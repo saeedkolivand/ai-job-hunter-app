@@ -110,6 +110,7 @@ function makeApp(overrides: Partial<Application>): Application {
     brief: '',
     notes: '',
     comp: '',
+    jobDescription: '',
     contactName: '',
     contactEmail: '',
     ...overrides,

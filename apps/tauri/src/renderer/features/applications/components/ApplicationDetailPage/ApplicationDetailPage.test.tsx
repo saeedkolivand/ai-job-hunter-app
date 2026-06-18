@@ -145,6 +145,7 @@ vi.mock('@/services', () => ({
   }),
   useDocuments: () => ({ data: [], isLoading: false }),
   useDocumentText: () => ({ data: undefined, isLoading: false }),
+  useImportJobUrl: () => ({ mutate: vi.fn(), isPending: false, isError: false }),
 }));
 
 vi.mock('@/services/use-ai-generations', () => ({
@@ -168,6 +169,7 @@ function makeApp(overrides: Partial<Application> = {}): Application {
     brief: '',
     notes: '',
     comp: '',
+    jobDescription: '',
     contactName: '',
     contactEmail: '',
     ...overrides,

@@ -772,7 +772,7 @@ function BriefTab({ application }: { application: Application }) {
                   onClick={() => {
                     fetchJd(application.jobUrl, {
                       onSuccess: (posting) => {
-                        const desc = posting.description ?? '';
+                        const desc = posting?.description ?? '';
                         if (desc.trim()) {
                           updateApp({ id: application.id, jobDescription: desc });
                         }
