@@ -157,5 +157,22 @@ browser.runtime.onInstalled.addListener(() => {
 // Kick an initial probe when the worker first loads.
 void getClient().ensureConnected();
 
+// Apply a pending update immediately once the browser has already downloaded it,
+// instead of waiting for the next natural SW restart.
+// ponytail: onUpdateAvailable only fires when an update is already staged — we
+// are not pulling the update, just collapsing the apply delay.
+browser.runtime.onUpdateAvailable.addListener(() => {
+  browser.runtime.reload();
+});
+
+// Chrome-only: nudge the browser to check for an update now so the download
+// starts sooner. requestUpdateCheck is absent in Firefox, so feature-detect.
+// ponytail: single startup nudge only — the browser already polls periodically.
+if (typeof browser.runtime.requestUpdateCheck === 'function') {
+  void browser.runtime.requestUpdateCheck().catch(() => {
+    // Ignore — non-fatal; update checks may be rate-limited or unavailable.
+  });
+}
+
 // Ensure this file is treated as an ES module (Chrome SW `type: module`).
 export {};
