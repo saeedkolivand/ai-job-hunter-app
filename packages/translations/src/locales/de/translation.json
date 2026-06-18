@@ -20,6 +20,8 @@
     "support": "Hilfe & Support",
     "settings": "Einstellungen",
     "applications": "Bewerbungen",
+    "collapseSidebar": "Seitenleiste einklappen",
+    "expandSidebar": "Seitenleiste ausklappen",
     "back": "Zurück"
   },
   "build": {

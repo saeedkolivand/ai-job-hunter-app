@@ -20,6 +20,8 @@
     "support": "Help & Support",
     "settings": "Settings",
     "applications": "Applications",
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar",
     "back": "Back"
   },
   "build": {
