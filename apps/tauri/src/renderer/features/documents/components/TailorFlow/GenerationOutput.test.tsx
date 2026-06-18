@@ -231,6 +231,12 @@ describe('GenerationOutput', () => {
 
       await clickJobAdTab(user);
 
+      // The picker carries an explicit label binding (sr-only <label htmlFor>).
+      expect(screen.getByText('autopilot.apply.jobAdView.summaryLanguage')).toHaveAttribute(
+        'for',
+        'job-ad-summary-language'
+      );
+
       // Summary sub-tab is the default; the language picker lists OUTPUT_LANGUAGES
       // by endonym. Choosing German must forward its locale CODE ('de'), not the
       // display name (which safeLocale would collapse to English).

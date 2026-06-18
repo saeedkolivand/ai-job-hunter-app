@@ -70,13 +70,20 @@ export function JobAdView({
           ariaLabel={t('autopilot.apply.jobAdView.label')}
         />
         {tab === 'summary' && (
-          <Dropdown
-            value={language}
-            onChange={onLanguageChange}
-            options={languageOptions}
-            placeholder={t('autopilot.apply.jobAdView.summaryLanguage')}
-            size="sm"
-          />
+          <>
+            {/* Explicit label bound to the trigger (id) — visually redundant with
+                the selected language, so sr-only keeps the toolbar uncluttered. */}
+            <label htmlFor="job-ad-summary-language" className="sr-only">
+              {t('autopilot.apply.jobAdView.summaryLanguage')}
+            </label>
+            <Dropdown
+              id="job-ad-summary-language"
+              value={language}
+              onChange={onLanguageChange}
+              options={languageOptions}
+              size="sm"
+            />
+          </>
         )}
       </div>
 
