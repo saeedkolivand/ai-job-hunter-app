@@ -1,5 +1,5 @@
 import { PanelLeft } from 'lucide-react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef } from 'react';
 import {
   createRootRoute,
@@ -188,14 +188,23 @@ function RootLayout() {
             <CinematicBackground />
             <Titlebar />
             <div className="flex flex-1 overflow-hidden">
-              <motion.div
-                animate={{ width: isCollapsed ? 0 : 'auto', opacity: isCollapsed ? 0 : 1 }}
-                transition={transition.normal}
-                className="overflow-hidden"
-                style={{ flexShrink: 0 }}
-              >
-                <Sidebar />
-              </motion.div>
+              {/* Unmount (not just shrink) the sidebar when collapsed so its links
+                  leave the tab order and stay out of reach of keyboard/SR users. */}
+              <AnimatePresence initial={false}>
+                {!isCollapsed && (
+                  <motion.div
+                    key="sidebar"
+                    initial={{ width: 0, opacity: 0 }}
+                    animate={{ width: 'auto', opacity: 1 }}
+                    exit={{ width: 0, opacity: 0 }}
+                    transition={transition.normal}
+                    className="overflow-hidden"
+                    style={{ flexShrink: 0 }}
+                  >
+                    <Sidebar />
+                  </motion.div>
+                )}
+              </AnimatePresence>
               <div className="relative flex flex-1 overflow-hidden">
                 {isCollapsed && (
                   <div className="absolute left-0 top-0 z-10 p-2">
