@@ -20,6 +20,8 @@ interface Props {
     generating: boolean;
     error: string | null;
     generate: () => void;
+    language: string;
+    setLanguage: (v: string) => void;
   };
   // Output / doc state from useTailorGeneration.
   activeOut: 'resume' | 'cover';

@@ -66,6 +66,7 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
         candidate: rec.candidate_name.clone(),
         brief: rec.company_brief.clone(),
         answers: rec.application_answers.clone(),
+        job_summary: String::new(),
     };
     if let Some(apps) = app.try_state::<crate::applications::ApplicationStore>() {
         if let Err(e) = apps.upsert_for_origin(

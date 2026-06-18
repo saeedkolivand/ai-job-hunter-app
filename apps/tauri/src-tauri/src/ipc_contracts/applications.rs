@@ -34,4 +34,6 @@ pub struct ApplicationUpdateRequest {
     pub contact_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contact_email: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub job_summary: Option<String>,
 }

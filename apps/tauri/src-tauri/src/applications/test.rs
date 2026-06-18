@@ -71,6 +71,7 @@ fn meta(company: &str, title: &str) -> ApplicationMeta {
         candidate: "Jane".into(),
         brief: String::new(),
         answers: vec![],
+        job_summary: String::new(),
     }
 }
 
@@ -255,6 +256,7 @@ fn update_fields_patches_only_provided() {
             Some(Some(123)),
             None,
             Some("Recruiter".into()),
+            None,
             None,
         )
         .unwrap();
@@ -445,7 +447,7 @@ fn update_fields_next_action_at_null_clears_and_absent_preserves() {
 
     // Set a value.
     store
-        .update_fields(&id, None, Some(Some(999)), None, None, None)
+        .update_fields(&id, None, Some(Some(999)), None, None, None, None)
         .unwrap();
     assert_eq!(
         store.get(&id).unwrap().next_action_at,
@@ -455,7 +457,7 @@ fn update_fields_next_action_at_null_clears_and_absent_preserves() {
 
     // Passing `Some(None)` must CLEAR the value.
     store
-        .update_fields(&id, None, Some(None), None, None, None)
+        .update_fields(&id, None, Some(None), None, None, None, None)
         .unwrap();
     assert_eq!(
         store.get(&id).unwrap().next_action_at,
@@ -465,7 +467,7 @@ fn update_fields_next_action_at_null_clears_and_absent_preserves() {
 
     // Set value again.
     store
-        .update_fields(&id, None, Some(Some(456)), None, None, None)
+        .update_fields(&id, None, Some(Some(456)), None, None, None, None)
         .unwrap();
     assert_eq!(
         store.get(&id).unwrap().next_action_at,
@@ -475,7 +477,7 @@ fn update_fields_next_action_at_null_clears_and_absent_preserves() {
 
     // Passing `None` (field absent) must PRESERVE the prior value.
     store
-        .update_fields(&id, None, None, None, None, None)
+        .update_fields(&id, None, None, None, None, None, None)
         .unwrap();
     assert_eq!(
         store.get(&id).unwrap().next_action_at,
@@ -917,7 +919,8 @@ fn valid_application_json(id: &str, status: &str) -> serde_json::Value {
         "nextActionAt": null,
         "comp": "",
         "contactName": "",
-        "contactEmail": ""
+        "contactEmail": "",
+        "jobSummary": ""
     })
 }
 
@@ -956,7 +959,8 @@ fn application_import_malformed_later_record_rolls_back_prior_data() {
             "nextActionAt": null,
             "comp": "",
             "contactName": "",
-            "contactEmail": ""
+            "contactEmail": "",
+            "jobSummary": ""
         }
     ]);
 
@@ -1016,5 +1020,111 @@ fn application_import_all_valid_records_replaces_prior_data() {
     assert!(
         list.iter().all(|a| a.company != "Old Corp"),
         "prior record 'Old Corp' must not survive a successful import"
+    );
+}
+
+/// Old-schema applications.db (no job_summary column) must gain it via the
+/// additive migration with NO data loss, then accept/return a summary.
+#[test]
+fn job_summary_migration_adds_column_without_data_loss() {
+    let dir = TempDir::new().unwrap();
+    // Hand-build the PRE-job_summary applications table (the create_applications
+    // shape) and seed one row, simulating a DB from before this migration.
+    {
+        let conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE applications (
+                id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'saved',
+                applied_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+                job_url TEXT NOT NULL DEFAULT '', board TEXT NOT NULL DEFAULT '',
+                company TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',
+                candidate TEXT NOT NULL DEFAULT '', answers TEXT NOT NULL DEFAULT '[]',
+                brief TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
+                next_action_at INTEGER, comp TEXT NOT NULL DEFAULT '',
+                contact_name TEXT NOT NULL DEFAULT '', contact_email TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE status_events (
+                application_id TEXT NOT NULL, from_status TEXT NOT NULL DEFAULT '',
+                to_status TEXT NOT NULL, at INTEGER NOT NULL, note TEXT NOT NULL DEFAULT ''
+            );
+            INSERT INTO applications (id, status, created_at, updated_at, company)
+                VALUES ('old-1', 'applied', 1000, 1000, 'Legacy Corp');",
+        )
+        .unwrap();
+    }
+    // Opening the store runs migrations (incl. add_applications_job_summary).
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let app = store
+        .get("old-1")
+        .expect("legacy row must survive migration");
+    assert_eq!(app.company, "Legacy Corp", "no data loss on migrated row");
+    assert_eq!(app.job_summary, "", "new column defaults to empty");
+}
+
+/// An upsert with a non-empty job_summary persists it; a follow-up upsert with an
+/// EMPTY summary must NOT clobber the stored value (merge-preserve, like `brief`).
+#[test]
+fn job_summary_upsert_persists_and_merge_preserves() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let url = "https://acme.com/job/777";
+
+    let mut m = meta("Acme", "Engineer");
+    m.job_summary = "A concise role summary.".into();
+    let id = store
+        .upsert_for_origin(url, "linkedin", &m, ApplicationOrigin::Generate, None)
+        .unwrap();
+    assert_eq!(
+        store.get(&id).unwrap().job_summary,
+        "A concise role summary."
+    );
+
+    // Re-upsert the same url with an EMPTY summary — must keep the stored one.
+    let m2 = meta("Acme", "Engineer"); // job_summary == ""
+    let id2 = store
+        .upsert_for_origin(url, "linkedin", &m2, ApplicationOrigin::Generate, None)
+        .unwrap();
+    assert_eq!(id, id2, "same url merges into one Application");
+    assert_eq!(
+        store.get(&id).unwrap().job_summary,
+        "A concise role summary.",
+        "empty incoming summary must not clobber the stored one"
+    );
+}
+
+/// `update_fields` can set the summary, and the 50 KB server cap truncates an
+/// oversize value on a UTF-8 char boundary (no panic, no split char).
+#[test]
+fn job_summary_update_and_50kb_clamp_truncates_on_char_boundary() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store.track_manual("", "", &meta("C", "T")).unwrap();
+
+    // Normal update path persists a summary.
+    store
+        .update_fields(&id, None, None, None, None, None, Some("hello".into()))
+        .unwrap();
+    assert_eq!(store.get(&id).unwrap().job_summary, "hello");
+
+    // >50 KB of a 2-byte char ('é' = U+00E9). 50_000 is even and every boundary in
+    // an all-'é' string is even, so exactly 25_000 whole chars (50_000 bytes) fit.
+    let big = "é".repeat(40_000); // 80_000 bytes
+    store
+        .update_fields(&id, None, None, None, None, None, Some(big))
+        .unwrap();
+    let stored = store.get(&id).unwrap().job_summary;
+    assert!(
+        stored.len() <= 50_000,
+        "must be capped at 50 KB, got {}",
+        stored.len()
+    );
+    assert!(
+        stored.chars().all(|c| c == 'é'),
+        "no split/garbage char at the cut"
+    );
+    assert_eq!(
+        stored.chars().count(),
+        25_000,
+        "exactly the whole chars that fit"
     );
 }

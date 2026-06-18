@@ -14,13 +14,16 @@ import { type PromptTarget, resolveProfile } from '../../provider/index.js';
 import type { GenerationMeta } from '../modes/index.js';
 
 /** System prompt — the no-fabrication contract for the digest. */
-export function buildJobAdSummarySystemPrompt(): string {
+export function buildJobAdSummarySystemPrompt(language?: string): string {
+  const rule3 = language
+    ? `Write the digest in ${language}.`
+    : `Write the digest in the AD'S OWN LANGUAGE (the language the ad is written in), not in English by default.`;
   return `You are summarizing a single job advertisement into a short, scannable digest of its key notes.
 
 ABSOLUTE RULES (never break these):
 1. Summarize ONLY what the ad actually states in <job_ad>. NEVER fabricate, infer, or add facts (skills, salary, location, seniority, company details) that are not present in the ad.
 2. If the ad does not cover one of the sections below, OMIT that section entirely — do not guess or pad.
-3. Write the digest in the AD'S OWN LANGUAGE (the language the ad is written in), not in English by default.
+3. ${rule3}
 4. Be concise: a scannable overview, NOT a re-print of the ad. Compress lists, drop boilerplate and legal disclaimers.
 5. Output concise markdown only — bold section labels and short bullet points. No preamble, no closing remarks, no headings beyond the bold labels below.`;
 }
@@ -33,11 +36,12 @@ ABSOLUTE RULES (never break these):
 export function buildJobAdSummaryPrompt(
   jobAd: string,
   meta?: GenerationMeta | null,
-  target?: PromptTarget
+  target?: PromptTarget,
+  language?: string
 ): string {
   const { jobAdChars } = resolveProfile(target);
 
-  const lang = meta?.targetLanguage;
+  const lang = language ?? meta?.targetLanguage;
   const langNote = lang
     ? `Write the digest in ${lang} (the ad's language).`
     : `Write the digest in the ad's own language.`;

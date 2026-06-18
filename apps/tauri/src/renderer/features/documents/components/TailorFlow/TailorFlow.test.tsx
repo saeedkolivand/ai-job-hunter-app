@@ -129,6 +129,19 @@ vi.mock('@/hooks/use-interview-questions', () => ({
   useInterviewQuestions: () => interviewMock,
 }));
 
+// ── useJobAdSummary — controlled mock ─────────────────────────────────────────
+
+vi.mock('./useJobAdSummary', () => ({
+  useJobAdSummary: () => ({
+    summary: '',
+    generating: false,
+    error: null,
+    generate: vi.fn(),
+    language: 'English',
+    setLanguage: vi.fn(),
+  }),
+}));
+
 // ── Heavy child stubs ─────────────────────────────────────────────────────────
 
 // TailorWizard stub exposes:

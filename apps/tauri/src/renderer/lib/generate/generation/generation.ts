@@ -404,23 +404,24 @@ export async function generateJobAdSummary(params: {
   jobAd: string;
   meta?: GenerationMeta | null;
   model: string;
+  language?: string;
   signal?: AbortSignal;
   onToken?: (tok: string) => void;
 }): Promise<string> {
-  const { jobAd, meta, model, signal, onToken } = params;
+  const { jobAd, meta, model, language, signal, onToken } = params;
   // Nothing to summarize → skip the wasted API call on an empty/whitespace ad.
   if (!jobAd.trim()) return '';
   const profile = buildProviderProfile(model);
 
-  const system = buildJobAdSummarySystemPrompt();
-  const user = buildJobAdSummaryPrompt(jobAd, meta, profile);
+  const system = buildJobAdSummarySystemPrompt(language);
+  const user = buildJobAdSummaryPrompt(jobAd, meta, profile, language);
   const raw = await streamGenerate(
     model,
     system,
     user,
     onToken ?? (() => {}),
     resolveTemperature('answers', 0.3),
-    meta?.targetLanguage || 'en',
+    language ?? meta?.targetLanguage ?? 'en',
     signal
   );
   return extractPlainText(raw);

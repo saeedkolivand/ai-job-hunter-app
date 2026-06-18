@@ -324,6 +324,7 @@ mod tests {
                     candidate: "Jane".into(),
                     brief: String::new(),
                     answers: vec![],
+                    job_summary: String::new(),
                 },
             )
             .unwrap();

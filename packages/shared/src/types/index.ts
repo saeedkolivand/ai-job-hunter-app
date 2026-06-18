@@ -344,6 +344,8 @@ export interface Application {
   comp: string;
   contactName: string;
   contactEmail: string;
+  /** Persisted AI-generated job-ad summary (server-capped at 50 KB). */
+  jobSummary: string;
 }
 
 /** One append-only status-history row. */

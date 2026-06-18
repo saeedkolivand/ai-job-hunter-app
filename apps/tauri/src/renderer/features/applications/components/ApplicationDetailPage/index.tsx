@@ -838,6 +838,8 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
           seedGeneration={matchingGenerations[0]}
           persistence={persistence}
           onController={setController}
+          applicationId={application.id}
+          initialSummary={application.jobSummary ?? undefined}
         />
       </div>
     </div>

@@ -2,7 +2,14 @@ import { ExternalLink as ExternalLinkIcon, Loader2, Sparkles } from 'lucide-reac
 import { useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, MarkdownMessage, SegmentedControl, StreamingText, TextArea } from '@ajh/ui';
+import {
+  Button,
+  Dropdown,
+  MarkdownMessage,
+  SegmentedControl,
+  StreamingText,
+  TextArea,
+} from '@ajh/ui';
 
 import { ExternalLink } from '@/components/ui/ExternalLink';
 
@@ -13,6 +20,8 @@ interface Props {
   generating: boolean;
   error: string | null;
   onGenerateSummary: () => void;
+  language: string;
+  onLanguageChange: (v: string) => void;
   hasDesc: boolean;
   fetchingDesc?: boolean;
   jobUrl?: string;
@@ -31,6 +40,8 @@ export function JobAdView({
   generating,
   error,
   onGenerateSummary,
+  language,
+  onLanguageChange,
   hasDesc,
   fetchingDesc,
   jobUrl,
@@ -38,9 +49,19 @@ export function JobAdView({
   const { t } = useTranslation();
   const [tab, setTab] = useState<'summary' | 'source'>('summary');
 
+  const languageOptions = [
+    { value: 'English', label: t('autopilot.apply.jobAdView.lang.en') },
+    { value: 'German', label: t('autopilot.apply.jobAdView.lang.de') },
+    { value: 'Spanish', label: t('autopilot.apply.jobAdView.lang.es') },
+    { value: 'French', label: t('autopilot.apply.jobAdView.lang.fr') },
+    { value: 'Italian', label: t('autopilot.apply.jobAdView.lang.it') },
+    { value: 'Portuguese', label: t('autopilot.apply.jobAdView.lang.pt') },
+    { value: 'Dutch', label: t('autopilot.apply.jobAdView.lang.nl') },
+  ];
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div className="shrink-0">
+      <div className="shrink-0 flex items-center justify-between gap-2">
         <SegmentedControl<'summary' | 'source'>
           options={[
             { value: 'summary', label: t('autopilot.apply.jobAdView.summaryTab') },
@@ -51,6 +72,14 @@ export function JobAdView({
           size="sm"
           ariaLabel={t('autopilot.apply.jobAdView.label')}
         />
+        {tab === 'summary' && (
+          <Dropdown
+            value={language}
+            onChange={onLanguageChange}
+            options={languageOptions}
+            size="sm"
+          />
+        )}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">

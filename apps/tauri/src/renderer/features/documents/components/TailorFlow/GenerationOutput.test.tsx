@@ -68,12 +68,14 @@ vi.mock('@ajh/ui', async (importOriginal) => {
       options,
       value,
       onChange,
+      id,
     }: {
       options: Array<{ value: string; label: string }>;
       value: string;
       onChange: (v: string) => void;
+      id?: string;
     }) => (
-      <div data-testid="template-picker" data-value={value}>
+      <div data-testid={id ?? 'dropdown'} data-value={value}>
         {options.map((o) => (
           <div
             key={o.value}
@@ -117,7 +119,14 @@ function makeProps(overrides: Partial<Parameters<typeof GenerationOutput>[0]> = 
     hasDesc: true,
     fetchingDesc: false,
     jobUrl: 'https://example.com/job',
-    jobAdSummary: { summary: '', generating: false, error: null, generate: vi.fn() },
+    jobAdSummary: {
+      summary: '',
+      generating: false,
+      error: null,
+      generate: vi.fn(),
+      language: 'English',
+      setLanguage: vi.fn(),
+    },
     ...overrides,
   };
 }
@@ -179,7 +188,14 @@ describe('GenerationOutput', () => {
       render(
         <GenerationOutput
           {...makeProps({
-            jobAdSummary: { summary: '', generating: false, error: null, generate },
+            jobAdSummary: {
+              summary: '',
+              generating: false,
+              error: null,
+              generate,
+              language: 'English',
+              setLanguage: vi.fn(),
+            },
           })}
         />
       );

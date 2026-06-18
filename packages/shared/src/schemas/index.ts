@@ -305,6 +305,7 @@ export const ApplicationUpdateSchema = z.object({
   comp: z.string().optional(),
   contactName: z.string().optional(),
   contactEmail: z.string().optional(),
+  jobSummary: z.string().max(50_000).optional(),
 });
 export type ApplicationUpdateRequest = z.infer<typeof ApplicationUpdateSchema>;
 

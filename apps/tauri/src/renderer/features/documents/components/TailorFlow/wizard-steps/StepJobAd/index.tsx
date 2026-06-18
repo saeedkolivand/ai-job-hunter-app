@@ -13,6 +13,8 @@ interface StepJobAdProps {
     generating: boolean;
     error: string | null;
     generate: () => void;
+    language: string;
+    setLanguage: (v: string) => void;
   };
 }
 
@@ -49,6 +51,8 @@ export function StepJobAd({
         generating={jobAdSummary.generating}
         error={jobAdSummary.error}
         onGenerateSummary={jobAdSummary.generate}
+        language={jobAdSummary.language}
+        onLanguageChange={jobAdSummary.setLanguage}
         hasDesc={hasDesc}
         fetchingDesc={fetchingDesc}
         jobUrl={jobUrl}
