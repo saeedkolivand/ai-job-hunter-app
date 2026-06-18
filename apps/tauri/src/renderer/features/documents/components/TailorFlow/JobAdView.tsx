@@ -12,6 +12,7 @@ import {
 } from '@ajh/ui';
 
 import { ExternalLink } from '@/components/ui/ExternalLink';
+import { OUTPUT_LANGUAGES } from '@/lib/generate';
 
 interface Props {
   jobDesc: string;
@@ -49,15 +50,11 @@ export function JobAdView({
   const { t } = useTranslation();
   const [tab, setTab] = useState<'summary' | 'source'>('summary');
 
-  const languageOptions = [
-    { value: 'English', label: t('autopilot.apply.jobAdView.lang.en') },
-    { value: 'German', label: t('autopilot.apply.jobAdView.lang.de') },
-    { value: 'Spanish', label: t('autopilot.apply.jobAdView.lang.es') },
-    { value: 'French', label: t('autopilot.apply.jobAdView.lang.fr') },
-    { value: 'Italian', label: t('autopilot.apply.jobAdView.lang.it') },
-    { value: 'Portuguese', label: t('autopilot.apply.jobAdView.lang.pt') },
-    { value: 'Dutch', label: t('autopilot.apply.jobAdView.lang.nl') },
-  ];
+  // Sourced from OUTPUT_LANGUAGES (the single locale source of truth) so each value
+  // is a locale CODE the generation pipeline's safeLocale accepts — display names
+  // ('German', 'Dutch') silently collapsed to English. Labels are endonyms, each
+  // language shown in its own script.
+  const languageOptions = OUTPUT_LANGUAGES.map((l) => ({ value: l.code, label: l.endonym }));
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
@@ -77,6 +74,7 @@ export function JobAdView({
             value={language}
             onChange={onLanguageChange}
             options={languageOptions}
+            placeholder={t('autopilot.apply.jobAdView.summaryLanguage')}
             size="sm"
           />
         )}

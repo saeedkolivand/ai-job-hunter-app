@@ -124,7 +124,7 @@ function makeProps(overrides: Partial<Parameters<typeof GenerationOutput>[0]> = 
       generating: false,
       error: null,
       generate: vi.fn(),
-      language: 'English',
+      language: 'en',
       setLanguage: vi.fn(),
     },
     ...overrides,
@@ -193,7 +193,7 @@ describe('GenerationOutput', () => {
               generating: false,
               error: null,
               generate,
-              language: 'English',
+              language: 'en',
               setLanguage: vi.fn(),
             },
           })}
@@ -209,6 +209,34 @@ describe('GenerationOutput', () => {
 
       await user.click(generateBtn);
       expect(generate).toHaveBeenCalledTimes(1);
+    });
+
+    it('selecting a summary language calls setLanguage with the locale code', async () => {
+      const user = userEvent.setup();
+      const setLanguage = vi.fn();
+      render(
+        <GenerationOutput
+          {...makeProps({
+            jobAdSummary: {
+              summary: '',
+              generating: false,
+              error: null,
+              generate: vi.fn(),
+              language: 'en',
+              setLanguage,
+            },
+          })}
+        />
+      );
+
+      await clickJobAdTab(user);
+
+      // Summary sub-tab is the default; the language picker lists OUTPUT_LANGUAGES
+      // by endonym. Choosing German must forward its locale CODE ('de'), not the
+      // display name (which safeLocale would collapse to English).
+      await user.click(screen.getByRole('option', { name: 'Deutsch' }));
+
+      expect(setLanguage).toHaveBeenCalledWith('de');
     });
 
     it('hides the editable doc output while Job ad tab is active', async () => {

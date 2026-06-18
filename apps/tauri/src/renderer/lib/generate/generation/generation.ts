@@ -44,7 +44,7 @@ import { detectLanguages } from '@ajh/shared/language-detection';
 import { usePreferencesStore } from '@/store/preferences-store';
 
 import { getClient } from '../../app-client';
-import { safeLocale } from '../locales';
+import { OUTPUT_LANGUAGES, safeLocale } from '../locales';
 import {
   buildProviderProfile,
   resolveActiveProvider,
@@ -413,15 +413,21 @@ export async function generateJobAdSummary(params: {
   if (!jobAd.trim()) return '';
   const profile = buildProviderProfile(model);
 
-  const system = buildJobAdSummarySystemPrompt(language);
-  const user = buildJobAdSummaryPrompt(jobAd, meta, profile, language);
+  // `language` arrives as a locale CODE ('de', 'es', …) from the picker. The prompt
+  // wants a human language NAME; streamGenerate wants a code. Resolve both once from
+  // OUTPUT_LANGUAGES (the allowlist) so the name interpolated into the prompt can't
+  // be an arbitrary injected string and the locale isn't silently collapsed to 'en'.
+  const lang = language ? OUTPUT_LANGUAGES.find((l) => l.code === language) : undefined;
+
+  const system = buildJobAdSummarySystemPrompt(lang?.englishName);
+  const user = buildJobAdSummaryPrompt(jobAd, meta, profile, lang?.englishName);
   const raw = await streamGenerate(
     model,
     system,
     user,
     onToken ?? (() => {}),
     resolveTemperature('answers', 0.3),
-    language ?? meta?.targetLanguage ?? 'en',
+    lang?.code ?? meta?.targetLanguage ?? 'en',
     signal
   );
   return extractPlainText(raw);

@@ -13,10 +13,22 @@
 import { type PromptTarget, resolveProfile } from '../../provider/index.js';
 import type { GenerationMeta } from '../modes/index.js';
 
+/**
+ * Only a plausible language name/code may be interpolated into the instructions —
+ * letters, spaces and hyphens, kept short. Anything else (a prompt-injection
+ * attempt smuggled through the `language` field) is dropped, and the digest falls
+ * back to the ad's own language. Defence in depth: callers already source the
+ * value from the locale allowlist.
+ */
+function safeLanguage(language?: string): string | undefined {
+  return language && /^[\p{L}][\p{L} -]{0,29}$/u.test(language) ? language : undefined;
+}
+
 /** System prompt — the no-fabrication contract for the digest. */
 export function buildJobAdSummarySystemPrompt(language?: string): string {
-  const rule3 = language
-    ? `Write the digest in ${language}.`
+  const safe = safeLanguage(language);
+  const rule3 = safe
+    ? `Write the digest in ${safe}.`
     : `Write the digest in the AD'S OWN LANGUAGE (the language the ad is written in), not in English by default.`;
   return `You are summarizing a single job advertisement into a short, scannable digest of its key notes.
 
@@ -41,7 +53,7 @@ export function buildJobAdSummaryPrompt(
 ): string {
   const { jobAdChars } = resolveProfile(target);
 
-  const lang = language ?? meta?.targetLanguage;
+  const lang = safeLanguage(language ?? meta?.targetLanguage);
   const langNote = lang
     ? `Write the digest in ${lang} (the ad's language).`
     : `Write the digest in the ad's own language.`;

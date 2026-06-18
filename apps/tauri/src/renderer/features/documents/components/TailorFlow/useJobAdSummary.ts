@@ -35,26 +35,34 @@ export function useJobAdSummary({
   applicationId,
   initialSummary,
 }: Params) {
-  const [summary, setSummary] = useState(initialSummary ?? '');
+  const updateApplication = useUpdateApplication();
+  const setCachedJobSummary = useSessionStore((s) => s.setCachedJobSummary);
+  // Session-cache fallback (used when there's no applicationId to persist onto):
+  // restore a prior summary generated for THIS exact ad so re-entering the flow
+  // starts populated instead of empty. Keyed by a jobDesc prefix (dedup-cheap).
+  const cacheKey = jobDesc.trim().slice(0, 200);
+  const cachedSummary = useSessionStore((s) => s.jobSummaryCache[cacheKey] ?? '');
+
+  const [summary, setSummary] = useState(initialSummary ?? cachedSummary);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [language, setLanguage] = useState('English');
+  // Locale CODE ('en', 'de', …) — must match an OUTPUT_LANGUAGES code so the
+  // generation pipeline's safeLocale doesn't collapse the choice to English.
+  const [language, setLanguage] = useState('en');
   // The jobDesc the current `summary` was generated from. When jobDesc diverges
   // from this, the summary is stale → reset it (so the empty state shows again).
   const summaryForDesc = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const updateApplication = useUpdateApplication();
-  const setCachedJobSummary = useSessionStore((s) => s.setCachedJobSummary);
-
-  // Seed summaryForDesc so the stale-desc reset doesn't clobber a persisted summary.
-  // jobDesc is intentionally included: if initialSummary arrives after jobDesc, we
-  // still want to stamp the current desc so the stale-reset guard is accurate.
+  // Seed summaryForDesc so the stale-desc reset doesn't clobber a restored summary
+  // (persisted via initialSummary OR session-cached). jobDesc is intentionally
+  // included: if the restored value arrives after jobDesc, we still stamp the
+  // current desc so the stale-reset guard stays accurate.
   useEffect(() => {
-    if (initialSummary && summaryForDesc.current === null) {
+    if ((initialSummary || cachedSummary) && summaryForDesc.current === null) {
       summaryForDesc.current = jobDesc;
     }
-  }, [initialSummary, jobDesc]);
+  }, [initialSummary, cachedSummary, jobDesc]);
 
   // Abort any in-flight generation on unmount so the stream is torn down and we
   // never setState on a dead component.
@@ -100,8 +108,8 @@ export function useJobAdSummary({
       if (applicationId) {
         updateApplication.mutate({ id: applicationId, jobSummary: result });
       } else {
-        // ponytail: slice key avoids hashing dep; 200 chars is plenty for session dedup
-        setCachedJobSummary(jobDesc.trim().slice(0, 200), result);
+        // Same key the restore reads from, so a re-open finds this summary.
+        setCachedJobSummary(cacheKey, result);
       }
     } catch (err) {
       // An explicit abort (restart/unmount) is not an error to surface.
