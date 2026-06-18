@@ -47,6 +47,8 @@ export interface ModalShellProps {
   ariaLabelledby?: string;
   /** Accessible name when there is no visible title element to reference. */
   ariaLabel?: string;
+  /** When false, clicking the backdrop does NOT close the modal (Escape + explicit controls still do). Default true. */
+  closeOnBackdrop?: boolean;
 }
 
 /**
@@ -65,6 +67,7 @@ export function ModalShell({
   borderClass,
   ariaLabelledby,
   ariaLabel,
+  closeOnBackdrop = true,
 }: ModalShellProps) {
   const trapRef = useFocusTrap(open);
 
@@ -93,12 +96,12 @@ export function ModalShell({
         <>
           {/* Visual backdrop — no click handler; the outer container handles dismissal */}
           <GlassOverlay zIndex={zIndex - 1} />
-          {/* Click on the backdrop area (outside the panel) closes the modal.
+          {/* Click on the backdrop area (outside the panel) closes the modal when closeOnBackdrop is true.
               Click on the panel calls stopPropagation so it never reaches here. */}
           <motion.div
             className="fixed inset-0 flex items-center justify-center p-4"
             style={{ zIndex }}
-            onClick={onClose}
+            onClick={closeOnBackdrop ? onClose : undefined}
             {...variants.overlay}
             transition={transition.overlay}
           >
