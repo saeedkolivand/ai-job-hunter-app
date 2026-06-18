@@ -139,7 +139,30 @@ pub struct ApplicationMeta {
     pub title: String,
     pub candidate: String,
     pub brief: String,
+    pub job_description: String,
     pub answers: Vec<ApplicationAnswer>,
+}
+
+/// Server-side cap on a stored job description, in BYTES. Mirrors the renderer
+/// Zod cap in packages/shared/src/schemas/index.ts — client validation is UX-only;
+/// this store write is the real trust boundary (the extension import path persists
+/// attacker-influenced page HTML, which never passes through the Zod schema).
+// ponytail: matches the renderer Zod cap; client validation is UX-only — the Rust store is the real boundary.
+const MAX_JOB_DESCRIPTION_BYTES: usize = 200_000;
+
+/// Clamp a job description to at most `MAX_JOB_DESCRIPTION_BYTES` bytes, cutting on
+/// a UTF-8 char boundary so the stored text is always valid UTF-8. Truncate (never
+/// reject): an over-cap import is clamped, not dropped.
+fn clamp_job_description(mut jd: String) -> String {
+    if jd.len() <= MAX_JOB_DESCRIPTION_BYTES {
+        return jd;
+    }
+    let mut end = MAX_JOB_DESCRIPTION_BYTES;
+    while end > 0 && !jd.is_char_boundary(end) {
+        end -= 1;
+    }
+    jd.truncate(end);
+    jd
 }
 
 /// The aggregate root. Owns identity, status, the job link, and the audit fields
@@ -164,6 +187,8 @@ pub struct Application {
     pub candidate: String,
     pub answers: Vec<ApplicationAnswer>,
     pub brief: String,
+    #[serde(default)]
+    pub job_description: String,
     #[serde(default)]
     pub notes: String,
     /// A user-set reminder timestamp (ms) for the next thing to do. `None` = unset.
@@ -236,6 +261,14 @@ impl ApplicationStore {
                     );
                     CREATE INDEX IF NOT EXISTS idx_status_events_app
                         ON status_events(application_id);",
+                )
+            },
+        },
+        Migration {
+            name: "add_applications_job_description",
+            up: |conn| {
+                conn.execute_batch(
+                    "ALTER TABLE applications ADD COLUMN job_description TEXT NOT NULL DEFAULT '';",
                 )
             },
         },
@@ -346,11 +379,18 @@ impl ApplicationStore {
                 title: g.title,
                 candidate: g.candidate,
                 brief: g.brief,
+                job_description: String::new(), // ponytail: legacy generations carry no JD column
                 answers: g.answers,
             };
             // Empty url → a fresh per-gen Application (no shared key to merge on);
             // non-empty url → merge into that url's Application if one exists.
-            let app_id = self.upsert_internal(&normalized, &g.board, &meta, Some(g.created_at))?;
+            let app_id = self.upsert_internal(
+                &normalized,
+                &g.board,
+                &meta,
+                &meta.job_description,
+                Some(g.created_at),
+            )?;
             gen_conn.execute(
                 "UPDATE ai_generations SET application_id = ?2 WHERE id = ?1",
                 params![g.id, app_id],
@@ -461,7 +501,11 @@ impl ApplicationStore {
         } else {
             None
         };
-        self.upsert_internal(&normalized, board, meta, applied_at)
+        // The Rust store is the real trust boundary: clamp the JD here so BOTH the
+        // import funnel and direct IPC callers are capped (the renderer Zod cap is
+        // UX-only and the import path never passes through it). Truncate, never drop.
+        let clamped_jd = clamp_job_description(meta.job_description.clone());
+        self.upsert_internal(&normalized, board, meta, &clamped_jd, applied_at)
     }
 
     /// Core upsert: `normalized` is already normalized; `applied_at` Some marks the
@@ -473,6 +517,10 @@ impl ApplicationStore {
         normalized: &str,
         board: &str,
         meta: &ApplicationMeta,
+        // Already clamped by the caller (`upsert_for_origin`) to
+        // `MAX_JOB_DESCRIPTION_BYTES`; both write branches below use this, never
+        // `meta.job_description`, so the cap can't be bypassed.
+        clamped_jd: &str,
         applied_at: Option<u64>,
     ) -> AppResult<String> {
         let pick = |inc: &str, ex: &str| -> String {
@@ -512,6 +560,7 @@ impl ApplicationStore {
                 candidate: pick(&meta.candidate, &existing.candidate),
                 answers,
                 brief: pick(&meta.brief, &existing.brief),
+                job_description: pick(clamped_jd, &existing.job_description),
                 notes: existing.notes.clone(),
                 next_action_at: existing.next_action_at,
                 comp: existing.comp.clone(),
@@ -557,6 +606,7 @@ impl ApplicationStore {
             candidate: meta.candidate.clone(),
             answers: meta.answers.clone(),
             brief: meta.brief.clone(),
+            job_description: clamped_jd.to_string(),
             notes: String::new(),
             next_action_at: None,
             comp: String::new(),
@@ -625,6 +675,7 @@ impl ApplicationStore {
         comp: Option<String>,
         contact_name: Option<String>,
         contact_email: Option<String>,
+        job_description: Option<String>,
     ) -> AppResult<()> {
         let existing = self
             .get(id)
@@ -635,6 +686,11 @@ impl ApplicationStore {
             comp: comp.unwrap_or(existing.comp),
             contact_name: contact_name.unwrap_or(existing.contact_name),
             contact_email: contact_email.unwrap_or(existing.contact_email),
+            // Clamp Some(s) at the store boundary; None still preserves the stored JD
+            // (the IPC arg is attacker-reachable and bypasses the renderer Zod cap).
+            job_description: job_description
+                .map(clamp_job_description)
+                .unwrap_or(existing.job_description),
             updated_at: now_ms(),
             ..existing
         };
@@ -670,8 +726,8 @@ impl ApplicationStore {
             "INSERT INTO applications
                 (id, status, applied_at, created_at, updated_at, job_url, board,
                  company, title, candidate, answers, brief, notes, next_action_at,
-                 comp, contact_name, contact_email)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
+                 comp, contact_name, contact_email, job_description)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)
              ON CONFLICT(id) DO UPDATE SET
                 status = excluded.status,
                 applied_at = excluded.applied_at,
@@ -687,7 +743,8 @@ impl ApplicationStore {
                 next_action_at = excluded.next_action_at,
                 comp = excluded.comp,
                 contact_name = excluded.contact_name,
-                contact_email = excluded.contact_email",
+                contact_email = excluded.contact_email,
+                job_description = excluded.job_description",
             params![
                 app.id,
                 app.status.as_id(),
@@ -706,6 +763,7 @@ impl ApplicationStore {
                 app.comp,
                 app.contact_name,
                 app.contact_email,
+                app.job_description,
             ],
         )?;
         Ok(())
@@ -724,7 +782,7 @@ impl ApplicationStore {
 /// Column projection shared by `list`/`get`/`find_by_job_url` so order lives once.
 const SELECT_COLS: &str = "SELECT id, status, applied_at, created_at, updated_at, job_url, board,
             company, title, candidate, answers, brief, notes, next_action_at,
-            comp, contact_name, contact_email
+            comp, contact_name, contact_email, job_description
      FROM applications";
 
 fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
@@ -748,6 +806,7 @@ fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
         comp: row.get(14)?,
         contact_name: row.get(15)?,
         contact_email: row.get(16)?,
+        job_description: row.get(17)?,
     })
 }
 

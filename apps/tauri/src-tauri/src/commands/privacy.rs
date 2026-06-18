@@ -323,6 +323,7 @@ mod tests {
                     title: "Dev".into(),
                     candidate: "Jane".into(),
                     brief: String::new(),
+                    job_description: String::new(),
                     answers: vec![],
                 },
             )

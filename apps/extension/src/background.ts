@@ -13,7 +13,7 @@ import { browser } from '@wxt-dev/browser';
 import type { ExtensionImportRequest } from '@ajh/shared';
 
 import { BridgeClient } from './lib/bridge';
-import type { ConnectionStatus, ImportMode, PopupRequest, PopupResponse } from './lib/messages';
+import type { ConnectionStatus, PopupRequest, PopupResponse } from './lib/messages';
 import { clearToken, getToken, setToken } from './lib/storage';
 
 /** Lazily-built, worker-lifetime-scoped client. Recreated after eviction. */
@@ -87,8 +87,8 @@ async function captureActiveTabHtml(): Promise<string> {
   return html;
 }
 
-/** Run an import for the requested mode, returning the import.result payload. */
-async function runImport(mode: ImportMode, applied: boolean): Promise<PopupResponse> {
+/** Run an import, always attempting to capture the rendered DOM first. */
+async function runImport(applied: boolean): Promise<PopupResponse> {
   const token = await getToken();
   if (!token) {
     return { ok: false, error: 'Not paired. Paste your pairing token first.' };
@@ -96,8 +96,13 @@ async function runImport(mode: ImportMode, applied: boolean): Promise<PopupRespo
 
   const url = await activeTabUrl();
   const payload: ExtensionImportRequest = { url, applied };
-  if (mode === 'scan') {
+  // Always try to capture the authenticated DOM so the desktop can parse it
+  // without re-fetching (which would hit bot-walls on LinkedIn/Indeed/Glassdoor).
+  // Fall back to URL-only if executeScript is blocked (restricted pages).
+  try {
     payload.html = await captureActiveTabHtml();
+  } catch {
+    // ponytail: restricted page or scripting permission denied — URL-only fallback
   }
 
   const result = await getClient().importJob(token, payload);
@@ -128,7 +133,7 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
         return { ok: true, kind: 'status', status: await computeStatus() };
       }
       case 'import':
-        return await runImport(req.mode, req.applied);
+        return await runImport(req.applied);
       default: {
         // Exhaustiveness guard — a new PopupRequest variant must be handled.
         const _never: never = req;

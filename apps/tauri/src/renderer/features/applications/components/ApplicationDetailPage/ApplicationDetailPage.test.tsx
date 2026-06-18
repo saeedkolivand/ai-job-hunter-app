@@ -125,6 +125,10 @@ const mockUseAiGenerations = vi.fn();
 const mockUpdateApplicationMutate = vi.fn();
 // Controlled so tests can assert `keepDocuments` on the delete path.
 const mockRemoveMutateAsync = vi.fn().mockResolvedValue(undefined);
+// JD-fetch (useImportJobUrl) — controllable so the recovery-panel fetch tests can
+// drive onSuccess and toggle the isError messaging path.
+const mockImportJobUrlMutate = vi.fn();
+let mockImportJobUrlIsError = false;
 
 vi.mock('@/services', () => ({
   useApplication: () => mockUseApplication(),
@@ -145,6 +149,11 @@ vi.mock('@/services', () => ({
   }),
   useDocuments: () => ({ data: [], isLoading: false }),
   useDocumentText: () => ({ data: undefined, isLoading: false }),
+  useImportJobUrl: () => ({
+    mutate: mockImportJobUrlMutate,
+    isPending: false,
+    isError: mockImportJobUrlIsError,
+  }),
 }));
 
 vi.mock('@/services/use-ai-generations', () => ({
@@ -168,6 +177,7 @@ function makeApp(overrides: Partial<Application> = {}): Application {
     brief: '',
     notes: '',
     comp: '',
+    jobDescription: '',
     contactName: '',
     contactEmail: '',
     ...overrides,
@@ -217,6 +227,8 @@ beforeEach(() => {
   mockSetApplicationApply.mockClear();
   mockRemoveMutateAsync.mockClear();
   mockNavigate.mockClear();
+  mockImportJobUrlMutate.mockReset();
+  mockImportJobUrlIsError = false;
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -809,28 +821,71 @@ describe('ApplicationDetailPage — ActionMenu delete flows', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('ApplicationDetailPage — Brief & answers tab', () => {
-  it('shows the briefEmpty copy when brief and answers are both empty', () => {
+  // The generic briefEmpty EmptyState early-return was removed: an empty
+  // brief/answers/JD stub now renders the JD recovery panel (paste/fetch) instead
+  // of vanishing — that panel IS the empty experience for a partial import.
+  it('renders the JD recovery panel (paste TextArea + notFound prompt) for an empty stub', () => {
     mockTab = 'brief';
-    renderLoaded({ brief: '', answers: [] });
-    expect(screen.getByText('applications.detail.briefEmpty')).toBeInTheDocument();
-  });
-
-  it('does NOT show the briefEmpty copy when brief has content', () => {
-    mockTab = 'brief';
-    renderLoaded({ brief: 'Company summary here.', answers: [] });
+    renderLoaded({ brief: '', answers: [], jobDescription: '' });
+    // The recovery prompt + paste field are shown; the old EmptyState is gone.
+    expect(screen.getByText('jobUrlImport.notFound')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('applications.detail.jdPlaceholder')).toBeInTheDocument();
     expect(screen.queryByText('applications.detail.briefEmpty')).not.toBeInTheDocument();
-    expect(screen.getByText('Company summary here.')).toBeInTheDocument();
   });
 
-  it('does NOT show the briefEmpty copy when answers is non-empty', () => {
+  it('typing into the paste TextArea updates it and enables the Save button', async () => {
     mockTab = 'brief';
-    renderLoaded({
-      brief: '',
-      answers: [{ id: 'q1', question: 'Why us?', answer: 'Because.' }],
+    const user = userEvent.setup();
+    renderLoaded({ brief: '', answers: [], jobDescription: '' });
+
+    const paste = screen.getByPlaceholderText('applications.detail.jdPlaceholder');
+    const save = screen.getByRole('button', { name: /applications\.detail\.jdSave/i });
+    // Disabled while the draft is empty (fix 3a: value is the draft, so typing sticks).
+    expect(save).toBeDisabled();
+
+    await user.type(paste, 'Pasted JD text');
+
+    expect(paste).toHaveValue('Pasted JD text');
+    expect(save).toBeEnabled();
+  });
+
+  it('clicking Save persists the pasted JD via the update mutation', async () => {
+    mockTab = 'brief';
+    const user = userEvent.setup();
+    renderLoaded({ id: 'app-jd-save', brief: '', answers: [], jobDescription: '' });
+
+    await user.type(screen.getByPlaceholderText('applications.detail.jdPlaceholder'), 'New JD');
+    await user.click(screen.getByRole('button', { name: /applications\.detail\.jdSave/i }));
+
+    expect(mockUpdateApplicationMutate).toHaveBeenCalledWith(
+      { id: 'app-jd-save', jobDescription: 'New JD' },
+      expect.any(Object)
+    );
+  });
+
+  it('clicking Fetch resolves the description and persists it on success', async () => {
+    mockTab = 'brief';
+    const user = userEvent.setup();
+    // Drive onSuccess synchronously with a posting carrying a description.
+    mockImportJobUrlMutate.mockImplementation((_url, opts) => {
+      opts?.onSuccess?.({ description: 'Fetched JD body' });
     });
-    expect(screen.queryByText('applications.detail.briefEmpty')).not.toBeInTheDocument();
-    expect(screen.getByText('Why us?')).toBeInTheDocument();
-    expect(screen.getByText('Because.')).toBeInTheDocument();
+    renderLoaded({ id: 'app-jd-fetch', brief: '', answers: [], jobDescription: '' });
+
+    await user.click(screen.getByRole('button', { name: /applications\.detail\.jdFetch/i }));
+
+    expect(mockImportJobUrlMutate).toHaveBeenCalledTimes(1);
+    expect(mockUpdateApplicationMutate).toHaveBeenCalledWith({
+      id: 'app-jd-fetch',
+      jobDescription: 'Fetched JD body',
+    });
+  });
+
+  it('shows the fetch-failed message when the JD fetch errors', () => {
+    mockTab = 'brief';
+    mockImportJobUrlIsError = true;
+    renderLoaded({ brief: '', answers: [], jobDescription: '' });
+    expect(screen.getByText('jobUrlImport.failed')).toBeInTheDocument();
   });
 
   it('renders the brief text and all answers when both are present', () => {

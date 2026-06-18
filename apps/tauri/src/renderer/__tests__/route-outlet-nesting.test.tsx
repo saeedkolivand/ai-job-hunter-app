@@ -160,6 +160,7 @@ const APPLICATION_FIXTURE: Application = {
   answers: [],
   brief: '',
   notes: '',
+  jobDescription: '',
   comp: '',
   contactName: '',
   contactEmail: '',
