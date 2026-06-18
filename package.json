@@ -14,6 +14,8 @@
     "dev": "pnpm build:packages && cargo fetch --manifest-path apps/tauri/src-tauri/Cargo.toml && pnpm --filter @ajh/tauri dev",
     "build": "turbo build",
     "build:packages": "turbo build --filter=!@ajh/tauri",
+    "build:chrome": "pnpm --filter @ajh/extension build:chrome",
+    "build:firefox": "pnpm --filter @ajh/extension build:firefox",
     "package": "pnpm build:packages && pnpm --filter @ajh/tauri package",
     "typecheck": "turbo typecheck",
     "lint": "eslint .",
