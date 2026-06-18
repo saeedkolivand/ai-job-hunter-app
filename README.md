@@ -416,17 +416,20 @@ ai-job-hunter-app/
 ## Scripts
 
 ```bash
-pnpm dev              # Start Tauri dev app (full stack)
-pnpm dev:frontend     # Frontend-only Vite dev server
-pnpm build            # Build all packages (Turbo)
-pnpm build:packages   # Build packages only (excludes Tauri)
-pnpm package          # Package desktop installers
+pnpm dev              # Start the Tauri dev app (full stack)
+pnpm build            # Build everything (Turbo)
+pnpm build:packages   # Build shared packages only (excludes Tauri)
+pnpm build:chrome     # Build the browser extension (Chrome / MV3)
+pnpm build:firefox    # Build the browser extension (Firefox / MV3)
+pnpm package          # Package the desktop installers
+pnpm typecheck        # TypeScript check across the monorepo
+pnpm test             # Run the Vitest suite (test:watch / test:coverage variants)
+pnpm lint:strict      # Lint with --max-warnings 0 (CI mode); lint:fix to autofix
+pnpm format           # Prettier format (format:check to verify)
 pnpm gen:ipc          # Regenerate Rust IPC structs from the shared Zod schemas
 pnpm gen:workflows    # Regenerate the CI workflow catalog + status badges
-pnpm typecheck        # TypeScript check across the monorepo
-pnpm test             # Run the Vitest suite
-pnpm lint:strict      # Lint with --max-warnings 0 (CI mode)
-pnpm format           # Prettier format
+pnpm clean            # Remove dist / out / .turbo + caches
+pnpm storybook        # Run the @ajh/ui Storybook
 ```
 
 ---
