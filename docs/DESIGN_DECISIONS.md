@@ -248,7 +248,7 @@ Never import `react-i18next` directly:
 
 ```typescript
 // ✅ correct
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation } from '@ajh/translations';
 
 // ❌ wrong — ESLint error
 import { useTranslation } from 'react-i18next';

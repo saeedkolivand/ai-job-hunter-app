@@ -1,6 +1,8 @@
 # AI Job Hunter — JetBrains AI Guidelines
 
-Local-first Electron desktop app. pnpm monorepo. React 19 + TypeScript strict.
+Local-first Tauri desktop app. pnpm monorepo. React 19 + TypeScript strict.
+
+Canonical rules: `CLAUDE.md` (single source of truth — these guidelines are a load-bearing subset; CLAUDE.md wins on conflict).
 
 ## Key rules
 
@@ -15,14 +17,14 @@ Local-first Electron desktop app. pnpm monorepo. React 19 + TypeScript strict.
 
 ```ts
 // ❌ import { useTranslation } from 'react-i18next';
-// ✅ import { useTranslation } from '@/lib/i18n';
+// ✅ import { useTranslation } from '@ajh/translations';
 ```
 
 ### Motion — always use tokens
 
 ```ts
 // ❌ transition={{ duration: 0.18, ease: [0.22,1,0.36,1] }}
-// ✅ import { transition } from '@/lib/motion'; → transition={transition.normal}
+// ✅ import { transition } from '@ajh/ui'; → transition={transition.normal}
 ```
 
 ### Colors — always use brand tokens
@@ -59,8 +61,10 @@ lib/machines/  → state machines
 
 ### Allowed renderer imports
 
-✅ @ajh/ui @ajh/shared @ajh/prompts
-❌ @ajh/core @ajh/ai @ajh/data @ajh/workers (main process only)
+✅ @ajh/ui @ajh/shared @ajh/prompts @ajh/translations
+
+Backend/business logic lives in the Rust core (`apps/tauri/src-tauri/`) — reachable from the
+renderer only via IPC service hooks, never imported directly.
 
 ## Full documentation
 

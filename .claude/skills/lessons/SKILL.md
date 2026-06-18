@@ -21,6 +21,8 @@ Returns only matching ≤5-line lessons — never bulk-loaded. The review-gate a
 
 Surface as: `LESSON · <category> · Context: … · Decision: … · Outcome: …` (≤5 lines). `project-steward` dedupes & persists.
 
+Tag the **memory type** in `--tags` (2026 agent-memory taxonomy): `episodic` (a specific past event/fix), `semantic` (a durable fact/convention), or `procedural` (a workflow / review convention / test command / tool-use habit). Procedural lessons are the highest-leverage — capture "how we do X here."
+
 ## Categories (exactly one)
 
 Architecture decision · Failed approach · Proven approach · Performance · Security · ATS · Scraping · AI-provider · Export · Testing discovery.

@@ -1,6 +1,9 @@
 # AI Job Hunter — Project Rules
 
-Local-first Tauri desktop app. pnpm monorepo. React 19 + TypeScript strict.
+> Canonical rules: see `CLAUDE.md` + `.claude/skills/*` — this file is a pointer + the load-bearing subset; CLAUDE.md wins on any conflict.
+
+Local-first Tauri desktop app (Rust core in `apps/tauri/src-tauri/`, React renderer in
+`apps/tauri/src/renderer/`). pnpm monorepo. React 19 + TypeScript strict, Tailwind v4.
 ESLint `--max-warnings 0` in CI — every warning is a build failure.
 
 ---
@@ -60,26 +63,27 @@ rtk git fetch origin && rtk git branch -r | grep $(git branch --show-current)
 ## Architecture
 
 ```
-packages/shared    → IPC contracts, types, Zod schemas. No React, no Node.
-packages/ui        → React component library (@ajh/ui). No app logic.
-packages/prompts   → AI prompt templates. Pure TS, zero deps.
-packages/core/ai/data/workers → Main process only. Never import in renderer.
-apps/desktop/src/renderer     → React UI. No Node.js access.
+packages/shared        → IPC contracts, types, Zod schemas. No React, no Node.
+packages/ui            → React component library (@ajh/ui). No app logic.
+packages/prompts       → AI prompt templates. Pure TS, zero deps.
+packages/translations  → i18next config + en/de resources (@ajh/translations). No app/IPC imports.
+apps/tauri/src-tauri   → Rust core (scraping, login, documents, AI). The shell does the work.
+apps/tauri/src/renderer → React UI. Reaches the Rust core only via IPC service hooks.
 ```
 
-Renderer → main: `window.api.*` only (via `AppClient` context → service hooks).
+Renderer → Tauri core: `AppClient` context → service hooks → `invoke`/`listen`. Never `window.api.*` in UI.
 
 ---
 
 ## Rules (ESLint-enforced, violations fail CI)
 
-**1. Service hooks only** — never call `window.api.*` in components/routes. Use `@/services`.
+**1. Service hooks only** — never call `window.api.*` in components/routes. Use hooks from `apps/tauri/src/renderer/services/`.
 
-**2. i18n adapter** — `import { useTranslation } from '@/lib/i18n'`, not `react-i18next`.
+**2. i18n adapter** — `import { useTranslation } from '@ajh/translations'`, not `react-i18next`. Renderer init shim is `@/i18n`.
 
-**3. No hardcoded colors** — use `text-brand`, `text-brand-soft`, `bg-brand`, `border-brand`. No `[#RRGGBB]`.
+**3. No hardcoded colors** — use `text-brand`, `text-brand-soft`, `bg-brand`, `border-brand`, `ring-brand`. No `[#RRGGBB]`.
 
-**4. Motion tokens** — `import { transition } from '@/lib/motion'` → `transition.normal` etc. No inline objects.
+**4. Motion tokens** — `import { transition } from '@ajh/ui'` → `transition.normal` etc. No inline objects.
 
 **5. UI primitives from `@ajh/ui`** — `Button`, `Input`, `TextArea`, `SelectDropdown`, `ModalShell`,
 `ConfirmModal`, `EmptyState`, `ErrorState`, `RowSkeleton`, `GlassCard`, `SettingsSection`, `OptionTile`,
@@ -93,9 +97,9 @@ Renderer → main: `window.api.*` only (via `AppClient` context → service hook
 
 **9. Data fetching** — React Query via service hooks only. No `useState + useEffect` for remote data.
 
-**10. Package boundaries** — renderer never imports `@ajh/core`, `@ajh/ai`, `@ajh/data`, `@ajh/workers`.
+**10. Package boundaries** — workspace packages are exactly `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`. The renderer reaches the Rust core only via IPC service hooks.
 
-**11. New IPC capability** — contract → router → preload → service hook → query key (all 5 steps required).
+**11. New IPC capability** — `packages/shared/src/ipc/contracts.ts` → `apps/tauri/src-tauri/src/commands.rs` → `apps/tauri/src/tauri-client.ts` → `apps/tauri/src/renderer/services/` → `services/query-client.ts` (all 5 steps required).
 
 ---
 

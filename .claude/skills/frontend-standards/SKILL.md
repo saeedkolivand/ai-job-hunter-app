@@ -15,13 +15,13 @@ Authoritative: `docs/DESIGN_SYSTEM.md`, `docs/PATTERNS.md`.
 ## Design system
 
 - **Tokens** — `text-brand`/`bg-brand`/`border-brand`/`ring-brand`; CSS vars `var(--color-brand)`. No `[#RRGGBB]` in className.
-- **Motion** — `import { transition } from '@/lib/motion'` (`.fast/.normal/.relaxed/.slow/.spring/.modal/.overlay`); no inline `{ duration, ease }`.
+- **Motion** — `import { transition } from '@ajh/ui'` (`.fast/.normal/.relaxed/.slow/.spring/.modal/.overlay`); no inline `{ duration, ease }`.
 - **Primitives** — `@ajh/ui` (`Button`, `Input`, `TextArea`, `SelectDropdown`, `ModalShell`, `GlassCard`, `EmptyState`, …). No raw `<button>/<select>/<textarea>` (exception: `<input type="range|file|checkbox|radio|hidden">`).
 - **Imports** — import `@ajh/ui` directly, not `@/components/ui/*` (except `UpdateBanner`).
 
 ## i18n (HIGH if user-facing text is unwrapped)
 
-Import from `@/lib/i18n`, never `react-i18next` directly. All user-facing strings localized.
+Import `useTranslation` / `TFunction` from `@ajh/translations`, never `react-i18next` directly (the renderer init shim is `@/i18n`). All user-facing strings localized.
 
 ## Accessibility
 
