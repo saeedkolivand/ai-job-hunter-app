@@ -2,9 +2,17 @@ import { ExternalLink as ExternalLinkIcon, Loader2, Sparkles } from 'lucide-reac
 import { useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, MarkdownMessage, SegmentedControl, StreamingText, TextArea } from '@ajh/ui';
+import {
+  Button,
+  Dropdown,
+  MarkdownMessage,
+  SegmentedControl,
+  StreamingText,
+  TextArea,
+} from '@ajh/ui';
 
 import { ExternalLink } from '@/components/ui/ExternalLink';
+import { OUTPUT_LANGUAGES } from '@/lib/generate';
 
 interface Props {
   jobDesc: string;
@@ -13,6 +21,8 @@ interface Props {
   generating: boolean;
   error: string | null;
   onGenerateSummary: () => void;
+  language: string;
+  onLanguageChange: (v: string) => void;
   hasDesc: boolean;
   fetchingDesc?: boolean;
   jobUrl?: string;
@@ -31,6 +41,8 @@ export function JobAdView({
   generating,
   error,
   onGenerateSummary,
+  language,
+  onLanguageChange,
   hasDesc,
   fetchingDesc,
   jobUrl,
@@ -38,9 +50,15 @@ export function JobAdView({
   const { t } = useTranslation();
   const [tab, setTab] = useState<'summary' | 'source'>('summary');
 
+  // Sourced from OUTPUT_LANGUAGES (the single locale source of truth) so each value
+  // is a locale CODE the generation pipeline's safeLocale accepts — display names
+  // ('German', 'Dutch') silently collapsed to English. Labels are endonyms, each
+  // language shown in its own script.
+  const languageOptions = OUTPUT_LANGUAGES.map((l) => ({ value: l.code, label: l.endonym }));
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div className="shrink-0">
+      <div className="shrink-0 flex items-center justify-between gap-2">
         <SegmentedControl<'summary' | 'source'>
           options={[
             { value: 'summary', label: t('autopilot.apply.jobAdView.summaryTab') },
@@ -51,6 +69,22 @@ export function JobAdView({
           size="sm"
           ariaLabel={t('autopilot.apply.jobAdView.label')}
         />
+        {tab === 'summary' && (
+          <>
+            {/* Explicit label bound to the trigger (id) — visually redundant with
+                the selected language, so sr-only keeps the toolbar uncluttered. */}
+            <label htmlFor="job-ad-summary-language" className="sr-only">
+              {t('autopilot.apply.jobAdView.summaryLanguage')}
+            </label>
+            <Dropdown
+              id="job-ad-summary-language"
+              value={language}
+              onChange={onLanguageChange}
+              options={languageOptions}
+              size="sm"
+            />
+          </>
+        )}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">

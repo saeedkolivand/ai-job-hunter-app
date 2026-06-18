@@ -74,6 +74,10 @@ export interface TailorFlowProps {
   seedGeneration?: AiGenerationRecord;
   persistence: TailorFlowPersistence;
   onController?: (c: TailorFlowController) => void;
+  /** The tracked Application id — used to persist the job summary onto the application record. */
+  applicationId?: string;
+  /** Persisted job summary from the application record (pre-seeds the summary panel). */
+  initialSummary?: string;
 }
 
 /**
@@ -96,6 +100,8 @@ export function TailorFlow({
   seedGeneration,
   persistence,
   onController,
+  applicationId,
+  initialSummary,
 }: TailorFlowProps) {
   const model = useSelectedModel();
   const { canUse, reason } = useCanUseAI();
@@ -151,7 +157,15 @@ export function TailorFlow({
 
   // Lazy, résumé-independent AI summary of the job ad (shared by the wizard's
   // job-ad step and the results job-ad tab). Reuses the flow's detected meta.
-  const jobAdSummary = useJobAdSummary({ jobDesc, model, canUse, hasDesc, meta: gen.meta });
+  const jobAdSummary = useJobAdSummary({
+    jobDesc,
+    model,
+    canUse,
+    hasDesc,
+    meta: gen.meta,
+    applicationId,
+    initialSummary,
+  });
 
   // Cold-entry hydration: when a prior generation is persisted for this job and
   // the live session is empty, seed it so the flow opens on the results panel

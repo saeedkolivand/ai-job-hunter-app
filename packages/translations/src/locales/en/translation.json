@@ -1208,7 +1208,8 @@
         "generateSummary": "Generate summary",
         "summaryHint": "Get an AI summary of this posting — key responsibilities, requirements, and signals.",
         "generating": "Summarizing the job ad…",
-        "editHelper": "Edits here are used for generation — fix a bad scrape before tailoring."
+        "editHelper": "Edits here are used for generation — fix a bad scrape before tailoring.",
+        "summaryLanguage": "Summary language"
       },
       "tryAgain": "Try again",
       "hintNoResume": "Add your resume to generate",

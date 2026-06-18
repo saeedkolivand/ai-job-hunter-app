@@ -200,6 +200,9 @@ interface SessionState {
   autopilot: AutopilotSlice;
   applicationApply: ApplicationApplySlice;
   applications: ApplicationsSlice;
+  /** Session-scoped job-summary cache for flows without a persisted applicationId. */
+  jobSummaryCache: Record<string, string>;
+  setCachedJobSummary: (key: string, summary: string) => void;
 
   setAIGenerate: (patch: Partial<AIGenerateSlice>) => void;
   resetAIGenerate: () => void;
@@ -240,6 +243,9 @@ export const useSessionStore = create<SessionState>((set) => ({
   },
   applicationApply: { ...APPLICATION_APPLY_DEFAULTS },
   applications: { collapsedSections: [], filter: '' },
+  jobSummaryCache: {},
+  setCachedJobSummary: (key, summary) =>
+    set((s) => ({ jobSummaryCache: { ...s.jobSummaryCache, [key]: summary } })),
 
   setAIGenerate: (patch) => set((s) => ({ aiGenerate: { ...s.aiGenerate, ...patch } })),
   resetAIGenerate: () => set({ aiGenerate: { ...AI_GENERATE_DEFAULTS } }),
