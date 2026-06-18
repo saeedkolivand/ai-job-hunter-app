@@ -12,63 +12,6 @@ allowBuilds:
   esbuild: true
   lzma-native: true
   tesseract.js: true
-minimumReleaseAgeExclude:
-  - framer-motion@12.39.0
-  - motion-dom@12.39.0
-  - motion-utils@12.39.0
-  - motion@12.39.0
-  - '@tanstack/query-core@5.100.11'
-  - '@tanstack/react-query@5.100.11'
-  - '@typescript-eslint/eslint-plugin@8.59.4'
-  - '@typescript-eslint/parser@8.59.4'
-  - '@typescript-eslint/project-service@8.59.4'
-  - '@typescript-eslint/scope-manager@8.59.4'
-  - '@typescript-eslint/tsconfig-utils@8.59.4'
-  - '@typescript-eslint/type-utils@8.59.4'
-  - '@typescript-eslint/types@8.59.4'
-  - '@typescript-eslint/typescript-estree@8.59.4'
-  - '@typescript-eslint/utils@8.59.4'
-  - '@typescript-eslint/visitor-keys@8.59.4'
-  - typescript-eslint@8.59.4
-  - '@storybook/addon-vitest@10.4.2'
-  - '@storybook/builder-vite@10.4.2'
-  - '@storybook/csf-plugin@10.4.2'
-  - '@storybook/react-dom-shim@10.4.2'
-  - '@storybook/react-vite@10.4.2'
-  - '@storybook/react@10.4.2'
-  - eslint-plugin-storybook@10.4.2
-  - storybook@10.4.2
-  - i18next@26.3.1
-  - i18next-cli@1.62.0
-  # @tiptap 3.27.0 (coordinated bump, published <24h before merge)
-  - '@tiptap/core@3.27.0'
-  - '@tiptap/extension-blockquote@3.27.0'
-  - '@tiptap/extension-bold@3.27.0'
-  - '@tiptap/extension-bubble-menu@3.27.0'
-  - '@tiptap/extension-bullet-list@3.27.0'
-  - '@tiptap/extension-code@3.27.0'
-  - '@tiptap/extension-code-block@3.27.0'
-  - '@tiptap/extension-document@3.27.0'
-  - '@tiptap/extension-dropcursor@3.27.0'
-  - '@tiptap/extension-floating-menu@3.27.0'
-  - '@tiptap/extension-gapcursor@3.27.0'
-  - '@tiptap/extension-hard-break@3.27.0'
-  - '@tiptap/extension-heading@3.27.0'
-  - '@tiptap/extension-horizontal-rule@3.27.0'
-  - '@tiptap/extension-italic@3.27.0'
-  - '@tiptap/extension-link@3.27.0'
-  - '@tiptap/extension-list@3.27.0'
-  - '@tiptap/extension-list-item@3.27.0'
-  - '@tiptap/extension-list-keymap@3.27.0'
-  - '@tiptap/extension-ordered-list@3.27.0'
-  - '@tiptap/extension-paragraph@3.27.0'
-  - '@tiptap/extension-strike@3.27.0'
-  - '@tiptap/extension-text@3.27.0'
-  - '@tiptap/extension-underline@3.27.0'
-  - '@tiptap/extensions@3.27.0'
-  - '@tiptap/pm@3.27.0'
-  - '@tiptap/react@3.27.0'
-  - '@tiptap/starter-kit@3.27.0'
 
 # Dependency hoisting settings
 nodeLinker: isolated
