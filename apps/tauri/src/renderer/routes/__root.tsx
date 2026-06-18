@@ -1,3 +1,5 @@
+import { PanelLeft } from 'lucide-react';
+import { motion } from 'motion/react';
 import { useEffect, useRef } from 'react';
 import {
   createRootRoute,
@@ -9,7 +11,7 @@ import {
 
 import type { NotificationToast } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, NotificationProvider, useNotification } from '@ajh/ui';
+import { Button, NotificationProvider, transition, useNotification } from '@ajh/ui';
 
 import { CinematicBackground } from '@/components/background/CinematicBackground';
 import { ProtocolVersionGate } from '@/components/layout/ProtocolVersionGate';
@@ -30,6 +32,7 @@ import {
   useNotificationEvents,
   useSyncCloseToTray,
 } from '@/services';
+import { useSidebarCollapsed, useToggleSidebar } from '@/store/preferences-store';
 
 /** Drives the native-menu navigation/actions. Rendered INSIDE
  *  `NotificationProvider` so its check-for-updates feedback can raise toasts. */
@@ -107,6 +110,9 @@ function NotificationToastBridge() {
 
 function RootLayout() {
   const router = useRouter();
+  const { t } = useTranslation();
+  const isCollapsed = useSidebarCollapsed();
+  const toggleSidebar = useToggleSidebar();
 
   // Route to an autopilot's found-jobs when the tray/deep-link asks (app-global).
   useAutopilotFocusNavigation();
@@ -182,10 +188,31 @@ function RootLayout() {
             <CinematicBackground />
             <Titlebar />
             <div className="flex flex-1 overflow-hidden">
-              <Sidebar />
-              <main className="app-main glass-surface m-3 flex-1 overflow-hidden rounded-2xl">
-                <Outlet />
-              </main>
+              <motion.div
+                animate={{ width: isCollapsed ? 0 : 'auto', opacity: isCollapsed ? 0 : 1 }}
+                transition={transition.normal}
+                className="overflow-hidden"
+                style={{ flexShrink: 0 }}
+              >
+                <Sidebar />
+              </motion.div>
+              <div className="relative flex flex-1 overflow-hidden">
+                {isCollapsed && (
+                  <div className="absolute left-0 top-0 z-10 p-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={toggleSidebar}
+                      aria-label={t('nav.expandSidebar')}
+                    >
+                      <PanelLeft size={16} />
+                    </Button>
+                  </div>
+                )}
+                <main className="app-main glass-surface m-3 flex-1 overflow-hidden rounded-2xl">
+                  <Outlet />
+                </main>
+              </div>
             </div>
             <StatusBar />
             <OnboardingWizard />

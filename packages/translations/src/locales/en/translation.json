@@ -19,7 +19,9 @@
     "monitoring": "Monitoring",
     "support": "Help & Support",
     "settings": "Settings",
-    "applications": "Applications"
+    "applications": "Applications",
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar"
   },
   "build": {
     "title": "Resume Builder",
