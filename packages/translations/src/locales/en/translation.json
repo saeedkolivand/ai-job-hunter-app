@@ -19,7 +19,8 @@
     "monitoring": "Monitoring",
     "support": "Help & Support",
     "settings": "Settings",
-    "applications": "Applications"
+    "applications": "Applications",
+    "back": "Back"
   },
   "build": {
     "title": "Resume Builder",
@@ -2453,6 +2454,12 @@
           "general": "Anyone"
         }
       },
+      "jdTitle": "Job description",
+      "jdEdit": "Edit",
+      "jdSave": "Save",
+      "jdCancel": "Cancel",
+      "jdFetch": "Fetch description",
+      "jdPlaceholder": "Paste the job description here…",
       "notFound": "Application not found",
       "notFoundDesc": "This application may have been removed."
     }
