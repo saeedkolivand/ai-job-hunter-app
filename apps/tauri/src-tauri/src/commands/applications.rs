@@ -74,6 +74,7 @@ pub async fn applications_update(app: AppHandle, req: ApplicationUpdateRequest) 
         req.comp,
         req.contact_name,
         req.contact_email,
+        req.job_description,
     );
     match result {
         Ok(()) => {
@@ -128,6 +129,7 @@ pub async fn applications_track(app: AppHandle, req: ApplicationTrackRequest) ->
         title: req.title.unwrap_or_default(),
         candidate: req.candidate.unwrap_or_default(),
         brief: String::new(),
+        job_description: String::new(),
         answers: vec![],
     };
     let job_url = req.job_url.unwrap_or_default();
@@ -154,6 +156,7 @@ pub async fn applications_save_from_posting(app: AppHandle, req: ApplicationTrac
         title: req.title.unwrap_or_default(),
         candidate: req.candidate.unwrap_or_default(),
         brief: String::new(),
+        job_description: String::new(),
         answers: vec![],
     };
     let job_url = req.job_url.unwrap_or_default();

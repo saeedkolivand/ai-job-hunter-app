@@ -344,6 +344,9 @@ export interface Application {
   comp: string;
   contactName: string;
   contactEmail: string;
+  /** The imported/pasted job description (from the captured DOM at import, or a
+   *  later manual paste / retry-resolve). Empty when unknown. */
+  jobDescription: string;
 }
 
 /** One append-only status-history row. */
