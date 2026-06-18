@@ -1281,7 +1281,16 @@ fn job_description_is_clamped_on_char_boundary_via_both_write_paths() {
 
     // None must leave the (now-clamped) JD untouched.
     store_b
-        .update_fields(&id_b, Some("note".into()), None, None, None, None, None, None)
+        .update_fields(
+            &id_b,
+            Some("note".into()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .unwrap();
     assert_eq!(
         store_b.get(&id_b).unwrap().job_description,
@@ -1369,7 +1378,16 @@ fn job_summary_update_and_50kb_clamp_truncates_on_char_boundary() {
 
     // Normal update path persists a summary.
     store
-        .update_fields(&id, None, None, None, None, None, None, Some("hello".into()))
+        .update_fields(
+            &id,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("hello".into()),
+        )
         .unwrap();
     assert_eq!(store.get(&id).unwrap().job_summary, "hello");
 
