@@ -1,4 +1,4 @@
-import { Check, FileText, Sparkles, Trash2 } from 'lucide-react';
+import { Check, Download, FileText, Sparkles, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -15,6 +15,7 @@ interface Props {
   onSelect: (doc: DocumentRecord) => void;
   onSetDefault: (doc: DocumentRecord) => void;
   onRemove: (doc: DocumentRecord) => void;
+  onDownload: (doc: DocumentRecord) => void;
   menuRef?: React.RefObject<HTMLDivElement | null>;
 }
 
@@ -26,6 +27,7 @@ export function SavedResumeMenu({
   onSelect,
   onSetDefault,
   onRemove,
+  onDownload,
   menuRef,
 }: Props) {
   const { t } = useTranslation();
@@ -94,6 +96,16 @@ export function SavedResumeMenu({
                   <Sparkles size={11} />
                 </Button>
               )}
+
+              <Button
+                variant="ghost"
+                onClick={() => onDownload(doc)}
+                title={t('settings.resume.download')}
+                aria-label={t('settings.resume.download')}
+                className="h-6 w-6 shrink-0 p-0 text-foreground/25 hover:text-blue-400"
+              >
+                <Download size={11} />
+              </Button>
 
               {confirmId === doc.id ? (
                 <Button

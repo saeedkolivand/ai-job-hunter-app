@@ -54,6 +54,7 @@ export function ResumeInputCard({ value, onChange, disabled, placeholder }: Prop
     handleSelectSaved,
     handleSetDefaultSaved,
     handleRemove,
+    handleDownload,
     handleFileChange,
     handleSavePaste,
     handleProfileUrlSubmit,
@@ -130,6 +131,7 @@ export function ResumeInputCard({ value, onChange, disabled, placeholder }: Prop
             onSelect={handleSelectSaved}
             onSetDefault={handleSetDefaultSaved}
             onRemove={handleRemove}
+            onDownload={handleDownload}
             menuRef={savedMenuRef}
           />
         </div>

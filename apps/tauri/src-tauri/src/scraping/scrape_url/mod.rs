@@ -387,6 +387,27 @@ pub fn parse_from_html(url: &str, html: &str) -> Option<JobPosting> {
         }
     }
 
+    // `__NEXT_DATA__` fallback: fill ONLY fields JSON-LD left missing (don't
+    // clobber good JSON-LD values).
+    if title.is_empty() || description.is_none() {
+        if let Some(nd) = next_data_job(html) {
+            if title.is_empty() && !nd.title.is_empty() {
+                title = nd.title;
+            }
+            if description.is_none() {
+                description = nd.description;
+            }
+            if location.is_none() {
+                location = nd.location;
+            }
+        }
+    }
+
+    // Main-content text as a last-resort description.
+    if description.is_none() {
+        description = main_content_text(html);
+    }
+
     let host = reqwest::Url::parse(url)
         .ok()
         .and_then(|u| u.host_str().map(str::to_string))
@@ -417,58 +438,108 @@ struct JsonLdJob {
     location: Option<String>,
 }
 
-/// Best-effort pull of a JSON-LD `JobPosting` node (single object, or one inside
-/// an `@graph` array) — title/description/jobLocation address locality. Returns
-/// `None` when no `@type: JobPosting` node carries a usable title.
-fn json_ld_job_posting(html: &str) -> Option<JsonLdJob> {
-    fn is_job_posting(node: &serde_json::Value) -> bool {
-        match node.get("@type") {
-            Some(serde_json::Value::String(s)) => s == "JobPosting",
-            Some(serde_json::Value::Array(arr)) => {
-                arr.iter().any(|v| v.as_str() == Some("JobPosting"))
-            }
-            _ => false,
-        }
-    }
-    fn from_node(node: &serde_json::Value) -> Option<JsonLdJob> {
-        if !is_job_posting(node) {
-            return None;
-        }
-        let title = node
-            .get("title")
+/// Format one JSON-LD `PostalAddress`-shaped node to a display string.
+/// Locality-first (`"City, Region"` / `"City"` / `"Region"`); `addressCountry`
+/// is a fallback ONLY when both locality and region are absent.
+// ponytail: country used only as a fallback when no locality/region, to preserve
+// the locality-first golden ("Berlin, BE" stays "Berlin, BE", not ", BE, DE").
+fn fmt_address(addr: &serde_json::Value) -> Option<String> {
+    let locality = addr.get("addressLocality").and_then(|s| s.as_str());
+    let region = addr.get("addressRegion").and_then(|s| s.as_str());
+    match (locality, region) {
+        (Some(c), Some(r)) => Some(format!("{c}, {r}")),
+        (Some(c), None) => Some(c.to_string()),
+        (None, Some(r)) => Some(r.to_string()),
+        (None, None) => addr
+            .get("addressCountry")
             .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .trim()
-            .to_string();
-        if title.is_empty() {
-            return None;
-        }
-        let description = node
-            .get("description")
-            .and_then(|s| s.as_str())
-            .map(crate::scraping::http::strip_html)
-            .filter(|s| !s.trim().is_empty());
-        // jobLocation.address.addressLocality (+ region) is the common shape.
-        let location = node
-            .get("jobLocation")
-            .and_then(|jl| jl.get("address"))
-            .and_then(|addr| {
-                let locality = addr.get("addressLocality").and_then(|s| s.as_str());
-                let region = addr.get("addressRegion").and_then(|s| s.as_str());
-                match (locality, region) {
-                    (Some(c), Some(r)) => Some(format!("{c}, {r}")),
-                    (Some(c), None) => Some(c.to_string()),
-                    (None, Some(r)) => Some(r.to_string()),
-                    _ => None,
-                }
-            });
-        Some(JsonLdJob {
-            title,
-            description,
-            location,
-        })
+            .map(str::to_string),
     }
+}
 
+/// Pull a display location from a `JobPosting`'s `jobLocation`, which may be a
+/// single node OR an array of nodes. Each node's `address` is formatted via
+/// [`fmt_address`]; multiple addresses join with `"; "`.
+fn job_location(node: &serde_json::Value) -> Option<String> {
+    let parts: Vec<String> = match node.get("jobLocation") {
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|n| n.get("address").and_then(fmt_address))
+            .collect(),
+        Some(single) => single
+            .get("address")
+            .and_then(fmt_address)
+            .into_iter()
+            .collect(),
+        None => return None,
+    };
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("; "))
+    }
+}
+
+/// Does this node's `@type` denote a `JobPosting`? Tolerates a string or an
+/// array of types (schema.org allows multiple types on one node).
+fn is_job_posting(node: &serde_json::Value) -> bool {
+    match node.get("@type") {
+        Some(serde_json::Value::String(s)) => s == "JobPosting",
+        Some(serde_json::Value::Array(arr)) => arr.iter().any(|v| v.as_str() == Some("JobPosting")),
+        _ => false,
+    }
+}
+
+/// Extract a [`JsonLdJob`] from a single node IF it is a titled `JobPosting`.
+fn job_from_node(node: &serde_json::Value) -> Option<JsonLdJob> {
+    if !is_job_posting(node) {
+        return None;
+    }
+    let title = node
+        .get("title")
+        .and_then(|s| s.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if title.is_empty() {
+        return None;
+    }
+    let description = node
+        .get("description")
+        .and_then(|s| s.as_str())
+        .map(crate::scraping::http::strip_html)
+        .filter(|s| !s.trim().is_empty());
+    Some(JsonLdJob {
+        title,
+        description,
+        location: job_location(node),
+    })
+}
+
+/// Walk a JSON-LD value (object values, array elements, `@graph` — which is just
+/// an object-valued array the recursion descends naturally) for the FIRST titled
+/// `JobPosting` node.
+// ponytail: depth-12 cap guards cyclic/pathologically-nested JSON-LD; raise it if
+// a real page legitimately nests a JobPosting deeper.
+fn find_job(node: &serde_json::Value, depth: u8) -> Option<JsonLdJob> {
+    if let Some(job) = job_from_node(node) {
+        return Some(job);
+    }
+    if depth >= 12 {
+        return None;
+    }
+    match node {
+        serde_json::Value::Array(arr) => arr.iter().find_map(|n| find_job(n, depth + 1)),
+        serde_json::Value::Object(map) => map.values().find_map(|n| find_job(n, depth + 1)),
+        _ => None,
+    }
+}
+
+/// Best-effort pull of a JSON-LD `JobPosting` node from anywhere in any
+/// `application/ld+json` block (top-level, `@graph`, or arbitrarily nested) —
+/// title/description/jobLocation. Returns `None` when no `JobPosting` node
+/// carries a usable title.
+fn json_ld_job_posting(html: &str) -> Option<JsonLdJob> {
     let doc = Html::parse_document(html);
     let sel = Selector::parse(r#"script[type="application/ld+json"]"#).ok()?;
     for node in doc.select(&sel) {
@@ -476,18 +547,86 @@ fn json_ld_job_posting(html: &str) -> Option<JsonLdJob> {
         let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) else {
             continue;
         };
-        if let Some(job) = from_node(&json) {
-            return Some(job);
-        }
-        if let Some(job) = json
-            .get("@graph")
-            .and_then(|g| g.as_array())
-            .and_then(|nodes| nodes.iter().find_map(from_node))
-        {
+        if let Some(job) = find_job(&json, 0) {
             return Some(job);
         }
     }
     None
+}
+
+/// `__NEXT_DATA__` fallback: Next.js ships the page's props as JSON in a
+/// `script#__NEXT_DATA__` blob. Find a `JobPosting` node OR, failing that, a
+/// job-shaped node (a non-empty string `title` plus at least one of
+/// `description` / `hiringOrganization` / `jobLocation`) and pull the same
+/// fields the JSON-LD path does.
+// ponytail: Next.js prop-shape sniffing; upgrade path = a per-board JSON path if a
+// real page needs one. Same depth-12 cap as `find_job`.
+fn next_data_job(html: &str) -> Option<JsonLdJob> {
+    /// Pull a `JsonLdJob` out of a job-shaped node (already known to have a title).
+    fn from_jobish(node: &serde_json::Value) -> JsonLdJob {
+        let title = node
+            .get("title")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let description = node
+            .get("description")
+            .and_then(|s| s.as_str())
+            .map(crate::scraping::http::strip_html)
+            .filter(|s| !s.trim().is_empty());
+        JsonLdJob {
+            title,
+            description,
+            location: job_location(node),
+        }
+    }
+    fn is_jobish(node: &serde_json::Value) -> bool {
+        let has_title = node
+            .get("title")
+            .and_then(|s| s.as_str())
+            .is_some_and(|s| !s.trim().is_empty());
+        has_title
+            && (node.get("description").is_some()
+                || node.get("hiringOrganization").is_some()
+                || node.get("jobLocation").is_some())
+    }
+    fn find(node: &serde_json::Value, depth: u8) -> Option<JsonLdJob> {
+        // Prefer a real JobPosting; else accept a job-shaped node.
+        if let Some(job) = job_from_node(node) {
+            return Some(job);
+        }
+        if is_jobish(node) {
+            return Some(from_jobish(node));
+        }
+        if depth >= 12 {
+            return None;
+        }
+        match node {
+            serde_json::Value::Array(arr) => arr.iter().find_map(|n| find(n, depth + 1)),
+            serde_json::Value::Object(map) => map.values().find_map(|n| find(n, depth + 1)),
+            _ => None,
+        }
+    }
+
+    let doc = Html::parse_document(html);
+    let sel = Selector::parse("script#__NEXT_DATA__").ok()?;
+    let raw = doc.select(&sel).next()?.text().collect::<String>();
+    let json = serde_json::from_str::<serde_json::Value>(&raw).ok()?;
+    find(&json, 0)
+}
+
+/// Largest main-content text block as a last-resort description: pick the longest
+/// rendered text among `main` / `[role="main"]` / `article`.
+// ponytail: largest-block heuristic, not a Readability port; good enough for ATS
+// detail pages. Upgrade path = a real content-extraction crate if it falls short.
+fn main_content_text(html: &str) -> Option<String> {
+    let doc = Html::parse_document(html);
+    let sel = Selector::parse(r#"main, [role="main"], article"#).ok()?;
+    doc.select(&sel)
+        .map(|el| crate::scraping::http::html_to_text(&el.inner_html()))
+        .filter(|t| !t.trim().is_empty())
+        .max_by_key(|t| t.len())
 }
 
 fn parse_generic_html(html: &str) -> (String, Option<String>) {
@@ -543,24 +682,30 @@ fn parse_generic_company(html: &str) -> Option<String> {
     None
 }
 
-/// Pull `hiringOrganization.name` from a JSON-LD value, tolerating a single
-/// object, a string org, and an `@graph` array of nodes.
+/// Pull `hiringOrganization.name` from a JSON-LD value at any depth, tolerating a
+/// single object, a string org, an `@graph` array, and arbitrary nesting.
+// ponytail: same depth-12 cap as `find_job` — cyclic/pathological-nesting guard.
 fn json_ld_company(json: &serde_json::Value) -> Option<String> {
-    fn org_name(node: &serde_json::Value) -> Option<String> {
-        match node.get("hiringOrganization")? {
-            serde_json::Value::String(s) => Some(s.clone()),
-            org @ serde_json::Value::Object(_) => {
-                org.get("name").and_then(|n| n.as_str()).map(str::to_string)
+    fn org_name(node: &serde_json::Value, depth: u8) -> Option<String> {
+        match node.get("hiringOrganization") {
+            Some(serde_json::Value::String(s)) => return Some(s.clone()),
+            Some(org @ serde_json::Value::Object(_)) => {
+                if let Some(name) = org.get("name").and_then(|n| n.as_str()) {
+                    return Some(name.to_string());
+                }
             }
+            _ => {}
+        }
+        if depth >= 12 {
+            return None;
+        }
+        match node {
+            serde_json::Value::Array(arr) => arr.iter().find_map(|n| org_name(n, depth + 1)),
+            serde_json::Value::Object(map) => map.values().find_map(|n| org_name(n, depth + 1)),
             _ => None,
         }
     }
-    if let Some(name) = org_name(json) {
-        return Some(name);
-    }
-    json.get("@graph")
-        .and_then(|g| g.as_array())
-        .and_then(|nodes| nodes.iter().find_map(org_name))
+    org_name(json, 0)
 }
 
 // ── LinkedIn ────────────────────────────────────────────────────────────────
@@ -629,6 +774,34 @@ async fn try_linkedin(url: &str) -> Result<Option<JobPosting>> {
         .select(&desc_sel)
         .next()
         .map(|e| clean_description(&crate::scraping::http::html_to_text(&e.inner_html())));
+
+    // Selectors miss when LinkedIn ships an auth-gated/redesigned shell. Fall back
+    // to the shared JSON-LD / __NEXT_DATA__ / main-content parse and fill ONLY the
+    // fields the selectors left empty (keep good selector values, keep source).
+    let (title, description, location, company) =
+        if title.is_empty() || description.as_deref().unwrap_or("").trim().is_empty() {
+            let fb = parse_from_html(url, &html);
+            let title = if title.is_empty() {
+                fb.as_ref().map(|f| f.title.clone()).unwrap_or_default()
+            } else {
+                title
+            };
+            let description = description
+                .filter(|d| !d.trim().is_empty())
+                .or_else(|| fb.as_ref().and_then(|f| f.description.clone()));
+            let location = location.or_else(|| fb.as_ref().and_then(|f| f.location.clone()));
+            let company = if company == "LinkedIn" {
+                fb.as_ref()
+                    .map(|f| f.company.clone())
+                    .filter(|c| !c.is_empty())
+                    .unwrap_or(company)
+            } else {
+                company
+            };
+            (title, description, location, company)
+        } else {
+            (title, description, location, company)
+        };
 
     log::info!(
         "[scrape_url] linkedin {} description: {} chars",

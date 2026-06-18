@@ -3,30 +3,41 @@ name: 🚀 Release
 # ──────────────────────────────────────────────────────────────────────
 # Release Pipeline
 # ──────────────────────────────────────────────────────────────────────
-# Purpose: Automated semantic release (on push) + on-demand Tauri installer builds
+# Purpose: Manual semantic release + on-demand Tauri installer builds
 # Triggers:
-#   - push to main      → create the GitHub release + sync version files (NO build)
-#   - workflow_dispatch → build installers for a chosen tag (the only build path)
+#   - workflow_dispatch only — nothing runs automatically on push to main
+# Actions (select via the `action` input):
+#   - release (manual)          → semantic-release computes version from conventional
+#       commits, syncs version files + CHANGELOG, creates the GitHub Release and tag,
+#       and commits the bump back to main. Does NOT build installers.
+#   - build-installers (default) → build Tauri apps + browser extension for a chosen
+#       tag, then run the cask/manifest/download-page fan-out.
 # Jobs:
 #   - release: Determine version, sync version files + changelog, create the
-#       GitHub release, and commit the bump back to main (push only)
-#   - build: Build Tauri apps for Windows, Linux, and macOS (manual / dispatch only)
+#       GitHub release, and commit the bump back to main (action: release only)
+#   - build: Build Tauri apps for Windows, Linux, and macOS (action: build-installers only)
+#   - package-extension: Build + attach browser extension zips (action: build-installers only)
 #   - generate-update-manifest: Publish latest.json for the auto-updater
 #   - update-cask: Pin the Homebrew cask to the built dmgs (version + per-arch sha256)
+#   - update-download-page: Sync landing/download.html to the built installer URLs
 #
-# Merging to main publishes the release + version bump but does NOT build
-# installers — those cross-platform compiles are slow, so they're decoupled from
-# the every-merge release flow. Build installers on demand from the Actions tab
-# ("Run workflow") — leave the version input blank for the latest tag, or pass one.
+# How to release:
+#   1. Actions → "🚀 Release" → Run workflow → action: release
+#      semantic-release derives the bump from commit types (feat/fix/perf/BREAKING).
+#   2. Actions → "🚀 Release" → Run workflow → action: build-installers
+#      Leave the version blank for the latest tag, or pass one (e.g. 0.61.0).
 # ──────────────────────────────────────────────────────────────────────
 
 on:
-  push:
-    branches:
-      - main
-
   workflow_dispatch:
     inputs:
+      action:
+        description: 'What to run'
+        type: choice
+        options:
+          - build-installers
+          - release
+        default: build-installers
       version:
         description: 'Version to build installers for, e.g. 0.61.0 (blank = latest tag)'
         required: false
@@ -43,9 +54,9 @@ concurrency:
 jobs:
   release:
     name: 📦 Create Release
-    # Versioning + release notes run automatically on merge; the installer build
-    # is a separate manual step (see the `build` job).
-    if: github.event_name == 'push'
+    # Versioning + release notes run on manual dispatch with action: release;
+    # the installer build is a separate manual step (see the `build` job).
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'release' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -136,11 +147,10 @@ jobs:
   build:
     name: 🏗️ Build Tauri Apps
     # Manual-only: installers are built on demand from the Actions tab
-    # ("Run workflow"), never automatically on a release push — the cross-platform
-    # compiles are slow, so they're decoupled from the every-merge release flow.
-    # The build self-syncs version files and checks out the resolved tag, so it
-    # needs nothing from the push-only release job.
-    if: github.event_name == 'workflow_dispatch'
+    # ("Run workflow" → action: build-installers) — the cross-platform compiles are
+    # slow, so they're decoupled from the release flow. The build self-syncs version
+    # files and checks out the resolved tag, so it needs nothing from the release job.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'build-installers' }}
 
     defaults:
       run:
@@ -464,10 +474,9 @@ jobs:
   package-extension:
     name: 🧩 Package Extension
     # Manual-only: the browser extension is built + attached to the Release on
-    # demand from the Actions tab ("Run workflow"), never automatically on a
-    # release push — so we don't publicly attach the current placeholder-ID
-    # build to every auto-release. Mirrors the installer `build` job philosophy.
-    if: github.event_name == 'workflow_dispatch'
+    # demand from the Actions tab ("Run workflow" → action: build-installers) —
+    # mirrors the installer `build` job philosophy.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'build-installers' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Uploads the zipped extension to the GitHub Release (softprops/action-gh-release).

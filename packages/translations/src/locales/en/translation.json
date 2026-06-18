@@ -21,7 +21,8 @@
     "settings": "Settings",
     "applications": "Applications",
     "collapseSidebar": "Collapse sidebar",
-    "expandSidebar": "Expand sidebar"
+    "expandSidebar": "Expand sidebar",
+    "back": "Back"
   },
   "build": {
     "title": "Resume Builder",
@@ -573,6 +574,9 @@
       "apiKey": "API Key",
       "keyStored": "API key stored securely in OS keychain",
       "removeKey": "Remove",
+      "showKey": "Show API key",
+      "hideKey": "Hide API key",
+      "changeKey": "Change key",
       "getKeyAt": "Get your API key at",
       "keyPlaceholder": "Paste your API key…",
       "saveKey": "Save",
@@ -2325,7 +2329,9 @@
     "modePaste": "Paste text",
     "dropOrClick": "Drop your resume here or click to upload",
     "extracting": "Extracting text…",
-    "uploadedClickToReplace": "Click to replace"
+    "uploadedClickToReplace": "Click to replace",
+    "downloaded": "Resume downloaded",
+    "downloadFailed": "Failed to download resume"
   },
   "resume": {
     "profileImport": {
@@ -2455,6 +2461,12 @@
           "general": "Anyone"
         }
       },
+      "jdTitle": "Job description",
+      "jdEdit": "Edit",
+      "jdSave": "Save",
+      "jdCancel": "Cancel",
+      "jdFetch": "Fetch description",
+      "jdPlaceholder": "Paste the job description here…",
       "notFound": "Application not found",
       "notFoundDesc": "This application may have been removed."
     }
