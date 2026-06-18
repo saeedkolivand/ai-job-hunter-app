@@ -43,8 +43,7 @@ function buildPopupDom(): void {
     <div id="view-pair" hidden></div>
     <div id="view-offline" hidden></div>
     <div id="view-searching"></div>
-    <button id="btn-url"></button>
-    <button id="btn-scan"></button>
+    <button id="btn-import"></button>
     <input id="chk-applied" type="checkbox" />
     <p id="import-msg"></p>
     <button id="btn-unpair"></button>
@@ -149,6 +148,32 @@ describe('resolveImportResponse', () => {
     const { text, tone } = resolveImportResponse(res);
     expect(tone).toBe('ok');
     expect(text).toBe('Imported. Open AI Job Hunter → Applications to view it.');
+  });
+
+  it('shows a partial message with title when partial=true', () => {
+    const res = {
+      ok: true as const,
+      kind: 'import' as const,
+      result: { applicationId: 'app-789', title: 'Frontend Engineer', partial: true },
+    };
+    const { text, tone } = resolveImportResponse(res);
+    expect(tone).toBe('ok');
+    expect(text).toBe(
+      "Imported “Frontend Engineer” — couldn't read the description. Open AI Job Hunter → Applications to paste it."
+    );
+  });
+
+  it('shows a partial message without title when partial=true and no title', () => {
+    const res = {
+      ok: true as const,
+      kind: 'import' as const,
+      result: { applicationId: 'app-000', partial: true },
+    };
+    const { text, tone } = resolveImportResponse(res);
+    expect(tone).toBe('ok');
+    expect(text).toBe(
+      "Imported — couldn't read the description. Open AI Job Hunter → Applications to paste it."
+    );
   });
 });
 

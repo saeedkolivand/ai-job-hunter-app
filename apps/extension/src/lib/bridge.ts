@@ -81,7 +81,8 @@ function isExtensionImportResult(v: unknown): v is ExtensionImportResult {
     optionalString(o.title) &&
     optionalString(o.company) &&
     optionalString(o.error) &&
-    (o.matchScore === undefined || typeof o.matchScore === 'number')
+    (o.matchScore === undefined || typeof o.matchScore === 'number') &&
+    (o.partial === undefined || typeof o.partial === 'boolean')
   );
 }
 
@@ -460,6 +461,7 @@ export class BridgeClient {
     if (src.company !== undefined) normalized.company = src.company;
     if (src.matchScore !== undefined) normalized.matchScore = src.matchScore;
     if (src.error !== undefined) normalized.error = src.error;
+    if (src.partial !== undefined) normalized.partial = src.partial;
     resolve(normalized);
   }
 

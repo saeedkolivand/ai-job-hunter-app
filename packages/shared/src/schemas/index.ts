@@ -305,6 +305,11 @@ export const ApplicationUpdateSchema = z.object({
   comp: z.string().optional(),
   contactName: z.string().optional(),
   contactEmail: z.string().optional(),
+  // The imported/pasted job description, persisted onto the Application so a JD
+  // captured from the browser DOM survives to tailoring. Capped to a sane bound
+  // so a pathological paste can't bloat the row.
+  // ponytail: 200 KB ceiling matches the 8 MB-frame era; raise if real JDs exceed it.
+  jobDescription: z.string().max(200_000).optional(),
 });
 export type ApplicationUpdateRequest = z.infer<typeof ApplicationUpdateSchema>;
 
