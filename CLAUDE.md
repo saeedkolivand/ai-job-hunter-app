@@ -220,7 +220,7 @@ No `// eslint-disable`, no `@ts-ignore`. Add scoped overrides to `eslint.config.
 
 ## Release Pipeline
 
-Automated via semantic-release on push to `main`. Do not manually tag or bump versions.
+**Manually triggered** — Actions → "🚀 Release" → Run workflow → `action: release`. Nothing runs automatically on push to `main`. Semantic-release still derives the bump from the commit types in the table below. Do not manually tag or bump versions.
 
 | Prefix                                         | Triggers      |
 | ---------------------------------------------- | ------------- |
