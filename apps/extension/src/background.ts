@@ -169,8 +169,11 @@ browser.runtime.onUpdateAvailable.addListener(() => {
 // starts sooner. requestUpdateCheck is absent in Firefox, so feature-detect.
 // ponytail: single startup nudge only — the browser already polls periodically.
 if (typeof browser.runtime.requestUpdateCheck === 'function') {
-  void browser.runtime.requestUpdateCheck().catch(() => {
-    // Ignore — non-fatal; update checks may be rate-limited or unavailable.
+  void browser.runtime.requestUpdateCheck().catch((err: unknown) => {
+    // Non-fatal — update checks may be rate-limited or unavailable. Surface a
+    // sanitized warning to the SW console (no telemetry leaves the device) so a
+    // persistent updater regression stays observable instead of fully silent.
+    console.warn('[ajh] update check failed:', err instanceof Error ? err.name : 'unknown');
   });
 }
 
