@@ -76,6 +76,7 @@ const APPLICATION_FIXTURE: Application = {
   brief: '',
   notes: '',
   comp: '',
+  jobDescription: '',
   jobSummary: '',
   contactName: '',
   contactEmail: '',

@@ -19,7 +19,10 @@
     "monitoring": "Monitoring",
     "support": "Hilfe & Support",
     "settings": "Einstellungen",
-    "applications": "Bewerbungen"
+    "applications": "Bewerbungen",
+    "collapseSidebar": "Seitenleiste einklappen",
+    "expandSidebar": "Seitenleiste ausklappen",
+    "back": "Zurück"
   },
   "build": {
     "title": "Lebenslauf-Builder",
@@ -541,6 +544,9 @@
       "apiKey": "API-Schlüssel",
       "keyStored": "API-Schlüssel sicher im OS-Schlüsselbund gespeichert",
       "removeKey": "Entfernen",
+      "showKey": "API-Schlüssel anzeigen",
+      "hideKey": "API-Schlüssel verbergen",
+      "changeKey": "Schlüssel ändern",
       "getKeyAt": "Holen Sie sich Ihren API-Schlüssel unter",
       "keyPlaceholder": "API-Schlüssel einfügen…",
       "saveKey": "Speichern",
@@ -2293,7 +2299,9 @@
     "modePaste": "Text einfügen",
     "dropOrClick": "Lebenslauf hier ablegen oder klicken",
     "extracting": "Text wird extrahiert…",
-    "uploadedClickToReplace": "Klicken zum Ersetzen"
+    "uploadedClickToReplace": "Klicken zum Ersetzen",
+    "downloaded": "Lebenslauf heruntergeladen",
+    "downloadFailed": "Lebenslauf konnte nicht heruntergeladen werden"
   },
   "resume": {
     "profileImport": {
@@ -2423,6 +2431,12 @@
           "general": "Alle"
         }
       },
+      "jdTitle": "Stellenbeschreibung",
+      "jdEdit": "Bearbeiten",
+      "jdSave": "Speichern",
+      "jdCancel": "Abbrechen",
+      "jdFetch": "Beschreibung abrufen",
+      "jdPlaceholder": "Stellenbeschreibung hier einfügen…",
       "notFound": "Bewerbung nicht gefunden",
       "notFoundDesc": "Diese Bewerbung wurde möglicherweise entfernt."
     }

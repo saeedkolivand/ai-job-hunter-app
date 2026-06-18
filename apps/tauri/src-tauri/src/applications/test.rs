@@ -70,6 +70,7 @@ fn meta(company: &str, title: &str) -> ApplicationMeta {
         title: title.into(),
         candidate: "Jane".into(),
         brief: String::new(),
+        job_description: String::new(),
         answers: vec![],
         job_summary: String::new(),
     }
@@ -256,6 +257,7 @@ fn update_fields_patches_only_provided() {
             Some(Some(123)),
             None,
             Some("Recruiter".into()),
+            None,
             None,
             None,
         )
@@ -447,7 +449,7 @@ fn update_fields_next_action_at_null_clears_and_absent_preserves() {
 
     // Set a value.
     store
-        .update_fields(&id, None, Some(Some(999)), None, None, None, None)
+        .update_fields(&id, None, Some(Some(999)), None, None, None, None, None)
         .unwrap();
     assert_eq!(
         store.get(&id).unwrap().next_action_at,
@@ -457,7 +459,7 @@ fn update_fields_next_action_at_null_clears_and_absent_preserves() {
 
     // Passing `Some(None)` must CLEAR the value.
     store
-        .update_fields(&id, None, Some(None), None, None, None, None)
+        .update_fields(&id, None, Some(None), None, None, None, None, None)
         .unwrap();
     assert_eq!(
         store.get(&id).unwrap().next_action_at,
@@ -467,7 +469,7 @@ fn update_fields_next_action_at_null_clears_and_absent_preserves() {
 
     // Set value again.
     store
-        .update_fields(&id, None, Some(Some(456)), None, None, None, None)
+        .update_fields(&id, None, Some(Some(456)), None, None, None, None, None)
         .unwrap();
     assert_eq!(
         store.get(&id).unwrap().next_action_at,
@@ -477,7 +479,7 @@ fn update_fields_next_action_at_null_clears_and_absent_preserves() {
 
     // Passing `None` (field absent) must PRESERVE the prior value.
     store
-        .update_fields(&id, None, None, None, None, None, None)
+        .update_fields(&id, None, None, None, None, None, None, None)
         .unwrap();
     assert_eq!(
         store.get(&id).unwrap().next_action_at,
@@ -915,6 +917,7 @@ fn valid_application_json(id: &str, status: &str) -> serde_json::Value {
         "candidate": "Jane",
         "answers": [],
         "brief": "",
+        "jobDescription": "",
         "notes": "",
         "nextActionAt": null,
         "comp": "",
@@ -955,6 +958,7 @@ fn application_import_malformed_later_record_rolls_back_prior_data() {
             "candidate": "",
             "answers": [],
             "brief": "",
+            "jobDescription": "",
             "notes": "",
             "nextActionAt": null,
             "comp": "",
@@ -1020,6 +1024,269 @@ fn application_import_all_valid_records_replaces_prior_data() {
     assert!(
         list.iter().all(|a| a.company != "Old Corp"),
         "prior record 'Old Corp' must not survive a successful import"
+    );
+}
+
+// ── job_description column: migration, persistence, and merge-preserve ────────
+//
+// Three behaviours pinned in ONE test function:
+//   1. Additive migration applies cleanly on top of a populated old-schema DB
+//      (no job_description column) → existing row survives with DEFAULT ''.
+//   2. upsert_for_origin with a non-empty JD persists it (mirrors the import path).
+//   3. Merge-preserve: empty incoming JD keeps the stored JD; non-empty incoming
+//      JD overwrites it.  One Application throughout (no accidental duplicates).
+
+#[test]
+fn job_description_migrates_persists_and_merge_preserves() {
+    let dir = TempDir::new().unwrap();
+
+    // ── Step 1: seed a legacy DB (migrations 1+2 applied, migration 3 not yet) ─
+    //
+    // We hand-create applications.db with the pre-job_description schema and set
+    // PRAGMA user_version = 2 so ApplicationStore::open applies only migration 3
+    // (ALTER TABLE … ADD COLUMN job_description …) when it opens.
+    let legacy_id = "app-legacy-001";
+    {
+        let conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE applications (
+                id              TEXT PRIMARY KEY,
+                status          TEXT NOT NULL DEFAULT 'saved',
+                applied_at      INTEGER,
+                created_at      INTEGER NOT NULL,
+                updated_at      INTEGER NOT NULL,
+                job_url         TEXT NOT NULL DEFAULT '',
+                board           TEXT NOT NULL DEFAULT '',
+                company         TEXT NOT NULL DEFAULT '',
+                title           TEXT NOT NULL DEFAULT '',
+                candidate       TEXT NOT NULL DEFAULT '',
+                answers         TEXT NOT NULL DEFAULT '[]',
+                brief           TEXT NOT NULL DEFAULT '',
+                notes           TEXT NOT NULL DEFAULT '',
+                next_action_at  INTEGER,
+                comp            TEXT NOT NULL DEFAULT '',
+                contact_name    TEXT NOT NULL DEFAULT '',
+                contact_email   TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_applications_job_url
+                ON applications(job_url);
+            CREATE TABLE status_events (
+                application_id  TEXT NOT NULL,
+                from_status     TEXT NOT NULL DEFAULT '',
+                to_status       TEXT NOT NULL,
+                at              INTEGER NOT NULL,
+                note            TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_status_events_app
+                ON status_events(application_id);
+            PRAGMA user_version = 2;",
+        )
+        .unwrap();
+        // Insert one row without job_description (column doesn't exist yet).
+        conn.execute(
+            "INSERT INTO applications
+             (id, status, created_at, updated_at)
+             VALUES (?1, 'applied', 1000, 1000)",
+            rusqlite::params![legacy_id],
+        )
+        .unwrap();
+    }
+
+    // Open the store — migration 3 (ADD COLUMN job_description … DEFAULT '')
+    // must apply without error and the pre-existing row must survive intact.
+    let store = ApplicationStore::open(dir.path()).unwrap();
+
+    let legacy_app = store
+        .get(legacy_id)
+        .expect("legacy row must be readable after migration");
+    assert_eq!(
+        legacy_app.job_description, "",
+        "legacy row must get DEFAULT '' for job_description after additive migration"
+    );
+    assert_eq!(
+        legacy_app.id, legacy_id,
+        "legacy row id must be unchanged after migration"
+    );
+
+    // ── Step 2: import path — upsert with a non-empty JD persists it ──────────
+    let jd = "Senior Rust role. Async, Tokio.";
+    let m_with_jd = ApplicationMeta {
+        job_description: jd.into(),
+        ..meta("Acme", "Engineer")
+    };
+    let app_id = store
+        .upsert_for_origin(
+            "https://acme.com/job/import/1",
+            "linkedin",
+            &m_with_jd,
+            ApplicationOrigin::Saved,
+            Some(false),
+        )
+        .unwrap();
+
+    assert_eq!(
+        store.get(&app_id).unwrap().job_description,
+        jd,
+        "upsert_for_origin must persist the supplied job_description"
+    );
+
+    // ── Step 3a: merge-preserve — empty incoming JD keeps the stored JD ───────
+    store
+        .upsert_for_origin(
+            "https://acme.com/job/import/1",
+            "linkedin",
+            &meta("Acme", "Engineer"), // job_description: String::new()
+            ApplicationOrigin::Saved,
+            Some(false),
+        )
+        .unwrap();
+
+    assert_eq!(
+        store.get(&app_id).unwrap().job_description,
+        jd,
+        "empty incoming job_description must NOT overwrite the stored JD"
+    );
+
+    // Still exactly ONE Application for this URL — no duplicate created.
+    assert_eq!(
+        store
+            .list()
+            .iter()
+            .filter(|a| a.job_url == "https://acme.com/job/import/1")
+            .count(),
+        1,
+        "merge must never duplicate the Application"
+    );
+
+    // ── Step 3b: non-empty incoming JD overwrites the stored JD ───────────────
+    let updated_jd = "Updated JD";
+    let m_updated = ApplicationMeta {
+        job_description: updated_jd.into(),
+        ..meta("Acme", "Engineer")
+    };
+    store
+        .upsert_for_origin(
+            "https://acme.com/job/import/1",
+            "linkedin",
+            &m_updated,
+            ApplicationOrigin::Saved,
+            Some(false),
+        )
+        .unwrap();
+
+    assert_eq!(
+        store.get(&app_id).unwrap().job_description,
+        updated_jd,
+        "non-empty incoming job_description must overwrite the stored JD"
+    );
+
+    // Final sanity: still one Application for the URL.
+    assert_eq!(
+        store
+            .list()
+            .iter()
+            .filter(|a| a.job_url == "https://acme.com/job/import/1")
+            .count(),
+        1,
+        "store must hold exactly one Application after all upserts"
+    );
+}
+
+// ── Security: server-side job_description cap (the real trust boundary) ───────
+//
+// The renderer Zod cap is UX-only; the extension import path persists
+// attacker-influenced page HTML that never passes through it. The store must
+// clamp the JD to MAX_JOB_DESCRIPTION_BYTES on a UTF-8 char boundary (truncate,
+// never reject) on BOTH write entry points: upsert_for_origin and update_fields.
+
+#[test]
+fn job_description_is_clamped_on_char_boundary_via_both_write_paths() {
+    // Over-cap (~250 KB) JD whose 4-byte 'U+1F600' STARTS at byte MAX-1, so a
+    // naive byte-cut at MAX lands mid-char and must be walked back to MAX-1.
+    // After the walk-back the emoji and everything after it is dropped → stored
+    // is exactly MAX-1 'a's.
+    let jd = "a".repeat(MAX_JOB_DESCRIPTION_BYTES - 1) + "\u{1F600}" + &"b".repeat(1000);
+    let expected = "a".repeat(MAX_JOB_DESCRIPTION_BYTES - 1);
+    assert!(
+        jd.len() > MAX_JOB_DESCRIPTION_BYTES,
+        "precondition: input is over-cap"
+    );
+
+    // Direct helper assertion: an under-cap string is returned unchanged.
+    let small = "short JD".to_string();
+    assert_eq!(
+        clamp_job_description(small.clone()),
+        small,
+        "under-cap input must pass through unchanged"
+    );
+
+    // ── Path A — upsert_for_origin (import funnel + every creation trigger) ────
+    let dir_a = TempDir::new().unwrap();
+    let store_a = ApplicationStore::open(dir_a.path()).unwrap();
+    let id_a = store_a
+        .upsert_for_origin(
+            "https://acme.com/job/clamp/a",
+            "linkedin",
+            &ApplicationMeta {
+                job_description: jd.clone(),
+                ..meta("Acme", "Eng")
+            },
+            ApplicationOrigin::Saved,
+            Some(false),
+        )
+        .unwrap();
+    let stored_a = store_a.get(&id_a).unwrap().job_description;
+    assert!(
+        stored_a.len() <= MAX_JOB_DESCRIPTION_BYTES,
+        "upsert_for_origin must clamp JD to <= MAX (got {})",
+        stored_a.len()
+    );
+    assert!(
+        std::str::from_utf8(stored_a.as_bytes()).is_ok(),
+        "stored JD must be valid UTF-8 (char-boundary cut)"
+    );
+    assert_eq!(
+        stored_a.len(),
+        MAX_JOB_DESCRIPTION_BYTES - 1,
+        "cut must walk back off the 4-byte char to MAX-1"
+    );
+    assert_eq!(
+        stored_a, expected,
+        "the multibyte char and everything after it must be dropped"
+    );
+
+    // ── Path B — update_fields (applications_update IPC; attacker-reachable) ───
+    let dir_b = TempDir::new().unwrap();
+    let store_b = ApplicationStore::open(dir_b.path()).unwrap();
+    let id_b = store_b.track_manual("", "", &meta("C", "T")).unwrap();
+    store_b
+        .update_fields(&id_b, None, None, None, None, None, Some(jd.clone()), None)
+        .unwrap();
+    let stored_b = store_b.get(&id_b).unwrap().job_description;
+    assert!(
+        stored_b.len() <= MAX_JOB_DESCRIPTION_BYTES,
+        "update_fields must clamp JD to <= MAX (got {})",
+        stored_b.len()
+    );
+    assert!(
+        std::str::from_utf8(stored_b.as_bytes()).is_ok(),
+        "stored JD must be valid UTF-8 (char-boundary cut)"
+    );
+    assert_eq!(
+        stored_b.len(),
+        MAX_JOB_DESCRIPTION_BYTES - 1,
+        "update_fields cut must walk back off the 4-byte char to MAX-1"
+    );
+    assert_eq!(stored_b, expected);
+
+    // None must leave the (now-clamped) JD untouched.
+    store_b
+        .update_fields(&id_b, Some("note".into()), None, None, None, None, None, None)
+        .unwrap();
+    assert_eq!(
+        store_b.get(&id_b).unwrap().job_description,
+        expected,
+        "None job_description must preserve the existing (clamped) JD"
     );
 }
 
@@ -1102,7 +1369,7 @@ fn job_summary_update_and_50kb_clamp_truncates_on_char_boundary() {
 
     // Normal update path persists a summary.
     store
-        .update_fields(&id, None, None, None, None, None, Some("hello".into()))
+        .update_fields(&id, None, None, None, None, None, None, Some("hello".into()))
         .unwrap();
     assert_eq!(store.get(&id).unwrap().job_summary, "hello");
 
@@ -1110,7 +1377,7 @@ fn job_summary_update_and_50kb_clamp_truncates_on_char_boundary() {
     // an all-'é' string is even, so exactly 25_000 whole chars (50_000 bytes) fit.
     let big = "é".repeat(40_000); // 80_000 bytes
     store
-        .update_fields(&id, None, None, None, None, None, Some(big))
+        .update_fields(&id, None, None, None, None, None, None, Some(big))
         .unwrap();
     let stored = store.get(&id).unwrap().job_summary;
     assert!(

@@ -31,10 +31,7 @@ export type PopupRequest =
   | { kind: 'setToken'; token: string }
   | { kind: 'clearToken' }
   | { kind: 'reconnect' }
-  | { kind: 'import'; mode: ImportMode; applied: boolean };
-
-/** URL mode imports by tab URL only; Scan mode also ships the rendered DOM. */
-export type ImportMode = 'url' | 'scan';
+  | { kind: 'import'; applied: boolean };
 
 /** background → popup responses (discriminated by the originating request). */
 export type PopupResponse =

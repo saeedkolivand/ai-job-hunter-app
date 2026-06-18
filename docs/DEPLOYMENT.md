@@ -107,7 +107,7 @@ pnpm tauri build
 
 ## Release Pipeline
 
-Releases are **automated** via [semantic-release][semantic-release] on push to `main`: a release commit versions the app, drafts the notes, and syncs version files. Building the cross-platform **installers is a separate, manual step** — the compiles are slow, so they're decoupled from the every-merge release flow. Run **Actions ▸ "🚀 Release" ▸ "Run workflow"** when you want installers for a tag (see [CI/CD Pipeline](#cicd-pipeline)).
+Releases are **manually triggered** via [semantic-release][semantic-release]: go to **Actions ▸ "🚀 Release" ▸ "Run workflow"**, choose `action: release`, and semantic-release will compute the version from conventional commits, sync version files, draft the notes, and create the tag + GitHub Release. Nothing runs automatically on push to `main`. Building the cross-platform **installers is a separate manual step** — run the same workflow with `action: build-installers` (the default) for a tag (see [CI/CD Pipeline](#cicd-pipeline)).
 
 ### Commit → Version mapping
 
@@ -155,10 +155,9 @@ Plus `CHANGELOG.md` is generated in the same commit. The release commit (tagged 
 
 ```mermaid
 graph LR
-    Push["git push to main"] --> Analysis["semantic-release\nanalyzes commits"]
+    Trigger1["Actions ▸ Run workflow\naction: release"] --> Analysis["semantic-release\nanalyzes commits"]
     Analysis --> Release["prepare: sync versions\ngenerate: notes + CHANGELOG\npublish: tag + GitHub release\nfinal: commit to main"]
-    Release --> Dispatch["Manual: Actions ▸\nRun workflow\n(version or latest)"]
-    Dispatch --> Build["build matrix"]
+    Trigger2["Actions ▸ Run workflow\naction: build-installers\n(version or latest)"] --> Build["build matrix"]
     Build --> Windows["Windows\nNSIS + MSI"]
     Build --> Mac["macOS\nDMG + APP"]
     Build --> Linux["Linux\nAppImage + DEB"]
@@ -168,11 +167,11 @@ graph LR
 
 ### GitHub Actions workflow
 
-`.github/workflows/release.yml`. A release push publishes the release + syncs all version files atomically; installers are built only via the manual **Run workflow** dispatch.
+`.github/workflows/release.yml`. Nothing runs automatically on push to `main` — both the release and the installer builds require a manual **Run workflow** dispatch with the appropriate `action` input.
 
 Every uploadable installer artifact (`.exe`, `.msi`, `.dmg`, `.AppImage`, `.deb`, `.rpm`) is prefixed with its OS (`windows-`, `macos-`, or `linux-`) so the GitHub Release asset list clusters by platform; `latest.json` and the extension zips are not prefixed.
 
-**On `push` to `main`** — single `release` job:
+**`action: release`** — single `release` job:
 
 1. semantic-release analyzes commits
 2. If a release is warranted: exec syncs version files → changelog generates `CHANGELOG.md` → GitHub publishes release + assets → git commits the synced versions + CHANGELOG to `main` with tag `v*`
@@ -182,7 +181,7 @@ Every uploadable installer artifact (`.exe`, `.msi`, `.dmg`, `.AppImage`, `.deb`
 
 `CHANGELOG.md` is an in-repo mirror generated and maintained by semantic-release's `@semantic-release/changelog` plugin. It contains every release's version + conventional-commits-derived notes grouped by type (Features, Bug Fixes, etc.). **GitHub Releases** remain canonical — they carry the per-platform **Downloads** table and signed assets; `CHANGELOG.md` is for offline / quick-reference access.
 
-**`build` + `generate-update-manifest`** — run **only** via **Actions ▸ "🚀 Release" ▸ "Run workflow"** (macOS Intel + Apple Silicon build as two parallel matrix legs, so wall-clock is roughly the slowest single platform rather than the sum of all three):
+**`action: build-installers`** — run via **Actions ▸ "🚀 Release" ▸ "Run workflow"** (macOS Intel + Apple Silicon build as two parallel matrix legs, so wall-clock is roughly the slowest single platform rather than the sum of all three):
 
 1. Resolve the version (the `version` input, or the latest tag if left blank), then checkout that tag
 2. Install pnpm + Node + Rust stable; `pnpm build:packages`

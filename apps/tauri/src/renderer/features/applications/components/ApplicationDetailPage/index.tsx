@@ -30,7 +30,6 @@ import {
   cn,
   ConfirmModal,
   Dropdown,
-  EmptyState,
   ErrorState,
   IconBadge,
   Input,
@@ -53,6 +52,7 @@ import {
   useApplication,
   useDocuments,
   useDocumentText,
+  useImportJobUrl,
   useOpenExternal,
   useRemoveApplication,
   useSetApplicationStatus,
@@ -675,15 +675,28 @@ function BriefTab({ application }: { application: Application }) {
   const { t } = useTranslation();
   const hasBrief = application.brief.trim().length > 0;
   const hasAnswers = application.answers.length > 0;
+  const hasJd = application.jobDescription.trim().length > 0;
+  const [editingJd, setEditingJd] = useState(false);
+  const [jdDraft, setJdDraft] = useState('');
+  const { mutate: updateApp, isPending: isSaving } = useUpdateApplication();
+  const { mutate: fetchJd, isPending: isFetching, isError: fetchFailed } = useImportJobUrl();
 
-  if (!hasBrief && !hasAnswers) {
-    return (
-      <div className="flex h-full items-center justify-center px-6 py-5">
-        <EmptyState icon={FileText} title={t('applications.detail.briefEmpty')} className="py-12" />
-      </div>
+  const startEdit = () => {
+    setJdDraft(application.jobDescription);
+    setEditingJd(true);
+  };
+  const cancelEdit = () => setEditingJd(false);
+  const saveJd = (text: string) => {
+    updateApp(
+      { id: application.id, jobDescription: text },
+      { onSuccess: () => setEditingJd(false) }
     );
-  }
+  };
 
+  // No generic empty-state early-return: the JD section renders its own recovery
+  // panel when empty (paste/fetch), which is exactly what a freshly-imported
+  // partial stub — no brief, no answers, no JD — needs. That panel IS the empty
+  // experience.
   return (
     <TabScroll>
       {hasBrief && (
@@ -696,6 +709,79 @@ function BriefTab({ application }: { application: Application }) {
           </p>
         </div>
       )}
+
+      {/* Job description — read-only with edit toggle when populated; recovery panel when empty */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
+            {t('applications.detail.jdTitle')}
+          </span>
+          {hasJd && !editingJd && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-5 px-1.5 text-[10px]"
+              onClick={startEdit}
+            >
+              {t('applications.detail.jdEdit')}
+            </Button>
+          )}
+        </div>
+        {hasJd && !editingJd && (
+          <p className="select-text whitespace-pre-wrap text-[12px] leading-relaxed text-foreground/70">
+            {application.jobDescription}
+          </p>
+        )}
+        {(editingJd || !hasJd) && (
+          <div className="space-y-2">
+            {!hasJd && (
+              <p className="text-[11px] text-foreground/55">{t('jobUrlImport.notFound')}</p>
+            )}
+            <TextArea
+              value={jdDraft}
+              onChange={(e) => setJdDraft(e.target.value)}
+              placeholder={t('applications.detail.jdPlaceholder')}
+              className="min-h-[120px] text-[12px]"
+            />
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => saveJd(jdDraft)}
+                disabled={isSaving || jdDraft.trim().length === 0}
+              >
+                {t('applications.detail.jdSave')}
+              </Button>
+              {editingJd && (
+                <Button variant="ghost" size="sm" onClick={cancelEdit}>
+                  {t('applications.detail.jdCancel')}
+                </Button>
+              )}
+              {!hasJd && application.jobUrl && (
+                <Button
+                  variant="glass"
+                  size="sm"
+                  disabled={isFetching}
+                  onClick={() => {
+                    fetchJd(application.jobUrl, {
+                      onSuccess: (posting) => {
+                        const desc = posting?.description ?? '';
+                        if (desc.trim()) {
+                          updateApp({ id: application.id, jobDescription: desc });
+                        }
+                      },
+                    });
+                  }}
+                >
+                  {isFetching ? '…' : t('applications.detail.jdFetch')}
+                </Button>
+              )}
+            </div>
+            {fetchFailed && (
+              <p className="text-[11px] text-destructive">{t('jobUrlImport.failed')}</p>
+            )}
+          </div>
+        )}
+      </div>
 
       {hasAnswers && (
         <div className="space-y-3">
@@ -771,7 +857,7 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
     company: application.company,
     url: application.jobUrl,
     location: undefined,
-    description: undefined,
+    description: application.jobDescription || undefined,
     foundAt: application.createdAt,
   };
 

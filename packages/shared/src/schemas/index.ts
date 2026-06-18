@@ -305,6 +305,18 @@ export const ApplicationUpdateSchema = z.object({
   comp: z.string().optional(),
   contactName: z.string().optional(),
   contactEmail: z.string().optional(),
+  // The imported/pasted job description, persisted onto the Application so a JD
+  // captured from the browser DOM survives to tailoring. Capped to a sane bound
+  // so a pathological paste can't bloat the row. Byte-length (not char-count) so
+  // it matches the Rust store's 200_000-BYTE limit — multi-byte UTF-8 otherwise
+  // passes validation then gets silently truncated.
+  // ponytail: 200 KB ceiling matches the 8 MB-frame era; raise if real JDs exceed it.
+  jobDescription: z
+    .string()
+    .refine((v) => new TextEncoder().encode(v).length <= 200_000, {
+      message: 'jobDescription must be at most 200000 bytes',
+    })
+    .optional(),
   jobSummary: z.string().max(50_000).optional(),
 });
 export type ApplicationUpdateRequest = z.infer<typeof ApplicationUpdateSchema>;
