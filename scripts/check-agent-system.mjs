@@ -20,7 +20,7 @@
 // Deferred (local-only / future, kept out of CI to stay dependency-free): codegraph
 // symbol-resolution for dead doc pointers, and `Last updated:` vs git-mtime staleness.
 //
-// Read-only. Run via `pnpm check:agent-system`; wired into .husky/pre-push + quality.yml.
+// Read-only. Run via `pnpm check:agent-system`; wired into .husky/pre-push + ci-pipeline.yml.
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
