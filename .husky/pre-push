@@ -33,6 +33,13 @@ if [ -z "${PREPUSH_NO_SYNC:-}" ]; then
   if [ -n "$branch" ] && [ "$branch" != "main" ]; then
     if git fetch -q origin main 2>/dev/null; then
       if [ -n "$(git rev-list -n1 FETCH_HEAD --not "$branch" 2>/dev/null)" ]; then
+        # A dirty tree makes `git merge` refuse before it even starts, so handle
+        # it explicitly — otherwise the abort no-ops and the conflict message
+        # below would misleadingly blame a content conflict.
+        if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+          echo "✗ origin/main has new commits but your working tree is dirty — commit or stash, then push again."
+          exit 1
+        fi
         echo "↻ origin/main has new commits — merging into $branch before push..."
         if git merge --no-edit FETCH_HEAD; then
           echo "✓ Merged latest origin/main into $branch."
@@ -40,7 +47,7 @@ if [ -z "${PREPUSH_NO_SYNC:-}" ]; then
           exit 1
         else
           git merge --abort 2>/dev/null || true
-          echo "✗ Could not cleanly merge origin/main — resolve it, commit, then push again."
+          echo "✗ Could not cleanly merge origin/main — resolve the conflicts, commit, then push again."
           exit 1
         fi
       fi
