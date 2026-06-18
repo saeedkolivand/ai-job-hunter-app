@@ -317,6 +317,7 @@ export const ApplicationUpdateSchema = z.object({
       message: 'jobDescription must be at most 200000 bytes',
     })
     .optional(),
+  jobSummary: z.string().max(50_000).optional(),
 });
 export type ApplicationUpdateRequest = z.infer<typeof ApplicationUpdateSchema>;
 
