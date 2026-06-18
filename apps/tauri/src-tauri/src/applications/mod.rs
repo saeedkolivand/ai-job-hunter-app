@@ -141,6 +141,7 @@ pub struct ApplicationMeta {
     pub brief: String,
     pub job_description: String,
     pub answers: Vec<ApplicationAnswer>,
+    pub job_summary: String,
 }
 
 /// Server-side cap on a stored job description, in BYTES. Mirrors the renderer
@@ -199,6 +200,8 @@ pub struct Application {
     pub contact_name: String,
     #[serde(default)]
     pub contact_email: String,
+    #[serde(default)]
+    pub job_summary: String,
 }
 
 /// One append-only status-history row.
@@ -269,6 +272,14 @@ impl ApplicationStore {
             up: |conn| {
                 conn.execute_batch(
                     "ALTER TABLE applications ADD COLUMN job_description TEXT NOT NULL DEFAULT '';",
+                )
+            },
+        },
+        Migration {
+            name: "add_applications_job_summary",
+            up: |conn| {
+                conn.execute_batch(
+                    "ALTER TABLE applications ADD COLUMN job_summary TEXT NOT NULL DEFAULT ''",
                 )
             },
         },
@@ -381,6 +392,7 @@ impl ApplicationStore {
                 brief: g.brief,
                 job_description: String::new(), // ponytail: legacy generations carry no JD column
                 answers: g.answers,
+                job_summary: String::new(),
             };
             // Empty url → a fresh per-gen Application (no shared key to merge on);
             // non-empty url → merge into that url's Application if one exists.
@@ -566,6 +578,7 @@ impl ApplicationStore {
                 comp: existing.comp.clone(),
                 contact_name: existing.contact_name.clone(),
                 contact_email: existing.contact_email.clone(),
+                job_summary: pick(&meta.job_summary, &existing.job_summary),
             };
             // Row write + the (conditional) status event in ONE transaction so an
             // upsert that changes status can never persist the row without its
@@ -612,6 +625,7 @@ impl ApplicationStore {
             comp: String::new(),
             contact_name: String::new(),
             contact_email: String::new(),
+            job_summary: meta.job_summary.clone(),
         };
         // New Application: the row + its seed status event in ONE transaction.
         let mut guard = self.conn.lock();
@@ -676,6 +690,7 @@ impl ApplicationStore {
         contact_name: Option<String>,
         contact_email: Option<String>,
         job_description: Option<String>,
+        job_summary: Option<String>,
     ) -> AppResult<()> {
         let existing = self
             .get(id)
@@ -691,6 +706,7 @@ impl ApplicationStore {
             job_description: job_description
                 .map(clamp_job_description)
                 .unwrap_or(existing.job_description),
+            job_summary: job_summary.unwrap_or(existing.job_summary),
             updated_at: now_ms(),
             ..existing
         };
@@ -722,12 +738,13 @@ impl ApplicationStore {
     /// plain `&Connection` or a `&Transaction` (which derefs to `&Connection`).
     fn write_row_conn(conn: &Connection, app: &Application) -> AppResult<()> {
         let answers_json = serde_json::to_string(&app.answers).unwrap_or_else(|_| "[]".into());
+        let job_summary = truncate_on_char_boundary(&app.job_summary, MAX_JOB_SUMMARY_BYTES);
         conn.execute(
             "INSERT INTO applications
                 (id, status, applied_at, created_at, updated_at, job_url, board,
                  company, title, candidate, answers, brief, notes, next_action_at,
-                 comp, contact_name, contact_email, job_description)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)
+                 comp, contact_name, contact_email, job_description, job_summary)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)
              ON CONFLICT(id) DO UPDATE SET
                 status = excluded.status,
                 applied_at = excluded.applied_at,
@@ -744,7 +761,8 @@ impl ApplicationStore {
                 comp = excluded.comp,
                 contact_name = excluded.contact_name,
                 contact_email = excluded.contact_email,
-                job_description = excluded.job_description",
+                job_description = excluded.job_description,
+                job_summary = excluded.job_summary",
             params![
                 app.id,
                 app.status.as_id(),
@@ -764,6 +782,7 @@ impl ApplicationStore {
                 app.contact_name,
                 app.contact_email,
                 app.job_description,
+                job_summary,
             ],
         )?;
         Ok(())
@@ -779,10 +798,16 @@ impl ApplicationStore {
     }
 }
 
+/// Server-side hard cap on a persisted job summary. The Zod `.max(50_000)` on the
+/// IPC schema is UX-only — this is the real bound, applied in the store write path
+/// so the IPC and any future import path are both protected.
+// ponytail: byte-cap + char-boundary truncate; raise the const if summaries grow.
+const MAX_JOB_SUMMARY_BYTES: usize = 50_000;
+
 /// Column projection shared by `list`/`get`/`find_by_job_url` so order lives once.
 const SELECT_COLS: &str = "SELECT id, status, applied_at, created_at, updated_at, job_url, board,
             company, title, candidate, answers, brief, notes, next_action_at,
-            comp, contact_name, contact_email, job_description
+            comp, contact_name, contact_email, job_description, job_summary
      FROM applications";
 
 fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
@@ -807,6 +832,7 @@ fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
         contact_name: row.get(15)?,
         contact_email: row.get(16)?,
         job_description: row.get(17)?,
+        job_summary: row.get(18)?,
     })
 }
 
@@ -885,6 +911,18 @@ pub fn normalize_job_url(url: &str) -> String {
         }
     }
     out
+}
+
+/// Truncate `s` to at most `max_bytes`, never splitting a UTF-8 char.
+fn truncate_on_char_boundary(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s.to_string();
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s[..end].to_string()
 }
 
 pub fn now_ms() -> u64 {

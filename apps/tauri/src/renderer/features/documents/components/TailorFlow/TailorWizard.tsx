@@ -35,6 +35,8 @@ interface Props {
     generating: boolean;
     error: string | null;
     generate: () => void;
+    language: string;
+    setLanguage: (v: string) => void;
   };
   // Global AI availability.
   canUse: boolean;

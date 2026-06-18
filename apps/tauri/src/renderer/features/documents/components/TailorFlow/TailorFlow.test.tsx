@@ -129,6 +129,26 @@ vi.mock('@/hooks/use-interview-questions', () => ({
   useInterviewQuestions: () => interviewMock,
 }));
 
+// ── useJobAdSummary — controlled mock ─────────────────────────────────────────
+
+// Hoisted so the spies are STABLE across hook calls/renders — recreating them
+// per call would make any assertion against them brittle (cleared in beforeEach).
+const jobAdSummaryMock = vi.hoisted(() => ({
+  generate: vi.fn(),
+  setLanguage: vi.fn(),
+}));
+
+vi.mock('./useJobAdSummary', () => ({
+  useJobAdSummary: () => ({
+    summary: '',
+    generating: false,
+    error: null,
+    generate: jobAdSummaryMock.generate,
+    language: 'en',
+    setLanguage: jobAdSummaryMock.setLanguage,
+  }),
+}));
+
 // ── Heavy child stubs ─────────────────────────────────────────────────────────
 
 // TailorWizard stub exposes:
@@ -330,6 +350,8 @@ beforeEach(() => {
   genMock.generate.mockClear();
   genMock.abort.mockClear();
   genMock.hydrate.mockClear();
+  jobAdSummaryMock.generate.mockClear();
+  jobAdSummaryMock.setLanguage.mockClear();
   answersMock.selected = new Set<string>();
   answersMock.generate.mockClear();
 });

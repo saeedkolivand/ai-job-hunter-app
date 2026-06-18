@@ -264,6 +264,7 @@ fn app_meta(company: &str, title: &str) -> crate::applications::ApplicationMeta 
         brief: String::new(),
         job_description: String::new(),
         answers: vec![],
+        job_summary: String::new(),
     }
 }
 

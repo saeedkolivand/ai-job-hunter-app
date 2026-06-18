@@ -347,6 +347,8 @@ export interface Application {
   /** The imported/pasted job description (from the captured DOM at import, or a
    *  later manual paste / retry-resolve). Empty when unknown. */
   jobDescription: string;
+  /** Persisted AI-generated job-ad summary (server-capped at 50 KB). */
+  jobSummary: string;
 }
 
 /** One append-only status-history row. */

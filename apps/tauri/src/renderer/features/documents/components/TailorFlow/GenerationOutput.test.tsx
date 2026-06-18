@@ -68,12 +68,14 @@ vi.mock('@ajh/ui', async (importOriginal) => {
       options,
       value,
       onChange,
+      id,
     }: {
       options: Array<{ value: string; label: string }>;
       value: string;
       onChange: (v: string) => void;
+      id?: string;
     }) => (
-      <div data-testid="template-picker" data-value={value}>
+      <div data-testid={id ?? 'dropdown'} data-value={value}>
         {options.map((o) => (
           <div
             key={o.value}
@@ -117,7 +119,14 @@ function makeProps(overrides: Partial<Parameters<typeof GenerationOutput>[0]> = 
     hasDesc: true,
     fetchingDesc: false,
     jobUrl: 'https://example.com/job',
-    jobAdSummary: { summary: '', generating: false, error: null, generate: vi.fn() },
+    jobAdSummary: {
+      summary: '',
+      generating: false,
+      error: null,
+      generate: vi.fn(),
+      language: 'en',
+      setLanguage: vi.fn(),
+    },
     ...overrides,
   };
 }
@@ -179,7 +188,14 @@ describe('GenerationOutput', () => {
       render(
         <GenerationOutput
           {...makeProps({
-            jobAdSummary: { summary: '', generating: false, error: null, generate },
+            jobAdSummary: {
+              summary: '',
+              generating: false,
+              error: null,
+              generate,
+              language: 'en',
+              setLanguage: vi.fn(),
+            },
           })}
         />
       );
@@ -193,6 +209,40 @@ describe('GenerationOutput', () => {
 
       await user.click(generateBtn);
       expect(generate).toHaveBeenCalledTimes(1);
+    });
+
+    it('selecting a summary language calls setLanguage with the locale code', async () => {
+      const user = userEvent.setup();
+      const setLanguage = vi.fn();
+      render(
+        <GenerationOutput
+          {...makeProps({
+            jobAdSummary: {
+              summary: '',
+              generating: false,
+              error: null,
+              generate: vi.fn(),
+              language: 'en',
+              setLanguage,
+            },
+          })}
+        />
+      );
+
+      await clickJobAdTab(user);
+
+      // The picker carries an explicit label binding (sr-only <label htmlFor>).
+      expect(screen.getByText('autopilot.apply.jobAdView.summaryLanguage')).toHaveAttribute(
+        'for',
+        'job-ad-summary-language'
+      );
+
+      // Summary sub-tab is the default; the language picker lists OUTPUT_LANGUAGES
+      // by endonym. Choosing German must forward its locale CODE ('de'), not the
+      // display name (which safeLocale would collapse to English).
+      await user.click(screen.getByRole('option', { name: 'Deutsch' }));
+
+      expect(setLanguage).toHaveBeenCalledWith('de');
     });
 
     it('hides the editable doc output while Job ad tab is active', async () => {

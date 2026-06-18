@@ -1182,7 +1182,8 @@
         "generateSummary": "Zusammenfassung generieren",
         "summaryHint": "Erhalte eine KI-Zusammenfassung dieser Anzeige — wichtigste Aufgaben, Anforderungen und Signale.",
         "generating": "Stellenanzeige wird zusammengefasst…",
-        "editHelper": "Änderungen hier werden für die Generierung verwendet — korrigiere einen fehlerhaften Scrape vor dem Anpassen."
+        "editHelper": "Änderungen hier werden für die Generierung verwendet — korrigiere einen fehlerhaften Scrape vor dem Anpassen.",
+        "summaryLanguage": "Zusammenfassungssprache"
       },
       "tryAgain": "Erneut versuchen",
       "hintNoResume": "Fügen Sie Ihren Lebenslauf hinzu, um zu generieren",
