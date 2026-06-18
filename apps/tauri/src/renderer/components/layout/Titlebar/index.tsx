@@ -1,8 +1,11 @@
-import { Sparkles } from 'lucide-react';
+import { ChevronLeft, Sparkles } from 'lucide-react';
 import { type ComponentType, useEffect, useState } from 'react';
+import { useNavigate, useRouterState } from '@tanstack/react-router';
 
 import { useTranslation } from '@ajh/translations';
+import { Button } from '@ajh/ui';
 
+import { parentRoute } from '@/lib/parent-route';
 import { onWindowControlsRegistered } from '@/lib/window-controls-registry';
 import { useOnboardingCompleted } from '@/store/preferences-store';
 
@@ -14,6 +17,10 @@ export function Titlebar() {
   const [WindowControls, setWindowControls] = useState<ComponentType | null>(null);
   const [isMac, setIsMac] = useState(false);
 
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const navigate = useNavigate();
+  const parent = parentRoute(pathname);
+
   useEffect(() => {
     onWindowControlsRegistered((c) => setWindowControls(() => c));
     setIsMac(navigator.userAgent.includes('Mac'));
@@ -24,15 +31,25 @@ export function Titlebar() {
       className="app-drag relative z-[300] flex h-10 select-none items-center justify-between"
       data-tauri-drag-region
     >
-      {/* Left spacer — mirrors the window-controls width so the right cluster has
-          something to balance against. Mac: 80px traffic lights · Windows/Linux:
-          3 × 44px control buttons = 132px */}
-      {isMac ? <div className="w-20" /> : <div className="w-[132px]" />}
+      {/* Left cluster: fixed-width spacer (mirrors window-controls on the right) with
+          optional back button on detail routes. `app-no-drag` keeps it clickable. */}
+      <div className={`app-no-drag flex items-center ${isMac ? 'w-20' : 'w-[132px]'}`}>
+        {parent !== null && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={t('nav.back')}
+            onClick={() => void navigate({ to: parent })}
+            className="ml-1 flex h-7 items-center gap-1 px-2 text-foreground/50 hover:text-foreground/80"
+          >
+            <ChevronLeft size={15} />
+          </Button>
+        )}
+      </div>
 
       {/* Title is an absolutely-centered overlay so it stays centered on the whole
-          bar regardless of how wide the left/right clusters are (the bell widens
-          the right side). `pointer-events-none` lets the drag region pass through
-          — the title isn't interactive, so nothing is lost. */}
+          bar regardless of how wide the left/right clusters are. `pointer-events-none`
+          lets the drag region pass through — the title isn't interactive. */}
       {onboardingCompleted && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="flex items-center gap-2 text-xs font-medium text-foreground/70">
