@@ -78,9 +78,11 @@ pub mod msg {
     pub const APPLIED_CHECK: &str = "applied.check";
 }
 
-/// Hard cap on a single WS message. Job HTML can be large (a few hundred KB), so
-/// 2 MB leaves generous headroom while blocking a memory-exhaustion frame.
-pub const MAX_FRAME_BYTES: usize = 2 * 1024 * 1024;
+/// Hard cap on a single WS message. A job page's full `outerHTML` can run to a
+/// few MB, so 8 MB matches the scraper's per-response cap
+/// ([`crate::scraping::http`]) — a full-page DOM capture isn't silently dropped
+/// — while still blocking a memory-exhaustion frame.
+pub const MAX_FRAME_BYTES: usize = 8 * 1024 * 1024;
 
 /// First port tried, then the rest of the inclusive range until one binds.
 const PORT_RANGE: std::ops::RangeInclusive<u16> = 47615..=47620;
@@ -465,6 +467,9 @@ struct ImportOk {
     status: String,
     title: String,
     company: String,
+    /// True when nothing usable parsed and a stub was persisted (empty title) —
+    /// the extension surfaces this so the user knows to complete the row.
+    partial: bool,
 }
 
 /// Build a canonical `import.result` envelope (success or error). The error's
@@ -476,6 +481,7 @@ fn result_reply(req_id: &str, outcome: AppResult<ImportOk>) -> String {
             "status": ok.status,
             "title": ok.title,
             "company": ok.company,
+            "partial": ok.partial,
         }),
         Err(e) => json!({ "error": e.to_string() }),
     };
@@ -503,6 +509,7 @@ fn persist_import_application(
     let meta = ApplicationMeta {
         company: posting.company.clone(),
         title: posting.title.clone(),
+        job_description: posting.description.clone().unwrap_or_default(),
         ..Default::default()
     };
     let id = store.upsert_for_origin(
@@ -517,6 +524,12 @@ fn persist_import_application(
         .map(|a| a.status.as_id().to_string())
         .unwrap_or_else(|| "saved".to_string());
     Ok((id, status))
+}
+
+/// A posting is usable for an import only if it carries a real title; an
+/// empty-title parse means the extractor degraded (blocked fetch / unknown page).
+fn usable(p: &crate::scraping::types::JobPosting) -> bool {
+    !p.title.trim().is_empty()
 }
 
 /// Core import: parse the posting (Scan mode from provided HTML, else URL mode
@@ -562,22 +575,53 @@ async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<ImportOk> {
         ));
     }
 
-    // Parse the posting. A canonicalized (list/SPA) import re-resolves the
-    // canonical link for BOTH modes — the captured list DOM can't be trusted to be
-    // the selected job. A direct page keeps existing behavior: Scan mode reuses the
-    // supplied authenticated DOM; URL mode runs the resolver.
-    let posting = match (&canonical, html) {
-        (Some(c), _) => crate::scraping::scrape_url::resolve(c).await?,
-        (None, Some(html)) => crate::scraping::scrape_url::parse_from_html(&url, &html),
-        (None, None) => crate::scraping::scrape_url::resolve(&url).await?,
-    };
-    let posting = match posting {
-        Some(p) => p,
-        None => {
-            return Err(AppError::Parse(
-                "could not parse a job posting from this page".to_string(),
-            ))
+    // At most one network fetch. The captured DOM is parsed ONLY for a direct page
+    // (no canonical rewrite) — for a SPA/list view the DOM is the list shell, not the
+    // selected job, so we resolve the canonical URL instead and never parse the shell.
+    let mut posting: Option<crate::scraping::types::JobPosting> =
+        if let Some(c) = canonical.as_deref() {
+            crate::scraping::scrape_url::resolve(c).await? // SPA/list view → selected job's canonical URL
+        } else if let Some(h) = html.as_deref() {
+            crate::scraping::scrape_url::parse_from_html(&url, h) // direct page → captured authenticated DOM
+        } else {
+            crate::scraping::scrape_url::resolve(effective_url).await? // URL mode, no DOM → server fetch
+        };
+
+    // Single server-fetch fallback: only the direct-page DOM path that came up unusable
+    // (a board API may resolve the same URL where the DOM parse missed). Skipped for the
+    // canonical and URL-mode branches because they already fetched `effective_url`.
+    if !posting.as_ref().is_some_and(usable) && canonical.is_none() && html.is_some() {
+        if let Some(p) = crate::scraping::scrape_url::resolve(effective_url).await? {
+            if usable(&p) || posting.is_none() {
+                posting = Some(p);
+            }
         }
+    }
+
+    // Never lose an import click: if nothing usable parsed, persist a stub the user
+    // can complete later (title empty → flagged partial), instead of erroring out.
+    let (posting, partial) = if posting.as_ref().is_some_and(usable) {
+        (posting.unwrap(), false)
+    } else {
+        let host = reqwest::Url::parse(effective_url)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_string))
+            .unwrap_or_default();
+        let stub = crate::scraping::types::JobPosting {
+            id: format!("url:{effective_url}"),
+            external_id: None,
+            title: String::new(),
+            company: host,
+            location: None,
+            url: effective_url.to_string(),
+            source: "url".to_string(),
+            description: None,
+            requirements: None,
+            posted_at: None,
+            captured_at: chrono::Utc::now().timestamp_millis(),
+            extra: std::collections::HashMap::new(),
+        };
+        (stub, true)
     };
 
     // An import is a deliberate pursuit, NOT a discovery: it creates only the
@@ -595,6 +639,20 @@ async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<ImportOk> {
         .ok_or_else(|| AppError::Config("applications store unavailable".to_string()))?;
     let (id, status) = persist_import_application(store.inner(), &normalized, &posting, applied)?;
 
+    // A partial stub has an empty title — fall back to the company (host) so the
+    // event payload and toast still name something the user recognizes.
+    let title_is_blank = posting.title.trim().is_empty();
+    let display_name = if title_is_blank {
+        posting.company.clone()
+    } else {
+        posting.title.clone()
+    };
+    let body = if title_is_blank {
+        posting.company.clone()
+    } else {
+        format!("{} · {}", posting.title, posting.company)
+    };
+
     // Tell the renderer to refresh (Applications + Jobs views) and surface a
     // live toast. Carry the title/company/status so the toast can name the job
     // without a refetch race.
@@ -603,7 +661,7 @@ async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<ImportOk> {
         APPLICATIONS_CHANGED,
         json!({
             "applicationId": id.clone(),
-            "title": posting.title.clone(),
+            "title": display_name.clone(),
             "company": posting.company.clone(),
             "status": status.clone(),
         }),
@@ -620,8 +678,8 @@ async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<ImportOk> {
         app,
         crate::notifications::NewNotification {
             kind: "import.result".to_string(),
-            title: format!("Imported {}", posting.title),
-            body: format!("{} · {}", posting.title, posting.company),
+            title: format!("Imported {display_name}"),
+            body,
             route: Some(crate::notifications::NotificationRoute {
                 to: "/applications".to_string(),
                 search: Some(search),
@@ -635,6 +693,7 @@ async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<ImportOk> {
         status,
         title: posting.title,
         company: posting.company,
+        partial,
     })
 }
 

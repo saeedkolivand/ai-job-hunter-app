@@ -189,6 +189,9 @@ export const PreferencesSchema = z.object({
   // résumé / cover-letter generation.
   contactPromptSeen: z.boolean().default(false),
 
+  // Sidebar
+  sidebarCollapsed: z.boolean().default(false).optional(),
+
   // Metadata
   lastUpdated: z.string().optional(),
 });

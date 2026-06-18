@@ -8,6 +8,7 @@ import {
   HelpCircle,
   LayoutDashboard,
   type LucideIcon,
+  PanelLeftClose,
   Settings,
   User,
   Wand2,
@@ -24,7 +25,7 @@ import { ROUTES } from '@/constants/routes';
 import { getTimeGreeting } from '@/lib/greeting';
 import { useContactProfile } from '@/services';
 import { useAppVersion } from '@/services/use-system';
-import { useUserName } from '@/store/preferences-store';
+import { useToggleSidebar, useUserName } from '@/store/preferences-store';
 
 interface NavItem {
   to: string;
@@ -84,6 +85,8 @@ export function Sidebar() {
   const { data: version = 'v0.1.0' } = useAppVersion();
   const appVersion = version.startsWith('v') ? version : `v${version}`;
 
+  const toggleSidebar = useToggleSidebar();
+
   const [versionTooltip, setVersionTooltip] = useState(false);
   const tooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -127,6 +130,16 @@ export function Sidebar() {
 
   return (
     <aside className="app-sidebar glass-surface m-3 mr-0 flex w-60 flex-col rounded-2xl p-3">
+      <div className="flex justify-end pb-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={toggleSidebar}
+          aria-label={t('nav.collapseSidebar')}
+        >
+          <PanelLeftClose size={16} />
+        </Button>
+      </div>
       <nav className="flex flex-col gap-4">
         {NAV_SECTIONS.map((section) => (
           <div key={section.labelKey}>
