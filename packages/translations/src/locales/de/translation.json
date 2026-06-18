@@ -19,7 +19,8 @@
     "monitoring": "Monitoring",
     "support": "Hilfe & Support",
     "settings": "Einstellungen",
-    "applications": "Bewerbungen"
+    "applications": "Bewerbungen",
+    "back": "Zurück"
   },
   "build": {
     "title": "Lebenslauf-Builder",

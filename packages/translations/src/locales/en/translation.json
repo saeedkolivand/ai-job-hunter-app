@@ -19,7 +19,8 @@
     "monitoring": "Monitoring",
     "support": "Help & Support",
     "settings": "Settings",
-    "applications": "Applications"
+    "applications": "Applications",
+    "back": "Back"
   },
   "build": {
     "title": "Resume Builder",
