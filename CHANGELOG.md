@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.109.4](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.109.3...v0.109.4) (2026-06-18)
+
+### 🐛 Bug Fixes
+
+* keep app chrome fixed and drop redundant results referral button ([#417](https://github.com/saeedkolivand/ai-job-hunter-app/issues/417)) ([886f091](https://github.com/saeedkolivand/ai-job-hunter-app/commit/886f091f030a34cd4411d0262aa2cae03a812133))
+
 ## [0.109.3](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.109.2...v0.109.3) (2026-06-18)
 
 ### 🐛 Bug Fixes
