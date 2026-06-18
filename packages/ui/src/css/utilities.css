@@ -512,6 +512,28 @@
   animation: nebula-2 75s ease-in-out infinite;
   animation-delay: -50s;
 }
+/* Retina/high-DPR (esp. macOS WKWebView): a 120px blur on a 60vw layer has a
+   DPR²-scaled backing texture that saturates the compositor and drops frames
+   app-wide. Halve the blur radius where DPR makes it expensive — the radial
+   gradients already feather the edges, so the visual stays soft. 1× displays
+   keep the full blur (free there). */
+@media (min-resolution: 2dppx) {
+  .animate-aurora-1 {
+    filter: blur(60px);
+  }
+  .animate-aurora-2 {
+    filter: blur(72px);
+  }
+  .animate-aurora-3 {
+    filter: blur(60px);
+  }
+  .animate-nebula-1 {
+    filter: blur(48px);
+  }
+  .animate-nebula-2 {
+    filter: blur(48px);
+  }
+}
 .animate-streak-1 {
   animation: streak-1 8s ease-in-out infinite;
   animation-delay: -2s;
