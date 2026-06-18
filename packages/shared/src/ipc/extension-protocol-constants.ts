@@ -54,6 +54,8 @@ export interface ExtensionImportResult {
   company?: string;
   matchScore?: number;
   error?: string;
+  /** True when the import was saved but the page could not be fully parsed (stub posting). */
+  partial?: boolean;
 }
 
 /**

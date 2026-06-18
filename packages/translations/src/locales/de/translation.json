@@ -2414,6 +2414,12 @@
           "general": "Alle"
         }
       },
+      "jdTitle": "Stellenbeschreibung",
+      "jdEdit": "Bearbeiten",
+      "jdSave": "Speichern",
+      "jdCancel": "Abbrechen",
+      "jdFetch": "Beschreibung abrufen",
+      "jdPlaceholder": "Stellenbeschreibung hier einfügen…",
       "notFound": "Bewerbung nicht gefunden",
       "notFoundDesc": "Diese Bewerbung wurde möglicherweise entfernt."
     }
