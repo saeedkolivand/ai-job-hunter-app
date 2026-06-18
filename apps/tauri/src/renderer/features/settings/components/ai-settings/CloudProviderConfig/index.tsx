@@ -1,5 +1,5 @@
 import { Eye, EyeOff, Key, Loader2, PenLine, Trash2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown, Input } from '@ajh/ui';
@@ -62,9 +62,15 @@ export function CloudProviderConfig({
   const setProviderSettings = usePreferencesStore((s) => s.setProviderSettings);
   const [changing, setChanging] = useState(false);
 
+  // Collapse the editor only after a save cycle COMPLETES (isSaving true→false)
+  // and the parent has cleared the input (its success signal). Gating on the
+  // falling edge is what stops the editor snapping shut the instant the user
+  // clicks "Change key", where apiKeyInput is still empty and no save has run.
+  const wasSaving = useRef(false);
   useEffect(() => {
-    if (changing && !isSaving && apiKeyInput === '') setChanging(false);
-  }, [isSaving, apiKeyInput, changing]);
+    if (wasSaving.current && !isSaving && apiKeyInput === '') setChanging(false);
+    wasSaving.current = isSaving;
+  }, [isSaving, apiKeyInput]);
 
   return (
     <>

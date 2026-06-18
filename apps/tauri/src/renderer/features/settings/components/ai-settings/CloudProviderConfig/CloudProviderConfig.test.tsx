@@ -84,12 +84,12 @@ describe('CloudProviderConfig — connected, not changing', () => {
 });
 
 describe('CloudProviderConfig — clicking "Change key" reveals the password input', () => {
-  it('shows a password input after clicking "Change key"', async () => {
+  it('keeps change-mode open with an initially empty input (the default connected path)', async () => {
     const user = userEvent.setup();
-    // apiKeyInput must be non-empty so the useEffect guard
-    // (`changing && !isSaving && apiKeyInput === ''`) does not immediately
-    // collapse change-mode back to false after the click.
-    const { container } = render(<CloudProviderConfig {...baseProps} apiKeyInput="sk-test" />);
+    // baseProps.apiKeyInput is '' — the real connected state before the user
+    // types. The editor must stay open: collapse only fires on the save→done
+    // edge, never on first open. (Regression guard for the premature collapse.)
+    const { container } = render(<CloudProviderConfig {...baseProps} />);
 
     await user.click(screen.getByText('settings.aiProvider.changeKey'));
 
@@ -115,9 +115,7 @@ describe('CloudProviderConfig — save in change-mode calls onSaveKey', () => {
 describe('CloudProviderConfig — eye-toggle a11y in change-mode', () => {
   it('eye-toggle button has an accessible name', async () => {
     const user = userEvent.setup();
-    // Same guard: non-empty apiKeyInput prevents the useEffect from
-    // collapsing change-mode immediately after the click.
-    render(<CloudProviderConfig {...baseProps} apiKeyInput="sk-test" />);
+    render(<CloudProviderConfig {...baseProps} />);
 
     await user.click(screen.getByText('settings.aiProvider.changeKey'));
 
