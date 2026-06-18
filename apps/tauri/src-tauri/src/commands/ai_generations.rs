@@ -67,6 +67,7 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
         brief: rec.company_brief.clone(),
         job_description: String::new(), // ponytail: JD persistence is scoped to import + the update IPC
         answers: rec.application_answers.clone(),
+        job_summary: String::new(),
     };
     if let Some(apps) = app.try_state::<crate::applications::ApplicationStore>() {
         if let Err(e) = apps.upsert_for_origin(

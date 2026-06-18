@@ -48,6 +48,8 @@ interface Props {
     generating: boolean;
     error: string | null;
     generate: () => void;
+    language: string;
+    setLanguage: (v: string) => void;
   };
 }
 
@@ -226,6 +228,7 @@ export function GenerationOutput({
                 export), no regeneration. */}
             <div className="w-40">
               <Dropdown
+                id="template-picker"
                 options={templateOptions}
                 value={templateId}
                 onChange={handleTemplateChange}
@@ -280,6 +283,8 @@ export function GenerationOutput({
             generating={jobAdSummary.generating}
             error={jobAdSummary.error}
             onGenerateSummary={jobAdSummary.generate}
+            language={jobAdSummary.language}
+            onLanguageChange={jobAdSummary.setLanguage}
             hasDesc={hasDesc}
             fetchingDesc={fetchingDesc}
             jobUrl={jobUrl}

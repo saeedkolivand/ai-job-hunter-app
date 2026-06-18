@@ -178,6 +178,7 @@ function makeApp(overrides: Partial<Application> = {}): Application {
     notes: '',
     comp: '',
     jobDescription: '',
+    jobSummary: '',
     contactName: '',
     contactEmail: '',
     ...overrides,
