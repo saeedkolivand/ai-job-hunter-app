@@ -152,10 +152,10 @@ export function useResumeInput({ value, onChange }: Params) {
     try {
       exportTXT(text, `${doc.title.replace(/\.[^/.]+$/, '')}.txt`);
       notify.success({ message: t('resumeInput.downloaded') });
-    } catch (err) {
-      notify.error({
-        message: err instanceof Error ? err.message : t('resumeInput.downloadFailed'),
-      });
+    } catch {
+      // exportTXT throws English-only messages; show the localized key instead
+      // of leaking raw exception text into a non-English locale's toast.
+      notify.error({ message: t('resumeInput.downloadFailed') });
     }
   };
 
