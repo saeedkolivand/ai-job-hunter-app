@@ -259,6 +259,7 @@ export function ResumePreferences() {
                     variant="ghost"
                     onClick={() => handleDownload(doc)}
                     title={t('settings.resume.download')}
+                    aria-label={t('settings.resume.download')}
                     className="h-8 w-8 p-0 text-foreground/30 hover:text-blue-400"
                   >
                     <Download size={13} />
