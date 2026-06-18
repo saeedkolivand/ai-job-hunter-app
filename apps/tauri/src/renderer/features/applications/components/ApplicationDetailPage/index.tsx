@@ -30,7 +30,6 @@ import {
   cn,
   ConfirmModal,
   Dropdown,
-  EmptyState,
   ErrorState,
   IconBadge,
   Input,
@@ -694,17 +693,10 @@ function BriefTab({ application }: { application: Application }) {
     );
   };
 
-  // The JD section is independent — render even when brief+answers are absent
-  const showEmpty = !hasBrief && !hasAnswers && !hasJd;
-
-  if (showEmpty) {
-    return (
-      <div className="flex h-full items-center justify-center px-6 py-5">
-        <EmptyState icon={FileText} title={t('applications.detail.briefEmpty')} className="py-12" />
-      </div>
-    );
-  }
-
+  // No generic empty-state early-return: the JD section renders its own recovery
+  // panel when empty (paste/fetch), which is exactly what a freshly-imported
+  // partial stub — no brief, no answers, no JD — needs. That panel IS the empty
+  // experience.
   return (
     <TabScroll>
       {hasBrief && (
@@ -746,7 +738,7 @@ function BriefTab({ application }: { application: Application }) {
               <p className="text-[11px] text-foreground/55">{t('jobUrlImport.notFound')}</p>
             )}
             <TextArea
-              value={editingJd ? jdDraft : ''}
+              value={jdDraft}
               onChange={(e) => setJdDraft(e.target.value)}
               placeholder={t('applications.detail.jdPlaceholder')}
               className="min-h-[120px] text-[12px]"

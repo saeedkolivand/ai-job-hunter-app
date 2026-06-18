@@ -228,6 +228,9 @@ async function doImport(): Promise<void> {
     const res = await send({ kind: 'import', applied: els.chkApplied.checked });
     const { text, tone } = resolveImportResponse(res);
     setMsg(els.importMsg, text, tone);
+  } catch {
+    // A transport/messaging rejection must not strand the status on "Importing…".
+    setMsg(els.importMsg, 'Import failed. Please retry.', 'err');
   } finally {
     els.btnImport.disabled = false;
   }
