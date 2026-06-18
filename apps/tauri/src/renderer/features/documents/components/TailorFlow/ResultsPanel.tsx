@@ -1,4 +1,4 @@
-import { RefreshCw, Settings2, UserPlus } from 'lucide-react';
+import { RefreshCw, Settings2 } from 'lucide-react';
 
 import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
@@ -41,12 +41,11 @@ interface Props {
   // Actions.
   onRegenerate: () => void;
   onEditSettings: () => void;
-  onReferral: () => void;
 }
 
 /**
  * Done stage: the tailored documents (resume/cover/job-ad tabs via
- * {@link GenerationOutput}), a referral action, and the regenerate / edit-settings
+ * {@link GenerationOutput}) and the regenerate / edit-settings
  * footer. The application-questions assistant now lives in a header-triggered
  * modal ({@link ApplicationQuestionsModal}), so it no longer crowds this stack.
  */
@@ -74,7 +73,6 @@ export function ResultsPanel({
   onExport,
   onRegenerate,
   onEditSettings,
-  onReferral,
 }: Props) {
   const { t } = useTranslation();
 
@@ -105,14 +103,6 @@ export function ResultsPanel({
           jobUrl={jobUrl}
           jobAdSummary={jobAdSummary}
         />
-
-        <Button
-          variant="ghost"
-          onClick={onReferral}
-          className="self-start gap-1.5 text-foreground/50 hover:text-foreground/80"
-        >
-          <UserPlus size={13} /> {t('autopilot.referral.open')}
-        </Button>
       </div>
 
       <div className="flex shrink-0 items-center justify-between border-t border-white/[0.06] px-8 py-4">

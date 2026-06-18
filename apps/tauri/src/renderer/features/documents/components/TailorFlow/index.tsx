@@ -317,7 +317,6 @@ export function TailorFlow({
                 onExport={(fmt) => void gen.exportAs(fmt)}
                 onRegenerate={() => startGeneration(methods.getValues())}
                 onEditSettings={() => setForceConfiguring(true)}
-                onReferral={() => setReferralOpen(true)}
               />
             )}
           </motion.div>
