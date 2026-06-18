@@ -64,6 +64,7 @@ export const ExtensionImportResultSchema = z.object({
   company: z.string().optional(),
   matchScore: z.number().optional(),
   error: z.string().optional(),
+  partial: z.boolean().optional(),
 }) satisfies z.ZodType<ExtensionImportResult>;
 
 /**

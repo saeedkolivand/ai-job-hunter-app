@@ -111,6 +111,7 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
       onClose={onCancel}
       maxWidth="max-w-xl"
       ariaLabelledby="creation-wizard-title"
+      closeOnBackdrop={!editing}
       header={
         <>
           {/* Wizard header */}

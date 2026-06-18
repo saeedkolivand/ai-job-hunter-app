@@ -10,7 +10,7 @@
 
 import { browser } from '@wxt-dev/browser';
 
-import type { ConnectionStatus, ImportMode, PopupRequest, PopupResponse } from '../lib/messages';
+import type { ConnectionStatus, PopupRequest, PopupResponse } from '../lib/messages';
 import { looksLikeToken } from '../lib/storage';
 
 import './popup.css';
@@ -37,10 +37,13 @@ export function resolveStatusResponse(
  *  user knows where to look (the extension can't focus the native window). */
 const IMPORT_LANDING_HINT = 'Open AI Job Hunter → Applications to view it.';
 
+/** Shown when the job was saved but the description couldn't be read. */
+const IMPORT_PARTIAL_HINT = 'Open AI Job Hunter → Applications to paste it.';
+
 /**
  * Given an `import` response, return the message text and tone to display. On
  * success it names the imported job (when the desktop parsed a title) and points
- * the user at where it landed, instead of a bare "Imported".
+ * the user at where it landed, instead of a bare “Imported”.
  *
  * Pure: no DOM access, no side effects.
  */
@@ -50,6 +53,13 @@ export function resolveImportResponse(res: PopupResponse): { text: string; tone:
   const { result } = res;
   if (result.error) return { text: result.error, tone: 'err' };
   const title = result.title?.trim();
+  if (result.partial) {
+    const lead = title ? `Imported “${title}”` : 'Imported';
+    return {
+      text: `${lead} — couldn't read the description. ${IMPORT_PARTIAL_HINT}`,
+      tone: 'ok',
+    };
+  }
   const lead = title ? `Imported “${title}”.` : 'Imported.';
   return { text: `${lead} ${IMPORT_LANDING_HINT}`, tone: 'ok' };
 }
@@ -68,8 +78,7 @@ const els = {
     offline: byId<HTMLElement>('view-offline'),
     searching: byId<HTMLElement>('view-searching'),
   },
-  btnUrl: byId<HTMLButtonElement>('btn-url'),
-  btnScan: byId<HTMLButtonElement>('btn-scan'),
+  btnImport: byId<HTMLButtonElement>('btn-import'),
   chkApplied: byId<HTMLInputElement>('chk-applied'),
   importMsg: byId<HTMLParagraphElement>('import-msg'),
   btnUnpair: byId<HTMLButtonElement>('btn-unpair'),
@@ -212,17 +221,18 @@ async function refreshUntilSettled(attempts = 5, gapMs = 600): Promise<void> {
   }
 }
 
-async function doImport(mode: ImportMode): Promise<void> {
-  els.btnUrl.disabled = true;
-  els.btnScan.disabled = true;
-  setMsg(els.importMsg, mode === 'scan' ? 'Scanning page…' : 'Importing…', 'muted');
+async function doImport(): Promise<void> {
+  els.btnImport.disabled = true;
+  setMsg(els.importMsg, 'Importing…', 'muted');
   try {
-    const res = await send({ kind: 'import', mode, applied: els.chkApplied.checked });
+    const res = await send({ kind: 'import', applied: els.chkApplied.checked });
     const { text, tone } = resolveImportResponse(res);
     setMsg(els.importMsg, text, tone);
+  } catch {
+    // A transport/messaging rejection must not strand the status on "Importing…".
+    setMsg(els.importMsg, 'Import failed. Please retry.', 'err');
   } finally {
-    els.btnUrl.disabled = false;
-    els.btnScan.disabled = false;
+    els.btnImport.disabled = false;
   }
 }
 
@@ -250,7 +260,7 @@ async function savePairing(): Promise<void> {
     await refreshUntilSettled();
     if (!els.views.import.hidden) {
       // Connected view is now shown; move focus off the (hidden) token input.
-      els.btnUrl.focus();
+      els.btnImport.focus();
     } else {
       // Didn't reach the connected view (e.g. app went away) — restore the
       // actionable label so the pair button works again.
@@ -312,8 +322,7 @@ async function getApp(): Promise<void> {
 }
 
 function wire(): void {
-  els.btnUrl.addEventListener('click', () => void doImport('url'));
-  els.btnScan.addEventListener('click', () => void doImport('scan'));
+  els.btnImport.addEventListener('click', () => void doImport());
   els.btnSaveToken.addEventListener('click', () => void savePairing());
   els.tokenInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') void savePairing();
