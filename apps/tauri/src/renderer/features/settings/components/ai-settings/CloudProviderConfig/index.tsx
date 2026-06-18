@@ -1,4 +1,5 @@
-import { Eye, EyeOff, Key, Loader2, Trash2 } from 'lucide-react';
+import { Eye, EyeOff, Key, Loader2, PenLine, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown, Input } from '@ajh/ui';
@@ -59,22 +60,85 @@ export function CloudProviderConfig({
 }: Props) {
   const { t } = useTranslation();
   const setProviderSettings = usePreferencesStore((s) => s.setProviderSettings);
+  const [changing, setChanging] = useState(false);
+
+  useEffect(() => {
+    if (changing && !isSaving && apiKeyInput === '') setChanging(false);
+  }, [isSaving, apiKeyInput, changing]);
 
   return (
     <>
       {connected ? (
-        <div className="flex items-center justify-between rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-3 py-2">
-          <div className="flex items-center gap-2 text-sm text-emerald-300/80">
-            <Key size={12} /> {t('settings.aiProvider.keyStored')}
+        changing ? (
+          <div className="space-y-2">
+            <div className="relative">
+              <Input
+                type={showKey ? 'text' : 'password'}
+                value={apiKeyInput}
+                onChange={(e) => onApiKeyChange(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && void onSaveKey()}
+                placeholder={t('settings.aiProvider.keyPlaceholder')}
+                className="w-full pr-9 text-sm"
+              />
+              <Button
+                variant="unstyled"
+                aria-label={t(
+                  showKey ? 'settings.aiProvider.hideKey' : 'settings.aiProvider.showKey'
+                )}
+                onClick={onToggleShowKey}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-foreground/30 hover:text-foreground/60"
+              >
+                {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+              </Button>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                className="text-xs"
+                onClick={() => {
+                  setChanging(false);
+                  onApiKeyChange('');
+                }}
+              >
+                {t('settings.cancel')}
+              </Button>
+              <Button
+                variant="glass"
+                disabled={!apiKeyInput.trim() || isSaving}
+                onClick={() => void onSaveKey()}
+                className={apiKeyInput.trim() && !isSaving ? 'ring-1 ring-brand/20' : ''}
+              >
+                {isSaving ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  t('settings.aiProvider.saveKey')
+                )}
+              </Button>
+            </div>
           </div>
-          <Button
-            variant="ghost"
-            className="text-xs text-red-400/60 hover:text-red-400"
-            onClick={() => void onRemoveKey()}
-          >
-            <Trash2 size={11} /> {t('settings.aiProvider.removeKey')}
-          </Button>
-        </div>
+        ) : (
+          <div className="flex items-center justify-between rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-3 py-2">
+            <div className="flex items-center gap-2 text-sm text-emerald-300/80">
+              <Key size={12} /> {t('settings.aiProvider.keyStored')}
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                className="text-xs text-foreground/50 hover:text-foreground/80"
+                onClick={() => setChanging(true)}
+              >
+                <PenLine size={11} /> {t('settings.aiProvider.changeKey')}
+              </Button>
+              <Button
+                variant="ghost"
+                className="text-xs text-red-400/60 hover:text-red-400"
+                onClick={() => void onRemoveKey()}
+              >
+                <Trash2 size={11} /> {t('settings.aiProvider.removeKey')}
+              </Button>
+            </div>
+          </div>
+        )
       ) : (
         <div className="space-y-2">
           <p className="text-xs text-foreground/40">
@@ -99,6 +163,9 @@ export function CloudProviderConfig({
               />
               <Button
                 variant="unstyled"
+                aria-label={t(
+                  showKey ? 'settings.aiProvider.hideKey' : 'settings.aiProvider.showKey'
+                )}
                 onClick={onToggleShowKey}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-foreground/30 hover:text-foreground/60"
               >
