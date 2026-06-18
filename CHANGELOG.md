@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.109.3](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.109.2...v0.109.3) (2026-06-18)
+
+### 🐛 Bug Fixes
+
+* keep popup views hidden, scroll small viewports, drop autopilot auto-apply copy ([#416](https://github.com/saeedkolivand/ai-job-hunter-app/issues/416)) ([366c5e4](https://github.com/saeedkolivand/ai-job-hunter-app/commit/366c5e4c6f51d395b9906e375783204e9f573091))
+
 ## [0.109.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.109.1...v0.109.2) (2026-06-17)
 
 ### ⚡ Performance
