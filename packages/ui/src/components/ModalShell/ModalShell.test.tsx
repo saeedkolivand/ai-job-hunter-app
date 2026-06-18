@@ -46,6 +46,31 @@ describe('ModalShell', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('does NOT close on backdrop click when closeOnBackdrop={false}', async () => {
+    const onClose = vi.fn();
+    render(
+      <ModalShell open onClose={onClose} closeOnBackdrop={false}>
+        <p>body</p>
+      </ModalShell>
+    );
+    // Click the overlay container (the dialog's parent) directly
+    const dialog = screen.getByRole('dialog');
+    const overlay = dialog.parentElement ?? dialog;
+    await userEvent.click(overlay);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('still closes on Escape when closeOnBackdrop={false}', async () => {
+    const onClose = vi.fn();
+    render(
+      <ModalShell open onClose={onClose} closeOnBackdrop={false}>
+        <p>body</p>
+      </ModalShell>
+    );
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalled();
+  });
+
   // --- responsive-window-resize contract (header / footer / className) ---
 
   it('renders nothing when open is false', () => {
