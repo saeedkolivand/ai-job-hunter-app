@@ -2287,7 +2287,9 @@
     "modePaste": "Text einfügen",
     "dropOrClick": "Lebenslauf hier ablegen oder klicken",
     "extracting": "Text wird extrahiert…",
-    "uploadedClickToReplace": "Klicken zum Ersetzen"
+    "uploadedClickToReplace": "Klicken zum Ersetzen",
+    "downloaded": "Lebenslauf heruntergeladen",
+    "downloadFailed": "Lebenslauf konnte nicht heruntergeladen werden"
   },
   "resume": {
     "profileImport": {
