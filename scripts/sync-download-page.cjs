@@ -47,7 +47,7 @@ function buildBlock(v) {
     `        <a class="dl-btn" href="${base}/macos-AI-Job-Hunter_${v}_aarch64-apple-silicon.dmg">Apple Silicon · .dmg</a>`,
     `        <a class="dl-btn alt" href="${base}/macos-AI-Job-Hunter_${v}_x64-intel.dmg">Intel · .dmg</a>`,
     '      </div>',
-    '      <p class="dl-note">macOS says it\'s "damaged"? It isn\'t — just unsigned. Clear the quarantine flag once:<br><code class="copy-cmd" role="button" tabindex="0" title="click to copy" data-copy=\'xattr -cr "/Applications/AI Job Hunter.app"\'>xattr -cr "/Applications/AI Job Hunter.app"</code><br>Or install it via <code class="copy-cmd" role="button" tabindex="0" title="click to copy" data-copy="brew install --cask ai-job-hunter">brew install --cask ai-job-hunter</code>.</p>',
+    '      <p class="dl-note">macOS says it\'s "damaged"? It isn\'t — just unsigned. Clear the quarantine flag once:<br><code class="copy-cmd" role="button" tabindex="0" title="click to copy" data-copy=\'xattr -cr "/Applications/AI Job Hunter.app"\'>xattr -cr "/Applications/AI Job Hunter.app"</code><br>Or install it with Homebrew — tap the repo once, then install:<br><code class="copy-cmd" role="button" tabindex="0" title="click to copy" data-copy="brew tap saeedkolivand/ai-job-hunter-app https://github.com/saeedkolivand/ai-job-hunter-app">brew tap saeedkolivand/ai-job-hunter-app https://github.com/saeedkolivand/ai-job-hunter-app</code><br><code class="copy-cmd" role="button" tabindex="0" title="click to copy" data-copy="brew install --cask ai-job-hunter">brew install --cask ai-job-hunter</code>.</p>',
     '    </div>',
     '',
     '    <div class="pcard">',
