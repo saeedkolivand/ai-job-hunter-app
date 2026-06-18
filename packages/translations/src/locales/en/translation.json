@@ -2323,7 +2323,9 @@
     "modePaste": "Paste text",
     "dropOrClick": "Drop your resume here or click to upload",
     "extracting": "Extracting text…",
-    "uploadedClickToReplace": "Click to replace"
+    "uploadedClickToReplace": "Click to replace",
+    "downloaded": "Resume downloaded",
+    "downloadFailed": "Failed to download resume"
   },
   "resume": {
     "profileImport": {

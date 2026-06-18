@@ -6,6 +6,7 @@ import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
+import { exportTXT } from '@/lib/generate';
 import { useAppClient } from '@/providers/AppClientProvider';
 import {
   keys,
@@ -145,6 +146,19 @@ export function useResumeInput({ value, onChange }: Params) {
     }
   };
 
+  const handleDownload = (doc: DocumentRecord) => {
+    const raw = rawDocs.find((d) => d._id === doc.id);
+    const text = raw?.text?.trim() ?? '';
+    try {
+      exportTXT(text, `${doc.title.replace(/\.[^/.]+$/, '')}.txt`);
+      notify.success({ message: t('resumeInput.downloaded') });
+    } catch (err) {
+      notify.error({
+        message: err instanceof Error ? err.message : t('resumeInput.downloadFailed'),
+      });
+    }
+  };
+
   const handleFileChange = async (file: File) => {
     clearReview();
     if (file.size > MAX_BYTES) {
@@ -253,6 +267,7 @@ export function useResumeInput({ value, onChange }: Params) {
     handleSelectSaved,
     handleSetDefaultSaved,
     handleRemove,
+    handleDownload,
     handleFileChange,
     handleSavePaste,
     handleProfileUrlSubmit,
