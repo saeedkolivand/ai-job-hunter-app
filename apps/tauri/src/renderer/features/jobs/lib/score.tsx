@@ -4,7 +4,7 @@ export type ScoreTier = 'High' | 'Medium' | 'Low';
 
 /** Map a 0–100 match score to a Low / Medium / High tier (#52/#50), with the
  *  matching {@link Tag} status colour (theme-safe in light + dark). */
-export function scoreTier(value: number): { label: ScoreTier; color: TagStatusColor } {
+function scoreTier(value: number): { label: ScoreTier; color: TagStatusColor } {
   if (value >= 75) return { label: 'High', color: 'success' };
   if (value >= 50) return { label: 'Medium', color: 'warning' };
   return { label: 'Low', color: 'error' };

@@ -12,7 +12,7 @@ import {
 export type TailorTarget = 'resume' | 'cover' | 'both';
 
 /** Coarse generation phase, surfaced to the UI. */
-export type GenerationPhase = 'idle' | 'analyzing' | 'resume' | 'cover';
+type GenerationPhase = 'idle' | 'analyzing' | 'resume' | 'cover';
 
 /**
  * One generation session's durable state. Keyed by a caller-supplied **context
@@ -58,7 +58,7 @@ export interface GenerationResult {
   companyBrief: string;
 }
 
-export interface RunTailorParams {
+interface RunTailorParams {
   contextId: string;
   resume: string;
   jobDesc: string;

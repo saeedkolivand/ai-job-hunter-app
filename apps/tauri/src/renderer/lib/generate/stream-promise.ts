@@ -21,10 +21,10 @@ import type { AppClient } from '../app-client';
 import { createThinkSplitter } from './think-split';
 
 /** Maximum wall-clock time for a single streamed generation (ms). */
-export const STREAM_TIMEOUT_MS = 5 * 60 * 1000;
+const STREAM_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** Interval between job-status poll ticks (ms). */
-export const JOB_POLL_INTERVAL_MS = 3_000;
+const JOB_POLL_INTERVAL_MS = 3_000;
 
 export interface AwaitAiStreamOptions {
   /** Called with each answer token (after think-splitting). */

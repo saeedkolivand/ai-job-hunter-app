@@ -146,7 +146,7 @@ renderer/
   components/layout/ ← Sidebar, Titlebar, StatusBar, PageShell
   services/          ← React Query hooks for all IPC namespaces
   lib/               ← pure utilities (cn, motion, greeting, machine, i18n)
-  hooks/             ← shared React hooks (use-machine, use-mouse-parallax)
+  hooks/             ← shared React hooks (use-machine, use-roving-tabindex)
   providers/         ← React context providers
   lib/machines/      ← state machine definitions
   store/             ← Zustand stores
