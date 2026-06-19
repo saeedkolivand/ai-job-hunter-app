@@ -1,4 +1,9 @@
 {
+  "common": {
+    "collapse": "Collapse",
+    "expand": "Expand",
+    "close": "Close"
+  },
   "app": {
     "title": "AI Job Hunter",
     "tagline": "Calm. Local. AI-native."
@@ -664,6 +669,20 @@
         "regenerateConfirmTitle": "Regenerate pairing token",
         "regenerateConfirmDescription": "Regenerating disconnects any paired browser. You will need to pair the extension again. Continue?",
         "regenerateConfirm": "Regenerate"
+      },
+      "connectedViaBrowser": "{{board}} connected via browser extension",
+      "boards": {
+        "connected": "Connected",
+        "connecting": "Connecting…",
+        "disconnecting": "Disconnecting…",
+        "connect": "Connect",
+        "disconnect": "Disconnect",
+        "disconnected": "Disconnected from {{board}}.",
+        "disconnectFailed": "Failed to disconnect from {{board}}.",
+        "connectFailed": "Failed to connect to {{board}}.",
+        "signInCancelled": "{{board}} sign-in was cancelled or timed out.",
+        "disconnectTitle": "Disconnect {{board}}",
+        "disconnectDescription": "This will sign you out of {{board}}. You can reconnect at any time."
       }
     },
     "privacy": {
@@ -1155,7 +1174,9 @@
       "salutationFallback": "Dear Hiring Manager,",
       "salutationWithName": "Dear {{name}},",
       "enclosures": "Enclosures:"
-    }
+    },
+    "genStepCounter": "Step {{current}} of {{total}} — {{label}}",
+    "loadingModel": "Loading model into memory…"
   },
   "autopilot": {
     "title": "Autopilot",
@@ -2278,7 +2299,8 @@
       "uploadFailed": "Upload failed",
       "replaceHint": "Click to replace",
       "skip": "Skip for now",
-      "next": "Set up AI"
+      "next": "Set up AI",
+      "uploadArea": "Upload your resume"
     }
   },
   "jobUrlImport": {
@@ -2353,7 +2375,8 @@
     "extracting": "Extracting text…",
     "uploadedClickToReplace": "Click to replace",
     "downloaded": "Resume downloaded",
-    "downloadFailed": "Failed to download resume"
+    "downloadFailed": "Failed to download resume",
+    "acceptedFormats": "PDF, DOCX, TXT — max 25 MB"
   },
   "resume": {
     "profileImport": {

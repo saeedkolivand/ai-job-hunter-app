@@ -1,4 +1,9 @@
 {
+  "common": {
+    "collapse": "Einklappen",
+    "expand": "Ausklappen",
+    "close": "Schließen"
+  },
   "app": {
     "title": "AI Job Hunter",
     "tagline": "Ruhig. Lokal. KI-nativ."
@@ -664,6 +669,20 @@
         "regenerateConfirmTitle": "Kopplungs-Token neu generieren",
         "regenerateConfirmDescription": "Beim Neugenerieren wird jeder gekoppelte Browser getrennt. Sie müssen die Erweiterung erneut koppeln. Fortfahren?",
         "regenerateConfirm": "Neu generieren"
+      },
+      "connectedViaBrowser": "{{board}} über Browser-Erweiterung verbunden",
+      "boards": {
+        "connected": "Verbunden",
+        "connecting": "Wird verbunden…",
+        "disconnecting": "Wird getrennt…",
+        "connect": "Verbinden",
+        "disconnect": "Trennen",
+        "disconnected": "Verbindung zu {{board}} getrennt.",
+        "disconnectFailed": "Verbindung zu {{board}} konnte nicht getrennt werden.",
+        "connectFailed": "Verbindung zu {{board}} fehlgeschlagen.",
+        "signInCancelled": "{{board}}-Anmeldung wurde abgebrochen oder ist abgelaufen.",
+        "disconnectTitle": "{{board}} trennen",
+        "disconnectDescription": "Dadurch werden Sie von {{board}} abgemeldet. Sie können jederzeit erneut eine Verbindung herstellen."
       }
     },
     "privacy": {
@@ -1159,7 +1178,9 @@
       "salutationFallback": "Sehr geehrte Damen und Herren,",
       "salutationWithName": "Sehr geehrte/r {{name}},",
       "enclosures": "Anlagen:"
-    }
+    },
+    "genStepCounter": "Schritt {{current}} von {{total}} — {{label}}",
+    "loadingModel": "Modell wird in den Arbeitsspeicher geladen…"
   },
   "autopilot": {
     "title": "Autopilot",
@@ -2282,7 +2303,8 @@
       "uploadFailed": "Upload fehlgeschlagen",
       "replaceHint": "Klicken zum Ersetzen",
       "skip": "Vorerst überspringen",
-      "next": "KI einrichten"
+      "next": "KI einrichten",
+      "uploadArea": "Lebenslauf hochladen"
     }
   },
   "jobUrlImport": {
@@ -2357,7 +2379,8 @@
     "extracting": "Text wird extrahiert…",
     "uploadedClickToReplace": "Klicken zum Ersetzen",
     "downloaded": "Lebenslauf heruntergeladen",
-    "downloadFailed": "Lebenslauf konnte nicht heruntergeladen werden"
+    "downloadFailed": "Lebenslauf konnte nicht heruntergeladen werden",
+    "acceptedFormats": "PDF, DOCX, TXT — max. 25 MB"
   },
   "resume": {
     "profileImport": {
