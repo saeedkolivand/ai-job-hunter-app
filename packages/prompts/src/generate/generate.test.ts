@@ -469,6 +469,54 @@ describe('resumeMentions', () => {
     expect(resumeMentions('Designed a REST API for payments', 'REST API')).toBe(true);
     expect(resumeMentions('No cloud here', 'AWS')).toBe(false);
   });
+
+  it('synonym path: JS alias matches JavaScript requirement', () => {
+    // Résumé says "JS bundles"; requirement spells out "JavaScript".
+    // The SYNONYMS map normalizes "js" → "javascript" on both sides.
+    expect(resumeMentions('Shipped JS bundles and optimized load times', 'JavaScript')).toBe(true);
+  });
+
+  it('synonym path: k8s alias matches Kubernetes requirement', () => {
+    // Résumé says "k8s clusters"; requirement spells out "Kubernetes".
+    expect(resumeMentions('Ran k8s clusters on bare metal', 'Kubernetes')).toBe(true);
+  });
+
+  it('negative: java must NOT match javascript (word-boundary, no false alias)', () => {
+    // "java" and "javascript" are different tokens; no synonym maps one to the other.
+    expect(resumeMentions('Maintained Java microservices', 'javascript')).toBe(false);
+  });
+
+  it('punctuation edge: trailing comma on résumé token does not block alias match', () => {
+    // "JavaScript," (trailing comma) must still match requirement "JavaScript".
+    expect(
+      resumeMentions('Shipped JavaScript, bundles and optimized load times', 'JavaScript')
+    ).toBe(true);
+  });
+
+  it('punctuation edge: leading/trailing parens on résumé token do not block alias match', () => {
+    // "(Kubernetes)" must still match requirement "Kubernetes".
+    expect(resumeMentions('(Kubernetes) clusters on bare metal', 'Kubernetes')).toBe(true);
+  });
+
+  it('boundary trim: strips leading/trailing boundary punct, preserves internal punct', () => {
+    // Trailing comma stripped → matches
+    expect(resumeMentions('JavaScript, bundles shipped', 'JavaScript')).toBe(true);
+    // Parens stripped → matches
+    expect(resumeMentions('(Kubernetes) on-prem', 'Kubernetes')).toBe(true);
+    // Internal punct preserved — c++ must not collapse to c
+    expect(resumeMentions('shipped in c++', 'c++')).toBe(true);
+    // Internal dot preserved — node.js must not collapse to node
+    expect(resumeMentions('runs on node.js', 'node.js')).toBe(true);
+  });
+
+  it('redos regression: pathological punctuation token completes instantly (linear scan)', () => {
+    // 100 000 consecutive quote chars — the old /^[...]+|[...]+$/g regex
+    // backtracks polynomially on this input; the linear scan returns immediately.
+    const pathological = '"'.repeat(100_000);
+    const result = resumeMentions(pathological, 'JavaScript');
+    // The entire token is boundary punctuation → stripped to '' → no match.
+    expect(result).toBe(false);
+  });
 });
 
 describe('buildGroundingBlock', () => {
