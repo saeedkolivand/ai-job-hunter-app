@@ -413,10 +413,14 @@ impl AiProvider for OpenAiClient {
     }
 
     fn max_embedding_input_chars(&self) -> usize {
-        // text-embedding-3-* accept 8191 tokens (~4 chars/token). 32k chars stays
-        // safely under that while keeping far more of a long résumé/job-ad than the
-        // conservative default — these models support much larger input than Ollama.
-        32_000
+        // text-embedding-3-* enforce a hard 8191-TOKEN limit and ERROR (no
+        // auto-truncate) when exceeded. The old 32k-char cap assumed ~4 chars/token
+        // (English); for token-dense scripts (CJK ≈ 1 char/token) 32k chars ≈ 32k
+        // tokens — far over 8191 — so the request would FAIL. Cap at 8000 chars: in
+        // the worst case (≈1 char/token) that stays under 8191 tokens for every
+        // language. Slightly over-truncates very long English, but safety (never a
+        // failed request) wins over maximizing English length.
+        8_000
     }
 
     async fn list_models(&self, app: &AppHandle) -> Vec<Value> {
@@ -475,10 +479,24 @@ impl AiProvider for OpenAiClient {
 mod tests {
     use super::{
         is_reasoning_model, join_responses_text, parse_openai_delta, parse_openai_frames,
-        should_list_model,
+        should_list_model, OpenAiClient,
     };
-    use crate::commands::ai_provider::ProviderId;
+    use crate::commands::ai_provider::{AiProvider, ProviderId};
     use serde_json::json;
+
+    #[test]
+    fn embedding_cap_is_token_safe_for_every_language() {
+        // text-embedding-3-* hard-error past 8191 tokens. Token-dense scripts (CJK)
+        // run ≈1 char/token, so the char cap must itself stay under 8191 — otherwise
+        // a full-cap CJK input exceeds the token limit and the request FAILS.
+        let cap = OpenAiClient::new(ProviderId::OpenAi, None).max_embedding_input_chars();
+        assert!(
+            cap <= 8191,
+            "char cap {cap} can exceed 8191 tokens for ~1-char/token languages"
+        );
+        // Sanity: still a useful amount of text (not collapsed to near-zero).
+        assert!(cap >= 4_000, "cap {cap} truncates too aggressively");
+    }
 
     #[test]
     fn list_filter_only_restricts_native_openai() {

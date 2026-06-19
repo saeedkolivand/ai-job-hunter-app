@@ -369,13 +369,15 @@ pub async fn embed_text(
     // Cap the input to the provider's real limit, char-boundary-safe (never splits a
     // multi-byte char). Applied here so every provider is consistent and a new one
     // inherits a safe default — see `AiProvider::max_embedding_input_chars`.
+    //
+    // Single pass: `char_indices().nth(cap)` finds the byte offset of the char *at*
+    // `cap` (i.e. the first char to drop). `Some` ⇒ the input exceeds `cap` chars, so
+    // slice there (a char-boundary offset); `None` ⇒ within cap, use as-is. Avoids the
+    // earlier `chars().count()` + `chars().take()` double scan.
     let cap = client.max_embedding_input_chars();
-    let truncated;
-    let text = if text.chars().count() > cap {
-        truncated = text.chars().take(cap).collect::<String>();
-        truncated.as_str()
-    } else {
-        text
+    let text = match text.char_indices().nth(cap) {
+        Some((byte_offset, _)) => &text[..byte_offset],
+        None => text,
     };
     let values = client.embed(app, &model, text).await?;
     if values.is_empty() {
