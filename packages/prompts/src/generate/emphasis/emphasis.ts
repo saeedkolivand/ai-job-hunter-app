@@ -33,11 +33,21 @@ const SYNONYMS: ReadonlyArray<readonly [string, string]> = [
 ] as const;
 
 /**
+ * Strip leading and trailing punctuation from a token so punctuation-attached
+ * words like `"JavaScript,"` or `"(Kubernetes)"` reach the alias map as their
+ * bare form. Only boundary chars are stripped — internal chars like `c++`,
+ * `node.js`, and `c#` are left intact.
+ */
+function stripBoundaryPunctuation(token: string): string {
+  return token.replace(/^[.,;:()[\]{}"']+|[.,;:()[\]{}"']+$/g, '');
+}
+
+/**
  * Normalize a term through the SYNONYMS alias map (same map as the Rust scorer)
  * so aliases collapse to their canonical form before matching.
  */
 function normalizeTerm(term: string): string {
-  const lower = term.toLowerCase();
+  const lower = stripBoundaryPunctuation(term).toLowerCase();
   const found = SYNONYMS.find(([alias]) => alias === lower);
   return found ? found[1] : lower;
 }

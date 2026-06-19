@@ -485,6 +485,18 @@ describe('resumeMentions', () => {
     // "java" and "javascript" are different tokens; no synonym maps one to the other.
     expect(resumeMentions('Maintained Java microservices', 'javascript')).toBe(false);
   });
+
+  it('punctuation edge: trailing comma on résumé token does not block alias match', () => {
+    // "JavaScript," (trailing comma) must still match requirement "JavaScript".
+    expect(
+      resumeMentions('Shipped JavaScript, bundles and optimized load times', 'JavaScript')
+    ).toBe(true);
+  });
+
+  it('punctuation edge: leading/trailing parens on résumé token do not block alias match', () => {
+    // "(Kubernetes)" must still match requirement "Kubernetes".
+    expect(resumeMentions('(Kubernetes) clusters on bare metal', 'Kubernetes')).toBe(true);
+  });
 });
 
 describe('buildGroundingBlock', () => {
