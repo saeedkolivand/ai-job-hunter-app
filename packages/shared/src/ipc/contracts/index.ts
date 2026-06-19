@@ -174,10 +174,14 @@ export { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js
 export { DATA_CHANNELS, type DataContract } from './data.js';
 export { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
 export {
+  type BaseExportRequest,
   type ConfidenceLevel,
   type ContactFieldConflict,
   DOCUMENTS_CHANNELS,
   type DocumentsContract,
+  type ExportIssue,
+  type ExportIssueSeverity,
+  type ExportReport,
   type ResumeField,
   type SectionSummary,
   type SourceSpan,
