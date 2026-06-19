@@ -1,4 +1,4 @@
-import { Languages, Power, User, Wand2 } from 'lucide-react';
+import { Languages, Move, Power, User, Wand2 } from 'lucide-react';
 
 import { useTranslation } from '@ajh/translations';
 import { Button, Input, SettingsSection, Switch } from '@ajh/ui';
@@ -6,6 +6,7 @@ import { Button, Input, SettingsSection, Switch } from '@ajh/ui';
 import { LanguageSelector } from '@/features/settings/components/shared/LanguageSelector';
 import { UpdateSection } from '@/features/settings/components/update-section';
 import { useLaunchAtLogin, useSetCloseToTray, useSetLaunchAtLogin } from '@/services';
+import { useWindowControls } from '@/services/use-window-controls/use-window-controls';
 import {
   useCloseToTray,
   useOnboardingCompleted,
@@ -26,6 +27,7 @@ export function GeneralSection({
   userName,
 }: GeneralSectionProps) {
   const { t } = useTranslation();
+  const controls = useWindowControls();
   const onboardingCompleted = useOnboardingCompleted();
   const resetOnboarding = usePreferencesStore((s) => s.resetOnboarding);
   const replayWizard = () => resetOnboarding();
@@ -104,6 +106,34 @@ export function GeneralSection({
               onCheckedChange={(next) => setCloseToTray.mutate(next)}
             />
           </div>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection icon={Move} label={t('settings.window.title')}>
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-foreground/45">{t('settings.window.resetPositionHint')}</p>
+            <Button
+              variant="glass"
+              onClick={() => void controls.resetPosition()}
+              className="ml-4 shrink-0"
+            >
+              {t('settings.window.resetPosition')}
+            </Button>
+          </div>
+          {/* ponytail: duplicates ⌘H — macOS only */}
+          {controls.isMacos && (
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-foreground/45">{t('settings.window.hideAppHint')}</p>
+              <Button
+                variant="glass"
+                onClick={() => void controls.hideApp()}
+                className="ml-4 shrink-0"
+              >
+                {t('settings.window.hideApp')}
+              </Button>
+            </div>
+          )}
         </div>
       </SettingsSection>
 

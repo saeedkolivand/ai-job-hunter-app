@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
+import { clearOnboardingMirror } from '@/lib/onboarding-mirror';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { usePreferencesStore } from '@/store/preferences-store';
 
@@ -35,6 +36,7 @@ export const useResetApp = () => {
     onSuccess: () => {
       qc.clear();
       resetPreferences();
+      void clearOnboardingMirror();
     },
   });
 };

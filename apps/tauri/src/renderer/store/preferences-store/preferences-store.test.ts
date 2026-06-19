@@ -1,10 +1,25 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// ── onboarding-mirror — mock so store tests are pure Zustand (no Tauri store) ──
+// vi.hoisted() ensures the spies are initialized before vi.mock() hoisting runs.
+
+const { mockClearOnboardingMirror, mockMarkOnboardingComplete } = vi.hoisted(() => ({
+  mockClearOnboardingMirror: vi.fn().mockResolvedValue(undefined),
+  mockMarkOnboardingComplete: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('@/lib/onboarding-mirror', () => ({
+  clearOnboardingMirror: mockClearOnboardingMirror,
+  markOnboardingComplete: mockMarkOnboardingComplete,
+}));
 
 import { usePreferencesStore } from './preferences-store';
 
 beforeEach(() => {
   localStorage.clear();
   usePreferencesStore.getState().resetPreferences();
+  mockClearOnboardingMirror.mockClear();
+  mockMarkOnboardingComplete.mockClear();
 });
 
 describe('usePreferencesStore', () => {
@@ -79,6 +94,24 @@ describe('usePreferencesStore', () => {
     expect(usePreferencesStore.getState().onboardingCompleted).toBe(false);
     // Unrelated prefs survive (unlike resetPreferences).
     expect(usePreferencesStore.getState().language).toBe('de');
+  });
+
+  it('resetOnboarding calls clearOnboardingMirror() and sets onboardingCompleted to false', () => {
+    const s = usePreferencesStore.getState();
+    s.setOnboardingComplete();
+    expect(usePreferencesStore.getState().onboardingCompleted).toBe(true);
+
+    usePreferencesStore.getState().resetOnboarding();
+
+    expect(mockClearOnboardingMirror).toHaveBeenCalledOnce();
+    expect(usePreferencesStore.getState().onboardingCompleted).toBe(false);
+  });
+
+  it('setOnboardingComplete calls markOnboardingComplete() and sets onboardingCompleted to true', () => {
+    usePreferencesStore.getState().setOnboardingComplete();
+
+    expect(mockMarkOnboardingComplete).toHaveBeenCalledOnce();
+    expect(usePreferencesStore.getState().onboardingCompleted).toBe(true);
   });
 
   it('records recent locations most-recent-first, de-duplicated and capped at 5', () => {
