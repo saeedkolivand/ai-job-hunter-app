@@ -65,9 +65,13 @@ fn join_text_blocks(data: &Value) -> String {
 /// its SSE framing lives here only.
 fn parse_anthropic_frames(buf: &mut String, last_event: &mut String) -> Vec<StreamPiece> {
     let mut out = Vec::new();
-    while let Some(nl) = buf.find('\n') {
-        let line = buf[..nl].trim().to_string();
-        *buf = buf[nl + 1..].to_string();
+    // Walk the buffer by a `consumed` offset and `drain(..consumed)` once at the end,
+    // instead of reallocating the whole tail per line (O(n²) on a big frame).
+    let mut consumed = 0;
+    while let Some(rel) = buf[consumed..].find('\n') {
+        let nl = consumed + rel;
+        let line = buf[consumed..nl].trim().to_string();
+        consumed = nl + 1;
 
         if let Some(event) = line.strip_prefix("event: ") {
             *last_event = event.trim().to_string();
@@ -78,6 +82,7 @@ fn parse_anthropic_frames(buf: &mut String, last_event: &mut String) -> Vec<Stre
             None => continue,
         };
         if last_event == "message_stop" || data.contains("\"type\":\"message_stop\"") {
+            buf.drain(..consumed);
             out.push(StreamPiece::done(""));
             return out;
         }
@@ -112,6 +117,8 @@ fn parse_anthropic_frames(buf: &mut String, last_event: &mut String) -> Vec<Stre
             _ => {}
         }
     }
+    // Drop the fully-parsed prefix once; the partial trailing line stays buffered.
+    buf.drain(..consumed);
     out
 }
 
@@ -496,6 +503,22 @@ mod tests {
         let mut last = String::new();
         let mut buf = String::from("data: {\"type\":\"content_block_de");
         assert!(parse_anthropic_frames(&mut buf, &mut last).is_empty());
+        assert_eq!(buf, "data: {\"type\":\"content_block_de");
+    }
+
+    #[test]
+    fn parse_frames_drains_consumed_lines_keeping_partial_tail() {
+        // The in-place `drain(..consumed)` must drop exactly the fully-parsed lines
+        // (incl. a multi-byte char before the newline) and keep the partial tail —
+        // the offset arithmetic stays on char boundaries.
+        let mut last = String::new();
+        let mut buf = String::from(
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"café\"}}\n\
+             data: {\"type\":\"content_block_de",
+        );
+        let pieces = parse_anthropic_frames(&mut buf, &mut last);
+        assert_eq!(pieces, vec![StreamPiece::text("café")]);
+        // Only the unterminated trailing line survives the drain.
         assert_eq!(buf, "data: {\"type\":\"content_block_de");
     }
 
