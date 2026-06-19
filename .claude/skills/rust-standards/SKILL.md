@@ -32,3 +32,17 @@ Migrations forward-safe and reversible-or-guarded; `*Store` writes go through th
 ## Observability
 
 Use `observability.rs` (`Span`) for tracing; don't invent ad-hoc logging.
+
+## External standards & best-practices (verified 2026-06-19)
+
+> Latest stable **Rust 1.95**; **Edition 2024** default since 1.85 (2025-02-20). Set `edition = "2024"` + pin MSRV (`rust-version`). Re-verify version-pinned items periodically.
+
+- **API Guidelines** — conversion naming (`as_`/`to_`/`into_`), `iter`/`iter_mut`/`into_iter`, eager `Debug, Clone, Eq, Hash`, `#[non_exhaustive]` on extensible public enums/structs, no private types in public signatures. https://rust-lang.github.io/api-guidelines/checklist.html
+- **Errors** — libraries: `thiserror` typed enums, preserve the chain (`#[source]`/`#[from]`, `#[error(transparent)]`); apps: `anyhow`/`eyre` + `.context(...)`. Never expose `anyhow::Error` in a library's public API. https://docs.rs/thiserror
+- **async/tokio** — never block an async worker; offload blocking/CPU work via `spawn_blocking` (prefer over `block_in_place`); `tokio::spawn` futures need `Send + 'static`; bound parallel `spawn_blocking` with a `Semaphore`. https://docs.rs/tokio/latest/tokio/task/fn.spawn_blocking.html
+- **Cancel-safety** — every `.await` is a cancellation point; only hold across-await invariants that survive a drop; in `select!` use only cancel-safe futures; graceful shutdown via `CancellationToken` + cleanup. https://tokio.rs/tokio/topics/shutdown
+- **Clippy** — enforce `clippy::all` + `clippy::pedantic` (`-D warnings`), allow-list rejected pedantic lints, set `msrv` in `clippy.toml`. https://doc.rust-lang.org/clippy/
+- **unsafe** — FFI / validated raw-pointer-or-layout / proven hot-path only; every block carries a `// SAFETY:` note; keep minimal.
+- **Supply chain** — `cargo audit`/`cargo deny` in CI vs https://rustsec.org/ . 2026 advisory **RUSTSEC-2026-0098** (`rustls-webpki < 0.103.12`, URI name-constraint bypass) — bump transitively if any TLS path pulls it.
+
+**Common mistakes:** blocking the runtime (sync I/O, `std::thread::sleep`, heavy CPU) in async; `.unwrap()`/`.expect()` on fallible non-test paths; stringly errors dropping the source chain; `anyhow` in a public library API; holding a `Mutex`/`RefCell` guard across `.await`; assuming a `select!` branch completed (may be cancelled); unbounded `spawn_blocking` fan-out; `unsafe` without `SAFETY`.

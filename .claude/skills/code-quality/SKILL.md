@@ -35,3 +35,15 @@ React/TS:
 - Clone-happy code where a borrow works; `String` params that should be `&str`.
 - Fat command handlers → push logic into testable fns; keep `#[tauri::command]` thin. `unsafe` without a justifying comment.
   Cross-cutting: duplicated literals/config → one const/module; magic numbers → named; deep nesting → guard clauses / early returns; a boolean param gating two behaviors → split the function.
+
+## External standards & best-practices (verified 2026-06-19)
+
+These are **tensions to manage, not rules to obey**.
+
+- **SOLID** — SRP/OCP/LSP/ISP/DIP guide module boundaries; apply where they cut coupling, not reflexively. https://martinfowler.com/bliki/
+- **DRY** — dedupe _knowledge_, not coincidentally-similar code; premature DRY couples unrelated call sites. https://martinfowler.com/bliki/BeckDesignRules.html
+- **KISS / YAGNI** — simplest thing that works; DRY routinely **collides with KISS** → prefer the clearer code; add abstraction at the _second_ real use (rule of three). https://martinfowler.com/bliki/Yagni.html
+- **AHA (Avoid Hasty Abstractions)** — the current critique of over-abstraction: a wrong abstraction costs more than duplication; inline a leaky abstraction back before re-splitting. https://kentcdodds.com/blog/aha-programming · https://sandimetz.com/blog/2016/1/20/the-wrong-abstraction
+- Smallest behavior-preserving diff; **name the trade-off** (coupling↔reuse, simplicity↔flexibility) rather than citing an acronym.
+
+**Common mistakes:** citing DRY to justify a shared abstraction over two superficially-similar but semantically-unrelated blocks (premature coupling); treating SOLID/YAGNI as pass/fail gates → ceremony (interfaces with one impl, factories for one type).
