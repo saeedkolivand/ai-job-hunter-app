@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781889837529,
+  "lastUpdate": 1781892409799,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -791,6 +791,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 311436,
             "range": "± 8396",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "67a6a6b83d386755e40a961dea80691de8a95d9a",
+          "message": "refactor: dedupe now_ms, job-id, and renderer doc helpers (#438)\n\n* refactor: dedupe now_ms, job-id, and renderer doc helpers\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n\n* refactor: address coderabbit review on dedupe pr\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-06-19T19:47:54+02:00",
+          "tree_id": "8de8a522d1180807a8554c2af2d56d2115fba04a",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/67a6a6b83d386755e40a961dea80691de8a95d9a"
+        },
+        "date": 1781892409357,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1188965,
+            "range": "± 108810",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 1678295,
+            "range": "± 85368",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 206428,
+            "range": "± 16075",
             "unit": "ns/iter"
           }
         ]
