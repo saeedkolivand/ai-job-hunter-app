@@ -107,18 +107,18 @@ async fn score_one(
         formula_version: MATCH_FORMULA_VERSION,
         job_text_hash: &job_text_hash,
     };
-    if let Some(cached) = store.get_match_score(&cache_key) {
+    if let Some(cached) = store.get_match_score_async(cache_key.to_owned_key()).await {
         return cached;
     }
     let (resume_vec, job_vec) = if skip_semantic {
         (None, None)
     } else {
-        let rv = match store.get_vector(&resume.id) {
+        let rv = match store.get_vector_async(&resume.id).await {
             Some(v) if active.matches(&v.space) => Some(v),
             _ => {
                 let v = embed(app, &resume.text).await;
                 if let Some(ref ev) = v {
-                    let _ = store.upsert_vector(&resume.id, ev);
+                    let _ = store.upsert_vector_async(&resume.id, ev).await;
                 }
                 v
             }
@@ -254,7 +254,10 @@ async fn score_one(
         "guidance": GUIDANCE,
     });
     if let Ok(s) = serde_json::to_string(&result) {
-        store.upsert_match_score(&cache_key, &s).ok();
+        store
+            .upsert_match_score_async(cache_key.to_owned_key(), s)
+            .await
+            .ok();
     }
     result
 }
