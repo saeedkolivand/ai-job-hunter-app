@@ -291,6 +291,98 @@ fn test_data_store_export_import_preserves_id() {
     assert_eq!(list[0].name, "Test AP");
 }
 
+#[test]
+fn save_skips_disk_write_when_serialized_state_is_unchanged() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    store.create(serde_json::json!({
+        "name": "AP",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 50.0 },
+        "schedule": "manual",
+    }));
+
+    // After `create`, disk already holds exactly the serialized JSON, so the
+    // dirty check compares equal and must skip the write. Probe with mtime: a
+    // skipped write never touches the file (mtime frozen); a real rewrite would
+    // bump it. Re-save the identical, unchanged map and assert mtime is stable.
+    let file = temp.path().join("autopilots.json");
+    let before = std::fs::metadata(&file).unwrap().modified().unwrap();
+
+    let map = store.load();
+    store.save(map);
+
+    let after = std::fs::metadata(&file).unwrap().modified().unwrap();
+    assert_eq!(
+        before, after,
+        "identical serialized state must skip the write (mtime unchanged)"
+    );
+    // And the state is preserved, not blanked.
+    assert!(std::fs::read_to_string(&file).unwrap().contains("\"_id\""));
+}
+
+#[test]
+fn save_writes_when_serialized_state_differs() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    store.create(serde_json::json!({
+        "name": "AP",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 50.0 },
+        "schedule": "manual",
+    }));
+
+    // Overwrite the file with content that does NOT match the serialized map,
+    // then save the (unchanged) map: the bytes differ, so the write must proceed
+    // and replace the sentinel content with the real serialized JSON.
+    let file = temp.path().join("autopilots.json");
+    std::fs::write(&file, "// stale sentinel content").unwrap();
+
+    let map = store.load();
+    store.save(map);
+
+    let after = std::fs::read_to_string(&file).unwrap();
+    assert!(
+        !after.contains("stale sentinel"),
+        "differing on-disk content must trigger a write"
+    );
+    assert!(
+        after.contains("\"_id\""),
+        "real serialized state was written"
+    );
+}
+
+#[test]
+fn save_writes_when_file_is_missing() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    store.create(serde_json::json!({
+        "name": "AP",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 50.0 },
+        "schedule": "manual",
+    }));
+
+    // A missing/unreadable file never matches the serialized bytes → the write
+    // must proceed so state isn't lost on the first persist after deletion.
+    let file = temp.path().join("autopilots.json");
+    std::fs::remove_file(&file).unwrap();
+    assert!(!file.exists());
+
+    let map = store.load();
+    store.save(map);
+
+    assert!(file.exists(), "missing file is (re)written, not skipped");
+    let after = std::fs::read_to_string(&file).unwrap();
+    assert!(after.contains("\"_id\""), "serialized state was written");
+}
+
 fn found_job(url: &str, found_at: u64) -> FoundJob {
     FoundJob {
         title: "Engineer".into(),
