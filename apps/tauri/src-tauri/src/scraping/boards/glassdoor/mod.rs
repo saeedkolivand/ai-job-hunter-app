@@ -61,10 +61,20 @@ impl Scraper for GlassdoorScraper {
             }
         });
 
-        let page = browser.new_page("about:blank").await?;
+        let page = match browser.new_page("about:blank").await {
+            Ok(p) => p,
+            Err(e) => {
+                let _ = browser.close().await;
+                let _ = handle.await;
+                return Err(e.into());
+            }
+        };
         let mut results = Vec::new();
+        // Tracks the first-page navigation error so we can propagate it after
+        // closing the browser (browser.close() must run on all exit paths).
+        let mut first_page_err: Option<anyhow::Error> = None;
 
-        for p in 1..=max_pages {
+        'pages: for p in 1..=max_pages {
             if ctx.signal.is_cancelled() {
                 break;
             }
@@ -90,8 +100,12 @@ impl Scraper for GlassdoorScraper {
             .await
             {
                 Ok(html) => html,
-                // First page failed → nothing collected → propagate.
-                Err(e) if results.is_empty() => return Err(e),
+                // First page failed → nothing collected → record error and break so
+                // the browser is still closed before we propagate.
+                Err(e) if results.is_empty() => {
+                    first_page_err = Some(e);
+                    break 'pages;
+                }
                 // Later page failed → keep the pages we already have.
                 Err(e) => {
                     log::warn!(
@@ -223,6 +237,10 @@ impl Scraper for GlassdoorScraper {
 
         browser.close().await?;
         let _ = handle.await;
+
+        if let Some(e) = first_page_err {
+            return Err(e);
+        }
 
         Ok(results)
     }
