@@ -7,11 +7,11 @@ use parking_lot::Mutex;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::db::now_ms;
 use crate::error::AppResult;
 
 // ── Data model ────────────────────────────────────────────────────────────────
@@ -399,13 +399,6 @@ impl AutopilotStore {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
 
 /// Sort autopilots newest-first by `created_at`, breaking ties by `id` so the
 /// order is stable across runs despite the unordered map. Single source of truth

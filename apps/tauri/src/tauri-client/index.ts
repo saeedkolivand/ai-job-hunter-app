@@ -49,7 +49,9 @@ export function createTauriInvokeClient(): AppClient {
     system: system as AppClient['system'],
     jobs: jobs as AppClient['jobs'],
     ai: ai as AppClient['ai'],
-    documents: documents as AppClient['documents'],
+    // list() returns RawDoc[] on the wire; callers use normalise(). A deferred
+    // PR will align the serde fields so the cast can be tightened to a plain `as`.
+    documents: documents as unknown as AppClient['documents'],
     jobPreferences: jobPreferences as AppClient['jobPreferences'],
     contactProfile: contactProfile as AppClient['contactProfile'],
     extensionBridge: extensionBridge as AppClient['extensionBridge'],

@@ -6,6 +6,7 @@
 ///
 /// Migrations must be idempotent where possible (use IF NOT EXISTS, etc.).
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
@@ -120,6 +121,27 @@ pub fn ts_to_db(ms: u64) -> i64 {
 #[inline]
 pub fn ts_from_db(v: i64) -> u64 {
     u64::try_from(v).unwrap_or(0)
+}
+
+/// Current wall-clock time as epoch milliseconds (`u64`).
+///
+/// Single authoritative implementation shared by every store and command module;
+/// replace per-module copies with `crate::db::now_ms()`.
+#[inline]
+pub fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+/// Generates a collision-resistant opaque tracking ID for a single job run.
+///
+/// Uses UUID v4 (128-bit random); practically zero collision probability even
+/// under parallel workloads. The `uuid` crate is already a dependency.
+#[inline]
+pub fn new_job_id() -> String {
+    format!("job-{}", uuid::Uuid::new_v4())
 }
 
 #[cfg(test)]

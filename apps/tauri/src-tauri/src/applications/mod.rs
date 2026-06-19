@@ -14,7 +14,6 @@
 //! the shared migration runner, plus an append-only `status_events` history.
 
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
@@ -23,7 +22,7 @@ use uuid::Uuid;
 
 use crate::ai_generations::ApplicationAnswer;
 use crate::data_store::DataStore;
-use crate::db::{run_migrations, ts_from_db, ts_to_db, Migration};
+use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::{AppError, AppResult};
 
 /// The user-mutable lifecycle of an [`Application`].
@@ -923,13 +922,6 @@ fn truncate_on_char_boundary(s: &str, max_bytes: usize) -> String {
         end -= 1;
     }
     s[..end].to_string()
-}
-
-pub fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
 }
 
 pub fn make_application_id() -> String {
