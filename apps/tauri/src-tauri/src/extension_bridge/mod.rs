@@ -18,7 +18,14 @@
 //!    (`platform::config::extension_dev_origins`) admits a locally-loaded
 //!    extension. The per-frame token (3) is what actually authenticates.
 //! 3. **Per-frame token** — every envelope carries the paired secret; a mismatch
-//!    closes the socket.
+//!    is rejected with the `unauthorized` reply and closes the socket. The
+//!    extension verifies the pairing up front with an [`msg::AUTH`] frame sent
+//!    immediately after the socket opens (a token check with no payload): a
+//!    correct token gets an `import.result` reply with **no** `error`, a wrong
+//!    token gets the unauthorized reply and the socket is closed. The handshake
+//!    (1–2) alone does NOT mark the socket connected: `connected` flips true only
+//!    once a frame passes the token gate, so a wrong-token socket is never
+//!    reported as connected/authorized (see [`handle_connection`]).
 //! 4. **Size cap** — frames over [`MAX_FRAME_BYTES`] are rejected.
 //! 5. **URL/SSRF guard** — the imported `url` is normalized (http(s) only) and
 //!    run through [`auth::is_safe_public_host`] (rejects loopback/private/
@@ -70,6 +77,11 @@ pub const NATIVE_HOST_MANIFEST: &str = "app.aijobhunter.bridge.json";
 /// in `packages/shared/src/ipc/extension-protocol.ts`. A parity test
 /// ([`test`]) pins these to the TS literals so the two can never drift.
 pub mod msg {
+    /// Connection-time token verification; no payload. The extension sends this
+    /// first frame right after the socket opens; the desktop replies with an
+    /// `import.result` envelope carrying no `error` on success (or the
+    /// unauthorized error reply on a bad token, after which the socket closes).
+    pub const AUTH: &str = "auth";
     pub const IMPORT_REQUEST: &str = "import.request";
     pub const IMPORT_RESULT: &str = "import.result";
     /// RESERVED (not handled yet) — live ATS match for the open posting.
@@ -98,7 +110,14 @@ pub struct BridgeState {
     port: Mutex<Option<u16>>,
     /// The pairing secret. Persisted to disk; rotated by `regenerate`.
     token: Mutex<String>,
-    /// True while at least one authenticated socket is open.
+    /// Last-writer-wins status hint: set `true` once a frame passes the
+    /// per-frame token gate (never on the bare handshake, so a wrong-token
+    /// client is never reported as connected) and `false` when a socket loop
+    /// exits. It is **not** a refcount — this single bool assumes the de-facto
+    /// single extension socket (loopback, one extension), so with concurrent
+    /// sockets the second to close clears the flag while the first is still
+    /// open. If concurrent sockets ever become real, promote to an
+    /// `AtomicUsize` refcount.
     connected: AtomicBool,
     /// App data dir — where the token file lives.
     data_dir: PathBuf,
@@ -284,7 +303,9 @@ async fn probe_ports(range: std::ops::RangeInclusive<u16>) -> Option<(TcpListene
 }
 
 /// Perform the WS handshake (validating `Origin`), then service frames until the
-/// socket closes or fails a guard. One authenticated socket flips `connected`.
+/// socket closes or fails a guard. `connected` flips true only once a frame
+/// passes the per-frame token gate (not on the bare handshake); a wrong-token
+/// frame replies `unauthorized` and closes the socket without marking connected.
 async fn handle_connection(app: AppHandle, stream: TcpStream) {
     use tokio_tungstenite::tungstenite::handshake::server::ErrorResponse;
     use tokio_tungstenite::tungstenite::http::StatusCode;
@@ -337,7 +358,10 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
         Some(s) => s,
         None => return,
     };
-    state.set_connected(true);
+    // NOT marked connected yet: the bare handshake (loopback + origin) is not
+    // authentication. `connected` flips true only once a frame passes the
+    // per-frame token gate (an `Import` or a `Reply` from `classify_frame`), so
+    // a wrong-token socket is never reported as connected/authorized.
 
     let (mut writer, mut reader) = ws.split();
 
@@ -361,16 +385,32 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
         };
 
         // Classify the frame against the size + token + type gates (no app state).
-        // An over-cap frame closes the socket; a bad token / unknown type replies
-        // with an error; only an authenticated import request reaches `app` state.
+        // An over-cap frame closes the socket; a bad token replies `unauthorized`
+        // then closes; a reserved/unknown type replies with an error; only an
+        // authenticated import request reaches `app` state.
         let reply = match classify_frame(&state, &text) {
             FrameDecision::CloseOverCap => {
                 log::warn!("[extension_bridge] frame over size cap — closing");
                 break;
             }
             FrameDecision::Drop => None,
-            FrameDecision::Reply(text) => Some(text),
+            FrameDecision::Unauthorized(reply) => {
+                // A wrong-token client must not linger: send the unauthorized
+                // reply (best-effort) and close the socket without ever marking
+                // it connected.
+                let _ = writer.send(Message::text(reply)).await;
+                break;
+            }
+            FrameDecision::Reply(text) => {
+                // A token-validated frame (e.g. the `auth` ok reply, or a
+                // reserved-type error) — the socket is authenticated, mark it
+                // connected.
+                state.set_connected(true);
+                Some(text)
+            }
             FrameDecision::Import { req_id, payload } => {
+                // A token-validated import — authenticated, mark connected.
+                state.set_connected(true);
                 let outcome = handle_import(&app, payload).await;
                 Some(result_reply(&req_id, outcome))
             }
@@ -395,8 +435,14 @@ enum FrameDecision {
     CloseOverCap,
     /// Not JSON (malformed) — drop silently, no reply.
     Drop,
-    /// A ready-to-send `import.result` reply text (bad token, or a reserved /
-    /// unknown message type acknowledged as an error).
+    /// A bad-token frame: send this ready-to-send `unauthorized` `import.result`
+    /// reply text, then CLOSE the socket. Distinct from [`FrameDecision::Reply`]
+    /// so the connection loop never marks an unauthorized socket connected and
+    /// never lets a wrong-token client linger.
+    Unauthorized(String),
+    /// A ready-to-send `import.result` reply text from a **token-validated**
+    /// frame (a reserved / unknown message type acknowledged as an error, or the
+    /// `auth` success reply). The socket stays open and is marked connected.
     Reply(String),
     /// An authenticated `import.request` to dispatch through [`handle_import`].
     Import { req_id: String, payload: Value },
@@ -433,13 +479,27 @@ fn classify_frame(state: &BridgeState, text: &str) -> FrameDecision {
     // remote timing side-channels are not a practical risk.
     if token.is_empty() || token != state.token() {
         log::warn!("[extension_bridge] rejected frame: bad token");
-        return FrameDecision::Reply(result_reply(
+        return FrameDecision::Unauthorized(result_reply(
             &req_id,
             Err(AppError::Validation("unauthorized".to_string())),
         ));
     }
 
     match kind {
+        // Connection-time token check. The token already passed the gate above,
+        // so a minimal `Ok` outcome — serializing with NO `error` field — is the
+        // "authorized" reply the extension expects (no error = authorized). An
+        // `auth` frame does no import; the empty fields are never read.
+        msg::AUTH => FrameDecision::Reply(result_reply(
+            &req_id,
+            Ok(ImportOk {
+                application_id: String::new(),
+                status: String::new(),
+                title: String::new(),
+                company: String::new(),
+                partial: false,
+            }),
+        )),
         msg::IMPORT_REQUEST => {
             let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
             FrameDecision::Import { req_id, payload }

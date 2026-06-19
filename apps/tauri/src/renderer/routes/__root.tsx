@@ -23,6 +23,8 @@ import { UpdateBanner } from '@/components/ui/UpdateBanner';
 import { OnboardingWizard } from '@/features/onboarding/OnboardingWizard';
 import { useAutopilotFocusNavigation } from '@/hooks/use-autopilot-focus-navigation';
 import { useMenuNavigation } from '@/hooks/use-menu-navigation';
+import { useWindowTaskbarSync } from '@/hooks/use-window-taskbar-sync';
+import { readOnboardingComplete } from '@/lib/onboarding-mirror';
 import { installUnknownPathRedirect } from '@/lib/router-guard';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { CapabilityProvider } from '@/providers/CapabilityProvider';
@@ -32,7 +34,12 @@ import {
   useNotificationEvents,
   useSyncCloseToTray,
 } from '@/services';
-import { useSidebarCollapsed, useToggleSidebar } from '@/store/preferences-store';
+import {
+  useOnboardingCompleted,
+  usePreferencesStore,
+  useSidebarCollapsed,
+  useToggleSidebar,
+} from '@/store/preferences-store';
 
 /** Drives the native-menu navigation/actions. Rendered INSIDE
  *  `NotificationProvider` so its check-for-updates feedback can raise toasts. */
@@ -113,11 +120,25 @@ function RootLayout() {
   const { t } = useTranslation();
   const isCollapsed = useSidebarCollapsed();
   const toggleSidebar = useToggleSidebar();
+  const onboardingCompleted = useOnboardingCompleted();
+  const setOnboardingComplete = usePreferencesStore((s) => s.setOnboardingComplete);
 
   // Route to an autopilot's found-jobs when the tray/deep-link asks (app-global).
   useAutopilotFocusNavigation();
   // Push the persisted close-to-tray preference to the shell once on boot.
   useSyncCloseToTray();
+  // Sync taskbar progress + flash attention on job completion/failure.
+  useWindowTaskbarSync();
+  // One-shot: if Zustand says not completed, check the disk mirror (survives
+  // webview-data clear) and hydrate the store so the wizard is skipped.
+  const checkedMirrorRef = useRef(false);
+  useEffect(() => {
+    if (onboardingCompleted || checkedMirrorRef.current) return;
+    checkedMirrorRef.current = true;
+    void readOnboardingComplete().then((done) => {
+      if (done) setOnboardingComplete();
+    });
+  }, [onboardingCompleted, setOnboardingComplete]);
   useEffect(() => {
     // Prevent mouse side-buttons (back/forward, buttons 3 & 4) from triggering
     // browser history navigation which leads to unhandled routes in the SPA.
@@ -198,7 +219,7 @@ function RootLayout() {
                     animate={{ width: 'auto', opacity: 1 }}
                     exit={{ width: 0, opacity: 0 }}
                     transition={transition.normal}
-                    className="overflow-hidden"
+                    className="flex overflow-hidden"
                     style={{ flexShrink: 0 }}
                   >
                     <Sidebar />
@@ -207,7 +228,7 @@ function RootLayout() {
               </AnimatePresence>
               <div className="relative flex flex-1 overflow-hidden">
                 {isCollapsed && (
-                  <div className="absolute left-0 top-0 z-10 p-2">
+                  <div className="absolute left-6 top-6 z-10">
                     <Button
                       variant="ghost"
                       size="sm"

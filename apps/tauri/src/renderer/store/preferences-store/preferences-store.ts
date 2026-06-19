@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import { clearOnboardingMirror, markOnboardingComplete } from '@/lib/onboarding-mirror';
+
 import {
   type AiProvider,
   type LocalModelLimits,
@@ -263,19 +265,23 @@ export const usePreferencesStore = create<PreferencesStore>()(
           return { ...state, recentLocations: next, lastUpdated: new Date().toISOString() };
         }),
 
-      setOnboardingComplete: () =>
+      setOnboardingComplete: () => {
+        void markOnboardingComplete();
         set((state) => ({
           ...state,
           onboardingCompleted: true,
           lastUpdated: new Date().toISOString(),
-        })),
+        }));
+      },
 
-      resetOnboarding: () =>
+      resetOnboarding: () => {
+        void clearOnboardingMirror();
         set((state) => ({
           ...state,
           onboardingCompleted: false,
           lastUpdated: new Date().toISOString(),
-        })),
+        }));
+      },
 
       setContactPromptSeen: () =>
         set((state) => ({

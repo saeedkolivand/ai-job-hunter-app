@@ -15,11 +15,13 @@ import {
   useNotifications,
   useRemoveNotification,
 } from '@/services';
+import { useWindowControls } from '@/services/use-window-controls/use-window-controls';
 import { useUiStore } from '@/store/ui-store';
 
 export function NotificationBell() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
+  const controls = useWindowControls();
 
   const open = useUiStore((s) => s.notificationsOpen);
   const setOpen = useUiStore((s) => s.setNotificationsOpen);
@@ -121,6 +123,8 @@ export function NotificationBell() {
                     const openNotification = () => {
                       markRead.mutate(n.id);
                       setOpen(false);
+                      // ponytail: window is usually already focused here
+                      void controls.foreground();
                       if (n.route) {
                         const validatedTo = resolveNotificationRoute(n.route.to);
                         void router.navigate({

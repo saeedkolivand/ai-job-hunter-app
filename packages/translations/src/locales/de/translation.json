@@ -580,6 +580,13 @@
       "closeToTray": "Im Infobereich weiterlaufen",
       "closeToTrayHint": "Die App beim Schließen des Fensters in der Menüleiste / im Infobereich weiterlaufen lassen. Zum Beenden beim Schließen deaktivieren."
     },
+    "window": {
+      "title": "Fenster",
+      "resetPosition": "Fensterposition zurücksetzen",
+      "resetPositionHint": "Fenster zentrieren, falls es nach einem Monitorwechsel außerhalb des Bildschirms geöffnet wird.",
+      "hideApp": "App verbergen",
+      "hideAppHint": "AI Job Hunter verbergen (entspricht ⌘H)."
+    },
     "aiProvider": {
       "title": "KI-Anbieter",
       "description": "Wählen Sie, wo Ihre KI läuft — lokal über Ollama oder über eine Cloud-API.",

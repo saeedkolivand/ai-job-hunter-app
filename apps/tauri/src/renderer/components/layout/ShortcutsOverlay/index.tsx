@@ -6,10 +6,8 @@ import { useTranslation } from '@ajh/translations';
 import { ModalShell, SectionLabel } from '@ajh/ui';
 
 import { type AppRoute, useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
+import { useWindowControls } from '@/services';
 import { useUiStore } from '@/store/ui-store';
-
-const IS_MAC = typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac');
-const MOD = IS_MAC ? '⌘' : 'Ctrl';
 
 interface Row {
   keys: string[];
@@ -25,11 +23,6 @@ const NAVIGATE: Row[] = [
   { keys: ['g', 'r'], labelKey: 'nav.documents' },
   { keys: ['g', 'm'], labelKey: 'nav.monitoring' },
   { keys: ['g', 's'], labelKey: 'nav.settings' },
-];
-
-const ACTIONS: Row[] = [
-  { keys: [MOD, ','], labelKey: 'nav.settings' },
-  { keys: ['?'], labelKey: 'shortcuts.help' },
 ];
 
 function Kbd({ children }: { children: string }) {
@@ -67,10 +60,18 @@ function ShortcutList({ rows, t }: { rows: Row[]; t: (k: string) => string }) {
 export function ShortcutsOverlay() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { isMacos } = useWindowControls();
+  const mod = isMacos ? '⌘' : 'Ctrl';
+
   // Open state is lifted to the UI store so the native menu's "Keyboard
   // Shortcuts" action can open it; the `?` key still toggles it locally.
   const open = useUiStore((s) => s.shortcutsOpen);
   const setOpen = useUiStore((s) => s.setShortcutsOpen);
+
+  const actions: Row[] = [
+    { keys: [mod, ','], labelKey: 'nav.settings' },
+    { keys: ['?'], labelKey: 'shortcuts.help' },
+  ];
 
   const onNavigate = useCallback((to: AppRoute) => void router.navigate({ to }), [router]);
   const onToggleHelp = useCallback(() => setOpen(!open), [open, setOpen]);
@@ -101,7 +102,7 @@ export function ShortcutsOverlay() {
         </div>
         <div className="space-y-2.5">
           <SectionLabel>{t('shortcuts.actions')}</SectionLabel>
-          <ShortcutList rows={ACTIONS} t={t} />
+          <ShortcutList rows={actions} t={t} />
         </div>
       </div>
     </ModalShell>

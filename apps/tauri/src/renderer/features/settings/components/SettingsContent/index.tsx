@@ -51,7 +51,7 @@ export function SettingsContent({
       </div>
 
       {/* Scrollable content */}
-      <div ref={scrollRef} className="@container flex-1 overflow-y-auto px-8 py-6">
+      <div ref={scrollRef} className="@container flex-1 overflow-y-auto px-8 pb-6 pt-3">
         <AnimatePresence mode="wait">
           <motion.div
             key={activeSection}

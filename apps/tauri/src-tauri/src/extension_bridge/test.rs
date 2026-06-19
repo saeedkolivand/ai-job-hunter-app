@@ -26,6 +26,7 @@ fn message_type_constants_match_ts() {
     // Each Rust constant must appear as a single-quoted string literal in the TS
     // `EXTENSION_MESSAGE_TYPES` map (e.g. `import.request: 'import.request'`).
     for literal in [
+        msg::AUTH,
         msg::IMPORT_REQUEST,
         msg::IMPORT_RESULT,
         msg::MATCH_LIVE,
@@ -42,8 +43,9 @@ fn message_type_constants_match_ts() {
 
 #[test]
 fn reserved_types_are_distinct() {
-    // The four wire types must all be different strings.
+    // The five wire types must all be different strings.
     let all = [
+        msg::AUTH,
         msg::IMPORT_REQUEST,
         msg::IMPORT_RESULT,
         msg::MATCH_LIVE,

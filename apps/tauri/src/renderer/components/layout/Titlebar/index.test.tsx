@@ -1,0 +1,211 @@
+/**
+ * Titlebar — handleTitlebarDoubleClick regression tests
+ *
+ * Strategy:
+ *  - @/services is partially overridden so useWindowControls returns a
+ *    controlled toggleMaximize spy — no real Tauri window is needed.
+ *  - @tanstack/react-router stubs useRouterState + useNavigate (no RouterProvider).
+ *  - @ajh/translations returns keys as-is (global pattern).
+ *  - @/store/preferences-store useOnboardingCompleted returns false — suppresses
+ *    the title overlay and NotificationBell so the drag region is the only
+ *    interactive surface under test.
+ *  - @/lib/window-controls-registry onWindowControlsRegistered is a no-op so the
+ *    useEffect in Titlebar doesn't fail in jsdom.
+ *  - @/lib/parent-route parentRoute returns null (no back-button rendered).
+ *  - motion/react is globally shimmed in vitest.setup.ts.
+ *
+ * Branch matrix covered:
+ *  1. mousedown  button:0 detail:2 on bare drag region  → toggleMaximize called once,
+ *                                                          preventDefault + stopPropagation invoked.
+ *  2. mousedown  button:0 detail:1 (single click)       → toggleMaximize NOT called,
+ *                                                          event NOT prevented/stopped.
+ *  3. mousedown  button:0 detail:2 inside .app-no-drag  → toggleMaximize NOT called
+ *                                                          (closest('.app-no-drag') guard).
+ *  4. mouseup    button:0 detail:2 on bare drag region  → toggleMaximize NOT called again
+ *                                                          (only mousedown toggles), but
+ *                                                          stopPropagation IS invoked.
+ *  5. mousedown  button:2 detail:2 (right-click)        → toggleMaximize NOT called
+ *                                                          (button !== 0 guard).
+ */
+import React from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render } from '@testing-library/react';
+
+// ── i18n ──────────────────────────────────────────────────────────────────────
+
+vi.mock('@ajh/translations', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { language: 'en' },
+  }),
+}));
+
+// ── Router ────────────────────────────────────────────────────────────────────
+
+vi.mock('@tanstack/react-router', () => ({
+  useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
+    select({ location: { pathname: '/' } }),
+  useNavigate: () => vi.fn(),
+}));
+
+// ── preferences-store — onboarding off so NotificationBell is not mounted ─────
+
+vi.mock('@/store/preferences-store', () => ({
+  useOnboardingCompleted: () => false,
+}));
+
+// ── window-controls-registry — no-op so useEffect doesn't fail in jsdom ──────
+
+vi.mock('@/lib/window-controls-registry', () => ({
+  onWindowControlsRegistered: vi.fn(),
+}));
+
+// ── parent-route — no back button ─────────────────────────────────────────────
+
+vi.mock('@/lib/parent-route', () => ({
+  parentRoute: () => null,
+}));
+
+// ── @tauri-apps/plugin-os — return 'windows' so isMac=false in jsdom ─────────
+
+vi.mock('@tauri-apps/plugin-os', () => ({
+  platform: () => 'windows',
+}));
+
+// ── useWindowControls — controlled spy ────────────────────────────────────────
+
+const mockToggleMaximize = vi.fn().mockResolvedValue(undefined);
+
+vi.mock('@/services', async (importOriginal) => {
+  const orig = await importOriginal<Record<string, unknown>>();
+  return {
+    ...(orig as object),
+    useWindowControls: () => ({ toggleMaximize: mockToggleMaximize }),
+  };
+});
+
+// ── component under test (import AFTER all vi.mock hoisting) ─────────────────
+
+import { Titlebar } from './index';
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+function renderTitlebar() {
+  return render(<Titlebar />);
+}
+
+/** Returns the data-tauri-drag-region div — unique in the rendered tree. */
+function dragRegion(): HTMLElement {
+  const el = document.querySelector<HTMLElement>('[data-tauri-drag-region]');
+  if (!el) throw new Error('data-tauri-drag-region div not found');
+  return el;
+}
+
+/**
+ * Build a synthetic MouseEvent init that matches what the handler inspects.
+ * `currentTarget` is set automatically by fireEvent to the dispatched element.
+ */
+function mouseInit(overrides: Partial<MouseEventInit> = {}): MouseEventInit {
+  return { button: 0, detail: 2, bubbles: true, cancelable: true, ...overrides };
+}
+
+// ── reset between tests ───────────────────────────────────────────────────────
+
+beforeEach(() => {
+  mockToggleMaximize.mockReset();
+  mockToggleMaximize.mockResolvedValue(undefined);
+});
+
+// ── Branch 1: left double-click mousedown on bare drag region ─────────────────
+
+describe('Titlebar — handleTitlebarDoubleClick', () => {
+  it('branch 1 — mousedown button:0 detail:2 on drag region calls toggleMaximize and prevents the event', () => {
+    renderTitlebar();
+    const region = dragRegion();
+
+    const event = new MouseEvent('mousedown', mouseInit());
+    const preventSpy = vi.spyOn(event, 'preventDefault');
+    const stopSpy = vi.spyOn(event, 'stopPropagation');
+
+    region.dispatchEvent(event);
+
+    expect(mockToggleMaximize).toHaveBeenCalledOnce();
+    expect(preventSpy).toHaveBeenCalledOnce();
+    expect(stopSpy).toHaveBeenCalledOnce();
+  });
+
+  // ── Branch 2: single click does nothing ─────────────────────────────────────
+
+  it('branch 2 — mousedown button:0 detail:1 (single click) does NOT call toggleMaximize and does NOT prevent the event', () => {
+    renderTitlebar();
+    const region = dragRegion();
+
+    const event = new MouseEvent('mousedown', mouseInit({ detail: 1 }));
+    const preventSpy = vi.spyOn(event, 'preventDefault');
+    const stopSpy = vi.spyOn(event, 'stopPropagation');
+
+    region.dispatchEvent(event);
+
+    expect(mockToggleMaximize).not.toHaveBeenCalled();
+    expect(preventSpy).not.toHaveBeenCalled();
+    expect(stopSpy).not.toHaveBeenCalled();
+  });
+
+  // ── Branch 3: target inside .app-no-drag is ignored ─────────────────────────
+
+  it('branch 3 — mousedown detail:2 with target inside .app-no-drag does NOT call toggleMaximize', () => {
+    renderTitlebar();
+
+    // The left cluster div carries .app-no-drag; query it and dispatch from there.
+    // fireEvent sets target to the dispatched element, so closest('.app-no-drag')
+    // will find it and the handler will return early.
+    const noDragEl = document.querySelector('.app-no-drag') as HTMLElement;
+    expect(noDragEl).not.toBeNull();
+
+    const event = new MouseEvent('mousedown', {
+      ...mouseInit(),
+      bubbles: true,
+      cancelable: true,
+    });
+
+    noDragEl.dispatchEvent(event);
+
+    expect(mockToggleMaximize).not.toHaveBeenCalled();
+  });
+
+  // ── Branch 4: mouseup double-click suppresses native path but does NOT toggle
+
+  it('branch 4 — mouseup button:0 detail:2 does NOT call toggleMaximize but DOES call stopPropagation', () => {
+    renderTitlebar();
+    const region = dragRegion();
+
+    const event = new MouseEvent('mouseup', mouseInit());
+    const preventSpy = vi.spyOn(event, 'preventDefault');
+    const stopSpy = vi.spyOn(event, 'stopPropagation');
+
+    region.dispatchEvent(event);
+
+    // Only mousedown toggles; mouseup must not.
+    expect(mockToggleMaximize).not.toHaveBeenCalled();
+    // But the event IS prevented/stopped to neutralise macOS's native handler.
+    expect(preventSpy).toHaveBeenCalledOnce();
+    expect(stopSpy).toHaveBeenCalledOnce();
+  });
+
+  // ── Branch 5: non-left button is ignored ────────────────────────────────────
+
+  it('branch 5 — mousedown button:2 detail:2 (right-click) does NOT call toggleMaximize', () => {
+    renderTitlebar();
+    const region = dragRegion();
+
+    const event = new MouseEvent('mousedown', mouseInit({ button: 2 }));
+    const preventSpy = vi.spyOn(event, 'preventDefault');
+    const stopSpy = vi.spyOn(event, 'stopPropagation');
+
+    region.dispatchEvent(event);
+
+    expect(mockToggleMaximize).not.toHaveBeenCalled();
+    expect(preventSpy).not.toHaveBeenCalled();
+    expect(stopSpy).not.toHaveBeenCalled();
+  });
+});
