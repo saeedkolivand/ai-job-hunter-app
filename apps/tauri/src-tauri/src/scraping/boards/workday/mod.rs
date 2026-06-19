@@ -4,6 +4,11 @@ use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, 
 use async_trait::async_trait;
 use serde::Deserialize;
 
+static WORKDAY_URL_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"^https?://([^.]+)\.(wd\d+)\.myworkdayjobs\.com/(?:[a-z-]+/)?([^/?#]+)")
+        .expect("WORKDAY_URL_RE is a valid static pattern")
+});
+
 #[derive(Debug, Deserialize)]
 struct WorkdayJobPosting {
     title: String,
@@ -61,11 +66,7 @@ impl WorkdayScraper {
             return Some((tenant, site, host));
         }
 
-        let re = regex::Regex::new(
-            r"^https?://([^.]+)\.(wd\d+)\.myworkdayjobs\.com/(?:[a-z-]+/)?([^/?#]+)",
-        )
-        .unwrap();
-        if let Some(caps) = re.captures(trimmed) {
+        if let Some(caps) = WORKDAY_URL_RE.captures(trimmed) {
             let tenant = caps.get(1).map(|m| m.as_str().to_string())?;
             let host = caps.get(2).map(|m| m.as_str().to_string())?;
             let site = caps.get(3).map(|m| m.as_str().to_string())?;

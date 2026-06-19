@@ -10,7 +10,7 @@ pub struct LinkedInHttpClient {
     session_data: Option<LinkedInSessionData>,
     user_agent: String,
     client: Client,
-    rate_limiter: RateLimiter,
+    rate_limiter: &'static RateLimiter,
 }
 
 impl LinkedInHttpClient {
