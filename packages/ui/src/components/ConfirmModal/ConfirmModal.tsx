@@ -15,6 +15,8 @@ interface ConfirmModalProps {
   cancelText?: string;
   variant?: 'danger' | 'warning' | 'info' | 'success';
   isConfirming?: boolean;
+  /** Accessible label for the close button. Pass a localized value from renderer callers. */
+  closeAriaLabel?: string;
 }
 
 const variantConfig: Record<
@@ -72,6 +74,7 @@ export function ConfirmModal({
   cancelText = 'Cancel',
   variant = 'info',
   isConfirming = false,
+  closeAriaLabel = 'Close dialog',
 }: ConfirmModalProps) {
   const config = variantConfig[variant];
   const Icon = config.icon;
@@ -100,14 +103,15 @@ export function ConfirmModal({
               {title}
             </div>
           </div>
-          <button
+          <Button
+            variant="unstyled"
             type="button"
             onClick={onClose}
-            aria-label="Close dialog"
+            aria-label={closeAriaLabel}
             className="rounded-xl bg-white/5 p-1.5 text-foreground/60 transition-all duration-150 hover:bg-white/10 hover:text-foreground"
           >
             <X size={14} aria-hidden="true" />
-          </button>
+          </Button>
         </div>
       }
       footer={
@@ -121,13 +125,14 @@ export function ConfirmModal({
           >
             {cancelText}
           </Button>
-          <button
+          <Button
+            variant="unstyled"
             type="button"
             disabled={isConfirming}
             onClick={onConfirm}
             style={{ boxShadow: isConfirming ? 'none' : config.glow }}
             className={cn(
-              'inline-flex h-8 items-center gap-2 rounded-lg border px-5 text-sm font-medium transition-all duration-150',
+              'inline-flex h-8 items-center gap-2 rounded-lg border px-5 text-sm transition-all duration-150',
               'disabled:pointer-events-none disabled:opacity-45',
               config.confirmClass
             )}
@@ -136,7 +141,7 @@ export function ConfirmModal({
               <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
             )}
             {confirmText}
-          </button>
+          </Button>
         </div>
       }
     >

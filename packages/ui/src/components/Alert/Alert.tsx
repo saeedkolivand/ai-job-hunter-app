@@ -1,6 +1,9 @@
 import { AlertTriangle, CheckCircle2, Info, type LucideIcon, X, XCircle } from 'lucide-react';
 import { type CSSProperties, type ReactNode, useState } from 'react';
 
+import { cn } from '../../lib/cn';
+import { Button } from '../Button';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type AlertType = 'success' | 'info' | 'warning' | 'error';
@@ -20,6 +23,8 @@ export interface AlertProps {
   closable?: boolean | { closeIcon?: ReactNode };
   /** Fired after the alert is closed. */
   onClose?: () => void;
+  /** Accessible label for the close button. Defaults to 'Close alert'. */
+  closeAriaLabel?: string;
   /** Action area rendered on the right (e.g. a button). */
   action?: ReactNode;
   /** Banner mode: full-width, square corners (sits flush at the top of a region). */
@@ -28,32 +33,35 @@ export interface AlertProps {
   style?: CSSProperties;
 }
 
-// ─── Type config (semantic colours, matched to Notification) ────────────────────
+// ─── Type config (Tailwind palette classes — same tokens used across the app) ─
 
-const TYPES: Record<AlertType, { icon: LucideIcon; accent: string; bg: string; border: string }> = {
+const TYPES: Record<
+  AlertType,
+  { icon: LucideIcon; iconClass: string; bgClass: string; borderClass: string }
+> = {
   success: {
     icon: CheckCircle2,
-    accent: '#10b981',
-    bg: 'rgba(16,185,129,0.10)',
-    border: 'rgba(16,185,129,0.32)',
+    iconClass: 'text-emerald-400',
+    bgClass: 'bg-emerald-500/10',
+    borderClass: 'border-emerald-500/30',
   },
   info: {
     icon: Info,
-    accent: '#3b82f6',
-    bg: 'rgba(59,130,246,0.10)',
-    border: 'rgba(59,130,246,0.32)',
+    iconClass: 'text-blue-400',
+    bgClass: 'bg-blue-500/10',
+    borderClass: 'border-blue-500/30',
   },
   warning: {
     icon: AlertTriangle,
-    accent: '#f59e0b',
-    bg: 'rgba(245,158,11,0.10)',
-    border: 'rgba(245,158,11,0.32)',
+    iconClass: 'text-amber-400',
+    bgClass: 'bg-amber-500/10',
+    borderClass: 'border-amber-500/30',
   },
   error: {
     icon: XCircle,
-    accent: '#ef4444',
-    bg: 'rgba(239,68,68,0.10)',
-    border: 'rgba(239,68,68,0.32)',
+    iconClass: 'text-red-400',
+    bgClass: 'bg-red-500/10',
+    borderClass: 'border-red-500/30',
   },
 };
 
@@ -73,6 +81,7 @@ export function Alert({
   icon,
   closable,
   onClose,
+  closeAriaLabel = 'Close alert',
   action,
   banner = false,
   className,
@@ -101,87 +110,47 @@ export function Alert({
   return (
     <div
       role="alert"
-      className={className}
-      style={{
-        display: 'flex',
-        alignItems: description != null ? 'flex-start' : 'center',
-        gap: '10px',
-        padding: description != null ? '12px 14px' : '8px 12px',
-        background: cfg.bg,
-        border: `1px solid ${cfg.border}`,
-        borderRadius: banner ? 0 : '10px',
-        color: 'color-mix(in srgb, var(--color-foreground) 80%, transparent)',
-        fontSize: '13px',
-        lineHeight: 1.45,
-        ...style,
-      }}
+      style={style}
+      className={cn(
+        'flex gap-[10px] border text-[13px] leading-[1.45] text-foreground/80',
+        description != null ? 'items-start px-[14px] py-3' : 'items-center px-3 py-2',
+        banner ? 'rounded-none' : 'rounded-[10px]',
+        cfg.bgClass,
+        cfg.borderClass,
+        className
+      )}
     >
       {withIcon && (
         <span
-          style={{
-            display: 'flex',
-            flexShrink: 0,
-            alignItems: 'center',
-            color: cfg.accent,
-            marginTop: description != null ? '1px' : 0,
-          }}
+          className={cn(
+            'flex shrink-0 items-center',
+            cfg.iconClass,
+            description != null && 'mt-[1px]'
+          )}
         >
           {icon ?? <Icon size={description != null ? 18 : 16} strokeWidth={2.2} />}
         </span>
       )}
 
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontWeight: description != null ? 600 : 500,
-            color: 'color-mix(in srgb, var(--color-foreground) 90%, transparent)',
-          }}
-        >
-          {message}
-        </div>
+      <div className="flex-1 min-w-0 text-foreground/90">
+        <div className={description != null ? 'font-semibold' : 'font-normal'}>{message}</div>
         {description != null && (
-          <div
-            style={{
-              marginTop: '3px',
-              fontSize: '12px',
-              color: 'color-mix(in srgb, var(--color-foreground) 60%, transparent)',
-            }}
-          >
-            {description}
-          </div>
+          <div className="mt-[3px] text-[12px] text-foreground/60">{description}</div>
         )}
       </div>
 
-      {action != null && <div style={{ flexShrink: 0 }}>{action}</div>}
+      {action != null && <div className="shrink-0">{action}</div>}
 
       {isClosable && (
-        <button
+        <Button
+          variant="unstyled"
           type="button"
-          aria-label="Close alert"
+          aria-label={closeAriaLabel}
           onClick={close}
-          style={{
-            display: 'flex',
-            flexShrink: 0,
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '2px',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: 'color-mix(in srgb, var(--color-foreground) 45%, transparent)',
-            transition: 'color 150ms',
-          }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.color =
-              'color-mix(in srgb, var(--color-foreground) 85%, transparent)')
-          }
-          onMouseLeave={(e) =>
-            (e.currentTarget.style.color =
-              'color-mix(in srgb, var(--color-foreground) 45%, transparent)')
-          }
+          className="flex shrink-0 items-center justify-center p-[2px] text-foreground/45 transition-colors duration-150 hover:text-foreground/85"
         >
           {closeIcon}
-        </button>
+        </Button>
       )}
     </div>
   );

@@ -863,6 +863,26 @@ html[data-text-scale='large'] {
   background: rgba(30, 35, 70, 0.12);
 }
 
+/* ── Light-scheme: bright palette steps → deeper steps for WCAG AA contrast ──
+   On a dark canvas `text-emerald-400` / `text-blue-400` / `text-amber-400` /
+   `text-red-400` are legible (≥4.5:1). On a white/light canvas they fail AA.
+   Per DESIGN_SYSTEM.md §"Light legibility" these are remapped to their -600
+   counterparts here, globally, so Alert icons/text and any other caller that
+   uses these classes stays accessible on both schemes. DARK scheme is not
+   touched — the selectors are scoped to [data-color-scheme='light'] only. */
+[data-color-scheme='light'] .text-emerald-400 {
+  color: rgb(4 120 87); /* emerald-700 — AA 4.55:1 on white */
+}
+[data-color-scheme='light'] .text-blue-400 {
+  color: rgb(37 99 235); /* blue-600 */
+}
+[data-color-scheme='light'] .text-amber-400 {
+  color: rgb(180 83 9); /* amber-700 — AA 4.52:1 on white */
+}
+[data-color-scheme='light'] .text-red-400 {
+  color: rgb(220 38 38); /* red-600 */
+}
+
 /* Dark ambient FX: keep the aurora as the signature flourish but DIM it on the
    new neutral charcoal — the bright ribbons over-saturate a calm gray — and tone
    the mouse-following glow/orbs down. Brand soul, just quieter (macOS-grade). */

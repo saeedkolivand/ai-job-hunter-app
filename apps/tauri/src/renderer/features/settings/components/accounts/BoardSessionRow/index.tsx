@@ -71,11 +71,16 @@ export function BoardSessionRow({ board }: { board: Board }) {
           message: t('settings.accounts.connectedViaBrowser', { board: board.name }),
         });
       } else if (!res?.connected) {
-        notify.warning({ message: `${board.name} sign-in was cancelled or timed out.` });
+        notify.warning({
+          message: t('settings.accounts.boards.signInCancelled', { board: board.name }),
+        });
       }
     } catch (err) {
       notify.error({
-        message: err instanceof Error ? err.message : `Failed to connect to ${board.name}.`,
+        message:
+          err instanceof Error
+            ? err.message
+            : t('settings.accounts.boards.connectFailed', { board: board.name }),
       });
     }
   };
@@ -88,10 +93,15 @@ export function BoardSessionRow({ board }: { board: Board }) {
       } else {
         await boardDisconnect.mutateAsync(board.id);
       }
-      notify.success({ message: `Disconnected from ${board.name}.` });
+      notify.success({
+        message: t('settings.accounts.boards.disconnected', { board: board.name }),
+      });
     } catch (err) {
       notify.error({
-        message: err instanceof Error ? err.message : `Failed to disconnect from ${board.name}.`,
+        message:
+          err instanceof Error
+            ? err.message
+            : t('settings.accounts.boards.disconnectFailed', { board: board.name }),
       });
     }
   };
@@ -119,7 +129,7 @@ export function BoardSessionRow({ board }: { board: Board }) {
             <span className="text-sm font-semibold text-foreground/90">{board.name}</span>
             {connected && (
               <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-                <Check size={9} strokeWidth={2.5} /> Connected
+                <Check size={9} strokeWidth={2.5} /> {t('settings.accounts.boards.connected')}
               </span>
             )}
           </div>
@@ -139,12 +149,12 @@ export function BoardSessionRow({ board }: { board: Board }) {
             {loading ? (
               <>
                 <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
-                Disconnecting…
+                {t('settings.accounts.boards.disconnecting')}
               </>
             ) : (
               <>
                 <LogOut size={11} />
-                Disconnect
+                {t('settings.accounts.boards.disconnect')}
               </>
             )}
           </Button>
@@ -158,12 +168,12 @@ export function BoardSessionRow({ board }: { board: Board }) {
             {loading ? (
               <>
                 <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
-                Connecting…
+                {t('settings.accounts.boards.connecting')}
               </>
             ) : (
               <>
                 <LinkIcon size={11} />
-                Connect
+                {t('settings.accounts.boards.connect')}
               </>
             )}
           </Button>
@@ -174,9 +184,9 @@ export function BoardSessionRow({ board }: { board: Board }) {
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
         onConfirm={() => void handleDisconnect()}
-        title={`Disconnect ${board.name}`}
-        description={`This will sign you out of ${board.name}. You can reconnect at any time.`}
-        confirmText="Disconnect"
+        title={t('settings.accounts.boards.disconnectTitle', { board: board.name })}
+        description={t('settings.accounts.boards.disconnectDescription', { board: board.name })}
+        confirmText={t('settings.accounts.boards.disconnect')}
         variant="info"
         isConfirming={loading}
       />

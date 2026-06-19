@@ -34,6 +34,10 @@ export interface CollapsibleFileInputProps {
   showCheckmark?: boolean;
   /** Optional action rendered in the header, next to the upload button. */
   headerAction?: React.ReactNode;
+  /** Accessible label for the collapse button when expanded. Defaults to 'Collapse'. */
+  collapseLabel?: string;
+  /** Accessible label for the collapse button when collapsed. Defaults to 'Expand'. */
+  expandLabel?: string;
   /** Additional class names */
   className?: string;
 }
@@ -52,6 +56,8 @@ export function CollapsibleFileInput({
   textareaHeight = 140,
   showCheckmark = true,
   headerAction,
+  collapseLabel = 'Collapse',
+  expandLabel = 'Expand',
   className,
 }: CollapsibleFileInputProps) {
   const ref = useRef<HTMLInputElement>(null);
@@ -102,6 +108,8 @@ export function CollapsibleFileInput({
           <Button
             variant="ghost"
             size="sm"
+            aria-expanded={expanded}
+            aria-label={expanded ? collapseLabel : expandLabel}
             onClick={() => setExpanded((e) => !e)}
             className="text-foreground/30 hover:text-foreground/60 transition-colors h-auto p-1"
           >
