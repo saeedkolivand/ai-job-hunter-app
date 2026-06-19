@@ -3,6 +3,7 @@ import type { RefObject } from 'react';
 
 import { IconBadge, transition, variants } from '@ajh/ui';
 
+import { AboutTab } from '@/features/settings/components/about/AboutTab';
 import { AccountsSettingsTab } from '@/features/settings/components/accounts/AccountsSettingsTab';
 import { AISettingsTab } from '@/features/settings/components/ai-settings/AISettingsTab';
 import { ContactProfileTab } from '@/features/settings/components/contact/ContactProfileTab';
@@ -85,6 +86,7 @@ export function SettingsContent({
             {activeSection === 'privacy' && <PrivacySettingsTab />}
             {activeSection === 'performance' && <PerformancePreferences />}
             {activeSection === 'developer' && <DeveloperPreferences />}
+            {activeSection === 'about' && <AboutTab />}
           </motion.div>
         </AnimatePresence>
       </div>

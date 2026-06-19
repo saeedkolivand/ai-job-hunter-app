@@ -410,12 +410,17 @@
   "settings": {
     "groups": {
       "preferences": "Einstellungen",
-      "system": "System"
+      "system": "System",
+      "about": "Über"
     },
     "sections": {
       "general": {
         "label": "Allgemein",
-        "description": "Name, Sprache, Aussehen"
+        "description": "Name, Sprache & Startverhalten"
+      },
+      "appearance": {
+        "label": "Aussehen",
+        "description": "Design, Akzentfarbe & Textgröße"
       },
       "contact": {
         "label": "Kontaktprofil",
@@ -448,6 +453,10 @@
       "developer": {
         "label": "Entwickler",
         "description": "Debug-Werkzeuge & Diagnose"
+      },
+      "about": {
+        "label": "Die Suche unterstützen",
+        "description": "App-Info & Unterstützungsmöglichkeiten"
       }
     },
     "applicant": {
@@ -517,6 +526,13 @@
       "debugModeHint": "Ausführliche Protokollierung und Diagnose-Overlays aktivieren",
       "openDevtools": "DevTools-Konsole öffnen"
     },
+    "about": {
+      "title": "Die Suche unterstützen",
+      "pitch": "Wenn diese App dir einige Nächte erspart hat, kannst du etwas zurückgeben — jeder Beitrag hilft.",
+      "githubSponsors": "Auf GitHub sponsern",
+      "kofi": "Einen Kaffee auf Ko-fi spendieren",
+      "paypal": "Trinkgeld via PayPal senden"
+    },
     "profile": {
       "title": "Profil",
       "displayName": "Anzeigename",
@@ -525,6 +541,32 @@
     },
     "language": {
       "title": "Sprache"
+    },
+    "appearance": {
+      "title": "Aussehen",
+      "scheme": "Design",
+      "light": "Hell",
+      "dark": "Dunkel",
+      "system": "System",
+      "textSize": "Textgröße",
+      "textSmall": "Klein",
+      "textDefault": "Standard",
+      "textLarge": "Groß",
+      "reduceTransparency": "Transparenz reduzieren",
+      "reduceTransparencyHint": "Undurchsichtige Flächen statt Milchglas verwenden.",
+      "increaseContrast": "Kontrast erhöhen",
+      "increaseContrastHint": "Stärkere Rahmen und Trennlinien.",
+      "accent": "Akzentfarbe",
+      "accentHint": "Färbt Schaltflächen, Links und Hervorhebungen in der gesamten App.",
+      "accentDefault": "Standard",
+      "accentViolet": "Violett",
+      "accentBlue": "Blau",
+      "accentGreen": "Grün",
+      "accentOrange": "Orange",
+      "accentPink": "Rosa",
+      "accentRed": "Rot",
+      "accentYellow": "Gelb",
+      "accentGraphite": "Graphit"
     },
     "onboarding": {
       "title": "Einführungsassistent",
@@ -1805,6 +1847,10 @@
           "label": "Allgemein",
           "description": "Name, Sprache, Aussehen"
         },
+        "appearance": {
+          "label": "Aussehen",
+          "description": "Design, Akzentfarbe & Textgröße"
+        },
         "contact": {
           "label": "Kontaktprofil",
           "description": "Kopfzeilen-Angaben & Profillinks"
@@ -2237,6 +2283,16 @@
     "notFound": "Diese Stellenanzeige konnte nicht gelesen werden — Beschreibung manuell einfügen.",
     "failed": "Import fehlgeschlagen. URL prüfen und erneut versuchen.",
     "imported": "Importiert"
+  },
+  "updater": {
+    "available": "v{{version}} ist verfügbar",
+    "downloading": "Update wird heruntergeladen… {{percent}}%",
+    "downloaded": "v{{version}} ist bereit zur Installation",
+    "downloadButton": "Herunterladen",
+    "installButton": "Neu starten & installieren",
+    "checking": "Suche nach Updates…",
+    "upToDate": "Du verwendest die neueste Version.",
+    "checkFailed": "Update-Prüfung fehlgeschlagen."
   },
   "resumeReview": {
     "title": "Extrahierten Lebenslauf prüfen",

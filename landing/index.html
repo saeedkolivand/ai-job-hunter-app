@@ -49,7 +49,6 @@ img,svg{display:block}
 body::after{
   content:""; position:fixed; top:0; right:0; bottom:0; left:0; z-index:60; pointer-events:none; opacity:.06;
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>");
-  mix-blend-mode:overlay;
 }
 
 /* ---------- doodle ink ---------- */
@@ -104,10 +103,10 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
    section's content column, and each drawing tip is an arrowhead that finally
    lands pointing at the CTA from its own side. Scrubbed by overall scroll
    progress, both directions. */
-#journey{position:absolute; top:0; left:0; width:100%; z-index:40; pointer-events:none}
+#journey{position:absolute; top:0; left:0; width:100%; z-index:40; pointer-events:none; contain:paint; transform:translateZ(0)}
 #journey svg{display:block; width:100%; height:100%; overflow:visible}
 #journey path{fill:none; stroke:var(--red); stroke-width:3.4; stroke-linecap:round; stroke-linejoin:round}
-#journey #journey-path,#journey #journey-path-2{opacity:.85; filter:drop-shadow(0 1px 0 rgba(0,0,0,.25))}
+#journey #journey-path,#journey #journey-path-2{opacity:.85}
 /* narrow viewports get an edge-hugging route from the JS builder instead of
    the gutter snake — keep the ink lighter there so it reads as margin doodle */
 @media (max-width:700px){ #journey path{stroke-width:2.6} }
@@ -194,12 +193,10 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   /* backgrounds drift slower than the scroll → depth */
   .stage .photo{
     transform:translate3d(0,calc((var(--p,.5) - .5) * 10vh),0) scale(1.2);
-    will-change:transform;
   }
   /* content gently sinks as a section leaves centre (scrubbed, reversible) */
   .stage > .inner{
     transform:translate3d(0,calc((1 - var(--c,1)) * 24px),0);
-    will-change:transform;
   }
   /* hero content lifts away + dims as you scroll past it */
   .hero > .inner{
@@ -296,7 +293,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 .ats{display:flex; align-items:center; gap:10px}
 .ats svg{width:64px; flex:none}
 .feed{
-  width:230px; height:84px; overflow:hidden; border:2px solid rgba(255,255,255,.12); border-radius:10px; background:#120d1c; position:relative;
+  width:230px; height:84px; overflow:hidden; border:2px solid rgba(255,255,255,.12); border-radius:10px; background:#120d1c; position:relative; content-visibility:auto;
 }
 .feed .scroller{position:absolute; left:0; top:0; width:100%; animation:feed 7s linear infinite}
 @keyframes feed{0%{transform:translateY(0)}100%{transform:translateY(-50%)}}
@@ -319,7 +316,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   radial-gradient(72% 72% at 50% 42%, #eec46c 0%, #d98e26 36%, #ad5b0d 70%, #6f2f05 100%);
   filter:saturate(1.35) contrast(1.1) brightness(.9);
 }
-.beat3 .grade{background:radial-gradient(70% 60% at 50% 42%,rgba(255,255,255,.14),rgba(255,255,255,0) 55%); mix-blend-mode:screen}
+.beat3 .grade{background:radial-gradient(70% 60% at 50% 42%,rgba(255,255,255,.2),rgba(255,255,255,0) 55%)}
 .beat3{color:#0b0b0b}
 .beat3-dood{width:clamp(200px,38vw,300px); margin:0 auto 6px; filter:drop-shadow(0 0 10px #ff00d4) drop-shadow(0 0 4px #00fff0)}
 .fried{
@@ -797,11 +794,12 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   <a class="cta" id="cta" href="/download">ok fine, take the app →</a>
   <a class="src-link" href="https://github.com/saeedkolivand/ai-job-hunter-app">view the source — it's PolyForm Noncommercial: read it, fork it, learn from it. just don't sell my misery back to me.</a>
   <a class="src-link" href="/creature">▶ THE CREATURE — a hand-drawn doodle about the tiny recruiter you accidentally summon. it grows. (2:40)</a>
+  <p class="src-link" style="margin-top:24px; font-size:14px; color:#6a614b">or fund a man's job hunt → <a href="https://ko-fi.com/saeedkolivand" target="_blank" rel="noopener" style="color:#4a4233">buy me a coffee</a> · <a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener" style="color:#4a4233">sponsor</a> · <a href="https://paypal.me/saeedkolivand" target="_blank" rel="noopener" style="color:#4a4233">PayPal</a></p>
   <p class="footnote">macOS will say the app is "damaged." it's not damaged. it's just unsigned — like a contract I was never offered. run <code>xattr -cr</code> and we move on.</p>
   <p class="builtwith">Tauri · Rust · React 19 · TanStack · LanceDB · Typst · Ollama · pure spite</p>
   <p class="byline">made by Saeed, between rejections.</p>
   <svg class="inkline draw" style="width:24px; margin-top:10px" viewBox="0 0 30 28" aria-hidden="true"><path pathLength="1" d="M15 24 C5 16 2 9 8 5 q5 -3 7 4 q2 -7 7 -4 c6 4 3 11 -7 19 Z" style="stroke-width:2.4"/></svg>
-  <p class="footnote"><a href="/privacy" style="color:#6f6650">Privacy</a> · <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll" target="_blank" rel="noopener" style="color:#6f6650">Chrome extension</a> · <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/" target="_blank" rel="noopener" style="color:#6f6650">Firefox extension</a> · <a href="https://github.com/saeedkolivand/ai-job-hunter-app" target="_blank" rel="noopener" style="color:#6f6650">GitHub</a></p>
+  <p class="footnote"><a href="/privacy" style="color:#6f6650">Privacy</a> · <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll" target="_blank" rel="noopener" style="color:#6f6650">Chrome extension</a> · <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/" target="_blank" rel="noopener" style="color:#6f6650">Firefox extension</a> · <a href="https://github.com/saeedkolivand/ai-job-hunter-app" target="_blank" rel="noopener" style="color:#6f6650">GitHub</a> · <a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener" style="color:#6f6650">♥ sponsor</a></p>
 </section>
 
 </main>
@@ -925,37 +923,57 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   /* .testi/.finale aren't .stage but carry draw-on scribbles — observe them too */
   document.querySelectorAll('.stage, .testi, .finale').forEach(function(s){ io.observe(s); });
 
-  /* ---- progress bar + odometer ---- */
+  /* ---- shared cached document height (avoids forced layout every frame) ---- */
+  var docMax = 0;
+  function measureDoc(){
+    docMax = document.documentElement.scrollHeight - (innerHeight || document.documentElement.clientHeight);
+    if(docMax < 0) docMax = 0;
+  }
+  addEventListener('load', measureDoc);
+  addEventListener('resize', measureDoc);
+  measureDoc();
+
+  /* ---- progress bar + odometer (rAF-throttled, uses cached docMax) ---- */
   var bar=document.getElementById('progress'), plabel=document.getElementById('progress-label'), odo=document.getElementById('odometer');
-  function onScroll(){
-    var h=document.documentElement.scrollHeight-innerHeight;
-    var f=h>0?scrollY/h:0; var pct=Math.round(f*100);
+  var progTick=false;
+  function paintProgress(){
+    var f=docMax>0?scrollY/docMax:0; var pct=Math.round(f*100);
     bar.style.width=pct+'%';
     plabel.textContent='job search: '+pct+'% complete · est. time remaining: ∞';
     odo.textContent='rejections survived: '+(1247+Math.floor(f*312)).toLocaleString('en-US');
+    progTick=false;
   }
-  addEventListener('scroll', onScroll, {passive:true}); onScroll();
+  function onScroll(){ if(!progTick){ progTick=true; requestAnimationFrame(paintProgress); } }
+  addEventListener('scroll', onScroll, {passive:true}); paintProgress();
 
   /* ---- scroll scenes: per-section --p (0→1 through the viewport) and --c
-         (1 when centred) drive the parallax/scrub CSS above. rAF-throttled. ---- */
-  var scenes = document.querySelectorAll('.stage, .testi, .finale'), sceneTick=false;
+         (1 when centred) drive the parallax/scrub CSS above. rAF-throttled.
+         READ pass (all getBoundingClientRect calls) happens before any WRITE,
+         and writes are skipped when the rounded value hasn't changed. ---- */
+  var scenes = document.querySelectorAll('.stage, .finale'), sceneTick=false;
   function paintScenes(){
+    var sy = scrollY;
     var vh = innerHeight || document.documentElement.clientHeight;
-    var maxS = document.documentElement.scrollHeight - vh;
+    var maxS = docMax;
+    /* READ pass: collect all rects first, no style writes */
+    var rects = [];
+    for(var i=0;i<scenes.length;i++) rects.push(scenes[i].getBoundingClientRect());
+    /* WRITE pass: compute and conditionally apply --p / --c */
     for(var i=0;i<scenes.length;i++){
-      var s=scenes[i], r=s.getBoundingClientRect();
+      var s=scenes[i], r=rects[i];
       var p=(vh - r.top)/(vh + r.height);
       /* sections near the document end can never travel fully past the
          viewport, so raw --p tops out below 1 and their scroll-scrubbed
          strokes would stay half-drawn — rescale by the progress this
          section can actually reach at full scroll */
-      var pm=(vh - (r.top + scrollY - maxS))/(vh + r.height);
+      var pm=(vh - (r.top + sy - maxS))/(vh + r.height);
       if(pm>0 && pm<1) p/=pm;
       p = p<0?0:(p>1?1:p);
       var mid=r.top + r.height/2;
       var c=1 - Math.min(1, Math.abs(mid - vh/2)/(vh/2 + r.height/2));
-      s.style.setProperty('--p', p.toFixed(4));
-      s.style.setProperty('--c', c.toFixed(4));
+      var pf=p.toFixed(4), cf=c.toFixed(4);
+      if(pf !== s.__p){ s.style.setProperty('--p', pf); s.__p=pf; }
+      if(cf !== s.__c){ s.style.setProperty('--c', cf); s.__c=cf; }
     }
     sceneTick=false;
   }
@@ -1100,8 +1118,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 
     function paintJourney(){
       if(!built) return;
-      var max=document.documentElement.scrollHeight-innerHeight;
-      var p=max>0?Math.min(1,Math.max(0,scrollY/max)):0;
+      var p=docMax>0?Math.min(1,Math.max(0,scrollY/docMax)):0;
       drawOne(line, tip, tbl, len, p);
       drawOne(line2, tip2, tbl2, len2, p);
     }
@@ -1109,9 +1126,13 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
     var jt=false;
     addEventListener('scroll', function(){ if(!jt){ jt=true; requestAnimationFrame(function(){ jt=false; paintJourney(); }); } }, {passive:true});
     var rt; addEventListener('resize', function(){ clearTimeout(rt); rt=setTimeout(build, 180); });
-    addEventListener('load', build);
-    setTimeout(build, 1800);   /* re-measure after webfonts settle layout */
-    build();
+    addEventListener('load', function(){ build(); measureDoc(); });
+    if(document.fonts && document.fonts.ready){            /* re-measure after webfonts settle layout */
+      document.fonts.ready.then(function(){ build(); measureDoc(); });
+    } else {
+      setTimeout(function(){ build(); measureDoc(); }, 1800);
+    }
+    build(); measureDoc();
   })();
 
   /* ---- poke a doodle: it mumbles in-character (voice per mood) ---- */

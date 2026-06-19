@@ -74,7 +74,8 @@ export type SettingsSection =
   | 'accounts'
   | 'privacy'
   | 'performance'
-  | 'developer';
+  | 'developer'
+  | 'about';
 
 interface SettingsSlice {
   activeSection: SettingsSection;
