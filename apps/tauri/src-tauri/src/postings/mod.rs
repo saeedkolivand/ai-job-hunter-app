@@ -83,6 +83,12 @@ pub struct InteractionStore {
     /// old `Option<Vec<_>>` cache that forced an O(n) linear scan + a clone of the
     /// whole vector on every interaction event.
     cache: Option<HashMap<InteractionKey, InteractionRecord>>,
+    /// Set true only when a corrupt `interactions.json` was detected but the
+    /// backup rename FAILED (file locked / cross-device / permissions). While it
+    /// is set, `save` refuses to write — overwriting the path would clobber the
+    /// un-backed-up corrupt original and lose the user's recoverable data. A
+    /// successful backup leaves this false so `save` writes fresh data normally.
+    block_save: bool,
 }
 
 impl InteractionStore {
@@ -91,6 +97,7 @@ impl InteractionStore {
         Self {
             data_file: data_dir.join("interactions.json"),
             cache: None,
+            block_save: false,
         }
     }
 
@@ -143,12 +150,28 @@ impl InteractionStore {
     }
 
     /// Borrow the in-memory map, hydrating it from disk on first access.
+    ///
+    /// A *missing* file hydrates an empty map (first run). A file that *exists*
+    /// but fails to parse is NOT silently treated as empty — that would let the
+    /// next `save` overwrite it with an empty array, destroying every recorded
+    /// interaction. Instead the corrupt file is backed up (see
+    /// [`Self::back_up_corrupt_file`]) before we start with an empty map, so the
+    /// data is recoverable and the next `save` can't clobber the original.
     fn map_mut(&mut self) -> &mut HashMap<InteractionKey, InteractionRecord> {
         if self.cache.is_none() {
-            let loaded: Vec<InteractionRecord> = std::fs::read_to_string(&self.data_file)
-                .ok()
-                .and_then(|s| serde_json::from_str(&s).ok())
-                .unwrap_or_default();
+            let loaded: Vec<InteractionRecord> = match std::fs::read_to_string(&self.data_file) {
+                // No file yet — first run, an empty map is correct.
+                Err(_) => Vec::new(),
+                Ok(contents) => match serde_json::from_str(&contents) {
+                    Ok(records) => records,
+                    // The file exists but is malformed. Preserve it before the
+                    // store can overwrite it with an empty map on the next save.
+                    Err(err) => {
+                        self.back_up_corrupt_file(&err);
+                        Vec::new()
+                    }
+                },
+            };
             self.cache = Some(
                 loaded
                     .into_iter()
@@ -157,6 +180,29 @@ impl InteractionStore {
             );
         }
         self.cache.as_mut().expect("cache just initialized")
+    }
+
+    /// Move a malformed `interactions.json` aside to `interactions.json.corrupt`
+    /// so a parse failure never silently discards the user's data. A fixed
+    /// suffix (no timestamp/random source here) is enough: it survives the
+    /// next `save`, which writes back to the original path. The error is logged
+    /// via the shared tracing layer for diagnostics.
+    ///
+    /// If the rename FAILS (file locked / cross-device / permissions) the corrupt
+    /// original still sits at `data_file`, so we set `block_save` to stop the next
+    /// `save` from overwriting it with an empty map. A successful rename frees the
+    /// path and leaves `block_save` false so `save` proceeds normally.
+    fn back_up_corrupt_file(&mut self, err: &serde_json::Error) {
+        let backup = self.data_file.with_extension("json.corrupt");
+        let renamed = std::fs::rename(&self.data_file, &backup).is_ok();
+        if !renamed {
+            self.block_save = true;
+        }
+        log::error!(
+            "[postings] interactions.json failed to parse ({err}); \
+             backed_up={renamed} backup={}",
+            backup.display()
+        );
     }
 
     /// Snapshot the records in a deterministic order (newest first, then by
@@ -177,6 +223,18 @@ impl InteractionStore {
     /// (unchanged shape). Serializes the deterministic snapshot so the file is
     /// stable between writes.
     fn save(&mut self) {
+        // A corrupt original is still sitting at `data_file` because its backup
+        // rename failed. Writing now would clobber the only copy of the user's
+        // recoverable data, so skip the write. The new interaction stays in
+        // memory (lost on restart) — preserving the on-disk original wins.
+        if self.block_save {
+            log::error!(
+                "[postings] save skipped: corrupt interactions.json could not be \
+                 backed up; refusing to overwrite the un-backed-up original at {}",
+                self.data_file.display()
+            );
+            return;
+        }
         let records = self.records();
         if let Ok(json) = serde_json::to_string_pretty(&records) {
             std::fs::write(&self.data_file, json).ok();

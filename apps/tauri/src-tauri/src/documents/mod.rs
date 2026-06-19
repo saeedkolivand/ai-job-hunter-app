@@ -902,7 +902,7 @@ pub async fn posting_vector_or_embed(
 // lock), so they never re-lock — `parking_lot::Mutex` is not reentrant.
 
 fn upsert_vector_with_conn(conn: &Connection, doc_id: &str, v: &EmbeddingVector) -> AppResult<()> {
-    let json = serde_json::to_string(&v.values).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string(&v.values)?;
     conn.execute(
         "INSERT INTO vectors (doc_id, vector, provider, model, dim, version)
          VALUES (?1, ?2, ?3, ?4, ?5, 1)
@@ -916,8 +916,7 @@ fn upsert_vector_with_conn(conn: &Connection, doc_id: &str, v: &EmbeddingVector)
             v.space.model,
             v.space.dim as i64
         ],
-    )
-    .map_err(|e| e.to_string())?;
+    )?;
     Ok(())
 }
 

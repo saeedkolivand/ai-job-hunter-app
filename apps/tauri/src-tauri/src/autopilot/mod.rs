@@ -4,6 +4,7 @@ use parking_lot::Mutex;
 /// Records are persisted to <dataDir>/autopilots.json as a flat JSON array.
 /// All field names are serialised in camelCase to match the TypeScript schema
 /// (`#[serde(rename_all = "camelCase")]`).
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -162,11 +163,7 @@ impl AutopilotStore {
     pub fn list(&self) -> Vec<Autopilot> {
         let map = self.load();
         let mut items: Vec<Autopilot> = map.into_values().collect();
-        items.sort_by(|a, b| {
-            b.created_at
-                .cmp(&a.created_at)
-                .then_with(|| a.id.cmp(&b.id))
-        });
+        items.sort_by(cmp_autopilot_newest_first);
         items
     }
 
@@ -373,11 +370,7 @@ impl AutopilotStore {
     fn save(&self, map: HashMap<String, Autopilot>) {
         let list: Vec<&Autopilot> = {
             let mut v: Vec<&Autopilot> = map.values().collect();
-            v.sort_by(|a, b| {
-                b.created_at
-                    .cmp(&a.created_at)
-                    .then_with(|| a.id.cmp(&b.id))
-            });
+            v.sort_by(|a, b| cmp_autopilot_newest_first(a, b));
             v
         };
         if let Ok(json) = serde_json::to_string_pretty(&list) {
@@ -412,6 +405,15 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
+}
+
+/// Sort autopilots newest-first by `created_at`, breaking ties by `id` so the
+/// order is stable across runs despite the unordered map. Single source of truth
+/// for both the read order (`list`) and the on-disk order (`save`).
+fn cmp_autopilot_newest_first(a: &Autopilot, b: &Autopilot) -> Ordering {
+    b.created_at
+        .cmp(&a.created_at)
+        .then_with(|| a.id.cmp(&b.id))
 }
 
 fn str_field(v: &serde_json::Value, key: &str) -> String {
