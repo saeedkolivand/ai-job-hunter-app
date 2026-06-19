@@ -32,6 +32,7 @@
   --paper:#f4ecdc;
   --ink:#1c1812;
   --red:#e24b4a;
+  /* legibility floor: Space Mono >=13px copy, Gloria Hallelujah >=15px copy, Patrick Hand >=14px */
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth; -webkit-text-size-adjust:100%; text-size-adjust:100%}
@@ -115,7 +116,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 /* ---------- fixed chrome ---------- */
 #progress-wrap{position:fixed; top:0; left:0; right:0; z-index:50; pointer-events:none}
 #progress{height:7px; width:0%; background:repeating-linear-gradient(45deg,var(--red) 0 8px,#b73a39 8px 16px); transition:width .12s linear}
-#progress-label{font-family:var(--mono); font-size:11px; padding:3px 8px; color:#cfd6e0; background:rgba(8,10,16,.55); display:inline-block; border-bottom-right-radius:8px}
+#progress-label{font-family:var(--mono); font-size:12px; padding:3px 8px; color:#cfd6e0; background:rgba(8,10,16,.55); display:inline-block; border-bottom-right-radius:8px}
 
 #odometer{
   position:fixed; left:12px; bottom:12px; z-index:50;
@@ -238,7 +239,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
 /* the lazy exit: same breakdown, zero scrolling */
 .filmhint{
-  display:inline-block; margin-top:16px; font-family:var(--scrawl); font-size:14px; color:#ffd27a;
+  display:inline-block; margin-top:16px; font-family:var(--scrawl); font-size:15px; color:#ffd27a;
   text-decoration:none; border:2px dashed rgba(255,210,122,.45); border-radius:12px 9px 13px 8px;
   padding:6px 14px; transition:transform .15s, background .2s, border-color .2s;
 }
@@ -288,9 +289,9 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   display:flex; align-items:center; justify-content:center; flex-direction:column; color:#caa7e6; font-family:var(--scrawl); font-size:13px; text-align:center; padding:18px;
 }
 .blackhole .yell{font-family:var(--impact); font-size:22px; color:#fff; letter-spacing:.03em}
-.echo{font-family:var(--mono); font-size:12px; color:#9d8fb3; margin-top:6px}
+.echo{font-family:var(--mono); font-size:13px; color:#9d8fb3; margin-top:6px}
 .npcs{display:flex; gap:6px; flex-wrap:wrap; justify-content:center}
-.npc{display:flex; flex-direction:column; align-items:center; width:78px; font-family:var(--mono); font-size:11px; color:#a99cc4; text-align:center}
+.npc{display:flex; flex-direction:column; align-items:center; width:78px; font-family:var(--mono); font-size:12px; color:#a99cc4; text-align:center}
 .npc svg{width:38px}
 .ats{display:flex; align-items:center; gap:10px}
 .ats svg{width:64px; flex:none}
@@ -372,7 +373,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 .testi::after{content:""; position:absolute; left:0; right:0; bottom:0; height:clamp(70px,10vh,120px); z-index:1; pointer-events:none; background:linear-gradient(to top,#ece2cf,transparent)}
 .testi > *{position:relative; z-index:2}
 .testi h2{font-family:var(--scrawl); font-size:clamp(22px,4.6vw,38px); margin:0 0 30px}
-.testi .small{font-family:var(--mono); font-size:12px; color:#7a7058}
+.testi .small{font-family:var(--mono); font-size:13px; color:#6c634d}
 .wall{column-count:3; column-gap:18px; max-width:980px; margin:0 auto}
 .quote{
   -webkit-column-break-inside:avoid; page-break-inside:avoid; break-inside:avoid;
@@ -381,9 +382,9 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 }
 .quote:nth-child(even){transform:rotate(.7deg)} .quote:nth-child(3n){transform:rotate(-.8deg)}
 .quote p{margin:0 0 8px; font-family:var(--hand); font-size:16px}
-.quote .who{font-family:var(--scrawl); font-size:12px; color:#7a6f55}
+.quote .who{font-family:var(--scrawl); font-size:14px; color:#7a6f55}
 .stars{color:#e0a32a; letter-spacing:2px}
-.featured{margin:34px auto 0; font-family:var(--mono); font-size:13px; color:#6f6650}
+.featured{margin:34px auto 0; font-family:var(--mono); font-size:14px; color:#6f6650}
 .featured b{color:var(--ink)}
 
 /* ================= FINALE ================= */
@@ -397,10 +398,10 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 }
 .cta:hover{transform:translateY(-2px)}
 .src-link{display:block; margin-top:18px; font-family:var(--hand); font-size:16px; color:#4a4233}
-.footnote{font-family:var(--mono); font-size:12px; color:#6f6650; max-width:54ch; margin:30px auto 0; line-height:1.7}
+.footnote{font-family:var(--mono); font-size:12px; color:#645c48; max-width:54ch; margin:30px auto 0; line-height:1.7}
 .footnote code{background:#dccfb6; padding:1px 6px; border-radius:4px}
-.builtwith{font-family:var(--mono); font-size:12px; color:#8a7f64; margin-top:24px}
-.byline{font-family:var(--scrawl); font-size:14px; color:#6f6650; margin-top:18px}
+.builtwith{font-family:var(--mono); font-size:12px; color:#645c48; margin-top:24px}
+.byline{font-family:var(--scrawl); font-size:14px; color:#6a614b; margin-top:18px}
 
 /* slowdown toast */
 #slowdown{

@@ -32,7 +32,7 @@ Terse findings only: `SEVERITY · file:line · finding · one-line fix`. No pros
 
 ## Spawning implementation agents efficiently
 
-Implementation agents use `general-purpose` (read-write) type and lack the domain reviewers' graphify-first grounding. Cold repo re-exploration is the dominant token cost (~70–122 k per agent). The only lever in this harness is cold-start minimization — `SendMessage` agent-reuse is not available.
+Domain **authors** (write-capable) implement; their independent **critics** audit. Cold repo re-exploration is the dominant token cost (~70–122 k per agent), so the primary lever is **cold-start minimization via the per-task handoff file** (`.claude/scratch/<task>.md`): the orchestrator pre-harvests paths + signatures once, and every stage reads it instead of re-exploring. Two further levers now exist in this harness: `SendMessage` to continue a warm agent (its context intact), and native **Agent Teams** (shared task list + mailbox) — but teams cost more tokens, so use them **only when parallelism genuinely pays** (file-disjoint, multi-domain work).
 
 **Pattern:**
 

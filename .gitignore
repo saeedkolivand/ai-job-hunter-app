@@ -209,6 +209,9 @@ temp/
 .claude/.review-cache
 .claude/*.bak-ruflo
 .claude-flow*
+# Per-task handoff files are transient; the template is committed.
+.claude/scratch/*
+!.claude/scratch/HANDOFF_TEMPLATE.md
 
 # NOTE: Project-level AI instruction files ARE committed (not ignored):
 #   CLAUDE.md                              → Claude Code

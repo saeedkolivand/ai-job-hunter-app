@@ -1,5 +1,7 @@
 # AI Job Hunter — Agent Rules
 
+> Canonical rules: see `CLAUDE.md` + `.claude/skills/*` — this file is a pointer + the load-bearing subset; CLAUDE.md wins on any conflict.
+
 Rules enforced by ESLint, TypeScript, and CI. Violations fail the build.
 
 ---
@@ -62,11 +64,11 @@ IPC contract: `packages/shared/src/ipc/contracts.ts`.
 
 **1. No `window.api` in UI** — use service hooks from `@/services` (React Query wrappers).
 
-**2. i18n** — `import { useTranslation } from '@/lib/i18n'`, never `react-i18next` directly.
+**2. i18n** — `import { useTranslation } from '@ajh/translations'`, never `react-i18next` directly. Renderer init shim is `@/i18n`.
 
-**3. Brand colors** — `text-brand`, `text-brand-soft`, `bg-brand`, `border-brand`. No `[#RRGGBB]`.
+**3. Brand colors** — `text-brand`, `text-brand-soft`, `bg-brand`, `border-brand`, `ring-brand`. No `[#RRGGBB]`.
 
-**4. Motion** — `import { transition } from '@/lib/motion'`. No inline `{ duration, ease }` objects.
+**4. Motion** — `import { transition } from '@ajh/ui'`. No inline `{ duration, ease }` objects.
 
 **5. UI primitives** — all from `@ajh/ui`: `Button`, `Input`, `TextArea`, `SelectDropdown`, `ModalShell`,
 `ConfirmModal`, `EmptyState`, `ErrorState`, `RowSkeleton`, `GlassCard`, `SettingsSection`, `OptionTile`,
@@ -94,12 +96,12 @@ Never push to `main`. Always: `rtk git checkout -b feat/name` → commit → `rt
 Before starting: `rtk git fetch origin && rtk git branch -r | grep $(git branch --show-current)`.
 If branch is gone: `rtk git checkout main && rtk git pull origin main`.
 
-## New IPC capability
+## New IPC capability (5 steps)
 
 1. `packages/shared/src/ipc/contracts.ts` — add signature
-2. `apps/desktop/src/main/ipc/router.ts` — implement
-3. `apps/desktop/src/preload/index.ts` — expose
-4. `apps/desktop/src/renderer/services/` — create hook
+2. `apps/tauri/src-tauri/src/commands.rs` — implement Tauri command
+3. `apps/tauri/src/tauri-client.ts` — wire invoke call
+4. `apps/tauri/src/renderer/services/` — create hook
 5. `services/query-client.ts` — add query key
 
 ## Release

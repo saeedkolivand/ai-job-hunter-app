@@ -249,10 +249,20 @@ jobs:
           pnpm check:landing-drift
           echo "::endgroup::"
 
-      - name: ❌ Check for Failures
-        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure' || steps.landing_drift.outcome == 'failure'
+      # Keeps the .claude/ agent fleet + its docs + the other AI-tool configs in
+      # sync (agents ⇄ routes ⇄ CLAUDE.md ⇄ docs ⇄ aider/cursor/copilot/…).
+      - name: 🤖 Check Agent-System Drift
+        id: agent_system
+        continue-on-error: true
         run: |
-          echo "::error file=package.json::Lint, format, IPC codegen, or landing-diagram drift check failed. Run 'pnpm lint:fix', 'pnpm format', 'pnpm gen:ipc', and 'pnpm check:landing-drift' locally to fix."
+          echo "::group::Checking agent-system drift"
+          pnpm check:agent-system
+          echo "::endgroup::"
+
+      - name: ❌ Check for Failures
+        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure' || steps.landing_drift.outcome == 'failure' || steps.agent_system.outcome == 'failure'
+        run: |
+          echo "::error file=package.json::Lint, format, IPC codegen, landing-diagram, or agent-system drift check failed. Run 'pnpm lint:fix', 'pnpm format', 'pnpm gen:ipc', 'pnpm check:landing-drift', and 'pnpm check:agent-system' locally to fix."
           echo "::error::Please fix the issues above before merging."
           exit 1
 

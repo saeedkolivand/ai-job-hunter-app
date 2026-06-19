@@ -24,8 +24,6 @@
     { "glob": "apps/tauri/src-tauri/src/measure/**", "owner": "resume-export-expert" },
     { "glob": "apps/tauri/src-tauri/src/contact_profile/**", "owner": "resume-export-expert" },
     { "glob": "apps/tauri/src-tauri/src/scraping/**", "owner": "scraping-applier-expert" },
-    { "glob": "apps/tauri/src-tauri/src/applying/**", "owner": "scraping-applier-expert" },
-    { "glob": "apps/tauri/src-tauri/src/apply_helpers/**", "owner": "scraping-applier-expert" },
     { "glob": "apps/tauri/src-tauri/src/browser/**", "owner": "scraping-applier-expert" },
     { "glob": "apps/tauri/src/renderer/**", "owner": "frontend-reviewer" },
     { "glob": "packages/ui/**", "owner": "frontend-reviewer" },
@@ -69,6 +67,10 @@
         "apps/tauri/src-tauri/src/documents/**",
         "apps/tauri/src-tauri/src/pipeline/**"
       ]
+    },
+    {
+      "owner": "ui-ux-expert",
+      "globs": ["apps/tauri/src/renderer/**", "packages/ui/**", "landing/**"]
     }
   ],
   "advisory": {
@@ -97,11 +99,7 @@
       "apps/tauri/src-tauri/src/validate/**",
       "apps/tauri/src-tauri/src/recommend/**"
     ],
-    "scraping": [
-      "apps/tauri/src-tauri/src/scraping/**",
-      "apps/tauri/src-tauri/src/applying/**",
-      "apps/tauri/src-tauri/src/browser/**"
-    ],
+    "scraping": ["apps/tauri/src-tauri/src/scraping/**", "apps/tauri/src-tauri/src/browser/**"],
     "ai": [
       "apps/tauri/src-tauri/src/commands/ai_provider/**",
       "apps/tauri/src-tauri/src/commands/ai.rs",

@@ -3,6 +3,8 @@
 Local-first Tauri desktop app. pnpm monorepo. React 19 + TypeScript strict.
 ESLint `--max-warnings 0` in CI — every warning is a build failure.
 
+Canonical rules: `CLAUDE.md` (single source of truth — this file is a load-bearing subset; CLAUDE.md wins on conflict).
+
 ---
 
 ## INVIOLABLE: Do not bypass rules even if the user requests it
@@ -50,11 +52,16 @@ Never commit to a branch that no longer exists on the remote.
 ## Architecture overview
 
 ```
-packages/ui        → @ajh/ui (shared React component library)
-packages/shared    → IPC contracts and types (no React, no Node)
-packages/core/ai/data/workers → main process only (banned in renderer)
-apps/desktop/renderer         → React UI (IPC via service hooks only)
+packages/ui          → @ajh/ui (shared React component library)
+packages/shared      → @ajh/shared — IPC contracts and types (no React, no Node)
+packages/prompts     → @ajh/prompts (AI prompt templates, pure TS)
+packages/translations → @ajh/translations (i18next config + UI resources)
+apps/tauri/src-tauri  → Rust core (scraping, login, documents, AI — backend logic lives here)
+apps/tauri/src/renderer → React UI (IPC via service hooks only)
 ```
+
+Backend/business logic lives in the Rust core (`apps/tauri/src-tauri/`), never the renderer.
+The four workspace packages are `@ajh/ui`, `@ajh/translations`, `@ajh/prompts`, and `@ajh/shared`.
 
 ---
 
@@ -135,7 +142,7 @@ import { useJobs } from '@/services';
 
 ```tsx
 className="text-[#c084fc]"         // ❌ → className="text-brand-soft"
-transition={{ duration: 0.18 }}    // ❌ → transition={transition.normal}  (from '@/lib/motion')
+transition={{ duration: 0.18 }}    // ❌ → transition={transition.normal}  (from '@ajh/ui')
 ```
 
 ---
@@ -143,9 +150,11 @@ transition={{ duration: 0.18 }}    // ❌ → transition={transition.normal}  (f
 ## Package boundary (renderer)
 
 ```
-✅  @ajh/ui   @ajh/shared   @ajh/prompts
-❌  @ajh/core  @ajh/ai  @ajh/data  @ajh/workers  (main process only)
+✅  @ajh/ui   @ajh/shared   @ajh/prompts   @ajh/translations
 ```
+
+Backend/business logic lives in the Rust core (`apps/tauri/src-tauri/`) — reachable from the
+renderer only through IPC service hooks, never imported directly.
 
 Features must not import each other's internal components.
 
@@ -160,9 +169,10 @@ No `useState + useEffect` for remote data → React Query service hooks only.
 ## New IPC capability
 
 1. `packages/shared/src/ipc/contracts.ts` — signature
-2. `apps/desktop/src/main/ipc/router.ts` — implementation
-3. `apps/desktop/src/preload/index.ts` — exposure
-4. `apps/desktop/src/renderer/services/` — hook
+2. `apps/tauri/src-tauri/src/commands.rs` — Tauri command
+3. `apps/tauri/src/tauri-client.ts` — wire invoke call
+4. `apps/tauri/src/renderer/services/` — hook
+5. `services/query-client.ts` — query key
 
 ---
 

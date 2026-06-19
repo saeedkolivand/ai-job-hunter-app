@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Job Hunter — The Agent Fleet</title>
+<meta name="description" content="How the AI Job Hunter repo's .claude/ agent system works: 21 specialized agents, paired author + critic per domain, routed by area, reviewed independently, closed out by a steward.">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="https://aijobhunter.app/agent-system">
+<meta name="theme-color" content="#f4ecdc">
+<meta property="og:title" content="AI Job Hunter — The Agent Fleet">
+<meta property="og:description" content="21 agents, paired author + critic per domain. The .claude/ system that builds and reviews this repo, explained.">
+<meta property="og:url" content="https://aijobhunter.app/agent-system">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="AI Job Hunter — The Agent Fleet">
+<meta name="twitter:description" content="21 agents, paired author + critic per domain. The .claude/ system that builds and reviews this repo.">
+<link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='12' fill='none' stroke='black' stroke-width='2'/><path d='M11 14 q2 2 4 0 M17 14 q2 2 4 0 M11 22 q5 -4 10 0' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'/><ellipse cx='10' cy='18' rx='1.6' ry='2.8' fill='deepskyblue'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Gloria+Hallelujah&family=Patrick+Hand&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --scrawl:'Gloria Hallelujah', cursive;
+  --hand:'Patrick Hand', cursive;
+  --impact:'Anton', Impact, sans-serif;
+  --mono:'Space Mono', monospace;
+  --paper:#f4ecdc;
+  --ink:#1c1812;
+  --red:#e24b4a;
+  --muted:#5a5340;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%; text-size-adjust:100%}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--hand); font-size:18px; line-height:1.7;
+}
+a{color:var(--red); text-decoration:none; border-bottom:1.5px solid rgba(226,75,74,.4)}
+a:hover{border-bottom-color:var(--red)}
+code{font-family:var(--mono); font-size:.8em; background:#e6dcc4; padding:1px 6px; border-radius:4px}
+
+/* click-to-copy command chip (matches download.html) */
+.copy-cmd{cursor:pointer; display:inline-block; margin:3px 0; transition:background .15s, color .15s}
+.copy-cmd:hover{background:#dccdaa}
+.copy-cmd:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
+.copy-cmd.copied{background:#cfe6cf; color:#2f5d2f}
+.copy-cmd.copied::after{content:" ✓"; font-weight:700}
+
+.wrap{max-width:900px; margin:0 auto; padding:56px 22px 90px}
+
+.top-back{display:inline-block; font-family:var(--mono); font-size:13px; color:var(--muted); border:none; margin-bottom:30px}
+.top-back:hover{color:var(--ink)}
+
+h1{font-family:var(--impact); text-transform:uppercase; font-size:clamp(40px,10vw,76px); line-height:.92; margin:0 0 10px; letter-spacing:1px}
+.lede{font-family:var(--mono); font-size:14px; line-height:1.85; color:#2c271c; margin:18px 0 0}
+.lede b{color:var(--ink)}
+.tag{font-family:var(--scrawl); font-size:clamp(16px,3.4vw,21px); color:var(--red); margin:14px 0 0}
+.count{font-family:var(--mono); font-size:13px; color:var(--muted); margin:6px 0 0}
+.count b{color:var(--ink)}
+
+h2.section{font-family:var(--impact); text-transform:uppercase; font-size:clamp(24px,5.4vw,38px); letter-spacing:.5px; margin:0 0 4px; line-height:1}
+.section-sub{font-family:var(--scrawl); font-size:clamp(15px,3vw,18px); color:var(--muted); margin:0 0 22px}
+
+hr.scrawl{border:none; height:14px; margin:54px auto; width:200px;
+  background:no-repeat center/contain url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 14'><path d='M4 8 q12 -8 24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0' fill='none' stroke='%231c1812' stroke-width='2.6' stroke-linecap='round'/></svg>")}
+
+/* generic wobbly card */
+.card{
+  background:#fffef8; border:2.6px solid var(--ink);
+  border-radius:16px 11px 18px 9px/9px 17px 11px 16px; box-shadow:4px 5px 0 rgba(0,0,0,.14);
+  padding:18px 20px;
+}
+
+/* ---------- intake → delegation ---------- */
+.intake{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.1fr); gap:20px; align-items:start}
+.issue-list{display:flex; flex-direction:column; gap:10px}
+.issue{
+  font-family:var(--hand); font-size:16px; text-align:left; width:100%; cursor:pointer;
+  background:#ece2cf; border:2.4px solid var(--ink); color:var(--ink);
+  border-radius:13px 9px 14px 10px; box-shadow:3px 4px 0 rgba(0,0,0,.14);
+  padding:11px 14px; transition:transform .14s, background .14s;
+}
+.issue:nth-child(odd){transform:rotate(-.3deg)} .issue:nth-child(even){transform:rotate(.3deg)}
+.issue:hover{background:#e3d6ba; transform:translateY(-2px)}
+.issue[aria-pressed="true"]{background:var(--ink); color:var(--paper); box-shadow:2px 3px 0 rgba(0,0,0,.3)}
+.issue .ico{margin-right:8px}
+.route{
+  background:#fffef8; border:2.6px solid var(--ink); transform:rotate(.25deg);
+  border-radius:16px 11px 18px 9px/9px 17px 11px 16px; box-shadow:4px 5px 0 rgba(0,0,0,.14);
+  padding:18px 20px; min-height:220px;
+}
+.route .placeholder{font-family:var(--scrawl); color:var(--muted)}
+.route h3{font-family:var(--impact); text-transform:uppercase; letter-spacing:.5px; font-size:18px; margin:0 0 2px}
+.route .area{font-family:var(--mono); font-size:13px; color:var(--muted); margin:0 0 14px}
+.flow{list-style:none; margin:0; padding:0}
+.flow li{display:flex; gap:10px; align-items:baseline; margin:0 0 9px; line-height:1.4}
+.flow .lbl{font-family:var(--mono); font-size:12.5px; color:var(--muted); min-width:78px; flex:0 0 78px; text-transform:uppercase; padding-top:2px}
+.flow .who{font-family:var(--hand); font-size:16px}
+.flow .who b{font-family:var(--mono); font-size:13px; background:#e6dcc4; padding:1px 6px; border-radius:4px; color:var(--ink)}
+.flow .who .crit{background:#f3d9d4}
+.flow .who .sec{background:#dfe9d8}
+.flow .why{font-family:var(--hand); font-size:14px; color:var(--muted)}
+
+/* ---------- fleet map ---------- */
+.map-shell{overflow-x:auto; -webkit-overflow-scrolling:touch}
+.fleet-svg{display:block; width:100%; height:auto; min-width:680px; font-family:var(--mono)}
+.fleet-svg text{fill:var(--ink); font-size:12px}
+.fleet-svg .domain-lbl{font-family:var(--scrawl); font-size:15px; fill:var(--muted)}
+.fleet-svg .node{cursor:pointer}
+.fleet-svg .node rect{fill:#fffef8; stroke:var(--ink); stroke-width:2.4; transition:fill .15s}
+.fleet-svg .node.author rect{fill:#eef3e9}
+.fleet-svg .node.critic rect{fill:#fbeae7}
+.fleet-svg .node:hover rect, .fleet-svg .node.active rect{fill:#ffe9a8}
+.fleet-svg .node:focus-visible rect{stroke:var(--red); stroke-width:3.5}
+.fleet-svg .link{fill:none; stroke:var(--ink); stroke-width:2.2; stroke-linecap:round; opacity:.32; transition:opacity .15s, stroke .15s}
+.fleet-svg .link.risk{stroke:var(--red)}
+.fleet-svg .link.lit{opacity:1; stroke-width:3}
+.map-hint{font-family:var(--mono); font-size:13px; color:var(--muted); margin:10px 0 0; text-align:center}
+.legend{display:flex; flex-wrap:wrap; gap:8px 18px; justify-content:center; font-family:var(--mono); font-size:12px; color:var(--muted); margin:14px 0 0}
+.legend span{display:inline-flex; align-items:center; gap:6px}
+.sw{width:18px; height:0; border-top:3px solid var(--ink); display:inline-block}
+.sw.risk{border-color:var(--red)}
+.sw.box{width:14px; height:14px; border:2px solid var(--ink); border-radius:3px}
+.sw.box.author{background:#eef3e9} .sw.box.critic{background:#fbeae7}
+
+/* draw-on animation, gated below by prefers-reduced-motion */
+@media (prefers-reduced-motion: no-preference){
+  /* stagger via inline animation-delay on each .link (two .domain-lbl <text> precede them, so :nth-child was mis-targeted) */
+  .fleet-svg .link{stroke-dasharray:520; stroke-dashoffset:520; animation:draw 1.5s ease forwards}
+  @keyframes draw{to{stroke-dashoffset:0}}
+}
+@media (prefers-reduced-motion: reduce){
+  *{ transition:none !important; animation:none !important }
+}
+
+/* ---------- agent cards ---------- */
+.domain-band{font-family:var(--scrawl); font-size:clamp(15px,3vw,19px); color:var(--ink); margin:30px 0 12px; display:flex; align-items:center; gap:10px}
+.domain-band::after{content:""; flex:1; height:3px; background:var(--ink); opacity:.18; border-radius:3px}
+.agent-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:18px}
+.agent{
+  background:#fffef8; border:2.6px solid var(--ink);
+  border-radius:16px 11px 18px 9px/9px 17px 11px 16px; box-shadow:4px 5px 0 rgba(0,0,0,.14);
+  padding:16px 18px; display:flex; flex-direction:column; gap:8px;
+}
+.agent:nth-child(odd){transform:rotate(-.3deg)} .agent:nth-child(even){transform:rotate(.3deg)}
+.agent .name{font-family:var(--mono); font-weight:700; font-size:14px; color:var(--ink); word-break:break-word}
+.agent .role-pill{font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.5px; padding:1px 7px; border-radius:6px; align-self:flex-start; border:2px solid var(--ink)}
+.role-author{background:#eef3e9} .role-critic{background:#fbeae7} .role-cross{background:#e6dcc4}
+.agent .role{font-family:var(--hand); font-size:15px; line-height:1.35}
+.agent .pair{font-family:var(--mono); font-size:12px; color:var(--muted); line-height:1.5}
+.agent .pair b{color:var(--ink)}
+.agent .paths{font-family:var(--mono); font-size:12px; color:var(--muted); line-height:1.5; word-break:break-word}
+.agent .copy-cmd{margin-top:auto; font-family:var(--mono); font-size:13px; line-height:1.5; background:#e6dcc4; border-radius:8px; padding:7px 9px; border:2px dashed rgba(28,24,18,.35)}
+
+/* ---------- pipeline walkthrough ---------- */
+.pipeline{display:flex; flex-direction:column; gap:0}
+.step{display:flex; gap:14px; align-items:flex-start; position:relative; padding:0 0 18px}
+.step:not(:last-child)::before{content:""; position:absolute; left:17px; top:34px; bottom:-2px; width:3px; background:repeating-linear-gradient(var(--ink) 0 6px, transparent 6px 11px); opacity:.4}
+.step .num{flex:0 0 36px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; font-family:var(--impact); font-size:18px; background:var(--ink); color:var(--paper); border-radius:50% 48% 52% 50%; z-index:1}
+.step .body{flex:1 1 auto; padding-top:3px}
+.step h3{font-family:var(--mono); font-weight:700; font-size:14px; margin:0 0 3px}
+.step h3 .tag{font-family:var(--mono); font-size:12px; color:var(--muted); font-weight:400; margin-left:2px; background:none}
+.step p{margin:0; font-size:16px; line-height:1.45}
+.step p .a{font-family:var(--mono); font-size:12px; background:#e6dcc4; padding:1px 5px; border-radius:4px}
+
+/* ---------- big work-together prompt ---------- */
+.big-prompt{
+  background:#fffef8; border:2.6px solid var(--ink); transform:rotate(-.25deg);
+  border-radius:18px 12px 20px 10px/10px 19px 12px 18px; box-shadow:5px 6px 0 rgba(0,0,0,.16);
+  padding:22px 24px;
+}
+.big-prompt .copy-cmd{display:block; font-family:var(--mono); font-size:14px; line-height:1.6; background:var(--ink); color:var(--paper); border-radius:10px; padding:14px 16px; margin:0 0 16px}
+.big-prompt .copy-cmd:hover{background:#2a241a}
+.big-prompt .copy-cmd:focus-visible{outline-color:var(--paper)}
+.big-prompt .copy-cmd.copied{background:#2f5d2f; color:#eaf6ea}
+.teams{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin:0}
+.team{background:#ece2cf; border:2.4px solid var(--ink); border-radius:13px 9px 14px 10px; padding:13px 15px}
+.team h4{font-family:var(--scrawl); font-size:15px; margin:0 0 7px}
+.team ul{margin:0; padding-left:18px; font-size:14.5px; line-height:1.5}
+.team code{font-size:.78em}
+
+/* ---------- with vs without ---------- */
+.versus{display:grid; grid-template-columns:1fr 1fr; gap:18px}
+.vcol{
+  border:2.6px solid var(--ink); border-radius:16px 11px 18px 9px/9px 17px 11px 16px;
+  box-shadow:4px 5px 0 rgba(0,0,0,.14); padding:16px 18px;
+}
+.vcol.without{background:#f1e3d0; transform:rotate(-.3deg)}
+.vcol.with{background:#fffef8; transform:rotate(.3deg)}
+.vcol h3{font-family:var(--impact); text-transform:uppercase; letter-spacing:.5px; font-size:19px; margin:0 0 12px}
+.dim{margin:0 0 13px}
+.dim .k{font-family:var(--mono); font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); display:block; margin:0 0 1px}
+.dim .v{font-family:var(--hand); font-size:16px; line-height:1.35}
+.dim .v b{font-family:var(--mono); font-size:13px}
+.illustrative{font-family:var(--mono); font-size:12px; color:var(--muted); margin:14px 0 0; line-height:1.7; border-top:2px dashed rgba(28,24,18,.25); padding-top:12px}
+.illustrative b{color:var(--ink)}
+
+footer{margin-top:64px; text-align:center}
+.byline{font-family:var(--scrawl); font-size:15px; color:var(--muted)}
+.foot-links{font-family:var(--mono); font-size:13px; color:var(--muted); margin-top:10px}
+.foot-links a{color:var(--muted); border:none}
+.foot-links a:hover{color:var(--ink)}
+
+@media (max-width:680px){
+  .intake{grid-template-columns:1fr}
+  .versus{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+
+  <a class="top-back" href="index.html">← back to the chaos</a>
+
+  <!-- ============ 1 · HERO ============ -->
+  <h1>The Agent Fleet</h1>
+  <p class="tag">a swarm of tiny specialists builds this repo, and a second swarm tears their work apart.</p>
+  <p class="count"><b>21 agents</b>, paired author + critic per domain.</p>
+  <p class="lede">
+    Every task and code change in this repo routes through a <b>.claude/</b> agent system. You name no agent —
+    the system reads the files you touched, picks the <b>author</b> that owns that area, runs an <b>independent critic</b>
+    over the diff, pulls in a security or performance <b>secondary</b> when there's risk, writes tests, sweeps dead code,
+    and lets a <b>steward</b> close the docs. Nobody approves their own work. Click around below to see it move.
+  </p>
+
+  <hr class="scrawl">
+
+  <!-- ============ 2 · INTAKE → DELEGATION ============ -->
+  <h2 class="section">Intake → Delegation</h2>
+  <p class="section-sub">one issue in. the fleet decides who touches it.</p>
+
+  <div class="intake">
+    <div class="issue-list" role="group" aria-label="sample issues to route">
+      <button class="issue" type="button" aria-pressed="false" data-issue="focus"><span class="ico" aria-hidden="true">⌨️</span>Button has no focus ring</button>
+      <button class="issue" type="button" aria-pressed="false" data-issue="ats"><span class="ico" aria-hidden="true">📊</span>ATS score seems wrong</button>
+      <button class="issue" type="button" aria-pressed="false" data-issue="ipc"><span class="ico" aria-hidden="true">🔌</span>Add an IPC command for X</button>
+      <button class="issue" type="button" aria-pressed="false" data-issue="pdf"><span class="ico" aria-hidden="true">📄</span>PDF export overflows a page</button>
+      <button class="issue" type="button" aria-pressed="false" data-issue="scrape"><span class="ico" aria-hidden="true">🕸️</span>Scraper stopped matching LinkedIn</button>
+    </div>
+
+    <div class="route" id="route" aria-live="polite">
+      <p class="placeholder">pick an issue to see who handles it — and why.</p>
+    </div>
+  </div>
+
+  <hr class="scrawl">
+
+  <!-- ============ 3 · FLEET MAP ============ -->
+  <h2 class="section">Fleet Map</h2>
+  <p class="section-sub">authors (left, green) write. critics (right, pink) audit. hover a node to light its pairing.</p>
+
+  <div class="map-shell">
+    <svg class="fleet-svg" viewBox="0 0 680 470" role="img" aria-label="Map of the agent fleet: each author paired to its independent critic, with security and performance secondaries connecting in red.">
+      <!-- column headers -->
+      <text class="domain-lbl" x="70" y="20">AUTHORS · write</text>
+      <text class="domain-lbl" x="400" y="20">CRITICS · audit</text>
+
+      <!-- author↔critic links (drawn first so nodes sit on top). data-pair lights on hover -->
+      <path class="link" data-pair="rust"   style="animation-delay:0s"    d="M220 60 C 300 60, 300 60, 400 60" />
+      <path class="link" data-pair="front"  style="animation-delay:.05s"  d="M220 105 C 300 105, 300 95, 400 105" />
+      <path class="link" data-pair="front"  style="animation-delay:.1s"   d="M220 105 C 300 130, 300 150, 400 150" />
+      <path class="link" data-pair="job"    style="animation-delay:.15s"  d="M220 195 C 300 195, 300 195, 400 195" />
+      <path class="link" data-pair="ai"     style="animation-delay:.2s"   d="M220 240 C 300 240, 300 240, 400 240" />
+      <path class="link" data-pair="scrape" style="animation-delay:.25s"  d="M220 285 C 300 285, 300 285, 400 285" />
+      <path class="link" data-pair="export" style="animation-delay:.3s"   d="M220 330 C 300 330, 300 330, 400 330" />
+      <path class="link" data-pair="test"   style="animation-delay:.35s"  d="M220 375 C 300 375, 300 375, 400 375" />
+      <path class="link" data-pair="cq"     style="animation-delay:.4s"   d="M220 420 C 300 420, 300 420, 400 420" />
+      <!-- risk secondaries — security + performance reach across to many authors (red) -->
+      <path class="link risk" data-pair="sec"  style="animation-delay:.45s" d="M470 425 C 360 200, 300 80, 215 62" />
+      <path class="link risk" data-pair="sec"  style="animation-delay:.5s"  d="M470 425 C 380 320, 320 250, 215 240" />
+      <path class="link risk" data-pair="sec"  style="animation-delay:.55s" d="M470 425 C 360 360, 320 300, 215 285" />
+      <path class="link risk" data-pair="perf" style="animation-delay:.6s"  d="M610 425 C 480 360, 360 335, 215 330" />
+      <path class="link risk" data-pair="perf" style="animation-delay:.65s" d="M610 425 C 520 360, 360 295, 215 285" />
+
+      <!-- AUTHOR nodes -->
+      <g class="node author" data-pair="rust"   tabindex="0" role="button" aria-label="rust-backend-author (author)"><rect x="30"  y="46"  width="190" height="28" rx="6"/><text x="40" y="64">rust-backend-author</text></g>
+      <g class="node author" data-pair="front"  tabindex="0" role="button" aria-label="frontend-author (author)"><rect x="30"  y="91"  width="190" height="28" rx="6"/><text x="40" y="109">frontend-author</text></g>
+      <g class="node author" data-pair="job"    tabindex="0" role="button" aria-label="job-match-author (author)"><rect x="30"  y="181" width="190" height="28" rx="6"/><text x="40" y="199">job-match-author</text></g>
+      <g class="node author" data-pair="ai"     tabindex="0" role="button" aria-label="ai-provider-author (author)"><rect x="30"  y="226" width="190" height="28" rx="6"/><text x="40" y="244">ai-provider-author</text></g>
+      <g class="node author" data-pair="scrape" tabindex="0" role="button" aria-label="scraping-applier-author (author)"><rect x="30"  y="271" width="190" height="28" rx="6"/><text x="40" y="289">scraping-applier-author</text></g>
+      <g class="node author" data-pair="export" tabindex="0" role="button" aria-label="pdf-docx-generator (author)"><rect x="30"  y="316" width="190" height="28" rx="6"/><text x="40" y="334">pdf-docx-generator</text></g>
+      <g class="node author" data-pair="test"   tabindex="0" role="button" aria-label="test-author (author)"><rect x="30"  y="361" width="190" height="28" rx="6"/><text x="40" y="379">test-author</text></g>
+      <g class="node author" data-pair="cq"     tabindex="0" role="button" aria-label="code-quality-author (author)"><rect x="30"  y="406" width="190" height="28" rx="6"/><text x="40" y="424">code-quality-author</text></g>
+
+      <!-- CRITIC nodes -->
+      <g class="node critic" data-pair="rust"   tabindex="0" role="button" aria-label="rust-backend-architect (critic)"><rect x="400" y="46"  width="200" height="28" rx="6"/><text x="410" y="64">rust-backend-architect</text></g>
+      <g class="node critic" data-pair="front"  tabindex="0" role="button" aria-label="frontend-reviewer (critic)"><rect x="400" y="91"  width="200" height="28" rx="6"/><text x="410" y="109">frontend-reviewer</text></g>
+      <g class="node critic" data-pair="front"  tabindex="0" role="button" aria-label="ui-ux-expert (critic)"><rect x="400" y="136" width="200" height="28" rx="6"/><text x="410" y="154">ui-ux-expert</text></g>
+      <g class="node critic" data-pair="job"    tabindex="0" role="button" aria-label="job-match-expert (critic)"><rect x="400" y="181" width="200" height="28" rx="6"/><text x="410" y="199">job-match-expert</text></g>
+      <g class="node critic" data-pair="ai"     tabindex="0" role="button" aria-label="ai-provider-expert (critic)"><rect x="400" y="226" width="200" height="28" rx="6"/><text x="410" y="244">ai-provider-expert</text></g>
+      <g class="node critic" data-pair="scrape" tabindex="0" role="button" aria-label="scraping-applier-expert (critic)"><rect x="400" y="271" width="200" height="28" rx="6"/><text x="410" y="289">scraping-applier-expert</text></g>
+      <g class="node critic" data-pair="export" tabindex="0" role="button" aria-label="resume-export-expert (critic)"><rect x="400" y="316" width="200" height="28" rx="6"/><text x="410" y="334">resume-export-expert</text></g>
+      <g class="node critic" data-pair="test"   tabindex="0" role="button" aria-label="testing-reviewer (critic)"><rect x="400" y="361" width="200" height="28" rx="6"/><text x="410" y="379">testing-reviewer</text></g>
+      <g class="node critic" data-pair="cq"     tabindex="0" role="button" aria-label="code-quality-reviewer (critic)"><rect x="400" y="406" width="200" height="28" rx="6"/><text x="410" y="424">code-quality-reviewer</text></g>
+
+      <!-- risk-lens nodes (bottom, red-linked) -->
+      <g class="node critic" data-pair="sec"  tabindex="0" role="button" aria-label="tauri-security-reviewer (critic)"><rect x="370" y="438" width="200" height="28" rx="6"/><text x="380" y="456">tauri-security-reviewer</text></g>
+      <g class="node critic" data-pair="perf" tabindex="0" role="button" aria-label="performance-profiler (critic)"><rect x="510" y="438" width="160" height="28" rx="6"/><text x="520" y="456">performance-profiler</text></g>
+    </svg>
+  </div>
+  <div class="legend">
+    <span><i class="sw box author"></i> author (writes)</span>
+    <span><i class="sw box critic"></i> critic (audits)</span>
+    <span><i class="sw"></i> author ↔ critic pairing</span>
+    <span><i class="sw risk"></i> risk secondary (security / perf)</span>
+  </div>
+  <p class="map-hint">Two cross-cutting roles aren't on the map: <code>cleanup</code> (dead-code sweep before close) and <code>project-steward</code> (docs/lessons — the sole writer there).</p>
+
+  <hr class="scrawl">
+
+  <!-- ============ 4 · AGENT CARDS ============ -->
+  <h2 class="section">The Roster</h2>
+  <p class="section-sub">every agent, its pair, the paths it owns, and how you'd delegate to it.</p>
+
+  <!-- cards are generated from data below so every name appears verbatim -->
+  <div id="roster"></div>
+
+  <hr class="scrawl">
+
+  <!-- ============ 5 · PER-TASK PIPELINE ============ -->
+  <h2 class="section">One Task, End to End</h2>
+  <p class="section-sub">how a single change actually flows through the fleet.</p>
+
+  <div class="card pipeline">
+    <div class="step">
+      <div class="num">1</div>
+      <div class="body">
+        <h3>Intake &amp; triage <span class="tag">main session</span></h3>
+        <p>The diff's touched paths are matched against <span class="a">.claude/review-routes.json</span> — first matching glob wins. That picks the <b>Primary Owner</b> (the author) and any risk <b>Secondary</b>. The main session orchestrates; agents never call other agents.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">2</div>
+      <div class="body">
+        <h3>Pre-harvest handoff <span class="tag">context, once</span></h3>
+        <p>Instead of every agent cold-exploring the repo, the owning area is harvested once into a compact handoff file (symbols, paths, contracts). The author and its critic read that, not the whole tree — this is what keeps the multi-agent token premium small.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">3</div>
+      <div class="body">
+        <h3>Author implements <span class="tag">write access</span></h3>
+        <p>The domain author (e.g. <span class="a">pdf-docx-generator</span>) makes the smallest diff that satisfies the spec, then hands off. It <b>does not</b> approve itself.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">4</div>
+      <div class="body">
+        <h3>Independent critic audits <span class="tag">read-only</span></h3>
+        <p>The paired critic (<span class="a">resume-export-expert</span>) reviews the diff against its checklist. HIGH/CRITICAL findings block; LOW/MEDIUM are advisory. A fresh pair of eyes — never the writer.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">5</div>
+      <div class="body">
+        <h3>test-author writes tests <span class="tag">if testable</span></h3>
+        <p>If the change touches testable logic, <span class="a">test-author</span> adds coverage (unit / golden / e2e). No feature is complete without it.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">6</div>
+      <div class="body">
+        <h3>testing-reviewer audits the tests <span class="tag">read-only</span></h3>
+        <p><span class="a">testing-reviewer</span> challenges weak assertions, flakiness, and untested error/security paths — and it <b>never writes tests</b>, so the author of the tests isn't the one signing off.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">7</div>
+      <div class="body">
+        <h3>cleanup sweeps dead code <span class="tag">report-first</span></h3>
+        <p><span class="a">cleanup</span> audits for unused files / exports / deps the change orphaned, and deletes only the safe tier after confirmation.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">8</div>
+      <div class="body">
+        <h3>project-steward closes <span class="tag">sole doc writer</span></h3>
+        <p><span class="a">project-steward</span> syncs <span class="a">docs/</span> + <span class="a">docs/knowledge</span>, persists any lesson, and runs <span class="a">graphify update .</span> + <span class="a">codegraph sync</span> so the graphs match reality again.</p>
+      </div>
+    </div>
+  </div>
+
+  <hr class="scrawl">
+
+  <!-- ============ 6 · WORK TOGETHER ============ -->
+  <h2 class="section">Make Them Work Together</h2>
+  <p class="section-sub">one cross-layer ask, the whole fleet in parallel.</p>
+
+  <div class="big-prompt">
+    <span class="copy-cmd" role="button" tabindex="0" title="click to copy" data-copy="Implement a 'save job to a folder' feature end-to-end: new IPC command + Rust store, a renderer panel to pick the folder, and ATS-aware tagging. Route it through the agent fleet.">Implement a "save job to a folder" feature end-to-end: new IPC command + Rust store, a renderer panel to pick the folder, and ATS-aware tagging. Route it through the agent fleet.</span>
+
+    <div class="teams">
+      <div class="team">
+        <h4>Disjoint files, in parallel</h4>
+        <ul>
+          <li><code>rust-backend-author</code> — IPC command + SQLite store (<code>commands/</code>, <code>data_store.rs</code>)</li>
+          <li><code>frontend-author</code> — the folder-picker panel (<code>renderer/**</code>)</li>
+          <li><code>job-match-author</code> — the ATS tag logic</li>
+        </ul>
+      </div>
+      <div class="team">
+        <h4>Critics challenge each other</h4>
+        <ul>
+          <li><code>rust-backend-architect</code> + <code>tauri-security-reviewer</code> on the new IPC surface</li>
+          <li><code>frontend-reviewer</code> + <code>ui-ux-expert</code> on the panel</li>
+          <li><code>job-match-expert</code> on the scoring</li>
+        </ul>
+      </div>
+      <div class="team">
+        <h4>Then the close-out</h4>
+        <ul>
+          <li><code>test-author</code> → <code>testing-reviewer</code> across all three</li>
+          <li><code>cleanup</code> sweep</li>
+          <li><code>project-steward</code> docs + lessons</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <hr class="scrawl">
+
+  <!-- ============ 7 · WITH vs WITHOUT ============ -->
+  <h2 class="section">With vs Without the Fleet</h2>
+  <p class="section-sub">same job. honestly: agents cost a token premium for higher reliability + parallel speed.</p>
+
+  <div class="versus">
+    <div class="vcol without">
+      <h3>One agent, no fleet</h3>
+      <div class="dim">
+        <span class="k">Wall-clock</span>
+        <span class="v">Serial. One context does intake, code, review, tests, docs — back to back.</span>
+      </div>
+      <div class="dim">
+        <span class="k">Tokens</span>
+        <span class="v">Cold re-exploration every spawn: <b>≈70–122k tokens/spawn</b>, <b>≈120 tool-uses</b> to rebuild context it never kept.</span>
+      </div>
+      <div class="dim">
+        <span class="k">Bugs caught before release</span>
+        <span class="v">The writer reviews its own work — the missed error is the one it didn't see the first time. No release gate.</span>
+      </div>
+    </div>
+
+    <div class="vcol with">
+      <h3>The agent fleet</h3>
+      <div class="dim">
+        <span class="k">Wall-clock</span>
+        <span class="v">Authors run in parallel on disjoint files; critics audit alongside. Faster on cross-layer work.</span>
+      </div>
+      <div class="dim">
+        <span class="k">Tokens</span>
+        <span class="v">Pre-harvested handoff instead of cold start: <b>≈44 tool-uses</b> vs ≈120. Multi-agent adds <b>≈+58% token overhead</b> — kept small by the handoff.</span>
+      </div>
+      <div class="dim">
+        <span class="k">Bugs caught before release</span>
+        <span class="v">An independent writer/critic split catches <b>≈60–80%</b> of otherwise-missed errors, plus the Stop review-gate before merge.</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="illustrative">
+    <b>ILLUSTRATIVE FIGURES.</b> The numbers above (cold-start ≈70–122k tokens/spawn; ≈44 vs ≈120 tool-uses pre-harvested vs cold;
+    writer/critic catching ≈60–80% of missed errors; multi-agent ≈+58% token overhead) are illustrative, not measured benchmarks
+    of this repo. The honest trade: agents cost a token premium for higher reliability and parallel speed; the pre-harvested
+    handoff is what keeps that premium small.
+  </p>
+
+  <hr class="scrawl">
+
+  <footer>
+    <p class="byline">21 specialists, zero of them with a real job either.</p>
+    <p class="foot-links">
+      <a href="index.html">home</a> · <a href="download.html">download</a> · <a href="https://github.com/saeedkolivand/ai-job-hunter-app" target="_blank" rel="noopener">GitHub</a>
+    </p>
+  </footer>
+
+</main>
+
+<script>
+  // ---- shared agent data (single source so names appear verbatim + drives cards) ----
+  // [name, roleClass, role one-liner, pair line, primary paths, delegate prompt]
+  var AGENTS = {
+    authors: [
+      ['rust-backend-author','author','Implements the Rust/Tauri backend — domain modeling, errors, module boundaries, SQLite/migrations.','↔ critic <b>rust-backend-architect</b> (+ tauri-security-reviewer on risk)','apps/tauri/src-tauri/src/** · packages/shared/**','Use rust-backend-author to add a SQLite-backed store for saved jobs.'],
+      ['frontend-author','author','Implements the React renderer — components, routes, UI state; design-system + i18n + a11y compliant.','↔ critics <b>frontend-reviewer</b> + <b>ui-ux-expert</b>','apps/tauri/src/renderer/** · packages/ui/**','Use frontend-author to add a saved-jobs panel with a folder picker.'],
+      ['job-match-author','author','Implements ATS scoring, job analysis, keyword/skill extraction, matching, and cover-letter relevance.','↔ critic <b>job-match-expert</b>','commands/match_resume.rs · cover_letter/** · recommend/** · validate/**','Use job-match-author to add a keyword-coverage tag to each saved job.'],
+      ['ai-provider-author','author','Implements AI provider integrations, model routing, embeddings, prompts, and streaming.','↔ critic <b>ai-provider-expert</b> (+ security on injection/leakage)','commands/ai_provider/** · commands/ai.rs · documents/** · packages/prompts/**','Use ai-provider-author to wire a new model into the provider registry.'],
+      ['scraping-applier-author','author','Implements job scraping + browser automation, selector resilience, and the SCRAPERS registry.','↔ critic <b>scraping-applier-expert</b>','apps/tauri/src-tauri/src/scraping/** · browser/**','Use scraping-applier-author to fix the LinkedIn list-view selectors.'],
+      ['pdf-docx-generator','author','Implements export rendering — PDF/DOCX, layout, fonts, pagination, golden snapshots, DocumentModel/theme/locale.','↔ critic <b>resume-export-expert</b>','export/** · model/** · theme/** · locale/** · layout/** · measure/**','Use pdf-docx-generator to fix the résumé overflowing onto a second page.'],
+      ['test-author','author','Writes automated tests — unit / integration / e2e / golden — across every domain.','↔ critic <b>testing-reviewer</b>','**/*.test.* · **/*.spec.* · src-tauri/tests/**','Use test-author to add golden tests for the new export path.'],
+      ['code-quality-author','author','Refactors to meet clean-code / DRY / KISS — smallest behavior-preserving diff.','↔ critic <b>code-quality-reviewer</b>','any package/path on request','Use code-quality-author to deduplicate the repeated scoring helpers.'],
+    ],
+    critics: [
+      ['rust-backend-architect','critic','Reviews the Rust/Tauri backend — domain modeling, error handling, L0–L3 boundaries, data/SQLite/GDPR.','audits <b>rust-backend-author</b>','apps/tauri/src-tauri/src/** (unowned) · packages/shared/**','/review-rust on the new store command.'],
+      ['frontend-reviewer','critic','Reviews the React renderer only — ports-&-adapters, design system, React Query, i18n, a11y.','audits <b>frontend-author</b>','apps/tauri/src/renderer/** · packages/ui/**','/review-frontend on the saved-jobs panel.'],
+      ['ui-ux-expert','critic','The visual + UX + deep-a11y taste lens — hierarchy, spacing, motion, microcopy. Read-only.','secondary on <b>frontend-author</b> changes','apps/tauri/src/renderer/** · packages/ui/** · landing/**','Use ui-ux-expert to critique the folder-picker UX.'],
+      ['job-match-expert','critic','Reviews ATS scoring / job analysis / matching / cover-letter relevance.','audits <b>job-match-author</b>','match_resume.rs · cover_letter.rs · validate/ · documents/embed','/review-ats on the keyword-coverage tag.'],
+      ['ai-provider-expert','critic','Reviews provider integrations — enforces add-a-provider = config + adapter only, never business-logic coupling.','audits <b>ai-provider-author</b>','ai_provider/** · commands/ai.rs · documents/embed · packages/prompts','/review-ai on the new model adapter.'],
+      ['scraping-applier-expert','critic','Reviews scraping / browser automation, selector resilience, registry + workflow reliability.','audits <b>scraping-applier-author</b>','scraping/** · browser/** · SCRAPERS registry','/review-scraping on the LinkedIn selector fix.'],
+      ['resume-export-expert','critic','Reviews the resume/export domain — DocumentModel, templates, theme, locale, ATS-safe structure.','audits <b>pdf-docx-generator</b>','export/** · model/** · theme/** · locale/** · layout/**','/review-export on the pagination fix.'],
+      ['testing-reviewer','critic','Audits coverage of changed code + test quality — weak assertions, flakiness, untested error paths. Never writes tests.','audits <b>test-author</b>','**/*.test.* · **/*.spec.* · src-tauri/tests/**','Use testing-reviewer to audit the new golden tests.'],
+      ['code-quality-reviewer','critic','Audits clean-code / DRY / KISS — severity-graded report, read-only.','audits <b>code-quality-author</b>','any package/path on request','/code-quality-review on the scoring module.'],
+      ['tauri-security-reviewer','critic','The cross-cutting SECURITY AUTHORITY — IPC surface, capabilities, updater, net, credentials, supply-chain, AI injection.','default <b>Secondary</b> on any risk-bearing change','capabilities/ · net/ · credentials/ · commands/** · Cargo.* · package.json','/review-security on the new IPC command.'],
+      ['performance-profiler','critic','The performance lens — startup, memory, hot paths, rendering, AI token efficiency. Secondary on perf-sensitive paths.','<b>Secondary</b> alongside the domain Primary','export/** · scraping/** · ai_provider/** · layout/** · measure/**','/review-performance on the export hot path.'],
+    ],
+    cross: [
+      ['cleanup','cross','Dead-code audit across the TS/React + Rust monorepo — unused files, exports, deps. Report-first; safe-tier deletes only after confirmation.','runs immediately before <b>project-steward</b>','whole monorepo','/cleanup after the feature lands.'],
+      ['project-steward','cross','Sole owner of docs, the knowledge base, ADRs, the lessons log, and release — the only agent that persists lessons.','closes every task','docs/** · docs/knowledge/** · landing/** · release config','/update-docs to sync docs + graphify after the change.'],
+    ],
+  };
+
+  function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function escAttr(s){ return esc(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+  function cardHTML(a){
+    var name=a[0], roleClass=a[1], role=a[2], pair=a[3], paths=a[4], prompt=a[5];
+    var pill = roleClass==='author' ? 'WRITES' : roleClass==='critic' ? 'AUDITS' : 'CROSS-CUTTING';
+    return ''+
+      '<div class="agent">'+
+        '<span class="role-pill role-'+roleClass+'">'+pill+'</span>'+
+        '<span class="name">'+esc(name)+'</span>'+
+        '<span class="role">'+role+'</span>'+
+        '<span class="pair">'+pair+'</span>'+
+        '<span class="paths">📁 '+esc(paths)+'</span>'+
+        '<span class="copy-cmd" role="button" tabindex="0" title="click to copy" data-copy="'+escAttr(prompt)+'">'+esc(prompt)+'</span>'+
+      '</div>';
+  }
+  function bandHTML(title, list){
+    return '<h3 class="domain-band">'+title+'</h3><div class="agent-grid">'+list.map(cardHTML).join('')+'</div>';
+  }
+  document.getElementById('roster').innerHTML =
+    bandHTML('Authors — they write', AGENTS.authors) +
+    bandHTML('Critics — they audit', AGENTS.critics) +
+    bandHTML('Cross-cutting — close-out', AGENTS.cross);
+
+  // ---- intake → delegation routing (grounded in review-routes.json) ----
+  var ROUTES = {
+    focus:  { title:'Button has no focus ring', area:'apps/tauri/src/renderer/** (or packages/ui/**) → frontend',
+      rows:[
+        ['detected','UI / renderer code — a focus-ring is a renderer + a11y concern.'],
+        ['author','frontend-author','author','adds the focus style on the @ajh/ui primitive'],
+        ['critic','frontend-reviewer','crit','checks ports-&-adapters + design tokens'],
+        ['critic','ui-ux-expert','crit','the a11y / visual taste lens — is the ring actually visible?'] ] },
+    ats:    { title:'ATS score seems wrong', area:'commands/match_resume.rs, validate/, recommend/ → ATS scoring',
+      rows:[
+        ['detected','Scoring / matching logic — owned by the job-match domain, not export formatting.'],
+        ['author','job-match-author','author','fixes the scoring kernel / keyword extraction'],
+        ['critic','job-match-expert','crit','audits match quality + recommendation correctness'] ] },
+    ipc:    { title:'Add an IPC command for X', area:'commands/**, commands/mod.rs, packages/shared/** → backend + IPC',
+      rows:[
+        ['detected','New IPC surface — Rust backend, and a new attack surface.'],
+        ['author','rust-backend-author','author','implements the command + wires the contract'],
+        ['critic','rust-backend-architect','crit','reviews boundaries, errors, data integrity'],
+        ['secondary','tauri-security-reviewer','sec','default risk Secondary — every new command is IPC attack surface'] ] },
+    pdf:    { title:'PDF export overflows a page', area:'export/**, layout/**, measure/** → resume/export',
+      rows:[
+        ['detected','Export rendering + pagination — the resume/export domain (perf-sensitive).'],
+        ['author','pdf-docx-generator','author','fixes layout / pagination in the renderer'],
+        ['critic','resume-export-expert','crit','audits ATS-safe structure + template correctness'],
+        ['secondary','performance-profiler','sec','export is a hot path — perf lens rides along'] ] },
+    scrape: { title:'Scraper stopped matching LinkedIn', area:'scraping/**, browser/**, SCRAPERS registry → scraping',
+      rows:[
+        ['detected','Selector resilience + browser automation — the scraping domain.'],
+        ['author','scraping-applier-author','author','repairs the LinkedIn selectors in the registry'],
+        ['critic','scraping-applier-expert','crit','audits selector resilience + workflow reliability'] ] },
+  };
+
+  function routeHTML(r){
+    var rows = r.rows.map(function(row){
+      if(row[0]==='detected'){
+        return '<li><span class="lbl">area</span><span class="why">'+esc(row[1])+'</span></li>';
+      }
+      var lbl = row[0]==='author' ? 'author' : row[0]==='secondary' ? 'secondary' : 'critic';
+      var cls = row[2]==='author' ? '' : row[2]==='sec' ? 'sec' : 'crit';
+      return '<li><span class="lbl">'+lbl+'</span><span class="who"><b class="'+cls+'">'+esc(row[1])+'</b></span>'+
+             '<span class="why">— '+esc(row[3])+'</span></li>';
+    }).join('');
+    return '<h3>'+esc(r.title)+'</h3><p class="area">'+esc(r.area)+'</p><ul class="flow">'+rows+'</ul>';
+  }
+
+  var routeEl = document.getElementById('route');
+  var issues = document.querySelectorAll('.issue');
+  issues.forEach(function(btn){
+    btn.addEventListener('click', function(){
+      issues.forEach(function(b){ b.setAttribute('aria-pressed','false'); });
+      btn.setAttribute('aria-pressed','true');
+      var r = ROUTES[btn.getAttribute('data-issue')];
+      if(r) routeEl.innerHTML = routeHTML(r);
+    });
+  });
+
+  // ---- fleet map: hover/focus a node lights its paired connectors ----
+  (function(){
+    var svg = document.querySelector('.fleet-svg');
+    if(!svg) return;
+    var nodes = svg.querySelectorAll('.node');
+    var links = svg.querySelectorAll('.link');
+    function light(pair, on){
+      links.forEach(function(l){ if(l.getAttribute('data-pair')===pair) l.classList.toggle('lit', on); });
+      nodes.forEach(function(n){ if(n.getAttribute('data-pair')===pair) n.classList.toggle('active', on); });
+    }
+    nodes.forEach(function(n){
+      var pair = n.getAttribute('data-pair');
+      n.addEventListener('mouseenter', function(){ light(pair,true); });
+      n.addEventListener('mouseleave', function(){ light(pair,false); });
+      n.addEventListener('focus', function(){ light(pair,true); });
+      n.addEventListener('blur', function(){ light(pair,false); });
+    });
+  })();
+
+  // ---- click-to-copy chips (same pattern as download.html, works on dynamic cards) ----
+  function wireCopy(el){
+    function copy(){
+      var text = el.getAttribute('data-copy') || el.textContent || '';
+      if(!navigator.clipboard) return;
+      navigator.clipboard.writeText(text).then(function(){
+        el.classList.add('copied');
+        setTimeout(function(){ el.classList.remove('copied'); }, 1300);
+      });
+    }
+    el.addEventListener('click', copy);
+    el.addEventListener('keydown', function(e){
+      if(e.key==='Enter' || e.key===' '){ e.preventDefault(); copy(); }
+    });
+  }
+  document.querySelectorAll('.copy-cmd').forEach(wireCopy);
+</script>
+</body>
+</html>
