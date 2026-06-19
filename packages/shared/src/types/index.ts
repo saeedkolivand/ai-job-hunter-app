@@ -107,6 +107,8 @@ export interface MatchScore {
   gaps: string[];
   recommendations: string[];
   explanation?: string;
+  /** Guidance framing: this score is our estimate, not the employer's verdict. */
+  guidance?: string;
 }
 
 export interface RuntimeHealth {

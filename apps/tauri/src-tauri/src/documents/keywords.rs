@@ -253,16 +253,22 @@ pub fn readable_gaps(gaps: &[String], display: &HashMap<String, String>) -> Vec<
 /// formula shared by the Jobs-page ATS sub-score ([`coverage_score`] /
 /// `commands::match_resume::score_one`) and the headless Autopilot ranker.
 /// Both sides are expected to be stemmed with the SAME (JD-derived) stemmer.
-pub fn keyword_coverage(job: &HashSet<String>, resume: &HashSet<String>) -> (f64, Vec<String>) {
+///
+/// Returns `None` when the job keyword set is empty (sparse/unparseable posting)
+/// so callers can distinguish "no extractable keywords" from "0% match".
+pub fn keyword_coverage(
+    job: &HashSet<String>,
+    resume: &HashSet<String>,
+) -> Option<(f64, Vec<String>)> {
     if job.is_empty() {
-        return (0.0, Vec::new());
+        return None;
     }
     let mut gaps: Vec<String> = job.difference(resume).cloned().collect();
     gaps.sort();
     let matched = job.len() - gaps.len();
     let coverage = (matched as f64 / job.len() as f64 * 100.0).round();
     gaps.truncate(15);
-    (coverage, gaps)
+    Some((coverage, gaps))
 }
 
 /// Build the ATS text blob for a job posting — title + description + requirements,
@@ -309,7 +315,9 @@ pub fn coverage_score(resume_text: &str, job_text: &str) -> f64 {
     let stemmer = make_stemmer(job_text);
     let job_kw = keywords(job_text, &stemmer);
     let resume_kw = keywords(resume_text, &stemmer);
-    keyword_coverage(&job_kw, &resume_kw).0
+    // None → no extractable JD keywords; return 0.0 for the headless ranker
+    // (Autopilot filters by minMatchScore, so 0.0 safely excludes sparse postings).
+    keyword_coverage(&job_kw, &resume_kw).map_or(0.0, |(cov, _)| cov)
 }
 
 #[cfg(test)]
@@ -492,7 +500,7 @@ mod test {
     fn keyword_coverage_full_when_resume_has_all() {
         let job = set(&["rust", "react", "docker"]);
         let resume = set(&["rust", "react", "docker", "extra"]);
-        let (cov, gaps) = keyword_coverage(&job, &resume);
+        let (cov, gaps) = keyword_coverage(&job, &resume).expect("non-empty job must return Some");
         assert_eq!(cov, 100.0);
         assert!(gaps.is_empty());
     }
@@ -501,22 +509,25 @@ mod test {
     fn keyword_coverage_reports_sorted_gaps() {
         let job = set(&["rust", "react", "docker", "kubernetes"]);
         let resume = set(&["rust", "react"]);
-        let (cov, gaps) = keyword_coverage(&job, &resume);
+        let (cov, gaps) = keyword_coverage(&job, &resume).expect("non-empty job must return Some");
         assert_eq!(cov, 50.0);
         assert_eq!(gaps, vec!["docker".to_string(), "kubernetes".to_string()]);
     }
 
     #[test]
-    fn keyword_coverage_empty_job_is_zero() {
-        let (cov, gaps) = keyword_coverage(&HashSet::new(), &set(&["rust"]));
-        assert_eq!(cov, 0.0);
-        assert!(gaps.is_empty());
+    fn keyword_coverage_empty_job_returns_none() {
+        // Empty JD keyword set → None (distinguishable from 0% real mismatch).
+        assert!(
+            keyword_coverage(&HashSet::new(), &set(&["rust"])).is_none(),
+            "empty job keyword set must return None, not Some(0.0)"
+        );
     }
 
     #[test]
     fn keyword_coverage_caps_gaps_at_fifteen() {
         let job: HashSet<String> = (0..30).map(|i| format!("skill{i:02}")).collect();
-        let (cov, gaps) = keyword_coverage(&job, &HashSet::new());
+        let (cov, gaps) =
+            keyword_coverage(&job, &HashSet::new()).expect("non-empty job must return Some");
         assert_eq!(cov, 0.0);
         assert_eq!(gaps.len(), 15, "gaps must be truncated to 15");
     }
@@ -549,7 +560,8 @@ mod test {
         let job = "rust kubernetes docker terraform";
         let stemmer = make_stemmer(job);
         let (kernel, _gaps) =
-            keyword_coverage(&keywords(job, &stemmer), &keywords(resume, &stemmer));
+            keyword_coverage(&keywords(job, &stemmer), &keywords(resume, &stemmer))
+                .expect("non-empty job must return Some");
         assert_eq!(coverage_score(resume, job), kernel);
     }
 
