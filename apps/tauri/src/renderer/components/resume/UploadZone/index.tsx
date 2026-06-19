@@ -31,6 +31,7 @@ export function UploadZone({
     <div
       role="button"
       tabIndex={0}
+      aria-label={t('resumeInput.dropOrClick')}
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -69,7 +70,7 @@ export function UploadZone({
           <Upload size={20} className="text-foreground/20" />
           <div className="text-center space-y-0.5">
             <p className="text-[11px] text-foreground/60">{t('resumeInput.dropOrClick')}</p>
-            <p className="text-[10px] text-foreground/30">PDF, DOCX, TXT — max 25 MB</p>
+            <p className="text-[10px] text-foreground/30">{t('resumeInput.acceptedFormats')}</p>
           </div>
         </>
       )}

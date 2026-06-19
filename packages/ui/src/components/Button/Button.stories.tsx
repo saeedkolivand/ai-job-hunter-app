@@ -113,13 +113,16 @@ export const Disabled: Story = {
 // any future Storybook/vitest browser runner).
 export const CssCheck: Story = {
   tags: ['ai-generated'],
-  args: { children: 'Submit', variant: 'default', size: 'md' },
+  // Uses `primary` (a filled variant) to assert font-semibold (600).
+  // Neutral variants (default/ghost/glass) are font-normal (400) per the
+  // design-system weight ladder; only filled/semantic variants use 600.
+  args: { children: 'Submit', variant: 'primary', size: 'md' },
   play: async ({ canvas }) => {
     const button = canvas.getByRole('button', { name: /submit/i });
     const styles = getComputedStyle(button);
     await expect(styles.display).toBe('inline-flex');
-    // Buttons default to weight 500 (`font-medium`). Still a non-UA value that
-    // only holds when the design-system CSS is loaded.
-    await expect(styles.fontWeight).toBe('500');
+    // Filled variants (primary/run/edit/delete/danger/warning/info/success) use
+    // font-semibold (600). Only holds when the design-system CSS is loaded.
+    await expect(styles.fontWeight).toBe('600');
   },
 };

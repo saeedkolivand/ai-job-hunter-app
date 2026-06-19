@@ -2,7 +2,16 @@ import { Cpu, Gauge, Info, type LucideIcon, SlidersHorizontal, Zap } from 'lucid
 import { motion } from 'motion/react';
 
 import { type TFunction, useTranslation } from '@ajh/translations';
-import { cn, Dropdown, GlassCard, SectionLabel, Switch, transition } from '@ajh/ui';
+import {
+  Button,
+  cn,
+  Dropdown,
+  GlassCard,
+  HoverPopover,
+  SectionLabel,
+  Switch,
+  transition,
+} from '@ajh/ui';
 
 import {
   type BlurTier,
@@ -52,22 +61,28 @@ const KNOB_FIELD: Record<BackendKnob, keyof PerformanceProfile['backend']> = {
 function BackendOptionInfo({ t, knob }: { t: TFunction; knob: BackendKnob }) {
   const base = `settings.performanceMode.backend.${knob}`;
   return (
-    <div className="relative group shrink-0">
-      <Info
-        size={12}
-        className="text-foreground/30 cursor-help transition-colors group-hover:text-foreground/60"
-      />
-      <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border border-foreground/15 bg-[var(--color-card)] p-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 shadow-2xl">
-        <p className="mb-2 text-[11px] leading-relaxed text-foreground/70">{t(`${base}.info`)}</p>
-        <ul className="space-y-1">
-          {BACKEND_TIERS.map((tier) => (
-            <li key={tier} className="text-[11px] leading-snug text-foreground/50">
-              {t(`${base}.details.${tier}`)}
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
+    <HoverPopover
+      placement="bottom"
+      contentClassName="w-64 rounded-xl border border-foreground/15 bg-[var(--color-card)] p-3 shadow-2xl"
+      trigger={
+        <Button
+          variant="unstyled"
+          aria-label={t(`${base}.label`)}
+          className="cursor-help text-foreground/30 transition-colors hover:text-foreground/60"
+        >
+          <Info size={12} aria-hidden="true" />
+        </Button>
+      }
+    >
+      <p className="mb-2 text-[11px] leading-relaxed text-foreground/70">{t(`${base}.info`)}</p>
+      <ul className="space-y-1">
+        {BACKEND_TIERS.map((tier) => (
+          <li key={tier} className="text-[11px] leading-snug text-foreground/50">
+            {t(`${base}.details.${tier}`)}
+          </li>
+        ))}
+      </ul>
+    </HoverPopover>
   );
 }
 
