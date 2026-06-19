@@ -37,3 +37,4 @@ export * from './use-referrals';
 export * from './use-support';
 export * from './use-system';
 export * from './use-system-resources';
+export * from './use-window-controls';

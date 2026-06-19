@@ -25,6 +25,16 @@
     { "glob": "apps/tauri/src-tauri/src/contact_profile/**", "owner": "resume-export-expert" },
     { "glob": "apps/tauri/src-tauri/src/scraping/**", "owner": "scraping-applier-expert" },
     { "glob": "apps/tauri/src-tauri/src/browser/**", "owner": "scraping-applier-expert" },
+    { "glob": "apps/extension/**", "owner": "extension-reviewer" },
+    { "glob": "apps/tauri/src-tauri/src/extension_bridge/**", "owner": "extension-reviewer" },
+    {
+      "glob": "apps/tauri/src-tauri/src/commands/extension_bridge.rs",
+      "owner": "extension-reviewer"
+    },
+    {
+      "glob": "packages/shared/src/ipc/extension-protocol-constants.ts",
+      "owner": "extension-reviewer"
+    },
     { "glob": "apps/tauri/src/renderer/**", "owner": "frontend-reviewer" },
     { "glob": "packages/ui/**", "owner": "frontend-reviewer" },
     { "glob": "apps/tauri/src-tauri/src/**", "owner": "rust-backend-architect" },
@@ -46,6 +56,9 @@
         "apps/tauri/src-tauri/src/commands/mod.rs",
         "apps/tauri/src-tauri/src/updater/**",
         "apps/tauri/src-tauri/src/commands/ai_provider/**",
+        "apps/extension/**",
+        "apps/tauri/src-tauri/src/extension_bridge/**",
+        "apps/tauri/src-tauri/src/commands/extension_bridge.rs",
         "packages/prompts/**",
         "apps/tauri/src-tauri/src/db.rs",
         "apps/tauri/src-tauri/src/data_store.rs",
@@ -100,6 +113,11 @@
       "apps/tauri/src-tauri/src/recommend/**"
     ],
     "scraping": ["apps/tauri/src-tauri/src/scraping/**", "apps/tauri/src-tauri/src/browser/**"],
+    "extension": [
+      "apps/extension/**",
+      "apps/tauri/src-tauri/src/extension_bridge/**",
+      "apps/tauri/src-tauri/src/commands/extension_bridge.rs"
+    ],
     "ai": [
       "apps/tauri/src-tauri/src/commands/ai_provider/**",
       "apps/tauri/src-tauri/src/commands/ai.rs",

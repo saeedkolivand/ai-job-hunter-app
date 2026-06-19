@@ -29,6 +29,25 @@ import { useUiStore } from '@/store/ui-store';
 
 import { NotificationBell } from './index';
 
+// ── useWindowControls — controlled spy ────────────────────────────────────────
+// vi.hoisted() ensures the spy is initialized before vi.mock() hoisting runs.
+
+const { mockForeground } = vi.hoisted(() => ({
+  mockForeground: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('@/services/use-window-controls/use-window-controls', () => ({
+  useWindowControls: () => ({
+    foreground: mockForeground,
+    isMacos: false,
+    isFocused: vi.fn().mockResolvedValue(true),
+    setTaskbarProgress: vi.fn(),
+    flashAttention: vi.fn(),
+    showApp: vi.fn(),
+    toggleMaximize: vi.fn(),
+  }),
+}));
+
 // ── i18n ──────────────────────────────────────────────────────────────────────
 
 vi.mock('@ajh/translations', () => ({
@@ -108,6 +127,8 @@ beforeEach(() => {
   mockRemove.mockReset();
   mockClearAll.mockReset();
   mockNavigate.mockReset();
+  mockForeground.mockReset();
+  mockForeground.mockResolvedValue(undefined);
 });
 
 // ── Badge ─────────────────────────────────────────────────────────────────────
@@ -357,6 +378,54 @@ describe('NotificationBell — toolbar actions', () => {
     // When list is empty the EmptyState shows; toolbar buttons are still rendered in the header.
     const clearAllBtn = screen.getByRole('button', { name: 'notifications.clearAll' });
     expect(clearAllBtn).toBeDisabled();
+  });
+});
+
+// ── foreground() before navigate ──────────────────────────────────────────────
+
+describe('NotificationBell — foreground before navigate', () => {
+  it('clicking a row with a route calls foreground() AND navigate() — foreground fired', () => {
+    const foregroundOrder: string[] = [];
+    mockForeground.mockImplementation(async () => {
+      foregroundOrder.push('foreground');
+    });
+    mockNavigate.mockImplementation(async () => {
+      foregroundOrder.push('navigate');
+    });
+
+    mockNotifications = [
+      makeNotification({
+        id: 'n1',
+        title: 'Nav Row',
+        route: { to: '/applications', search: { highlight: 'n1' } },
+      }),
+    ];
+    renderBell();
+    openDropdown();
+
+    const row = screen.getByText('Nav Row').closest('[role="button"]');
+    expect(row).not.toBeNull();
+    if (row) fireEvent.click(row);
+
+    // foreground() is void-called (fire-and-forget); it must have been invoked.
+    expect(mockForeground).toHaveBeenCalledOnce();
+    // navigate is also called.
+    expect(mockNavigate).toHaveBeenCalledOnce();
+    // foreground was kicked off before navigate (full order, not just [0]).
+    expect(foregroundOrder).toEqual(['foreground', 'navigate']);
+  });
+
+  it('clicking a row WITHOUT a route still calls foreground() but NOT navigate()', () => {
+    mockNotifications = [makeNotification({ id: 'n1', title: 'No Route Row', route: undefined })];
+    renderBell();
+    openDropdown();
+
+    const row = screen.getByText('No Route Row').closest('[role="button"]');
+    expect(row).not.toBeNull();
+    if (row) fireEvent.click(row);
+
+    expect(mockForeground).toHaveBeenCalledOnce();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
 

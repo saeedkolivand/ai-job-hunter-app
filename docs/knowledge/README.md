@@ -1,6 +1,6 @@
 # Knowledge base (`docs/knowledge/`)
 
-Last updated: 2026-06-14
+Last updated: 2026-06-19
 
 A **thin, pointer-style** index for AI agents (and humans). It describes _shape and contracts_ and points at the **owning source symbol**; it deliberately does **not** copy drift-prone literals (scoring weights, template/board counts) — those live in code.
 
@@ -25,6 +25,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [domain-model.md](domain-model.md)                 | Core types/traits + registries (DocumentModel, JobPosting, ExportRequest/Result, Scraper/SCRAPERS)   |
 | [resume-domain.md](resume-domain.md)               | Resume + ATS + export: sections, templates, country standards, ATS scoring model, PDF/DOCX contract  |
 | [automation-domain.md](automation-domain.md)       | Scraping + AI-provider: registries, resilience, provider abstraction, embeddings, streaming, prompts |
+| [extension-domain.md](extension-domain.md)         | Browser extension (MV3) + desktop bridge: auth model, transport, protocol lockstep, store policy     |
 | [matching-algorithm.md](matching-algorithm.md)     | Keyword-coverage scoring kernel (Autopilot + ATS), caching, gap analysis                             |
 | [persistence.md](persistence.md)                   | SQLite + transactions, `db::open`, DataStore trait, backup/restore, Resettable registry              |
 | [anti-abuse-limits.md](anti-abuse-limits.md)       | Rate + concurrency limits, per-provider daily ceilings, runtime configuration                        |
@@ -68,6 +69,6 @@ Every ADR carries a `Status` field documenting its lifecycle: `Accepted | Supers
 
 `docs/ARCHITECTURE.md`, `docs/architecture-rules.md`, `docs/PATTERNS.md`, `docs/DESIGN_SYSTEM.md`, `docs/EXPORT_TEMPLATES.md`, `docs/API.md`, `docs/DESIGN_DECISIONS.md`, and the graphify graph (`graphify-out/`).
 
-**Agent system:** interactive explainer at `landing/agent-system.html` documents the 21-agent fleet, pairing structure, and command routing.
+**Agent system:** interactive explainer at `landing/agent-system.html` documents the 23-agent fleet, pairing structure, and command routing.
 
 > Maintained **only** by `project-steward`. Keep each file ≤ ~150 lines. After code/doc changes: `graphify update .`.

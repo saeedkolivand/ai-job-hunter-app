@@ -47,12 +47,20 @@ const BACKOFF_MS = [500, 1_000, 2_000, 5_000, 10_000];
 /** WS handshake/open timeout per port probe. */
 const OPEN_TIMEOUT_MS = 1_500;
 
+/**
+ * The exact error string the desktop sends when the pairing token is wrong.
+ * Only this string triggers permanent `bad_token` + no-reconnect.
+ * Every other auth error (timeout / connection-closed / malformed) is a
+ * TRANSPORT failure that allows reconnect via `app_not_running`.
+ */
+const AUTH_ERROR_UNAUTHORIZED = 'unauthorized';
+
 /** How long to wait for the native host's `bridge.ready` before falling back to ws. */
 const READY_TIMEOUT_MS = 1_500;
 
 type PendingResolver = (result: ExtensionImportResult) => void;
 
-export type BridgePhase = 'searching' | 'connected' | 'app_not_running';
+export type BridgePhase = 'searching' | 'connected' | 'app_not_running' | 'bad_token';
 
 export interface BridgeStatus {
   phase: BridgePhase;
@@ -235,9 +243,15 @@ export class BridgeClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
   private connecting = false;
+  /** When true the last close was an auth rejection — suppress normal reconnect. */
+  private authRejected = false;
 
   /** Notified on every phase change so the background can broadcast status. */
-  constructor(private readonly onPhaseChange: (status: BridgeStatus) => void) {}
+  constructor(
+    private readonly onPhaseChange: (status: BridgeStatus) => void,
+    /** Optional: called on connect to retrieve the stored pairing token for the auth handshake. */
+    private readonly getStoredToken?: () => Promise<string | null>
+  ) {}
 
   status(): BridgeStatus {
     return { phase: this.phase, port: this.port };
@@ -253,7 +267,7 @@ export class BridgeClient {
    * Safe to call repeatedly (popup-open wake, reconnect button).
    */
   async ensureConnected(): Promise<void> {
-    if (this.disposed || this.isOpen() || this.connecting) return;
+    if (this.disposed || this.isOpen() || this.connecting || this.phase === 'bad_token') return;
     this.connecting = true;
     try {
       this.setPhase('searching');
@@ -273,7 +287,7 @@ export class BridgeClient {
         try {
           const native = await readyPromise;
           this.port = null; // native has no port number; diagnostics only.
-          this.attach(native);
+          await this.attach(native);
           return;
         } catch (err) {
           if (err instanceof Error && err.message === NATIVE_APP_DOWN) {
@@ -288,13 +302,25 @@ export class BridgeClient {
 
       const socket = await this.probeRange();
       if (socket) {
-        this.attach(new WebSocketTransport(socket));
+        await this.attach(new WebSocketTransport(socket));
       } else {
         this.setPhase('app_not_running');
         this.scheduleReconnect();
       }
     } finally {
       this.connecting = false;
+    }
+  }
+
+  /**
+   * Clear the bad-token block so `ensureConnected()` will attempt a fresh
+   * connection after the user pastes a new token. Call this whenever the stored
+   * token is updated or cleared.
+   */
+  resetForNewToken(): void {
+    this.authRejected = false;
+    if (this.phase === 'bad_token') {
+      this.setPhase('searching');
     }
   }
 
@@ -411,21 +437,90 @@ export class BridgeClient {
     });
   }
 
-  /** Wire an opened transport: register handlers and reset backoff. */
-  private attach(transport: BridgeTransport): void {
+  /** Wire an opened transport, then perform the auth handshake if a token is stored. */
+  private async attach(transport: BridgeTransport): Promise<void> {
     this.transport = transport;
     this.backoffIndex = 0;
-    this.setPhase('connected');
+    this.authRejected = false;
 
     transport.onMessage((env) => this.onMessage(env));
     transport.onClose(() => {
       this.transport = null;
       this.failAllPending('Connection to the desktop app closed.');
       if (!this.disposed) {
-        this.setPhase('app_not_running');
-        this.scheduleReconnect();
+        if (this.authRejected) {
+          // Desktop closed the socket after rejecting our token — do NOT reconnect
+          // in a loop. The user must re-pair with a new token.
+          this.setPhase('bad_token');
+        } else {
+          this.setPhase('app_not_running');
+          this.scheduleReconnect();
+        }
       }
     });
+
+    // Auth handshake: if we have a stored token, verify it with the desktop
+    // before declaring the connection authorized.
+    const token = this.getStoredToken ? await this.getStoredToken() : null;
+    if (!token) {
+      // No token stored — socket is open but we're not paired yet.  The
+      // background's computeStatus() will surface this as 'not_paired'.
+      this.setPhase('connected');
+      return;
+    }
+
+    // Send the auth frame and await the import.result reply.
+    const reqId = newReqId();
+    const authEnvelope: ExtensionEnvelope = {
+      type: EXTENSION_MESSAGE_TYPES.auth,
+      token,
+      reqId,
+      payload: null,
+    };
+
+    const result = await new Promise<ExtensionImportResult>((resolve) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(reqId);
+        this.timers.delete(reqId);
+        // Treat a timeout the same as a failed auth — we cannot confirm.
+        resolve({ error: 'auth timeout' });
+      }, REQUEST_TIMEOUT_MS);
+      this.timers.set(reqId, timer);
+      this.pending.set(reqId, resolve);
+
+      try {
+        transport.send(authEnvelope);
+      } catch {
+        clearTimeout(timer);
+        this.timers.delete(reqId);
+        this.pending.delete(reqId);
+        resolve({ error: 'auth send failed' });
+      }
+    });
+
+    if (result.error === AUTH_ERROR_UNAUTHORIZED) {
+      // Explicit token rejection: block reconnect so the user must re-pair.
+      // The desktop closes the socket immediately after this reply; if it
+      // hasn't yet, close from our side so the onClose handler fires.
+      this.authRejected = true;
+      if (this.transport) {
+        this.transport.close();
+        this.transport = null;
+      }
+      this.setPhase('bad_token');
+    } else if (result.error) {
+      // Transport failure (timeout / connection-closed before reply / malformed):
+      // do NOT enter bad_token. Close cleanly so the onClose handler transitions
+      // to app_not_running + scheduleReconnect(), letting the extension recover
+      // when the desktop comes back.
+      if (this.transport) {
+        this.transport.close();
+        this.transport = null;
+      }
+      // onClose already fires on close(); don't double-set phase here.
+    } else {
+      this.setPhase('connected');
+    }
   }
 
   /** Match a parsed reply envelope by `reqId`, validate payload, resolve caller. */

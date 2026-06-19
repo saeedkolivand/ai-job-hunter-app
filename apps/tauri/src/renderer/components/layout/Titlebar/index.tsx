@@ -7,6 +7,7 @@ import { Button } from '@ajh/ui';
 
 import { parentRoute } from '@/lib/parent-route';
 import { onWindowControlsRegistered } from '@/lib/window-controls-registry';
+import { useWindowControls } from '@/services';
 import { useOnboardingCompleted } from '@/store/preferences-store';
 
 import { NotificationBell } from './NotificationBell';
@@ -15,7 +16,7 @@ export function Titlebar() {
   const { t } = useTranslation();
   const onboardingCompleted = useOnboardingCompleted();
   const [WindowControls, setWindowControls] = useState<ComponentType | null>(null);
-  const [isMac, setIsMac] = useState(false);
+  const { toggleMaximize, isMacos } = useWindowControls();
 
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
@@ -23,17 +24,33 @@ export function Titlebar() {
 
   useEffect(() => {
     onWindowControlsRegistered((c) => setWindowControls(() => c));
-    setIsMac(navigator.userAgent.includes('Mac'));
   }, []);
+
+  // Own the double-click uniformly on all platforms and suppress Tauri's built-in
+  // drag-region handler so we don't double-toggle (Win/Linux fire on mousedown,
+  // macOS fires on mouseup — both paths are neutralised by stopPropagation before
+  // the document-level listener runs, which is safe under React 19's root-container
+  // event delegation where synthetic stopPropagation calls nativeEvent.stopPropagation).
+  const handleTitlebarDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || e.detail !== 2) return;
+    if ((e.target as HTMLElement).closest('.app-no-drag')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'mousedown') {
+      void toggleMaximize();
+    }
+  };
 
   return (
     <div
       className="app-drag relative z-[300] flex h-10 select-none items-center justify-between"
       data-tauri-drag-region
+      onMouseDown={handleTitlebarDoubleClick}
+      onMouseUp={handleTitlebarDoubleClick}
     >
       {/* Left cluster: fixed-width spacer (mirrors window-controls on the right) with
           optional back button on detail routes. `app-no-drag` keeps it clickable. */}
-      <div className={`app-no-drag flex items-center ${isMac ? 'w-20' : 'w-[132px]'}`}>
+      <div className={`app-no-drag flex items-center ${isMacos ? 'w-20' : 'w-[132px]'}`}>
         {parent !== null && (
           <Button
             variant="ghost"
@@ -65,7 +82,7 @@ export function Titlebar() {
           keeps both clickable inside the drag region. */}
       <div className="app-no-drag flex items-center gap-1">
         {onboardingCompleted && <NotificationBell />}
-        {WindowControls && !isMac ? <WindowControls /> : <div className="w-20" />}
+        {WindowControls && !isMacos ? <WindowControls /> : <div className="w-20" />}
       </div>
     </div>
   );

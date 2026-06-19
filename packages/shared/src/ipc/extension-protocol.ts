@@ -34,6 +34,7 @@ export {
 };
 
 export const ExtensionMessageTypeSchema = z.enum([
+  EXTENSION_MESSAGE_TYPES.auth,
   EXTENSION_MESSAGE_TYPES.importRequest,
   EXTENSION_MESSAGE_TYPES.importResult,
   EXTENSION_MESSAGE_TYPES.matchLive,

@@ -580,6 +580,13 @@
       "closeToTray": "Keep running in the tray",
       "closeToTrayHint": "Keep the app running in the menu bar / tray when you close the window. Turn off to quit on close."
     },
+    "window": {
+      "title": "Window",
+      "resetPosition": "Reset window position",
+      "resetPositionHint": "Recenter the window if it opens off-screen after a monitor change.",
+      "hideApp": "Hide app",
+      "hideAppHint": "Hide AI Job Hunter (same as ⌘H)."
+    },
     "aiProvider": {
       "title": "AI Provider",
       "description": "Choose where your AI runs — locally via Ollama or through a cloud API.",

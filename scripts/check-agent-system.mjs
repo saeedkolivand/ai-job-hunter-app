@@ -44,6 +44,7 @@ const PAIRS = [
   ['test-author', 'testing-reviewer'],
   ['code-quality-author', 'code-quality-reviewer'],
   ['pdf-docx-generator', 'resume-export-expert'],
+  ['extension-author', 'extension-reviewer'],
 ];
 
 // Parallel AI-assistant rule files that must defer to CLAUDE.md as the single source.

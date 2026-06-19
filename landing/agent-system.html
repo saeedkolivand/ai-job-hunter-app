@@ -305,7 +305,7 @@ footer{margin-top:64px; text-align:center}
   <p class="section-sub">authors (left, green) write. critics (right, pink) audit. hover a node to light its pairing.</p>
 
   <div class="map-shell">
-    <svg class="fleet-svg" viewBox="0 0 680 510" role="img" aria-label="Map of the agent fleet: each author paired to its independent critic, with security and performance secondaries connecting in red.">
+    <svg class="fleet-svg" viewBox="0 0 680 560" role="img" aria-label="Map of the agent fleet: each author paired to its independent critic, with security and performance secondaries connecting in red.">
       <!-- column headers -->
       <text class="domain-lbl" x="70" y="20">AUTHORS · write</text>
       <text class="domain-lbl" x="400" y="20">CRITICS · audit</text>
@@ -320,12 +320,14 @@ footer{margin-top:64px; text-align:center}
       <path class="link" data-pair="export" style="animation-delay:.3s"   d="M220 330 C 300 330, 300 330, 400 330" />
       <path class="link" data-pair="test"   style="animation-delay:.35s"  d="M220 375 C 300 375, 300 375, 400 375" />
       <path class="link" data-pair="cq"     style="animation-delay:.4s"   d="M220 420 C 300 420, 300 420, 400 420" />
+      <path class="link" data-pair="ext"    style="animation-delay:.43s"  d="M220 465 C 300 465, 300 465, 400 465" />
       <!-- risk secondaries — security + performance reach across to many authors (red) -->
-      <path class="link risk" data-pair="sec"  style="animation-delay:.45s" d="M254 470 C 360 200, 300 80, 215 62" />
-      <path class="link risk" data-pair="sec"  style="animation-delay:.5s"  d="M254 470 C 380 320, 320 250, 215 240" />
-      <path class="link risk" data-pair="sec"  style="animation-delay:.55s" d="M254 470 C 360 360, 320 300, 215 285" />
-      <path class="link risk" data-pair="perf" style="animation-delay:.6s"  d="M446 470 C 480 360, 360 335, 215 330" />
-      <path class="link risk" data-pair="perf" style="animation-delay:.65s" d="M446 470 C 520 360, 360 295, 215 285" />
+      <path class="link risk" data-pair="sec"  style="animation-delay:.45s" d="M254 515 C 360 200, 300 80, 215 62" />
+      <path class="link risk" data-pair="sec"  style="animation-delay:.5s"  d="M254 515 C 380 320, 320 250, 215 240" />
+      <path class="link risk" data-pair="sec"  style="animation-delay:.55s" d="M254 515 C 360 360, 320 300, 215 285" />
+      <path class="link risk" data-pair="sec"  style="animation-delay:.57s" d="M254 515 C 350 480, 310 460, 215 465" />
+      <path class="link risk" data-pair="perf" style="animation-delay:.6s"  d="M446 515 C 480 360, 360 335, 215 330" />
+      <path class="link risk" data-pair="perf" style="animation-delay:.65s" d="M446 515 C 520 360, 360 295, 215 285" />
 
       <!-- AUTHOR nodes -->
       <g class="node author" data-pair="rust"   tabindex="0" role="button" aria-label="rust-backend-author (author)"><rect x="30"  y="46"  width="190" height="28" rx="6"/><text x="40" y="64">rust-backend-author</text></g>
@@ -336,6 +338,7 @@ footer{margin-top:64px; text-align:center}
       <g class="node author" data-pair="export" tabindex="0" role="button" aria-label="pdf-docx-generator (author)"><rect x="30"  y="316" width="190" height="28" rx="6"/><text x="40" y="334">pdf-docx-generator</text></g>
       <g class="node author" data-pair="test"   tabindex="0" role="button" aria-label="test-author (author)"><rect x="30"  y="361" width="190" height="28" rx="6"/><text x="40" y="379">test-author</text></g>
       <g class="node author" data-pair="cq"     tabindex="0" role="button" aria-label="code-quality-author (author)"><rect x="30"  y="406" width="190" height="28" rx="6"/><text x="40" y="424">code-quality-author</text></g>
+      <g class="node author" data-pair="ext"    tabindex="0" role="button" aria-label="extension-author (author)"><rect x="30"  y="451" width="190" height="28" rx="6"/><text x="40" y="469">extension-author</text></g>
 
       <!-- CRITIC nodes -->
       <g class="node critic" data-pair="rust"   tabindex="0" role="button" aria-label="rust-backend-architect (critic)"><rect x="400" y="46"  width="200" height="28" rx="6"/><text x="410" y="64">rust-backend-architect</text></g>
@@ -347,10 +350,11 @@ footer{margin-top:64px; text-align:center}
       <g class="node critic" data-pair="export" tabindex="0" role="button" aria-label="resume-export-expert (critic)"><rect x="400" y="316" width="200" height="28" rx="6"/><text x="410" y="334">resume-export-expert</text></g>
       <g class="node critic" data-pair="test"   tabindex="0" role="button" aria-label="testing-reviewer (critic)"><rect x="400" y="361" width="200" height="28" rx="6"/><text x="410" y="379">testing-reviewer</text></g>
       <g class="node critic" data-pair="cq"     tabindex="0" role="button" aria-label="code-quality-reviewer (critic)"><rect x="400" y="406" width="200" height="28" rx="6"/><text x="410" y="424">code-quality-reviewer</text></g>
+      <g class="node critic" data-pair="ext"    tabindex="0" role="button" aria-label="extension-reviewer (critic)"><rect x="400" y="451" width="200" height="28" rx="6"/><text x="410" y="469">extension-reviewer</text></g>
 
       <!-- risk-lens nodes (bottom, red-linked) — centered, side-by-side, 12px gap -->
-      <g class="node critic" data-pair="sec"  tabindex="0" role="button" aria-label="tauri-security-reviewer (critic)"><rect x="154" y="470" width="200" height="28" rx="6"/><text x="164" y="488">tauri-security-reviewer</text></g>
-      <g class="node critic" data-pair="perf" tabindex="0" role="button" aria-label="performance-profiler (critic)"><rect x="366" y="470" width="160" height="28" rx="6"/><text x="376" y="488">performance-profiler</text></g>
+      <g class="node critic" data-pair="sec"  tabindex="0" role="button" aria-label="tauri-security-reviewer (critic)"><rect x="154" y="515" width="200" height="28" rx="6"/><text x="164" y="533">tauri-security-reviewer</text></g>
+      <g class="node critic" data-pair="perf" tabindex="0" role="button" aria-label="performance-profiler (critic)"><rect x="366" y="515" width="160" height="28" rx="6"/><text x="376" y="533">performance-profiler</text></g>
     </svg>
   </div>
   <div class="legend">
@@ -550,6 +554,7 @@ footer{margin-top:64px; text-align:center}
       ['pdf-docx-generator','author','Implements export rendering — PDF/DOCX, layout, fonts, pagination, golden snapshots, DocumentModel/theme/locale.','↔ critic <b>resume-export-expert</b>','export/** · model/** · theme/** · locale/** · layout/** · measure/**','Use pdf-docx-generator to fix the résumé overflowing onto a second page.'],
       ['test-author','author','Writes automated tests — unit / integration / e2e / golden — across every domain.','↔ critic <b>testing-reviewer</b>','**/*.test.* · **/*.spec.* · src-tauri/tests/**','Use test-author to add golden tests for the new export path.'],
       ['code-quality-author','author','Refactors to meet clean-code / DRY / KISS — smallest behavior-preserving diff.','↔ critic <b>code-quality-reviewer</b>','any package/path on request','Use code-quality-author to deduplicate the repeated scoring helpers.'],
+      ['extension-author','author','Implements the browser extension (MV3, Chrome + Firefox) and the desktop↔extension bridge (native-host + loopback WS, per-frame token auth) plus the shared wire protocol.','↔ critic <b>extension-reviewer</b> (+ tauri-security-reviewer on auth/permission/data risk)','apps/extension/** · apps/tauri/src-tauri/src/extension_bridge/** · packages/shared/src/ipc/extension-protocol*','Use extension-author to add a new extension message type.'],
     ],
     critics: [
       ['rust-backend-architect','critic','Reviews the Rust/Tauri backend — domain modeling, error handling, L0–L3 boundaries, data/SQLite/GDPR.','audits <b>rust-backend-author</b>','apps/tauri/src-tauri/src/** (unowned) · packages/shared/**','/review-rust on the new store command.'],
@@ -563,6 +568,7 @@ footer{margin-top:64px; text-align:center}
       ['code-quality-reviewer','critic','Audits clean-code / DRY / KISS — severity-graded report, read-only.','audits <b>code-quality-author</b>','any package/path on request','/code-quality-review on the scoring module.'],
       ['tauri-security-reviewer','critic','The cross-cutting SECURITY AUTHORITY — IPC surface, capabilities, updater, net, credentials, supply-chain, AI injection.','default <b>Secondary</b> on any risk-bearing change','capabilities/ · net/ · credentials/ · commands/** · Cargo.* · package.json','/review-security on the new IPC command.'],
       ['performance-profiler','critic','The performance lens — startup, memory, hot paths, rendering, AI token efficiency. Secondary on perf-sensitive paths.','<b>Secondary</b> alongside the domain Primary','export/** · scraping/** · ai_provider/** · layout/** · measure/**','/review-performance on the export hot path.'],
+      ['extension-reviewer','critic','Reviews the browser extension + bridge — MV3 compliance, permission minimization, per-frame token auth correctness, protocol lockstep (TS ↔ Rust), and Chrome Web Store + Firefox AMO store-policy compliance.','audits <b>extension-author</b> (+ tauri-security-reviewer on auth/permission/data risk)','apps/extension/** · extension_bridge/** · extension-protocol*','/review-extension on the new message type.'],
     ],
     cross: [
       ['cleanup','cross','Dead-code audit across the TS/React + Rust monorepo — unused files, exports, deps. Report-first; safe-tier deletes only after confirmation.','runs immediately before <b>project-steward</b>','whole monorepo','/cleanup after the feature lands.'],
