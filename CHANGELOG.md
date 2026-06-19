@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.111.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.111.0...v0.111.1) (2026-06-19)
+
+### 🐛 Bug Fixes
+
+* cut release for pending extension bridge auth fix and ui polish ([1db08ee](https://github.com/saeedkolivand/ai-job-hunter-app/commit/1db08eec778b68815a3eca0b3319b11d8ae1e12f))
+
 ## [0.111.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.110.0...v0.111.0) (2026-06-19)
 
 ### ✨ Features
