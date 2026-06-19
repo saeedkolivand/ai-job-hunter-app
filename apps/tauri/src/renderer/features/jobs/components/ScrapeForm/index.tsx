@@ -1,8 +1,11 @@
 import { Loader2, Search, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useRef } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, GlassCard, Input, transition } from '@ajh/ui';
+
+import { makeRovingTabindex } from '@/hooks/use-roving-tabindex';
 
 import { AuthHint } from './AuthHint';
 import { AuthModeBadge } from './AuthModeBadge';
@@ -43,6 +46,7 @@ export function ScrapeForm({
   onGeocode,
 }: ScrapeFormProps) {
   const { t } = useTranslation();
+  const boardRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const showAuthBadge = AUTH_BENEFITS.has(form.board);
   const showAuthHint = AUTH_BENEFITS.has(form.board) && !boardConnected;
@@ -101,17 +105,37 @@ export function ScrapeForm({
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
                 {t('jobs.board')}
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {BOARDS.map(({ id, labelKey }) => {
+              <div
+                role="radiogroup"
+                aria-label={t('jobs.board')}
+                className="flex flex-wrap gap-1.5"
+                onKeyDown={
+                  scraping
+                    ? undefined
+                    : makeRovingTabindex(
+                        BOARDS.map((b) => b.id),
+                        form.board,
+                        (id) => onFormChange({ board: id }),
+                        boardRefs
+                      )
+                }
+              >
+                {BOARDS.map(({ id, labelKey }, i) => {
                   const active = form.board === id;
                   return (
                     <Button
                       key={id}
+                      ref={(el) => {
+                        boardRefs.current[i] = el;
+                      }}
+                      role="radio"
+                      aria-checked={active}
+                      tabIndex={active ? 0 : -1}
                       variant="ghost"
                       disabled={scraping}
                       onClick={() => onFormChange({ board: id })}
                       className={cn(
-                        'rounded-lg px-2.5 py-1 text-[11px] font-medium transition-all',
+                        'rounded-lg px-2.5 py-1 text-[11px] transition-all',
                         active
                           ? 'bg-brand/20 text-brand-soft ring-1 ring-brand/40'
                           : 'bg-white/[0.04] text-foreground/50 hover:bg-white/[0.07] hover:text-foreground/80',

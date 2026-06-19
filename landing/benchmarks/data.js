@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781870149821,
+  "lastUpdate": 1781889837529,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -749,6 +749,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 307226,
             "range": "± 4408",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "62f3ff46cadd417efe4cc3664ce45dcf52238cd5",
+          "message": "fix(scraping): close glassdoor browser on error and share linkedin rate limiter (#436)\n\n* fix(scraping): close glassdoor browser on error and share linkedin rate limiter\n\n- glassdoor: store first-page nav error and break to labeled loop so\n  browser.close() and handle.await always run before propagating; also\n  close browser on new_page failure\n- linkedin rate_limiter: promote to process-wide static LazyLock so\n  concurrent scrapes share one window instead of each getting a fresh one;\n  fix thundering-herd in wait_for_slot by re-checking under lock after\n  sleep (loop until slot is genuinely free)\n- linkedin client: store &'static RateLimiter instead of owned value\n- workday: hoist Regex::new to static LazyLock to avoid recompile per call\n- linkedin search_paginated: fire on_progress(fraction) after each page\n  instead of only at completion\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n\n* fix(scraping): preserve first-page error over glassdoor teardown failure\n\nWhen first_page_err is set, the original browser.close().await? could\npreempt the captured root-cause error with a secondary teardown failure.\nCapture close_res first, await the handle, then return first_page_err if\nset — suppressing any close error — otherwise propagate close_res normally.\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-06-19T19:05:11+02:00",
+          "tree_id": "ce67e5fe6ba170068c90f1cc86e0a6acd8de974e",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/62f3ff46cadd417efe4cc3664ce45dcf52238cd5"
+        },
+        "date": 1781889837117,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1972551,
+            "range": "± 39130",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2602912,
+            "range": "± 59410",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 311436,
+            "range": "± 8396",
             "unit": "ns/iter"
           }
         ]

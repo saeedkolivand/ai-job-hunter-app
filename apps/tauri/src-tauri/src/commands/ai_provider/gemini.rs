@@ -18,6 +18,28 @@ use super::{
 
 const BASE: &str = "https://generativelanguage.googleapis.com";
 
+/// Validate the key the keychain returned, rejecting a missing/blank one early.
+///
+/// Pure (no `AppHandle`) so it's unit-testable. Several call paths previously
+/// defaulted a missing key to `""` and still issued the request, sending an empty
+/// `x-goog-api-key` header — a guaranteed 401 round-trip. This fails fast with the
+/// same unauthorized error `friendly_api_error` maps a real 401/403 to, so the
+/// message stays consistent.
+fn validate_gemini_key(stored: Option<String>) -> AppResult<String> {
+    match stored {
+        Some(k) if !k.trim().is_empty() => Ok(k),
+        _ => Err(AppError::Config(format!(
+            "{}: invalid or unauthorized API key.",
+            ProviderId::Gemini.as_str()
+        ))),
+    }
+}
+
+/// Resolve the stored Gemini key, rejecting a missing/blank one before any request.
+fn require_gemini_key(app: &AppHandle) -> AppResult<String> {
+    validate_gemini_key(get_provider_key(app, ProviderId::Gemini.credential_key()))
+}
+
 /// Concatenate every `parts[].text` of the first candidate (non-streaming
 /// `generateContent`, incl. grounded responses) into one string. Pure +
 /// unit-tested.
@@ -186,7 +208,7 @@ impl AiProvider for GeminiClient {
         job_id: &str,
         req: &AiGenerateRequest,
     ) -> AppResult<()> {
-        let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
+        let api_key = require_gemini_key(app)?;
         let endpoint_label = format!("/v1beta/models/{}:streamGenerateContent", req.model);
         let trace =
             RequestTrace::begin(ProviderId::Gemini, &req.model, &endpoint_label, BASE, true);
@@ -226,10 +248,11 @@ impl AiProvider for GeminiClient {
             body["systemInstruction"] = json!({ "parts": [{ "text": system_text }] });
         }
 
-        let url = format!("{BASE}{endpoint_label}?key={api_key}");
+        let url = format!("{BASE}{endpoint_label}");
         let response = crate::net::http::shared()
             .post(&url)
             .timeout(std::time::Duration::from_secs(300))
+            .header("x-goog-api-key", &api_key)
             .json(&body)
             .send()
             .await;
@@ -269,7 +292,7 @@ impl AiProvider for GeminiClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
-        let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
+        let api_key = require_gemini_key(app)?;
         let m = model.strip_prefix("models/").unwrap_or(model);
         let endpoint_label = format!("/v1beta/models/{m}:generateContent");
         let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
@@ -282,11 +305,12 @@ impl AiProvider for GeminiClient {
             body["systemInstruction"] = json!({ "parts": [{ "text": system }] });
         }
 
-        let url = format!("{BASE}{endpoint_label}?key={api_key}");
+        let url = format!("{BASE}{endpoint_label}");
         let resp = send_with_retry(|| {
             crate::net::http::shared()
                 .post(&url)
                 .timeout(std::time::Duration::from_secs(120))
+                .header("x-goog-api-key", &api_key)
                 .json(&body)
         })
         .await;
@@ -342,10 +366,11 @@ impl AiProvider for GeminiClient {
             "generationConfig": { "temperature": 0.2 },
             "tools": [{ "google_search": {} }],
         });
-        let url = format!("{BASE}{endpoint_label}?key={api_key}");
+        let url = format!("{BASE}{endpoint_label}");
         let resp = crate::net::http::shared()
             .post(&url)
             .timeout(std::time::Duration::from_secs(25))
+            .header("x-goog-api-key", &api_key)
             .json(&body)
             .send()
             .await;
@@ -376,7 +401,7 @@ impl AiProvider for GeminiClient {
     }
 
     async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
-        let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
+        let api_key = require_gemini_key(app)?;
         let m = model.strip_prefix("models/").unwrap_or(model);
         let endpoint_label = format!("/v1beta/models/{m}:embedContent");
         let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
@@ -384,11 +409,12 @@ impl AiProvider for GeminiClient {
             "model": format!("models/{m}"),
             "content": { "parts": [{ "text": text }] },
         });
-        let url = format!("{BASE}{endpoint_label}?key={api_key}");
+        let url = format!("{BASE}{endpoint_label}");
         let resp = send_with_retry(|| {
             crate::net::http::shared()
                 .post(&url)
                 .timeout(std::time::Duration::from_secs(30))
+                .header("x-goog-api-key", &api_key)
                 .json(&body)
         })
         .await
@@ -412,14 +438,25 @@ impl AiProvider for GeminiClient {
         Some("text-embedding-004")
     }
 
+    fn max_embedding_input_chars(&self) -> usize {
+        // text-embedding-004 accepts 2048 tokens (~4 chars/token ≈ 8000 chars). This
+        // matches the conservative default but is stated explicitly so Gemini's real
+        // cap is documented at the adapter and won't drift if the default changes.
+        8_000
+    }
+
     async fn list_models(&self, app: &AppHandle) -> Vec<Value> {
+        // Returns `Vec` (no `AppResult`), so a blank key can't surface the
+        // unauthorized error — short-circuit to the empty "no models" result
+        // instead of wasting a 401 round-trip with an empty header.
         let api_key = match get_provider_key(app, self.id().credential_key()) {
-            Some(k) => k,
-            None => return vec![],
+            Some(k) if !k.trim().is_empty() => k,
+            _ => return vec![],
         };
         let client = crate::net::http::shared();
         let resp = client
-            .get(format!("{BASE}/v1/models?key={api_key}"))
+            .get(format!("{BASE}/v1/models"))
+            .header("x-goog-api-key", &api_key)
             .timeout(std::time::Duration::from_secs(10))
             .send()
             .await;
@@ -439,11 +476,11 @@ impl AiProvider for GeminiClient {
     }
 
     async fn test_key(&self, app: &AppHandle) -> AppResult<()> {
-        let api_key = get_provider_key(app, self.id().credential_key())
-            .ok_or_else(|| AppError::Config("No API key found".to_string()))?;
+        let api_key = require_gemini_key(app)?;
         let client = crate::net::http::shared();
         let resp = client
-            .get(format!("{BASE}/v1/models?key={api_key}"))
+            .get(format!("{BASE}/v1/models"))
+            .header("x-goog-api-key", &api_key)
             .timeout(std::time::Duration::from_secs(10))
             .send()
             .await
@@ -463,9 +500,35 @@ impl AiProvider for GeminiClient {
 mod tests {
     use super::{
         gemini_supports_thinking, join_parts_text, parse_gemini_frames, parse_gemini_parts,
-        GeminiScanner, StreamPiece,
+        validate_gemini_key, GeminiScanner, StreamPiece,
     };
+    use crate::error::AppError;
     use serde_json::json;
+
+    #[test]
+    fn blank_or_missing_key_is_rejected_with_unauthorized() {
+        // A missing key, an empty string, and whitespace-only must all fail fast with
+        // the same unauthorized message `friendly_api_error` maps a real 401/403 to —
+        // never sending an empty `x-goog-api-key` header for a wasted round-trip.
+        for stored in [None, Some(String::new()), Some("   \n\t".to_string())] {
+            match validate_gemini_key(stored) {
+                Err(AppError::Config(msg)) => {
+                    assert_eq!(msg, "gemini: invalid or unauthorized API key.")
+                }
+                other => panic!("expected unauthorized Config error, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn present_key_passes_through_untrimmed() {
+        // A real key is returned verbatim (surrounding content preserved, only blank
+        // rejected) so the request uses exactly what the user stored.
+        assert_eq!(
+            validate_gemini_key(Some("AIza-secret".to_string())).unwrap(),
+            "AIza-secret"
+        );
+    }
 
     #[test]
     fn join_parts_text_concatenates_first_candidate_parts() {
