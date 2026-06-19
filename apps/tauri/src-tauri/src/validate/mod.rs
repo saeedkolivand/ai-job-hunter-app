@@ -224,38 +224,47 @@ fn run_validators(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> {
 ///
 /// Normalizes trivial differences that don't change the identity of a URL:
 /// - lowercase scheme and host (the authority is case-insensitive per RFC 3986)
-/// - strip a single trailing slash from the path
+/// - strip a single trailing slash from the path (never from the query/fragment)
 /// - decode a percent-encoded space (`%20` → space), the most common encoding
 ///   divergence between stored profile values and rendered PDF annotations
 ///
 /// Intentionally conservative: the check's goal is to catch a genuinely wrong
 /// URL (a company link leaking into the header), not to canonicalize semantics.
 fn canonicalize_url(url: &str) -> String {
-    // Lowercase scheme+host only — path/query/fragment are case-sensitive.
-    let (prefix, rest) = if let Some(after_scheme) = url.find("://").map(|i| url.split_at(i + 3)) {
-        let (scheme_slashes, after) = after_scheme;
-        // Find end of authority (host[:port])
-        let auth_end = after.find('/').unwrap_or(after.len());
-        let (authority, path_and_rest) = after.split_at(auth_end);
-        (
-            format!(
-                "{}{}",
-                scheme_slashes.to_lowercase(),
-                authority.to_lowercase()
-            ),
-            path_and_rest.to_string(),
-        )
-    } else {
-        (String::new(), url.to_string())
+    // Split off scheme+authority (both case-insensitive per RFC 3986).
+    // Authority ends at the first '/', '?', or '#' — NOT just the first '/'.
+    // Without this, `https://example.com?Token=ABC` wrongly treats `?Token=ABC`
+    // as part of the authority and lowercases the query string.
+    let (prefix, path_query_fragment) =
+        if let Some(after_scheme_start) = url.find("://").map(|i| i + 3) {
+            let after = &url[after_scheme_start..];
+            // End of authority = first of '/', '?', '#' (or end of string).
+            let auth_end = after.find(['/', '?', '#']).unwrap_or(after.len());
+            let scheme_and_auth = &url[..after_scheme_start + auth_end];
+            let rest = &url[after_scheme_start + auth_end..];
+            (scheme_and_auth.to_lowercase(), rest.to_string())
+        } else {
+            (String::new(), url.to_string())
+        };
+
+    // Separate the path from any query/fragment so we only strip a trailing
+    // slash from the path, never from inside the query or fragment.
+    let path_query_fragment = {
+        // Find where path ends (first '?' or '#').
+        let qf_start = path_query_fragment
+            .find(['?', '#'])
+            .unwrap_or(path_query_fragment.len());
+        let path = &path_query_fragment[..qf_start];
+        let query_fragment = &path_query_fragment[qf_start..];
+        // Strip at most one trailing slash from the path.
+        let path = path.strip_suffix('/').unwrap_or(path);
+        format!("{path}{query_fragment}")
     };
 
-    // Strip a single trailing slash from the path portion.
-    let rest = rest.strip_suffix('/').unwrap_or(&rest).to_string();
-
     // Decode a percent-encoded space — the most common trivial encoding mismatch.
-    let rest = rest.replace("%20", " ");
+    let path_query_fragment = path_query_fragment.replace("%20", " ");
 
-    format!("{prefix}{rest}")
+    format!("{prefix}{path_query_fragment}")
 }
 
 /// Reject stray Markdown emphasis (`*`, backtick) that survived sanitization into
@@ -284,19 +293,15 @@ fn has_stray_emphasis(text: &str) -> bool {
     let chars: Vec<char> = text.chars().collect();
     for (i, &ch) in chars.iter().enumerate() {
         if ch == '*' || ch == '`' {
-            let prev_word = i > 0 && is_ascii_word_char(chars[i - 1]);
-            let next_word = i + 1 < chars.len() && is_ascii_word_char(chars[i + 1]);
+            let prev_word = i > 0 && crate::export::parser::is_word_char(chars[i - 1]);
+            let next_word =
+                i + 1 < chars.len() && crate::export::parser::is_word_char(chars[i + 1]);
             if !(prev_word && next_word) {
                 return true;
             }
         }
     }
     false
-}
-
-#[inline]
-fn is_ascii_word_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '_'
 }
 
 /// A link annotation read back from the rendered PDF: its `/Rect` in PDF user

@@ -88,7 +88,11 @@ pub(crate) fn generate_resume_docx_in(
 
     // ATS mode collapses to a single column and reorders sections for reading.
     // theme::is_two_column is the single source of truth for two-column gating.
-    let two_column = crate::theme::is_two_column(template.id) && !ats_mode;
+    // Belt-and-suspenders: also require two_column config to be present so a
+    // future template classified as two-column but missing the config falls back
+    // to single-column rather than reaching the expect() in add_two_column_body.
+    let two_column =
+        crate::theme::is_two_column(template.id) && template.two_column.is_some() && !ats_mode;
     if ats_mode {
         transform::linearize(&mut model);
     }

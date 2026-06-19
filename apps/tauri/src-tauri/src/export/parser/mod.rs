@@ -103,8 +103,9 @@ pub fn sanitize_markdown(text: &str) -> String {
 
 /// Returns `true` when `c` is an ASCII word character (`[A-Za-z0-9_]`).
 /// Mirrors the `\w` class that the `regex` crate would use in ASCII mode.
+/// `pub(crate)` so `validate` can import this instead of duplicating it.
 #[inline]
-fn is_word_char(c: char) -> bool {
+pub(crate) fn is_word_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 
