@@ -472,7 +472,7 @@ describe('BridgeClient – reconnect/backoff on close', () => {
     expect(client.status().phase).toBe('app_not_running');
 
     // Advance past backoff[0]=500ms — reconnect probe must create a new socket.
-    vi.advanceTimersByTime(600);
+    await vi.advanceTimersByTimeAsync(600);
     expect(createdCount).toBeGreaterThan(countBefore);
 
     client.dispose();
@@ -662,6 +662,336 @@ describe('BridgeClient – native messaging transport', () => {
 
     expect(port.disconnect).toHaveBeenCalled(); // timeout closes the native port
     expect(client.status()).toMatchObject({ phase: 'connected', port: 47615 });
+
+    client.dispose();
+  });
+});
+
+// ── auth handshake ─────────────────────────────────────────────────────────────
+
+describe('BridgeClient – auth handshake', () => {
+  let latestSocket: FakeWebSocket | undefined;
+  let restoreWS: () => void;
+
+  beforeEach(() => {
+    latestSocket = undefined;
+    restoreWS = installFakeWS((ws) => {
+      latestSocket = ws;
+    });
+  });
+
+  afterEach(() => {
+    restoreWS();
+    vi.useRealTimers();
+  });
+
+  /**
+   * Build a connected BridgeClient whose getStoredToken returns the given value.
+   * Opens the socket synchronously, then returns the socket for further control.
+   */
+  async function clientWithToken(
+    storedToken: string | null
+  ): Promise<{ client: BridgeClient; socket: FakeWebSocket; connectPromise: Promise<void> }> {
+    const getStoredToken = vi.fn<[], Promise<string | null>>().mockResolvedValue(storedToken);
+    const client = new BridgeClient(vi.fn(), getStoredToken);
+    const connectPromise = client.ensureConnected();
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+    return { client, socket, connectPromise };
+  }
+
+  /** Reply to an auth frame: extract the reqId from the outgoing send call at
+   *  `callIndex` and simulate a desktop reply on the socket. */
+  function replyToAuth(
+    socket: FakeWebSocket,
+    callIndex: number,
+    payload: Record<string, unknown>
+  ): void {
+    const raw = socket.send.mock.calls[callIndex]?.[0] as string | undefined;
+    if (!raw) throw new Error(`No send call at index ${callIndex}`);
+    const frame = JSON.parse(raw) as { reqId: string };
+    socket.simulateMessage(
+      JSON.stringify({
+        type: EXTENSION_MESSAGE_TYPES.importResult,
+        token: FAKE_TOKEN,
+        reqId: frame.reqId,
+        payload,
+      })
+    );
+  }
+
+  it('sends an auth frame on open when a token is stored', async () => {
+    const { socket, connectPromise } = await clientWithToken(FAKE_TOKEN);
+
+    // Auth frame must be sent before the handshake resolves.
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+
+    const raw = socket.send.mock.calls[0]?.[0] as string;
+    const frame = JSON.parse(raw) as { type: string; token: string; payload: unknown };
+    expect(frame.type).toBe(EXTENSION_MESSAGE_TYPES.auth);
+    expect(frame.token).toBe(FAKE_TOKEN);
+    expect(frame.payload).toBeNull();
+
+    // Reply with success so the promise resolves cleanly.
+    replyToAuth(socket, 0, {
+      applicationId: '',
+      status: '',
+      title: '',
+      company: '',
+      partial: false,
+    });
+    await connectPromise;
+  });
+
+  it('sets phase to connected after a valid-token auth reply (no error field)', async () => {
+    const { client, socket, connectPromise } = await clientWithToken(FAKE_TOKEN);
+
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+
+    // Desktop replies with the success payload (no error field).
+    replyToAuth(socket, 0, {
+      applicationId: '',
+      status: '',
+      title: '',
+      company: '',
+      partial: false,
+    });
+    await connectPromise;
+
+    expect(client.status().phase).toBe('connected');
+    client.dispose();
+  });
+
+  it('sets phase to bad_token after an unauthorized auth reply and does NOT reconnect', async () => {
+    vi.useFakeTimers();
+    let socketCount = 0;
+    restoreWS();
+    restoreWS = installFakeWS((ws) => {
+      socketCount += 1;
+      latestSocket = ws;
+    });
+
+    const getStoredToken = vi.fn<[], Promise<string | null>>().mockResolvedValue(FAKE_TOKEN);
+    const client = new BridgeClient(vi.fn(), getStoredToken);
+    const connectPromise = client.ensureConnected();
+
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+
+    // Wait for the auth frame.
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+
+    // Desktop replies with unauthorized.
+    replyToAuth(socket, 0, { error: 'unauthorized' });
+    await connectPromise;
+
+    expect(client.status().phase).toBe('bad_token');
+
+    // Advance well past all backoff intervals — must NOT trigger a reconnect.
+    const socketCountBefore = socketCount;
+    vi.advanceTimersByTime(15_000);
+    expect(socketCount).toBe(socketCountBefore);
+
+    client.dispose();
+  });
+
+  it('does NOT enter bad_token when the socket closes before the auth reply — transport failure, reconnect allowed', async () => {
+    vi.useFakeTimers();
+    let socketCount = 0;
+    restoreWS();
+    restoreWS = installFakeWS((ws) => {
+      socketCount += 1;
+      latestSocket = ws;
+    });
+
+    const getStoredToken = vi.fn<[], Promise<string | null>>().mockResolvedValue(FAKE_TOKEN);
+    const client = new BridgeClient(vi.fn(), getStoredToken);
+    const connectPromise = client.ensureConnected();
+
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+
+    // Wait for the auth frame to be sent.
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+
+    // Close the socket BEFORE any auth reply arrives — simulates disconnect
+    // during handshake (not an unauthorized rejection).
+    socket.simulateClose();
+
+    // Must NOT land in bad_token; onClose handles it as a transport failure.
+    await connectPromise.catch(() => {
+      // ensureConnected may reject if connect throws; that's fine.
+    });
+
+    // Allow pending microtasks/timers to settle.
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(client.status().phase).not.toBe('bad_token');
+    // Reconnect must be scheduled (phase is app_not_running, new socket probed).
+    const socketCountBefore = socketCount;
+    vi.advanceTimersByTime(600);
+    expect(socketCount).toBeGreaterThan(socketCountBefore);
+
+    client.dispose();
+  });
+
+  it('does NOT enter bad_token on auth timeout — transport failure, reconnect allowed', async () => {
+    vi.useFakeTimers();
+    restoreWS();
+    restoreWS = installFakeWS((ws) => {
+      latestSocket = ws;
+    });
+
+    const getStoredToken = vi.fn<[], Promise<string | null>>().mockResolvedValue(FAKE_TOKEN);
+    const client = new BridgeClient(vi.fn(), getStoredToken);
+    const connectPromise = client.ensureConnected();
+
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+
+    // Wait for the auth frame to be sent.
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+
+    // Advance past REQUEST_TIMEOUT_MS (30 000ms) with no reply — triggers timeout.
+    // This also drains any reconnect backoff timers that fire in the same window.
+    await vi.advanceTimersByTimeAsync(31_000);
+
+    await connectPromise.catch(() => {
+      // may reject; ignore
+    });
+
+    // Timeout is a transport failure — must NOT permanently lock out reconnect.
+    // Phase may be app_not_running or searching (if a reconnect probe already
+    // fired within the 31 s window), but never bad_token.
+    expect(client.status().phase).not.toBe('bad_token');
+
+    client.dispose();
+  });
+
+  it('a non-unauthorized error reply is a transport failure — phase never becomes bad_token and a reconnect is scheduled', async () => {
+    vi.useFakeTimers();
+    let socketCount = 0;
+    restoreWS();
+    restoreWS = installFakeWS((ws) => {
+      socketCount += 1;
+      latestSocket = ws;
+    });
+
+    const getStoredToken = vi.fn<[], Promise<string | null>>().mockResolvedValue(FAKE_TOKEN);
+    const client = new BridgeClient(vi.fn(), getStoredToken);
+    const connectPromise = client.ensureConnected();
+
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+
+    // Wait for the auth frame to be sent.
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+
+    // Desktop replies with a non-unauthorized error (transport/server crash, NOT token rejection).
+    replyToAuth(socket, 0, { error: 'server-crash' });
+
+    await connectPromise.catch(() => {
+      // may reject; ignore
+    });
+
+    // Allow the close + microtasks to settle (the bridge calls transport.close() which
+    // fires onClose synchronously in our fake, but microtasks still need to drain).
+    await vi.advanceTimersByTimeAsync(0);
+
+    // MUST NOT enter bad_token — 'server-crash' is not the sentinel 'unauthorized'.
+    expect(client.status().phase).not.toBe('bad_token');
+
+    // Reconnect must be scheduled: advance past backoff[0]=500ms and assert a new socket appears.
+    const socketCountBefore = socketCount;
+    await vi.advanceTimersByTimeAsync(600);
+    expect(socketCount).toBeGreaterThan(socketCountBefore);
+
+    client.dispose();
+  });
+
+  it('resetForNewToken() clears bad_token so ensureConnected() attempts a fresh socket', async () => {
+    vi.useFakeTimers();
+    let socketCount = 0;
+    restoreWS();
+    restoreWS = installFakeWS((ws) => {
+      socketCount += 1;
+      latestSocket = ws;
+    });
+
+    const getStoredToken = vi.fn<[], Promise<string | null>>().mockResolvedValue(FAKE_TOKEN);
+    const client = new BridgeClient(vi.fn(), getStoredToken);
+    const connectPromise = client.ensureConnected();
+
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+
+    // Drive into bad_token via an explicit unauthorized reply.
+    replyToAuth(socket, 0, { error: 'unauthorized' });
+    await connectPromise;
+
+    // Confirm bad_token before recovery.
+    expect(client.status().phase).toBe('bad_token');
+
+    // ── recovery ──────────────────────────────────────────────────────────────
+    client.resetForNewToken();
+
+    // Phase must return to 'searching' (no longer bad_token).
+    expect(client.status().phase).toBe('searching');
+
+    // The bad_token guard in ensureConnected() must now be lifted —
+    // a fresh ensureConnected() call must attempt a new socket.
+    const socketCountBefore = socketCount;
+    void client.ensureConnected();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(socketCount).toBeGreaterThan(socketCountBefore);
+
+    client.dispose();
+  });
+
+  it('does NOT send an auth frame when no token is stored, and stays not-paired', async () => {
+    const { client, socket, connectPromise } = await clientWithToken(null);
+
+    // Let the attach() complete (it awaits getStoredToken which resolves to null).
+    await connectPromise;
+
+    // No auth frame should have been sent.
+    expect(socket.send).not.toHaveBeenCalled();
+    // Phase is 'connected' from bridge perspective (background will map to not_paired).
+    expect(client.status().phase).toBe('connected');
 
     client.dispose();
   });

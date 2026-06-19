@@ -110,6 +110,7 @@ const PILL_LABEL: Record<ConnectionStatus['phase'], string> = {
   not_paired: '⚠ Not paired',
   connected: '● Connected',
   app_not_running: '✕ App not running',
+  bad_token: '✕ Wrong token',
 };
 
 /** First status resolves within this budget, else fall back to the offline/Retry view. */
@@ -140,7 +141,9 @@ async function send(req: PopupRequest): Promise<PopupResponse> {
 
 function showView(phase: ConnectionStatus['phase']): void {
   els.views.import.hidden = phase !== 'connected';
-  els.views.pair.hidden = phase !== 'not_paired';
+  // Show the pairing view for both not_paired and bad_token — the user must
+  // enter a corrected token in both cases.
+  els.views.pair.hidden = phase !== 'not_paired' && phase !== 'bad_token';
   els.views.offline.hidden = phase !== 'app_not_running';
   els.views.searching.hidden = phase !== 'searching';
 }
@@ -153,6 +156,15 @@ function render(status: ConnectionStatus): void {
   // app is unreachable — a reconnect is a no-op once the app is up.
   els.btnRetry.hidden = status.phase !== 'app_not_running';
   showView(status.phase);
+  // On bad_token, surface a clear error in the pairing view so the user knows
+  // they need to copy the current token from the desktop app's Settings.
+  if (status.phase === 'bad_token') {
+    setMsg(
+      els.pairMsg,
+      "That token didn't match — copy the current token from the desktop app's Settings and try again.",
+      'err'
+    );
+  }
 }
 
 /**

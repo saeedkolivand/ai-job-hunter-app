@@ -21,10 +21,14 @@ let client: BridgeClient | null = null;
 
 function getClient(): BridgeClient {
   if (!client) {
-    client = new BridgeClient(() => {
-      // Best-effort push so an open popup live-updates; ignore "no receiver".
-      void broadcastStatus();
-    });
+    client = new BridgeClient(
+      () => {
+        // Best-effort push so an open popup live-updates; ignore "no receiver".
+        void broadcastStatus();
+      },
+      // Provide the stored token so the bridge can perform the auth handshake on connect.
+      getToken
+    );
   }
   return client;
 }
@@ -35,7 +39,9 @@ async function computeStatus(): Promise<ConnectionStatus> {
   const bridge = getClient().status();
 
   let phase: ConnectionStatus['phase'];
-  if (bridge.phase === 'app_not_running') {
+  if (bridge.phase === 'bad_token') {
+    phase = 'bad_token';
+  } else if (bridge.phase === 'app_not_running') {
     phase = 'app_not_running';
   } else if (bridge.phase === 'searching') {
     phase = 'searching';
@@ -43,6 +49,7 @@ async function computeStatus(): Promise<ConnectionStatus> {
     // Bridge reachable but we have no secret yet → show the pairing screen.
     phase = 'not_paired';
   } else {
+    // bridge.phase === 'connected' AND hasToken, meaning the auth handshake succeeded.
     phase = 'connected';
   }
   return { phase, port: bridge.port, hasToken };
@@ -121,11 +128,15 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
       }
       case 'setToken': {
         await setToken(req.token);
+        // Reset any bad-token block so the bridge will attempt auth with the new token.
+        getClient().resetForNewToken();
         void getClient().ensureConnected();
         return { ok: true, kind: 'token' };
       }
       case 'clearToken': {
         await clearToken();
+        // Also reset the bad-token block so the bridge returns to searching state.
+        getClient().resetForNewToken();
         return { ok: true, kind: 'token' };
       }
       case 'reconnect': {

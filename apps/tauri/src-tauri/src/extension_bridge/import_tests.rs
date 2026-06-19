@@ -557,10 +557,11 @@ fn frame_empty_token_is_unauthorized_and_persists_nothing() {
 
     let decision = classify_frame(&state, &frame);
     let reply = match decision {
-        FrameDecision::Reply(text) => text,
-        other => panic!("empty token must produce a Reply, got {other:?}"),
+        FrameDecision::Unauthorized(text) => text,
+        other => panic!("empty token must produce an Unauthorized decision, got {other:?}"),
     };
-    // A `Reply` (not `Import`) means handle_import is never invoked → no persist.
+    // An `Unauthorized` (not `Import`) means handle_import is never invoked → no
+    // persist; at the connection level it also closes the socket.
     let err = reply_error(&reply).expect("empty token reply must carry an error");
     assert!(!err.is_empty(), "unauthorized error must be non-empty");
     assert!(
@@ -597,14 +598,14 @@ fn frame_wrong_token_is_unauthorized_and_persists_nothing() {
     .to_string();
 
     match classify_frame(&state, &frame) {
-        FrameDecision::Reply(reply) => {
+        FrameDecision::Unauthorized(reply) => {
             let err = reply_error(&reply).expect("wrong token reply must carry an error");
             assert!(
                 err.contains("unauthorized"),
                 "wrong token must map to an unauthorized error, got {err:?}"
             );
         }
-        other => panic!("wrong token must produce a Reply, got {other:?}"),
+        other => panic!("wrong token must produce an Unauthorized decision, got {other:?}"),
     }
 }
 
@@ -634,6 +635,126 @@ fn frame_correct_token_classifies_as_import() {
         }
         other => panic!("a valid token + import.request must classify as Import, got {other:?}"),
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B1b. Connection-time `auth` frame (the wrong-token-never-connected fix)
+//
+// The extension sends an `auth` frame immediately after the socket opens to
+// verify the pairing before any import. A WRONG token must be `Unauthorized`
+// (reply carries the `unauthorized` error; the connection loop then closes the
+// socket and never marks it connected). A CORRECT token must be a `Reply` whose
+// `import.result` payload carries NO `error` (the extension reads "no error" =
+// authorized). The connection loop marks `connected` true only for `Reply` /
+// `Import` (token-validated), never for `Unauthorized`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// An `auth` frame with the WRONG token is `Unauthorized` (not `Reply`): the
+/// connection loop sends the reply then closes the socket and never marks it
+/// connected. This is the core fix — a wrong token is rejected at the handshake-
+/// adjacent first frame, never reported as connected/authorized.
+#[test]
+fn auth_frame_wrong_token_is_unauthorized() {
+    let (_dir, state) = bridge_state();
+    let wrong = "9".repeat(64);
+    assert_ne!(wrong, state.token(), "fixture must use a non-matching token");
+
+    let frame = json!({
+        "token": wrong,
+        "reqId": "r-auth-bad",
+        "type": super::msg::AUTH,
+        "payload": serde_json::Value::Null,
+    })
+    .to_string();
+
+    match classify_frame(&state, &frame) {
+        FrameDecision::Unauthorized(reply) => {
+            let err = reply_error(&reply).expect("wrong-token auth reply must carry an error");
+            assert!(
+                err.contains("unauthorized"),
+                "wrong-token auth must map to an unauthorized error, got {err:?}"
+            );
+        }
+        other => panic!("an `auth` frame with a wrong token must be Unauthorized, got {other:?}"),
+    }
+}
+
+/// An `auth` frame with the CORRECT token is a `Reply` whose `import.result`
+/// payload contains NO `error` field — the extension treats "no error" as
+/// authorized. The `auth` frame does no import (empty fields), it only verifies
+/// the token.
+#[test]
+fn auth_frame_correct_token_replies_with_no_error() {
+    let (_dir, state) = bridge_state();
+    let token = state.token();
+
+    let frame = json!({
+        "token": token,
+        "reqId": "r-auth-ok",
+        "type": super::msg::AUTH,
+        "payload": serde_json::Value::Null,
+    })
+    .to_string();
+
+    match classify_frame(&state, &frame) {
+        FrameDecision::Reply(reply) => {
+            assert!(
+                reply_error(&reply).is_none(),
+                "a correct-token auth reply must carry NO error (no error = authorized), got {reply}"
+            );
+            let parsed: serde_json::Value = serde_json::from_str(&reply).unwrap();
+            assert_eq!(
+                parsed.get("type").and_then(|t| t.as_str()),
+                Some(super::msg::IMPORT_RESULT),
+                "the auth ok reply reuses the import.result envelope"
+            );
+            assert_eq!(
+                parsed.get("reqId").and_then(|r| r.as_str()),
+                Some("r-auth-ok"),
+                "the auth reply must echo the request id"
+            );
+        }
+        other => panic!("an `auth` frame with the correct token must be a Reply, got {other:?}"),
+    }
+}
+
+/// A wrong-token frame yields `Unauthorized` while a valid-token frame yields
+/// `Reply`/`Import` — and ONLY the latter two cause the connection loop to call
+/// `set_connected(true)`. `set_connected` lives in the async connection loop
+/// (not unit-reachable without a live socket), so we pin the classify-level
+/// variant split that drives it: `Unauthorized` (never connected) is a distinct
+/// variant from `Reply`/`Import` (connected). A fresh state is disconnected.
+#[test]
+fn unauthorized_variant_is_distinct_from_connecting_variants() {
+    let (_dir, state) = bridge_state();
+    assert!(
+        !state.is_connected(),
+        "a fresh bridge state is not connected until a token-validated frame arrives"
+    );
+
+    let bad = json!({
+        "token": "0".repeat(64),
+        "reqId": "r-bad",
+        "type": super::msg::AUTH,
+        "payload": serde_json::Value::Null,
+    })
+    .to_string();
+    assert!(
+        matches!(classify_frame(&state, &bad), FrameDecision::Unauthorized(_)),
+        "a wrong-token frame must classify as Unauthorized (loop never marks it connected)"
+    );
+
+    let ok = json!({
+        "token": state.token(),
+        "reqId": "r-ok",
+        "type": super::msg::AUTH,
+        "payload": serde_json::Value::Null,
+    })
+    .to_string();
+    assert!(
+        matches!(classify_frame(&state, &ok), FrameDecision::Reply(_)),
+        "a valid-token auth frame must classify as Reply (the loop marks it connected)"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

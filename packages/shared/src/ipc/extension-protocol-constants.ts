@@ -10,12 +10,18 @@
  */
 
 /**
- * Every wire message `type`. v1 implements `import.request` / `import.result`;
- * `match.live` and `applied.check` are **reserved** — the type strings are
- * fixed now so a future build can add handlers without a protocol bump, but the
- * bridge does not handle them yet.
+ * Every wire message `type`. v1 implements `auth` / `import.request` /
+ * `import.result`; `match.live` and `applied.check` are **reserved** — the type
+ * strings are fixed now so a future build can add handlers without a protocol
+ * bump, but the bridge does not handle them yet. `auth` is the connection-time
+ * token check the extension sends immediately after the socket opens (no
+ * payload): on success the desktop replies with an `import.result` envelope that
+ * carries no `error`; a bad token gets the unauthorized error reply and the
+ * socket is closed.
  */
 export const EXTENSION_MESSAGE_TYPES = {
+  /** Extension → desktop: connection-time token verification; no payload. */
+  auth: 'auth',
   /** Extension → desktop: import a job (URL mode, or Scan mode with `html`). */
   importRequest: 'import.request',
   /** Desktop → extension: the import outcome (or an `error`). */
