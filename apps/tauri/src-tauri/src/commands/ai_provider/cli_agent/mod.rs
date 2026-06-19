@@ -356,6 +356,21 @@ pub fn clear_detect_cache() {
 
 // ── Streaming engine ─────────────────────────────────────────────────────────────
 
+/// Outcome of one race between the next-line read and the cancel poll. A distinct
+/// `Cancelled` variant keeps a natural EOF (`Eof`) from being misreported as a
+/// cancel when cancellation and stream-end coincide in the same poll window —
+/// overloading `Ok(None)` for both would surface a false "Job cancelled" error.
+enum ReadOutcome {
+    /// A complete line of agent output.
+    Line(String),
+    /// The stream ended cleanly (normal completion).
+    Eof,
+    /// Cancellation observed before the next line arrived.
+    Cancelled,
+    /// The underlying read failed.
+    Err(std::io::Error),
+}
+
 async fn run_stream(
     app: &AppHandle,
     job_id: &str,
@@ -413,15 +428,24 @@ async fn run_stream(
         // (or on a stalled stream that never emits another newline) is observed
         // within `CANCEL_POLL` instead of hanging until the next line — or forever.
         // The poll branch loops back to re-check `is_cancelled`; the deadline still
-        // bounds the whole read via `timeout_at`.
+        // bounds the whole read via `timeout_at`. A distinct `ReadOutcome` keeps a
+        // real EOF from being misreported as a cancel when both happen to be true in
+        // the same poll window (overloading `Ok(None)` for both would).
         let line = match tokio::time::timeout_at(deadline, async {
             loop {
                 tokio::select! {
                     biased;
-                    next = lines.next_line() => break next,
+                    next = lines.next_line() => {
+                        // Biased: a ready line always wins over the cancel poll.
+                        break match next {
+                            Ok(Some(l)) => ReadOutcome::Line(l),
+                            Ok(None) => ReadOutcome::Eof,
+                            Err(e) => ReadOutcome::Err(e),
+                        };
+                    }
                     _ = tokio::time::sleep(CANCEL_POLL) => {
                         if is_cancelled(app, job_id) {
-                            break Ok(None);
+                            break ReadOutcome::Cancelled;
                         }
                     }
                 }
@@ -436,14 +460,14 @@ async fn run_stream(
                     "{label} timed out after 5 minutes."
                 )));
             }
-            Ok(_) if is_cancelled(app, job_id) => {
+            Ok(ReadOutcome::Cancelled) => {
                 let _ = child.start_kill();
                 trace.end(None, false);
                 return Err(AppError::Message("Job cancelled".to_string()));
             }
-            Ok(Ok(Some(line))) => line,
-            Ok(Ok(None)) => break, // clean EOF
-            Ok(Err(e)) => {
+            Ok(ReadOutcome::Line(line)) => line,
+            Ok(ReadOutcome::Eof) => break, // clean EOF (never a cancel)
+            Ok(ReadOutcome::Err(e)) => {
                 let _ = child.start_kill();
                 trace.end(None, false);
                 return Err(AppError::Provider(format!("{label}: read error: {e}")));
@@ -715,7 +739,7 @@ mod tests {
 
         // Models `run_stream`'s read loop: the line read stalls forever while the
         // cancel flag flips. The `biased` select must reach the poll branch and
-        // return `Ok(None)` (the cancel sentinel) instead of hanging on the read.
+        // yield `ReadOutcome::Cancelled` instead of hanging on the read.
         let cancelled = Arc::new(AtomicBool::new(false));
         let flag = cancelled.clone();
         tokio::spawn(async move {
@@ -723,15 +747,21 @@ mod tests {
             flag.store(true, Ordering::SeqCst);
         });
 
-        let result: io::Result<Option<String>> = async {
+        let outcome = async {
             loop {
                 tokio::select! {
                     biased;
                     // A stalled stream: the next line never arrives.
-                    next = std::future::pending::<io::Result<Option<String>>>() => break next,
+                    next = std::future::pending::<io::Result<Option<String>>>() => {
+                        break match next {
+                            Ok(Some(l)) => ReadOutcome::Line(l),
+                            Ok(None) => ReadOutcome::Eof,
+                            Err(e) => ReadOutcome::Err(e),
+                        };
+                    }
                     _ = tokio::time::sleep(CANCEL_POLL) => {
                         if cancelled.load(Ordering::SeqCst) {
-                            break Ok(None);
+                            break ReadOutcome::Cancelled;
                         }
                     }
                 }
@@ -739,8 +769,48 @@ mod tests {
         }
         .await;
 
-        // Cancel observed within a bounded number of polls — no hang.
-        assert!(matches!(result, Ok(None)));
+        // Cancel observed within a bounded number of polls — no hang, and it is a
+        // *cancel*, distinct from a natural EOF.
+        assert!(matches!(outcome, ReadOutcome::Cancelled));
+    }
+
+    #[tokio::test]
+    async fn eof_without_cancel_is_clean_completion_not_a_cancel() {
+        use std::io;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        // A natural EOF that coincides with *no* cancellation must resolve to
+        // `Eof` (clean break), never `Cancelled`. The biased line read wins over
+        // the poll, so even if a cancel were racing the EOF still takes priority —
+        // here cancel never fires, so the only correct outcome is `Eof`.
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let flag = cancelled.clone();
+
+        let outcome = async {
+            loop {
+                tokio::select! {
+                    biased;
+                    // Stream end: the read is immediately ready with `Ok(None)`.
+                    next = async { io::Result::Ok(None::<String>) } => {
+                        break match next {
+                            Ok(Some(l)) => ReadOutcome::Line(l),
+                            Ok(None) => ReadOutcome::Eof,
+                            Err(e) => ReadOutcome::Err(e),
+                        };
+                    }
+                    _ = tokio::time::sleep(CANCEL_POLL) => {
+                        if flag.load(Ordering::SeqCst) {
+                            break ReadOutcome::Cancelled;
+                        }
+                    }
+                }
+            }
+        }
+        .await;
+
+        // A real EOF is never misreported as a cancellation.
+        assert!(matches!(outcome, ReadOutcome::Eof));
     }
 
     #[tokio::test]
