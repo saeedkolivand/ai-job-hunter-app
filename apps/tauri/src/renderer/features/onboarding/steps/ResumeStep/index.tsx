@@ -7,7 +7,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button, cn, FloatingIcon, useNotification, withDelay } from '@ajh/ui';
 
 import { ContactConflictModal } from '@/components/contact/ContactConflictModal';
-import { ProfileUrlImport } from '@/features/resume/components/ProfileUrlImport';
+import { ProfileUrlImport } from '@/components/resume/ProfileUrlImport';
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
 import { useDocuments } from '@/services';
 import { usePreferencesStore } from '@/store/preferences-store';
@@ -101,6 +101,15 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
         initial={{ y: 10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={withDelay(0.1)}
+        role="button"
+        tabIndex={uploading ? -1 : 0}
+        aria-label={t('onboarding.resume.uploadArea')}
+        onKeyDown={(e) => {
+          if ((e.key === 'Enter' || e.key === ' ') && !uploading) {
+            e.preventDefault();
+            fileInputRef.current?.click();
+          }
+        }}
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
         onDragOver={handleDrag}
@@ -108,6 +117,7 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
         onClick={() => !uploading && fileInputRef.current?.click()}
         className={cn(
           'mb-5 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-all',
+          'focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-1 focus-visible:outline-none',
           dragActive
             ? 'border-brand/50 bg-brand/5'
             : 'border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]',
