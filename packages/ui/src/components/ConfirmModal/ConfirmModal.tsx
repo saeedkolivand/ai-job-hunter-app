@@ -15,6 +15,8 @@ interface ConfirmModalProps {
   cancelText?: string;
   variant?: 'danger' | 'warning' | 'info' | 'success';
   isConfirming?: boolean;
+  /** Accessible label for the close button. Pass a localized value from renderer callers. */
+  closeAriaLabel?: string;
 }
 
 const variantConfig: Record<
@@ -72,6 +74,7 @@ export function ConfirmModal({
   cancelText = 'Cancel',
   variant = 'info',
   isConfirming = false,
+  closeAriaLabel = 'Close dialog',
 }: ConfirmModalProps) {
   const config = variantConfig[variant];
   const Icon = config.icon;
@@ -104,7 +107,7 @@ export function ConfirmModal({
             variant="unstyled"
             type="button"
             onClick={onClose}
-            aria-label="Close dialog"
+            aria-label={closeAriaLabel}
             className="rounded-xl bg-white/5 p-1.5 text-foreground/60 transition-all duration-150 hover:bg-white/10 hover:text-foreground"
           >
             <X size={14} aria-hidden="true" />

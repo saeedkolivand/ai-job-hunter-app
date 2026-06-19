@@ -52,7 +52,8 @@ export function AppearanceCard() {
       ? ('default' as const)
       : prefs.accentSource === 'system'
         ? ('system' as const)
-        : (prefs.accentColor?.toLowerCase() ?? 'default');
+        : (ACCENTS.find((a) => a.color.toLowerCase() === prefs.accentColor?.toLowerCase())?.id ??
+          'default');
 
   const schemeIds = SCHEMES.map((s) => s.id);
   const scaleIds = SCALES.map((s) => s.id);

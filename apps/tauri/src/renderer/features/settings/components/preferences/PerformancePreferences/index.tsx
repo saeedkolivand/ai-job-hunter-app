@@ -63,6 +63,7 @@ function BackendOptionInfo({ t, knob }: { t: TFunction; knob: BackendKnob }) {
   return (
     <HoverPopover
       placement="bottom"
+      ariaLabel={t(`${base}.label`)}
       contentClassName="w-64 rounded-xl border border-foreground/15 bg-[var(--color-card)] p-3 shadow-2xl"
       trigger={
         <Button
