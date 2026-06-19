@@ -497,6 +497,26 @@ describe('resumeMentions', () => {
     // "(Kubernetes)" must still match requirement "Kubernetes".
     expect(resumeMentions('(Kubernetes) clusters on bare metal', 'Kubernetes')).toBe(true);
   });
+
+  it('boundary trim: strips leading/trailing boundary punct, preserves internal punct', () => {
+    // Trailing comma stripped → matches
+    expect(resumeMentions('JavaScript, bundles shipped', 'JavaScript')).toBe(true);
+    // Parens stripped → matches
+    expect(resumeMentions('(Kubernetes) on-prem', 'Kubernetes')).toBe(true);
+    // Internal punct preserved — c++ must not collapse to c
+    expect(resumeMentions('shipped in c++', 'c++')).toBe(true);
+    // Internal dot preserved — node.js must not collapse to node
+    expect(resumeMentions('runs on node.js', 'node.js')).toBe(true);
+  });
+
+  it('redos regression: pathological punctuation token completes instantly (linear scan)', () => {
+    // 100 000 consecutive quote chars — the old /^[...]+|[...]+$/g regex
+    // backtracks polynomially on this input; the linear scan returns immediately.
+    const pathological = '"'.repeat(100_000);
+    const result = resumeMentions(pathological, 'JavaScript');
+    // The entire token is boundary punctuation → stripped to '' → no match.
+    expect(result).toBe(false);
+  });
 });
 
 describe('buildGroundingBlock', () => {

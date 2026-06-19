@@ -37,9 +37,16 @@ const SYNONYMS: ReadonlyArray<readonly [string, string]> = [
  * words like `"JavaScript,"` or `"(Kubernetes)"` reach the alias map as their
  * bare form. Only boundary chars are stripped — internal chars like `c++`,
  * `node.js`, and `c#` are left intact.
+ *
+ * Linear O(n) scan — no regex — avoids ReDoS on long punctuation runs.
  */
+const BOUNDARY_PUNCT = new Set(['.', ',', ';', ':', '(', ')', '[', ']', '{', '}', '"', "'"]);
 function stripBoundaryPunctuation(token: string): string {
-  return token.replace(/^[.,;:()[\]{}"']+|[.,;:()[\]{}"']+$/g, '');
+  let start = 0;
+  let end = token.length;
+  while (start < end && BOUNDARY_PUNCT.has(token.charAt(start))) start += 1;
+  while (end > start && BOUNDARY_PUNCT.has(token.charAt(end - 1))) end -= 1;
+  return token.slice(start, end);
 }
 
 /**
