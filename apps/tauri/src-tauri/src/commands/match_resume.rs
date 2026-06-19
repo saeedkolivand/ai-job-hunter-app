@@ -5,7 +5,8 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::documents::keywords::{
-    apply_stemmer, display_forms, keyword_coverage, keywords, make_stemmer, readable_gaps,
+    apply_stemmer, display_forms, keyword_coverage, keywords, keywords_normalized, make_stemmer,
+    readable_gaps,
 };
 use crate::documents::{
     embed, posting_vector_or_embed, sha256_hex, DocumentRecord, DocumentStore, EmbeddingConfig,
@@ -132,20 +133,64 @@ async fn score_one(
         _ => 0.0, // embeddings unavailable or disabled.
     };
 
-    // ATS: how many job keywords appear in the resume text. Both sides are
-    // stemmed with one stemmer whose language is detected from the JD, since the
-    // job-ad language defines the matching context.
+    // ATS: how many job keywords appear in the resume text. The JD language
+    // defines the stemmer; both sides are stemmed with the SAME stemmer when the
+    // languages match (or translation ran). When they diverge, BOTH sides stay
+    // unstemmed (normalized only) so intersection is symmetric — stemming only
+    // one side would mangle tech tokens that survive in their raw form (e.g.
+    // `docker`, `kubernetes`) and produce WORSE matches than no stemming at all.
     let stemmer = make_stemmer(&job_text);
-    let job_keywords = keywords(&job_text, &stemmer);
-    // Reuse the résumé's cached normalized keywords when present, stemming them
-    // with the JD-derived stemmer so matching stays in the job-ad's language.
-    // Legacy documents (imported before the cache existed) and corrupt JSON
-    // arrive here as `None` and fall back to live extraction from the stored text.
-    let resume_words: HashSet<String> = match resume_raw_keywords {
-        Some(tokens) => apply_stemmer(tokens.iter().cloned().collect(), &stemmer),
-        None => keywords(&resume.text, &stemmer),
+
+    // Re-detect the JD language after translate_if_needed (translation may have
+    // changed the text language; the result is used to decide whether both sides
+    // should be stemmed or both left normalized-only).
+    let jd_lang = whatlang::detect(&job_text).map(|i| i.lang());
+    let resume_locale = resume.locale.as_deref().unwrap_or("en");
+    let jd_matches_resume_locale = match jd_lang {
+        Some(whatlang::Lang::Deu) => resume_locale.starts_with("de"),
+        Some(whatlang::Lang::Fra) => resume_locale.starts_with("fr"),
+        Some(whatlang::Lang::Spa) => resume_locale.starts_with("es"),
+        Some(whatlang::Lang::Ita) => resume_locale.starts_with("it"),
+        Some(whatlang::Lang::Por) => resume_locale.starts_with("pt"),
+        Some(whatlang::Lang::Nld) => resume_locale.starts_with("nl"),
+        _ => resume_locale.starts_with("en"), // English stemmer is the default fallback
     };
-    let (ats, gap_stems) = keyword_coverage(&job_keywords, &resume_words);
+
+    // Symmetric treatment: stem BOTH sides with the JD stemmer when languages
+    // match; leave BOTH sides normalized-only (unstemmed) when they diverge.
+    // Mixing stemmed-JD vs unstemmed-résumé would cause language-neutral tokens
+    // like `docker` / `kubernetes` to be mutated on one side only and match
+    // neither set — strictly worse than the unstemmed symmetric baseline.
+    let job_keywords: HashSet<String> = if jd_matches_resume_locale {
+        keywords(&job_text, &stemmer)
+    } else {
+        keywords_normalized(&job_text)
+    };
+    let resume_words: HashSet<String> = match resume_raw_keywords {
+        Some(tokens) => {
+            let token_set: HashSet<String> = tokens.iter().cloned().collect();
+            if jd_matches_resume_locale {
+                apply_stemmer(token_set, &stemmer)
+            } else {
+                token_set // normalized-only: symmetric with the JD side above
+            }
+        }
+        None => {
+            if jd_matches_resume_locale {
+                keywords(&resume.text, &stemmer)
+            } else {
+                // Live extraction without stemming — symmetric with JD side.
+                keywords_normalized(&resume.text)
+            }
+        }
+    };
+
+    // keyword_coverage returns None when the JD has no extractable keywords
+    // (sparse posting) — distinguish from a genuine 0% match.
+    let (ats, gap_stems, no_jd_keywords) = match keyword_coverage(&job_keywords, &resume_words) {
+        Some((a, g)) => (a, g, false),
+        None => (0.0, Vec::new(), true),
+    };
     // The coverage kernel works on stemmed tokens; map them back to readable,
     // unstemmed forms before surfacing them so the UI shows "kubernetes" /
     // "developer", not the Snowball stems "kubernet" / "develop".
@@ -158,14 +203,21 @@ async fn score_one(
     };
 
     let recommendations = recommendations(&gaps);
-    let explanation = if skip_semantic {
+    // Guidance framing: the score is our estimate, not the employer's verdict.
+    const GUIDANCE: &str =
+        "This score is a guidance estimate — not the employer's decision or any ATS system's score.";
+    let explanation = if no_jd_keywords {
         format!(
-            "Keyword coverage {ats:.0}% across {} job keywords (semantic scoring disabled).",
+            "No extractable keywords found in this job posting — coverage score is unavailable. {GUIDANCE}"
+        )
+    } else if skip_semantic {
+        format!(
+            "Keyword coverage {ats:.0}% across {} job keywords (semantic scoring disabled). {GUIDANCE}",
             job_keywords.len()
         )
     } else {
         format!(
-            "Semantic similarity {semantic:.0}%, keyword coverage {ats:.0}% across {} job keywords.",
+            "Semantic similarity {semantic:.0}%, keyword coverage {ats:.0}% across {} job keywords. {GUIDANCE}",
             job_keywords.len()
         )
     };
@@ -179,6 +231,7 @@ async fn score_one(
         "gaps": gaps,
         "recommendations": recommendations,
         "explanation": explanation,
+        "guidance": GUIDANCE,
     });
     if let Ok(s) = serde_json::to_string(&result) {
         store.upsert_match_score(&cache_key, &s).ok();
@@ -386,7 +439,8 @@ mod test {
         let stemmer = make_stemmer(job_text);
         let job_kw = keywords(job_text, &stemmer);
         // An empty résumé → every job keyword is a gap.
-        let (_ats, gap_stems) = keyword_coverage(&job_kw, &HashSet::new());
+        let (_ats, gap_stems) =
+            keyword_coverage(&job_kw, &HashSet::new()).expect("non-empty job must return Some");
 
         // The raw stems are mangled.
         assert!(
@@ -436,7 +490,8 @@ mod test {
 
         // A job keyword present in the resume text must be covered.
         let job = keywords("rust developer typescript", &stemmer);
-        let (cov, _gaps) = keyword_coverage(&job, &resume_words);
+        let (cov, _gaps) =
+            keyword_coverage(&job, &resume_words).expect("non-empty job must return Some");
         assert!(
             cov > 0.0,
             "ATS coverage must be > 0 when resume text contains matching terms"
@@ -589,6 +644,7 @@ mod test {
     // A6 — Degrade explanation: when semantic is disabled the explanation must
     // say "(semantic scoring disabled)" and NOT mention "Semantic similarity".
     // When semantic is available the explanation includes "Semantic similarity".
+    // Both explanations must carry the guidance framing ("guidance estimate").
     // Mirrors the `explanation` construction in `score_one` (pure string logic,
     // tested without AppHandle).
     #[test]
@@ -596,10 +652,12 @@ mod test {
         let job_kw_count = 10_usize;
         let ats = 70.0_f64;
         let semantic = 85.0_f64;
+        const GUIDANCE: &str =
+            "This score is a guidance estimate — not the employer's decision or any ATS system's score.";
 
         // Degrade (skip_semantic = true):
         let degrade_explanation = format!(
-            "Keyword coverage {ats:.0}% across {job_kw_count} job keywords (semantic scoring disabled)."
+            "Keyword coverage {ats:.0}% across {job_kw_count} job keywords (semantic scoring disabled). {GUIDANCE}"
         );
         assert!(
             degrade_explanation.contains("semantic scoring disabled"),
@@ -609,10 +667,14 @@ mod test {
             !degrade_explanation.contains("Semantic similarity"),
             "degrade explanation must NOT mention 'Semantic similarity'; got: {degrade_explanation}"
         );
+        assert!(
+            degrade_explanation.contains("guidance estimate"),
+            "degrade explanation must carry guidance framing; got: {degrade_explanation}"
+        );
 
         // Normal (skip_semantic = false):
         let normal_explanation = format!(
-            "Semantic similarity {semantic:.0}%, keyword coverage {ats:.0}% across {job_kw_count} job keywords."
+            "Semantic similarity {semantic:.0}%, keyword coverage {ats:.0}% across {job_kw_count} job keywords. {GUIDANCE}"
         );
         assert!(
             normal_explanation.contains("Semantic similarity"),
@@ -621,6 +683,79 @@ mod test {
         assert!(
             !normal_explanation.contains("disabled"),
             "normal explanation must NOT mention 'disabled'; got: {normal_explanation}"
+        );
+        assert!(
+            normal_explanation.contains("guidance estimate"),
+            "normal explanation must carry guidance framing; got: {normal_explanation}"
+        );
+    }
+
+    // Empty JD keywords → explanation flags unavailable score, not misleading 0%.
+    // Mirrors the `no_jd_keywords` branch in `score_one`.
+    #[test]
+    fn empty_jd_keywords_explanation_flags_unavailable() {
+        const GUIDANCE: &str =
+            "This score is a guidance estimate — not the employer's decision or any ATS system's score.";
+        let explanation = format!(
+            "No extractable keywords found in this job posting — coverage score is unavailable. {GUIDANCE}"
+        );
+        assert!(
+            explanation.contains("No extractable keywords"),
+            "empty-JD explanation must flag unavailability; got: {explanation}"
+        );
+        assert!(
+            explanation.contains("guidance estimate"),
+            "empty-JD explanation must carry guidance framing; got: {explanation}"
+        );
+        // Must NOT claim 0% — that would be indistinguishable from a real mismatch.
+        assert!(
+            !explanation.contains("0%"),
+            "empty-JD explanation must not claim 0%; got: {explanation}"
+        );
+    }
+
+    // Stemmer-language guard: when JD language matches the résumé locale,
+    // apply_stemmer runs; when they diverge, the normalized (unstemmed) set is
+    // used directly. This pins the guard logic (pure boolean, no AppHandle).
+    #[test]
+    fn stemmer_language_guard_skips_stemming_on_mismatch() {
+        use crate::documents::keywords::{apply_stemmer, keywords_normalized, make_stemmer};
+
+        // German JD, English résumé (locale "en") — languages diverge.
+        let jd_text = "Wir suchen einen erfahrenen Softwareentwickler mit Rust-Kenntnissen";
+        let stemmer = make_stemmer(jd_text); // German stemmer
+        let resume_tokens = keywords_normalized("experienced rust developer");
+
+        // Guard logic mirrors score_one: German JD, English locale → no match.
+        let jd_matches_en = false; // German JD vs "en" locale
+        let resume_words_diverge: HashSet<String> = if jd_matches_en {
+            apply_stemmer(resume_tokens.clone(), &stemmer)
+        } else {
+            resume_tokens.clone() // unstemmed
+        };
+
+        // When languages match (English JD, English résumé) → stemmer applied.
+        let en_jd = "experienced rust developer";
+        let en_stemmer = make_stemmer(en_jd);
+        let en_tokens = keywords_normalized("experienced rust developer");
+        let resume_words_match = apply_stemmer(en_tokens.clone(), &en_stemmer);
+
+        // The stemmed set must differ from the unstemmed one for ordinary words.
+        // ("developer" → "develop" under English Snowball).
+        assert!(
+            resume_words_match.contains("develop"),
+            "English stemmer must reduce 'developer' to 'develop'; got {:?}",
+            resume_words_match
+        );
+        assert!(
+            resume_words_diverge.contains("developer"),
+            "Without stemming, 'developer' must survive unstemmed; got {:?}",
+            resume_words_diverge
+        );
+        assert!(
+            !resume_words_diverge.contains("develop"),
+            "Without stemming, stemmed form 'develop' must be absent; got {:?}",
+            resume_words_diverge
         );
     }
 
@@ -705,6 +840,73 @@ mod test {
         assert_ne!(
             got["semantic"], got["combined"],
             "semantic and combined must be distinct"
+        );
+    }
+
+    // Integration test for HIGH stemmer-asymmetry regression fix.
+    //
+    // A German-language JD and an English-locale résumé share the language-neutral
+    // token `docker`. With the OLD asymmetric code (JD stemmed with German stemmer,
+    // résumé unstemmed), the German Snowball stemmer mutates `docker` on the JD side
+    // while the résumé keeps the raw form — neither set contains the same token after
+    // asymmetric processing, so coverage is 0%.
+    //
+    // The symmetric fix leaves BOTH sides unstemmed (normalized-only) when languages
+    // diverge, so `docker` survives on both sides and the coverage is > 0%.
+    //
+    // This test FAILS against the pre-fix asymmetric code and PASSES after the fix.
+    #[test]
+    fn divergent_language_pair_shared_tech_token_matches_symmetrically() {
+        use crate::documents::keywords::{
+            apply_stemmer, keyword_coverage, keywords, keywords_normalized, make_stemmer,
+        };
+
+        // German JD with shared tech token `docker` embedded in German prose.
+        let german_jd =
+            "Wir suchen einen erfahrenen Softwareentwickler mit docker und kubernetes Kenntnissen";
+        let english_resume =
+            "experienced engineer shipping docker containers and kubernetes clusters";
+
+        // Build the German stemmer (what score_one uses for this JD).
+        let german_stemmer = make_stemmer(german_jd);
+
+        // --- Demonstrate the OLD asymmetric behavior causes zero coverage ---
+        // Old code: JD side stemmed with German stemmer; résumé side unstemmed.
+        let jd_stemmed = keywords(german_jd, &german_stemmer);
+        let resume_unstemmed = keywords_normalized(english_resume);
+        let (old_cov, _) =
+            keyword_coverage(&jd_stemmed, &resume_unstemmed).unwrap_or((0.0, vec![]));
+        assert_eq!(
+            old_cov, 0.0,
+            "precondition: asymmetric stemming (JD stemmed, résumé unstemmed) must yield 0% \
+             coverage — shared tech token 'docker'/'kubernetes' lost in the stem mismatch; got {old_cov}%"
+        );
+
+        // --- Demonstrate the NEW symmetric behavior preserves the shared token ---
+        // New code: BOTH sides normalized-only (unstemmed) when languages diverge.
+        let jd_normalized = keywords_normalized(german_jd);
+        let resume_normalized = keywords_normalized(english_resume);
+        let (new_cov, _) =
+            keyword_coverage(&jd_normalized, &resume_normalized).unwrap_or((0.0, vec![]));
+        assert!(
+            new_cov > 0.0,
+            "symmetric normalization (both unstemmed) must yield > 0% coverage \
+             — 'docker' and 'kubernetes' appear on both sides; got {new_cov}%"
+        );
+
+        // Also verify that the symmetric STEMMED path (same language) is not broken:
+        // English JD + English résumé sharing `docker` must still match when both are stemmed.
+        let en_jd = "looking for a developer with docker and kubernetes experience";
+        let en_resume = "shipped docker containers and kubernetes clusters";
+        let en_stemmer = make_stemmer(en_jd);
+        let jd_en_stemmed = keywords(en_jd, &en_stemmer);
+        let resume_en_stemmed = apply_stemmer(keywords_normalized(en_resume), &en_stemmer);
+        let (en_cov, _) =
+            keyword_coverage(&jd_en_stemmed, &resume_en_stemmed).unwrap_or((0.0, vec![]));
+        assert!(
+            en_cov > 0.0,
+            "matching-language path (both English, both stemmed) must still yield > 0% coverage; \
+             got {en_cov}%"
         );
     }
 

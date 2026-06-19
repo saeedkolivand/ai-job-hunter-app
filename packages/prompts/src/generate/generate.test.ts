@@ -469,6 +469,22 @@ describe('resumeMentions', () => {
     expect(resumeMentions('Designed a REST API for payments', 'REST API')).toBe(true);
     expect(resumeMentions('No cloud here', 'AWS')).toBe(false);
   });
+
+  it('synonym path: JS alias matches JavaScript requirement', () => {
+    // Résumé says "JS bundles"; requirement spells out "JavaScript".
+    // The SYNONYMS map normalizes "js" → "javascript" on both sides.
+    expect(resumeMentions('Shipped JS bundles and optimized load times', 'JavaScript')).toBe(true);
+  });
+
+  it('synonym path: k8s alias matches Kubernetes requirement', () => {
+    // Résumé says "k8s clusters"; requirement spells out "Kubernetes".
+    expect(resumeMentions('Ran k8s clusters on bare metal', 'Kubernetes')).toBe(true);
+  });
+
+  it('negative: java must NOT match javascript (word-boundary, no false alias)', () => {
+    // "java" and "javascript" are different tokens; no synonym maps one to the other.
+    expect(resumeMentions('Maintained Java microservices', 'javascript')).toBe(false);
+  });
 });
 
 describe('buildGroundingBlock', () => {

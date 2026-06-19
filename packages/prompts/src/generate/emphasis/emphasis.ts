@@ -1,21 +1,80 @@
 /** Keyword-emphasis + résumé-grounding instruction blocks. */
 
 /**
+ * Alias pairs matching the Rust scorer's SYNONYMS constant so evidence
+ * grounding normalizes through the same map before the substring test.
+ * Keep in sync with `apps/tauri/src-tauri/src/documents/keywords.rs` SYNONYMS.
+ */
+const SYNONYMS: ReadonlyArray<readonly [string, string]> = [
+  ['js', 'javascript'],
+  ['ts', 'typescript'],
+  ['py', 'python'],
+  ['golang', 'go'],
+  ['k8s', 'kubernetes'],
+  ['kube', 'kubernetes'],
+  ['node', 'nodejs'],
+  ['react.js', 'react'],
+  ['vue.js', 'vue'],
+  ['next.js', 'nextjs'],
+  ['nuxt.js', 'nuxtjs'],
+  ['psql', 'postgresql'],
+  ['postgres', 'postgresql'],
+  ['mongo', 'mongodb'],
+  ['tf', 'tensorflow'],
+  ['sklearn', 'scikit-learn'],
+  ['scikit', 'scikit-learn'],
+  ['ci/cd', 'cicd'],
+  ['c/c++', 'cpp'],
+  ['c++', 'cpp'],
+  ['objective-c', 'objectivec'],
+  ['llms', 'llm'],
+  ['genai', 'generativeai'],
+  ['gen-ai', 'generativeai'],
+] as const;
+
+/**
+ * Normalize a term through the SYNONYMS alias map (same map as the Rust scorer)
+ * so aliases collapse to their canonical form before matching.
+ */
+function normalizeTerm(term: string): string {
+  const lower = term.toLowerCase();
+  const found = SYNONYMS.find(([alias]) => alias === lower);
+  return found ? found[1] : lower;
+}
+
+/**
  * Whether the résumé body actually mentions `term`.
  *
- * Multi-word terms or terms containing punctuation (e.g. `Node.js`, `CI/CD`,
- * `REST API`) match by case-insensitive substring; single alphanumeric tokens
- * (e.g. `React`, `Go`, `AWS`) match on a word boundary so `Go` does not match
- * "category". Heuristic by design — the model still sees the full résumé and is
- * told never to fabricate — but it lets us tell the model which job-ad
- * requirements are genuinely backed by the résumé.
+ * Both `term` and the résumé body are normalized through the SYNONYMS alias map
+ * (matching the Rust scorer's normalization) before the match, so aliases like
+ * "JS" / "JavaScript" or "k8s" / "Kubernetes" are treated as equivalent — the
+ * same way the scorer does. Multi-word terms or terms containing punctuation
+ * (e.g. `Node.js`, `CI/CD`, `REST API`) match by case-insensitive substring;
+ * single alphanumeric tokens (e.g. `React`, `Go`, `AWS`) match on a word
+ * boundary so `Go` does not match "category". Heuristic by design — the model
+ * still sees the full résumé and is told never to fabricate — but it lets us
+ * tell the model which job-ad requirements are genuinely backed by the résumé.
  */
 export function resumeMentions(resumeBody: string, term: string): boolean {
-  const t = term.trim().toLowerCase();
+  const t = normalizeTerm(term.trim());
   if (!t) return false;
-  if (/[^a-z0-9]/.test(t)) return resumeBody.toLowerCase().includes(t);
-  const esc = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`\\b${esc}\\b`, 'i').test(resumeBody);
+  // Normalize every word in the résumé body through the alias map so e.g. a
+  // résumé that says "JS" matches a requirement spelled "JavaScript".
+  // NOTE: callers that check multiple terms should use resumeMentionsNormalized
+  // with a pre-normalized body to avoid O(reqs × body) re-normalization.
+  const normalizedBody = resumeBody.toLowerCase().replace(/\S+/g, (w) => normalizeTerm(w));
+  return resumeMentionsInNormalized(normalizedBody, t);
+}
+
+/**
+ * Inner match against an already-normalized body (normalized via the same
+ * `normalizeTerm` alias map). Separating normalization from matching lets
+ * callers that check many terms normalize the body once and reuse it.
+ */
+function resumeMentionsInNormalized(normalizedBody: string, normalizedTerm: string): boolean {
+  if (/[^a-z0-9]/.test(normalizedTerm)) return normalizedBody.includes(normalizedTerm);
+  const esc = normalizedTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${esc}\\b`).test(normalizedBody);
 }
 
 /**
@@ -30,10 +89,13 @@ export function buildGroundingBlock(resumeBody: string, topRequirements: string[
   const reqs = topRequirements.slice(0, 12);
   if (!reqs.length) return '';
 
+  // Normalize the body once; reuse across all requirements (O(body) not O(reqs × body)).
+  const normalizedBody = resumeBody.toLowerCase().replace(/\S+/g, (w) => normalizeTerm(w));
   const present: string[] = [];
   const absent: string[] = [];
   for (const req of reqs) {
-    (resumeMentions(resumeBody, req) ? present : absent).push(req);
+    const t = normalizeTerm(req.trim());
+    (t && resumeMentionsInNormalized(normalizedBody, t) ? present : absent).push(req);
   }
   if (!present.length && !absent.length) return '';
 
