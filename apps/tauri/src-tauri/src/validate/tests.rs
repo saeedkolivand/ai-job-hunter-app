@@ -388,3 +388,67 @@ fn typst_cover_letter_pdf_passes_validation() {
         report.issues
     );
 }
+
+// ─── canonicalize_url ─────────────────────────────────────────────────────────
+
+/// Query-string case (including values like `Token=ABC`) must be preserved.
+/// The old code found '/' at `after.len()` but still treated `?Token=ABC` as
+/// part of the authority — so `authority.to_lowercase()` clobbered the token.
+#[test]
+fn canonicalize_url_preserves_query_case() {
+    let url = "https://Example.COM/path?Token=ABC&foo=Bar";
+    let canon = canonicalize_url(url);
+    // Scheme + host lowercased; path + query case preserved.
+    assert_eq!(canon, "https://example.com/path?Token=ABC&foo=Bar");
+}
+
+/// A URL with no path separator before the query must not lowercase the query.
+#[test]
+fn canonicalize_url_query_without_path_slash() {
+    let url = "https://Example.COM?Token=ABC";
+    let canon = canonicalize_url(url);
+    assert_eq!(canon, "https://example.com?Token=ABC");
+}
+
+/// Fragment identifiers must not be lowercased or mangled.
+#[test]
+fn canonicalize_url_preserves_fragment() {
+    let url = "https://Example.COM/page#SectionTitle";
+    let canon = canonicalize_url(url);
+    assert_eq!(canon, "https://example.com/page#SectionTitle");
+}
+
+/// A trailing slash on the PATH (before any `?`) is stripped; the query is kept.
+#[test]
+fn canonicalize_url_strips_path_trailing_slash_before_query() {
+    let url = "https://example.com/profile/?Token=ABC";
+    let canon = canonicalize_url(url);
+    assert_eq!(canon, "https://example.com/profile?Token=ABC");
+}
+
+/// Two genuinely different URLs (different hosts / paths) must never compare equal.
+#[test]
+fn canonicalize_url_different_urls_are_not_equal() {
+    let a = canonicalize_url("https://linkedin.com/in/janedoe");
+    let b = canonicalize_url("https://github.com/janedoe");
+    assert_ne!(
+        a, b,
+        "different URLs must not collide after canonicalization"
+    );
+}
+
+/// Regression: a Google Drive URL with a query containing uppercase must not be
+/// lowercased — this is the exact URL shape that false-blocked exports.
+#[test]
+fn canonicalize_url_google_drive_link_is_stable() {
+    let url = "https://drive.google.com/file/d/abc123/view?usp=drive_link";
+    // Canonicalizing twice must yield the same string (idempotent).
+    let once = canonicalize_url(url);
+    let twice = canonicalize_url(&once);
+    assert_eq!(once, twice, "canonicalize_url must be idempotent");
+    // The query value must survive unchanged.
+    assert!(
+        once.contains("?usp=drive_link"),
+        "query must survive: {once}"
+    );
+}
