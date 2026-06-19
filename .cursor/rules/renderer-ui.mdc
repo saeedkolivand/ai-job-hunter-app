@@ -1,30 +1,22 @@
 ---
 description: Renderer UI rules — applies to all React components and route files
-globs: ["apps/desktop/src/renderer/**/*.tsx", "apps/desktop/src/renderer/**/*.ts"]
+globs: ["apps/tauri/src/renderer/**/*.tsx", "apps/tauri/src/renderer/**/*.ts"]
 alwaysApply: true
 ---
 
 # Renderer UI Rules
 
+> Canonical rules: see `CLAUDE.md` + `.claude/skills/*` — this file is a pointer + the load-bearing subset; CLAUDE.md wins on any conflict.
+
+The renderer lives in `apps/tauri/src/renderer/` and talks to the Rust core only through IPC service hooks.
+
 ## Path Privacy
 
-- Never expose real local file system paths
-- Never output absolute Windows, macOS, or Linux paths
-- Always use repository-relative paths
-
-❌ `C:\Users\username\project\apps\tauri\src\main.rs`
-❌ `/home/username/project/apps/api/src/server.ts`
-❌ `~/Projects/app/src/index.ts`
-
-✅ `apps/tauri/src/main.rs`
-✅ `apps/api/src/server.ts`
-
-- Never expose usernames, home directories, drive letters, workspace roots, temp paths, or IDE-specific paths
-- Sanitize absolute paths in logs, stack traces, screenshots, terminal output, PRs, commits, comments, and markdown
-- Prefer repository-root-relative paths. If needed, use: `file:///app/<relative-path>`
+- Never expose real local file system paths, usernames, home dirs, drive letters, or temp paths.
+- Always use repository-relative paths. Sanitize absolute paths in logs, PRs, commits, and markdown.
 
 ## Data fetching — React Query only
-Never use `useState + useEffect` for IPC data. Always use service hooks:
+Never use `useState + useEffect` for IPC data. Always use service hooks from `apps/tauri/src/renderer/services/`:
 ```ts
 import { useDocuments, usePostings, useJobQueue } from '@/services';
 const { data, isLoading } = useDocuments();
@@ -33,15 +25,16 @@ const { data, isLoading } = useDocuments();
 ## i18n
 ```ts
 // ✅ correct
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation } from '@ajh/translations';
 // ❌ never
 import { useTranslation } from 'react-i18next';
 ```
+The renderer init shim is `@/i18n` (owns init + the locale→main listener).
 
 ## Motion tokens
 ```ts
 // ✅ correct
-import { transition, variants, stagger } from '@/lib/motion';
+import { transition } from '@ajh/ui';
 <motion.div transition={transition.normal}>
 // ❌ never
 <motion.div transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}>
@@ -72,9 +65,11 @@ All from `@ajh/ui` directly — never from `@/components/ui/*`:
 | Page wrapper | `PageShell` from `@/components/layout/PageShell` |
 | App-specific | `UpdateBanner` from `@/components/ui/UpdateBanner` |
 
+No raw `<button>`, `<select>`, `<textarea>`. Exception: `<input type="range|file|checkbox|radio|hidden">`.
+
 ## File placement
-- `features/X/components/` — components owned by only route X
-- `components/ui/` — shared across multiple features
+- `features/X/components/` — components owned by only route X (never import across feature dirs)
+- `components/ui/` — re-exports from `@ajh/ui` (`UpdateBanner` is the exception)
 - `services/` — all IPC/React Query hooks
 - `lib/machines/` — state machines for complex flows (3+ states)
 

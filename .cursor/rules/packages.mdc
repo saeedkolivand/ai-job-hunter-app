@@ -6,22 +6,16 @@ alwaysApply: true
 
 # Package Rules
 
+> Canonical rules: see `CLAUDE.md` + `.claude/skills/*` — this file is a pointer + the load-bearing subset; CLAUDE.md wins on any conflict.
+
+There are exactly four workspace packages: `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`.
+There are no separate backend TS packages — backend logic lives in the Rust core under
+`apps/tauri/src-tauri/`, reached only via the IPC contract.
+
 ## Path Privacy
 
-- Never expose real local file system paths
-- Never output absolute Windows, macOS, or Linux paths
-- Always use repository-relative paths
-
-❌ `C:\Users\username\project\apps\tauri\src\main.rs`
-❌ `/home/username/project/apps/api/src/server.ts`
-❌ `~/Projects/app/src/index.ts`
-
-✅ `apps/tauri/src/main.rs`
-✅ `apps/api/src/server.ts`
-
-- Never expose usernames, home directories, drive letters, workspace roots, temp paths, or IDE-specific paths
-- Sanitize absolute paths in logs, stack traces, screenshots, terminal output, PRs, commits, comments, and markdown
-- Prefer repository-root-relative paths. If needed, use: `file:///app/<relative-path>`
+- Never expose real local file system paths, usernames, home dirs, drive letters, or temp paths.
+- Always use repository-relative paths. Sanitize absolute paths in logs, PRs, commits, and markdown.
 
 ## @ajh/ui (packages/ui)
 - No app logic — no Zustand, no IPC, no routing imports
@@ -38,13 +32,13 @@ alwaysApply: true
 - Pure TypeScript — no imports from other packages
 - No `window`, `document`, or React references
 
-## @ajh/data (packages/data)
-- Main-process only — never imported by renderer
-- Internal subdomains: `db/`, `scraping/`, `matching/`, `files/`, `applying/`, `autopilot/`
+## @ajh/translations (packages/translations)
+- i18next config + UI translation resources (en/de) → consumed as `@ajh/translations`
+- No app / IPC / renderer imports (the locale→main listener stays in the renderer's `@/i18n` shim)
 
 ## Dependency direction
 ```
-renderer → @ajh/ui, @ajh/shared, @ajh/prompts
-main → @ajh/core, @ajh/ai, @ajh/data, @ajh/workers, @ajh/shared
+renderer → @ajh/ui, @ajh/shared, @ajh/prompts, @ajh/translations
+Rust core (apps/tauri/src-tauri) ← reached only via IPC (packages/shared contract)
 ```
 Lower packages never import from upper packages.

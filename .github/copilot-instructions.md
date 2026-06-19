@@ -1,6 +1,9 @@
 # AI Job Hunter — Copilot Instructions
 
-Local-first Tauri desktop app. pnpm monorepo. React 19 + TypeScript strict.
+> Canonical rules: see `CLAUDE.md` + `.claude/skills/*` — this file is a pointer + the load-bearing subset; CLAUDE.md wins on any conflict.
+
+Local-first Tauri desktop app (Rust core in `apps/tauri/src-tauri/`, React renderer in
+`apps/tauri/src/renderer/`). pnpm monorepo. React 19 + TypeScript strict, Tailwind v4.
 ESLint `--max-warnings 0` in CI — every warning fails the build.
 
 ---
@@ -35,13 +38,13 @@ Never `find -exec`, never PowerShell syntax. Git Bash paths: `/c/Users/...`
 
 ## Non-negotiable rules (ESLint-enforced — refuse if user asks to bypass)
 
-**1. No `window.api` in UI** — use service hooks from `@/services` (React Query wrappers).
+**1. No `window.api` in UI** — use service hooks from `apps/tauri/src/renderer/services/` (React Query wrappers).
 
-**2. i18n** — `import { useTranslation } from '@/lib/i18n'`, never `react-i18next`.
+**2. i18n** — `import { useTranslation } from '@ajh/translations'`, never `react-i18next`. Renderer init shim is `@/i18n`.
 
-**3. Brand colors** — `text-brand`, `text-brand-soft`, `bg-brand`, `border-brand`. No `[#RRGGBB]`.
+**3. Brand colors** — `text-brand`, `text-brand-soft`, `bg-brand`, `border-brand`, `ring-brand`. No `[#RRGGBB]`.
 
-**4. Motion** — `import { transition } from '@/lib/motion'` → `transition.normal` etc. No inline objects.
+**4. Motion** — `import { transition } from '@ajh/ui'` → `transition.normal` etc. No inline objects.
 
 **5. UI primitives from `@ajh/ui`** — `Button`, `Input`, `TextArea`, `SelectDropdown`, `ModalShell`,
 `ConfirmModal`, `EmptyState`, `ErrorState`, `RowSkeleton`, `GlassCard`, `SettingsSection`, `OptionTile`,
@@ -56,7 +59,7 @@ Exception: `<input type="range|file|checkbox|radio|hidden">`.
 
 **9. Data fetching** — React Query via service hooks only. No `useState + useEffect` for remote data.
 
-**10. Package boundaries** — renderer never imports `@ajh/core`, `@ajh/ai`, `@ajh/data`, `@ajh/workers`.
+**10. Package boundaries** — workspace packages are exactly `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`. The renderer reaches the Rust core only via IPC service hooks.
 
 **11. No ESLint bypass** — no `// eslint-disable`, no `@ts-ignore`. `eslint.config.mjs` scoped overrides only.
 

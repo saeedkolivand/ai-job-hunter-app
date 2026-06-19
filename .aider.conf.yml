@@ -4,12 +4,13 @@
 # Load project rules as system prompt on every session
 system-prompt: .aider/system-prompt.md
 
-# Always read these files for context
+# Always read these files for context (CLAUDE.md is the canonical source of truth)
 read:
-  - ARCHITECTURE.md
+  - CLAUDE.md
+  - docs/ARCHITECTURE.md
   - packages/shared/src/ipc/contracts.ts
 
-# TypeScript/React project settings
+# Tauri + React project settings
 auto-commits: false # manual commits only
 suggest-shell-commands: false
 

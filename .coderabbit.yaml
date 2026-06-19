@@ -52,7 +52,7 @@ reviews:
         components — use service hooks from @/services (React Query). Use @ajh/ui
         primitives (Button/Input/TextArea/SelectDropdown/ModalShell/etc.), never raw
         <button>/<select>/<textarea>. Brand/design tokens only (text-brand, bg-brand,
-        var(--color-brand)); no hardcoded [#RRGGBB]. Motion via @/lib/motion tokens,
+        var(--color-brand)); no hardcoded [#RRGGBB]. Motion via `@ajh/ui` tokens,
         no inline {duration,ease}. i18n via @ajh/translations, never react-i18next/
         i18next directly. No useState+useEffect for remote data. Never cross-import
         between feature dirs.

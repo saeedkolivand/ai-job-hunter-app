@@ -662,10 +662,10 @@ Clicking a sidebar nav item smooth-scrolls the active page's scroll region to th
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `useState + useEffect` for IPC data               | React Query service hook                                                                                                                     |
 | `window.__TAURI_INVOKE__` directly                | `useAppClient()` service hook                                                                                                                |
-| `import { useTranslation } from "react-i18next"`  | `import { useTranslation } from "@/lib/i18n"`                                                                                                |
+| `import { useTranslation } from "react-i18next"`  | `import { useTranslation } from "@ajh/translations"`                                                                                         |
 | Cross-feature imports                             | Only import from `@ajh/ui`, `services/`, `lib/`                                                                                              |
 | `// eslint-disable` comment                       | Fix the underlying issue or add a scoped `eslint.config.mjs` override                                                                        |
-| Inline `{ duration: 0.2, ease: "easeOut" }`       | `transition.fast` from `@/lib/motion`                                                                                                        |
+| Inline `{ duration: 0.2, ease: "easeOut" }`       | `transition.fast` from `@ajh/ui`                                                                                                             |
 | Hardcoded colors in className                     | `text-brand`, `bg-brand`, etc.                                                                                                               |
 | Storing credentials in SQLite                     | OS keychain (AI keys via `credentials` module; board sessions via `boards.*`/`linkedin.*`)                                                   |
 | Reading `AJH_DATA_DIR` / rebuilding `~/.ajh`      | `platform::config::data_dir()`                                                                                                               |
