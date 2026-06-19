@@ -762,6 +762,129 @@ fn unauthorized_variant_is_distinct_from_connecting_variants() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// B1c. classify_frame with absent / empty reqId
+//
+// When a frame's `reqId` field is absent OR is an empty string, `classify_frame`
+// defaults `req_id` to `""`. The reply is still emitted with `"reqId": ""`.
+//
+// KNOWN CORRELATION HAZARD: two concurrent requests both lacking `reqId` would
+// both receive `"reqId": ""` replies, making them indistinguishable on the
+// extension side. This is NOT fixed here — it is pinned as a documented behavior
+// so a future change (e.g. server-side reqId generation) has a test to land on.
+// Auth frames are normally sent one-at-a-time, so the hazard is advisory for now.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// An `auth` frame whose `reqId` is ABSENT defaults `req_id` to `""`. The frame
+/// still classifies correctly (correct token → Reply, wrong token → Unauthorized)
+/// and the reply carries `"reqId": ""` rather than panicking or mis-routing to a
+/// non-existent request.
+#[test]
+fn classify_frame_auth_absent_req_id_defaults_to_empty_string() {
+    let (_dir, state) = bridge_state();
+    let token = state.token();
+
+    // Auth with correct token, NO reqId field at all.
+    let frame = json!({
+        "token": token,
+        "type": super::msg::AUTH,
+        "payload": serde_json::Value::Null,
+    })
+    .to_string();
+
+    match classify_frame(&state, &frame) {
+        FrameDecision::Reply(reply) => {
+            // Must not panic; error-free means "authorized".
+            assert!(
+                reply_error(&reply).is_none(),
+                "absent-reqId auth with correct token must reply with no error"
+            );
+            let parsed: serde_json::Value = serde_json::from_str(&reply).unwrap();
+            // PINNED BEHAVIOR: absent reqId → reply carries "reqId": "".
+            // If this assertion ever changes, the correlation-hazard comment above
+            // must be revisited (e.g. the bridge started generating its own reqId).
+            assert_eq!(
+                parsed.get("reqId").and_then(|r| r.as_str()),
+                Some(""),
+                "absent reqId must default the reply's reqId to empty string (pinned behavior)"
+            );
+        }
+        other => {
+            panic!("correct-token auth with absent reqId must classify as Reply, got {other:?}")
+        }
+    }
+}
+
+/// An `import.request` frame whose `reqId` is an empty string `""` is treated
+/// the same as absent — `req_id` is `""` and the `Import` decision carries it.
+/// This pins the correlation hazard: a reply for this request would have
+/// `"reqId": ""` and cannot be distinguished from another no-reqId import reply.
+#[test]
+fn classify_frame_import_empty_req_id_carries_empty_string() {
+    let (_dir, state) = bridge_state();
+    let token = state.token();
+
+    let frame = json!({
+        "token": token,
+        "reqId": "",  // explicitly empty — same as absent for correlation purposes
+        "type": super::msg::IMPORT_REQUEST,
+        "payload": { "url": "https://jobs.example.com/posting/empty-req" }
+    })
+    .to_string();
+
+    match classify_frame(&state, &frame) {
+        FrameDecision::Import { req_id, payload } => {
+            // PINNED BEHAVIOR: empty reqId passes through as "".
+            assert_eq!(
+                req_id, "",
+                "empty reqId must be carried as-is (empty string) into the Import decision"
+            );
+            assert_eq!(
+                payload.get("url").and_then(|u| u.as_str()),
+                Some("https://jobs.example.com/posting/empty-req")
+            );
+            // CORRELATION HAZARD (advisory, not a panic): `result_reply(&req_id, …)`
+            // will produce `"reqId": ""` — indistinguishable from any other empty-reqId
+            // reply. The extension always sets a non-empty reqId today, so this is
+            // defensive documentation rather than an active bug.
+        }
+        other => {
+            panic!("correct-token import with empty reqId must classify as Import, got {other:?}")
+        }
+    }
+}
+
+/// Wrong-token frame with ABSENT `reqId` still produces an Unauthorized reply
+/// (token gate runs before reqId is meaningful), and the reply carries `"reqId": ""`.
+#[test]
+fn classify_frame_unauthorized_absent_req_id_reply_carries_empty_string() {
+    let (_dir, state) = bridge_state();
+    let wrong = "a".repeat(64);
+    assert_ne!(wrong, state.token());
+
+    // No reqId field.
+    let frame = json!({
+        "token": wrong,
+        "type": super::msg::AUTH,
+        "payload": serde_json::Value::Null,
+    })
+    .to_string();
+
+    match classify_frame(&state, &frame) {
+        FrameDecision::Unauthorized(reply) => {
+            let err = reply_error(&reply).expect("unauthorized reply must carry an error");
+            assert!(err.contains("unauthorized"));
+            let parsed: serde_json::Value = serde_json::from_str(&reply).unwrap();
+            assert_eq!(
+                parsed.get("reqId").and_then(|r| r.as_str()),
+                Some(""),
+                "unauthorized reply with no reqId must echo empty string (pinned behavior)"
+            );
+        }
+        other => panic!("wrong-token + absent reqId must be Unauthorized, got {other:?}"),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // B2. Oversize-frame rejection (HIGH 2)
 //
 // A frame over MAX_FRAME_BYTES must yield `CloseOverCap` (the loop breaks/closes)
