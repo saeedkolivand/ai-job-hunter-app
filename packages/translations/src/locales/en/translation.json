@@ -1493,6 +1493,8 @@
     "scoreHint": "Score this job against your default résumé",
     "scoreNoResume": "Save a résumé to score",
     "scoreGuidance": "This score is a guidance estimate — not the employer's decision or any ATS system's score.",
+    "scoreGuidanceLabel": "About this score",
+    "scoreEst": "est.",
     "showMore": "Show more",
     "tailor": "Tailor",
     "tailorHint": "Tailor your résumé & cover letter for this job",
