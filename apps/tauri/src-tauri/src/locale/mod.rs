@@ -1,18 +1,14 @@
-//! Locale profiles — per-market document conventions: page size, date style,
-//! photo/PII policy, and default section order.
+//! Locale profiles — per-market document conventions: page size and photo policy.
 //!
-//! Page size + date style feed both backends; section order + photo/PII feed the
-//! AI prompt and model build. Phase 1 ships the `en` default (A4, photos Never,
-//! no personal details) plus the types; the full registry (US, UK, DE/AT/CH, FR,
-//! NL, generic-EU/INTL) is populated in Phase 7.
+//! Page size feeds both PDF and DOCX backends (A4 vs US Letter).  Photo policy
+//! and privacy rules (photo/PII) are surfaced to the AI prompt and UI.
+//! Phase 1 ships the `en` default (A4, photos Never) plus the types; the full
+//! registry (US, UK, DE/AT/CH, FR, NL, generic-EU/INTL) is populated in Phase 7.
 //!
-//! Privacy: photo / personal details are **user-supplied only** — never inferred
-//! or auto-added.
+//! Privacy: photo is **user-supplied only** — never inferred or auto-added.
 #![allow(dead_code)]
 
 pub mod letter;
-
-use crate::model::document::SectionId;
 
 /// Physical page size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,17 +40,6 @@ impl PageSize {
     }
 }
 
-/// How date ranges are written in the target market.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DateStyle {
-    /// "January 2021 – March 2023"
-    MonthYear,
-    /// "01/2021 – 03/2023"
-    NumericSlash,
-    /// "2021-01 – 2023-03"
-    IsoMonth,
-}
-
 /// Whether a photo is customary on a CV in this market.
 /// User-supplied only — never inferred or auto-added.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,51 +55,8 @@ pub struct LocaleProfile {
     /// Market id ("en", "de", "us", …).
     pub id: &'static str,
     pub page_size: PageSize,
-    pub date_style: DateStyle,
     pub photo: PhotoPolicy,
-    /// Whether personal details (DOB, nationality, marital status) are customary
-    /// in this market. User-supplied only.
-    pub include_personal_details: bool,
-    /// Canonical section ordering for this market (consumed by
-    /// `transform::reorder_sections`).
-    pub default_section_order: &'static [SectionId],
 }
-
-/// Default single-column section order shared by the English/international profile.
-const DEFAULT_ORDER: &[SectionId] = &[
-    SectionId::Summary,
-    SectionId::Experience,
-    SectionId::Skills,
-    SectionId::Projects,
-    SectionId::Education,
-    SectionId::Certifications,
-    SectionId::Languages,
-    SectionId::Awards,
-];
-
-/// US résumés lead with experience and skills; education trails.
-const US_ORDER: &[SectionId] = &[
-    SectionId::Summary,
-    SectionId::Experience,
-    SectionId::Skills,
-    SectionId::Projects,
-    SectionId::Education,
-    SectionId::Certifications,
-    SectionId::Awards,
-    SectionId::Languages,
-];
-
-/// UK/EU CVs give education more prominence (right after experience).
-const EDUCATION_FORWARD_ORDER: &[SectionId] = &[
-    SectionId::Summary,
-    SectionId::Experience,
-    SectionId::Education,
-    SectionId::Skills,
-    SectionId::Languages,
-    SectionId::Certifications,
-    SectionId::Projects,
-    SectionId::Awards,
-];
 
 impl LocaleProfile {
     /// Page geometry for this profile.
@@ -127,12 +69,20 @@ impl LocaleProfile {
     /// international default, so a new/unsupported market always works.
     pub fn get(id: &str) -> LocaleProfile {
         let key = id.trim().to_lowercase();
-        // Match on the leading region/country token (`de-at` → `de`, `en_us` → `en`).
-        let region = key
-            .split(['-', '_'])
-            .next_back()
-            .filter(|s| s.len() == 2)
-            .unwrap_or(key.as_str());
+        // Try both the leading token and the trailing token — whichever matches a
+        // known region wins.  This handles both `en-US` (leading `en` → intl but
+        // trailing `us` → US Letter) and `de-AT` (leading `de` → DACH) correctly.
+        // Prefer the leading token when both match (family-first: `de-AT` → `de`).
+        let mut parts = key.split(['-', '_']).filter(|s| s.len() == 2);
+        let first = parts.next().unwrap_or(key.as_str());
+        let last = parts.next_back().unwrap_or(first);
+        let region = if Self::is_known_region(first) {
+            first
+        } else if Self::is_known_region(last) {
+            last
+        } else {
+            key.as_str()
+        };
         match region {
             "us" => Self::us(),
             "uk" | "gb" => Self::uk(),
@@ -142,6 +92,14 @@ impl LocaleProfile {
             "eu" => Self::eu(),
             _ => Self::intl(),
         }
+    }
+
+    /// Returns `true` when `token` is a supported region/market code.
+    fn is_known_region(token: &str) -> bool {
+        matches!(
+            token,
+            "us" | "uk" | "gb" | "de" | "at" | "ch" | "fr" | "nl" | "eu" | "dach"
+        )
     }
 
     /// Every supported market profile (for the recommender and UI pickers).
@@ -168,82 +126,61 @@ impl LocaleProfile {
         LocaleProfile {
             id: "en",
             page_size: PageSize::A4,
-            date_style: DateStyle::MonthYear,
             photo: PhotoPolicy::Never,
-            include_personal_details: false,
-            default_section_order: DEFAULT_ORDER,
         }
     }
 
-    /// United States — US Letter, no photo, no personal details.
+    /// United States — US Letter, no photo.
     pub fn us() -> LocaleProfile {
         LocaleProfile {
             id: "us",
             page_size: PageSize::Letter,
-            date_style: DateStyle::MonthYear,
             photo: PhotoPolicy::Never,
-            include_personal_details: false,
-            default_section_order: US_ORDER,
         }
     }
 
-    /// United Kingdom — A4, no photo, education-forward.
+    /// United Kingdom — A4, no photo.
     pub fn uk() -> LocaleProfile {
         LocaleProfile {
             id: "uk",
             page_size: PageSize::A4,
-            date_style: DateStyle::MonthYear,
             photo: PhotoPolicy::Never,
-            include_personal_details: false,
-            default_section_order: EDUCATION_FORWARD_ORDER,
         }
     }
 
-    /// DACH (DE/AT/CH) — A4, photo common, personal details customary.
+    /// DACH (DE/AT/CH) — A4, photo common.
     pub fn dach() -> LocaleProfile {
         LocaleProfile {
             id: "dach",
             page_size: PageSize::A4,
-            date_style: DateStyle::NumericSlash,
             photo: PhotoPolicy::Common,
-            include_personal_details: true,
-            default_section_order: EDUCATION_FORWARD_ORDER,
         }
     }
 
-    /// France — A4, photo optional, personal details customary.
+    /// France — A4, photo optional.
     pub fn fr() -> LocaleProfile {
         LocaleProfile {
             id: "fr",
             page_size: PageSize::A4,
-            date_style: DateStyle::NumericSlash,
             photo: PhotoPolicy::Optional,
-            include_personal_details: true,
-            default_section_order: EDUCATION_FORWARD_ORDER,
         }
     }
 
-    /// Netherlands — A4, photo optional, no personal details.
+    /// Netherlands — A4, photo optional.
     pub fn nl() -> LocaleProfile {
         LocaleProfile {
             id: "nl",
             page_size: PageSize::A4,
-            date_style: DateStyle::MonthYear,
             photo: PhotoPolicy::Optional,
-            include_personal_details: false,
-            default_section_order: EDUCATION_FORWARD_ORDER,
         }
     }
 
-    /// Generic EU — A4, photo optional, education-forward.
+    /// Generic EU — A4, photo optional.
     pub fn eu() -> LocaleProfile {
         LocaleProfile {
             id: "eu",
             page_size: PageSize::A4,
-            date_style: DateStyle::MonthYear,
             photo: PhotoPolicy::Optional,
-            include_personal_details: false,
-            default_section_order: EDUCATION_FORWARD_ORDER,
         }
     }
 }
@@ -283,7 +220,6 @@ mod tests {
         assert_eq!(p.id, "en");
         assert_eq!(p.page_size, PageSize::A4);
         assert_eq!(p.photo, PhotoPolicy::Never);
-        assert!(!p.include_personal_details);
         assert_eq!(
             p.page_geometry(),
             PageGeometry {
@@ -300,27 +236,18 @@ mod tests {
     }
 
     #[test]
-    fn default_order_starts_with_summary_then_experience() {
-        let order = LocaleProfile::en().default_section_order;
-        assert_eq!(order.first(), Some(&SectionId::Summary));
-        assert_eq!(order.get(1), Some(&SectionId::Experience));
-    }
-
-    #[test]
     fn us_is_letter_sized_without_photo() {
         let us = LocaleProfile::get("us");
         assert_eq!(us.page_size, PageSize::Letter);
         assert_eq!(us.photo, PhotoPolicy::Never);
-        assert!(!us.include_personal_details);
     }
 
     #[test]
-    fn dach_uses_photo_and_personal_details() {
+    fn dach_uses_photo_common() {
         let de = LocaleProfile::get("de");
         assert_eq!(de.id, "dach");
         assert_eq!(de.page_size, PageSize::A4);
         assert_eq!(de.photo, PhotoPolicy::Common);
-        assert!(de.include_personal_details);
         // AT and CH resolve to the same DACH profile.
         assert_eq!(LocaleProfile::get("at"), de);
         assert_eq!(LocaleProfile::get("ch"), de);
@@ -328,9 +255,20 @@ mod tests {
 
     #[test]
     fn region_is_parsed_from_locale_tags_case_insensitively() {
+        // Trailing region token (en-US → US → Letter).
         assert_eq!(LocaleProfile::get("en-US"), LocaleProfile::us());
+        // Leading language token (de_AT → de → DACH; at also matches but de comes first).
         assert_eq!(LocaleProfile::get("de_AT"), LocaleProfile::dach());
+        // Single 2-char code (GB → uk).
         assert_eq!(LocaleProfile::get("GB"), LocaleProfile::uk());
+    }
+
+    #[test]
+    fn leading_region_wins_when_trailing_is_unknown() {
+        // "fr-CA" — trailing "ca" is not a known region, leading "fr" is → France.
+        assert_eq!(LocaleProfile::get("fr-CA"), LocaleProfile::fr());
+        // "nl-BE" — trailing "be" is not a known region, leading "nl" is → Netherlands.
+        assert_eq!(LocaleProfile::get("nl-BE"), LocaleProfile::nl());
     }
 
     #[test]

@@ -104,16 +104,12 @@ fn decode_and_sanitise(raw: &[u8]) -> Option<Vec<u8>> {
         .with_guessed_format()
         .ok()?;
 
-    // Reject formats that are not ordinary raster images.
+    // Reject formats that are not the MIME-gated raster types (png/jpeg/webp/gif).
+    // BMP and TIFF are intentionally excluded: the upstream MIME gate in
+    // `decode_data_url` never admits them, so this branch is dead — keeping it
+    // here would be misleading and could create a gap if the MIME list diverges.
     match reader.format() {
-        Some(
-            ImageFormat::Png
-            | ImageFormat::Jpeg
-            | ImageFormat::WebP
-            | ImageFormat::Gif
-            | ImageFormat::Bmp
-            | ImageFormat::Tiff,
-        ) => {}
+        Some(ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::WebP | ImageFormat::Gif) => {}
         _ => return None,
     }
 
