@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.111.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.110.0...v0.111.0) (2026-06-19)
+
+### ✨ Features
+
+* sponsorship, agent-system redesign, landing perf, i18n parity ([#431](https://github.com/saeedkolivand/ai-job-hunter-app/issues/431)) ([6999cc2](https://github.com/saeedkolivand/ai-job-hunter-app/commit/6999cc22be610a1e2a263ac111d139f7260ba6a2))
+
 ## [0.110.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.109.4...v0.110.0) (2026-06-19)
 
 ### ✨ Features
