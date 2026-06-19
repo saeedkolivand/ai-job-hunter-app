@@ -7,7 +7,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button, cn, GlassCard, transition, useNotification } from '@ajh/ui';
 
 import { ContactConflictModal } from '@/components/contact/ContactConflictModal';
-import { ProfileUrlImport } from '@/features/resume/components/ProfileUrlImport';
+import { ProfileUrlImport } from '@/components/resume/ProfileUrlImport';
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
 import { normalise, type RawDoc } from '@/lib/doc-record';
 import { exportTXT } from '@/lib/generate';

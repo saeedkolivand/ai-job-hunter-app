@@ -218,7 +218,9 @@ pub async fn reachable_model() -> (bool, Option<String>) {
 /// Embed `text` with a specific Ollama embedding model. Returns a clear error
 /// (not `None`) so callers can surface why embedding failed.
 pub async fn embed_with(model: &str, text: &str) -> AppResult<Vec<f64>> {
-    // Char-boundary-safe truncation (avoids panics on multi-byte input).
+    // Defensive char-boundary-safe cap for any direct caller (avoids panics on
+    // multi-byte input). The shared `embed_text` path already caps to the provider's
+    // `max_embedding_input_chars` (8000 for Ollama), so this is a no-op there.
     let truncated: String = text.chars().take(8000).collect();
     let body = json!({ "model": model, "prompt": truncated, "keep_alive": crate::performance::ollama_keep_alive() });
     let endpoint = format!("{}/api/embeddings", host());
@@ -440,9 +442,13 @@ pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> AppResult<()> {
     let mut line_buf = String::new();
     while let Some(bytes) = response.chunk().await.map_err(|e| e.to_string())? {
         line_buf.push_str(&String::from_utf8_lossy(&bytes));
-        while let Some(nl) = line_buf.find('\n') {
-            let line = line_buf[..nl].trim().to_string();
-            line_buf = line_buf[nl + 1..].to_string();
+        // Walk by a `consumed` offset and drain the parsed prefix once after the
+        // inner loop, instead of reallocating the whole tail per line (O(n²)).
+        let mut consumed = 0;
+        while let Some(rel) = line_buf[consumed..].find('\n') {
+            let nl = consumed + rel;
+            let line = line_buf[consumed..nl].trim().to_string();
+            consumed = nl + 1;
             if line.is_empty() {
                 continue;
             }
@@ -474,6 +480,8 @@ pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> AppResult<()> {
                 return Ok(());
             }
         }
+        // Drop the fully-parsed prefix once; the partial trailing line stays buffered.
+        line_buf.drain(..consumed);
     }
     Ok(())
 }
@@ -489,9 +497,13 @@ pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> AppResult<()> {
 /// framing lives here only.
 fn parse_ollama_frames(buf: &mut String) -> Vec<StreamPiece> {
     let mut out = Vec::new();
-    while let Some(nl) = buf.find('\n') {
-        let line = buf[..nl].trim().to_string();
-        *buf = buf[nl + 1..].to_string();
+    // Walk by a `consumed` offset and `drain(..consumed)` once at the end, instead
+    // of reallocating the whole tail per line (O(n²) on a big frame).
+    let mut consumed = 0;
+    while let Some(rel) = buf[consumed..].find('\n') {
+        let nl = consumed + rel;
+        let line = buf[consumed..nl].trim().to_string();
+        consumed = nl + 1;
         if line.is_empty() {
             continue;
         }
@@ -515,6 +527,7 @@ fn parse_ollama_frames(buf: &mut String) -> Vec<StreamPiece> {
         if done {
             // Final object — carry its content on the terminal sentinel so the
             // shared loop emits it then completes (matches the original framing).
+            buf.drain(..consumed);
             out.push(StreamPiece::done(delta));
             return out;
         }
@@ -522,6 +535,8 @@ fn parse_ollama_frames(buf: &mut String) -> Vec<StreamPiece> {
             out.push(StreamPiece::text(delta));
         }
     }
+    // Drop the fully-parsed prefix once; the partial trailing line stays buffered.
+    buf.drain(..consumed);
     out
 }
 

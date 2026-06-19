@@ -47,7 +47,10 @@ export function OutputPanelGenerating({
       <div className="shrink-0 border-b border-white/[0.05] px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Loader2 size={14} className="animate-spin text-brand-soft" />
+            <Loader2
+              size={14}
+              className="animate-spin motion-reduce:animate-none text-brand-soft"
+            />
             <AnimatePresence mode="wait">
               <motion.span
                 key={stageLabel}
@@ -63,7 +66,11 @@ export function OutputPanelGenerating({
           </div>
           {genStep && genStep.total > 1 && (
             <span className="text-[10px] text-foreground/30">
-              Step {genStep.current} of {genStep.total} — {genStep.label}
+              {t('aiGenerate.genStepCounter', {
+                current: genStep.current,
+                total: genStep.total,
+                label: genStep.label,
+              })}
             </span>
           )}
         </div>
@@ -72,7 +79,7 @@ export function OutputPanelGenerating({
             className="h-full rounded-full bg-gradient-to-r from-brand to-brand-soft"
             initial={{ width: '0%' }}
             animate={{ width: streamBuffer.length > 0 ? '90%' : '0%' }}
-            transition={streamBuffer.length > 0 ? transition.fakeProgressSlow : { duration: 0 }}
+            transition={streamBuffer.length > 0 ? transition.fakeProgressSlow : transition.instant}
           />
         </div>
       </div>
@@ -82,9 +89,12 @@ export function OutputPanelGenerating({
         <ThinkingBubble thinking={thinkingBuffer} done={streamBuffer.length > 0} />
 
         {modelLoading && (
-          <div className="flex items-center gap-2 mb-3 text-[10px] text-foreground/40">
-            <span className="h-1.5 w-1.5 animate-spin rounded-full border border-brand border-t-transparent" />
-            Loading model into memory...
+          <div
+            className="flex items-center gap-2 mb-3 text-[10px] text-foreground/40"
+            aria-live="polite"
+          >
+            <span className="h-1.5 w-1.5 animate-spin motion-reduce:animate-none rounded-full border border-brand border-t-transparent" />
+            {t('aiGenerate.loadingModel')}
           </div>
         )}
 
