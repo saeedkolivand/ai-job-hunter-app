@@ -154,6 +154,9 @@ describe('truncateResume', () => {
     expect(result).not.toBe('');
     expect(result.length).toBeGreaterThan(0);
     expect(result).toContain('EXPERIENCE');
+    // Body content must survive truncation — not just the section label. The
+    // char-slice keeps the start of the section, so the company name is retained.
+    expect(result).toContain('Acme');
     // Still bounded by the budget's hard char-limit safety net.
     expect(estimateTokens(result)).toBeLessThanOrEqual(tightStrategy.maxTokens + 50);
   });

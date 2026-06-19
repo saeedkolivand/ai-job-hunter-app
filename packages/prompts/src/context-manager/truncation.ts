@@ -173,8 +173,12 @@ export function truncateResume(resume: string, strategy: TruncationStrategy): st
           available > 100 && section.name === 'Experience'
             ? truncateExperience(section.content, available)
             : section.content.slice(0, available * 4); // Rough char estimate
-        result.push(`${section.name.toUpperCase()}\n${truncated}`);
-        currentTokens += estimateTokens(truncated);
+        const emitted = `${section.name.toUpperCase()}\n${truncated}`;
+        result.push(emitted);
+        // Count the whole emitted string (header + truncated body), not just the
+        // body — otherwise the header's tokens go unbudgeted and later sections
+        // can slip over the limit.
+        currentTokens += estimateTokens(emitted);
       }
     }
   }
