@@ -98,15 +98,20 @@ fn parse_openai_delta(event: &Value) -> (&str, &str) {
 /// closure handed to [`stream_response`], so OpenAI's SSE framing lives here only.
 fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
     let mut out = Vec::new();
-    while let Some(nl) = buf.find('\n') {
-        let line = buf[..nl].trim().to_string();
-        *buf = buf[nl + 1..].to_string();
+    // Walk by a `consumed` offset and `drain(..consumed)` once at the end, instead
+    // of reallocating the whole tail per line (O(n²) on a big frame).
+    let mut consumed = 0;
+    while let Some(rel) = buf[consumed..].find('\n') {
+        let nl = consumed + rel;
+        let line = buf[consumed..nl].trim().to_string();
+        consumed = nl + 1;
 
         let data = match line.strip_prefix("data: ") {
             Some(d) => d.trim(),
             None => continue,
         };
         if data == "[DONE]" {
+            buf.drain(..consumed);
             out.push(StreamPiece::done(""));
             return out;
         }
@@ -122,6 +127,8 @@ fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
             out.push(StreamPiece::text(delta));
         }
     }
+    // Drop the fully-parsed prefix once; the partial trailing line stays buffered.
+    buf.drain(..consumed);
     out
 }
 
@@ -405,6 +412,17 @@ impl AiProvider for OpenAiClient {
         Some("text-embedding-3-small")
     }
 
+    fn max_embedding_input_chars(&self) -> usize {
+        // text-embedding-3-* enforce a hard 8191-TOKEN limit and ERROR (no
+        // auto-truncate) when exceeded. The old 32k-char cap assumed ~4 chars/token
+        // (English); for token-dense scripts (CJK ≈ 1 char/token) 32k chars ≈ 32k
+        // tokens — far over 8191 — so the request would FAIL. Cap at 8000 chars: in
+        // the worst case (≈1 char/token) that stays under 8191 tokens for every
+        // language. Slightly over-truncates very long English, but safety (never a
+        // failed request) wins over maximizing English length.
+        8_000
+    }
+
     async fn list_models(&self, app: &AppHandle) -> Vec<Value> {
         let api_key = match get_provider_key(app, self.id.credential_key()) {
             Some(k) => k,
@@ -461,10 +479,24 @@ impl AiProvider for OpenAiClient {
 mod tests {
     use super::{
         is_reasoning_model, join_responses_text, parse_openai_delta, parse_openai_frames,
-        should_list_model,
+        should_list_model, OpenAiClient,
     };
-    use crate::commands::ai_provider::ProviderId;
+    use crate::commands::ai_provider::{AiProvider, ProviderId};
     use serde_json::json;
+
+    #[test]
+    fn embedding_cap_is_token_safe_for_every_language() {
+        // text-embedding-3-* hard-error past 8191 tokens. Token-dense scripts (CJK)
+        // run ≈1 char/token, so the char cap must itself stay under 8191 — otherwise
+        // a full-cap CJK input exceeds the token limit and the request FAILS.
+        let cap = OpenAiClient::new(ProviderId::OpenAi, None).max_embedding_input_chars();
+        assert!(
+            cap <= 8191,
+            "char cap {cap} can exceed 8191 tokens for ~1-char/token languages"
+        );
+        // Sanity: still a useful amount of text (not collapsed to near-zero).
+        assert!(cap >= 4_000, "cap {cap} truncates too aggressively");
+    }
 
     #[test]
     fn list_filter_only_restricts_native_openai() {

@@ -387,6 +387,11 @@ impl LinkedInJobsApiClient {
                 break;
             }
 
+            // Report incremental progress after each successful page.
+            if let Some(ref on_progress) = on_progress {
+                on_progress((page + 1) as f32 / max_pages as f32);
+            }
+
             // Add delay between pages (cancellation-aware).
             if page < max_pages - 1
                 && cancellable_sleep(
@@ -399,6 +404,7 @@ impl LinkedInJobsApiClient {
             }
         }
 
+        // Ensure progress reaches exactly 1.0 on completion.
         if let Some(on_progress) = on_progress {
             on_progress(1.0);
         }

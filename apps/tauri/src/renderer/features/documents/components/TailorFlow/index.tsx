@@ -24,9 +24,8 @@ import { useJobAdSummary } from './useJobAdSummary';
 import { useTailorGeneration } from './useTailorGeneration';
 
 export type { TailorWizardState };
-export { buildTailorDefaults };
 
-export type TailorFlowStage = 'configuring' | 'generating' | 'done';
+type TailorFlowStage = 'configuring' | 'generating' | 'done';
 
 /**
  * Imperative surface a host can drive: it reads the derived `stage` + the
