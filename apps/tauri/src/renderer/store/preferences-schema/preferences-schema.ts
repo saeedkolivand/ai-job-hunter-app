@@ -11,13 +11,13 @@ export const PerformanceModeSchema = z.enum(['low-memory', 'balanced', 'performa
  * Backdrop-blur tier. The `'off'` tier is reachable ONLY via a custom profile —
  * the three presets use `'full'` (balanced/performance) or `'reduced'` (low-memory).
  */
-export const BlurTierSchema = z.enum(['full', 'reduced', 'off']);
-export const PerfTierSchema = z.enum(['low', 'balanced', 'high']);
+const BlurTierSchema = z.enum(['full', 'reduced', 'off']);
+const PerfTierSchema = z.enum(['low', 'balanced', 'high']);
 
 // Resolved performance profile — the single shape every consumer reads. Presets
 // resolve to this; `custom` mode stores one of these directly under
 // `customPerformance`.
-export const PerformanceProfileSchema = z.object({
+const PerformanceProfileSchema = z.object({
   visual: z.object({
     aurora: z.boolean(),
     nebula: z.boolean(),
@@ -56,7 +56,7 @@ export const AIModelPreferenceSchema = z.object({
 });
 
 // AI provider selection (API key stored in OS keychain, not here)
-export const AiProviderSchema = z.enum([
+const AiProviderSchema = z.enum([
   'ollama',
   // Ollama Cloud — hosted Ollama models via its OpenAI-compatible endpoint; the
   // same account key also powers Ollama Web Search for company research.
@@ -97,7 +97,7 @@ export const LocalModelLimitsSchema = z.object({
 });
 
 // Per-provider settings (model choice, optional base URL, optional CLI effort)
-export const PerProviderSettingsSchema = z.object({
+const PerProviderSettingsSchema = z.object({
   model: z.string().default(''),
   baseUrl: z.string().optional(),
   // Reasoning effort for CLI agents that support it (e.g. Codex: low/medium/high).
