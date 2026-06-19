@@ -487,24 +487,35 @@ See <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBU
 
 ## Documentation
 
-| Document                                                                                                                            | Description                                                          |
-| ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| <a href="apps/tauri/README.md" target="_blank" rel="noopener noreferrer">apps/tauri/README.md</a>                                   | Desktop app architecture, directory map, Rust/React setup            |
-| <a href="apps/extension/README.md" target="_blank" rel="noopener noreferrer">apps/extension/README.md</a>                           | Browser extension (MV3) — job import, local dev pairing, permissions |
-| <a href="docs/ARCHITECTURE.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE.md</a>                                   | System design, data flow, diagrams                                   |
-| <a href="docs/PATTERNS.md" target="_blank" rel="noopener noreferrer">docs/PATTERNS.md</a>                                           | IPC, state machines, AI streaming, search patterns                   |
-| <a href="docs/API.md" target="_blank" rel="noopener noreferrer">docs/API.md</a>                                                     | IPC namespaces + commands                                            |
-| <a href="docs/EXPORT_TEMPLATES.md" target="_blank" rel="noopener noreferrer">docs/EXPORT_TEMPLATES.md</a>                           | Templates, theming, PDF/DOCX export                                  |
-| <a href="docs/DESIGN_SYSTEM.md" target="_blank" rel="noopener noreferrer">docs/DESIGN_SYSTEM.md</a>                                 | Tokens, components, motion, theming                                  |
-| <a href="docs/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer">docs/DEVELOPMENT.md</a>                                     | Local dev environment setup                                          |
-| <a href="docs/DEPLOYMENT.md" target="_blank" rel="noopener noreferrer">docs/DEPLOYMENT.md</a>                                       | Building and releasing installers                                    |
-| <a href="docs/ARCHITECTURE_STATUS.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE_STATUS.md</a>                     | Implementation status tracker                                        |
-| <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a>                                             | Knowledge base + architecture decision records (ADRs)                |
-| <a href="SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a>                                                     | Security policy &amp; vulnerability reporting                        |
-| <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a>                                             | Code style, branching, PR process                                    |
-| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/how-it-works.html">landing/how-it-works.html</a>         | How the AI Job Hunter works end-to-end (interactive walkthrough)     |
-| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/architecture-map.html">landing/architecture-map.html</a> | Interactive architecture map of the AI Job Hunter                    |
-| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/creature.html">landing/creature.html</a>                 | THE CREATURE — a hand-drawn doodle about the recruiter you summon    |
+| Document                                                                                                                            | Description                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| <a href="apps/tauri/README.md" target="_blank" rel="noopener noreferrer">apps/tauri/README.md</a>                                   | Desktop app architecture, directory map, Rust/React setup                                                          |
+| <a href="apps/extension/README.md" target="_blank" rel="noopener noreferrer">apps/extension/README.md</a>                           | Browser extension (MV3) — job import, local dev pairing, permissions                                               |
+| <a href="docs/ARCHITECTURE.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE.md</a>                                   | System design, data flow, diagrams                                                                                 |
+| <a href="docs/PATTERNS.md" target="_blank" rel="noopener noreferrer">docs/PATTERNS.md</a>                                           | IPC, state machines, AI streaming, search patterns                                                                 |
+| <a href="docs/API.md" target="_blank" rel="noopener noreferrer">docs/API.md</a>                                                     | IPC namespaces + commands                                                                                          |
+| <a href="docs/EXPORT_TEMPLATES.md" target="_blank" rel="noopener noreferrer">docs/EXPORT_TEMPLATES.md</a>                           | Templates, theming, PDF/DOCX export                                                                                |
+| <a href="docs/DESIGN_SYSTEM.md" target="_blank" rel="noopener noreferrer">docs/DESIGN_SYSTEM.md</a>                                 | Tokens, components, motion, theming                                                                                |
+| <a href="docs/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer">docs/DEVELOPMENT.md</a>                                     | Local dev environment setup                                                                                        |
+| <a href="docs/DEPLOYMENT.md" target="_blank" rel="noopener noreferrer">docs/DEPLOYMENT.md</a>                                       | Building and releasing installers                                                                                  |
+| <a href="docs/ARCHITECTURE_STATUS.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE_STATUS.md</a>                     | Implementation status tracker                                                                                      |
+| <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a>                                             | Knowledge base + architecture decision records (ADRs)                                                              |
+| <a href="SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a>                                                     | Security policy &amp; vulnerability reporting                                                                      |
+| <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a>                                             | Code style, branching, PR process                                                                                  |
+| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/how-it-works.html">landing/how-it-works.html</a>         | How the AI Job Hunter works end-to-end (interactive walkthrough)                                                   |
+| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/architecture-map.html">landing/architecture-map.html</a> | Interactive architecture map of the AI Job Hunter                                                                  |
+| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/agent-system.html">landing/agent-system.html</a>         | Interactive agent-fleet walkthrough — 21 paired author+critic agents, intake→delegation routing, per-task pipeline |
+| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/creature.html">landing/creature.html</a>                 | THE CREATURE — a hand-drawn doodle about the recruiter you summon                                                  |
+
+---
+
+## 💛 Fund the job hunt
+
+This project is built by a guy who is, himself, still unemployed — a cry for help, made between rejections. If it's saving you time or sanity, consider a voluntary gift:
+
+<a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener noreferrer">GitHub Sponsors</a> · <a href="https://ko-fi.com/saeedkolivand" target="_blank" rel="noopener noreferrer">Ko-fi</a> · <a href="https://paypal.me/saeedkolivand" target="_blank" rel="noopener noreferrer">PayPal</a>
+
+Donations don't conflict with the PolyForm Noncommercial license — the license restricts commercial repackaging and resale by others; voluntary gifts to the maintainer are not commercial use.
 
 ---
 

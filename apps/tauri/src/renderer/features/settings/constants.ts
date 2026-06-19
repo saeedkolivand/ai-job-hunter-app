@@ -4,6 +4,7 @@ import {
   Cpu,
   FileText,
   Gauge,
+  Heart,
   Languages,
   Lock,
   Palette,
@@ -21,7 +22,8 @@ export type SectionId =
   | 'accounts'
   | 'privacy'
   | 'performance'
-  | 'developer';
+  | 'developer'
+  | 'about';
 
 export interface NavItem {
   id: SectionId;
@@ -103,6 +105,17 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'settings.sections.developer.label',
         icon: Terminal,
         description: 'settings.sections.developer.description',
+      },
+    ],
+  },
+  {
+    label: 'settings.groups.about',
+    items: [
+      {
+        id: 'about',
+        label: 'settings.sections.about.label',
+        icon: Heart,
+        description: 'settings.sections.about.description',
       },
     ],
   },
