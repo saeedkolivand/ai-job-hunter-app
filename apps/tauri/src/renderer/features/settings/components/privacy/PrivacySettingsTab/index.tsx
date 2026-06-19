@@ -90,6 +90,8 @@ export function PrivacySettingsTab() {
         notify.success({
           message: t('settings.privacy.importSuccess', { count, plural: count === 1 ? '' : 's' }),
         });
+      } else if (res.partial) {
+        notify.error({ message: t('settings.privacy.importPartial') });
       } else if (res.error) notify.error({ message: t('settings.privacy.somethingWentWrong') });
     } catch {
       notify.error({ message: t('settings.privacy.somethingWentWrong') });
