@@ -72,17 +72,40 @@ pub fn normalize_unicode(text: &str) -> String {
 
 /// Strip stray Markdown emphasis the model occasionally leaks (`*React`, `AWS*`,
 /// `AWS*-Services`) WITHOUT touching valid `**bold**` runs (the renderer turns those
-/// into real bold) or in-word punctuation like `snake_case`. Runs after
+/// into real bold), in-word punctuation like `snake_case`, or literal `*`/`` ` ``
+/// that sit between two word characters (e.g. `5*4`, `a*b`). Runs after
 /// [`normalize_unicode`], before any Markdown parsing.
 pub fn sanitize_markdown(text: &str) -> String {
-    // Protect valid bold pairs, drop every remaining lone '*' and stray backtick,
-    // then restore the bold markers.
+    // Strategy:
+    // 1. Protect bold pairs (**…**) with a sentinel so the single-* pass ignores them.
+    // 2. Walk the guarded string; keep a `*` or `` ` `` only when it is flanked by a
+    //    word character on BOTH sides (i.e. it is a literal mid-word character like
+    //    `5*4`). A marker at a word boundary (emphasis position) is dropped.
+    // 3. Restore bold markers.
     const BOLD: &str = "\u{0}B\u{0}";
-    text.replace("**", BOLD)
-        .chars()
-        .filter(|&c| c != '*' && c != '`')
-        .collect::<String>()
-        .replace(BOLD, "**")
+    let guarded = text.replace("**", BOLD);
+    let chars: Vec<char> = guarded.chars().collect();
+    let mut out = String::with_capacity(guarded.len());
+    for (i, &ch) in chars.iter().enumerate() {
+        if ch == '*' || ch == '`' {
+            let prev_word = i > 0 && is_word_char(chars[i - 1]);
+            let next_word = i + 1 < chars.len() && is_word_char(chars[i + 1]);
+            if prev_word && next_word {
+                out.push(ch); // literal mid-word char — preserve
+            }
+            // else: emphasis-position marker — drop
+        } else {
+            out.push(ch);
+        }
+    }
+    out.replace(BOLD, "**")
+}
+
+/// Returns `true` when `c` is an ASCII word character (`[A-Za-z0-9_]`).
+/// Mirrors the `\w` class that the `regex` crate would use in ASCII mode.
+#[inline]
+fn is_word_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
 }
 
 /// Typography pass for dash usage. With en/em-dashes preserved by

@@ -220,10 +220,53 @@ fn run_validators(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> {
     issues
 }
 
+/// Light URL canonicalization for the header-URL mismatch check.
+///
+/// Normalizes trivial differences that don't change the identity of a URL:
+/// - lowercase scheme and host (the authority is case-insensitive per RFC 3986)
+/// - strip a single trailing slash from the path
+/// - decode a percent-encoded space (`%20` → space), the most common encoding
+///   divergence between stored profile values and rendered PDF annotations
+///
+/// Intentionally conservative: the check's goal is to catch a genuinely wrong
+/// URL (a company link leaking into the header), not to canonicalize semantics.
+fn canonicalize_url(url: &str) -> String {
+    // Lowercase scheme+host only — path/query/fragment are case-sensitive.
+    let (prefix, rest) = if let Some(after_scheme) = url.find("://").map(|i| url.split_at(i + 3)) {
+        let (scheme_slashes, after) = after_scheme;
+        // Find end of authority (host[:port])
+        let auth_end = after.find('/').unwrap_or(after.len());
+        let (authority, path_and_rest) = after.split_at(auth_end);
+        (
+            format!(
+                "{}{}",
+                scheme_slashes.to_lowercase(),
+                authority.to_lowercase()
+            ),
+            path_and_rest.to_string(),
+        )
+    } else {
+        (String::new(), url.to_string())
+    };
+
+    // Strip a single trailing slash from the path portion.
+    let rest = rest.strip_suffix('/').unwrap_or(&rest).to_string();
+
+    // Decode a percent-encoded space — the most common trivial encoding mismatch.
+    let rest = rest.replace("%20", " ");
+
+    format!("{prefix}{rest}")
+}
+
 /// Reject stray Markdown emphasis (`*`, backtick) that survived sanitization into
 /// the rendered text — the leaked-asterisk symptom. Applies to PDF and DOCX.
+///
+/// Only flags `*` or `` ` `` that appear at emphasis-boundary positions (not
+/// flanked by an ASCII word character on both sides). A `*` between two word
+/// chars (e.g. `5*4`, `a*b`) is a literal value preserved by the sanitizer and
+/// must not be treated as a rendering defect.
 fn stray_markdown_issues(extracted: &str) -> Vec<ExportIssue> {
-    if extracted.contains('*') || extracted.contains('`') {
+    if has_stray_emphasis(extracted) {
         vec![ExportIssue::critical(
             "stray_markdown",
             "The exported document contains stray Markdown markers (* or `) that should \
@@ -232,6 +275,28 @@ fn stray_markdown_issues(extracted: &str) -> Vec<ExportIssue> {
     } else {
         Vec::new()
     }
+}
+
+/// Returns `true` when `text` contains a `*` or `` ` `` that is NOT flanked by
+/// ASCII word characters on both sides — the same rule the sanitizer uses to
+/// decide what to strip vs. preserve.
+fn has_stray_emphasis(text: &str) -> bool {
+    let chars: Vec<char> = text.chars().collect();
+    for (i, &ch) in chars.iter().enumerate() {
+        if ch == '*' || ch == '`' {
+            let prev_word = i > 0 && is_ascii_word_char(chars[i - 1]);
+            let next_word = i + 1 < chars.len() && is_ascii_word_char(chars[i + 1]);
+            if !(prev_word && next_word) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[inline]
+fn is_ascii_word_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
 }
 
 /// A link annotation read back from the rendered PDF: its `/Rect` in PDF user
@@ -292,11 +357,18 @@ fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> 
             .filter(|l| l.page == 0 && l.rect[1].max(l.rect[3]) >= header_band_bottom)
             .collect();
 
+        // Canonicalise URLs before comparing so trivial differences (trailing slash,
+        // scheme/host case, a percent-encoded space) do not cause false positives.
+        // The check's intent — catching a wrong link in the header — is preserved;
+        // we only avoid blocking on byte-identical-but-semantically-equal URLs.
+        let allowed_canonical: std::collections::BTreeSet<String> =
+            allowed.iter().map(|u| canonicalize_url(u)).collect();
+
         // A header-band link that is NOT one of the profile's own fields means a
         // body/company link displaced a personal one (the URL-swap regression) —
         // the document shows a wrong link, so this stays blocking.
         for link in &header_links {
-            if !allowed.contains(&link.url) {
+            if !allowed_canonical.contains(&canonicalize_url(&link.url)) {
                 issues.push(ExportIssue::critical(
                     "header_url_mismatch",
                     format!(
@@ -312,7 +384,10 @@ fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> 
         // advisory — a missing/displaced contact link is a quality note, never a
         // reason to stop the user exporting an otherwise-valid, readable document.
         for url in &allowed {
-            if !header_links.iter().any(|l| &l.url == url) {
+            if !header_links
+                .iter()
+                .any(|l| canonicalize_url(&l.url) == canonicalize_url(url))
+            {
                 issues.push(ExportIssue::warning(
                     "header_url_missing",
                     format!("Contact profile link {url} is missing from the rendered header."),
