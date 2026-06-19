@@ -12,10 +12,12 @@ type ConnectionPhase =
   | 'searching'
   /** A bridge port answered but no token is stored — show the pairing screen. */
   | 'not_paired'
-  /** Paired token present and an authenticated socket is open. */
+  /** Paired token present and the auth handshake with the desktop succeeded. */
   | 'connected'
   /** No bridge port answered in the probe range — the app is not running. */
-  | 'app_not_running';
+  | 'app_not_running'
+  /** The stored token was rejected by the desktop — the user must re-pair. */
+  | 'bad_token';
 
 export interface ConnectionStatus {
   phase: ConnectionPhase;
