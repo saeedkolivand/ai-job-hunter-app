@@ -6,6 +6,8 @@ export interface DataContract {
   /** Restore all user data from a user-chosen backup file (replace semantics). */
   import(): Promise<{
     success: boolean;
+    /** True when one or more stores failed to restore (others may have succeeded). */
+    partial?: boolean;
     imported?: Record<string, number | { error: string }>;
     error?: string;
   }>;

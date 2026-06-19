@@ -697,7 +697,8 @@
       "signedOutSuccess": "Von allen Konten abgemeldet. Neuverbindung über Einstellungen → Konten.",
       "historyClearedSuccess": "Interaktionsverlauf gelöscht.",
       "exportSuccess": "Daten erfolgreich exportiert.",
-      "importSuccess": "{{count}} Datensatz{{plural}} importiert."
+      "importSuccess": "{{count}} Datensatz{{plural}} importiert.",
+      "importPartial": "Einige Elemente konnten nicht wiederhergestellt werden. Ihre Daten sind möglicherweise unvollständig."
     },
     "location": {
       "title": "Bevorzugter Standort",
