@@ -98,15 +98,20 @@ fn parse_openai_delta(event: &Value) -> (&str, &str) {
 /// closure handed to [`stream_response`], so OpenAI's SSE framing lives here only.
 fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
     let mut out = Vec::new();
-    while let Some(nl) = buf.find('\n') {
-        let line = buf[..nl].trim().to_string();
-        *buf = buf[nl + 1..].to_string();
+    // Walk by a `consumed` offset and `drain(..consumed)` once at the end, instead
+    // of reallocating the whole tail per line (O(n²) on a big frame).
+    let mut consumed = 0;
+    while let Some(rel) = buf[consumed..].find('\n') {
+        let nl = consumed + rel;
+        let line = buf[consumed..nl].trim().to_string();
+        consumed = nl + 1;
 
         let data = match line.strip_prefix("data: ") {
             Some(d) => d.trim(),
             None => continue,
         };
         if data == "[DONE]" {
+            buf.drain(..consumed);
             out.push(StreamPiece::done(""));
             return out;
         }
@@ -122,6 +127,8 @@ fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
             out.push(StreamPiece::text(delta));
         }
     }
+    // Drop the fully-parsed prefix once; the partial trailing line stays buffered.
+    buf.drain(..consumed);
     out
 }
 
@@ -403,6 +410,13 @@ impl AiProvider for OpenAiClient {
 
     fn default_embedding_model(&self) -> Option<&'static str> {
         Some("text-embedding-3-small")
+    }
+
+    fn max_embedding_input_chars(&self) -> usize {
+        // text-embedding-3-* accept 8191 tokens (~4 chars/token). 32k chars stays
+        // safely under that while keeping far more of a long résumé/job-ad than the
+        // conservative default — these models support much larger input than Ollama.
+        32_000
     }
 
     async fn list_models(&self, app: &AppHandle) -> Vec<Value> {

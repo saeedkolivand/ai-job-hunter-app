@@ -46,6 +46,11 @@ use gemini_cli::GeminiCliAgent;
 /// Max wall-clock time for a single CLI generation before we kill the child.
 const TIMEOUT: Duration = Duration::from_secs(300);
 
+/// How often the stream loop re-polls the JobTracker for cancellation while
+/// waiting on the next output line, so a cancel mid-line (or on a stalled stream)
+/// is observed promptly instead of blocking until the next newline arrives.
+const CANCEL_POLL: Duration = Duration::from_millis(200);
+
 // ── Agent contract ──────────────────────────────────────────────────────────────
 
 /// A neutral, parsed event from a CLI agent's output stream. Each backend's
@@ -404,19 +409,37 @@ async fn run_stream(
     let mut any_delta = false;
 
     loop {
-        if is_cancelled(app, job_id) {
-            let _ = child.start_kill();
-            trace.end(None, false);
-            return Err(AppError::Message("Job cancelled".to_string()));
-        }
-
-        let line = match tokio::time::timeout_at(deadline, lines.next_line()).await {
+        // Race the next line read against a cancel poll so a cancellation mid-line
+        // (or on a stalled stream that never emits another newline) is observed
+        // within `CANCEL_POLL` instead of hanging until the next line — or forever.
+        // The poll branch loops back to re-check `is_cancelled`; the deadline still
+        // bounds the whole read via `timeout_at`.
+        let line = match tokio::time::timeout_at(deadline, async {
+            loop {
+                tokio::select! {
+                    biased;
+                    next = lines.next_line() => break next,
+                    _ = tokio::time::sleep(CANCEL_POLL) => {
+                        if is_cancelled(app, job_id) {
+                            break Ok(None);
+                        }
+                    }
+                }
+            }
+        })
+        .await
+        {
             Err(_) => {
                 let _ = child.start_kill();
                 trace.end(None, false);
                 return Err(AppError::Network(format!(
                     "{label} timed out after 5 minutes."
                 )));
+            }
+            Ok(_) if is_cancelled(app, job_id) => {
+                let _ = child.start_kill();
+                trace.end(None, false);
+                return Err(AppError::Message("Job cancelled".to_string()));
             }
             Ok(Ok(Some(line))) => line,
             Ok(Ok(None)) => break, // clean EOF
@@ -682,6 +705,42 @@ mod tests {
     #[test]
     fn non_cli_provider_has_no_backend() {
         assert!(backend_for(ProviderId::Anthropic).is_none());
+    }
+
+    #[tokio::test]
+    async fn cancel_poll_breaks_a_stalled_line_read() {
+        use std::io;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        // Models `run_stream`'s read loop: the line read stalls forever while the
+        // cancel flag flips. The `biased` select must reach the poll branch and
+        // return `Ok(None)` (the cancel sentinel) instead of hanging on the read.
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let flag = cancelled.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            flag.store(true, Ordering::SeqCst);
+        });
+
+        let result: io::Result<Option<String>> = async {
+            loop {
+                tokio::select! {
+                    biased;
+                    // A stalled stream: the next line never arrives.
+                    next = std::future::pending::<io::Result<Option<String>>>() => break next,
+                    _ = tokio::time::sleep(CANCEL_POLL) => {
+                        if cancelled.load(Ordering::SeqCst) {
+                            break Ok(None);
+                        }
+                    }
+                }
+            }
+        }
+        .await;
+
+        // Cancel observed within a bounded number of polls — no hang.
+        assert!(matches!(result, Ok(None)));
     }
 
     #[tokio::test]

@@ -226,10 +226,11 @@ impl AiProvider for GeminiClient {
             body["systemInstruction"] = json!({ "parts": [{ "text": system_text }] });
         }
 
-        let url = format!("{BASE}{endpoint_label}?key={api_key}");
+        let url = format!("{BASE}{endpoint_label}");
         let response = crate::net::http::shared()
             .post(&url)
             .timeout(std::time::Duration::from_secs(300))
+            .header("x-goog-api-key", &api_key)
             .json(&body)
             .send()
             .await;
@@ -282,11 +283,12 @@ impl AiProvider for GeminiClient {
             body["systemInstruction"] = json!({ "parts": [{ "text": system }] });
         }
 
-        let url = format!("{BASE}{endpoint_label}?key={api_key}");
+        let url = format!("{BASE}{endpoint_label}");
         let resp = send_with_retry(|| {
             crate::net::http::shared()
                 .post(&url)
                 .timeout(std::time::Duration::from_secs(120))
+                .header("x-goog-api-key", &api_key)
                 .json(&body)
         })
         .await;
@@ -342,10 +344,11 @@ impl AiProvider for GeminiClient {
             "generationConfig": { "temperature": 0.2 },
             "tools": [{ "google_search": {} }],
         });
-        let url = format!("{BASE}{endpoint_label}?key={api_key}");
+        let url = format!("{BASE}{endpoint_label}");
         let resp = crate::net::http::shared()
             .post(&url)
             .timeout(std::time::Duration::from_secs(25))
+            .header("x-goog-api-key", &api_key)
             .json(&body)
             .send()
             .await;
@@ -384,11 +387,12 @@ impl AiProvider for GeminiClient {
             "model": format!("models/{m}"),
             "content": { "parts": [{ "text": text }] },
         });
-        let url = format!("{BASE}{endpoint_label}?key={api_key}");
+        let url = format!("{BASE}{endpoint_label}");
         let resp = send_with_retry(|| {
             crate::net::http::shared()
                 .post(&url)
                 .timeout(std::time::Duration::from_secs(30))
+                .header("x-goog-api-key", &api_key)
                 .json(&body)
         })
         .await
@@ -412,6 +416,13 @@ impl AiProvider for GeminiClient {
         Some("text-embedding-004")
     }
 
+    fn max_embedding_input_chars(&self) -> usize {
+        // text-embedding-004 accepts 2048 tokens (~4 chars/token ≈ 8000 chars). This
+        // matches the conservative default but is stated explicitly so Gemini's real
+        // cap is documented at the adapter and won't drift if the default changes.
+        8_000
+    }
+
     async fn list_models(&self, app: &AppHandle) -> Vec<Value> {
         let api_key = match get_provider_key(app, self.id().credential_key()) {
             Some(k) => k,
@@ -419,7 +430,8 @@ impl AiProvider for GeminiClient {
         };
         let client = crate::net::http::shared();
         let resp = client
-            .get(format!("{BASE}/v1/models?key={api_key}"))
+            .get(format!("{BASE}/v1/models"))
+            .header("x-goog-api-key", &api_key)
             .timeout(std::time::Duration::from_secs(10))
             .send()
             .await;
@@ -443,7 +455,8 @@ impl AiProvider for GeminiClient {
             .ok_or_else(|| AppError::Config("No API key found".to_string()))?;
         let client = crate::net::http::shared();
         let resp = client
-            .get(format!("{BASE}/v1/models?key={api_key}"))
+            .get(format!("{BASE}/v1/models"))
+            .header("x-goog-api-key", &api_key)
             .timeout(std::time::Duration::from_secs(10))
             .send()
             .await

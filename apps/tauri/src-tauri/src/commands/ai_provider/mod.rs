@@ -242,6 +242,16 @@ pub trait AiProvider: Send + Sync {
     /// The provider's default embedding model, or `None` if it has no embeddings API.
     fn default_embedding_model(&self) -> Option<&'static str>;
 
+    /// Max input length (in **chars**) accepted by this provider's embeddings API.
+    /// `embed_text` truncates to this (char-boundary-safe) before calling `embed`,
+    /// so over-long input degrades gracefully instead of erroring. The default is a
+    /// conservative bound that no supported provider's API rejects, so a NEW
+    /// provider works with zero code change; providers with larger real limits
+    /// override upward to avoid needlessly losing data.
+    fn max_embedding_input_chars(&self) -> usize {
+        8_000
+    }
+
     /// List the models this provider exposes. Resolves its own credentials/client
     /// (exactly like `chat_stream`/`complete`), so no HTTP/key transport detail
     /// leaks into the trait — a CLI agent has neither and just lists its aliases.
@@ -356,6 +366,17 @@ pub async fn embed_text(
             provider.as_str()
         )));
     }
+    // Cap the input to the provider's real limit, char-boundary-safe (never splits a
+    // multi-byte char). Applied here so every provider is consistent and a new one
+    // inherits a safe default — see `AiProvider::max_embedding_input_chars`.
+    let cap = client.max_embedding_input_chars();
+    let truncated;
+    let text = if text.chars().count() > cap {
+        truncated = text.chars().take(cap).collect::<String>();
+        truncated.as_str()
+    } else {
+        text
+    };
     let values = client.embed(app, &model, text).await?;
     if values.is_empty() {
         return Err(AppError::Provider(format!(
