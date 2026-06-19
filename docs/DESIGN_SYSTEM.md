@@ -637,10 +637,10 @@ Wraps subtrees to catch render errors gracefully:
 
 ## Motion System
 
-Motion tokens are defined in `packages/ui/src/lib/motion.ts` and imported through the app-level alias. Uses [motion/react][motion-react] for animation primitives:
+Motion tokens are defined in `packages/ui/src/lib/motion.ts` and imported through the `@ajh/ui` package. Uses [motion/react][motion-react] for animation primitives:
 
 ```typescript
-import { transition } from '@/lib/motion';
+import { transition } from '@ajh/ui';
 ```
 
 ### Transition Presets
@@ -659,7 +659,7 @@ import { transition } from '@/lib/motion';
 
 ```typescript
 import { motion } from "motion/react";
-import { transition } from "@/lib/motion";
+import { transition } from "@ajh/ui";
 
 <motion.div
   initial={{ opacity: 0, y: 8 }}

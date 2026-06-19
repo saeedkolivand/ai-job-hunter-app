@@ -2,6 +2,8 @@
 
 OpenAI Codex API integration for code generation and completion. Follow these rules for safe, efficient, and cost-effective usage.
 
+Canonical rules: `CLAUDE.md` + `.claude/skills/*` (this file is a pointer + load-bearing subset; CLAUDE.md wins on conflict).
+
 ---
 
 ## Path Privacy
@@ -28,7 +30,7 @@ OpenAI Codex API integration for code generation and completion. Follow these ru
 **Never commit API keys to version control.**
 - Store API keys in environment variables: `OPENAI_API_KEY`
 - Use `.env` files (add to `.gitignore`)
-- For Electron/Tauri: store in secure app config, never in renderer
+- For Tauri: store in secure app config, never in renderer
 - Rotate keys if compromised
 
 ---
@@ -99,7 +101,7 @@ Output format: [specify]
 ```
 packages/shared/src/codex/   → Types, Zod schemas, prompt templates (no API calls)
 packages/core/src/codex/     → API client, rate limiting, caching (main process only)
-apps/desktop/src/services/   → Service hooks for renderer (React Query wrappers)
+apps/tauri/src/renderer/services/   → Service hooks for renderer (React Query wrappers)
 ```
 
 Renderer → Codex: service hooks only, never direct API calls.

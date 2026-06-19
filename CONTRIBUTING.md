@@ -95,11 +95,11 @@ PR checklist:
 ### Styling
 
 - `text-brand`, `bg-brand`, `border-brand` — never hardcoded hex colors
-- No inline `{ duration, ease }` animation objects — use `transition.*` from `@/lib/motion`
+- No inline `{ duration, ease }` animation objects — use `transition.*` from `@ajh/ui`
 
 ### i18n
 
-- `import { useTranslation } from "@/lib/i18n"` — never from `react-i18next` directly
+- `import { useTranslation } from "@ajh/translations"` — never from `react-i18next` directly
 
 ---
 

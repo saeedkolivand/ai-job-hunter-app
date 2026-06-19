@@ -23,9 +23,9 @@ You are the **frontend-reviewer** — primary review authority for the React ren
 ## Design-system rules (ESLint-enforced — flag early)
 
 - **Ports & adapters**: no `window.api.*` in `features/`, `routes/`, `components/` — use service hooks from `renderer/services/`.
-- **i18n**: import from `@/lib/i18n`, never `react-i18next` directly.
+- **i18n**: import from `@ajh/translations`, never `react-i18next` directly (init shim is `@/i18n`).
 - **Design tokens**: `text-brand`/`bg-brand`/`border-brand`/`ring-brand`; no `[#RRGGBB]` in className.
-- **Motion**: `import { transition } from '@/lib/motion'`; no inline `{ duration, ease }` in feature/route files.
+- **Motion**: `import { transition } from '@ajh/ui'`; no inline `{ duration, ease }` in feature/route files.
 - **UI primitives**: `@ajh/ui` (`Button`/`Input`/`TextArea`/`SelectDropdown`/…); no raw `<button>/<select>/<textarea>` (except `<input type="range|file|checkbox|radio|hidden">`).
 - **Imports**: package entrypoints (`@ajh/ui`), `import type` for pure types, correct group ordering.
 - **Data**: React Query via service hooks only — no `useState+useEffect` for remote data.

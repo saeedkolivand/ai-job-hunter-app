@@ -1,6 +1,9 @@
 # AI Job Hunter — Cline Rules
 
-Local-first Electron desktop app. pnpm monorepo. React 19 + TypeScript strict.
+> Canonical rules: see `CLAUDE.md` + `.claude/skills/*` — this file is a pointer + the load-bearing subset; CLAUDE.md wins on any conflict.
+
+Local-first Tauri desktop app (Rust core in `apps/tauri/src-tauri/`, React renderer in
+`apps/tauri/src/renderer/`). pnpm monorepo. React 19 + TypeScript strict, Tailwind v4.
 ESLint `--max-warnings 0` in CI — every warning fails the build.
 
 ---
@@ -55,11 +58,12 @@ Never commit to a dead branch — the work cannot be pushed and will be orphaned
 ## Architecture
 
 ```
-packages/shared    → IPC contracts, Zod schemas, types. No React, no Node.
-packages/ui        → @ajh/ui React component library. No app logic.
-packages/prompts   → AI prompt templates. Pure TS.
-packages/core/ai/data/workers → main process only. NEVER import in renderer.
-apps/desktop/renderer → React UI. IPC via window.api (service hooks only).
+packages/shared        → IPC contracts, Zod schemas, types. No React, no Node.
+packages/ui            → @ajh/ui React component library. No app logic.
+packages/prompts       → AI prompt templates. Pure TS.
+packages/translations  → @ajh/translations i18next config + en/de resources. No app/IPC imports.
+apps/tauri/src-tauri    → Rust core (scraping, login, documents, AI). The shell does the work.
+apps/tauri/src/renderer → React UI. Reaches the Rust core only via IPC service hooks.
 ```
 
 ---
@@ -157,20 +161,16 @@ transition={{ duration: 0.18 }}
 
 // ✅
 className="text-brand-soft"
-import { transition } from '@/lib/motion'; transition={transition.normal}
+import { transition } from '@ajh/ui'; transition={transition.normal}
 ```
 
 ---
 
 ## Package boundary
 
-```ts
-// ❌ BANNED in renderer
-import anything from '@ajh/core';
-import anything from '@ajh/ai';
-import anything from '@ajh/data';
-import anything from '@ajh/workers';
-```
+Workspace packages are exactly `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`.
+Backend business logic lives in the Rust core under `apps/tauri/src-tauri/`, not in a TS package —
+the renderer reaches it only through IPC service hooks, never by importing a backend package.
 
 ---
 
@@ -186,12 +186,13 @@ Features must not import each other's internals. Shared code → `@ajh/ui`, `@/h
 
 ---
 
-## New IPC capability
+## New IPC capability (5 steps)
 
-1. `packages/shared/src/ipc/contracts.ts`
-2. `apps/desktop/src/main/ipc/router.ts`
-3. `apps/desktop/src/preload/index.ts`
-4. `apps/desktop/src/renderer/services/`
+1. `packages/shared/src/ipc/contracts.ts` — add signature
+2. `apps/tauri/src-tauri/src/commands.rs` — implement Tauri command
+3. `apps/tauri/src/tauri-client.ts` — wire invoke call
+4. `apps/tauri/src/renderer/services/` — create hook
+5. `services/query-client.ts` — add query key
 
 ---
 
