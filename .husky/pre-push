@@ -93,10 +93,12 @@ done
 RUST=""
 NODE=""
 LANDING=""
+WORKFLOWS=""
 if [ -n "${PREPUSH_FULL:-}" ] || [ "$HAVE_RANGE" -eq 0 ]; then
   RUST=1
   NODE=1
   LANDING=1
+  WORKFLOWS=1
   if [ -n "${PREPUSH_FULL:-}" ]; then
     echo "▶ Path filter: FULL gate (PREPUSH_FULL set)"
   else
@@ -112,8 +114,11 @@ else
   if printf '%s\n' "$CHANGED" | grep -qE '^landing/'; then
     LANDING=1
   fi
+  if printf '%s\n' "$CHANGED" | grep -qE '^\.github/workflows/'; then
+    WORKFLOWS=1
+  fi
   count=$(printf '%s\n' "$CHANGED" | grep -c . || true)
-  echo "▶ Path filter: NODE=${NODE:-0} RUST=${RUST:-0} LANDING=${LANDING:-0} (${count} files changed)"
+  echo "▶ Path filter: NODE=${NODE:-0} RUST=${RUST:-0} LANDING=${LANDING:-0} WORKFLOWS=${WORKFLOWS:-0} (${count} files changed)"
   if [ -z "$RUST" ] && [ -z "$NODE" ] && [ -z "$LANDING" ]; then
     echo "✓ No gated paths changed — skipping the build/test gate."
   fi
@@ -151,6 +156,15 @@ fi
 if [ -n "$NODE" ] || [ -n "$RUST" ] || [ -n "$LANDING" ]; then
   echo "▶ Checking landing-diagram drift..."
   pnpm check:landing-drift
+fi
+
+# ── Workflow-catalog drift ─────────────────────────────────────────────────────
+# The generated .github/workflows/README.md (+ README badges) is derived from the
+# workflow files; regenerate and fail if it drifted. Only when a workflow changed
+# (CI's "Workflow Catalog" job is authoritative — this catches it before the push).
+if [ -n "$WORKFLOWS" ]; then
+  echo "▶ Checking workflow-catalog drift..."
+  pnpm gen:workflows:check
 fi
 
 # ── Agent-system drift ─────────────────────────────────────────────────────────
