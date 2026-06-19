@@ -208,16 +208,14 @@ function RootLayout() {
               <div className="relative flex flex-1 overflow-hidden">
                 {isCollapsed && (
                   <div className="absolute left-4 top-4 z-10">
-                    <div className="glass-card rounded-xl border border-foreground/[0.08] p-1 shadow-md">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={toggleSidebar}
-                        aria-label={t('nav.expandSidebar')}
-                      >
-                        <PanelLeft size={16} />
-                      </Button>
-                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={toggleSidebar}
+                      aria-label={t('nav.expandSidebar')}
+                    >
+                      <PanelLeft size={16} />
+                    </Button>
                   </div>
                 )}
                 <main className="app-main glass-surface m-3 flex-1 overflow-hidden rounded-2xl">
