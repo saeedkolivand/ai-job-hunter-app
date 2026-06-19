@@ -56,6 +56,14 @@ Both scores are cached in SQLite:
 
 Keyword-coverage tests live in `documents/keywords.rs::tests` (unit tests for stemming, matching, language detection) and `recommend/tests.rs` (batch matching + ranking). See ARCHITECTURE_STATUS.md for the full coverage.
 
+## Intentional simplification: flat keyword coverage
+
+`keyword_coverage()` in `documents/keywords.rs` weights every JD keyword equally. ATS knockout gating (hard-vs-nice-to-have distinction) and tiered keyword importance are **deliberately deferred**.
+
+Rationale: the match score is a **guidance estimate** surfaced to the user, not a real ATS verdict. The UI frames it accordingly — the score helps the user decide whether to apply; it does not simulate the employer's ATS system. Implementing knockout gating would require reliable JD parsing for requirement tiers, which is outside the current scope.
+
+If knockout gating is added in future, the entry point is `documents/keywords.rs::keyword_coverage` and the hybrid formula in `commands/match_resume.rs::score_one`.
+
 ## Related Decisions
 
 - **ADR-020**: Unified autopilot scoring — explains why keyword-coverage is the single source for Autopilot.
