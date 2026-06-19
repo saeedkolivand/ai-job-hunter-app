@@ -410,7 +410,8 @@
   "settings": {
     "groups": {
       "preferences": "Preferences",
-      "system": "System"
+      "system": "System",
+      "about": "About"
     },
     "sections": {
       "general": {
@@ -452,6 +453,10 @@
       "developer": {
         "label": "Developer",
         "description": "Debug tools & diagnostics"
+      },
+      "about": {
+        "label": "Fund the hunt",
+        "description": "App info & ways to chip in"
       }
     },
     "applicant": {
@@ -520,6 +525,13 @@
       "debugMode": "Debug mode",
       "debugModeHint": "Enable verbose logging and diagnostic overlays",
       "openDevtools": "Open DevTools Console"
+    },
+    "about": {
+      "title": "Fund the hunt",
+      "pitch": "If this app saved you some 3am despair, you can chip in — any amount helps keep it going.",
+      "githubSponsors": "Sponsor on GitHub",
+      "kofi": "Buy a coffee on Ko-fi",
+      "paypal": "Send a tip via PayPal"
     },
     "profile": {
       "title": "Profile",
