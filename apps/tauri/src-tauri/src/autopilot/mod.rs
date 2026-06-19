@@ -373,7 +373,17 @@ impl AutopilotStore {
             v
         };
         if let Ok(json) = serde_json::to_string_pretty(&list) {
-            std::fs::write(&self.data_file, json).ok();
+            // No-op-write skip: many mutations (set_run_status, stamp_last_run, …)
+            // re-serialize identical state. Skip the disk write when the bytes
+            // match what's already persisted — a pure dirty check, NOT debouncing,
+            // so state is still flushed synchronously the instant it changes (no
+            // crash-loss window). A missing/unreadable file never matches → write.
+            let unchanged = std::fs::read_to_string(&self.data_file)
+                .map(|existing| existing == json)
+                .unwrap_or(false);
+            if !unchanged {
+                std::fs::write(&self.data_file, json).ok();
+            }
         }
         *self.cache.lock() = Some(map);
     }

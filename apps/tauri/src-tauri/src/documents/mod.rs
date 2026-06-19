@@ -8,6 +8,7 @@ use parking_lot::Mutex;
 /// Ollama is called for embeddings via reqwest; gracefully degrades when
 /// Ollama is not running.
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
@@ -90,6 +91,52 @@ pub struct MatchScoreKey<'a> {
     pub job_text_hash: &'a str,
 }
 
+impl MatchScoreKey<'_> {
+    /// Copy the borrowed key into an owned form that can cross into a
+    /// `spawn_blocking` (`'static`) closure for the async store methods.
+    pub fn to_owned_key(&self) -> OwnedMatchScoreKey {
+        OwnedMatchScoreKey {
+            resume_id: self.resume_id.to_string(),
+            job_id: self.job_id.to_string(),
+            provider: self.provider.to_string(),
+            model: self.model.to_string(),
+            semantic_enabled: self.semantic_enabled,
+            formula_version: self.formula_version,
+            job_text_hash: self.job_text_hash.to_string(),
+        }
+    }
+}
+
+/// Owned twin of [`MatchScoreKey`]. The borrowed key keeps the hot call site
+/// allocation-free, but a `spawn_blocking` closure must be `Send + 'static`, so
+/// the async store methods take this owned form and borrow it back inside the
+/// closure via [`OwnedMatchScoreKey::as_ref`].
+pub struct OwnedMatchScoreKey {
+    pub resume_id: String,
+    pub job_id: String,
+    pub provider: String,
+    pub model: String,
+    pub semantic_enabled: i64,
+    pub formula_version: i64,
+    pub job_text_hash: String,
+}
+
+impl OwnedMatchScoreKey {
+    /// Borrow back into a [`MatchScoreKey`] so the shared SQL helper takes one
+    /// key type for both the sync and async paths.
+    pub fn as_ref(&self) -> MatchScoreKey<'_> {
+        MatchScoreKey {
+            resume_id: &self.resume_id,
+            job_id: &self.job_id,
+            provider: &self.provider,
+            model: &self.model,
+            semantic_enabled: self.semantic_enabled,
+            formula_version: self.formula_version,
+            job_text_hash: &self.job_text_hash,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentRecord {
     #[serde(rename = "_id")]
@@ -115,7 +162,11 @@ pub struct DocumentRecord {
 // ── DocumentStore ─────────────────────────────────────────────────────────────
 
 pub struct DocumentStore {
-    conn: Mutex<Connection>,
+    /// Shared so a clone can move into a `spawn_blocking` closure on the hot
+    /// match path (the closure must be `Send + 'static`). `parking_lot::Mutex`
+    /// is not reentrant — never re-lock while a guard is held, and never hold a
+    /// guard across an `.await`.
+    conn: Arc<Mutex<Connection>>,
     /// Monotonic count of `upsert_posting_vector` writes, used to amortize the
     /// posting-vector cache prune onto a cheap cadence (every
     /// [`Self::POSTING_PRUNE_EVERY`] writes) instead of running two DELETEs under
@@ -291,7 +342,7 @@ impl DocumentStore {
         // every `open()`.
         run_migrations(&mut conn, Self::MIGRATIONS)?;
         Ok(Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
             posting_writes: std::sync::atomic::AtomicU64::new(0),
         })
     }
@@ -425,52 +476,43 @@ impl DocumentStore {
     /// Store a space-tagged vector. The space (`provider`/`model`/`dim`) travels
     /// with the values so comparisons can reject incompatible vectors.
     pub fn upsert_vector(&self, doc_id: &str, v: &EmbeddingVector) -> AppResult<()> {
-        let json = serde_json::to_string(&v.values).map_err(|e| e.to_string())?;
         let conn = self.conn.lock();
-        conn.execute(
-            "INSERT INTO vectors (doc_id, vector, provider, model, dim, version)
-             VALUES (?1, ?2, ?3, ?4, ?5, 1)
-             ON CONFLICT(doc_id) DO UPDATE SET
-                vector = excluded.vector, provider = excluded.provider,
-                model = excluded.model, dim = excluded.dim, version = excluded.version",
-            params![
-                doc_id,
-                json,
-                v.space.provider,
-                v.space.model,
-                v.space.dim as i64
-            ],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(())
+        upsert_vector_with_conn(&conn, doc_id, v)
+    }
+
+    /// Async variant of [`upsert_vector`] that runs the blocking lock + write on
+    /// a `spawn_blocking` thread, keeping the Tokio worker free on the hot match
+    /// path (`score_one` may call this up to once per job in a 1000-job batch).
+    /// Same write, same return type — callers in async contexts use this.
+    pub async fn upsert_vector_async(&self, doc_id: &str, v: &EmbeddingVector) -> AppResult<()> {
+        let conn = Arc::clone(&self.conn);
+        let doc_id = doc_id.to_string();
+        let v = v.clone();
+        spawn_blocking_db(move || {
+            let conn = conn.lock();
+            upsert_vector_with_conn(&conn, &doc_id, &v)
+        })
+        .await
     }
 
     pub fn get_vector(&self, doc_id: &str) -> Option<EmbeddingVector> {
         let conn = self.conn.lock();
-        conn.query_row(
-            "SELECT vector, provider, model, dim FROM vectors WHERE doc_id = ?1",
-            params![doc_id],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, i64>(3)?,
-                ))
-            },
-        )
-        .ok()
-        .and_then(|(json, provider, model, dim)| {
-            let values: Vec<f64> = serde_json::from_str(&json).ok()?;
-            Some(EmbeddingVector {
-                values,
-                space: EmbeddingSpace {
-                    provider,
-                    model,
-                    dim: dim as usize,
-                },
-            })
+        get_vector_with_conn(&conn, doc_id)
+    }
+
+    /// Async variant of [`get_vector`] — runs the blocking lock + read off the
+    /// async worker via `spawn_blocking`. A `JoinError` (closure panicked)
+    /// degrades to `None`, matching the sync read's "row missing → None" shape.
+    pub async fn get_vector_async(&self, doc_id: &str) -> Option<EmbeddingVector> {
+        let conn = Arc::clone(&self.conn);
+        let doc_id = doc_id.to_string();
+        tauri::async_runtime::spawn_blocking(move || {
+            let conn = conn.lock();
+            get_vector_with_conn(&conn, &doc_id)
         })
+        .await
+        .ok()
+        .flatten()
     }
 
     // ── Posting-vector cache (translation-aware job embeddings) ───────────────
@@ -634,61 +676,49 @@ impl DocumentStore {
     /// Fetch a cached match-score JSON result for the given key, if present.
     pub fn get_match_score(&self, key: &MatchScoreKey) -> Option<serde_json::Value> {
         let conn = self.conn.lock();
-        // Read-side TTL: an expired-but-not-yet-evicted row is a miss. None ttl = no expiry.
-        let cutoff = ttl_cutoff_ms();
-        conn.query_row(
-            "SELECT score_json FROM match_scores
-             WHERE resume_id = ?1 AND job_id = ?2 AND provider = ?3 AND model = ?4
-               AND semantic_enabled = ?5 AND formula_version = ?6 AND job_text_hash = ?7
-               AND created_at >= ?8",
-            params![
-                key.resume_id,
-                key.job_id,
-                key.provider,
-                key.model,
-                key.semantic_enabled,
-                key.formula_version,
-                key.job_text_hash,
-                cutoff,
-            ],
-            |row| row.get::<_, String>(0),
-        )
+        get_match_score_with_conn(&conn, key)
+    }
+
+    /// Async variant of [`get_match_score`] — runs the blocking lock + read off
+    /// the async worker. Takes an owned [`OwnedMatchScoreKey`] because the
+    /// borrowed [`MatchScoreKey`] can't cross into a `'static` closure. A
+    /// `JoinError` degrades to `None` (a cache miss), so a panicking blocking
+    /// task never poisons the result — `score_one` recomputes the score.
+    pub async fn get_match_score_async(
+        &self,
+        key: OwnedMatchScoreKey,
+    ) -> Option<serde_json::Value> {
+        let conn = Arc::clone(&self.conn);
+        tauri::async_runtime::spawn_blocking(move || {
+            let conn = conn.lock();
+            get_match_score_with_conn(&conn, &key.as_ref())
+        })
+        .await
         .ok()
-        .and_then(|json| serde_json::from_str(&json).ok())
+        .flatten()
     }
 
     /// Store (or replace) the cached match-score JSON result for the given key.
     pub fn upsert_match_score(&self, key: &MatchScoreKey, score_json: &str) -> AppResult<()> {
         let conn = self.conn.lock();
-        conn.execute(
-            "INSERT INTO match_scores
-                (resume_id, job_id, provider, model, semantic_enabled, formula_version,
-                 job_text_hash, score_json, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-             ON CONFLICT(resume_id, job_id, provider, model, semantic_enabled, formula_version, job_text_hash)
-             DO UPDATE SET score_json = excluded.score_json, created_at = excluded.created_at",
-            params![
-                key.resume_id,
-                key.job_id,
-                key.provider,
-                key.model,
-                key.semantic_enabled,
-                key.formula_version,
-                key.job_text_hash,
-                score_json,
-                ts_to_db(now_ms()),
-            ],
-        )
-        .map_err(|e| e.to_string())?;
-        // Lazy per-write eviction, reusing the held lock (must NOT re-lock).
-        let cfg = crate::performance::current();
-        Self::prune_table_locked(
-            &conn,
-            "match_scores",
-            cfg.cache_ttl_secs,
-            cfg.cache_max_rows,
-        );
-        Ok(())
+        upsert_match_score_with_conn(&conn, key, score_json)
+    }
+
+    /// Async variant of [`upsert_match_score`] — runs the blocking write + lazy
+    /// eviction off the async worker. Takes owned key + json so the closure is
+    /// `'static`. The TTL/row-cap prune reads `performance::current()` *inside*
+    /// the closure, reusing the held lock (never re-locks → no deadlock).
+    pub async fn upsert_match_score_async(
+        &self,
+        key: OwnedMatchScoreKey,
+        score_json: String,
+    ) -> AppResult<()> {
+        let conn = Arc::clone(&self.conn);
+        spawn_blocking_db(move || {
+            let conn = conn.lock();
+            upsert_match_score_with_conn(&conn, &key.as_ref(), &score_json)
+        })
+        .await
     }
 
     /// Drop the entire match-result cache (e.g. on embedding-config change).
@@ -860,6 +890,131 @@ pub async fn posting_vector_or_embed(
         .upsert_posting_vector(job_id, &hash, &v)
         .ok();
     Some(v)
+}
+
+// ── Connection-bound SQL helpers ───────────────────────────────────────────────
+//
+// The hot match-path methods (`*_vector` / `*_match_score`) have both a sync
+// form (used by the synchronous `DataStore` trait + tests) and an async form
+// that offloads the blocking lock + query onto `spawn_blocking`. Both share the
+// SQL through these `&Connection`-bound free functions so the query lives in
+// exactly one place. They take `&Connection` (the caller already holds the
+// lock), so they never re-lock — `parking_lot::Mutex` is not reentrant.
+
+fn upsert_vector_with_conn(conn: &Connection, doc_id: &str, v: &EmbeddingVector) -> AppResult<()> {
+    let json = serde_json::to_string(&v.values).map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO vectors (doc_id, vector, provider, model, dim, version)
+         VALUES (?1, ?2, ?3, ?4, ?5, 1)
+         ON CONFLICT(doc_id) DO UPDATE SET
+            vector = excluded.vector, provider = excluded.provider,
+            model = excluded.model, dim = excluded.dim, version = excluded.version",
+        params![
+            doc_id,
+            json,
+            v.space.provider,
+            v.space.model,
+            v.space.dim as i64
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn get_vector_with_conn(conn: &Connection, doc_id: &str) -> Option<EmbeddingVector> {
+    conn.query_row(
+        "SELECT vector, provider, model, dim FROM vectors WHERE doc_id = ?1",
+        params![doc_id],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        },
+    )
+    .ok()
+    .and_then(|(json, provider, model, dim)| {
+        let values: Vec<f64> = serde_json::from_str(&json).ok()?;
+        Some(EmbeddingVector {
+            values,
+            space: EmbeddingSpace {
+                provider,
+                model,
+                dim: dim as usize,
+            },
+        })
+    })
+}
+
+fn get_match_score_with_conn(conn: &Connection, key: &MatchScoreKey) -> Option<serde_json::Value> {
+    // Read-side TTL: an expired-but-not-yet-evicted row is a miss. None ttl = no expiry.
+    let cutoff = ttl_cutoff_ms();
+    conn.query_row(
+        "SELECT score_json FROM match_scores
+         WHERE resume_id = ?1 AND job_id = ?2 AND provider = ?3 AND model = ?4
+           AND semantic_enabled = ?5 AND formula_version = ?6 AND job_text_hash = ?7
+           AND created_at >= ?8",
+        params![
+            key.resume_id,
+            key.job_id,
+            key.provider,
+            key.model,
+            key.semantic_enabled,
+            key.formula_version,
+            key.job_text_hash,
+            cutoff,
+        ],
+        |row| row.get::<_, String>(0),
+    )
+    .ok()
+    .and_then(|json| serde_json::from_str(&json).ok())
+}
+
+fn upsert_match_score_with_conn(
+    conn: &Connection,
+    key: &MatchScoreKey,
+    score_json: &str,
+) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO match_scores
+            (resume_id, job_id, provider, model, semantic_enabled, formula_version,
+             job_text_hash, score_json, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         ON CONFLICT(resume_id, job_id, provider, model, semantic_enabled, formula_version, job_text_hash)
+         DO UPDATE SET score_json = excluded.score_json, created_at = excluded.created_at",
+        params![
+            key.resume_id,
+            key.job_id,
+            key.provider,
+            key.model,
+            key.semantic_enabled,
+            key.formula_version,
+            key.job_text_hash,
+            score_json,
+            ts_to_db(now_ms()),
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    // Lazy per-write eviction, reusing the held lock (must NOT re-lock).
+    let cfg = crate::performance::current();
+    DocumentStore::prune_table_locked(conn, "match_scores", cfg.cache_ttl_secs, cfg.cache_max_rows);
+    Ok(())
+}
+
+/// Run a fallible blocking DB closure on the `spawn_blocking` pool and flatten
+/// the `JoinError` into the typed [`AppError`] hierarchy. A panic in the closure
+/// (or pool shutdown) surfaces as an `AppError::Storage`, matching how every
+/// other rusqlite failure on this store is categorized. Used by the write-side
+/// async methods, where the `?`-propagated result must distinguish failure.
+async fn spawn_blocking_db<F>(f: F) -> AppResult<()>
+where
+    F: FnOnce() -> AppResult<()> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| crate::error::AppError::Storage(format!("documents db task failed: {e}")))?
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

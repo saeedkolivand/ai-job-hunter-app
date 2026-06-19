@@ -71,9 +71,18 @@ pub struct InteractionRecord {
     pub location: String,
 }
 
+/// Key into the in-memory interaction map: a record is unique per
+/// (`job_id`, `interaction_type`) — the same identity the old linear scan used.
+type InteractionKey = (String, String);
+
 pub struct InteractionStore {
     data_file: PathBuf,
-    cache: Option<Vec<InteractionRecord>>,
+    /// In-memory map keyed by (job_id, interaction_type) for O(1) upsert. Lazily
+    /// hydrated from disk on first access; the flat JSON array on disk is the
+    /// source of truth and is rebuilt from this map on every `save`. Replaces the
+    /// old `Option<Vec<_>>` cache that forced an O(n) linear scan + a clone of the
+    /// whole vector on every interaction event.
+    cache: Option<HashMap<InteractionKey, InteractionRecord>>,
 }
 
 impl InteractionStore {
@@ -86,7 +95,7 @@ impl InteractionStore {
     }
 
     pub fn list(&mut self, filter_type: Option<&str>) -> Vec<InteractionRecord> {
-        let all = self.load();
+        let all = self.records();
         match filter_type {
             Some(t) => all
                 .into_iter()
@@ -97,68 +106,81 @@ impl InteractionStore {
     }
 
     pub fn upsert(&mut self, record: InteractionRecord) {
-        let mut all = self.load();
-        if let Some(existing) = all
-            .iter_mut()
-            .find(|r| r.job_id == record.job_id && r.interaction_type == record.interaction_type)
-        {
-            *existing = record;
-        } else {
-            all.push(record);
-        }
-        self.save(all);
+        let map = self.map_mut();
+        // O(1): a re-interaction with the same (job_id, type) overwrites in place;
+        // a new pair inserts. No full-vector clone, no linear scan.
+        map.insert(
+            (record.job_id.clone(), record.interaction_type.clone()),
+            record,
+        );
+        self.save();
     }
 
     pub fn clear_all(&mut self) {
-        self.save(vec![]);
+        self.cache = Some(HashMap::new());
+        self.save();
     }
 
     /// Export all interactions for the data export feature.
     pub fn export_all(&mut self) -> Vec<InteractionRecord> {
-        self.load()
+        self.records()
     }
 
-    /// Import from an exported bundle, upserting each record.
+    /// Import from an exported bundle, upserting each record. Returns the count
+    /// of records that were newly inserted (not overwrites), matching the old
+    /// behavior exactly.
     pub fn import_bundle(&mut self, records: Vec<InteractionRecord>) -> usize {
-        let mut all = self.load();
+        let map = self.map_mut();
         let mut imported = 0;
-        let mut index: HashMap<(String, String), usize> = all
-            .iter()
-            .enumerate()
-            .map(|(i, r)| ((r.job_id.clone(), r.interaction_type.clone()), i))
-            .collect();
-
         for record in records {
             let key = (record.job_id.clone(), record.interaction_type.clone());
-            if let Some(&idx) = index.get(&key) {
-                all[idx] = record;
-            } else {
-                index.insert(key, all.len());
-                all.push(record);
+            if map.insert(key, record).is_none() {
                 imported += 1;
             }
         }
-        self.save(all);
+        self.save();
         imported
     }
 
-    fn load(&mut self) -> Vec<InteractionRecord> {
-        if let Some(ref c) = self.cache {
-            return c.clone();
+    /// Borrow the in-memory map, hydrating it from disk on first access.
+    fn map_mut(&mut self) -> &mut HashMap<InteractionKey, InteractionRecord> {
+        if self.cache.is_none() {
+            let loaded: Vec<InteractionRecord> = std::fs::read_to_string(&self.data_file)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default();
+            self.cache = Some(
+                loaded
+                    .into_iter()
+                    .map(|r| ((r.job_id.clone(), r.interaction_type.clone()), r))
+                    .collect(),
+            );
         }
-        let loaded: Vec<InteractionRecord> = std::fs::read_to_string(&self.data_file)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
-        self.cache = Some(loaded.clone());
-        loaded
+        self.cache.as_mut().expect("cache just initialized")
     }
 
-    fn save(&mut self, records: Vec<InteractionRecord>) {
+    /// Snapshot the records in a deterministic order (newest first, then by
+    /// id/type) so both `list`/`export_all` and the on-disk file are stable
+    /// across runs despite the unordered map.
+    fn records(&mut self) -> Vec<InteractionRecord> {
+        let mut all: Vec<InteractionRecord> = self.map_mut().values().cloned().collect();
+        all.sort_by(|a, b| {
+            b.timestamp
+                .cmp(&a.timestamp)
+                .then_with(|| a.job_id.cmp(&b.job_id))
+                .then_with(|| a.interaction_type.cmp(&b.interaction_type))
+        });
+        all
+    }
+
+    /// Persist the current map as the flat JSON array the on-disk format expects
+    /// (unchanged shape). Serializes the deterministic snapshot so the file is
+    /// stable between writes.
+    fn save(&mut self) {
+        let records = self.records();
         if let Ok(json) = serde_json::to_string_pretty(&records) {
             std::fs::write(&self.data_file, json).ok();
         }
-        self.cache = Some(records);
     }
 }
 
