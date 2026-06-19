@@ -14,6 +14,9 @@ const TOKEN_KEY = 'pairingToken';
 /** The desktop token is 32 random bytes as lowercase hex → 64 chars. */
 const TOKEN_HEX_LENGTH = 64;
 
+/** Pre-compiled regex for `looksLikeToken` — built once from `TOKEN_HEX_LENGTH`. */
+const TOKEN_REGEX = new RegExp(`^[0-9a-f]{${TOKEN_HEX_LENGTH}}$`);
+
 /** Read the stored pairing token, or `null` if not paired. */
 export async function getToken(): Promise<string | null> {
   const stored = await browser.storage.local.get(TOKEN_KEY);
@@ -39,5 +42,5 @@ export async function clearToken(): Promise<void> {
  * only catches obvious paste mistakes before we store one.
  */
 export function looksLikeToken(value: string): boolean {
-  return new RegExp(`^[0-9a-f]{${TOKEN_HEX_LENGTH}}$`).test(value.trim());
+  return TOKEN_REGEX.test(value.trim());
 }
