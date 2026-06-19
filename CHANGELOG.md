@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.110.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.109.4...v0.110.0) (2026-06-19)
+
+### ✨ Features
+
+* add a download button to each saved resume in the uploader ([#423](https://github.com/saeedkolivand/ai-job-hunter-app/issues/423)) ([89b1824](https://github.com/saeedkolivand/ai-job-hunter-app/commit/89b1824a3e991d37e46d2fed565ca12a74871247))
+* add a global back button to the titlebar ([#421](https://github.com/saeedkolivand/ai-job-hunter-app/issues/421)) ([6d426bf](https://github.com/saeedkolivand/ai-job-hunter-app/commit/6d426bfb493bdb0dab8fb434b13102610c8dd6b6))
+* apply pending extension updates immediately ([#425](https://github.com/saeedkolivand/ai-job-hunter-app/issues/425)) ([0907e7b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0907e7b86955c252959406aa30b67372cf42bcea))
+* collapsible sidebar with persisted state ([#424](https://github.com/saeedkolivand/ai-job-hunter-app/issues/424)) ([1663caf](https://github.com/saeedkolivand/ai-job-hunter-app/commit/1663cafab2ecad6f54de09c12854cdf07f9dc190))
+* harden extension job import and gate release behind a manual trigger ([#418](https://github.com/saeedkolivand/ai-job-hunter-app/issues/418)) ([f54b3f4](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f54b3f4f3b97f0bdd076f9a57095d86ed3b76bb6))
+* persist the job-ad summary and add a language selector ([#426](https://github.com/saeedkolivand/ai-job-hunter-app/issues/426)) ([9793258](https://github.com/saeedkolivand/ai-job-hunter-app/commit/979325846b92eaf4a9747abd46ad8a475216be84))
+
+### 🐛 Bug Fixes
+
+* keep the autopilot edit wizard open on backdrop click ([#420](https://github.com/saeedkolivand/ai-job-hunter-app/issues/420)) ([ce87b82](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ce87b82dfc67a4521197865271d09de01cb88071))
+* let users change a stored provider key in settings in place ([#422](https://github.com/saeedkolivand/ai-job-hunter-app/issues/422)) ([1254338](https://github.com/saeedkolivand/ai-job-hunter-app/commit/1254338b99b5a1c9e5938fe14d22f5db4ba8315e))
+
+### ⚡ Performance
+
+* reduce aurora background blur on retina displays ([#427](https://github.com/saeedkolivand/ai-job-hunter-app/issues/427)) ([b30287c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b30287c7c71dea0dd9239ad5fb184678169a55ef))
+
+### 📚 Documentation
+
+* sync readme scripts with current package.json ([#419](https://github.com/saeedkolivand/ai-job-hunter-app/issues/419)) ([9bf78f4](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9bf78f442b33994476409b9b8aae382e9bb9a0a2))
+
 ## [0.109.4](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.109.3...v0.109.4) (2026-06-18)
 
 ### 🐛 Bug Fixes
