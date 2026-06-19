@@ -20,12 +20,13 @@
 
 use std::path::Path;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
+
+use crate::db::now_ms;
 
 /// Maximum notifications retained. Newest-first; pushing past the cap drops the
 /// oldest. Enforced on `push` **and** defensively on load (in case the on-disk
@@ -211,15 +212,6 @@ impl NotificationStore {
         }
         *self.cache.lock() = Some(notifications);
     }
-}
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
 }
 
 // ── Factory-reset wiring ─────────────────────────────────────────────────────

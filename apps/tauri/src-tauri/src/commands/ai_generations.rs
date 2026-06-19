@@ -15,7 +15,7 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
 
     let rec = crate::ai_generations::AiGenerationRecord {
         id: crate::ai_generations::make_generation_id(),
-        created_at: crate::ai_generations::now_ms(),
+        created_at: crate::db::now_ms(),
         candidate_name: req.candidate_name,
         job_title: req.job_title,
         company_name: req.company_name,

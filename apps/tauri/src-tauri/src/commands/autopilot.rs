@@ -4,6 +4,7 @@ use parking_lot::Mutex;
 
 use crate::autopilot::{AutopilotFilter, AutopilotStatus, AutopilotStore, FoundJob, RunStatus};
 use crate::autopilot_helpers::autopilot_scrape;
+use crate::db::{new_job_id, now_ms};
 use crate::scraping::{JobPosting, ScraperEngine};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
@@ -14,23 +15,6 @@ use tokio_util::sync::CancellationToken;
 // AutopilotCreateRequest / AutopilotUpdateRequest are generated from the Zod
 // schemas in packages/shared by `pnpm gen:ipc`.
 pub use crate::ipc_contracts::autopilot::{AutopilotCreateRequest, AutopilotUpdateRequest};
-
-fn uuid_v4() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    format!("job-{t:x}")
-}
-
-fn now_ms() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
 
 fn store(app: &AppHandle) -> Arc<Mutex<AutopilotStore>> {
     app.state::<Arc<Mutex<AutopilotStore>>>().inner().clone()
@@ -120,7 +104,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         format!("run={autopilot_id} board={}", target.board),
     );
 
-    let job_id = uuid_v4();
+    let job_id = new_job_id();
     crate::commands::jobs::job_start(&app, &job_id, "autopilot.run");
 
     // Mark the run live so the UI shows a "running" badge and a crash mid-run
