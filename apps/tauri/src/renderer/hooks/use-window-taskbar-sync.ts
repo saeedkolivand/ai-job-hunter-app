@@ -35,12 +35,10 @@ export function useWindowTaskbarSync() {
     if (next === lastProgressRef.current) return;
     lastProgressRef.current = next;
     void controls.setTaskbarProgress(next);
-
-    // M2: clear taskbar bar on unmount while a job is still running.
-    return () => {
-      void controls.setTaskbarProgress(null);
-    };
   }, [jobs, controls]);
+
+  // Clear the taskbar bar only when this hook unmounts (not on every jobs change).
+  useEffect(() => () => void controls.setTaskbarProgress(null), [controls]);
 
   // Attention on job terminal events while window is unfocused.
   useJobEvents((event: JobEvent) => {

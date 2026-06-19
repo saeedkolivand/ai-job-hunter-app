@@ -53,7 +53,7 @@ export function useWindowControls() {
         if (p < 0) return win.setProgressBar({ status: ProgressBarStatus.Indeterminate });
         return win.setProgressBar({
           status: ProgressBarStatus.Normal,
-          progress: Math.round(p * 100),
+          progress: Math.min(100, Math.max(0, Math.round(p * 100))),
         });
       },
       flashAttention: () => win.requestUserAttention(UserAttentionType.Informational),

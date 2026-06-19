@@ -70,14 +70,15 @@ tauri-plugin-deep-link = "2"
 # discovery agent. Toggled only via our own `system_*` commands (Rust API), so
 # no JS plugin capability is exposed; no extra launch args are registered.
 tauri-plugin-autostart = "2"
-# Added for FUTURE use — no renderer callers yet. Least-privilege: only
-# `os:default`, `positioner:default`, and `store:default` are granted in
-# capabilities/default.json; the `websocket`/`process`/`global-shortcut` JS ACL
-# grants are deferred until a caller exists (crates stay compiled, but no
-# capability is exposed yet). OS info (platform/arch/version), process
-# exit/restart, window positioning, global hotkeys (desktop-only init), a JSON
-# key-value store, and a client WebSocket — all first-party Tauri v2 plugins,
-# pinned to "2" like the block above.
+# Least-privilege: `os:default`, `positioner:default`, and `store:default` are
+# granted in capabilities/default.json AND now have renderer callers — `os`
+# (platform()/isMacos via useWindowControls), `positioner` (resetPosition /
+# "Reset window position" Settings action), and `store` (onboarding-mirror.ts).
+# The `websocket`/`process`/`global-shortcut` JS ACL grants remain deferred until
+# a caller exists (crates stay compiled, but no capability is exposed yet). OS
+# info (platform/arch/version), process exit/restart, window positioning, global
+# hotkeys (desktop-only init), a JSON key-value store, and a client WebSocket —
+# all first-party Tauri v2 plugins, pinned to "2" like the block above.
 tauri-plugin-os = "2"
 tauri-plugin-process = "2"
 tauri-plugin-positioner = "2"

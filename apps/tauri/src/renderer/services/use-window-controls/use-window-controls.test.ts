@@ -147,6 +147,12 @@ describe('useWindowControls — setTaskbarProgress', () => {
     await setTaskbarProgress(0.336);
     expect(mockSetProgressBar).toHaveBeenCalledWith({ status: 'normal', progress: 34 });
   });
+
+  it('clamps value > 1 to progress: 100', async () => {
+    const { setTaskbarProgress } = getControls();
+    await setTaskbarProgress(1.5);
+    expect(mockSetProgressBar).toHaveBeenCalledWith({ status: 'normal', progress: 100 });
+  });
 });
 
 // ── isMacos ───────────────────────────────────────────────────────────────────

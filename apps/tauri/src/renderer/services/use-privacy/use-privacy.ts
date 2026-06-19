@@ -33,10 +33,10 @@ export const useResetApp = () => {
   const resetPreferences = usePreferencesStore((s) => s.resetPreferences);
   return useMutation({
     mutationFn: () => api.privacy.resetApp(),
-    onSuccess: () => {
+    onSuccess: async () => {
       qc.clear();
       resetPreferences();
-      void clearOnboardingMirror();
+      await clearOnboardingMirror();
     },
   });
 };

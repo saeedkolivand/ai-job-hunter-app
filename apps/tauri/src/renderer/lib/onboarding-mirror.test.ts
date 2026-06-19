@@ -154,4 +154,9 @@ describe('onboarding-mirror — error paths (best-effort / non-throwing)', () =>
     mockStoreLoad.mockRejectedValueOnce(new Error('fs error'));
     await expect(clearOnboardingMirror()).resolves.toBeUndefined();
   });
+
+  it('store.save rejects → clearOnboardingMirror resolves without throwing', async () => {
+    mockSave.mockRejectedValueOnce(new Error('disk full'));
+    await expect(clearOnboardingMirror()).resolves.toBeUndefined();
+  });
 });

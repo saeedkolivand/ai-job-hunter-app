@@ -70,8 +70,9 @@ describe('useResetApp', () => {
     expect(mockResetPreferences).toHaveBeenCalledOnce();
   });
 
-  it('does NOT call clearOnboardingMirror() when resetApp fails', async () => {
+  it('does NOT call clearOnboardingMirror() or resetPreferences() when resetApp fails', async () => {
     mockClearOnboardingMirror.mockClear();
+    mockResetPreferences.mockClear();
 
     const client = createMockClient({
       'privacy.resetApp': vi.fn().mockRejectedValue(new Error('network error')),
@@ -88,5 +89,6 @@ describe('useResetApp', () => {
     });
 
     expect(mockClearOnboardingMirror).not.toHaveBeenCalled();
+    expect(mockResetPreferences).not.toHaveBeenCalled();
   });
 });

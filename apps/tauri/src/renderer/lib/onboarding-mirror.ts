@@ -15,7 +15,10 @@ export async function markOnboardingComplete(): Promise<void> {
     await store.set(KEY, true);
     await store.save();
   } catch (err) {
-    console.warn('[onboarding-mirror] markOnboardingComplete failed (non-fatal):', err);
+    console.warn(
+      '[onboarding-mirror] markOnboardingComplete failed (non-fatal):',
+      err instanceof Error ? err.name : 'error'
+    );
   }
 }
 
@@ -25,7 +28,10 @@ export async function clearOnboardingMirror(): Promise<void> {
     await store.delete(KEY);
     await store.save();
   } catch (err) {
-    console.warn('[onboarding-mirror] clearOnboardingMirror failed (non-fatal):', err);
+    console.warn(
+      '[onboarding-mirror] clearOnboardingMirror failed (non-fatal):',
+      err instanceof Error ? err.name : 'error'
+    );
   }
 }
 
