@@ -155,8 +155,20 @@ pub fn system_open_devtools(app: AppHandle) {
 #[tauri::command]
 pub async fn system_open_external(app: AppHandle, url: String) -> AppResult<()> {
     use tauri_plugin_opener::OpenerExt;
+
+    // Allowlist web schemes only. The renderer passes this URL through to the OS
+    // opener, so without a scheme check a `file:`/custom-scheme URL would launch
+    // an arbitrary handler. Case-insensitive: URL schemes are not case-sensitive.
+    let trimmed = url.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return Err(AppError::Message(
+            "system_open_external: only http(s) URLs are allowed".to_string(),
+        ));
+    }
+
     app.opener()
-        .open_url(&url, None::<&str>)
+        .open_url(trimmed, None::<&str>)
         .map_err(|e| AppError::Message(e.to_string()))
 }
 
