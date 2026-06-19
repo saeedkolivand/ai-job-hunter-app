@@ -697,7 +697,8 @@
       "signedOutSuccess": "Signed out of all accounts. Reconnect via Settings → Accounts.",
       "historyClearedSuccess": "Interaction history cleared.",
       "exportSuccess": "Data exported successfully.",
-      "importSuccess": "Imported {{count}} record{{plural}}."
+      "importSuccess": "Imported {{count}} record{{plural}}.",
+      "importPartial": "Some items could not be restored. Your data may be incomplete."
     },
     "location": {
       "title": "Preferred Location",
