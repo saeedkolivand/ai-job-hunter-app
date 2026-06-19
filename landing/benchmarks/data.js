@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781644705981,
+  "lastUpdate": 1781870149821,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -707,6 +707,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 283832,
             "range": "± 2301",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "44aa3472fa11f43c991e22f8f83134b4ba98db3e",
+          "message": "fix(security): restrict system_open_external to http and https schemes (#435)\n\nReject non-http(s) URL schemes in system_open_external before handing the\nrenderer-supplied URL to the OS opener, closing a file:/custom-scheme handler\nlaunch vector. Narrow the CSP connect-src loopback wildcards to the exact ports\nin use: Ollama (11434) plus the extension-bridge WS range (47615-47620).\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
+          "timestamp": "2026-06-19T13:36:30+02:00",
+          "tree_id": "441c21e17fef0d9c458f8eacbc2637412241b0bd",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/44aa3472fa11f43c991e22f8f83134b4ba98db3e"
+        },
+        "date": 1781870149400,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1964986,
+            "range": "± 54296",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2637908,
+            "range": "± 69629",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 307226,
+            "range": "± 4408",
             "unit": "ns/iter"
           }
         ]
