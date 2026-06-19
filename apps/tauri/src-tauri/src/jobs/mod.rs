@@ -12,13 +12,12 @@
 /// reaches the shell.
 use std::collections::HashMap;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::db::{run_migrations, ts_from_db, ts_to_db, Migration};
+use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -327,13 +326,6 @@ impl JobTracker {
             );
         }
     }
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
 }
 
 #[cfg(test)]

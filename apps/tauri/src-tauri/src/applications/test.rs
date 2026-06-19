@@ -615,7 +615,7 @@ fn generate_save_second_generation_same_url_merge_into_one_gen_row_and_one_appli
         .unwrap();
     let rec1 = crate::ai_generations::AiGenerationRecord {
         id: "gen-resume".into(),
-        created_at: crate::ai_generations::now_ms(),
+        created_at: crate::db::now_ms(),
         candidate_name: "Jane".into(),
         job_title: "Engineer".into(),
         company_name: "Acme".into(),
@@ -649,7 +649,7 @@ fn generate_save_second_generation_same_url_merge_into_one_gen_row_and_one_appli
         .unwrap();
     let rec2 = crate::ai_generations::AiGenerationRecord {
         id: "gen-cover".into(),
-        created_at: crate::ai_generations::now_ms(),
+        created_at: crate::db::now_ms(),
         candidate_name: "Jane".into(),
         job_title: "Engineer".into(),
         company_name: "Acme".into(),

@@ -100,7 +100,7 @@ pub async fn documents_import(app: AppHandle, req: DocumentsImportRequest) -> Va
         locale: req.locale,
         text: extraction.text,
         pages: None,
-        created_at: crate::documents::now_ms(),
+        created_at: crate::db::now_ms(),
         indexed: false,
         is_default: false,
         keywords_json,

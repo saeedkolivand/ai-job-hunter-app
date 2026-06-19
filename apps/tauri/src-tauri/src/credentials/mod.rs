@@ -16,11 +16,11 @@ use parking_lot::Mutex;
 /// looked up by scrapers/appliers via `get_decrypted(board_id)`.
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use keyring_core::Entry;
 use serde::{Deserialize, Serialize};
 
+use crate::db::now_ms;
 use crate::error::{AppError, AppResult};
 
 const SERVICE: &str = "com.ajh.tauri";
@@ -169,13 +169,6 @@ impl CredentialStore {
         self.cache.lock().0 = Some(meta);
         Ok(())
     }
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
 }
 
 #[cfg(test)]

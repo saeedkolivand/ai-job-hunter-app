@@ -8,7 +8,6 @@
 //! `job_url` so a found job's referral contacts can be listed cheaply.
 
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
@@ -16,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::data_store::DataStore;
-use crate::db::{run_migrations, ts_from_db, ts_to_db, Migration};
+use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::{AppError, AppResult};
 
 /// One locally-stored referral contact. Optional drafts/notes are empty strings
@@ -203,13 +202,6 @@ fn row_to_record(row: &rusqlite::Row) -> rusqlite::Result<ReferralContact> {
 
 #[cfg(test)]
 mod test;
-
-pub(crate) fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
 
 pub(crate) fn make_referral_id() -> String {
     format!("ref-{}-{}", now_ms(), &Uuid::new_v4().to_string()[..8])

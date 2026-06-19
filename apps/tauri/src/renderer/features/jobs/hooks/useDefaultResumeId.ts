@@ -1,9 +1,5 @@
+import type { RawDoc } from '@/lib/doc-record';
 import { useDocuments } from '@/services';
-
-interface RawDoc {
-  _id: string;
-  isDefault?: boolean;
-}
 
 /** Resolve the default saved résumé's id (`_id`), falling back to the first saved one. */
 export function useDefaultResumeId(): string | null {

@@ -9,6 +9,7 @@ import { Button, cn, GlassCard, transition, useNotification } from '@ajh/ui';
 import { ContactConflictModal } from '@/components/contact/ContactConflictModal';
 import { ProfileUrlImport } from '@/components/resume/ProfileUrlImport';
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
+import { normalise, type RawDoc } from '@/lib/doc-record';
 import { exportTXT } from '@/lib/generate';
 import { useDocuments, useRemoveDocument, useSetDefaultDocument } from '@/services';
 
@@ -18,19 +19,8 @@ export function ResumePreferences() {
 
   const { data: documentsRaw = [], isLoading } = useDocuments();
   // Rust serialises id as _id and created_at as createdAt — normalise here
-  type RawDoc = Omit<DocumentRecord, 'id' | 'importedAt'> & {
-    _id: string;
-    createdAt: number;
-    name?: string;
-  };
   const rawDocs = documentsRaw as unknown as RawDoc[];
-  const documents: DocumentRecord[] = rawDocs.map((d) => ({
-    ...d,
-    id: d._id,
-    importedAt: d.createdAt,
-    source:
-      d.source ?? (d.name?.endsWith('.pdf') ? 'pdf' : d.name?.endsWith('.docx') ? 'docx' : 'txt'),
-  }));
+  const documents: DocumentRecord[] = rawDocs.map(normalise);
   const { importFile, isPending: uploading, isOcr } = useImportWithOcr();
   const removeDocument = useRemoveDocument();
   const setDefaultDocument = useSetDefaultDocument();
