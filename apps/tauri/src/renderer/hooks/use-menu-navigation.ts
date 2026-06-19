@@ -24,6 +24,7 @@ const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   'privacy',
   'performance',
   'developer',
+  'about',
 ];
 
 /**

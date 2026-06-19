@@ -1,4 +1,4 @@
-import { Github, Heart } from 'lucide-react';
+import { Gift, Heart, Wallet } from 'lucide-react';
 
 import { useTranslation } from '@ajh/translations';
 import { Button, GlassCard, SectionLabel } from '@ajh/ui';
@@ -9,7 +9,7 @@ const DONATE_LINKS = [
   {
     key: 'github' as const,
     href: 'https://github.com/sponsors/saeedkolivand',
-    icon: Github,
+    icon: Gift,
     labelKey: 'settings.about.githubSponsors',
   },
   {
@@ -21,7 +21,7 @@ const DONATE_LINKS = [
   {
     key: 'paypal' as const,
     href: 'https://paypal.me/saeedkolivand',
-    icon: Heart,
+    icon: Wallet,
     labelKey: 'settings.about.paypal',
   },
 ];
