@@ -10,8 +10,29 @@ import { moveWindow, Position } from '@tauri-apps/plugin-positioner';
  * @tauri-apps/plugin-positioner. Exposes fire-and-forget shell actions; this is
  * not data-fetching so no React Query wrapper is needed.
  */
+
 export function useWindowControls() {
   return useMemo(() => {
+    // True only inside the Tauri webview; false in the Playwright/browser harness.
+    // Evaluated inside useMemo (not module scope) so test beforeEach can set/clear
+    // window.__TAURI_INTERNALS__ and the check sees the current value each render.
+    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+      // ponytail: browser/E2E harness — no Tauri runtime; degrade to no-ops so
+      // the renderer boots. Keys + return types match the real branch.
+      const noop = async () => {};
+      return {
+        isMacos: false,
+        toggleMaximize: noop,
+        isFocused: async () => true,
+        foreground: noop,
+        setTaskbarProgress: (_p: number | null): Promise<void> => Promise.resolve(),
+        flashAttention: noop,
+        resetPosition: noop,
+        hideApp: noop,
+        showApp: noop,
+      };
+    }
+
     const win = getCurrentWindow();
     return {
       isMacos: platform() === 'macos',
@@ -27,7 +48,7 @@ export function useWindowControls() {
        * Maps a 0..1 fraction (or sentinel) to the OS taskbar progress bar.
        * null → clear, <0 → indeterminate, else → normal with clamped percent.
        */
-      setTaskbarProgress: (p: number | null) => {
+      setTaskbarProgress: (p: number | null): Promise<void> => {
         if (p === null) return win.setProgressBar({ status: ProgressBarStatus.None });
         if (p < 0) return win.setProgressBar({ status: ProgressBarStatus.Indeterminate });
         return win.setProgressBar({

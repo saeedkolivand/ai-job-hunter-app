@@ -15,7 +15,7 @@
  *  2. isMacos derives correctly from mocked platform().
  *  3. foreground() calls unminimize then setFocus in order.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 
 // ── hoisted spies ─────────────────────────────────────────────────────────────
@@ -89,13 +89,21 @@ function getControls() {
   return result.current;
 }
 
-// ── reset ─────────────────────────────────────────────────────────────────────
+// ── Tauri runtime sentinel ─────────────────────────────────────────────────────
+// The runtime check lives inside useMemo, so setting __TAURI_INTERNALS__ before
+// each render is enough to route tests to the real branch. The no-op branch test
+// simply deletes it before calling renderHook.
 
 beforeEach(() => {
+  (window as unknown as { __TAURI_INTERNALS__?: object }).__TAURI_INTERNALS__ = {};
   mockSetProgressBar.mockClear();
   mockUnminimize.mockClear();
   mockSetFocus.mockClear();
   platformContainer.value = 'windows';
+});
+
+afterEach(() => {
+  delete (window as unknown as { __TAURI_INTERNALS__?: object }).__TAURI_INTERNALS__;
 });
 
 // ── setTaskbarProgress ────────────────────────────────────────────────────────
@@ -179,5 +187,28 @@ describe('useWindowControls — foreground', () => {
     await foreground();
 
     expect(callOrder).toEqual(['unminimize', 'setFocus']);
+  });
+});
+
+// ── no-op branch (browser / E2E harness — no Tauri runtime) ──────────────────
+// The Tauri check lives inside useMemo, so deleting __TAURI_INTERNALS__ before
+// renderHook is enough — no module reset needed.
+
+describe('useWindowControls — no-op branch (no Tauri runtime)', () => {
+  it('returns isMacos=false, isFocused resolves true, and fire-and-forget methods resolve without calling mocked getCurrentWindow', async () => {
+    // beforeEach sets __TAURI_INTERNALS__ = {}; delete it here so the
+    // runtime check inside useMemo takes the no-op path for this test.
+    delete (window as unknown as { __TAURI_INTERNALS__?: object }).__TAURI_INTERNALS__;
+
+    const { result } = renderHook(() => useWindowControls());
+    const controls = result.current;
+
+    expect(controls.isMacos).toBe(false);
+    await expect(controls.isFocused()).resolves.toBe(true);
+    await expect(controls.setTaskbarProgress(0.5)).resolves.toBeUndefined();
+    await expect(controls.toggleMaximize()).resolves.toBeUndefined();
+
+    // getCurrentWindow was never reached — setProgressBar must not have been called.
+    expect(mockSetProgressBar).not.toHaveBeenCalled();
   });
 });

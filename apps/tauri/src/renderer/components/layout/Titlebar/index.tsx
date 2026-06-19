@@ -1,7 +1,6 @@
 import { ChevronLeft, Sparkles } from 'lucide-react';
 import { type ComponentType, useEffect, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { platform } from '@tauri-apps/plugin-os';
 
 import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
@@ -13,13 +12,11 @@ import { useOnboardingCompleted } from '@/store/preferences-store';
 
 import { NotificationBell } from './NotificationBell';
 
-const isMac = platform() === 'macos';
-
 export function Titlebar() {
   const { t } = useTranslation();
   const onboardingCompleted = useOnboardingCompleted();
   const [WindowControls, setWindowControls] = useState<ComponentType | null>(null);
-  const { toggleMaximize } = useWindowControls();
+  const { toggleMaximize, isMacos } = useWindowControls();
 
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
@@ -53,7 +50,7 @@ export function Titlebar() {
     >
       {/* Left cluster: fixed-width spacer (mirrors window-controls on the right) with
           optional back button on detail routes. `app-no-drag` keeps it clickable. */}
-      <div className={`app-no-drag flex items-center ${isMac ? 'w-20' : 'w-[132px]'}`}>
+      <div className={`app-no-drag flex items-center ${isMacos ? 'w-20' : 'w-[132px]'}`}>
         {parent !== null && (
           <Button
             variant="ghost"
@@ -85,7 +82,7 @@ export function Titlebar() {
           keeps both clickable inside the drag region. */}
       <div className="app-no-drag flex items-center gap-1">
         {onboardingCompleted && <NotificationBell />}
-        {WindowControls && !isMac ? <WindowControls /> : <div className="w-20" />}
+        {WindowControls && !isMacos ? <WindowControls /> : <div className="w-20" />}
       </div>
     </div>
   );
