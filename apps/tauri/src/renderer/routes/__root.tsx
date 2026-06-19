@@ -207,7 +207,7 @@ function RootLayout() {
               </AnimatePresence>
               <div className="relative flex flex-1 overflow-hidden">
                 {isCollapsed && (
-                  <div className="absolute left-4 top-4 z-10">
+                  <div className="absolute left-6 top-6 z-10">
                     <Button
                       variant="ghost"
                       size="sm"
