@@ -444,8 +444,12 @@ pub fn run() {
             // mobile/other-target build is not broken. No shortcuts are bound yet
             // — this only makes the `global-shortcut:default` capability available.
             #[cfg(desktop)]
-            app.handle()
-                .plugin(tauri_plugin_global_shortcut::Builder::new().build())?;
+            if let Err(e) = app
+                .handle()
+                .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+            {
+                log::warn!("[setup] global-shortcut plugin init failed (non-fatal): {e}");
+            }
 
             let handle = app.handle();
 
