@@ -161,16 +161,20 @@ export function truncateResume(resume: string, strategy: TruncationStrategy): st
         result.push(`${section.name.toUpperCase()}\n${section.content}`);
         currentTokens += section.tokenCount;
       } else {
-        // Section is too large, need to truncate it
+        // Section is too large, need to truncate it.
         const available = strategy.maxTokens - currentTokens;
-        if (available > 100) {
-          const truncated =
-            section.name === 'Experience'
-              ? truncateExperience(section.content, available)
-              : section.content.slice(0, available * 4); // Rough char estimate
-          result.push(`${section.name.toUpperCase()}\n${truncated}`);
-          currentTokens += estimateTokens(truncated);
-        }
+        if (available <= 0) continue; // No budget left at all — skip.
+
+        const truncated =
+          // With a comfortable budget, prefer the section-aware truncators.
+          // With a tight budget (<= 100 tokens), those leave nothing useful, so
+          // fall back to a hard char-slice so the section is never silently
+          // dropped — a positive budget must always yield some content.
+          available > 100 && section.name === 'Experience'
+            ? truncateExperience(section.content, available)
+            : section.content.slice(0, available * 4); // Rough char estimate
+        result.push(`${section.name.toUpperCase()}\n${truncated}`);
+        currentTokens += estimateTokens(truncated);
       }
     }
   }

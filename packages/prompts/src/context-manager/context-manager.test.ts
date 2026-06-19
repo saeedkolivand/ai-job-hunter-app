@@ -137,6 +137,48 @@ describe('truncateResume', () => {
     expect(estimateTokens(result)).toBeLessThanOrEqual(SMALL_MODEL_STRATEGY.maxTokens + 50);
     expect(result).not.toContain('Cycling');
   });
+
+  it('hard-truncates an oversized preserve-section even on a tiny budget (never returns empty)', () => {
+    // A single preserve-section larger than the whole budget. With maxTokens <= 100
+    // the available budget is also <= 100, so the old `available > 100` guard
+    // silently skipped the section and returned ''. It must now truncate-to-fit.
+    const tightStrategy = {
+      maxTokens: 50,
+      preserveSections: ['Experience'],
+      summarizeSections: [],
+      dropSections: [],
+      modelType: 'small' as const,
+    };
+    const resume = `Work Experience\nAcme — Engineer (2020 - Present)\n${'y '.repeat(2000)}`;
+    const result = truncateResume(resume, tightStrategy);
+    expect(result).not.toBe('');
+    expect(result.length).toBeGreaterThan(0);
+    expect(result).toContain('EXPERIENCE');
+    // Still bounded by the budget's hard char-limit safety net.
+    expect(estimateTokens(result)).toBeLessThanOrEqual(tightStrategy.maxTokens + 50);
+  });
+
+  it('truncates an oversized preserve-section on a normal budget', () => {
+    // The `available > 100` path is unchanged: an oversized Experience section is
+    // section-aware-truncated and stays non-empty.
+    const strategy = {
+      maxTokens: 400,
+      preserveSections: ['Experience'],
+      summarizeSections: [],
+      dropSections: [],
+      modelType: 'large' as const,
+    };
+    const resume = [
+      'Work Experience',
+      'Acme — Engineer (2020 - Present)',
+      ...Array.from({ length: 40 }, (_, i) => `Did important work item number ${i} here.`),
+    ].join('\n');
+    const result = truncateResume(resume, strategy);
+    expect(result).not.toBe('');
+    expect(result).toContain('EXPERIENCE');
+    expect(result).toContain('Acme');
+    expect(estimateTokens(result)).toBeLessThanOrEqual(strategy.maxTokens + 50);
+  });
 });
 
 describe('analyzeResumeSize', () => {
