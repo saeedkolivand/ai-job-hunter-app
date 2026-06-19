@@ -104,6 +104,19 @@ describe('RowMatchScore — score state', () => {
     expect(screen.getByText('High')).toBeInTheDocument();
     expect(container.querySelector('[aria-busy="true"]')).not.toBeInTheDocument();
   });
+
+  it('renders the always-visible estimate label adjacent to the band', () => {
+    renderRow({ score: { ...BASE_SCORE, combined: 82 }, pending: false, hasResume: true });
+    // The "est." micro-label is the persistent estimate framing — present without
+    // any interaction. The i18n stub returns the key, so we assert on the key itself.
+    expect(screen.getByText('jobs.scoreEst')).toBeInTheDocument();
+  });
+
+  it('renders a guidance info trigger with the scoreGuidanceLabel aria-label', () => {
+    renderRow({ score: { ...BASE_SCORE, combined: 82 }, pending: false, hasResume: true });
+    // aria-label is distinct from the panel content — no duplicate-announcement.
+    expect(screen.getByRole('button', { name: 'jobs.scoreGuidanceLabel' })).toBeInTheDocument();
+  });
 });
 
 describe('RowMatchScore — pending state', () => {
