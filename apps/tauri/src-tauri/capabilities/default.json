@@ -29,6 +29,9 @@
     "notification:allow-is-permission-granted",
     "notification:allow-permission-state",
     "notification:allow-register-listener",
+    "os:default",
+    "positioner:default",
+    "store:default",
     {
       "identifier": "shell:allow-execute",
       "allow": [

@@ -427,7 +427,26 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        // Added for FUTURE use — no renderer callers yet (their `*:default`
+        // capabilities are listed in capabilities/default.json so they are ready
+        // to wire). OS info, process control, window positioning, a JSON
+        // key-value store, and a client WebSocket. `global-shortcut` is
+        // desktop-only and gated below, mirroring the `#[cfg(desktop)]` deep-link
+        // pattern used in `setup`.
+        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_positioner::init())
+        .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_websocket::init())
         .setup(|app| {
+            // Global shortcuts are a desktop-only capability; register the plugin
+            // here (gated) rather than in the always-compiled builder chain so a
+            // mobile/other-target build is not broken. No shortcuts are bound yet
+            // — this only makes the `global-shortcut:default` capability available.
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_global_shortcut::Builder::new().build())?;
+
             let handle = app.handle();
 
             // `ajh://` deep links. The OS routes a cold/click-launched URL here
