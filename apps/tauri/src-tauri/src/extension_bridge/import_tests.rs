@@ -657,7 +657,11 @@ fn frame_correct_token_classifies_as_import() {
 fn auth_frame_wrong_token_is_unauthorized() {
     let (_dir, state) = bridge_state();
     let wrong = "9".repeat(64);
-    assert_ne!(wrong, state.token(), "fixture must use a non-matching token");
+    assert_ne!(
+        wrong,
+        state.token(),
+        "fixture must use a non-matching token"
+    );
 
     let frame = json!({
         "token": wrong,
