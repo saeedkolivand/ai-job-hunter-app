@@ -542,20 +542,13 @@ jobs:
           pnpm install --frozen-lockfile
           echo "::endgroup::"
 
-      - name: 🔨 Build Extension
+      - name: 🔨 Build + Package Extension
         run: |
           echo "::group::Building shared packages"
           pnpm build:packages
           echo "::endgroup::"
-          echo "::group::Building browser extension"
-          pnpm --filter @ajh/extension build
-          echo "::endgroup::"
-
-      - name: 🗜️ Zip Extension Bundles
-        run: |
-          echo "::group::Zipping chrome + firefox bundles"
-          VERSION="${{ steps.resolve.outputs.version }}"
-          ( cd apps/extension/dist && zip -r "$GITHUB_WORKSPACE/ai-job-hunter-extension-chrome-${VERSION}.zip" chrome && zip -r "$GITHUB_WORKSPACE/ai-job-hunter-extension-firefox-${VERSION}.zip" firefox )
+          echo "::group::Building + zipping browser extension (manifest at zip root)"
+          pnpm --filter @ajh/extension package
           echo "::endgroup::"
 
       - name: 📤 Upload Extension to Release
@@ -563,8 +556,8 @@ jobs:
         with:
           tag_name: ${{ steps.resolve.outputs.version }}
           files: |
-            ai-job-hunter-extension-chrome-${{ steps.resolve.outputs.version }}.zip
-            ai-job-hunter-extension-firefox-${{ steps.resolve.outputs.version }}.zip
+            apps/extension/dist/ai-job-hunter-extension-chrome-*.zip
+            apps/extension/dist/ai-job-hunter-extension-firefox-*.zip
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -745,7 +738,7 @@ jobs:
           | 🍎 macOS (Apple Silicon) | [.dmg]($URL/macos-AI-Job-Hunter_${RAW}_aarch64-apple-silicon.dmg) |
           | 🍎 macOS (Intel) | [.dmg]($URL/macos-AI-Job-Hunter_${RAW}_x64-intel.dmg) |
           | 🐧 Linux | [AppImage]($URL/linux-AI-Job-Hunter_${RAW}_amd64.AppImage) · [.deb]($URL/linux-AI-Job-Hunter_${RAW}_amd64.deb) · [.rpm]($URL/linux-AI-Job-Hunter-${RAW}-1.x86_64.rpm) |
-          | 🧩 Browser extension | [Chrome (.zip)]($URL/ai-job-hunter-extension-chrome-${VERSION}.zip) · [Firefox (.zip)]($URL/ai-job-hunter-extension-firefox-${VERSION}.zip) |
+          | 🧩 Browser extension | [Chrome (.zip)]($URL/ai-job-hunter-extension-chrome-${RAW}.zip) · [Firefox (.zip)]($URL/ai-job-hunter-extension-firefox-${RAW}.zip) |
 
           _Installed apps auto-update — no need to re-download for new versions. The browser extension installs from its .zip (load unpacked / store upload)._
           <!-- downloads:end -->
