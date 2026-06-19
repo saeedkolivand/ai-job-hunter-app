@@ -235,12 +235,15 @@ impl Scraper for GlassdoorScraper {
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
 
-        browser.close().await?;
+        let close_res = browser.close().await;
         let _ = handle.await;
-
+        // The first-page navigation error is the root cause — always prefer it
+        // over a teardown failure so callers see the real error, not a
+        // secondary browser-close error that obscures what actually went wrong.
         if let Some(e) = first_page_err {
             return Err(e);
         }
+        close_res?;
 
         Ok(results)
     }
