@@ -3,6 +3,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::credentials::CredentialStore;
+use crate::db::new_job_id;
 use crate::documents::{embedding_space_changed, DocumentStore, EmbeddingConfig};
 use crate::events::{emit_event, JobEvent, JOBS_EVENT};
 use crate::ipc_contracts::ai::AiEmbedRequest;
@@ -13,15 +14,6 @@ use super::ai_provider::{
     emit_stream_error, ollama, resolve, resolve_by_name, AiGenerateRequest, ProviderId,
 };
 
-fn uuid_v4() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    format!("job-{t:x}")
-}
-
 /// Stream an AI generation from the explicitly-selected provider.
 ///
 /// The provider is **required and validated** — unknown/missing providers and
@@ -29,7 +21,7 @@ fn uuid_v4() -> String {
 /// fallback to Ollama.
 #[tauri::command]
 pub async fn ai_generate(app: AppHandle, req: AiGenerateRequest) -> Value {
-    let job_id = uuid_v4();
+    let job_id = new_job_id();
     crate::commands::jobs::job_start(&app, &job_id, "ai.generate");
 
     let fail = |app: &AppHandle, job_id: &str, msg: String| -> Value {
@@ -226,7 +218,7 @@ pub async fn ai_research_company(
 
 #[tauri::command]
 pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
-    let job_id = uuid_v4();
+    let job_id = new_job_id();
     crate::commands::jobs::job_start(&app, &job_id, "ai.pull_model");
 
     let job_id_clone = job_id.clone();
@@ -376,7 +368,7 @@ pub async fn ai_set_embedding_config(
 /// job id. Clears the live posting embedding cache so stale-space entries go too.
 #[tauri::command]
 pub async fn ai_reembed_all(app: AppHandle) -> Value {
-    let job_id = uuid_v4();
+    let job_id = new_job_id();
     crate::commands::jobs::job_start(&app, &job_id, "ai.reembed");
 
     let job_id_clone = job_id.clone();
@@ -447,7 +439,7 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
                     r#type: "job.stream".to_string(),
                     job_id: job_id_clone.clone(),
                     data: Some(json!({ "done": done, "failed": failed, "total": total })),
-                    ts: crate::documents::now_ms() as i64,
+                    ts: crate::db::now_ms() as i64,
                 },
             );
         }

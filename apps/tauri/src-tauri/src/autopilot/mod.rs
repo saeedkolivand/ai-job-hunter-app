@@ -6,11 +6,11 @@ use parking_lot::Mutex;
 /// (`#[serde(rename_all = "camelCase")]`).
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::db::now_ms;
 use crate::error::AppResult;
 
 // ── Data model ────────────────────────────────────────────────────────────────
@@ -388,13 +388,6 @@ impl AutopilotStore {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
 
 fn str_field(v: &serde_json::Value, key: &str) -> String {
     v.get(key)

@@ -1,3 +1,4 @@
+use crate::db::{new_job_id, now_ms};
 use crate::postings::{InteractionRecord, InteractionStore, PostingsCache};
 use crate::scraping::{BoardSearchInput, ScraperEngine};
 use parking_lot::Mutex;
@@ -40,26 +41,9 @@ pub struct ScrapeListFilter {
     pub interaction_type: Option<String>,
 }
 
-fn now_ms() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
-
-fn uuid_v4() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    format!("job-{t:x}")
-}
-
 #[tauri::command]
 pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
-    let job_id = uuid_v4();
+    let job_id = new_job_id();
 
     // Anti-abuse: rate + concurrency cap. Rejected before a job is created so a
     // looping/XSS'd renderer can't drive unbounded scrape traffic. The guard is
@@ -209,7 +193,7 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
         Err(e) => return json!({ "error": e.to_string() }),
     };
 
-    let job_id = uuid_v4();
+    let job_id = new_job_id();
     crate::commands::jobs::job_start(&app, &job_id, "scrape.url");
 
     let app_clone = app.clone();

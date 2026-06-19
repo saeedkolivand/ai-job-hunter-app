@@ -6,6 +6,7 @@ import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
 import { useImportWithOcr } from '@/hooks/use-import-with-ocr';
+import { isRawDoc, normalise } from '@/lib/doc-record';
 import { exportTXT } from '@/lib/generate';
 import { useAppClient } from '@/providers/AppClientProvider';
 import {
@@ -19,28 +20,6 @@ import {
 import { isProfileAuthError, isSupportedProfileUrl } from '../profile-url';
 
 const MAX_BYTES = 25 * 1024 * 1024;
-
-type RawDoc = Omit<DocumentRecord, 'id' | 'importedAt'> & {
-  _id: string;
-  createdAt: number;
-  name?: string;
-  text?: string; // returned by the backend but not in the shared TS type
-};
-
-function normalise(raw: RawDoc): DocumentRecord {
-  return {
-    ...raw,
-    id: raw._id,
-    importedAt: raw.createdAt,
-    source:
-      raw.source ??
-      (raw.name?.endsWith('.pdf') ? 'pdf' : raw.name?.endsWith('.docx') ? 'docx' : 'txt'),
-  };
-}
-
-function isRawDoc(x: unknown): x is RawDoc {
-  return typeof x === 'object' && x !== null && typeof (x as { _id?: unknown })._id === 'string';
-}
 
 interface Params {
   value: string;

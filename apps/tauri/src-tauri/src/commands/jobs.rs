@@ -21,7 +21,7 @@ fn emit_job_event(app: &AppHandle, kind: &str, job_id: &str, data: Option<Value>
             r#type: kind.to_string(),
             job_id: job_id.to_string(),
             data,
-            ts: crate::documents::now_ms() as i64,
+            ts: crate::db::now_ms() as i64,
         },
     );
 }

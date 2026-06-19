@@ -1,13 +1,12 @@
 use parking_lot::Mutex;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::data_store::DataStore;
-use crate::db::{run_migrations, ts_from_db, ts_to_db, Migration};
+use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::{AppError, AppResult};
 
 /// One answered application question, stored on the application record.
@@ -504,13 +503,6 @@ fn merge_application(
         },
         application_id: incoming.application_id.or(existing.application_id),
     }
-}
-
-pub fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
 }
 
 pub fn make_generation_id() -> String {

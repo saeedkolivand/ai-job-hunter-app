@@ -467,7 +467,7 @@ pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> AppResult<()> {
                     data: Some(
                         json!({ "status": status, "p": p, "completed": completed, "total": total, "digest": digest }),
                     ),
-                    ts: crate::documents::now_ms() as i64,
+                    ts: crate::db::now_ms() as i64,
                 },
             );
             if status == "success" {
