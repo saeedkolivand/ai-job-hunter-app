@@ -49,7 +49,7 @@ code{font-family:var(--mono); font-size:.8em; background:#e6dcc4; padding:1px 6p
 
 .wrap{max-width:900px; margin:0 auto; padding:56px 22px 90px}
 
-.top-back{display:inline-block; font-family:var(--mono); font-size:12px; color:var(--muted); border:none; margin-bottom:30px}
+.top-back{display:inline-block; font-family:var(--mono); font-size:13px; color:var(--muted); border:none; margin-bottom:30px}
 .top-back:hover{color:var(--ink)}
 
 h1{font-family:var(--impact); text-transform:uppercase; font-size:clamp(40px,10vw,76px); line-height:.92; margin:0 0 10px; letter-spacing:1px}
@@ -60,7 +60,7 @@ h1{font-family:var(--impact); text-transform:uppercase; font-size:clamp(40px,10v
 .count b{color:var(--ink)}
 
 h2.section{font-family:var(--impact); text-transform:uppercase; font-size:clamp(24px,5.4vw,38px); letter-spacing:.5px; margin:0 0 4px; line-height:1}
-.section-sub{font-family:var(--scrawl); font-size:clamp(14px,3vw,18px); color:var(--muted); margin:0 0 22px}
+.section-sub{font-family:var(--scrawl); font-size:clamp(15px,3vw,18px); color:var(--muted); margin:0 0 22px}
 
 hr.scrawl{border:none; height:14px; margin:54px auto; width:200px;
   background:no-repeat center/contain url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 14'><path d='M4 8 q12 -8 24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0' fill='none' stroke='%231c1812' stroke-width='2.6' stroke-linecap='round'/></svg>")}
@@ -92,10 +92,10 @@ hr.scrawl{border:none; height:14px; margin:54px auto; width:200px;
 }
 .route .placeholder{font-family:var(--scrawl); color:var(--muted)}
 .route h3{font-family:var(--impact); text-transform:uppercase; letter-spacing:.5px; font-size:18px; margin:0 0 2px}
-.route .area{font-family:var(--mono); font-size:12px; color:var(--muted); margin:0 0 14px}
+.route .area{font-family:var(--mono); font-size:13px; color:var(--muted); margin:0 0 14px}
 .flow{list-style:none; margin:0; padding:0}
 .flow li{display:flex; gap:10px; align-items:baseline; margin:0 0 9px; line-height:1.4}
-.flow .lbl{font-family:var(--mono); font-size:10.5px; color:var(--muted); min-width:78px; flex:0 0 78px; text-transform:uppercase; padding-top:2px}
+.flow .lbl{font-family:var(--mono); font-size:12.5px; color:var(--muted); min-width:78px; flex:0 0 78px; text-transform:uppercase; padding-top:2px}
 .flow .who{font-family:var(--hand); font-size:16px}
 .flow .who b{font-family:var(--mono); font-size:13px; background:#e6dcc4; padding:1px 6px; border-radius:4px; color:var(--ink)}
 .flow .who .crit{background:#f3d9d4}
@@ -105,8 +105,8 @@ hr.scrawl{border:none; height:14px; margin:54px auto; width:200px;
 /* ---------- fleet map ---------- */
 .map-shell{overflow-x:auto; -webkit-overflow-scrolling:touch}
 .fleet-svg{display:block; width:100%; height:auto; min-width:680px; font-family:var(--mono)}
-.fleet-svg text{fill:var(--ink); font-size:11px}
-.fleet-svg .domain-lbl{font-family:var(--scrawl); font-size:12px; fill:var(--muted)}
+.fleet-svg text{fill:var(--ink); font-size:12px}
+.fleet-svg .domain-lbl{font-family:var(--scrawl); font-size:15px; fill:var(--muted)}
 .fleet-svg .node{cursor:pointer}
 .fleet-svg .node rect{fill:#fffef8; stroke:var(--ink); stroke-width:2.4; transition:fill .15s}
 .fleet-svg .node.author rect{fill:#eef3e9}
@@ -116,8 +116,8 @@ hr.scrawl{border:none; height:14px; margin:54px auto; width:200px;
 .fleet-svg .link{fill:none; stroke:var(--ink); stroke-width:2.2; stroke-linecap:round; opacity:.32; transition:opacity .15s, stroke .15s}
 .fleet-svg .link.risk{stroke:var(--red)}
 .fleet-svg .link.lit{opacity:1; stroke-width:3}
-.map-hint{font-family:var(--mono); font-size:12px; color:var(--muted); margin:10px 0 0; text-align:center}
-.legend{display:flex; flex-wrap:wrap; gap:8px 18px; justify-content:center; font-family:var(--mono); font-size:11px; color:var(--muted); margin:14px 0 0}
+.map-hint{font-family:var(--mono); font-size:13px; color:var(--muted); margin:10px 0 0; text-align:center}
+.legend{display:flex; flex-wrap:wrap; gap:8px 18px; justify-content:center; font-family:var(--mono); font-size:12px; color:var(--muted); margin:14px 0 0}
 .legend span{display:inline-flex; align-items:center; gap:6px}
 .sw{width:18px; height:0; border-top:3px solid var(--ink); display:inline-block}
 .sw.risk{border-color:var(--red)}
@@ -145,13 +145,13 @@ hr.scrawl{border:none; height:14px; margin:54px auto; width:200px;
 }
 .agent:nth-child(odd){transform:rotate(-.3deg)} .agent:nth-child(even){transform:rotate(.3deg)}
 .agent .name{font-family:var(--mono); font-weight:700; font-size:14px; color:var(--ink); word-break:break-word}
-.agent .role-pill{font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.5px; padding:1px 7px; border-radius:6px; align-self:flex-start; border:2px solid var(--ink)}
+.agent .role-pill{font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.5px; padding:1px 7px; border-radius:6px; align-self:flex-start; border:2px solid var(--ink)}
 .role-author{background:#eef3e9} .role-critic{background:#fbeae7} .role-cross{background:#e6dcc4}
 .agent .role{font-family:var(--hand); font-size:15px; line-height:1.35}
-.agent .pair{font-family:var(--mono); font-size:11px; color:var(--muted); line-height:1.5}
+.agent .pair{font-family:var(--mono); font-size:12px; color:var(--muted); line-height:1.5}
 .agent .pair b{color:var(--ink)}
-.agent .paths{font-family:var(--mono); font-size:10.5px; color:var(--muted); line-height:1.5; word-break:break-word}
-.agent .copy-cmd{margin-top:auto; font-family:var(--mono); font-size:11px; line-height:1.5; background:#e6dcc4; border-radius:8px; padding:7px 9px; border:2px dashed rgba(28,24,18,.35)}
+.agent .paths{font-family:var(--mono); font-size:12px; color:var(--muted); line-height:1.5; word-break:break-word}
+.agent .copy-cmd{margin-top:auto; font-family:var(--mono); font-size:13px; line-height:1.5; background:#e6dcc4; border-radius:8px; padding:7px 9px; border:2px dashed rgba(28,24,18,.35)}
 
 /* ---------- pipeline walkthrough ---------- */
 .pipeline{display:flex; flex-direction:column; gap:0}
@@ -160,8 +160,8 @@ hr.scrawl{border:none; height:14px; margin:54px auto; width:200px;
 .step .num{flex:0 0 36px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; font-family:var(--impact); font-size:18px; background:var(--ink); color:var(--paper); border-radius:50% 48% 52% 50%; z-index:1}
 .step .body{flex:1 1 auto; padding-top:3px}
 .step h3{font-family:var(--mono); font-weight:700; font-size:14px; margin:0 0 3px}
-.step h3 .tag{font-family:var(--mono); font-size:11px; color:var(--muted); font-weight:400; margin-left:2px; background:none}
-.step p{margin:0; font-size:15.5px; line-height:1.45}
+.step h3 .tag{font-family:var(--mono); font-size:12px; color:var(--muted); font-weight:400; margin-left:2px; background:none}
+.step p{margin:0; font-size:16px; line-height:1.45}
 .step p .a{font-family:var(--mono); font-size:12px; background:#e6dcc4; padding:1px 5px; border-radius:4px}
 
 /* ---------- big work-together prompt ---------- */
@@ -190,15 +190,15 @@ hr.scrawl{border:none; height:14px; margin:54px auto; width:200px;
 .vcol.with{background:#fffef8; transform:rotate(.3deg)}
 .vcol h3{font-family:var(--impact); text-transform:uppercase; letter-spacing:.5px; font-size:19px; margin:0 0 12px}
 .dim{margin:0 0 13px}
-.dim .k{font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); display:block; margin:0 0 1px}
+.dim .k{font-family:var(--mono); font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); display:block; margin:0 0 1px}
 .dim .v{font-family:var(--hand); font-size:16px; line-height:1.35}
 .dim .v b{font-family:var(--mono); font-size:13px}
-.illustrative{font-family:var(--mono); font-size:11px; color:var(--muted); margin:14px 0 0; line-height:1.7; border-top:2px dashed rgba(28,24,18,.25); padding-top:12px}
+.illustrative{font-family:var(--mono); font-size:12px; color:var(--muted); margin:14px 0 0; line-height:1.7; border-top:2px dashed rgba(28,24,18,.25); padding-top:12px}
 .illustrative b{color:var(--ink)}
 
 footer{margin-top:64px; text-align:center}
-.byline{font-family:var(--scrawl); font-size:14px; color:var(--muted)}
-.foot-links{font-family:var(--mono); font-size:12px; color:var(--muted); margin-top:10px}
+.byline{font-family:var(--scrawl); font-size:15px; color:var(--muted)}
+.foot-links{font-family:var(--mono); font-size:13px; color:var(--muted); margin-top:10px}
 .foot-links a{color:var(--muted); border:none}
 .foot-links a:hover{color:var(--ink)}
 
@@ -257,15 +257,15 @@ footer{margin-top:64px; text-align:center}
       <text class="domain-lbl" x="400" y="20">CRITICS · audit</text>
 
       <!-- author↔critic links (drawn first so nodes sit on top). data-pair lights on hover -->
-      <path class="link" data-pair="rust"   style="animation-delay:0s"    d="M210 60 C 300 60, 300 60, 400 60" />
-      <path class="link" data-pair="front"  style="animation-delay:.05s"  d="M210 105 C 300 105, 300 95, 400 105" />
-      <path class="link" data-pair="front"  style="animation-delay:.1s"   d="M210 105 C 300 130, 300 150, 400 150" />
-      <path class="link" data-pair="job"    style="animation-delay:.15s"  d="M210 195 C 300 195, 300 195, 400 195" />
-      <path class="link" data-pair="ai"     style="animation-delay:.2s"   d="M210 240 C 300 240, 300 240, 400 240" />
-      <path class="link" data-pair="scrape" style="animation-delay:.25s"  d="M210 285 C 300 285, 300 285, 400 285" />
-      <path class="link" data-pair="export" style="animation-delay:.3s"   d="M210 330 C 300 330, 300 330, 400 330" />
-      <path class="link" data-pair="test"   style="animation-delay:.35s"  d="M210 375 C 300 375, 300 375, 400 375" />
-      <path class="link" data-pair="cq"     style="animation-delay:.4s"   d="M210 420 C 300 420, 300 420, 400 420" />
+      <path class="link" data-pair="rust"   style="animation-delay:0s"    d="M220 60 C 300 60, 300 60, 400 60" />
+      <path class="link" data-pair="front"  style="animation-delay:.05s"  d="M220 105 C 300 105, 300 95, 400 105" />
+      <path class="link" data-pair="front"  style="animation-delay:.1s"   d="M220 105 C 300 130, 300 150, 400 150" />
+      <path class="link" data-pair="job"    style="animation-delay:.15s"  d="M220 195 C 300 195, 300 195, 400 195" />
+      <path class="link" data-pair="ai"     style="animation-delay:.2s"   d="M220 240 C 300 240, 300 240, 400 240" />
+      <path class="link" data-pair="scrape" style="animation-delay:.25s"  d="M220 285 C 300 285, 300 285, 400 285" />
+      <path class="link" data-pair="export" style="animation-delay:.3s"   d="M220 330 C 300 330, 300 330, 400 330" />
+      <path class="link" data-pair="test"   style="animation-delay:.35s"  d="M220 375 C 300 375, 300 375, 400 375" />
+      <path class="link" data-pair="cq"     style="animation-delay:.4s"   d="M220 420 C 300 420, 300 420, 400 420" />
       <!-- risk secondaries — security + performance reach across to many authors (red) -->
       <path class="link risk" data-pair="sec"  style="animation-delay:.45s" d="M470 425 C 360 200, 300 80, 215 62" />
       <path class="link risk" data-pair="sec"  style="animation-delay:.5s"  d="M470 425 C 380 320, 320 250, 215 240" />
@@ -274,14 +274,14 @@ footer{margin-top:64px; text-align:center}
       <path class="link risk" data-pair="perf" style="animation-delay:.65s" d="M610 425 C 520 360, 360 295, 215 285" />
 
       <!-- AUTHOR nodes -->
-      <g class="node author" data-pair="rust"   tabindex="0" role="button" aria-label="rust-backend-author (author)"><rect x="30"  y="46"  width="180" height="28" rx="6"/><text x="40" y="64">rust-backend-author</text></g>
-      <g class="node author" data-pair="front"  tabindex="0" role="button" aria-label="frontend-author (author)"><rect x="30"  y="91"  width="180" height="28" rx="6"/><text x="40" y="109">frontend-author</text></g>
-      <g class="node author" data-pair="job"    tabindex="0" role="button" aria-label="job-match-author (author)"><rect x="30"  y="181" width="180" height="28" rx="6"/><text x="40" y="199">job-match-author</text></g>
-      <g class="node author" data-pair="ai"     tabindex="0" role="button" aria-label="ai-provider-author (author)"><rect x="30"  y="226" width="180" height="28" rx="6"/><text x="40" y="244">ai-provider-author</text></g>
-      <g class="node author" data-pair="scrape" tabindex="0" role="button" aria-label="scraping-applier-author (author)"><rect x="30"  y="271" width="180" height="28" rx="6"/><text x="40" y="289">scraping-applier-author</text></g>
-      <g class="node author" data-pair="export" tabindex="0" role="button" aria-label="pdf-docx-generator (author)"><rect x="30"  y="316" width="180" height="28" rx="6"/><text x="40" y="334">pdf-docx-generator</text></g>
-      <g class="node author" data-pair="test"   tabindex="0" role="button" aria-label="test-author (author)"><rect x="30"  y="361" width="180" height="28" rx="6"/><text x="40" y="379">test-author</text></g>
-      <g class="node author" data-pair="cq"     tabindex="0" role="button" aria-label="code-quality-author (author)"><rect x="30"  y="406" width="180" height="28" rx="6"/><text x="40" y="424">code-quality-author</text></g>
+      <g class="node author" data-pair="rust"   tabindex="0" role="button" aria-label="rust-backend-author (author)"><rect x="30"  y="46"  width="190" height="28" rx="6"/><text x="40" y="64">rust-backend-author</text></g>
+      <g class="node author" data-pair="front"  tabindex="0" role="button" aria-label="frontend-author (author)"><rect x="30"  y="91"  width="190" height="28" rx="6"/><text x="40" y="109">frontend-author</text></g>
+      <g class="node author" data-pair="job"    tabindex="0" role="button" aria-label="job-match-author (author)"><rect x="30"  y="181" width="190" height="28" rx="6"/><text x="40" y="199">job-match-author</text></g>
+      <g class="node author" data-pair="ai"     tabindex="0" role="button" aria-label="ai-provider-author (author)"><rect x="30"  y="226" width="190" height="28" rx="6"/><text x="40" y="244">ai-provider-author</text></g>
+      <g class="node author" data-pair="scrape" tabindex="0" role="button" aria-label="scraping-applier-author (author)"><rect x="30"  y="271" width="190" height="28" rx="6"/><text x="40" y="289">scraping-applier-author</text></g>
+      <g class="node author" data-pair="export" tabindex="0" role="button" aria-label="pdf-docx-generator (author)"><rect x="30"  y="316" width="190" height="28" rx="6"/><text x="40" y="334">pdf-docx-generator</text></g>
+      <g class="node author" data-pair="test"   tabindex="0" role="button" aria-label="test-author (author)"><rect x="30"  y="361" width="190" height="28" rx="6"/><text x="40" y="379">test-author</text></g>
+      <g class="node author" data-pair="cq"     tabindex="0" role="button" aria-label="code-quality-author (author)"><rect x="30"  y="406" width="190" height="28" rx="6"/><text x="40" y="424">code-quality-author</text></g>
 
       <!-- CRITIC nodes -->
       <g class="node critic" data-pair="rust"   tabindex="0" role="button" aria-label="rust-backend-architect (critic)"><rect x="400" y="46"  width="200" height="28" rx="6"/><text x="410" y="64">rust-backend-architect</text></g>

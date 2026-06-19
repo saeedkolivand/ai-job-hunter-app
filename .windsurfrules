@@ -97,7 +97,7 @@ Renderer → Tauri core: `AppClient` context → service hooks → `invoke`/`lis
 
 **9. Data fetching** — React Query via service hooks only. No `useState + useEffect` for remote data.
 
-**10. Package boundaries** — workspace packages are exactly `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`. The renderer reaches the Rust core only via IPC service hooks.
+**10. Package boundaries** — workspace packages are exactly `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`. The renderer imports `@ajh/ui` + `@ajh/translations` directly (per rules 2 & 4) and reaches the Rust core only via IPC service hooks.
 
 **11. New IPC capability** — `packages/shared/src/ipc/contracts.ts` → `apps/tauri/src-tauri/src/commands.rs` → `apps/tauri/src/tauri-client.ts` → `apps/tauri/src/renderer/services/` → `services/query-client.ts` (all 5 steps required).
 

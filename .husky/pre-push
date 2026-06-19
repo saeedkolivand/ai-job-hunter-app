@@ -155,10 +155,10 @@ fi
 
 # ── Agent-system drift ─────────────────────────────────────────────────────────
 # Keeps the .claude/ agent fleet + its docs + the other AI-tool configs in sync.
-# Validates whole-system state (not diff-based) and is a cheap pure-node check, so
-# run it unconditionally as a backstop.
+# Validates whole-system state (not diff-based), so run it unconditionally as a
+# backstop. Invoke node directly (not `pnpm run`) to skip pnpm's startup overhead.
 echo "▶ Checking agent-system drift..."
-pnpm check:agent-system
+node scripts/check-agent-system.mjs
 
 # ── Rust gate (CI `rust` filter) ───────────────────────────────────────────────
 if [ -n "$RUST" ]; then

@@ -16,4 +16,4 @@ Prepare release: **$ARGUMENTS**
    - Conventional commits since last release are well-formed (commitlint) and the implied bump (`feat`→minor, `fix`/`perf`→patch, `BREAKING CHANGE`→major) is correct.
    - Version files are in sync (`scripts/sync-tauri-version.cjs`) — a mismatch is CRITICAL.
    - Changelog/notes accurate; updater manifest (`latest.json`) + signing integrity (defer the security lens to `tauri-security-reviewer`).
-4. **Do NOT** manually tag or bump — semantic-release runs on push to `main`. Report blockers; fix commit/version issues via a PR.
+4. **Do NOT** manually tag or bump — releases are **manually dispatched** (Actions → "🚀 Release"); semantic-release then derives the bump from the commit types. Nothing runs automatically on push to `main`. Report blockers; fix commit/version issues via a PR.
