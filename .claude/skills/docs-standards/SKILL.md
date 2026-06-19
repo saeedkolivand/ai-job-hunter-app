@@ -26,3 +26,11 @@ Run `graphify update .` (AST-only, no API cost) so the graph stays current.
 ## Lessons graduation
 
 When an **Architecture-decision** lesson becomes an ADR, **remove it from `lessons.jsonl`** — the ADR is then its single source.
+
+## External standards & best-practices (verified 2026-06-19)
+
+- **Diátaxis** — keep the four types distinct, never mixed in one page: **Tutorial** (learning), **How-to** (task), **Reference** (lookup/spec), **Explanation** (the "why"). Axes: action↔cognition, acquisition↔application. https://diataxis.fr/
+- **Docs-as-code** — docs in-repo, versioned, reviewed in PRs, built/linted in CI. https://www.writethedocs.org/guide/docs-as-code/
+- **Thin-pointer / no-drift** — `docs/knowledge/` points at the owning symbol/file; never copy code literals (they rot). After code changes, re-sync docs + run `graphify update .`.
+
+**Common mistakes:** a "reference" page drifting into tutorial prose (split it — one need per page); pasting code values/signatures into docs instead of pointing at the source (guaranteed drift).
