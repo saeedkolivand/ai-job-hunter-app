@@ -38,24 +38,35 @@ impl RateLimiter {
     }
 
     /// Wait if necessary to respect rate limits.
+    ///
+    /// Re-validates the window under the lock after each sleep so that multiple
+    /// concurrent waiters (thundering herd) cannot all pass simultaneously.
     pub async fn wait_for_slot(&self) {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-        let mut requests = self.requests.lock().await;
+        loop {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64;
+            let mut requests = self.requests.lock().await;
 
-        // Remove requests outside the current window
-        requests.retain(|&t| now - t < self.options.window_ms);
+            // Remove requests outside the current window.
+            requests.retain(|&t| now - t < self.options.window_ms);
 
-        if requests.len() >= self.options.max_requests {
-            if let Some(&oldest) = requests.first() {
-                let wait_time = oldest + self.options.window_ms - now;
-                if wait_time > 0 {
-                    drop(requests);
-                    sleep(Duration::from_millis(wait_time)).await;
-                }
+            if requests.len() < self.options.max_requests {
+                // Slot is free — return; caller will record after the request.
+                return;
             }
+
+            // Window is full: compute how long until the oldest slot expires,
+            // then release the lock and sleep before re-checking.
+            let wait_ms = match requests.first() {
+                Some(&oldest) => oldest + self.options.window_ms - now,
+                None => return, // empty after retain — should not happen, but be safe
+            };
+            drop(requests);
+            sleep(Duration::from_millis(wait_ms)).await;
+            // Loop and re-check under the lock — another waiter may have filled
+            // the slot while we were sleeping.
         }
     }
 
@@ -76,9 +87,13 @@ impl RateLimiter {
     }
 }
 
-/// Global rate limiter instance for LinkedIn requests.
-pub fn linkedin_rate_limiter() -> RateLimiter {
-    RateLimiter::new(RateLimiterOptions::default())
+/// Process-wide LinkedIn rate limiter — shared across all concurrent scrapes.
+static LINKEDIN_RATE_LIMITER: std::sync::LazyLock<RateLimiter> =
+    std::sync::LazyLock::new(|| RateLimiter::new(RateLimiterOptions::default()));
+
+/// Returns a reference to the process-wide LinkedIn rate limiter.
+pub fn linkedin_rate_limiter() -> &'static RateLimiter {
+    &LINKEDIN_RATE_LIMITER
 }
 
 #[cfg(test)]

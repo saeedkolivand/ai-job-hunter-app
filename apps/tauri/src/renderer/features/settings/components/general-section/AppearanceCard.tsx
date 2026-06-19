@@ -1,5 +1,5 @@
 import { Monitor, Palette, Type } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 import {
@@ -14,6 +14,7 @@ import {
 } from '@ajh/ui';
 
 import { ACCENTS, SCHEMES } from '@/constants/appearance';
+import { makeRovingTabindex } from '@/hooks/use-roving-tabindex';
 import { useSystemAccent } from '@/services';
 
 // Each button previews its own size via the text utility it sets.
@@ -30,11 +31,32 @@ export function AppearanceCard() {
   // failure `supported` is false and the System chip is hidden (no error UI).
   const { data: sysAccent } = useSystemAccent();
 
+  const schemeRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const textSizeRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const accentRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
   const update = (patch: Partial<ThemePrefs>) => {
     const next = { ...prefs, ...patch };
     setPrefs(next);
     applyThemeAnimated(next);
   };
+
+  // Build accent items list for roving tabindex (must match render order)
+  const accentItems = [
+    'default' as const,
+    ...(sysAccent?.supported ? ['system' as const] : []),
+    ...ACCENTS.map((a) => a.id),
+  ];
+  const currentAccentKey =
+    prefs.accentSource === 'default'
+      ? ('default' as const)
+      : prefs.accentSource === 'system'
+        ? ('system' as const)
+        : (ACCENTS.find((a) => a.color.toLowerCase() === prefs.accentColor?.toLowerCase())?.id ??
+          'default');
+
+  const schemeIds = SCHEMES.map((s) => s.id);
+  const scaleIds = SCALES.map((s) => s.id);
 
   return (
     <SettingsSection icon={Palette} label={t('settings.appearance.title')}>
@@ -47,14 +69,24 @@ export function AppearanceCard() {
             role="radiogroup"
             aria-label={t('settings.appearance.scheme')}
             className="grid grid-cols-1 gap-2 @xs:grid-cols-3"
+            onKeyDown={makeRovingTabindex(
+              schemeIds,
+              prefs.scheme,
+              (v) => update({ scheme: v }),
+              schemeRefs
+            )}
           >
-            {SCHEMES.map(({ id, icon: Icon, labelKey }) => {
+            {SCHEMES.map(({ id, icon: Icon, labelKey }, i) => {
               const active = prefs.scheme === id;
               return (
                 <Button
                   key={id}
+                  ref={(el) => {
+                    schemeRefs.current[i] = el;
+                  }}
                   role="radio"
                   aria-checked={active}
+                  tabIndex={active ? 0 : -1}
                   onClick={() => update({ scheme: id })}
                   className={cn(
                     'flex h-auto flex-col items-center gap-1.5 rounded-xl border px-3 py-3 text-xs font-medium transition-all focus-visible:ring-2 focus-visible:ring-brand/50',
@@ -79,11 +111,34 @@ export function AppearanceCard() {
             role="radiogroup"
             aria-label={t('settings.appearance.accent')}
             className="flex flex-wrap items-center gap-2"
+            onKeyDown={makeRovingTabindex(
+              accentItems,
+              currentAccentKey,
+              (v) => {
+                if (v === 'default') update({ accentSource: 'default', accentColor: undefined });
+                else if (v === 'system')
+                  update({ accentSource: 'system', accentColor: sysAccent?.color ?? undefined });
+                else {
+                  const accent = ACCENTS.find((a) => a.id === v);
+                  if (accent)
+                    update({
+                      accentSource: 'custom',
+                      accentColor: accent.color,
+                      accentColor2: accent.color2,
+                    });
+                }
+              },
+              accentRefs
+            )}
           >
             <Button
+              ref={(el) => {
+                accentRefs.current[0] = el;
+              }}
               variant="unstyled"
               role="radio"
               aria-checked={prefs.accentSource === 'default'}
+              tabIndex={prefs.accentSource === 'default' ? 0 : -1}
               aria-label={t('settings.appearance.accentDefault')}
               title={t('settings.appearance.accentDefault')}
               onClick={() => update({ accentSource: 'default', accentColor: undefined })}
@@ -109,9 +164,13 @@ export function AppearanceCard() {
             </Button>
             {sysAccent?.supported && (
               <Button
+                ref={(el) => {
+                  accentRefs.current[1] = el;
+                }}
                 variant="unstyled"
                 role="radio"
                 aria-checked={prefs.accentSource === 'system'}
+                tabIndex={prefs.accentSource === 'system' ? 0 : -1}
                 aria-label={t('settings.appearance.system')}
                 title={t('settings.appearance.system')}
                 onClick={() =>
@@ -128,16 +187,21 @@ export function AppearanceCard() {
                 {t('settings.appearance.system')}
               </Button>
             )}
-            {ACCENTS.map(({ id, color, color2, labelKey }) => {
+            {ACCENTS.map(({ id, color, color2, labelKey }, i) => {
               const active =
                 prefs.accentSource === 'custom' &&
                 prefs.accentColor?.toLowerCase() === color.toLowerCase();
+              const refIdx = (sysAccent?.supported ? 2 : 1) + i;
               return (
                 <Button
                   key={id}
+                  ref={(el) => {
+                    accentRefs.current[refIdx] = el;
+                  }}
                   variant="unstyled"
                   role="radio"
                   aria-checked={active}
+                  tabIndex={active ? 0 : -1}
                   aria-label={t(labelKey)}
                   title={t(labelKey)}
                   onClick={() =>
@@ -165,14 +229,24 @@ export function AppearanceCard() {
             role="radiogroup"
             aria-label={t('settings.appearance.textSize')}
             className="grid grid-cols-1 gap-2 @xs:grid-cols-3"
+            onKeyDown={makeRovingTabindex(
+              scaleIds,
+              prefs.textScale,
+              (v) => update({ textScale: v }),
+              textSizeRefs
+            )}
           >
-            {SCALES.map(({ id, labelKey, size }) => {
+            {SCALES.map(({ id, labelKey, size }, i) => {
               const active = prefs.textScale === id;
               return (
                 <Button
                   key={id}
+                  ref={(el) => {
+                    textSizeRefs.current[i] = el;
+                  }}
                   role="radio"
                   aria-checked={active}
+                  tabIndex={active ? 0 : -1}
                   onClick={() => update({ textScale: id })}
                   className={cn(
                     'flex h-auto items-center justify-center rounded-xl border px-3 py-2.5 font-medium transition-all focus-visible:ring-2 focus-visible:ring-brand/50',

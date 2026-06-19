@@ -59,6 +59,8 @@ export function JobAdField({
         uploadText={uploadText}
         textareaHeight={140}
         showCheckmark
+        collapseLabel={t('common.collapse')}
+        expandLabel={t('common.expand')}
         headerAction={
           <Button
             variant="info"

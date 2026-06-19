@@ -358,9 +358,6 @@ importers:
       '@vitest/browser-playwright':
         specifier: ^4.1.9
         version: 4.1.9(playwright@1.60.0)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))(vitest@4.1.8)
-      eslint-plugin-storybook:
-        specifier: ^10.4.3
-        version: 10.4.3(eslint@10.4.1(jiti@2.7.0))(storybook@10.4.3(@testing-library/dom@10.4.1)(@types/react@19.2.17)(prettier@3.8.4)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@6.0.3)
       jsdom:
         specifier: ^26.1.0
         version: 26.1.0

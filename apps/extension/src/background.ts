@@ -14,7 +14,7 @@ import type { ExtensionImportRequest } from '@ajh/shared';
 
 import { BridgeClient } from './lib/bridge';
 import type { ConnectionStatus, PopupRequest, PopupResponse } from './lib/messages';
-import { clearToken, getToken, setToken } from './lib/storage';
+import { clearToken, getToken, looksLikeToken, setToken } from './lib/storage';
 
 /** Lazily-built, worker-lifetime-scoped client. Recreated after eviction. */
 let client: BridgeClient | null = null;
@@ -127,6 +127,13 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
         return { ok: true, kind: 'status', status };
       }
       case 'setToken': {
+        if (!looksLikeToken(req.token)) {
+          return {
+            ok: false,
+            error:
+              'Invalid token format. Paste the full 64-character hex token from the desktop app.',
+          };
+        }
         await setToken(req.token);
         // Reset any bad-token block so the bridge will attempt auth with the new token.
         getClient().resetForNewToken();
