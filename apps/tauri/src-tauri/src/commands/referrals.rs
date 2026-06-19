@@ -1,8 +1,9 @@
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+use crate::db::now_ms;
 use crate::ipc_contracts::referrals::ReferralUpsertRequest;
-use crate::referrals::{make_referral_id, now_ms, ReferralContact, ReferralStore};
+use crate::referrals::{make_referral_id, ReferralContact, ReferralStore};
 
 #[tauri::command]
 pub async fn referrals_list(app: AppHandle, job_url: Option<String>) -> Value {

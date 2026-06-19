@@ -20,7 +20,7 @@ interface ExportMeta {
   targetLanguage?: string;
 }
 
-interface BaseExportRequest {
+export interface BaseExportRequest {
   text: string;
   format: 'docx' | 'pdf' | 'txt';
   documentType: 'resume' | 'cover-letter';

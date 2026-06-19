@@ -13,20 +13,13 @@ use crate::applications::ApplicationStore;
 use crate::autopilot::AutopilotStore;
 use crate::contact_profile::ContactProfileStore;
 use crate::data_store::DataStore;
+use crate::db::now_ms;
 use crate::documents::DocumentStore;
 use crate::job_preferences::JobPreferencesStore;
 use crate::postings::{InteractionRecord, InteractionStore};
 use crate::referrals::ReferralStore;
 
 const BUNDLE_VERSION: u32 = 1;
-
-fn now_ms() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
 
 fn date_stamp() -> String {
     // YYYY-MM-DD from the system clock (UTC-ish, good enough for a filename).

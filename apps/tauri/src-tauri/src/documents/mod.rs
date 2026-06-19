@@ -9,7 +9,6 @@ use parking_lot::Mutex;
 /// Ollama is not running.
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -17,7 +16,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::commands::ai_provider::{EmbeddingSpace, EmbeddingVector, ProviderId};
 use crate::data_store::DataStore;
-use crate::db::{column_exists, run_migrations, ts_from_db, ts_to_db, Migration};
+use crate::db::{column_exists, now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::AppResult;
 
 pub mod keywords;
@@ -1025,13 +1024,6 @@ fn ttl_cutoff_ms() -> i64 {
         Some(ttl) => ts_to_db(now_ms()).saturating_sub(ttl.saturating_mul(1000)),
         None => i64::MIN,
     }
-}
-
-pub fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
 }
 
 pub fn make_doc_id() -> String {

@@ -11,12 +11,9 @@ use serde_json::{json, Value};
 use tauri::AppHandle;
 
 use crate::commands::ai_provider::{emit_stream_error, resolve, AiGenerateRequest, ProviderId};
+use crate::db::new_job_id;
 use crate::error::AppResult;
 use crate::pipeline::{Pipeline, Stage};
-
-fn new_job_id() -> String {
-    format!("job-{}", uuid::Uuid::new_v4())
-}
 
 struct GenerationContext {
     app: AppHandle,
