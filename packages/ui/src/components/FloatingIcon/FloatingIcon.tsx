@@ -2,6 +2,8 @@ import type { LucideIcon } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { ReactNode } from 'react';
 
+import { transition } from '../../lib/motion';
+
 interface FloatingIconProps {
   icon: LucideIcon;
   size?: number;
@@ -14,7 +16,7 @@ export function FloatingIcon({ icon: Icon, size = 24, children }: FloatingIconPr
       animate={{
         y: [0, -8, 0],
       }}
-      transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+      transition={transition.breathe}
       className="relative"
     >
       <div className="absolute inset-0 rounded-full bg-brand/20 blur-xl" />

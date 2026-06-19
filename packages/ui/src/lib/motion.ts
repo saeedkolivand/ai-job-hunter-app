@@ -46,6 +46,8 @@ export const duration = {
 // Pass directly: `transition={transition.normal}`
 
 export const transition = {
+  /** Zero-duration — immediate/instant state change with no visual transition. */
+  instant: { duration: 0 },
   fast: { duration: duration.fast, ease: ease.smooth },
   normal: { duration: duration.normal, ease: ease.smooth },
   relaxed: { duration: duration.relaxed, ease: ease.smooth },

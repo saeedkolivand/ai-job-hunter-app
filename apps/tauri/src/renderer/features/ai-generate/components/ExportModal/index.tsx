@@ -38,7 +38,12 @@ export function ExportModal({ open, onClose, meta, docType, onExport }: Props) {
   };
 
   return (
-    <ModalShell open={open} onClose={onClose} maxWidth="max-w-sm">
+    <ModalShell
+      open={open}
+      onClose={onClose}
+      maxWidth="max-w-sm"
+      ariaLabel={t('aiGenerate.exportTitle')}
+    >
       <div className="p-5">
         <div className="mb-1 flex items-center gap-2">
           <Download size={15} className="text-brand-soft" />
