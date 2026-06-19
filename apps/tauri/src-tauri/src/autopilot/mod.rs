@@ -162,7 +162,11 @@ impl AutopilotStore {
     pub fn list(&self) -> Vec<Autopilot> {
         let map = self.load();
         let mut items: Vec<Autopilot> = map.into_values().collect();
-        items.sort_by_key(|a| std::cmp::Reverse(a.created_at));
+        items.sort_by(|a, b| {
+            b.created_at
+                .cmp(&a.created_at)
+                .then_with(|| a.id.cmp(&b.id))
+        });
         items
     }
 
@@ -369,7 +373,11 @@ impl AutopilotStore {
     fn save(&self, map: HashMap<String, Autopilot>) {
         let list: Vec<&Autopilot> = {
             let mut v: Vec<&Autopilot> = map.values().collect();
-            v.sort_by_key(|a| std::cmp::Reverse(a.created_at));
+            v.sort_by(|a, b| {
+                b.created_at
+                    .cmp(&a.created_at)
+                    .then_with(|| a.id.cmp(&b.id))
+            });
             v
         };
         if let Ok(json) = serde_json::to_string_pretty(&list) {
