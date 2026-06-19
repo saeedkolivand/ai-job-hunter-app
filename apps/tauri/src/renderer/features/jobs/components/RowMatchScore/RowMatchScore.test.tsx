@@ -11,8 +11,7 @@
  *  - neither score nor pending → renders nothing
  */
 import { describe, expect, it, vi } from 'vitest';
-import { screen } from '@testing-library/dom';
-import { render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 import type { MatchScore } from '@ajh/shared';
 
@@ -103,6 +102,39 @@ describe('RowMatchScore — score state', () => {
     });
     expect(screen.getByText('High')).toBeInTheDocument();
     expect(container.querySelector('[aria-busy="true"]')).not.toBeInTheDocument();
+  });
+
+  it('renders the always-visible estimate label adjacent to the band', () => {
+    renderRow({ score: { ...BASE_SCORE, combined: 82 }, pending: false, hasResume: true });
+    // The "est." micro-label is the persistent estimate framing — present without
+    // any interaction. The i18n stub returns the key, so we assert on the key itself.
+    expect(screen.getByText('jobs.scoreEst')).toBeInTheDocument();
+  });
+
+  it('renders a guidance info trigger with the scoreGuidanceLabel aria-label', () => {
+    renderRow({ score: { ...BASE_SCORE, combined: 82 }, pending: false, hasResume: true });
+    // aria-label is distinct from the panel content — no duplicate-announcement.
+    expect(screen.getByRole('button', { name: 'jobs.scoreGuidanceLabel' })).toBeInTheDocument();
+  });
+
+  it('reveals guidance popover content when the trigger wrapper receives focus', () => {
+    // Popover is closed before interaction.
+    const { container } = renderRow({
+      score: { ...BASE_SCORE, combined: 82 },
+      pending: false,
+      hasResume: true,
+    });
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+    // HoverPopover opens on `focus` on its root wrapper div (container.firstChild).
+    // motion/react is shimmed synchronously in vitest.setup.ts, so the portalled
+    // panel is present in the DOM immediately after the event — no waitFor needed.
+    fireEvent.focus(container.firstChild as HTMLElement);
+
+    // The panel carries role="tooltip" and contains the guidance key text.
+    const tooltip = screen.getByRole('tooltip');
+    expect(tooltip).toBeInTheDocument();
+    expect(tooltip).toHaveTextContent('jobs.scoreGuidance');
   });
 });
 

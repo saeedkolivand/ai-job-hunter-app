@@ -1,4 +1,7 @@
+import { Info } from 'lucide-react';
+
 import { useTranslation } from '@ajh/translations';
+import { Button, HoverPopover } from '@ajh/ui';
 
 import { MatchBand } from '@/features/jobs/lib/score';
 import { useRowMatchScore } from '@/features/jobs/providers';
@@ -7,17 +10,47 @@ import { useRowMatchScore } from '@/features/jobs/providers';
  * Presentational per-row match score. The combined keyword/semantic score is
  * supplied by MatchScoresProvider (one batch call for all filtered postings),
  * so this component holds no scheduling or fetching logic.
+ *
+ * Estimate framing is AMBIENT: the always-visible "est." micro-label adjacent
+ * to the band makes the disclaimer present without interaction. The info trigger
+ * opens the full guidance sentence on hover/focus; touch users see the "est."
+ * label regardless (non-blocking touch gap per reviewer agreement).
  */
 export function RowMatchScore({ jobId }: { jobId: string }) {
   const { t } = useTranslation();
   const { score, pending, hasResume } = useRowMatchScore(jobId);
 
   if (!hasResume) return null;
-  if (score) return <MatchBand value={score.combined} />;
+  if (score) {
+    return (
+      <HoverPopover
+        placement="top"
+        ariaLabel={t('jobs.scoreGuidance')}
+        trigger={
+          <div className="flex items-center gap-1">
+            <MatchBand value={score.combined} />
+            {/* Always-visible estimate framing — present without interaction. */}
+            <span className="text-fine-print text-foreground/50">{t('jobs.scoreEst')}</span>
+            <Button
+              variant="unstyled"
+              className="flex h-6 w-6 items-center justify-center text-foreground/50 hover:text-foreground/70 focus-visible:text-foreground/70"
+              aria-label={t('jobs.scoreGuidanceLabel')}
+            >
+              <Info size={14} aria-hidden="true" />
+            </Button>
+          </div>
+        }
+      >
+        <p className="dropdown-surface max-w-[220px] px-3 py-2 text-fine-print leading-snug text-foreground/70">
+          {t('jobs.scoreGuidance')}
+        </p>
+      </HoverPopover>
+    );
+  }
   if (pending) {
     return (
       <span
-        className="text-[11px] text-foreground/30"
+        className="text-fine-print text-foreground/30"
         aria-label={t('jobs.scoreLoading')}
         aria-busy="true"
       >
