@@ -801,7 +801,7 @@ describe('BridgeClient – auth handshake', () => {
 
     // Advance well past all backoff intervals — must NOT trigger a reconnect.
     const socketCountBefore = socketCount;
-    vi.advanceTimersByTime(15_000);
+    await vi.advanceTimersByTimeAsync(15_000);
     expect(socketCount).toBe(socketCountBefore);
 
     client.dispose();
@@ -846,7 +846,7 @@ describe('BridgeClient – auth handshake', () => {
     expect(client.status().phase).not.toBe('bad_token');
     // Reconnect must be scheduled (phase is app_not_running, new socket probed).
     const socketCountBefore = socketCount;
-    vi.advanceTimersByTime(600);
+    await vi.advanceTimersByTimeAsync(600);
     expect(socketCount).toBeGreaterThan(socketCountBefore);
 
     client.dispose();

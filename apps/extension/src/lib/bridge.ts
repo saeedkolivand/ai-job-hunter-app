@@ -320,7 +320,7 @@ export class BridgeClient {
   resetForNewToken(): void {
     this.authRejected = false;
     if (this.phase === 'bad_token') {
-      this.phase = 'searching';
+      this.setPhase('searching');
     }
   }
 

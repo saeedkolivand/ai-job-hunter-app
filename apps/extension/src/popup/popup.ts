@@ -164,6 +164,8 @@ function render(status: ConnectionStatus): void {
       "That token didn't match — copy the current token from the desktop app's Settings and try again.",
       'err'
     );
+  } else if (status.phase === 'not_paired') {
+    els.pairMsg.textContent = '';
   }
 }
 
