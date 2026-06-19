@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781892409799,
+  "lastUpdate": 1781901842464,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -833,6 +833,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 206428,
             "range": "± 16075",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2dd85c20dddc3b0b835f7cd3ce36452fbba0e9fa",
+          "message": "fix(job-match): align evidence grounding with scorer and add guidance framing (#442)\n\n* fix(job-match): align evidence grounding with scorer and add guidance framing\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n\n* fix(job-match): normalize punctuation tokens and harden language handling\n\n- strip boundary punctuation from résumé tokens before alias lookup so\n  trailing commas and surrounding parens (e.g. \"JavaScript,\" \"(Kubernetes)\")\n  no longer cause false ABSENT grounding labels; intra-token chars like\n  c++ and node.js are preserved\n- add punctuation-edge synonym tests covering both cases\n- soften divergent_language_pair integration test precondition from\n  assert_eq!(old_cov, 0.0) to assert!(old_cov < new_cov) so it is not\n  coupled to the exact german snowball stemmer output\n- guard cjk and other non-latin-script jd languages from english stemming\n  by treating them as divergent (normalized-only) in jd_matches_resume_locale\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n\n* fix(renderer): surface match-score guidance disclaimer in jobs ui (#447)\n\nadds a keyboard-accessible HoverPopover info trigger next to the MatchBand\nin RowMatchScore so the guidance disclaimer (jobs.scoreGuidance) is\ndiscoverable without cluttering every list row\n\nCo-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>\n\n* fix(security): replace redos-prone boundary-trim regex with linear scan\n\nThe `stripBoundaryPunctuation` helper in emphasis.ts used an alternation\nregex (`/^[...]+|[...]+$/g`) that backtracks polynomially on a long run\nof boundary punctuation — a real redos vector since normalizeTerm calls\nit on every whitespace-split token of uncontrolled résumé/jd input.\n\nReplace with a linear O(n) char-by-char scan using a Set lookup (charAt\nto satisfy noUncheckedIndexedAccess). Behavior is identical: only\nleading/trailing boundary punct is stripped; internal chars like c++,\nnode.js, and c# are preserved. Adds a regression test asserting a\n100 000-char punctuation token completes instantly and returns ''.\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n\n* test(jobs): assert guidance popover content is revealed on interaction\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-06-19T22:35:41+02:00",
+          "tree_id": "29bfe460d52d89b97aa9e5e2d18a9fcb3434fd76",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/2dd85c20dddc3b0b835f7cd3ce36452fbba0e9fa"
+        },
+        "date": 1781901841880,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1918207,
+            "range": "± 56153",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2540225,
+            "range": "± 34275",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 297712,
+            "range": "± 3702",
             "unit": "ns/iter"
           }
         ]
