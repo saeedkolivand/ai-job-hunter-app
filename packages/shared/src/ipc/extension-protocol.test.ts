@@ -89,7 +89,8 @@ describe('ExtensionEnvelopeSchema', () => {
   });
 
   it('accepts an envelope with null payload (unknown field accepts anything)', () => {
-    // payload is z.unknown() — null is a valid unknown value
+    // payload is intentionally z.unknown() — validation is deferred to the message-type-specific
+    // handler, so the envelope schema accepts any payload shape (including null) without failing.
     expect(() => ExtensionEnvelopeSchema.parse({ ...VALID_ENVELOPE, payload: null })).not.toThrow();
   });
 });
