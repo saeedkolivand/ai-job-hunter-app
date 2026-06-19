@@ -1,6 +1,7 @@
 import { ChevronLeft, Sparkles } from 'lucide-react';
 import { type ComponentType, useEffect, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
+import { platform } from '@tauri-apps/plugin-os';
 
 import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
@@ -12,11 +13,12 @@ import { useOnboardingCompleted } from '@/store/preferences-store';
 
 import { NotificationBell } from './NotificationBell';
 
+const isMac = platform() === 'macos';
+
 export function Titlebar() {
   const { t } = useTranslation();
   const onboardingCompleted = useOnboardingCompleted();
   const [WindowControls, setWindowControls] = useState<ComponentType | null>(null);
-  const [isMac, setIsMac] = useState(false);
   const { toggleMaximize } = useWindowControls();
 
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -25,7 +27,6 @@ export function Titlebar() {
 
   useEffect(() => {
     onWindowControlsRegistered((c) => setWindowControls(() => c));
-    setIsMac(navigator.userAgent.includes('Mac'));
   }, []);
 
   // Own the double-click uniformly on all platforms and suppress Tauri's built-in

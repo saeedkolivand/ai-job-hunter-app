@@ -66,6 +66,12 @@ vi.mock('@/lib/parent-route', () => ({
   parentRoute: () => null,
 }));
 
+// ── @tauri-apps/plugin-os — return 'windows' so isMac=false in jsdom ─────────
+
+vi.mock('@tauri-apps/plugin-os', () => ({
+  platform: () => 'windows',
+}));
+
 // ── useWindowControls — controlled spy ────────────────────────────────────────
 
 const mockToggleMaximize = vi.fn().mockResolvedValue(undefined);

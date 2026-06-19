@@ -1,6 +1,7 @@
 import { Command } from 'lucide-react';
 import { useCallback } from 'react';
 import { useRouter } from '@tanstack/react-router';
+import { platform } from '@tauri-apps/plugin-os';
 
 import { useTranslation } from '@ajh/translations';
 import { ModalShell, SectionLabel } from '@ajh/ui';
@@ -8,8 +9,7 @@ import { ModalShell, SectionLabel } from '@ajh/ui';
 import { type AppRoute, useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { useUiStore } from '@/store/ui-store';
 
-const IS_MAC = typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac');
-const MOD = IS_MAC ? '⌘' : 'Ctrl';
+const MOD = platform() === 'macos' ? '⌘' : 'Ctrl';
 
 interface Row {
   keys: string[];

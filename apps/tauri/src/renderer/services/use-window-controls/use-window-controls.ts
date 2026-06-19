@@ -10,7 +10,7 @@ export function useWindowControls() {
   return useMemo(() => {
     const win = getCurrentWindow();
     return {
-      toggleMaximize: async () => ((await win.isMaximized()) ? win.unmaximize() : win.maximize()),
+      toggleMaximize: () => win.toggleMaximize(),
     };
   }, []);
 }
