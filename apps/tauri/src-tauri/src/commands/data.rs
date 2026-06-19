@@ -207,6 +207,7 @@ pub async fn data_import(app: AppHandle) -> Value {
     }
 
     let mut imported = serde_json::Map::new();
+    let mut had_error = false;
     let mut import_into = |key: &str, store: &dyn DataStore| {
         if let Some(data) = stores.get(key) {
             match store.import(data) {
@@ -214,6 +215,7 @@ pub async fn data_import(app: AppHandle) -> Value {
                     imported.insert(key.to_string(), json!(n));
                 }
                 Err(e) => {
+                    had_error = true;
                     imported.insert(key.to_string(), json!({ "error": e }));
                 }
             }
@@ -244,12 +246,25 @@ pub async fn data_import(app: AppHandle) -> Value {
     }
     if let Some(s) = app.try_state::<Mutex<InteractionStore>>() {
         if let Some(data) = stores.get("interactions") {
-            let records: Vec<InteractionRecord> =
-                serde_json::from_value(data.clone()).unwrap_or_default();
-            let n = s.lock().import_bundle(records);
-            imported.insert("interactions".to_string(), json!(n));
+            match serde_json::from_value::<Vec<InteractionRecord>>(data.clone()) {
+                Ok(records) => {
+                    let n = s.lock().import_bundle(records);
+                    imported.insert("interactions".to_string(), json!(n));
+                }
+                Err(e) => {
+                    had_error = true;
+                    imported.insert(
+                        "interactions".to_string(),
+                        json!({ "error": e.to_string() }),
+                    );
+                }
+            }
         }
     }
 
-    json!({ "success": true, "imported": Value::Object(imported) })
+    json!({
+        "success": !had_error,
+        "partial": had_error,
+        "imported": Value::Object(imported),
+    })
 }

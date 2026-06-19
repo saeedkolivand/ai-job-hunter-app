@@ -336,8 +336,7 @@ impl AiGenerationStore {
 
     pub fn remove(&self, id: &str) -> AppResult<()> {
         let conn = self.conn.lock();
-        conn.execute("DELETE FROM ai_generations WHERE id = ?1", params![id])
-            .map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM ai_generations WHERE id = ?1", params![id])?;
         Ok(())
     }
 
@@ -352,9 +351,7 @@ impl AiGenerationStore {
         let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!("DELETE FROM ai_generations WHERE id IN ({placeholders})");
         let conn = self.conn.lock();
-        let deleted = conn
-            .execute(&sql, rusqlite::params_from_iter(ids.iter()))
-            .map_err(|e| e.to_string())?;
+        let deleted = conn.execute(&sql, rusqlite::params_from_iter(ids.iter()))?;
         Ok(deleted)
     }
 
@@ -363,12 +360,10 @@ impl AiGenerationStore {
     /// everything". Idempotent: an Application with no documents deletes 0 rows.
     pub fn remove_for_application(&self, application_id: &str) -> AppResult<usize> {
         let conn = self.conn.lock();
-        let deleted = conn
-            .execute(
-                "DELETE FROM ai_generations WHERE application_id = ?1",
-                params![application_id],
-            )
-            .map_err(|e| e.to_string())?;
+        let deleted = conn.execute(
+            "DELETE FROM ai_generations WHERE application_id = ?1",
+            params![application_id],
+        )?;
         Ok(deleted)
     }
 
@@ -378,12 +373,10 @@ impl AiGenerationStore {
     /// tracking only (keep documents)".
     pub fn detach_application(&self, application_id: &str) -> AppResult<usize> {
         let conn = self.conn.lock();
-        let updated = conn
-            .execute(
-                "UPDATE ai_generations SET application_id = NULL WHERE application_id = ?1",
-                params![application_id],
-            )
-            .map_err(|e| e.to_string())?;
+        let updated = conn.execute(
+            "UPDATE ai_generations SET application_id = NULL WHERE application_id = ?1",
+            params![application_id],
+        )?;
         Ok(updated)
     }
 
@@ -401,24 +394,18 @@ impl AiGenerationStore {
     ) -> AppResult<()> {
         let conn = self.conn.lock();
         let changed = match (resume_text, cover_letter_text) {
-            (Some(resume), Some(cover)) => conn
-                .execute(
-                    "UPDATE ai_generations SET resume_text = ?2, cover_letter_text = ?3 WHERE id = ?1",
-                    params![id, resume, cover],
-                )
-                .map_err(|e| e.to_string())?,
-            (Some(resume), None) => conn
-                .execute(
-                    "UPDATE ai_generations SET resume_text = ?2 WHERE id = ?1",
-                    params![id, resume],
-                )
-                .map_err(|e| e.to_string())?,
-            (None, Some(cover)) => conn
-                .execute(
-                    "UPDATE ai_generations SET cover_letter_text = ?2 WHERE id = ?1",
-                    params![id, cover],
-                )
-                .map_err(|e| e.to_string())?,
+            (Some(resume), Some(cover)) => conn.execute(
+                "UPDATE ai_generations SET resume_text = ?2, cover_letter_text = ?3 WHERE id = ?1",
+                params![id, resume, cover],
+            )?,
+            (Some(resume), None) => conn.execute(
+                "UPDATE ai_generations SET resume_text = ?2 WHERE id = ?1",
+                params![id, resume],
+            )?,
+            (None, Some(cover)) => conn.execute(
+                "UPDATE ai_generations SET cover_letter_text = ?2 WHERE id = ?1",
+                params![id, cover],
+            )?,
             // Both fields absent: no UPDATE is issued, so there is no
             // rows-changed count to check — an explicit no-op success.
             (None, None) => return Ok(()),
