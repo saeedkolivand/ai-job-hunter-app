@@ -775,6 +775,34 @@ describe('extractPlainText', () => {
     expect(extractPlainText('***strong***')).toBe('*strong*');
     expect(extractPlainText('an *italic* word')).toBe('an italic word');
   });
+
+  it('removes a fenced code block entirely (no orphaned backticks or code leak)', () => {
+    // Regression: the inline-backtick pass used to consume the ``` fence markers
+    // first, so the fenced regex could not match and the code body leaked.
+    const out = extractPlainText('Intro.\n```\nconst x = 1;\n```\nOutro.');
+    // The fence (and only the fence) is gone — surrounding prose is preserved.
+    // The minimal reorder fix leaves the blank line where the fence stood; what
+    // matters is no backticks survive and the code body does not leak.
+    expect(out).not.toContain('```');
+    expect(out).not.toContain('const x = 1;');
+    expect(out).toContain('Intro.');
+    expect(out).toContain('Outro.');
+    expect(out.replace(/\n+/g, '\n')).toBe('Intro.\nOutro.');
+  });
+
+  it('strips a language-tagged fenced block too', () => {
+    const out = extractPlainText('Before\n```ts\nlet y = 2;\n```\nAfter');
+    expect(out).not.toContain('let y = 2;');
+    expect(out).not.toContain('```');
+    expect(out).toContain('Before');
+    expect(out).toContain('After');
+  });
+
+  it('still strips inline single-backtick code spans', () => {
+    const out = extractPlainText('Use the `npm install` command.');
+    expect(out).toBe('Use the npm install command.');
+    expect(out).not.toContain('`');
+  });
 });
 
 describe('validateMetadata', () => {

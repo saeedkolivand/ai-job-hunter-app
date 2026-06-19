@@ -15,5 +15,3 @@ export const ONBOARDING_STEPS = [
   { id: 'extension', component: ExtensionStep },
   { id: 'appearance', component: AppearanceStep },
 ] as const;
-
-export type StepId = (typeof ONBOARDING_STEPS)[number]['id'];

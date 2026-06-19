@@ -15,8 +15,11 @@ export function extractPlainText(raw: string): string {
       .replace(/^#{1,6}\s/gm, '')
       .replace(/\*\*\*(.+?)\*\*\*/g, '**$1**') // triple → double (preserve bold)
       .replace(/\*([^*]+)\*/g, '$1') // single italic → plain
-      .replace(/`(.+?)`/g, '$1')
+      // Fenced blocks first — otherwise the inline-backtick pass below consumes
+      // the ``` fence markers, orphaning them so the fenced regex no longer
+      // matches and the code body leaks into the plain text.
       .replace(/```[\s\S]*?```/g, '')
+      .replace(/`(.+?)`/g, '$1')
       .trim()
   );
 }

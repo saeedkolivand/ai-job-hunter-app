@@ -6,7 +6,7 @@ import { Button, cn, ModalShell, SegmentedControl } from '@ajh/ui';
 
 import type { TemplateId } from '@/lib/generate';
 
-export const EXPORT_FORMATS = ['pdf', 'docx', 'txt'] as const;
+const EXPORT_FORMATS = ['pdf', 'docx', 'txt'] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
 export interface ExportTemplateOption {
