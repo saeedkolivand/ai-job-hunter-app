@@ -47,15 +47,30 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled || loading}
         className={cn(
           // Base (skipped for `unstyled` — the call site owns layout/look).
-          // Apple: weight 500 (font-medium), scale(0.95) press, pill for filled actions.
+          // Design system weight ladder: 300/400/600/700 — font-medium (500) is intentionally
+          // avoided. Buttons use font-semibold (600) per Apple caption-strong convention.
           !unstyled && [
-            'inline-flex items-center justify-center gap-2 font-medium transition-all duration-150',
+            'inline-flex items-center justify-center gap-2 transition-all duration-150',
             isPill ? 'rounded-full' : 'rounded-lg',
             'active:scale-[0.95]',
           ],
           // Accessibility essentials apply to every variant
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
           'disabled:pointer-events-none disabled:opacity-45',
+
+          // Weight ladder: filled/semantic variants use font-semibold (600, Apple caption-strong).
+          // Neutral utility variants (ghost/default/glass) use font-normal (400) — they act as
+          // chips and secondary controls where heavy weight reads too loud.
+          (variant === 'primary' ||
+            variant === 'run' ||
+            variant === 'edit' ||
+            variant === 'delete' ||
+            variant === 'danger' ||
+            variant === 'warning' ||
+            variant === 'info' ||
+            variant === 'success') &&
+            'font-semibold',
+          (variant === 'ghost' || variant === 'default' || variant === 'glass') && 'font-normal',
 
           // Filled Apple actions — solid colour + white label (tokens only, no hex)
           variant === 'primary' && [

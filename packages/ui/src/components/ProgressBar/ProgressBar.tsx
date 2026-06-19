@@ -49,7 +49,7 @@ export function ProgressBar({
       {showLabel && (
         <div
           className={cn(
-            'flex text-[10px] text-foreground/20',
+            'flex text-[10px] text-foreground/45',
             labelPosition === 'end' ? 'justify-end' : 'justify-start'
           )}
         >
