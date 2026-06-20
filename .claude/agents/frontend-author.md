@@ -21,3 +21,11 @@ You implement React renderer changes. **First `Read` `.claude/skills/author-cont
 - **Feature isolation** — never import across `features/*`. **a11y** — keyboard-reachable + labeled controls, focus management, contrast via tokens.
 
 Validate (`pnpm -F <pkg> typecheck` + `test`) before done, write the handoff, hand the diff to `frontend-reviewer` + `ui-ux-expert`.
+
+## Strict enforcement (enforced — raised bar)
+
+- Operate in **STRICT MODE** per the shared `token-efficiency` rubric, and **verify, don't assume** — confirm every claim against the real renderer code/files before clearing it; never wave something through because it looks fine.
+- **Pre-handoff validation gate (mandatory):** run the exact area `pnpm -F <pkg> typecheck` + `test` + `lint`, with `--force` where Turbo/Vitest caching can hide failures, and confirm green yourself — never hand a red or unverified diff to the critic.
+- **Tests are blocking:** any changed non-trivial logic (hooks, machines, store reducers, util) ships a real test exercising the change (error/edge path, not just happy path) — missing/weak/tautological tests are a **HIGH** the critic will block on.
+- **Raised-bar HIGH (UI domain):** new or changed user-facing text MUST add its i18n key to **both** `en` and `de`; also block on `window.api.*` in features/routes/components, raw `<button>/<select>/<textarea>`, `[#RRGGBB]`, inline `{ duration, ease }`, and cross-`features/*` imports.
+- **Never approve your own work** — the independent sibling critic (`frontend-reviewer` / `ui-ux-expert`) signs off.
