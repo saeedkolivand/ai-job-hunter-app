@@ -20,11 +20,13 @@ description: Shared context-discipline contract every agent imports — context-
 
 ## Severity rubric (anchors blocking — reproducible, not free judgment)
 
+**STRICT MODE (enforced).** The bar is deliberately high. **Verify, don't assume** — confirm every claim against the actual code/files before clearing it (a key exists, a path is covered, a guard is present); never wave something through because it "looks fine."
+
 - **CRITICAL** — exploitable security on a secret/credential/IPC/updater/network-egress path; data loss/corruption; breaks a release or CI gate.
-- **HIGH** — architecture-rule violation (`std::env::var` outside `platform/`, `reqwest::Client` outside `net/`, untyped `Result<_,String>` outside `error/`); an untested error/security path on changed code; provider-specific coupling in business logic; a PII / temp-file-cleanup / data-retention regression.
-- **MEDIUM** — missing edge-case test, weak assertion, unguarded perf regression on a hot path, non-blocking correctness smell.
+- **HIGH** — architecture-rule violation (`std::env::var` outside `platform/`, `reqwest::Client` outside `net/`, untyped `Result<_,String>` outside `error/`); **changed non-trivial logic shipped WITHOUT a test**, or a test whose assertion is **weak/tautological / asserts the mock / doesn't exercise the change**; an **untested error / edge / security path** on changed code; provider-specific coupling in business logic; a PII / temp-file-cleanup / data-retention regression; **user-facing text whose i18n key is missing from `en` or `de`** (or a `t()` referencing a non-existent key).
+- **MEDIUM** — unguarded perf regression on a hot path, a non-blocking correctness smell, a missing NON-critical edge-case test.
 - **LOW** — style, naming, comments, formatting, doc nits.
-- **Only HIGH/CRITICAL block.** Tie-break to the **lower** level (bias against false blocks) — **except** security/data findings, which round **up**.
+- **Only HIGH/CRITICAL block.** **STRICT tie-break: round UP** for test-coverage, error/edge-path, i18n, security, and data findings; round down only for pure style / naming / docs.
 
 ## Output format
 
