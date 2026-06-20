@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781961561804,
+  "lastUpdate": 1781965739884,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -917,6 +917,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 290966,
             "range": "± 12979",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9b40e7bdbdbe5d2a2672694d2c9d3aad664a1fea",
+          "message": "fix(scraping): preserve caller headers and stream-cap http responses (#454)\n\n* fix(scraping): preserve caller headers and stream-cap http responses\n\nTwo hardening fixes to the shared scraper HTTP helper (surfaced during the board\nverification sweep):\n\n- fetch_json no longer drops caller-supplied headers. It previously replaced\n  opts.headers with only `accept: application/json`, silently dropping headers\n  like arbeitsagentur's X-API-Key — which made an auth failure look like \"empty\n  results\". It now merges, adding the JSON accept only when the caller didn't set\n  one. arbeitsagentur moves back to fetch_json (the fetch_text workaround is gone).\n- fetch_text now enforces the size cap while streaming. It read the whole body via\n  Response::text() before checking the cap, so a response that omits/lies about\n  Content-Length could OOM. It now reads bytes_stream() and aborts the moment the\n  buffer exceeds the cap (peak ~cap + one chunk), keeping the content-length\n  pre-check. Charset is decoded via encoding_rs (already transitive via reqwest),\n  honoring the Content-Type charset with a UTF-8 fallback — German/legacy\n  encodings round-trip (covered by utf-8, iso-8859-1, and no-charset tests).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix(scraping): tighten http charset parsing and size-cap boundary\n\nAddress CodeRabbit review on #454:\n- Charset parameter is matched case-insensitively and surrounding quotes are\n  stripped, so Content-Type like `Charset=\"ISO-8859-1\"` decodes correctly instead\n  of silently falling back to UTF-8.\n- The streamed size cap is checked before extending the buffer\n  (buf.len() + chunk.len() > cap), so a single large chunk can't momentarily\n  allocate past the cap. Boundary stays consistent with the content-length\n  pre-check.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
+          "timestamp": "2026-06-20T16:10:41+02:00",
+          "tree_id": "f4fc9315aa0a30f2c8094ed644b209cf3674d078",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/9b40e7bdbdbe5d2a2672694d2c9d3aad664a1fea"
+        },
+        "date": 1781965739387,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1874924,
+            "range": "± 56181",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2510906,
+            "range": "± 14777",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 292370,
+            "range": "± 1629",
             "unit": "ns/iter"
           }
         ]
