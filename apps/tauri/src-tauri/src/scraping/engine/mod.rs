@@ -43,6 +43,14 @@ pub struct BoardScrapeSummary {
     pub error: Option<String>,
 }
 
+/// Maximum number of distinct boards processed per `scrape_boards` call.
+///
+/// Mirrors the Zod `.array().max(6)` cap in the renderer contract, but enforced
+/// server-side so a crafted IPC payload or tampered autopilots.json with thousands
+/// of (valid) board ids cannot build thousands of concurrent futures and drive
+/// ban amplification against the user's own authenticated sessions.
+const MAX_BOARDS_PER_BATCH: usize = 6;
+
 pub struct ScraperEngine {
     /// Bounded concurrency — swapped on `set_concurrency`. Holding an
     /// owned permit for the duration of a scrape lets us shrink the limit
@@ -296,15 +304,27 @@ impl ScraperEngine {
                 .clone()
         };
 
+        // Dedupe (first-seen order) + truncate to MAX_BOARDS_PER_BATCH so a
+        // crafted payload with thousands of valid ids cannot build thousands of
+        // futures and drive ban amplification on the user's own sessions.
+        let boards_deduped: Vec<&String> = {
+            let mut seen = std::collections::HashSet::new();
+            boards
+                .iter()
+                .filter(|id| seen.insert(id.as_str()))
+                .take(MAX_BOARDS_PER_BATCH)
+                .collect()
+        };
+
         // Resolve board ids; unknown boards become per-entry Err values so the
         // run still proceeds for the boards that ARE known.
         // `boards::get` returns `&'static dyn Scraper` (from the SCRAPERS static).
-        let resolved: Vec<(String, anyhow::Result<&'static dyn Scraper>)> = boards
+        let resolved: Vec<(String, anyhow::Result<&'static dyn Scraper>)> = boards_deduped
             .iter()
             .map(|id| {
                 let scraper = super::boards::get(id)
                     .ok_or_else(|| anyhow::anyhow!("Unknown board: {id}"));
-                (id.clone(), scraper)
+                (id.to_string(), scraper)
             })
             .collect();
 

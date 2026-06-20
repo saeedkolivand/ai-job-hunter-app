@@ -16,9 +16,11 @@ use uuid::Uuid;
 /// Accept either a JSON string (`"board": "linkedin"`) or a JSON array
 /// (`"boards": ["linkedin","remotive"]`) and normalise to `Vec<String>`.
 ///
-/// This is the migration bridge for on-disk `autopilots.json` records written
-/// before the multi-board change. The `#[serde(alias = "board")]` on the field
-/// lets the old key name be mapped by serde before this function is called.
+/// Backward-compatibility deserializer: on-disk `autopilots.json` records written
+/// before the multi-board change store a single string under the legacy `"board"`
+/// key; new records store an array under `"boards"`. The
+/// `#[serde(alias = "board")]` on the field lets the old key name be accepted by
+/// serde before this function is called — no data migration or rewrite required.
 fn string_or_vec<'de, D>(de: D) -> Result<Vec<String>, D::Error>
 where
     D: serde::Deserializer<'de>,

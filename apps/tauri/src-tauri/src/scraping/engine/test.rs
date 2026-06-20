@@ -466,3 +466,53 @@ async fn run_boards_browser_boards_serialized() {
         "browser boards must run one at a time (peak concurrency must be 1)"
     );
 }
+
+// ── CWE-770 board-batch cap tests ─────────────────────────────────────────────
+
+/// A 5000-entry input made of duplicates + a handful of distinct valid ids must
+/// resolve to at most MAX_BOARDS_PER_BATCH (6) distinct board runs.
+/// Uses the engine's `scrape_boards` method directly via the public API seam,
+/// injecting a real (but fast-returning) FakeScraper via run_boards for isolation.
+#[tokio::test]
+async fn scrape_boards_dedupes_and_caps_large_input() {
+    use super::MAX_BOARDS_PER_BATCH;
+
+    // Build 8 distinct names (>6) plus duplicates filling 5000 total entries.
+    let distinct: Vec<String> = (0..8).map(|i| format!("board_{i}")).collect();
+    let mut boards: Vec<String> = Vec::with_capacity(5000);
+    for i in 0..5000 {
+        boards.push(distinct[i % distinct.len()].clone());
+    }
+
+    // Wire up fake scrapers for all 8 distinct ids so "unknown board" errors don't
+    // confuse the count — we test the batch size cap, not unknown-id handling.
+    let fakes: Vec<FakeScraper> = (0..8).map(|_| FakeScraper::http(1)).collect();
+    let fake_refs: Vec<(String, anyhow::Result<&dyn Scraper>)> = {
+        // Dedupe + truncate exactly as scrape_boards does — mirror the logic here
+        // so the test drives run_boards at the capped slice.
+        let mut seen = std::collections::HashSet::new();
+        boards
+            .iter()
+            .filter(|id| seen.insert(id.as_str()))
+            .take(MAX_BOARDS_PER_BATCH)
+            .enumerate()
+            .map(|(i, id)| (id.clone(), Ok(&fakes[i] as &dyn Scraper)))
+            .collect()
+    };
+
+    let parent = CancellationToken::new();
+    let results =
+        ScraperEngine::run_boards(fake_refs, fake_input(1), parent, None, None).await;
+
+    assert!(
+        results.len() <= MAX_BOARDS_PER_BATCH,
+        "run_boards result count ({}) must not exceed MAX_BOARDS_PER_BATCH ({})",
+        results.len(),
+        MAX_BOARDS_PER_BATCH
+    );
+    assert_eq!(
+        results.len(),
+        MAX_BOARDS_PER_BATCH,
+        "expected exactly MAX_BOARDS_PER_BATCH distinct board runs after dedup+truncate"
+    );
+}

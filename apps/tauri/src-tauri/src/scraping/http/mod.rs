@@ -95,13 +95,12 @@ pub async fn fetch_text(
             return Err(AppError::Cancelled);
         }
 
-        // Per-host rate limiting: wait for a free slot before sending. Skip on
-        // retry (we're already past the backoff sleep); only gate the first send.
-        if attempt == 0 {
-            if let Some(ref host) = host_opt {
-                let rl = crate::scraping::rate_limiter::for_host(host).await;
-                rl.wait_for_slot().await;
-            }
+        // Per-host rate limiting: wait for a free slot before every request
+        // attempt, including retries after 429/503. Gating only the first send
+        // let a short Retry-After bypass per-host pacing on retry attempts.
+        if let Some(ref host) = host_opt {
+            let rl = crate::scraping::rate_limiter::for_host(host).await;
+            rl.wait_for_slot().await;
         }
 
         let client = crate::net::http::shared();
@@ -144,6 +143,13 @@ pub async fn fetch_text(
             Ok(response) => {
                 let status_code = response.status().as_u16();
                 let headers = response.headers().clone();
+
+                // Record every completed send — including 429/503 retries — so the
+                // per-host window reflects actual traffic, not just final successes.
+                if let Some(ref host) = host_opt {
+                    let rl = crate::scraping::rate_limiter::for_host(host).await;
+                    rl.record_request().await;
+                }
 
                 // 429 / 503 — rate-limited or temporarily unavailable. If we have
                 // retries left, back off then loop; otherwise fall through and
@@ -205,12 +211,6 @@ pub async fn fetch_text(
                 let (cow, _enc, _had_errors) = encoding.decode(&buf);
                 let text = cow.into_owned();
 
-                // Record the successful request against the per-host limiter.
-                if let Some(ref host) = host_opt {
-                    let rl = crate::scraping::rate_limiter::for_host(host).await;
-                    rl.record_request().await;
-                }
-
                 return Ok(FetchResult {
                     status_code,
                     headers,
@@ -247,7 +247,9 @@ fn retry_after_ms(headers: &reqwest::header::HeaderMap) -> Option<u64> {
 
     // Integer seconds only — the format almost all APIs use in practice.
     let secs = value.trim().parse::<u64>().ok()?;
-    Some((secs * 1_000).min(30_000))
+    // saturating_mul prevents debug-mode panic (and release-mode wrap) when a
+    // hostile board sends a huge value; .min(30_000) caps the actual wait.
+    Some(secs.saturating_mul(1_000).min(30_000))
 }
 
 pub async fn fetch_json<T: for<'de> serde::Deserialize<'de>>(
