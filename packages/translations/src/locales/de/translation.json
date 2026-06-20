@@ -1600,7 +1600,8 @@
     "boardsSelected_other": "{{count}} ausgewählt",
     "needsLogin": {
       "label": "Anmeldung erforderlich:",
-      "connectBoard": "Verbinden"
+      "connectBoard": "Verbinden",
+      "blockedHint": "Bei {{boards}} anmelden, um die Suche zu starten."
     },
     "partialScrapeNote": "{{done}} von {{total}} Boards · {{failed}} fehlgeschlagen"
   },
