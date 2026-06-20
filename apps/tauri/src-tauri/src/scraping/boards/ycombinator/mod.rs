@@ -23,6 +23,25 @@ struct HnItem {
     time: Option<i64>,
 }
 
+/// Derive the company name from an HN job title.
+///
+/// Titles look like `"Company (YC S24) Is Hiring …"`. If the ` (YC ` marker is
+/// found, everything before it is the company name — but if that prefix is empty
+/// (the marker appears at the very start), fall back to `by` instead.
+/// When the marker is absent, return `by` directly.
+pub(crate) fn parse_company(title: &str, by: &str) -> String {
+    if let Some(pos) = title.find(" (YC ") {
+        let prefix = title[..pos].trim();
+        if prefix.is_empty() {
+            by.to_string()
+        } else {
+            prefix.to_string()
+        }
+    } else {
+        by.to_string()
+    }
+}
+
 pub struct YCombinatorScraper;
 
 #[async_trait]
@@ -108,13 +127,8 @@ impl Scraper for YCombinatorScraper {
             // HN job titles often look like "Company (YC S24) Is Hiring …"
             // Only match the full " (YC " prefix — bare " (W" / " (S" are too loose
             // and truncate ordinary English parentheticals (e.g. "Engineer (Senior) at …").
-            let company = {
-                if let Some(pos) = title.find(" (YC ") {
-                    title[..pos].trim().to_string()
-                } else {
-                    item.by.clone().unwrap_or_else(|| "Unknown".to_string())
-                }
-            };
+            let by = item.by.clone().unwrap_or_else(|| "Unknown".to_string());
+            let company = parse_company(&title, &by);
 
             let url = item
                 .url

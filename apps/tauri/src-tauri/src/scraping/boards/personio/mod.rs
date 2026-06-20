@@ -24,6 +24,12 @@ static OFFICE_RE: std::sync::LazyLock<regex::Regex> =
 static JOBDESC_BLOCK_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new(r"(?s)<jobDescriptions>(.*?)</jobDescriptions>").unwrap()
 });
+// Legacy (pre-2025) Personio feeds use a singular <jobDescription> block.
+// When the plural wrapper is absent, scope the fallback to this block only —
+// avoids leaking <value> fields from sibling blocks like <customAttributes>.
+static JOBDESC_SINGULAR_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"(?s)<jobDescription>(.*?)</jobDescription>").unwrap()
+});
 static DESC_RE: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r"(?s)<value>(.*?)</value>").unwrap());
 static CREATED_RE: std::sync::LazyLock<regex::Regex> =
@@ -57,13 +63,18 @@ pub(crate) fn parse_xml_feed(xml: &str) -> Vec<PersonioPosition> {
         }
         // Extract <value> nodes only from within <jobDescriptions>…</jobDescriptions>
         // to avoid picking up <value> tags in sibling blocks (customAttributes, etc.).
-        // Fall back to the whole position block for feeds still using the older
-        // singular <jobDescription> format (e.g. legacy tenants / test fixtures).
-        let desc_scope = JOBDESC_BLOCK_RE
-            .captures(position_str)
-            .and_then(|c| c.get(1))
-            .map(|m| m.as_str())
-            .unwrap_or(position_str);
+        // Fall back to the singular <jobDescription> block for legacy tenants/fixtures;
+        // never fall back to the whole position string (leaks <value> from other blocks).
+        let desc_scope_owned;
+        let desc_scope = if let Some(c) = JOBDESC_BLOCK_RE.captures(position_str) {
+            c.get(1).map(|m| m.as_str()).unwrap_or("")
+        } else {
+            desc_scope_owned = JOBDESC_SINGULAR_RE
+                .captures(position_str)
+                .and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
+                .unwrap_or_default();
+            desc_scope_owned.as_str()
+        };
         let description = DESC_RE
             .captures_iter(desc_scope)
             .filter_map(|c| c.get(1).map(|m| strip_html(m.as_str().trim())))

@@ -121,13 +121,10 @@ impl Scraper for GermanTechJobsScraper {
                 continue;
             }
 
-            // Location filter — GTJ is Germany-focused; location not in RSS so filter on loc only
-            // if location hint is in the description
-            if !loc.is_empty() {
-                let desc_hay = description.as_deref().unwrap_or("").to_lowercase();
-                if !desc_hay.contains(&loc) && !haystack.contains(&loc) {
-                    continue;
-                }
+            // Location filter — GTJ is Germany-focused; location not in RSS so filter on loc
+            // against `haystack` (which already includes the description).
+            if !loc.is_empty() && !haystack.contains(&loc) {
+                continue;
             }
 
             let posting = JobPosting {

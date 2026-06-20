@@ -19,30 +19,36 @@ fn test_ycombinator_scraper_mode() {
 }
 
 #[test]
-fn test_hn_item_company_extraction() {
-    // "Company (YC S24) Is Hiring …" → company = "Company"
-    let title = "Trellis AI (YC W24) hiring a product lead";
-    let pos = title.find(" (YC ");
-    assert!(pos.is_some());
-    let company = &title[..pos.unwrap()];
-    assert_eq!(company, "Trellis AI");
+fn test_parse_company_yc_title() {
+    // "Company (YC W24) Is Hiring …" → company extracted from title prefix
+    assert_eq!(
+        parse_company("Trellis AI (YC W24) hiring a product lead", "hn_user"),
+        "Trellis AI"
+    );
 }
 
 #[test]
-fn test_hn_item_no_yc_tag() {
-    let title = "Some random job posting";
-    let pos = title.find(" (YC ");
-    assert!(pos.is_none());
+fn test_parse_company_no_yc_tag() {
+    // No " (YC " marker → fall back to `by`
+    assert_eq!(parse_company("Some random job posting", "poster"), "poster");
 }
 
 #[test]
-fn test_hn_item_english_parenthetical_not_truncated() {
-    // "(Senior)" looks like " (S" but must NOT be treated as a YC batch marker.
-    // Company extraction should fall through to `by` field, not produce garbage.
-    let title = "Engineer (Senior) at Acme";
-    let pos = title.find(" (YC ");
-    // No YC prefix → no extraction from title
-    assert!(pos.is_none(), "title should not match YC prefix");
+fn test_parse_company_english_parenthetical_not_truncated() {
+    // "(Senior)" must NOT match as a YC batch marker; falls back to `by`
+    assert_eq!(
+        parse_company("Engineer (Senior) at Acme", "acme_recruiter"),
+        "acme_recruiter"
+    );
+}
+
+#[test]
+fn test_parse_company_yc_marker_at_start_falls_back_to_by() {
+    // Title starts with " (YC " making the prefix empty → fall back to `by`
+    assert_eq!(
+        parse_company(" (YC S21) some posting", "real_user"),
+        "real_user"
+    );
 }
 
 #[tokio::test]
@@ -73,7 +79,12 @@ async fn live_search_returns_results() {
         on_progress: None,
         on_item: None,
     };
-    let results = scraper.search(input, ctx).await;
+    let results = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        scraper.search(input, ctx),
+    )
+    .await
+    .expect("live search timed out");
     assert!(results.is_ok(), "search failed: {:?}", results.err());
     let postings = results.unwrap();
     assert!(!postings.is_empty(), "expected >=1 posting, got 0");

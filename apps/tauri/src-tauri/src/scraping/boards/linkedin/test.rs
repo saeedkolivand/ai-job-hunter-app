@@ -54,7 +54,12 @@ async fn live_search_returns_results() {
         on_progress: None,
         on_item: None,
     };
-    let results = scraper.search(input, ctx).await;
+    let results = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        scraper.search(input, ctx),
+    )
+    .await
+    .expect("live search timed out");
     assert!(results.is_ok(), "search failed: {:?}", results.err());
     let postings = results.unwrap();
     assert!(!postings.is_empty(), "expected >=1 posting, got 0");

@@ -49,6 +49,19 @@ fn test_title_no_at_sign() {
     assert_eq!(result, "no-split");
 }
 
+#[test]
+fn test_salary_bracket_stripped() {
+    // Salary bracket must be removed; role text must be preserved intact.
+    let input = "Senior Rust Engineer [70.000 - 100.000 €]";
+    let result = SALARY_BRACKET_RE.replace(input, "").trim().to_string();
+    assert_eq!(result, "Senior Rust Engineer");
+
+    // No bracket → title passes through unchanged.
+    let no_bracket = "Backend Engineer";
+    let result2 = SALARY_BRACKET_RE.replace(no_bracket, "").trim().to_string();
+    assert_eq!(result2, "Backend Engineer");
+}
+
 #[tokio::test]
 #[ignore = "live network"]
 async fn live_search_returns_results() {
@@ -77,7 +90,12 @@ async fn live_search_returns_results() {
         on_progress: None,
         on_item: None,
     };
-    let results = scraper.search(input, ctx).await;
+    let results = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        scraper.search(input, ctx),
+    )
+    .await
+    .expect("live search timed out");
     assert!(results.is_ok(), "search failed: {:?}", results.err());
     let postings = results.unwrap();
     assert!(!postings.is_empty(), "expected >=1 posting, got 0");
