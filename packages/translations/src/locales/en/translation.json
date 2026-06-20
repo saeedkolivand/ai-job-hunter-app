@@ -1596,7 +1596,8 @@
     "boardsSelected_other": "{{count}} selected",
     "needsLogin": {
       "label": "Needs login:",
-      "connectBoard": "Connect"
+      "connectBoard": "Connect",
+      "blockedHint": "Sign in to {{boards}} to start scraping."
     },
     "partialScrapeNote": "{{done}} of {{total}} boards · {{failed}} failed"
   },
