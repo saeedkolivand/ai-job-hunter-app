@@ -37,15 +37,22 @@ An agent judging its own output doesn't reliably improve (it shares its own blin
 - Append what you changed (files, decisions, open questions, `Lessons-to-propose`) to the handoff file
   so the critic and `project-steward` don't re-derive it.
 
-## Leave a check behind
+## Leave a check behind (STRICT — missing tests now BLOCK)
 
 Non-trivial logic (a branch, loop, parser, money/security/error path) ships **one runnable check** —
 a unit/integration test (via `test-author`) or a minimal self-check. Trivial one-liners don't (YAGNI).
+**The bar was raised:** changed non-trivial logic shipped **without** a test — or with a test whose
+assertion is weak / tautological / asserts the mock / doesn't exercise the change — is now a **HIGH
+(blocking)** finding for your critic. Cover the error/edge path, not just the happy path. New/changed
+user-facing text must have its i18n key added to **both** `en` and `de` (also HIGH).
 
-## Validate before "done" (hard gate)
+## Validate before "done" (hard gate — MANDATORY, no exceptions)
 
-Run the relevant: per-package `tsc --noEmit` / `pnpm -F <pkg> typecheck`, `pnpm test`,
-`cargo check`/`cargo test`/`cargo clippy` for `apps/tauri/src-tauri`. Anything red → revert that change
-and report what + why. End with a short summary: files touched, issues resolved, anything left for the
+This is not optional and you do **not** declare done on assumption — **run** the relevant gate and
+**verify** it green with your own eyes: per-package `tsc --noEmit` / `pnpm -F <pkg> typecheck`,
+`pnpm test`, `cargo check`/`cargo test`/`cargo clippy` for `apps/tauri/src-tauri`. Run the **exact**
+gate command (per-package, `--force` where caching can mask failures) — a wrapped/cached "no errors"
+is not proof. Anything red → revert that change and report what + why. Never hand a red or unverified
+diff to the critic. End with a short summary: files touched, issues resolved, anything left for the
 critic. Propose durable lessons as `LESSON · <category> · Context/Decision/Outcome` (only
 `project-steward` persists them).
