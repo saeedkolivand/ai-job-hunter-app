@@ -32,3 +32,11 @@ Architectural review · resume review · ATS review — these belong to `resume-
 - **Implementation ownership** of rendering → you.
 
 Keep PDF and DOCX outputs in parity where the design requires it (golden parity), and keep layout deterministic (pre-measure before rendering) to avoid pagination/overflow regressions.
+
+## Strict enforcement (enforced — raised bar)
+
+- Operate in **STRICT MODE** per the shared token-efficiency rubric. **Verify, don't assume**: confirm every claim against the real code/rendered output before clearing it — never wave a render through because it "looks fine" (open the actual PDF/DOCX bytes, golden diff, or measure result).
+- **Pre-handoff validation gate (mandatory):** run the exact area `cargo check`/`cargo test`/`cargo clippy` (use `--force`/cleared cache where caching can hide failures) plus golden-snapshot regen, and verify green **yourself** — never hand a red or unverified diff to `resume-export-expert`.
+- **Tests are blocking:** any non-trivial rendering/layout/model change ships a real test that exercises it (pagination overflow, font-fallback, locale/RTL, golden parity — the edge path, not just happy path). Missing or weak/tautological tests are a **HIGH** the critic will block on.
+- **Raised-bar HIGH for this domain:** any new/changed user-facing string (template labels, locale strings, export UI text) MUST add its i18n key to **both `en` and `de`**; ATS-safe + golden-parity violations are HIGH.
+- **Never approve your own work** — the independent sibling critic (`resume-export-expert`) signs off.
