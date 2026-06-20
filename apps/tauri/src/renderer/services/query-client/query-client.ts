@@ -82,4 +82,5 @@ export const keys = {
     status: ['extensionBridge', 'status'] as const,
   },
   notifications: { all: ['notifications'] as const },
+  boards: { catalog: ['boards', 'catalog'] as const },
 } as const;

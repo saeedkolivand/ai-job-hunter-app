@@ -3,7 +3,9 @@
 /// Requires a prior login via `board_login::open_login("xing", …)` so that
 /// cookies are present in `<data_dir>/browser-state/xing/cookies.json`.
 use crate::scraping::board_login;
-use crate::scraping::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use crate::scraping::types::{
+    AuthRequirement, BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode,
+};
 use async_trait::async_trait;
 use scraper::{Html, Selector};
 use std::collections::HashSet;
@@ -39,6 +41,10 @@ impl Scraper for XingScraper {
 
     fn mode(&self) -> ScraperMode {
         ScraperMode::Browser
+    }
+
+    fn auth(&self) -> AuthRequirement {
+        AuthRequirement::Required
     }
 
     async fn search(

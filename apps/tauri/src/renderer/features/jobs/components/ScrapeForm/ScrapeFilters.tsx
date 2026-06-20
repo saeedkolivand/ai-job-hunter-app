@@ -5,7 +5,8 @@ import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, Dropdown, LocationInput, NumberField } from '@ajh/ui';
 
-import { AUTH_BENEFITS, REGIONS, type ScrapeFormState } from './constants';
+import { AUTH_BENEFITS } from '../../constants';
+import { REGIONS, type ScrapeFormState } from './constants';
 
 interface Props {
   form: ScrapeFormState;

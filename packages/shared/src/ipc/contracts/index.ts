@@ -151,6 +151,8 @@ export {
   type AutopilotStepEvent,
 } from './autopilot.js';
 export {
+  type BoardAuthRequirement,
+  type BoardCatalogEntry,
   BOARDS_CHANNELS,
   type BoardsContract,
   type CookieImportOutcome,

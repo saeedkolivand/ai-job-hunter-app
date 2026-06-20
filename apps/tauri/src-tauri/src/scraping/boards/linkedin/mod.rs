@@ -49,6 +49,10 @@ impl Scraper for LinkedInScraper {
         crate::scraping::types::ScraperMode::Http
     }
 
+    fn auth(&self) -> crate::scraping::types::AuthRequirement {
+        crate::scraping::types::AuthRequirement::Optional
+    }
+
     async fn search(&self, input: BoardSearchInput, ctx: ScrapeContext) -> Result<Vec<JobPosting>> {
         // Try to load session data from disk
         let session_data = self.load_session_data().await;

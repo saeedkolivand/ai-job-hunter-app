@@ -3,7 +3,9 @@
 /// Uses interior mutability so `Arc<ScraperEngine>` can be cloned into Tauri
 /// commands and scrape jobs run concurrently (bounded by `semaphore`) without
 /// serializing on an outer mutex.
-use super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::types::{
+    AuthRequirement, BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode,
+};
 use arc_swap::ArcSwap;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -14,8 +16,13 @@ use tokio_util::sync::CancellationToken;
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ScraperCatalogEntry {
     pub id: String,
+    #[serde(rename = "displayName")]
     pub display_name: String,
     pub mode: String,
+    /// Auth tier — `"guest" | "optional" | "required"`.
+    pub auth: AuthRequirement,
+    /// Whether the board shows in the manual jobs picker.
+    pub listed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +60,8 @@ impl ScraperEngine {
                     ScraperMode::Browser => "browser",
                 }
                 .to_string(),
+                auth: s.auth(),
+                listed: s.listed(),
             })
             .collect()
     }

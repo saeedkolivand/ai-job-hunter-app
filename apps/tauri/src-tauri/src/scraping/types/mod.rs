@@ -68,12 +68,37 @@ pub enum ScraperMode {
     Browser,
 }
 
+/// Whether a board can be scraped without a logged-in session. Serializes to
+/// `"guest" | "optional" | "required"` for the renderer's manual jobs picker.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AuthRequirement {
+    /// No login needed — guest scraping returns full results.
+    Guest,
+    /// Guest scraping works; logging in enriches results.
+    Optional,
+    /// Guest scraping returns ~nothing — login is mandatory.
+    Required,
+}
+
 #[allow(dead_code)]
 #[async_trait]
 pub trait Scraper: Send + Sync {
     fn id(&self) -> &'static str;
     fn display_name(&self) -> &'static str;
     fn mode(&self) -> ScraperMode;
+
+    /// Auth tier for this board. Defaults to [`AuthRequirement::Guest`] so a
+    /// board only overrides this when it needs a session.
+    fn auth(&self) -> AuthRequirement {
+        AuthRequirement::Guest
+    }
+
+    /// Whether the board appears in the manual jobs picker. Defaults to `true`;
+    /// a board overrides to `false` to stay registered (dispatchable) but hidden.
+    fn listed(&self) -> bool {
+        true
+    }
 
     async fn search(
         &self,

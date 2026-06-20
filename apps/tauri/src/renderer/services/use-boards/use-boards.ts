@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
+import { keys } from '../query-client';
 import { useCheckBrowser } from '../use-system';
 
 const KEYS = {
@@ -107,5 +108,19 @@ export const useBoardDisconnect = () => {
     },
     onSettled: (_data, _err, boardId) =>
       qc.invalidateQueries({ queryKey: KEYS.boardStatus(boardId) }),
+  });
+};
+
+// ─── Catalog ─────────────────────────────────────────────────────────────────
+
+/** Board catalog — static for the session (registry order, listed boards only via filter). */
+export const useBoardsCatalog = () => {
+  const api = useAppClient();
+  return useQuery({
+    queryKey: keys.boards.catalog,
+    queryFn: () => api.boards.catalog(),
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 };

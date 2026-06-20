@@ -10,7 +10,23 @@ export interface CookieImportResult {
   imported: number;
 }
 
+/** Login requirement for a board, sourced from the Rust scraper registry. */
+export type BoardAuthRequirement = 'guest' | 'optional' | 'required';
+
+/** One board in the scraper catalog — the source of truth for the jobs picker. */
+export interface BoardCatalogEntry {
+  id: string;
+  displayName: string;
+  mode: string;
+  auth: BoardAuthRequirement;
+  /** Whether the board appears in the manual jobs picker. */
+  listed: boolean;
+}
+
 export interface BoardsContract {
+  /** Full scraper catalog (id, label, mode, auth tier, listed) from the registry. */
+  catalog(): Promise<BoardCatalogEntry[]>;
+
   /** Connect to a board by launching a browser for manual login. */
   connect(req: { boardId: string }): Promise<{ connected: boolean; accountEmail?: string }>;
 
@@ -27,6 +43,7 @@ export interface BoardsContract {
 }
 
 export const BOARDS_CHANNELS = {
+  catalog: 'boards:catalog',
   connect: 'boards:connect',
   disconnect: 'boards:disconnect',
   getStatus: 'boards:getStatus',
