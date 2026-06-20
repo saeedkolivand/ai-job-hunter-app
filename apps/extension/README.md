@@ -243,7 +243,7 @@ On release, the **Release workflow** includes a manual `package-extension` job (
 - Packages them as zips with source-build reproducibility info
 - Uploads artifacts for store submission (when the extension is published)
 
-Release frequency: the extension version tracks the app version via `pnpm sync:version` (Chrome is published to the Web Store; Firefox/AMO is pending).
+Release frequency: the extension version tracks the app version via `pnpm sync:version` (Chrome is published to the Web Store; Firefox is published on AMO).
 
 ---
 

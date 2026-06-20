@@ -1,8 +1,8 @@
-import type { ScrapeBoardRequest, ScrapeUrlRequest } from '../../schemas/index.js';
+import type { ScrapeBoardsRequest, ScrapeUrlRequest } from '../../schemas/index.js';
 import type { JobPosting } from '../../types/index.js';
 
 export interface ScrapeContract {
-  board(req: ScrapeBoardRequest): Promise<{ jobId: string }>;
+  boards(req: ScrapeBoardsRequest): Promise<{ jobId: string }>;
 
   url(req: ScrapeUrlRequest): Promise<{ jobId: string }>;
 
@@ -30,7 +30,7 @@ export interface ScrapeContract {
 }
 
 export const SCRAPE_CHANNELS = {
-  board: 'scrape:board',
+  boards: 'scrape:boards',
   url: 'scrape:url',
   resolveUrl: 'scrape:resolveUrl',
   listPostings: 'scrape:listPostings',

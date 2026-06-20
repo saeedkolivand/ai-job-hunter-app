@@ -32,7 +32,7 @@ import {
   MatchResumeRequestSchema,
   ReferralUpsertSchema,
   ResumeExtractTextSchema,
-  ScrapeBoardRequestSchema,
+  ScrapeBoardsRequestSchema,
   ScrapeUrlRequestSchema,
 } from '../src/schemas/index.js';
 
@@ -56,7 +56,7 @@ const MODULES: ModuleSpec[] = [
   {
     outFile: 'apps/tauri/src-tauri/src/ipc_contracts/scrape.rs',
     structs: [
-      { rustName: 'ScrapeBoardRequest', schema: ScrapeBoardRequestSchema },
+      { rustName: 'ScrapeBoardsRequest', schema: ScrapeBoardsRequestSchema },
       { rustName: 'ScrapeUrlRequest', schema: ScrapeUrlRequestSchema },
     ],
   },

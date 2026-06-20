@@ -42,8 +42,10 @@ The three screenshots are ordered to give the store a clean narrative:
 
 ## Intermediate artifacts
 
-`screenshots/raw/popup-{offline,pairing,connected}.png` are the element
-screenshots of the real popup card (width 640px = 320 CSS px × 2 device scale).
+`screenshots/raw/` contains 6 element screenshots of the real popup card — light
+and dark variants for each of the three states:
+`popup-{offline,pairing,connected}.png` and `dark-popup-{offline,pairing,connected}.png`.
+Each is captured at a 360px CSS viewport × 2 device scale (720px output width).
 They are inputs to the composited screenshots above; not uploaded to the store.
 
 ## Brand tokens (from `landing/index.html`)

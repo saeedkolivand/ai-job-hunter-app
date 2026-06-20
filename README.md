@@ -88,7 +88,7 @@ No API key required to start — run fully offline with [Ollama][ollama], or add
 
 ## What It Does
 
-AI Job Hunter is a desktop application built with **[Tauri][tauri]** (a [Rust][rust] core with a [React][react] renderer) that brings AI-driven job hunting to your local machine. It scrapes 18+ job boards, semantically matches postings to your résumé, generates tailored cover letters and résumés with your AI provider of choice, drafts grounded answers to application questions, and tracks everything you apply to — all while keeping your data and credentials on your device.
+AI Job Hunter is a desktop application built with **[Tauri][tauri]** (a [Rust][rust] core with a [React][react] renderer) that brings AI-driven job hunting to your local machine. It scrapes 20 job boards, semantically matches postings to your résumé, generates tailored cover letters and résumés with your AI provider of choice, drafts grounded answers to application questions, and tracks everything you apply to — all while keeping your data and credentials on your device.
 
 The only outbound calls are to the AI provider **you** configure (and an optional web search you explicitly enable). Everything else — jobs, résumés, generations, applications — lives in a local database on your machine.
 
@@ -158,7 +158,7 @@ The only outbound calls are to the AI provider **you** configure (and an optiona
 - **Credentials in the OS keychain** — encrypted, never in plain text or config files.
 - **All data local** — jobs, résumés, generations, applications in a local SQLite database; **zero telemetry**.
 - **Full reset** — one action wipes every store (documents, generations, autopilots, contact/job preferences, caches, keychain entries) back to a clean install.
-- **Multilingual** — UI and generation in 11 languages: en, de, fr, es, it, tr, pt, ru, zh, ja, ko.
+- **Multilingual** — UI in English & German; generation in 11 languages: en, de, fr, es, it, tr, pt, ru, zh, ja, ko.
 </details>
 
 ---
@@ -242,13 +242,13 @@ pnpm dev
 <details>
 <summary><strong>Troubleshooting</strong></summary>
 
-| Symptom                                       | Fix                                                                                                                                                                         |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| macOS: _"app is damaged and can't be opened"_ | Not notarized — clear quarantine once: `xattr -cr "/Applications/AI Job Hunter.app"`                                                                                        |
-| No models in the picker / "select a model"    | Start Ollama and `ollama pull <model>`, or add a cloud key in **Settings → AI**                                                                                             |
-| Company research does nothing                 | It's opt-in and uses your AI provider's own web search; on **Ollama** add the free Ollama key (Settings → AI). Without a usable search, generation proceeds without a brief |
-| Scraping can't find a browser                 | Set the browser path in **Settings → Scraping**                                                                                                                             |
-| `pnpm dev` fails to build the Rust core       | Ensure the stable Rust toolchain is installed (`rustup install stable`) and re-run                                                                                          |
+| Symptom                                       | Fix                                                                                                                                                                                |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS: _"app is damaged and can't be opened"_ | Not notarized — clear quarantine once: `xattr -cr "/Applications/AI Job Hunter.app"`                                                                                               |
+| No models in the picker / "select a model"    | Start Ollama and `ollama pull <model>`, or add a cloud key in **Settings → AI**                                                                                                    |
+| Company research does nothing                 | It's opt-in and uses your AI provider's own web search; on **Ollama** add the free Ollama key (Settings → AI). Without a usable search, generation proceeds without a brief        |
+| Scraping can't find a browser                 | The app auto-detects an installed Chromium browser (`detect_system_chrome`). If none is found, install Chrome or Edge, or set the `CHROME` env var to the browser executable path. |
+| `pnpm dev` fails to build the Rust core       | Ensure the stable Rust toolchain is installed (`rustup install stable`) and re-run                                                                                                 |
 
 </details>
 
@@ -301,14 +301,13 @@ pnpm dev
 
 The app uses the OS keychain for secrets — no `.env` files. Keys and credentials are set in the UI and encrypted via Tauri's keychain plugin.
 
-| Setting            | Location            | Description                                       |
-| ------------------ | ------------------- | ------------------------------------------------- |
-| AI provider + key  | Settings → AI       | Ollama / OpenAI / Anthropic / Gemini / compatible |
-| Local model limits | Settings → AI       | Context window + max output, per Ollama model     |
-| Ollama account key | Settings → AI       | Optional — Ollama Cloud models + company research |
-| Performance mode   | Settings → General  | Low / Balanced / Performance                      |
-| Language           | Settings → General  | UI and generation locale                          |
-| Browser            | Settings → Scraping | Path to system browser                            |
+| Setting            | Location               | Description                                       |
+| ------------------ | ---------------------- | ------------------------------------------------- |
+| AI provider + key  | Settings → AI          | Ollama / OpenAI / Anthropic / Gemini / compatible |
+| Local model limits | Settings → AI          | Context window + max output, per Ollama model     |
+| Ollama account key | Settings → AI          | Optional — Ollama Cloud models + company research |
+| Performance mode   | Settings → Performance | Low / Balanced / Performance                      |
+| Language           | Settings → General     | UI and generation locale                          |
 
 ---
 
@@ -377,7 +376,7 @@ IPC request shapes have a single source of truth: **[Zod][zod] schemas in `packa
 <details>
 <summary><strong>Knowledge base &amp; AI agent system</strong></summary>
 
-This repo ships a knowledge base under <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a> — domain notes plus **architecture decision records** (<a href="docs/knowledge/decision-records/" target="_blank" rel="noopener noreferrer">ADRs</a>) — and a Claude Code agent system under `.claude/` (21 agents, a write-capable **author** + an independent **critic** per domain, plus commands). When in doubt about _why_ something is built a certain way, the ADRs are the fastest answer.
+This repo ships a knowledge base under <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a> — domain notes plus **architecture decision records** (<a href="docs/knowledge/decision-records/" target="_blank" rel="noopener noreferrer">ADRs</a>) — and a Claude Code agent system under `.claude/` (23 agents, a write-capable **author** + an independent **critic** per domain, plus commands). When in doubt about _why_ something is built a certain way, the ADRs are the fastest answer.
 
 For a **visual walkthrough** of the agent system — the fleet map, how a prompt is routed to an agent, the author→critic pipeline, and a with/without-agents comparison — open the interactive <a href="landing/agent-system.html" target="_blank" rel="noopener noreferrer">landing/agent-system.html</a>.
 
@@ -504,7 +503,7 @@ See <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBU
 | <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a>                                             | Code style, branching, PR process                                                                                  |
 | <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/how-it-works.html">landing/how-it-works.html</a>         | How the AI Job Hunter works end-to-end (interactive walkthrough)                                                   |
 | <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/architecture-map.html">landing/architecture-map.html</a> | Interactive architecture map of the AI Job Hunter                                                                  |
-| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/agent-system.html">landing/agent-system.html</a>         | Interactive agent-fleet walkthrough — 21 paired author+critic agents, intake→delegation routing, per-task pipeline |
+| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/agent-system.html">landing/agent-system.html</a>         | Interactive agent-fleet walkthrough — 23 paired author+critic agents, intake→delegation routing, per-task pipeline |
 | <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/creature.html">landing/creature.html</a>                 | THE CREATURE — a hand-drawn doodle about the recruiter you summon                                                  |
 
 ---

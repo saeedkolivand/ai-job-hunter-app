@@ -46,17 +46,24 @@ factor. No default-to-German or default-to-English assumption.
 
 ## Layout
 
-Every concern is a **folder** with an `index.ts` barrel (its `@ajh/prompts/<name>`
-entry point — see `package.json` `exports`), its focused submodules, and a
-colocated test. `src/index.ts` aggregates them into `@ajh/prompts`.
+Each concern is a **folder** with focused submodules and a colocated test.
+`src/index.ts` aggregates the public API into `@ajh/prompts`.
+
+Public entry points (exported in `package.json` `exports`):
+
+| Import                         | Folder                 |
+| ------------------------------ | ---------------------- |
+| `@ajh/prompts`                 | `src/index.ts`         |
+| `@ajh/prompts/generate`        | `src/generate/`        |
+| `@ajh/prompts/analyze`         | `src/analyze/`         |
+| `@ajh/prompts/builder`         | `src/builder/`         |
+| `@ajh/prompts/context-manager` | `src/context-manager/` |
+| `@ajh/prompts/provider`        | `src/provider/`        |
+
+Internal folders (not exported — no `@ajh/prompts/<name>` entry point):
 
 ```
 src/
-  index.ts               aggregates everything → @ajh/prompts
-  analyze/               schema · system-prompt · analysis-prompt · validate
-  generate/              modes · emphasis · links · metadata · resume · cover-letter · text
-  context-manager/       tokens · sections · truncation · model-size · multi-pass
-  provider/              provider profiles, resolveProfile, JSON schemas
   locale/                section lexicons, resume conventions, token factors
   workspace/             workspace chat assistant system prompt
   fixtures/              shared test fixtures

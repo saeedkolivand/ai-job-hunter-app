@@ -7,9 +7,9 @@ Canonical source: `apps/tauri/src-tauri/src/limits/mod.rs`
 The `limits` module provides **in-memory rate limiting + concurrency control** on expensive, abuse-prone operations:
 
 - `ai_generate`: AI inference (cost, latency)
-- `scrape_board` / `scrape_url`: Web scraping (target rate-limits, IP bans)
+- `scrape_boards` / `scrape_url`: Web scraping (target rate-limits, IP bans)
 
-The limiter is **process-scoped** (in-memory; resets on app restart) and operates at the **command boundary** (right after deserialization, before business logic).
+The limiter is **process-scoped** (in-memory; resets on app restart) and operates at the **command boundary** (right after deserialization, before business logic). **Multi-board batch limit**: `MAX_BOARDS_PER_BATCH` server-side cap in `scraping/engine/mod.rs` prevents unbounded request amplification from crafted IPC payloads (even if Zod validates on the renderer).
 
 ## Design
 
@@ -64,18 +64,21 @@ pub async fn ai_generate(
 
 ### Scraping Commands
 
-Applied to `scrape_board` / `scrape_url` in `commands/scrape.rs`:
+Applied to `scrape_boards` / `scrape_url` in `commands/scrape.rs`:
 
 ```rust
 #[tauri::command]
-pub async fn scrape_board(
-    board_id: String,
+pub async fn scrape_boards(
+    request: ScrapeBoardsRequest,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
-    // Apply rate limit
-    state.limits.check_scrape(&board_id).await?;
+    // Apply rate limit per board
+    for board in &request.boards {
+        state.limits.check_scrape(board).await?;
+    }
 
-    // Proceed with scraping
+    // Engine enforces MAX_BOARDS_PER_BATCH (scraping/engine/mod.rs) server-side
+    // Proceed with multi-board scraping
     // ...
 }
 ```
