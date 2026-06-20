@@ -1604,10 +1604,8 @@
     "logIn": "Anmelden",
     "selectAll": "Alle auswählen",
     "clearBoards": "Löschen",
-    "boardsSelected": {
-      "one": "1 ausgewählt",
-      "other": "{{count}} ausgewählt"
-    },
+    "boardsSelected_one": "1 ausgewählt",
+    "boardsSelected_other": "{{count}} ausgewählt",
     "needsLogin": {
       "label": "Anmeldung erforderlich:",
       "connectBoard": "Verbinden"

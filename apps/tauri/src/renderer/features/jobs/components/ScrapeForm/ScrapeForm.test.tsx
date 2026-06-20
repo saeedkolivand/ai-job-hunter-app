@@ -59,9 +59,9 @@ vi.mock('@ajh/translations', () => ({
   }),
 }));
 
-// Stub roving-tabindex (returns a noop handler; no DOM layout needed)
+// Stub multi-select key handler (returns a noop handler; no DOM layout needed)
 vi.mock('@/hooks/use-roving-tabindex', () => ({
-  makeRovingTabindex: () => () => {},
+  makeMultiSelectKeyHandler: () => () => {},
 }));
 
 // ---------------------------------------------------------------------------

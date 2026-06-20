@@ -46,3 +46,56 @@ export function makeRovingTabindex<T>(
     }
   };
 }
+
+/**
+ * Returns an `onKeyDown` handler implementing the APG roving-tabindex pattern
+ * for a **multi-select** toolbar/group (e.g. a set of toggle buttons):
+ *
+ *  - ArrowRight / ArrowDown — move focus forward (wraps), NO toggle
+ *  - ArrowLeft  / ArrowUp   — move focus backward (wraps), NO toggle
+ *  - Home                   — move focus to first item, NO toggle
+ *  - End                    — move focus to last item, NO toggle
+ *  - Space / Enter          — toggle membership of the currently-focused item
+ *
+ * Focus position is tracked in `focusedIdxRef` (a plain `useRef<number>`),
+ * independent of the selection set. Exactly ONE button should have `tabIndex=0`
+ * (the one at `focusedIdxRef.current`); all others get `tabIndex=-1`.
+ *
+ * Callers must:
+ *   1. Pass a stable `focusedIdxRef` (e.g. `useRef(0)`).
+ *   2. Also update `focusedIdxRef.current` on click (so mouse + keyboard stay in sync).
+ *   3. Render `tabIndex={i === focusedIdxRef.current ? 0 : -1}` on each button.
+ */
+export function makeMultiSelectKeyHandler(
+  length: number,
+  focusedIdxRef: MutableRefObject<number>,
+  refs: MutableRefObject<(HTMLButtonElement | null)[]>,
+  onToggle: (idx: number) => void
+) {
+  return (e: KeyboardEvent<HTMLElement>) => {
+    const current = focusedIdxRef.current;
+    let nextIdx: number | null = null;
+    let shouldToggle = false;
+
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      nextIdx = (current + 1) % length;
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      nextIdx = (current - 1 + length) % length;
+    } else if (e.key === 'Home') {
+      nextIdx = 0;
+    } else if (e.key === 'End') {
+      nextIdx = length - 1;
+    } else if (e.key === ' ' || e.key === 'Enter') {
+      shouldToggle = true;
+    }
+
+    if (nextIdx !== null) {
+      e.preventDefault();
+      focusedIdxRef.current = nextIdx;
+      refs.current[nextIdx]?.focus();
+    } else if (shouldToggle) {
+      e.preventDefault();
+      onToggle(current);
+    }
+  };
+}

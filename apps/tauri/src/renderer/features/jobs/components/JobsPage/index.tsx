@@ -116,7 +116,7 @@ export function JobsPage() {
       if (failedBoards.length > 0) {
         const total = boardSummaries.length;
         const done = total - failedBoards.length;
-        const failedNames = failedBoards.map((b) => b.board).join(', ');
+        const failedNames = failedBoards.map((b) => t(`jobs.boards.${b.board}`)).join(', ');
         note = t('jobs.partialScrapeNote', {
           done: String(done),
           total: String(total),

@@ -71,6 +71,7 @@ export function BoardConnectChip({ board }: BoardConnectChipProps) {
           variant="unstyled"
           type="button"
           disabled={disconnectPending}
+          aria-label={`${t('jobs.disconnect')} ${boardLabel}`}
           onClick={() => void handleDisconnect()}
           className="ml-0.5 text-[10px] text-red-400/70 underline-offset-2 hover:text-red-400 hover:underline disabled:opacity-50"
         >

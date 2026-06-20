@@ -7,7 +7,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button, CardSkeleton, cn, GlassCard, Input, transition } from '@ajh/ui';
 
 import { AUTH_BENEFITS } from '@/features/jobs/constants';
-import { makeRovingTabindex } from '@/hooks/use-roving-tabindex';
+import { makeMultiSelectKeyHandler } from '@/hooks/use-roving-tabindex';
 import { useBoardsCatalog, useBoardStatuses } from '@/services/use-boards';
 
 import { BoardConnectChip } from './BoardConnectChip';
@@ -44,6 +44,8 @@ export function ScrapeForm({
 }: ScrapeFormProps) {
   const { t } = useTranslation();
   const boardRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // Tracks keyboard-focus position independently of the selection set (multi-select pattern).
+  const focusedBoardIdx = useRef<number>(0);
 
   const { data: catalogRaw, isLoading: catalogLoading } = useBoardsCatalog();
   const listedBoards: BoardCatalogEntry[] = (catalogRaw ?? []).filter((e) => e.listed);
@@ -83,11 +85,8 @@ export function ScrapeForm({
     if (first) onFormChange({ boards: [first] });
   };
 
-  // Count label: "3 selected"
-  const countLabel =
-    form.boards.length === 1
-      ? t('jobs.boardsSelected.one', { count: '1' })
-      : t('jobs.boardsSelected.other', { count: String(form.boards.length) });
+  // Count label: "3 selected" — i18next picks the plural form automatically.
+  const countLabel = t('jobs.boardsSelected', { count: form.boards.length });
 
   // Progress label
   const scrapingLabel =
@@ -118,6 +117,7 @@ export function ScrapeForm({
               </div>
               <Button
                 variant="ghost"
+                aria-label={t('common.close')}
                 onClick={onToggle}
                 className="rounded-md p-1 text-foreground/40 hover:bg-white/5 hover:text-foreground/70 h-auto"
               >
@@ -152,7 +152,11 @@ export function ScrapeForm({
                 </span>
                 {!catalogLoading && listedBoards.length > 0 && (
                   <>
-                    <span className="rounded-full bg-brand/20 px-1.5 py-px text-[10px] font-medium text-brand-soft">
+                    <span
+                      aria-live="polite"
+                      aria-atomic="true"
+                      className="rounded-full bg-brand/20 px-1.5 py-px text-[10px] font-medium text-brand-soft"
+                    >
                       {countLabel}
                     </span>
                     <div className="ml-auto flex items-center gap-1">
@@ -160,7 +164,7 @@ export function ScrapeForm({
                         variant="ghost"
                         disabled={scraping || allSelected}
                         onClick={handleSelectAll}
-                        className="h-auto rounded px-1.5 py-0.5 text-[10px] text-foreground/50 hover:text-foreground/80 disabled:opacity-40"
+                        className="h-auto rounded px-1.5 py-1 text-[10px] text-foreground/50 hover:text-foreground/80 disabled:opacity-40"
                       >
                         {t('jobs.selectAll')}
                       </Button>
@@ -168,7 +172,7 @@ export function ScrapeForm({
                         variant="ghost"
                         disabled={scraping || form.boards.length <= 1}
                         onClick={handleClear}
-                        className="h-auto rounded px-1.5 py-0.5 text-[10px] text-foreground/50 hover:text-foreground/80 disabled:opacity-40"
+                        className="h-auto rounded px-1.5 py-1 text-[10px] text-foreground/50 hover:text-foreground/80 disabled:opacity-40"
                       >
                         {t('jobs.clearBoards')}
                       </Button>
@@ -182,16 +186,21 @@ export function ScrapeForm({
                 <div
                   role="group"
                   aria-label={t('jobs.board')}
-                  aria-multiselectable="true"
                   className="flex flex-wrap gap-1.5"
                   onKeyDown={
                     scraping
                       ? undefined
-                      : makeRovingTabindex(
-                          listedBoards.map((b) => b.id),
-                          form.boards[0] ?? '',
-                          (id) => onFormChange({ boards: toggleBoard(form.boards, id) }),
-                          boardRefs
+                      : makeMultiSelectKeyHandler(
+                          listedBoards.length,
+                          focusedBoardIdx,
+                          boardRefs,
+                          (idx) => {
+                            const id = listedBoards[idx]?.id;
+                            if (!id) return;
+                            // Prevent deselecting the last board.
+                            if (selectedSet.has(id) && form.boards.length === 1) return;
+                            onFormChange({ boards: toggleBoard(form.boards, id) });
+                          }
                         )
                   }
                 >
@@ -203,14 +212,14 @@ export function ScrapeForm({
                         ref={(el) => {
                           boardRefs.current[i] = el;
                         }}
-                        role="button"
                         aria-pressed={active}
-                        tabIndex={i === 0 || active ? 0 : -1}
+                        tabIndex={i === focusedBoardIdx.current ? 0 : -1}
                         variant="ghost"
                         disabled={scraping}
                         onClick={() => {
                           // Prevent deselecting the last board.
                           if (active && form.boards.length === 1) return;
+                          focusedBoardIdx.current = i;
                           onFormChange({ boards: toggleBoard(form.boards, id) });
                         }}
                         className={cn(
@@ -232,7 +241,7 @@ export function ScrapeForm({
             {/* Auth affordance — compact "needs login" row per selected board */}
             {needsLoginBoards.length > 0 && (
               <div className="mb-3 flex flex-wrap items-center gap-1.5">
-                <span className="text-[10px] text-foreground/45">{t('jobs.needsLogin.label')}</span>
+                <span className="text-[10px] text-foreground/55">{t('jobs.needsLogin.label')}</span>
                 {needsLoginBoards.map((e) => (
                   <BoardConnectChip key={e.id} board={e.id} />
                 ))}
@@ -276,7 +285,11 @@ export function ScrapeForm({
                   <span
                     className={cn(
                       'text-[11px]',
-                      scrapeOutcome.ok ? 'text-emerald-400/70' : 'text-amber-400/70'
+                      scrapeOutcome.ok && !scrapeOutcome.note
+                        ? 'text-emerald-400/70'
+                        : scrapeOutcome.ok && scrapeOutcome.note
+                          ? 'text-amber-400/70'
+                          : 'text-amber-400/70'
                     )}
                   >
                     {scrapeOutcome.ok

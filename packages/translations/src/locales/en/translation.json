@@ -1600,10 +1600,8 @@
     "logIn": "Log in",
     "selectAll": "Select all",
     "clearBoards": "Clear",
-    "boardsSelected": {
-      "one": "1 selected",
-      "other": "{{count}} selected"
-    },
+    "boardsSelected_one": "1 selected",
+    "boardsSelected_other": "{{count}} selected",
     "needsLogin": {
       "label": "Needs login:",
       "connectBoard": "Connect"
