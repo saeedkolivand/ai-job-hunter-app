@@ -81,7 +81,7 @@ describe('ModalShell', () => {
       </ModalShell>
     );
     const dialog = screen.getByRole('dialog');
-    const backdrop = dialog.parentElement!;
+    const backdrop = dialog.parentElement as HTMLElement;
 
     fireEvent.mouseDown(backdrop, { target: backdrop });
     fireEvent.click(backdrop, { target: backdrop });
@@ -97,7 +97,7 @@ describe('ModalShell', () => {
       </ModalShell>
     );
     const dialog = screen.getByRole('dialog');
-    const backdrop = dialog.parentElement!;
+    const backdrop = dialog.parentElement as HTMLElement;
     const innerPara = screen.getByText('inner content');
 
     // Simulate: press starts on a child inside the panel (mousedown on innerPara, which
@@ -117,7 +117,7 @@ describe('ModalShell', () => {
       </ModalShell>
     );
     const dialog = screen.getByRole('dialog');
-    const backdrop = dialog.parentElement!;
+    const backdrop = dialog.parentElement as HTMLElement;
 
     fireEvent.mouseDown(backdrop, { target: backdrop });
     fireEvent.click(backdrop, { target: backdrop });
