@@ -7,6 +7,7 @@ import { useNotification } from '@ajh/ui';
 
 import { useMenuIntents } from '@/services';
 import { useUpdater } from '@/services/use-updater';
+import { useWindowControls } from '@/services/use-window-controls';
 import { type SettingsSection, useSessionStore } from '@/store/session-store';
 import { useUiStore } from '@/store/ui-store';
 
@@ -45,6 +46,7 @@ export function useMenuNavigation() {
   const { check } = useUpdater();
   const notify = useNotification();
   const { t } = useTranslation();
+  const { isMacos } = useWindowControls();
 
   const onNavigate = useCallback(
     ({ route, section, focus }: MenuNavigateEvent) => {
@@ -95,6 +97,7 @@ export function useMenuNavigation() {
   // Single reliable delivery path: the shell buffers the intent and we pull it
   // (on the emitted event, on window focus/visibility-restore, and on mount).
   // Works from the tray and the macOS menu bar, whether the window was visible
-  // or hidden — see `useMenuIntents`.
-  useMenuIntents(onNavigate, onAction);
+  // or hidden — see `useMenuIntents`. The 250 ms poll backstop is macOS-only
+  // (NSMenu tracking suppresses focus/visibility/emit on the main window).
+  useMenuIntents(onNavigate, onAction, isMacos);
 }
