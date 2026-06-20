@@ -113,6 +113,7 @@ dependencies = [
  "criterion",
  "dbus-secret-service-keyring-store",
  "docx-rs",
+ "encoding_rs",
  "feed-rs",
  "flate2",
  "futures",

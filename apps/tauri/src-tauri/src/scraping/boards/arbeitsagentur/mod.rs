@@ -6,10 +6,7 @@
 /// detail fetch succeeds. This degrades gracefully — list data has title/company/
 /// location/url which is sufficient for search results.
 ///
-/// fetch_json note: we call fetch_text directly + deserialize manually because
-/// fetch_json overwrites the caller's `headers` with only `accept: application/json`,
-/// dropping the required `X-API-Key` header (follow-up: fix fetch_json to merge headers).
-use super::super::http::{fetch_text, strip_html};
+use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -136,12 +133,11 @@ impl Scraper for ArbeitsagenturScraper {
                 .collect::<Vec<_>>()
                 .join("&");
 
-            let list_res = match fetch_text(
+            let list_resp = match fetch_json::<ListResp>(
                 &format!("{}/jobs?{}", API_BASE, query_string),
                 super::super::http::FetchOptions {
                     headers: Some(vec![
                         ("X-API-Key".to_string(), API_KEY.to_string()),
-                        ("accept".to_string(), "application/json".to_string()),
                         ("accept-language".to_string(), "de-DE,de;q=0.9".to_string()),
                     ]),
                     ..Default::default()
@@ -160,13 +156,10 @@ impl Scraper for ArbeitsagenturScraper {
                     break;
                 }
             };
-            let list = if list_res.status_code >= 200 && list_res.status_code < 300 {
-                serde_json::from_str::<ListResp>(&list_res.text).ok()
-            } else {
-                None
-            };
 
-            let items = list.and_then(|l| l.stellenangebote).unwrap_or_default();
+            let items = list_resp
+                .and_then(|l| l.stellenangebote)
+                .unwrap_or_default();
 
             if items.is_empty() {
                 break;
@@ -190,21 +183,17 @@ impl Scraper for ArbeitsagenturScraper {
                     .clone()
                     .unwrap_or_else(|| self.to_base64_url(&j.refnr));
 
-                let detail = fetch_text(
+                let detail = fetch_json::<DetailResp>(
                     &format!("{}/jobdetails/{}", API_BASE, urlencoding::encode(&hash)),
                     super::super::http::FetchOptions {
-                        headers: Some(vec![
-                            ("X-API-Key".to_string(), API_KEY.to_string()),
-                            ("accept".to_string(), "application/json".to_string()),
-                        ]),
+                        headers: Some(vec![("X-API-Key".to_string(), API_KEY.to_string())]),
                         ..Default::default()
                     },
                     ctx.signal.clone(),
                 )
                 .await
                 .ok()
-                .filter(|r| r.status_code >= 200 && r.status_code < 300)
-                .and_then(|r| serde_json::from_str::<DetailResp>(&r.text).ok());
+                .flatten();
 
                 let description = detail.as_ref().and_then(|d| {
                     let desc = vec![
