@@ -6,6 +6,8 @@
 /// - opt-in JSON / HTML helpers with size caps
 use std::time::Duration;
 
+use futures::StreamExt as _;
+
 use crate::error::{AppError, AppResult};
 use crate::net::http::DEFAULT_UA;
 
@@ -96,10 +98,22 @@ pub async fn fetch_text(
         };
 
         request = request.header("user-agent", DEFAULT_UA);
-        request = request.header(
-            "accept",
-            "text/html,application/xhtml+xml,application/xml,application/json;q=0.9,*/*;q=0.8",
-        );
+
+        // Only add the broad HTML accept when the caller hasn't already set one.
+        // This prevents a double `accept` header when fetch_json (which prepends
+        // `accept: application/json` into opts.headers) calls fetch_text.
+        let caller_has_accept = opts
+            .headers
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("accept"));
+        if !caller_has_accept {
+            request = request.header(
+                "accept",
+                "text/html,application/xhtml+xml,application/xml,application/json;q=0.9,*/*;q=0.8",
+            );
+        }
         request = request.header("accept-language", "en-US,en;q=0.9,de;q=0.8");
 
         if let Some(headers) = &opts.headers {
@@ -117,18 +131,46 @@ pub async fn fetch_text(
                 let status_code = response.status().as_u16();
                 let headers = response.headers().clone();
 
-                // Check content length if available
+                // Cheap pre-check: honest servers that declare content-length
+                // let us abort before reading a single byte.
                 if let Some(content_length) = response.content_length() {
                     if content_length > cap as u64 {
                         return Err(AppError::Validation("Response too large".to_string()));
                     }
                 }
 
-                let text = response.text().await?;
+                // Determine charset from Content-Type (mirrors what reqwest::Response::text()
+                // does internally) so German umlauts / € decode correctly regardless of cap.
+                let encoding = headers
+                    .get(reqwest::header::CONTENT_TYPE)
+                    .and_then(|ct| ct.to_str().ok())
+                    .and_then(|ct| {
+                        // Extract charset=... from e.g. "text/html; charset=iso-8859-1"
+                        ct.split(';').find_map(|part| {
+                            let p = part.trim();
+                            p.strip_prefix("charset=")
+                                .map(|cs| cs.trim().to_ascii_lowercase())
+                        })
+                    })
+                    .and_then(|cs| encoding_rs::Encoding::for_label(cs.as_bytes()))
+                    .unwrap_or(encoding_rs::UTF_8);
 
-                if text.len() > cap {
-                    return Err(AppError::Validation("Response too large".to_string()));
+                // Stream the body, accumulating bytes and aborting as soon as the
+                // running total exceeds the effective cap — prevents OOM from a
+                // server that lies about or omits Content-Length.
+                let mut stream = response.bytes_stream();
+                let mut buf: Vec<u8> = Vec::new();
+                while let Some(chunk) = stream.next().await {
+                    let chunk = chunk.map_err(|e| AppError::Network(e.to_string()))?;
+                    buf.extend_from_slice(&chunk);
+                    if buf.len() > cap {
+                        return Err(AppError::Validation("Response too large".to_string()));
+                    }
                 }
+
+                // Decode using the charset we extracted above.
+                let (cow, _enc, _had_errors) = encoding.decode(&buf);
+                let text = cow.into_owned();
 
                 return Ok(FetchResult {
                     status_code,
@@ -156,10 +198,23 @@ pub async fn fetch_json<T: for<'de> serde::Deserialize<'de>>(
     opts: FetchOptions,
     signal: tokio_util::sync::CancellationToken,
 ) -> AppResult<Option<T>> {
+    // Merge `accept: application/json` into caller headers.
+    // Caller-supplied headers win — if the caller already set an `accept` header we
+    // leave it as-is; otherwise we prepend the JSON accept so fetch_text's broader
+    // HTML accept doesn't take precedence. This preserves auth headers like X-API-Key.
+    // Clone headers so we can use `..opts` below — avoids silently dropping any
+    // future FetchOptions field that would otherwise be missed by field-by-field copy.
+    let mut merged_headers = opts.headers.clone().unwrap_or_default();
+    let has_accept = merged_headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("accept"));
+    if !has_accept {
+        merged_headers.insert(0, ("accept".to_string(), "application/json".to_string()));
+    }
     let res = fetch_text(
         url,
         FetchOptions {
-            headers: Some(vec![("accept".to_string(), "application/json".to_string())]),
+            headers: Some(merged_headers),
             ..opts
         },
         signal,
