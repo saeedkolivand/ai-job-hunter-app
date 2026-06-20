@@ -76,6 +76,16 @@ export function ScrapeForm({
   const authBenefitBoardIds = form.boards.filter((b) => AUTH_BENEFITS.has(b));
   const { anyConnected: anyAuthBenefitConnected } = useBoardStatuses(authBenefitBoardIds);
 
+  // Boards with auth === 'required' that are selected — must be connected to start.
+  const requiredBoardIds = listedBoards
+    .filter((e) => selectedSet.has(e.id) && e.auth === 'required')
+    .map((e) => e.id);
+  const { results: requiredResults } = useBoardStatuses(requiredBoardIds);
+  const unconnectedRequired = requiredBoardIds.filter(
+    (_id, i) =>
+      (requiredResults[i]?.data as { connected?: boolean } | undefined)?.connected !== true
+  );
+
   const handleSelectAll = () => {
     onFormChange({ boards: listedBoards.map((e) => e.id) });
   };
@@ -275,6 +285,17 @@ export function ScrapeForm({
             )}
 
             {/* Footer */}
+            {!scraping && unconnectedRequired.length > 0 && (
+              <p
+                id="scrape-blocked-hint"
+                aria-live="polite"
+                className="mb-2 text-[11px] text-amber-400/70"
+              >
+                {t('jobs.needsLogin.blockedHint', {
+                  boards: unconnectedRequired.map((id) => t(`jobs.boards.${id}`)).join(', '),
+                })}
+              </p>
+            )}
             <div className="flex items-center justify-end gap-2">
               {scraping ? (
                 <Button variant="ghost" onClick={onCancel}>
@@ -301,8 +322,12 @@ export function ScrapeForm({
               <Button
                 variant="primary"
                 onClick={() => onStart()}
-                disabled={scraping || !form.query.trim()}
+                disabled={scraping || !form.query.trim() || unconnectedRequired.length > 0}
                 loading={scraping}
+                aria-describedby={
+                  !scraping && unconnectedRequired.length > 0 ? 'scrape-blocked-hint' : undefined
+                }
+                data-testid="scrape-start-button"
                 className="transition-all duration-150 ease-out"
               >
                 {!scraping && <Search size={12} />}
