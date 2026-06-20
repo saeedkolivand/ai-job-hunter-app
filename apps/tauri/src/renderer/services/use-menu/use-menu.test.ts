@@ -27,12 +27,15 @@ const ACTION_INTENT: PendingMenuIntent = {
  * The `onNavigate` / `onAction` event-listener registrars (`menu.onNavigate`,
  * `menu.onAction`) default to no-op unsub stubs matching the `createMockClient`
  * default for `on*` methods — they return `() => {}`.
+ *
+ * Pass `enablePoll: true` to activate the 250 ms backstop (macOS behaviour).
+ * Defaults to `true` so existing poll-backstop tests remain unchanged.
  */
-function setup(takePending: () => Promise<PendingMenuIntent | null>) {
+function setup(takePending: () => Promise<PendingMenuIntent | null>, enablePoll = true) {
   const onNavigate = vi.fn();
   const onAction = vi.fn();
   const client = createMockClient({ 'menu.takePending': takePending });
-  const utils = renderHook(() => useMenuIntents(onNavigate, onAction), {
+  const utils = renderHook(() => useMenuIntents(onNavigate, onAction, enablePoll), {
     wrapper: withProviders(client),
   });
   return { ...utils, onNavigate, onAction, takePending };
@@ -353,5 +356,42 @@ describe('useMenuIntents — poll backstop', () => {
     // Confirm takePending was called on all ticks (poll survived the rejections).
     // mount drain (1) + tick1 reject (1) + tick2 reject (1) + tick3 resolve (1) = 4.
     expect(takePending).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not create the interval when enablePoll is false (Windows/Linux path)', async () => {
+    // With enablePoll=false the setInterval must never be called for the 250ms
+    // backstop. The only takePending call should be the mount-drain.
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    setVisibilityState('visible');
+
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+
+    const takePending = vi
+      .fn<() => Promise<PendingMenuIntent | null>>()
+      .mockResolvedValueOnce(null) // mount drain → empty
+      .mockResolvedValue(NAV_INTENT); // would be delivered by poll — must not reach
+
+    const { onNavigate, onAction } = setup(takePending, false);
+
+    // Settle mount-drain.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    const mountDrainCalls = takePending.mock.calls.length;
+
+    // Advance several poll intervals — no interval was created, so only the
+    // mount-drain call should have fired.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250 * 5);
+    });
+
+    expect(takePending).toHaveBeenCalledTimes(mountDrainCalls);
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(onAction).not.toHaveBeenCalled();
+    // Confirm the hook never registered a 250 ms interval.
+    expect(setIntervalSpy).not.toHaveBeenCalledWith(expect.any(Function), 250);
+
+    setIntervalSpy.mockRestore();
   });
 });
