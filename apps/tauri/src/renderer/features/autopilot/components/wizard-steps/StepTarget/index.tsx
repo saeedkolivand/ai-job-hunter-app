@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 
 import { BOARD_IDS } from '@ajh/shared';
@@ -5,6 +6,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button, cn, Dropdown, Input, LocationInput, NumberField } from '@ajh/ui';
 
 import type { Prefilled, WizardState } from '@/features/autopilot/types';
+import { makeMultiSelectKeyHandler } from '@/hooks/use-roving-tabindex';
 import { useAppClient } from '@/providers/AppClientProvider';
 
 import { ComingSoonBadge } from '../ComingSoonBadge';
@@ -26,6 +28,9 @@ export function StepTarget({ prefilled }: StepTargetProps) {
   const { control } = useFormContext<WizardState>();
   // Disabled "coming soon" control — display the current value without binding.
   const workType = useWatch({ control, name: 'workType' });
+
+  const boardRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const focusedBoardIdx = useRef<number>(0);
 
   return (
     <div className="space-y-4">
@@ -61,27 +66,61 @@ export function StepTarget({ prefilled }: StepTargetProps) {
 
       <Controller
         control={control}
-        name="board"
-        render={({ field }) => (
-          <WizardField label={t('autopilot.wizard.target.board')}>
-            <div className="grid grid-cols-2 gap-1.5 max-h-28 overflow-y-auto pr-1 @sm:grid-cols-4">
-              {BOARD_IDS.map((b) => (
-                <Button
-                  key={b}
-                  onClick={() => field.onChange(b)}
-                  className={cn(
-                    'rounded-lg border px-2 py-1.5 text-[10px] font-medium capitalize transition-all h-auto',
-                    field.value === b
-                      ? 'border-brand/40 bg-brand/10 text-brand-soft'
-                      : 'border-white/[0.06] text-foreground/40 hover:border-white/10 hover:text-foreground/65'
-                  )}
-                >
-                  {b}
-                </Button>
-              ))}
-            </div>
-          </WizardField>
-        )}
+        name="boards"
+        render={({ field }) => {
+          const selectedSet = new Set(field.value);
+          const toggle = (b: string) => {
+            const next = selectedSet.has(b)
+              ? field.value.filter((id) => id !== b)
+              : [...field.value, b];
+            // Always keep at least one board selected.
+            if (next.length > 0) field.onChange(next);
+          };
+          return (
+            <WizardField label={t('autopilot.wizard.target.board')}>
+              <div
+                role="group"
+                aria-label={t('autopilot.wizard.target.board')}
+                className="grid grid-cols-2 gap-1.5 max-h-28 overflow-y-auto pr-1 @sm:grid-cols-4"
+                onKeyDown={makeMultiSelectKeyHandler(
+                  BOARD_IDS.length,
+                  focusedBoardIdx,
+                  boardRefs,
+                  (idx) => {
+                    const b = BOARD_IDS[idx];
+                    if (b !== undefined) toggle(b);
+                  }
+                )}
+              >
+                {BOARD_IDS.map((b, i) => {
+                  const active = selectedSet.has(b);
+                  return (
+                    <Button
+                      key={b}
+                      ref={(el) => {
+                        boardRefs.current[i] = el;
+                      }}
+                      aria-pressed={active}
+                      tabIndex={i === focusedBoardIdx.current ? 0 : -1}
+                      onClick={() => {
+                        focusedBoardIdx.current = i;
+                        toggle(b);
+                      }}
+                      className={cn(
+                        'rounded-lg border px-2 py-1.5 text-[10px] font-medium capitalize transition-all h-auto',
+                        active
+                          ? 'border-brand/40 bg-brand/10 text-brand-soft'
+                          : 'border-white/[0.06] text-foreground/40 hover:border-white/10 hover:text-foreground/65'
+                      )}
+                    >
+                      {t(`jobs.boards.${b}`)}
+                    </Button>
+                  );
+                })}
+              </div>
+            </WizardField>
+          );
+        }}
       />
 
       <div className="grid grid-cols-1 gap-3 @xs:grid-cols-2">

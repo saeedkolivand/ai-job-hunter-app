@@ -1,10 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import type { JobPosting } from '@ajh/shared';
-import type { ScrapeBoardRequest, ScrapeUrlRequest } from '@ajh/shared/schemas';
+import type { ScrapeBoardsRequest, ScrapeUrlRequest } from '@ajh/shared/schemas';
 
 export const scrape = {
-  board: (req: ScrapeBoardRequest) => invoke<{ jobId: string }>('scrape_board', { req }),
+  boards: (req: ScrapeBoardsRequest) => invoke<{ jobId: string }>('scrape_boards', { req }),
   url: (req: ScrapeUrlRequest) => invoke<{ jobId: string }>('scrape_url', { req }),
   resolveUrl: ({ url }: { url: string }) =>
     invoke<JobPosting | null>('scrape_resolve_url', { url }),

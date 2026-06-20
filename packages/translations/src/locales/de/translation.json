@@ -1592,16 +1592,16 @@
       "sg": "🇸🇬 Singapur — sg.indeed.com",
       "jp": "🇯🇵 Japan — jp.indeed.com"
     },
-    "authHint": "Verbinde dein Konto in den Einstellungen für mehr Ergebnisse und bessere Genauigkeit.",
-    "authHintLink": "Konto verbinden",
     "disconnect": "Trennen",
-    "modeAuthenticated": "Authentifiziert",
-    "modeAuthNote": "Volle Ergebnisse · Feine Zeitfilter",
-    "modeGuest": "Gastmodus",
-    "modeGuestNote": "Begrenzte Ergebnisse · nur 24h / Woche / Monat",
-    "modeLoginRequired": "Anmeldung erforderlich",
-    "modeLoginRequiredNote": "Anmelden, um dieses Board zu scrapen — als Gast keine Ergebnisse",
-    "logIn": "Anmelden"
+    "selectAll": "Alle auswählen",
+    "clearBoards": "Löschen",
+    "boardsSelected_one": "1 ausgewählt",
+    "boardsSelected_other": "{{count}} ausgewählt",
+    "needsLogin": {
+      "label": "Anmeldung erforderlich:",
+      "connectBoard": "Verbinden"
+    },
+    "partialScrapeNote": "{{done}} von {{total}} Boards · {{failed}} fehlgeschlagen"
   },
   "resumes": {
     "title": "Dokumente",

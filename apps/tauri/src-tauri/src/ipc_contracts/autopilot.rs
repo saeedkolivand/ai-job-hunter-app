@@ -25,7 +25,7 @@ pub struct AutopilotCreateRequest {
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct AutopilotCreateRequestTarget {
-    pub board: String,
+    pub boards: Vec<String>,
     pub query: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
@@ -77,7 +77,7 @@ pub struct AutopilotUpdateRequest {
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct AutopilotUpdateRequestTarget {
-    pub board: String,
+    pub boards: Vec<String>,
     pub query: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,

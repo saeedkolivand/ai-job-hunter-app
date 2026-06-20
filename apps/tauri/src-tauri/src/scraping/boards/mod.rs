@@ -47,6 +47,10 @@ use super::types::Scraper;
 /// derive from this list via the `Scraper` trait, so adding a board is one
 /// implementation module + one line here (no parallel match or hardcoded array).
 static SCRAPERS: &[&dyn Scraper] = &[
+    &LinkedInScraper,
+    &GlassdoorScraper,
+    &XingScraper,
+    &IndeedScraper,
     &YCombinatorScraper,
     &RemotiveScraper,
     &RemoteOkScraper,
@@ -63,10 +67,6 @@ static SCRAPERS: &[&dyn Scraper] = &[
     &WorkdayScraper,
     &AshbyScraper,
     &ArbeitsagenturScraper,
-    &LinkedInScraper,
-    &IndeedScraper,
-    &XingScraper,
-    &GlassdoorScraper,
 ];
 
 /// All registered scrapers, in catalog display order.

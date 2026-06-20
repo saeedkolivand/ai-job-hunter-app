@@ -28,7 +28,7 @@ const STEPS = ['Target', 'Filter', 'Action', 'Schedule'] as const;
 // Fields each step must pass before "Next" advances. Steps without an entry have
 // no gate (their controls are bounded, so they can't hold invalid input).
 const STEP_FIELDS: Partial<Record<number, (keyof WizardState)[]>> = {
-  0: ['name', 'board', 'query'],
+  0: ['name', 'boards', 'query'],
 };
 
 export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {

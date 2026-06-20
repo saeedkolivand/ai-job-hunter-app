@@ -11,13 +11,13 @@ key: value
 
 Recognized keys (repeatable keys accumulate in order):
 
-| key       | repeatable | meaning                                    |
-| --------- | ---------- | ------------------------------------------ |
-| `name`    | no         | candidate full name                        |
-| `email`   | no\*       | contact email (must be a synthetic domain) |
-| `phone`   | no         | contact phone                              |
-| `section` | yes        | each expected section heading              |
-| `link`    | yes        | each expected profile/portfolio label      |
+| key       | repeatable | required | meaning                                    |
+| --------- | ---------- | -------- | ------------------------------------------ |
+| `name`    | no         | yes      | candidate full name                        |
+| `email`   | no         | yes      | contact email (must be a synthetic domain) |
+| `phone`   | no         | no       | contact phone                              |
+| `section` | yes        | yes      | each expected section heading              |
+| `link`    | yes        | no       | each expected profile/portfolio label      |
 
 ## Rules
 

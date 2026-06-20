@@ -19,6 +19,7 @@ import { EVENT_CHANNELS } from '@ajh/shared';
 import { createTauriInvokeClient } from '../index';
 import { ai } from './ai';
 import { applications } from './applications';
+import { boards } from './boards';
 import { documents } from './documents';
 import { extensionBridge } from './extensionBridge';
 import { jobs } from './jobs';
@@ -40,9 +41,9 @@ describe('tauri-client namespaces', () => {
     system.setLocale('de');
     expect(invoke).toHaveBeenCalledWith('system_set_locale', { locale: 'de' });
 
-    scrape.board({ board: 'linkedin', query: 'react', amount: 25 });
-    expect(invoke).toHaveBeenCalledWith('scrape_board', {
-      req: { board: 'linkedin', query: 'react', amount: 25 },
+    scrape.boards({ boards: ['linkedin'], query: 'react', amount: 25 });
+    expect(invoke).toHaveBeenCalledWith('scrape_boards', {
+      req: { boards: ['linkedin'], query: 'react', amount: 25 },
     });
 
     documents.remove('doc-1');
@@ -56,6 +57,12 @@ describe('tauri-client namespaces', () => {
 
     extensionBridge.regenerateToken();
     expect(invoke).toHaveBeenCalledWith('extension_bridge_regenerate_token');
+
+    boards.connect({ boardId: 'indeed' });
+    expect(invoke).toHaveBeenCalledWith('boards_login_with_browser', { boardId: 'indeed' });
+
+    boards.disconnect({ boardId: 'indeed' });
+    expect(invoke).toHaveBeenCalledWith('boards_logout', { boardId: 'indeed' });
   });
 
   it('wires event subscriptions through listen and forwards payloads', () => {

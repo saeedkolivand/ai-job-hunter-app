@@ -2,15 +2,15 @@ import { Loader2, Search, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef } from 'react';
 
-import type { BoardAuthRequirement } from '@ajh/shared';
+import type { BoardCatalogEntry } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, CardSkeleton, cn, GlassCard, Input, transition } from '@ajh/ui';
 
-import { makeRovingTabindex } from '@/hooks/use-roving-tabindex';
-import { useBoardsCatalog } from '@/services/use-boards';
+import { AUTH_BENEFITS } from '@/features/jobs/constants';
+import { makeMultiSelectKeyHandler } from '@/hooks/use-roving-tabindex';
+import { useBoardsCatalog, useBoardStatuses } from '@/services/use-boards';
 
-import { AuthHint } from './AuthHint';
-import { AuthModeBadge } from './AuthModeBadge';
+import { BoardConnectChip } from './BoardConnectChip';
 import type { ScrapeFormState } from './constants';
 import { ScrapeFilters } from './ScrapeFilters';
 
@@ -19,16 +19,16 @@ interface ScrapeFormProps {
   form: ScrapeFormState;
   scraping: boolean;
   scrapeOutcome: { ok: boolean; note?: string } | null;
-  boardConnected: boolean;
-  connectPending: boolean;
-  disconnectPending: boolean;
   onToggle: () => void;
   onFormChange: (updates: Partial<ScrapeFormState>) => void;
   onStart: () => void;
   onCancel: () => void;
-  onConnect: () => void;
-  onDisconnect: () => void;
   onGeocode: (query: string) => Promise<{ display: string }[]>;
+}
+
+/** Toggle membership of `id` in the array without mutation. */
+function toggleBoard(boards: string[], id: string): string[] {
+  return boards.includes(id) ? boards.filter((b) => b !== id) : [...boards, id];
 }
 
 export function ScrapeForm({
@@ -36,39 +36,63 @@ export function ScrapeForm({
   form,
   scraping,
   scrapeOutcome,
-  boardConnected,
-  connectPending,
-  disconnectPending,
   onToggle,
   onFormChange,
   onStart,
   onCancel,
-  onConnect,
-  onDisconnect,
   onGeocode,
 }: ScrapeFormProps) {
   const { t } = useTranslation();
   const boardRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // Tracks keyboard-focus position independently of the selection set (multi-select pattern).
+  const focusedBoardIdx = useRef<number>(0);
 
   const { data: catalogRaw, isLoading: catalogLoading } = useBoardsCatalog();
-  const listedBoards = (catalogRaw ?? []).filter((e) => e.listed);
+  const listedBoards: BoardCatalogEntry[] = (catalogRaw ?? []).filter((e) => e.listed);
 
-  // Normalize: if the persisted board ID is no longer listed, reset to the first listed board.
-  const selectedEntry = listedBoards.find((e) => e.id === form.board);
-  const effectiveBoardId = selectedEntry?.id ?? listedBoards[0]?.id;
+  // Normalize: ensure every persisted id in form.boards still exists in the
+  // catalog; if none remain, default to the first listed board.
+  // Guard: only call onFormChange when the normalized set actually differs to
+  // prevent an infinite re-render loop.
   useEffect(() => {
-    if (!catalogLoading && listedBoards.length > 0 && !selectedEntry && effectiveBoardId) {
-      onFormChange({ board: effectiveBoardId });
-    }
-  }, [catalogLoading, listedBoards, selectedEntry, effectiveBoardId, onFormChange]);
+    if (catalogLoading || listedBoards.length === 0) return;
+    const listedIds = new Set(listedBoards.map((e) => e.id));
+    const valid = form.boards.filter((id) => listedIds.has(id));
+    const needsUpdate = valid.length !== form.boards.length || form.boards.length === 0;
+    if (!needsUpdate) return;
+    const fallback = listedBoards[0]?.id ?? '';
+    onFormChange({ boards: valid.length > 0 ? valid : fallback ? [fallback] : [] });
+  }, [catalogLoading, listedBoards, form.boards, onFormChange]);
 
-  // Derive the selected board's auth tier from the catalog; default to 'guest'.
-  const selectedAuth: BoardAuthRequirement = (selectedEntry ?? listedBoards[0])?.auth ?? 'guest';
+  const selectedSet = new Set(form.boards);
+  const allSelected = listedBoards.length > 0 && listedBoards.every((e) => selectedSet.has(e.id));
 
-  // Badge shows for optional/required; guest boards show nothing.
-  const showAuthBadge = selectedAuth !== 'guest';
-  // AuthHint (settings nudge) only for optional boards when not connected.
-  const showAuthHint = selectedAuth === 'optional' && !boardConnected;
+  // Boards that are selected and require login, filtered against catalog auth.
+  const needsLoginBoards = listedBoards.filter(
+    (e) => selectedSet.has(e.id) && (e.auth === 'optional' || e.auth === 'required')
+  );
+
+  // Query connection status for all selected auth-benefit boards via a service hook.
+  const authBenefitBoardIds = form.boards.filter((b) => AUTH_BENEFITS.has(b));
+  const { anyConnected: anyAuthBenefitConnected } = useBoardStatuses(authBenefitBoardIds);
+
+  const handleSelectAll = () => {
+    onFormChange({ boards: listedBoards.map((e) => e.id) });
+  };
+  const handleClear = () => {
+    // Always keep at least one; clear to the first listed board.
+    const first = listedBoards[0]?.id;
+    if (first) onFormChange({ boards: [first] });
+  };
+
+  // Count label: "3 selected" — i18next picks the plural form automatically.
+  const countLabel = t('jobs.boardsSelected', { count: form.boards.length });
+
+  // Progress label
+  const scrapingLabel =
+    form.boards.length === 1
+      ? (catalogRaw?.find((e) => e.id === form.boards[0])?.displayName ?? form.boards[0])
+      : countLabel;
 
   return (
     <AnimatePresence>
@@ -93,6 +117,7 @@ export function ScrapeForm({
               </div>
               <Button
                 variant="ghost"
+                aria-label={t('common.close')}
                 onClick={onToggle}
                 className="rounded-md p-1 text-foreground/40 hover:bg-white/5 hover:text-foreground/70 h-auto"
               >
@@ -119,43 +144,84 @@ export function ScrapeForm({
               />
             </div>
 
-            {/* Board picker */}
+            {/* Board picker — multi-select toggle group */}
             <div className="mb-4">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
-                {t('jobs.board')}
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
+                  {t('jobs.board')}
+                </span>
+                {!catalogLoading && listedBoards.length > 0 && (
+                  <>
+                    <span
+                      aria-live="polite"
+                      aria-atomic="true"
+                      className="rounded-full bg-brand/20 px-1.5 py-px text-[10px] font-medium text-brand-soft"
+                    >
+                      {countLabel}
+                    </span>
+                    <div className="ml-auto flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        disabled={scraping || allSelected}
+                        onClick={handleSelectAll}
+                        className="h-auto rounded px-1.5 py-1 text-[10px] text-foreground/50 hover:text-foreground/80 disabled:opacity-40"
+                      >
+                        {t('jobs.selectAll')}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        disabled={scraping || form.boards.length <= 1}
+                        onClick={handleClear}
+                        className="h-auto rounded px-1.5 py-1 text-[10px] text-foreground/50 hover:text-foreground/80 disabled:opacity-40"
+                      >
+                        {t('jobs.clearBoards')}
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
               {catalogLoading ? (
                 <CardSkeleton className="h-8 w-full" />
               ) : (
                 <div
-                  role="radiogroup"
+                  role="group"
                   aria-label={t('jobs.board')}
                   className="flex flex-wrap gap-1.5"
                   onKeyDown={
                     scraping
                       ? undefined
-                      : makeRovingTabindex(
-                          listedBoards.map((b) => b.id),
-                          form.board,
-                          (id) => onFormChange({ board: id }),
-                          boardRefs
+                      : makeMultiSelectKeyHandler(
+                          listedBoards.length,
+                          focusedBoardIdx,
+                          boardRefs,
+                          (idx) => {
+                            const id = listedBoards[idx]?.id;
+                            if (!id) return;
+                            // Prevent deselecting the last board.
+                            if (selectedSet.has(id) && form.boards.length === 1) return;
+                            onFormChange({ boards: toggleBoard(form.boards, id) });
+                          }
                         )
                   }
                 >
                   {listedBoards.map(({ id }, i) => {
-                    const active = effectiveBoardId === id;
+                    const active = selectedSet.has(id);
                     return (
                       <Button
                         key={id}
                         ref={(el) => {
                           boardRefs.current[i] = el;
                         }}
-                        role="radio"
-                        aria-checked={active}
-                        tabIndex={active ? 0 : -1}
+                        aria-pressed={active}
+                        tabIndex={i === focusedBoardIdx.current ? 0 : -1}
                         variant="ghost"
                         disabled={scraping}
-                        onClick={() => onFormChange({ board: id })}
+                        onClick={() => {
+                          // Prevent deselecting the last board.
+                          if (active && form.boards.length === 1) return;
+                          focusedBoardIdx.current = i;
+                          onFormChange({ boards: toggleBoard(form.boards, id) });
+                        }}
                         className={cn(
                           'rounded-lg px-2.5 py-1 text-[11px] transition-all',
                           active
@@ -172,23 +238,20 @@ export function ScrapeForm({
               )}
             </div>
 
-            <AuthModeBadge
-              show={showAuthBadge}
-              board={form.board}
-              auth={selectedAuth}
-              boardConnected={boardConnected}
-              disconnectPending={disconnectPending}
-              connectPending={connectPending}
-              onDisconnect={onDisconnect}
-              onConnect={onConnect}
-            />
-
-            <AuthHint show={showAuthHint} connectPending={connectPending} onConnect={onConnect} />
+            {/* Auth affordance — compact "needs login" row per selected board */}
+            {needsLoginBoards.length > 0 && (
+              <div className="mb-3 flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] text-foreground/55">{t('jobs.needsLogin.label')}</span>
+                {needsLoginBoards.map((e) => (
+                  <BoardConnectChip key={e.id} board={e.id} />
+                ))}
+              </div>
+            )}
 
             <ScrapeFilters
               form={form}
               scraping={scraping}
-              boardConnected={boardConnected}
+              boardConnected={anyAuthBenefitConnected}
               onFormChange={onFormChange}
               onGeocode={onGeocode}
             />
@@ -206,7 +269,7 @@ export function ScrapeForm({
                 </div>
                 <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-foreground/40">
                   <Loader2 size={10} className="animate-spin" />
-                  {t('jobs.scraping')} {form.board}…
+                  {t('jobs.scraping')} {scrapingLabel}…
                 </div>
               </div>
             )}
@@ -222,10 +285,16 @@ export function ScrapeForm({
                   <span
                     className={cn(
                       'text-[11px]',
-                      scrapeOutcome.ok ? 'text-emerald-400/70' : 'text-amber-400/70'
+                      scrapeOutcome.ok && !scrapeOutcome.note
+                        ? 'text-emerald-400/70'
+                        : scrapeOutcome.ok && scrapeOutcome.note
+                          ? 'text-amber-400/70'
+                          : 'text-amber-400/70'
                     )}
                   >
-                    {scrapeOutcome.ok ? t('jobs.done') : (scrapeOutcome.note ?? t('jobs.failed'))}
+                    {scrapeOutcome.ok
+                      ? (scrapeOutcome.note ?? t('jobs.done'))
+                      : (scrapeOutcome.note ?? t('jobs.failed'))}
                   </span>
                 )
               )}
