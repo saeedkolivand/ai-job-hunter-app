@@ -145,11 +145,16 @@ pub async fn fetch_text(
                     .get(reqwest::header::CONTENT_TYPE)
                     .and_then(|ct| ct.to_str().ok())
                     .and_then(|ct| {
-                        // Extract charset=... from e.g. "text/html; charset=iso-8859-1"
+                        // Extract charset=... from e.g. "text/html; Charset="ISO-8859-1""
+                        // Key match is case-insensitive; strip surrounding quotes from value.
                         ct.split(';').find_map(|part| {
                             let p = part.trim();
-                            p.strip_prefix("charset=")
-                                .map(|cs| cs.trim().to_ascii_lowercase())
+                            let eq = p.find('=')?;
+                            if !p[..eq].trim().eq_ignore_ascii_case("charset") {
+                                return None;
+                            }
+                            let cs = p[eq + 1..].trim().trim_matches(|c| c == '"' || c == '\'');
+                            Some(cs.to_ascii_lowercase())
                         })
                     })
                     .and_then(|cs| encoding_rs::Encoding::for_label(cs.as_bytes()))
@@ -162,10 +167,10 @@ pub async fn fetch_text(
                 let mut buf: Vec<u8> = Vec::new();
                 while let Some(chunk) = stream.next().await {
                     let chunk = chunk.map_err(|e| AppError::Network(e.to_string()))?;
-                    buf.extend_from_slice(&chunk);
-                    if buf.len() > cap {
+                    if buf.len().saturating_add(chunk.len()) > cap {
                         return Err(AppError::Validation("Response too large".to_string()));
                     }
+                    buf.extend_from_slice(&chunk);
                 }
 
                 // Decode using the charset we extracted above.

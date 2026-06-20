@@ -310,6 +310,37 @@ async fn test_fetch_text_iso8859_decode() {
     assert_eq!(result.unwrap().text, "Schlüssel");
 }
 
+/// Content-Type with a capital-C "Charset" key and a quoted value must still
+/// resolve to the correct encoding — not silently fall back to UTF-8.
+/// 0xFC is ü in ISO-8859-1; if the charset is missed it would decode as garbage.
+#[tokio::test]
+async fn test_fetch_text_iso8859_uppercase_quoted_charset() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let mock_server = MockServer::start().await;
+    let signal = tokio_util::sync::CancellationToken::new();
+
+    let body_bytes: Vec<u8> = b"Schl\xFCssel".to_vec();
+
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/html; Charset=\"iso-8859-1\"")
+                .set_body_bytes(body_bytes),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let result = fetch_text(&mock_server.uri(), FetchOptions::default(), signal).await;
+    assert!(result.is_ok());
+    assert_eq!(
+        result.unwrap().text,
+        "Schlüssel",
+        "capital-C Charset with quoted value must decode ISO-8859-1, not fall back to UTF-8"
+    );
+}
+
 /// When Content-Type has no charset, fetch_text falls back to UTF-8.
 #[tokio::test]
 async fn test_fetch_text_no_charset_fallback_utf8() {
