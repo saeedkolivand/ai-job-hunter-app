@@ -25,6 +25,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [domain-model.md](domain-model.md)                               | Core types/traits + registries (DocumentModel, JobPosting, ExportRequest/Result, Scraper/SCRAPERS)                         |
 | [resume-domain.md](resume-domain.md)                             | Resume + ATS + export: sections, templates, country standards, ATS scoring model, PDF/DOCX contract                        |
 | [automation-domain.md](automation-domain.md)                     | Scraping + AI-provider: registries, resilience, provider abstraction, embeddings, streaming, prompts                       |
+| [../SCRAPING_ENDPOINTS.md](../SCRAPING_ENDPOINTS.md)             | Per-board scraping endpoint reconnaissance (external snapshot — see the doc)                                               |
 | [extension-domain.md](extension-domain.md)                       | Browser extension (MV3) + desktop bridge: auth model, transport, protocol lockstep, store policy                           |
 | [document-record-wire-format.md](document-record-wire-format.md) | DocumentRecord serde renames = backup-bundle on-disk format; intentional divergence from TS app model                      |
 | [matching-algorithm.md](matching-algorithm.md)                   | Keyword-coverage scoring kernel (Autopilot + ATS), caching, gap analysis, intentional flat-coverage simplification         |
