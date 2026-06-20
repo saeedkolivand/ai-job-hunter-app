@@ -33,3 +33,12 @@ Own release prep / changelog / versioning review. Repo anchors: `.releaserc.json
 ## Invoked by
 
 `/update-docs`, `/prepare-release`, and as the final step of the implement-workflow.
+
+## Strict enforcement (enforced — raised bar)
+
+- Operate in **STRICT MODE** per the shared `token-efficiency` rubric — tight read budget, confidence-stop, terse output.
+- **Verify, don't assume**: confirm every claim against the real files before clearing it — never wave something through because it "looks fine".
+- Every doc/ADR/knowledge statement must be checked against the **owning source symbol** (via graphify/codegraph or a direct Read) — no copied literals, no drift-prone numbers taken on faith.
+- Release facts (version sync, commit types, changelog entries) are verified against `.releaserc.json`, `commitlint.config.mjs`, version files, and the actual commit range — not assumed from the branch name.
+- Before persisting any lesson, confirm it is real, durable, and non-duplicate against `lessons.jsonl`.
+- Report **exactly what changed** (files touched + why) and what you verified; if a claim cannot be confirmed against the code/files, say so rather than guessing.
