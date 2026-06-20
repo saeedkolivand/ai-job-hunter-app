@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { ModalShell } from './ModalShell';
@@ -69,6 +69,60 @@ describe('ModalShell', () => {
     );
     await userEvent.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalled();
+  });
+
+  // --- text-selection drag regression ---
+
+  it('closes when mousedown AND click both land on the backdrop', () => {
+    const onClose = vi.fn();
+    render(
+      <ModalShell open onClose={onClose}>
+        <p>body</p>
+      </ModalShell>
+    );
+    const dialog = screen.getByRole('dialog');
+    const backdrop = dialog.parentElement as HTMLElement;
+
+    fireEvent.mouseDown(backdrop, { target: backdrop });
+    fireEvent.click(backdrop, { target: backdrop });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT close when mousedown starts inside the panel but click reaches the backdrop (selection drag)', () => {
+    const onClose = vi.fn();
+    render(
+      <ModalShell open onClose={onClose}>
+        <p>inner content</p>
+      </ModalShell>
+    );
+    const dialog = screen.getByRole('dialog');
+    const backdrop = dialog.parentElement as HTMLElement;
+    const innerPara = screen.getByText('inner content');
+
+    // Simulate: press starts on a child inside the panel (mousedown on innerPara, which
+    // bubbles up to backdrop — so e.target !== e.currentTarget on the backdrop handler).
+    fireEvent.mouseDown(innerPara);
+    // Release / click lands on the backdrop itself
+    fireEvent.click(backdrop, { target: backdrop });
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('does NOT close on backdrop mousedown+click when closeOnBackdrop={false}', () => {
+    const onClose = vi.fn();
+    render(
+      <ModalShell open onClose={onClose} closeOnBackdrop={false}>
+        <p>body</p>
+      </ModalShell>
+    );
+    const dialog = screen.getByRole('dialog');
+    const backdrop = dialog.parentElement as HTMLElement;
+
+    fireEvent.mouseDown(backdrop, { target: backdrop });
+    fireEvent.click(backdrop, { target: backdrop });
+
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   // --- responsive-window-resize contract (header / footer / className) ---
