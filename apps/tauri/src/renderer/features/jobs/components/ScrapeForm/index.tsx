@@ -85,6 +85,7 @@ export function ScrapeForm({
     (_id, i) =>
       (requiredResults[i]?.data as { connected?: boolean } | undefined)?.connected !== true
   );
+  const blockedByRequiredLogin = unconnectedRequired.length > 0;
 
   const handleSelectAll = () => {
     onFormChange({ boards: listedBoards.map((e) => e.id) });
@@ -142,7 +143,12 @@ export function ScrapeForm({
                 value={form.query}
                 onChange={(e) => onFormChange({ query: e.target.value })}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !scraping && form.query.trim()) {
+                  if (
+                    e.key === 'Enter' &&
+                    !scraping &&
+                    !blockedByRequiredLogin &&
+                    form.query.trim()
+                  ) {
                     e.preventDefault();
                     onStart();
                   }
@@ -285,7 +291,7 @@ export function ScrapeForm({
             )}
 
             {/* Footer */}
-            {!scraping && unconnectedRequired.length > 0 && (
+            {!scraping && blockedByRequiredLogin && (
               <p
                 id="scrape-blocked-hint"
                 aria-live="polite"
@@ -322,10 +328,10 @@ export function ScrapeForm({
               <Button
                 variant="primary"
                 onClick={() => onStart()}
-                disabled={scraping || !form.query.trim() || unconnectedRequired.length > 0}
+                disabled={scraping || !form.query.trim() || blockedByRequiredLogin}
                 loading={scraping}
                 aria-describedby={
-                  !scraping && unconnectedRequired.length > 0 ? 'scrape-blocked-hint' : undefined
+                  !scraping && blockedByRequiredLogin ? 'scrape-blocked-hint' : undefined
                 }
                 data-testid="scrape-start-button"
                 className="transition-all duration-150 ease-out"

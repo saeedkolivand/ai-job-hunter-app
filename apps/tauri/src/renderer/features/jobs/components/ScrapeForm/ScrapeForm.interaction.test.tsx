@@ -280,13 +280,18 @@ function buildFormWithQuery(boards: string[]): Parameters<typeof ScrapeForm>[0][
   };
 }
 
-function renderFormWithQuery(boards: string[], statuses: StubStatus[], anyConnected = false) {
+function renderFormWithQuery(
+  boards: string[],
+  statuses: StubStatus[],
+  anyConnected = false,
+  onStart = vi.fn()
+) {
   stubCatalog = CATALOG;
   stubLoading = false;
   stubStatuses = { results: statuses, anyConnected };
   capturedKeyHandler = null;
 
-  return render(
+  render(
     <ScrapeForm
       show={true}
       form={buildFormWithQuery(boards)}
@@ -294,12 +299,14 @@ function renderFormWithQuery(boards: string[], statuses: StubStatus[], anyConnec
       scrapeOutcome={null}
       onToggle={vi.fn()}
       onFormChange={vi.fn()}
-      onStart={vi.fn()}
+      onStart={onStart}
       onCancel={vi.fn()}
       onGeocode={async () => []}
     />,
     { wrapper: Wrapper }
   );
+
+  return { onStart };
 }
 
 /** Returns the primary Start/Scrape button (variant=primary, no aria-pressed). */
@@ -350,5 +357,24 @@ describe('ScrapeForm — required-board login gate', () => {
     const hint = document.getElementById('scrape-blocked-hint');
     expect(hint).not.toBeNull();
     expect(hint?.tagName.toLowerCase()).toBe('p');
+  });
+
+  // Keyboard-submit regression — CodeRabbit PR #458
+  it('Enter on query input does NOT call onStart when a required board (indeed) is disconnected', () => {
+    const { onStart } = renderFormWithQuery(['indeed'], [{ data: undefined }]);
+
+    const queryInput = screen.getByPlaceholderText('jobs.queryPlaceholder');
+    fireEvent.keyDown(queryInput, { key: 'Enter' });
+
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it('Enter on query input DOES call onStart when a required board (indeed) is connected', () => {
+    const { onStart } = renderFormWithQuery(['indeed'], [{ data: { connected: true } }], true);
+
+    const queryInput = screen.getByPlaceholderText('jobs.queryPlaceholder');
+    fireEvent.keyDown(queryInput, { key: 'Enter' });
+
+    expect(onStart).toHaveBeenCalledTimes(1);
   });
 });
