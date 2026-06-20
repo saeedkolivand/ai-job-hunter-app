@@ -52,7 +52,7 @@ Rust Core (in-process commands)
 SQLite · Ollama/Cloud AI · Chromium · OS Keychain
 ```
 
-**The golden rule:** React never talks to the OS directly. It routes everything through `AppClient` (tauri-client) service hooks, which marshal to Rust commands. The IPC contract is a single source of truth: Zod schemas in `packages/shared/src/ipc/contracts.ts` → both sides stay in sync.
+**The golden rule:** React never talks to the OS directly. It routes everything through `AppClient` (tauri-client) service hooks, which marshal to Rust commands. The IPC contract is a single source of truth: Zod schemas in `packages/shared/src/ipc/contracts/` → both sides stay in sync.
 
 ---
 
@@ -60,27 +60,27 @@ SQLite · Ollama/Cloud AI · Chromium · OS Keychain
 
 ### `src-tauri/src/` — Rust Core
 
-| Directory           | Responsibility                                                                                           |
-| ------------------- | -------------------------------------------------------------------------------------------------------- |
-| `commands/`         | IPC endpoints — handlers for all renderer invocations                                                    |
-| `platform/`         | Centralized config — env vars, data-dir, Ollama host, extension dev-origins                              |
-| `net/`              | Pooled HTTP client, SSRF guards, timeout handling                                                        |
-| `error/`            | Unified `AppError` + `AppResult` — all fallible operations use this                                      |
-| `observability/`    | Timed trace `Span`s for AI, scraping, autopilot (logged to console in dev)                               |
-| `scraping/`         | Board scrapers (18+ boards) — chromiumoxide for browser boards, HTTP for APIs; registry-driven discovery |
-| `documents/`        | Document import, OCR dispatch, SQLite storage, full-text indexing                                        |
-| `jobs/`             | Job tracker state machine (queued → running → done/failed)                                               |
-| `credentials/`      | OS keychain integration — AI keys + board session auth                                                   |
-| `autopilot/`        | Job-discovery agent + scheduler — finds, ranks, notifies; crash reconciliation                           |
-| `applications/`     | Application store aggregate (Saved / Applied / Rejected) — dedup by URL, track generations               |
-| `postings/`         | Job posting index — vector + keyword search                                                              |
-| `ai_provider/`      | Provider adapters (Ollama, OpenAI, Anthropic, Gemini, CLI agents) — streaming, reasoning, token limits   |
-| `extension_bridge/` | WebSocket bridge for browser extension — job import, pairing, token rotation                             |
-| `export/`           | DOCX + PDF rendering — Typst engine (PDF) + docx-rs (DOCX), glyph subsetting                             |
-| `updater/`          | Auto-update state machine — check, download, install                                                     |
-| `tray/`             | System-tray integration — dynamic "New jobs: N" badge, pause all autopilots                              |
-| `deeplink/`         | Deep-link guard (`ajh://autopilot/<id>`) — strict allowlist validation                                   |
-| `ai_generations/`   | Metadata tracking for generated résumés / cover letters / answers                                        |
+| Directory               | Responsibility                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------------- |
+| `commands/`             | IPC endpoints — handlers for all renderer invocations                                                   |
+| `platform/`             | Centralized config — env vars, data-dir, Ollama host, extension dev-origins                             |
+| `net/`                  | Pooled HTTP client, SSRF guards, timeout handling                                                       |
+| `error/`                | Unified `AppError` + `AppResult` — all fallible operations use this                                     |
+| `observability/`        | Timed trace `Span`s for AI, scraping, autopilot (logged to console in dev)                              |
+| `scraping/`             | Board scrapers (20 boards) — chromiumoxide for browser boards, HTTP for APIs; registry-driven discovery |
+| `documents/`            | Document import, OCR dispatch, SQLite storage, full-text indexing                                       |
+| `jobs/`                 | Job tracker state machine (queued → running → done/failed)                                              |
+| `credentials/`          | OS keychain integration — AI keys + board session auth                                                  |
+| `autopilot/`            | Job-discovery agent + scheduler — finds, ranks, notifies; crash reconciliation                          |
+| `applications/`         | Application store aggregate (Saved / Applied / Rejected) — dedup by URL, track generations              |
+| `postings/`             | Job posting index — vector + keyword search                                                             |
+| `commands/ai_provider/` | Provider adapters (Ollama, OpenAI, Anthropic, Gemini, CLI agents) — streaming, reasoning, token limits  |
+| `extension_bridge/`     | WebSocket bridge for browser extension — job import, pairing, token rotation                            |
+| `export/`               | DOCX + PDF rendering — Typst engine (PDF) + docx-rs (DOCX), glyph subsetting                            |
+| `updater/`              | Auto-update state machine — check, download, install                                                    |
+| `tray/`                 | System-tray integration — dynamic "New jobs: N" badge, pause all autopilots                             |
+| `deeplink/`             | Deep-link guard (`ajh://autopilot/<id>`) — strict allowlist validation                                  |
+| `ai_generations/`       | Metadata tracking for generated résumés / cover letters / answers                                       |
 
 ### `src/renderer/` — React Renderer
 
@@ -124,11 +124,11 @@ The renderer is a thin **client**: it has no business logic. All stateful decisi
 
 ### IPC & Commands
 
-All React ↔ Rust communication is typed. The contract is **Zod schemas** in `packages/shared/src/ipc/contracts.ts`. When you add a new capability:
+All React ↔ Rust communication is typed. The contract is **Zod schemas** in `packages/shared/src/ipc/contracts/`. When you add a new capability:
 
 1. Define the request/response shapes in the Zod contract
 2. Implement the handler in `src-tauri/src/commands/`
-3. Wire the invoke call in `src/tauri-client.ts`
+3. Wire the invoke call in `src/tauri-client/namespaces/`
 4. Create a React Query hook in `src/renderer/services/`
 5. Run `pnpm gen:ipc` to regenerate Rust struct definitions
 
@@ -143,7 +143,7 @@ All remote data (IPC calls) flows through React Query service hooks, never raw `
 ### Design System
 
 Color tokens: `text-brand`, `bg-brand`, `border-brand` (no hardcoded hex).  
-Motion tokens: `transition.fast`, `transition.modal`, `transition.spring` (in `@/lib/motion`).  
+Motion tokens: `transition.fast`, `transition.modal`, `transition.spring` (import `transition` from `@ajh/ui`).  
 UI primitives: all from `@ajh/ui` (Button, Input, Modal, etc.) — no raw `<button>` or `<select>`.  
 Lint guards enforce this; violations block commits.
 
