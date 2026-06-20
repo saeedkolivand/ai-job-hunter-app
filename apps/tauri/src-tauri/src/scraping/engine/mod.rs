@@ -58,6 +58,10 @@ pub struct ScraperEngine {
     semaphore: ArcSwap<Semaphore>,
     /// Active jobs keyed by job_id. Used by `cancel(job_id)`.
     jobs: Arc<Mutex<HashMap<String, CancellationToken>>>,
+    /// Process-wide browser semaphore — one chromiumoxide session at a time.
+    /// Shared across concurrent `scrape_boards` calls so two jobs that each
+    /// include a browser board cannot spin up two headless instances at once.
+    browser_sem: Arc<Semaphore>,
 }
 
 impl ScraperEngine {
@@ -65,6 +69,7 @@ impl ScraperEngine {
         Self {
             semaphore: ArcSwap::from_pointee(Semaphore::new(2)),
             jobs: Arc::new(Mutex::new(HashMap::new())),
+            browser_sem: Arc::new(Semaphore::new(1)),
         }
     }
 
@@ -182,21 +187,19 @@ impl ScraperEngine {
     }
 
     /// Fan-out core — run multiple boards concurrently (up to 3 in parallel;
-    /// browser boards are serialized via a shared size-1 semaphore) and collect
-    /// per-board results. Tests inject fake scrapers through this seam.
+    /// browser boards are serialized via the process-wide `browser_sem`) and
+    /// collect per-board results in **input order**. Tests inject fake scrapers
+    /// through this seam.
     pub async fn run_boards<'s>(
         resolved: Vec<(String, anyhow::Result<&'s dyn Scraper>)>,
         input: BoardSearchInput,
         parent: CancellationToken,
         on_progress: Option<Arc<dyn Fn(f32) + Send + Sync>>,
         on_item: Option<Arc<dyn Fn(JobPosting) + Send + Sync>>,
+        browser_sem: Arc<Semaphore>,
     ) -> Vec<(String, anyhow::Result<Vec<JobPosting>>)> {
         let total = resolved.len();
         let done = Arc::new(AtomicUsize::new(0));
-
-        // One browser board at a time — chromiumoxide has its own per-profile
-        // session and running two headless instances concurrently causes flakiness.
-        let browser_sem = Arc::new(Semaphore::new(1));
 
         // Build per-board tasks as boxed futures so the closure doesn't have to
         // be higher-kinded over the scraper's lifetime (which triggers rustc's
@@ -257,10 +260,10 @@ impl ScraperEngine {
             })
             .collect();
 
-        futures::stream::iter(tasks)
-            .buffer_unordered(3)
-            .collect()
-            .await
+        // `.buffered` (not `.buffer_unordered`) preserves input order so that
+        // `postings` is the concatenation of all boards' results in input order,
+        // matching the doc comment on `scrape_boards`.
+        futures::stream::iter(tasks).buffered(3).collect().await
     }
 
     /// Multi-board scrape: acquire one engine permit, reuse or mint the parent
@@ -301,6 +304,11 @@ impl ScraperEngine {
     where
         F: Fn(&str) -> anyhow::Result<&'static dyn Scraper>,
     {
+        // F1 — guard against empty board list before doing any async work.
+        if boards.is_empty() {
+            return Err(anyhow::anyhow!("at least one board is required"));
+        }
+
         // Bound concurrency — one engine permit for the whole multi-board batch.
         let sem = self.semaphore.load_full();
         let _permit = sem
@@ -308,13 +316,19 @@ impl ScraperEngine {
             .await
             .map_err(|_| anyhow::anyhow!("scraper engine semaphore closed"))?;
 
-        // Reuse or mint the parent token under job_id so `cancel(job_id)` still
-        // works (Autopilot pre-registers its own token for the whole run).
-        let parent = {
+        // F2/F5 — reuse a pre-registered token (Autopilot pre-registers its own
+        // token for the whole run) or mint a fresh one. Track whether WE minted it
+        // so we only remove the slot when we own it — a pre-registered token is
+        // managed by the caller (Autopilot calls `unregister_token` itself).
+        let (parent, we_minted) = {
             let mut jobs = self.jobs.lock().await;
-            jobs.entry(job_id.clone())
-                .or_insert_with(CancellationToken::new)
-                .clone()
+            if let Some(existing) = jobs.get(&job_id) {
+                (existing.clone(), false)
+            } else {
+                let token = CancellationToken::new();
+                jobs.insert(job_id.clone(), token.clone());
+                (token, true)
+            }
         };
 
         // Dedupe (first-seen order) + truncate to MAX_BOARDS_PER_BATCH so a
@@ -339,19 +353,33 @@ impl ScraperEngine {
             })
             .collect();
 
-        let results = Self::run_boards(resolved, input, parent.clone(), on_progress, on_item).await;
+        let results = Self::run_boards(
+            resolved,
+            input,
+            parent.clone(),
+            on_progress,
+            on_item,
+            self.browser_sem.clone(),
+        )
+        .await;
 
-        // Always remove the token slot, even on partial failure.
-        self.jobs.lock().await.remove(&job_id);
+        // F5 — only remove the token slot when we minted it. A pre-registered
+        // token (Autopilot pre-registers its own) is managed by the caller.
+        if we_minted {
+            self.jobs.lock().await.remove(&job_id);
+        }
 
         let mut all_postings: Vec<JobPosting> = Vec::new();
         let mut summaries: Vec<BoardScrapeSummary> = Vec::new();
-        let mut all_failed = true;
+        // F6 — true only when at least one board returned a non-empty Ok.
+        let mut any_recovered_items = false;
 
         for (board, res) in results {
             match res {
                 Ok(postings) => {
-                    all_failed = false;
+                    if !postings.is_empty() {
+                        any_recovered_items = true;
+                    }
                     summaries.push(BoardScrapeSummary {
                         board,
                         count: postings.len(),
@@ -369,9 +397,9 @@ impl ScraperEngine {
             }
         }
 
-        // Return Err only when the user cancelled the run and every board failed
-        // with no recovered items — a partial success is always Ok.
-        if all_failed && parent.is_cancelled() {
+        // F6 — return Err only when the user cancelled AND no items were recovered.
+        // A board returning Ok([]) after observing cancellation is not a success.
+        if parent.is_cancelled() && !any_recovered_items {
             return Err(anyhow::anyhow!("scrape cancelled"));
         }
 

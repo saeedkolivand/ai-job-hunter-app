@@ -86,6 +86,13 @@ impl RateLimiter {
         );
     }
 
+    /// Clear all recorded request timestamps, resetting the window.
+    ///
+    /// # Panics
+    ///
+    /// `blocking_lock` panics if called from inside a Tokio async context
+    /// (e.g. inside `async fn` or a spawned task). Only call this from a
+    /// synchronous context such as a `#[test]` function.
     pub fn reset(&self) {
         let mut requests = self.requests.blocking_lock();
         requests.clear();

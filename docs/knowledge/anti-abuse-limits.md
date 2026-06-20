@@ -9,7 +9,7 @@ The `limits` module provides **in-memory rate limiting + concurrency control** o
 - `ai_generate`: AI inference (cost, latency)
 - `scrape_boards` / `scrape_url`: Web scraping (target rate-limits, IP bans)
 
-The limiter is **process-scoped** (in-memory; resets on app restart) and operates at the **command boundary** (right after deserialization, before business logic). **Multi-board batch limit**: `MAX_BOARDS_PER_BATCH = 6` server-side cap in `scraping/engine/mod.rs` prevents unbounded request amplification from crafted IPC payloads (even if Zod validates on the renderer).
+The limiter is **process-scoped** (in-memory; resets on app restart) and operates at the **command boundary** (right after deserialization, before business logic). **Multi-board batch limit**: `MAX_BOARDS_PER_BATCH` server-side cap in `scraping/engine/mod.rs` prevents unbounded request amplification from crafted IPC payloads (even if Zod validates on the renderer).
 
 ## Design
 
@@ -77,7 +77,7 @@ pub async fn scrape_boards(
         state.limits.check_scrape(board).await?;
     }
 
-    // Engine enforces MAX_BOARDS_PER_BATCH server-side
+    // Engine enforces MAX_BOARDS_PER_BATCH (scraping/engine/mod.rs) server-side
     // Proceed with multi-board scraping
     // ...
 }

@@ -140,3 +140,23 @@ describe('makeMultiSelectKeyHandler — unhandled keys', () => {
     expect(e.preventDefault).not.toHaveBeenCalled();
   });
 });
+
+describe('makeMultiSelectKeyHandler — count === 0 (empty list)', () => {
+  it('ArrowRight on an empty list does not move focus, toggle, or preventDefault', () => {
+    const { focusedIdxRef, onToggle, handler } = setup(0, 0);
+    const e = makeKey('ArrowRight');
+    fire(handler, e);
+    expect(focusedIdxRef.current).toBe(0);
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(e.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('Space on an empty list does not toggle or preventDefault', () => {
+    const { focusedIdxRef, onToggle, handler } = setup(0, 0);
+    const e = makeKey(' ');
+    fire(handler, e);
+    expect(focusedIdxRef.current).toBe(0);
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(e.preventDefault).not.toHaveBeenCalled();
+  });
+});

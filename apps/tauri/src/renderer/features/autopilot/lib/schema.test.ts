@@ -72,6 +72,10 @@ describe('autopilotWizardSchema — step-0 gate', () => {
     ).toBe(false);
   });
 
+  it('rejects a boards array containing an empty string (per-item min(1))', () => {
+    expect(autopilotWizardSchema.safeParse(makeForm({ boards: [''] })).success).toBe(false);
+  });
+
   it('rejects out-of-range numeric controls (amount > 500, score > 100)', () => {
     expect(autopilotWizardSchema.safeParse(makeForm({ amount: 501 })).success).toBe(false);
     expect(autopilotWizardSchema.safeParse(makeForm({ minMatchScore: 101 })).success).toBe(false);

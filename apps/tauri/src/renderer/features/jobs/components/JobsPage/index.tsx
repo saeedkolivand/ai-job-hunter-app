@@ -110,7 +110,7 @@ export function JobsPage() {
       const completedData = ev.data as
         | { boards?: { board: string; count: number; error?: string }[] }
         | undefined;
-      const boardSummaries = completedData?.boards ?? [];
+      const boardSummaries = Array.isArray(completedData?.boards) ? completedData.boards : [];
       const failedBoards = boardSummaries.filter((b) => b.error);
       let note: string | undefined;
       if (failedBoards.length > 0) {

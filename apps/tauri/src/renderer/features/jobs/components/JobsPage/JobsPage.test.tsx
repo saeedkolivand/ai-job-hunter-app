@@ -282,4 +282,19 @@ describe('JobsPage — job.completed event handler', () => {
     expect(outcome?.ok).toBe(false);
     expect(outcome?.note).toBe('connection refused');
   });
+
+  it('malformed data.boards (not an array) → does not throw, noteScrapeFinished called with ok:true and no note', async () => {
+    renderJobsPage();
+
+    fireJobEvent({
+      type: 'job.completed',
+      jobId: 'job-123',
+      data: { boards: {} },
+    });
+
+    await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
+    const outcome = scrapingMock.noteScrapeFinished.mock.calls[0]?.[1];
+    expect(outcome?.ok).toBe(true);
+    expect(outcome?.note).toBeUndefined();
+  });
 });

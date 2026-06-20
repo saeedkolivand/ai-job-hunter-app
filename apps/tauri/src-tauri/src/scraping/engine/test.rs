@@ -1,4 +1,9 @@
 use super::*;
+use tokio::sync::Semaphore as TokioSemaphore;
+
+fn test_browser_sem() -> Arc<TokioSemaphore> {
+    Arc::new(TokioSemaphore::new(1))
+}
 
 #[test]
 fn test_catalog() {
@@ -188,6 +193,50 @@ impl super::super::types::Scraper for FakeScraper {
     }
 }
 
+/// A fake scraper that always returns a fixed number of items, ignoring the
+/// cancellation signal. Used to simulate a board that already has items buffered
+/// before checking cancellation (e.g., a board that completed a page fetch).
+struct UncancellableScraper {
+    count: usize,
+}
+
+#[async_trait::async_trait]
+impl super::super::types::Scraper for UncancellableScraper {
+    fn id(&self) -> &'static str {
+        "uncancellable"
+    }
+    fn display_name(&self) -> &'static str {
+        "Uncancellable"
+    }
+    fn mode(&self) -> ScraperMode {
+        ScraperMode::Http
+    }
+    async fn search(
+        &self,
+        _input: BoardSearchInput,
+        _ctx: ScrapeContext,
+    ) -> anyhow::Result<Vec<JobPosting>> {
+        // Intentionally ignores the signal to simulate a board returning items
+        // it already fetched before noticing the cancellation.
+        Ok((0..self.count)
+            .map(|i| JobPosting {
+                id: format!("always:{i}"),
+                external_id: None,
+                title: format!("Job {i}"),
+                company: "Always Co".to_string(),
+                location: None,
+                url: format!("https://always.example.com/{i}"),
+                source: "uncancellable".to_string(),
+                description: None,
+                requirements: None,
+                posted_at: None,
+                captured_at: 0,
+                extra: std::collections::HashMap::new(),
+            })
+            .collect())
+    }
+}
+
 /// A fake scraper that always returns an error.
 struct FailingScraper;
 
@@ -304,8 +353,15 @@ async fn run_boards_collects_all_boards_up_to_amount() {
     });
 
     let parent = CancellationToken::new();
-    let results =
-        ScraperEngine::run_boards(resolved, fake_input(10), parent, None, Some(on_item)).await;
+    let results = ScraperEngine::run_boards(
+        resolved,
+        fake_input(10),
+        parent,
+        None,
+        Some(on_item),
+        test_browser_sem(),
+    )
+    .await;
 
     assert_eq!(results.len(), 3, "one result per board");
     for (_, res) in &results {
@@ -332,7 +388,15 @@ async fn run_boards_one_error_does_not_kill_others() {
     ];
 
     let parent = CancellationToken::new();
-    let results = ScraperEngine::run_boards(resolved, fake_input(10), parent, None, None).await;
+    let results = ScraperEngine::run_boards(
+        resolved,
+        fake_input(10),
+        parent,
+        None,
+        None,
+        test_browser_sem(),
+    )
+    .await;
 
     assert_eq!(results.len(), 3);
     let map: HashMap<String, _> = results.into_iter().collect();
@@ -363,7 +427,15 @@ async fn run_boards_parent_cancel_stops_all() {
     let parent = CancellationToken::new();
     parent.cancel(); // cancel before boards start
 
-    let results = ScraperEngine::run_boards(resolved, fake_input(1000), parent, None, None).await;
+    let results = ScraperEngine::run_boards(
+        resolved,
+        fake_input(1000),
+        parent,
+        None,
+        None,
+        test_browser_sem(),
+    )
+    .await;
 
     // Both boards observed the cancelled signal immediately and streamed 0 items.
     for (_, res) in &results {
@@ -384,8 +456,15 @@ async fn run_boards_child_cap_stops_only_its_board() {
     ];
 
     let parent = CancellationToken::new();
-    let results =
-        ScraperEngine::run_boards(resolved, fake_input(3), parent.clone(), None, None).await;
+    let results = ScraperEngine::run_boards(
+        resolved,
+        fake_input(3),
+        parent.clone(),
+        None,
+        None,
+        test_browser_sem(),
+    )
+    .await;
 
     assert!(
         !parent.is_cancelled(),
@@ -414,7 +493,15 @@ async fn run_boards_browser_board_collects_items() {
     ];
 
     let parent = CancellationToken::new();
-    let results = ScraperEngine::run_boards(resolved, fake_input(10), parent, None, None).await;
+    let results = ScraperEngine::run_boards(
+        resolved,
+        fake_input(10),
+        parent,
+        None,
+        None,
+        test_browser_sem(),
+    )
+    .await;
 
     assert_eq!(results.len(), 2, "one result per board");
     let map: HashMap<String, _> = results.into_iter().collect();
@@ -494,7 +581,15 @@ async fn run_boards_browser_boards_serialized() {
     ];
 
     let parent = CancellationToken::new();
-    ScraperEngine::run_boards(resolved, fake_input(5), parent, None, None).await;
+    ScraperEngine::run_boards(
+        resolved,
+        fake_input(5),
+        parent,
+        None,
+        None,
+        test_browser_sem(),
+    )
+    .await;
 
     assert_eq!(
         peak.load(Ordering::SeqCst),
@@ -537,7 +632,15 @@ async fn scrape_boards_dedupes_and_caps_large_input() {
     };
 
     let parent = CancellationToken::new();
-    let results = ScraperEngine::run_boards(fake_refs, fake_input(1), parent, None, None).await;
+    let results = ScraperEngine::run_boards(
+        fake_refs,
+        fake_input(1),
+        parent,
+        None,
+        None,
+        test_browser_sem(),
+    )
+    .await;
 
     assert!(
         results.len() <= MAX_BOARDS_PER_BATCH,
@@ -671,18 +774,21 @@ async fn scrape_boards_all_failed_and_cancelled_returns_err() {
 
 /// HIGH 3 (complementary) — partial success under cancellation returns `Ok`.
 ///
-/// When at least one board succeeds (≥1 item recovered) and the parent token is
-/// cancelled, `scrape_boards` must return `Ok` — the two-condition gate
-/// (`all_failed && parent.is_cancelled()`) requires BOTH to be true.
+/// When at least one board recovers ≥1 item and the parent token is cancelled,
+/// `scrape_boards` must return `Ok`. The gate now requires BOTH
+/// `parent.is_cancelled() && !any_recovered_items` to return `Err`, so a board
+/// that delivers items despite the cancel (already had a page buffered) keeps
+/// the run as `Ok`.
 ///
 /// Exercises the EXACT same code path as the public `scrape_boards` via the
 /// resolver seam (`scrape_boards_with_resolver`).
 #[tokio::test]
 async fn scrape_boards_partial_success_under_cancel_returns_ok() {
-    // Static fake scrapers — required so the resolver closure can return
-    // `&'static dyn Scraper` (matching what boards::get returns from SCRAPERS).
-    static FAKE_OK: std::sync::LazyLock<FakeScraper> =
-        std::sync::LazyLock::new(|| FakeScraper::http(3));
+    // UncancellableScraper ignores the signal — simulates a board that already
+    // fetched a page before the cancel arrived. Static so the resolver closure
+    // can return `&'static dyn Scraper`.
+    static FAKE_OK: std::sync::LazyLock<UncancellableScraper> =
+        std::sync::LazyLock::new(|| UncancellableScraper { count: 3 });
     static FAKE_FAIL: std::sync::LazyLock<FailingScraper> =
         std::sync::LazyLock::new(|| FailingScraper);
 
@@ -696,8 +802,8 @@ async fn scrape_boards_partial_success_under_cancel_returns_ok() {
         .await;
     token.cancel();
 
-    // Two board ids: "ok-board" resolves to a working FakeScraper (3 items),
-    // "fail-board" resolves to a FailingScraper (always Err).
+    // Two board ids: "ok-board" resolves to UncancellableScraper (3 items even
+    // under cancel), "fail-board" resolves to FailingScraper (always Err).
     let boards = vec!["ok-board".to_string(), "fail-board".to_string()];
 
     let result = engine
@@ -715,14 +821,10 @@ async fn scrape_boards_partial_success_under_cancel_returns_ok() {
         )
         .await;
 
-    // Partial success (at least one board Ok) + cancelled → must return Ok, not Err.
+    // Partial success (ok-board recovered 3 items) + cancelled → must return Ok.
     let (postings, summaries) =
         result.expect("partial success under cancellation must return Ok, not Err");
 
-    // ok-board streamed items even though the parent was pre-cancelled:
-    // FakeScraper checks ctx.signal which is a child token, so 0 items is also
-    // acceptable (the parent was cancelled before search started). What matters
-    // is that run_boards returned Ok for that board — the gate must see !all_failed.
     assert_eq!(
         summaries.len(),
         2,
@@ -737,6 +839,10 @@ async fn scrape_boards_partial_success_under_cancel_returns_ok() {
         ok_summary.error.is_none(),
         "ok-board must not carry an error in its summary; got {ok_summary:?}"
     );
+    assert!(
+        ok_summary.count > 0,
+        "ok-board must report recovered items; got count=0"
+    );
 
     let fail_summary = summaries
         .iter()
@@ -747,7 +853,280 @@ async fn scrape_boards_partial_success_under_cancel_returns_ok() {
         "fail-board must carry an error in its summary; got {fail_summary:?}"
     );
 
-    // postings may be 0 (if the child token was already cancelled), but the
-    // overall result must be Ok — that's the gate being tested.
-    let _ = postings; // count is environment-dependent; Ok return is the assertion
+    // The ok-board's 3 items must be present in the result.
+    assert!(
+        !postings.is_empty(),
+        "recovered postings must be non-empty when ok-board delivered items"
+    );
+}
+
+// ── F1: empty boards guard ────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn scrape_boards_rejects_empty_boards_list() {
+    let engine = ScraperEngine::new();
+    let result = engine
+        .scrape_boards(&[], fake_input(5), "job-empty".to_string(), None, None)
+        .await;
+    assert!(result.is_err(), "empty boards list must return Err");
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("at least one board"),
+        "error message must mention the empty-list requirement"
+    );
+}
+
+// ── F3: process-wide browser semaphore across concurrent engine calls ─────────
+
+/// Two concurrent `scrape_boards` calls that both include a browser board must
+/// serialize those browser boards on the shared engine semaphore — peak browser
+/// concurrency must remain 1 regardless of how many scrape_boards calls are
+/// in-flight simultaneously.
+#[tokio::test]
+async fn concurrent_scrape_boards_serialize_browser_boards() {
+    use std::sync::atomic::{AtomicI32, Ordering as Ord};
+    use std::time::Duration;
+
+    // Static probe scrapers so the resolver closure can return `&'static dyn Scraper`.
+    static ACTIVE: std::sync::LazyLock<Arc<AtomicI32>> =
+        std::sync::LazyLock::new(|| Arc::new(AtomicI32::new(0)));
+    static PEAK: std::sync::LazyLock<Arc<AtomicI32>> =
+        std::sync::LazyLock::new(|| Arc::new(AtomicI32::new(0)));
+
+    struct ProbeScraper;
+
+    #[async_trait::async_trait]
+    impl Scraper for ProbeScraper {
+        fn id(&self) -> &'static str {
+            "probe"
+        }
+        fn display_name(&self) -> &'static str {
+            "Probe"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Browser
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            _ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            let now = ACTIVE.fetch_add(1, Ord::SeqCst) + 1;
+            let mut cur = PEAK.load(Ord::SeqCst);
+            while now > cur {
+                match PEAK.compare_exchange(cur, now, Ord::SeqCst, Ord::SeqCst) {
+                    Ok(_) => break,
+                    Err(p) => cur = p,
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            ACTIVE.fetch_sub(1, Ord::SeqCst);
+            Ok(vec![])
+        }
+    }
+
+    static PROBE: std::sync::LazyLock<ProbeScraper> = std::sync::LazyLock::new(|| ProbeScraper);
+
+    // Use one shared engine — both calls share the same `browser_sem` field.
+    let engine = Arc::new(ScraperEngine::new());
+    let e1 = engine.clone();
+    let e2 = engine.clone();
+
+    // Bind board slices to named variables so the temporaries live long enough
+    // across the tokio::join! expansion.
+    let boards_a = vec!["probe-a".to_string()];
+    let boards_b = vec!["probe-b".to_string()];
+
+    let (r1, r2) = tokio::join!(
+        e1.scrape_boards_with_resolver(
+            &boards_a,
+            fake_input(1),
+            "job-browser-1".to_string(),
+            None,
+            None,
+            |_id| Ok(&*PROBE as &'static dyn Scraper),
+        ),
+        e2.scrape_boards_with_resolver(
+            &boards_b,
+            fake_input(1),
+            "job-browser-2".to_string(),
+            None,
+            None,
+            |_id| Ok(&*PROBE as &'static dyn Scraper),
+        ),
+    );
+    let _ = (r1, r2);
+
+    assert_eq!(
+        PEAK.load(Ord::SeqCst),
+        1,
+        "shared browser_sem must serialize browser boards across concurrent scrape_boards calls"
+    );
+}
+
+// ── F4: input-order preservation ─────────────────────────────────────────────
+
+/// `.buffered(3)` preserves input order — postings from board "a" must precede
+/// those from "b", which must precede "c", regardless of which board finishes first.
+#[tokio::test]
+async fn run_boards_preserves_input_order() {
+    use std::time::Duration;
+
+    // Slow → Fast → Medium intentionally out of completion order.
+    struct DelayedScraper {
+        delay_ms: u64,
+        tag: &'static str,
+    }
+
+    #[async_trait::async_trait]
+    impl Scraper for DelayedScraper {
+        fn id(&self) -> &'static str {
+            "delayed"
+        }
+        fn display_name(&self) -> &'static str {
+            "Delayed"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            tokio::time::sleep(Duration::from_millis(self.delay_ms)).await;
+            if ctx.signal.is_cancelled() {
+                return Ok(vec![]);
+            }
+            Ok(vec![JobPosting {
+                id: self.tag.to_string(),
+                external_id: None,
+                title: self.tag.to_string(),
+                company: "co".into(),
+                location: None,
+                url: format!("https://example.com/{}", self.tag),
+                source: self.tag.to_string(),
+                description: None,
+                requirements: None,
+                posted_at: None,
+                captured_at: 0,
+                extra: std::collections::HashMap::new(),
+            }])
+        }
+    }
+
+    let slow = DelayedScraper {
+        delay_ms: 40,
+        tag: "a",
+    };
+    let fast = DelayedScraper {
+        delay_ms: 5,
+        tag: "b",
+    };
+    let mid = DelayedScraper {
+        delay_ms: 20,
+        tag: "c",
+    };
+
+    let resolved: Vec<(String, anyhow::Result<&dyn Scraper>)> = vec![
+        ("a".into(), Ok(&slow as &dyn Scraper)),
+        ("b".into(), Ok(&fast as &dyn Scraper)),
+        ("c".into(), Ok(&mid as &dyn Scraper)),
+    ];
+
+    let parent = CancellationToken::new();
+    let results = ScraperEngine::run_boards(
+        resolved,
+        fake_input(5),
+        parent,
+        None,
+        None,
+        test_browser_sem(),
+    )
+    .await;
+
+    // Order must match input (a, b, c) even though completion order is b, c, a.
+    let names: Vec<&str> = results.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(
+        names,
+        vec!["a", "b", "c"],
+        "run_boards must preserve input order"
+    );
+}
+
+// ── F6: cancelled + zero-recovered = error ────────────────────────────────────
+
+/// All boards return `Ok([])` under a pre-cancelled token → `scrape_boards`
+/// must return `Err("scrape cancelled")` because no items were actually recovered.
+#[tokio::test]
+async fn scrape_boards_all_empty_ok_under_cancel_returns_err() {
+    static EMPTY_FAKE: std::sync::LazyLock<FakeScraper> =
+        std::sync::LazyLock::new(|| FakeScraper::http(100));
+
+    let engine = ScraperEngine::new();
+    let token = CancellationToken::new();
+    engine
+        .register_token("job-empty-cancel", token.clone())
+        .await;
+    token.cancel(); // pre-cancel so FakeScraper sees it and returns Ok([])
+
+    let result = engine
+        .scrape_boards_with_resolver(
+            &["board-a".to_string(), "board-b".to_string()],
+            fake_input(100),
+            "job-empty-cancel".to_string(),
+            None,
+            None,
+            |_id| Ok(&*EMPTY_FAKE as &'static dyn Scraper),
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "cancelled run with all Ok([]) must return Err, got: {result:?}"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("cancelled"),
+        "error must mention cancellation; got: {msg}"
+    );
+}
+
+// ── F2/F5: pre-registered token not removed by scrape_boards ─────────────────
+
+/// When the caller pre-registers a token before calling `scrape_boards`,
+/// the token slot must still exist in the engine's job map after the call
+/// (scrape_boards must not remove a token it did not mint).
+#[tokio::test]
+async fn scrape_boards_does_not_remove_pre_registered_token() {
+    static FAKE: std::sync::LazyLock<FakeScraper> =
+        std::sync::LazyLock::new(|| FakeScraper::http(1));
+
+    let engine = ScraperEngine::new();
+    let token = CancellationToken::new();
+    engine
+        .register_token("job-preregistered", token.clone())
+        .await;
+
+    // scrape_boards reuses the pre-registered token; we_minted=false → no removal.
+    let _ = engine
+        .scrape_boards_with_resolver(
+            &["board-x".to_string()],
+            fake_input(1),
+            "job-preregistered".to_string(),
+            None,
+            None,
+            |_id| Ok(&*FAKE as &'static dyn Scraper),
+        )
+        .await;
+
+    // Token must still be reachable via cancel — if scrape_boards had removed it,
+    // this cancel would be a no-op and the token would not be cancelled.
+    engine.cancel("job-preregistered").await;
+    assert!(
+        token.is_cancelled(),
+        "pre-registered token must remain in the job map after scrape_boards completes"
+    );
 }

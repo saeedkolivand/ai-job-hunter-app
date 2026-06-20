@@ -107,7 +107,7 @@ describe('useBoardStatuses — anyConnected', () => {
       client,
     });
 
-    await waitFor(() => result.current.results.every((r) => r.isSuccess));
+    await waitFor(() => expect(result.current.results.every((r) => r.isSuccess)).toBe(true));
 
     expect(result.current.anyConnected).toBe(false);
   });

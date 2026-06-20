@@ -73,6 +73,7 @@ export function makeMultiSelectKeyHandler(
   onToggle: (idx: number) => void
 ) {
   return (e: KeyboardEvent<HTMLElement>) => {
+    if (length <= 0) return;
     const current = focusedIdxRef.current;
     let nextIdx: number | null = null;
     let shouldToggle = false;

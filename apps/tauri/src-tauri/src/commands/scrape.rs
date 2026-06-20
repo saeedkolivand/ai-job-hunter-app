@@ -140,6 +140,13 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
             );
         });
 
+    // F2 — register the cancellation token BEFORE spawning so that a fast
+    // `jobs_cancel` call (arriving between this return and the spawn waking) is
+    // never a no-op. `scrape_boards` detects the pre-registered slot and reuses
+    // it (we_minted=false) and therefore will NOT remove it — we clean up below.
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+    engine.register_token(&job_id, cancel_token).await;
+
     let app_clone = app.clone();
     let job_id_clone = job_id.clone();
     tokio::spawn(async move {
@@ -154,6 +161,10 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
                 Some(on_item),
             )
             .await;
+
+        // F2/F5 — we pre-registered the token, so scrape_boards left the slot
+        // in place; clean it up now that the run is done.
+        engine.unregister_token(&job_id_clone).await;
 
         match &result {
             Ok((postings, summaries)) => {
