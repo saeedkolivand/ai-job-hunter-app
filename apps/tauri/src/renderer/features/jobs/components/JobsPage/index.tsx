@@ -44,7 +44,7 @@ export function JobsPage() {
   const [showScrapeForm, setShowScrapeForm] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [scrapeForm, setScrapeForm] = useState<ScrapeFormState>({
-    board: 'linkedin',
+    boards: ['linkedin'],
     query: '',
     location: '',
     radiusKm: 0,
@@ -75,11 +75,6 @@ export function JobsPage() {
     startScrape,
     cancelScrape,
     noteScrapeFinished,
-    handleInlineConnect,
-    handleInlineDisconnect,
-    boardConnected,
-    connectPending,
-    disconnectPending,
   } = useScraping(notify, scrapeForm);
 
   useJobEvents((raw: unknown) => {
@@ -111,7 +106,24 @@ export function JobsPage() {
     }
 
     if (ev.type === 'job.completed') {
-      noteScrapeFinished(ev.jobId, { ok: true });
+      // Read per-board summary to surface partial failures.
+      const completedData = ev.data as
+        | { boards?: { board: string; count: number; error?: string }[] }
+        | undefined;
+      const boardSummaries = completedData?.boards ?? [];
+      const failedBoards = boardSummaries.filter((b) => b.error);
+      let note: string | undefined;
+      if (failedBoards.length > 0) {
+        const total = boardSummaries.length;
+        const done = total - failedBoards.length;
+        const failedNames = failedBoards.map((b) => b.board).join(', ');
+        note = t('jobs.partialScrapeNote', {
+          done: String(done),
+          total: String(total),
+          failed: failedNames,
+        });
+      }
+      noteScrapeFinished(ev.jobId, { ok: true, note });
       void invalidatePostings();
     } else if (ev.type === 'job.failed') {
       noteScrapeFinished(ev.jobId, {
@@ -240,15 +252,10 @@ export function JobsPage() {
             form={scrapeForm}
             scraping={scraping}
             scrapeOutcome={scrapeOutcome}
-            boardConnected={boardConnected}
-            connectPending={connectPending}
-            disconnectPending={disconnectPending}
             onToggle={() => setShowScrapeForm(!showScrapeForm)}
             onFormChange={(updates) => setScrapeForm({ ...scrapeForm, ...updates })}
             onStart={startScrape}
             onCancel={cancelScrape}
-            onConnect={handleInlineConnect}
-            onDisconnect={handleInlineDisconnect}
             onGeocode={geocodeSuggest}
           />
         </div>

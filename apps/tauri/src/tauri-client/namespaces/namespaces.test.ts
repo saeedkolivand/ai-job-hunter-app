@@ -40,9 +40,9 @@ describe('tauri-client namespaces', () => {
     system.setLocale('de');
     expect(invoke).toHaveBeenCalledWith('system_set_locale', { locale: 'de' });
 
-    scrape.board({ board: 'linkedin', query: 'react', amount: 25 });
-    expect(invoke).toHaveBeenCalledWith('scrape_board', {
-      req: { board: 'linkedin', query: 'react', amount: 25 },
+    scrape.boards({ boards: ['linkedin'], query: 'react', amount: 25 });
+    expect(invoke).toHaveBeenCalledWith('scrape_boards', {
+      req: { boards: ['linkedin'], query: 'react', amount: 25 },
     });
 
     documents.remove('doc-1');

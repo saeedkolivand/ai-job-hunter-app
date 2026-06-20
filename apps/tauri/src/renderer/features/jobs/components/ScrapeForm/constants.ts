@@ -1,7 +1,7 @@
 import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
 
 export interface ScrapeFormState {
-  board: string;
+  boards: string[];
   query: string;
   location: string;
   /** Structured location captured from a picked geocode suggestion (#49/#40). */

@@ -139,7 +139,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     },
 
     scrape: {
-      board: noop,
+      boards: noop,
       url: noop,
       resolveUrl: async () => null,
       persistJob: noop,

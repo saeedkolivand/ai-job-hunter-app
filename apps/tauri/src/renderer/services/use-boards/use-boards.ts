@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
@@ -109,6 +109,41 @@ export const useBoardDisconnect = () => {
     onSettled: (_data, _err, boardId) =>
       qc.invalidateQueries({ queryKey: KEYS.boardStatus(boardId) }),
   });
+};
+
+// ─── Multi-board status ───────────────────────────────────────────────────────
+
+/**
+ * Query connection status for a dynamic list of board IDs in parallel.
+ *
+ * Uses `useQueries` (the Rules-of-Hooks-safe API for dynamic query arrays).
+ * LinkedIn uses its own status key; all other boards use the generic board key.
+ * Returns `true` if at least one queried board reports `connected: true`.
+ */
+export const useBoardStatuses = (boardIds: string[] = []) => {
+  const api = useAppClient();
+  const safeIds = Array.isArray(boardIds) ? boardIds : [];
+  const results = useQueries({
+    queries: safeIds.map((id) =>
+      id === 'linkedin'
+        ? {
+            queryKey: KEYS.linkedinStatus,
+            queryFn: () => api.linkedin.getStatus(),
+            refetchInterval: 30_000,
+          }
+        : {
+            queryKey: KEYS.boardStatus(id),
+            queryFn: () => api.boards.getStatus({ boardId: id }),
+            refetchInterval: 30_000,
+            enabled: !!id,
+          }
+    ),
+  });
+  const anyConnected = results.some(
+    (r) => (r.data as { connected?: boolean } | undefined)?.connected === true
+  );
+
+  return { results, anyConnected };
 };
 
 // ─── Catalog ─────────────────────────────────────────────────────────────────

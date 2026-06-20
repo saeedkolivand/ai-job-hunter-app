@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import type { ScrapeBoardRequest, ScrapeUrlRequest } from '@ajh/shared';
+import type { ScrapeBoardsRequest, ScrapeUrlRequest } from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
@@ -20,11 +20,11 @@ export const useInteractions = (interactionType?: string) => {
   });
 };
 
-export const useScrapeBoard = () => {
+export const useScrapeBoards = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: ScrapeBoardRequest) => api.scrape.board(req),
+    mutationFn: (req: ScrapeBoardsRequest) => api.scrape.boards(req),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.postings.all }),
   });
 };

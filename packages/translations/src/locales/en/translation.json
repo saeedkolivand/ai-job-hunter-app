@@ -1597,7 +1597,18 @@
     "modeGuestNote": "Limited results · 24h / week / month filters only",
     "modeLoginRequired": "Login required",
     "modeLoginRequiredNote": "Sign in to scrape this board — guest returns no results",
-    "logIn": "Log in"
+    "logIn": "Log in",
+    "selectAll": "Select all",
+    "clearBoards": "Clear",
+    "boardsSelected": {
+      "one": "1 selected",
+      "other": "{{count}} selected"
+    },
+    "needsLogin": {
+      "label": "Needs login:",
+      "connectBoard": "Connect"
+    },
+    "partialScrapeNote": "{{done}} of {{total}} boards · {{failed}} failed"
   },
   "resumes": {
     "title": "Documents",

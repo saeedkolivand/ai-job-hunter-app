@@ -1601,7 +1601,18 @@
     "modeGuestNote": "Begrenzte Ergebnisse · nur 24h / Woche / Monat",
     "modeLoginRequired": "Anmeldung erforderlich",
     "modeLoginRequiredNote": "Anmelden, um dieses Board zu scrapen — als Gast keine Ergebnisse",
-    "logIn": "Anmelden"
+    "logIn": "Anmelden",
+    "selectAll": "Alle auswählen",
+    "clearBoards": "Löschen",
+    "boardsSelected": {
+      "one": "1 ausgewählt",
+      "other": "{{count}} ausgewählt"
+    },
+    "needsLogin": {
+      "label": "Anmeldung erforderlich:",
+      "connectBoard": "Verbinden"
+    },
+    "partialScrapeNote": "{{done}} von {{total}} Boards · {{failed}} fehlgeschlagen"
   },
   "resumes": {
     "title": "Dokumente",

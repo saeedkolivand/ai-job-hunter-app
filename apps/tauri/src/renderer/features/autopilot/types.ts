@@ -3,7 +3,7 @@ import type { AutopilotSchedule } from '@ajh/shared';
 export interface WizardState {
   name: string;
   // Step 1 — Target
-  board: string;
+  boards: string[];
   query: string;
   location: string;
   workType: 'remote' | 'hybrid' | 'on-site' | 'any';

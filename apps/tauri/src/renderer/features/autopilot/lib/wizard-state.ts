@@ -35,7 +35,7 @@ export function wizardStateToPayload(form: WizardState): AutopilotCreate {
   return {
     name: form.name,
     target: {
-      board: form.board,
+      boards: form.boards,
       query: form.query,
       location: form.location || undefined,
       workType: form.workType !== 'any' ? form.workType : undefined,
@@ -59,7 +59,7 @@ export function wizardStateToPayload(form: WizardState): AutopilotCreate {
 export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
   return {
     name: '',
-    board: 'linkedin',
+    boards: ['linkedin'],
     query: '',
     location: jobPrefs?.location ?? '',
     // No job-preference field seeds work type; default to the 'any' sentinel.
@@ -78,15 +78,33 @@ export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
 
 /** Map a persisted autopilot back into the wizard form for editing. */
 export function autopilotToWizardState(ap: Autopilot): WizardState {
+  // The runtime payload uses `boards: string[]` (post-migration). The static
+  // `Autopilot` type still carries the legacy `board: string` shape; cast to
+  // read whichever field exists until the shared type is regenerated.
+  const target = ap.target as unknown as {
+    boards?: string[];
+    board?: string;
+    query: string;
+    location?: string;
+    workType?: 'remote' | 'hybrid' | 'on-site';
+    pages: number;
+    dateFilter?: string;
+  };
+  const boards: string[] =
+    target.boards && target.boards.length > 0
+      ? target.boards
+      : target.board
+        ? [target.board]
+        : ['linkedin'];
   return {
     name: ap.name,
-    board: ap.target.board,
-    query: ap.target.query,
-    location: ap.target.location ?? '',
-    workType: ap.target.workType ?? 'any',
+    boards,
+    query: target.query,
+    location: target.location ?? '',
+    workType: target.workType ?? 'any',
     // Stored as pages; surface back as an approximate item count for editing.
-    amount: ap.target.pages * PAGE_SIZE,
-    dateFilter: ap.target.dateFilter ?? '',
+    amount: target.pages * PAGE_SIZE,
+    dateFilter: target.dateFilter ?? '',
     minMatchScore: ap.filter.minMatchScore,
     keywords: ap.filter.keywords?.join(', ') ?? '',
     excludeKeywords: ap.filter.excludeKeywords?.join(', ') ?? '',

@@ -61,27 +61,47 @@ export function StepTarget({ prefilled }: StepTargetProps) {
 
       <Controller
         control={control}
-        name="board"
-        render={({ field }) => (
-          <WizardField label={t('autopilot.wizard.target.board')}>
-            <div className="grid grid-cols-2 gap-1.5 max-h-28 overflow-y-auto pr-1 @sm:grid-cols-4">
-              {BOARD_IDS.map((b) => (
-                <Button
-                  key={b}
-                  onClick={() => field.onChange(b)}
-                  className={cn(
-                    'rounded-lg border px-2 py-1.5 text-[10px] font-medium capitalize transition-all h-auto',
-                    field.value === b
-                      ? 'border-brand/40 bg-brand/10 text-brand-soft'
-                      : 'border-white/[0.06] text-foreground/40 hover:border-white/10 hover:text-foreground/65'
-                  )}
-                >
-                  {b}
-                </Button>
-              ))}
-            </div>
-          </WizardField>
-        )}
+        name="boards"
+        render={({ field }) => {
+          const selectedSet = new Set(field.value);
+          const toggle = (b: string) => {
+            const next = selectedSet.has(b)
+              ? field.value.filter((id) => id !== b)
+              : [...field.value, b];
+            // Always keep at least one board selected.
+            if (next.length > 0) field.onChange(next);
+          };
+          return (
+            <WizardField label={t('autopilot.wizard.target.board')}>
+              <div
+                role="group"
+                aria-label={t('autopilot.wizard.target.board')}
+                aria-multiselectable="true"
+                className="grid grid-cols-2 gap-1.5 max-h-28 overflow-y-auto pr-1 @sm:grid-cols-4"
+              >
+                {BOARD_IDS.map((b) => {
+                  const active = selectedSet.has(b);
+                  return (
+                    <Button
+                      key={b}
+                      role="button"
+                      aria-pressed={active}
+                      onClick={() => toggle(b)}
+                      className={cn(
+                        'rounded-lg border px-2 py-1.5 text-[10px] font-medium capitalize transition-all h-auto',
+                        active
+                          ? 'border-brand/40 bg-brand/10 text-brand-soft'
+                          : 'border-white/[0.06] text-foreground/40 hover:border-white/10 hover:text-foreground/65'
+                      )}
+                    >
+                      {t(`jobs.boards.${b}`)}
+                    </Button>
+                  );
+                })}
+              </div>
+            </WizardField>
+          );
+        }}
       />
 
       <div className="grid grid-cols-1 gap-3 @xs:grid-cols-2">

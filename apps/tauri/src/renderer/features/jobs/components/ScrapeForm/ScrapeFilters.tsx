@@ -66,7 +66,7 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
             <Dropdown
               options={[
                 { value: '', label: t('jobs.anyTime') },
-                ...(AUTH_BENEFITS.has(form.board) && boardConnected
+                ...(form.boards.some((b) => AUTH_BENEFITS.has(b)) && boardConnected
                   ? [
                       { value: '30m', label: t('jobs.past30m') },
                       { value: '1h', label: t('jobs.past1h') },
@@ -113,7 +113,7 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
           </div>
 
           {/* Indeed region */}
-          {form.board === 'indeed' && (
+          {form.boards.includes('indeed') && (
             <div className="col-span-2">
               <label className={LABEL}>{t('jobs.region')}</label>
               <Dropdown

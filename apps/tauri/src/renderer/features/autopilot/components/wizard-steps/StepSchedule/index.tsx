@@ -34,7 +34,7 @@ export function StepSchedule() {
   // and write through setValue (the value-array controls don't map cleanly to a
   // single Controller). RHF stays the single source of truth.
   const name = useWatch({ control, name: 'name' });
-  const board = useWatch({ control, name: 'board' });
+  const boards = useWatch({ control, name: 'boards' });
   const query = useWatch({ control, name: 'query' });
   const minMatchScore = useWatch({ control, name: 'minMatchScore' });
   const schedule = useWatch({ control, name: 'schedule' });
@@ -178,7 +178,7 @@ export function StepSchedule() {
         </div>
         {[
           [t('autopilot.wizard.schedule.summaryName'), name || '—'],
-          [t('autopilot.wizard.schedule.summaryBoard'), board],
+          [t('autopilot.wizard.schedule.summaryBoard'), boards?.join(', ') ?? '—'],
           [t('autopilot.wizard.schedule.summaryQuery'), query || '—'],
           [t('autopilot.wizard.schedule.summarySchedule'), scheduleSummary],
           [
