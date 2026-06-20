@@ -13,6 +13,77 @@ fn test_catalog() {
 }
 
 #[test]
+fn test_catalog_auth_tiers() {
+    use crate::scraping::types::AuthRequirement;
+
+    let engine = ScraperEngine::new();
+    let catalog = engine.catalog();
+
+    let entry = |id: &str| {
+        catalog
+            .iter()
+            .find(|e| e.id == id)
+            .unwrap_or_else(|| panic!("missing board: {id}"))
+    };
+
+    // Required login — guest returns ~nothing
+    assert_eq!(
+        entry("indeed").auth,
+        AuthRequirement::Required,
+        "indeed must be Required"
+    );
+    assert_eq!(
+        entry("xing").auth,
+        AuthRequirement::Required,
+        "xing must be Required"
+    );
+
+    // Optional — guest works; login enriches
+    assert_eq!(
+        entry("linkedin").auth,
+        AuthRequirement::Optional,
+        "linkedin must be Optional"
+    );
+
+    // Guest default — no override needed
+    assert_eq!(
+        entry("greenhouse").auth,
+        AuthRequirement::Guest,
+        "greenhouse must be Guest (default)"
+    );
+    assert_eq!(
+        entry("ycombinator").auth,
+        AuthRequirement::Guest,
+        "ycombinator must be Guest (default)"
+    );
+}
+
+#[test]
+fn test_catalog_listed_flags() {
+    let engine = ScraperEngine::new();
+    let catalog = engine.catalog();
+
+    let entry = |id: &str| {
+        catalog
+            .iter()
+            .find(|e| e.id == id)
+            .unwrap_or_else(|| panic!("missing board: {id}"))
+    };
+
+    // glassdoor is registered but hidden from the picker
+    assert!(!entry("glassdoor").listed, "glassdoor must not be listed");
+
+    // A representative guest board is listed
+    assert!(entry("greenhouse").listed, "greenhouse must be listed");
+    assert!(entry("linkedin").listed, "linkedin must be listed");
+    assert!(entry("indeed").listed, "indeed must be listed");
+
+    // 19 of the 20 boards are listed (glassdoor is the only hidden one)
+    let listed_count = catalog.iter().filter(|e| e.listed).count();
+    assert_eq!(listed_count, 19, "exactly 19 boards should be listed");
+}
+
+#[test]
 fn test_health() {
     let engine = ScraperEngine::new();
     let health = engine.health();
