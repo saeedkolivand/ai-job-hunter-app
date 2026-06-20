@@ -404,6 +404,35 @@ async fn run_boards_child_cap_stops_only_its_board() {
 }
 
 #[tokio::test]
+async fn run_boards_browser_board_collects_items() {
+    // Verify that a browser-mode FakeScraper collects items correctly —
+    // the browser-semaphore path must not swallow results.
+    let browser_a = FakeScraper::browser(5);
+    let http_b = FakeScraper::http(5);
+
+    let resolved: Vec<(String, anyhow::Result<&dyn Scraper>)> = vec![
+        ("browser_a".into(), Ok(&browser_a as &dyn Scraper)),
+        ("http_b".into(), Ok(&http_b as &dyn Scraper)),
+    ];
+
+    let parent = CancellationToken::new();
+    let results = ScraperEngine::run_boards(resolved, fake_input(10), parent, None, None).await;
+
+    assert_eq!(results.len(), 2, "one result per board");
+    let map: HashMap<String, _> = results.into_iter().collect();
+    assert_eq!(
+        map["browser_a"].as_ref().unwrap().len(),
+        5,
+        "browser-mode board returns all items when under the cap"
+    );
+    assert_eq!(
+        map["http_b"].as_ref().unwrap().len(),
+        5,
+        "http-mode board returns all items when under the cap"
+    );
+}
+
+#[tokio::test]
 async fn run_boards_browser_boards_serialized() {
     // Two browser-mode boards. We track peak concurrency with a shared atomic
     // counter incremented on entry and decremented on exit of `search`.
