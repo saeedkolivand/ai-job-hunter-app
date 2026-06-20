@@ -288,6 +288,28 @@ impl ScraperEngine {
         on_progress: Option<Arc<dyn Fn(f32) + Send + Sync>>,
         on_item: Option<Arc<dyn Fn(JobPosting) + Send + Sync>>,
     ) -> anyhow::Result<(Vec<JobPosting>, Vec<BoardScrapeSummary>)> {
+        self.scrape_boards_with_resolver(boards, input, job_id, on_progress, on_item, |id| {
+            super::boards::get(id).ok_or_else(|| anyhow::anyhow!("Unknown board: {id}"))
+        })
+        .await
+    }
+
+    /// Test-only resolver seam: identical to `scrape_boards` but accepts a
+    /// caller-supplied `resolve` function so tests can inject fake scrapers
+    /// without touching the real `boards::get` registry.
+    #[doc(hidden)]
+    pub(crate) async fn scrape_boards_with_resolver<F>(
+        &self,
+        boards: &[String],
+        input: BoardSearchInput,
+        job_id: String,
+        on_progress: Option<Arc<dyn Fn(f32) + Send + Sync>>,
+        on_item: Option<Arc<dyn Fn(JobPosting) + Send + Sync>>,
+        resolve: F,
+    ) -> anyhow::Result<(Vec<JobPosting>, Vec<BoardScrapeSummary>)>
+    where
+        F: Fn(&str) -> anyhow::Result<&'static dyn Scraper>,
+    {
         // Bound concurrency — one engine permit for the whole multi-board batch.
         let sem = self.semaphore.load_full();
         let _permit = sem
@@ -316,14 +338,12 @@ impl ScraperEngine {
                 .collect()
         };
 
-        // Resolve board ids; unknown boards become per-entry Err values so the
-        // run still proceeds for the boards that ARE known.
-        // `boards::get` returns `&'static dyn Scraper` (from the SCRAPERS static).
+        // Resolve board ids via the supplied resolver; unknown boards become
+        // per-entry Err values so the run still proceeds for the boards that ARE known.
         let resolved: Vec<(String, anyhow::Result<&'static dyn Scraper>)> = boards_deduped
             .iter()
             .map(|id| {
-                let scraper = super::boards::get(id)
-                    .ok_or_else(|| anyhow::anyhow!("Unknown board: {id}"));
+                let scraper = resolve(id.as_str());
                 (id.to_string(), scraper)
             })
             .collect();

@@ -545,3 +545,193 @@ async fn scrape_boards_dedupes_and_caps_large_input() {
         "expected exactly MAX_BOARDS_PER_BATCH distinct board runs after dedup+truncate"
     );
 }
+
+/// HIGH 2 — CWE-770: `scrape_boards` itself must enforce the cap and dedupe,
+/// not just `run_boards`. A future refactor moving the guard out of `scrape_boards`
+/// MUST fail this test.
+///
+/// Strategy: pass 5 000 entries composed of > MAX_BOARDS_PER_BATCH distinct IDs
+/// directly to `ScraperEngine::scrape_boards`. Unknown board IDs resolve to
+/// `Err("Unknown board: …")` entries immediately — no network calls — so the run
+/// is fast. The test asserts that summaries.len() ≤ MAX_BOARDS_PER_BATCH and that
+/// first-seen order is preserved (the first 6 distinct IDs win, not a random set).
+#[tokio::test]
+async fn scrape_boards_real_entrypoint_caps_and_dedupes() {
+    use super::MAX_BOARDS_PER_BATCH;
+
+    // 9 distinct fake IDs (> MAX_BOARDS_PER_BATCH=6) interleaved with duplicates.
+    // None of these match registered boards, so they resolve to Err immediately.
+    let distinct: Vec<String> = (0..9).map(|i| format!("nonexistent_board_{i}")).collect();
+    let mut boards: Vec<String> = Vec::with_capacity(5000);
+    for i in 0..5000 {
+        boards.push(distinct[i % distinct.len()].clone());
+    }
+
+    // The first 6 distinct IDs we see in iteration order.
+    let expected_first_six: Vec<String> = distinct[..MAX_BOARDS_PER_BATCH].to_vec();
+
+    let engine = ScraperEngine::new();
+    // No cancellation — all_failed=true but parent.is_cancelled()=false → Ok.
+    let result = engine
+        .scrape_boards(&boards, fake_input(1), "test-job-cap".to_string(), None, None)
+        .await;
+
+    let (postings, summaries) = result.expect(
+        "all boards unknown (no network) but not cancelled → must return Ok, not Err",
+    );
+
+    assert!(postings.is_empty(), "unknown boards produce no postings");
+    assert!(
+        summaries.len() <= MAX_BOARDS_PER_BATCH,
+        "summaries ({}) must not exceed MAX_BOARDS_PER_BATCH ({})",
+        summaries.len(),
+        MAX_BOARDS_PER_BATCH
+    );
+    assert_eq!(
+        summaries.len(),
+        MAX_BOARDS_PER_BATCH,
+        "exactly MAX_BOARDS_PER_BATCH summaries expected after dedup+truncate"
+    );
+
+    // Verify first-seen order: the winning IDs must be the first 6 distinct ones.
+    let summary_boards: Vec<&str> = summaries.iter().map(|s| s.board.as_str()).collect();
+    let expected_refs: Vec<&str> = expected_first_six.iter().map(|s| s.as_str()).collect();
+    assert_eq!(
+        summary_boards, expected_refs,
+        "dedupe must preserve first-seen order; got {summary_boards:?}"
+    );
+
+    // Every summary must carry an error (unknown board → no items recovered).
+    for s in &summaries {
+        assert!(
+            s.error.is_some(),
+            "board '{}' is unknown so must report an error",
+            s.board
+        );
+        assert_eq!(s.count, 0, "unknown board '{}' must report count=0", s.board);
+    }
+}
+
+/// HIGH 3 — cancellation + all-failed gate: `scrape_boards` returns `Err("scrape cancelled")`
+/// only when ALL boards failed AND the parent token is cancelled.
+#[tokio::test]
+async fn scrape_boards_all_failed_and_cancelled_returns_err() {
+    // Pre-register a token under the job_id so scrape_boards reuses it (matching
+    // the Autopilot pattern). Cancel it before the run so it's already cancelled
+    // when the boards start — no timing dependency.
+    let engine = ScraperEngine::new();
+    let token = CancellationToken::new();
+    engine.register_token("job-cancel-all-fail", token.clone()).await;
+    token.cancel();
+
+    // All boards are unknown → all fail with Err("Unknown board: …") immediately.
+    let boards: Vec<String> = vec![
+        "nonexistent_a".to_string(),
+        "nonexistent_b".to_string(),
+        "nonexistent_c".to_string(),
+    ];
+
+    let result = engine
+        .scrape_boards(
+            &boards,
+            fake_input(5),
+            "job-cancel-all-fail".to_string(),
+            None,
+            None,
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "all-failed + cancelled must return Err, got: {result:?}"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("cancelled"),
+        "error message must mention cancellation, got: {msg}"
+    );
+}
+
+/// HIGH 3 (complementary) — partial success under cancellation returns `Ok`.
+///
+/// When at least one board succeeds (≥1 item recovered) and the parent token is
+/// cancelled, `scrape_boards` must return `Ok` — the two-condition gate
+/// (`all_failed && parent.is_cancelled()`) requires BOTH to be true.
+///
+/// Exercises the EXACT same code path as the public `scrape_boards` via the
+/// resolver seam (`scrape_boards_with_resolver`).
+#[tokio::test]
+async fn scrape_boards_partial_success_under_cancel_returns_ok() {
+    // Static fake scrapers — required so the resolver closure can return
+    // `&'static dyn Scraper` (matching what boards::get returns from SCRAPERS).
+    static FAKE_OK: std::sync::LazyLock<FakeScraper> =
+        std::sync::LazyLock::new(|| FakeScraper::http(3));
+    static FAKE_FAIL: std::sync::LazyLock<FailingScraper> =
+        std::sync::LazyLock::new(|| FailingScraper);
+
+    let engine = ScraperEngine::new();
+
+    // Pre-register and cancel the token before the run — matches the Autopilot
+    // pattern tested by `scrape_boards_all_failed_and_cancelled_returns_err`.
+    let token = CancellationToken::new();
+    engine
+        .register_token("job-partial-cancel", token.clone())
+        .await;
+    token.cancel();
+
+    // Two board ids: "ok-board" resolves to a working FakeScraper (3 items),
+    // "fail-board" resolves to a FailingScraper (always Err).
+    let boards = vec!["ok-board".to_string(), "fail-board".to_string()];
+
+    let result = engine
+        .scrape_boards_with_resolver(
+            &boards,
+            fake_input(3),
+            "job-partial-cancel".to_string(),
+            None,
+            None,
+            |id| match id {
+                "ok-board" => Ok(&*FAKE_OK as &'static dyn super::super::types::Scraper),
+                "fail-board" => Ok(&*FAKE_FAIL as &'static dyn super::super::types::Scraper),
+                other => Err(anyhow::anyhow!("Unknown board: {other}")),
+            },
+        )
+        .await;
+
+    // Partial success (at least one board Ok) + cancelled → must return Ok, not Err.
+    let (postings, summaries) = result.expect(
+        "partial success under cancellation must return Ok, not Err",
+    );
+
+    // ok-board streamed items even though the parent was pre-cancelled:
+    // FakeScraper checks ctx.signal which is a child token, so 0 items is also
+    // acceptable (the parent was cancelled before search started). What matters
+    // is that run_boards returned Ok for that board — the gate must see !all_failed.
+    assert_eq!(
+        summaries.len(),
+        2,
+        "summaries must cover both boards; got {summaries:?}"
+    );
+
+    let ok_summary = summaries
+        .iter()
+        .find(|s| s.board == "ok-board")
+        .expect("ok-board summary missing");
+    assert!(
+        ok_summary.error.is_none(),
+        "ok-board must not carry an error in its summary; got {ok_summary:?}"
+    );
+
+    let fail_summary = summaries
+        .iter()
+        .find(|s| s.board == "fail-board")
+        .expect("fail-board summary missing");
+    assert!(
+        fail_summary.error.is_some(),
+        "fail-board must carry an error in its summary; got {fail_summary:?}"
+    );
+
+    // postings may be 0 (if the child token was already cancelled), but the
+    // overall result must be Ok — that's the gate being tested.
+    let _ = postings; // count is environment-dependent; Ok return is the assertion
+}

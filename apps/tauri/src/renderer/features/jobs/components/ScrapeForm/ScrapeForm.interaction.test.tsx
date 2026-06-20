@@ -15,7 +15,7 @@
  */
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { BoardCatalogEntry } from '@ajh/shared';
@@ -137,18 +137,16 @@ function getBoardButton(label: string): HTMLElement {
 // ---------------------------------------------------------------------------
 
 describe('ScrapeForm board toggle — add board', () => {
-  it('clicking an unselected board adds it via onFormChange', async () => {
+  it('clicking an unselected board adds it via onFormChange, preserving existing selection order', async () => {
     const onFormChange = vi.fn();
     renderForm(['greenhouse'], onFormChange);
 
     const linkedinBtn = getBoardButton('jobs.boards.linkedin');
     await userEvent.click(linkedinBtn);
 
-    expect(onFormChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        boards: expect.arrayContaining(['greenhouse', 'linkedin']),
-      })
-    );
+    // toggleBoard appends the new id: [...boards, id] → exact order is load-bearing.
+    const call = onFormChange.mock.calls[0]?.[0] as { boards: string[] } | undefined;
+    expect(call?.boards).toEqual(['greenhouse', 'linkedin']);
   });
 
   it('clicking a selected board (multiple selected) removes it via onFormChange', async () => {
@@ -239,14 +237,18 @@ describe('ScrapeForm clear boards', () => {
 // ---------------------------------------------------------------------------
 
 describe('ScrapeForm keyboard handler', () => {
-  it('makeMultiSelectKeyHandler is called and the group has an onKeyDown prop', () => {
+  it('ArrowRight on the board group triggers the makeMultiSelectKeyHandler callback', () => {
     renderForm(['greenhouse']);
 
-    // The group must exist and have the key handler wired.
     const group = screen.getByRole('group');
     expect(group).toBeInTheDocument();
-    // The handler is passed via onKeyDown — verify it was constructed.
-    // capturedKeyHandler is set by our mock of makeMultiSelectKeyHandler.
+    // capturedKeyHandler is the vi.fn() returned by our makeMultiSelectKeyHandler mock.
     expect(capturedKeyHandler).not.toBeNull();
+
+    // Fire a real keyboard event — the group's onKeyDown must invoke the handler.
+    fireEvent.keyDown(group, { key: 'ArrowRight' });
+
+    // The mock handler must have been called, proving the wiring is live.
+    expect(capturedKeyHandler).toHaveBeenCalledTimes(1);
   });
 });

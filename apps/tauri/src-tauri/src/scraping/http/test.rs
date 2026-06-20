@@ -367,6 +367,64 @@ async fn test_fetch_text_no_charset_fallback_utf8() {
     assert_eq!(result.unwrap().text, body);
 }
 
+/// `retry_after_ms` must clamp a hostile huge `Retry-After` value to ≤ 30 000 ms.
+///
+/// A board returning `Retry-After: 4294967295` (u32::MAX, well into the
+/// saturating_mul danger zone) must NOT produce a 49-day wait.
+/// The function is private, so we reach it through a helper that builds a
+/// minimal HeaderMap with just the `retry-after` key.
+#[test]
+fn test_retry_after_overflow_clamped() {
+    fn make_headers(value: &str) -> reqwest::header::HeaderMap {
+        let mut m = reqwest::header::HeaderMap::new();
+        m.insert(
+            reqwest::header::HeaderName::from_static("retry-after"),
+            reqwest::header::HeaderValue::from_str(value).unwrap(),
+        );
+        m
+    }
+
+    // Large value that would overflow u64::checked_mul(1_000): result must be ≤ 30_000.
+    let huge = make_headers("4294967295");
+    let ms = retry_after_ms(&huge).expect("should parse as u64");
+    assert!(
+        ms <= 30_000,
+        "huge Retry-After must be clamped to ≤ 30 000 ms, got {ms}"
+    );
+
+    // u64::MAX / 1_000 + 1 — saturating_mul would produce u64::MAX without the clamp.
+    let near_max = make_headers("18446744073709552");
+    let ms2 = retry_after_ms(&near_max).expect("should parse as u64");
+    assert!(
+        ms2 <= 30_000,
+        "near-MAX Retry-After must be clamped to ≤ 30 000 ms, got {ms2}"
+    );
+
+    // Sanity: a normal 5-second value is NOT clamped.
+    let normal = make_headers("5");
+    assert_eq!(
+        retry_after_ms(&normal),
+        Some(5_000),
+        "5 s → 5 000 ms, no clamping"
+    );
+
+    // Exactly 30 s — should pass through as 30 000 ms (at the boundary, not over).
+    let boundary = make_headers("30");
+    assert_eq!(
+        retry_after_ms(&boundary),
+        Some(30_000),
+        "30 s is exactly at the 30 000 ms cap"
+    );
+
+    // 31 s — should be clamped to 30 000 ms.
+    let over = make_headers("31");
+    assert_eq!(
+        retry_after_ms(&over),
+        Some(30_000),
+        "31 s must be clamped to 30 000 ms"
+    );
+}
+
 /// A 429 with `Retry-After: 0` (or very small) retries immediately and
 /// succeeds on the next attempt.
 #[tokio::test]
