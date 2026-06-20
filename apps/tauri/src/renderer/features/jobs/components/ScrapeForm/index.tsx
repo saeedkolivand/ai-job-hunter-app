@@ -2,14 +2,16 @@ import { Loader2, Search, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useRef } from 'react';
 
+import type { BoardAuthRequirement } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, cn, GlassCard, Input, transition } from '@ajh/ui';
+import { Button, CardSkeleton, cn, GlassCard, Input, transition } from '@ajh/ui';
 
 import { makeRovingTabindex } from '@/hooks/use-roving-tabindex';
+import { useBoardsCatalog } from '@/services/use-boards';
 
 import { AuthHint } from './AuthHint';
 import { AuthModeBadge } from './AuthModeBadge';
-import { AUTH_BENEFITS, BOARDS, type ScrapeFormState } from './constants';
+import type { ScrapeFormState } from './constants';
 import { ScrapeFilters } from './ScrapeFilters';
 
 interface ScrapeFormProps {
@@ -48,8 +50,17 @@ export function ScrapeForm({
   const { t } = useTranslation();
   const boardRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const showAuthBadge = AUTH_BENEFITS.has(form.board);
-  const showAuthHint = AUTH_BENEFITS.has(form.board) && !boardConnected;
+  const { data: catalogRaw, isLoading: catalogLoading } = useBoardsCatalog();
+  const listedBoards = (catalogRaw ?? []).filter((e) => e.listed);
+
+  // Derive the selected board's auth tier from the catalog; default to 'guest'.
+  const selectedEntry = listedBoards.find((e) => e.id === form.board);
+  const selectedAuth: BoardAuthRequirement = selectedEntry?.auth ?? 'guest';
+
+  // Badge shows for optional/required; guest boards show nothing.
+  const showAuthBadge = selectedAuth !== 'guest';
+  // AuthHint (settings nudge) only for optional boards when not connected.
+  const showAuthHint = selectedAuth === 'optional' && !boardConnected;
 
   return (
     <AnimatePresence>
@@ -105,56 +116,63 @@ export function ScrapeForm({
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
                 {t('jobs.board')}
               </div>
-              <div
-                role="radiogroup"
-                aria-label={t('jobs.board')}
-                className="flex flex-wrap gap-1.5"
-                onKeyDown={
-                  scraping
-                    ? undefined
-                    : makeRovingTabindex(
-                        BOARDS.map((b) => b.id),
-                        form.board,
-                        (id) => onFormChange({ board: id }),
-                        boardRefs
-                      )
-                }
-              >
-                {BOARDS.map(({ id, labelKey }, i) => {
-                  const active = form.board === id;
-                  return (
-                    <Button
-                      key={id}
-                      ref={(el) => {
-                        boardRefs.current[i] = el;
-                      }}
-                      role="radio"
-                      aria-checked={active}
-                      tabIndex={active ? 0 : -1}
-                      variant="ghost"
-                      disabled={scraping}
-                      onClick={() => onFormChange({ board: id })}
-                      className={cn(
-                        'rounded-lg px-2.5 py-1 text-[11px] transition-all',
-                        active
-                          ? 'bg-brand/20 text-brand-soft ring-1 ring-brand/40'
-                          : 'bg-white/[0.04] text-foreground/50 hover:bg-white/[0.07] hover:text-foreground/80',
-                        'disabled:cursor-not-allowed disabled:opacity-40'
-                      )}
-                    >
-                      {t(labelKey)}
-                    </Button>
-                  );
-                })}
-              </div>
+              {catalogLoading ? (
+                <CardSkeleton className="h-8 w-full" />
+              ) : (
+                <div
+                  role="radiogroup"
+                  aria-label={t('jobs.board')}
+                  className="flex flex-wrap gap-1.5"
+                  onKeyDown={
+                    scraping
+                      ? undefined
+                      : makeRovingTabindex(
+                          listedBoards.map((b) => b.id),
+                          form.board,
+                          (id) => onFormChange({ board: id }),
+                          boardRefs
+                        )
+                  }
+                >
+                  {listedBoards.map(({ id }, i) => {
+                    const active = form.board === id;
+                    return (
+                      <Button
+                        key={id}
+                        ref={(el) => {
+                          boardRefs.current[i] = el;
+                        }}
+                        role="radio"
+                        aria-checked={active}
+                        tabIndex={active ? 0 : -1}
+                        variant="ghost"
+                        disabled={scraping}
+                        onClick={() => onFormChange({ board: id })}
+                        className={cn(
+                          'rounded-lg px-2.5 py-1 text-[11px] transition-all',
+                          active
+                            ? 'bg-brand/20 text-brand-soft ring-1 ring-brand/40'
+                            : 'bg-white/[0.04] text-foreground/50 hover:bg-white/[0.07] hover:text-foreground/80',
+                          'disabled:cursor-not-allowed disabled:opacity-40'
+                        )}
+                      >
+                        {t(`jobs.boards.${id}`)}
+                      </Button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <AuthModeBadge
               show={showAuthBadge}
               board={form.board}
+              auth={selectedAuth}
               boardConnected={boardConnected}
               disconnectPending={disconnectPending}
+              connectPending={connectPending}
               onDisconnect={onDisconnect}
+              onConnect={onConnect}
             />
 
             <AuthHint show={showAuthHint} connectPending={connectPending} onConnect={onConnect} />

@@ -73,6 +73,15 @@ pub fn boards_get_status(app: AppHandle, board_id: String) -> Value {
     json!({ "connected": crate::scraping::board_login::get_status(&data_dir, &board_id) })
 }
 
+/// Board catalog driving the manual jobs picker — the registry is the single
+/// source of truth for each board's auth tier and `listed` flag. Serialized
+/// entries match `BoardCatalogEntry` in the shared IPC contract.
+#[tauri::command]
+pub fn boards_catalog(app: AppHandle) -> Value {
+    let engine = app.state::<std::sync::Arc<crate::scraping::ScraperEngine>>();
+    json!(engine.catalog())
+}
+
 #[tauri::command]
 pub fn boards_list(app: AppHandle) -> Value {
     let data_dir = app

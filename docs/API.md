@@ -1,6 +1,6 @@
 # IPC API Reference — AI Job Hunter
 
-Last updated: 2026-06-01
+Last updated: 2026-06-20
 
 All renderer ↔ Rust communication is defined as typed contracts in `packages/shared/src/ipc/contracts/`. The renderer accesses them exclusively through `AppClient` service hooks.
 
@@ -273,6 +273,24 @@ interface BoardLoginConfig {
   hasAuthCookiePredicate: boolean; // true if the board supports cookie-based auth detection
 }
 ```
+
+#### `boards.catalog(): Promise<BoardCatalogEntry[]>`
+
+Returns the catalog of all available job boards, including authentication requirements and visibility status. Each entry describes the board's scraping mode, login requirements, and whether it is listed in the board picker. The catalog is the single source of truth for board availability and auth tiers; it derives from the `Scraper` trait in `apps/tauri/src-tauri/src/scraping/types/mod.rs` (defaults: `auth()=guest`, `listed()=true`). Overrides: indeed/xing → `auth=required`; linkedin → `auth=optional`; glassdoor → `listed=false`.
+
+```typescript
+type BoardAuthRequirement = 'guest' | 'optional' | 'required';
+
+interface BoardCatalogEntry {
+  id: string; // e.g. "linkedin", "indeed", "greenhouse"
+  displayName: string; // human-readable board name
+  mode: 'http' | 'browser' | string; // scraping transport mode
+  auth: BoardAuthRequirement; // login requirement: 'guest' (default), 'optional' (login enriches), 'required' (no results without auth)
+  listed: boolean; // whether visible in the board picker (filters hidden boards like glassdoor)
+}
+```
+
+See `boards.catalog` channel (`BOARDS_CHANNELS.catalog = 'boards:catalog'`); frontend hook `useBoardsCatalog()` in `apps/tauri/src/renderer/services/use-boards/use-boards.ts`.
 
 #### `boards.importCookies(boardId: string): Promise<CookieImportResult>`
 
