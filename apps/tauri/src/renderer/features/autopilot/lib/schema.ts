@@ -22,7 +22,7 @@ import type { WizardState } from '@/features/autopilot/types';
  */
 export const autopilotWizardSchema = z.object({
   name: z.string().trim().min(1, 'autopilot.wizard.validation.nameRequired'),
-  board: z.string().min(1, 'autopilot.wizard.validation.missingFields'),
+  boards: z.array(z.string().min(1)).min(1, 'autopilot.wizard.validation.missingFields').max(6),
   query: z.string().trim().min(1, 'autopilot.wizard.validation.queryRequired'),
   location: z.string(),
   workType: z.enum(['remote', 'hybrid', 'on-site', 'any']),

@@ -4,7 +4,7 @@ use crate::events::{emit_event, SCRAPE_ITEM, SCRAPE_PROGRESS};
 use crate::scraping::{BoardSearchInput, JobPosting, ScraperEngine};
 use tauri::AppHandle;
 
-/// Scrape job postings from a board
+/// Scrape job postings from one or more boards for an autopilot run.
 pub async fn autopilot_scrape(
     engine: &ScraperEngine,
     target: &AutopilotTarget,
@@ -35,27 +35,29 @@ pub async fn autopilot_scrape(
 
     let app_progress = app.clone();
     let job_id_progress = job_id.to_string();
-    let on_progress = Box::new(move |p: f32| {
-        emit_event(
-            &app_progress,
-            SCRAPE_PROGRESS,
-            serde_json::json!({ "jobId": job_id_progress, "progress": p }),
-        );
-    });
+    let on_progress: std::sync::Arc<dyn Fn(f32) + Send + Sync> =
+        std::sync::Arc::new(move |p: f32| {
+            emit_event(
+                &app_progress,
+                SCRAPE_PROGRESS,
+                serde_json::json!({ "jobId": job_id_progress, "progress": p }),
+            );
+        });
 
     let app_item = app.clone();
     let job_id_item = job_id.to_string();
-    let on_item = Box::new(move |item: JobPosting| {
-        emit_event(
-            &app_item,
-            SCRAPE_ITEM,
-            serde_json::json!({ "jobId": job_id_item, "item": item }),
-        );
-    });
+    let on_item: std::sync::Arc<dyn Fn(JobPosting) + Send + Sync> =
+        std::sync::Arc::new(move |item: JobPosting| {
+            emit_event(
+                &app_item,
+                SCRAPE_ITEM,
+                serde_json::json!({ "jobId": job_id_item, "item": item }),
+            );
+        });
 
     let result = engine
-        .scrape_board(
-            &target.board,
+        .scrape_boards(
+            &target.boards,
             input,
             job_id.to_string(),
             Some(on_progress),
@@ -63,5 +65,8 @@ pub async fn autopilot_scrape(
         )
         .await;
 
-    result.map_err(AppError::from)
+    // Return only the postings; the caller (autopilot run) doesn't use per-board summaries.
+    result
+        .map(|(postings, _summaries)| postings)
+        .map_err(AppError::from)
 }

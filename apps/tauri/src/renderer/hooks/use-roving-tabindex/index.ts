@@ -1,1 +1,1 @@
-export { makeRovingTabindex } from './use-roving-tabindex';
+export { makeMultiSelectKeyHandler, makeRovingTabindex } from './use-roving-tabindex';

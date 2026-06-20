@@ -6,12 +6,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
-pub struct ScrapeBoardRequest {
-    pub board: String,
+pub struct ScrapeBoardsRequest {
+    pub boards: Vec<String>,
     pub query: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
-    #[serde(default = "default_scrape_board_request_amount")]
+    #[serde(default = "default_scrape_boards_request_amount")]
     pub amount: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub replace: Option<bool>,
@@ -50,6 +50,6 @@ pub struct ScrapeUrlRequest {
     pub url: String,
 }
 
-fn default_scrape_board_request_amount() -> u32 {
+fn default_scrape_boards_request_amount() -> u32 {
     25
 }

@@ -3,24 +3,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
 import type { useNotification } from '@ajh/ui';
 
-import { AUTH_BENEFITS } from '@/features/jobs/constants';
 import type { Posting } from '@/features/jobs/types';
-import {
-  fetchJob,
-  useBoardConnect,
-  useBoardDisconnect,
-  useBoardStatus,
-  useCancelJob,
-  useLinkedInConnect,
-  useLinkedInDisconnect,
-  useLinkedInStatus,
-  useScrapeBoard,
-} from '@/services';
+import { fetchJob, useCancelJob, useScrapeBoards } from '@/services';
 
 type ScrapeOutcome = { ok: boolean; note?: string };
 
 interface ScrapeForm {
-  board: string;
+  boards: string[];
   query: string;
   location: string;
   countryCode?: string;
@@ -48,55 +37,12 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
   // than appends to) the persisted postings, applied on the first stream item.
   const replacePendingRef = useRef(false);
 
-  const scrapeBoard = useScrapeBoard();
+  const scrapeBoards = useScrapeBoards();
   const cancelJob = useCancelJob();
 
-  const isLinkedInBoard = scrapeForm.board === 'linkedin';
-  const linkedInStatus = useLinkedInStatus();
-  const boardStatus = useBoardStatus(
-    AUTH_BENEFITS.has(scrapeForm.board) && !isLinkedInBoard ? scrapeForm.board : ''
-  );
-  const linkedInConnect = useLinkedInConnect();
-  const linkedInDisconnect = useLinkedInDisconnect();
-  const boardConnect = useBoardConnect();
-  const boardDisconnect = useBoardDisconnect();
-
-  const boardConnected = isLinkedInBoard
-    ? ((linkedInStatus.data as { connected?: boolean } | undefined)?.connected ?? false)
-    : ((boardStatus.data as { connected?: boolean } | undefined)?.connected ?? false);
-  const connectPending = isLinkedInBoard ? linkedInConnect.isPending : boardConnect.isPending;
-  const disconnectPending = isLinkedInBoard
-    ? linkedInDisconnect.isPending
-    : boardDisconnect.isPending;
-
-  const handleInlineDisconnect = async () => {
-    try {
-      if (isLinkedInBoard) await linkedInDisconnect.mutateAsync();
-      else await boardDisconnect.mutateAsync(scrapeForm.board);
-    } catch (err) {
-      notify.error({ message: err instanceof Error ? err.message : 'Disconnect failed.' });
-    }
-  };
-
-  const handleInlineConnect = async () => {
-    try {
-      const result = isLinkedInBoard
-        ? await linkedInConnect.mutateAsync()
-        : await boardConnect.mutateAsync(scrapeForm.board);
-      const res = result as { connected?: boolean; error?: string } | undefined;
-      if (res?.error) notify.error({ message: res.error });
-      else if (!res?.connected) {
-        const boardName = isLinkedInBoard ? 'LinkedIn' : scrapeForm.board;
-        notify.warning({ message: `${boardName} sign-in was cancelled or timed out.` });
-      }
-    } catch (err) {
-      notify.error({ message: err instanceof Error ? err.message : 'Connection failed.' });
-    }
-  };
-
   const doScrape = async (amount: number, replace: boolean) => {
-    const res = (await scrapeBoard.mutateAsync({
-      board: scrapeForm.board,
+    const res = (await scrapeBoards.mutateAsync({
+      boards: scrapeForm.boards,
       query: scrapeForm.query,
       ...(scrapeForm.location ? { location: scrapeForm.location } : {}),
       ...(scrapeForm.countryCode ? { countryCode: scrapeForm.countryCode } : {}),
@@ -106,8 +52,8 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
       amount,
       ...(replace ? { replace: true } : {}),
       ...(scrapeForm.dateFilter ? { dateFilter: scrapeForm.dateFilter } : {}),
-      ...(scrapeForm.board === 'indeed' ? { locale: scrapeForm.locale } : {}),
-    } as Parameters<typeof scrapeBoard.mutateAsync>[0])) as { jobId: string; error?: string };
+      ...(scrapeForm.boards.includes('indeed') ? { locale: scrapeForm.locale } : {}),
+    } as Parameters<typeof scrapeBoards.mutateAsync>[0])) as { jobId: string; error?: string };
     return res;
   };
 
@@ -124,7 +70,7 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
     // For "Show more" (same signature) keep existing results so the list
     // doesn't jump to the top.
     const signature = [
-      scrapeForm.board,
+      [...scrapeForm.boards].sort().join(','),
       scrapeForm.query.trim().toLowerCase(),
       scrapeForm.location.trim().toLowerCase(),
       scrapeForm.dateFilter ?? '',
@@ -248,10 +194,5 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
     replacePendingRef,
     startScrape,
     cancelScrape,
-    handleInlineConnect,
-    handleInlineDisconnect,
-    boardConnected,
-    connectPending,
-    disconnectPending,
   };
 }

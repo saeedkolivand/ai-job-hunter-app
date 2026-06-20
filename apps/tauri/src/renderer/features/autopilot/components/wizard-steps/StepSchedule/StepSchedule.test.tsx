@@ -28,7 +28,7 @@ vi.mock('@ajh/translations', () => ({
 function makeForm(overrides: Partial<WizardState> = {}): WizardState {
   return {
     name: 'Test run',
-    board: 'linkedin',
+    boards: ['linkedin'],
     query: 'react developer',
     location: 'Berlin',
     workType: 'remote',

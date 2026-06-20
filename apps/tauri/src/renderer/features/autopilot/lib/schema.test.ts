@@ -4,11 +4,11 @@ import type { WizardState } from '@/features/autopilot/types';
 
 import { autopilotWizardSchema } from './schema';
 
-/** A fully valid wizard form — the step-0 gate (name/board/query) is satisfied. */
+/** A fully valid wizard form — the step-0 gate (name/boards/query) is satisfied. */
 function makeForm(overrides: Partial<WizardState> = {}): WizardState {
   return {
     name: 'Backend roles',
-    board: 'linkedin',
+    boards: ['linkedin'],
     query: 'rust backend',
     location: '',
     workType: 'any',
@@ -61,8 +61,19 @@ describe('autopilotWizardSchema — step-0 gate', () => {
     );
   });
 
-  it('requires a non-empty board', () => {
-    expect(autopilotWizardSchema.safeParse(makeForm({ board: '' })).success).toBe(false);
+  it('requires at least one board in boards', () => {
+    expect(autopilotWizardSchema.safeParse(makeForm({ boards: [] })).success).toBe(false);
+  });
+
+  it('rejects more than 6 boards', () => {
+    expect(
+      autopilotWizardSchema.safeParse(makeForm({ boards: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] }))
+        .success
+    ).toBe(false);
+  });
+
+  it('rejects a boards array containing an empty string (per-item min(1))', () => {
+    expect(autopilotWizardSchema.safeParse(makeForm({ boards: [''] })).success).toBe(false);
   });
 
   it('rejects out-of-range numeric controls (amount > 500, score > 100)', () => {

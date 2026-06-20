@@ -201,7 +201,7 @@ mod test {
             name: "name".into(),
             status,
             target: AutopilotTarget {
-                board: "linkedin".into(),
+                boards: vec!["linkedin".into()],
                 query: "rust".into(),
                 location: None,
                 work_type: None,

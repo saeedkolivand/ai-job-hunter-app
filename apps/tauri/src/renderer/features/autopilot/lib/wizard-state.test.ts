@@ -18,6 +18,8 @@ const BASE_AUTOPILOT: Autopilot = {
   name: 'My autopilot',
   status: 'active',
   target: {
+    // Autopilot.target type still carries the legacy `board: string` shape; runtime
+    // sends `boards: string[]` — the cast in autopilotToWizardState handles both.
     board: 'linkedin',
     query: 'react developer',
     location: 'Berlin',
@@ -75,6 +77,10 @@ describe('buildDefaults()', () => {
     const state = buildDefaults();
     expect(state.location).toBe('');
   });
+
+  it('defaults to boards: ["linkedin"]', () => {
+    expect(buildDefaults().boards).toEqual(['linkedin']);
+  });
 });
 
 // ── autopilotToWizardState ────────────────────────────────────────────────────
@@ -108,11 +114,23 @@ describe('autopilotToWizardState()', () => {
   it('round-trips all other top-level fields correctly', () => {
     const state = autopilotToWizardState(BASE_AUTOPILOT);
     expect(state.name).toBe('My autopilot');
-    expect(state.board).toBe('linkedin');
+    // Legacy `board: string` autopilots are normalized to `boards: [board]`.
+    expect(state.boards).toEqual(['linkedin']);
     expect(state.query).toBe('react developer');
     expect(state.schedule).toBe('daily');
     expect(state.minMatchScore).toBe(60);
     expect(state.resumeText).toBe('My resume text');
+  });
+
+  it('reads boards array from new-style autopilots', () => {
+    // Runtime payload has `boards: string[]`; the static Autopilot type still carries
+    // the legacy `board: string`. Use a double-cast to simulate the runtime shape.
+    const ap = {
+      ...BASE_AUTOPILOT,
+      target: { ...BASE_AUTOPILOT.target, boards: ['linkedin', 'indeed'] },
+    } as unknown as Autopilot;
+    const state = autopilotToWizardState(ap);
+    expect(state.boards).toEqual(['linkedin', 'indeed']);
   });
 
   it('joins keywords array to a comma-separated string', () => {
@@ -135,7 +153,7 @@ describe('autopilotToWizardState()', () => {
 function makeForm(overrides: Partial<WizardState> = {}): WizardState {
   return {
     name: 'Backend roles',
-    board: 'linkedin',
+    boards: ['linkedin'],
     query: 'rust backend',
     location: 'Berlin',
     workType: 'remote',
@@ -157,7 +175,7 @@ describe('wizardStateToPayload()', () => {
     expect(wizardStateToPayload(makeForm())).toEqual({
       name: 'Backend roles',
       target: {
-        board: 'linkedin',
+        boards: ['linkedin'],
         query: 'rust backend',
         location: 'Berlin',
         workType: 'remote',

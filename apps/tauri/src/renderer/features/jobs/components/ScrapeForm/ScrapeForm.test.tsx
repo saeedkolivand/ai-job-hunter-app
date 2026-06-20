@@ -3,11 +3,13 @@
  *
  * Covers:
  *   - Shows a skeleton while the catalog is loading
- *   - Renders one radio button per listed board (glassdoor filtered out)
+ *   - Renders one toggle button per listed board (glassdoor filtered out)
  *   - Renders no board buttons when the catalog returns []
  *   - glassdoor is NOT rendered (listed=false)
  *   - listed boards ARE rendered (greenhouse, linkedin, indeed)
  *   - Board order matches catalog (registry) order
+ *   - Selected boards shown with aria-pressed=true
+ *   - Select all / Clear controls present
  *
  * motion/react is globally shimmed in vitest.setup.ts.
  * ScrapeFilters is stubbed to avoid deep dependency pulls.
@@ -31,6 +33,7 @@ vi.mock('@/services/use-boards', () => ({
     isLoading: stubLoading,
     isSuccess: !stubLoading && stubCatalog !== undefined,
   }),
+  useBoardStatuses: () => ({ results: [], anyConnected: false }),
 }));
 
 // Stub ScrapeFilters — deep component; not under test here
@@ -38,19 +41,27 @@ vi.mock('./ScrapeFilters', () => ({
   ScrapeFilters: () => <div data-testid="scrape-filters" />,
 }));
 
-// Stub AuthHint — not under test here
-vi.mock('./AuthHint', () => ({
-  AuthHint: () => null,
+// Stub BoardConnectChip — not under test here
+vi.mock('./BoardConnectChip', () => ({
+  BoardConnectChip: ({ board }: { board: string }) => <span data-testid={`chip-${board}`} />,
 }));
 
 // i18n: identity t() so we assert on keys
 vi.mock('@ajh/translations', () => ({
-  useTranslation: () => ({ t: (k: string) => k }),
+  useTranslation: () => ({
+    t: (k: string, p?: Record<string, string>) => {
+      if (!p) return k;
+      return Object.entries(p).reduce(
+        (acc, [k2, v]) => acc.replace(new RegExp(`\\{\\{${k2}\\}\\}`, 'g'), v),
+        k
+      );
+    },
+  }),
 }));
 
-// Stub roving-tabindex (returns a noop handler; no DOM layout needed)
+// Stub multi-select key handler (returns a noop handler; no DOM layout needed)
 vi.mock('@/hooks/use-roving-tabindex', () => ({
-  makeRovingTabindex: () => () => {},
+  makeMultiSelectKeyHandler: () => () => {},
 }));
 
 // ---------------------------------------------------------------------------
@@ -72,7 +83,7 @@ const LISTED_CATALOG: BoardCatalogEntry[] = [
 ];
 
 const DEFAULT_FORM = {
-  board: 'greenhouse',
+  boards: ['greenhouse'],
   query: '',
   location: '',
   radiusKm: 0,
@@ -98,15 +109,10 @@ function renderForm(overrides: { catalogLoading?: boolean; catalog?: BoardCatalo
       form={DEFAULT_FORM}
       scraping={false}
       scrapeOutcome={null}
-      boardConnected={false}
-      connectPending={false}
-      disconnectPending={false}
       onToggle={NOOP}
       onFormChange={NOOP}
       onStart={NOOP}
       onCancel={NOOP}
-      onConnect={NOOP}
-      onDisconnect={NOOP}
       onGeocode={async () => []}
     />,
     { wrapper: Wrapper }
@@ -120,23 +126,24 @@ function renderForm(overrides: { catalogLoading?: boolean; catalog?: BoardCatalo
 describe('ScrapeForm — catalog loading state', () => {
   it('shows a skeleton while the catalog is loading', () => {
     renderForm({ catalogLoading: true, catalog: undefined });
-    // CardSkeleton renders as a div with a specific class — query by its role or test-id
-    // The board radiogroup should not be present while loading
-    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+    // Board group should not be present while loading
+    expect(screen.queryByRole('group')).not.toBeInTheDocument();
   });
 });
 
 describe('ScrapeForm — catalog-driven board picker', () => {
-  it('renders a radio button for each listed board', () => {
+  it('renders a toggle button for each listed board', () => {
     renderForm();
-    const radios = screen.getAllByRole('radio');
+    // Each board button has role="button" and aria-pressed
+    const buttons = screen
+      .getAllByRole('button', { hidden: false })
+      .filter((el) => el.getAttribute('aria-pressed') !== null);
     // 3 listed boards (greenhouse, linkedin, indeed); glassdoor is filtered out
-    expect(radios).toHaveLength(3);
+    expect(buttons).toHaveLength(3);
   });
 
   it('does NOT render a button for glassdoor (listed=false)', () => {
     renderForm();
-    // The button label uses t(`jobs.boards.glassdoor`) → key string in test
     expect(screen.queryByText('jobs.boards.glassdoor')).not.toBeInTheDocument();
   });
 
@@ -157,25 +164,42 @@ describe('ScrapeForm — catalog-driven board picker', () => {
 
   it('renders boards in catalog (registry) order', () => {
     renderForm();
-    const radios = screen.getAllByRole('radio');
-    // Text content uses i18n keys in test mode; check DOM order matches catalog order
-    const labels = radios.map((r) => r.textContent ?? '');
+    const buttons = screen
+      .getAllByRole('button', { hidden: false })
+      .filter((el) => el.getAttribute('aria-pressed') !== null);
+    const labels = buttons.map((r) => r.textContent ?? '');
     expect(labels[0]).toBe('jobs.boards.greenhouse');
     expect(labels[1]).toBe('jobs.boards.linkedin');
     expect(labels[2]).toBe('jobs.boards.indeed');
   });
+
+  it('marks selected boards with aria-pressed=true', () => {
+    renderForm();
+    const greenhouse = screen.getByText('jobs.boards.greenhouse').closest('button');
+    expect(greenhouse).toHaveAttribute('aria-pressed', 'true');
+    const linkedin = screen.getByText('jobs.boards.linkedin').closest('button');
+    expect(linkedin).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('renders select-all and clear controls', () => {
+    renderForm();
+    expect(screen.getByText('jobs.selectAll')).toBeInTheDocument();
+    expect(screen.getByText('jobs.clearBoards')).toBeInTheDocument();
+  });
 });
 
 describe('ScrapeForm — empty catalog fallback', () => {
-  it('renders no board radio buttons when the catalog is empty', () => {
+  it('renders no board toggle buttons when the catalog is empty', () => {
     renderForm({ catalog: [] });
-    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+    const buttons = screen
+      .queryAllByRole('button', { hidden: false })
+      .filter((el) => el.getAttribute('aria-pressed') !== null);
+    expect(buttons).toHaveLength(0);
   });
 
-  it('renders the radiogroup container even when catalog is empty (safe fallback)', () => {
+  it('renders the group container even when catalog is empty (safe fallback)', () => {
     renderForm({ catalog: [] });
-    // The radiogroup div is still rendered (just empty)
-    expect(screen.getByRole('radiogroup')).toBeInTheDocument();
+    expect(screen.getByRole('group')).toBeInTheDocument();
   });
 });
 
@@ -189,15 +213,10 @@ describe('ScrapeForm — hidden when show=false', () => {
         form={DEFAULT_FORM}
         scraping={false}
         scrapeOutcome={null}
-        boardConnected={false}
-        connectPending={false}
-        disconnectPending={false}
         onToggle={NOOP}
         onFormChange={NOOP}
         onStart={NOOP}
         onCancel={NOOP}
-        onConnect={NOOP}
-        onDisconnect={NOOP}
         onGeocode={async () => []}
       />
     );

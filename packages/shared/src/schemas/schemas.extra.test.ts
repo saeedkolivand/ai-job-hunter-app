@@ -101,13 +101,26 @@ describe('ResumeExtractTextSchema', () => {
 
 describe('AutopilotTargetSchema', () => {
   it('defaults pages to 2', () => {
-    const parsed = AutopilotTargetSchema.parse({ board: 'linkedin', query: 'dev' });
+    const parsed = AutopilotTargetSchema.parse({ boards: ['linkedin'], query: 'dev' });
     expect(parsed.pages).toBe(2);
   });
 
   it('rejects pages above 10', () => {
     expect(() =>
-      AutopilotTargetSchema.parse({ board: 'linkedin', query: 'dev', pages: 11 })
+      AutopilotTargetSchema.parse({ boards: ['linkedin'], query: 'dev', pages: 11 })
+    ).toThrow();
+  });
+
+  it('rejects an empty boards array', () => {
+    expect(() => AutopilotTargetSchema.parse({ boards: [], query: 'dev' })).toThrow();
+  });
+
+  it('rejects more than 6 boards', () => {
+    expect(() =>
+      AutopilotTargetSchema.parse({
+        boards: ['linkedin', 'indeed', 'stepstone', 'greenhouse', 'lever', 'ashby', 'remotive'],
+        query: 'dev',
+      })
     ).toThrow();
   });
 });
