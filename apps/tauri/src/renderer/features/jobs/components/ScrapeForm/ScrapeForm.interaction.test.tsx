@@ -156,9 +156,9 @@ describe('ScrapeForm board toggle — add board', () => {
     const linkedinBtn = getBoardButton('jobs.boards.linkedin');
     await userEvent.click(linkedinBtn);
 
-    const call = onFormChange.mock.calls[0]![0] as { boards: string[] };
-    expect(call.boards).not.toContain('linkedin');
-    expect(call.boards).toContain('greenhouse');
+    const call = onFormChange.mock.calls[0]?.[0] as { boards: string[] } | undefined;
+    expect(call?.boards).not.toContain('linkedin');
+    expect(call?.boards).toContain('greenhouse');
   });
 
   it('clicking the only selected board does NOT call onFormChange (last-board guard)', async () => {

@@ -170,9 +170,9 @@ describe('JobsPage — job.completed event handler', () => {
     });
 
     await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
-    const [, outcome] = scrapingMock.noteScrapeFinished.mock.calls[0]!;
-    expect(outcome.ok).toBe(true);
-    expect(outcome.note).toBeUndefined();
+    const outcome = scrapingMock.noteScrapeFinished.mock.calls[0]?.[1];
+    expect(outcome?.ok).toBe(true);
+    expect(outcome?.note).toBeUndefined();
   });
 
   it('completed event with one failed board → ok:true (partial failure keeps ok)', async () => {
@@ -190,9 +190,9 @@ describe('JobsPage — job.completed event handler', () => {
     });
 
     await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
-    const [, outcome] = scrapingMock.noteScrapeFinished.mock.calls[0]!;
-    expect(outcome.ok).toBe(true);
-    expect(outcome.note).toBeDefined();
+    const outcome = scrapingMock.noteScrapeFinished.mock.calls[0]?.[1];
+    expect(outcome?.ok).toBe(true);
+    expect(outcome?.note).toBeDefined();
   });
 
   it('partial note uses translated display names via t("jobs.boards.<id>"), not raw ids', async () => {
@@ -211,8 +211,8 @@ describe('JobsPage — job.completed event handler', () => {
     });
 
     await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
-    const [, outcome] = scrapingMock.noteScrapeFinished.mock.calls[0]!;
-    const note = outcome.note ?? '';
+    const outcome = scrapingMock.noteScrapeFinished.mock.calls[0]?.[1];
+    const note = outcome?.note ?? '';
 
     // The note is the result of t('jobs.partialScrapeNote', { done, total, failed }).
     // Our mock returns "jobs.partialScrapeNote[done=1,total=2,failed=<failedNames>]".
@@ -240,8 +240,8 @@ describe('JobsPage — job.completed event handler', () => {
     });
 
     await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
-    const [, outcome] = scrapingMock.noteScrapeFinished.mock.calls[0]!;
-    const note = outcome.note ?? '';
+    const outcome = scrapingMock.noteScrapeFinished.mock.calls[0]?.[1];
+    const note = outcome?.note ?? '';
 
     // t() mock → "jobs.partialScrapeNote[done=1,total=2,failed=jobs.boards.xing]"
     expect(note).toContain('done=1'); // 1 board succeeded
@@ -264,8 +264,8 @@ describe('JobsPage — job.completed event handler', () => {
     });
 
     await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
-    const [, outcome] = scrapingMock.noteScrapeFinished.mock.calls[0]!;
-    expect(outcome.ok).toBe(true);
+    const outcome = scrapingMock.noteScrapeFinished.mock.calls[0]?.[1];
+    expect(outcome?.ok).toBe(true);
   });
 
   it('job.failed event → ok:false with the error data as note', async () => {
@@ -278,8 +278,8 @@ describe('JobsPage — job.completed event handler', () => {
     });
 
     await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
-    const [, outcome] = scrapingMock.noteScrapeFinished.mock.calls[0]!;
-    expect(outcome.ok).toBe(false);
-    expect(outcome.note).toBe('connection refused');
+    const outcome = scrapingMock.noteScrapeFinished.mock.calls[0]?.[1];
+    expect(outcome?.ok).toBe(false);
+    expect(outcome?.note).toBe('connection refused');
   });
 });
