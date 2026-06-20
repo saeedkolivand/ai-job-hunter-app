@@ -391,7 +391,8 @@ fn target_deserializes_legacy_board_string() {
     // The `#[serde(alias = "board", deserialize_with = "string_or_vec")]` must
     // normalise this to `boards: vec!["linkedin"]`.
     let json = r#"{"board": "linkedin", "query": "rust", "pages": 2}"#;
-    let target: AutopilotTarget = serde_json::from_str(json).expect("legacy format must deserialize");
+    let target: AutopilotTarget =
+        serde_json::from_str(json).expect("legacy format must deserialize");
     assert_eq!(target.boards, vec!["linkedin"]);
 }
 
@@ -417,8 +418,14 @@ fn target_round_trips_as_boards_array() {
         top_n: 3,
     };
     let serialized = serde_json::to_string(&target).unwrap();
-    assert!(serialized.contains("\"boards\""), "must serialize as boards array");
-    assert!(!serialized.contains("\"board\""), "must not serialize as legacy singular");
+    assert!(
+        serialized.contains("\"boards\""),
+        "must serialize as boards array"
+    );
+    assert!(
+        !serialized.contains("\"board\""),
+        "must not serialize as legacy singular"
+    );
 
     let restored: AutopilotTarget = serde_json::from_str(&serialized).unwrap();
     assert_eq!(restored.boards, vec!["linkedin", "remotive"]);

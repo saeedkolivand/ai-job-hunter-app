@@ -299,18 +299,13 @@ async fn run_boards_collects_all_boards_up_to_amount() {
 
     let received = Arc::new(AtomicUsize::new(0));
     let received_cb = received.clone();
-    let on_item: Arc<dyn Fn(JobPosting) + Send + Sync> =
-        Arc::new(move |_| { received_cb.fetch_add(1, Ordering::SeqCst); });
+    let on_item: Arc<dyn Fn(JobPosting) + Send + Sync> = Arc::new(move |_| {
+        received_cb.fetch_add(1, Ordering::SeqCst);
+    });
 
     let parent = CancellationToken::new();
-    let results = ScraperEngine::run_boards(
-        resolved,
-        fake_input(10),
-        parent,
-        None,
-        Some(on_item),
-    )
-    .await;
+    let results =
+        ScraperEngine::run_boards(resolved, fake_input(10), parent, None, Some(on_item)).await;
 
     assert_eq!(results.len(), 3, "one result per board");
     for (_, res) in &results {
@@ -347,7 +342,11 @@ async fn run_boards_one_error_does_not_kill_others() {
     assert!(map["good_b"].is_ok(), "good_b should succeed");
 
     // The error board's summary would carry an error message.
-    assert!(map["fail"].as_ref().unwrap_err().to_string().contains("board error"));
+    assert!(map["fail"]
+        .as_ref()
+        .unwrap_err()
+        .to_string()
+        .contains("board error"));
 }
 
 #[tokio::test]
@@ -388,14 +387,13 @@ async fn run_boards_child_cap_stops_only_its_board() {
     let results =
         ScraperEngine::run_boards(resolved, fake_input(3), parent.clone(), None, None).await;
 
-    assert!(!parent.is_cancelled(), "child cap must not cancel parent token");
+    assert!(
+        !parent.is_cancelled(),
+        "child cap must not cancel parent token"
+    );
 
     let map: HashMap<String, _> = results.into_iter().collect();
-    assert_eq!(
-        map["a"].as_ref().unwrap().len(),
-        3,
-        "board a capped to 3"
-    );
+    assert_eq!(map["a"].as_ref().unwrap().len(), 3, "board a capped to 3");
     assert_eq!(
         map["b"].as_ref().unwrap().len(),
         3,
@@ -446,9 +444,15 @@ async fn run_boards_browser_boards_serialized() {
 
     #[async_trait::async_trait]
     impl Scraper for ConcurrencyProbeScraper {
-        fn id(&self) -> &'static str { "probe" }
-        fn display_name(&self) -> &'static str { "Probe" }
-        fn mode(&self) -> ScraperMode { ScraperMode::Browser }
+        fn id(&self) -> &'static str {
+            "probe"
+        }
+        fn display_name(&self) -> &'static str {
+            "Probe"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Browser
+        }
         async fn search(
             &self,
             _input: BoardSearchInput,
@@ -458,7 +462,10 @@ async fn run_boards_browser_boards_serialized() {
             // Update peak.
             let mut cur_peak = self.peak.load(Ord::SeqCst);
             while now > cur_peak {
-                match self.peak.compare_exchange(cur_peak, now, Ord::SeqCst, Ord::SeqCst) {
+                match self
+                    .peak
+                    .compare_exchange(cur_peak, now, Ord::SeqCst, Ord::SeqCst)
+                {
                     Ok(_) => break,
                     Err(p) => cur_peak = p,
                 }
@@ -530,8 +537,7 @@ async fn scrape_boards_dedupes_and_caps_large_input() {
     };
 
     let parent = CancellationToken::new();
-    let results =
-        ScraperEngine::run_boards(fake_refs, fake_input(1), parent, None, None).await;
+    let results = ScraperEngine::run_boards(fake_refs, fake_input(1), parent, None, None).await;
 
     assert!(
         results.len() <= MAX_BOARDS_PER_BATCH,
@@ -573,12 +579,17 @@ async fn scrape_boards_real_entrypoint_caps_and_dedupes() {
     let engine = ScraperEngine::new();
     // No cancellation — all_failed=true but parent.is_cancelled()=false → Ok.
     let result = engine
-        .scrape_boards(&boards, fake_input(1), "test-job-cap".to_string(), None, None)
+        .scrape_boards(
+            &boards,
+            fake_input(1),
+            "test-job-cap".to_string(),
+            None,
+            None,
+        )
         .await;
 
-    let (postings, summaries) = result.expect(
-        "all boards unknown (no network) but not cancelled → must return Ok, not Err",
-    );
+    let (postings, summaries) = result
+        .expect("all boards unknown (no network) but not cancelled → must return Ok, not Err");
 
     assert!(postings.is_empty(), "unknown boards produce no postings");
     assert!(
@@ -608,7 +619,11 @@ async fn scrape_boards_real_entrypoint_caps_and_dedupes() {
             "board '{}' is unknown so must report an error",
             s.board
         );
-        assert_eq!(s.count, 0, "unknown board '{}' must report count=0", s.board);
+        assert_eq!(
+            s.count, 0,
+            "unknown board '{}' must report count=0",
+            s.board
+        );
     }
 }
 
@@ -621,7 +636,9 @@ async fn scrape_boards_all_failed_and_cancelled_returns_err() {
     // when the boards start — no timing dependency.
     let engine = ScraperEngine::new();
     let token = CancellationToken::new();
-    engine.register_token("job-cancel-all-fail", token.clone()).await;
+    engine
+        .register_token("job-cancel-all-fail", token.clone())
+        .await;
     token.cancel();
 
     // All boards are unknown → all fail with Err("Unknown board: …") immediately.
@@ -699,9 +716,8 @@ async fn scrape_boards_partial_success_under_cancel_returns_ok() {
         .await;
 
     // Partial success (at least one board Ok) + cancelled → must return Ok, not Err.
-    let (postings, summaries) = result.expect(
-        "partial success under cancellation must return Ok, not Err",
-    );
+    let (postings, summaries) =
+        result.expect("partial success under cancellation must return Ok, not Err");
 
     // ok-board streamed items even though the parent was pre-cancelled:
     // FakeScraper checks ctx.signal which is a child token, so 0 items is also

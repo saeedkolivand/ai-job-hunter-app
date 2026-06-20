@@ -241,9 +241,7 @@ pub async fn fetch_text(
 /// Returns `None` when the header is absent or non-numeric.
 /// The returned value is clamped to 30 000 ms.
 fn retry_after_ms(headers: &reqwest::header::HeaderMap) -> Option<u64> {
-    let value = headers
-        .get("retry-after")
-        .and_then(|v| v.to_str().ok())?;
+    let value = headers.get("retry-after").and_then(|v| v.to_str().ok())?;
 
     // Integer seconds only — the format almost all APIs use in practice.
     let secs = value.trim().parse::<u64>().ok()?;

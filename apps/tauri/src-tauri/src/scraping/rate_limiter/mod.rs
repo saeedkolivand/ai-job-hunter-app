@@ -95,8 +95,9 @@ impl RateLimiter {
 // ── Host-keyed registry ───────────────────────────────────────────────────────
 
 /// Process-wide per-host rate limiters. Get-or-create via [`for_host`].
-static HOST_LIMITERS: std::sync::LazyLock<Mutex<std::collections::HashMap<String, Arc<RateLimiter>>>> =
-    std::sync::LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+static HOST_LIMITERS: std::sync::LazyLock<
+    Mutex<std::collections::HashMap<String, Arc<RateLimiter>>>,
+> = std::sync::LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
 
 /// Return the shared rate limiter for `host`, creating one on first use.
 pub async fn for_host(host: &str) -> Arc<RateLimiter> {

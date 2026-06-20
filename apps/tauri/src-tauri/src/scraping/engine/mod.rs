@@ -216,10 +216,7 @@ impl ScraperEngine {
                     Box::pin(async move {
                         // Acquire the browser semaphore ONLY for browser-mode boards,
                         // so HTTP boards fan out freely while browser ones serialize.
-                        let _browser_permit = if scraper
-                            .as_ref()
-                            .ok()
-                            .map(|s| s.mode())
+                        let _browser_permit = if scraper.as_ref().ok().map(|s| s.mode())
                             == Some(ScraperMode::Browser)
                         {
                             Some(
@@ -244,15 +241,9 @@ impl ScraperEngine {
                                 boxed
                             });
 
-                        let res = Self::run_one(
-                            &name,
-                            scraper,
-                            input,
-                            child,
-                            None,
-                            per_board_on_item,
-                        )
-                        .await;
+                        let res =
+                            Self::run_one(&name, scraper, input, child, None, per_board_on_item)
+                                .await;
 
                         // Batch progress: coarse done/total fraction after each board.
                         let finished = done.fetch_add(1, Ordering::Relaxed) + 1;

@@ -61,10 +61,7 @@ where
             Ok(Vec::new())
         }
 
-        fn visit_some<D2: serde::Deserializer<'de>>(
-            self,
-            d: D2,
-        ) -> Result<Self::Value, D2::Error> {
+        fn visit_some<D2: serde::Deserializer<'de>>(self, d: D2) -> Result<Self::Value, D2::Error> {
             serde::Deserialize::deserialize(d).map(|v: serde_json::Value| match v {
                 serde_json::Value::String(s) => vec![s],
                 serde_json::Value::Array(arr) => arr

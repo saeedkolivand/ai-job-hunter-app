@@ -437,10 +437,7 @@ async fn test_fetch_text_429_with_retry_after_succeeds() {
 
     // First request returns 429 with Retry-After: 0 (retry immediately).
     Mock::given(method("GET"))
-        .respond_with(
-            ResponseTemplate::new(429)
-                .insert_header("retry-after", "0"),
-        )
+        .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "0"))
         .up_to_n_times(1)
         .mount(&mock_server)
         .await;
@@ -453,7 +450,10 @@ async fn test_fetch_text_429_with_retry_after_succeeds() {
 
     let result = fetch_text(
         &mock_server.uri(),
-        FetchOptions { retries: 2, ..Default::default() },
+        FetchOptions {
+            retries: 2,
+            ..Default::default()
+        },
         signal,
     )
     .await;
