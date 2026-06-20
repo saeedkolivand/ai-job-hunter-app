@@ -1,5 +1,15 @@
 /// Bundesagentur für Arbeit — official German federal employment agency
-use super::super::http::{fetch_json, strip_html};
+///
+/// Detail endpoint note (2026-06): the `/jobdetails/{hash}` endpoint returns 404
+/// for most jobs when called from non-browser clients (no session cookie / bot filter).
+/// Jobs are emitted from list data alone; description is populated only when the
+/// detail fetch succeeds. This degrades gracefully — list data has title/company/
+/// location/url which is sufficient for search results.
+///
+/// fetch_json note: we call fetch_text directly + deserialize manually because
+/// fetch_json overwrites the caller's `headers` with only `accept: application/json`,
+/// dropping the required `X-API-Key` header (follow-up: fix fetch_json to merge headers).
+use super::super::http::{fetch_text, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -48,16 +58,21 @@ struct Branche {
 
 #[derive(Debug, Deserialize)]
 struct DetailResp {
-    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
-    refnr: String,
-    stellenbeschreibung: Option<String>,
+    // Live API (2026-06): fields renamed; all Option so future renames degrade gracefully.
+    #[allow(dead_code)]
+    #[serde(rename = "referenznummer")]
+    referenznummer: Option<String>,
+    #[serde(rename = "stellenangebotsBeschreibung")]
+    stellenangebots_beschreibung: Option<String>,
     arbeitgeberdarstellung: Option<String>,
-    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
+    #[allow(dead_code)]
     branche: Option<Branche>,
-    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
-    arbeitgeber: Option<String>,
-    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
-    titel: Option<String>,
+    // live API uses "firma" for company name in detail response
+    #[allow(dead_code)]
+    firma: Option<String>,
+    #[allow(dead_code)]
+    #[serde(rename = "stellenangebotsTitel")]
+    stellenangebots_titel: Option<String>,
 }
 
 pub struct ArbeitsagenturScraper;
@@ -121,7 +136,7 @@ impl Scraper for ArbeitsagenturScraper {
                 .collect::<Vec<_>>()
                 .join("&");
 
-            let list = match fetch_json::<ListResp>(
+            let list_res = match fetch_text(
                 &format!("{}/jobs?{}", API_BASE, query_string),
                 super::super::http::FetchOptions {
                     headers: Some(vec![
@@ -135,7 +150,7 @@ impl Scraper for ArbeitsagenturScraper {
             )
             .await
             {
-                Ok(l) => l,
+                Ok(r) => r,
                 Err(e) if out.is_empty() => return Err(e.into()),
                 Err(e) => {
                     log::warn!(
@@ -144,6 +159,11 @@ impl Scraper for ArbeitsagenturScraper {
                     );
                     break;
                 }
+            };
+            let list = if list_res.status_code >= 200 && list_res.status_code < 300 {
+                serde_json::from_str::<ListResp>(&list_res.text).ok()
+            } else {
+                None
             };
 
             let items = list.and_then(|l| l.stellenangebote).unwrap_or_default();
@@ -163,12 +183,14 @@ impl Scraper for ArbeitsagenturScraper {
 
                 seen.insert(j.refnr.clone());
 
+                // Attempt detail fetch opportunistically — 404s are common from non-browser
+                // clients (bot filter). On failure/404 we still emit the job from list data.
                 let hash = j
                     .hash_id
                     .clone()
                     .unwrap_or_else(|| self.to_base64_url(&j.refnr));
 
-                let detail = match fetch_json::<DetailResp>(
+                let detail = fetch_text(
                     &format!("{}/jobdetails/{}", API_BASE, urlencoding::encode(&hash)),
                     super::super::http::FetchOptions {
                         headers: Some(vec![
@@ -180,18 +202,13 @@ impl Scraper for ArbeitsagenturScraper {
                     ctx.signal.clone(),
                 )
                 .await
-                {
-                    Ok(d) => d,
-                    // One job's detail fetch failing must not abort the batch — skip it.
-                    Err(e) => {
-                        log::warn!("[arbeitsagentur] detail {} failed: {e}; skipping", j.refnr);
-                        continue;
-                    }
-                };
+                .ok()
+                .filter(|r| r.status_code >= 200 && r.status_code < 300)
+                .and_then(|r| serde_json::from_str::<DetailResp>(&r.text).ok());
 
                 let description = detail.as_ref().and_then(|d| {
                     let desc = vec![
-                        d.stellenbeschreibung.as_deref(),
+                        d.stellenangebots_beschreibung.as_deref(),
                         d.arbeitgeberdarstellung.as_deref(),
                     ]
                     .into_iter()
@@ -245,6 +262,9 @@ impl Scraper for ArbeitsagenturScraper {
                         Some(location)
                     },
                     url: j.externe_url.clone().unwrap_or_else(|| {
+                        // The public jobdetail deep-link uses the hashId (base64url of refnr),
+                        // NOT the raw refnr — the raw form returns 404 on the website.
+                        // `hash` was already computed above for the API detail fetch.
                         format!(
                             "https://www.arbeitsagentur.de/jobsuche/jobdetail/{}",
                             urlencoding::encode(&hash)

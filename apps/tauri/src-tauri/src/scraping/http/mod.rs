@@ -9,7 +9,7 @@ use std::time::Duration;
 use crate::error::{AppError, AppResult};
 use crate::net::http::DEFAULT_UA;
 
-const MAX_BYTES: usize = 8 * 1024 * 1024; // 8 MB per response
+const MAX_BYTES: usize = 8 * 1024 * 1024; // 8 MB default guard — per-request override via FetchOptions::max_bytes
 
 // ── Compiled-once regexes for HTML→text helpers ────────────────────────────────
 // Promoted from per-call `Regex::new(...).unwrap()` so each `strip_html` /
@@ -50,6 +50,9 @@ pub struct FetchOptions {
     pub method: Option<reqwest::Method>,
     pub body: Option<String>,
     pub retries: u32,
+    /// Per-request byte cap. `None` falls back to the shared `MAX_BYTES` (8 MB).
+    /// Use only for feeds known to exceed 8 MB (e.g. the GTJ RSS feed at ~10 MB).
+    pub max_bytes: Option<usize>,
 }
 
 impl Default for FetchOptions {
@@ -59,6 +62,7 @@ impl Default for FetchOptions {
             method: None,
             body: None,
             retries: 1,
+            max_bytes: None,
         }
     }
 }
@@ -76,6 +80,7 @@ pub async fn fetch_text(
     signal: tokio_util::sync::CancellationToken,
 ) -> AppResult<FetchResult> {
     let retries = opts.retries;
+    let cap = opts.max_bytes.unwrap_or(MAX_BYTES);
     let mut last_err: Option<AppError> = None;
 
     for attempt in 0..=retries {
@@ -114,14 +119,14 @@ pub async fn fetch_text(
 
                 // Check content length if available
                 if let Some(content_length) = response.content_length() {
-                    if content_length > MAX_BYTES as u64 {
+                    if content_length > cap as u64 {
                         return Err(AppError::Validation("Response too large".to_string()));
                     }
                 }
 
                 let text = response.text().await?;
 
-                if text.len() > MAX_BYTES {
+                if text.len() > cap {
                     return Err(AppError::Validation("Response too large".to_string()));
                 }
 
