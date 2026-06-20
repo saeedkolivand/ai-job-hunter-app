@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781986623273,
+  "lastUpdate": 1781987743170,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1001,6 +1001,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 279208,
             "range": "± 4607",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b9e90be42edb32c5f726378a68d646015a05804b",
+          "message": "fix(jobs): list glassdoor in the board picker (#456)\n\nGlassdoor was listed()->false (hidden) because it predated the board login\nwiring. The connect flow merged in #455 supplies that, so surface it as a\nbest-effort board. It stays anonymous (frequently bot-blocked) — the browser\nscraper does not yet load the saved session, so login is not wired into it.\nCatalog test updated: glassdoor listed, 20 boards listed.\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-20T22:27:48+02:00",
+          "tree_id": "866e5676f190c689242a96111c296db8ce03bad8",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/b9e90be42edb32c5f726378a68d646015a05804b"
+        },
+        "date": 1781987742676,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1878992,
+            "range": "± 44146",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2499567,
+            "range": "± 4147",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 291555,
+            "range": "± 1607",
             "unit": "ns/iter"
           }
         ]
