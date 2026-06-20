@@ -1,32 +1,26 @@
-/// Y Combinator Jobs (Work at a Startup) — public Algolia search.
+/// Y Combinator Jobs — HN Firebase API (replaces Algolia whose public client keys rotated)
+///
+/// The workatastartup.com Algolia credentials are baked into the JS bundle and rotate.
+/// The Hacker News Firebase API is the canonical public YC job feed:
+///   /v0/jobstories.json  → list of item IDs (most recent ~30 jobs)
+///   /v0/item/{id}.json   → individual job: type="job", title, url, text, by, time
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
 use serde::Deserialize;
 
-const ALGOLIA_APP_ID: &str = "45BWZJ1SGC";
-const ALGOLIA_API_KEY: &str =
-    "NDYyYmNmMDU5OWVmNzNlNzMwMWQ5MDE4ZWY3M2NlNDU0NjA5MTRmZTdiNDAxYjE3MTUyYmU5OWZlNjVmZmUyZHRhZ0ZpbHRlcnM9JTVCJTIyam9icyUyMiU1RA==";
+const HN_BASE: &str = "https://hacker-news.firebaseio.com/v0";
 
 #[derive(Debug, Deserialize)]
-struct Hit {
-    #[serde(rename = "objectID")]
-    object_id: String,
+struct HnItem {
+    id: i64,
+    #[serde(rename = "type")]
+    item_type: Option<String>,
     title: Option<String>,
-    description: Option<String>,
-    #[serde(rename = "company_name")]
-    company_name: Option<String>,
-    location: Option<String>,
-    remote: Option<bool>,
-    #[serde(rename = "apply_url")]
-    apply_url: Option<String>,
-    #[serde(rename = "created_at_i")]
-    created_at_i: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-struct AlgoliaResp {
-    hits: Vec<Hit>,
+    url: Option<String>,
+    text: Option<String>,
+    by: Option<String>,
+    time: Option<i64>,
 }
 
 pub struct YCombinatorScraper;
@@ -50,65 +44,98 @@ impl Scraper for YCombinatorScraper {
         input: BoardSearchInput,
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
-        let q = input.query.trim();
-        let url = format!(
-            "https://{}-dsn.algolia.net/1/indexes/JobPosting/query",
-            ALGOLIA_APP_ID.to_lowercase()
-        );
+        let q = input.query.trim().to_lowercase();
 
-        let data = fetch_json::<AlgoliaResp>(
-            &url,
-            super::super::http::FetchOptions {
-                method: Some(reqwest::Method::POST),
-                headers: Some(vec![
-                    (
-                        "x-algolia-application-id".to_string(),
-                        ALGOLIA_APP_ID.to_string(),
-                    ),
-                    ("x-algolia-api-key".to_string(), ALGOLIA_API_KEY.to_string()),
-                    ("content-type".to_string(), "application/json".to_string()),
-                ]),
-                body: Some(serde_json::json!({ "query": q, "hitsPerPage": 50 }).to_string()),
-                ..Default::default()
-            },
-            ctx.signal,
+        // Step 1: fetch the list of job story IDs
+        let ids = fetch_json::<Vec<i64>>(
+            &format!("{}/jobstories.json", HN_BASE),
+            Default::default(),
+            ctx.signal.clone(),
         )
-        .await?;
+        .await?
+        .unwrap_or_default();
 
-        let hits = match data {
-            Some(d) => d.hits,
-            None => return Ok(vec![]),
-        };
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
 
         let now = chrono::Utc::now().timestamp_millis();
+        let limit = input.amount.clamp(1, 50) as usize;
         let mut out = vec![];
 
-        for h in hits {
-            if h.title.is_none() {
+        // Step 2: fetch each item; stop early once we hit the limit
+        for id in ids.iter().take(limit * 3) {
+            // over-fetch to account for filter misses
+            if ctx.signal.is_cancelled() {
+                break;
+            }
+            if out.len() >= limit {
+                break;
+            }
+
+            let item = match fetch_json::<HnItem>(
+                &format!("{}/item/{}.json", HN_BASE, id),
+                Default::default(),
+                ctx.signal.clone(),
+            )
+            .await
+            {
+                Ok(Some(i)) => i,
+                Ok(None) => continue,
+                Err(e) => {
+                    log::warn!("[ycombinator] item {id} failed: {e}; skipping");
+                    continue;
+                }
+            };
+
+            // Only include items of type "job"
+            if item.item_type.as_deref() != Some("job") {
                 continue;
             }
 
+            let title = item.title.unwrap_or_default();
+            if title.is_empty() {
+                continue;
+            }
+
+            // Keyword filter
+            let description_text = item.text.as_deref().unwrap_or("");
+            let haystack = format!("{} {}", title, description_text).to_lowercase();
+            if !q.is_empty() && !haystack.contains(&q) {
+                continue;
+            }
+
+            // HN job titles often look like "Company (YC S24) Is Hiring …"
+            // Only match the full " (YC " prefix — bare " (W" / " (S" are too loose
+            // and truncate ordinary English parentheticals (e.g. "Engineer (Senior) at …").
+            let company = {
+                if let Some(pos) = title.find(" (YC ") {
+                    title[..pos].trim().to_string()
+                } else {
+                    item.by.clone().unwrap_or_else(|| "Unknown".to_string())
+                }
+            };
+
+            let url = item
+                .url
+                .clone()
+                .unwrap_or_else(|| format!("https://news.ycombinator.com/item?id={}", item.id));
+
+            let description = item.text.as_deref().map(strip_html);
+
             let posting = JobPosting {
-                id: format!("{}:{}", self.id(), h.object_id),
-                external_id: Some(h.object_id.clone()),
-                title: h.title.unwrap_or_default(),
-                company: h.company_name.unwrap_or_else(|| "Unknown".to_string()),
-                location: h.location,
-                url: h.apply_url.unwrap_or_else(|| {
-                    format!("https://www.workatastartup.com/jobs/{}", h.object_id)
-                }),
+                id: format!("{}:{}", self.id(), item.id),
+                external_id: Some(item.id.to_string()),
+                title,
+                company,
+                location: None,
+                url,
                 source: self.id().to_string(),
-                description: h.description.map(|d| strip_html(&d)),
+                description,
                 requirements: None,
-                posted_at: h.created_at_i.map(|t| t * 1000),
+                posted_at: item.time.map(|t| t * 1000),
                 captured_at: now,
-                extra: {
-                    let mut map = std::collections::HashMap::new();
-                    if let Some(remote) = h.remote {
-                        map.insert("remote".to_string(), serde_json::json!(remote));
-                    }
-                    map
-                },
+                extra: std::collections::HashMap::new(),
             };
 
             if let Some(ref on_item) = ctx.on_item {

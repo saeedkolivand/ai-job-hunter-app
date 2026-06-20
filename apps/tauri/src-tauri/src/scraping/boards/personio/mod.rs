@@ -17,9 +17,15 @@ static NAME_RE: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r"<name>(.*?)</name>").unwrap());
 static OFFICE_RE: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r"<office>(.*?)</office>").unwrap());
-static DESC_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new(r"(?s)<jobDescription>\s*<value>(.*?)</value>\s*</jobDescription>").unwrap()
+// 2025+: Personio XML uses <jobDescriptions> wrapping <jobDescription> blocks each with
+// <name> + <value>. First extract the <jobDescriptions>…</jobDescriptions> block, then
+// capture every <value> within it — prevents matching <value> nodes in sibling blocks
+// like <customAttributes> or <department>.
+static JOBDESC_BLOCK_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"(?s)<jobDescriptions>(.*?)</jobDescriptions>").unwrap()
 });
+static DESC_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"(?s)<value>(.*?)</value>").unwrap());
 static CREATED_RE: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r"<createdAt>(.*?)</createdAt>").unwrap());
 
@@ -49,10 +55,21 @@ pub(crate) fn parse_xml_feed(xml: &str) -> Vec<PersonioPosition> {
         if id.is_empty() {
             continue;
         }
-        let description = DESC_RE
+        // Extract <value> nodes only from within <jobDescriptions>…</jobDescriptions>
+        // to avoid picking up <value> tags in sibling blocks (customAttributes, etc.).
+        // Fall back to the whole position block for feeds still using the older
+        // singular <jobDescription> format (e.g. legacy tenants / test fixtures).
+        let desc_scope = JOBDESC_BLOCK_RE
             .captures(position_str)
-            .and_then(|c| c.get(1).map(|m| strip_html(m.as_str().trim())))
-            .unwrap_or_default();
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str())
+            .unwrap_or(position_str);
+        let description = DESC_RE
+            .captures_iter(desc_scope)
+            .filter_map(|c| c.get(1).map(|m| strip_html(m.as_str().trim())))
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n");
         out.push(PersonioPosition {
             id,
             title: cap(&NAME_RE),
@@ -92,7 +109,9 @@ impl Scraper for PersonioScraper {
 
         let mut xml = None;
         for host in HOSTS {
-            let url = format!("https://{}.{}", company, host);
+            // 2025+: Personio migrated career sites to Next.js; root URL returns HTML.
+            // The XML feed now lives at /xml on the same subdomain.
+            let url = format!("https://{}.{}/xml", company, host);
             let res = fetch_text(&url, Default::default(), ctx.signal.clone()).await?;
 
             if res.status_code == 200 && res.text.contains("<position") {
