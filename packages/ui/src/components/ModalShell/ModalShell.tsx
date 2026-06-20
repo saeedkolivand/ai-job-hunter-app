@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 import { useFocusTrap } from '../../hooks/use-focus-trap';
@@ -70,6 +70,7 @@ export function ModalShell({
   closeOnBackdrop = true,
 }: ModalShellProps) {
   const trapRef = useFocusTrap(open);
+  const pointerDownOnBackdrop = useRef(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -101,7 +102,18 @@ export function ModalShell({
           <motion.div
             className="fixed inset-0 flex items-center justify-center p-4"
             style={{ zIndex }}
-            onClick={closeOnBackdrop ? onClose : undefined}
+            onMouseDown={(e) => {
+              pointerDownOnBackdrop.current = e.target === e.currentTarget;
+            }}
+            onClick={(e) => {
+              if (
+                closeOnBackdrop &&
+                pointerDownOnBackdrop.current &&
+                e.target === e.currentTarget
+              ) {
+                onClose();
+              }
+            }}
             {...variants.overlay}
             transition={transition.overlay}
           >
@@ -119,7 +131,6 @@ export function ModalShell({
               )}
               {...variants.scale}
               transition={transition.modal}
-              onClick={(e) => e.stopPropagation()}
             >
               {header && <div className="shrink-0">{header}</div>}
               <div className="@container min-h-0 flex-1 overflow-y-auto">{children}</div>
