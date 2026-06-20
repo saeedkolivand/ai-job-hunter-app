@@ -8,9 +8,9 @@ use tauri::{AppHandle, Manager};
 
 use crate::events::{emit_event, JobEvent, JOBS_EVENT, SCRAPE_PROGRESS};
 
-// ScrapeBoardRequest and ScrapeUrlRequest are generated from the Zod schemas in
+// ScrapeBoardsRequest and ScrapeUrlRequest are generated from the Zod schemas in
 // packages/shared by `pnpm gen:ipc`. See crate::ipc_contracts::scrape.
-pub use crate::ipc_contracts::scrape::{ScrapeBoardRequest, ScrapeUrlRequest};
+pub use crate::ipc_contracts::scrape::{ScrapeBoardsRequest, ScrapeUrlRequest};
 
 /// Per-board page request budget. Each board clamps this down to its own page
 /// cap; combined with the central `amount` cap, whichever limit is hit first
@@ -42,7 +42,7 @@ pub struct ScrapeListFilter {
 }
 
 #[tauri::command]
-pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
+pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
     let job_id = new_job_id();
 
     // Anti-abuse: rate + concurrency cap. Rejected before a job is created so a
@@ -53,7 +53,7 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
         .inner()
         .clone();
     let guard = match limiter.acquire(
-        "scrape_board",
+        "scrape_boards",
         crate::limits::SCRAPE_RATE_MAX,
         crate::limits::SCRAPE_CONCURRENCY_MAX,
     ) {
@@ -61,16 +61,18 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
         Err(e) => return json!({ "error": e.to_string() }),
     };
 
+    // "scrape.board" kept unchanged — renderer / use-worker-activity tests key on it.
     crate::commands::jobs::job_start(&app, &job_id, "scrape.board");
 
     let engine = app.state::<std::sync::Arc<ScraperEngine>>().inner().clone();
     let input = BoardSearchInput {
         query: req.query.clone(),
         location: req.location.clone(),
+        // `amount` is the per-board cap: each board returns up to this many results.
         amount: req.amount.clamp(1, 100),
         pages: MAX_PAGE_BUDGET,
         date_filter: req.date_filter.clone(),
-        // Structured search filters from the IPC request (ScrapeBoardRequestSchema
+        // Structured search filters from the IPC request (ScrapeBoardsRequestSchema
         // in packages/shared). Optional, so absent fields stay None; LinkedIn's
         // search_paginated honors them and other boards ignore them. UI controls
         // for these are a follow-up — only the contract + propagation exist today.
@@ -87,15 +89,14 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
         longitude: req.longitude,
         radius_km: req.radius_km,
     };
-    let board = req.board.clone();
+    let boards = req.boards.clone();
 
     // First-item-clear: on a NEW search (replace=true) the live postings cache is
     // wiped under-lock the instant the first new result streams in, so a failed or
     // empty search leaves the previous results intact. The latch ensures we clear
-    // exactly once. Append (replace omitted/false) leaves the cache untouched.
+    // exactly once across ALL boards. Append (replace omitted/false) leaves the
+    // cache untouched.
     //
-    // `replace` (a NEW search vs "show more") makes the FIRST streamed item clear the
-    // live cache before adding itself, so an errored/empty scrape keeps the old list.
     // Exclusivity is a renderer contract: the Jobs page cancels the in-flight scrape
     // before starting a new one, so two concurrent replace=true scrapes don't race.
     let replace = req.replace.unwrap_or(false);
@@ -103,39 +104,41 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
 
     let app_progress = app.clone();
     let job_id_progress = job_id.clone();
-    let on_progress = Box::new(move |p: f32| {
-        emit_event(
-            &app_progress,
-            SCRAPE_PROGRESS,
-            json!({ "jobId": job_id_progress, "progress": p }),
-        );
-        crate::commands::jobs::job_progress(&app_progress, &job_id_progress, p as f64);
-    });
+    let on_progress: std::sync::Arc<dyn Fn(f32) + Send + Sync> =
+        std::sync::Arc::new(move |p: f32| {
+            emit_event(
+                &app_progress,
+                SCRAPE_PROGRESS,
+                json!({ "jobId": job_id_progress, "progress": p }),
+            );
+            crate::commands::jobs::job_progress(&app_progress, &job_id_progress, p as f64);
+        });
 
     let app_item = app.clone();
     let job_id_item = job_id.clone();
-    let on_item = Box::new(move |item: crate::scraping::JobPosting| {
-        if let Some(cache) = app_item.try_state::<Mutex<PostingsCache>>() {
-            let mut guard = cache.lock();
-            if replace && !replaced_clone.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                guard.clear_all();
+    let on_item: std::sync::Arc<dyn Fn(crate::scraping::JobPosting) + Send + Sync> =
+        std::sync::Arc::new(move |item: crate::scraping::JobPosting| {
+            if let Some(cache) = app_item.try_state::<Mutex<PostingsCache>>() {
+                let mut guard = cache.lock();
+                if replace && !replaced_clone.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                    guard.clear_all();
+                }
+                if let Ok(item_json) = serde_json::to_value(&item) {
+                    guard.add(item_json);
+                }
             }
-            if let Ok(item_json) = serde_json::to_value(&item) {
-                guard.add(item_json);
-            }
-        }
 
-        emit_event(
-            &app_item,
-            JOBS_EVENT,
-            JobEvent {
-                r#type: "job.stream".to_string(),
-                job_id: job_id_item.clone(),
-                data: Some(json!(item)),
-                ts: now_ms() as i64,
-            },
-        );
-    });
+            emit_event(
+                &app_item,
+                JOBS_EVENT,
+                JobEvent {
+                    r#type: "job.stream".to_string(),
+                    job_id: job_id_item.clone(),
+                    data: Some(json!(item)),
+                    ts: now_ms() as i64,
+                },
+            );
+        });
 
     let app_clone = app.clone();
     let job_id_clone = job_id.clone();
@@ -143,8 +146,8 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
         // Hold the concurrency guard for the whole scrape; dropped on completion.
         let _guard = guard;
         let result = engine
-            .scrape_board(
-                &board,
+            .scrape_boards(
+                &boards,
                 input,
                 job_id_clone.clone(),
                 Some(on_progress),
@@ -153,11 +156,11 @@ pub async fn scrape_board(app: AppHandle, req: ScrapeBoardRequest) -> Value {
             .await;
 
         match &result {
-            Ok(results) => {
+            Ok((postings, summaries)) => {
                 crate::commands::jobs::job_complete(
                     &app_clone,
                     &job_id_clone,
-                    json!({ "count": results.len() }),
+                    json!({ "count": postings.len(), "boards": summaries }),
                 );
             }
             Err(e) => {

@@ -63,7 +63,7 @@ impl Default for FetchOptions {
             headers: None,
             method: None,
             body: None,
-            retries: 1,
+            retries: 2,
             max_bytes: None,
         }
     }
@@ -85,9 +85,23 @@ pub async fn fetch_text(
     let cap = opts.max_bytes.unwrap_or(MAX_BYTES);
     let mut last_err: Option<AppError> = None;
 
+    // Extract host once — used for per-host rate limiting on every attempt.
+    let host_opt: Option<String> = reqwest::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()));
+
     for attempt in 0..=retries {
         if signal.is_cancelled() {
             return Err(AppError::Cancelled);
+        }
+
+        // Per-host rate limiting: wait for a free slot before sending. Skip on
+        // retry (we're already past the backoff sleep); only gate the first send.
+        if attempt == 0 {
+            if let Some(ref host) = host_opt {
+                let rl = crate::scraping::rate_limiter::for_host(host).await;
+                rl.wait_for_slot().await;
+            }
         }
 
         let client = crate::net::http::shared();
@@ -130,6 +144,20 @@ pub async fn fetch_text(
             Ok(response) => {
                 let status_code = response.status().as_u16();
                 let headers = response.headers().clone();
+
+                // 429 / 503 — rate-limited or temporarily unavailable. If we have
+                // retries left, back off then loop; otherwise fall through and
+                // return the response as-is so the caller can observe the status.
+                if (status_code == 429 || status_code == 503) && attempt < retries {
+                    let wait_ms = retry_after_ms(&headers).unwrap_or_else(|| {
+                        // Exponential backoff with ±25% jitter: base * 2^attempt + jitter.
+                        let base: u64 = 1_000 * (1u64 << attempt);
+                        let jitter = rand::random::<u64>() % (base / 4 + 1);
+                        (base + jitter).min(30_000)
+                    });
+                    tokio::time::sleep(Duration::from_millis(wait_ms)).await;
+                    continue;
+                }
 
                 // Cheap pre-check: honest servers that declare content-length
                 // let us abort before reading a single byte.
@@ -177,6 +205,12 @@ pub async fn fetch_text(
                 let (cow, _enc, _had_errors) = encoding.decode(&buf);
                 let text = cow.into_owned();
 
+                // Record the successful request against the per-host limiter.
+                if let Some(ref host) = host_opt {
+                    let rl = crate::scraping::rate_limiter::for_host(host).await;
+                    rl.record_request().await;
+                }
+
                 return Ok(FetchResult {
                     status_code,
                     headers,
@@ -196,6 +230,24 @@ pub async fn fetch_text(
     }
 
     Err(last_err.unwrap_or_else(|| AppError::Network("fetch_text failed".to_string())))
+}
+
+/// Parse a `Retry-After` header into milliseconds to wait.
+///
+/// Handles the integer-seconds form: `Retry-After: 5`.
+/// HTTP-date form is not parsed (no extra dependency) — callers fall back to
+/// exponential backoff when the header is absent or non-numeric.
+///
+/// Returns `None` when the header is absent or non-numeric.
+/// The returned value is clamped to 30 000 ms.
+fn retry_after_ms(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    let value = headers
+        .get("retry-after")
+        .and_then(|v| v.to_str().ok())?;
+
+    // Integer seconds only — the format almost all APIs use in practice.
+    let secs = value.trim().parse::<u64>().ok()?;
+    Some((secs * 1_000).min(30_000))
 }
 
 pub async fn fetch_json<T: for<'de> serde::Deserialize<'de>>(

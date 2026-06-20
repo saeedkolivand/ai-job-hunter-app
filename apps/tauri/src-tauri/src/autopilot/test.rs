@@ -14,7 +14,7 @@ fn test_autopilot_status_partial_eq() {
 #[test]
 fn test_autopilot_target_serialization() {
     let target = AutopilotTarget {
-        board: "linkedin".to_string(),
+        boards: vec!["linkedin".to_string()],
         query: "software engineer".to_string(),
         location: Some("Berlin".to_string()),
         work_type: None,
@@ -382,6 +382,49 @@ fn save_writes_when_file_is_missing() {
     let after = std::fs::read_to_string(&file).unwrap();
     assert!(after.contains("\"_id\""), "serialized state was written");
 }
+
+// ── AutopilotTarget boards back-compat deserialization ────────────────────────
+
+#[test]
+fn target_deserializes_legacy_board_string() {
+    // Old on-disk format: `"board": "linkedin"` (singular string field).
+    // The `#[serde(alias = "board", deserialize_with = "string_or_vec")]` must
+    // normalise this to `boards: vec!["linkedin"]`.
+    let json = r#"{"board": "linkedin", "query": "rust", "pages": 2}"#;
+    let target: AutopilotTarget = serde_json::from_str(json).expect("legacy format must deserialize");
+    assert_eq!(target.boards, vec!["linkedin"]);
+}
+
+#[test]
+fn target_deserializes_new_boards_array() {
+    // New format: `"boards": ["linkedin","remotive"]`.
+    let json = r#"{"boards": ["linkedin","remotive"], "query": "rust", "pages": 2}"#;
+    let target: AutopilotTarget = serde_json::from_str(json).expect("new format must deserialize");
+    assert_eq!(target.boards, vec!["linkedin", "remotive"]);
+}
+
+#[test]
+fn target_round_trips_as_boards_array() {
+    // Serializing always writes `boards` (the canonical field name), so a
+    // re-loaded record uses the new format — no legacy drift.
+    let target = AutopilotTarget {
+        boards: vec!["linkedin".to_string(), "remotive".to_string()],
+        query: "rust".to_string(),
+        location: None,
+        work_type: None,
+        pages: 2,
+        date_filter: None,
+        top_n: 3,
+    };
+    let serialized = serde_json::to_string(&target).unwrap();
+    assert!(serialized.contains("\"boards\""), "must serialize as boards array");
+    assert!(!serialized.contains("\"board\""), "must not serialize as legacy singular");
+
+    let restored: AutopilotTarget = serde_json::from_str(&serialized).unwrap();
+    assert_eq!(restored.boards, vec!["linkedin", "remotive"]);
+}
+
+// ── found_job helper ──────────────────────────────────────────────────────────
 
 fn found_job(url: &str, found_at: u64) -> FoundJob {
     FoundJob {

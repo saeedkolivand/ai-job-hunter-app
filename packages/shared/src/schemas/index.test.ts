@@ -4,7 +4,7 @@ import {
   AiGenerateRequestSchema,
   AutopilotCreateSchema,
   LocaleSchema,
-  ScrapeBoardRequestSchema,
+  ScrapeBoardsRequestSchema,
 } from './index';
 
 describe('LocaleSchema', () => {
@@ -56,7 +56,7 @@ describe('AiGenerateRequestSchema', () => {
 describe('AutopilotCreateSchema', () => {
   const valid = {
     name: 'My autopilot',
-    target: { board: 'linkedin', query: 'react developer', pages: 2 },
+    target: { boards: ['linkedin'], query: 'react developer', pages: 2 },
     filter: { minMatchScore: 60 },
     schedule: 'daily',
   };
@@ -147,21 +147,43 @@ describe('AutopilotCreateSchema', () => {
   });
 });
 
-describe('ScrapeBoardRequestSchema', () => {
-  it('requires a supported board id', () => {
+describe('ScrapeBoardsRequestSchema', () => {
+  it('requires at least one valid board id', () => {
     expect(() =>
-      ScrapeBoardRequestSchema.parse({ board: 'unknown_board', query: 'test' })
+      ScrapeBoardsRequestSchema.parse({ boards: ['unknown_board'], query: 'test' })
+    ).toThrow();
+  });
+
+  it('rejects an empty boards array', () => {
+    expect(() => ScrapeBoardsRequestSchema.parse({ boards: [], query: 'test' })).toThrow();
+  });
+
+  it('rejects more than 6 boards', () => {
+    expect(() =>
+      ScrapeBoardsRequestSchema.parse({
+        boards: ['linkedin', 'indeed', 'stepstone', 'greenhouse', 'lever', 'ashby', 'remotive'],
+        query: 'test',
+      })
     ).toThrow();
   });
 
   it('defaults amount to 25', () => {
-    const result = ScrapeBoardRequestSchema.parse({ board: 'linkedin', query: 'test' });
+    const result = ScrapeBoardsRequestSchema.parse({ boards: ['linkedin'], query: 'test' });
     expect(result.amount).toBe(25);
   });
 
   it('rejects amount above 100', () => {
     expect(() =>
-      ScrapeBoardRequestSchema.parse({ board: 'linkedin', query: 'test', amount: 101 })
+      ScrapeBoardsRequestSchema.parse({ boards: ['linkedin'], query: 'test', amount: 101 })
     ).toThrow();
+  });
+
+  it('accepts up to 6 boards', () => {
+    expect(() =>
+      ScrapeBoardsRequestSchema.parse({
+        boards: ['linkedin', 'indeed', 'stepstone', 'greenhouse', 'lever', 'ashby'],
+        query: 'test',
+      })
+    ).not.toThrow();
   });
 });

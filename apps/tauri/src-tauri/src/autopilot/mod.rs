@@ -11,6 +11,72 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+// ── Back-compat deserializer: `board` (string) OR `boards` (array) → Vec<String> ──
+
+/// Accept either a JSON string (`"board": "linkedin"`) or a JSON array
+/// (`"boards": ["linkedin","remotive"]`) and normalise to `Vec<String>`.
+///
+/// This is the migration bridge for on-disk `autopilots.json` records written
+/// before the multi-board change. The `#[serde(alias = "board")]` on the field
+/// lets the old key name be mapped by serde before this function is called.
+fn string_or_vec<'de, D>(de: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+    use std::fmt;
+
+    struct StringOrVec;
+
+    impl<'de> Visitor<'de> for StringOrVec {
+        type Value = Vec<String>;
+
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("a string or a sequence of strings")
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+            Ok(vec![v.to_string()])
+        }
+
+        fn visit_string<E: de::Error>(self, v: String) -> Result<Self::Value, E> {
+            Ok(vec![v])
+        }
+
+        fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+            let mut out = Vec::new();
+            while let Some(s) = seq.next_element::<String>()? {
+                out.push(s);
+            }
+            Ok(out)
+        }
+
+        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(Vec::new())
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(Vec::new())
+        }
+
+        fn visit_some<D2: serde::Deserializer<'de>>(
+            self,
+            d: D2,
+        ) -> Result<Self::Value, D2::Error> {
+            serde::Deserialize::deserialize(d).map(|v: serde_json::Value| match v {
+                serde_json::Value::String(s) => vec![s],
+                serde_json::Value::Array(arr) => arr
+                    .into_iter()
+                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                    .collect(),
+                _ => Vec::new(),
+            })
+        }
+    }
+
+    de.deserialize_any(StringOrVec)
+}
+
 use crate::db::now_ms;
 use crate::error::AppResult;
 
@@ -19,7 +85,11 @@ use crate::error::AppResult;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutopilotTarget {
-    pub board: String,
+    /// The boards to scrape. Accepts either a `"boards": [...]` array (new
+    /// format) or a `"board": "..."` string (legacy on-disk format). The alias
+    /// + custom deserializer normalise both to `Vec<String>` transparently.
+    #[serde(alias = "board", deserialize_with = "string_or_vec")]
+    pub boards: Vec<String>,
     pub query: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
@@ -179,7 +249,7 @@ impl AutopilotStore {
             status: AutopilotStatus::Active,
             target: serde_json::from_value(input["target"].clone()).unwrap_or_else(|_| {
                 AutopilotTarget {
-                    board: String::new(),
+                    boards: Vec::new(),
                     query: String::new(),
                     location: None,
                     work_type: None,

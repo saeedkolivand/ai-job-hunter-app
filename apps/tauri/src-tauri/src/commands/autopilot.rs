@@ -101,7 +101,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
 
     let span = crate::observability::Span::begin(
         "autopilot",
-        format!("run={autopilot_id} board={}", target.board),
+        format!("run={autopilot_id} boards={}", target.boards.join(",")),
     );
 
     let job_id = new_job_id();
@@ -130,7 +130,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         &app,
         &job_id,
         "scrape_start",
-        &format!("Scraping {}", target.board),
+        &format!("Scraping {}", target.boards.join(", ")),
     );
 
     let postings = match autopilot_scrape(&engine, &target, &job_id, &app).await {

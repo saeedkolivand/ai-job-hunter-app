@@ -7,6 +7,7 @@ use super::types::{
     AuthRequirement, BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode,
 };
 use arc_swap::ArcSwap;
+use futures::StreamExt as _;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -30,6 +31,16 @@ pub struct ScraperRuntimeHealth {
     pub mode: String,
     pub scrapers: Vec<ScraperCatalogEntry>,
     pub ready: bool,
+}
+
+/// Per-board outcome reported by [`ScraperEngine::scrape_boards`].
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardScrapeSummary {
+    pub board: String,
+    pub count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 pub struct ScraperEngine {
@@ -74,51 +85,20 @@ impl ScraperEngine {
         }
     }
 
-    pub async fn scrape_board(
-        &self,
-        board: &str,
-        input: BoardSearchInput,
-        job_id: String,
-        on_progress: Option<Box<dyn Fn(f32) + Send>>,
-        on_item: Option<Box<dyn Fn(JobPosting) + Send>>,
-    ) -> anyhow::Result<Vec<JobPosting>> {
-        let scraper =
-            super::boards::get(board).ok_or_else(|| anyhow::anyhow!("Unknown board: {}", board));
-        self.run_search(board, scraper, input, job_id, on_progress, on_item)
-            .await
-    }
-
-    /// Core scrape path with the central `amount` cap enforced here (no board
-    /// loop is touched). `scraper` is the resolved board (or an error to report
-    /// for an unknown board); tests inject a fake scraper through this seam.
-    async fn run_search(
-        &self,
+    /// Single-board core — the `amount`-cap wrapper, `ScrapeContext` build,
+    /// `scraper.search`, and the reached-cap recovery. Cancels `token` when the
+    /// cap is hit; touches no semaphore and no `jobs` map.
+    ///
+    /// `scraper` is the resolved board (or an error for an unknown board);
+    /// tests inject a fake scraper through this seam.
+    pub async fn run_one(
         board: &str,
         scraper: anyhow::Result<&dyn Scraper>,
         input: BoardSearchInput,
-        job_id: String,
+        token: CancellationToken,
         on_progress: Option<Box<dyn Fn(f32) + Send>>,
         on_item: Option<Box<dyn Fn(JobPosting) + Send>>,
     ) -> anyhow::Result<Vec<JobPosting>> {
-        // Bound concurrency — acquire owned permit so the limit can be reduced
-        // mid-flight without aborting this job.
-        let sem = self.semaphore.load_full();
-        let _permit = sem
-            .acquire_owned()
-            .await
-            .map_err(|_| anyhow::anyhow!("scraper engine semaphore closed"))?;
-
-        // Cancellation token under job_id so `cancel(job_id)` works. Reuse a
-        // token a caller pre-registered for this job (e.g. autopilot owns one
-        // for the whole run, spanning scrape + post-processing) rather than
-        // overwriting it; otherwise mint a fresh one.
-        let token = {
-            let mut jobs = self.jobs.lock().await;
-            jobs.entry(job_id.clone())
-                .or_insert_with(CancellationToken::new)
-                .clone()
-        };
-
         // Central item cap. The board loops stream items through `on_item` and
         // check `ctx.signal`; we count the stream here and cancel the token the
         // instant `amount` is reached, so whichever limit (page budget or item
@@ -160,15 +140,11 @@ impl ScraperEngine {
             on_item: wrapped,
         };
 
-        let span =
-            crate::observability::Span::begin("scrape", format!("board={board} job={job_id}"));
+        let span = crate::observability::Span::begin("scrape", format!("board={board}"));
         let result = match scraper {
             Ok(scraper) => scraper.search(input, ctx).await,
             Err(e) => Err(e),
         };
-
-        // Always clear the token slot, even on error.
-        self.jobs.lock().await.remove(&job_id);
 
         match result {
             Ok(mut items) => {
@@ -197,6 +173,180 @@ impl ScraperEngine {
         }
     }
 
+    /// Fan-out core — run multiple boards concurrently (up to 3 in parallel;
+    /// browser boards are serialized via a shared size-1 semaphore) and collect
+    /// per-board results. Tests inject fake scrapers through this seam.
+    pub async fn run_boards<'s>(
+        resolved: Vec<(String, anyhow::Result<&'s dyn Scraper>)>,
+        input: BoardSearchInput,
+        parent: CancellationToken,
+        on_progress: Option<Arc<dyn Fn(f32) + Send + Sync>>,
+        on_item: Option<Arc<dyn Fn(JobPosting) + Send + Sync>>,
+    ) -> Vec<(String, anyhow::Result<Vec<JobPosting>>)> {
+        let total = resolved.len();
+        let done = Arc::new(AtomicUsize::new(0));
+
+        // One browser board at a time — chromiumoxide has its own per-profile
+        // session and running two headless instances concurrently causes flakiness.
+        let browser_sem = Arc::new(Semaphore::new(1));
+
+        // Build per-board tasks as boxed futures so the closure doesn't have to
+        // be higher-kinded over the scraper's lifetime (which triggers rustc's
+        // FnOnce-not-general-enough error when combined with async move).
+        use futures::future::BoxFuture;
+        let tasks: Vec<BoxFuture<'s, (String, anyhow::Result<Vec<JobPosting>>)>> = resolved
+            .into_iter()
+            .map(|(name, scraper)| {
+                let input = input.clone();
+                let parent = parent.clone();
+                let on_progress = on_progress.clone();
+                let on_item = on_item.clone();
+                let done = done.clone();
+                let browser_sem = browser_sem.clone();
+
+                let fut: BoxFuture<'s, (String, anyhow::Result<Vec<JobPosting>>)> =
+                    Box::pin(async move {
+                        // Acquire the browser semaphore ONLY for browser-mode boards,
+                        // so HTTP boards fan out freely while browser ones serialize.
+                        let _browser_permit = if scraper
+                            .as_ref()
+                            .ok()
+                            .map(|s| s.mode())
+                            == Some(ScraperMode::Browser)
+                        {
+                            Some(
+                                browser_sem
+                                    .clone()
+                                    .acquire_owned()
+                                    .await
+                                    .expect("browser semaphore never closes"),
+                            )
+                        } else {
+                            None
+                        };
+
+                        let child = parent.child_token();
+
+                        // Wrap the shared `on_item` Arc into a per-board Box.
+                        let per_board_on_item: Option<Box<dyn Fn(JobPosting) + Send>> =
+                            on_item.as_ref().map(|arc| {
+                                let arc = arc.clone();
+                                let boxed: Box<dyn Fn(JobPosting) + Send> =
+                                    Box::new(move |item: JobPosting| arc(item));
+                                boxed
+                            });
+
+                        let res = Self::run_one(
+                            &name,
+                            scraper,
+                            input,
+                            child,
+                            None,
+                            per_board_on_item,
+                        )
+                        .await;
+
+                        // Batch progress: coarse done/total fraction after each board.
+                        let finished = done.fetch_add(1, Ordering::Relaxed) + 1;
+                        if let Some(ref cb) = on_progress {
+                            cb(finished as f32 / total as f32);
+                        }
+
+                        (name, res)
+                    });
+                fut
+            })
+            .collect();
+
+        futures::stream::iter(tasks)
+            .buffer_unordered(3)
+            .collect()
+            .await
+    }
+
+    /// Multi-board scrape: acquire one engine permit, reuse or mint the parent
+    /// cancellation token under `job_id`, fan out via [`run_boards`], then
+    /// assemble results and summaries.
+    ///
+    /// Returns `(postings, summaries)` where `postings` is the concatenation of
+    /// all boards' results in input order, and `summaries` describe per-board
+    /// counts/errors. Returns `Err` only when the user cancelled AND every board
+    /// errored with no recovered items.
+    pub async fn scrape_boards(
+        &self,
+        boards: &[String],
+        input: BoardSearchInput,
+        job_id: String,
+        on_progress: Option<Arc<dyn Fn(f32) + Send + Sync>>,
+        on_item: Option<Arc<dyn Fn(JobPosting) + Send + Sync>>,
+    ) -> anyhow::Result<(Vec<JobPosting>, Vec<BoardScrapeSummary>)> {
+        // Bound concurrency — one engine permit for the whole multi-board batch.
+        let sem = self.semaphore.load_full();
+        let _permit = sem
+            .acquire_owned()
+            .await
+            .map_err(|_| anyhow::anyhow!("scraper engine semaphore closed"))?;
+
+        // Reuse or mint the parent token under job_id so `cancel(job_id)` still
+        // works (Autopilot pre-registers its own token for the whole run).
+        let parent = {
+            let mut jobs = self.jobs.lock().await;
+            jobs.entry(job_id.clone())
+                .or_insert_with(CancellationToken::new)
+                .clone()
+        };
+
+        // Resolve board ids; unknown boards become per-entry Err values so the
+        // run still proceeds for the boards that ARE known.
+        // `boards::get` returns `&'static dyn Scraper` (from the SCRAPERS static).
+        let resolved: Vec<(String, anyhow::Result<&'static dyn Scraper>)> = boards
+            .iter()
+            .map(|id| {
+                let scraper = super::boards::get(id)
+                    .ok_or_else(|| anyhow::anyhow!("Unknown board: {id}"));
+                (id.clone(), scraper)
+            })
+            .collect();
+
+        let results = Self::run_boards(resolved, input, parent.clone(), on_progress, on_item).await;
+
+        // Always remove the token slot, even on partial failure.
+        self.jobs.lock().await.remove(&job_id);
+
+        let mut all_postings: Vec<JobPosting> = Vec::new();
+        let mut summaries: Vec<BoardScrapeSummary> = Vec::new();
+        let mut all_failed = true;
+
+        for (board, res) in results {
+            match res {
+                Ok(postings) => {
+                    all_failed = false;
+                    summaries.push(BoardScrapeSummary {
+                        board,
+                        count: postings.len(),
+                        error: None,
+                    });
+                    all_postings.extend(postings);
+                }
+                Err(e) => {
+                    summaries.push(BoardScrapeSummary {
+                        board,
+                        count: 0,
+                        error: Some(e.to_string()),
+                    });
+                }
+            }
+        }
+
+        // Return Err only when the user cancelled the run and every board failed
+        // with no recovered items — a partial success is always Ok.
+        if all_failed && parent.is_cancelled() {
+            return Err(anyhow::anyhow!("scrape cancelled"));
+        }
+
+        Ok((all_postings, summaries))
+    }
+
     /// Signal cancellation to a running job by id. No-op if the id is unknown.
     pub async fn cancel(&self, job_id: &str) {
         let mut jobs = self.jobs.lock().await;
@@ -206,7 +356,7 @@ impl ScraperEngine {
     }
 
     /// Register a job token so it can be reached by `cancel(job_id)`. Used by
-    /// the apply flow, which manages its own token outside `scrape_board`.
+    /// the apply flow, which manages its own token outside `scrape_boards`.
     pub async fn register_token(&self, job_id: &str, token: CancellationToken) {
         self.jobs.lock().await.insert(job_id.to_string(), token);
     }
