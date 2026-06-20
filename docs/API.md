@@ -276,7 +276,7 @@ interface BoardLoginConfig {
 
 #### `boards.catalog(): Promise<BoardCatalogEntry[]>`
 
-Returns the catalog of all available job boards, including authentication requirements and visibility status. Each entry describes the board's scraping mode, login requirements, and whether it is listed in the board picker. The catalog is the single source of truth for board availability and auth tiers; it derives from the `Scraper` trait in `apps/tauri/src-tauri/src/scraping/types/mod.rs` (defaults: `auth()=guest`, `listed()=true`). Overrides: indeed/xing → `auth=required`; linkedin → `auth=optional`; glassdoor → `listed=false`.
+Returns the catalog of all available job boards, including authentication requirements and visibility status. Each entry describes the board's scraping mode, login requirements, and whether it is listed in the board picker. The catalog derives from the `Scraper` trait in `apps/tauri/src-tauri/src/scraping/types/mod.rs`; see individual scraper implementations for auth-tier and listing overrides.
 
 ```typescript
 type BoardAuthRequirement = 'guest' | 'optional' | 'required';

@@ -72,11 +72,19 @@ export function AuthModeBadge({
               <Button
                 variant="unstyled"
                 type="button"
+                aria-label={t('jobs.logIn')}
                 disabled={connectPending}
                 onClick={onConnect}
                 className="ml-auto shrink-0 text-[10px] text-brand-soft underline-offset-2 hover:underline disabled:opacity-50"
               >
-                {connectPending ? <Loader2 size={10} className="animate-spin" /> : t('jobs.logIn')}
+                {connectPending ? (
+                  <>
+                    <Loader2 size={10} className="animate-spin" />
+                    <span className="sr-only">{t('jobs.logIn')}</span>
+                  </>
+                ) : (
+                  t('jobs.logIn')
+                )}
               </Button>
             </>
           ) : (

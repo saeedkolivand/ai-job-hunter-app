@@ -1,6 +1,6 @@
 import { Loader2, Search, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 import type { BoardAuthRequirement } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
@@ -53,9 +53,17 @@ export function ScrapeForm({
   const { data: catalogRaw, isLoading: catalogLoading } = useBoardsCatalog();
   const listedBoards = (catalogRaw ?? []).filter((e) => e.listed);
 
-  // Derive the selected board's auth tier from the catalog; default to 'guest'.
+  // Normalize: if the persisted board ID is no longer listed, reset to the first listed board.
   const selectedEntry = listedBoards.find((e) => e.id === form.board);
-  const selectedAuth: BoardAuthRequirement = selectedEntry?.auth ?? 'guest';
+  const effectiveBoardId = selectedEntry?.id ?? listedBoards[0]?.id;
+  useEffect(() => {
+    if (!catalogLoading && listedBoards.length > 0 && !selectedEntry && effectiveBoardId) {
+      onFormChange({ board: effectiveBoardId });
+    }
+  }, [catalogLoading, listedBoards, selectedEntry, effectiveBoardId, onFormChange]);
+
+  // Derive the selected board's auth tier from the catalog; default to 'guest'.
+  const selectedAuth: BoardAuthRequirement = (selectedEntry ?? listedBoards[0])?.auth ?? 'guest';
 
   // Badge shows for optional/required; guest boards show nothing.
   const showAuthBadge = selectedAuth !== 'guest';
@@ -135,7 +143,7 @@ export function ScrapeForm({
                   }
                 >
                   {listedBoards.map(({ id }, i) => {
-                    const active = form.board === id;
+                    const active = effectiveBoardId === id;
                     return (
                       <Button
                         key={id}

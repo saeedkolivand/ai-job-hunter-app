@@ -28,16 +28,7 @@ vi.mock('@ajh/translations', () => ({
 // Helpers
 // ---------------------------------------------------------------------------
 
-type BadgeProps = {
-  show?: boolean;
-  board?: string;
-  auth?: 'guest' | 'optional' | 'required';
-  boardConnected?: boolean;
-  disconnectPending?: boolean;
-  connectPending?: boolean;
-  onDisconnect?: () => void;
-  onConnect?: () => void;
-};
+type BadgeProps = Partial<React.ComponentProps<typeof AuthModeBadge>>;
 
 function renderBadge({
   show = true,
@@ -146,12 +137,11 @@ describe('AuthModeBadge — required (indeed / xing) + not connected', () => {
 
   it('disables the Log in button and shows a spinner when connectPending=true', () => {
     renderBadge({ auth: 'required', boardConnected: false, connectPending: true });
-    // The "Log in" text is replaced by a spinner — button text gone
-    expect(screen.queryByText('jobs.logIn')).not.toBeInTheDocument();
-    // The button is disabled (spinner is aria-hidden, so query by role with no name constraint)
-    const buttons = screen.getAllByRole('button');
-    const connectBtn = buttons.find((b) => b.hasAttribute('disabled'));
-    expect(connectBtn).toBeDefined();
+    // The visible label is replaced by a spinner; the text is now sr-only (visually hidden)
+    const srLabel = screen.getByText('jobs.logIn');
+    expect(srLabel).toHaveClass('sr-only');
+    // The button remains accessible via aria-label and is disabled
+    const connectBtn = screen.getByRole('button', { name: 'jobs.logIn' });
     expect(connectBtn).toBeDisabled();
   });
 
