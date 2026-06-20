@@ -2,9 +2,11 @@
 
 > **SNAPSHOT — 2026-06-20. This document is NOT auto-updated.**
 >
-> Job sites change markup, endpoints, and anti-bot measures frequently. Re-verify every endpoint against the live site before relying on it. Obey each site's Terms of Service; this application is a personal job-hunting tool, not a bulk aggregator or reseller. See [`SECURITY.md`](../SECURITY.md) for the project Responsible Use policy.
+> **What this document is:** The URLs, query params, response shapes, selectors, and anti-bot notes documented here are an **external, web-verified snapshot of the third-party job sites** — they describe the targets our scrapers must hit, not our own code. They were verified by live inspection of the public sites, not extracted from this repository. Several of our scrapers are stale or broken relative to the current live endpoints; capturing the verified external truth is the whole purpose of this doc.
 >
-> Where a repo source file already owns a constant (URL, selector, field path), that file is cited as the authority — do not copy the literal here; read the source.
+> **What lives in source:** Live constants that exist in our code (URL strings, selector literals, field mappings) are owned by the Rust source files cited in each section's **Source** line. Those are authoritative for what the scraper currently does; this doc is authoritative for what the external site currently exposes. Re-verify external values before relying on them — job sites change markup, endpoints, and anti-bot measures frequently.
+>
+> Obey each site's Terms of Service; this application is a personal job-hunting tool, not a bulk aggregator or reseller. See [`SECURITY.md`](../SECURITY.md) for the project Responsible Use policy.
 
 ---
 
