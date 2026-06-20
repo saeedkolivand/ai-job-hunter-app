@@ -156,7 +156,7 @@ describe('ScrapeForm board toggle — add board', () => {
     const linkedinBtn = getBoardButton('jobs.boards.linkedin');
     await userEvent.click(linkedinBtn);
 
-    const call = onFormChange.mock.calls[0][0] as { boards: string[] };
+    const call = onFormChange.mock.calls[0]![0] as { boards: string[] };
     expect(call.boards).not.toContain('linkedin');
     expect(call.boards).toContain('greenhouse');
   });
