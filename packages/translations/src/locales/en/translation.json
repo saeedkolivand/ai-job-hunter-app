@@ -1594,7 +1594,10 @@
     "modeAuthenticated": "Authenticated",
     "modeAuthNote": "Full results · fine-grained time filters",
     "modeGuest": "Guest mode",
-    "modeGuestNote": "Limited results · 24h / week / month filters only"
+    "modeGuestNote": "Limited results · 24h / week / month filters only",
+    "modeLoginRequired": "Login required",
+    "modeLoginRequiredNote": "Sign in to scrape this board — guest returns no results",
+    "logIn": "Log in"
   },
   "resumes": {
     "title": "Documents",

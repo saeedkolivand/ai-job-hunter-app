@@ -1598,7 +1598,10 @@
     "modeAuthenticated": "Authentifiziert",
     "modeAuthNote": "Volle Ergebnisse · Feine Zeitfilter",
     "modeGuest": "Gastmodus",
-    "modeGuestNote": "Begrenzte Ergebnisse · nur 24h / Woche / Monat"
+    "modeGuestNote": "Begrenzte Ergebnisse · nur 24h / Woche / Monat",
+    "modeLoginRequired": "Anmeldung erforderlich",
+    "modeLoginRequiredNote": "Anmelden, um dieses Board zu scrapen — als Gast keine Ergebnisse",
+    "logIn": "Anmelden"
   },
   "resumes": {
     "title": "Dokumente",

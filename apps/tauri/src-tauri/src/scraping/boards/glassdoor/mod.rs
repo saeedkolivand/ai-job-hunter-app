@@ -36,6 +36,12 @@ impl Scraper for GlassdoorScraper {
         ScraperMode::Browser
     }
 
+    /// Hidden from the manual jobs picker — registered (dispatchable) but no
+    /// login wiring, so it stays out of the catalog-driven board list.
+    fn listed(&self) -> bool {
+        false
+    }
+
     async fn search(
         &self,
         input: BoardSearchInput,

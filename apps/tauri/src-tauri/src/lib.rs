@@ -766,6 +766,7 @@ pub fn run() {
             commands::boards::boards_logout,
             commands::boards::boards_get_status,
             commands::boards::boards_list,
+            commands::boards::boards_catalog,
             // privacy
             commands::privacy::privacy_clear_data,
             commands::privacy::privacy_clear_interactions,
