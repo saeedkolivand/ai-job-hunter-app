@@ -33,7 +33,12 @@ import { useAppClient } from '@/providers/AppClientProvider';
  */
 export const useMenuIntents = (
   onNavigate?: (event: MenuNavigateEvent) => void,
-  onAction?: (event: MenuActionEvent) => void
+  onAction?: (event: MenuActionEvent) => void,
+  /** Gate the 250 ms poll backstop. Only macOS needs it — the native menu bar
+   *  suspends the shell's emit and fires no focus/visibility event. On
+   *  Windows/Linux the mount-drain, `focus`, `visibilitychange`, and the
+   *  `onNavigate`/`onAction` emit triggers fully cover delivery. */
+  enablePoll = false
 ) => {
   const api = useAppClient();
   useEffect(() => {
@@ -63,21 +68,25 @@ export const useMenuIntents = (
     // payload and always drain the buffer so delivery is exactly-once.
     const offNavigate = api.menu.onNavigate(trigger);
     const offAction = api.menu.onAction(trigger);
-    // Backstop: the macOS menu-bar nav case fires NO focus/visibility/emit the
-    // renderer can trust (window keeps key focus; the shell emit is dropped across
-    // menu tracking). Poll the buffer while focused so the buffered intent always
-    // lands. `takePending` is a cheap take-and-clear; an empty pull is a no-op.
-    const poll: number = window.setInterval(() => {
-      if (document.visibilityState === 'visible' && document.hasFocus()) void drain();
-    }, 250);
+    // macOS-only backstop (gated by caller): the macOS menu-bar nav case fires NO
+    // focus/visibility/emit the renderer can trust (window keeps key focus; the
+    // shell emit is dropped across NSMenu tracking). Poll the buffer while focused
+    // so the buffered intent always lands. On Windows/Linux the other triggers
+    // fully cover delivery, so the poll is omitted to avoid constant null-returning
+    // IPC spam. `takePending` is a cheap take-and-clear; an empty pull is a no-op.
+    const poll: number | undefined = enablePoll
+      ? window.setInterval(() => {
+          if (document.visibilityState === 'visible' && document.hasFocus()) void drain();
+        }, 250)
+      : undefined;
 
     return () => {
       cancelled = true;
-      window.clearInterval(poll);
+      if (poll !== undefined) window.clearInterval(poll);
       window.removeEventListener('focus', trigger);
       document.removeEventListener('visibilitychange', onVisibility);
       offNavigate?.();
       offAction?.();
     };
-  }, [api, onNavigate, onAction]);
+  }, [api, onNavigate, onAction, enablePoll]);
 };
