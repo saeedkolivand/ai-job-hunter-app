@@ -75,17 +75,17 @@ fn test_catalog_listed_flags() {
             .unwrap_or_else(|| panic!("missing board: {id}"))
     };
 
-    // glassdoor is registered but hidden from the picker
-    assert!(!entry("glassdoor").listed, "glassdoor must not be listed");
+    // glassdoor is now listed (login wiring merged in #455; best-effort anonymous)
+    assert!(entry("glassdoor").listed, "glassdoor must be listed");
 
     // A representative guest board is listed
     assert!(entry("greenhouse").listed, "greenhouse must be listed");
     assert!(entry("linkedin").listed, "linkedin must be listed");
     assert!(entry("indeed").listed, "indeed must be listed");
 
-    // 19 of the 20 boards are listed (glassdoor is the only hidden one)
+    // All 20 boards are listed
     let listed_count = catalog.iter().filter(|e| e.listed).count();
-    assert_eq!(listed_count, 19, "exactly 19 boards should be listed");
+    assert_eq!(listed_count, 20, "all 20 boards should be listed");
 }
 
 #[test]
