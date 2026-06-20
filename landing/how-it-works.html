@@ -1023,7 +1023,7 @@
         invoke: {
           t: "invoke('command', args)",
           layer: 'ipc',
-          d: "Each namespace method is a thin wrapper, e.g. <code>scrape.board(req) ⇒ invoke('scrape_board', { req })</code>. Tauri serializes the args to JSON, sends them across the native bridge, and resolves with the command's return value (or rejects with the error string).",
+          d: "Each namespace method is a thin wrapper, e.g. <code>scrape.boards(req) ⇒ invoke('scrape_boards', { req })</code>. Tauri serializes the args to JSON, sends them across the native bridge, and resolves with the command's return value (or rejects with the error string).",
           f: ['apps/tauri/src/tauri-client/namespaces/scrape/scrape.ts'],
         },
         listen: {
@@ -1408,9 +1408,9 @@
             },
             {
               layer: 'ipc',
-              title: 'invoke scrape_board',
-              body: "<code>useScrapeBoard().mutateAsync(req)</code> → <code>invoke('scrape_board', { req })</code>. The UI sets <code>scraping=true</code> and clears the live list while it waits for the jobId.",
-              code: 'board: (req) =&gt; invoke(<span class="s">\'scrape_board\'</span>, { req })',
+              title: 'invoke scrape_boards',
+              body: "<code>useScrapeBoards().mutateAsync(req)</code> → <code>invoke('scrape_boards', { req })</code>. The UI sets <code>scraping=true</code>, clears the live list, and waits for the jobId. Multi-board: up to 6 boards per run, fanned out ≤3 concurrent.",
+              code: 'boards: (req) =&gt; invoke(<span class="s">\'scrape_boards\'</span>, { req })',
               files: ['apps/tauri/src/tauri-client/namespaces/scrape/scrape.ts'],
             },
             {
@@ -1602,7 +1602,7 @@
         ['privacy', 'clearInteractions', 'inv', 'privacy_clear_interactions'],
         ['privacy', 'resetApp', 'inv', 'privacy_reset_app'],
         ['resume', 'extractText', 'inv', 'resume_extract_text'],
-        ['scrape', 'board', 'inv', 'scrape_board'],
+        ['scrape', 'boards', 'inv', 'scrape_boards'],
         ['scrape', 'url', 'inv', 'scrape_url'],
         ['scrape', 'resolveUrl', 'inv', 'scrape_resolve_url'],
         ['scrape', 'persistJob', 'inv', 'scrape_persist_job'],
@@ -1808,8 +1808,8 @@
         {
           q: 'How does the renderer talk to Rust?',
           a: `Only through service hooks. A hook calls <code>useAppClient()</code>
-    to get the <code>AppClient</code>, then a namespace method like <code>api.scrape.board(req)</code> which is a
-    one‑line wrapper over <code>invoke(\'scrape_board\', { req })</code>. Tauri serializes args to JSON, routes to
+    to get the <code>AppClient</code>, then a namespace method like <code>api.scrape.boards(req)</code> which is a
+    one‑line wrapper over <code>invoke(\'scrape_boards\', { req })</code>. Tauri serializes args to JSON, routes to
     the matching <code>#[tauri::command]</code>, and resolves the promise with the return value. The UI never
     touches <code>invoke</code> directly — that\'s enforced by ESLint.`,
         },
