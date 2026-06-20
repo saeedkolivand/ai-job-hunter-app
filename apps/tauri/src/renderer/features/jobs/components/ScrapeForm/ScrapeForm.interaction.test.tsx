@@ -27,13 +27,19 @@ import type { BoardCatalogEntry } from '@ajh/shared';
 let stubCatalog: BoardCatalogEntry[] = [];
 let stubLoading = false;
 
+type StubStatus = { data: { connected: boolean } | undefined };
+let stubStatuses: { results: StubStatus[]; anyConnected: boolean } = {
+  results: [],
+  anyConnected: false,
+};
+
 vi.mock('@/services/use-boards', () => ({
   useBoardsCatalog: () => ({
     data: stubCatalog,
     isLoading: stubLoading,
     isSuccess: !stubLoading,
   }),
-  useBoardStatuses: () => ({ results: [], anyConnected: false }),
+  useBoardStatuses: () => stubStatuses,
 }));
 
 vi.mock('./ScrapeFilters', () => ({
@@ -101,6 +107,7 @@ function Wrapper({ children }: { children: ReactNode }) {
 function renderForm(boards: string[], onFormChange: (u: Partial<FormBoards>) => void = vi.fn()) {
   stubCatalog = CATALOG;
   stubLoading = false;
+  stubStatuses = { results: [], anyConnected: false };
   capturedKeyHandler = null;
 
   return render(
@@ -250,5 +257,124 @@ describe('ScrapeForm keyboard handler', () => {
 
     // The mock handler must have been called, proving the wiring is live.
     expect(capturedKeyHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Required-board login gate — Start button disabled + blockedHint
+// ---------------------------------------------------------------------------
+
+/**
+ * Helper: build a form with a non-empty query so the query gate doesn't
+ * interfere with the required-board gate we're testing.
+ */
+function buildFormWithQuery(boards: string[]): Parameters<typeof ScrapeForm>[0]['form'] {
+  return {
+    boards,
+    query: 'software engineer',
+    location: '',
+    radiusKm: 0,
+    amount: 25,
+    dateFilter: '' as const,
+    locale: 'en',
+  };
+}
+
+function renderFormWithQuery(
+  boards: string[],
+  statuses: StubStatus[],
+  anyConnected = false,
+  onStart = vi.fn()
+) {
+  stubCatalog = CATALOG;
+  stubLoading = false;
+  stubStatuses = { results: statuses, anyConnected };
+  capturedKeyHandler = null;
+
+  render(
+    <ScrapeForm
+      show={true}
+      form={buildFormWithQuery(boards)}
+      scraping={false}
+      scrapeOutcome={null}
+      onToggle={vi.fn()}
+      onFormChange={vi.fn()}
+      onStart={onStart}
+      onCancel={vi.fn()}
+      onGeocode={async () => []}
+    />,
+    { wrapper: Wrapper }
+  );
+
+  return { onStart };
+}
+
+/** Returns the primary Start/Scrape button (variant=primary, no aria-pressed). */
+function getStartButton(): HTMLElement {
+  return screen.getByTestId('scrape-start-button');
+}
+
+describe('ScrapeForm — required-board login gate', () => {
+  it('disables Start and shows blockedHint when a required board (indeed) is selected but not connected', () => {
+    // indeed is auth=required; status returns not connected (undefined data)
+    renderFormWithQuery(['indeed'], [{ data: undefined }]);
+
+    const startBtn = getStartButton();
+    expect(startBtn).toBeDisabled();
+
+    expect(document.getElementById('scrape-blocked-hint')).not.toBeNull();
+  });
+
+  it('enables Start when a required board (indeed) is selected and connected', () => {
+    // indeed connected → unconnectedRequired is empty → button enabled
+    renderFormWithQuery(['indeed'], [{ data: { connected: true } }], true);
+
+    const startBtn = getStartButton();
+    expect(startBtn).not.toBeDisabled();
+
+    expect(document.getElementById('scrape-blocked-hint')).toBeNull();
+  });
+
+  it('does NOT disable Start or show blockedHint for optional/guest boards even when not connected', () => {
+    // linkedin=optional, greenhouse=guest; neither has auth=required
+    // stubStatuses is empty because requiredBoardIds will be [] for these boards
+    renderFormWithQuery(['linkedin', 'greenhouse'], []);
+
+    const startBtn = getStartButton();
+    // Disabled only if query is empty or scraping — neither applies here
+    expect(startBtn).not.toBeDisabled();
+
+    expect(document.getElementById('scrape-blocked-hint')).toBeNull();
+  });
+
+  it('sets aria-describedby="scrape-blocked-hint" on the Start button when blocked', () => {
+    renderFormWithQuery(['indeed'], [{ data: { connected: false } }]);
+
+    const startBtn = getStartButton();
+    expect(startBtn).toHaveAttribute('aria-describedby', 'scrape-blocked-hint');
+
+    // The hint paragraph must carry the matching id
+    const hint = document.getElementById('scrape-blocked-hint');
+    expect(hint).not.toBeNull();
+    expect(hint?.tagName.toLowerCase()).toBe('p');
+  });
+
+  // Keyboard-submit regression — CodeRabbit PR #458
+  it('Enter on query input does NOT call onStart when a required board (indeed) is disconnected', () => {
+    const { onStart } = renderFormWithQuery(['indeed'], [{ data: undefined }]);
+
+    const queryInput = screen.getByPlaceholderText('jobs.queryPlaceholder');
+    fireEvent.keyDown(queryInput, { key: 'Enter' });
+
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it('Enter on query input DOES call onStart when a required board (indeed) is connected', () => {
+    const { onStart } = renderFormWithQuery(['indeed'], [{ data: { connected: true } }], true);
+
+    const queryInput = screen.getByPlaceholderText('jobs.queryPlaceholder');
+    fireEvent.keyDown(queryInput, { key: 'Enter' });
+
+    expect(onStart).toHaveBeenCalledTimes(1);
   });
 });
