@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781901842464,
+  "lastUpdate": 1781961561804,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -875,6 +875,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 297712,
             "range": "± 3702",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b9817a9fb2bf2dfcac863b9343d30863504b05a1",
+          "message": "fix(scraping): repair drifted board scrapers and add live smoke tests (#450)\n\n* fix(scraping): repair drifted board scrapers and add live smoke tests\n\nLive-verified all 17 guest/company-scoped boards against their real endpoints\nand repaired the ones that had drifted:\n\n- arbeitsagentur: detail API renamed fields (refnr -> referenznummer, etc.); made\n  DetailResp fields Option so one rename no longer drops all jobs; use fetch_text\n  so the X-API-Key header survives; detail fetch is now opportunistic.\n- germantechjobs: site dropped __NEXT_DATA__ (now a client SPA) -> switched to the\n  RSS feed via feed_rs; description included in the keyword filter; salary-bracket\n  strip narrowed to real [..] brackets only.\n- ycombinator: Algolia key was revoked -> switched to the HN Firebase job feed\n  (credential-free, stable); company extraction matches the full \"(YC \" prefix only.\n- personio: feed moved to /xml; description regex scoped to the <jobDescriptions>\n  block.\n\nHarness: one #[ignore = \"live network\"] smoke test per testable board (run with\ncargo test live_search_returns_results -- --ignored) for future drift detection.\nworkday (Cloudflare bot management) and stepstone (IP-based bot block) can't be\nexercised from a programmatic client and are documented in their tests, not fixed.\n\nhttp: MAX_BYTES stays 8MB globally; FetchOptions gains an opt-in max_bytes so only\ngermantechjobs' ~10MB RSS lifts the cap, preserving the shared OOM guard.\n\nFollow-up (separate PR): fetch_json overwrites caller headers, masking auth errors\nas empty results.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix(scraping): bound live tests with timeouts and tighten board parsers\n\nAddress CodeRabbit review on #450:\n- All live #[ignore] smoke tests wrap search() in a 30s tokio timeout so a\n  stalled endpoint fails fast instead of hanging the run.\n- personio: legacy description fallback now scopes to the singular\n  <jobDescription> block instead of the whole position (no sibling <value> leak).\n- ycombinator: company parsing extracted to a pub(crate) parse_company() helper\n  (now unit-tested directly); empty prefix (title starts with \"(YC \") falls back\n  to the author handle instead of an empty company.\n- germantechjobs: dropped the redundant desc_hay containment check (haystack\n  already includes the description); added a SALARY_BRACKET_RE strip test.\n\nDeferred to a follow-up PR: http fetch buffers the body via text() before the\nsize check, so the byte cap only rejects post-buffer (content-length pre-check\nremains the practical guard) — bundling with the fetch_json header fix.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
+          "timestamp": "2026-06-20T15:11:05+02:00",
+          "tree_id": "d78464349d9ab420feb534b6cfe14dfa9d4d30ca",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/b9817a9fb2bf2dfcac863b9343d30863504b05a1"
+        },
+        "date": 1781961561416,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1909940,
+            "range": "± 49704",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2561350,
+            "range": "± 118419",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 290966,
+            "range": "± 12979",
             "unit": "ns/iter"
           }
         ]
