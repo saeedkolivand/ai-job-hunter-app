@@ -82,8 +82,14 @@ pub(crate) struct AdzunaProvider {
 impl AdzunaProvider {
     fn new() -> Self {
         Self {
-            app_id: crate::credentials::read_credential("ai:adzuna-app-id"),
-            app_key: crate::credentials::read_credential("ai:adzuna-app-key"),
+            app_id: crate::credentials::read_credential("ai:adzuna-app-id").unwrap_or_else(|e| {
+                log::warn!("[aggregator] adzuna-app-id keyring error: {e}");
+                None
+            }),
+            app_key: crate::credentials::read_credential("ai:adzuna-app-key").unwrap_or_else(|e| {
+                log::warn!("[aggregator] adzuna-app-key keyring error: {e}");
+                None
+            }),
         }
     }
 }
@@ -114,13 +120,15 @@ impl JobProvider for AdzunaProvider {
 
         let country = if country.is_empty() { "de" } else { country };
         let country_enc = urlencoding::encode(country);
+        let app_id_enc = urlencoding::encode(app_id);
+        let app_key_enc = urlencoding::encode(app_key);
         let q_enc = urlencoding::encode(query);
         let loc_enc = urlencoding::encode(location);
 
         let url = format!(
             "https://api.adzuna.com/v1/api/jobs/{}/search/1\
              ?app_id={}&app_key={}&what={}&where={}&results_per_page=50&content-type=application/json",
-            country_enc, app_id, app_key, q_enc, loc_enc
+            country_enc, app_id_enc, app_key_enc, q_enc, loc_enc
         );
 
         let result = fetch_json::<AdzunaResp>(&url, FetchOptions::default(), signal).await?;
@@ -197,7 +205,10 @@ pub(crate) struct JSearchProvider {
 impl JSearchProvider {
     fn new() -> Self {
         Self {
-            api_key: crate::credentials::read_credential("ai:jsearch-key"),
+            api_key: crate::credentials::read_credential("ai:jsearch-key").unwrap_or_else(|e| {
+                log::warn!("[aggregator] jsearch-key keyring error: {e}");
+                None
+            }),
         }
     }
 }
@@ -376,23 +387,7 @@ fn dedupe(items: Vec<JobPosting>) -> Vec<JobPosting> {
 
 // ── Scraper impl ──────────────────────────────────────────────────────────────
 
-/// Credentials are process-stable (read from keyring at startup, not rotated
-/// at runtime without a restart).  Cache the constructed providers so we don't
-/// hit the OS keyring on every search call.
-static PROVIDERS: std::sync::OnceLock<Vec<Box<dyn JobProvider>>> = std::sync::OnceLock::new();
-
 pub struct AggregatorScraper;
-
-impl AggregatorScraper {
-    fn providers() -> &'static [Box<dyn JobProvider>] {
-        PROVIDERS.get_or_init(|| {
-            vec![
-                Box::new(AdzunaProvider::new()),
-                Box::new(JSearchProvider::new()),
-            ]
-        })
-    }
-}
 
 #[async_trait]
 impl Scraper for AggregatorScraper {
@@ -430,9 +425,15 @@ impl Scraper for AggregatorScraper {
             .map(str::to_lowercase)
             .unwrap_or_else(|| "de".to_string());
 
-        let providers = Self::providers();
+        // Construct providers fresh per call so that key changes made in Settings
+        // take effect immediately without requiring an app restart.
+        let providers: Vec<Box<dyn JobProvider>> = vec![
+            Box::new(AdzunaProvider::new()),
+            Box::new(JSearchProvider::new()),
+        ];
         let items =
-            search_with_providers(providers, query, location, &country, ctx.signal.clone()).await?;
+            search_with_providers(&providers, query, location, &country, ctx.signal.clone())
+                .await?;
 
         let amount = input.amount as usize;
         let mut out = Vec::new();

@@ -143,6 +143,31 @@ describe('AggregatorKeysSettings — not connected', () => {
 
     expect(mockSetMutateAsync).not.toHaveBeenCalled();
   });
+
+  it('shows the generic saveError i18n message (not raw error) when save mutation rejects', async () => {
+    mockSetMutateAsync.mockRejectedValueOnce(
+      new Error('keyring: /home/user/.local/share/keyrings/secret')
+    );
+    mockNotify.error.mockClear();
+    const user = userEvent.setup();
+    const { container } = render(<AggregatorKeysSettings />);
+
+    const inputs = getPasswordInputs(container);
+    const firstInput = inputs[0];
+    if (!firstInput) throw new Error('No password input found');
+    await user.type(firstInput, 'bad-key');
+
+    const saveButtons = screen.getAllByRole('button', { name: /settings\.aggregatorKeys\.save/i });
+    const firstSave = saveButtons[0];
+    if (!firstSave) throw new Error('No Save button found');
+    await user.click(firstSave);
+
+    await waitFor(() => expect(mockNotify.error).toHaveBeenCalledOnce());
+    const [call] = mockNotify.error.mock.calls;
+    expect(call?.[0]).toEqual({ message: 'settings.aggregatorKeys.saveError' });
+    // raw error text must never reach the notification
+    expect(call?.[0]).not.toMatchObject({ message: expect.stringContaining('keyring') });
+  });
 });
 
 // ── tests — connected state ────────────────────────────────────────────────
@@ -213,6 +238,37 @@ describe('AggregatorKeysSettings — connected state', () => {
     await waitFor(() =>
       expect(mockRemoveMutateAsync).toHaveBeenCalledWith({ provider: 'adzuna-app-id' })
     );
+
+    delete keyState['adzuna-app-id'];
+  });
+
+  it('shows the removeError i18n message (not raw error) when remove mutation rejects', async () => {
+    keyState['adzuna-app-id'] = true;
+    mockRemoveMutateAsync.mockRejectedValueOnce(new Error('keyring: permission denied'));
+    mockNotify.error.mockClear();
+    const user = userEvent.setup();
+
+    render(<AggregatorKeysSettings />);
+
+    const removeButtons = screen.getAllByRole('button', {
+      name: /settings\.aggregatorKeys\.remove/i,
+    });
+    const firstRemove = removeButtons[0];
+    if (!firstRemove) throw new Error('No Remove button found');
+    await user.click(firstRemove);
+
+    const dialog = screen.getByRole('dialog');
+    const confirmBtn = Array.from(dialog.querySelectorAll('button')).find((b) =>
+      /settings\.aggregatorKeys\.remove/i.test(b.textContent ?? '')
+    );
+    if (!confirmBtn) throw new Error('Confirm button not found in modal');
+    await user.click(confirmBtn);
+
+    await waitFor(() => expect(mockNotify.error).toHaveBeenCalledOnce());
+    const [call] = mockNotify.error.mock.calls;
+    expect(call?.[0]).toEqual({ message: 'settings.aggregatorKeys.removeError' });
+    // raw error text must never reach the notification
+    expect(call?.[0]).not.toMatchObject({ message: expect.stringContaining('keyring') });
 
     delete keyState['adzuna-app-id'];
   });

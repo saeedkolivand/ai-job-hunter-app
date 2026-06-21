@@ -285,12 +285,17 @@ pub async fn fetch_json<T: for<'de> serde::Deserialize<'de>>(
     match serde_json::from_str::<T>(&res.text) {
         Ok(value) => Ok(Some(value)),
         Err(e) => {
-            // Log host+path only — the query string may contain API secrets (e.g.
-            // Adzuna app_id/app_key).  Never log the full URL or the response body.
+            // Log scheme+host+port+path only — never query (may contain API
+            // secrets like Adzuna app_key) or userinfo/fragment.
             let safe_url = reqwest::Url::parse(url)
-                .map(|mut u| {
-                    u.set_query(None);
-                    u.to_string()
+                .map(|u| {
+                    let port = u.port().map(|p| format!(":{p}")).unwrap_or_default();
+                    match u.host_str() {
+                        Some(host) => {
+                            format!("{}://{}{}{}", u.scheme(), host, port, u.path())
+                        }
+                        None => format!("{}:{}", u.scheme(), u.path()),
+                    }
                 })
                 .unwrap_or_else(|_| "<unparseable-url>".to_string());
             log::debug!(

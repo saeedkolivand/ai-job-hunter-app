@@ -49,10 +49,8 @@ function AggregatorKeyField({
       await setProviderKey.mutateAsync({ provider: slot, apiKey: apiKey.trim() });
       setApiKey('');
       notify.success({ message: t('settings.aggregatorKeys.saved') });
-    } catch (err) {
-      notify.error({
-        message: err instanceof Error ? err.message : t('settings.aggregatorKeys.saveError'),
-      });
+    } catch {
+      notify.error({ message: t('settings.aggregatorKeys.saveError') });
     } finally {
       setSaving(false);
     }
@@ -63,10 +61,8 @@ function AggregatorKeyField({
     try {
       await removeProviderKey.mutateAsync({ provider: slot });
       notify.success({ message: t('settings.aggregatorKeys.removed') });
-    } catch (err) {
-      notify.error({
-        message: err instanceof Error ? err.message : t('settings.aggregatorKeys.saveError'),
-      });
+    } catch {
+      notify.error({ message: t('settings.aggregatorKeys.removeError') });
     }
   };
 

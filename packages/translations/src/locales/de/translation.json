@@ -654,6 +654,7 @@
       "removed": "Schlüssel entfernt.",
       "remove": "Entfernen",
       "saveError": "Schlüssel konnte nicht gespeichert werden.",
+      "removeError": "Schlüssel konnte nicht entfernt werden.",
       "adzunaAppId": {
         "label": "Adzuna App-ID",
         "placeholder": "Adzuna App-ID einfügen…",

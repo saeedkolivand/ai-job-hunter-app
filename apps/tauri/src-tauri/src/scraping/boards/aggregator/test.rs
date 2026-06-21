@@ -509,18 +509,47 @@ async fn cancelled_before_search_returns_empty_no_provider_call() {
     );
 }
 
-/// Cancellation set after Adzuna fails (simulated by the signal already being
-/// cancelled when the fallback guard runs) → JSearch must not be called.
+/// A provider that returns an error AND cancels the supplied token during its
+/// `search()` call, simulating a cancel that arrives between Adzuna's failure
+/// and the JSearch fallback dispatch.
+struct CancelOnSearchProvider {
+    token: tokio_util::sync::CancellationToken,
+}
+
+#[async_trait::async_trait]
+impl JobProvider for CancelOnSearchProvider {
+    fn provider_id(&self) -> &'static str {
+        "adzuna"
+    }
+
+    fn is_configured(&self) -> bool {
+        true
+    }
+
+    async fn search(
+        &self,
+        _query: &str,
+        _location: &str,
+        _country: &str,
+        _signal: tokio_util::sync::CancellationToken,
+    ) -> anyhow::Result<Vec<JobPosting>> {
+        // Fail AND cancel so the fallback guard (not the top-of-function guard)
+        // catches the cancellation before JSearch is called.
+        self.token.cancel();
+        Err(anyhow::anyhow!("adzuna: network timeout"))
+    }
+}
+
+/// Adzuna errors and the token is cancelled during that call → the pre-fallback
+/// cancel guard must prevent the paid JSearch call.
 #[tokio::test]
 async fn cancelled_after_adzuna_err_skips_jsearch() {
-    // We cancel the token before the call so the guard at the top of
-    // search_with_providers catches it immediately — same observable effect as
-    // a cancel that races between Adzuna-error and JSearch dispatch.
     let signal = make_token();
-    signal.cancel();
 
     let providers: Vec<Box<dyn JobProvider>> = vec![
-        Box::new(FakeProvider::err("adzuna", "network timeout")),
+        Box::new(CancelOnSearchProvider {
+            token: signal.clone(),
+        }),
         Box::new(FakeProvider::ok(
             "jsearch",
             vec![sample_posting("9", "jsearch")],
@@ -532,6 +561,98 @@ async fn cancelled_after_adzuna_err_skips_jsearch() {
         .unwrap();
     assert!(
         result.is_empty(),
-        "JSearch must not be called after cancellation"
+        "JSearch must not be called when token is cancelled after Adzuna error"
     );
+}
+
+// ── Credential-read degradation: keyring failure / absence → None, never panic ──
+//
+// `AdzunaProvider::new()` / `JSearchProvider::new()` read OPTIONAL third-party API
+// keys via `credentials::read_credential` and collapse BOTH `Err(_)` and
+// `Ok(None)` to `None` (graceful degradation: log + treat as absent — never crash
+// a user-triggered search over a missing optional key). These tests pin that
+// construction-time degradation using keyring-core's in-memory mock store.
+//
+// The providers read FIXED slot names (`ai:adzuna-app-id`, …), unlike the
+// UUID-isolated credentials tests, so these two tests serialize on a shared mutex
+// and clean up after themselves to stay race-safe within the multi-thread test
+// binary. The mock store install is the same process-wide `Once` the credentials
+// tests use, so it is never swapped mid-run.
+
+use std::sync::Mutex;
+static AGG_KEYRING_LOCK: Mutex<()> = Mutex::new(());
+
+const ADZUNA_SLOTS: [&str; 2] = ["ai:adzuna-app-id", "ai:adzuna-app-key"];
+const JSEARCH_SLOT: &str = "ai:jsearch-key";
+
+/// Delete the aggregator's fixed keyring slots so a test starts from a known
+/// "absent" baseline regardless of what a previous serialized test left behind.
+fn clear_aggregator_slots() {
+    for slot in ADZUNA_SLOTS.iter().chain(std::iter::once(&JSEARCH_SLOT)) {
+        if let Ok(entry) = keyring_core::Entry::new(crate::credentials::SERVICE, slot) {
+            // NoEntry on a clean slot is fine; we only care it ends up absent.
+            let _ = entry.delete_credential();
+        }
+    }
+}
+
+/// Absent keys (NoEntry → Ok(None) → None): both providers must construct with
+/// `None` credentials and report `is_configured() == false`, so the aggregator
+/// degrades to keyless-empty instead of panicking.
+#[test]
+fn providers_degrade_to_unconfigured_when_keys_absent() {
+    let _guard = AGG_KEYRING_LOCK.lock().unwrap();
+    crate::credentials::install_mock_keyring();
+    clear_aggregator_slots();
+
+    let adzuna = AdzunaProvider::new();
+    assert!(adzuna.app_id.is_none(), "absent adzuna app-id must be None");
+    assert!(
+        adzuna.app_key.is_none(),
+        "absent adzuna app-key must be None"
+    );
+    assert!(
+        !adzuna.is_configured(),
+        "Adzuna must be unconfigured when both keys are absent"
+    );
+
+    let jsearch = JSearchProvider::new();
+    assert!(jsearch.api_key.is_none(), "absent jsearch key must be None");
+    assert!(
+        !jsearch.is_configured(),
+        "JSearch must be unconfigured when the key is absent"
+    );
+}
+
+/// Keyring read FAILURE (non-NoEntry → Err) must ALSO degrade to None at
+/// construction (the provider's `.unwrap_or_else(|_| None)`), not propagate or
+/// panic. We arm a non-NoEntry error on one Adzuna slot's mock `Cred`; the next
+/// read of that slot returns it, exercising the `Err → None` branch.
+#[test]
+fn providers_degrade_to_unconfigured_on_keyring_error() {
+    let _guard = AGG_KEYRING_LOCK.lock().unwrap();
+    crate::credentials::install_mock_keyring();
+    clear_aggregator_slots();
+
+    // Arm a non-NoEntry failure on the app-id slot. `read_credential` maps it to
+    // Err(AppError::Storage), which the provider collapses to None.
+    let entry = keyring_core::Entry::new(crate::credentials::SERVICE, ADZUNA_SLOTS[0]).unwrap();
+    let mock: &keyring_core::mock::Cred = entry.as_any().downcast_ref().unwrap();
+    mock.set_error(keyring_core::Error::Invalid(
+        "induced".to_string(),
+        "non-NoEntry keyring failure".to_string(),
+    ));
+
+    // Must NOT panic; the errored slot collapses to None → not configured.
+    let adzuna = AdzunaProvider::new();
+    assert!(
+        adzuna.app_id.is_none(),
+        "keyring error on app-id must degrade to None, not crash"
+    );
+    assert!(
+        !adzuna.is_configured(),
+        "Adzuna must be unconfigured when a key read errors"
+    );
+
+    clear_aggregator_slots();
 }

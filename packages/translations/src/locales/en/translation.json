@@ -654,6 +654,7 @@
       "removed": "Key removed.",
       "remove": "Remove",
       "saveError": "Couldn't save the key.",
+      "removeError": "Couldn't remove the key.",
       "adzunaAppId": {
         "label": "Adzuna App ID",
         "placeholder": "Paste your Adzuna App ID…",
