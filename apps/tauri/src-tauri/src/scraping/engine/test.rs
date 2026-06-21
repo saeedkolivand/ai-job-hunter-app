@@ -1751,6 +1751,73 @@ async fn ats_board_without_companies_is_skipped() {
     );
 }
 
+/// An ATS board with whitespace-only company entries must be skipped with
+/// `skipped=Some("needs-company")`, just like an empty list.
+/// Regression for the engine skip that checked only `is_empty()` — a payload
+/// like `[" ", "\t"]` bypassed that check but was silently dropped by ATS
+/// scrapers, breaking the UI missing-company warning path.
+#[tokio::test]
+async fn ats_board_whitespace_only_companies_is_skipped() {
+    struct AtsWhitespacePanicker;
+
+    #[async_trait::async_trait]
+    impl Scraper for AtsWhitespacePanicker {
+        fn id(&self) -> &'static str {
+            "ats-whitespace-panicker"
+        }
+        fn display_name(&self) -> &'static str {
+            "AtsWhitespacePanicker"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        fn requires_company(&self) -> bool {
+            true
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            _ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            panic!("AtsWhitespacePanicker.search must never be called when only whitespace companies are supplied");
+        }
+    }
+
+    static ATS_WS: std::sync::LazyLock<AtsWhitespacePanicker> =
+        std::sync::LazyLock::new(|| AtsWhitespacePanicker);
+
+    let engine = ScraperEngine::new();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let mut input = fake_input(5);
+    // Whitespace-only entries — not empty, but all trimmed to "".
+    input.companies = vec!["   ".to_string(), "\t".to_string()];
+
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["ats-whitespace-panicker".to_string()],
+            input,
+            "job-whitespace-company-test".to_string(),
+            None,
+            None,
+            tmp.path(),
+            |_id| Ok(&*ATS_WS as &'static dyn Scraper),
+        )
+        .await
+        .expect("whitespace-only companies must return Ok (skip path)");
+
+    let s = summaries
+        .iter()
+        .find(|s| s.board == "ats-whitespace-panicker")
+        .expect("summary missing");
+    assert_eq!(
+        s.skipped.as_deref(),
+        Some("needs-company"),
+        "whitespace-only companies must be treated as 'needs-company'"
+    );
+    assert_eq!(s.count, 0);
+    assert!(s.error.is_none());
+}
+
 /// An ATS board with non-empty companies must NOT be skipped — search is called
 /// and returns items.
 #[tokio::test]

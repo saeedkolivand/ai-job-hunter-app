@@ -40,6 +40,22 @@ struct GhJobsResponse {
     jobs: Vec<Job>,
 }
 
+/// Maximum number of company slugs processed per scrape call.
+/// Prevents an unbounded number of outbound requests from a large IPC payload.
+const MAX_COMPANIES: usize = 50;
+
+/// Trim, drop blanks, dedupe (first-seen order), and cap to `max`.
+/// Extracted so the normalisation logic can be unit-tested without network.
+pub(crate) fn normalize_companies(input: &[String], max: usize) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    input
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && seen.insert(s.clone()))
+        .take(max)
+        .collect()
+}
+
 pub struct GreenhouseScraper;
 
 #[async_trait]
@@ -72,16 +88,18 @@ impl Scraper for GreenhouseScraper {
 
         let now = chrono::Utc::now().timestamp_millis();
         let mut out = vec![];
-        let total = input.companies.len();
 
-        for (i, company) in input.companies.iter().enumerate() {
+        // Dedupe (first-seen order), drop blanks, and cap to MAX_COMPANIES so a
+        // large IPC payload cannot fan out unbounded requests to Greenhouse.
+        let companies = normalize_companies(&input.companies, MAX_COMPANIES);
+        let total = companies.len();
+
+        let mut successful_fetches = 0usize;
+        let mut first_fetch_error: Option<String> = None;
+
+        for (i, company) in companies.iter().enumerate() {
             if ctx.signal.is_cancelled() {
                 break;
-            }
-
-            let company = company.trim();
-            if company.is_empty() {
-                continue;
             }
 
             let url = format!(
@@ -95,17 +113,31 @@ impl Scraper for GreenhouseScraper {
                 {
                     Ok(d) => d,
                     Err(e) => {
-                        log::warn!("[greenhouse] fetch failed for '{}': {e}", company);
+                        // Check cancellation first: a fetch that failed because
+                        // the run was cancelled is not a real board-level error.
                         if ctx.signal.is_cancelled() {
                             break;
+                        }
+                        log::warn!("[greenhouse] fetch failed for '{}': {e}", company);
+                        first_fetch_error.get_or_insert_with(|| e.to_string());
+                        if let Some(ref on_progress) = ctx.on_progress {
+                            on_progress((i + 1) as f32 / total as f32);
                         }
                         continue;
                     }
                 };
 
             let jobs = match data {
-                Some(d) => d.jobs,
-                None => continue,
+                Some(d) => {
+                    successful_fetches += 1;
+                    d.jobs
+                }
+                None => {
+                    if let Some(ref on_progress) = ctx.on_progress {
+                        on_progress((i + 1) as f32 / total as f32);
+                    }
+                    continue;
+                }
             };
 
             for j in jobs {
@@ -139,6 +171,15 @@ impl Scraper for GreenhouseScraper {
 
             if let Some(ref on_progress) = ctx.on_progress {
                 on_progress((i + 1) as f32 / total as f32);
+            }
+        }
+
+        // Return Err only when every attempt failed — partial success is kept.
+        if successful_fetches == 0 {
+            if let Some(error) = first_fetch_error {
+                return Err(anyhow::anyhow!(
+                    "all greenhouse company fetches failed: {error}"
+                ));
             }
         }
 

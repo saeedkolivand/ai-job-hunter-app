@@ -3,20 +3,16 @@ use super::*;
 // Regression: createdAt is already epoch-milliseconds; the old code did `* 1000`
 // which produced microseconds (~year 3000). The mapping must carry the value through
 // verbatim — no multiplication.
+//
+// This test uses the production mapper (`map_posted_at`) exposed for testing,
+// not a local re-implementation, so any regression in the real mapping path
+// is caught here.
 #[test]
 fn posted_at_carries_epoch_ms_verbatim() {
     // 1_700_000_000_000 ms = 2023-11-14T22:13:20Z — a known, sane date.
-    let posting = LeverPosting {
-        id: "abc123".to_string(),
-        text: "Software Engineer".to_string(),
-        hosted_url: "https://jobs.lever.co/acme/abc123".to_string(),
-        categories: None,
-        description_plain: None,
-        created_at: Some(1_700_000_000_000_i64),
-    };
-
-    // Mirror the production mapping exactly (mod.rs line ~115).
-    let posted_at = posting.created_at;
+    let created_at_ms: i64 = 1_700_000_000_000;
+    // Exercise the production mapping path.
+    let posted_at = map_posted_at(Some(created_at_ms));
 
     assert_eq!(
         posted_at,
@@ -38,17 +34,10 @@ fn posted_at_carries_epoch_ms_verbatim() {
 
 #[test]
 fn posted_at_none_when_created_at_absent() {
-    let posting = LeverPosting {
-        id: "no-date".to_string(),
-        text: "Designer".to_string(),
-        hosted_url: "https://jobs.lever.co/acme/no-date".to_string(),
-        categories: None,
-        description_plain: None,
-        created_at: None,
-    };
-
+    // Exercise the production mapping path with None input.
+    let posted_at = map_posted_at(None);
     assert_eq!(
-        posting.created_at, None,
+        posted_at, None,
         "posted_at must be None when createdAt is absent"
     );
 }

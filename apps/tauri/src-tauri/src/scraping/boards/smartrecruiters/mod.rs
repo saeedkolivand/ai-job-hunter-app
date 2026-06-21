@@ -55,6 +55,23 @@ struct DetailResp {
     ref_field: Option<String>,
 }
 
+/// Maximum number of company slugs processed per scrape call.
+/// Each SmartRecruiters slug can produce one list request plus up to 100 detail
+/// requests — an unbounded list from IPC would amplify outbound traffic severely.
+const MAX_COMPANIES: usize = 20;
+
+/// Trim, drop blanks, dedupe (first-seen order), and cap to `max`.
+/// Extracted so the normalisation logic can be unit-tested without network.
+pub(crate) fn normalize_companies(input: &[String], max: usize) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    input
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && seen.insert(s.clone()))
+        .take(max)
+        .collect()
+}
+
 pub struct SmartRecruitersScraper;
 
 #[async_trait]
@@ -87,17 +104,19 @@ impl Scraper for SmartRecruitersScraper {
 
         let now = chrono::Utc::now().timestamp_millis();
         let mut out = vec![];
-        let company_count = input.companies.len();
 
-        for (ci, company) in input.companies.iter().enumerate() {
+        // Dedupe (first-seen order), drop blanks, and cap to MAX_COMPANIES.
+        // Each company can produce one list fetch + up to 100 detail fetches, so
+        // an uncapped IPC payload would amplify traffic severely.
+        let companies = normalize_companies(&input.companies, MAX_COMPANIES);
+        let company_count = companies.len();
+
+        for (ci, company) in companies.iter().enumerate() {
             if ctx.signal.is_cancelled() {
                 break;
             }
 
-            let company = company.trim();
-            if company.is_empty() {
-                continue;
-            }
+            let company = company.as_str();
 
             // SmartRecruiters supports a real `q` keyword param — pass it when set.
             let keyword = input.query.trim();
