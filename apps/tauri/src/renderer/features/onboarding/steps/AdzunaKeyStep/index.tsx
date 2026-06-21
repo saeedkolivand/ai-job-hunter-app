@@ -22,7 +22,7 @@ interface Props {
 /**
  * Optional, skippable onboarding step: connect a free Adzuna API key so the
  * aggregator board returns results. Both App ID and App Key are needed; the
- * user can skip and add them later via Settings → AI → Job search providers.
+ * user can skip and add them later via Settings → Jobs.
  */
 export function AdzunaKeyStep({ onBack, onNext, direction, stepIndex, totalSteps }: Props) {
   const { t } = useTranslation();
@@ -42,7 +42,7 @@ export function AdzunaKeyStep({ onBack, onNext, direction, stepIndex, totalSteps
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const canSave = (appId.trim().length > 0 || idSaved) && (appKey.trim().length > 0 || keySaved);
+  const hasSomethingToSave = appId.trim().length > 0 || appKey.trim().length > 0;
 
   const handleSave = async () => {
     if (!appId.trim() && !appKey.trim()) return;
@@ -137,7 +137,9 @@ export function AdzunaKeyStep({ onBack, onNext, direction, stepIndex, totalSteps
                       type={showId ? 'text' : 'password'}
                       value={appId}
                       onChange={(e) => setAppId(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && canSave && void handleSave()}
+                      onKeyDown={(e) =>
+                        e.key === 'Enter' && hasSomethingToSave && !saving && void handleSave()
+                      }
                       placeholder={t('onboarding.adzunaKey.appIdPlaceholder')}
                       className="w-full pr-9 text-sm"
                     />
@@ -178,7 +180,9 @@ export function AdzunaKeyStep({ onBack, onNext, direction, stepIndex, totalSteps
                       type={showKey ? 'text' : 'password'}
                       value={appKey}
                       onChange={(e) => setAppKey(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && canSave && void handleSave()}
+                      onKeyDown={(e) =>
+                        e.key === 'Enter' && hasSomethingToSave && !saving && void handleSave()
+                      }
                       placeholder={t('onboarding.adzunaKey.appKeyPlaceholder')}
                       className="w-full pr-9 text-sm"
                     />
@@ -204,7 +208,7 @@ export function AdzunaKeyStep({ onBack, onNext, direction, stepIndex, totalSteps
             <div className="flex justify-end">
               <Button
                 variant="primary"
-                disabled={(!appId.trim() && !appKey.trim()) || saving}
+                disabled={!hasSomethingToSave || saving}
                 onClick={() => void handleSave()}
               >
                 {saving ? (

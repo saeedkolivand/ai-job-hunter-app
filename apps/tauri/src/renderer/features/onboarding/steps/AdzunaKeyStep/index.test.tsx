@@ -11,7 +11,7 @@
  * noUncheckedIndexedAccess: all array accesses are guarded.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -30,6 +30,14 @@ let stubKeyHas = false;
 const mutateAsyncSpy = vi.fn().mockResolvedValue(undefined);
 const notifySuccessSpy = vi.fn();
 const notifyErrorSpy = vi.fn();
+
+beforeEach(() => {
+  stubIdHas = false;
+  stubKeyHas = false;
+  mutateAsyncSpy.mockClear();
+  notifySuccessSpy.mockClear();
+  notifyErrorSpy.mockClear();
+});
 
 vi.mock('@/services', () => ({
   useHasProviderKey: (slot: string) => {

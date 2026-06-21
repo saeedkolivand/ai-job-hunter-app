@@ -114,8 +114,8 @@ export function ScrapeForm({
   // Adzuna keys aren't configured. Derived from service hooks; no hardcoded values
   // beyond the board's stable catalog id ('aggregator').
   const aggregatorSelected = selectedSet.has('aggregator');
-  const { data: adzunaIdData } = useHasProviderKey('adzuna-app-id');
-  const { data: adzunaKeyData } = useHasProviderKey('adzuna-app-key');
+  const { data: adzunaIdData } = useHasProviderKey('adzuna-app-id', aggregatorSelected);
+  const { data: adzunaKeyData } = useHasProviderKey('adzuna-app-key', aggregatorSelected);
   const showAggregatorKeyHint = aggregatorSelected && !(adzunaIdData?.has && adzunaKeyData?.has);
 
   const handleSelectAll = () => {
