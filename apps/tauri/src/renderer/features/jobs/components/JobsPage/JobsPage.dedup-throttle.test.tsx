@@ -46,12 +46,16 @@ const invalidateSpy = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
  * the component state.  setLivePostings is vi.fn() so tests can inspect
  * .mock.calls and call .mockClear() without casts.
  *
+ * `replacePendingRef` is exposed here so tests can set `.current = true` to
+ * exercise the eager-invalidation branch in the job.stream handler.
+ *
  * Kept as a plain-object container (accessed by property reference inside the
  * vi.mock factory) so hoisting of vi.mock doesn't cause TDZ issues.
  */
 const scrapingState = {
   livePostings: [] as Posting[],
   setLivePostings: vi.fn<(updater: Posting[] | ((prev: Posting[]) => Posting[])) => void>(),
+  replacePendingRef: { current: false },
 };
 
 // ---------------------------------------------------------------------------
@@ -65,7 +69,7 @@ vi.mock('@/features/jobs/hooks/useScraping', () => ({
     livePostings: scrapingState.livePostings,
     setLivePostings: scrapingState.setLivePostings,
     scrapeJobRef: { current: 'job-abc' },
-    replacePendingRef: { current: false },
+    replacePendingRef: scrapingState.replacePendingRef,
     startScrape: vi.fn(),
     cancelScrape: vi.fn(),
     noteScrapeFinished: vi.fn(),
@@ -386,6 +390,7 @@ describe('allPostings merge formula — pure function', () => {
 describe('JobsPage — stream invalidation throttle', () => {
   beforeEach(() => {
     scrapingState.livePostings = [];
+    scrapingState.replacePendingRef.current = false;
     invalidateSpy.mockClear();
     vi.useFakeTimers();
   });
@@ -504,6 +509,37 @@ describe('JobsPage — stream invalidation throttle', () => {
     });
 
     expect(invalidateSpy).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('replacePendingRef=true → invalidatePostings called immediately (eager, before throttle window)', async () => {
+    // The "first item of a new search" branch: when replacePendingRef.current is
+    // true the handler resets the ref to false, replaces livePostings with just
+    // the new item, and calls invalidatePostings() DIRECTLY — bypassing the
+    // ~1 s timer so the backend cache is flushed without waiting.
+    scrapingState.replacePendingRef.current = true;
+    const { unmount } = renderPage();
+
+    // Fire one stream event while replacePendingRef is true.
+    fireStreamEvent(posting('replace-item'));
+
+    // Assert BEFORE advancing fake timers — the eager call must have happened
+    // synchronously within the event handler, not deferred to the throttle.
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+
+    // The ref must be consumed (reset to false) so a second tick falls through
+    // to the normal throttled path (no immediate second call).
+    fireStreamEvent(posting('follow-up'));
+
+    // Still only the one eager call — the follow-up is now throttled.
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+
+    // Advance past the throttle window; the follow-up timer fires once more.
+    await act(async () => {
+      vi.advanceTimersByTime(1001);
+    });
+    expect(invalidateSpy).toHaveBeenCalledTimes(2);
+
     unmount();
   });
 });
