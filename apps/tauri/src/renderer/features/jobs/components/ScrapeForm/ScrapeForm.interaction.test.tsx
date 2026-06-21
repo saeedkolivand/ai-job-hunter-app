@@ -42,6 +42,11 @@ vi.mock('@/services/use-boards', () => ({
   useBoardStatuses: () => stubStatuses,
 }));
 
+// Stub out Adzuna key presence — not under test in this file.
+vi.mock('@/services/use-ai-provider', () => ({
+  useHasProviderKey: () => ({ data: { has: false } }),
+}));
+
 vi.mock('./ScrapeFilters', () => ({
   ScrapeFilters: () => <div data-testid="scrape-filters" />,
 }));

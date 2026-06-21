@@ -1,3 +1,4 @@
+import { AdzunaKeyStep } from './steps/AdzunaKeyStep';
 import { AISelectionStep } from './steps/AISelectionStep';
 import { AppearanceStep } from './steps/AppearanceStep';
 import { BrowserStep } from './steps/BrowserStep';
@@ -12,6 +13,7 @@ export const ONBOARDING_STEPS = [
   { id: 'ai', component: AISelectionStep },
   { id: 'research', component: ResearchStep },
   { id: 'browser', component: BrowserStep },
+  { id: 'adzunaKey', component: AdzunaKeyStep },
   { id: 'extension', component: ExtensionStep },
   { id: 'appearance', component: AppearanceStep },
 ] as const;
