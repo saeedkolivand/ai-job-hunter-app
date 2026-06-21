@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.112.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.111.1...v0.112.0) (2026-06-21)
+
+### ✨ Features
+
+* **jobs:** disable scrape until required boards are logged in ([#458](https://github.com/saeedkolivand/ai-job-hunter-app/issues/458)) ([7e12ad5](https://github.com/saeedkolivand/ai-job-hunter-app/commit/7e12ad56defc776cf096a500fc5b41cd5850abdc))
+* **jobs:** repair broken job boards and gate logged-out scraping ([#462](https://github.com/saeedkolivand/ai-job-hunter-app/issues/462)) ([0e3535f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0e3535f2642266a974b5610f16adcc07371276e3)), closes [#458](https://github.com/saeedkolivand/ai-job-hunter-app/issues/458)
+* **scraping:** scrape multiple job boards per run with rate-limit hardening ([#455](https://github.com/saeedkolivand/ai-job-hunter-app/issues/455)) ([92bf979](https://github.com/saeedkolivand/ai-job-hunter-app/commit/92bf97973d9e2843c2940ae68cac7df98cbf4149))
+* **scraping:** surface per-board login requirement in jobs picker ([#449](https://github.com/saeedkolivand/ai-job-hunter-app/issues/449)) ([eff970d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/eff970d3036404bc728c53b91bfdd2e72a10d63a))
+
+### 🐛 Bug Fixes
+
+* **ai:** make cli-agent stream cancellable and move gemini auth to header ([#443](https://github.com/saeedkolivand/ai-job-hunter-app/issues/443)) ([92df12a](https://github.com/saeedkolivand/ai-job-hunter-app/commit/92df12a3bdfe0e45ada1b494cb16aa18340cb997))
+* **data:** surface partial restore failures instead of reporting success ([#434](https://github.com/saeedkolivand/ai-job-hunter-app/issues/434)) ([44afc66](https://github.com/saeedkolivand/ai-job-hunter-app/commit/44afc6613c018b32c7e74e5d588877211cd22ed8))
+* **extension:** validate token format in background settoken handler ([#444](https://github.com/saeedkolivand/ai-job-hunter-app/issues/444)) ([928cfb2](https://github.com/saeedkolivand/ai-job-hunter-app/commit/928cfb28670616af5142b32dd75338a8bc8a0c83))
+* **i18n:** add the glassdoor board label ([#457](https://github.com/saeedkolivand/ai-job-hunter-app/issues/457)) ([11ab8c0](https://github.com/saeedkolivand/ai-job-hunter-app/commit/11ab8c0a38b2acf9be49a2d96b6d4c92086e0baf)), closes [#456](https://github.com/saeedkolivand/ai-job-hunter-app/issues/456)
+* **job-match:** align evidence grounding with scorer and add guidance framing ([#442](https://github.com/saeedkolivand/ai-job-hunter-app/issues/442)) ([2dd85c2](https://github.com/saeedkolivand/ai-job-hunter-app/commit/2dd85c20dddc3b0b835f7cd3ce36452fbba0e9fa)), closes [#447](https://github.com/saeedkolivand/ai-job-hunter-app/issues/447)
+* **jobs:** list glassdoor in the board picker ([#456](https://github.com/saeedkolivand/ai-job-hunter-app/issues/456)) ([b9e90be](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b9e90be42edb32c5f726378a68d646015a05804b)), closes [#455](https://github.com/saeedkolivand/ai-job-hunter-app/issues/455)
+* **menu:** gate the menu_take_pending poll to macos only ([#451](https://github.com/saeedkolivand/ai-job-hunter-app/issues/451)) ([f9050ba](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f9050ba21a6cb83afe5270323dd6208515c460a6))
+* **prompts:** truncate oversized sections and strip fenced code blocks ([#446](https://github.com/saeedkolivand/ai-job-hunter-app/issues/446)) ([448a428](https://github.com/saeedkolivand/ai-job-hunter-app/commit/448a428094303c334e7a61504c01ff5dd1a78bbe))
+* **renderer:** a11y, i18n, and design-token fixes across renderer and ui ([#439](https://github.com/saeedkolivand/ai-job-hunter-app/issues/439)) ([91d8669](https://github.com/saeedkolivand/ai-job-hunter-app/commit/91d86694679039565236745c9d8bd0df8cd1e32d))
+* **resume:** preserve literal markdown chars and resolve region-suffixed locales ([#441](https://github.com/saeedkolivand/ai-job-hunter-app/issues/441)) ([9664d21](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9664d218a716a97ba54a4884b78459d082f1e9c8))
+* **scraping:** close glassdoor browser on error and share linkedin rate limiter ([#436](https://github.com/saeedkolivand/ai-job-hunter-app/issues/436)) ([62f3ff4](https://github.com/saeedkolivand/ai-job-hunter-app/commit/62f3ff46cadd417efe4cc3664ce45dcf52238cd5))
+* **scraping:** preserve caller headers and stream-cap http responses ([#454](https://github.com/saeedkolivand/ai-job-hunter-app/issues/454)) ([9b40e7b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9b40e7bdbdbe5d2a2672694d2c9d3aad664a1fea))
+* **scraping:** repair drifted board scrapers and add live smoke tests ([#450](https://github.com/saeedkolivand/ai-job-hunter-app/issues/450)) ([b9817a9](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b9817a9fb2bf2dfcac863b9343d30863504b05a1))
+* **security:** restrict system_open_external to http and https schemes ([#435](https://github.com/saeedkolivand/ai-job-hunter-app/issues/435)) ([44aa347](https://github.com/saeedkolivand/ai-job-hunter-app/commit/44aa3472fa11f43c991e22f8f83134b4ba98db3e))
+* **ui:** keep modal open when a text-selection drag ends on the backdrop ([#452](https://github.com/saeedkolivand/ai-job-hunter-app/issues/452)) ([7d43d60](https://github.com/saeedkolivand/ai-job-hunter-app/commit/7d43d6081ae1620a58ac1d944c4ea53a9a8c7178))
+
+### ⚡ Performance
+
+* **db:** run sqlite off the async runtime and speed up store hot paths ([#437](https://github.com/saeedkolivand/ai-job-hunter-app/issues/437)) ([c2ac215](https://github.com/saeedkolivand/ai-job-hunter-app/commit/c2ac215aef402b92d9228211d56aef40db520547))
+
+### 🎨 UI/UX
+
+* clarify autopilot wizard target labels ([#453](https://github.com/saeedkolivand/ai-job-hunter-app/issues/453)) ([31285b9](https://github.com/saeedkolivand/ai-job-hunter-app/commit/31285b948570c02b2a9447e86cd10bfd57270b55))
+
+### ♻️ Refactors
+
+* dedupe now_ms, job-id, and renderer doc helpers ([#438](https://github.com/saeedkolivand/ai-job-hunter-app/issues/438)) ([67a6a6b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/67a6a6b83d386755e40a961dea80691de8a95d9a))
+
+### 📚 Documentation
+
+* add scraping endpoint reconnaissance for all 20 boards ([#461](https://github.com/saeedkolivand/ai-job-hunter-app/issues/461)) ([5002ff9](https://github.com/saeedkolivand/ai-job-hunter-app/commit/5002ff9fac50e1b1102c9500f8357733d2694003))
+* capture fleet-audit decisions and intentional simplifications ([#448](https://github.com/saeedkolivand/ai-job-hunter-app/issues/448)) ([4ffa4fc](https://github.com/saeedkolivand/ai-job-hunter-app/commit/4ffa4fc609d2444bf3872962c3bc7af2edfd6045))
+
 ## [0.111.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.111.0...v0.111.1) (2026-06-19)
 
 ### 🐛 Bug Fixes
