@@ -186,4 +186,14 @@ describe('ScrapeBoardsRequestSchema', () => {
       })
     ).not.toThrow();
   });
+
+  it('rejects retired board id "indeed"', () => {
+    expect(() => ScrapeBoardsRequestSchema.parse({ boards: ['indeed'], query: 'test' })).toThrow();
+  });
+
+  it('rejects retired board id "stepstone" even when mixed with a valid id', () => {
+    expect(() =>
+      ScrapeBoardsRequestSchema.parse({ boards: ['linkedin', 'stepstone'], query: 'test' })
+    ).toThrow();
+  });
 });
