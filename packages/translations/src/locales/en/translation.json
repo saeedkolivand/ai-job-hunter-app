@@ -1600,8 +1600,10 @@
       "remotive": "Remotive",
       "arbeitnow": "Arbeit Now",
       "wwr": "WWR",
-      "ycombinator": "YC Jobs"
+      "ycombinator": "YC Jobs",
+      "aggregator": "Aggregator"
     },
+    "aggregatorKeyHint": "Add your free Adzuna key in Settings to enable aggregated search.",
     "regions": {
       "us": "🇺🇸 United States — indeed.com",
       "de": "🇩🇪 Germany — de.indeed.com",
@@ -2269,6 +2271,24 @@
       "back": "Back",
       "next": "Continue",
       "skip": "Skip for now"
+    },
+    "adzunaKey": {
+      "title": "Aggregated Job Search",
+      "subtitle": "Adzuna is a free aggregator that searches millions of jobs. Paste your App ID and App Key to enable it — you can always add these later in Settings.",
+      "getKeyAt": "Get your free keys at",
+      "appIdLabel": "App ID",
+      "appKeyLabel": "App Key",
+      "appIdPlaceholder": "Paste your Adzuna App ID…",
+      "appKeyPlaceholder": "Paste your Adzuna App Key…",
+      "connected": "Both keys saved — aggregated search is ready.",
+      "partialSaved": "One key saved — add both to enable aggregated search.",
+      "save": "Save",
+      "saved": "Key saved.",
+      "saveError": "Couldn't save the key.",
+      "skip": "Skip for now",
+      "skipHint": "You can add this later in Settings → AI → Job search providers.",
+      "next": "Continue",
+      "back": "Back"
     },
     "browser": {
       "title": "Browser Required",

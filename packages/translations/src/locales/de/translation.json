@@ -1604,8 +1604,10 @@
       "remotive": "Remotive",
       "arbeitnow": "Arbeit Now",
       "wwr": "WWR",
-      "ycombinator": "YC Jobs"
+      "ycombinator": "YC Jobs",
+      "aggregator": "Aggregator"
     },
+    "aggregatorKeyHint": "Fügen Sie Ihren kostenlosen Adzuna-Schlüssel in den Einstellungen hinzu, um die aggregierte Jobsuche zu aktivieren.",
     "regions": {
       "us": "🇺🇸 Vereinigte Staaten — indeed.com",
       "de": "🇩🇪 Deutschland — de.indeed.com",
@@ -2273,6 +2275,24 @@
       "back": "Zurück",
       "next": "Weiter",
       "skip": "Vorerst überspringen"
+    },
+    "adzunaKey": {
+      "title": "Aggregierte Jobsuche",
+      "subtitle": "Adzuna ist ein kostenloser Aggregator, der Millionen von Jobs durchsucht. Fügen Sie Ihre App-ID und Ihren App-Key ein, um ihn zu aktivieren — Sie können dies jederzeit später in den Einstellungen nachholen.",
+      "getKeyAt": "Ihre kostenlosen Schlüssel erhalten Sie unter",
+      "appIdLabel": "App-ID",
+      "appKeyLabel": "App-Key",
+      "appIdPlaceholder": "Adzuna App-ID einfügen…",
+      "appKeyPlaceholder": "Adzuna App-Key einfügen…",
+      "connected": "Beide Schlüssel gespeichert — die aggregierte Suche ist bereit.",
+      "partialSaved": "Ein Schlüssel gespeichert — fügen Sie beide hinzu, um die aggregierte Suche zu aktivieren.",
+      "save": "Speichern",
+      "saved": "Schlüssel gespeichert.",
+      "saveError": "Schlüssel konnte nicht gespeichert werden.",
+      "skip": "Vorerst überspringen",
+      "skipHint": "Sie können dies später unter Einstellungen → KI → Jobsuche-Anbieter hinzufügen.",
+      "next": "Weiter",
+      "back": "Zurück"
     },
     "browser": {
       "title": "Browser erforderlich",
