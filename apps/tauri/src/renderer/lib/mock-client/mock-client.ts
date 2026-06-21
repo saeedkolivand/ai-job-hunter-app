@@ -36,6 +36,8 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
 
   const base: AppClient = {
     system: {
+      appReady: noop,
+      setThemeMirror: noop,
       health: noop,
       getVersion: noop,
       getLocale: async () => 'en',
