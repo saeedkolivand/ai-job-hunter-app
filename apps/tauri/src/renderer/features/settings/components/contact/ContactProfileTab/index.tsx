@@ -19,13 +19,17 @@ export function ContactProfileTab() {
 
   return (
     <>
-      <SettingsSection icon={Contact} label={t('settings.contactProfile.title')}>
-        <p className="mb-4 text-xs text-foreground/55">
-          {t('settings.contactProfile.description')}
-        </p>
-        <ContactProfileForm />
-      </SettingsSection>
-      <ApplicantDetailsSection />
+      <div data-settings-anchor="contact-profile">
+        <SettingsSection icon={Contact} label={t('settings.contactProfile.title')}>
+          <p className="mb-4 text-xs text-foreground/55">
+            {t('settings.contactProfile.description')}
+          </p>
+          <ContactProfileForm />
+        </SettingsSection>
+      </div>
+      <div data-settings-anchor="contact-applicant">
+        <ApplicantDetailsSection />
+      </div>
     </>
   );
 }

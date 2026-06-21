@@ -1,4 +1,4 @@
-import { ChevronLeft, Sparkles } from 'lucide-react';
+import { ChevronLeft, PanelLeft, Sparkles } from 'lucide-react';
 import { type ComponentType, useEffect, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 
@@ -8,13 +8,19 @@ import { Button } from '@ajh/ui';
 import { parentRoute } from '@/lib/parent-route';
 import { onWindowControlsRegistered } from '@/lib/window-controls-registry';
 import { useWindowControls } from '@/services';
-import { useOnboardingCompleted } from '@/store/preferences-store';
+import {
+  useOnboardingCompleted,
+  useSidebarCollapsed,
+  useToggleSidebar,
+} from '@/store/preferences-store';
 
 import { NotificationBell } from './NotificationBell';
 
 export function Titlebar() {
   const { t } = useTranslation();
   const onboardingCompleted = useOnboardingCompleted();
+  const isCollapsed = useSidebarCollapsed();
+  const toggleSidebar = useToggleSidebar();
   const [WindowControls, setWindowControls] = useState<ComponentType | null>(null);
   const { toggleMaximize, isMacos } = useWindowControls();
 
@@ -48,18 +54,30 @@ export function Titlebar() {
       onMouseDown={handleTitlebarDoubleClick}
       onMouseUp={handleTitlebarDoubleClick}
     >
-      {/* Left cluster: fixed-width spacer (mirrors window-controls on the right) with
-          optional back button on detail routes. `app-no-drag` keeps it clickable. */}
-      <div className={`app-no-drag flex items-center ${isMacos ? 'w-20' : 'w-[132px]'}`}>
+      {/* Left cluster: fixed-width spacer (mirrors window-controls on the right) holding
+          the global back button (detail routes) + the expand-sidebar toggle (shown when
+          the sidebar is collapsed). `app-no-drag` keeps them clickable. */}
+      <div className={`app-no-drag flex items-center gap-1 pl-1 ${isMacos ? 'w-20' : 'w-[132px]'}`}>
         {parent !== null && (
           <Button
             variant="ghost"
             size="sm"
             aria-label={t('nav.back')}
             onClick={() => void navigate({ to: parent })}
-            className="ml-1 flex h-7 items-center gap-1 px-2 text-foreground/50 hover:text-foreground/80"
+            className="text-foreground/60 hover:text-foreground"
           >
-            <ChevronLeft size={15} />
+            <ChevronLeft size={16} />
+          </Button>
+        )}
+        {isCollapsed && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={t('nav.expandSidebar')}
+            onClick={toggleSidebar}
+            className="text-foreground/60 hover:text-foreground"
+          >
+            <PanelLeft size={16} />
           </Button>
         )}
       </div>

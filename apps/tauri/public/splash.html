@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>AI Job Hunter</title>
+    <!--
+      Native cold-start splash. Self-contained: no framework, no external/remote
+      resources, inline CSS + one tiny inline <script> so it paints instantly.
+      Theme rides the URL as ?theme=light|dark (resolved in Rust: last effective
+      scheme, OS theme on first launch) and is applied to <html data-theme> BEFORE
+      first paint. Honors prefers-reduced-motion (drops the shimmer/animations).
+    -->
+    <script>
+      // Read ?theme=light|dark and set it on <html> before paint. Default to the
+      // static data-theme="dark" if the param is missing/unknown.
+      (function () {
+        try {
+          var t = new URLSearchParams(location.search).get('theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+            var meta = document.querySelector('meta[name="color-scheme"]');
+            if (meta) meta.setAttribute('content', t);
+          }
+        } catch (e) {
+          /* keep the static dark fallback */
+        }
+      })();
+    </script>
+    <style>
+      :root {
+        /* Brand gradient stops — mirror the app's --color-brand family (teal/peach/coral).
+           Dark variant leading stop is #fff; light variant leading stop is the app's
+           dark-ink #1e1b2e. Both then sweep brand → brand-mid → brand-2 at 135deg,
+           matching .text-gradient in utilities.css exactly. */
+        --brand-from-dark: #ffffff;
+        --brand-from-light: #1e1b2e;
+        --brand-teal: #5bb8b7;
+        --brand-peach: #fad8a8;
+        --brand-coral: #f4726f;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Inter', system-ui,
+          'Segoe UI', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        user-select: none;
+        cursor: default;
+      }
+
+      /* ── Dark variant (default) ──────────────────────────────────────────── */
+      html[data-theme='dark'] body {
+        background: radial-gradient(120% 120% at 50% 0%, #16162a 0%, #0a0a14 60%, #08080f 100%);
+        color: #e6e6f0;
+      }
+      html[data-theme='dark'] .card {
+        background: rgba(22, 22, 42, 0.72);
+        border: 1px solid rgba(91, 184, 183, 0.18);
+        box-shadow:
+          0 12px 48px rgba(0, 0, 0, 0.55),
+          inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      }
+      html[data-theme='dark'] .tagline {
+        color: #9b9bb5;
+      }
+      html[data-theme='dark'] .glyph {
+        background: rgba(91, 184, 183, 0.12);
+        border: 1px solid rgba(91, 184, 183, 0.22);
+      }
+      html[data-theme='dark'] .track {
+        background: rgba(255, 255, 255, 0.07);
+      }
+
+      /* ── Light variant ───────────────────────────────────────────────────── */
+      html[data-theme='light'] body {
+        background: radial-gradient(120% 120% at 50% 0%, #ffffff 0%, #f4f4fb 60%, #ecebf6 100%);
+        color: #1a1a2e;
+      }
+      html[data-theme='light'] .card {
+        background: rgba(255, 255, 255, 0.86);
+        border: 1px solid rgba(43, 122, 120, 0.14);
+        box-shadow:
+          0 12px 40px rgba(43, 122, 120, 0.12),
+          inset 0 1px 0 rgba(255, 255, 255, 0.6);
+      }
+      html[data-theme='light'] .tagline {
+        color: #6b6b82;
+      }
+      html[data-theme='light'] .glyph {
+        background: rgba(43, 122, 120, 0.08);
+        border: 1px solid rgba(43, 122, 120, 0.16);
+      }
+      html[data-theme='light'] .track {
+        background: rgba(26, 26, 46, 0.08);
+      }
+
+      /* ── Card ────────────────────────────────────────────────────────────── */
+      .card {
+        width: 392px;
+        padding: 34px 32px 30px;
+        border-radius: 22px;
+        text-align: center;
+        animation: fade-in 520ms ease-out both;
+      }
+
+      .glyph {
+        width: 56px;
+        height: 56px;
+        margin: 0 auto 18px;
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .glyph svg {
+        width: 30px;
+        height: 30px;
+      }
+      /* Paint the Sparkles glyph in the brand gradient. */
+      .glyph svg path {
+        fill: url(#brandGrad);
+      }
+
+      /* Dark wordmark: #fff → teal → peach → coral at 135deg (matches .text-gradient dark). */
+      html[data-theme='dark'] .wordmark {
+        background: linear-gradient(
+          135deg,
+          var(--brand-from-dark) 0%,
+          var(--brand-teal) 35%,
+          var(--brand-peach) 65%,
+          var(--brand-coral) 100%
+        );
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: transparent;
+      }
+
+      /* Light wordmark: #1e1b2e → teal → peach → coral at 135deg (matches .text-gradient light). */
+      html[data-theme='light'] .wordmark {
+        background: linear-gradient(
+          135deg,
+          var(--brand-from-light) 0%,
+          var(--brand-teal) 35%,
+          var(--brand-peach) 65%,
+          var(--brand-coral) 100%
+        );
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: transparent;
+      }
+
+      .wordmark {
+        font-size: 26px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        line-height: 1.1;
+      }
+
+      .tagline {
+        margin-top: 8px;
+        font-size: 13px;
+        font-weight: 400;
+        letter-spacing: 0.01em;
+      }
+
+      /* ── Indeterminate shimmer loader ────────────────────────────────────── */
+      .track {
+        position: relative;
+        width: 168px;
+        height: 3px;
+        margin: 24px auto 2px;
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      .track::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        width: 42%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, transparent, var(--brand-peach), transparent);
+        animation: shimmer 1.25s ease-in-out infinite;
+      }
+
+      @keyframes fade-in {
+        from {
+          opacity: 0;
+          transform: translateY(8px) scale(0.985);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+
+      @keyframes shimmer {
+        0% {
+          transform: translateX(-120%);
+        }
+        100% {
+          transform: translateX(330%);
+        }
+      }
+
+      /* Respect reduced-motion: no fade-in, no shimmer — show a static bar. */
+      @media (prefers-reduced-motion: reduce) {
+        .card {
+          animation: none;
+        }
+        .track::after {
+          animation: none;
+          width: 100%;
+          opacity: 0.5;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Hidden SVG defs: the brand gradient referenced by the glyph fill.
+         x1="0" y1="0" x2="1" y2="1" = top-left→bottom-right = 135deg,
+         matching the CSS .text-gradient angle exactly. -->
+    <svg width="0" height="0" aria-hidden="true" style="position: absolute; overflow: hidden">
+      <defs>
+        <linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#5bb8b7" />
+          <stop offset="55%" stop-color="#fad8a8" />
+          <stop offset="100%" stop-color="#f4726f" />
+        </linearGradient>
+      </defs>
+    </svg>
+
+    <main class="card" role="status" aria-live="polite" aria-label="AI Job Hunter is starting">
+      <div class="glyph" aria-hidden="true">
+        <!-- Sparkles glyph (lucide-style). -->
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path
+            d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3zM19 14l.9 2.2 2.2.9-2.2.9L19 20.2l-.9-2.2-2.2-.9 2.2-.9L19 14zM5 14l.7 1.7 1.7.7-1.7.7L5 18.8l-.7-1.7L2.6 16.4l1.7-.7L5 14z"
+          />
+        </svg>
+      </div>
+      <div class="wordmark">AI Job Hunter</div>
+      <div class="tagline">Calm. Local. AI-native.</div>
+      <div class="track" aria-hidden="true"></div>
+    </main>
+  </body>
+</html>

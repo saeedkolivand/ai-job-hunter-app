@@ -61,7 +61,7 @@ export function AppearanceCard() {
   return (
     <SettingsSection icon={Palette} label={t('settings.appearance.title')}>
       <div className="space-y-4">
-        <div>
+        <div data-settings-anchor="appearance-theme">
           <div className="mb-2 text-xs font-medium text-foreground/55">
             {t('settings.appearance.scheme')}
           </div>
@@ -103,7 +103,7 @@ export function AppearanceCard() {
           </div>
         </div>
 
-        <div>
+        <div data-settings-anchor="appearance-accent">
           <div className="mb-2 text-xs font-medium text-foreground/55">
             {t('settings.appearance.accent')}
           </div>
@@ -220,7 +220,7 @@ export function AppearanceCard() {
           </div>
         </div>
 
-        <div>
+        <div data-settings-anchor="appearance-textsize">
           <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-foreground/55">
             <Type size={13} />
             {t('settings.appearance.textSize')}
@@ -263,18 +263,22 @@ export function AppearanceCard() {
           </div>
         </div>
 
-        <Switch
-          label={t('settings.appearance.reduceTransparency')}
-          description={t('settings.appearance.reduceTransparencyHint')}
-          checked={prefs.reduceTransparency}
-          onCheckedChange={(v) => update({ reduceTransparency: v })}
-        />
-        <Switch
-          label={t('settings.appearance.increaseContrast')}
-          description={t('settings.appearance.increaseContrastHint')}
-          checked={prefs.contrast === 'more'}
-          onCheckedChange={(v) => update({ contrast: v ? 'more' : 'normal' })}
-        />
+        <div data-settings-anchor="appearance-transparency">
+          <Switch
+            label={t('settings.appearance.reduceTransparency')}
+            description={t('settings.appearance.reduceTransparencyHint')}
+            checked={prefs.reduceTransparency}
+            onCheckedChange={(v) => update({ reduceTransparency: v })}
+          />
+        </div>
+        <div data-settings-anchor="appearance-contrast">
+          <Switch
+            label={t('settings.appearance.increaseContrast')}
+            description={t('settings.appearance.increaseContrastHint')}
+            checked={prefs.contrast === 'more'}
+            onCheckedChange={(v) => update({ contrast: v ? 'more' : 'normal' })}
+          />
+        </div>
       </div>
     </SettingsSection>
   );

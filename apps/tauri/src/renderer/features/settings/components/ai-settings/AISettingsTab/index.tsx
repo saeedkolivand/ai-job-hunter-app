@@ -123,10 +123,14 @@ export function AISettingsTab() {
       </GlassCard>
 
       {/* Embeddings — provider/model for matching & search, with re-indexing */}
-      <EmbeddingsSettings />
+      <div data-settings-anchor="ai-embeddings">
+        <EmbeddingsSettings />
+      </div>
 
       {/* Company research — provider-native web search (Ollama needs the free key) */}
-      <CompanyResearchSettings />
+      <div data-settings-anchor="ai-company-research">
+        <CompanyResearchSettings />
+      </div>
     </motion.div>
   );
 }

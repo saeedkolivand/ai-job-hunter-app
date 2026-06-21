@@ -320,3 +320,71 @@ describe('header Retry visibility', () => {
     expect(retry.hidden).toBe(true);
   });
 });
+
+describe('offline-sticky — searching after app_not_running must not hide offline view', () => {
+  // Reuse the same onMessage listener registered during module load.
+  const statusListener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
+    | ((message: unknown) => void)
+    | undefined;
+  if (!statusListener) throw new Error('onMessage status listener not registered');
+  const push = (phase: ConnectionStatus['phase']) =>
+    statusListener({ ok: true, kind: 'status', status: { phase, port: null, hasToken: false } });
+
+  beforeEach(() => {
+    // Reset the sticky flag by pushing a settled phase so each test starts clean.
+    push('connected');
+  });
+
+  it('keeps #view-offline visible and retains the Retry button when searching follows app_not_running', () => {
+    expect(statusListener).toBeTypeOf('function');
+
+    const offlineView = byId<HTMLElement>('view-offline');
+    const searchingView = byId<HTMLElement>('view-searching');
+    const pill = byId<HTMLSpanElement>('status-pill');
+    const retry = byId<HTMLButtonElement>('btn-retry');
+
+    // Step 1: offline view shown.
+    push('app_not_running');
+    expect(offlineView.hidden).toBe(false);
+    expect(searchingView.hidden).toBe(true);
+
+    // Step 2: background reconnect attempt fires a transient `searching`.
+    // The offline guidance must NOT disappear.
+    push('searching');
+    expect(offlineView.hidden).toBe(false);
+    expect(searchingView.hidden).toBe(true);
+    // Pill reflects the reconnect attempt.
+    expect(pill.textContent).toBe('○ Connecting…');
+    // Retry button stays available.
+    expect(retry.hidden).toBe(false);
+  });
+
+  it('switches to the import view when connected arrives after an offline+searching cycle', () => {
+    expect(statusListener).toBeTypeOf('function');
+
+    const offlineView = byId<HTMLElement>('view-offline');
+    const importView = byId<HTMLElement>('view-import');
+
+    // Simulate the full cycle: offline → searching reconnect → actually connected.
+    push('app_not_running');
+    push('searching');
+    expect(offlineView.hidden).toBe(false);
+
+    push('connected');
+    expect(importView.hidden).toBe(false);
+    expect(offlineView.hidden).toBe(true);
+  });
+
+  it('does not suppress the first searching spinner before offline has been shown', () => {
+    expect(statusListener).toBeTypeOf('function');
+
+    // After beforeEach pushed `connected`, hasShownOffline is false.
+    // A searching push (first popup open, bridge connecting) should show the spinner.
+    const searchingView = byId<HTMLElement>('view-searching');
+    const offlineView = byId<HTMLElement>('view-offline');
+
+    push('searching');
+    expect(searchingView.hidden).toBe(false);
+    expect(offlineView.hidden).toBe(true);
+  });
+});

@@ -194,16 +194,21 @@ export function PrivacySettingsTab() {
 
   return (
     <div className="space-y-3">
-      <SettingsSection icon={Shield} label={t('settings.privacy.dataTitle')}>
-        <div className="space-y-3">
-          {cards.map(({ key, ...card }) => (
-            <ActionCard key={key} {...card} />
-          ))}
-        </div>
-      </SettingsSection>
+      <div data-settings-anchor="privacy-data">
+        <SettingsSection icon={Shield} label={t('settings.privacy.dataTitle')}>
+          <div className="space-y-3">
+            {cards.map(({ key, ...card }) => (
+              <ActionCard key={key} {...card} />
+            ))}
+          </div>
+        </SettingsSection>
+      </div>
 
       {/* ── Danger Zone ─────────────────────────────────────────────── */}
-      <div className="mt-2 rounded-xl border border-red-500/30 bg-red-500/[0.08] p-3">
+      <div
+        data-settings-anchor="privacy-reset"
+        className="mt-2 rounded-xl border border-red-500/30 bg-red-500/[0.08] p-3"
+      >
         <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-rose-500/80">
           <RotateCcw size={10} />
           {t('settings.privacy.dangerZone')}

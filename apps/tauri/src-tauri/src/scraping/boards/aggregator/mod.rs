@@ -25,6 +25,53 @@ use crate::scraping::types::{
     AuthRequirement, BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode,
 };
 
+// ── Serde helpers ─────────────────────────────────────────────────────────────
+
+/// Accept either a JSON string or a JSON integer for the Adzuna `id` field,
+/// normalizing both to `String`.  Adzuna documents the field as a string but
+/// the live API returns it as an integer (e.g. `331705081`).
+fn de_string_or_number<'de, D>(de: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrNumber {
+        Str(String),
+        Num(i64),
+    }
+
+    match StringOrNumber::deserialize(de)? {
+        StringOrNumber::Str(s) => Ok(s),
+        StringOrNumber::Num(n) => Ok(n.to_string()),
+    }
+}
+
+// ── Date-filter helpers ────────────────────────────────────────────────────────
+
+/// Map a UI date-filter token to Adzuna's `max_days_old` integer (whole days).
+///
+// ponytail: Adzuna's recency granularity is whole days, so all sub-day options
+// collapse to 1 day (API ceiling). No filter / unrecognized token caps at 30 days
+// so the aggregator never surfaces postings older than a month.
+fn adzuna_max_days_old(date_filter: Option<&str>) -> u32 {
+    match date_filter {
+        Some("30m" | "1h" | "2h" | "4h" | "8h" | "24h") => 1,
+        Some("week") => 7,
+        _ => 30,
+    }
+}
+
+/// Map a UI date-filter token to JSearch's `date_posted` query token. No filter /
+/// unrecognized token caps at `month` (results no older than the past month).
+fn jsearch_date_posted(date_filter: Option<&str>) -> &'static str {
+    match date_filter {
+        Some("30m" | "1h" | "2h" | "4h" | "8h" | "24h") => "today",
+        Some("week") => "week",
+        _ => "month",
+    }
+}
+
 // ── Provider trait ────────────────────────────────────────────────────────────
 
 /// A single search-API backend.  Object-safe so the scraper can hold a
@@ -40,6 +87,7 @@ pub(crate) trait JobProvider: Send + Sync {
         query: &str,
         location: &str,
         country: &str,
+        date_filter: Option<&str>,
         signal: tokio_util::sync::CancellationToken,
     ) -> anyhow::Result<Vec<JobPosting>>;
 }
@@ -58,6 +106,7 @@ struct AdzunaLocation {
 
 #[derive(Debug, Deserialize)]
 struct AdzunaJob {
+    #[serde(deserialize_with = "de_string_or_number")]
     id: String,
     title: String,
     company: Option<AdzunaCompany>,
@@ -109,6 +158,7 @@ impl JobProvider for AdzunaProvider {
         query: &str,
         location: &str,
         country: &str,
+        date_filter: Option<&str>,
         signal: tokio_util::sync::CancellationToken,
     ) -> anyhow::Result<Vec<JobPosting>> {
         if !self.is_configured() {
@@ -125,11 +175,19 @@ impl JobProvider for AdzunaProvider {
         let q_enc = urlencoding::encode(query);
         let loc_enc = urlencoding::encode(location);
 
-        let url = format!(
+        let mut url = format!(
             "https://api.adzuna.com/v1/api/jobs/{}/search/1\
              ?app_id={}&app_key={}&what={}&where={}&results_per_page=50&content-type=application/json",
             country_enc, app_id_enc, app_key_enc, q_enc, loc_enc
         );
+
+        // Sort newest-first (Adzuna defaults to relevance, which floats stale
+        // postings up) and always bound the window with max_days_old so nothing
+        // older than the cap (30 days, or the user's tighter pick) is returned.
+        url.push_str(&format!(
+            "&sort_by=date&sort_direction=down&max_days_old={}",
+            adzuna_max_days_old(date_filter)
+        ));
 
         let result = fetch_json::<AdzunaResp>(&url, FetchOptions::default(), signal).await?;
         let resp = match result {
@@ -228,6 +286,7 @@ impl JobProvider for JSearchProvider {
         query: &str,
         location: &str,
         _country: &str,
+        date_filter: Option<&str>,
         signal: tokio_util::sync::CancellationToken,
     ) -> anyhow::Result<Vec<JobPosting>> {
         if !self.is_configured() {
@@ -243,10 +302,15 @@ impl JobProvider for JSearchProvider {
             format!("{query} in {location}")
         };
         let q_enc = urlencoding::encode(&combined);
-        let url = format!(
+        let mut url = format!(
             "https://jsearch.p.rapidapi.com/search?query={}&page=1&num_pages=1",
             q_enc
         );
+
+        url.push_str(&format!(
+            "&date_posted={}",
+            jsearch_date_posted(date_filter)
+        ));
 
         let result = fetch_json::<JSearchResp>(
             &url,
@@ -331,6 +395,7 @@ async fn search_with_providers(
     query: &str,
     location: &str,
     country: &str,
+    date_filter: Option<&str>,
     signal: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<Vec<JobPosting>> {
     if signal.is_cancelled() {
@@ -344,7 +409,10 @@ async fn search_with_providers(
     // Run primary if configured.
     if let Some(p) = primary {
         if p.is_configured() {
-            match p.search(query, location, country, signal.clone()).await {
+            match p
+                .search(query, location, country, date_filter, signal.clone())
+                .await
+            {
                 Ok(items) => {
                     // Even empty → use result as-is; do NOT fall through to JSearch.
                     return Ok(dedupe(items));
@@ -365,7 +433,10 @@ async fn search_with_providers(
     // Try fallback.
     if let Some(f) = fallback {
         if f.is_configured() {
-            return f.search(query, location, country, signal).await.map(dedupe);
+            return f
+                .search(query, location, country, date_filter, signal)
+                .await
+                .map(dedupe);
         }
     }
 
@@ -431,9 +502,15 @@ impl Scraper for AggregatorScraper {
             Box::new(AdzunaProvider::new()),
             Box::new(JSearchProvider::new()),
         ];
-        let items =
-            search_with_providers(&providers, query, location, &country, ctx.signal.clone())
-                .await?;
+        let items = search_with_providers(
+            &providers,
+            query,
+            location,
+            &country,
+            input.date_filter.as_deref(),
+            ctx.signal.clone(),
+        )
+        .await?;
 
         let amount = input.amount as usize;
         let mut out = Vec::new();

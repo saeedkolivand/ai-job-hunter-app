@@ -108,6 +108,9 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
       board: posting.source,
       company: posting.company,
       title: posting.title,
+      // Carry the scraped description so tailoring has the ad text even when the
+      // posting URL (e.g. an aggregator redirect) can't be re-resolved.
+      jobDescription: posting.description,
     });
     if (!res?.id) {
       notify.error({ message: t('jobs.tailorError') });
@@ -140,6 +143,9 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
       board: posting.source,
       company: posting.company,
       title: posting.title,
+      // Carry the scraped description so tailoring has the ad text even when the
+      // posting URL (e.g. an aggregator redirect) can't be re-resolved.
+      jobDescription: posting.description,
     });
     notify.success({ message: t('applications.savedToTracking') });
   };

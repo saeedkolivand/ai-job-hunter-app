@@ -413,6 +413,14 @@
     }
   },
   "settings": {
+    "search": {
+      "placeholder": "Search settings… ⌘F",
+      "noResults": "No settings found for \"{{query}}\"",
+      "resultsLabel": "Settings search results",
+      "resultCount": "{{count}} results",
+      "noResultsAria": "No results for «{{query}}»",
+      "ariaLabel": "Search settings"
+    },
     "groups": {
       "preferences": "Preferences",
       "system": "System",
@@ -784,6 +792,9 @@
         "suggested": "Suggested",
         "mayLagRam": "A large context window may lag on your available RAM",
         "mayLagVram": "A large context window may lag on your available VRAM"
+      },
+      "embeddings": {
+        "title": "Embeddings"
       }
     },
     "outputTone": {

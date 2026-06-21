@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ApplicationTrackSchema,
   ApplicationUpdateSchema,
   AutopilotTargetSchema,
   AutopilotUpdateSchema,
@@ -202,6 +203,51 @@ describe('ApplicationUpdateSchema — jobDescription byte-level refine', () => {
     expect(() =>
       ApplicationUpdateSchema.parse({ id: 'app1', jobDescription: justUnder })
     ).not.toThrow();
+  });
+});
+
+describe('ApplicationTrackSchema — jobDescription carried from a posting', () => {
+  it('accepts a track request carrying a jobDescription', () => {
+    expect(() =>
+      ApplicationTrackSchema.parse({
+        jobUrl: 'https://example.com/job/1',
+        board: 'aggregator',
+        company: 'Acme',
+        title: 'Engineer',
+        jobDescription: 'Build things.',
+      })
+    ).not.toThrow();
+  });
+
+  it('accepts jobDescription absent (field is optional)', () => {
+    expect(() =>
+      ApplicationTrackSchema.parse({ jobUrl: 'https://example.com/job/1' })
+    ).not.toThrow();
+  });
+
+  it('rejects a jobDescription that exceeds 200 000 bytes', () => {
+    const overLimit = 'a'.repeat(200_001);
+    expect(() => ApplicationTrackSchema.parse({ jobDescription: overLimit })).toThrow(
+      /200000 bytes/
+    );
+  });
+
+  it('enforces a BYTE ceiling, not a character ceiling (multi-byte UTF-8)', () => {
+    // '€' encodes as 3 bytes in UTF-8. 66 667 '€' chars = 200 001 bytes but
+    // only 66 667 chars — under the naive char limit but over the byte limit.
+    const euroCount = 66_667;
+    const overLimitByBytes = '€'.repeat(euroCount);
+    expect(new TextEncoder().encode(overLimitByBytes).length).toBeGreaterThan(200_000);
+    expect(() => ApplicationTrackSchema.parse({ jobDescription: overLimitByBytes })).toThrow(
+      /200000 bytes/
+    );
+  });
+
+  it('accepts a multi-byte string that stays under 200 000 bytes', () => {
+    // 66 666 '€' = 199 998 bytes — just under the ceiling.
+    const justUnder = '€'.repeat(66_666);
+    expect(new TextEncoder().encode(justUnder).length).toBeLessThanOrEqual(200_000);
+    expect(() => ApplicationTrackSchema.parse({ jobDescription: justUnder })).not.toThrow();
   });
 });
 

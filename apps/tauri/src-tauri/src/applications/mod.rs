@@ -148,7 +148,10 @@ pub struct ApplicationMeta {
 /// this store write is the real trust boundary (the extension import path persists
 /// attacker-influenced page HTML, which never passes through the Zod schema).
 // ponytail: matches the renderer Zod cap; client validation is UX-only — the Rust store is the real boundary.
-const MAX_JOB_DESCRIPTION_BYTES: usize = 200_000;
+// `pub(crate)` so the IPC command layer (`commands::applications`) can reject an
+// oversized description up-front against the SAME cap the store clamps to, instead
+// of hardcoding a second literal.
+pub(crate) const MAX_JOB_DESCRIPTION_BYTES: usize = 200_000;
 
 /// Clamp a job description to at most `MAX_JOB_DESCRIPTION_BYTES` bytes, cutting on
 /// a UTF-8 char boundary so the stored text is always valid UTF-8. Truncate (never

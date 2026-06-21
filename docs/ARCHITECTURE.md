@@ -81,26 +81,27 @@ The Tauri app is split into two processes:
 
 **Rust core (`src-tauri/`)** — thin orchestration layer:
 
-| Module               | Responsibility                                                                                                                                              |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `commands/`          | IPC endpoint handlers; routes invocations to the appropriate runtime                                                                                        |
-| `platform::config`   | **Sole owner** of env vars + data-dir / filesystem path resolution                                                                                          |
-| `net::http`          | **Sole owner** of `reqwest::Client` construction — one pooled rustls client; per-request timeouts                                                           |
-| `error` (`AppError`) | Unified typed error hierarchy (`AppResult`); serializes to its message string                                                                               |
-| `observability`      | Shared timed trace `Span`s (`→`/`←` + duration) for AI, scraping, autopilot                                                                                 |
-| `scraping/`          | Board scrapers (chromiumoxide for browser boards, HTTP for API boards) via a single `SCRAPERS` registry + `Scraper` trait                                   |
-| `documents/`         | Document import, OCR dispatch, [SQLite][sqlite] storage                                                                                                     |
-| `jobs/`              | Job tracker state machine (queued → running → done/failed)                                                                                                  |
-| `credentials/`       | OS keychain — AI provider keys (`ai:*`) + `credentials_available` encryption-check; board login uses the separate `boards.*`/`linkedin.*` session-auth path |
-| `autopilot/`         | Job-discovery agent + step scheduler (finds → ranks → notifies; the user tailors & applies); `run_status` + crash reconciliation                            |
-| `tray/`              | System-tray module — dynamic "New jobs: N" + "Pause all autopilots" (L3 entrypoint)                                                                         |
-| `deeplink/`          | Deep-link guard — `ajh://autopilot/<id>` validated against strict allowlist; OS scheme registered via `tauri-plugin-deep-link`                              |
-| `ai_generations/`    | Metadata tracking for generated documents                                                                                                                   |
-| `export/`            | DOCX/PDF rendering — PDF via Typst (`export/typst_engine/`), DOCX via docx-rs (`export/docx/`)                                                              |
-| `updater/`           | Auto-update state (check, download, install)                                                                                                                |
-| `browser/`           | System browser detection and launch                                                                                                                         |
-| `data_store.rs`      | `DataStore` trait (export/import) implemented by every persistent store                                                                                     |
-| `commands/data.rs`   | Full backup/restore — one versioned bundle across all stores                                                                                                |
+| Module               | Responsibility                                                                                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `commands/`          | IPC endpoint handlers; routes invocations to the appropriate runtime                                                                                         |
+| `platform::config`   | **Sole owner** of env vars + data-dir / filesystem path resolution                                                                                           |
+| `net::http`          | **Sole owner** of `reqwest::Client` construction — one pooled rustls client; per-request timeouts                                                            |
+| `error` (`AppError`) | Unified typed error hierarchy (`AppResult`); serializes to its message string                                                                                |
+| `observability`      | Shared timed trace `Span`s (`→`/`←` + duration) for AI, scraping, autopilot                                                                                  |
+| `scraping/`          | Board scrapers (chromiumoxide for browser boards, HTTP for API boards) via a single `SCRAPERS` registry + `Scraper` trait                                    |
+| `documents/`         | Document import, OCR dispatch, [SQLite][sqlite] storage                                                                                                      |
+| `jobs/`              | Job tracker state machine (queued → running → done/failed)                                                                                                   |
+| `credentials/`       | OS keychain — AI provider keys (`ai:*`) + `credentials_available` encryption-check; board login uses the separate `boards.*`/`linkedin.*` session-auth path  |
+| `autopilot/`         | Job-discovery agent + step scheduler (finds → ranks → notifies; the user tailors & applies); `run_status` + crash reconciliation                             |
+| `tray/`              | System-tray module — dynamic "New jobs: N" + "Pause all autopilots" (L3 entrypoint)                                                                          |
+| `deeplink/`          | Deep-link guard — `ajh://autopilot/<id>` validated against strict allowlist; OS scheme registered via `tauri-plugin-deep-link`                               |
+| `splash/`            | Native theme-aware cold-start splash window; reads theme from mirror file (renderer-written) or OS; guards reveal via `RevealGuard` (`app_ready` or timeout) |
+| `ai_generations/`    | Metadata tracking for generated documents                                                                                                                    |
+| `export/`            | DOCX/PDF rendering — PDF via Typst (`export/typst_engine/`), DOCX via docx-rs (`export/docx/`)                                                               |
+| `updater/`           | Auto-update state (check, download, install)                                                                                                                 |
+| `browser/`           | System browser detection and launch                                                                                                                          |
+| `data_store.rs`      | `DataStore` trait (export/import) implemented by every persistent store                                                                                      |
+| `commands/data.rs`   | Full backup/restore — one versioned bundle across all stores                                                                                                 |
 
 **[React][react] renderer (`src/renderer/`)** — feature-scoped UI:
 

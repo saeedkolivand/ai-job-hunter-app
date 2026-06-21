@@ -29,7 +29,8 @@
  */
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
 
@@ -50,8 +51,16 @@ vi.mock('@tanstack/react-router', () => ({
 
 // ── preferences-store — onboarding off so NotificationBell is not mounted ─────
 
+// Mutable container so individual describe blocks can override collapsed state.
+const prefsState = {
+  sidebarCollapsed: false,
+};
+const mockToggleSidebar = vi.fn();
+
 vi.mock('@/store/preferences-store', () => ({
   useOnboardingCompleted: () => false,
+  useSidebarCollapsed: () => prefsState.sidebarCollapsed,
+  useToggleSidebar: () => mockToggleSidebar,
 }));
 
 // ── window-controls-registry — no-op so useEffect doesn't fail in jsdom ──────
@@ -114,6 +123,8 @@ function mouseInit(overrides: Partial<MouseEventInit> = {}): MouseEventInit {
 beforeEach(() => {
   mockToggleMaximize.mockReset();
   mockToggleMaximize.mockResolvedValue(undefined);
+  mockToggleSidebar.mockReset();
+  prefsState.sidebarCollapsed = false;
 });
 
 // ── Branch 1: left double-click mousedown on bare drag region ─────────────────
@@ -207,5 +218,31 @@ describe('Titlebar — handleTitlebarDoubleClick', () => {
     expect(mockToggleMaximize).not.toHaveBeenCalled();
     expect(preventSpy).not.toHaveBeenCalled();
     expect(stopSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ── Collapsed sidebar — expand button ─────────────────────────────────────────
+
+describe('Titlebar — collapsed sidebar', () => {
+  it('renders the expand-sidebar button (aria-label=nav.expandSidebar) when sidebar is collapsed', () => {
+    prefsState.sidebarCollapsed = true;
+    renderTitlebar();
+    expect(screen.getByRole('button', { name: 'nav.expandSidebar' })).toBeInTheDocument();
+  });
+
+  it('does NOT render the expand-sidebar button when sidebar is expanded', () => {
+    prefsState.sidebarCollapsed = false;
+    renderTitlebar();
+    expect(screen.queryByRole('button', { name: 'nav.expandSidebar' })).not.toBeInTheDocument();
+  });
+
+  it('clicking the expand-sidebar button calls the useToggleSidebar spy', async () => {
+    prefsState.sidebarCollapsed = true;
+    const user = userEvent.setup();
+    renderTitlebar();
+
+    await user.click(screen.getByRole('button', { name: 'nav.expandSidebar' }));
+
+    expect(mockToggleSidebar).toHaveBeenCalledOnce();
   });
 });

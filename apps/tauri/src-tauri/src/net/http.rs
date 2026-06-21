@@ -145,6 +145,60 @@ pub async fn get_guarded(url: &str) -> crate::error::AppResult<reqwest::Response
     client.get(u).send().await.map_err(AppError::from)
 }
 
+/// Like [`get_guarded`] but manually follows up to `max_hops` redirects (so at
+/// most `max_hops + 1` total requests: the initial fetch plus one per hop),
+/// **re-validating every hop** through [`get_guarded`] — so each redirect target
+/// is IP-validated + pinned and an attacker can't bounce us onto a private /
+/// loopback / metadata address via a `Location` header (the exact hole
+/// [`build_guarded_client`] disables reqwest's own redirect following to avoid).
+/// This matches reqwest's own `Policy::limited(n)` semantics (`n` = redirects
+/// followed, not total requests). Relative `Location` values resolve against the
+/// current URL. Returns the first non-redirect response, or — if the hop budget
+/// is exhausted while still redirecting, or a `Location` can't be safely followed
+/// — the last 3xx (which callers treat as non-2xx → "no match").
+///
+/// Used by the generic-HTML resolver so an aggregator `redirect_url` (an Adzuna
+/// 30x that bounces to the real posting) reaches the destination ad instead of
+/// dying on the first non-2xx hop.
+pub async fn get_guarded_following_redirects(
+    url: &str,
+    max_hops: u8,
+) -> crate::error::AppResult<reqwest::Response> {
+    let mut current = url.to_string();
+    // `max_hops` redirects followed → at most `max_hops + 1` fetches: the initial
+    // one below, plus one per loop iteration.
+    let mut res = get_guarded(&current).await?;
+    for _ in 0..max_hops {
+        if !res.status().is_redirection() {
+            return Ok(res);
+        }
+        let location = match res.headers().get(reqwest::header::LOCATION) {
+            // non-UTF-8 / absent Location → nothing safe to follow; return the 3xx
+            // (caller treats non-2xx as "no match").
+            Some(v) => match v.to_str() {
+                Ok(s) => s.to_string(),
+                Err(_) => return Ok(res),
+            },
+            None => return Ok(res),
+        };
+        // Resolve a possibly-relative Location against the current URL. An
+        // unparseable/un-joinable Location is also "can't follow safely" → return
+        // the 3xx, symmetric with the non-UTF-8 / absent cases above. The next
+        // get_guarded re-validates this URL, so no IP check is skipped.
+        let next = match reqwest::Url::parse(&current)
+            .ok()
+            .and_then(|base| base.join(&location).ok())
+        {
+            Some(u) => u.to_string(),
+            None => return Ok(res),
+        };
+        current = next;
+        res = get_guarded(&current).await?;
+    }
+    // Hop budget exhausted: return the last response (a 3xx here → "no match").
+    Ok(res)
+}
+
 /// Validate the set of addresses a hostname resolved to. This is the security
 /// core of the hostname branch of [`get_guarded`] — the check that actually
 /// closes the DNS-rebinding TOCTOU. Rejects the whole set (with
@@ -283,5 +337,15 @@ mod tests {
             validate_resolved_addrs(&addrs).is_ok(),
             "an all-public resolved set must pass"
         );
+    }
+
+    // The redirect-follower must apply get_guarded's IP validation on the FIRST
+    // hop too — an unsafe literal is rejected before any redirect could be followed.
+    #[tokio::test]
+    async fn following_redirects_rejects_unsafe_first_hop() {
+        let err = get_guarded_following_redirects("http://127.0.0.1/", 5)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
     }
 }

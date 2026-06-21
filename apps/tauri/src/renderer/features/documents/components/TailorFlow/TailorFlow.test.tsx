@@ -60,8 +60,20 @@ vi.mock('@/components/ui/ModelSelector', () => ({
 
 // ── Service hooks — no real IPC / QueryClient needed ─────────────────────────
 
+// Mutable container so individual tests can override the resolved description
+// and the second arg (shouldFetch) can be captured and asserted.
+const resolveJobUrlState = {
+  data: undefined as { description: string } | undefined,
+  isLoading: false,
+};
+// Tracks the last `shouldFetch` arg received by useResolveJobUrl.
+let lastResolveJobUrlShouldFetch: boolean | undefined = undefined;
+
 vi.mock('@/services', () => ({
-  useResolveJobUrl: () => ({ data: undefined, isLoading: false }),
+  useResolveJobUrl: (_url: string, shouldFetch: boolean) => {
+    lastResolveJobUrlShouldFetch = shouldFetch;
+    return { data: resolveJobUrlState.data, isLoading: resolveJobUrlState.isLoading };
+  },
   useExtractText: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
@@ -163,12 +175,14 @@ vi.mock('./TailorWizard', () => ({
     step,
     setStep,
     onGenerate,
+    jobDesc,
   }: {
     step: number;
     setStep: (n: number) => void;
     onGenerate: (v: { resume: string; outputType: 'resume'; researchCompany: boolean }) => void;
+    jobDesc?: string;
   }) => (
-    <div data-testid="tailor-wizard" data-step={step}>
+    <div data-testid="tailor-wizard" data-step={step} data-jobdesc={jobDesc}>
       <div role="button" tabIndex={0} data-testid="wizard-next" onClick={() => setStep(step + 1)}>
         next-step
       </div>
@@ -324,11 +338,13 @@ function renderFlow(opts: {
   persistence?: TailorFlowPersistence;
   onController?: (c: TailorFlowController) => void;
   seedGeneration?: AiGenerationRecord;
+  job?: AutopilotFoundJob;
 }) {
   const persistence = opts.persistence ?? makePersistence();
+  const job = opts.job ?? JOB;
   return render(
     <TailorFlow
-      job={JOB}
+      job={job}
       resumeText="My resume"
       board="linkedin"
       contextId="autopilot:https://acme.com/jobs/1"
@@ -354,6 +370,10 @@ beforeEach(() => {
   jobAdSummaryMock.setLanguage.mockClear();
   answersMock.selected = new Set<string>();
   answersMock.generate.mockClear();
+  // Reset useResolveJobUrl state.
+  resolveJobUrlState.data = undefined;
+  resolveJobUrlState.isLoading = false;
+  lastResolveJobUrlShouldFetch = undefined;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -706,5 +726,55 @@ describe('TailorFlow — cold-entry hydration', () => {
       seedGeneration: { ...SAVED_GENERATION, resumeText: '', coverLetterText: '' },
     });
     expect(genMock.hydrate).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. prefer-longer / skip-refetch branch (SHORT_DESC_FLOOR = 800)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// A string of exactly `n` 'x' characters — avoids import of a pad utility.
+const repeat = (n: number) => 'x'.repeat(n);
+
+describe('TailorFlow — prefer-longer / useResolveJobUrl branch', () => {
+  it('(a) short initialDesc + longer fetchedDesc → fetchedDesc wins (forwarded to TailorWizard)', () => {
+    // initialDesc is 10 chars (< 800): re-resolve is triggered.
+    // fetchedDesc is 900 chars: longer than initialDesc → must win.
+    const shortDesc = repeat(10);
+    const longFetched = repeat(900);
+    resolveJobUrlState.data = { description: longFetched };
+
+    renderFlow({
+      job: { ...JOB, description: shortDesc },
+    });
+
+    // jobDesc flowed into TailorWizard as the jobDesc prop → exposed as data-jobdesc.
+    expect(screen.getByTestId('tailor-wizard')).toHaveAttribute('data-jobdesc', longFetched);
+  });
+
+  it('(b) long initialDesc (≥800) → useResolveJobUrl called with shouldFetch=false', () => {
+    // initialDesc is 800 chars: at the floor, re-resolve is skipped.
+    const longDesc = repeat(800);
+
+    renderFlow({
+      job: { ...JOB, description: longDesc },
+    });
+
+    // The 2nd arg to useResolveJobUrl must be false when initialDesc.length >= SHORT_DESC_FLOOR.
+    expect(lastResolveJobUrlShouldFetch).toBe(false);
+  });
+
+  it('(c) equal-length fetchedDesc and initialDesc → initialDesc (carried) wins', () => {
+    // Both are 50 chars: fetchedDesc.length > initialDesc.length is false → initialDesc wins.
+    const carried = repeat(50);
+    const fetched = repeat(50);
+    resolveJobUrlState.data = { description: fetched };
+
+    renderFlow({
+      job: { ...JOB, description: carried },
+    });
+
+    // jobDesc must equal the carried initialDesc, not the fetched one.
+    expect(screen.getByTestId('tailor-wizard')).toHaveAttribute('data-jobdesc', carried);
   });
 });

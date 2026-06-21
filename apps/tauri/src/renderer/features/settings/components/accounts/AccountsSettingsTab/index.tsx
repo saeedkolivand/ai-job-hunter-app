@@ -21,15 +21,19 @@ export function AccountsSettingsTab() {
         <Alert type="error" showIcon message={t('settings.accounts.noEncryptionWarning')} />
       )}
 
-      <SettingsSection icon={Lock} label={t('settings.accounts.boardsTitle')}>
-        <div className="space-y-3">
-          {AUTH_BOARDS.map((board) => (
-            <BoardSessionRow key={board.id} board={board} />
-          ))}
-        </div>
-      </SettingsSection>
+      <div data-settings-anchor="accounts-boards">
+        <SettingsSection icon={Lock} label={t('settings.accounts.boardsTitle')}>
+          <div className="space-y-3">
+            {AUTH_BOARDS.map((board) => (
+              <BoardSessionRow key={board.id} board={board} />
+            ))}
+          </div>
+        </SettingsSection>
+      </div>
 
-      <ExtensionBridgeSection />
+      <div data-settings-anchor="accounts-extension">
+        <ExtensionBridgeSection />
+      </div>
     </div>
   );
 }

@@ -293,6 +293,15 @@ export const ApplicationTrackSchema = z.object({
   company: z.string().optional(),
   title: z.string().optional(),
   candidate: z.string().optional(),
+  // Job description captured at save time (e.g. an aggregator posting whose URL is
+  // a redirect that can't be re-resolved). Carried so tailoring has the ad text
+  // without a second fetch. Same byte-bound refine as ApplicationUpdateSchema.
+  jobDescription: z
+    .string()
+    .refine((v) => new TextEncoder().encode(v).length <= 200_000, {
+      message: 'jobDescription must be at most 200000 bytes',
+    })
+    .optional(),
 });
 export type ApplicationTrackRequest = z.infer<typeof ApplicationTrackSchema>;
 
