@@ -5,12 +5,12 @@ import { useAiProviderConfig } from '@/store/preferences-store';
 
 import { keys } from '../query-client';
 
-export const useHasProviderKey = (provider: string) => {
+export const useHasProviderKey = (provider: string, enabled = true) => {
   const api = useAppClient();
   return useQuery({
     queryKey: [...keys.ai.models, 'provider-key', provider],
     queryFn: () => api.ai.hasProviderKey({ provider }),
-    enabled: provider !== 'ollama',
+    enabled: enabled && provider !== 'ollama',
     staleTime: 30_000,
   });
 };

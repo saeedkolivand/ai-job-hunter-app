@@ -1,4 +1,4 @@
-import { Loader2, Search, X } from 'lucide-react';
+import { Info, Loader2, Search, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -9,6 +9,7 @@ import { Button, CardSkeleton, cn, GlassCard, Input, transition } from '@ajh/ui'
 
 import { AUTH_BENEFITS } from '@/features/jobs/constants';
 import { makeMultiSelectKeyHandler } from '@/hooks/use-roving-tabindex';
+import { useHasProviderKey } from '@/services/use-ai-provider';
 import { useBoardsCatalog, useBoardStatuses } from '@/services/use-boards';
 
 import { BoardConnectChip } from './BoardConnectChip';
@@ -108,6 +109,14 @@ export function ScrapeForm({
       (requiredResults[i]?.data as { connected?: boolean } | undefined)?.connected !== true
   );
   const blockedByRequiredLogin = unconnectedRequired.length > 0;
+
+  // Aggregator key hint — shown when the aggregator board is selected but the
+  // Adzuna keys aren't configured. Derived from service hooks; no hardcoded values
+  // beyond the board's stable catalog id ('aggregator').
+  const aggregatorSelected = selectedSet.has('aggregator');
+  const { data: adzunaIdData } = useHasProviderKey('adzuna-app-id', aggregatorSelected);
+  const { data: adzunaKeyData } = useHasProviderKey('adzuna-app-key', aggregatorSelected);
+  const showAggregatorKeyHint = aggregatorSelected && !(adzunaIdData?.has && adzunaKeyData?.has);
 
   const handleSelectAll = () => {
     onFormChange({ boards: listedBoards.map((e) => e.id) });
@@ -293,6 +302,17 @@ export function ScrapeForm({
                   <BoardConnectChip key={e.id} board={e.id} required={e.auth === 'required'} />
                 ))}
               </div>
+            )}
+
+            {/* Aggregator key hint — shown when aggregator selected but Adzuna keys absent */}
+            {showAggregatorKeyHint && (
+              <p
+                data-testid="aggregator-key-hint"
+                className="mb-3 flex items-center gap-1.5 text-[11px] text-amber-400/70"
+              >
+                <Info size={11} aria-hidden="true" />
+                {t('jobs.aggregatorKeyHint')}
+              </p>
             )}
 
             {/* Companies input — only shown when an ATS board (requiresCompany) is selected */}
