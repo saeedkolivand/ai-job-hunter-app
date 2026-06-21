@@ -231,6 +231,24 @@ describe('ApplicationTrackSchema — jobDescription carried from a posting', () 
       /200000 bytes/
     );
   });
+
+  it('enforces a BYTE ceiling, not a character ceiling (multi-byte UTF-8)', () => {
+    // '€' encodes as 3 bytes in UTF-8. 66 667 '€' chars = 200 001 bytes but
+    // only 66 667 chars — under the naive char limit but over the byte limit.
+    const euroCount = 66_667;
+    const overLimitByBytes = '€'.repeat(euroCount);
+    expect(new TextEncoder().encode(overLimitByBytes).length).toBeGreaterThan(200_000);
+    expect(() => ApplicationTrackSchema.parse({ jobDescription: overLimitByBytes })).toThrow(
+      /200000 bytes/
+    );
+  });
+
+  it('accepts a multi-byte string that stays under 200 000 bytes', () => {
+    // 66 666 '€' = 199 998 bytes — just under the ceiling.
+    const justUnder = '€'.repeat(66_666);
+    expect(new TextEncoder().encode(justUnder).length).toBeLessThanOrEqual(200_000);
+    expect(() => ApplicationTrackSchema.parse({ jobDescription: justUnder })).not.toThrow();
+  });
 });
 
 describe('MatchResumeBatchRequestSchema — jobIds boundary', () => {

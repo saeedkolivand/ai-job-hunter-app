@@ -29,7 +29,11 @@ export function matchEntries(
   return SEARCH_INDEX.flatMap((entry) => {
     const title = t(entry.titleKey);
     const sectionLabel = t(sectionLabelKeys[entry.section] ?? '');
-    const haystack = [title.toLowerCase(), sectionLabel.toLowerCase(), ...entry.keywords].join(' ');
+    const haystack = [
+      title.toLowerCase(),
+      sectionLabel.toLowerCase(),
+      ...entry.keywords.map((k) => k.toLowerCase()),
+    ].join(' ');
     return haystack.includes(q) ? [{ ...entry, title, sectionLabel }] : [];
   });
 }

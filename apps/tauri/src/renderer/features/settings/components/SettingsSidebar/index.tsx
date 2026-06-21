@@ -125,7 +125,7 @@ export function SettingsSidebar({
           placeholder={t('settings.search.placeholder')}
           aria-label={t('settings.search.ariaLabel')}
           aria-expanded={isSearching && results.length > 0}
-          aria-controls={isSearching ? listboxId : undefined}
+          aria-controls={isSearching && results.length > 0 ? listboxId : undefined}
           aria-activedescendant={highlightedId}
           aria-autocomplete="list"
           role="combobox"

@@ -125,7 +125,7 @@ describe('useSyncThemeMirror', () => {
     renderHookWithClient(() => useSyncThemeMirror(), { client });
 
     await waitFor(() =>
-      expect(setThemeMirror).toHaveBeenCalledWith(expect.stringMatching(/^light|dark$/))
+      expect(setThemeMirror).toHaveBeenCalledWith(expect.stringMatching(/^(light|dark)$/))
     );
   });
 

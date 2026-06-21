@@ -39,6 +39,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use crate::error::{AppError, AppResult};
+use crate::observability::Span;
 
 /// Label of the programmatically-created splash window.
 const SPLASH_LABEL: &str = "splash";
@@ -173,10 +174,18 @@ pub fn write_theme_mirror(scheme: &str) -> AppResult<()> {
 /// creates or modifies the file. The `data_dir()`-backed [`write_theme_mirror`]
 /// is the production wrapper.
 fn write_theme_mirror_in(dir: &Path, scheme: &str) -> AppResult<()> {
-    let value = validate_scheme(scheme)?;
-    std::fs::create_dir_all(dir)?;
-    std::fs::write(theme_mirror_path_in(dir), value)?;
-    Ok(())
+    let span = Span::begin("splash", "write_theme_mirror".to_string());
+    let result: AppResult<()> = (|| {
+        let value = validate_scheme(scheme)?;
+        std::fs::create_dir_all(dir)?;
+        std::fs::write(theme_mirror_path_in(dir), value)?;
+        Ok(())
+    })();
+    match &result {
+        Ok(()) => span.end(true),
+        Err(e) => span.end_with(&e.to_string(), false),
+    }
+    result
 }
 
 /// Best-effort OS theme via the (hidden) main window's reported theme. Defaults
@@ -224,6 +233,9 @@ pub fn reveal_main(app: &AppHandle) {
         return; // Already revealed — duplicate call (or the timeout raced).
     }
 
+    // Span only the winning reveal — the no-op duplicate/timeout calls return above
+    // without logging, so the span fires exactly once per launch.
+    let span = Span::begin("splash", "reveal_main".to_string());
     if let Some(splash) = app.get_webview_window(SPLASH_LABEL) {
         let _ = splash.close();
     }
@@ -231,6 +243,7 @@ pub fn reveal_main(app: &AppHandle) {
         let _ = main.show();
         let _ = main.set_focus();
     }
+    span.end(true);
 }
 
 /// Create the splash window (themed via `?theme=`), manage the [`RevealGuard`],
@@ -246,6 +259,7 @@ pub fn spawn(app: &AppHandle) -> Option<Instant> {
     app.manage(Arc::new(RevealGuard::default()));
 
     let theme = resolve_for_launch(app);
+    let span = Span::begin("splash", format!("spawn theme={}", theme.as_query_value()));
     let url = format!("{SPLASH_ASSET}?theme={}", theme.as_query_value());
 
     let builder = WebviewWindowBuilder::new(app, SPLASH_LABEL, WebviewUrl::App(url.into()))
@@ -263,12 +277,14 @@ pub fn spawn(app: &AppHandle) -> Option<Instant> {
         Ok(_) => {
             let shown_at = Instant::now();
             schedule_safety_reveal(app);
+            span.end(true);
             Some(shown_at)
         }
         Err(e) => {
             // Splash failed to create — never trap the user behind a hidden main
             // window. Reveal immediately (no minimum-display delay).
             log::warn!("[splash] failed to create splash window (revealing main): {e}");
+            span.end_with(&e.to_string(), false);
             reveal_main(app);
             None
         }
@@ -293,7 +309,9 @@ fn theme_background(theme: SplashTheme) -> tauri::window::Color {
 fn schedule_safety_reveal(app: &AppHandle) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
+        let span = Span::begin("splash", "safety_reveal_wait".to_string());
         tokio::time::sleep(SAFETY_TIMEOUT).await;
+        span.end(true);
         reveal_main(&handle);
     });
 }
@@ -308,10 +326,12 @@ fn schedule_safety_reveal(app: &AppHandle) {
 pub fn reveal_after_min_display(app: &AppHandle, shown_at: Instant) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
+        let span = Span::begin("splash", "reveal_after_min_display".to_string());
         let elapsed = shown_at.elapsed();
         if let Some(remaining) = MIN_SPLASH.checked_sub(elapsed) {
             tokio::time::sleep(remaining).await;
         }
+        span.end(true);
         reveal_main(&handle);
     });
 }

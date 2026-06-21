@@ -347,8 +347,12 @@ async fn generic_html(url: &str) -> Result<Option<JobPosting>> {
     // matched" so the paste-a-URL flow degrades gracefully (the bridge then
     // replies a clean "could not parse" import error).
     // Follow redirects (e.g. an aggregator `redirect_url` that bounces to the real
-    // posting) — each hop is re-validated by get_guarded, capped to a few hops.
-    let res = match crate::net::http::get_guarded_following_redirects(url, 5).await {
+    // posting) — each hop is re-validated by get_guarded. Capped to 2 hops: an
+    // aggregator redirect_url → real posting is typically 1 hop, and 2 covers a CDN
+    // bounce. The cap is deliberately small because the per-slot rate limiter on the
+    // calling IPC command charges ONE slot per resolve, so one slot must equal a
+    // small, bounded number of outbound fetches (worst case 1 + 2 = 3).
+    let res = match crate::net::http::get_guarded_following_redirects(url, 2).await {
         Ok(r) => r,
         Err(_) => return Ok(None),
     };

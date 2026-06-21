@@ -15,13 +15,9 @@ export default function setup() {
   const SUPPRESSED = ['Not implemented: window.scrollTo', 'Not implemented: navigation'];
 
   const origWrite = process.stderr.write.bind(process.stderr);
-  // @ts-expect-error — overriding overloaded write signature
-  process.stderr.write = (chunk: string | Buffer, ...rest: unknown[]) => {
+  process.stderr.write = ((chunk: string | Buffer, ...rest: unknown[]) => {
     const text = typeof chunk === 'string' ? chunk : chunk.toString();
     if (SUPPRESSED.some((s) => text.includes(s))) return true;
-    return (origWrite as typeof process.stderr.write)(
-      chunk as string,
-      ...(rest as Parameters<typeof process.stderr.write>).slice(1)
-    );
-  };
+    return (origWrite as (...a: unknown[]) => boolean)(chunk, ...rest);
+  }) as typeof process.stderr.write;
 }

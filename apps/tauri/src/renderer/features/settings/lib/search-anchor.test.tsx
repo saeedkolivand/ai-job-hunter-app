@@ -179,17 +179,58 @@ vi.mock('@/features/settings/components/contact/ApplicantDetailsSection', () => 
   ApplicantDetailsSection: () => <div data-settings-anchor="contact-applicant" />,
 }));
 
-// AISettingsTab — renders via SettingsContent; stub the whole tab so useProviderKeys
-// (which calls useQueryClient) never runs. The wrapper divs for ai-provider/ai-tone
-// live in SettingsContent, not in AISettingsTab, so stubbing the tab is safe.
-// ai-embeddings and ai-company-research ARE inside AISettingsTab — stub them too.
-vi.mock('@/features/settings/components/ai-settings/AISettingsTab', () => ({
-  AISettingsTab: () => (
-    <>
-      <div data-settings-anchor="ai-embeddings" />
-      <div data-settings-anchor="ai-company-research" />
-    </>
-  ),
+// AISettingsTab — renders via SettingsContent with the REAL component so that
+// data-settings-anchor="ai-embeddings" and data-settings-anchor="ai-company-research"
+// are verified in the actual production JSX (not injected by a stub).
+// useProviderKeys calls useQueryClient/useQueries/useAppClient — mock it at the
+// hook boundary so the real AISettingsTab JSX (including the anchor divs) renders.
+vi.mock('@/features/settings/components/ai-settings/AISettingsTab/useProviderKeys', () => ({
+  useProviderKeys: () => ({
+    activeProvider: 'ollama',
+    setActiveProvider: vi.fn(),
+    connectedProviders: [],
+    keyStatus: {},
+    providerConfig: undefined,
+    selectedOllamaModel: undefined,
+    ollamaModels: [],
+    loadingOllama: false,
+    expanded: null,
+    expandedModels: [],
+    apiKeyInput: '',
+    showKey: false,
+    savingKey: null,
+    testingKey: null,
+    baseUrlInput: '',
+    pulling: null,
+    handleSelectModel: vi.fn(),
+    handleSaveKey: vi.fn(),
+    handleTestKey: vi.fn(),
+    handleRemoveKey: vi.fn(),
+    handlePullOllama: vi.fn(),
+    toggleExpand: vi.fn(),
+    setApiKeyInput: vi.fn(),
+    toggleShowKey: vi.fn(),
+    setBaseUrlInput: vi.fn(),
+    recheck: vi.fn(),
+    openDocs: vi.fn(),
+  }),
+}));
+// Stub the child sections that useProviderKeys feeds into so they don't need
+// their own deep trees — the anchors being guarded live directly in AISettingsTab.
+vi.mock('@/features/settings/components/ai-settings/ActiveProviderSwitcher', () => ({
+  ActiveProviderSwitcher: () => null,
+}));
+vi.mock('@/features/settings/components/ai-settings/ProviderDebugBadge', () => ({
+  ProviderDebugBadge: () => null,
+}));
+vi.mock('@/features/settings/components/ai-settings/ProviderRow', () => ({
+  ProviderRow: () => null,
+}));
+vi.mock('@/features/settings/components/ai-settings/EmbeddingsSettings', () => ({
+  EmbeddingsSettings: () => null,
+}));
+vi.mock('@/features/settings/components/ai-settings/CompanyResearchSettings', () => ({
+  CompanyResearchSettings: () => null,
 }));
 
 // AccountsSettingsTab children

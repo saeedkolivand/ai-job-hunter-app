@@ -22,6 +22,12 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 
+// ── matchMedia leak guard ─────────────────────────────────────────────────────
+// Several describe blocks override window.matchMedia in their beforeEach to
+// simulate prefers-reduced-motion.  Save the original once here and restore it
+// in afterEach so the override never leaks into a sibling suite.
+const originalMatchMedia = window.matchMedia;
+
 // ── i18n stub ─────────────────────────────────────────────────────────────────
 
 vi.mock('@ajh/translations', () => ({
@@ -136,9 +142,12 @@ function renderWithAnchor(anchor: string | null, onConsumed = vi.fn()) {
 
 afterEach(() => {
   vi.useRealTimers();
-  // Do NOT call vi.restoreAllMocks() here — the scrollIntoView spy is managed
-  // per describe-block via beforeAll/afterAll + mockClear. restoreAllMocks would
-  // restore the prototype mid-block, breaking the mockClear isolation strategy.
+  // Restore matchMedia after every test so describe-block overrides don't leak
+  // into sibling suites.  Do NOT call vi.restoreAllMocks() here — the
+  // scrollIntoView spy is managed per describe-block via beforeAll/afterAll +
+  // mockClear; restoreAllMocks would restore the prototype mid-block, breaking
+  // the mockClear isolation strategy.
+  window.matchMedia = originalMatchMedia;
   document.body.innerHTML = '';
 });
 

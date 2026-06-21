@@ -391,7 +391,7 @@ describe('SettingsSidebar — keyboard: ArrowDown', () => {
     // Use a broad query to ensure ≥2 results
     await user.type(getInput(), 'a');
     const optionsBefore = screen.getAllByRole('option');
-    if (optionsBefore.length < 2) return; // guard: need ≥2 results
+    expect(optionsBefore.length).toBeGreaterThanOrEqual(2); // fixture drift guard: need ≥2 results
     expect(optionsBefore[0]).toHaveAttribute('aria-selected', 'true');
     expect(optionsBefore[1]).toHaveAttribute('aria-selected', 'false');
 
@@ -407,7 +407,7 @@ describe('SettingsSidebar — keyboard: ArrowDown', () => {
     renderSidebar();
     await user.type(getInput(), 'a');
     const options = screen.getAllByRole('option');
-    if (options.length < 2) return;
+    expect(options.length).toBeGreaterThanOrEqual(2); // fixture drift guard: need ≥2 results
     // Move highlight to last
     for (let i = 0; i < options.length - 1; i++) {
       await user.keyboard('{ArrowDown}');
@@ -428,7 +428,7 @@ describe('SettingsSidebar — keyboard: ArrowUp wraps', () => {
     renderSidebar();
     await user.type(getInput(), 'a');
     const optionsBefore = screen.getAllByRole('option');
-    if (optionsBefore.length < 2) return;
+    expect(optionsBefore.length).toBeGreaterThanOrEqual(2); // fixture drift guard: need ≥2 results
     expect(optionsBefore[0]).toHaveAttribute('aria-selected', 'true');
 
     await user.keyboard('{ArrowUp}');
