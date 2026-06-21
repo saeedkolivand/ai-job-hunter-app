@@ -542,4 +542,33 @@ describe('JobsPage — stream invalidation throttle', () => {
 
     unmount();
   });
+
+  it('replacePendingRef=true + rejection → no unhandled rejection, ref consumed, follow-up is throttled', async () => {
+    // Make the eager invalidatePostings call reject once.
+    invalidateSpy.mockRejectedValueOnce(new Error('eager network error'));
+    scrapingState.replacePendingRef.current = true;
+    const { unmount } = renderPage();
+
+    // (a) Fire one stream event while replacePendingRef is true — the eager path
+    // runs, the rejection must be swallowed (no unhandled rejection / test throw).
+    fireStreamEvent(posting('eager-reject-item'));
+
+    // The eager call happened immediately (synchronous — before any timer).
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+
+    // (b) The ref must have been consumed (reset to false) so the next tick is
+    // handled by the throttled path, not another eager call.
+    fireStreamEvent(posting('eager-follow-up'));
+
+    // Still only the one eager call right now — the follow-up is throttled.
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+
+    // Advance past the throttle window — the follow-up timer fires once more.
+    await act(async () => {
+      vi.advanceTimersByTime(1001);
+    });
+    expect(invalidateSpy).toHaveBeenCalledTimes(2);
+
+    unmount();
+  });
 });

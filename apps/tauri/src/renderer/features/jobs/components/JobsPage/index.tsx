@@ -102,7 +102,7 @@ export function JobsPage() {
         if (replacePendingRef.current) {
           replacePendingRef.current = false;
           setLivePostings([item]);
-          void invalidatePostings(); // backend already cleared old + added this first item
+          void invalidatePostings().catch(() => {}); // backend already cleared old + added this first item
         } else {
           setLivePostings((prev) => {
             if (prev.some((p) => p.id === item.id)) return prev;
