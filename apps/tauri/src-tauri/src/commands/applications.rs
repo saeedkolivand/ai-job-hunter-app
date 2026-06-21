@@ -258,4 +258,42 @@ mod tests {
             "rejection message must mention the byte cap, got {err:?}"
         );
     }
+
+    #[test]
+    fn multi_byte_utf8_over_cap_is_rejected() {
+        // '€' is 3 UTF-8 bytes. 66_667 repetitions → 200_001 bytes, one over the
+        // 200_000-byte cap. A future switch from str.len() (bytes) to char-count
+        // would keep 66_667 chars in and this test would catch the regression.
+        let s = "€".repeat(66_667);
+        assert_eq!(
+            s.len(),
+            200_001,
+            "fixture sanity: expected 200_001 bytes, got {}",
+            s.len()
+        );
+        let err = reject_oversized_job_description(Some(&s))
+            .expect_err("multi-byte string over the byte cap must be rejected");
+        assert!(
+            matches!(err, AppError::Validation(_)),
+            "must be a Validation error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn multi_byte_utf8_at_cap_is_accepted() {
+        // '€' is 3 UTF-8 bytes. 66_666 repetitions → 199_998 bytes, within the
+        // 200_000-byte cap. Verifies the guard accepts multi-byte content that fits.
+        let s = "€".repeat(66_666);
+        assert_eq!(
+            s.len(),
+            199_998,
+            "fixture sanity: expected 199_998 bytes, got {}",
+            s.len()
+        );
+        assert!(
+            reject_oversized_job_description(Some(&s)).is_ok(),
+            "{} bytes must be accepted (cap is {MAX_JOB_DESCRIPTION_BYTES})",
+            s.len()
+        );
+    }
 }
