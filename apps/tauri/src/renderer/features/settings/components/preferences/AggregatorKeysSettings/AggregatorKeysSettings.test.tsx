@@ -1,0 +1,219 @@
+/**
+ * AggregatorKeysSettings — focused behaviour tests.
+ *
+ * Covers:
+ *  - not connected: password inputs rendered; Save buttons disabled when empty.
+ *  - not connected: eye-toggle buttons have accessible names (a11y guard).
+ *  - not connected: toggling show/hide changes input type.
+ *  - not connected: Save calls setProviderKey after typing a value.
+ *  - not connected: Save is a no-op (disabled) when input is blank.
+ *  - connected: stored-key badge shown; Remove button present.
+ *  - connected: clicking Remove opens the confirm modal.
+ *  - connected: confirming Remove calls removeProviderKey.
+ *
+ * Service hooks are stubbed at the boundary; the real @ajh/ui tree is used
+ * (only useNotification is overridden to avoid a Notification provider).
+ */
+import { describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+
+import type * as AjhUi from '@ajh/ui';
+
+// ── mutable key-state so tests can flip connected/disconnected per slot ────
+
+const keyState: Record<string, boolean> = {};
+
+// ── i18n stub ──────────────────────────────────────────────────────────────
+
+vi.mock('@ajh/translations', () => ({
+  useTranslation: () => ({ t: (k: string) => k }),
+}));
+
+// ── @ajh/ui — use the real library, override only useNotification ──────────
+
+const mockNotify = {
+  open: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+  warning: vi.fn(),
+  destroy: vi.fn(),
+};
+
+vi.mock('@ajh/ui', async (importOriginal) => {
+  const actual = await importOriginal<typeof AjhUi>();
+  return {
+    ...actual,
+    useNotification: () => mockNotify,
+  };
+});
+
+// ── service stubs ──────────────────────────────────────────────────────────
+
+const mockSetMutateAsync = vi.fn().mockResolvedValue(undefined);
+const mockRemoveMutateAsync = vi.fn().mockResolvedValue(undefined);
+
+vi.mock('@/services', () => ({
+  useHasProviderKey: (slot: string) => ({ data: { has: keyState[slot] ?? false } }),
+  useSetProviderKey: () => ({ mutateAsync: mockSetMutateAsync, isPending: false }),
+  useRemoveProviderKey: () => ({ mutateAsync: mockRemoveMutateAsync, isPending: false }),
+  useOpenExternal: () => ({ mutateAsync: vi.fn() }),
+}));
+
+// ── component under test ───────────────────────────────────────────────────
+
+import { AggregatorKeysSettings } from './index';
+
+// ── helpers ────────────────────────────────────────────────────────────────
+
+function getPasswordInputs(container: HTMLElement) {
+  return Array.from(container.querySelectorAll('input[type="password"]'));
+}
+
+// ── tests — not connected (default keyState = all false) ──────────────────
+
+describe('AggregatorKeysSettings — not connected', () => {
+  it('renders password inputs for all three key fields', () => {
+    const { container } = render(<AggregatorKeysSettings />);
+    expect(getPasswordInputs(container).length).toBe(3);
+  });
+
+  it('Save buttons are disabled when inputs are empty', () => {
+    render(<AggregatorKeysSettings />);
+    const saveButtons = screen.getAllByRole('button', { name: /settings\.aggregatorKeys\.save/i });
+    saveButtons.forEach((btn) => expect(btn).toBeDisabled());
+  });
+
+  it('eye-toggle buttons have accessible names for all three fields', () => {
+    render(<AggregatorKeysSettings />);
+    const eyeToggles = screen.getAllByRole('button', {
+      name: 'settings.aiProvider.showKey',
+    });
+    expect(eyeToggles.length).toBe(3);
+  });
+
+  it('toggling the first eye-button switches that field from password to text', async () => {
+    const user = userEvent.setup();
+    const { container } = render(<AggregatorKeysSettings />);
+
+    expect(getPasswordInputs(container).length).toBe(3);
+
+    const toggles = screen.getAllByRole('button', { name: 'settings.aiProvider.showKey' });
+    const firstToggle = toggles[0];
+    if (!firstToggle) throw new Error('No eye-toggle found');
+    await user.click(firstToggle);
+
+    expect(getPasswordInputs(container).length).toBe(2);
+    expect(Array.from(container.querySelectorAll('input[type="text"]')).length).toBe(1);
+  });
+
+  it('calls setProviderKey with the correct slot and value on Save', async () => {
+    mockSetMutateAsync.mockClear();
+    const user = userEvent.setup();
+    const { container } = render(<AggregatorKeysSettings />);
+
+    const inputs = getPasswordInputs(container);
+    const firstInput = inputs[0];
+    if (!firstInput) throw new Error('No password input found');
+    await user.type(firstInput, 'my-app-id');
+
+    const saveButtons = screen.getAllByRole('button', { name: /settings\.aggregatorKeys\.save/i });
+    const firstSave = saveButtons[0];
+    if (!firstSave) throw new Error('No Save button found');
+    await user.click(firstSave);
+
+    await waitFor(() =>
+      expect(mockSetMutateAsync).toHaveBeenCalledWith({
+        provider: 'adzuna-app-id',
+        apiKey: 'my-app-id',
+      })
+    );
+  });
+
+  it('does NOT call setProviderKey when Save is disabled (empty input)', async () => {
+    mockSetMutateAsync.mockClear();
+    const user = userEvent.setup();
+    render(<AggregatorKeysSettings />);
+
+    const saveButtons = screen.getAllByRole('button', { name: /settings\.aggregatorKeys\.save/i });
+    const firstSave = saveButtons[0];
+    if (!firstSave) throw new Error('No Save button found');
+    await user.click(firstSave);
+
+    expect(mockSetMutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+// ── tests — connected state ────────────────────────────────────────────────
+
+describe('AggregatorKeysSettings — connected state', () => {
+  it('shows the stored-key badge when a slot has a key', () => {
+    keyState['adzuna-app-id'] = true;
+
+    render(<AggregatorKeysSettings />);
+
+    expect(screen.getByText('settings.aggregatorKeys.adzunaAppId.connected')).toBeInTheDocument();
+
+    delete keyState['adzuna-app-id'];
+  });
+
+  it('shows a Remove button when a slot has a key', () => {
+    keyState['adzuna-app-id'] = true;
+
+    render(<AggregatorKeysSettings />);
+
+    expect(
+      screen.getAllByRole('button', { name: /settings\.aggregatorKeys\.remove/i }).length
+    ).toBeGreaterThanOrEqual(1);
+
+    delete keyState['adzuna-app-id'];
+  });
+
+  it('clicking Remove opens the confirm modal', async () => {
+    keyState['adzuna-app-id'] = true;
+    const user = userEvent.setup();
+
+    render(<AggregatorKeysSettings />);
+
+    const removeButtons = screen.getAllByRole('button', {
+      name: /settings\.aggregatorKeys\.remove/i,
+    });
+    const firstRemove = removeButtons[0];
+    if (!firstRemove) throw new Error('No Remove button found');
+    await user.click(firstRemove);
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    delete keyState['adzuna-app-id'];
+  });
+
+  it('calls removeProviderKey with the correct slot on modal confirm', async () => {
+    keyState['adzuna-app-id'] = true;
+    mockRemoveMutateAsync.mockClear();
+    const user = userEvent.setup();
+
+    render(<AggregatorKeysSettings />);
+
+    const removeButtons = screen.getAllByRole('button', {
+      name: /settings\.aggregatorKeys\.remove/i,
+    });
+    const firstRemove = removeButtons[0];
+    if (!firstRemove) throw new Error('No Remove button found');
+    await user.click(firstRemove);
+
+    // ConfirmModal is open — find its confirm button inside the dialog
+    const dialog = screen.getByRole('dialog');
+    const confirmBtn = Array.from(dialog.querySelectorAll('button')).find((b) =>
+      /settings\.aggregatorKeys\.remove/i.test(b.textContent ?? '')
+    );
+    if (!confirmBtn) throw new Error('Confirm button not found in modal');
+    await user.click(confirmBtn);
+
+    await waitFor(() =>
+      expect(mockRemoveMutateAsync).toHaveBeenCalledWith({ provider: 'adzuna-app-id' })
+    );
+
+    delete keyState['adzuna-app-id'];
+  });
+});

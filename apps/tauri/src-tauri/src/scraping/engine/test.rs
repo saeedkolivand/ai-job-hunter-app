@@ -9,12 +9,13 @@ fn test_browser_sem() -> Arc<TokioSemaphore> {
 fn test_catalog() {
     let engine = ScraperEngine::new();
     let catalog = engine.catalog();
-    assert_eq!(catalog.len(), 20);
+    assert_eq!(catalog.len(), 21);
 
     // Check specific scrapers
     assert!(catalog.iter().any(|s| s.id == "linkedin"));
     assert!(catalog.iter().any(|s| s.id == "indeed"));
     assert!(catalog.iter().any(|s| s.id == "ycombinator"));
+    assert!(catalog.iter().any(|s| s.id == "aggregator"));
 }
 
 #[test]
@@ -139,9 +140,9 @@ fn test_catalog_listed_flags() {
     assert!(entry("linkedin").listed, "linkedin must be listed");
     assert!(entry("indeed").listed, "indeed must be listed");
 
-    // All 20 boards are listed
+    // All 21 boards are listed
     let listed_count = catalog.iter().filter(|e| e.listed).count();
-    assert_eq!(listed_count, 20, "all 20 boards should be listed");
+    assert_eq!(listed_count, 21, "all 21 boards should be listed");
 }
 
 #[test]
@@ -150,7 +151,7 @@ fn test_health() {
     let health = engine.health();
     assert_eq!(health.mode, "in-process");
     assert!(health.ready);
-    assert_eq!(health.scrapers.len(), 20);
+    assert_eq!(health.scrapers.len(), 21);
 }
 
 #[test]

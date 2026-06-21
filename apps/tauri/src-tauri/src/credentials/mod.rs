@@ -171,5 +171,21 @@ impl CredentialStore {
     }
 }
 
+/// Read a single credential directly from the OS keychain by its full `slot`
+/// name (e.g. `"ai:adzuna-app-key"`), without needing an `AppHandle` or the
+/// metadata cache. Returns `None` when the entry is absent or the keychain is
+/// unavailable.
+///
+/// Workers (scrapers, autopilot tasks) that have no `AppHandle` use this
+/// instead of `get_provider_key`; it reuses the same keyring backend
+/// initialized at startup by [`init_keyring`].
+pub fn read_credential(slot: &str) -> Option<String> {
+    Entry::new(SERVICE, slot)
+        .ok()?
+        .get_password()
+        .ok()
+        .filter(|s| !s.is_empty())
+}
+
 #[cfg(test)]
 mod test;
