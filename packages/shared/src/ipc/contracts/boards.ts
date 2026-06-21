@@ -21,6 +21,14 @@ export interface BoardCatalogEntry {
   auth: BoardAuthRequirement;
   /** Whether the board appears in the manual jobs picker. */
   listed: boolean;
+  /**
+   * Whether this board requires a company slug to return any results.
+   * ATS platforms (Greenhouse, Lever, Ashby, Recruitee, Personio,
+   * SmartRecruiters) set this to true. When true, the UI should show a company
+   * input field and the engine will skip the board with `skipped: "needs-company"`
+   * if no companies are supplied.
+   */
+  requiresCompany: boolean;
 }
 
 export interface BoardsContract {
@@ -44,13 +52,14 @@ export interface BoardsContract {
 
 /**
  * Per-board outcome from a completed scrape job.
- * `skipped: "needs-login"` means the board was bypassed because no session exists.
+ * - `skipped: "needs-login"` — board bypassed because no session exists.
+ * - `skipped: "needs-company"` — ATS board bypassed because no company slug was supplied.
  */
 export interface BoardScrapeSummary {
   board: string;
   count: number;
   error?: string;
-  skipped?: 'needs-login';
+  skipped?: 'needs-login' | 'needs-company';
 }
 
 export const BOARDS_CHANNELS = {

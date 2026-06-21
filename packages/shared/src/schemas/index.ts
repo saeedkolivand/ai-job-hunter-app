@@ -159,6 +159,12 @@ export const ScrapeBoardsRequestSchema = z.object({
   activelyHiring: z.boolean().optional(),
   verified: z.boolean().optional(),
   sortBy: z.string().optional(),
+  // Company / board identifiers for ATS boards (greenhouse, lever, ashby,
+  // recruitee, personio, smartrecruiters) whose public APIs have no global
+  // keyword search — they require a company slug (e.g. Greenhouse
+  // `boards-api.greenhouse.io/v1/boards/{company}/jobs`). Absent/empty = no
+  // company filter; only ATS boards read it, every other board ignores it.
+  companies: z.array(z.string()).optional(),
 });
 
 export const ScrapeUrlRequestSchema = z.object({
