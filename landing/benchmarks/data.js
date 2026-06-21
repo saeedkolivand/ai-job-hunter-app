@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782029062624,
+  "lastUpdate": 1782031809873,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1169,6 +1169,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 291946,
             "range": "± 2498",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ea681ef2c4961e20293ede4e394cb16873f550c4",
+          "message": "fix(scraping): harden company-scoped boards (ssrf, fan-out caps, stale events) (#467)\n\n* fix(scraping): harden company-scoped boards (ssrf, fan-out caps, stale events)\n\nAddress CodeRabbit's review of #464, which was merged before its findings\nwere resolved:\n- CRITICAL: validate Personio company slugs before composing the subdomain\n  URL (an unvalidated slug like 127.0.0.1:8443/foo was an SSRF vector);\n  mirrors the Recruitee hostname-label guard.\n- Cap per-board company fan-out (ashby/greenhouse 50, smartrecruiters 20),\n  dedupe and drop blank slugs, and return Err when every company fetch\n  fails instead of a silent empty result.\n- Namespace Personio job ids per company to avoid cross-tenant collisions.\n- Skip needs-company boards when the companies list is whitespace-only.\n- Reject blank company entries at the Zod schema boundary.\n- Guard JobsPage skip notifications to the active scrape round so stale\n  job.completed events no longer raise false sticky warnings.\n- Extract normalize_companies and slug/timestamp helpers; add unit tests\n  (Personio SSRF guard, per-board cap/dedupe/sanitize, hook payload).\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(scraping): refine ats follow-up per review (cancellation, slug rules)\n\nAddress CodeRabbit re-review on #467:\n- ashby/greenhouse: check cancellation before recording first_fetch_error so\n  a cancelled run no longer surfaces as a false board-level Err.\n- recruitee: tighten is_valid_recruitee_slug to full DNS-label rules (<=63,\n  no leading/trailing hyphen), matching the Personio guard.\n- add tests: cancelled-run returns Ok, recruitee slug edge cases, and a\n  Personio cross-tenant id-namespacing regression.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* test(scraping): validate personio id namespacing via production helper\n\nAddress CodeRabbit re-review on #467: extract make_job_id() in personio so\nthe id-namespacing test asserts on the production format helper instead of\nreimplementing it (the test now fails if namespacing is removed).\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(scraping): make personio url-resolver ids match the board path\n\nAddress CodeRabbit on #467: the URL resolver built personio:{id} while the\nboard scraper builds personio:{company}:{id} via make_job_id, so the same\nposting got different ids across ingestion paths (breaking dedupe/upsert).\nRoute the resolver through make_job_id, extract personio_company_from_url so\nboth paths share one host->company parser, and replace the tautological id\ntest with one driven from real URL strings (incl. suffix-evasion -> None).\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-21T10:41:47+02:00",
+          "tree_id": "a7da8821d6fbeef0cfe853077fcd0385637d731f",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/ea681ef2c4961e20293ede4e394cb16873f550c4"
+        },
+        "date": 1782031809745,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1915189,
+            "range": "± 62489",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2615483,
+            "range": "± 24247",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 308646,
+            "range": "± 7140",
             "unit": "ns/iter"
           }
         ]
