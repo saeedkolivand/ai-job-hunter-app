@@ -12,7 +12,10 @@
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-use crate::applications::{ApplicationMeta, ApplicationStatus, ApplicationStore};
+use crate::applications::{
+    ApplicationMeta, ApplicationStatus, ApplicationStore, MAX_JOB_DESCRIPTION_BYTES,
+};
+use crate::error::{AppError, AppResult};
 use crate::observability::Span;
 
 // Generated from the Zod schemas in packages/shared by `pnpm gen:ipc`.
@@ -20,6 +23,24 @@ pub use crate::ipc_contracts::applications::{ApplicationTrackRequest, Applicatio
 
 fn store(app: &AppHandle) -> tauri::State<'_, ApplicationStore> {
     app.state::<ApplicationStore>()
+}
+
+/// Server-side trust boundary for the inbound job description. A direct IPC caller
+/// bypasses the renderer's Zod cap, so the creation handlers REJECT an oversized
+/// value here — up-front, before any store work — against the SAME byte cap the
+/// store clamps to ([`MAX_JOB_DESCRIPTION_BYTES`], the single source of truth).
+/// The store still clamps as a defense-in-depth second layer. `None` (no
+/// description supplied) is always fine.
+fn reject_oversized_job_description(jd: Option<&str>) -> AppResult<()> {
+    if let Some(jd) = jd {
+        if jd.len() > MAX_JOB_DESCRIPTION_BYTES {
+            return Err(AppError::Validation(format!(
+                "job description exceeds the {MAX_JOB_DESCRIPTION_BYTES}-byte limit ({} bytes)",
+                jd.len()
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -125,12 +146,18 @@ pub async fn applications_delete(app: AppHandle, id: String, keep_documents: boo
 #[tauri::command]
 pub async fn applications_track(app: AppHandle, req: ApplicationTrackRequest) -> Value {
     let span = Span::begin("applications", "track (manual)".to_string());
+    if let Err(e) = reject_oversized_job_description(req.job_description.as_deref()) {
+        span.end_with(&e.to_string(), false);
+        return json!({ "error": e });
+    }
     let meta = ApplicationMeta {
         company: req.company.unwrap_or_default(),
         title: req.title.unwrap_or_default(),
         candidate: req.candidate.unwrap_or_default(),
         brief: String::new(),
-        job_description: String::new(),
+        // Carry the posting's description (e.g. an aggregator job whose redirect
+        // URL can't be re-resolved) so tailoring has the ad text without a refetch.
+        job_description: req.job_description.unwrap_or_default(),
         answers: vec![],
         job_summary: String::new(),
     };
@@ -153,12 +180,18 @@ pub async fn applications_save_from_posting(app: AppHandle, req: ApplicationTrac
     // Jobs-page "Save" → a `saved` (pre-apply) Application. Same request shape as
     // `track`, but the origin keeps it pre-apply instead of marking it applied.
     let span = Span::begin("applications", "save_from_posting".to_string());
+    if let Err(e) = reject_oversized_job_description(req.job_description.as_deref()) {
+        span.end_with(&e.to_string(), false);
+        return json!({ "error": e });
+    }
     let meta = ApplicationMeta {
         company: req.company.unwrap_or_default(),
         title: req.title.unwrap_or_default(),
         candidate: req.candidate.unwrap_or_default(),
         brief: String::new(),
-        job_description: String::new(),
+        // Carry the posting's description (e.g. an aggregator job whose redirect
+        // URL can't be re-resolved) so tailoring has the ad text without a refetch.
+        job_description: req.job_description.unwrap_or_default(),
         answers: vec![],
         job_summary: String::new(),
     };
@@ -179,5 +212,88 @@ pub async fn applications_save_from_posting(app: AppHandle, req: ApplicationTrac
             span.end_with(&e.to_string(), false);
             json!({ "error": e })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn none_description_is_accepted() {
+        // No description supplied → always fine (the common path).
+        assert!(reject_oversized_job_description(None).is_ok());
+    }
+
+    #[test]
+    fn under_and_at_cap_are_accepted() {
+        // Empty, small, and exactly-at-the-cap inputs all pass — the guard rejects
+        // ONLY strictly-oversized input, mirroring the store's `len() <= cap` clamp.
+        let at_cap = "a".repeat(MAX_JOB_DESCRIPTION_BYTES);
+        for jd in ["", "a normal job ad", at_cap.as_str()] {
+            assert!(
+                reject_oversized_job_description(Some(jd)).is_ok(),
+                "{} bytes must be accepted (cap is {MAX_JOB_DESCRIPTION_BYTES})",
+                jd.len()
+            );
+        }
+    }
+
+    #[test]
+    fn over_cap_is_rejected() {
+        // One byte over the cap → rejected up-front (the direct-IPC abuse path the
+        // renderer's Zod cap can't protect). The store still clamps as a second layer.
+        let oversized = "a".repeat(MAX_JOB_DESCRIPTION_BYTES + 1);
+        let err = reject_oversized_job_description(Some(&oversized))
+            .expect_err("an over-cap description must be rejected");
+        // It is a typed Validation error (R6), and the message names the byte limit
+        // so the renderer can surface a useful reason.
+        assert!(
+            matches!(err, AppError::Validation(_)),
+            "must be a Validation error, got {err:?}"
+        );
+        assert!(
+            err.to_string()
+                .contains(&MAX_JOB_DESCRIPTION_BYTES.to_string()),
+            "rejection message must mention the byte cap, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn multi_byte_utf8_over_cap_is_rejected() {
+        // '€' is 3 UTF-8 bytes. 66_667 repetitions → 200_001 bytes, one over the
+        // 200_000-byte cap. A future switch from str.len() (bytes) to char-count
+        // would keep 66_667 chars in and this test would catch the regression.
+        let s = "€".repeat(66_667);
+        assert_eq!(
+            s.len(),
+            200_001,
+            "fixture sanity: expected 200_001 bytes, got {}",
+            s.len()
+        );
+        let err = reject_oversized_job_description(Some(&s))
+            .expect_err("multi-byte string over the byte cap must be rejected");
+        assert!(
+            matches!(err, AppError::Validation(_)),
+            "must be a Validation error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn multi_byte_utf8_at_cap_is_accepted() {
+        // '€' is 3 UTF-8 bytes. 66_666 repetitions → 199_998 bytes, within the
+        // 200_000-byte cap. Verifies the guard accepts multi-byte content that fits.
+        let s = "€".repeat(66_666);
+        assert_eq!(
+            s.len(),
+            199_998,
+            "fixture sanity: expected 199_998 bytes, got {}",
+            s.len()
+        );
+        assert!(
+            reject_oversized_job_description(Some(&s)).is_ok(),
+            "{} bytes must be accepted (cap is {MAX_JOB_DESCRIPTION_BYTES})",
+            s.len()
+        );
     }
 }

@@ -132,6 +132,16 @@ const GET_APP_URL = 'https://aijobhunter.app/download';
  */
 let lastKnownHasToken = false;
 
+/**
+ * Set to `true` once the offline (`app_not_running`) view has been shown.
+ * While `true`, a transient `searching` status from a background reconnect
+ * attempt does NOT swap out the offline guidance — the user already knows the
+ * app is unreachable; briefly hiding the "Get the app" content on every retry
+ * cycle is disorienting. Reset to `false` when a real outcome arrives
+ * (`connected`, `not_paired`, or `bad_token`).
+ */
+let hasShownOffline = false;
+
 /** Send a typed request to the background and return its typed response. */
 async function send(req: PopupRequest): Promise<PopupResponse> {
   const res = (await browser.runtime.sendMessage(req)) as PopupResponse | undefined;
@@ -150,6 +160,31 @@ function showView(phase: ConnectionStatus['phase']): void {
 
 function render(status: ConnectionStatus): void {
   lastKnownHasToken = status.hasToken;
+
+  // Track whether the offline view has been shown so we can suppress the
+  // flickering "Connecting…" spinner during background reconnect attempts.
+  if (status.phase === 'app_not_running') {
+    hasShownOffline = true;
+  } else if (
+    status.phase === 'connected' ||
+    status.phase === 'not_paired' ||
+    status.phase === 'bad_token'
+  ) {
+    // A real outcome arrived — reset so the next session starts fresh.
+    hasShownOffline = false;
+  }
+
+  // If a transient reconnect attempt (`searching`) arrives AFTER the offline
+  // view was shown, keep the offline guidance visible. Only update the pill
+  // label and keep the Retry button so the user can see the retry is happening,
+  // but do NOT swap the view — that would hide the "Get the app" content.
+  if (status.phase === 'searching' && hasShownOffline) {
+    els.pill.textContent = PILL_LABEL.searching;
+    els.pill.className = `pill pill--searching`;
+    els.btnRetry.hidden = false;
+    return;
+  }
+
   els.pill.textContent = PILL_LABEL[status.phase];
   els.pill.className = `pill pill--${status.phase}`;
   // Retry lives in the header (left of the pill) and only makes sense when the

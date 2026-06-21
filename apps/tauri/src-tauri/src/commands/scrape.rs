@@ -294,6 +294,11 @@ pub async fn scrape_resolve_url(app: AppHandle, url: String) -> Value {
         .state::<std::sync::Arc<crate::limits::Limiter>>()
         .inner()
         .clone();
+    // NOTE: one slot here covers a single resolve, which may fan out a SHORT,
+    // bounded redirect chain — `generic_html` follows at most 2 hops
+    // (get_guarded_following_redirects with max_hops=2 → up to 3 fetches: the
+    // initial request + 2 redirect hops). The hop budget is kept small precisely so
+    // one slot stays a small, honest, bounded number of outbound fetches.
     let _guard = match limiter.acquire(
         "scrape_url",
         crate::limits::SCRAPE_RATE_MAX,

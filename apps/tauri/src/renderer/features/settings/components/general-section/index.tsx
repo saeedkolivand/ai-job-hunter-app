@@ -40,104 +40,116 @@ export function GeneralSection({
 
   return (
     <>
-      <SettingsSection icon={User} label={t('settings.profile.title')}>
-        <div className="space-y-3">
-          <label className="block">
-            <div className="mb-1.5 text-[11px] font-medium text-foreground/50">
-              {t('settings.profile.displayName')}
-            </div>
-            <div className="flex gap-2">
-              <Input
-                value={localName}
-                onChange={(e) => setLocalName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && localName !== (userName || '')) setUserName(localName);
-                }}
-                placeholder={t('settings.profile.placeholder')}
-                className="flex-1"
-              />
-              <Button
-                variant="glass"
-                onClick={() => setUserName(localName)}
-                disabled={localName === (userName || '')}
-              >
-                {t('settings.profile.save')}
-              </Button>
-            </div>
-          </label>
-        </div>
-      </SettingsSection>
-
-      <SettingsSection icon={Languages} label={t('settings.language.title')}>
-        <LanguageSelector />
-      </SettingsSection>
-
-      <SettingsSection icon={Wand2} label={t('settings.onboarding.title')}>
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-foreground/45">{t('settings.onboarding.description')}</p>
-          <Button
-            variant="glass"
-            onClick={replayWizard}
-            disabled={!onboardingCompleted}
-            className="ml-4 shrink-0"
-          >
-            {t('settings.onboarding.replay')}
-          </Button>
-        </div>
-      </SettingsSection>
-
-      <SettingsSection icon={Power} label={t('settings.startup.title')}>
-        <div className="space-y-2.5">
-          <div className="rounded-lg border border-foreground/10 px-3 py-2.5">
-            <Switch
-              label={t('settings.startup.launchAtLogin')}
-              description={t('settings.startup.launchAtLoginHint')}
-              checked={launchAtLogin}
-              disabled={setLaunchAtLogin.isPending}
-              onCheckedChange={(next) => setLaunchAtLogin.mutate(next)}
-            />
+      <div data-settings-anchor="general-profile">
+        <SettingsSection icon={User} label={t('settings.profile.title')}>
+          <div className="space-y-3">
+            <label className="block">
+              <div className="mb-1.5 text-[11px] font-medium text-foreground/50">
+                {t('settings.profile.displayName')}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  value={localName}
+                  onChange={(e) => setLocalName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && localName !== (userName || '')) setUserName(localName);
+                  }}
+                  placeholder={t('settings.profile.placeholder')}
+                  className="flex-1"
+                />
+                <Button
+                  variant="glass"
+                  onClick={() => setUserName(localName)}
+                  disabled={localName === (userName || '')}
+                >
+                  {t('settings.profile.save')}
+                </Button>
+              </div>
+            </label>
           </div>
-          <div className="rounded-lg border border-foreground/10 px-3 py-2.5">
-            <Switch
-              label={t('settings.startup.closeToTray')}
-              description={t('settings.startup.closeToTrayHint')}
-              checked={closeToTray}
-              disabled={setCloseToTray.isPending}
-              onCheckedChange={(next) => setCloseToTray.mutate(next)}
-            />
-          </div>
-        </div>
-      </SettingsSection>
+        </SettingsSection>
+      </div>
 
-      <SettingsSection icon={Move} label={t('settings.window.title')}>
-        <div className="space-y-2.5">
+      <div data-settings-anchor="general-language">
+        <SettingsSection icon={Languages} label={t('settings.language.title')}>
+          <LanguageSelector />
+        </SettingsSection>
+      </div>
+
+      <div data-settings-anchor="general-onboarding">
+        <SettingsSection icon={Wand2} label={t('settings.onboarding.title')}>
           <div className="flex items-center justify-between">
-            <p className="text-xs text-foreground/45">{t('settings.window.resetPositionHint')}</p>
+            <p className="text-xs text-foreground/45">{t('settings.onboarding.description')}</p>
             <Button
               variant="glass"
-              onClick={() => void controls.resetPosition()}
+              onClick={replayWizard}
+              disabled={!onboardingCompleted}
               className="ml-4 shrink-0"
             >
-              {t('settings.window.resetPosition')}
+              {t('settings.onboarding.replay')}
             </Button>
           </div>
-          {/* ponytail: duplicates ⌘H — macOS only */}
-          {controls.isMacos && (
+        </SettingsSection>
+      </div>
+
+      <div data-settings-anchor="general-startup">
+        <SettingsSection icon={Power} label={t('settings.startup.title')}>
+          <div className="space-y-2.5">
+            <div className="rounded-lg border border-foreground/10 px-3 py-2.5">
+              <Switch
+                label={t('settings.startup.launchAtLogin')}
+                description={t('settings.startup.launchAtLoginHint')}
+                checked={launchAtLogin}
+                disabled={setLaunchAtLogin.isPending}
+                onCheckedChange={(next) => setLaunchAtLogin.mutate(next)}
+              />
+            </div>
+            <div className="rounded-lg border border-foreground/10 px-3 py-2.5">
+              <Switch
+                label={t('settings.startup.closeToTray')}
+                description={t('settings.startup.closeToTrayHint')}
+                checked={closeToTray}
+                disabled={setCloseToTray.isPending}
+                onCheckedChange={(next) => setCloseToTray.mutate(next)}
+              />
+            </div>
+          </div>
+        </SettingsSection>
+      </div>
+
+      <div data-settings-anchor="general-window">
+        <SettingsSection icon={Move} label={t('settings.window.title')}>
+          <div className="space-y-2.5">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-foreground/45">{t('settings.window.hideAppHint')}</p>
+              <p className="text-xs text-foreground/45">{t('settings.window.resetPositionHint')}</p>
               <Button
                 variant="glass"
-                onClick={() => void controls.hideApp()}
+                onClick={() => void controls.resetPosition()}
                 className="ml-4 shrink-0"
               >
-                {t('settings.window.hideApp')}
+                {t('settings.window.resetPosition')}
               </Button>
             </div>
-          )}
-        </div>
-      </SettingsSection>
+            {/* ponytail: duplicates ⌘H — macOS only */}
+            {controls.isMacos && (
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-foreground/45">{t('settings.window.hideAppHint')}</p>
+                <Button
+                  variant="glass"
+                  onClick={() => void controls.hideApp()}
+                  className="ml-4 shrink-0"
+                >
+                  {t('settings.window.hideApp')}
+                </Button>
+              </div>
+            )}
+          </div>
+        </SettingsSection>
+      </div>
 
-      <UpdateSection />
+      <div data-settings-anchor="general-updates">
+        <UpdateSection />
+      </div>
     </>
   );
 }

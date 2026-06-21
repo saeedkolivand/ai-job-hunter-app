@@ -59,7 +59,7 @@ export function wizardStateToPayload(form: WizardState): AutopilotCreate {
 export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
   return {
     name: '',
-    boards: ['linkedin'],
+    boards: ['aggregator'],
     query: '',
     location: jobPrefs?.location ?? '',
     // No job-preference field seeds work type; default to the 'any' sentinel.
@@ -95,7 +95,7 @@ export function autopilotToWizardState(ap: Autopilot): WizardState {
       ? target.boards
       : target.board
         ? [target.board]
-        : ['linkedin'];
+        : ['aggregator'];
   return {
     name: ap.name,
     boards,

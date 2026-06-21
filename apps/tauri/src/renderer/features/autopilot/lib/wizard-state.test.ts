@@ -78,8 +78,8 @@ describe('buildDefaults()', () => {
     expect(state.location).toBe('');
   });
 
-  it('defaults to boards: ["linkedin"]', () => {
-    expect(buildDefaults().boards).toEqual(['linkedin']);
+  it('defaults to boards: ["aggregator"]', () => {
+    expect(buildDefaults().boards).toEqual(['aggregator']);
   });
 });
 
