@@ -992,6 +992,36 @@ async fn try_smartrecruiters(url: &str) -> Result<Option<JobPosting>> {
 // URL: https://<company>.jobs.personio.{de,com}/?id=<id>
 // Match against the XML feed item.
 
+/// Extract the company slug from a Personio job URL.
+///
+/// Valid hosts are `<company>.jobs.personio.{de,com}` — the first host label
+/// (before the first `.`) is the company slug, returned lowercased.
+/// Returns `None` for non-Personio hosts, bare `jobs.personio.*` roots (no
+/// company subdomain), or malformed/unparseable URLs.
+pub(crate) fn personio_company_from_url(url: &str) -> Option<String> {
+    let u = reqwest::Url::parse(url).ok()?;
+    let host = u.host_str()?;
+    // Exact/suffix match only — a substring gate would let a look-alike host
+    // (`jobs.personio.attacker.tld`) pass.
+    if host != "jobs.personio.de"
+        && host != "jobs.personio.com"
+        && !host.ends_with(".jobs.personio.de")
+        && !host.ends_with(".jobs.personio.com")
+    {
+        return None;
+    }
+    // The bare roots (`jobs.personio.de` / `jobs.personio.com`) have no
+    // company subdomain — the first label would be "jobs", which is wrong.
+    if host == "jobs.personio.de" || host == "jobs.personio.com" {
+        return None;
+    }
+    let company = host.split('.').next()?;
+    if company.is_empty() {
+        return None;
+    }
+    Some(company.to_ascii_lowercase())
+}
+
 async fn try_personio(url: &str) -> Result<Option<JobPosting>> {
     let u = match reqwest::Url::parse(url) {
         Ok(u) => u,
@@ -1001,22 +1031,11 @@ async fn try_personio(url: &str) -> Result<Option<JobPosting>> {
         Some(h) => h,
         None => return Ok(None),
     };
-    // Exact/suffix match only. A substring gate (`contains("jobs.personio.")`)
-    // would let `jobs.personio.attacker.tld` pass and turn the feed fetch into
-    // an attacker-controlled, rebindable egress. Real Personio job hosts are
-    // `jobs.personio.{de,com}` and `<company>.jobs.personio.{de,com}`.
-    if host != "jobs.personio.de"
-        && host != "jobs.personio.com"
-        && !host.ends_with(".jobs.personio.de")
-        && !host.ends_with(".jobs.personio.com")
-    {
-        return Ok(None);
-    }
 
-    let company = host.split('.').next().unwrap_or("");
-    if company.is_empty() {
-        return Ok(None);
-    }
+    let company = match personio_company_from_url(url) {
+        Some(c) => c,
+        None => return Ok(None),
+    };
 
     let id = u
         .query_pairs()
@@ -1043,16 +1062,18 @@ async fn try_personio(url: &str) -> Result<Option<JobPosting>> {
 
     // Shared feed parser (regex set + capture loop) lives in the Personio board.
     // Here we pick the single position whose id matches the URL query and map it
-    // onto this resolver's JobPosting shape (original url, personio:<id>).
+    // onto this resolver's JobPosting shape (original url, personio:{company}:{id}).
+    // Use make_job_id so both the board-scrape path and this URL-resolve path
+    // produce byte-identical ids for the same posting — deduplication depends on it.
     let position = crate::scraping::boards::personio::parse_xml_feed(&xml)
         .into_iter()
         .find(|p| p.id == id);
     if let Some(pos) = position {
         return Ok(Some(JobPosting {
-            id: format!("personio:{}", id),
+            id: crate::scraping::boards::personio::make_job_id(&company, &id),
             external_id: Some(id.clone()),
             title: pos.title,
-            company: company.to_string(),
+            company: company.clone(),
             location: if pos.office.is_empty() {
                 None
             } else {

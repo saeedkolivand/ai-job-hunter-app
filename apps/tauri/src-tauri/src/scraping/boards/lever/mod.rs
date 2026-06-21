@@ -30,6 +30,14 @@ struct LeverPosting {
     created_at: Option<i64>,
 }
 
+/// Map a Lever `createdAt` value (already epoch-milliseconds) to the
+/// `posted_at` field.  Exposed for testing so the test exercises this exact
+/// function rather than a local re-implementation that could drift.
+#[inline]
+pub(crate) fn map_posted_at(created_at: Option<i64>) -> Option<i64> {
+    created_at // createdAt is already epoch-milliseconds — pass through verbatim
+}
+
 pub struct LeverScraper;
 
 #[async_trait]
@@ -109,7 +117,7 @@ impl Scraper for LeverScraper {
                     source: self.id().to_string(),
                     description: p.description_plain,
                     requirements: None,
-                    posted_at: p.created_at, // createdAt is already epoch-milliseconds
+                    posted_at: map_posted_at(p.created_at), // createdAt is already epoch-milliseconds
                     captured_at: now,
                     extra: std::collections::HashMap::new(),
                 };

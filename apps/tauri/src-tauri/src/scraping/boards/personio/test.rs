@@ -1,5 +1,142 @@
 use super::*;
 
+// ── Slug validation guard ─────────────────────────────────────────────────────
+
+/// `is_valid_personio_slug` must accept normal lowercase slugs and reject
+/// values that could alter the URL authority (SSRF guard).
+#[test]
+fn slug_validation_accepts_valid_slugs() {
+    assert!(is_valid_personio_slug("clark"));
+    assert!(is_valid_personio_slug("my-company"));
+    assert!(is_valid_personio_slug("acme123"));
+    assert!(is_valid_personio_slug("a1b2-c3d4"));
+}
+
+#[test]
+fn slug_validation_rejects_ssrf_slugs() {
+    // IP with port — the classic SSRF vector for subdomain-based URLs.
+    assert!(!is_valid_personio_slug("127.0.0.1:8443"));
+    // Path injection.
+    assert!(!is_valid_personio_slug("127.0.0.1/foo"));
+    // Dot in label (would split subdomain or allow IP).
+    assert!(!is_valid_personio_slug("dotted.host"));
+    // Colon (port injection).
+    assert!(!is_valid_personio_slug("host:8080"));
+    // Leading hyphen (invalid DNS label).
+    assert!(!is_valid_personio_slug("-leading"));
+    // Trailing hyphen (invalid DNS label).
+    assert!(!is_valid_personio_slug("trailing-"));
+    // Empty string.
+    assert!(!is_valid_personio_slug(""));
+    // Exceeds 63-char DNS label limit.
+    assert!(!is_valid_personio_slug(&"a".repeat(64)));
+}
+
+/// An invalid slug must be skipped without any network request — the search
+/// returns Ok([]) immediately.
+#[tokio::test]
+async fn invalid_slug_skipped_without_network() {
+    let scraper = PersonioScraper;
+
+    let make_input = |companies: Vec<String>| BoardSearchInput {
+        query: String::new(),
+        location: None,
+        amount: 10,
+        pages: 1,
+        date_filter: None,
+        job_type: None,
+        work_type: None,
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        locale: None,
+        country_code: None,
+        latitude: None,
+        longitude: None,
+        radius_km: None,
+        companies,
+    };
+    let make_ctx = || ScrapeContext {
+        signal: tokio_util::sync::CancellationToken::new(),
+        on_progress: None,
+        on_item: None,
+    };
+
+    // IP:port — the primary SSRF vector.
+    let result = scraper
+        .search(make_input(vec!["127.0.0.1:8443".to_string()]), make_ctx())
+        .await;
+    assert!(result.is_ok(), "invalid slug must return Ok");
+    assert!(
+        result.unwrap().is_empty(),
+        "SSRF slug must produce empty result (skipped, no network)"
+    );
+
+    // Dotted host.
+    let result = scraper
+        .search(make_input(vec!["dotted.host".to_string()]), make_ctx())
+        .await;
+    assert!(result.is_ok());
+    assert!(result.unwrap().is_empty(), "dotted slug must be skipped");
+
+    // Path injection.
+    let result = scraper
+        .search(make_input(vec!["127.0.0.1/foo".to_string()]), make_ctx())
+        .await;
+    assert!(result.is_ok());
+    assert!(
+        result.unwrap().is_empty(),
+        "path-injection slug must be skipped"
+    );
+}
+
+// ── ID namespacing — cross-tenant collision prevention ────────────────────────
+
+/// Two companies returning the same raw position ID must produce distinct
+/// `JobPosting.id` values because the format is `personio:{company}:{id}`.
+/// Without the company namespace, a position `id=42` at "acme" and the same
+/// `id=42` at "globex" would collide in any deduplication or storage layer.
+#[test]
+fn id_namespacing_prevents_cross_tenant_collisions() {
+    let xml_template = |id: &str, name: &str| {
+        format!(
+            r#"<?xml version="1.0"?>
+<workzag-jobs>
+  <position>
+    <id>{id}</id>
+    <name>{name}</name>
+    <office>Berlin</office>
+    <jobDescription><value>desc</value></jobDescription>
+    <createdAt>2024-01-01T00:00:00Z</createdAt>
+  </position>
+</workzag-jobs>"#
+        )
+    };
+
+    let xml_acme = xml_template("42", "Engineer at Acme");
+    let xml_globex = xml_template("42", "Engineer at Globex");
+
+    let positions_acme = parse_xml_feed(&xml_acme);
+    let positions_globex = parse_xml_feed(&xml_globex);
+
+    assert_eq!(positions_acme.len(), 1);
+    assert_eq!(positions_globex.len(), 1);
+
+    // Use the production helper — if namespacing is removed or changed the
+    // assertions below fail on the actual output, not a reimplementation.
+    let id_acme = make_job_id("acme", &positions_acme[0].id);
+    let id_globex = make_job_id("globex", &positions_globex[0].id);
+
+    assert_ne!(
+        id_acme, id_globex,
+        "same raw position id from different tenants must produce distinct JobPosting.id"
+    );
+    assert_eq!(id_acme, "personio:acme:42");
+    assert_eq!(id_globex, "personio:globex:42");
+}
+
 // ── R5: Personio dotall regex — multi-line content capture ────────────────────
 //
 // `DESC_RE` uses the `(?s)` flag so `.` matches newlines.  Without it, a

@@ -33,6 +33,14 @@ function toggleBoard(boards: string[], id: string): string[] {
   return boards.includes(id) ? boards.filter((b) => b !== id) : [...boards, id];
 }
 
+/** Parse a comma-separated companies string into a trimmed, non-empty string[]. */
+function parseCompanies(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 export function ScrapeForm({
   show,
   form,
@@ -182,12 +190,8 @@ export function ScrapeForm({
                   ) {
                     e.preventDefault();
                     if (showCompanyInput) {
-                      const parsed = rawCompanies
-                        .split(',')
-                        .map((s) => s.trim())
-                        .filter(Boolean);
                       flushSync(() => {
-                        onFormChange({ companies: parsed });
+                        onFormChange({ companies: parseCompanies(rawCompanies) });
                       });
                     }
                     onStart();
@@ -333,11 +337,7 @@ export function ScrapeForm({
                   onBlur={(e) => {
                     // Parse to string[] only on blur so mid-typing state
                     // (e.g. "stripe, ") is never snapped back by join(', ').
-                    const parsed = e.target.value
-                      .split(',')
-                      .map((s) => s.trim())
-                      .filter(Boolean);
-                    onFormChange({ companies: parsed });
+                    onFormChange({ companies: parseCompanies(e.target.value) });
                   }}
                   placeholder={t('jobs.companies.placeholder')}
                   disabled={scraping}
@@ -419,12 +419,8 @@ export function ScrapeForm({
                     // un-blurred entry is not lost (React 18 batches state
                     // updates so flushSync forces the parent to re-render with
                     // the parsed companies before startScrape captures them).
-                    const parsed = rawCompanies
-                      .split(',')
-                      .map((s) => s.trim())
-                      .filter(Boolean);
                     flushSync(() => {
-                      onFormChange({ companies: parsed });
+                      onFormChange({ companies: parseCompanies(rawCompanies) });
                     });
                   }
                   onStart();

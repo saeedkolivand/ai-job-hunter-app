@@ -164,7 +164,7 @@ export const ScrapeBoardsRequestSchema = z.object({
   // keyword search — they require a company slug (e.g. Greenhouse
   // `boards-api.greenhouse.io/v1/boards/{company}/jobs`). Absent/empty = no
   // company filter; only ATS boards read it, every other board ignores it.
-  companies: z.array(z.string()).optional(),
+  companies: z.array(z.string().trim().min(1)).optional(),
 });
 
 export const ScrapeUrlRequestSchema = z.object({

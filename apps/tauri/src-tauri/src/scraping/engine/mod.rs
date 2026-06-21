@@ -380,6 +380,12 @@ impl ScraperEngine {
         // Map board name → original index for filling run results later.
         let mut name_to_idx: HashMap<String, usize> = HashMap::new();
 
+        // Pre-compute whether the input contains at least one non-whitespace company
+        // slug.  A payload like [" ", "\t"] bypasses `is_empty()` but ATS scrapers
+        // trim-and-drop those entries, yielding no usable company — the same outcome
+        // as an empty list.  Check once here so the per-board skip stays O(1).
+        let has_usable_company = input.companies.iter().any(|c| !c.trim().is_empty());
+
         for (idx, (id, scraper)) in resolved.into_iter().enumerate() {
             // Determine skip reason (if any) from the resolved scraper.
             // Unknown-board Err values always pass through (no skip) so they
@@ -394,8 +400,10 @@ impl ScraperEngine {
                         return Some("needs-login");
                     }
                 }
-                // Skip 2: ATS board that requires a company slug but none supplied.
-                if s.requires_company() && input.companies.is_empty() {
+                // Skip 2: ATS board that requires a company slug but none usable.
+                // Treats whitespace-only entries (e.g. [" ", "\t"]) the same as
+                // an empty list — they are trimmed-and-dropped by ATS scrapers.
+                if s.requires_company() && !has_usable_company {
                     return Some("needs-company");
                 }
                 None

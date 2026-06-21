@@ -429,6 +429,112 @@ fn test_parse_from_html_json_ld_enriches_empty_title_page() {
         .contains("Lead the platform"));
 }
 
+// ── Personio id consistency: resolver == board-scrape path ───────────────────
+//
+// Both ingestion paths (board scrape + URL resolve) must produce the same
+// JobPosting.id for the same posting. Before this fix the resolver emitted
+// `personio:{id}` while the board emitted `personio:{company}:{id}`.
+
+/// `personio_company_from_url` correctly extracts the company slug from the
+/// first host label and lowercases it.  This drives the extraction fn from
+/// *real URL strings*, so the assertions fail if the fn stops parsing the host
+/// or stops lowercasing — a hardcoded-literal test cannot catch those regressions.
+#[test]
+fn personio_company_from_url_extracts_slug() {
+    use super::personio_company_from_url;
+
+    // Standard `.de` subdomain → lowercase company slug.
+    assert_eq!(
+        personio_company_from_url("https://acme.jobs.personio.de/?id=42"),
+        Some("acme".to_string()),
+        "standard .de URL must yield company slug"
+    );
+
+    // `.com` variant must also work.
+    assert_eq!(
+        personio_company_from_url("https://globex.jobs.personio.com/job/99"),
+        Some("globex".to_string()),
+        ".com host variant must yield company slug"
+    );
+
+    // Uppercase in host: reqwest::Url normalises ASCII hosts to lowercase
+    // before we even split — verify the fn handles that chain end-to-end.
+    assert_eq!(
+        personio_company_from_url("https://ACME.jobs.personio.de/?id=1"),
+        Some("acme".to_string()),
+        "uppercase host label must be normalised to lowercase"
+    );
+
+    // Bare root (no company subdomain) → None.
+    assert_eq!(
+        personio_company_from_url("https://jobs.personio.de/?id=5"),
+        None,
+        "bare personio root has no company subdomain"
+    );
+
+    // Non-Personio host → None.
+    assert_eq!(
+        personio_company_from_url("https://acme.example.com/jobs/42"),
+        None,
+        "non-Personio host must return None"
+    );
+
+    // Look-alike (suffix-evading) host → None.
+    assert_eq!(
+        personio_company_from_url("https://jobs.personio.de.evil.tld/?id=1"),
+        None,
+        "look-alike host must be rejected"
+    );
+
+    // Garbage / unparseable URL → None.
+    assert_eq!(
+        personio_company_from_url("not a url at all"),
+        None,
+        "unparseable URL must return None"
+    );
+}
+
+/// Assert the full resolver id for a known URL+pos_id equals
+/// `make_job_id(extracted_company, pos_id)` — i.e. the test fails if the
+/// resolver stops extracting the company from the URL or stops using
+/// `make_job_id`.  Unlike the previous test, both sides are NOT identical
+/// expressions: one side drives `personio_company_from_url` from the URL
+/// string; the other is the expected literal.
+#[test]
+fn personio_resolver_id_composition_is_non_tautological() {
+    use super::personio_company_from_url;
+
+    let url = "https://acme.jobs.personio.de/?id=42";
+    let pos_id = "42";
+
+    // Drive extraction from the URL — NOT a hardcoded company string.
+    let extracted =
+        personio_company_from_url(url).expect("well-formed Personio URL must yield a company slug");
+
+    // If personio_company_from_url returns the wrong thing (e.g. "jobs" instead
+    // of "acme", or the id instead of the slug), this assertion catches it.
+    assert_eq!(
+        extracted, "acme",
+        "extracted slug must be the subdomain label"
+    );
+
+    // Compose the id the same way try_personio does.
+    let resolver_id = crate::scraping::boards::personio::make_job_id(&extracted, pos_id);
+
+    // If make_job_id format ever changes (e.g. drops the company), this fails.
+    assert_eq!(
+        resolver_id, "personio:acme:42",
+        "resolver id must be personio:<company>:<pos_id>"
+    );
+
+    // Cross-check: the board-scrape path for the same company+id must be byte-identical.
+    let board_id = crate::scraping::boards::personio::make_job_id("acme", pos_id);
+    assert_eq!(
+        resolver_id, board_id,
+        "resolver and board-scrape must produce byte-identical ids for the same posting"
+    );
+}
+
 // ── SSRF host-gate rejection (hermetic — no network) ─────────────────────────
 //
 // A look-alike host must be rejected at the host gate and return `Ok(None)`

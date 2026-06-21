@@ -139,8 +139,13 @@ export function JobsPage() {
           failed: failedNames,
         });
       }
+      // Capture the active job id BEFORE noteScrapeFinished clears scrapeJobRef.
+      // Guard: only emit per-board warnings for the active scrape job — stale
+      // `job.completed` events from a previous round must not show false diagnostics.
+      const isActiveJob = ev.jobId === scrapeJobRef.current;
       noteScrapeFinished(ev.jobId, { ok: true, note });
       void invalidatePostings();
+      if (!isActiveJob) return;
       // Surface skipped-due-to-login boards as a distinct warning notification
       // so the user knows why a board returned 0 results.
       if (skippedBoards.length > 0) {

@@ -127,23 +127,17 @@ async fn mixed_list_invalid_slug_skipped_no_panic() {
 // Boundary: valid slugs are NOT rejected by the guard
 // ---------------------------------------------------------------------------
 
-/// Slugs that use only [a-zA-Z0-9-] must pass the guard (they will attempt a
-/// network fetch, so we cancel immediately — but they must NOT be rejected by
-/// the predicate itself, which would produce an immediate empty return before
-/// the cancel check).
-///
-/// We verify this indirectly: a cancelled-before-start run returns Ok(()), not
-/// an error; if the guard had wrongly rejected the slug we'd get the same
-/// result, but combined with the invalid-slug tests this forms a complete
-/// boundary picture.  A live verification is in `live_search_returns_results`.
-#[tokio::test]
-async fn valid_slug_passes_guard_predicate() {
-    // Verify the predicate directly — no I/O needed.
+/// Slugs that use only [a-zA-Z0-9-] must pass the production guard; slugs with
+/// any other character must be rejected.  Uses `is_valid_recruitee_slug` from
+/// `mod.rs` directly so this test exercises the real guard — not a local
+/// re-implementation that could drift from the production path.
+#[test]
+fn valid_slug_passes_guard_predicate() {
     let valid_slugs = ["acme", "my-company", "ACME123", "a1b2-c3d4"];
     for slug in valid_slugs {
         assert!(
-            slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
-            "slug '{slug}' should be accepted by the hostname guard"
+            is_valid_recruitee_slug(slug),
+            "slug '{slug}' should be accepted by the production hostname guard"
         );
     }
 
@@ -153,11 +147,15 @@ async fn valid_slug_passes_guard_predicate() {
         "dotted.host",
         "bad%20slug",
         "_under",
+        // DNS-label constraints (must match Personio guard)
+        "-leading",
+        "trailing-",
+        &"a".repeat(64), // >63 chars
     ];
     for slug in invalid_slugs {
         assert!(
-            !slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
-            "slug '{slug}' should be rejected by the hostname guard"
+            !is_valid_recruitee_slug(slug),
+            "slug '{slug}' should be rejected by the production hostname guard"
         );
     }
 }
