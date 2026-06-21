@@ -20,10 +20,38 @@ describe('use-boards services', () => {
 // ── useBoardsCatalog ──────────────────────────────────────────────────────────
 
 const MOCK_CATALOG: BoardCatalogEntry[] = [
-  { id: 'greenhouse', displayName: 'Greenhouse', mode: 'http', auth: 'guest', listed: true },
-  { id: 'linkedin', displayName: 'LinkedIn', mode: 'http', auth: 'optional', listed: true },
-  { id: 'indeed', displayName: 'Indeed', mode: 'browser', auth: 'required', listed: true },
-  { id: 'glassdoor', displayName: 'Glassdoor', mode: 'browser', auth: 'guest', listed: false },
+  {
+    id: 'greenhouse',
+    displayName: 'Greenhouse',
+    mode: 'http',
+    auth: 'guest',
+    listed: true,
+    requiresCompany: false,
+  },
+  {
+    id: 'linkedin',
+    displayName: 'LinkedIn',
+    mode: 'http',
+    auth: 'optional',
+    listed: true,
+    requiresCompany: false,
+  },
+  {
+    id: 'indeed',
+    displayName: 'Indeed',
+    mode: 'browser',
+    auth: 'required',
+    listed: true,
+    requiresCompany: false,
+  },
+  {
+    id: 'glassdoor',
+    displayName: 'Glassdoor',
+    mode: 'browser',
+    auth: 'guest',
+    listed: false,
+    requiresCompany: false,
+  },
 ];
 
 describe('useBoardsCatalog', () => {

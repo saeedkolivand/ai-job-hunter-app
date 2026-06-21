@@ -1603,6 +1603,15 @@
       "skippedNote_one": "{{boards}} was skipped — sign in to enable results from this board.",
       "skippedNote_other": "{{boards}} were skipped — sign in to enable results from these boards."
     },
+    "needsCompany": {
+      "skippedNote_one": "{{boards}} was skipped — add a company slug to scrape this board.",
+      "skippedNote_other": "{{boards}} were skipped — add a company slug to scrape these boards."
+    },
+    "companies": {
+      "label": "Companies",
+      "placeholder": "e.g. stripe, airbnb",
+      "hint": "Comma-separated company slugs for ATS boards."
+    },
     "partialScrapeNote": "{{done}} of {{total}} boards · {{failed}} failed"
   },
   "resumes": {

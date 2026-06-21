@@ -41,6 +41,8 @@ pub struct ScrapeBoardsRequest {
     pub verified: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sort_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub companies: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

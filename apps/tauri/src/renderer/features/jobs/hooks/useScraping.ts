@@ -1,27 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
 import type { useNotification } from '@ajh/ui';
 
+import type { ScrapeFormState } from '@/features/jobs/components/ScrapeForm/constants';
 import type { Posting } from '@/features/jobs/types';
 import { fetchJob, useCancelJob, useScrapeBoards } from '@/services';
 
 type ScrapeOutcome = { ok: boolean; note?: string };
 
-interface ScrapeForm {
-  boards: string[];
-  query: string;
-  location: string;
-  countryCode?: string;
-  latitude?: number;
-  longitude?: number;
-  radiusKm: number;
-  amount: number;
-  dateFilter: '' | (typeof DATE_FILTER_OPTIONS)[number];
-  locale: string;
-}
-
-export function useScraping(notify: ReturnType<typeof useNotification>, scrapeForm: ScrapeForm) {
+export function useScraping(
+  notify: ReturnType<typeof useNotification>,
+  scrapeForm: ScrapeFormState
+) {
   const [scraping, setScraping] = useState(false);
   const [scrapeJobId, setScrapeJobId] = useState<string | null>(null);
   const [scrapeOutcome, setScrapeOutcome] = useState<ScrapeOutcome | null>(null);
@@ -53,6 +43,7 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
       ...(replace ? { replace: true } : {}),
       ...(scrapeForm.dateFilter ? { dateFilter: scrapeForm.dateFilter } : {}),
       ...(scrapeForm.boards.includes('indeed') ? { locale: scrapeForm.locale } : {}),
+      ...(scrapeForm.companies.length > 0 ? { companies: scrapeForm.companies } : {}),
     } as Parameters<typeof scrapeBoards.mutateAsync>[0])) as { jobId: string; error?: string };
     return res;
   };
@@ -74,6 +65,7 @@ export function useScraping(notify: ReturnType<typeof useNotification>, scrapeFo
       scrapeForm.query.trim().toLowerCase(),
       scrapeForm.location.trim().toLowerCase(),
       scrapeForm.dateFilter ?? '',
+      scrapeForm.companies.slice().sort().join(','),
     ].join('|');
     if (signature !== lastSearchRef.current) {
       lastSearchRef.current = signature;

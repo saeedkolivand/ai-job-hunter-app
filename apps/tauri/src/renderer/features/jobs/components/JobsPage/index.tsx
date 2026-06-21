@@ -51,6 +51,7 @@ export function JobsPage() {
     amount: 25,
     dateFilter: '' as '' | (typeof DATE_FILTER_OPTIONS)[number],
     locale: 'us',
+    companies: [],
   });
 
   // One-way prefill: seed the scrape location from the saved preferred location
@@ -150,6 +151,20 @@ export function JobsPage() {
             count: skippedBoards.length,
           }),
           // Sticky: diagnostic notification requires user action (sign in to that board).
+          duration: 0,
+        });
+      }
+      // Surface skipped-due-to-missing-company boards as a distinct warning so
+      // the user knows to add a company slug in the scrape form.
+      const needsCompanyBoards = boardSummaries.filter((b) => b.skipped === 'needs-company');
+      if (needsCompanyBoards.length > 0) {
+        const boardNames = needsCompanyBoards.map((b) => t(`jobs.boards.${b.board}`)).join(', ');
+        notify.warning({
+          message: t('jobs.needsCompany.skippedNote', {
+            boards: boardNames,
+            count: needsCompanyBoards.length,
+          }),
+          // Sticky: diagnostic notification requires user action (add company slug).
           duration: 0,
         });
       }

@@ -88,6 +88,10 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
         latitude: req.latitude,
         longitude: req.longitude,
         radius_km: req.radius_km,
+        // Company slugs for ATS boards with no global keyword search. Absent on
+        // the wire → empty here, which is a no-op for every current board (none
+        // read it yet); the 6 ATS boards will consume it in a follow-up.
+        companies: req.companies.clone().unwrap_or_default(),
     };
     let boards = req.boards.clone();
 
