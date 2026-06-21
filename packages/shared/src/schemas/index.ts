@@ -99,13 +99,10 @@ export const DocumentImportRequestSchema = z.object({
 export const BOARD_IDS = [
   // Major
   'linkedin',
-  'indeed',
-  'stepstone',
   // German / DACH
   'arbeitsagentur',
   'berlinstartupjobs',
   'germantechjobs',
-  'xing',
   // ATS platforms
   'greenhouse',
   'lever',
@@ -113,7 +110,6 @@ export const BOARD_IDS = [
   'smartrecruiters',
   'recruitee',
   'personio',
-  'workday',
   // Remote-first / aggregators
   'remoteok',
   'remotive',
@@ -139,7 +135,6 @@ export const ScrapeBoardsRequestSchema = z.object({
   // empty search keeps the previous results. Omitted/false = append.
   replace: z.boolean().optional(),
   dateFilter: z.enum(DATE_FILTER_OPTIONS).optional(),
-  locale: LocaleSchema.optional(),
   // Structured location (from a picked geocode suggestion) — lets boards filter
   // by precise place/country/radius instead of fuzzy free text (#49/#40).
   countryCode: z.string().optional(),

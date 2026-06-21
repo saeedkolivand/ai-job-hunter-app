@@ -12,29 +12,36 @@
 
 ## Summary table
 
-| Board               | Mode                                | Status               | Confidence | Verified endpoint                                                        | Notes                                   |
-| ------------------- | ----------------------------------- | -------------------- | ---------- | ------------------------------------------------------------------------ | --------------------------------------- |
-| **Aggregator**      | **HTTP (provider registry)**        | **✅ works**         | **high**   | **Adzuna (primary) / JSearch (paid fallback)**                           | **Bring-your-own-key; keyless = empty** |
-| Glassdoor           | Browser (login required)            | ⚠️ best-effort       | high       | `POST /job-search-next/bff/jobSearchResultsQuery`                        |                                         |
-| Indeed              | HTTP (login required)               | ⚠️ best-effort       | high       | `https://{domain}/jobs?q=…&l=…&start=…`                                  |                                         |
-| Xing                | HTTP (login required)               | ⚠️ best-effort       | medium     | `https://www.xing.com/jobs/search?keywords=…`                            |                                         |
-| LinkedIn            | HTTP (guest)                        | ✅ works             | high       | `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search` |                                         |
-| YCombinator (HN)    | HTTP (JSON API)                     | ✅ works             | high       | `https://hacker-news.firebaseio.com/v0/jobstories.json`                  |                                         |
-| Remotive            | HTTP (JSON API)                     | ✅ works             | high       | `https://remotive.com/api/remote-jobs`                                   |                                         |
-| RemoteOK            | HTTP (JSON API)                     | ✅ works             | high       | `https://remoteok.com/api`                                               |                                         |
-| WWR                 | HTTP (RSS)                          | ✅ works             | high       | `https://weworkremotely.com/remote-jobs.rss`                             |                                         |
-| Arbeitnow           | HTTP (JSON API)                     | ✅ works             | high       | `https://www.arbeitnow.com/api/job-board-api`                            |                                         |
-| Berlin Startup Jobs | HTTP (RSS)                          | ✅ works             | high       | `https://berlinstartupjobs.com/feed/`                                    |                                         |
-| German Tech Jobs    | HTTP (XML)                          | ✅ works             | high       | `https://germantechjobs.de/job_feed.xml` (working)                       |                                         |
-| **Greenhouse**      | **HTTP (JSON API, company-scoped)** | **✅ works**         | **high**   | **`https://boards-api.greenhouse.io/v1/boards/{slug}/jobs`**             | **Requires company slug**               |
-| **Lever**           | **HTTP (JSON API, company-scoped)** | **✅ works**         | **high**   | **`https://api.lever.co/v0/postings/{company}?mode=json`**               | **Requires company slug**               |
-| StepStone           | HTTP (ld+json)                      | ⚠️ fragile           | medium     | `https://www.stepstone.de/jobs/{query}?page={n}`                         |                                         |
-| **SmartRecruiters** | **HTTP (JSON API, company-scoped)** | **✅ works**         | **high**   | **`https://api.smartrecruiters.com/v1/companies/{id}/postings`**         | **Requires company + supports keyword** |
-| **Personio**        | **HTTP (XML feed, company-scoped)** | **✅ works**         | **high**   | **`https://{company}.jobs.personio.de/xml`**                             | **Requires company slug**               |
-| **Recruitee**       | **HTTP (JSON API, company-scoped)** | **✅ works**         | **high**   | **`https://{company}.recruitee.com/api/offers/`**                        | **Requires company slug**               |
-| Workday             | HTTP (JSON)                         | ❌ Cloudflare blocks | high       | `POST …/wday/cxs/{tenant}/{site}/jobs` (422 on all programmatic POSTs)   |                                         |
-| **Ashby**           | **HTTP (JSON API, company-scoped)** | **✅ works**         | **high**   | **`https://api.ashbyhq.com/posting-api/job-board/{clientname}`**         | **Requires company slug**               |
-| Arbeitsagentur      | HTTP (JSON API)                     | ✅ works             | high       | `https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs`   |                                         |
+Active scrapers: **16 boards** (registry as of 2026-06-21). Five boards were retired as direct scrapers and are now covered via the Adzuna/JSearch aggregator (see "Retired — now via aggregator" section below).
+
+| Board               | Mode                                | Status       | Confidence | Verified endpoint                                                        | Notes                                   |
+| ------------------- | ----------------------------------- | ------------ | ---------- | ------------------------------------------------------------------------ | --------------------------------------- |
+| **Aggregator**      | **HTTP (provider registry)**        | **✅ works** | **high**   | **Adzuna (primary) / JSearch (paid fallback)**                           | **Bring-your-own-key; keyless = empty** |
+| LinkedIn            | HTTP (guest)                        | ✅ works     | high       | `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search` |                                         |
+| YCombinator (HN)    | HTTP (JSON API)                     | ✅ works     | high       | `https://hacker-news.firebaseio.com/v0/jobstories.json`                  |                                         |
+| Remotive            | HTTP (JSON API)                     | ✅ works     | high       | `https://remotive.com/api/remote-jobs`                                   |                                         |
+| RemoteOK            | HTTP (JSON API)                     | ✅ works     | high       | `https://remoteok.com/api`                                               |                                         |
+| WWR                 | HTTP (RSS)                          | ✅ works     | high       | `https://weworkremotely.com/remote-jobs.rss`                             |                                         |
+| Arbeitnow           | HTTP (JSON API)                     | ✅ works     | high       | `https://www.arbeitnow.com/api/job-board-api`                            |                                         |
+| Berlin Startup Jobs | HTTP (RSS)                          | ✅ works     | high       | `https://berlinstartupjobs.com/feed/`                                    |                                         |
+| German Tech Jobs    | HTTP (XML)                          | ✅ works     | high       | `https://germantechjobs.de/job_feed.xml` (working)                       |                                         |
+| **Greenhouse**      | **HTTP (JSON API, company-scoped)** | **✅ works** | **high**   | **`https://boards-api.greenhouse.io/v1/boards/{slug}/jobs`**             | **Requires company slug**               |
+| **Lever**           | **HTTP (JSON API, company-scoped)** | **✅ works** | **high**   | **`https://api.lever.co/v0/postings/{company}?mode=json`**               | **Requires company slug**               |
+| **SmartRecruiters** | **HTTP (JSON API, company-scoped)** | **✅ works** | **high**   | **`https://api.smartrecruiters.com/v1/companies/{id}/postings`**         | **Requires company + supports keyword** |
+| **Personio**        | **HTTP (XML feed, company-scoped)** | **✅ works** | **high**   | **`https://{company}.jobs.personio.de/xml`**                             | **Requires company slug**               |
+| **Recruitee**       | **HTTP (JSON API, company-scoped)** | **✅ works** | **high**   | **`https://{company}.recruitee.com/api/offers/`**                        | **Requires company slug**               |
+| **Ashby**           | **HTTP (JSON API, company-scoped)** | **✅ works** | **high**   | **`https://api.ashbyhq.com/posting-api/job-board/{clientname}`**         | **Requires company slug**               |
+| Arbeitsagentur      | HTTP (JSON API)                     | ✅ works     | high       | `https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs`   |                                         |
+
+**Retired — now via aggregator** (removed from `SCRAPERS` registry; results available via Adzuna/JSearch):
+
+| Board     | Former mode              | Retirement reason                                                                 |
+| --------- | ------------------------ | --------------------------------------------------------------------------------- |
+| Glassdoor | Browser (login required) | Cloudflare Bot Management blocks all headless sessions; aggregator covers         |
+| Indeed    | HTTP (login required)    | hCaptcha + Cloudflare at volume; login cookies unreliable; aggregator covers      |
+| Xing      | HTTP (login required)    | Cloudflare tightening since mid-2025; login cookies unreliable; aggregator covers |
+| StepStone | HTTP (ld+json)           | Cloudflare/bot filter causes consistent 403/timeouts; aggregator covers           |
+| Workday   | HTTP (JSON POST)         | 422 on all programmatic POSTs (Cloudflare Bot Management); aggregator covers      |
 
 **Status legend:** ✅ works · ⚠️ fragile (anti-bot or stale selectors; works but needs monitoring) · ❌ broken (endpoint returns errors or scraper logic is stale and requires code changes)
 
@@ -89,109 +96,21 @@ Bring-your-own-key design: users with no key see empty results (not an error). S
 
 ---
 
-### Glassdoor
+### Retired boards (Glassdoor, Indeed, Xing, StepStone, Workday)
 
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/glassdoor/` (browser-based, login required)
+These five boards were retired as direct scrapers in 2026-06-21 (ADR-026). Their Rust modules (`scraping/boards/{glassdoor,indeed,xing,stepstone,workday}/`) have been deleted and they are removed from the `SCRAPERS` registry (registry count: 21 → 16). Coverage for these boards is now provided by the **Aggregator** (Adzuna/JSearch) — see the Aggregator section above.
 
-#### Current scraper
+**Why retired:** All five boards returned empty results or errors in production due to anti-bot defences (Cloudflare Bot Management, hCaptcha, JS fingerprinting). Self-scraping was a losing maintenance battle with no reliable fix short of residential proxies or managed actors, neither of which fit the local-first, bring-your-own-key model.
 
-- **Mode:** Browser (chromiumoxide with persisted login profile)
-- **Profile:** Per-board Chromium profile stored after `boards_import_cookies` or manual login via `boards_connect`; reused across scrape runs
-- **Session handling:** Best-effort authenticated access using `--user-data-dir` + system Chrome; session cookies from the profile backstop Cloudflare challenges
-- **Auth tier:** Required (see `AuthRequirement::Required` in `scraping/types/`); skipped if no valid session exists (empty cookie jar or stale session via `board_login::{load_cookies, session_is_stale}`)
+**What is deliberately KEPT (dormant):**
 
-#### Verified endpoint (2026-06-20)
+- `scraping/scrape_url/mod.rs` — `resolve()`, `try_workday()`, `canonical_job_url()` (Indeed URL resolver): used by the browser extension single-job import flow; kept because the import resolvers are pure URL transforms, not authenticated scrape loops.
+- `scraping/board_login/` and `credentials/` machinery: dormant (no active scrapers need them for these boards, but the infrastructure supports future use).
+- `commands/boards.rs` `boards_list()`: trimmed to `["linkedin"]` — indeed/xing/glassdoor were removed because their in-app login fed nothing after scraping removal.
+- `CredentialSetSchema` / `CredentialBoardSchema` in shared schemas: untouched (dormant).
+- Privacy "clear all" (`privacy_reset_app`): still disconnects the retired boards to wipe any lingering sessions from before the migration.
 
-- **Search URL:** `POST https://www.glassdoor.com/job-search-next/bff/jobSearchResultsQuery`
-- **Request body (JSON):** `keyword`, `locationId` (numeric Glassdoor ID, not a city string), `locationType` (CITY/STATE/COUNTRY/METRO), `pageNumber` (0-indexed), `pageCursor` (opaque string from prior response), `numJobsToShow` (30), `filterParams[]`
-- **Pagination:** `pageNumber` + `pageCursor` from `response.data.jobListings.paginationCursors`; max ~30 pages per query
-- **Auth required:** Login session; Cloudflare Bot Management requires either a persisted browser session or TLS impersonation. The scraper uses the persisted profile (`--user-data-dir`) to carry authentication; anonymous runs bypass this board entirely (new backend behavior: skipped instead of attempting a doomed headless request).
-- **Response format:** JSON — `response.data.jobListings.jobListings[].jobview`
-- **Key data fields:**
-  - Title: `jobview.header.jobTitleText`
-  - Company: `jobview.header.employerNameFromSearch`
-  - Location: `jobview.header.locationName`
-  - Stable ID: `jobview.job.listingId`
-  - URL: `jobview.header.seoJobLink`
-  - Age: `jobview.header.ageInDays`
-  - Salary (estimated percentiles): `jobview.header.payPeriodAdjustedPay.p10` / `.p90`
-  - Description: secondary call to `GET /job-listing/api/job-details?jobListingId={id}`
-- **Anti-bot:** Cloudflare Bot Management with TLS fingerprinting. Headless-browser CDP stealth flags (`--disable-blink-features=AutomationControlled`) mitigate fingerprinting but do not guarantee success. A persisted session (cookies + browser profile from a real login) improves reliability; however, Cloudflare may still restrict even authenticated headless sessions. No heuristic works 100%.
-
-#### Recommendation
-
-The scraper is correct; expect failures even when authenticated. Best-effort is the right posture. If Cloudflare blocks all headless sessions unconditionally, options: (A) residential proxy (solves the TLS fingerprint), (B) curl_cffi + TLS impersonation, (C) defer to a third-party actor (Apify). The current approach is maintainable and aligns with the project's apply-assistant model (user review before submit).
-
----
-
-### Indeed
-
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/indeed/`
-
-#### Current scraper
-
-- **URL:** `https://{domain}/jobs?q={query}&l={location}&start={page*10}`
-- **Mode:** HTTP via reqwest (NOT browser); runs behind `browser_sem` only because it was historically grouped with browser scrapers, but it is a pure HTTP HTML parser
-- **Selectors:** `div.job_seen_beacon`, `h2.jobTitle span[title]`, `[data-testid='company-name']`, `[data-testid='text-location']`, `div.job-snippet`, `data-jk` attribute
-- **Auth tier:** Required (login cookies carry over from `boards_import_cookies`); skipped when no valid session exists
-- **Staleness:** Moderate-high. Scraper has both modern `data-testid` attributes and legacy class selectors. Legacy `.companyName`/`.companyLocation` classes churn frequently.
-
-#### Verified endpoint (2026-06-20)
-
-- **Search URL:** `https://www.indeed.com/jobs` (locale variants: `de.indeed.com`, `uk.indeed.com`, etc.)
-- **Query params:** `q` (search, `+`-encoded), `l` (location, `+`-encoded), `start` (offset: 0, 10, 20 … max ~1000)
-- **Pagination:** `start` offset, step 10; ~100 pages max
-- **Auth required:** Login session via cookies (`INDEED-PSID`, etc.). Anonymous access returns empty result sets or Cloudflare/hCaptcha challenges at volume. Empty results from a logged-out session now trigger a `skipped: "needs-login"` outcome instead of an empty result emission.
-- **Response format:** Server-rendered HTML; statically parseable (no client-side React injection that demands a headless render)
-- **Key data fields:**
-  - Title: `h2.jobTitle > span[title]` (or `a span`)
-  - Company: `[data-testid='company-name']` (fallback `span.companyName`)
-  - Location: `[data-testid='text-location']` (fallback `div.companyLocation`)
-  - Snippet: `div[data-testid='job-snippet']`
-  - Stable ID: `data-jk` attribute (fallback: regex extract `?jk=…` from href)
-  - Posted date: `span.date` — NOT currently extracted; always `None`
-  - Salary: `[data-testid='attribute_snippet_testid']` — NOT currently extracted
-- **Anti-bot:** Cloudflare Enterprise + JavaScript fingerprinting + hCaptcha on volume. Scraper mitigates via persistent cookies (carries session from login) and rate limiting. No hCaptcha solver present.
-
-#### Recommendation
-
-Keep HTTP mode; the pure HTML parsing is simpler and more resilient than a headless browser. Prioritize `data-testid` selectors over class names (class names hash frequently). Explicitly extract `data-jk` before regex fallback. Add `span.date` parsing for `posted_at`. Verify the `skipped: "needs-login"` outcome is surfaced to the user when the session is empty or stale.
-
----
-
-### Xing
-
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/xing/`
-
-#### Current scraper
-
-- **URL:** `https://www.xing.com/jobs/search?keywords={query}&location={location}&page={page}`
-- **Mode:** HTTP via reqwest (NOT browser); pure HTML parsing; uses login cookies from `boards_import_cookies`
-- **Selectors:** `article[data-testid='job-search-result']`, `[data-testid='job-title']`, `[data-testid='job-company-name']`, `[data-testid='job-location']`; fallbacks: `h2.job-teaser__title`, `.companyName`, `p.location`
-- **Auth tier:** Required (login via Xing account credentials; cookies persisted); skipped when no valid session exists
-- **Staleness:** Unknown — selectors cannot be confirmed live due to access restrictions. `data-testid` selectors are resilient; class fallbacks are fragile.
-
-#### Verified endpoint (2026-06-20)
-
-- **Search URL:** `https://www.xing.com/jobs/search`
-- **Query params:** `keywords`, `location`, `page` (1-indexed)
-- **Pagination:** Numeric `page`; max 5 pages (clamped in scraper); stops on 0 results or non-2xx
-- **Auth required:** YES. Login credentials required; cookies persisted from a prior login session. Empty cookie jar or stale session triggers `skipped: "needs-login"` (skips the board entirely instead of attempting anonymous access).
-- **Response format:** Server-rendered HTML, parsed with CSS selectors (no client-side render engine required)
-- **Key data fields:**
-  - Title: `[data-testid='job-title']` (fallback `h2[class*='title']`)
-  - Company: `[data-testid='job-company-name']` (fallback `.companyName`)
-  - Location: `[data-testid='job-location']` (fallback `p.location`)
-  - URL: `a[href*='/jobs/']`; href may be relative — reconstructed as `https://www.xing.com{href}`
-  - Stable ID: last path segment of job URL (e.g. `software-engineer-abc123`)
-  - Posted date: NOT extracted (always `None`)
-  - Description: NOT extracted (always `None`)
-  - Salary: NOT extracted
-- **Anti-bot:** Cloudflare (stricter on AI scraping since July 2025 per third-party reports); login session provides limited mitigation. Rate limiting is enforced. No captcha solver present.
-
-#### Recommendation
-
-Verify live selectors in an authenticated session when possible. Add `description` and `posted_at` extraction. Ensure that the `skipped: "needs-login"` outcome is surfaced to the user when the session is empty or stale. Monitor for Cloudflare fingerprinting escalation (may eventually block all scraping regardless of auth).
+**Endpoint reconnaissance notes (archived):** The verified endpoint data (selectors, query params, field mappings) captured in the previous version of this document was accurate as of 2026-06-20. It is no longer maintained here since these boards have no active scraper. Refer to the ADR-026 for the retirement rationale.
 
 ---
 
@@ -537,38 +456,6 @@ Confirmed solid. No changes to search endpoint. Salary unavailable from API.
 
 ---
 
-### StepStone
-
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/stepstone/mod.rs` (URL construction lines 88–101; ld+json parse lines 131–159)
-
-#### Current scraper
-
-- **URL pattern:** `https://www.stepstone.de/jobs/{query}?page={n}` or `https://www.stepstone.de/jobs/{query}/in-{location}?page={n}`
-- **Mode:** HTTP (reqwest with rustls; no JS rendering)
-- **Method:** Parse `<script type="application/ld+json">` blocks (schema.org `JobPosting`)
-
-#### Verified endpoint (2026-06-20)
-
-- **Search URL:** `https://www.stepstone.de/jobs/{urlencoded_query}?page={n}` (keyword-only) or with `/in-{urlencoded_location}` segment
-- **Query params:** `page` (1-indexed); max 5 pages (clamped in scraper)
-- **Pagination:** `?page=N`; stops on non-200 or no new ld+json items found
-- **Auth required:** Anonymous; standard desktop User-Agent; `Accept-Language: de-DE`
-- **Response format:** HTML with embedded `application/ld+json` (schema.org `JobPosting`)
-- **Key data fields:**
-  - Title: `ld+json.title` (required)
-  - Company: `ld+json.hiringOrganization.name` (default `"Unknown"`)
-  - Location: `ld+json.jobLocation.address.addressLocality` + `addressCountry`
-  - URL: `ld+json.url`
-  - Stable ID: extracted from URL — regex `[?&]ID=([^&]+)` (uppercase param), fallback `(\d{6,})` (6+ digit path segment)
-  - Posted: `ld+json.datePosted` (RFC3339)
-  - Description: `ld+json.description` (HTML, stripped)
-  - Salary: `ld+json.baseSalary` — NOT currently extracted
-- **Anti-bot:** CONFIRMED FRAGILE. Test file (line 109) documents: `"StepStone is bot-sensitive (timeout/403 from certain IPs / CI)"`. WebFetch attempts timed out (>60 s). Likely Cloudflare. Scraper mitigates: per-host rate limiting, 900–1500 ms jitter between pages. No captcha solver.
-
-#### Recommendation
-
-URL structure is correct and working (when not blocked). Add `ld+json.baseSalary.minValue`/`.maxValue`/`.currency` extraction. Keep test marked `#[ignore]` in CI. If IP-level blocking becomes consistent, consider residential proxy or increasing jitter.
-
 ---
 
 ### SmartRecruiters
@@ -681,37 +568,6 @@ Implementation correct and working. Add `salary` object parsing if needed. Consi
 
 ---
 
-### Workday
-
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/workday/mod.rs` + `test.rs`
-
-#### Current scraper
-
-- **URL:** `POST https://{tenant}.{wd_server}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs`
-- **Mode:** HTTP (reqwest)
-- **Request body:** `{ appliedFacets: {}, searchText: "", limit: 20, offset: page*20 }`
-
-#### Verified endpoint (2026-06-20)
-
-- **Search URL:** `POST https://{tenant}.{wd_server}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs`
-- **Query params:** None (JSON body only); `{wd_server}` varies per tenant (wd1, wd3, wd5, …); tenant/site extracted from company career URL or colon-delimited hint (e.g. `amazon:External:wd1`)
-- **Pagination:** `offset` increment by `limit` (20); stop when `jobPostings` empty or `offset >= total`; hard cap: 10,000 results per query
-- **Auth required:** Anonymous (no API key); BUT Cloudflare Bot Management is the blocker
-- **Response format:** JSON `{ jobPostings: [{title, externalPath, locationsText, postedOn, bulletFields}], total: int }`; detail GET returns `{ jobPostingInfo: { jobDescription (HTML), jobPostingId } }`
-- **Key data fields:**
-  - Title: `jobPostings[].title`
-  - Location: `jobPostings[].locationsText` (optional)
-  - Stable ID: derived from `externalPath` path segment; prefixed `workday:{external_id}`
-  - Posted: `jobPostings[].postedOn` (RFC3339)
-  - Description: detail endpoint `jobPostingInfo.jobDescription` (HTML, stripped)
-  - Company: from tenant slug
-  - Salary: NOT exposed in either endpoint
-- **Anti-bot:** CONFIRMED BLOCKER. Test file explicitly documents: `"Workday CXS endpoints are protected by Cloudflare Bot Management (__cf_bm cookie requires a JS challenge). All programmatic POSTs return 422 regardless of tenant, body, or headers."` Implementation is correct but currently non-functional for HTTP-only clients.
-
-#### Recommendation
-
-The scraper implementation is architecturally correct but blocked by Cloudflare. Unblock options: (A) shift to headless browser (Chromium) to obtain `__cf_bm` cookie then reuse for CXS API calls; (B) use a residential proxy service that solves the JS challenge; (C) use Apify's Workday actor via API. No changes to parsing logic needed — only the network layer.
-
 ---
 
 ### Ashby
@@ -788,28 +644,22 @@ Implementation is current and handles the detail-endpoint bot filter correctly. 
 
 ## Top priorities
 
-### Needs code fixes (blocked or broken)
+### Needs monitoring
 
-| Board       | Issue                                                                                                                          | Effort |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| **Workday** | All programmatic POSTs return 422 (Cloudflare Bot Management); needs headless browser, residential proxy, or third-party actor | High   |
+No active scrapers are currently blocked. The aggregator (Adzuna/JSearch) covers the five retired boards. Monitor Adzuna.de result depth for German-market roles — if thin, a dedicated German source may be warranted (tracked as a follow-up; not done in ADR-026).
 
 ### Status changes (fixed or improved)
 
-| Board                          | Previous issue                                                  | Current status                                                                         | Change                                                                                                              |
-| ------------------------------ | --------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **German Tech Jobs**           | `/rss` returns HTTP 403; parser used `feed_rs`                  | ✅ `/job_feed.xml` working; custom XML parser via regex blocks                         | Fixed: new endpoint + rewritten parser (non-RSS XML schema)                                                         |
-| **Glassdoor**                  | Legacy `jobs.htm` selectors broken; Cloudflare blocks anonymous | ⚠️ Best-effort authenticated via persisted login profile; skipped when unauthenticated | Fixed: wired auth requirement; now gates on session presence                                                        |
-| **Indeed**                     | Fragile class selectors; blocks anonymous users                 | ⚠️ HTTP-only (not browser); gated on login; empty results now trigger `skipped`        | Fixed: clarified HTTP mode; added login gate + skipped state                                                        |
-| **Xing**                       | Fragile selectors; Cloudflare tightening; gated on login        | ⚠️ HTTP-only (not browser); gated on login; empty results now trigger `skipped`        | Fixed: clarified HTTP mode; consistent login gate + skipped                                                         |
-| **Company-scoped ATS boards**  | Free-text keyword search unsupported; no company identifier     | ✅ Company-scoped with per-company fan-out + SSRF hardening                            | Fixed: `BoardSearchInput.companies[]` + `requires_company()` declarations; skipped as `needs-company` if empty list |
-| **Scrape results persistence** | Results lost when navigating away mid-scrape                    | ✅ Results persist across navigation (backend `PostingsCache` is source of truth)      | Fixed: throttled `invalidatePostings()` on `job.stream` event (React Query hydration on remount)                    |
-
-### Confirmed fragile (monitor, may need attention)
-
-| Board         | Risk                                                                                                             |
-| ------------- | ---------------------------------------------------------------------------------------------------------------- |
-| **StepStone** | Cloudflare/bot filter causes timeouts/403 from datacenter IPs and CI; works from desktop; monitor for escalation |
+| Board                          | Previous issue                                              | Current status                                                                    | Change                                                                                                              |
+| ------------------------------ | ----------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **German Tech Jobs**           | `/rss` returns HTTP 403; parser used `feed_rs`              | ✅ `/job_feed.xml` working; custom XML parser via regex blocks                    | Fixed: new endpoint + rewritten parser (non-RSS XML schema)                                                         |
+| **Glassdoor**                  | Cloudflare blocks all headless sessions                     | Retired — coverage via Aggregator (ADR-026)                                       | Scraper removed from `SCRAPERS`; import URL resolver kept                                                           |
+| **Indeed**                     | hCaptcha + Cloudflare at volume; login cookies unreliable   | Retired — coverage via Aggregator (ADR-026)                                       | Scraper removed; `canonical_job_url` URL resolver kept for extension import                                         |
+| **Xing**                       | Cloudflare tightening; login cookies unreliable             | Retired — coverage via Aggregator (ADR-026)                                       | Scraper removed; no import resolver existed                                                                         |
+| **StepStone**                  | Cloudflare/bot filter; consistent 403/timeouts from CI      | Retired — coverage via Aggregator (ADR-026)                                       | Scraper removed from `SCRAPERS`                                                                                     |
+| **Workday**                    | 422 on all programmatic POSTs (Cloudflare Bot Management)   | Retired — coverage via Aggregator (ADR-026)                                       | Scraper removed; `try_workday()` URL resolver kept for extension import                                             |
+| **Company-scoped ATS boards**  | Free-text keyword search unsupported; no company identifier | ✅ Company-scoped with per-company fan-out + SSRF hardening                       | Fixed: `BoardSearchInput.companies[]` + `requires_company()` declarations; skipped as `needs-company` if empty list |
+| **Scrape results persistence** | Results lost when navigating away mid-scrape                | ✅ Results persist across navigation (backend `PostingsCache` is source of truth) | Fixed: throttled `invalidatePostings()` on `job.stream` event (React Query hydration on remount)                    |
 
 ### Confirmed solid (public APIs, no auth, no anti-bot)
 

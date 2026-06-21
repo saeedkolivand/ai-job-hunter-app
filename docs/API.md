@@ -282,11 +282,11 @@ Returns the catalog of all available job boards, including authentication requir
 type BoardAuthRequirement = 'guest' | 'optional' | 'required';
 
 interface BoardCatalogEntry {
-  id: string; // e.g. "linkedin", "indeed", "greenhouse"
+  id: string; // e.g. "linkedin", "greenhouse", "aggregator"
   displayName: string; // human-readable board name
   mode: 'http' | 'browser' | string; // scraping transport mode
   auth: BoardAuthRequirement; // login requirement: 'guest' (default), 'optional' (login enriches), 'required' (no results without auth)
-  listed: boolean; // whether visible in the board picker (filters hidden boards like glassdoor)
+  listed: boolean; // whether visible in the board picker
 }
 ```
 
@@ -308,7 +308,7 @@ interface CookieImportResult {
 
 ```typescript
 interface BoardConfig {
-  id: string; // e.g. "linkedin", "indeed", "greenhouse"
+  id: string; // e.g. "linkedin", "greenhouse", "aggregator"
   name: string;
   isEnabled: boolean;
   requiresAuth: boolean;
@@ -317,7 +317,9 @@ interface BoardConfig {
 }
 ```
 
-**Supported board IDs**: `linkedin`, `indeed`, `stepstone`, `xing`, `greenhouse`, `lever`, `ashby`, `smartrecruiters`, `recruitee`, `personio`, `workday`, `remoteok`, `remotive`, `arbeitsagentur`, `berlinstartupjobs`, `germantechjobs`, `arbeitnow`, `ycombinator`
+**Supported board IDs** (16 active scrapers): `aggregator`, `linkedin`, `greenhouse`, `lever`, `ashby`, `smartrecruiters`, `recruitee`, `personio`, `remoteok`, `remotive`, `arbeitsagentur`, `berlinstartupjobs`, `germantechjobs`, `arbeitnow`, `ycombinator`, `weworkremotely`
+
+Note: `indeed`, `stepstone`, `xing`, `workday`, and `glassdoor` were retired as direct scrapers (ADR-026). Their job results are now routed through the `aggregator` board (Adzuna/JSearch).
 
 ---
 
