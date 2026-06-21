@@ -645,6 +645,38 @@
       "removeConfirmDesc": "Dadurch wird Ihr gespeicherter Ollama-Schlüssel gelöscht. Die Unternehmensrecherche pausiert, bis Sie wieder einen Schlüssel hinzufügen.",
       "saveError": "Schlüssel konnte nicht gespeichert werden."
     },
+    "aggregatorKeys": {
+      "title": "Jobsuche-Anbieter",
+      "description": "Adzuna ist der kostenlose primäre Aggregator — App-ID und App-Key erhalten Sie unter",
+      "descriptionSuffix": "JSearch (RapidAPI) ist ein optionaler kostenpflichtiger Fallback.",
+      "save": "Speichern",
+      "saved": "Schlüssel gespeichert.",
+      "removed": "Schlüssel entfernt.",
+      "remove": "Entfernen",
+      "saveError": "Schlüssel konnte nicht gespeichert werden.",
+      "removeError": "Schlüssel konnte nicht entfernt werden.",
+      "adzunaAppId": {
+        "label": "Adzuna App-ID",
+        "placeholder": "Adzuna App-ID einfügen…",
+        "connected": "Adzuna App-ID sicher gespeichert",
+        "removeConfirmTitle": "Adzuna App-ID entfernen?",
+        "removeConfirmDesc": "Dadurch wird die gespeicherte Adzuna App-ID gelöscht. Die aggregierte Jobsuche liefert keine Ergebnisse mehr, bis Sie sie erneut hinzufügen."
+      },
+      "adzunaAppKey": {
+        "label": "Adzuna App-Key",
+        "placeholder": "Adzuna App-Key einfügen…",
+        "connected": "Adzuna App-Key sicher gespeichert",
+        "removeConfirmTitle": "Adzuna App-Key entfernen?",
+        "removeConfirmDesc": "Dadurch wird der gespeicherte Adzuna App-Key gelöscht. Die aggregierte Jobsuche liefert keine Ergebnisse mehr, bis Sie ihn erneut hinzufügen."
+      },
+      "jsearchKey": {
+        "label": "JSearch-Schlüssel (RapidAPI) — optional",
+        "placeholder": "RapidAPI JSearch-Schlüssel einfügen…",
+        "connected": "JSearch-Schlüssel sicher gespeichert",
+        "removeConfirmTitle": "JSearch-Schlüssel entfernen?",
+        "removeConfirmDesc": "Dadurch wird der gespeicherte JSearch-Schlüssel gelöscht. Der JSearch-Fallback wird deaktiviert, bis Sie ihn erneut hinzufügen."
+      }
+    },
     "accounts": {
       "boardsTitle": "Jobbörsen-Konten",
       "credentialsWarning": "Anmeldedaten werden lokal verschlüsselt auf Ihrem Gerät gespeichert. Sie werden niemals an einen Server gesendet.",

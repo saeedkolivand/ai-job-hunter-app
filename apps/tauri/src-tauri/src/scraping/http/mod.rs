@@ -285,9 +285,21 @@ pub async fn fetch_json<T: for<'de> serde::Deserialize<'de>>(
     match serde_json::from_str::<T>(&res.text) {
         Ok(value) => Ok(Some(value)),
         Err(e) => {
-            // Log metadata only; never the raw response body (third-party data).
+            // Log scheme+host+port+path only — never query (may contain API
+            // secrets like Adzuna app_key) or userinfo/fragment.
+            let safe_url = reqwest::Url::parse(url)
+                .map(|u| {
+                    let port = u.port().map(|p| format!(":{p}")).unwrap_or_default();
+                    match u.host_str() {
+                        Some(host) => {
+                            format!("{}://{}{}{}", u.scheme(), host, port, u.path())
+                        }
+                        None => format!("{}:{}", u.scheme(), u.path()),
+                    }
+                })
+                .unwrap_or_else(|_| "<unparseable-url>".to_string());
             log::debug!(
-                "[scraping::http] fetch_json parse failure for {url} ({e}); body_len={}",
+                "[scraping::http] fetch_json parse failure for {safe_url} ({e}); body_len={}",
                 res.text.len()
             );
             Ok(None)

@@ -645,6 +645,38 @@
       "removeConfirmDesc": "This deletes your saved Ollama account key. Company research stops until you add a key again.",
       "saveError": "Couldn't save the key."
     },
+    "aggregatorKeys": {
+      "title": "Job search providers",
+      "description": "Adzuna is the free primary aggregator — get your App ID and App Key at",
+      "descriptionSuffix": "JSearch (RapidAPI) is an optional paid fallback.",
+      "save": "Save",
+      "saved": "Key saved.",
+      "removed": "Key removed.",
+      "remove": "Remove",
+      "saveError": "Couldn't save the key.",
+      "removeError": "Couldn't remove the key.",
+      "adzunaAppId": {
+        "label": "Adzuna App ID",
+        "placeholder": "Paste your Adzuna App ID…",
+        "connected": "Adzuna App ID stored securely",
+        "removeConfirmTitle": "Remove Adzuna App ID?",
+        "removeConfirmDesc": "This deletes the saved Adzuna App ID. Aggregated job search will stop returning results until you add it again."
+      },
+      "adzunaAppKey": {
+        "label": "Adzuna App Key",
+        "placeholder": "Paste your Adzuna App Key…",
+        "connected": "Adzuna App Key stored securely",
+        "removeConfirmTitle": "Remove Adzuna App Key?",
+        "removeConfirmDesc": "This deletes the saved Adzuna App Key. Aggregated job search will stop returning results until you add it again."
+      },
+      "jsearchKey": {
+        "label": "JSearch Key (RapidAPI) — optional",
+        "placeholder": "Paste your RapidAPI JSearch key…",
+        "connected": "JSearch key stored securely",
+        "removeConfirmTitle": "Remove JSearch key?",
+        "removeConfirmDesc": "This deletes the saved JSearch key. The JSearch fallback will be disabled until you add it again."
+      }
+    },
     "accounts": {
       "boardsTitle": "Job board accounts",
       "credentialsWarning": "Credentials are stored locally and encrypted on your device. They are never sent to any server.",

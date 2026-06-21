@@ -3,6 +3,25 @@ use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 
+// ── Keyring mock harness ──────────────────────────────────────────────────────
+//
+// keyring-core v1 ships an in-memory `mock::Store` (platform-independent, no
+// persistence) that lets us exercise the real `Entry` path — including the
+// non-`NoEntry` error branch of `read_credential` — without touching the OS
+// keychain. (The earlier "no mock backend" note above predated this; the C4
+// metadata tests still stand on their own.)
+//
+// The store is process-global, so installation funnels through the shared
+// `install_mock_keyring` (see `mod.rs`). Tests then use UUID-unique slot names so
+// their `Cred`s never collide, keeping them race-safe under Cargo's multi-thread
+// test runner.
+
+/// A slot name guaranteed unique to this test invocation, so its mock `Cred`
+/// is never shared with another (possibly concurrent) test.
+fn unique_slot(prefix: &str) -> String {
+    format!("{prefix}-{}", uuid::Uuid::new_v4())
+}
+
 #[test]
 fn test_is_available() {
     let temp_dir = TempDir::new().unwrap();
@@ -60,16 +79,15 @@ fn test_now_ms() {
 
 // ── C4 — Credential metadata persistence layer ───────────────────────────────
 //
-// keyring-core v1 uses platform-specific stores (DPAPI / Keychain / libsecret)
-// and does NOT expose a mock/in-memory credential builder in this version.
-// Full round-trip tests (set → get_decrypted) would hit the real OS keychain,
-// which is unsuitable for automated tests (CI agents may have no keychain,
-// Windows DPAPI is user-scoped and can fail in sandboxes).
+// The production keychain uses platform-specific stores (DPAPI / Keychain /
+// libsecret) that are unsuitable for automated tests (CI agents may have no
+// keychain; Windows DPAPI is user-scoped and can fail in sandboxes). These C4
+// tests therefore exercise the METADATA layer (credential-meta.json) in
+// isolation, driving `save_meta`/`load_meta` through the public API.
 //
-// We therefore test the METADATA layer (credential-meta.json) in isolation:
-// the `save_meta`/`load_meta` path is exercised indirectly through the public
-// API. The keychain operations (Entry::new / set_password / get_password) are
-// noted as untestable at unit level without a mock backend.
+// Where we DO need to drive the keyring `Entry` path (see the `read_credential`
+// tests below), we install keyring-core's in-memory `mock::Store` instead of
+// the OS keychain.
 
 /// Write a metadata file directly (bypassing `set`, which needs the keychain)
 /// and return a CredentialStore that reads from that file via `list()`.
@@ -230,5 +248,84 @@ fn get_decrypted_returns_none_when_no_metadata_entry() {
     assert!(
         result.is_none(),
         "get_decrypted must return None for an unregistered board_id"
+    );
+}
+
+// ── read_credential — keyring-backed branches (via the in-memory mock store) ──
+
+#[test]
+fn read_credential_missing_slot_returns_ok_none() {
+    // NoEntry branch: a slot that was never set must map to Ok(None) so OPTIONAL
+    // callers (e.g. the aggregator) degrade gracefully instead of erroring.
+    install_mock_keyring();
+    let slot = unique_slot("ai:nonexistent");
+
+    let result = read_credential(&slot);
+    assert!(
+        matches!(result, Ok(None)),
+        "missing slot must read as Ok(None); got {result:?}"
+    );
+}
+
+#[test]
+fn read_credential_present_slot_returns_value() {
+    // Happy path: a stored non-empty value reads back as Ok(Some(value)).
+    install_mock_keyring();
+    let slot = unique_slot("ai:present");
+    keyring_core::Entry::new(SERVICE, &slot)
+        .unwrap()
+        .set_password("super-secret-key")
+        .unwrap();
+
+    let result = read_credential(&slot);
+    assert!(
+        matches!(
+            result.as_ref().map(Option::as_deref),
+            Ok(Some("super-secret-key"))
+        ),
+        "present slot must read as Ok(Some(value)); got {result:?}"
+    );
+}
+
+#[test]
+fn read_credential_empty_value_returns_ok_none() {
+    // An empty stored value is treated as "absent" (Ok(None)) — the same
+    // degradation path as NoEntry, so an empty key never reads as configured.
+    install_mock_keyring();
+    let slot = unique_slot("ai:empty");
+    keyring_core::Entry::new(SERVICE, &slot)
+        .unwrap()
+        .set_password("")
+        .unwrap();
+
+    let result = read_credential(&slot);
+    assert!(
+        matches!(result, Ok(None)),
+        "empty stored value must read as Ok(None); got {result:?}"
+    );
+}
+
+#[test]
+fn read_credential_non_no_entry_error_returns_storage_err() {
+    // The "other keyring error" branch: any keyring failure that is NOT NoEntry
+    // (locked store, permission denied, …) must surface as AppError::Storage so
+    // CRITICAL callers can decide to surface it rather than silently degrade.
+    //
+    // The mock store lets us arm a specific error on a Cred; the next Entry call
+    // returns it (and then clears it). We arm a non-NoEntry error and assert the
+    // mapping. UUID-unique slot keeps this Cred isolated from concurrent tests.
+    install_mock_keyring();
+    let slot = unique_slot("ai:errslot");
+    let entry = keyring_core::Entry::new(SERVICE, &slot).unwrap();
+    let mock: &keyring_core::mock::Cred = entry.as_any().downcast_ref().unwrap();
+    mock.set_error(keyring_core::Error::Invalid(
+        "induced".to_string(),
+        "non-NoEntry keyring failure".to_string(),
+    ));
+
+    let result = read_credential(&slot);
+    assert!(
+        matches!(result, Err(AppError::Storage(_))),
+        "non-NoEntry keyring error must map to AppError::Storage; got {result:?}"
     );
 }

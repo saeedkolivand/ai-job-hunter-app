@@ -1,3 +1,4 @@
+pub mod aggregator;
 pub mod arbeitnow;
 pub mod arbeitsagentur;
 pub mod ashby;
@@ -19,6 +20,7 @@ pub mod wwr;
 pub mod xing;
 pub mod ycombinator;
 
+pub use aggregator::AggregatorScraper;
 pub use arbeitnow::ArbeitnowScraper;
 pub use arbeitsagentur::ArbeitsagenturScraper;
 pub use ashby::AshbyScraper;
@@ -47,6 +49,7 @@ use super::types::Scraper;
 /// derive from this list via the `Scraper` trait, so adding a board is one
 /// implementation module + one line here (no parallel match or hardcoded array).
 static SCRAPERS: &[&dyn Scraper] = &[
+    &AggregatorScraper,
     &LinkedInScraper,
     &GlassdoorScraper,
     &XingScraper,
