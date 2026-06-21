@@ -88,7 +88,7 @@ No API key required to start — run fully offline with [Ollama][ollama], or add
 
 ## What It Does
 
-AI Job Hunter is a desktop application built with **[Tauri][tauri]** (a [Rust][rust] core with a [React][react] renderer) that brings AI-driven job hunting to your local machine. It scrapes 20 job boards, semantically matches postings to your résumé, generates tailored cover letters and résumés with your AI provider of choice, drafts grounded answers to application questions, and tracks everything you apply to — all while keeping your data and credentials on your device.
+AI Job Hunter is a desktop application built with **[Tauri][tauri]** (a [Rust][rust] core with a [React][react] renderer) that brings AI-driven job hunting to your local machine. It scrapes 20+ job boards (including an Adzuna/JSearch aggregator for anti-bot sites, plus company-scoped ATS boards like Greenhouse and Lever), semantically matches postings to your résumé, generates tailored cover letters and résumés with your AI provider of choice, drafts grounded answers to application questions, and tracks everything you apply to — all while keeping your data and credentials on your device.
 
 The only outbound calls are to the AI provider **you** configure (and an optional web search you explicitly enable). Everything else — jobs, résumés, generations, applications — lives in a local database on your machine.
 
@@ -288,10 +288,13 @@ pnpm dev
 <summary><strong>Scrape boards &amp; search semantically</strong></summary>
 
 ```
-1. Jobs → Scrape → select boards (e.g. LinkedIn + Greenhouse) → query + location → Start
-2. Results stream into the jobs table
-3. Semantic search ranks postings against your résumé (hybrid vector + keyword)
+1. Jobs → Scrape → select boards (e.g. LinkedIn + Greenhouse + Aggregator)
+2. Query + location; for company-scoped ATS boards (Greenhouse, Lever, etc.), enter company slugs
+3. Click Start → results stream into the jobs table
+4. Semantic search ranks postings against your résumé (hybrid vector + keyword)
 ```
+
+**Note:** Company-scoped ATS boards require company slugs instead of free-text keywords. The **Aggregator** (Adzuna + JSearch) replaces direct scraping of anti-bot boards (Indeed, Glassdoor, Xing); free Adzuna keys available at https://developer.adzuna.com. See `docs/knowledge/scraping-domain.md` for the full board list and configuration details.
 
 </details>
 
@@ -301,13 +304,14 @@ pnpm dev
 
 The app uses the OS keychain for secrets — no `.env` files. Keys and credentials are set in the UI and encrypted via Tauri's keychain plugin.
 
-| Setting            | Location               | Description                                       |
-| ------------------ | ---------------------- | ------------------------------------------------- |
-| AI provider + key  | Settings → AI          | Ollama / OpenAI / Anthropic / Gemini / compatible |
-| Local model limits | Settings → AI          | Context window + max output, per Ollama model     |
-| Ollama account key | Settings → AI          | Optional — Ollama Cloud models + company research |
-| Performance mode   | Settings → Performance | Low / Balanced / Performance                      |
-| Language           | Settings → General     | UI and generation locale                          |
+| Setting                 | Location               | Description                                                                                                                                                                                                   |
+| ----------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AI provider + key       | Settings → AI          | Ollama / OpenAI / Anthropic / Gemini / compatible                                                                                                                                                             |
+| Local model limits      | Settings → AI          | Context window + max output, per Ollama model                                                                                                                                                                 |
+| Ollama account key      | Settings → AI          | Optional — Ollama Cloud models + company research                                                                                                                                                             |
+| **Adzuna/JSearch keys** | **Settings → Jobs**    | **Optional — provider registry with Adzuna (primary, free) and JSearch (paid fallback). Covers anti-bot boards like Indeed, Glassdoor, Xing, and more. See `docs/knowledge/scraping-domain.md` for details.** |
+| Performance mode        | Settings → Performance | Low / Balanced / Performance                                                                                                                                                                                  |
+| Language                | Settings → General     | UI and generation locale                                                                                                                                                                                      |
 
 ---
 

@@ -1,6 +1,6 @@
 # Domain model (core types, traits, registries)
 
-Last updated: 2026-06-20
+Last updated: 2026-06-21
 
 Describes the **shape**; the source is authoritative for field-level detail. Use `graphify explain "<type>"` then read the owning file.
 
@@ -29,7 +29,7 @@ Describes the **shape**; the source is authoritative for field-level detail. Use
 
 ## Automation traits + registries
 
-- **`Scraper`** + **`SCRAPERS`** — `scraping/boards/mod.rs`; `ScraperMode` (Http/Browser); `ScrapeContext` carries a cancellation token + progress/item callbacks. **Catalog** — `ScraperEngine::catalog()` (Rust) → `boards.catalog()` IPC → `useBoardsCatalog()` hook exposes auth tiers (`guest`/`optional`/`required`) and visibility to the board picker. See `scraping/types/mod.rs: Scraper::auth()` / `Scraper::listed()` (trait defaults; overrides for indeed/xing/linkedin/glassdoor).
+- **Scraping** — see [scraping-domain.md](scraping-domain.md) (boards, company-scoped ATS, aggregator, provider registry).
 - _(No applier registry: the auto-apply engine was removed — the app is an apply **assistant**. See [automation-domain.md](automation-domain.md).)_
 
 ## Application tracking
