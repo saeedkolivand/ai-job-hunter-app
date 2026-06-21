@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782004462607,
+  "lastUpdate": 1782024645653,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1085,6 +1085,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 293823,
             "range": "± 4273",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "06c5617a1aaf505621fb0a6767f0c8c56cf438e5",
+          "message": "feat(scraping): add company identifier for company-scoped boards (#464)\n\nApplicant-tracking boards (greenhouse, lever, ashby, recruitee, personio,\nsmartrecruiters) have no global keyword search — their public APIs require a\ncompany/board slug, so a free-text keyword returned nothing. Add a\nfirst-class companies identifier end to end: the scrape-boards IPC request,\nthe generated Rust contract, BoardSearchInput, and a conditional company\nfield in the scrape form shown only for boards that declare requires_company\n(via catalog metadata, no hardcoded list). The six company-scoped boards\niterate the companies list with per-company endpoints and partial-failure\nisolation, and the engine skips a requires_company board that has no\ncompanies as needs-company, mirroring the existing needs-login skip and UI\nprompt. smartrecruiters also gains real keyword search via its q param.\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-21T08:41:57+02:00",
+          "tree_id": "104fde5f62beeb1f14253e1b9ab440e84bb54418",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/06c5617a1aaf505621fb0a6767f0c8c56cf438e5"
+        },
+        "date": 1782024645237,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1860927,
+            "range": "± 54273",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2461073,
+            "range": "± 29643",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 266666,
+            "range": "± 1936",
             "unit": "ns/iter"
           }
         ]
