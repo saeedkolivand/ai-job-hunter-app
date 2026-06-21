@@ -94,6 +94,9 @@ body {
 .title {
   position: relative;
   margin: 0;
+  /* fit-content makes the h1 hug the text so the absolutely-positioned SVG
+   * underline spans the wordmark instead of the full flex-row width. */
+  width: fit-content;
   font-family: var(--hand);
   font-size: 22px;
   font-weight: 400;
