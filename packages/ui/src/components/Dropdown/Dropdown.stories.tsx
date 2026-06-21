@@ -21,8 +21,8 @@ const AI_MODELS = [
 
 const BOARDS = [
   { value: 'linkedin', label: 'LinkedIn' },
-  { value: 'indeed', label: 'Indeed' },
-  { value: 'stepstone', label: 'StepStone' },
+  { value: 'greenhouse', label: 'Greenhouse' },
+  { value: 'lever', label: 'Lever' },
 ];
 
 function DefaultDemo() {

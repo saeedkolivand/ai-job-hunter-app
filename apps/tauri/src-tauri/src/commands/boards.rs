@@ -82,6 +82,13 @@ pub fn boards_catalog(app: AppHandle) -> Value {
     json!(engine.catalog())
 }
 
+/// Boards that support in-app login/connect (auth-capable). Add a board id here
+/// when its login flow is wired; the scrapeable-board catalog is separate (registry-derived).
+const LOGIN_BOARDS: &[&str] = &["linkedin"];
+
+/// In-app login / connect status for auth-capable boards.
+/// Returns each board's `connected` state via `board_login::get_status` — NOT the
+/// scrapeable-board catalog, which is registry-derived (`boards::all()` / `boards_catalog`).
 #[tauri::command]
 pub fn boards_list(app: AppHandle) -> Value {
     let data_dir = app
@@ -89,7 +96,7 @@ pub fn boards_list(app: AppHandle) -> Value {
         .app_data_dir()
         .unwrap_or_else(|_| std::path::PathBuf::from("."));
     let mut boards = Vec::new();
-    for board_id in &["linkedin", "indeed", "xing", "glassdoor"] {
+    for board_id in LOGIN_BOARDS {
         boards.push(json!({
             "id": board_id,
             "displayName": board_id.to_uppercase(),

@@ -113,7 +113,6 @@ function buildForm(boards: string[]): Parameters<typeof ScrapeForm>[0]['form'] {
     radiusKm: 0,
     amount: 25,
     dateFilter: '' as const,
-    locale: 'en',
     companies: [],
   };
 }

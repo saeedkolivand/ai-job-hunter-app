@@ -820,7 +820,7 @@
               <div class="node" data-node="ollama">Ollama (local LLM)</div>
               <div class="node" data-node="cloud">Cloud APIs</div>
               <div class="node" data-node="cli">CLI agents</div>
-              <div class="node" data-node="boards">Job boards (Chromium)</div>
+              <div class="node" data-node="boards">Job boards</div>
               <div class="node" data-node="disk">Disk &amp; OS keyring</div>
             </div>
           </div>
@@ -1056,7 +1056,7 @@
         scraper: {
           t: 'Scraper engine + board registry',
           layer: 'rust',
-          d: '<code>ScraperEngine</code> bounds concurrency with a resizable semaphore and tracks cancellation tokens per job. A static <code>SCRAPERS</code> registry (~20 boards) maps an id to a <code>&dyn Scraper</code>. Each scraper is HTTP‑mode or Browser‑mode and emits items through an <code>on_item</code> callback.',
+          d: '<code>ScraperEngine</code> bounds concurrency with a resizable semaphore and tracks cancellation tokens per job. A static <code>SCRAPERS</code> registry (16 boards) maps an id to a <code>&dyn Scraper</code>. Each scraper is HTTP‑mode or Browser‑mode and emits items through an <code>on_item</code> callback.',
           f: [
             'apps/tauri/src-tauri/src/scraping/engine/mod.rs',
             'apps/tauri/src-tauri/src/scraping/boards/mod.rs',
@@ -1118,9 +1118,9 @@
           f: ['apps/tauri/src-tauri/src/commands/ai_provider/cli_agent/claude_code.rs'],
         },
         boards: {
-          t: 'Job boards (via Chromium)',
+          t: 'Job boards',
           layer: 'ext',
-          d: 'Aggregators (LinkedIn, Indeed, Xing, Glassdoor) need a real browser; the app drives Chromium through <code>chromiumoxide</code> using a per‑board persistent profile so your login survives. ATS boards (Greenhouse, Lever, Workday…) are scraped over plain HTTP.',
+          d: 'LinkedIn is the only browser‑mode scraper: the app drives Chromium through <code>chromiumoxide</code> using a persistent profile so your login survives. Indeed, Glassdoor, Xing, Workday, and StepStone are reached via the <b>Adzuna/JSearch aggregator API</b> — no Chromium needed. The rest (Greenhouse, Lever, Ashby, Personio, Recruitee, and more) are plain‑HTTP ATS/feed scrapers.',
           f: ['apps/tauri/src-tauri/src/scraping/boards/'],
         },
         disk: {
@@ -1423,7 +1423,7 @@
               layer: 'rust',
               title: 'Engine: throttle + look up the board',
               body: '<code>ScraperEngine</code> acquires a semaphore permit (default <b>2</b> concurrent scrapes, tunable by performance mode), registers a <code>CancellationToken</code> under the jobId, and resolves the scraper from the registry: <code>boards::get(id)</code>.',
-              code: '<span class="k">static</span> SCRAPERS: &[&<span class="k">dyn</span> Scraper] = &[ <span class="c">/* ~20 boards */</span> ];\\nboards::get(board)? <span class="c">// &dyn Scraper</span>',
+              code: '<span class="k">static</span> SCRAPERS: &[&<span class="k">dyn</span> Scraper] = &[ <span class="c">/* ~16 boards */</span> ];\\nboards::get(board)? <span class="c">// &dyn Scraper</span>',
               files: [
                 'apps/tauri/src-tauri/src/scraping/engine/mod.rs',
                 'apps/tauri/src-tauri/src/scraping/boards/mod.rs',
@@ -1703,14 +1703,12 @@
           ],
         },
         {
-          h: 'Scraping — engine + board registry (~20 boards)',
+          h: 'Scraping — engine + board registry (16 boards)',
           b: `
     <p>The <code>ScraperEngine</code> bounds concurrency with a resizable semaphore (default 2) and keeps a
     cancellation token per running job. Boards live in a static <code>SCRAPERS</code> registry.</p>
     <ul>
-      <li><b>Two modes:</b> <i>HTTP</i> for ATS/job boards (Greenhouse, Lever, Workday, Ashby, Remotive,
-        RemoteOK, WeWorkRemotely, StepStone, SmartRecruiters, Personio, Recruitee, YCombinator, ArbeitNow…)
-        and <i>Browser</i> (Chromium) for aggregators that need JS (LinkedIn, Indeed, Xing, Glassdoor).</li>
+      <li><b>Three modes:</b> <i>Browser</i> (Chromium via <code>chromiumoxide</code>) for <b>LinkedIn</b> only; <i>Aggregator API</i> (Adzuna primary, JSearch paid fallback) for the walled boards — Indeed, Glassdoor, Xing, Workday, StepStone; and <i>HTTP</i> for the rest (Greenhouse, Lever, Ashby, Personio, Recruitee, SmartRecruiters, Remotive, RemoteOK, WeWorkRemotely, YCombinator, ArbeitNow, BerlinStartupJobs, GermanTechJobs, Arbeitsagentur).</li>
       <li><b>Streaming:</b> each posting is pushed through an <code>on_item</code> callback → cached + emitted on
         <span class="chan">jobs:event</span>. Progress flows through <code>on_progress</code>.</li>
       <li><b>Add a board:</b> implement the <code>Scraper</code> trait in one module + add one line to

@@ -1562,8 +1562,6 @@
     "pages": "Pages",
     "amount": "Number of jobs",
     "radius": "Radius (km)",
-    "region": "Region",
-    "selectRegion": "Select region",
     "advanced": "Advanced",
     "scraping": "Scraping",
     "startScrape": "Start Scrape",
@@ -1583,7 +1581,6 @@
     "boards": {
       "linkedin": "LinkedIn",
       "indeed": "Indeed",
-      "stepstone": "StepStone",
       "xing": "XING",
       "glassdoor": "Glassdoor",
       "arbeitsagentur": "Arbeitsagentur",
@@ -1592,7 +1589,6 @@
       "greenhouse": "Greenhouse",
       "lever": "Lever",
       "ashby": "Ashby",
-      "workday": "Workday",
       "smartrecruiters": "SmartRecruiters",
       "recruitee": "Recruitee",
       "personio": "Personio",
@@ -1604,25 +1600,6 @@
       "aggregator": "Aggregator"
     },
     "aggregatorKeyHint": "Add your free Adzuna key in Settings to enable aggregated search.",
-    "regions": {
-      "us": "🇺🇸 United States — indeed.com",
-      "de": "🇩🇪 Germany — de.indeed.com",
-      "uk": "🇬🇧 United Kingdom — uk.indeed.com",
-      "fr": "🇫🇷 France — fr.indeed.com",
-      "at": "🇦🇹 Austria — at.indeed.com",
-      "ch": "🇨🇭 Switzerland — ch.indeed.com",
-      "au": "🇦🇺 Australia — au.indeed.com",
-      "ca": "🇨🇦 Canada — ca.indeed.com",
-      "nl": "🇳🇱 Netherlands — nl.indeed.com",
-      "be": "🇧🇪 Belgium — be.indeed.com",
-      "es": "🇪🇸 Spain — es.indeed.com",
-      "it": "🇮🇹 Italy — it.indeed.com",
-      "pl": "🇵🇱 Poland — pl.indeed.com",
-      "br": "🇧🇷 Brazil — br.indeed.com",
-      "in": "🇮🇳 India — in.indeed.com",
-      "sg": "🇸🇬 Singapore — sg.indeed.com",
-      "jp": "🇯🇵 Japan — jp.indeed.com"
-    },
     "disconnect": "Disconnect",
     "selectAll": "Select all",
     "clearBoards": "Clear",
@@ -1794,10 +1771,6 @@
         "scrapingZeroJobs": {
           "q": "Scraping starts but shows 0 jobs after completing",
           "a": "This usually means the search returned no matching results, or LinkedIn blocked the request. Try a broader search query (e.g. \"engineer\" instead of \"senior frontend engineer React\"). Remove or relax the date filter — \"Past 24 hours\" on a niche query often returns 0 results. Reconnect your LinkedIn account — unauthenticated scraping returns fewer results. Try reducing Pages to 1 to test if any results come back at all."
-        },
-        "indeedWrongCountry": {
-          "q": "Indeed shows jobs from the wrong country",
-          "a": "Indeed has separate job boards per country. When scraping: 1. Select Indeed as the board in the scrape form. 2. A Region dropdown will appear — select your country (e.g. \"Germany — de.indeed.com\"). 3. The location field should match the selected region's language and format."
         },
         "jobsDisappeared": {
           "q": "Scraped jobs disappeared after I restarted the app",

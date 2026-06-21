@@ -118,7 +118,7 @@ describe('useBoardStatuses — anyConnected', () => {
     });
 
     const { result } = renderHookWithClient(
-      () => useBoardStatuses(['greenhouse', 'indeed', 'xing']),
+      () => useBoardStatuses(['greenhouse', 'indeed', 'lever']),
       { client }
     );
 

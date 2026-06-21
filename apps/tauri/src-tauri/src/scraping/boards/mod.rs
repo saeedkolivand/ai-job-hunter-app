@@ -4,9 +4,7 @@ pub mod arbeitsagentur;
 pub mod ashby;
 pub mod berlinstartupjobs;
 pub mod germantechjobs;
-pub mod glassdoor;
 pub mod greenhouse;
-pub mod indeed;
 pub mod lever;
 pub mod linkedin;
 pub mod personio;
@@ -14,10 +12,7 @@ pub mod recruitee;
 pub mod remoteok;
 pub mod remotive;
 pub mod smartrecruiters;
-pub mod stepstone;
-pub mod workday;
 pub mod wwr;
-pub mod xing;
 pub mod ycombinator;
 
 pub use aggregator::AggregatorScraper;
@@ -26,9 +21,7 @@ pub use arbeitsagentur::ArbeitsagenturScraper;
 pub use ashby::AshbyScraper;
 pub use berlinstartupjobs::BerlinStartupJobsScraper;
 pub use germantechjobs::GermanTechJobsScraper;
-pub use glassdoor::GlassdoorScraper;
 pub use greenhouse::GreenhouseScraper;
-pub use indeed::IndeedScraper;
 pub use lever::LeverScraper;
 pub use linkedin::LinkedInScraper;
 pub use personio::PersonioScraper;
@@ -36,10 +29,7 @@ pub use recruitee::RecruiteeScraper;
 pub use remoteok::RemoteOkScraper;
 pub use remotive::RemotiveScraper;
 pub use smartrecruiters::SmartRecruitersScraper;
-pub use stepstone::StepStoneScraper;
-pub use workday::WorkdayScraper;
 pub use wwr::WeWorkRemotelyScraper;
-pub use xing::XingScraper;
 pub use ycombinator::YCombinatorScraper;
 
 use super::types::Scraper;
@@ -51,9 +41,6 @@ use super::types::Scraper;
 static SCRAPERS: &[&dyn Scraper] = &[
     &AggregatorScraper,
     &LinkedInScraper,
-    &GlassdoorScraper,
-    &XingScraper,
-    &IndeedScraper,
     &YCombinatorScraper,
     &RemotiveScraper,
     &RemoteOkScraper,
@@ -63,11 +50,9 @@ static SCRAPERS: &[&dyn Scraper] = &[
     &GermanTechJobsScraper,
     &GreenhouseScraper,
     &LeverScraper,
-    &StepStoneScraper,
     &SmartRecruitersScraper,
     &PersonioScraper,
     &RecruiteeScraper,
-    &WorkdayScraper,
     &AshbyScraper,
     &ArbeitsagenturScraper,
 ];

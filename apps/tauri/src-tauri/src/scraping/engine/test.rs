@@ -9,13 +9,20 @@ fn test_browser_sem() -> Arc<TokioSemaphore> {
 fn test_catalog() {
     let engine = ScraperEngine::new();
     let catalog = engine.catalog();
-    assert_eq!(catalog.len(), 21);
+    assert_eq!(catalog.len(), 16);
 
     // Check specific scrapers
     assert!(catalog.iter().any(|s| s.id == "linkedin"));
-    assert!(catalog.iter().any(|s| s.id == "indeed"));
     assert!(catalog.iter().any(|s| s.id == "ycombinator"));
     assert!(catalog.iter().any(|s| s.id == "aggregator"));
+    assert!(catalog.iter().any(|s| s.id == "greenhouse"));
+
+    // Retired anti-bot boards must not appear in the catalog.
+    assert!(!catalog.iter().any(|s| s.id == "indeed"));
+    assert!(!catalog.iter().any(|s| s.id == "glassdoor"));
+    assert!(!catalog.iter().any(|s| s.id == "xing"));
+    assert!(!catalog.iter().any(|s| s.id == "workday"));
+    assert!(!catalog.iter().any(|s| s.id == "stepstone"));
 }
 
 #[test]
@@ -31,23 +38,6 @@ fn test_catalog_auth_tiers() {
             .find(|e| e.id == id)
             .unwrap_or_else(|| panic!("missing board: {id}"))
     };
-
-    // Required login — guest returns ~nothing
-    assert_eq!(
-        entry("indeed").auth,
-        AuthRequirement::Required,
-        "indeed must be Required"
-    );
-    assert_eq!(
-        entry("xing").auth,
-        AuthRequirement::Required,
-        "xing must be Required"
-    );
-    assert_eq!(
-        entry("glassdoor").auth,
-        AuthRequirement::Required,
-        "glassdoor must be Required (bot-blocks anonymous sessions)"
-    );
 
     // Optional — guest works; login enriches
     assert_eq!(
@@ -66,6 +56,11 @@ fn test_catalog_auth_tiers() {
         entry("ycombinator").auth,
         AuthRequirement::Guest,
         "ycombinator must be Guest (default)"
+    );
+    assert_eq!(
+        entry("arbeitsagentur").auth,
+        AuthRequirement::Guest,
+        "arbeitsagentur must be Guest (default)"
     );
 }
 
@@ -99,19 +94,15 @@ fn test_catalog_requires_company_flags() {
     // All other boards must keep the default false.
     for non_ats_id in &[
         "linkedin",
-        "indeed",
-        "xing",
-        "glassdoor",
         "ycombinator",
         "remoteok",
         "remotive",
         "arbeitnow",
         "wwr",
-        "stepstone",
-        "workday",
         "berlinstartupjobs",
         "germantechjobs",
         "arbeitsagentur",
+        "aggregator",
     ] {
         assert!(
             !entry(non_ats_id).requires_company,
@@ -132,17 +123,18 @@ fn test_catalog_listed_flags() {
             .unwrap_or_else(|| panic!("missing board: {id}"))
     };
 
-    // glassdoor is listed; login is Required (engine skips without a valid session)
-    assert!(entry("glassdoor").listed, "glassdoor must be listed");
-
-    // A representative guest board is listed
+    // Representative boards across auth tiers are listed
     assert!(entry("greenhouse").listed, "greenhouse must be listed");
     assert!(entry("linkedin").listed, "linkedin must be listed");
-    assert!(entry("indeed").listed, "indeed must be listed");
+    assert!(entry("ycombinator").listed, "ycombinator must be listed");
+    assert!(
+        entry("arbeitsagentur").listed,
+        "arbeitsagentur must be listed"
+    );
 
-    // All 21 boards are listed
+    // All 16 active boards are listed
     let listed_count = catalog.iter().filter(|e| e.listed).count();
-    assert_eq!(listed_count, 21, "all 21 boards should be listed");
+    assert_eq!(listed_count, 16, "all 16 boards should be listed");
 }
 
 #[test]
@@ -151,7 +143,7 @@ fn test_health() {
     let health = engine.health();
     assert_eq!(health.mode, "in-process");
     assert!(health.ready);
-    assert_eq!(health.scrapers.len(), 21);
+    assert_eq!(health.scrapers.len(), 16);
 }
 
 #[test]
@@ -331,7 +323,6 @@ fn fake_input(amount: u32) -> BoardSearchInput {
         actively_hiring: None,
         verified: None,
         sort_by: None,
-        locale: None,
         country_code: None,
         latitude: None,
         longitude: None,

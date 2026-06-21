@@ -42,7 +42,6 @@ export function useScraping(
       amount,
       ...(replace ? { replace: true } : {}),
       ...(scrapeForm.dateFilter ? { dateFilter: scrapeForm.dateFilter } : {}),
-      ...(scrapeForm.boards.includes('indeed') ? { locale: scrapeForm.locale } : {}),
       ...(scrapeForm.companies.length > 0 ? { companies: scrapeForm.companies } : {}),
     } as Parameters<typeof scrapeBoards.mutateAsync>[0])) as { jobId: string; error?: string };
     return res;

@@ -26,7 +26,6 @@ pub async fn autopilot_scrape(
         actively_hiring: None,
         verified: None,
         sort_by: None,
-        locale: None,
         country_code: None,
         latitude: None,
         longitude: None,

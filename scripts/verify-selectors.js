@@ -41,16 +41,6 @@ const linkedinSelectors = {
   captcha: ["[data-test='captcha']", '.captcha'],
 };
 
-const indeedSelectors = {
-  name: ["input[name='applicant.name']"],
-  email: ["input[type='email']"],
-  phone: ["input[type='tel']"],
-  resume: ["input[type='file']", "[id='resume-upload']"],
-  coverLetter: ["textarea[name='coverLetter']", "[id='cover-letter']"],
-  submit: ["button[type='submit']", "[id='apply-button']"],
-  captcha: ['.recaptcha', '[data-captcha]'],
-};
-
 const greenhouseSelectors = {
   name: ["input[name='name']"],
   email: ["input[type='email']"],
@@ -61,28 +51,14 @@ const greenhouseSelectors = {
   captcha: ['.g-recaptcha', '[data-sitekey]'],
 };
 
-const workdaySelectors = {
-  name: ["input[name='candidate-name']"],
-  email: ["input[type='email']"],
-  phone: ["input[type='tel']"],
-  resume: ["input[type='file']", "[data-automation-id='fileUpload']"],
-  coverLetter: ["textarea[name='cover-letter']", "[data-automation-id='coverLetter']"],
-  submit: ["button[type='submit']", "[data-automation-id='submit']"],
-  captcha: ['.captcha', '[data-captcha]'],
-};
-
 // Test functions
 const testLinkedIn = () => testSelectors('LinkedIn', linkedinSelectors);
-const testIndeed = () => testSelectors('Indeed', indeedSelectors);
 const testGreenhouse = () => testSelectors('Greenhouse', greenhouseSelectors);
-const testWorkday = () => testSelectors('Workday', workdaySelectors);
 
 // Run all tests
 const testAll = () => {
   testLinkedIn();
-  testIndeed();
   testGreenhouse();
-  testWorkday();
 };
 
 // Expose on window so the DevTools console can call them after pasting
@@ -90,12 +66,10 @@ const testAll = () => {
 // public surface of this helper script).
 if (typeof window !== 'undefined') {
   window.testLinkedIn = testLinkedIn;
-  window.testIndeed = testIndeed;
   window.testGreenhouse = testGreenhouse;
-  window.testWorkday = testWorkday;
   window.testAll = testAll;
 }
 
 console.log(
-  'Selector verification script loaded. Call testLinkedIn(), testIndeed(), testGreenhouse(), testWorkday(), or testAll()'
+  'Selector verification script loaded. Call testLinkedIn(), testGreenhouse(), or testAll()'
 );

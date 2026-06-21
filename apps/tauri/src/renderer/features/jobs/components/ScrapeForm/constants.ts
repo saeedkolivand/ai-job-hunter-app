@@ -13,7 +13,6 @@ export interface ScrapeFormState {
   /** Target number of jobs to fetch (#41); sent as the scrape `amount` (backend clamps to 100). */
   amount: number;
   dateFilter: '' | (typeof DATE_FILTER_OPTIONS)[number];
-  locale: string;
   /**
    * Company slugs for ATS boards (greenhouse, lever, ashby, etc.) whose APIs
    * require a company identifier. Comma-separated in the UI, stored as an array.
@@ -21,23 +20,3 @@ export interface ScrapeFormState {
    */
   companies: string[];
 }
-
-export const REGIONS = [
-  { value: 'us', labelKey: 'jobs.regions.us' },
-  { value: 'de', labelKey: 'jobs.regions.de' },
-  { value: 'uk', labelKey: 'jobs.regions.uk' },
-  { value: 'fr', labelKey: 'jobs.regions.fr' },
-  { value: 'at', labelKey: 'jobs.regions.at' },
-  { value: 'ch', labelKey: 'jobs.regions.ch' },
-  { value: 'au', labelKey: 'jobs.regions.au' },
-  { value: 'ca', labelKey: 'jobs.regions.ca' },
-  { value: 'nl', labelKey: 'jobs.regions.nl' },
-  { value: 'be', labelKey: 'jobs.regions.be' },
-  { value: 'es', labelKey: 'jobs.regions.es' },
-  { value: 'it', labelKey: 'jobs.regions.it' },
-  { value: 'pl', labelKey: 'jobs.regions.pl' },
-  { value: 'br', labelKey: 'jobs.regions.br' },
-  { value: 'in', labelKey: 'jobs.regions.in' },
-  { value: 'sg', labelKey: 'jobs.regions.sg' },
-  { value: 'jp', labelKey: 'jobs.regions.jp' },
-] as const;

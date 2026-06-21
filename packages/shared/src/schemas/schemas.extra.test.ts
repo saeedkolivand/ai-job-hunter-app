@@ -118,7 +118,15 @@ describe('AutopilotTargetSchema', () => {
   it('rejects more than 6 boards', () => {
     expect(() =>
       AutopilotTargetSchema.parse({
-        boards: ['linkedin', 'indeed', 'stepstone', 'greenhouse', 'lever', 'ashby', 'remotive'],
+        boards: [
+          'linkedin',
+          'arbeitsagentur',
+          'remoteok',
+          'greenhouse',
+          'lever',
+          'ashby',
+          'remotive',
+        ],
         query: 'dev',
       })
     ).toThrow();

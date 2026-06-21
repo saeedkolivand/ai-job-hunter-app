@@ -161,7 +161,7 @@ describe('ScrapeBoardsRequestSchema', () => {
   it('rejects more than 6 boards', () => {
     expect(() =>
       ScrapeBoardsRequestSchema.parse({
-        boards: ['linkedin', 'indeed', 'stepstone', 'greenhouse', 'lever', 'ashby', 'remotive'],
+        boards: ['linkedin', 'arbeitsagentur', 'greenhouse', 'lever', 'ashby', 'remotive', 'wwr'],
         query: 'test',
       })
     ).toThrow();
@@ -181,7 +181,7 @@ describe('ScrapeBoardsRequestSchema', () => {
   it('accepts up to 6 boards', () => {
     expect(() =>
       ScrapeBoardsRequestSchema.parse({
-        boards: ['linkedin', 'indeed', 'stepstone', 'greenhouse', 'lever', 'ashby'],
+        boards: ['linkedin', 'arbeitsagentur', 'greenhouse', 'lever', 'ashby', 'remotive'],
         query: 'test',
       })
     ).not.toThrow();
