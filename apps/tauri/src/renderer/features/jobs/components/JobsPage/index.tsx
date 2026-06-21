@@ -77,6 +77,14 @@ export function JobsPage() {
     noteScrapeFinished,
   } = useScraping(notify, scrapeForm);
 
+  // Throttle postings invalidation during streaming: at most one RQ refetch per
+  // second so the backend cache stays the source of truth without a round-trip
+  // per streamed item. This ensures remounting mid-scrape rehydrates from the
+  // server cache (the query will be stale from the last tick).
+  const streamInvalidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const throttledInvalidatePostings = useRef(invalidatePostings);
+  throttledInvalidatePostings.current = invalidatePostings;
+
   useJobEvents((raw: unknown) => {
     const ev = raw as JobEvent;
 
@@ -100,6 +108,14 @@ export function JobsPage() {
             if (prev.some((p) => p.id === item.id)) return prev;
             return [item, ...prev].slice(0, 500);
           });
+        }
+        // Throttled invalidation: keep the RQ postings cache in sync so that
+        // navigating away and back mid-scrape rehydrates from the backend.
+        if (!streamInvalidateTimerRef.current) {
+          streamInvalidateTimerRef.current = setTimeout(() => {
+            streamInvalidateTimerRef.current = null;
+            void throttledInvalidatePostings.current().catch(() => {});
+          }, 1000);
         }
       }
       return;
@@ -144,6 +160,17 @@ export function JobsPage() {
       });
     }
   });
+
+  // Clear the stream-invalidation timer on unmount so it can't fire after the
+  // component is gone and call a stale invalidatePostings closure.
+  useEffect(() => {
+    return () => {
+      if (streamInvalidateTimerRef.current) {
+        clearTimeout(streamInvalidateTimerRef.current);
+        streamInvalidateTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (livePostings.length > 0) setShowScrapeForm(false);
