@@ -32,12 +32,17 @@ struct Resp {
     offers: Vec<Offer>,
 }
 
-/// Validate that a slug is a valid hostname label (alphanumeric + hyphen only).
+/// Validate that a slug is a valid DNS hostname label (RFC 1123).
 /// Recruitee uses the slug as a subdomain so URL-encoding would produce a
 /// malformed host; this guard rejects any slug that would break or redirect
-/// the URL (e.g., dots, colons, spaces, percent signs).
+/// the URL (e.g., dots, colons, spaces, percent signs, leading/trailing hyphens,
+/// or labels exceeding the 63-character DNS limit).
 pub(crate) fn is_valid_recruitee_slug(slug: &str) -> bool {
-    !slug.is_empty() && slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    !slug.is_empty()
+        && slug.len() <= 63
+        && slug.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        && !slug.starts_with('-')
+        && !slug.ends_with('-')
 }
 
 pub struct RecruiteeScraper;

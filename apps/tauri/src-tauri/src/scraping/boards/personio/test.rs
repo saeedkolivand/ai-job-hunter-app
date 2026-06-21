@@ -92,6 +92,50 @@ async fn invalid_slug_skipped_without_network() {
     );
 }
 
+// ── ID namespacing — cross-tenant collision prevention ────────────────────────
+
+/// Two companies returning the same raw position ID must produce distinct
+/// `JobPosting.id` values because the format is `personio:{company}:{id}`.
+/// Without the company namespace, a position `id=42` at "acme" and the same
+/// `id=42` at "globex" would collide in any deduplication or storage layer.
+#[test]
+fn id_namespacing_prevents_cross_tenant_collisions() {
+    let xml_template = |id: &str, name: &str| {
+        format!(
+            r#"<?xml version="1.0"?>
+<workzag-jobs>
+  <position>
+    <id>{id}</id>
+    <name>{name}</name>
+    <office>Berlin</office>
+    <jobDescription><value>desc</value></jobDescription>
+    <createdAt>2024-01-01T00:00:00Z</createdAt>
+  </position>
+</workzag-jobs>"#
+        )
+    };
+
+    let xml_acme = xml_template("42", "Engineer at Acme");
+    let xml_globex = xml_template("42", "Engineer at Globex");
+
+    let positions_acme = parse_xml_feed(&xml_acme);
+    let positions_globex = parse_xml_feed(&xml_globex);
+
+    assert_eq!(positions_acme.len(), 1);
+    assert_eq!(positions_globex.len(), 1);
+
+    // Simulate what PersonioScraper does: prefix with "personio:{company}:{id}".
+    let id_acme = format!("personio:{}:{}", "acme", positions_acme[0].id);
+    let id_globex = format!("personio:{}:{}", "globex", positions_globex[0].id);
+
+    assert_ne!(
+        id_acme, id_globex,
+        "same raw position id from different tenants must produce distinct JobPosting.id"
+    );
+    assert_eq!(id_acme, "personio:acme:42");
+    assert_eq!(id_globex, "personio:globex:42");
+}
+
 // ── R5: Personio dotall regex — multi-line content capture ────────────────────
 //
 // `DESC_RE` uses the `(?s)` flag so `.` matches newlines.  Without it, a

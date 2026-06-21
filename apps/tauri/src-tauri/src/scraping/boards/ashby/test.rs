@@ -142,6 +142,50 @@ async fn empty_companies_returns_empty_without_network() {
     );
 }
 
+/// A pre-cancelled signal must make the loop break immediately without
+/// recording `first_fetch_error`.  If cancellation were treated as a genuine
+/// failure the board would return `Err` on any cancelled run that happened to
+/// receive a network error — this ensures it always returns `Ok` instead.
+#[tokio::test]
+async fn cancelled_before_fetch_returns_ok_not_err() {
+    let scraper = AshbyScraper;
+    let input = BoardSearchInput {
+        query: String::new(),
+        location: None,
+        amount: 10,
+        pages: 1,
+        date_filter: None,
+        job_type: None,
+        work_type: None,
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        locale: None,
+        country_code: None,
+        latitude: None,
+        longitude: None,
+        radius_km: None,
+        // Valid slug that would normally trigger a fetch.
+        companies: vec!["acme".to_string()],
+    };
+    let ctx = ScrapeContext {
+        signal: tokio_util::sync::CancellationToken::new(),
+        on_progress: None,
+        on_item: None,
+    };
+    // Cancel before search runs so the per-company loop breaks on the first
+    // iteration without attempting any network I/O.
+    ctx.signal.cancel();
+
+    let result = scraper.search(input, ctx).await;
+    assert!(
+        result.is_ok(),
+        "cancelled run must return Ok, not Err — cancellation must not be recorded as first_fetch_error"
+    );
+}
+
 /// When all company entries are blank or whitespace the list normalises to
 /// empty — the scraper falls through the normalisation stage with an empty
 /// Vec, producing Ok([]) rather than Err.

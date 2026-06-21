@@ -147,6 +147,10 @@ fn valid_slug_passes_guard_predicate() {
         "dotted.host",
         "bad%20slug",
         "_under",
+        // DNS-label constraints (must match Personio guard)
+        "-leading",
+        "trailing-",
+        &"a".repeat(64), // >63 chars
     ];
     for slug in invalid_slugs {
         assert!(

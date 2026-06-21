@@ -111,11 +111,13 @@ impl Scraper for AshbyScraper {
                 {
                     Ok(d) => d,
                     Err(e) => {
-                        log::warn!("[ashby] fetch failed for '{}': {e}", company);
-                        first_fetch_error.get_or_insert_with(|| e.to_string());
+                        // Check cancellation first: a fetch that failed because
+                        // the run was cancelled is not a real board-level error.
                         if ctx.signal.is_cancelled() {
                             break;
                         }
+                        log::warn!("[ashby] fetch failed for '{}': {e}", company);
+                        first_fetch_error.get_or_insert_with(|| e.to_string());
                         if let Some(ref on_progress) = ctx.on_progress {
                             on_progress((i + 1) as f32 / total as f32);
                         }
