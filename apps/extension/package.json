@@ -1,6 +1,6 @@
 {
   "name": "@ajh/extension",
-  "version": "0.111.1",
+  "version": "0.112.0",
   "private": true,
   "type": "module",
   "description": "AI Job Hunter — browser extension (MV3, Chrome + Firefox) bridging job pages to the local desktop app",
