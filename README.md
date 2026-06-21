@@ -294,7 +294,7 @@ pnpm dev
 4. Semantic search ranks postings against your résumé (hybrid vector + keyword)
 ```
 
-**Note:** Company-scoped boards (Greenhouse, Lever, Ashby, Personio, Recruitee, SmartRecruiters) require company slugs, not free-text keywords. The **Aggregator** (Adzuna + JSearch) replaces direct scraping of anti-bot boards (Indeed, Glassdoor, Xing); free Adzuna keys available at https://developer.adzuna.com.
+**Note:** Company-scoped ATS boards require company slugs instead of free-text keywords. The **Aggregator** (Adzuna + JSearch) replaces direct scraping of anti-bot boards (Indeed, Glassdoor, Xing); free Adzuna keys available at https://developer.adzuna.com. See `docs/knowledge/scraping-domain.md` for the full board list and configuration details.
 
 </details>
 
@@ -304,14 +304,14 @@ pnpm dev
 
 The app uses the OS keychain for secrets — no `.env` files. Keys and credentials are set in the UI and encrypted via Tauri's keychain plugin.
 
-| Setting                 | Location               | Description                                               |
-| ----------------------- | ---------------------- | --------------------------------------------------------- |
-| AI provider + key       | Settings → AI          | Ollama / OpenAI / Anthropic / Gemini / compatible         |
-| Local model limits      | Settings → AI          | Context window + max output, per Ollama model             |
-| Ollama account key      | Settings → AI          | Optional — Ollama Cloud models + company research         |
-| **Adzuna/JSearch keys** | **Settings → Jobs**    | **Optional — aggregator board for Indeed/Glassdoor/Xing** |
-| Performance mode        | Settings → Performance | Low / Balanced / Performance                              |
-| Language                | Settings → General     | UI and generation locale                                  |
+| Setting                 | Location               | Description                                                                                                                                                                                                   |
+| ----------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AI provider + key       | Settings → AI          | Ollama / OpenAI / Anthropic / Gemini / compatible                                                                                                                                                             |
+| Local model limits      | Settings → AI          | Context window + max output, per Ollama model                                                                                                                                                                 |
+| Ollama account key      | Settings → AI          | Optional — Ollama Cloud models + company research                                                                                                                                                             |
+| **Adzuna/JSearch keys** | **Settings → Jobs**    | **Optional — provider registry with Adzuna (primary, free) and JSearch (paid fallback). Covers anti-bot boards like Indeed, Glassdoor, Xing, and more. See `docs/knowledge/scraping-domain.md` for details.** |
+| Performance mode        | Settings → Performance | Low / Balanced / Performance                                                                                                                                                                                  |
+| Language                | Settings → General     | UI and generation locale                                                                                                                                                                                      |
 
 ---
 

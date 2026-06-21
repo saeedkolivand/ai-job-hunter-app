@@ -17,14 +17,7 @@ Describes the job-scraping subsystem: board registry, company-scoped ATS boards,
 
 ## Company-scoped boards (PR #464)
 
-Six ATS boards require a company slug, not a free-text keyword search:
-
-1. **Greenhouse** (`requires_company=true`, fan-out cap: 50)
-2. **Lever** (`requires_company=true`, fan-out cap: none)
-3. **Ashby** (`requires_company=true`, fan-out cap: 50)
-4. **Personio** (`requires_company=true`, fan-out cap: none)
-5. **Recruitee** (`requires_company=true`, fan-out cap: none)
-6. **SmartRecruiters** (`requires_company=true`, fan-out cap: 20, supports keyword via `?q` param)
+Company-scoped ATS boards require company slugs instead of free-text keyword searches. Each board declares `requiresCompany=true` in the catalog metadata and implements its own fanout and filtering logic. For the authoritative list of boards and per-board limits, see `apps/tauri/src-tauri/src/scraping/boards/` (each module) and the registry `apps/tauri/src-tauri/src/scraping/boards/mod.rs` (`SCRAPERS`).
 
 ### BoardSearchInput contract
 
@@ -46,38 +39,21 @@ When a company-scoped board is selected with an empty `companies` list:
 
 ## Aggregator board (PR #465)
 
-**Purpose:** Replace direct scraping of anti-bot sites (Indeed, Glassdoor, Xing, Workday, StepStone). Uses a provider registry pattern.
+**Purpose:** Replace direct scraping of anti-bot sites (Indeed, Glassdoor, Xing, Workday, StepStone). Uses a provider registry pattern: Adzuna (primary, free) with JSearch (paid fallback, invoked only on Adzuna errors).
 
-### Providers
+**Keys and configuration:**
 
-**Adzuna** (primary, free)
+- Adzuna and JSearch API keys are stored in the OS keyring and never logged (encrypted at rest, decrypted only in Rust).
+- Settings → Jobs exposes UI to enter/remove credentials.
+- Keys are read on-demand via `credentials::read_credential` (module at `apps/tauri/src-tauri/src/credentials/mod.rs`).
 
-- App ID + App key from https://developer.adzuna.com (user-supplied)
-- Stored in OS keyring (`ai:adzuna-app-id`, `ai:adzuna-app-key`)
-- Stripped from HTTP logs
-- Endpoint: `https://api.adzuna.com/v1/api/jobs/{country_code}/search/1`
+**Provider details, endpoints, and fallback logic:** see `apps/tauri/src-tauri/src/scraping/boards/aggregator/mod.rs` (AdzunaProvider, JSearchProvider, and JobProvider trait).
 
-**JSearch** (paid, fallback only on Adzuna errors)
+**Behavior:**
 
-- API key from https://api.jsearch.io (user-supplied)
-- Stored in OS keyring (`ai:jsearch-key`)
-- Invoked only when Adzuna **errors** (not on legitimate empty results)
-- Fallback respects cancellation signal (cancel before fallback = no fallback)
-- Endpoint: `https://jskills-api.api.jsearch.io/v2/jobs-search`
-
-### Keyring & settings
-
-- Keys are encrypted in the OS keyring and never logged/visible in plaintext
-- Settings → Jobs shows a field to enter/remove Adzuna app ID + key
-- UI wraps save/remove with re-entrancy guard (rapid Enter / double-click is no-op)
-- Removed OnceLock cache so new keys take effect on next search without app restart
-
-### Behavior
-
-- **Keyless:** Returns empty results (never crashes; logged as warning)
-- **Provider errors:** Fallback to next provider (Adzuna error → JSearch)
-- **Empty results:** Legitimate; no fallback triggered
-- **Cancellation:** Pre-fallback cancel signal skips the paid provider entirely
+- **Keyless:** Returns empty results (never crashes; logged as warning).
+- **Provider errors:** Fallback to next provider (Adzuna error → JSearch; empty results are legitimate and do NOT trigger fallback).
+- **Cancellation:** Pre-fallback cancel signal skips the paid provider entirely.
 
 ## Scrape results persistence (PR #463)
 

@@ -821,12 +821,12 @@ Aggregator (Adzuna/JSearch, bring-your-own-key), LinkedIn (guest HTML), YCombina
 
 ### Skip States
 
-The Rust scraping engine (`apps/tauri/src-tauri/src/scraping/engine/mod.rs`) reports scrape outcomes via `BoardScrapeSummary.skipped: Option<String>`:
+The Rust scraping engine (`apps/tauri/src-tauri/src/scraping/engine/mod.rs`) reports scrape outcomes via `BoardScrapeSummary.skipped: 'needs-login' | 'needs-company'` (a closed union, not `Option<String>`):
 
-- **`needs-login`** — board marked `AuthRequirement::Required` with no usable session (empty cookie jar or stale session via `board_login::{load_cookies, session_is_stale}`). Required boards are gated both at the UI (Start button disabled until boards are connected) and at the backend (redundant skip if the gate is somehow bypassed).
-- **`needs-company`** — company-scoped board (Greenhouse, Lever, Ashby, Personio, Recruitee, SmartRecruiters) with an empty `companies` list in `BoardSearchInput`. The scrape form shows a "Companies" field only for boards that declare `requires_company()` (surfaced in the catalog metadata; no hardcoded list). If no companies are entered, the board is skipped entirely with this outcome.
+- **`needs-login`** — board marked `AuthRequirement::Required` with no usable session (empty cookie jar or stale session via `board_login::{load_cookies, session_is_stale}`). Required boards are gated both at the UI (Start button disabled until boards are connected) and at the backend (redundant skip if the gate is somehow bypassed). Surfaced with a sign-in prompt.
+- **`needs-company`** — company-scoped board (Greenhouse, Lever, Ashby, Personio, Recruitee, SmartRecruiters) with an empty or whitespace-only `companies` list in `BoardSearchInput`. The scrape form shows a "Companies" field only for boards that declare `requires_company()` (surfaced in the catalog metadata; no hardcoded list). Surfaced with a config hint (e.g., "Enter company slugs to scrape this board").
 
-Both outcomes are surfaced to the user in the scrape results page with a sign-in or config prompt, mirroring the existing pattern.
+Each skip reason is surfaced separately in the scrape results UI with its own remediation message.
 
 ### chromiumoxide Warnings
 
