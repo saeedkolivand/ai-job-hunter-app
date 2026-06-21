@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782031809873,
+  "lastUpdate": 1782040504118,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1211,6 +1211,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 308646,
             "range": "± 7140",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bd3c34424d28f3a169b78e2fed06edb407525309",
+          "message": "refactor(scraping): retire 5 anti-bot board scrapers covered by the aggregator (#469)\n\n* refactor(scraping): retire 5 anti-bot board scrapers covered by the aggregator\n\nRemove the Glassdoor, Indeed, Xing, Workday and StepStone scrapers. All five\nwere structurally blocked by anti-bot defences and returned nothing; the\nexisting Adzuna/JSearch aggregator already covers them via API. The SCRAPERS\nregistry goes 21 -> 16 boards.\n\nScraper-only retirement. Single-job import (the browser-extension flow) is\nunaffected: the scrape_url Indeed/Workday URL resolvers, board_login and\ncredential machinery are kept dormant, and contact-profile Xing + SourceBadge\nsource attribution stay. The in-app accounts/login panel is trimmed to LinkedIn\n(the only board with a live in-app login after retirement); board_login configs\nremain so import can be wired for the others later.\n\nAlso drop the now-dead Indeed-only locale field across the shared schema,\nBoardSearchInput, the generated IPC contract, command passthroughs and test\nfixtures; the aggregator localises via country_code. Persisted Autopilot configs\nreferencing a retired board degrade gracefully (free-string boards, unknown-id\nskip with an error summary).\n\nDocs, README, landing claims (16 boards; walled boards via aggregator, not\nChromium) and ADR-026 updated. German-market depth via Adzuna.de is a separate\nfollow-up, not addressed here.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* test(scraping): use active board ids and assert retired boards are rejected\n\nSwap leftover retired-board fixtures (indeed) for active ids in the board-status\nhook test, and add negative cases asserting ScrapeBoardsRequestSchema rejects\nretired board ids (indeed, stepstone) so they can't be silently re-added to\nBOARD_IDS. Addresses CodeRabbit review on #469.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-21T13:06:27+02:00",
+          "tree_id": "8ec9eea6695d9671cd2f7be82f236abca679a883",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/bd3c34424d28f3a169b78e2fed06edb407525309"
+        },
+        "date": 1782040503689,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1941193,
+            "range": "± 72938",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2584372,
+            "range": "± 19732",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 300183,
+            "range": "± 1860",
             "unit": "ns/iter"
           }
         ]
