@@ -1,4 +1,8 @@
 /// Recruitee — public per-company offers API
+///
+/// Endpoint: `https://{company}.recruitee.com/api/offers/`
+/// No global keyword search — requires a company slug. The engine skips this
+/// board with `"needs-company"` when `input.companies` is empty.
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
@@ -44,91 +48,126 @@ impl Scraper for RecruiteeScraper {
         ScraperMode::Http
     }
 
+    fn requires_company(&self) -> bool {
+        true
+    }
+
     async fn search(
         &self,
         input: BoardSearchInput,
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
-        let company = input.query.trim();
-        if company.is_empty() {
+        // Engine skips us when companies is empty; guard defensively anyway.
+        if input.companies.is_empty() {
             return Ok(vec![]);
         }
 
-        let url = format!(
-            "https://{}.recruitee.com/api/offers/",
-            urlencoding::encode(company)
-        );
-        let data = fetch_json::<Resp>(&url, Default::default(), ctx.signal).await?;
-
-        let offers = match data {
-            Some(d) => d.offers,
-            None => return Ok(vec![]),
-        };
-
         let now = chrono::Utc::now().timestamp_millis();
         let mut out = vec![];
+        let total = input.companies.len();
 
-        for o in offers {
-            let description = vec![
-                o.description.as_deref().map(strip_html),
-                o.requirements.as_deref().map(strip_html),
-            ]
-            .into_iter()
-            .flatten()
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n\n");
+        for (i, company) in input.companies.iter().enumerate() {
+            if ctx.signal.is_cancelled() {
+                break;
+            }
 
-            let location = vec![o.city.as_deref(), o.country.as_deref()]
+            let company = company.trim();
+            if company.is_empty() {
+                continue;
+            }
+
+            // Recruitee uses the slug as a hostname label — URL-encoding would
+            // percent-encode dots and produce a malformed host. Accept only
+            // labels that are valid hostname components (alphanumeric + hyphen).
+            if !company
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-')
+            {
+                log::warn!("[recruitee] skipping invalid hostname slug '{}'", company);
+                continue;
+            }
+
+            // Use the raw slug as the subdomain; do NOT percent-encode it.
+            let url = format!("https://{}.recruitee.com/api/offers/", company);
+            let data = match fetch_json::<Resp>(&url, Default::default(), ctx.signal.clone()).await
+            {
+                Ok(d) => d,
+                Err(e) => {
+                    log::warn!("[recruitee] fetch failed for '{}': {e}", company);
+                    if ctx.signal.is_cancelled() {
+                        break;
+                    }
+                    continue;
+                }
+            };
+
+            let offers = match data {
+                Some(d) => d.offers,
+                None => continue,
+            };
+
+            for o in offers {
+                let description = vec![
+                    o.description.as_deref().map(strip_html),
+                    o.requirements.as_deref().map(strip_html),
+                ]
                 .into_iter()
                 .flatten()
                 .filter(|s| !s.is_empty())
                 .collect::<Vec<_>>()
-                .join(", ");
+                .join("\n\n");
 
-            let posted_at = o
-                .created_at
-                .and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok())
-                .map(|dt| dt.timestamp_millis());
+                let location = vec![o.city.as_deref(), o.country.as_deref()]
+                    .into_iter()
+                    .flatten()
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(", ");
 
-            let posting = JobPosting {
-                id: format!("{}:{}", self.id(), o.id),
-                external_id: Some(o.id.to_string()),
-                title: o.title,
-                company: o.company_name.unwrap_or_else(|| company.to_string()),
-                location: if location.is_empty() {
-                    None
-                } else {
-                    Some(location)
-                },
-                url: o.careers_url,
-                source: self.id().to_string(),
-                description: if description.is_empty() {
-                    None
-                } else {
-                    Some(description)
-                },
-                requirements: None,
-                posted_at,
-                captured_at: now,
-                extra: {
-                    let mut map = std::collections::HashMap::new();
-                    if let Some(remote) = o.remote {
-                        map.insert("remote".to_string(), serde_json::json!(remote));
-                    }
-                    map
-                },
-            };
+                let posted_at = o
+                    .created_at
+                    .and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok())
+                    .map(|dt| dt.timestamp_millis());
 
-            if let Some(ref on_item) = ctx.on_item {
-                on_item(posting.clone());
+                let posting = JobPosting {
+                    id: format!("{}:{}", self.id(), o.id),
+                    external_id: Some(o.id.to_string()),
+                    title: o.title,
+                    company: o.company_name.unwrap_or_else(|| company.to_string()),
+                    location: if location.is_empty() {
+                        None
+                    } else {
+                        Some(location)
+                    },
+                    url: o.careers_url,
+                    source: self.id().to_string(),
+                    description: if description.is_empty() {
+                        None
+                    } else {
+                        Some(description)
+                    },
+                    requirements: None,
+                    posted_at,
+                    captured_at: now,
+                    extra: {
+                        let mut map = std::collections::HashMap::new();
+                        if let Some(remote) = o.remote {
+                            map.insert("remote".to_string(), serde_json::json!(remote));
+                        }
+                        map
+                    },
+                };
+
+                if let Some(ref on_item) = ctx.on_item {
+                    on_item(posting.clone());
+                }
+
+                out.push(posting);
             }
 
-            out.push(posting);
-        }
-
-        if let Some(ref on_progress) = ctx.on_progress {
-            on_progress(1.0);
+            if let Some(ref on_progress) = ctx.on_progress {
+                on_progress((i + 1) as f32 / total as f32);
+            }
         }
 
         Ok(out)

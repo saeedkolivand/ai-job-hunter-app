@@ -81,9 +81,30 @@ import { ScrapeForm } from './index';
 // ---------------------------------------------------------------------------
 
 const CATALOG: BoardCatalogEntry[] = [
-  { id: 'greenhouse', displayName: 'Greenhouse', mode: 'http', auth: 'guest', listed: true },
-  { id: 'linkedin', displayName: 'LinkedIn', mode: 'http', auth: 'optional', listed: true },
-  { id: 'indeed', displayName: 'Indeed', mode: 'browser', auth: 'required', listed: true },
+  {
+    id: 'greenhouse',
+    displayName: 'Greenhouse',
+    mode: 'http',
+    auth: 'guest',
+    listed: true,
+    requiresCompany: false,
+  },
+  {
+    id: 'linkedin',
+    displayName: 'LinkedIn',
+    mode: 'http',
+    auth: 'optional',
+    listed: true,
+    requiresCompany: false,
+  },
+  {
+    id: 'indeed',
+    displayName: 'Indeed',
+    mode: 'browser',
+    auth: 'required',
+    listed: true,
+    requiresCompany: false,
+  },
 ];
 
 type FormBoards = { boards: string[] };
@@ -97,6 +118,7 @@ function buildForm(boards: string[]): Parameters<typeof ScrapeForm>[0]['form'] {
     amount: 25,
     dateFilter: '' as const,
     locale: 'en',
+    companies: [],
   };
 }
 
@@ -277,6 +299,7 @@ function buildFormWithQuery(boards: string[]): Parameters<typeof ScrapeForm>[0][
     amount: 25,
     dateFilter: '' as const,
     locale: 'en',
+    companies: [],
   };
 }
 

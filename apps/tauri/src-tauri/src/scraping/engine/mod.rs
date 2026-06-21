@@ -24,6 +24,11 @@ pub struct ScraperCatalogEntry {
     pub auth: AuthRequirement,
     /// Whether the board shows in the manual jobs picker.
     pub listed: bool,
+    /// Whether the board requires at least one company slug in `input.companies`
+    /// to return results. The engine skips boards with `requires_company=true`
+    /// when `input.companies` is empty, reporting `skipped: "needs-company"`.
+    #[serde(rename = "requiresCompany")]
+    pub requires_company: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -89,6 +94,7 @@ impl ScraperEngine {
                 .to_string(),
                 auth: s.auth(),
                 listed: s.listed(),
+                requires_company: s.requires_company(),
             })
             .collect()
     }
@@ -375,26 +381,32 @@ impl ScraperEngine {
         let mut name_to_idx: HashMap<String, usize> = HashMap::new();
 
         for (idx, (id, scraper)) in resolved.into_iter().enumerate() {
-            let should_skip = scraper
-                .as_ref()
-                .ok()
-                .map(|s| {
-                    if s.auth() != AuthRequirement::Required {
-                        return false;
-                    }
-                    // Skip when: no cookies, OR no valid connected status (file
-                    // missing / connected:false / connected_at absent), OR stale.
-                    super::board_login::load_cookies(data_dir, &id).is_empty()
+            // Determine skip reason (if any) from the resolved scraper.
+            // Unknown-board Err values always pass through (no skip) so they
+            // produce a normal error summary rather than a misleading skip.
+            let skip_reason: Option<&'static str> = scraper.as_ref().ok().and_then(|s| {
+                // Skip 1: Required auth board with no valid session.
+                if s.auth() == AuthRequirement::Required {
+                    let no_session = super::board_login::load_cookies(data_dir, &id).is_empty()
                         || super::board_login::session_age_ms(data_dir, &id).is_none()
-                        || super::board_login::session_is_stale(data_dir, &id)
-                })
-                .unwrap_or(false); // unknown-board Err → run through normal error path
-            if should_skip {
+                        || super::board_login::session_is_stale(data_dir, &id);
+                    if no_session {
+                        return Some("needs-login");
+                    }
+                }
+                // Skip 2: ATS board that requires a company slug but none supplied.
+                if s.requires_company() && input.companies.is_empty() {
+                    return Some("needs-company");
+                }
+                None
+            });
+
+            if let Some(reason) = skip_reason {
                 slot_summaries[idx] = Some(BoardScrapeSummary {
                     board: id,
                     count: 0,
                     error: None,
-                    skipped: Some("needs-login".into()),
+                    skipped: Some(reason.into()),
                 });
             } else {
                 name_to_idx.insert(id.clone(), idx);

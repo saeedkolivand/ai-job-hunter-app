@@ -1,4 +1,8 @@
 /// Personio — public XML feed per company
+///
+/// Endpoint: `https://{company}.jobs.personio.de/xml` (falls back to `.com`)
+/// No global keyword search — requires a company slug. The engine skips this
+/// board with `"needs-company"` when `input.companies` is empty.
 use super::super::http::{fetch_text, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
@@ -108,78 +112,117 @@ impl Scraper for PersonioScraper {
         ScraperMode::Http
     }
 
+    fn requires_company(&self) -> bool {
+        true
+    }
+
     async fn search(
         &self,
         input: BoardSearchInput,
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
-        let company = input.query.trim().to_lowercase();
-        if company.is_empty() {
+        // Engine skips us when companies is empty; guard defensively anyway.
+        if input.companies.is_empty() {
             return Ok(vec![]);
         }
 
-        let mut xml = None;
-        for host in HOSTS {
-            // 2025+: Personio migrated career sites to Next.js; root URL returns HTML.
-            // The XML feed now lives at /xml on the same subdomain.
-            let url = format!("https://{}.{}/xml", company, host);
-            let res = fetch_text(&url, Default::default(), ctx.signal.clone()).await?;
-
-            if res.status_code == 200 && res.text.contains("<position") {
-                xml = Some(res.text);
-                break;
-            }
-        }
-
-        let xml = match xml {
-            Some(x) => x,
-            None => return Ok(vec![]),
-        };
-
         let now = chrono::Utc::now().timestamp_millis();
         let mut out = vec![];
+        let total = input.companies.len();
 
-        for pos in parse_xml_feed(&xml) {
-            let posted_at = if pos.created.is_empty() {
-                None
-            } else {
-                chrono::DateTime::parse_from_rfc3339(&pos.created)
-                    .ok()
-                    .map(|dt| dt.timestamp_millis())
-            };
-
-            let posting = JobPosting {
-                id: format!("{}:{}", self.id(), pos.id),
-                external_id: Some(pos.id.clone()),
-                title: pos.title,
-                company: company.clone(),
-                location: if pos.office.is_empty() {
-                    None
-                } else {
-                    Some(pos.office)
-                },
-                url: format!("https://{}.{}/job/{}", company, HOSTS[0], pos.id),
-                source: self.id().to_string(),
-                description: if pos.description.is_empty() {
-                    None
-                } else {
-                    Some(pos.description)
-                },
-                requirements: None,
-                posted_at,
-                captured_at: now,
-                extra: std::collections::HashMap::new(),
-            };
-
-            if let Some(ref on_item) = ctx.on_item {
-                on_item(posting.clone());
+        for (i, raw_company) in input.companies.iter().enumerate() {
+            if ctx.signal.is_cancelled() {
+                break;
             }
 
-            out.push(posting);
-        }
+            let company = raw_company.trim().to_lowercase();
+            if company.is_empty() {
+                continue;
+            }
 
-        if let Some(ref on_progress) = ctx.on_progress {
-            on_progress(1.0);
+            let mut xml_and_host: Option<(String, String)> = None;
+            for &host in HOSTS {
+                if ctx.signal.is_cancelled() {
+                    break;
+                }
+                // 2025+: Personio migrated career sites to Next.js; root URL returns HTML.
+                // The XML feed now lives at /xml on the same subdomain.
+                let url = format!("https://{}.{}/xml", company, host);
+                let res = match fetch_text(&url, Default::default(), ctx.signal.clone()).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        log::warn!(
+                            "[personio] fetch failed for '{}' via {}: {e}",
+                            company,
+                            host
+                        );
+                        if ctx.signal.is_cancelled() {
+                            break;
+                        }
+                        continue;
+                    }
+                };
+
+                if res.status_code == 200 && res.text.contains("<position") {
+                    xml_and_host = Some((res.text, host.to_string()));
+                    break;
+                }
+            }
+
+            let (xml, serving_host) = match xml_and_host {
+                Some(x) => x,
+                None => {
+                    if let Some(ref on_progress) = ctx.on_progress {
+                        on_progress((i + 1) as f32 / total as f32);
+                    }
+                    continue;
+                }
+            };
+
+            for pos in parse_xml_feed(&xml) {
+                let posted_at = if pos.created.is_empty() {
+                    None
+                } else {
+                    chrono::DateTime::parse_from_rfc3339(&pos.created)
+                        .ok()
+                        .map(|dt| dt.timestamp_millis())
+                };
+
+                let posting = JobPosting {
+                    id: format!("{}:{}", self.id(), pos.id),
+                    external_id: Some(pos.id.clone()),
+                    title: pos.title,
+                    company: company.clone(),
+                    location: if pos.office.is_empty() {
+                        None
+                    } else {
+                        Some(pos.office)
+                    },
+                    // Use the host that actually served the XML so .com fallback
+                    // produces correct job URLs instead of hardcoding .de.
+                    url: format!("https://{}.{}/job/{}", company, serving_host, pos.id),
+                    source: self.id().to_string(),
+                    description: if pos.description.is_empty() {
+                        None
+                    } else {
+                        Some(pos.description)
+                    },
+                    requirements: None,
+                    posted_at,
+                    captured_at: now,
+                    extra: std::collections::HashMap::new(),
+                };
+
+                if let Some(ref on_item) = ctx.on_item {
+                    on_item(posting.clone());
+                }
+
+                out.push(posting);
+            }
+
+            if let Some(ref on_progress) = ctx.on_progress {
+                on_progress((i + 1) as f32 / total as f32);
+            }
         }
 
         Ok(out)
