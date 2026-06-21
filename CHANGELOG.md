@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.113.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.112.0...v0.113.0) (2026-06-21)
+
+### ✨ Features
+
+* **jobs:** prompt for adzuna key in onboarding and scrape form ([#466](https://github.com/saeedkolivand/ai-job-hunter-app/issues/466)) ([e0bafe6](https://github.com/saeedkolivand/ai-job-hunter-app/commit/e0bafe681649bb1b681ee73cc941bae4105679b1))
+* **scraping:** add adzuna and jsearch aggregator with key settings ([#465](https://github.com/saeedkolivand/ai-job-hunter-app/issues/465)) ([be2ff48](https://github.com/saeedkolivand/ai-job-hunter-app/commit/be2ff48b44e94fd3f16e8e857388e273203713a3))
+* **scraping:** add company identifier for company-scoped boards ([#464](https://github.com/saeedkolivand/ai-job-hunter-app/issues/464)) ([06c5617](https://github.com/saeedkolivand/ai-job-hunter-app/commit/06c5617a1aaf505621fb0a6767f0c8c56cf438e5))
+
+### 🐛 Bug Fixes
+
+* **jobs:** persist scrape results across navigation ([#463](https://github.com/saeedkolivand/ai-job-hunter-app/issues/463)) ([bce7a1c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/bce7a1c6575ff33e3786bf4f74f8525a9de7dc37))
+* **scraping:** harden company-scoped boards (ssrf, fan-out caps, stale events) ([#467](https://github.com/saeedkolivand/ai-job-hunter-app/issues/467)) ([ea681ef](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ea681ef2c4961e20293ede4e394cb16873f550c4)), closes [#464](https://github.com/saeedkolivand/ai-job-hunter-app/issues/464)
+
+### ♻️ Refactors
+
+* **scraping:** retire 5 anti-bot board scrapers covered by the aggregator ([#469](https://github.com/saeedkolivand/ai-job-hunter-app/issues/469)) ([bd3c344](https://github.com/saeedkolivand/ai-job-hunter-app/commit/bd3c34424d28f3a169b78e2fed06edb407525309))
+
+### 📚 Documentation
+
+* **scraping:** document company-scoped boards and the aggregator ([#468](https://github.com/saeedkolivand/ai-job-hunter-app/issues/468)) ([e1e2b1f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/e1e2b1fa7e82de9365efd76daa868323b72245bd)), closes [463-#467](https://github.com/saeedkolivand/463-/issues/467)
+
 ## [0.112.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.111.1...v0.112.0) (2026-06-21)
 
 ### ✨ Features
