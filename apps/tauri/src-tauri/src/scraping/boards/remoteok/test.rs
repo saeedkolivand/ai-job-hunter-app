@@ -102,7 +102,6 @@ async fn live_search_returns_results() {
         actively_hiring: None,
         verified: None,
         sort_by: None,
-        locale: None,
         country_code: None,
         latitude: None,
         longitude: None,

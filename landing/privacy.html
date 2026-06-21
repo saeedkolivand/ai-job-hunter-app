@@ -193,10 +193,13 @@ footer{margin-top:60px; text-align:center}
     <span class="label">Job scraping — fetching job-board pages</span>
     <p style="margin-top:0">
       To find and import jobs, the app makes <b>outbound requests to the job boards you search</b>.
-      Most boards (e.g. Greenhouse, Lever, Workday) are fetched over plain HTTP; aggregators that need a
-      real browser session (e.g. LinkedIn, Indeed, Glassdoor) are driven through a local Chromium instance
-      using a per-board profile so your login persists on your machine. These requests go to the job boards
-      themselves — not to us. We run no proxy or intermediary; there is no AI Job Hunter server in the path.
+      Most boards (e.g. Greenhouse, Lever, Ashby, Personio) are fetched over plain HTTP. LinkedIn is
+      the only board driven through a local Chromium instance using a per-board profile so your login
+      persists on your machine. The walled aggregator boards (Indeed, Glassdoor, StepStone, Xing, Workday)
+      are reached via the Adzuna/JSearch aggregator API using your own API key — no browser required.
+      These requests go to Adzuna's or JSearch's APIs directly — not to us. We run no proxy or
+      intermediary; there is no AI Job Hunter server in the path. Adzuna and JSearch requests are
+      subject to their respective terms of service and privacy policies.
     </p>
   </div>
 

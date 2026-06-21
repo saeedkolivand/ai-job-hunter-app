@@ -3,10 +3,10 @@
  *
  * Covers:
  *   - Shows a skeleton while the catalog is loading
- *   - Renders one toggle button per listed board (glassdoor filtered out)
+ *   - Renders one toggle button per listed board (remoteok filtered out)
  *   - Renders no board buttons when the catalog returns []
- *   - glassdoor is NOT rendered (listed=false)
- *   - listed boards ARE rendered (greenhouse, linkedin, indeed)
+ *   - remoteok is NOT rendered (listed=false)
+ *   - listed boards ARE rendered (greenhouse, linkedin, lever)
  *   - Board order matches catalog (registry) order
  *   - Selected boards shown with aria-pressed=true
  *   - Select all / Clear controls present
@@ -97,18 +97,18 @@ const LISTED_CATALOG: BoardCatalogEntry[] = [
     requiresCompany: false,
   },
   {
-    id: 'indeed',
-    displayName: 'Indeed',
-    mode: 'browser',
-    auth: 'required',
+    id: 'lever',
+    displayName: 'Lever',
+    mode: 'http',
+    auth: 'guest',
     listed: true,
-    requiresCompany: false,
+    requiresCompany: true,
   },
-  // glassdoor: listed=false → should NOT appear in the picker
+  // remoteok: listed=false → should NOT appear in the picker
   {
-    id: 'glassdoor',
-    displayName: 'Glassdoor',
-    mode: 'browser',
+    id: 'remoteok',
+    displayName: 'RemoteOK',
+    mode: 'http',
     auth: 'guest',
     listed: false,
     requiresCompany: false,
@@ -122,7 +122,6 @@ const DEFAULT_FORM = {
   radiusKm: 0,
   amount: 25,
   dateFilter: '' as const,
-  locale: 'en',
   companies: [],
 };
 
@@ -172,13 +171,13 @@ describe('ScrapeForm — catalog-driven board picker', () => {
     const buttons = screen
       .getAllByRole('button', { hidden: false })
       .filter((el) => el.getAttribute('aria-pressed') !== null);
-    // 3 listed boards (greenhouse, linkedin, indeed); glassdoor is filtered out
+    // 3 listed boards (greenhouse, linkedin, lever); remoteok is filtered out
     expect(buttons).toHaveLength(3);
   });
 
-  it('does NOT render a button for glassdoor (listed=false)', () => {
+  it('does NOT render a button for remoteok (listed=false)', () => {
     renderForm();
-    expect(screen.queryByText('jobs.boards.glassdoor')).not.toBeInTheDocument();
+    expect(screen.queryByText('jobs.boards.remoteok')).not.toBeInTheDocument();
   });
 
   it('renders greenhouse (guest board) in the picker', () => {
@@ -191,9 +190,9 @@ describe('ScrapeForm — catalog-driven board picker', () => {
     expect(screen.getByText('jobs.boards.linkedin')).toBeInTheDocument();
   });
 
-  it('renders indeed (required board) in the picker', () => {
+  it('renders lever (guest board) in the picker', () => {
     renderForm();
-    expect(screen.getByText('jobs.boards.indeed')).toBeInTheDocument();
+    expect(screen.getByText('jobs.boards.lever')).toBeInTheDocument();
   });
 
   it('renders boards in catalog (registry) order', () => {
@@ -204,7 +203,7 @@ describe('ScrapeForm — catalog-driven board picker', () => {
     const labels = buttons.map((r) => r.textContent ?? '');
     expect(labels[0]).toBe('jobs.boards.greenhouse');
     expect(labels[1]).toBe('jobs.boards.linkedin');
-    expect(labels[2]).toBe('jobs.boards.indeed');
+    expect(labels[2]).toBe('jobs.boards.lever');
   });
 
   it('marks selected boards with aria-pressed=true', () => {

@@ -117,7 +117,6 @@ function buildForm(
     radiusKm: 0,
     amount: 25,
     dateFilter: '' as const,
-    locale: 'en',
     companies,
   };
 }

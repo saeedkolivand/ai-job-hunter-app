@@ -67,27 +67,31 @@ former `packages/ai` and `packages/data` Node packages were removed.
 
 ## Scraping (`apps/tauri/src-tauri/src/scraping/`)
 
-| Board                           | Status | Notes                                      |
-| ------------------------------- | ------ | ------------------------------------------ |
-| LinkedIn                        | ✅     | Playwright; session cookie required        |
-| Indeed                          | ✅     |                                            |
-| StepStone                       | ✅     |                                            |
-| Xing                            | ✅     | DACH market                                |
-| Greenhouse                      | ✅     | ATS platform                               |
-| Lever                           | ✅     | ATS platform                               |
-| Ashby                           | ✅     | ATS platform                               |
-| SmartRecruiters                 | ✅     |                                            |
-| Recruitee                       | ✅     |                                            |
-| Personio                        | ✅     |                                            |
-| Workday                         | ✅     |                                            |
-| RemoteOK                        | ✅     |                                            |
-| Remotive                        | ✅     |                                            |
-| Arbeitsagentur                  | ✅     | German federal job agency                  |
-| BerlinStartupJobs               | ✅     |                                            |
-| GermanTechJobs                  | ✅     |                                            |
-| ArbeitNow                       | ✅     |                                            |
-| YCombinator (Work at a Startup) | ✅     |                                            |
-| Captcha detection + handling    | ✅     | Reports to UI, waits for manual resolution |
+Active scrapers: 16 boards. Five boards (Indeed, StepStone, Xing, Workday, Glassdoor) were retired as direct scrapers in 2026-06-21 and are now covered by the Aggregator (Adzuna/JSearch). See ADR-026.
+
+| Board                           | Status  | Notes                                                              |
+| ------------------------------- | ------- | ------------------------------------------------------------------ |
+| Aggregator (Adzuna/JSearch)     | ✅      | Bring-your-own-key; covers Indeed/StepStone/Xing/Workday/Glassdoor |
+| LinkedIn                        | ✅      | Session cookie required for higher rate limits                     |
+| Greenhouse                      | ✅      | ATS platform; company-scoped                                       |
+| Lever                           | ✅      | ATS platform; company-scoped                                       |
+| Ashby                           | ✅      | ATS platform; company-scoped                                       |
+| SmartRecruiters                 | ✅      | Company-scoped                                                     |
+| Recruitee                       | ✅      | Company-scoped                                                     |
+| Personio                        | ✅      | Company-scoped                                                     |
+| RemoteOK                        | ✅      |                                                                    |
+| Remotive                        | ✅      |                                                                    |
+| Arbeitsagentur                  | ✅      | German federal job agency                                          |
+| BerlinStartupJobs               | ✅      |                                                                    |
+| GermanTechJobs                  | ✅      |                                                                    |
+| ArbeitNow                       | ✅      |                                                                    |
+| YCombinator (Work at a Startup) | ✅      |                                                                    |
+| We Work Remotely                | ✅      | RSS feed                                                           |
+| Indeed                          | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                   |
+| StepStone                       | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                   |
+| Xing                            | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                   |
+| Workday                         | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                   |
+| Glassdoor                       | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                   |
 
 ---
 

@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-21
 
-Describes the job-scraping subsystem: board registry, company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance).
+Describes the job-scraping subsystem: board registry (16 active scrapers), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
 ## Board registry & catalog
 
@@ -37,9 +37,13 @@ When a company-scoped board is selected with an empty `companies` list:
 - **Per-company dedup:** SmartRecruiters + Personio deduplicate results within each company (partial failure isolation: one company's error doesn't block others)
 - **Consistent IDs:** `personio::make_job_id(company, position_id)` ensures job IDs match across ingestion paths (scrape + URL resolve)
 
+## Retired boards (Glassdoor, Indeed, Xing, StepStone, Workday)
+
+These five boards were retired as direct scrapers (ADR-026, 2026-06-21). Their Rust modules are deleted; the registry went from 21 → 16 boards. Coverage is now provided by the Aggregator. The single-job import resolvers (`scrape_url::canonical_job_url` for Indeed, `scrape_url::try_workday`) and the dormant `board_login`/credential machinery are **deliberately kept** — see ADR-026 for the full keep-list and rationale.
+
 ## Aggregator board (PR #465)
 
-**Purpose:** Replace direct scraping of anti-bot sites (Indeed, Glassdoor, Xing, Workday, StepStone). Uses a provider registry pattern: Adzuna (primary, free) with JSearch (paid fallback, invoked only on Adzuna errors).
+**Purpose:** Cover anti-bot sites (Indeed, Glassdoor, Xing, Workday, StepStone) that return empty results or errors when self-scraped. Uses a provider registry pattern: Adzuna (primary, free) with JSearch (paid fallback, invoked only on Adzuna errors).
 
 **Keys and configuration:**
 
@@ -84,6 +88,6 @@ Results now persist across navigation thanks to React Query + backend cache:
 
 ## See also
 
-- `docs/SCRAPING_ENDPOINTS.md` — verified external endpoint reconnaissance (20 boards + aggregator)
+- `docs/SCRAPING_ENDPOINTS.md` — verified external endpoint reconnaissance (16 active boards + aggregator; retired boards noted)
 - `docs/knowledge/domain-model.md` — brief mention of `Scraper` trait + catalog
 - `docs/ARCHITECTURE.md` — high-level diagram of scraping + IPC boundary

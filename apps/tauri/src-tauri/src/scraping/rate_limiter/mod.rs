@@ -120,23 +120,15 @@ pub async fn for_host(host: &str) -> Arc<RateLimiter> {
 /// Rate-limiter options tuned per host.
 ///
 /// Default is generous (30 req / 60 s) so public HTTP boards are not unduly
-/// throttled. Sites with documented anti-scraping policies get tighter limits.
+/// throttled.
 ///
 /// `pub(crate)` so tests can assert the per-host configuration without going
 /// through a full HTTP round-trip.
-pub(crate) fn options_for_host(host: &str) -> RateLimiterOptions {
-    if host.contains("stepstone") {
-        RateLimiterOptions {
-            max_requests: 10,
-            window_ms: 60_000,
-            ..RateLimiterOptions::default()
-        }
-    } else {
-        RateLimiterOptions {
-            max_requests: 30,
-            window_ms: 60_000,
-            ..RateLimiterOptions::default()
-        }
+pub(crate) fn options_for_host(_host: &str) -> RateLimiterOptions {
+    RateLimiterOptions {
+        max_requests: 30,
+        window_ms: 60_000,
+        ..RateLimiterOptions::default()
     }
 }
 
@@ -144,38 +136,25 @@ pub(crate) fn options_for_host(host: &str) -> RateLimiterOptions {
 mod test {
     use super::*;
 
-    /// stepstone gets the conservative 10-req/60-s limit; every other host
-    /// gets the generous 30-req/60-s default.
+    /// All hosts get the uniform 30-req/60-s default (per-board overrides were
+    /// removed when the anti-bot scraper boards were retired).
     #[test]
-    fn options_for_host_stepstone_branch() {
-        let stepstone = options_for_host("www.stepstone.de");
-        assert_eq!(
-            stepstone.max_requests, 10,
-            "stepstone must have max_requests=10"
-        );
-        assert_eq!(
-            stepstone.window_ms, 60_000,
-            "stepstone window must be 60 000 ms"
-        );
-
-        // Subdomain variant — still matches because host.contains("stepstone").
-        let sub = options_for_host("api.stepstone.de");
-        assert_eq!(
-            sub.max_requests, 10,
-            "stepstone subdomain must also have max_requests=10"
-        );
-
-        // Unrelated host must NOT get the stepstone limit.
-        let other = options_for_host("www.linkedin.com");
-        assert_eq!(
-            other.max_requests, 30,
-            "non-stepstone host must have max_requests=30"
-        );
-
-        let generic = options_for_host("greenhouse.io");
-        assert_eq!(
-            generic.max_requests, 30,
-            "generic host must have max_requests=30"
-        );
+    fn options_for_host_uniform_default() {
+        for host in &[
+            "www.linkedin.com",
+            "greenhouse.io",
+            "jobs.lever.co",
+            "api.ashbyhq.com",
+        ] {
+            let opts = options_for_host(host);
+            assert_eq!(
+                opts.max_requests, 30,
+                "host '{host}' must have max_requests=30 (uniform default)"
+            );
+            assert_eq!(
+                opts.window_ms, 60_000,
+                "host '{host}' must have window_ms=60 000"
+            );
+        }
     }
 }

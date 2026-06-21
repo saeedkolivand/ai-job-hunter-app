@@ -103,12 +103,12 @@ const CATALOG: BoardCatalogEntry[] = [
     requiresCompany: false,
   },
   {
-    id: 'indeed',
-    displayName: 'Indeed',
-    mode: 'browser',
-    auth: 'required',
+    id: 'lever',
+    displayName: 'Lever',
+    mode: 'http',
+    auth: 'guest',
     listed: true,
-    requiresCompany: false,
+    requiresCompany: true,
   },
 ];
 
@@ -122,7 +122,6 @@ function buildForm(boards: string[]): Parameters<typeof ScrapeForm>[0]['form'] {
     radiusKm: 0,
     amount: 25,
     dateFilter: '' as const,
-    locale: 'en',
     companies: [],
   };
 }
@@ -222,11 +221,11 @@ describe('ScrapeForm select-all', () => {
     await userEvent.click(screen.getByText('jobs.selectAll'));
 
     const lastCall = onFormChange.mock.lastCall?.[0] as { boards: string[] } | undefined;
-    expect(lastCall?.boards).toEqual(['greenhouse', 'linkedin', 'indeed']);
+    expect(lastCall?.boards).toEqual(['greenhouse', 'linkedin', 'lever']);
   });
 
   it('select-all button is disabled when all boards are already selected', () => {
-    renderForm(['greenhouse', 'linkedin', 'indeed']);
+    renderForm(['greenhouse', 'linkedin', 'lever']);
 
     const selectAllBtn = screen.getByText('jobs.selectAll').closest('button');
     expect(selectAllBtn).toBeDisabled();
@@ -243,7 +242,7 @@ describe('ScrapeForm select-all', () => {
 describe('ScrapeForm clear boards', () => {
   it('clear calls onFormChange with only the first listed board', async () => {
     const onFormChange = vi.fn();
-    renderForm(['greenhouse', 'linkedin', 'indeed'], onFormChange);
+    renderForm(['greenhouse', 'linkedin', 'lever'], onFormChange);
 
     await userEvent.click(screen.getByText('jobs.clearBoards'));
 
@@ -291,6 +290,21 @@ describe('ScrapeForm keyboard handler', () => {
 // Required-board login gate — Start button disabled + blockedHint
 // ---------------------------------------------------------------------------
 
+// Catalog that includes a required-auth board for gate tests.
+// Uses 'arbeitsagentur' (real active board) overridden to auth='required' —
+// the gate logic is UI-side only; the catalog fixture drives it.
+const CATALOG_WITH_REQUIRED: BoardCatalogEntry[] = [
+  ...CATALOG,
+  {
+    id: 'arbeitsagentur',
+    displayName: 'Arbeitsagentur',
+    mode: 'http' as const,
+    auth: 'required' as const,
+    listed: true,
+    requiresCompany: false,
+  },
+];
+
 /**
  * Helper: build a form with a non-empty query so the query gate doesn't
  * interfere with the required-board gate we're testing.
@@ -303,7 +317,6 @@ function buildFormWithQuery(boards: string[]): Parameters<typeof ScrapeForm>[0][
     radiusKm: 0,
     amount: 25,
     dateFilter: '' as const,
-    locale: 'en',
     companies: [],
   };
 }
@@ -314,7 +327,7 @@ function renderFormWithQuery(
   anyConnected = false,
   onStart = vi.fn()
 ) {
-  stubCatalog = CATALOG;
+  stubCatalog = CATALOG_WITH_REQUIRED;
   stubLoading = false;
   stubStatuses = { results: statuses, anyConnected };
   capturedKeyHandler = null;
@@ -343,9 +356,9 @@ function getStartButton(): HTMLElement {
 }
 
 describe('ScrapeForm — required-board login gate', () => {
-  it('disables Start and shows blockedHint when a required board (indeed) is selected but not connected', () => {
-    // indeed is auth=required; status returns not connected (undefined data)
-    renderFormWithQuery(['indeed'], [{ data: undefined }]);
+  it('disables Start and shows blockedHint when a required board (arbeitsagentur) is selected but not connected', () => {
+    // arbeitsagentur is auth=required in CATALOG_WITH_REQUIRED; status returns not connected
+    renderFormWithQuery(['arbeitsagentur'], [{ data: undefined }]);
 
     const startBtn = getStartButton();
     expect(startBtn).toBeDisabled();
@@ -353,9 +366,9 @@ describe('ScrapeForm — required-board login gate', () => {
     expect(document.getElementById('scrape-blocked-hint')).not.toBeNull();
   });
 
-  it('enables Start when a required board (indeed) is selected and connected', () => {
-    // indeed connected → unconnectedRequired is empty → button enabled
-    renderFormWithQuery(['indeed'], [{ data: { connected: true } }], true);
+  it('enables Start when a required board (arbeitsagentur) is selected and connected', () => {
+    // arbeitsagentur connected → unconnectedRequired is empty → button enabled
+    renderFormWithQuery(['arbeitsagentur'], [{ data: { connected: true } }], true);
 
     const startBtn = getStartButton();
     expect(startBtn).not.toBeDisabled();
@@ -376,7 +389,7 @@ describe('ScrapeForm — required-board login gate', () => {
   });
 
   it('sets aria-describedby="scrape-blocked-hint" on the Start button when blocked', () => {
-    renderFormWithQuery(['indeed'], [{ data: { connected: false } }]);
+    renderFormWithQuery(['arbeitsagentur'], [{ data: { connected: false } }]);
 
     const startBtn = getStartButton();
     expect(startBtn).toHaveAttribute('aria-describedby', 'scrape-blocked-hint');
@@ -388,8 +401,8 @@ describe('ScrapeForm — required-board login gate', () => {
   });
 
   // Keyboard-submit regression — CodeRabbit PR #458
-  it('Enter on query input does NOT call onStart when a required board (indeed) is disconnected', () => {
-    const { onStart } = renderFormWithQuery(['indeed'], [{ data: undefined }]);
+  it('Enter on query input does NOT call onStart when a required board (arbeitsagentur) is disconnected', () => {
+    const { onStart } = renderFormWithQuery(['arbeitsagentur'], [{ data: undefined }]);
 
     const queryInput = screen.getByPlaceholderText('jobs.queryPlaceholder');
     fireEvent.keyDown(queryInput, { key: 'Enter' });
@@ -397,8 +410,12 @@ describe('ScrapeForm — required-board login gate', () => {
     expect(onStart).not.toHaveBeenCalled();
   });
 
-  it('Enter on query input DOES call onStart when a required board (indeed) is connected', () => {
-    const { onStart } = renderFormWithQuery(['indeed'], [{ data: { connected: true } }], true);
+  it('Enter on query input DOES call onStart when a required board (arbeitsagentur) is connected', () => {
+    const { onStart } = renderFormWithQuery(
+      ['arbeitsagentur'],
+      [{ data: { connected: true } }],
+      true
+    );
 
     const queryInput = screen.getByPlaceholderText('jobs.queryPlaceholder');
     fireEvent.keyDown(queryInput, { key: 'Enter' });

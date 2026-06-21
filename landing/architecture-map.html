@@ -1898,7 +1898,7 @@
           'sc-registry',
           'scraper',
           'SCRAPERS',
-          'registry · 20 boards',
+          'registry · 16 boards',
           1709,
           96,
           210,
@@ -2009,20 +2009,20 @@
           tag: ['scrape', 'all'],
         }),
         N(
-          'sc-stepstone',
+          'sc-aggregator',
           'scraper',
-          'stepstone',
-          'Scraper · browser',
+          'adzuna/jsearch',
+          'Aggregator · API',
           1709,
           628,
           210,
           42,
           'scraper',
           {
-            role: 'StepStone scraper.',
-            plain: 'Reads jobs from StepStone.',
-            path: 'apps/tauri/src-tauri/src/scraping/boards/stepstone',
-            notes: [],
+            role: 'Adzuna (primary) + JSearch (paid fallback) aggregator API — covers Indeed, Glassdoor, StepStone, Xing, and Workday without direct scraping.',
+            plain: 'An aggregator API that surfaces jobs from the walled boards (Indeed, Glassdoor, StepStone, Xing, Workday) so no browser or login is needed.',
+            path: 'apps/tauri/src-tauri/src/scraping/boards/',
+            notes: ['Replaces 5 retired anti-bot scrapers', 'Adzuna is primary; JSearch is the paid fallback'],
             tag: ['scrape', 'all'],
           }
         ),
@@ -2055,13 +2055,6 @@
           role: 'Recruitee scraper.',
           plain: 'Reads jobs from Recruitee.',
           path: 'apps/tauri/src-tauri/src/scraping/boards/recruitee',
-          notes: [],
-          tag: ['scrape', 'all'],
-        }),
-        N('sc-workday', 'scraper', 'workday', 'ATS · browser', 1945, 316, 210, 42, 'scraper', {
-          role: 'Workday scraper.',
-          plain: 'Reads jobs from companies using Workday.',
-          path: 'apps/tauri/src-tauri/src/scraping/boards/workday',
           notes: [],
           tag: ['scrape', 'all'],
         }),
@@ -2105,38 +2098,6 @@
             plain: 'Reads LinkedIn jobs using a logged-in browser session.',
             path: 'apps/tauri/src-tauri/src/scraping/boards/linkedin',
             notes: ['Browser board; LinkedIn API integration is on the roadmap'],
-            tag: ['scrape', 'all'],
-          }
-        ),
-        N('sc-indeed', 'scraper', 'indeed', 'Scraper · browser', 1945, 524, 210, 42, 'scraper', {
-          role: 'Indeed scraper.',
-          plain: 'Reads jobs from Indeed.',
-          path: 'apps/tauri/src-tauri/src/scraping/boards/indeed',
-          notes: ['Browser board'],
-          tag: ['scrape', 'all'],
-        }),
-        N('sc-xing', 'scraper', 'xing', 'DACH · browser', 1945, 576, 210, 42, 'scraper', {
-          role: 'Xing scraper (DACH market).',
-          plain: 'Reads jobs from Xing.',
-          path: 'apps/tauri/src-tauri/src/scraping/boards/xing',
-          notes: [],
-          tag: ['scrape', 'all'],
-        }),
-        N(
-          'sc-glassdoor',
-          'scraper',
-          'glassdoor',
-          'Scraper · browser',
-          1945,
-          628,
-          210,
-          42,
-          'scraper',
-          {
-            role: 'Glassdoor scraper.',
-            plain: 'Reads jobs from Glassdoor.',
-            path: 'apps/tauri/src-tauri/src/scraping/boards/glassdoor',
-            notes: [],
             tag: ['scrape', 'all'],
           }
         ),
@@ -2502,14 +2463,14 @@
           'ex-jobsites',
           'external',
           'Job board sites',
-          '20 boards',
+          '16 boards',
           2789,
           672,
           236,
           46,
           'external',
           {
-            role: 'The live job-board websites/APIs scraped by SCRAPERS.',
+            role: 'The live job-board websites/APIs reached by SCRAPERS (direct HTTP/browser) or via the Adzuna/JSearch aggregator API.',
             plain: 'The actual job websites out on the internet.',
             path: '(remote)',
             notes: [],
@@ -3140,12 +3101,12 @@
           label: '',
           tag: ['scrape', 'all'],
         },
-        { from: 'sc-registry', to: 'sc-indeed', kind: 'normal', label: '', tag: ['scrape', 'all'] },
+        { from: 'sc-registry', to: 'sc-aggregator', kind: 'normal', label: '', tag: ['scrape', 'all'] },
         {
-          from: 'sc-registry',
-          to: 'sc-stepstone',
-          kind: 'normal',
-          label: '',
+          from: 'sc-aggregator',
+          to: 'ex-jobsites',
+          kind: 'api',
+          label: 'Adzuna/JSearch API',
           tag: ['scrape', 'all'],
         },
         {
@@ -3797,7 +3758,7 @@
    <div class="plain">Click any box for its plain-English role, real file path, and what wires into and out of it. Use the chips up top to highlight a feature or a user-flow path. Drag to pan, scroll to zoom.</div>
    <div class="k">Notable findings from this map</div><ul class="findings">`;
         FINDINGS.forEach((f) => (h += `<li>${f}</li>`));
-        h += `</ul><div class="k">Counts</div><div style="color:#cfcfcf">${nodes.length} nodes · ${edges.length} edges · ${clusters.length} clusters · 20 boards · 8 AI providers</div>`;
+        h += `</ul><div class="k">Counts</div><div style="color:#cfcfcf">${nodes.length} nodes · ${edges.length} edges · ${clusters.length} clusters · 16 boards · 8 AI providers</div>`;
         h += `<div class="k">Critical paths</div><div style="color:#cfcfcf">Red = <b>AI Generate</b> (default). Click <b>Autopilot</b> or <b>Scrape → Match</b> to light up the other two flows.</div>`;
         return h;
       }

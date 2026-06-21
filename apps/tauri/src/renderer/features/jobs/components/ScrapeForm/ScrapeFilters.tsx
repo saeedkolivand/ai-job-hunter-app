@@ -6,7 +6,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button, cn, Dropdown, LocationInput, NumberField } from '@ajh/ui';
 
 import { AUTH_BENEFITS } from '../../constants';
-import { REGIONS, type ScrapeFormState } from './constants';
+import type { ScrapeFormState } from './constants';
 
 interface Props {
   form: ScrapeFormState;
@@ -111,20 +111,6 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
               className="w-full bg-white/[0.03] text-xs text-foreground disabled:opacity-50"
             />
           </div>
-
-          {/* Indeed region */}
-          {form.boards.includes('indeed') && (
-            <div className="col-span-2">
-              <label className={LABEL}>{t('jobs.region')}</label>
-              <Dropdown
-                options={REGIONS.map((r) => ({ value: r.value, label: t(r.labelKey) }))}
-                value={form.locale}
-                onChange={(value) => onFormChange({ locale: value })}
-                disabled={scraping}
-                placeholder={t('jobs.selectRegion')}
-              />
-            </div>
-          )}
         </div>
       )}
     </div>

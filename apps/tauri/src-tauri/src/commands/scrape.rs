@@ -83,7 +83,6 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
         actively_hiring: req.actively_hiring,
         verified: req.verified,
         sort_by: req.sort_by.clone(),
-        locale: req.locale.clone(),
         country_code: req.country_code.clone(),
         latitude: req.latitude,
         longitude: req.longitude,
