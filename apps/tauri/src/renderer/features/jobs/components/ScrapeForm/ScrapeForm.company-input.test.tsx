@@ -385,21 +385,7 @@ describe('ScrapeForm — companies field absent after deselecting requiresCompan
     expect(clearCall).toBeDefined();
   });
 
-  it('useScraping omits companies from the scrape request when the array is empty', () => {
-    // This exercises the guard in useScraping.ts:
-    //   ...(scrapeForm.companies.length > 0 ? { companies: scrapeForm.companies } : {})
-    // We test the pure branch logic inline — it matches what the hook does.
-    function buildRequest(companies: string[]): Record<string, unknown> {
-      return {
-        boards: ['linkedin'],
-        query: 'engineer',
-        ...(companies.length > 0 ? { companies } : {}),
-      };
-    }
-
-    // companies=[] → key absent
-    expect(buildRequest([])).not.toHaveProperty('companies');
-    // companies=['stripe'] → key present
-    expect(buildRequest(['stripe'])).toHaveProperty('companies', ['stripe']);
-  });
+  // companies-omission logic is tested at the hook level in:
+  //   features/jobs/hooks/useScraping.test.ts
+  // (exercising the real useScraping hook, not a local replica).
 });

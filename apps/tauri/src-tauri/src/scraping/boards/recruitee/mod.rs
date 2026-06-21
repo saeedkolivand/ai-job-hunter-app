@@ -32,6 +32,14 @@ struct Resp {
     offers: Vec<Offer>,
 }
 
+/// Validate that a slug is a valid hostname label (alphanumeric + hyphen only).
+/// Recruitee uses the slug as a subdomain so URL-encoding would produce a
+/// malformed host; this guard rejects any slug that would break or redirect
+/// the URL (e.g., dots, colons, spaces, percent signs).
+pub(crate) fn is_valid_recruitee_slug(slug: &str) -> bool {
+    !slug.is_empty() && slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
 pub struct RecruiteeScraper;
 
 #[async_trait]
@@ -79,10 +87,7 @@ impl Scraper for RecruiteeScraper {
             // Recruitee uses the slug as a hostname label — URL-encoding would
             // percent-encode dots and produce a malformed host. Accept only
             // labels that are valid hostname components (alphanumeric + hyphen).
-            if !company
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-')
-            {
+            if !is_valid_recruitee_slug(company) {
                 log::warn!("[recruitee] skipping invalid hostname slug '{}'", company);
                 continue;
             }

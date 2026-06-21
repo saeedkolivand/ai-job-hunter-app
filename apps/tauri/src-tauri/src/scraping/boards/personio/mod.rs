@@ -96,6 +96,17 @@ pub(crate) fn parse_xml_feed(xml: &str) -> Vec<PersonioPosition> {
     out
 }
 
+/// Validate that a company slug is a single valid DNS hostname label.
+/// Rejects anything with colons, slashes, dots, or other characters that could
+/// alter the URL authority and redirect the fetch away from Personio (SSRF).
+fn is_valid_personio_slug(slug: &str) -> bool {
+    !slug.is_empty()
+        && slug.len() <= 63
+        && slug.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        && !slug.starts_with('-')
+        && !slug.ends_with('-')
+}
+
 pub struct PersonioScraper;
 
 #[async_trait]
@@ -137,6 +148,17 @@ impl Scraper for PersonioScraper {
 
             let company = raw_company.trim().to_lowercase();
             if company.is_empty() {
+                continue;
+            }
+
+            // Guard: reject slugs that are not valid single DNS hostname labels.
+            // A slug like `127.0.0.1:8443/foo` would change the URL authority and
+            // redirect the fetch away from Personio (SSRF).
+            if !is_valid_personio_slug(&company) {
+                log::warn!("[personio] skipping invalid company slug '{}'", company);
+                if let Some(ref on_progress) = ctx.on_progress {
+                    on_progress((i + 1) as f32 / total as f32);
+                }
                 continue;
             }
 
@@ -189,7 +211,9 @@ impl Scraper for PersonioScraper {
                 };
 
                 let posting = JobPosting {
-                    id: format!("{}:{}", self.id(), pos.id),
+                    // Namespace by company so position IDs from different Personio
+                    // tenants never collide during a multi-company scrape.
+                    id: format!("{}:{}:{}", self.id(), company, pos.id),
                     external_id: Some(pos.id.clone()),
                     title: pos.title,
                     company: company.clone(),
