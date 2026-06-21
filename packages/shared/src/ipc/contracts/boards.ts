@@ -42,6 +42,17 @@ export interface BoardsContract {
   importCookies(req: { boardId: string }): Promise<CookieImportResult>;
 }
 
+/**
+ * Per-board outcome from a completed scrape job.
+ * `skipped: "needs-login"` means the board was bypassed because no session exists.
+ */
+export interface BoardScrapeSummary {
+  board: string;
+  count: number;
+  error?: string;
+  skipped?: 'needs-login';
+}
+
 export const BOARDS_CHANNELS = {
   catalog: 'boards:catalog',
   connect: 'boards:connect',

@@ -1597,7 +1597,11 @@
     "needsLogin": {
       "label": "Needs login:",
       "connectBoard": "Connect",
-      "blockedHint": "Sign in to {{boards}} to start scraping."
+      "blockedHint": "Sign in to {{boards}} to start scraping.",
+      "loginToEnable": "Sign in to enable",
+      "loginToEnableHint": "{{board}} requires a login — connect your account so scraping returns results.",
+      "skippedNote_one": "{{boards}} was skipped — sign in to enable results from this board.",
+      "skippedNote_other": "{{boards}} were skipped — sign in to enable results from these boards."
     },
     "partialScrapeNote": "{{done}} of {{total}} boards · {{failed}} failed"
   },

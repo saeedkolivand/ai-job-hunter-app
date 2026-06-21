@@ -42,6 +42,11 @@ fn test_catalog_auth_tiers() {
         AuthRequirement::Required,
         "xing must be Required"
     );
+    assert_eq!(
+        entry("glassdoor").auth,
+        AuthRequirement::Required,
+        "glassdoor must be Required (bot-blocks anonymous sessions)"
+    );
 
     // Optional — guest works; login enriches
     assert_eq!(
@@ -75,7 +80,7 @@ fn test_catalog_listed_flags() {
             .unwrap_or_else(|| panic!("missing board: {id}"))
     };
 
-    // glassdoor is now listed (login wiring merged in #455; best-effort anonymous)
+    // glassdoor is listed; login is Required (engine skips without a valid session)
     assert!(entry("glassdoor").listed, "glassdoor must be listed");
 
     // A representative guest board is listed
@@ -813,6 +818,7 @@ async fn scrape_boards_partial_success_under_cancel_returns_ok() {
             "job-partial-cancel".to_string(),
             None,
             None,
+            std::path::Path::new("."),
             |id| match id {
                 "ok-board" => Ok(&*FAKE_OK as &'static dyn super::super::types::Scraper),
                 "fail-board" => Ok(&*FAKE_FAIL as &'static dyn super::super::types::Scraper),
@@ -946,6 +952,7 @@ async fn concurrent_scrape_boards_serialize_browser_boards() {
             "job-browser-1".to_string(),
             None,
             None,
+            std::path::Path::new("."),
             |_id| Ok(&*PROBE as &'static dyn Scraper),
         ),
         e2.scrape_boards_with_resolver(
@@ -954,6 +961,7 @@ async fn concurrent_scrape_boards_serialize_browser_boards() {
             "job-browser-2".to_string(),
             None,
             None,
+            std::path::Path::new("."),
             |_id| Ok(&*PROBE as &'static dyn Scraper),
         ),
     );
@@ -1079,6 +1087,7 @@ async fn scrape_boards_all_empty_ok_under_cancel_returns_err() {
             "job-empty-cancel".to_string(),
             None,
             None,
+            std::path::Path::new("."),
             |_id| Ok(&*EMPTY_FAKE as &'static dyn Scraper),
         )
         .await;
@@ -1092,6 +1101,509 @@ async fn scrape_boards_all_empty_ok_under_cancel_returns_err() {
         msg.contains("cancelled"),
         "error must mention cancellation; got: {msg}"
     );
+}
+
+// ── Required-board skip short-circuit ────────────────────────────────────────
+
+/// A `Required` fake scraper with no cookies must be skipped without calling
+/// `search` (the summary has `skipped=Some("needs-login")`, `count=0`, no
+/// error), while a `Guest` fake runs normally. The RequiredPanicker's `search`
+/// panics, so if the short-circuit is absent the test fails immediately.
+#[tokio::test]
+async fn required_board_without_session_is_skipped() {
+    // Required scraper: panics if searched.
+    struct RequiredPanicker;
+
+    #[async_trait::async_trait]
+    impl Scraper for RequiredPanicker {
+        fn id(&self) -> &'static str {
+            "required-panicker"
+        }
+        fn display_name(&self) -> &'static str {
+            "RequiredPanicker"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        fn auth(&self) -> super::super::types::AuthRequirement {
+            super::super::types::AuthRequirement::Required
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            _ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            panic!("RequiredPanicker.search must never be called when no session exists");
+        }
+    }
+
+    static REQ: std::sync::LazyLock<RequiredPanicker> =
+        std::sync::LazyLock::new(|| RequiredPanicker);
+    // Guest board: 1 item so we can assert it WAS actually run (count=1), not silently skipped.
+    static FAKE_GUEST: std::sync::LazyLock<FakeScraper> =
+        std::sync::LazyLock::new(|| FakeScraper::http(1));
+
+    let engine = ScraperEngine::new();
+    // Use an isolated tempdir — no cookies.json exists there for "required-board",
+    // so load_cookies returns [] and the skip fires. If the skip is absent the
+    // panicker's search() runs and the test panics.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["required-board".to_string(), "guest-board".to_string()],
+            fake_input(5),
+            "job-skip-test".to_string(),
+            None,
+            None,
+            tmp.path(),
+            |id| match id {
+                "required-board" => Ok(&*REQ as &'static dyn Scraper),
+                "guest-board" => Ok(&*FAKE_GUEST as &'static dyn Scraper),
+                other => Err(anyhow::anyhow!("unknown: {other}")),
+            },
+        )
+        .await
+        .expect("skip run must return Ok");
+
+    let req_summary = summaries
+        .iter()
+        .find(|s| s.board == "required-board")
+        .expect("required-board summary missing");
+    assert_eq!(
+        req_summary.skipped.as_deref(),
+        Some("needs-login"),
+        "Required board with no session must be skipped with 'needs-login'"
+    );
+    assert_eq!(req_summary.count, 0, "skipped board must report count=0");
+    assert!(
+        req_summary.error.is_none(),
+        "skipped board must not carry an error"
+    );
+
+    let guest_summary = summaries
+        .iter()
+        .find(|s| s.board == "guest-board")
+        .expect("guest-board summary missing");
+    assert!(
+        guest_summary.skipped.is_none(),
+        "Guest board must not be skipped"
+    );
+    assert!(
+        guest_summary.error.is_none(),
+        "Guest board must run without error"
+    );
+    assert_eq!(
+        guest_summary.count, 1,
+        "Guest board (FakeScraper::http(1)) must have been run and report count=1"
+    );
+}
+
+/// Input order is preserved across a mixed run/skip/run scenario:
+/// [required-no-session (skip), guest (run), required-no-session-2 (skip)]
+/// Summaries must come back in that same order, not skips-last.
+#[tokio::test]
+async fn scrape_boards_summaries_preserve_input_order_with_skips() {
+    struct AlwaysRequired;
+
+    #[async_trait::async_trait]
+    impl Scraper for AlwaysRequired {
+        fn id(&self) -> &'static str {
+            "always-required"
+        }
+        fn display_name(&self) -> &'static str {
+            "AlwaysRequired"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        fn auth(&self) -> super::super::types::AuthRequirement {
+            super::super::types::AuthRequirement::Required
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            _ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            panic!("AlwaysRequired.search must not be called when no session exists");
+        }
+    }
+
+    static REQ1: std::sync::LazyLock<AlwaysRequired> = std::sync::LazyLock::new(|| AlwaysRequired);
+    static REQ2: std::sync::LazyLock<AlwaysRequired> = std::sync::LazyLock::new(|| AlwaysRequired);
+    static GUEST: std::sync::LazyLock<FakeScraper> =
+        std::sync::LazyLock::new(|| FakeScraper::http(2));
+
+    let engine = ScraperEngine::new();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &[
+                "req-1".to_string(),
+                "guest-mid".to_string(),
+                "req-2".to_string(),
+            ],
+            fake_input(10),
+            "job-order-test".to_string(),
+            None,
+            None,
+            tmp.path(),
+            |id| match id {
+                "req-1" => Ok(&*REQ1 as &'static dyn Scraper),
+                "guest-mid" => Ok(&*GUEST as &'static dyn Scraper),
+                "req-2" => Ok(&*REQ2 as &'static dyn Scraper),
+                other => Err(anyhow::anyhow!("unknown: {other}")),
+            },
+        )
+        .await
+        .expect("mixed run must return Ok");
+
+    assert_eq!(summaries.len(), 3, "one summary per requested board");
+    let order: Vec<&str> = summaries.iter().map(|s| s.board.as_str()).collect();
+    assert_eq!(
+        order,
+        vec!["req-1", "guest-mid", "req-2"],
+        "summaries must be in input order, not run-results-then-skips; got {order:?}"
+    );
+    assert_eq!(
+        summaries[0].skipped.as_deref(),
+        Some("needs-login"),
+        "req-1 must be skipped"
+    );
+    assert_eq!(summaries[1].skipped, None, "guest-mid must not be skipped");
+    assert_eq!(summaries[1].count, 2, "guest-mid must report 2 items run");
+    assert_eq!(
+        summaries[2].skipped.as_deref(),
+        Some("needs-login"),
+        "req-2 must be skipped"
+    );
+}
+
+/// A Required board whose skip predicate fires on a stale session must be
+/// skipped with `skipped=Some("needs-login")` — same outcome as no-cookies.
+///
+/// Uses a tempdir so this test never touches the real `data_dir()` and is
+/// safe to run concurrently with any other test.
+#[tokio::test]
+async fn required_board_stale_session_is_skipped() {
+    use crate::scraping::board_login::{auth_status_path, write_cookies, StoredCookie};
+
+    let board_id = "stale-engine-test-board";
+
+    struct RequiredPanicker2;
+    #[async_trait::async_trait]
+    impl Scraper for RequiredPanicker2 {
+        fn id(&self) -> &'static str {
+            "req-stale"
+        }
+        fn display_name(&self) -> &'static str {
+            "RequiredPanicker2"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        fn auth(&self) -> super::super::types::AuthRequirement {
+            super::super::types::AuthRequirement::Required
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            _ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            panic!("RequiredPanicker2.search must not be called on stale session");
+        }
+    }
+    static STALE_SCRAPER: std::sync::LazyLock<RequiredPanicker2> =
+        std::sync::LazyLock::new(|| RequiredPanicker2);
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let data_dir = tmp.path();
+
+    // Write a fresh cookie (non-empty → skip fires on staleness, not absence).
+    let cookie = StoredCookie {
+        name: "sess".into(),
+        value: "tok".into(),
+        domain: "example.com".into(),
+        path: "/".into(),
+        expires: None,
+        http_only: false,
+        secure: false,
+    };
+    write_cookies(data_dir, board_id, &[cookie]).expect("write_cookies");
+    // connected_at = 0 → age ≈ now-ms → always > SESSION_MAX_AGE_MS (7 days).
+    let apath = auth_status_path(data_dir, board_id);
+    std::fs::write(&apath, r#"{"connected":true,"connected_at":0}"#)
+        .expect("overwrite auth-status with epoch-0");
+
+    let engine = ScraperEngine::new();
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &[board_id.to_string()],
+            fake_input(1),
+            "job-stale-skip".to_string(),
+            None,
+            None,
+            data_dir,
+            |_id| Ok(&*STALE_SCRAPER as &'static dyn Scraper),
+        )
+        .await
+        .expect("stale-session skip must return Ok");
+
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(
+        summaries[0].skipped.as_deref(),
+        Some("needs-login"),
+        "stale-session Required board must be skipped with 'needs-login'"
+    );
+    assert_eq!(summaries[0].count, 0);
+    assert!(summaries[0].error.is_none());
+}
+
+/// A Required board with fresh cookies + fresh auth-status must NOT be skipped —
+/// search is called and the summary appears in run results with its items.
+///
+/// Uses a tempdir so this test never touches the real `data_dir()`.
+#[tokio::test]
+async fn required_board_with_valid_session_runs() {
+    use crate::scraping::board_login::{write_auth_status, write_cookies, StoredCookie};
+
+    let board_id = "fresh-engine-test-board";
+
+    static FRESH_SCRAPER: std::sync::LazyLock<FakeScraper> =
+        std::sync::LazyLock::new(|| FakeScraper::http(3));
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let data_dir = tmp.path();
+
+    let cookie = StoredCookie {
+        name: "sess".into(),
+        value: "tok".into(),
+        domain: "example.com".into(),
+        path: "/".into(),
+        expires: None,
+        http_only: false,
+        secure: false,
+    };
+    write_cookies(data_dir, board_id, &[cookie]).expect("write_cookies");
+    // connected_at = now → age ≈ 0 → not stale.
+    write_auth_status(data_dir, board_id, true);
+
+    let engine = ScraperEngine::new();
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &[board_id.to_string()],
+            fake_input(5),
+            "job-fresh-session".to_string(),
+            None,
+            None,
+            data_dir,
+            |_id| Ok(&*FRESH_SCRAPER as &'static dyn Scraper),
+        )
+        .await
+        .expect("fresh-session Required board must return Ok");
+
+    assert_eq!(summaries.len(), 1);
+    assert!(
+        summaries[0].skipped.is_none(),
+        "Required board with fresh session must NOT be skipped; got {:?}",
+        summaries[0].skipped
+    );
+    assert!(summaries[0].error.is_none(), "must not error");
+    assert_eq!(
+        summaries[0].count, 3,
+        "FakeScraper::http(3) must return 3 items"
+    );
+}
+
+/// A Required board with non-empty cookies but no valid connected status (e.g.
+/// `{"connected":false,"connected_at":0}`) must be skipped — the fix to also
+/// check `session_age_ms(…).is_none()` covers this case. The cookie-empty branch
+/// would NOT fire here, so this test specifically exercises the new branch.
+#[tokio::test]
+async fn required_board_cookies_but_no_valid_status_is_skipped() {
+    use crate::scraping::board_login::{auth_status_path, write_cookies, StoredCookie};
+
+    let board_id = "no-status-engine-test-board";
+
+    struct RequiredPanicker3;
+    #[async_trait::async_trait]
+    impl Scraper for RequiredPanicker3 {
+        fn id(&self) -> &'static str {
+            "req-no-status"
+        }
+        fn display_name(&self) -> &'static str {
+            "RequiredPanicker3"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        fn auth(&self) -> super::super::types::AuthRequirement {
+            super::super::types::AuthRequirement::Required
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            _ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            panic!("RequiredPanicker3.search must not be called when connected status is invalid");
+        }
+    }
+    static NO_STATUS_SCRAPER: std::sync::LazyLock<RequiredPanicker3> =
+        std::sync::LazyLock::new(|| RequiredPanicker3);
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let data_dir = tmp.path();
+
+    // Write non-empty cookies so the empty-cookie branch does NOT fire.
+    let cookie = StoredCookie {
+        name: "sess".into(),
+        value: "tok".into(),
+        domain: "example.com".into(),
+        path: "/".into(),
+        expires: None,
+        http_only: false,
+        secure: false,
+    };
+    write_cookies(data_dir, board_id, &[cookie]).expect("write_cookies");
+
+    // Write an auth-status with connected:false → session_age_ms returns None.
+    // connected:false → session_age_ms() == None (clause 2 fires) BEFORE connected_at is read;
+    // near-now ts means session_is_stale() is false, so clause 3 cannot mask the fix.
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let apath = auth_status_path(data_dir, board_id);
+    std::fs::write(
+        &apath,
+        format!(r#"{{"connected":false,"connected_at":{now_ms}}}"#),
+    )
+    .expect("write connected:false auth-status");
+
+    let engine = ScraperEngine::new();
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &[board_id.to_string()],
+            fake_input(1),
+            "job-no-status-skip".to_string(),
+            None,
+            None,
+            data_dir,
+            |_id| Ok(&*NO_STATUS_SCRAPER as &'static dyn Scraper),
+        )
+        .await
+        .expect("no-valid-status skip must return Ok");
+
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(
+        summaries[0].skipped.as_deref(),
+        Some("needs-login"),
+        "Required board with non-empty cookies but no valid connected status must be skipped with 'needs-login'"
+    );
+    assert_eq!(summaries[0].count, 0);
+    assert!(summaries[0].error.is_none());
+}
+
+/// Every board Required + no session → returns Ok with empty postings and
+/// all-skipped summaries (NOT Err). No network calls, no panics.
+#[tokio::test]
+async fn all_required_no_session_returns_ok_empty() {
+    struct ReqNoop;
+
+    #[async_trait::async_trait]
+    impl Scraper for ReqNoop {
+        fn id(&self) -> &'static str {
+            "req-noop"
+        }
+        fn display_name(&self) -> &'static str {
+            "ReqNoop"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        fn auth(&self) -> super::super::types::AuthRequirement {
+            super::super::types::AuthRequirement::Required
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            _ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            panic!("ReqNoop.search must not be called when no session exists");
+        }
+    }
+
+    static A: std::sync::LazyLock<ReqNoop> = std::sync::LazyLock::new(|| ReqNoop);
+    static B: std::sync::LazyLock<ReqNoop> = std::sync::LazyLock::new(|| ReqNoop);
+
+    let engine = ScraperEngine::new();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let result = engine
+        .scrape_boards_with_resolver(
+            &["req-a".to_string(), "req-b".to_string()],
+            fake_input(5),
+            "job-all-req-no-session".to_string(),
+            None,
+            None,
+            tmp.path(),
+            |id| match id {
+                "req-a" => Ok(&*A as &'static dyn Scraper),
+                "req-b" => Ok(&*B as &'static dyn Scraper),
+                other => Err(anyhow::anyhow!("unknown: {other}")),
+            },
+        )
+        .await;
+
+    let (postings, summaries) =
+        result.expect("all-Required-no-session must return Ok (not Err) — skips are not failures");
+    assert!(postings.is_empty(), "no postings when all boards skipped");
+    assert_eq!(summaries.len(), 2, "one summary per board");
+    for s in &summaries {
+        assert_eq!(
+            s.skipped.as_deref(),
+            Some("needs-login"),
+            "board '{}' must be skipped with 'needs-login'",
+            s.board
+        );
+        assert_eq!(s.count, 0, "skipped board '{}' must have count=0", s.board);
+        assert!(
+            s.error.is_none(),
+            "skipped board '{}' must not carry an error",
+            s.board
+        );
+    }
+}
+
+/// An unknown board id (resolver returns Err) must produce an error summary,
+/// not a skip summary — it must not be silently treated as a skipped board.
+#[tokio::test]
+async fn unknown_board_errors_not_skipped() {
+    let engine = ScraperEngine::new();
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["totally-unknown-board".to_string()],
+            fake_input(1),
+            "job-unknown-test".to_string(),
+            None,
+            None,
+            std::path::Path::new("."),
+            |id| Err(anyhow::anyhow!("Unknown board: {id}")),
+        )
+        .await
+        .expect("unknown board returns Ok (not Err) because parent is not cancelled");
+
+    assert_eq!(summaries.len(), 1);
+    let s = &summaries[0];
+    assert_eq!(s.board, "totally-unknown-board");
+    assert!(
+        s.skipped.is_none(),
+        "unknown board must not appear as skipped; got skipped={:?}",
+        s.skipped
+    );
+    assert!(
+        s.error.is_some(),
+        "unknown board must carry an error summary"
+    );
+    assert_eq!(s.count, 0, "unknown board must have count=0");
 }
 
 // ── F2/F5: pre-registered token not removed by scrape_boards ─────────────────
@@ -1118,6 +1630,7 @@ async fn scrape_boards_does_not_remove_pre_registered_token() {
             "job-preregistered".to_string(),
             None,
             None,
+            std::path::Path::new("."),
             |_id| Ok(&*FAKE as &'static dyn Scraper),
         )
         .await;

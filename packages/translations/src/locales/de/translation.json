@@ -1601,7 +1601,11 @@
     "needsLogin": {
       "label": "Anmeldung erforderlich:",
       "connectBoard": "Verbinden",
-      "blockedHint": "Bei {{boards}} anmelden, um die Suche zu starten."
+      "blockedHint": "Bei {{boards}} anmelden, um die Suche zu starten.",
+      "loginToEnable": "Anmelden zum Aktivieren",
+      "loginToEnableHint": "{{board}} erfordert eine Anmeldung — verbinde dein Konto, damit die Suche Ergebnisse liefert.",
+      "skippedNote_one": "{{boards}} wurde übersprungen — melde dich an, um Ergebnisse von diesem Board zu erhalten.",
+      "skippedNote_other": "{{boards}} wurden übersprungen — melde dich an, um Ergebnisse von diesen Boards zu erhalten."
     },
     "partialScrapeNote": "{{done}} von {{total}} Boards · {{failed}} fehlgeschlagen"
   },
