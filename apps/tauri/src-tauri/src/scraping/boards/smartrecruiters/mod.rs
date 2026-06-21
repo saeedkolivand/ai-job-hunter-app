@@ -1,4 +1,9 @@
 /// SmartRecruiters — public per-company postings API
+///
+/// Endpoint: `https://api.smartrecruiters.com/v1/companies/{company}/postings?limit=100`
+/// Supports an optional `q` keyword param when `input.query` is non-empty.
+/// No global keyword-only search — requires a company slug. The engine skips
+/// this board with `"needs-company"` when `input.companies` is empty.
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use async_trait::async_trait;
@@ -66,160 +71,222 @@ impl Scraper for SmartRecruitersScraper {
         ScraperMode::Http
     }
 
+    fn requires_company(&self) -> bool {
+        true
+    }
+
     async fn search(
         &self,
         input: BoardSearchInput,
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
-        let company = input.query.trim();
-        if company.is_empty() {
+        // Engine skips us when companies is empty; guard defensively anyway.
+        if input.companies.is_empty() {
             return Ok(vec![]);
         }
 
-        let list_url = format!(
-            "https://api.smartrecruiters.com/v1/companies/{}/postings?limit=100",
-            urlencoding::encode(company)
-        );
-
-        let list =
-            fetch_json::<ListResp>(&list_url, Default::default(), ctx.signal.clone()).await?;
-
-        let postings = match list {
-            Some(l) => l.content,
-            None => return Ok(vec![]),
-        };
-
         let now = chrono::Utc::now().timestamp_millis();
         let mut out = vec![];
-        let total = postings.len();
+        let company_count = input.companies.len();
 
-        for (i, p) in postings.into_iter().enumerate() {
+        for (ci, company) in input.companies.iter().enumerate() {
             if ctx.signal.is_cancelled() {
                 break;
             }
 
-            let detail_url = format!(
-                "https://api.smartrecruiters.com/v1/companies/{}/postings/{}",
-                urlencoding::encode(company),
-                p.id
-            );
+            let company = company.trim();
+            if company.is_empty() {
+                continue;
+            }
 
-            // On a detail-fetch error yield `None` (not `continue`) so the
-            // progress emission + politeness sleep below still run every
-            // iteration; otherwise repeated detail errors would stop
-            // rate-limiting requests and stall progress.
-            let detail = match fetch_json::<DetailResp>(
-                &detail_url,
-                Default::default(),
-                ctx.signal.clone(),
-            )
-            .await
-            {
-                Ok(d) => d,
-                Err(e) => {
-                    log::warn!(
-                        "[smartrecruiters] detail fetch failed for posting {} ({detail_url}): {e}; skipping",
-                        p.id
-                    );
-                    None
-                }
+            // SmartRecruiters supports a real `q` keyword param — pass it when set.
+            let keyword = input.query.trim();
+            let list_url = if keyword.is_empty() {
+                format!(
+                    "https://api.smartrecruiters.com/v1/companies/{}/postings?limit=100",
+                    urlencoding::encode(company)
+                )
+            } else {
+                format!(
+                    "https://api.smartrecruiters.com/v1/companies/{}/postings?limit=100&q={}",
+                    urlencoding::encode(company),
+                    urlencoding::encode(keyword)
+                )
             };
 
-            let detail = match detail {
-                Some(d) => d,
-                None => {
-                    // Detail unavailable: skip building a posting, but still run
-                    // the progress + sleep below so pacing and progress hold.
-                    if let Some(ref on_progress) = ctx.on_progress {
-                        on_progress((i + 1) as f32 / total as f32);
+            let list =
+                match fetch_json::<ListResp>(&list_url, Default::default(), ctx.signal.clone())
+                    .await
+                {
+                    Ok(l) => l,
+                    Err(e) => {
+                        log::warn!("[smartrecruiters] list fetch failed for '{}': {e}", company);
+                        if ctx.signal.is_cancelled() {
+                            break;
+                        }
+                        continue;
                     }
-                    tokio::time::sleep(std::time::Duration::from_millis(
-                        150 + (rand::random::<u64>() % 200),
-                    ))
-                    .await;
+                };
+
+            let postings = match list {
+                Some(l) => l.content,
+                None => {
+                    if let Some(ref on_progress) = ctx.on_progress {
+                        on_progress((ci + 1) as f32 / company_count as f32);
+                    }
                     continue;
                 }
             };
 
-            let sections = detail.job_ad.and_then(|ja| ja.sections).unwrap_or_default();
+            let posting_count = postings.len();
 
-            let description = sections
-                .values()
-                .map(|s| {
-                    format!(
-                        "{}\n{}",
-                        s.title.as_deref().unwrap_or(""),
-                        strip_html(s.text.as_deref().unwrap_or(""))
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n\n")
-                .trim()
-                .to_string();
+            for (i, p) in postings.into_iter().enumerate() {
+                if ctx.signal.is_cancelled() {
+                    break;
+                }
 
-            let location = vec![
-                p.location.as_ref().and_then(|l| l.city.clone()),
-                p.location.as_ref().and_then(|l| l.country.clone()),
-            ]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>()
-            .join(", ");
-
-            let posted_at = p
-                .released_date
-                .and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok())
-                .map(|dt| dt.timestamp_millis());
-
-            let posting = JobPosting {
-                id: format!("{}:{}", self.id(), p.id),
-                external_id: Some(p.id.clone()),
-                title: p.name,
-                company: company.to_string(),
-                location: if location.is_empty() {
-                    None
-                } else {
-                    Some(location)
-                },
-                url: format!(
-                    "https://jobs.smartrecruiters.com/{}/{}",
+                let detail_url = format!(
+                    "https://api.smartrecruiters.com/v1/companies/{}/postings/{}",
                     urlencoding::encode(company),
                     p.id
-                ),
-                source: self.id().to_string(),
-                description: if description.is_empty() {
-                    None
-                } else {
-                    Some(description)
-                },
-                requirements: None,
-                posted_at,
-                captured_at: now,
-                extra: {
-                    let mut map = std::collections::HashMap::new();
-                    if let Some(remote) = p.location.as_ref().and_then(|l| l.remote) {
-                        map.insert("remote".to_string(), serde_json::json!(remote));
+                );
+
+                // On a detail-fetch error yield `None` (not `continue`) so the
+                // progress emission + politeness sleep below still run every
+                // iteration; otherwise repeated detail errors would stop
+                // rate-limiting requests and stall progress.
+                let detail = match fetch_json::<DetailResp>(
+                    &detail_url,
+                    Default::default(),
+                    ctx.signal.clone(),
+                )
+                .await
+                {
+                    Ok(d) => d,
+                    Err(e) => {
+                        log::warn!(
+                            "[smartrecruiters] detail fetch failed for posting {} ({detail_url}): {e}; skipping",
+                            p.id
+                        );
+                        None
                     }
-                    map
-                },
-            };
+                };
 
-            if let Some(ref on_item) = ctx.on_item {
-                on_item(posting.clone());
+                let detail = match detail {
+                    Some(d) => d,
+                    None => {
+                        // Detail unavailable (404 / parse failure): skip this posting
+                        // but still run the progress + sleep so pacing holds.
+                        log::debug!(
+                            "[smartrecruiters] detail returned None for posting {} — skipping",
+                            p.id
+                        );
+                        if let Some(ref on_progress) = ctx.on_progress {
+                            on_progress(
+                                (ci as f32 + (i + 1) as f32 / posting_count as f32)
+                                    / company_count as f32,
+                            );
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            150 + (rand::random::<u64>() % 200),
+                        ))
+                        .await;
+                        continue;
+                    }
+                };
+
+                let sections = detail.job_ad.and_then(|ja| ja.sections).unwrap_or_default();
+
+                // Sort by key for deterministic section order — HashMap iteration
+                // order is non-deterministic and would produce unstable descriptions.
+                let mut sections_sorted: Vec<(&String, &Section)> = sections.iter().collect();
+                sections_sorted.sort_by_key(|(k, _)| k.as_str());
+
+                let description = sections_sorted
+                    .iter()
+                    .map(|(_, s)| {
+                        format!(
+                            "{}\n{}",
+                            s.title.as_deref().unwrap_or(""),
+                            strip_html(s.text.as_deref().unwrap_or(""))
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
+                    .trim()
+                    .to_string();
+
+                let location = vec![
+                    p.location.as_ref().and_then(|l| l.city.clone()),
+                    p.location.as_ref().and_then(|l| l.country.clone()),
+                ]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(", ");
+
+                let posted_at = p
+                    .released_date
+                    .and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok())
+                    .map(|dt| dt.timestamp_millis());
+
+                let posting = JobPosting {
+                    id: format!("{}:{}", self.id(), p.id),
+                    external_id: Some(p.id.clone()),
+                    title: p.name,
+                    company: company.to_string(),
+                    location: if location.is_empty() {
+                        None
+                    } else {
+                        Some(location)
+                    },
+                    url: format!(
+                        "https://jobs.smartrecruiters.com/{}/{}",
+                        urlencoding::encode(company),
+                        p.id
+                    ),
+                    source: self.id().to_string(),
+                    description: if description.is_empty() {
+                        None
+                    } else {
+                        Some(description)
+                    },
+                    requirements: None,
+                    posted_at,
+                    captured_at: now,
+                    extra: {
+                        let mut map = std::collections::HashMap::new();
+                        if let Some(remote) = p.location.as_ref().and_then(|l| l.remote) {
+                            map.insert("remote".to_string(), serde_json::json!(remote));
+                        }
+                        map
+                    },
+                };
+
+                if let Some(ref on_item) = ctx.on_item {
+                    on_item(posting.clone());
+                }
+
+                out.push(posting);
+
+                if let Some(ref on_progress) = ctx.on_progress {
+                    on_progress(
+                        (ci as f32 + (i + 1) as f32 / posting_count as f32) / company_count as f32,
+                    );
+                }
+
+                // Small jitter between per-listing detail fetches (rate-limit
+                // politeness; mirrors the arbeitsagentur per-page delay pattern).
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    150 + (rand::random::<u64>() % 200),
+                ))
+                .await;
             }
 
-            out.push(posting);
-
+            // Emit company-level progress after exhausting all postings for this slug.
             if let Some(ref on_progress) = ctx.on_progress {
-                on_progress((i + 1) as f32 / total as f32);
+                on_progress((ci + 1) as f32 / company_count as f32);
             }
-
-            // Small jitter between per-listing detail fetches (rate-limit
-            // politeness; mirrors the arbeitsagentur per-page delay pattern).
-            tokio::time::sleep(std::time::Duration::from_millis(
-                150 + (rand::random::<u64>() % 200),
-            ))
-            .await;
         }
 
         Ok(out)

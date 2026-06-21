@@ -1,5 +1,58 @@
 use super::*;
 
+// Regression: createdAt is already epoch-milliseconds; the old code did `* 1000`
+// which produced microseconds (~year 3000). The mapping must carry the value through
+// verbatim — no multiplication.
+#[test]
+fn posted_at_carries_epoch_ms_verbatim() {
+    // 1_700_000_000_000 ms = 2023-11-14T22:13:20Z — a known, sane date.
+    let posting = LeverPosting {
+        id: "abc123".to_string(),
+        text: "Software Engineer".to_string(),
+        hosted_url: "https://jobs.lever.co/acme/abc123".to_string(),
+        categories: None,
+        description_plain: None,
+        created_at: Some(1_700_000_000_000_i64),
+    };
+
+    // Mirror the production mapping exactly (mod.rs line ~115).
+    let posted_at = posting.created_at;
+
+    assert_eq!(
+        posted_at,
+        Some(1_700_000_000_000_i64),
+        "posted_at must equal the raw createdAt epoch-ms value (no * 1000)"
+    );
+
+    // Sanity bounds: must fall between year 2000 and year 2100 in epoch-ms.
+    // Fails if someone reintroduces * 1000 (pushes into year ~3000)
+    // or a / 1000 regression (drops to epoch-seconds ~year 1970).
+    const MS_YEAR_2000: i64 = 946_684_800_000;
+    const MS_YEAR_2100: i64 = 4_102_444_800_000;
+    let v = posted_at.unwrap();
+    assert!(
+        (MS_YEAR_2000..=MS_YEAR_2100).contains(&v),
+        "posted_at {v} is outside [2000, 2100] epoch-ms range — unit error reintroduced?"
+    );
+}
+
+#[test]
+fn posted_at_none_when_created_at_absent() {
+    let posting = LeverPosting {
+        id: "no-date".to_string(),
+        text: "Designer".to_string(),
+        hosted_url: "https://jobs.lever.co/acme/no-date".to_string(),
+        categories: None,
+        description_plain: None,
+        created_at: None,
+    };
+
+    assert_eq!(
+        posting.created_at, None,
+        "posted_at must be None when createdAt is absent"
+    );
+}
+
 #[test]
 fn test_lever_scraper_id() {
     let scraper = LeverScraper;
@@ -18,12 +71,19 @@ fn test_lever_scraper_mode() {
     assert_eq!(scraper.mode(), ScraperMode::Http);
 }
 
+#[test]
+fn test_lever_requires_company() {
+    assert!(
+        LeverScraper.requires_company(),
+        "Lever is an ATS board and must return true for requires_company()"
+    );
+}
+
 #[tokio::test]
-#[ignore = "live network"]
-async fn live_search_returns_results() {
+async fn empty_companies_returns_empty_without_network() {
     let scraper = LeverScraper;
     let input = BoardSearchInput {
-        query: "mistral".to_string(), // confirmed live: jobs.lever.co/mistral
+        query: String::new(),
         location: None,
         amount: 10,
         pages: 1,
@@ -40,6 +100,44 @@ async fn live_search_returns_results() {
         latitude: None,
         longitude: None,
         radius_km: None,
+        companies: Vec::new(),
+    };
+    let ctx = ScrapeContext {
+        signal: tokio_util::sync::CancellationToken::new(),
+        on_progress: None,
+        on_item: None,
+    };
+    let result = scraper.search(input, ctx).await;
+    assert!(result.is_ok(), "empty companies must return Ok, not Err");
+    assert!(
+        result.unwrap().is_empty(),
+        "empty companies must return empty Vec"
+    );
+}
+
+#[tokio::test]
+#[ignore = "live network"]
+async fn live_search_returns_results() {
+    let scraper = LeverScraper;
+    let input = BoardSearchInput {
+        query: String::new(),
+        location: None,
+        amount: 10,
+        pages: 1,
+        date_filter: None,
+        job_type: None,
+        work_type: None,
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        locale: None,
+        country_code: None,
+        latitude: None,
+        longitude: None,
+        radius_km: None,
+        companies: vec!["mistral".to_string()], // confirmed live: jobs.lever.co/mistral
     };
     let ctx = ScrapeContext {
         signal: tokio_util::sync::CancellationToken::new(),

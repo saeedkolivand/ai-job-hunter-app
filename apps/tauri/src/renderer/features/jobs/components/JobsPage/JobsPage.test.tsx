@@ -400,6 +400,104 @@ describe('JobsPage — job.completed event handler', () => {
     expect(notifyMock.warning).not.toHaveBeenCalled();
   });
 
+  // ---------------------------------------------------------------------------
+  // Skipped-boards (needs-company) notification tests
+  // ---------------------------------------------------------------------------
+
+  it('single needs-company board → warning fired once, sticky (duration:0), correct key + params', async () => {
+    renderJobsPage();
+
+    fireJobEvent({
+      type: 'job.completed',
+      jobId: 'job-123',
+      data: {
+        boards: [{ board: 'greenhouse', count: 0, skipped: 'needs-company' }],
+      },
+    });
+
+    await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
+    expect(notifyMock.warning).toHaveBeenCalledTimes(1);
+
+    const call = notifyMock.warning.mock.calls[0]?.[0] as { message: string; duration: number };
+    // duration:0 = sticky; user must add a company slug to dismiss the root cause.
+    expect(call.duration).toBe(0);
+    // t() mock: "jobs.needsCompany.skippedNote[boards=<boardName>,count=<n>]"
+    // boardName = t('jobs.boards.greenhouse') = 'jobs.boards.greenhouse' (identity mock)
+    expect(call.message).toContain('jobs.needsCompany.skippedNote');
+    expect(call.message).toContain('boards=jobs.boards.greenhouse');
+    expect(call.message).toContain('count=1');
+  });
+
+  it('two needs-company boards → warning with count:2 and both board names in boards param', async () => {
+    renderJobsPage();
+
+    fireJobEvent({
+      type: 'job.completed',
+      jobId: 'job-123',
+      data: {
+        boards: [
+          { board: 'greenhouse', count: 0, skipped: 'needs-company' },
+          { board: 'lever', count: 0, skipped: 'needs-company' },
+        ],
+      },
+    });
+
+    await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
+    expect(notifyMock.warning).toHaveBeenCalledTimes(1);
+
+    const call = notifyMock.warning.mock.calls[0]?.[0] as { message: string; duration: number };
+    expect(call.duration).toBe(0);
+    expect(call.message).toContain('jobs.needsCompany.skippedNote');
+    expect(call.message).toContain('jobs.boards.greenhouse');
+    expect(call.message).toContain('jobs.boards.lever');
+    expect(call.message).toContain('count=2');
+  });
+
+  it('no needs-company boards (normal completion) → needs-company warning NOT fired', async () => {
+    renderJobsPage();
+
+    fireJobEvent({
+      type: 'job.completed',
+      jobId: 'job-123',
+      data: {
+        boards: [
+          { board: 'linkedin', count: 10 },
+          { board: 'indeed', count: 5 },
+        ],
+      },
+    });
+
+    await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
+    // No warning at all (neither needs-login nor needs-company).
+    expect(notifyMock.warning).not.toHaveBeenCalled();
+  });
+
+  it('needs-company + needs-login in same payload → two warning calls, each with correct key', async () => {
+    renderJobsPage();
+
+    fireJobEvent({
+      type: 'job.completed',
+      jobId: 'job-123',
+      data: {
+        boards: [
+          { board: 'linkedin', count: 5 },
+          { board: 'indeed', count: 0, skipped: 'needs-login' },
+          { board: 'greenhouse', count: 0, skipped: 'needs-company' },
+        ],
+      },
+    });
+
+    await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
+    // Both warnings fire (one per skip reason).
+    expect(notifyMock.warning).toHaveBeenCalledTimes(2);
+
+    const messages = (
+      notifyMock.warning.mock.calls as Array<[{ message: string; duration: number }]>
+    ).map((c) => c[0].message);
+    expect(messages.some((m) => m.includes('jobs.needsLogin.skippedNote'))).toBe(true);
+    expect(messages.some((m) => m.includes('jobs.needsCompany.skippedNote'))).toBe(true);
+  });
+
   it('malformed data.boards (not an array) → does not throw, noteScrapeFinished called with ok:true and no note', async () => {
     renderJobsPage();
 

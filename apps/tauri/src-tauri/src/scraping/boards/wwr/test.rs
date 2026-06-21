@@ -73,6 +73,7 @@ async fn live_search_returns_results() {
         latitude: None,
         longitude: None,
         radius_km: None,
+        companies: Vec::new(),
     };
     let ctx = ScrapeContext {
         signal: tokio_util::sync::CancellationToken::new(),

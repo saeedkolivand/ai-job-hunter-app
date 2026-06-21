@@ -18,12 +18,20 @@ fn test_greenhouse_scraper_mode() {
     assert_eq!(scraper.mode(), ScraperMode::Http);
 }
 
+#[test]
+fn test_greenhouse_requires_company() {
+    assert!(
+        GreenhouseScraper.requires_company(),
+        "Greenhouse is an ATS board and must return true for requires_company()"
+    );
+}
+
 #[tokio::test]
-#[ignore = "live network"]
-async fn live_search_returns_results() {
+async fn empty_companies_returns_empty_without_network() {
+    // No companies → early return; no network call can happen.
     let scraper = GreenhouseScraper;
     let input = BoardSearchInput {
-        query: "airbnb".to_string(),
+        query: String::new(),
         location: None,
         amount: 10,
         pages: 1,
@@ -40,6 +48,44 @@ async fn live_search_returns_results() {
         latitude: None,
         longitude: None,
         radius_km: None,
+        companies: Vec::new(), // empty → defensive guard fires
+    };
+    let ctx = ScrapeContext {
+        signal: tokio_util::sync::CancellationToken::new(),
+        on_progress: None,
+        on_item: None,
+    };
+    let result = scraper.search(input, ctx).await;
+    assert!(result.is_ok(), "empty companies must return Ok, not Err");
+    assert!(
+        result.unwrap().is_empty(),
+        "empty companies must return empty Vec"
+    );
+}
+
+#[tokio::test]
+#[ignore = "live network"]
+async fn live_search_returns_results() {
+    let scraper = GreenhouseScraper;
+    let input = BoardSearchInput {
+        query: String::new(),
+        location: None,
+        amount: 10,
+        pages: 1,
+        date_filter: None,
+        job_type: None,
+        work_type: None,
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        locale: None,
+        country_code: None,
+        latitude: None,
+        longitude: None,
+        radius_km: None,
+        companies: vec!["airbnb".to_string()],
     };
     let ctx = ScrapeContext {
         signal: tokio_util::sync::CancellationToken::new(),

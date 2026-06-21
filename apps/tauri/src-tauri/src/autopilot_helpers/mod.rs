@@ -31,6 +31,9 @@ pub async fn autopilot_scrape(
         latitude: None,
         longitude: None,
         radius_km: None,
+        // Autopilot has no per-company target; ATS company slugs are a manual
+        // search affordance, so this stays empty (a no-op for every board).
+        companies: Vec::new(),
     };
 
     let app_progress = app.clone();

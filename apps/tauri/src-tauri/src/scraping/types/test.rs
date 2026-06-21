@@ -81,10 +81,12 @@ fn test_board_search_input_creation() {
         latitude: Some(52.52),
         longitude: Some(13.405),
         radius_km: Some(25),
+        companies: vec!["acme".to_string(), "globex".to_string()],
     };
     assert_eq!(input.query, "Software Engineer");
     assert_eq!(input.pages, 5);
     assert_eq!(input.amount, 25);
+    assert_eq!(input.companies, vec!["acme", "globex"]);
 }
 
 #[test]
@@ -107,9 +109,13 @@ fn test_board_search_input_defaults() {
         latitude: None,
         longitude: None,
         radius_km: None,
+        // Plumbing for ATS company slugs: an unset filter is the empty list, the
+        // no-op default every current board sees.
+        companies: Vec::new(),
     };
     assert!(input.location.is_none());
     assert_eq!(input.pages, 1);
+    assert!(input.companies.is_empty());
 }
 
 #[test]

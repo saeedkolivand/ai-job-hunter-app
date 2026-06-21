@@ -69,6 +69,57 @@ fn test_catalog_auth_tiers() {
 }
 
 #[test]
+fn test_catalog_requires_company_flags() {
+    let engine = ScraperEngine::new();
+    let catalog = engine.catalog();
+
+    let entry = |id: &str| {
+        catalog
+            .iter()
+            .find(|e| e.id == id)
+            .unwrap_or_else(|| panic!("missing board: {id}"))
+    };
+
+    // The 6 ATS boards must declare requires_company = true.
+    for ats_id in &[
+        "greenhouse",
+        "lever",
+        "ashby",
+        "recruitee",
+        "personio",
+        "smartrecruiters",
+    ] {
+        assert!(
+            entry(ats_id).requires_company,
+            "ATS board '{ats_id}' must have requires_company=true"
+        );
+    }
+
+    // All other boards must keep the default false.
+    for non_ats_id in &[
+        "linkedin",
+        "indeed",
+        "xing",
+        "glassdoor",
+        "ycombinator",
+        "remoteok",
+        "remotive",
+        "arbeitnow",
+        "wwr",
+        "stepstone",
+        "workday",
+        "berlinstartupjobs",
+        "germantechjobs",
+        "arbeitsagentur",
+    ] {
+        assert!(
+            !entry(non_ats_id).requires_company,
+            "board '{non_ats_id}' must have requires_company=false (default)"
+        );
+    }
+}
+
+#[test]
 fn test_catalog_listed_flags() {
     let engine = ScraperEngine::new();
     let catalog = engine.catalog();
@@ -284,6 +335,7 @@ fn fake_input(amount: u32) -> BoardSearchInput {
         latitude: None,
         longitude: None,
         radius_km: None,
+        companies: Vec::new(),
     }
 }
 
@@ -1606,6 +1658,164 @@ async fn unknown_board_errors_not_skipped() {
     assert_eq!(s.count, 0, "unknown board must have count=0");
 }
 
+// ── needs-company skip ────────────────────────────────────────────────────────
+
+/// An ATS board (requires_company=true) with no companies in the input must be
+/// skipped with `skipped=Some("needs-company")` and its `search` must never be
+/// called — identical structure to the `needs-login` panicker tests.
+#[tokio::test]
+async fn ats_board_without_companies_is_skipped() {
+    struct AtsNeedsPanicker;
+
+    #[async_trait::async_trait]
+    impl Scraper for AtsNeedsPanicker {
+        fn id(&self) -> &'static str {
+            "ats-needs-panicker"
+        }
+        fn display_name(&self) -> &'static str {
+            "AtsNeedsPanicker"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        fn requires_company(&self) -> bool {
+            true
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            _ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            panic!("AtsNeedsPanicker.search must never be called when companies is empty");
+        }
+    }
+
+    static ATS: std::sync::LazyLock<AtsNeedsPanicker> =
+        std::sync::LazyLock::new(|| AtsNeedsPanicker);
+    // Guest board runs normally alongside the skipped ATS board.
+    static GUEST: std::sync::LazyLock<FakeScraper> =
+        std::sync::LazyLock::new(|| FakeScraper::http(2));
+
+    let engine = ScraperEngine::new();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    // input.companies is empty — the ATS board must be skipped.
+    let input = fake_input(5); // companies: Vec::new() by construction
+
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["ats-board".to_string(), "guest-board".to_string()],
+            input,
+            "job-needs-company-test".to_string(),
+            None,
+            None,
+            tmp.path(),
+            |id| match id {
+                "ats-board" => Ok(&*ATS as &'static dyn Scraper),
+                "guest-board" => Ok(&*GUEST as &'static dyn Scraper),
+                other => Err(anyhow::anyhow!("unknown: {other}")),
+            },
+        )
+        .await
+        .expect("needs-company skip must return Ok");
+
+    let ats_summary = summaries
+        .iter()
+        .find(|s| s.board == "ats-board")
+        .expect("ats-board summary missing");
+    assert_eq!(
+        ats_summary.skipped.as_deref(),
+        Some("needs-company"),
+        "ATS board with no companies must be skipped with 'needs-company'"
+    );
+    assert_eq!(
+        ats_summary.count, 0,
+        "skipped ATS board must report count=0"
+    );
+    assert!(
+        ats_summary.error.is_none(),
+        "skipped ATS board must not carry an error"
+    );
+
+    let guest_summary = summaries
+        .iter()
+        .find(|s| s.board == "guest-board")
+        .expect("guest-board summary missing");
+    assert!(
+        guest_summary.skipped.is_none(),
+        "Guest board must not be skipped"
+    );
+    assert_eq!(
+        guest_summary.count, 2,
+        "Guest board (FakeScraper::http(2)) must have run normally"
+    );
+}
+
+/// An ATS board with non-empty companies must NOT be skipped — search is called
+/// and returns items.
+#[tokio::test]
+async fn ats_board_with_companies_runs() {
+    static FAKE_ATS: std::sync::LazyLock<FakeScraper> =
+        std::sync::LazyLock::new(|| FakeScraper::http(3));
+
+    struct FakeAtsWrapper;
+    #[async_trait::async_trait]
+    impl Scraper for FakeAtsWrapper {
+        fn id(&self) -> &'static str {
+            "fake-ats"
+        }
+        fn display_name(&self) -> &'static str {
+            "FakeAts"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        fn requires_company(&self) -> bool {
+            true
+        }
+        async fn search(
+            &self,
+            input: BoardSearchInput,
+            ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            // Delegate to the inner FakeScraper so we get real items.
+            FAKE_ATS.search(input, ctx).await
+        }
+    }
+
+    static WRAPPER: std::sync::LazyLock<FakeAtsWrapper> =
+        std::sync::LazyLock::new(|| FakeAtsWrapper);
+
+    let engine = ScraperEngine::new();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let mut input = fake_input(5);
+    input.companies = vec!["acme".to_string()]; // non-empty → must NOT skip
+
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["fake-ats".to_string()],
+            input,
+            "job-ats-with-company".to_string(),
+            None,
+            None,
+            tmp.path(),
+            |_id| Ok(&*WRAPPER as &'static dyn Scraper),
+        )
+        .await
+        .expect("ATS board with companies must return Ok");
+
+    assert_eq!(summaries.len(), 1);
+    assert!(
+        summaries[0].skipped.is_none(),
+        "ATS board with companies must NOT be skipped; got {:?}",
+        summaries[0].skipped
+    );
+    assert!(summaries[0].error.is_none(), "must not error");
+    assert_eq!(
+        summaries[0].count, 3,
+        "FakeScraper::http(3) must return 3 items when companies is non-empty"
+    );
+}
+
 // ── F2/F5: pre-registered token not removed by scrape_boards ─────────────────
 
 /// When the caller pre-registers a token before calling `scrape_boards`,
@@ -1641,5 +1851,117 @@ async fn scrape_boards_does_not_remove_pre_registered_token() {
     assert!(
         token.is_cancelled(),
         "pre-registered token must remain in the job map after scrape_boards completes"
+    );
+}
+
+// ── ATS per-company partial-failure isolation ─────────────────────────────────
+
+/// A fake ATS scraper that iterates `input.companies`, returns a transport `Err`
+/// for the first company ("slug-1"), and yields one item for the second
+/// ("slug-2"). This is the pattern used by greenhouse, lever, ashby, recruitee,
+/// smartrecruiters (list-fetch), and personio (per-host fetch_text) after the
+/// partial-failure fix that replaces `?` with a `match … warn … continue`.
+///
+/// The test asserts that a transport error on slug-1 does NOT suppress the
+/// result for slug-2 — i.e. the scraper continues the loop, not aborts.
+struct AtsPartialFailScraper;
+
+#[async_trait::async_trait]
+impl Scraper for AtsPartialFailScraper {
+    fn id(&self) -> &'static str {
+        "ats-partial-fail"
+    }
+    fn display_name(&self) -> &'static str {
+        "AtsPartialFail"
+    }
+    fn mode(&self) -> ScraperMode {
+        ScraperMode::Http
+    }
+    fn requires_company(&self) -> bool {
+        true
+    }
+    async fn search(
+        &self,
+        input: BoardSearchInput,
+        ctx: ScrapeContext,
+    ) -> anyhow::Result<Vec<JobPosting>> {
+        let mut out = Vec::new();
+        for company in &input.companies {
+            if ctx.signal.is_cancelled() {
+                break;
+            }
+            // Simulate transport Err on "slug-1" (DNS / TLS failure pattern).
+            if company == "slug-1" {
+                log::warn!(
+                    "[ats-partial-fail] simulated transport error for '{}'",
+                    company
+                );
+                if ctx.signal.is_cancelled() {
+                    break;
+                }
+                // continue to next company — do NOT propagate with `?`
+                continue;
+            }
+            out.push(JobPosting {
+                id: format!("ats-partial-fail:{company}"),
+                external_id: Some(company.clone()),
+                title: format!("Job at {company}"),
+                company: company.clone(),
+                location: None,
+                url: format!("https://{company}.example.com/jobs/1"),
+                source: "ats-partial-fail".to_string(),
+                description: None,
+                requirements: None,
+                posted_at: None,
+                captured_at: 0,
+                extra: std::collections::HashMap::new(),
+            });
+        }
+        Ok(out)
+    }
+}
+
+/// A transport error on slug-1 must not abort the company loop — slug-2's
+/// items must still appear in the result. No live network.
+#[tokio::test]
+async fn ats_per_company_transport_error_does_not_suppress_remaining_companies() {
+    static SCRAPER: std::sync::LazyLock<AtsPartialFailScraper> =
+        std::sync::LazyLock::new(|| AtsPartialFailScraper);
+
+    let engine = ScraperEngine::new();
+    let tmp = tempfile::tempdir().expect("tempdir");
+
+    let mut input = fake_input(10);
+    input.companies = vec!["slug-1".to_string(), "slug-2".to_string()];
+
+    let (postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["ats-board".to_string()],
+            input,
+            "job-ats-partial-fail".to_string(),
+            None,
+            None,
+            tmp.path(),
+            |_id| Ok(&*SCRAPER as &'static dyn Scraper),
+        )
+        .await
+        .expect("partial-failure ATS run must return Ok");
+
+    assert_eq!(summaries.len(), 1, "one summary for the one board");
+    assert!(
+        summaries[0].error.is_none(),
+        "board must not report a fatal error when only one slug failed; got {:?}",
+        summaries[0].error
+    );
+    // slug-2 must have produced its item despite slug-1 erroring.
+    assert!(
+        postings.iter().any(|p| p.company == "slug-2"),
+        "slug-2's job must appear in postings even though slug-1 errored; got {:?}",
+        postings.iter().map(|p| &p.company).collect::<Vec<_>>()
+    );
+    // slug-1 must have produced nothing (it errored, not panicked).
+    assert!(
+        !postings.iter().any(|p| p.company == "slug-1"),
+        "slug-1 errored and must produce no items"
     );
 }

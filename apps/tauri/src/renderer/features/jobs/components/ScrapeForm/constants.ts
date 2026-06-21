@@ -14,6 +14,12 @@ export interface ScrapeFormState {
   amount: number;
   dateFilter: '' | (typeof DATE_FILTER_OPTIONS)[number];
   locale: string;
+  /**
+   * Company slugs for ATS boards (greenhouse, lever, ashby, etc.) whose APIs
+   * require a company identifier. Comma-separated in the UI, stored as an array.
+   * Empty array = no filter; backend skips ATS boards with `needs-company`.
+   */
+  companies: string[];
 }
 
 export const REGIONS = [

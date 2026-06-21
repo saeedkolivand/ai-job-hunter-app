@@ -53,6 +53,11 @@ pub struct BoardSearchInput {
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
     pub radius_km: Option<u32>,
+    /// Company / board identifiers for ATS boards (greenhouse, lever, ashby,
+    /// recruitee, personio, smartrecruiters) whose public APIs require a company
+    /// slug instead of a global keyword search. Empty = no company filter; only
+    /// those ATS boards read it, every other board ignores it.
+    pub companies: Vec<String>,
 }
 
 pub struct ScrapeContext {
@@ -98,6 +103,19 @@ pub trait Scraper: Send + Sync {
     /// a board overrides to `false` to stay registered (dispatchable) but hidden.
     fn listed(&self) -> bool {
         true
+    }
+
+    /// Whether this board requires a company slug to return any results.
+    ///
+    /// ATS platforms (Greenhouse, Lever, Ashby, Recruitee, Personio,
+    /// SmartRecruiters) have no global keyword search — their public APIs only
+    /// accept a per-company slug. Boards that return `true` here are skipped by
+    /// the engine with reason `"needs-company"` when `input.companies` is empty,
+    /// instead of making a wasted network call that would return nothing.
+    ///
+    /// Defaults to `false` so only the 6 ATS boards need to override this.
+    fn requires_company(&self) -> bool {
+        false
     }
 
     async fn search(

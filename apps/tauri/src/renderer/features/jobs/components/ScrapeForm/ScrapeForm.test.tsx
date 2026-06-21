@@ -75,11 +75,39 @@ import { ScrapeForm } from './index';
 // ---------------------------------------------------------------------------
 
 const LISTED_CATALOG: BoardCatalogEntry[] = [
-  { id: 'greenhouse', displayName: 'Greenhouse', mode: 'http', auth: 'guest', listed: true },
-  { id: 'linkedin', displayName: 'LinkedIn', mode: 'http', auth: 'optional', listed: true },
-  { id: 'indeed', displayName: 'Indeed', mode: 'browser', auth: 'required', listed: true },
+  {
+    id: 'greenhouse',
+    displayName: 'Greenhouse',
+    mode: 'http',
+    auth: 'guest',
+    listed: true,
+    requiresCompany: false,
+  },
+  {
+    id: 'linkedin',
+    displayName: 'LinkedIn',
+    mode: 'http',
+    auth: 'optional',
+    listed: true,
+    requiresCompany: false,
+  },
+  {
+    id: 'indeed',
+    displayName: 'Indeed',
+    mode: 'browser',
+    auth: 'required',
+    listed: true,
+    requiresCompany: false,
+  },
   // glassdoor: listed=false → should NOT appear in the picker
-  { id: 'glassdoor', displayName: 'Glassdoor', mode: 'browser', auth: 'guest', listed: false },
+  {
+    id: 'glassdoor',
+    displayName: 'Glassdoor',
+    mode: 'browser',
+    auth: 'guest',
+    listed: false,
+    requiresCompany: false,
+  },
 ];
 
 const DEFAULT_FORM = {
@@ -90,6 +118,7 @@ const DEFAULT_FORM = {
   amount: 25,
   dateFilter: '' as const,
   locale: 'en',
+  companies: [],
 };
 
 const NOOP = () => {};
