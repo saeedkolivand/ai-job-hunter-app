@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782024645653,
+  "lastUpdate": 1782029062624,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1127,6 +1127,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 266666,
             "range": "± 1936",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "be2ff48b44e94fd3f16e8e857388e273203713a3",
+          "message": "feat(scraping): add adzuna and jsearch aggregator with key settings (#465)\n\n* feat(scraping): add adzuna and jsearch aggregator with key settings\n\nAdd an aggregator board to replace self-scraping the anti-bot boards\n(Indeed, Glassdoor, Xing, Workday, StepStone — unreliable in 2026). It is\nbacked by a provider registry: adzuna (free, primary) and jsearch (paid\nfallback, invoked only when adzuna errors, never on a legitimately empty\nresult). Keys are user-supplied, stored in the OS keyring (ai:adzuna-app-id,\nai:adzuna-app-key, ai:jsearch-key) and read at runtime; with no key the\nboard returns empty and never crashes. A Settings field on the Jobs tab lets\nusers paste their own free Adzuna key, with a link to developer.adzuna.com.\nSecrets are stripped from HTTP logs, each provider guards on is_configured(),\nand the cancel signal is checked before the paid fallback fires. Retiring the\nfive legacy boards is a follow-up PR.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(scraping): address aggregator review findings\n\nCodeRabbit review on #465:\n- Remove the OnceLock provider cache so a newly-saved Adzuna/JSearch key\n  takes effect on the next search without an app restart.\n- read_credential now returns AppResult<Option<String>>: NoEntry -> Ok(None),\n  a real keyring fault -> Err(AppError::Storage); optional keys still degrade\n  gracefully (log + treated as absent). Docstring reconciled.\n- Harden HTTP log redaction to scheme://host/path (drops query, userinfo and\n  fragment) and URL-encode the Adzuna app_id/app_key, closing the key-in-log\n  path.\n- Fix the cancel test to exercise the pre-fallback cancel guard (cancel\n  during the provider call, not before invocation).\n- Settings: show generic i18n errors instead of raw backend strings, add a\n  dedicated removeError key, and cover save/remove rejection paths.\n- Add Rust tests for the read_credential error branches and the provider\n  degradation paths (via keyring_core::mock).\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(settings): guard aggregator key save/remove against re-entrant submits\n\nAddress CodeRabbit re-review on #465:\n- handleSave/handleRemove return early when the mutation is already pending\n  (rapid Enter / double-click no longer fires parallel mutateAsync calls).\n- Reset the shared keyState mock in afterEach so a failed assertion can't\n  leak connectivity state into later tests.\n- Add tests covering both pending-state early returns.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-21T09:55:44+02:00",
+          "tree_id": "a8c959591c34cb4b0b9167d7e5ff59990b51a115",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/be2ff48b44e94fd3f16e8e857388e273203713a3"
+        },
+        "date": 1782029062598,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1896630,
+            "range": "± 64985",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2521150,
+            "range": "± 16842",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 291946,
+            "range": "± 2498",
             "unit": "ns/iter"
           }
         ]
