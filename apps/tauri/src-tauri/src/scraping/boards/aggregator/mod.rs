@@ -25,6 +25,28 @@ use crate::scraping::types::{
     AuthRequirement, BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode,
 };
 
+// ── Serde helpers ─────────────────────────────────────────────────────────────
+
+/// Accept either a JSON string or a JSON integer for the Adzuna `id` field,
+/// normalizing both to `String`.  Adzuna documents the field as a string but
+/// the live API returns it as an integer (e.g. `331705081`).
+fn de_string_or_number<'de, D>(de: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrNumber {
+        Str(String),
+        Num(i64),
+    }
+
+    match StringOrNumber::deserialize(de)? {
+        StringOrNumber::Str(s) => Ok(s),
+        StringOrNumber::Num(n) => Ok(n.to_string()),
+    }
+}
+
 // ── Provider trait ────────────────────────────────────────────────────────────
 
 /// A single search-API backend.  Object-safe so the scraper can hold a
@@ -58,6 +80,7 @@ struct AdzunaLocation {
 
 #[derive(Debug, Deserialize)]
 struct AdzunaJob {
+    #[serde(deserialize_with = "de_string_or_number")]
     id: String,
     title: String,
     company: Option<AdzunaCompany>,

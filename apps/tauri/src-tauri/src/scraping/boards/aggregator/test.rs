@@ -329,6 +329,56 @@ fn adzuna_response_maps_to_job_posting() {
     assert_eq!(j.salary_max, Some(90000.0));
 }
 
+/// Adzuna live API sends `id` as an integer — must parse and normalise to String.
+/// Regression for: "invalid type: integer `331705081`, expected a string".
+#[test]
+fn adzuna_integer_id_deserializes_to_string() {
+    let json = serde_json::json!({
+        "results": [{
+            "id": 331705081_i64,
+            "title": "Rust Engineer",
+            "company": { "display_name": "Corp" },
+            "location": { "display_name": "Berlin" },
+            "redirect_url": "https://api.adzuna.com/v1/api/jobs/de/redirects/331705081",
+            "description": null,
+            "created": null,
+            "salary_min": null,
+            "salary_max": null
+        }]
+    });
+
+    let resp: AdzunaResp = serde_json::from_value(json)
+        .expect("integer id must deserialize without error");
+    let j = &resp.results[0];
+    assert_eq!(j.id, "331705081");
+    // Confirm the id maps correctly through the JobPosting formatting.
+    assert_eq!(format!("adzuna-{}", j.id), "adzuna-331705081");
+    assert_eq!(format!("aggregator:adzuna-{}", j.id), "aggregator:adzuna-331705081");
+}
+
+/// String `id` (original documented shape) must still deserialize correctly
+/// after the `de_string_or_number` migration.
+#[test]
+fn adzuna_string_id_still_deserializes() {
+    let json = serde_json::json!({
+        "results": [{
+            "id": "abc123",
+            "title": "Senior Rust Engineer",
+            "company": { "display_name": "RustCorp" },
+            "location": { "display_name": "Berlin" },
+            "redirect_url": "https://api.adzuna.com/v1/api/jobs/de/redirects/abc123",
+            "description": null,
+            "created": null,
+            "salary_min": null,
+            "salary_max": null
+        }]
+    });
+
+    let resp: AdzunaResp = serde_json::from_value(json)
+        .expect("string id must still deserialize");
+    assert_eq!(resp.results[0].id, "abc123");
+}
+
 // ── JSearch response → JobPosting mapping ────────────────────────────────────
 
 #[test]
