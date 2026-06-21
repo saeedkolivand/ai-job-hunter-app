@@ -72,6 +72,7 @@ impl JobProvider for FakeProvider {
         _query: &str,
         _location: &str,
         _country: &str,
+        _date_filter: Option<&str>,
         _signal: tokio_util::sync::CancellationToken,
     ) -> anyhow::Result<Vec<JobPosting>> {
         match &self.result {
@@ -93,7 +94,7 @@ async fn adzuna_ok_returns_items_no_jsearch() {
         Box::new(FakeProvider::err("jsearch", "should not be called")),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "berlin", "de", make_token())
+    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, make_token())
         .await
         .unwrap();
 
@@ -113,7 +114,7 @@ async fn adzuna_ok_empty_does_not_call_jsearch() {
         )),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "berlin", "de", make_token())
+    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, make_token())
         .await
         .unwrap();
 
@@ -134,7 +135,7 @@ async fn adzuna_err_falls_back_to_jsearch() {
         Box::new(FakeProvider::ok("jsearch", vec![jsearch_posting.clone()])),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "berlin", "de", make_token())
+    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, make_token())
         .await
         .unwrap();
 
@@ -150,7 +151,7 @@ async fn neither_configured_returns_empty() {
         Box::new(FakeProvider::unconfigured("jsearch")),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "berlin", "de", make_token())
+    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, make_token())
         .await
         .unwrap();
 
@@ -166,7 +167,7 @@ async fn only_jsearch_configured_uses_jsearch() {
         Box::new(FakeProvider::ok("jsearch", vec![jsearch_posting.clone()])),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "berlin", "de", make_token())
+    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, make_token())
         .await
         .unwrap();
 
@@ -182,7 +183,7 @@ async fn adzuna_err_and_no_jsearch_returns_empty() {
         Box::new(FakeProvider::unconfigured("jsearch")),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "berlin", "de", make_token())
+    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, make_token())
         .await
         .unwrap();
 
@@ -513,7 +514,7 @@ async fn adzuna_unconfigured_returns_err_without_network() {
         app_id: None,
         app_key: None,
     };
-    let result = p.search("engineer", "berlin", "de", make_token()).await;
+    let result = p.search("engineer", "berlin", "de", None, make_token()).await;
     assert!(result.is_err(), "unconfigured Adzuna must return Err");
     assert!(
         result.unwrap_err().to_string().contains("not configured"),
@@ -524,7 +525,7 @@ async fn adzuna_unconfigured_returns_err_without_network() {
 #[tokio::test]
 async fn jsearch_unconfigured_returns_err_without_network() {
     let p = JSearchProvider { api_key: None };
-    let result = p.search("engineer", "berlin", "de", make_token()).await;
+    let result = p.search("engineer", "berlin", "de", None, make_token()).await;
     assert!(result.is_err(), "unconfigured JSearch must return Err");
     assert!(
         result.unwrap_err().to_string().contains("not configured"),
@@ -550,7 +551,7 @@ async fn cancelled_before_search_returns_empty_no_provider_call() {
         )),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "berlin", "de", signal)
+    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, signal)
         .await
         .unwrap();
     assert!(
@@ -581,6 +582,7 @@ impl JobProvider for CancelOnSearchProvider {
         _query: &str,
         _location: &str,
         _country: &str,
+        _date_filter: Option<&str>,
         _signal: tokio_util::sync::CancellationToken,
     ) -> anyhow::Result<Vec<JobPosting>> {
         // Fail AND cancel so the fallback guard (not the top-of-function guard)
@@ -606,7 +608,7 @@ async fn cancelled_after_adzuna_err_skips_jsearch() {
         )),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "berlin", "de", signal)
+    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, signal)
         .await
         .unwrap();
     assert!(
@@ -705,4 +707,38 @@ fn providers_degrade_to_unconfigured_on_keyring_error() {
     );
 
     clear_aggregator_slots();
+}
+
+// ── Date-filter mapping helpers ───────────────────────────────────────────────
+
+#[test]
+fn adzuna_max_days_old_maps_correctly() {
+    // All sub-day windows collapse to 1 day (Adzuna's day granularity).
+    assert_eq!(adzuna_max_days_old(Some("24h")), 1);
+    assert_eq!(adzuna_max_days_old(Some("8h")), 1);
+    assert_eq!(adzuna_max_days_old(Some("4h")), 1);
+    assert_eq!(adzuna_max_days_old(Some("2h")), 1);
+    assert_eq!(adzuna_max_days_old(Some("1h")), 1);
+    assert_eq!(adzuna_max_days_old(Some("30m")), 1);
+    assert_eq!(adzuna_max_days_old(Some("week")), 7);
+    assert_eq!(adzuna_max_days_old(Some("month")), 30);
+    // No filter or an unknown token caps at the past month (30 days).
+    assert_eq!(adzuna_max_days_old(None), 30);
+    assert_eq!(adzuna_max_days_old(Some("99y")), 30);
+}
+
+#[test]
+fn jsearch_date_posted_maps_correctly() {
+    // All sub-day windows collapse to "today" (JSearch's finest token).
+    assert_eq!(jsearch_date_posted(Some("24h")), "today");
+    assert_eq!(jsearch_date_posted(Some("8h")), "today");
+    assert_eq!(jsearch_date_posted(Some("4h")), "today");
+    assert_eq!(jsearch_date_posted(Some("2h")), "today");
+    assert_eq!(jsearch_date_posted(Some("1h")), "today");
+    assert_eq!(jsearch_date_posted(Some("30m")), "today");
+    assert_eq!(jsearch_date_posted(Some("week")), "week");
+    assert_eq!(jsearch_date_posted(Some("month")), "month");
+    // No filter or an unknown token caps at the past month.
+    assert_eq!(jsearch_date_posted(None), "month");
+    assert_eq!(jsearch_date_posted(Some("99y")), "month");
 }
