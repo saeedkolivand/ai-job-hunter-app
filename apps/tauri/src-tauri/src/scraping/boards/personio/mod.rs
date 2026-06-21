@@ -107,6 +107,14 @@ fn is_valid_personio_slug(slug: &str) -> bool {
         && !slug.ends_with('-')
 }
 
+/// Build the namespaced job id for a Personio posting.
+///
+/// Format: `personio:{company}:{pos_id}` — the company prefix prevents
+/// position IDs from different tenants colliding in any deduplication layer.
+pub(crate) fn make_job_id(company: &str, pos_id: &str) -> String {
+    format!("personio:{company}:{pos_id}")
+}
+
 pub struct PersonioScraper;
 
 #[async_trait]
@@ -211,9 +219,7 @@ impl Scraper for PersonioScraper {
                 };
 
                 let posting = JobPosting {
-                    // Namespace by company so position IDs from different Personio
-                    // tenants never collide during a multi-company scrape.
-                    id: format!("{}:{}:{}", self.id(), company, pos.id),
+                    id: make_job_id(&company, &pos.id),
                     external_id: Some(pos.id.clone()),
                     title: pos.title,
                     company: company.clone(),

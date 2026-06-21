@@ -124,9 +124,10 @@ fn id_namespacing_prevents_cross_tenant_collisions() {
     assert_eq!(positions_acme.len(), 1);
     assert_eq!(positions_globex.len(), 1);
 
-    // Simulate what PersonioScraper does: prefix with "personio:{company}:{id}".
-    let id_acme = format!("personio:{}:{}", "acme", positions_acme[0].id);
-    let id_globex = format!("personio:{}:{}", "globex", positions_globex[0].id);
+    // Use the production helper — if namespacing is removed or changed the
+    // assertions below fail on the actual output, not a reimplementation.
+    let id_acme = make_job_id("acme", &positions_acme[0].id);
+    let id_globex = make_job_id("globex", &positions_globex[0].id);
 
     assert_ne!(
         id_acme, id_globex,
