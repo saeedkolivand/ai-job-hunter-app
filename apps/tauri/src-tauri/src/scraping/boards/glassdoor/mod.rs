@@ -1,9 +1,12 @@
 /// Glassdoor — browser-based scraper (requires JavaScript rendering).
 ///
-/// BEST-EFFORT ANONYMOUS: launches a browser with no cookies or auth.
-/// Glassdoor frequently bot-blocks anonymous sessions with sign-in or
-/// captcha walls. Full login-wiring is out of scope for this scraper.
-use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+/// Requires login: Glassdoor bot-blocks anonymous sessions aggressively with
+/// sign-in walls and CAPTCHAs. The scraper still runs best-effort even when
+/// authenticated, as Glassdoor may restrict scraping regardless.
+/// The engine short-circuits this board when no valid session exists.
+use super::super::types::{
+    AuthRequirement, BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode,
+};
 use async_trait::async_trait;
 use chromiumoxide::browser::{Browser, BrowserConfig};
 use futures::StreamExt;
@@ -36,6 +39,10 @@ impl Scraper for GlassdoorScraper {
         ScraperMode::Browser
     }
 
+    fn auth(&self) -> AuthRequirement {
+        AuthRequirement::Required
+    }
+
     async fn search(
         &self,
         input: BoardSearchInput,
@@ -45,9 +52,30 @@ impl Scraper for GlassdoorScraper {
         let query = urlencoding::encode(&input.query);
         let loc = urlencoding::encode(input.location.as_deref().unwrap_or(""));
 
+        // ponytail: use the persisted per-board profile so login cookies from
+        // open_login are carried into the scrape. Best-effort — Cloudflare
+        // fingerprinting may still block a headless session even when
+        // authenticated; CDP stealth / TLS-impersonation is deliberately out of
+        // scope. The profile is shared with the login window; they don't run
+        // concurrently in normal use and browser scrapes are serialized by
+        // browser_sem, so no profile-lock contention in practice.
+        let data_dir = crate::platform::config::data_dir();
+        let profile = crate::scraping::board_login::profile_dir(&data_dir, "glassdoor");
+        tokio::fs::create_dir_all(&profile).await.ok();
+
+        let mut builder = BrowserConfig::builder()
+            .window_size(1920, 1080)
+            .arg(format!("--user-data-dir={}", profile.display()))
+            .arg("--disable-blink-features=AutomationControlled")
+            .arg("--no-default-browser-check")
+            .arg("--no-first-run");
+
+        if let Some(chrome_path) = crate::platform::detect_system_chrome() {
+            builder = builder.chrome_executable(chrome_path);
+        }
+
         let (mut browser, mut handler) = Browser::launch(
-            BrowserConfig::builder()
-                .window_size(1920, 1080)
+            builder
                 .build()
                 .map_err(|e| anyhow::anyhow!("Browser config error: {e}"))?,
         )
@@ -217,7 +245,8 @@ impl Scraper for GlassdoorScraper {
                         || lower.contains("log in to continue");
                     if walled {
                         log::warn!(
-                            "[glassdoor] page {p} returned no cards behind a sign-in/captcha wall;                              this board is best-effort-anonymous and is likely bot-blocked"
+                            "[glassdoor] page {p} returned no cards behind a sign-in/captcha wall; \
+                             login session may have expired or Glassdoor is blocking the headless browser"
                         );
                     } else {
                         log::warn!(

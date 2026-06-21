@@ -334,9 +334,8 @@ async fn export_cookies(page: &Page, app_data_dir: &Path, board_id: &str) -> Res
 /// Persist `cookies` to `<board-state>/cookies.json` in the exact format the
 /// HTTP scrapers consume (`Vec<StoredCookie>`). Shared by the browser-login
 /// export path and the cookie-import path (`import.rs`) so both produce
-/// byte-identical artifacts. `pub(super)` — reachable from the sibling
-/// `import` module only.
-pub(super) fn write_cookies(
+/// byte-identical artifacts.
+pub(crate) fn write_cookies(
     app_data_dir: &Path,
     board_id: &str,
     cookies: &[StoredCookie],
@@ -350,7 +349,7 @@ pub(super) fn write_cookies(
     Ok(())
 }
 
-pub(super) fn write_auth_status(app_data_dir: &Path, board_id: &str, connected: bool) {
+pub(crate) fn write_auth_status(app_data_dir: &Path, board_id: &str, connected: bool) {
     let path = auth_status_path(app_data_dir, board_id);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).ok();

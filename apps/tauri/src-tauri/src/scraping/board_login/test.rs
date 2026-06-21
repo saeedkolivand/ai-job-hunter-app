@@ -116,6 +116,77 @@ fn test_get_config_glassdoor() {
     assert_eq!(config.unwrap().id, "glassdoor");
 }
 
+/// epoch-0 connected_at → age > SESSION_MAX_AGE_MS → session_is_stale returns true.
+/// This covers the stale branch of the engine's skip predicate.
+#[test]
+fn stale_session_is_detected() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let data_dir = tmp.path();
+    let board = "stale-test-board";
+
+    // Write a cookie so load_cookies is non-empty (skip fires on staleness, not absence).
+    let cookie = StoredCookie {
+        name: "sess".into(),
+        value: "tok".into(),
+        domain: "example.com".into(),
+        path: "/".into(),
+        expires: None,
+        http_only: false,
+        secure: false,
+    };
+    write_cookies(data_dir, board, &[cookie]).expect("write_cookies");
+
+    // connected_at = 0 → age = now_ms → always > 7 days in ms.
+    write_auth_status(data_dir, board, true);
+    // Overwrite with epoch-0 connected_at to force staleness.
+    let apath = auth_status_path(data_dir, board);
+    std::fs::write(&apath, r#"{"connected":true,"connected_at":0}"#)
+        .expect("overwrite auth-status");
+
+    assert!(
+        !load_cookies(data_dir, board).is_empty(),
+        "cookies must be non-empty"
+    );
+    let age = session_age_ms(data_dir, board).expect("session_age_ms must be Some");
+    assert!(
+        age > SESSION_MAX_AGE_MS,
+        "epoch-0 session age ({age} ms) must exceed SESSION_MAX_AGE_MS ({SESSION_MAX_AGE_MS} ms)"
+    );
+    assert!(
+        session_is_stale(data_dir, board),
+        "session_is_stale must return true for epoch-0 connected_at"
+    );
+}
+
+/// Fresh connected_at (now) → age < SESSION_MAX_AGE_MS → session_is_stale returns false.
+#[test]
+fn fresh_session_is_not_stale() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let data_dir = tmp.path();
+    let board = "fresh-test-board";
+
+    let cookie = StoredCookie {
+        name: "sess".into(),
+        value: "tok".into(),
+        domain: "example.com".into(),
+        path: "/".into(),
+        expires: None,
+        http_only: false,
+        secure: false,
+    };
+    write_cookies(data_dir, board, &[cookie]).expect("write_cookies");
+    write_auth_status(data_dir, board, true); // connected_at = now
+
+    assert!(
+        !load_cookies(data_dir, board).is_empty(),
+        "cookies must be non-empty"
+    );
+    assert!(
+        !session_is_stale(data_dir, board),
+        "fresh session must not be stale"
+    );
+}
+
 #[test]
 fn test_default_is_authed_url_signin() {
     assert!(!default_is_authed_url("https://example.com/signin"));

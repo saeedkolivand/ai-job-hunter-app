@@ -7,6 +7,16 @@ fn test_glassdoor_scraper_id() {
 }
 
 #[test]
+fn test_glassdoor_auth_required() {
+    use crate::scraping::types::AuthRequirement;
+    assert_eq!(
+        GlassdoorScraper.auth(),
+        AuthRequirement::Required,
+        "GlassdoorScraper must report Required auth (engine gates on this)"
+    );
+}
+
+#[test]
 fn test_glassdoor_scraper_display_name() {
     let scraper = GlassdoorScraper;
     assert_eq!(scraper.display_name(), "Glassdoor");

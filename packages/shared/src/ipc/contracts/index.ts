@@ -155,6 +155,7 @@ export {
   type BoardCatalogEntry,
   BOARDS_CHANNELS,
   type BoardsContract,
+  type BoardScrapeSummary,
   type CookieImportOutcome,
   type CookieImportResult,
 } from './boards.js';

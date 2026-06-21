@@ -259,7 +259,7 @@ export function ScrapeForm({
               <div className="mb-3 flex flex-wrap items-center gap-1.5">
                 <span className="text-[10px] text-foreground/55">{t('jobs.needsLogin.label')}</span>
                 {needsLoginBoards.map((e) => (
-                  <BoardConnectChip key={e.id} board={e.id} />
+                  <BoardConnectChip key={e.id} board={e.id} required={e.auth === 'required'} />
                 ))}
               </div>
             )}

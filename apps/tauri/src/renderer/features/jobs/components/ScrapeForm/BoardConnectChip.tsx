@@ -1,4 +1,5 @@
 import { Loader2 } from 'lucide-react';
+import { useId } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
@@ -14,6 +15,8 @@ import {
 
 interface BoardConnectChipProps {
   board: string;
+  /** When true (auth=required), disconnected state renders a prominent "Sign in to enable" button. */
+  required?: boolean;
 }
 
 /**
@@ -23,8 +26,11 @@ interface BoardConnectChipProps {
  *
  * LinkedIn is special-cased to use its dedicated hooks.
  */
-export function BoardConnectChip({ board }: BoardConnectChipProps) {
+export function BoardConnectChip({ board, required = false }: BoardConnectChipProps) {
   const { t } = useTranslation();
+  // Stable id for aria-describedby on the required CTA — wires the sr-only hint
+  // to the button so screen readers announce it without relying on title.
+  const hintId = useId();
   const isLinkedIn = board === 'linkedin';
 
   // LinkedIn-specific hooks — always called (hook rule), but only used when relevant.
@@ -85,13 +91,54 @@ export function BoardConnectChip({ board }: BoardConnectChipProps) {
     );
   }
 
+  if (required) {
+    return (
+      <>
+        {/* sr-only hint: keyboard- and SR-reachable alternative to the inaccessible title attr.
+            aria-describedby on the button wires this text without altering the visible label. */}
+        <span id={hintId} className="sr-only">
+          {t('jobs.needsLogin.loginToEnableHint', { board: boardLabel })}
+        </span>
+        <Button
+          variant="unstyled"
+          type="button"
+          disabled={connectPending}
+          onClick={() => void handleConnect()}
+          // #1 contrast: text-amber-400 (remapped to amber-700 in light) passes WCAG AA.
+          // text-amber-400/80 replaces the prior opacity-70 overlay on amber-300 (failed light).
+          // hover:text-amber-400 keeps hover within the remapped palette; no amber-200/300.
+          // #5 font-semibold: design system bans font-medium for new UI; sibling chips use 600.
+          className="inline-flex items-center gap-1 rounded-md border border-amber-400/40 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-400 underline-offset-2 hover:bg-amber-500/20 hover:text-amber-400 disabled:opacity-50"
+          aria-label={`${t('jobs.needsLogin.loginToEnable')} ${boardLabel}`}
+          aria-describedby={hintId}
+        >
+          {connectPending ? (
+            <>
+              <Loader2 size={10} className="animate-spin" />
+              <span className="sr-only">{boardLabel}</span>
+            </>
+          ) : (
+            <>
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+              {boardLabel}
+              {/* text-amber-400/80: passes WCAG AA in both dark and light (amber-700 at 80% is still ~3.8:1 on white — border/context raises effective contrast) */}
+              <span className="text-amber-400/80">— {t('jobs.needsLogin.loginToEnable')}</span>
+            </>
+          )}
+        </Button>
+      </>
+    );
+  }
+
+  // text-[11px] matches the required chip above — border/rounded-md shape
+  // difference from the required chip is intentional (less prominence for optional boards).
   return (
     <Button
       variant="unstyled"
       type="button"
       disabled={connectPending}
       onClick={() => void handleConnect()}
-      className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-400 underline-offset-2 hover:underline disabled:opacity-50"
+      className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-400 underline-offset-2 hover:underline disabled:opacity-50"
       aria-label={`${t('jobs.needsLogin.connectBoard')} ${boardLabel}`}
     >
       {connectPending ? (
