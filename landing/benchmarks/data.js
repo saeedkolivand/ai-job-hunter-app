@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781987743170,
+  "lastUpdate": 1782004462607,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1043,6 +1043,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 291555,
             "range": "± 1607",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0e3535f2642266a974b5610f16adcc07371276e3",
+          "message": "feat(jobs): repair broken job boards and gate logged-out scraping (#462)\n\n* fix(scraping): repair german tech jobs feed and rewrite the parser\n\nThe /rss feed returns 403; switch to /job_feed.xml, a custom\njobs/job XML schema. Replace feed_rs with a regex-per-block parser\nextracting company, location, salary, and DD.MM.YYYY dates.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* feat(jobs): skip logged-out required boards and add a sign-in prompt\n\nRequired boards with no session are now skipped before any\nrequest and reported via BoardScrapeSummary.skipped='needs-login',\nclosing the renderer-only #458 gate on autopilot and IPC paths.\n\nGlassdoor moves from Guest to Required and reuses its persisted\nlogin profile; the renderer adds a sign-in prompt for logged-out\nrequired boards and a sticky skipped-board notification.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs(scraping): correct endpoint recon and document auth skip\n\nCorrect the German Tech Jobs recommendation (was wrongly 'parser\nunchanged') and reframe Indeed/Xing as HTTP, login-gated boards\nrather than fragile-selector scrapers.\n\nMark Glassdoor best-effort-with-login, document the skipped\ncontract, and note the chromiumoxide WS warning is benign on the\npinned version.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(scraping): gate required boards on a valid auth status, not just cookies\n\nThe required-board skip gate only checked for empty cookies or a stale\nsession. session_is_stale returns false when the auth-status file is\nmissing, unreadable, has connected:false, or lacks connected_at, so a\nboard with leftover cookies but no usable session still ran. Also skip\nwhen session_age_ms is None.\n\nGlassdoor: create the Chrome profile dir with tokio::fs inside the async\nsearch instead of blocking std::fs.\n\nAdd an engine regression test for the no-valid-status branch and drop\ndead setup in the stale-session test.\n\nResolves CodeRabbit review findings on the pull request.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-21T02:55:25+02:00",
+          "tree_id": "6241b06cc02793f3d76a4a48b92d17a16e5fe294",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/0e3535f2642266a974b5610f16adcc07371276e3"
+        },
+        "date": 1782004462186,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1939105,
+            "range": "± 65637",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2555892,
+            "range": "± 23563",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 293823,
+            "range": "± 4273",
             "unit": "ns/iter"
           }
         ]
