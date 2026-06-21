@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 
@@ -21,10 +21,25 @@ export function SettingsPage() {
   const activeSection = settings.activeSection;
   const setActiveSection = (v: SectionId) => setSettings({ activeSection: v });
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  /** Anchor to scroll+highlight after the next section renders. */
+  const [pendingAnchor, setPendingAnchor] = useState<string | null>(null);
+
   const handleSectionChange = (v: SectionId) => {
     setActiveSection(v);
     scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  const handleResultSelect = (section: SectionId, anchor: string) => {
+    if (section !== activeSection) {
+      setActiveSection(section);
+    }
+    // Always set the anchor — SettingsContent fires the scroll after mount.
+    setPendingAnchor(anchor);
+  };
+
+  const handleAnchorConsumed = useCallback(() => setPendingAnchor(null), []);
+
   const userName = useUserName();
   const setUserName = usePreferencesStore((s) => s.setUserName);
   const [localName, setLocalName] = useState(userName || '');
@@ -48,6 +63,7 @@ export function SettingsPage() {
         navGroups={navGroups}
         activeSection={activeSection}
         onSectionChange={handleSectionChange}
+        onResultSelect={handleResultSelect}
       />
       <SettingsContent
         activeSection={activeSection}
@@ -57,6 +73,8 @@ export function SettingsPage() {
         setUserName={setUserName}
         userName={userName ?? ''}
         scrollRef={scrollRef}
+        pendingAnchor={pendingAnchor}
+        onAnchorConsumed={handleAnchorConsumed}
       />
     </PageTransition>
   );

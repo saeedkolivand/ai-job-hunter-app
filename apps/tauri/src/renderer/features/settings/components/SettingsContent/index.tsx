@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
-import type { RefObject } from 'react';
+import { type RefObject, useEffect } from 'react';
 
 import { IconBadge, transition, variants } from '@ajh/ui';
 
@@ -23,21 +23,83 @@ interface Props {
   activeSection: SectionId;
   current: NavItem;
   localName: string;
+  /** Anchor to scroll+pulse after mount. Null when no pending anchor. */
+  pendingAnchor: string | null;
   scrollRef: RefObject<HTMLDivElement | null>;
   setLocalName: (name: string) => void;
   setUserName: (name: string) => void;
   userName: string;
+  /** Called after the anchor has been consumed so the parent can clear it. */
+  onAnchorConsumed: () => void;
 }
+
+/** Duration (ms) the ring-pulse stays visible. */
+const PULSE_DURATION = 1500;
+
+/** Classes added during the pulse — must all be removed in cleanup. */
+const PULSE_CLASSES = ['ring-2', 'ring-brand', 'rounded-xl', 'transition-[box-shadow]'] as const;
 
 export function SettingsContent({
   activeSection,
   current,
   localName,
+  pendingAnchor,
   scrollRef,
   setLocalName,
   setUserName,
   userName,
+  onAnchorConsumed,
 }: Props) {
+  /**
+   * Scroll to + briefly ring-highlight an anchored element after the section
+   * mounts. Keyed on both activeSection and pendingAnchor so it re-fires when
+   * the section changes (the anchor element may not exist yet on the previous
+   * render).
+   */
+  useEffect(() => {
+    if (!pendingAnchor) return;
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let anchoredEl: HTMLElement | null = null;
+
+    const removePulseClasses = () => {
+      anchoredEl?.classList.remove(...PULSE_CLASSES);
+    };
+
+    // Use rAF so the section's DOM has finished painting.
+    const rafId = requestAnimationFrame(() => {
+      const el = scrollRef.current?.querySelector<HTMLElement>(
+        `[data-settings-anchor="${pendingAnchor}"]`
+      );
+      if (!el) return;
+      anchoredEl = el;
+
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      if (reducedMotion) {
+        // Skip animation; just scroll instantly and consume the anchor.
+        el.scrollIntoView({ behavior: 'instant', block: 'nearest' });
+        onAnchorConsumed();
+      } else {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        el.classList.add(...PULSE_CLASSES);
+
+        timer = setTimeout(() => {
+          removePulseClasses();
+          onAnchorConsumed();
+        }, PULSE_DURATION);
+      }
+    });
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(timer);
+      removePulseClasses();
+    };
+    // activeSection is intentionally included: the anchor DOM only exists after
+    // the right section has rendered, so we re-run on section change too.
+  }, [activeSection, pendingAnchor, scrollRef, onAnchorConsumed]);
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Section header */}
@@ -72,23 +134,49 @@ export function SettingsContent({
             {activeSection === 'contact' && <ContactProfileTab />}
             {activeSection === 'ai' && (
               <>
-                <AISettingsTab />
-                <OutputTonePreferences />
+                <div data-settings-anchor="ai-provider">
+                  <AISettingsTab />
+                </div>
+                <div data-settings-anchor="ai-tone">
+                  <OutputTonePreferences />
+                </div>
               </>
             )}
             {activeSection === 'job' && (
               <>
-                <JobLocationPreferences />
-                <TechStackPreferences />
-                <AggregatorKeysSettings />
+                <div data-settings-anchor="job-location">
+                  <JobLocationPreferences />
+                </div>
+                <div data-settings-anchor="job-techstack">
+                  <TechStackPreferences />
+                </div>
+                <div data-settings-anchor="job-aggregator">
+                  <AggregatorKeysSettings />
+                </div>
               </>
             )}
-            {activeSection === 'resume' && <ResumePreferences />}
+            {activeSection === 'resume' && (
+              <div data-settings-anchor="resume-manage">
+                <ResumePreferences />
+              </div>
+            )}
             {activeSection === 'accounts' && <AccountsSettingsTab />}
             {activeSection === 'privacy' && <PrivacySettingsTab />}
-            {activeSection === 'performance' && <PerformancePreferences />}
-            {activeSection === 'developer' && <DeveloperPreferences />}
-            {activeSection === 'about' && <AboutTab />}
+            {activeSection === 'performance' && (
+              <div data-settings-anchor="performance-mode">
+                <PerformancePreferences />
+              </div>
+            )}
+            {activeSection === 'developer' && (
+              <div data-settings-anchor="developer-tools">
+                <DeveloperPreferences />
+              </div>
+            )}
+            {activeSection === 'about' && (
+              <div data-settings-anchor="about-info">
+                <AboutTab />
+              </div>
+            )}
           </motion.div>
         </AnimatePresence>
       </div>

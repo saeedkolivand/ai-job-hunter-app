@@ -413,6 +413,14 @@
     }
   },
   "settings": {
+    "search": {
+      "placeholder": "Einstellungen durchsuchen… ⌘F",
+      "noResults": "Keine Einstellungen für \"{{query}}\" gefunden",
+      "resultsLabel": "Suchergebnisse",
+      "resultCount": "{{count}} Ergebnisse",
+      "noResultsAria": "Keine Ergebnisse für «{{query}}»",
+      "ariaLabel": "Einstellungen durchsuchen"
+    },
     "groups": {
       "preferences": "Einstellungen",
       "system": "System",
@@ -784,6 +792,9 @@
         "suggested": "Vorschlag",
         "mayLagRam": "Ein großes Kontextfenster kann bei Ihrem verfügbaren RAM ruckeln",
         "mayLagVram": "Ein großes Kontextfenster kann bei Ihrem verfügbaren VRAM ruckeln"
+      },
+      "embeddings": {
+        "title": "Einbettungen"
       }
     },
     "outputTone": {
@@ -1566,7 +1577,6 @@
     "pages": "Seiten",
     "amount": "Anzahl der Jobs",
     "radius": "Umkreis (km)",
-
     "advanced": "Erweitert",
     "scraping": "Scraping läuft",
     "startScrape": "Scraping starten",
