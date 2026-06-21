@@ -30,10 +30,6 @@ export function getSupportSections(t: (key: string) => string): Section[] {
           a: t('support.faq.jobScrapingQuestions.scrapingZeroJobs.a'),
         },
         {
-          q: t('support.faq.jobScrapingQuestions.indeedWrongCountry.q'),
-          a: t('support.faq.jobScrapingQuestions.indeedWrongCountry.a'),
-        },
-        {
           q: t('support.faq.jobScrapingQuestions.jobsDisappeared.q'),
           a: t('support.faq.jobScrapingQuestions.jobsDisappeared.a'),
         },

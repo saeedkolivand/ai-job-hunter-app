@@ -22,9 +22,6 @@ interface Board {
 
 const BOARD_STYLE: Record<string, { iconBg: string; glowColor: string; abbr: string }> = {
   linkedin: { iconBg: '#0077B5', glowColor: 'rgba(0,119,181,0.2)', abbr: 'in' },
-  indeed: { iconBg: '#003A9B', glowColor: 'rgba(0,58,155,0.2)', abbr: 'id' },
-  xing: { iconBg: '#026466', glowColor: 'rgba(2,100,102,0.2)', abbr: 'xi' },
-  glassdoor: { iconBg: '#0CAA41', glowColor: 'rgba(12,170,65,0.2)', abbr: 'gd' },
 };
 
 const FALLBACK = {

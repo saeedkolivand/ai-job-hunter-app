@@ -50,7 +50,6 @@ export function JobsPage() {
     radiusKm: 0,
     amount: 25,
     dateFilter: '' as '' | (typeof DATE_FILTER_OPTIONS)[number],
-    locale: 'us',
     companies: [],
   });
 

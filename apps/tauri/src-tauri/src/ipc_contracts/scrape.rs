@@ -18,8 +18,6 @@ pub struct ScrapeBoardsRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_filter: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub locale: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub country_code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latitude: Option<f64>,

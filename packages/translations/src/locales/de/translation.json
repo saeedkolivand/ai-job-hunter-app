@@ -1566,8 +1566,7 @@
     "pages": "Seiten",
     "amount": "Anzahl der Jobs",
     "radius": "Umkreis (km)",
-    "region": "Region",
-    "selectRegion": "Region auswählen",
+
     "advanced": "Erweitert",
     "scraping": "Scraping läuft",
     "startScrape": "Scraping starten",
@@ -1587,7 +1586,6 @@
     "boards": {
       "linkedin": "LinkedIn",
       "indeed": "Indeed",
-      "stepstone": "StepStone",
       "xing": "XING",
       "glassdoor": "Glassdoor",
       "arbeitsagentur": "Arbeitsagentur",
@@ -1596,7 +1594,6 @@
       "greenhouse": "Greenhouse",
       "lever": "Lever",
       "ashby": "Ashby",
-      "workday": "Workday",
       "smartrecruiters": "SmartRecruiters",
       "recruitee": "Recruitee",
       "personio": "Personio",
@@ -1608,25 +1605,6 @@
       "aggregator": "Aggregator"
     },
     "aggregatorKeyHint": "Fügen Sie Ihren kostenlosen Adzuna-Schlüssel in den Einstellungen hinzu, um die aggregierte Jobsuche zu aktivieren.",
-    "regions": {
-      "us": "🇺🇸 Vereinigte Staaten — indeed.com",
-      "de": "🇩🇪 Deutschland — de.indeed.com",
-      "uk": "🇬🇧 Vereinigtes Königreich — uk.indeed.com",
-      "fr": "🇫🇷 Frankreich — fr.indeed.com",
-      "at": "🇦🇹 Österreich — at.indeed.com",
-      "ch": "🇨🇭 Schweiz — ch.indeed.com",
-      "au": "🇦🇺 Australien — au.indeed.com",
-      "ca": "🇨🇦 Kanada — ca.indeed.com",
-      "nl": "🇳🇱 Niederlande — nl.indeed.com",
-      "be": "🇧🇪 Belgien — be.indeed.com",
-      "es": "🇪🇸 Spanien — es.indeed.com",
-      "it": "🇮🇹 Italien — it.indeed.com",
-      "pl": "🇵🇱 Polen — pl.indeed.com",
-      "br": "🇧🇷 Brasilien — br.indeed.com",
-      "in": "🇮🇳 Indien — in.indeed.com",
-      "sg": "🇸🇬 Singapur — sg.indeed.com",
-      "jp": "🇯🇵 Japan — jp.indeed.com"
-    },
     "disconnect": "Trennen",
     "selectAll": "Alle auswählen",
     "clearBoards": "Löschen",
@@ -1798,10 +1776,6 @@
         "scrapingZeroJobs": {
           "q": "Scraping startet, zeigt aber 0 Jobs nach Abschluss",
           "a": "Dies bedeutet normalerweise, dass die Suche keine passenden Ergebnisse zurückgegeben hat oder LinkedIn die Anfrage blockiert hat. Versuchen Sie eine breitere Suchanfrage (z.B. \"Ingenieur\" statt \"Senior Frontend Engineer React\"). Entfernen oder lockern Sie den Datumsfilter — \"Letzte 24 Stunden\" bei einer Nischenanfrage gibt oft 0 Ergebnisse. Verbinden Sie Ihr LinkedIn-Konto neu — unauthentifiziertes Scraping gibt weniger Ergebnisse zurück. Versuchen Sie, die Seiten auf 1 zu reduzieren, um zu testen, ob Ergebnisse zurückgegeben werden."
-        },
-        "indeedWrongCountry": {
-          "q": "Indeed zeigt Jobs aus dem falschen Land",
-          "a": "Indeed hat separate Jobbörsen pro Land. Beim Scraping: 1. Wählen Sie Indeed als Board im Scraping-Formular. 2. Ein Region-Dropdown erscheint — wählen Sie Ihr Land (z.B. \"Deutschland — de.indeed.com\"). 3. Das Standortfeld sollte der Sprache und dem Format der ausgewählten Region entsprechen."
         },
         "jobsDisappeared": {
           "q": "Gescrapte Jobs verschwanden nach Neustart der App",

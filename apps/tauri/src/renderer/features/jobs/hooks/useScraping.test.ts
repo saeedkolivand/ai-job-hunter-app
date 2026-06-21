@@ -46,7 +46,6 @@ function makeForm(overrides: Partial<ScrapeFormState> = {}): ScrapeFormState {
     radiusKm: 0,
     amount: 25,
     dateFilter: '',
-    locale: 'us',
     companies: [],
     ...overrides,
   };

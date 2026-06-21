@@ -61,7 +61,7 @@ describe('useBoardStatuses — LinkedIn routing', () => {
       'boards.getStatus': boardGetStatus,
     });
 
-    const { result } = renderHookWithClient(() => useBoardStatuses(['indeed']), { client });
+    const { result } = renderHookWithClient(() => useBoardStatuses(['arbeitsagentur']), { client });
 
     await waitFor(() => expect(result.current.results[0]?.isFetching).toBe(false));
 
@@ -76,7 +76,7 @@ describe('useBoardStatuses — anyConnected', () => {
       'boards.getStatus': vi.fn().mockResolvedValue({ connected: true }),
     });
 
-    const { result } = renderHookWithClient(() => useBoardStatuses(['indeed']), { client });
+    const { result } = renderHookWithClient(() => useBoardStatuses(['arbeitsagentur']), { client });
 
     await waitFor(() => expect(result.current.results[0]?.isSuccess).toBe(true));
 
@@ -89,9 +89,12 @@ describe('useBoardStatuses — anyConnected', () => {
       'boards.getStatus': vi.fn().mockResolvedValue({ connected: false }),
     });
 
-    const { result } = renderHookWithClient(() => useBoardStatuses(['linkedin', 'indeed']), {
-      client,
-    });
+    const { result } = renderHookWithClient(
+      () => useBoardStatuses(['linkedin', 'arbeitsagentur']),
+      {
+        client,
+      }
+    );
 
     // Wait until anyConnected flips to true — linkedin is connected:true so it must.
     await waitFor(() => expect(result.current.anyConnected).toBe(true));
@@ -103,9 +106,12 @@ describe('useBoardStatuses — anyConnected', () => {
       'boards.getStatus': vi.fn().mockResolvedValue({ connected: false }),
     });
 
-    const { result } = renderHookWithClient(() => useBoardStatuses(['linkedin', 'indeed']), {
-      client,
-    });
+    const { result } = renderHookWithClient(
+      () => useBoardStatuses(['linkedin', 'arbeitsagentur']),
+      {
+        client,
+      }
+    );
 
     await waitFor(() => expect(result.current.results.every((r) => r.isSuccess)).toBe(true));
 
@@ -118,7 +124,7 @@ describe('useBoardStatuses — anyConnected', () => {
     });
 
     const { result } = renderHookWithClient(
-      () => useBoardStatuses(['greenhouse', 'indeed', 'xing']),
+      () => useBoardStatuses(['greenhouse', 'arbeitsagentur', 'lever']),
       { client }
     );
 
