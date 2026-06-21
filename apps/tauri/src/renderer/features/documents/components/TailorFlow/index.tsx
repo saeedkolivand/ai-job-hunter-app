@@ -25,6 +25,14 @@ import { useTailorGeneration } from './useTailorGeneration';
 
 export type { TailorWizardState };
 
+// A short carried description (e.g. an Adzuna API snippet, ~200–400 chars) is
+// worth re-resolving: the URL fetch (which now follows the aggregator redirect)
+// may reach the fuller ad. Re-resolve when the carried text is short OR empty,
+// then prefer whichever description is longer.
+// ponytail: 800-char floor separates aggregator snippets from full ads; raise if
+// real full ads legitimately come in shorter.
+const SHORT_DESC_FLOOR = 800;
+
 type TailorFlowStage = 'configuring' | 'generating' | 'done';
 
 /**
@@ -134,11 +142,14 @@ export function TailorFlow({
   const [forceConfiguring, setForceConfiguring] = useState(false);
 
   const initialDesc = (job.description ?? '').trim();
-  const resolved = useResolveJobUrl(job.url, !initialDesc);
+  const resolved = useResolveJobUrl(job.url, initialDesc.length < SHORT_DESC_FLOOR);
   const fetchedDesc = (resolved.data?.description ?? '').trim();
   const [jobDescOverride, setJobDescOverride] = useState<string | null>(null);
-  const jobDesc = jobDescOverride ?? (initialDesc || fetchedDesc);
+  const jobDesc =
+    jobDescOverride ?? (fetchedDesc.length > initialDesc.length ? fetchedDesc : initialDesc);
   const hasDesc = jobDesc.length > 0;
+  // Show the loading state only when there's nothing to display yet (no snippet);
+  // with a snippet present it renders immediately and upgrades silently on fetch.
   const fetchingDesc = !initialDesc && resolved.isLoading;
 
   const gen = useTailorGeneration({

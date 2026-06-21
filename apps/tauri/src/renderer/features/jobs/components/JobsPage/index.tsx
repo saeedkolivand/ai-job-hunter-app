@@ -44,7 +44,7 @@ export function JobsPage() {
   const [showScrapeForm, setShowScrapeForm] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [scrapeForm, setScrapeForm] = useState<ScrapeFormState>({
-    boards: ['linkedin'],
+    boards: ['aggregator'],
     query: '',
     location: '',
     radiusKm: 0,

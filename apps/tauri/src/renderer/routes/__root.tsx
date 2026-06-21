@@ -1,4 +1,3 @@
-import { PanelLeft } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef } from 'react';
 import {
@@ -38,7 +37,6 @@ import {
   useOnboardingCompleted,
   usePreferencesStore,
   useSidebarCollapsed,
-  useToggleSidebar,
 } from '@/store/preferences-store';
 
 /** Drives the native-menu navigation/actions. Rendered INSIDE
@@ -117,9 +115,7 @@ function NotificationToastBridge() {
 
 function RootLayout() {
   const router = useRouter();
-  const { t } = useTranslation();
   const isCollapsed = useSidebarCollapsed();
-  const toggleSidebar = useToggleSidebar();
   const onboardingCompleted = useOnboardingCompleted();
   const setOnboardingComplete = usePreferencesStore((s) => s.setOnboardingComplete);
 
@@ -227,18 +223,6 @@ function RootLayout() {
                 )}
               </AnimatePresence>
               <div className="relative flex flex-1 overflow-hidden">
-                {isCollapsed && (
-                  <div className="absolute left-6 top-6 z-10">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={toggleSidebar}
-                      aria-label={t('nav.expandSidebar')}
-                    >
-                      <PanelLeft size={16} />
-                    </Button>
-                  </div>
-                )}
                 <main className="app-main glass-surface m-3 flex-1 overflow-hidden rounded-2xl">
                   <Outlet />
                 </main>

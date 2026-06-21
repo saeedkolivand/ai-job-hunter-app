@@ -348,13 +348,16 @@ fn adzuna_integer_id_deserializes_to_string() {
         }]
     });
 
-    let resp: AdzunaResp = serde_json::from_value(json)
-        .expect("integer id must deserialize without error");
+    let resp: AdzunaResp =
+        serde_json::from_value(json).expect("integer id must deserialize without error");
     let j = &resp.results[0];
     assert_eq!(j.id, "331705081");
     // Confirm the id maps correctly through the JobPosting formatting.
     assert_eq!(format!("adzuna-{}", j.id), "adzuna-331705081");
-    assert_eq!(format!("aggregator:adzuna-{}", j.id), "aggregator:adzuna-331705081");
+    assert_eq!(
+        format!("aggregator:adzuna-{}", j.id),
+        "aggregator:adzuna-331705081"
+    );
 }
 
 /// String `id` (original documented shape) must still deserialize correctly
@@ -375,8 +378,7 @@ fn adzuna_string_id_still_deserializes() {
         }]
     });
 
-    let resp: AdzunaResp = serde_json::from_value(json)
-        .expect("string id must still deserialize");
+    let resp: AdzunaResp = serde_json::from_value(json).expect("string id must still deserialize");
     assert_eq!(resp.results[0].id, "abc123");
 }
 
@@ -514,7 +516,9 @@ async fn adzuna_unconfigured_returns_err_without_network() {
         app_id: None,
         app_key: None,
     };
-    let result = p.search("engineer", "berlin", "de", None, make_token()).await;
+    let result = p
+        .search("engineer", "berlin", "de", None, make_token())
+        .await;
     assert!(result.is_err(), "unconfigured Adzuna must return Err");
     assert!(
         result.unwrap_err().to_string().contains("not configured"),
@@ -525,7 +529,9 @@ async fn adzuna_unconfigured_returns_err_without_network() {
 #[tokio::test]
 async fn jsearch_unconfigured_returns_err_without_network() {
     let p = JSearchProvider { api_key: None };
-    let result = p.search("engineer", "berlin", "de", None, make_token()).await;
+    let result = p
+        .search("engineer", "berlin", "de", None, make_token())
+        .await;
     assert!(result.is_err(), "unconfigured JSearch must return Err");
     assert!(
         result.unwrap_err().to_string().contains("not configured"),

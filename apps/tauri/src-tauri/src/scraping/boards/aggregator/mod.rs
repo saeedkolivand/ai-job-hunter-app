@@ -307,7 +307,10 @@ impl JobProvider for JSearchProvider {
             q_enc
         );
 
-        url.push_str(&format!("&date_posted={}", jsearch_date_posted(date_filter)));
+        url.push_str(&format!(
+            "&date_posted={}",
+            jsearch_date_posted(date_filter)
+        ));
 
         let result = fetch_json::<JSearchResp>(
             &url,
@@ -406,7 +409,10 @@ async fn search_with_providers(
     // Run primary if configured.
     if let Some(p) = primary {
         if p.is_configured() {
-            match p.search(query, location, country, date_filter, signal.clone()).await {
+            match p
+                .search(query, location, country, date_filter, signal.clone())
+                .await
+            {
                 Ok(items) => {
                     // Even empty → use result as-is; do NOT fall through to JSearch.
                     return Ok(dedupe(items));
@@ -427,7 +433,10 @@ async fn search_with_providers(
     // Try fallback.
     if let Some(f) = fallback {
         if f.is_configured() {
-            return f.search(query, location, country, date_filter, signal).await.map(dedupe);
+            return f
+                .search(query, location, country, date_filter, signal)
+                .await
+                .map(dedupe);
         }
     }
 

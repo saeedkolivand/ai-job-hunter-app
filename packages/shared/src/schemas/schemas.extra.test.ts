@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ApplicationTrackSchema,
   ApplicationUpdateSchema,
   AutopilotTargetSchema,
   AutopilotUpdateSchema,
@@ -202,6 +203,33 @@ describe('ApplicationUpdateSchema — jobDescription byte-level refine', () => {
     expect(() =>
       ApplicationUpdateSchema.parse({ id: 'app1', jobDescription: justUnder })
     ).not.toThrow();
+  });
+});
+
+describe('ApplicationTrackSchema — jobDescription carried from a posting', () => {
+  it('accepts a track request carrying a jobDescription', () => {
+    expect(() =>
+      ApplicationTrackSchema.parse({
+        jobUrl: 'https://example.com/job/1',
+        board: 'aggregator',
+        company: 'Acme',
+        title: 'Engineer',
+        jobDescription: 'Build things.',
+      })
+    ).not.toThrow();
+  });
+
+  it('accepts jobDescription absent (field is optional)', () => {
+    expect(() =>
+      ApplicationTrackSchema.parse({ jobUrl: 'https://example.com/job/1' })
+    ).not.toThrow();
+  });
+
+  it('rejects a jobDescription that exceeds 200 000 bytes', () => {
+    const overLimit = 'a'.repeat(200_001);
+    expect(() => ApplicationTrackSchema.parse({ jobDescription: overLimit })).toThrow(
+      /200000 bytes/
+    );
   });
 });
 

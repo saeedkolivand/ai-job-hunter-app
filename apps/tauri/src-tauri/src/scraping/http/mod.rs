@@ -291,7 +291,10 @@ pub async fn fetch_json<T: for<'de> serde::Deserialize<'de>>(
         .unwrap_or_else(|_| "<unparseable-url>".to_string());
 
     if res.status_code < 200 || res.status_code >= 300 {
-        log::warn!("[scraping::http] non-2xx HTTP {} for {safe_url}", res.status_code);
+        log::warn!(
+            "[scraping::http] non-2xx HTTP {} for {safe_url}",
+            res.status_code
+        );
         return Ok(None);
     }
 

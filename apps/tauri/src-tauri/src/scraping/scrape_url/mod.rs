@@ -346,7 +346,9 @@ async fn generic_html(url: &str) -> Result<Option<JobPosting>> {
     // DNS-rebinding TOCTOU); a rejected/unsafe host is treated as "no scraper
     // matched" so the paste-a-URL flow degrades gracefully (the bridge then
     // replies a clean "could not parse" import error).
-    let res = match crate::net::http::get_guarded(url).await {
+    // Follow redirects (e.g. an aggregator `redirect_url` that bounces to the real
+    // posting) — each hop is re-validated by get_guarded, capped to a few hops.
+    let res = match crate::net::http::get_guarded_following_redirects(url, 5).await {
         Ok(r) => r,
         Err(_) => return Ok(None),
     };
