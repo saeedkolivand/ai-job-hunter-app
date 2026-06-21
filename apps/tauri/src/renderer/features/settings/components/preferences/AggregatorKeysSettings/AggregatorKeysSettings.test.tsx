@@ -7,15 +7,17 @@
  *  - not connected: toggling show/hide changes input type.
  *  - not connected: Save calls setProviderKey after typing a value.
  *  - not connected: Save is a no-op (disabled) when input is blank.
+ *  - not connected: Save does NOT call mutateAsync when setProviderKey.isPending (re-entrancy guard).
  *  - connected: stored-key badge shown; Remove button present.
  *  - connected: clicking Remove opens the confirm modal.
  *  - connected: confirming Remove calls removeProviderKey.
+ *  - connected: Remove does NOT call mutateAsync when removeProviderKey.isPending (re-entrancy guard).
  *
  * Service hooks are stubbed at the boundary; the real @ajh/ui tree is used
  * (only useNotification is overridden to avoid a Notification provider).
  */
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type * as AjhUi from '@ajh/ui';
@@ -23,6 +25,19 @@ import type * as AjhUi from '@ajh/ui';
 // ── mutable key-state so tests can flip connected/disconnected per slot ────
 
 const keyState: Record<string, boolean> = {};
+
+// ── per-test pending-state overrides ──────────────────────────────────────
+// Default: not pending. Tests that probe the re-entrancy guard flip these.
+
+let setIsPending = false;
+let removeIsPending = false;
+
+afterEach(() => {
+  for (const k of Object.keys(keyState)) delete keyState[k];
+  setIsPending = false;
+  removeIsPending = false;
+  vi.clearAllMocks();
+});
 
 // ── i18n stub ──────────────────────────────────────────────────────────────
 
@@ -56,8 +71,8 @@ const mockRemoveMutateAsync = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('@/services', () => ({
   useHasProviderKey: (slot: string) => ({ data: { has: keyState[slot] ?? false } }),
-  useSetProviderKey: () => ({ mutateAsync: mockSetMutateAsync, isPending: false }),
-  useRemoveProviderKey: () => ({ mutateAsync: mockRemoveMutateAsync, isPending: false }),
+  useSetProviderKey: () => ({ mutateAsync: mockSetMutateAsync, isPending: setIsPending }),
+  useRemoveProviderKey: () => ({ mutateAsync: mockRemoveMutateAsync, isPending: removeIsPending }),
   useOpenExternal: () => ({ mutateAsync: vi.fn() }),
 }));
 
@@ -144,6 +159,32 @@ describe('AggregatorKeysSettings — not connected', () => {
     expect(mockSetMutateAsync).not.toHaveBeenCalled();
   });
 
+  it('does NOT call setProviderKey.mutateAsync when isPending (save re-entrancy guard)', async () => {
+    // Simulate a mutation already in-flight so handleSave's early-return fires.
+    setIsPending = true;
+    mockSetMutateAsync.mockClear();
+    const user = userEvent.setup();
+    const { container } = render(<AggregatorKeysSettings />);
+
+    const inputs = getPasswordInputs(container);
+    const firstInput = inputs[0];
+    if (!firstInput) throw new Error('No password input found');
+    // Type a value so the blank-input guard doesn't fire instead.
+    await user.type(firstInput, 'pending-key');
+
+    // Trigger via Enter key (the other branch of the save path).
+    await user.keyboard('{Enter}');
+
+    // The Save button click path:
+    const saveButtons = screen.getAllByRole('button', { name: /settings\.aggregatorKeys\.save/i });
+    const firstSave = saveButtons[0];
+    if (!firstSave) throw new Error('No Save button found');
+    await user.click(firstSave);
+
+    // Neither trigger should have reached mutateAsync.
+    expect(mockSetMutateAsync).not.toHaveBeenCalled();
+  });
+
   it('shows the generic saveError i18n message (not raw error) when save mutation rejects', async () => {
     mockSetMutateAsync.mockRejectedValueOnce(
       new Error('keyring: /home/user/.local/share/keyrings/secret')
@@ -179,8 +220,6 @@ describe('AggregatorKeysSettings — connected state', () => {
     render(<AggregatorKeysSettings />);
 
     expect(screen.getByText('settings.aggregatorKeys.adzunaAppId.connected')).toBeInTheDocument();
-
-    delete keyState['adzuna-app-id'];
   });
 
   it('shows a Remove button when a slot has a key', () => {
@@ -191,8 +230,6 @@ describe('AggregatorKeysSettings — connected state', () => {
     expect(
       screen.getAllByRole('button', { name: /settings\.aggregatorKeys\.remove/i }).length
     ).toBeGreaterThanOrEqual(1);
-
-    delete keyState['adzuna-app-id'];
   });
 
   it('clicking Remove opens the confirm modal', async () => {
@@ -209,13 +246,10 @@ describe('AggregatorKeysSettings — connected state', () => {
     await user.click(firstRemove);
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-
-    delete keyState['adzuna-app-id'];
   });
 
   it('calls removeProviderKey with the correct slot on modal confirm', async () => {
     keyState['adzuna-app-id'] = true;
-    mockRemoveMutateAsync.mockClear();
     const user = userEvent.setup();
 
     render(<AggregatorKeysSettings />);
@@ -238,14 +272,44 @@ describe('AggregatorKeysSettings — connected state', () => {
     await waitFor(() =>
       expect(mockRemoveMutateAsync).toHaveBeenCalledWith({ provider: 'adzuna-app-id' })
     );
+  });
 
-    delete keyState['adzuna-app-id'];
+  it('does NOT call removeProviderKey.mutateAsync when isPending (remove re-entrancy guard)', async () => {
+    // Put a slot in connected state so the Remove button renders.
+    keyState['adzuna-app-id'] = true;
+    // Simulate a removal already in-flight so handleRemove's early-return fires.
+    removeIsPending = true;
+    mockRemoveMutateAsync.mockClear();
+    const user = userEvent.setup();
+
+    render(<AggregatorKeysSettings />);
+
+    // Open the confirm modal via the Remove trigger button.
+    const removeButtons = screen.getAllByRole('button', {
+      name: /settings\.aggregatorKeys\.remove/i,
+    });
+    const firstRemove = removeButtons[0];
+    if (!firstRemove) throw new Error('No Remove button found');
+    await user.click(firstRemove);
+
+    // Confirm modal is open. The confirm button is disabled (isConfirming=true),
+    // so userEvent ignores it. Use fireEvent to bypass the disabled attribute and
+    // directly invoke the onClick handler — this is the scenario the re-entrancy
+    // guard defends against (programmatic / rapid double-submit while in-flight).
+    const dialog = screen.getByRole('dialog');
+    const confirmBtn = Array.from(dialog.querySelectorAll('button')).find((b) =>
+      /settings\.aggregatorKeys\.remove/i.test(b.textContent ?? '')
+    );
+    if (!confirmBtn) throw new Error('Confirm button not found in modal');
+    fireEvent.click(confirmBtn);
+
+    // handleRemove returned early at the isPending guard — mutateAsync must not fire.
+    expect(mockRemoveMutateAsync).not.toHaveBeenCalled();
   });
 
   it('shows the removeError i18n message (not raw error) when remove mutation rejects', async () => {
     keyState['adzuna-app-id'] = true;
     mockRemoveMutateAsync.mockRejectedValueOnce(new Error('keyring: permission denied'));
-    mockNotify.error.mockClear();
     const user = userEvent.setup();
 
     render(<AggregatorKeysSettings />);
@@ -269,7 +333,5 @@ describe('AggregatorKeysSettings — connected state', () => {
     expect(call?.[0]).toEqual({ message: 'settings.aggregatorKeys.removeError' });
     // raw error text must never reach the notification
     expect(call?.[0]).not.toMatchObject({ message: expect.stringContaining('keyring') });
-
-    delete keyState['adzuna-app-id'];
   });
 });

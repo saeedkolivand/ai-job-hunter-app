@@ -43,7 +43,7 @@ function AggregatorKeyField({
   const [confirmRemove, setConfirmRemove] = useState(false);
 
   const handleSave = async () => {
-    if (!apiKey.trim()) return;
+    if (saving || setProviderKey.isPending || !apiKey.trim()) return;
     setSaving(true);
     try {
       await setProviderKey.mutateAsync({ provider: slot, apiKey: apiKey.trim() });
@@ -57,6 +57,7 @@ function AggregatorKeyField({
   };
 
   const handleRemove = async () => {
+    if (removeProviderKey.isPending) return;
     setConfirmRemove(false);
     try {
       await removeProviderKey.mutateAsync({ provider: slot });
