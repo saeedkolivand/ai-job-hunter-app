@@ -9,6 +9,9 @@
  *   - connect-pending → spinner shown, button disabled
  *   - connect click → calls the appropriate mutate (generic board, not linkedin)
  *   - linkedin → routes to linkedin-specific hooks, not generic board hooks
+ *   - required=true → font-semibold, text-amber-400 (not amber-300), aria-describedby hint
+ *   - optional chip → text-[11px] matching required chip size
+ *   - plural skippedNote handled at call site (count plumbing tested in JobsPage)
  *
  * All service hooks are module-mocked so the chip renders in isolation.
  */
@@ -198,5 +201,137 @@ describe('BoardConnectChip — linkedin · connected', () => {
 
     expect(linkedInDisconnectRef.mutateAsync).toHaveBeenCalled();
     expect(boardDisconnectRef.mutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// required=true variant — "Sign in to enable" CTA
+// ---------------------------------------------------------------------------
+
+describe('BoardConnectChip — required=true · not connected', () => {
+  it('renders aria-label containing loginToEnable key (not connectBoard key)', () => {
+    resetRefs();
+    render(<BoardConnectChip board="indeed" required />);
+
+    const btn = screen.getByRole('button', {
+      name: /jobs\.needsLogin\.loginToEnable.*jobs\.boards\.indeed/,
+    });
+    expect(btn).toBeInTheDocument();
+  });
+
+  it('renders the "Sign in to enable" suffix text (visible span, not sr-only hint)', () => {
+    resetRefs();
+    render(<BoardConnectChip board="indeed" required />);
+
+    // The visible suffix span contains exactly "loginToEnable", not "loginToEnableHint".
+    // Use getAllByText and assert the non-sr-only instance exists.
+    const matches = screen.getAllByText(/jobs\.needsLogin\.loginToEnable/);
+    const visibleMatch = matches.find((el) => !el.classList.contains('sr-only'));
+    expect(visibleMatch).toBeInTheDocument();
+  });
+
+  it('renders an sr-only hint linked via aria-describedby (a11y: keyboard/SR accessible)', () => {
+    resetRefs();
+    render(<BoardConnectChip board="indeed" required />);
+
+    const btn = screen.getByRole('button', {
+      name: /jobs\.needsLogin\.loginToEnable/,
+    });
+    // aria-describedby must point to an element that exists in the DOM
+    const describedById = btn.getAttribute('aria-describedby');
+    expect(describedById).toBeTruthy();
+    // describedById is asserted truthy above, so the getElementById call is safe.
+    const hintEl = describedById ? document.getElementById(describedById) : null;
+    expect(hintEl).toBeInTheDocument();
+    // The hint element carries the loginToEnableHint key text
+    expect(hintEl?.textContent).toMatch(/jobs\.needsLogin\.loginToEnableHint/);
+  });
+
+  it('does NOT have a title attribute (hint moved to aria-describedby)', () => {
+    resetRefs();
+    render(<BoardConnectChip board="indeed" required />);
+
+    const btn = screen.getByRole('button', {
+      name: /jobs\.needsLogin\.loginToEnable/,
+    });
+    // title-only hints are inaccessible to keyboard/SR — must be absent
+    expect(btn).not.toHaveAttribute('title');
+  });
+
+  it('uses font-semibold (600) not font-medium (500) on the required CTA', () => {
+    resetRefs();
+    render(<BoardConnectChip board="indeed" required />);
+
+    const btn = screen.getByRole('button', {
+      name: /jobs\.needsLogin\.loginToEnable/,
+    });
+    // font-semibold maps to Tailwind's font-weight-600 class
+    expect(btn.className).toContain('font-semibold');
+    expect(btn.className).not.toContain('font-medium');
+  });
+
+  it('uses text-amber-400 (not text-amber-300) for WCAG AA in light mode', () => {
+    resetRefs();
+    render(<BoardConnectChip board="indeed" required />);
+
+    const btn = screen.getByRole('button', {
+      name: /jobs\.needsLogin\.loginToEnable/,
+    });
+    expect(btn.className).toContain('text-amber-400');
+    expect(btn.className).not.toContain('text-amber-300');
+  });
+
+  it('calls boardConnect.mutateAsync when the required CTA is clicked', async () => {
+    resetRefs();
+    render(<BoardConnectChip board="indeed" required />);
+
+    const btn = screen.getByRole('button', {
+      name: /jobs\.needsLogin\.loginToEnable/,
+    });
+    await userEvent.click(btn);
+
+    expect(boardConnectRef.mutateAsync).toHaveBeenCalledWith('indeed');
+  });
+
+  it('disables the required CTA and shows spinner when connectPending', () => {
+    resetRefs();
+    boardConnectRef.isPending = true;
+    render(<BoardConnectChip board="indeed" required />);
+
+    const btn = screen.getByRole('button', {
+      name: /jobs\.needsLogin\.loginToEnable/,
+    });
+    expect(btn).toBeDisabled();
+  });
+});
+
+describe('BoardConnectChip — required=true · connected', () => {
+  it('renders the connected state (same green pill) regardless of required prop', () => {
+    resetRefs();
+    boardStatusRef.data = { connected: true };
+    render(<BoardConnectChip board="indeed" required />);
+
+    expect(screen.getByText('jobs.boards.indeed')).toBeInTheDocument();
+    const disconnectBtn = screen.getByRole('button', {
+      name: /jobs\.disconnect.*jobs\.boards\.indeed/,
+    });
+    expect(disconnectBtn).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Chip size consistency — optional chip must be text-[11px] to match required
+// ---------------------------------------------------------------------------
+
+describe('BoardConnectChip — chip size consistency', () => {
+  it('optional chip uses text-[11px] (matching required chip size)', () => {
+    resetRefs();
+    render(<BoardConnectChip board="indeed" />);
+
+    const btn = screen.getByRole('button', {
+      name: /jobs\.needsLogin\.connectBoard/,
+    });
+    // Both optional and required chips are text-[11px]; shape differs intentionally.
+    expect(btn.className).toContain('text-[11px]');
   });
 });

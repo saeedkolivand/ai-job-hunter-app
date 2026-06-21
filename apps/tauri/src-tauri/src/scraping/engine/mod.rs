@@ -41,6 +41,9 @@ pub struct BoardScrapeSummary {
     pub count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Set when the board was skipped without running (e.g. `"needs-login"`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skipped: Option<String>,
 }
 
 /// Maximum number of distinct boards processed per `scrape_boards` call.
@@ -282,15 +285,22 @@ impl ScraperEngine {
         on_progress: Option<Arc<dyn Fn(f32) + Send + Sync>>,
         on_item: Option<Arc<dyn Fn(JobPosting) + Send + Sync>>,
     ) -> anyhow::Result<(Vec<JobPosting>, Vec<BoardScrapeSummary>)> {
-        self.scrape_boards_with_resolver(boards, input, job_id, on_progress, on_item, |id| {
-            super::boards::get(id).ok_or_else(|| anyhow::anyhow!("Unknown board: {id}"))
-        })
+        self.scrape_boards_with_resolver(
+            boards,
+            input,
+            job_id,
+            on_progress,
+            on_item,
+            &crate::platform::config::data_dir(),
+            |id| super::boards::get(id).ok_or_else(|| anyhow::anyhow!("Unknown board: {id}")),
+        )
         .await
     }
 
     /// Test-only resolver seam: identical to `scrape_boards` but accepts a
-    /// caller-supplied `resolve` function so tests can inject fake scrapers
-    /// without touching the real `boards::get` registry.
+    /// caller-supplied `resolve` function and an explicit `data_dir` so tests
+    /// can inject fake scrapers and an isolated tempdir without touching the
+    /// real `boards::get` registry or `crate::platform::config::data_dir()`.
     #[doc(hidden)]
     pub(crate) async fn scrape_boards_with_resolver<F>(
         &self,
@@ -299,6 +309,7 @@ impl ScraperEngine {
         job_id: String,
         on_progress: Option<Arc<dyn Fn(f32) + Send + Sync>>,
         on_item: Option<Arc<dyn Fn(JobPosting) + Send + Sync>>,
+        data_dir: &std::path::Path,
         resolve: F,
     ) -> anyhow::Result<(Vec<JobPosting>, Vec<BoardScrapeSummary>)>
     where
@@ -353,8 +364,41 @@ impl ScraperEngine {
             })
             .collect();
 
+        // Short-circuit: skip Required boards that have no usable session.
+        // Skipped boards never enter run_boards (no fetch, no browser_sem acquire).
+        // Use a position-indexed Option<BoardScrapeSummary> so skips are slotted
+        // at their original index and the final flatten preserves input order.
+        let n = resolved.len();
+        let mut slot_summaries: Vec<Option<BoardScrapeSummary>> = (0..n).map(|_| None).collect();
+        let mut runnable: Vec<(String, anyhow::Result<&'static dyn Scraper>)> = Vec::new();
+        // Map board name → original index for filling run results later.
+        let mut name_to_idx: HashMap<String, usize> = HashMap::new();
+
+        for (idx, (id, scraper)) in resolved.into_iter().enumerate() {
+            let should_skip = scraper
+                .as_ref()
+                .ok()
+                .map(|s| {
+                    s.auth() == AuthRequirement::Required
+                        && (super::board_login::load_cookies(data_dir, &id).is_empty()
+                            || super::board_login::session_is_stale(data_dir, &id))
+                })
+                .unwrap_or(false); // unknown-board Err → run through normal error path
+            if should_skip {
+                slot_summaries[idx] = Some(BoardScrapeSummary {
+                    board: id,
+                    count: 0,
+                    error: None,
+                    skipped: Some("needs-login".into()),
+                });
+            } else {
+                name_to_idx.insert(id.clone(), idx);
+                runnable.push((id, scraper));
+            }
+        }
+
         let results = Self::run_boards(
-            resolved,
+            runnable,
             input,
             parent.clone(),
             on_progress,
@@ -370,32 +414,39 @@ impl ScraperEngine {
         }
 
         let mut all_postings: Vec<JobPosting> = Vec::new();
-        let mut summaries: Vec<BoardScrapeSummary> = Vec::new();
         // F6 — true only when at least one board returned a non-empty Ok.
         let mut any_recovered_items = false;
 
+        // Fill run results back into their original positions.
         for (board, res) in results {
+            let idx = name_to_idx[&board];
             match res {
                 Ok(postings) => {
                     if !postings.is_empty() {
                         any_recovered_items = true;
                     }
-                    summaries.push(BoardScrapeSummary {
+                    slot_summaries[idx] = Some(BoardScrapeSummary {
                         board,
                         count: postings.len(),
                         error: None,
+                        skipped: None,
                     });
                     all_postings.extend(postings);
                 }
                 Err(e) => {
-                    summaries.push(BoardScrapeSummary {
+                    slot_summaries[idx] = Some(BoardScrapeSummary {
                         board,
                         count: 0,
                         error: Some(e.to_string()),
+                        skipped: None,
                     });
                 }
             }
         }
+
+        // Flatten in input order — every slot is now Some (skips were filled above,
+        // run results were filled by name_to_idx lookup).
+        let summaries: Vec<BoardScrapeSummary> = slot_summaries.into_iter().flatten().collect();
 
         // F6 — return Err only when the user cancelled AND no items were recovered.
         // A board returning Ok([]) after observing cancellation is not a success.

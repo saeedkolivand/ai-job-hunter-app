@@ -1,7 +1,7 @@
 import { ListFilter, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import type { DATE_FILTER_OPTIONS } from '@ajh/shared';
+import type { BoardScrapeSummary, DATE_FILTER_OPTIONS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, ConfirmModal, Dropdown, Input, useNotification } from '@ajh/ui';
 
@@ -106,12 +106,11 @@ export function JobsPage() {
     }
 
     if (ev.type === 'job.completed') {
-      // Read per-board summary to surface partial failures.
-      const completedData = ev.data as
-        | { boards?: { board: string; count: number; error?: string }[] }
-        | undefined;
+      // Read per-board summary to surface partial failures and skipped boards.
+      const completedData = ev.data as { boards?: BoardScrapeSummary[] } | undefined;
       const boardSummaries = Array.isArray(completedData?.boards) ? completedData.boards : [];
       const failedBoards = boardSummaries.filter((b) => b.error);
+      const skippedBoards = boardSummaries.filter((b) => b.skipped === 'needs-login');
       let note: string | undefined;
       if (failedBoards.length > 0) {
         const total = boardSummaries.length;
@@ -125,6 +124,19 @@ export function JobsPage() {
       }
       noteScrapeFinished(ev.jobId, { ok: true, note });
       void invalidatePostings();
+      // Surface skipped-due-to-login boards as a distinct warning notification
+      // so the user knows why a board returned 0 results.
+      if (skippedBoards.length > 0) {
+        const boardNames = skippedBoards.map((b) => t(`jobs.boards.${b.board}`)).join(', ');
+        notify.warning({
+          message: t('jobs.needsLogin.skippedNote', {
+            boards: boardNames,
+            count: skippedBoards.length,
+          }),
+          // Sticky: diagnostic notification requires user action (sign in to that board).
+          duration: 0,
+        });
+      }
     } else if (ev.type === 'job.failed') {
       noteScrapeFinished(ev.jobId, {
         ok: false,
