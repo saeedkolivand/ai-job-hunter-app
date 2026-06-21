@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::now_ms;
 use crate::error::{AppError, AppResult};
 
-const SERVICE: &str = "com.ajh.tauri";
+pub(crate) const SERVICE: &str = "com.ajh.tauri";
 
 /// Initialise the OS-native keyring backend. Must be called once before any
 /// `Entry` operations. Returns [`AppError::Storage`] if the platform secret
@@ -169,6 +169,59 @@ impl CredentialStore {
         self.cache.lock().0 = Some(meta);
         Ok(())
     }
+}
+
+/// Read a single credential directly from the OS keychain by its full `slot`
+/// name (e.g. `"ai:adzuna-app-key"`), without needing an `AppHandle` or the
+/// metadata cache.
+///
+/// Returns:
+/// - `Ok(Some(value))` — credential found and non-empty.
+/// - `Ok(None)` — credential not set or stored empty (`NoEntry`).
+/// - `Err(AppError::Storage)` — OS keyring is unavailable (locked store,
+///   permission denied, etc.); this is a genuine fault, NOT "key absent".
+///
+/// Caller policy for the `Err` case:
+/// - **Critical keys** (a credential the operation cannot proceed without)
+///   should surface the `Err` so the user learns the keyring is broken, rather
+///   than silently behaving as if the key were unset.
+/// - **Optional keys** (e.g. the aggregator's third-party Adzuna / JSearch API
+///   keys) may degrade gracefully: log the error and treat the key as absent
+///   (`None`). Never crash a user-triggered action over a missing or unreadable
+///   optional key — the board simply yields keyless-empty results.
+///
+/// Workers (scrapers, autopilot tasks) that have no `AppHandle` use this
+/// instead of `get_provider_key`; it reuses the same keyring backend
+/// initialized at startup by [`init_keyring`].
+pub fn read_credential(slot: &str) -> AppResult<Option<String>> {
+    let entry = Entry::new(SERVICE, slot)
+        .map_err(|e| AppError::Storage(format!("keyring entry error for {slot}: {e}")))?;
+    match entry.get_password() {
+        Ok(pw) => Ok(if pw.is_empty() { None } else { Some(pw) }),
+        Err(keyring_core::Error::NoEntry) => Ok(None),
+        Err(e) => Err(AppError::Storage(format!(
+            "keyring read error for {slot}: {e}"
+        ))),
+    }
+}
+
+/// Test-only keyring harness shared across the workspace's unit tests.
+///
+/// `keyring_core::set_default_store` installs a PROCESS-GLOBAL store, and Cargo
+/// runs the lib test binary multi-threaded. To avoid one test replacing the
+/// store out from under another (which would orphan already-created mock
+/// `Cred`s), every test that needs the keyring goes through this single `Once`,
+/// installing keyring-core's in-memory `mock::Store` exactly once for the whole
+/// binary. Tests then isolate themselves by using unique slot names rather than
+/// by swapping stores. Lives here (not in `test.rs`) so sibling modules like the
+/// aggregator can share the same install path.
+#[cfg(test)]
+pub(crate) fn install_mock_keyring() {
+    use std::sync::Once;
+    static INSTALL: Once = Once::new();
+    INSTALL.call_once(|| {
+        keyring_core::set_default_store(keyring_core::mock::Store::new().unwrap());
+    });
 }
 
 #[cfg(test)]
