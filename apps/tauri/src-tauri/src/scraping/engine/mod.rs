@@ -379,9 +379,14 @@ impl ScraperEngine {
                 .as_ref()
                 .ok()
                 .map(|s| {
-                    s.auth() == AuthRequirement::Required
-                        && (super::board_login::load_cookies(data_dir, &id).is_empty()
-                            || super::board_login::session_is_stale(data_dir, &id))
+                    if s.auth() != AuthRequirement::Required {
+                        return false;
+                    }
+                    // Skip when: no cookies, OR no valid connected status (file
+                    // missing / connected:false / connected_at absent), OR stale.
+                    super::board_login::load_cookies(data_dir, &id).is_empty()
+                        || super::board_login::session_age_ms(data_dir, &id).is_none()
+                        || super::board_login::session_is_stale(data_dir, &id)
                 })
                 .unwrap_or(false); // unknown-board Err → run through normal error path
             if should_skip {

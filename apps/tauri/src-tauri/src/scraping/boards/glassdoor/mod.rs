@@ -61,7 +61,7 @@ impl Scraper for GlassdoorScraper {
         // browser_sem, so no profile-lock contention in practice.
         let data_dir = crate::platform::config::data_dir();
         let profile = crate::scraping::board_login::profile_dir(&data_dir, "glassdoor");
-        std::fs::create_dir_all(&profile).ok();
+        tokio::fs::create_dir_all(&profile).await.ok();
 
         let mut builder = BrowserConfig::builder()
             .window_size(1920, 1080)
