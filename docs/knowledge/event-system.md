@@ -40,6 +40,18 @@ Centralized, one-way event channels — the complement to IPC request/response (
 
 **Convention:** Use `dispatch_menu` for local window broadcasts in `tray/mod.rs` (identity-free tray/window distinction); all other paths use centralized `emit_event`.
 
+## Cold-start deep-link buffering
+
+When a deep link (e.g. `ajh://autopilot/<id>`) or menu action fires during Tauri setup, before the renderer's JS event listeners attach, the emitted event is lost. Mitigate with a **buffer + pull pattern**:
+
+1. Shell-side: `app.manage(Buffer<T>)` at the earliest point in setup (before any write path runs)
+2. Write path: write intent to buffer BEFORE emit
+3. Renderer: on mount (and on window focus/visibility-restore), call `takePendingIntent()` to atomically take and clear
+
+Examples: `menu.takePending()` (menu + action intents), `autopilot.takePendingFocus()` (focus target id). Both use the same pattern.
+
+**Critical ordering:** The buffer must be app-managed at the point the EARLIEST write can occur, which may be well before the buffer is consumed. Placing `app.manage()` inside a late builder (e.g. `tray::build`) will silently no-op any write that fires before the builder runs.
+
 ## Renderer consumption
 
 **Tauri-client namespaces:** `apps/tauri/src/tauri-client/namespaces/**`
