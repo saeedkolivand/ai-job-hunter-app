@@ -15,8 +15,9 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/dom';
 import { render } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
-import type { MatchScore } from '@ajh/shared';
+import { type MatchScore, PROVIDER_SLOTS } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 
 // ── i18n stub — identity t() so we assert on keys ─────────────────────────────
@@ -25,28 +26,41 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 
-// ── router stub — navigate is a no-op spy ─────────────────────────────────────
+// ── router stub — navigate is a captured spy so tests can assert calls ────────
 
+const mockNavigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({
-  useRouter: () => ({ navigate: vi.fn() }),
+  useRouter: () => ({ navigate: mockNavigate }),
 }));
 
-// ── session-store stub — setSettings is a no-op spy ──────────────────────────
+// ── session-store stub — setSettings is a captured spy ───────────────────────
 
+const mockSetSettings = vi.fn();
 vi.mock('@/store/session-store', () => ({
-  useSessionStore: (sel: (s: { setSettings: () => void }) => unknown) =>
-    sel({ setSettings: vi.fn() }),
+  useSessionStore: (sel: (s: { setSettings: typeof mockSetSettings }) => unknown) =>
+    sel({ setSettings: mockSetSettings }),
 }));
 
-// ── useHasProviderKey stub — keys present + resolved by default ───────────────
+// ── useHasProviderKey stub — per-provider map so the wrong slot fails ─────────
 //
-// isSuccess must be true for the new guard (keysKnown) to let missingAdzunaKeys
-// become true.  stubbedKeyIsSuccess=false simulates the query still loading.
+// The component calls useHasProviderKey(PROVIDER_SLOTS.adzunaAppId, ...) and
+// useHasProviderKey(PROVIDER_SLOTS.adzunaAppKey, ...) separately. A shared
+// scalar would pass even if the component queried the wrong slot, so we use a
+// per-provider map keyed by slot name. Missing slots default to false.
+//
+// stubbedKeyIsSuccess=false simulates the queries still loading; missingAdzunaKeys
+// stays false so the generic empty-state is shown (no false-positive "add keys" flash).
 
-let stubbedHasKey = true;
+let stubbedHasByProvider: Record<string, boolean> = {
+  [PROVIDER_SLOTS.adzunaAppId]: true,
+  [PROVIDER_SLOTS.adzunaAppKey]: true,
+};
 let stubbedKeyIsSuccess = true;
 vi.mock('@/services/use-ai-provider', () => ({
-  useHasProviderKey: () => ({ data: { has: stubbedHasKey }, isSuccess: stubbedKeyIsSuccess }),
+  useHasProviderKey: (provider: string) => ({
+    data: { has: stubbedHasByProvider[provider] ?? false },
+    isSuccess: stubbedKeyIsSuccess,
+  }),
 }));
 
 // ── useJobMatchScores stub — module-level ref set BEFORE each render ───────────
@@ -165,8 +179,13 @@ function rowOrder(): string[] {
 
 beforeEach(() => {
   stubbedQuery = { scoresById: new Map(), isPending: false, isError: false };
-  stubbedHasKey = true;
+  stubbedHasByProvider = {
+    [PROVIDER_SLOTS.adzunaAppId]: true,
+    [PROVIDER_SLOTS.adzunaAppKey]: true,
+  };
   stubbedKeyIsSuccess = true;
+  mockNavigate.mockClear();
+  mockSetSettings.mockClear();
 });
 
 describe('JobsResults — gating', () => {
@@ -250,7 +269,8 @@ describe('JobsResults — no résumé', () => {
   });
 
   it('shows the Adzuna-keys CTA when the list is empty and keys are missing', () => {
-    stubbedHasKey = false;
+    stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppId] = false;
+    stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppKey] = false;
     renderResults({ filtered: [], resumeId: null });
 
     // Secondary message and settings CTA are shown instead of the generic scrape CTA.
@@ -260,7 +280,7 @@ describe('JobsResults — no résumé', () => {
   });
 
   it('shows the generic CTA when the list is empty and keys are present', () => {
-    stubbedHasKey = true;
+    // stubbedHasByProvider defaults to both true in beforeEach — no override needed
     renderResults({ filtered: [], resumeId: null });
 
     expect(screen.getByText('jobs.emptyCta')).toBeInTheDocument();
@@ -271,7 +291,8 @@ describe('JobsResults — no résumé', () => {
     // isSuccess=false means the query has not resolved yet — keys may exist but
     // we don't know.  missingAdzunaKeys must be false so the generic empty-state
     // is shown, preventing a false-positive "add keys" flash.
-    stubbedHasKey = false; // would trigger CTA if isSuccess were true
+    stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppId] = false; // would trigger CTA if isSuccess were true
+    stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppKey] = false;
     stubbedKeyIsSuccess = false; // queries unresolved / loading
     renderResults({ filtered: [], resumeId: null });
 
@@ -282,11 +303,32 @@ describe('JobsResults — no résumé', () => {
   it('wraps the empty-state variant swap in a live region so AT users hear the change', () => {
     // The missingAdzunaKeys → keys-present swap replaces the EmptyState in place;
     // a single polite live region around both variants announces the new text.
-    stubbedHasKey = false;
+    stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppId] = false;
+    stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppKey] = false;
     const { container } = renderResults({ filtered: [], resumeId: null });
 
     const live = container.querySelector('[role="status"][aria-live="polite"]');
     expect(live).not.toBeNull();
     expect(live).toHaveTextContent('jobs.emptyNoAdzunaKeys');
+  });
+
+  it('clicking the missing-keys CTA calls setSettings({activeSection:"job"}) and navigates to /settings', async () => {
+    // Arrange: show the Adzuna-keys empty state (empty list, both slots missing, resolved).
+    stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppId] = false;
+    stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppKey] = false;
+    renderResults({ filtered: [], resumeId: null });
+
+    // The CTA button text is the i18n key (identity t()).
+    const cta = screen.getByText('jobs.emptyNoAdzunaKeysCta');
+    expect(cta).toBeInTheDocument();
+
+    // Act: click via user-event (fires real pointer + keyboard events).
+    await userEvent.click(cta);
+
+    // Assert: session store receives the correct section, then router navigates.
+    expect(mockSetSettings).toHaveBeenCalledOnce();
+    expect(mockSetSettings).toHaveBeenCalledWith({ activeSection: 'job' });
+    expect(mockNavigate).toHaveBeenCalledOnce();
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/settings' });
   });
 });
