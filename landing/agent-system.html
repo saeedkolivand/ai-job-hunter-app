@@ -573,6 +573,7 @@ footer{margin-top:64px; text-align:center}
     cross: [
       ['cleanup','cross','Dead-code audit across the TS/React + Rust monorepo — unused files, exports, deps. Report-first; safe-tier deletes only after confirmation.','runs immediately before <b>project-steward</b>','whole monorepo','/cleanup after the feature lands.'],
       ['project-steward','cross','Sole owner of docs, the knowledge base, ADRs, the lessons log, and release — the only agent that persists lessons.','closes every task','docs/** · docs/knowledge/** · landing/** · release config','/update-docs to sync docs + graphify after the change.'],
+      ['pr-reviewer','cross','Strict generalist PRE-PR reviewer — runs the real repo tools (typecheck, lint, clippy, tests) + cross-file blast-radius + a verification gate before a PR opens, so CodeRabbit finds fewer issues.','final internal gate before push — 🔴+🟠 block','any changed files (diff-scoped)','/review before opening a PR.'],
     ],
   };
 
