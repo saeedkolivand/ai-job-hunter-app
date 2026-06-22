@@ -2,6 +2,7 @@ import { ArrowLeft, ArrowRight, Check, Eye, EyeOff, Key, Loader2, Search } from 
 import { motion } from 'motion/react';
 import { useState } from 'react';
 
+import { PROVIDER_SLOTS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, FloatingIcon, Input, useNotification, withDelay } from '@ajh/ui';
 
@@ -30,8 +31,8 @@ export function AdzunaKeyStep({ onBack, onNext, direction, stepIndex, totalSteps
   const openExternal = useOpenExternal();
   const setProviderKey = useSetProviderKey();
 
-  const { data: idData } = useHasProviderKey('adzuna-app-id');
-  const { data: keyData } = useHasProviderKey('adzuna-app-key');
+  const { data: idData } = useHasProviderKey(PROVIDER_SLOTS.adzunaAppId);
+  const { data: keyData } = useHasProviderKey(PROVIDER_SLOTS.adzunaAppKey);
   const idSaved = idData?.has ?? false;
   const keySaved = keyData?.has ?? false;
   const bothSaved = idSaved && keySaved;
@@ -49,11 +50,17 @@ export function AdzunaKeyStep({ onBack, onNext, direction, stepIndex, totalSteps
     setSaving(true);
     try {
       if (appId.trim()) {
-        await setProviderKey.mutateAsync({ provider: 'adzuna-app-id', apiKey: appId.trim() });
+        await setProviderKey.mutateAsync({
+          provider: PROVIDER_SLOTS.adzunaAppId,
+          apiKey: appId.trim(),
+        });
         setAppId('');
       }
       if (appKey.trim()) {
-        await setProviderKey.mutateAsync({ provider: 'adzuna-app-key', apiKey: appKey.trim() });
+        await setProviderKey.mutateAsync({
+          provider: PROVIDER_SLOTS.adzunaAppKey,
+          apiKey: appKey.trim(),
+        });
         setAppKey('');
       }
       notify.success({ message: t('onboarding.adzunaKey.saved') });

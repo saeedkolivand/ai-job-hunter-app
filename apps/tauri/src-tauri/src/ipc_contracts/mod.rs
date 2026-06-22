@@ -13,6 +13,7 @@ pub mod event_payloads;
 mod event_payloads_test;
 pub mod events;
 pub mod matching;
+pub mod provider_slots;
 pub mod referrals;
 pub mod resume;
 pub mod scrape;

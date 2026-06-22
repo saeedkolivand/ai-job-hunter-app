@@ -432,6 +432,12 @@ const R7_ALLOW: &[(&str, &str)] = &[
     // accent_watcher (L0 platform) emits via the L3 events helper; same shell-reach as
     // autopilot_helpers->events. TODO(arch): emitter port.
     ("platform", "events"),
+    // The aggregator (L1 scraping) reads the generated credential-slot consts from
+    // ipc_contracts::provider_slots — pure compile-time `&str` literals (the single
+    // cross-language source of truth, like the L3 events channel consts that L0/L2
+    // already reach up for). No runtime/layer coupling. TODO(arch): host the
+    // cross-language consts in an L0 module so this exception clears.
+    ("scraping", "ipc_contracts"),
 ];
 
 #[test]

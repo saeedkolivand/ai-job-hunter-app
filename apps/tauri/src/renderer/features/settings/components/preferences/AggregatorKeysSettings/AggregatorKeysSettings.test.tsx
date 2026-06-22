@@ -20,6 +20,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import { PROVIDER_SLOTS } from '@ajh/shared';
 import type * as AjhUi from '@ajh/ui';
 
 // ── mutable key-state so tests can flip connected/disconnected per slot ────
@@ -140,7 +141,7 @@ describe('AggregatorKeysSettings — not connected', () => {
 
     await waitFor(() =>
       expect(mockSetMutateAsync).toHaveBeenCalledWith({
-        provider: 'adzuna-app-id',
+        provider: PROVIDER_SLOTS.adzunaAppId,
         apiKey: 'my-app-id',
       })
     );
@@ -215,7 +216,7 @@ describe('AggregatorKeysSettings — not connected', () => {
 
 describe('AggregatorKeysSettings — connected state', () => {
   it('shows the stored-key badge when a slot has a key', () => {
-    keyState['adzuna-app-id'] = true;
+    keyState[PROVIDER_SLOTS.adzunaAppId] = true;
 
     render(<AggregatorKeysSettings />);
 
@@ -223,7 +224,7 @@ describe('AggregatorKeysSettings — connected state', () => {
   });
 
   it('shows a Remove button when a slot has a key', () => {
-    keyState['adzuna-app-id'] = true;
+    keyState[PROVIDER_SLOTS.adzunaAppId] = true;
 
     render(<AggregatorKeysSettings />);
 
@@ -233,7 +234,7 @@ describe('AggregatorKeysSettings — connected state', () => {
   });
 
   it('clicking Remove opens the confirm modal', async () => {
-    keyState['adzuna-app-id'] = true;
+    keyState[PROVIDER_SLOTS.adzunaAppId] = true;
     const user = userEvent.setup();
 
     render(<AggregatorKeysSettings />);
@@ -249,7 +250,7 @@ describe('AggregatorKeysSettings — connected state', () => {
   });
 
   it('calls removeProviderKey with the correct slot on modal confirm', async () => {
-    keyState['adzuna-app-id'] = true;
+    keyState[PROVIDER_SLOTS.adzunaAppId] = true;
     const user = userEvent.setup();
 
     render(<AggregatorKeysSettings />);
@@ -270,13 +271,13 @@ describe('AggregatorKeysSettings — connected state', () => {
     await user.click(confirmBtn);
 
     await waitFor(() =>
-      expect(mockRemoveMutateAsync).toHaveBeenCalledWith({ provider: 'adzuna-app-id' })
+      expect(mockRemoveMutateAsync).toHaveBeenCalledWith({ provider: PROVIDER_SLOTS.adzunaAppId })
     );
   });
 
   it('does NOT call removeProviderKey.mutateAsync when isPending (remove re-entrancy guard)', async () => {
     // Put a slot in connected state so the Remove button renders.
-    keyState['adzuna-app-id'] = true;
+    keyState[PROVIDER_SLOTS.adzunaAppId] = true;
     // Simulate a removal already in-flight so handleRemove's early-return fires.
     removeIsPending = true;
     mockRemoveMutateAsync.mockClear();
@@ -308,7 +309,7 @@ describe('AggregatorKeysSettings — connected state', () => {
   });
 
   it('shows the removeError i18n message (not raw error) when remove mutation rejects', async () => {
-    keyState['adzuna-app-id'] = true;
+    keyState[PROVIDER_SLOTS.adzunaAppId] = true;
     mockRemoveMutateAsync.mockRejectedValueOnce(new Error('keyring: permission denied'));
     const user = userEvent.setup();
 

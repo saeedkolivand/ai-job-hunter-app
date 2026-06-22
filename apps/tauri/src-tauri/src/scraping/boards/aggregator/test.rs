@@ -636,17 +636,37 @@ async fn cancelled_after_adzuna_err_skips_jsearch() {
 // and clean up after themselves to stay race-safe within the multi-thread test
 // binary. The mock store install is the same process-wide `Once` the credentials
 // tests use, so it is never swapped mid-run.
+//
+// The asserted slot strings are derived from the SAME generated source of truth
+// the providers read (`ipc_contracts::provider_slots`) + the `ai:` namespace, so
+// this test fails if a slot literal ever drifts from that single source.
 
 use std::sync::Mutex;
+
+use crate::ipc_contracts::provider_slots::{ADZUNA_APP_ID, ADZUNA_APP_KEY, JSEARCH_KEY};
+
 static AGG_KEYRING_LOCK: Mutex<()> = Mutex::new(());
 
-const ADZUNA_SLOTS: [&str; 2] = ["ai:adzuna-app-id", "ai:adzuna-app-key"];
-const JSEARCH_SLOT: &str = "ai:jsearch-key";
+/// The aggregator's `ai:`-namespaced keyring slots, built from the generated
+/// bare slot consts so the test asserts against the single cross-language source
+/// of truth (drift in `provider_slots` flows straight through here).
+fn adzuna_slots() -> [String; 2] {
+    [
+        format!("ai:{ADZUNA_APP_ID}"),
+        format!("ai:{ADZUNA_APP_KEY}"),
+    ]
+}
+
+fn jsearch_slot() -> String {
+    format!("ai:{JSEARCH_KEY}")
+}
 
 /// Delete the aggregator's fixed keyring slots so a test starts from a known
 /// "absent" baseline regardless of what a previous serialized test left behind.
 fn clear_aggregator_slots() {
-    for slot in ADZUNA_SLOTS.iter().chain(std::iter::once(&JSEARCH_SLOT)) {
+    let adzuna = adzuna_slots();
+    let jsearch = jsearch_slot();
+    for slot in adzuna.iter().chain(std::iter::once(&jsearch)) {
         if let Ok(entry) = keyring_core::Entry::new(crate::credentials::SERVICE, slot) {
             // NoEntry on a clean slot is fine; we only care it ends up absent.
             let _ = entry.delete_credential();
@@ -694,7 +714,7 @@ fn providers_degrade_to_unconfigured_on_keyring_error() {
 
     // Arm a non-NoEntry failure on the app-id slot. `read_credential` maps it to
     // Err(AppError::Storage), which the provider collapses to None.
-    let entry = keyring_core::Entry::new(crate::credentials::SERVICE, ADZUNA_SLOTS[0]).unwrap();
+    let entry = keyring_core::Entry::new(crate::credentials::SERVICE, &adzuna_slots()[0]).unwrap();
     let mock: &keyring_core::mock::Cred = entry.as_any().downcast_ref().unwrap();
     mock.set_error(keyring_core::Error::Invalid(
         "induced".to_string(),

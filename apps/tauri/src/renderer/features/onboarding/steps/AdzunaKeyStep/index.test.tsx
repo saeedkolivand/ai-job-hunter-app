@@ -15,6 +15,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import { PROVIDER_SLOTS } from '@ajh/shared';
+
 import { createMockClient, withProviders } from '@/test-support';
 
 // ── i18n stub ─────────────────────────────────────────────────────────────────
@@ -39,15 +41,21 @@ beforeEach(() => {
   notifyErrorSpy.mockClear();
 });
 
-vi.mock('@/services', () => ({
-  useHasProviderKey: (slot: string) => {
-    if (slot === 'adzuna-app-id') return { data: { has: stubIdHas } };
-    if (slot === 'adzuna-app-key') return { data: { has: stubKeyHas } };
-    return { data: { has: false } };
-  },
-  useSetProviderKey: () => ({ mutateAsync: mutateAsyncSpy }),
-  useOpenExternal: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) }),
-}));
+vi.mock('@/services', async () => {
+  const shared = await vi.importActual<{
+    PROVIDER_SLOTS: { adzunaAppId: string; adzunaAppKey: string };
+  }>('@ajh/shared');
+  const PS = shared.PROVIDER_SLOTS;
+  return {
+    useHasProviderKey: (slot: string) => {
+      if (slot === PS.adzunaAppId) return { data: { has: stubIdHas } };
+      if (slot === PS.adzunaAppKey) return { data: { has: stubKeyHas } };
+      return { data: { has: false } };
+    },
+    useSetProviderKey: () => ({ mutateAsync: mutateAsyncSpy }),
+    useOpenExternal: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) }),
+  };
+});
 
 // ── @ajh/ui: spread real module; stub useNotification ─────────────────────────
 
@@ -182,7 +190,8 @@ describe('AdzunaKeyStep — key save', () => {
     const calls = mutateAsyncSpy.mock.calls;
     const idCall = calls.find(
       (c) =>
-        (c[0] as { provider: string; apiKey: string } | undefined)?.provider === 'adzuna-app-id'
+        (c[0] as { provider: string; apiKey: string } | undefined)?.provider ===
+        PROVIDER_SLOTS.adzunaAppId
     );
     expect(idCall).toBeDefined();
     const arg = idCall?.[0] as { provider: string; apiKey: string } | undefined;
@@ -205,7 +214,8 @@ describe('AdzunaKeyStep — key save', () => {
     const calls = mutateAsyncSpy.mock.calls;
     const keyCall = calls.find(
       (c) =>
-        (c[0] as { provider: string; apiKey: string } | undefined)?.provider === 'adzuna-app-key'
+        (c[0] as { provider: string; apiKey: string } | undefined)?.provider ===
+        PROVIDER_SLOTS.adzunaAppKey
     );
     expect(keyCall).toBeDefined();
     const arg = keyCall?.[0] as { provider: string; apiKey: string } | undefined;
