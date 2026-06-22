@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782149991580,
+  "lastUpdate": 1782154283780,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1421,6 +1421,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 289683,
             "range": "± 3085",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "48f9158f178aff1ccdaa1a6f2dc349d1b29c1c7b",
+          "message": "refactor: replace the native splash window with an in-app overlay (#475)\n\n* refactor: replace the native splash window with an in-app overlay\n\nSwap the separate native splash window for a self-contained in-app React\noverlay, removing the cross-process machinery it required.\n\n- delete splash/mod.rs (RevealGuard, spawn, reveal paths, theme-mirror) +\n  public/splash.html; main window is now visible at boot (themed backgroundColor\n  covers the brief pre-mount frame)\n- remove the app_ready + set_theme_mirror IPC commands + their SystemContract\n  entries and channels; deep-link cold-start reveals via tray::show_focus\n- new components/layout/AppSplash overlay: brand wordmark + shimmer via design\n  tokens, theme-aware (renderer already resolves the scheme), self-dismiss after\n  ~700ms with a reduced-motion path; pointer-events-none + fallback unmount so a\n  stalled exit animation can never trap the app\n- drop the renderer AppReadyBridge/ThemeMirrorBridge/useSyncThemeMirror bridges\n- architecture.rs: remove the splash L3 entry\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs: drop native splash from architecture docs, note in-app overlay\n\nRemove the splash backend module from the L3 list and the module table; note\nthe splash is now the in-app components/layout/AppSplash overlay (no native\nwindow).\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs: remove the duplicate splash entry from the l3 list\n\nThe L3 module set is listed twice in architecture-rules.md; the prior edit\ndropped splash from the code-block list (line 20) but not the section header.\nRemove it there too so both enumerations agree.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-22T20:43:12+02:00",
+          "tree_id": "ff7663b826f6a9263b339af57df1e8f5d696d841",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/48f9158f178aff1ccdaa1a6f2dc349d1b29c1c7b"
+        },
+        "date": 1782154283215,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1884631,
+            "range": "± 48773",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2464306,
+            "range": "± 21264",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 286170,
+            "range": "± 3211",
             "unit": "ns/iter"
           }
         ]
