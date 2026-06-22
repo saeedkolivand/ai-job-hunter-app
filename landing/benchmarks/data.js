@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782140574420,
+  "lastUpdate": 1782146340852,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1337,6 +1337,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 285552,
             "range": "± 7244",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "99e7286d3a68571af4de811362d41c94a9d156b5",
+          "message": "fix: show aggregator in autopilot; centralize board and date-filter constants (#473)\n\n* fix: show aggregator in autopilot; centralize board and date-filter constants\n\nThe autopilot wizard hardcoded BOARD_IDS in its picker, so the aggregator board\n(the default) was selected-but-invisible and unusable. Switch the picker to the\ndynamic board catalog (mirrors the jobs ScrapeForm), add the missing-keys hint,\nand nudge missing Adzuna keys from the jobs zero-results state.\n\nBundles the aggregator/board-domain hardcoding cleanup:\n- add 'aggregator' to BOARD_IDS so it validates as a BoardId; new AGGREGATOR_BOARD_ID\n  constant replaces bare 'aggregator' literals (ScrapeForm/JobsPage/wizard-state)\n- dedup the credential board enum to z.enum(AUTH_CAPABLE_BOARDS) (revives the dead\n  const; kept intentionally distinct from BOARD_IDS = scrapeable vs login-capable)\n- date-filter codegen: genDateFilters -> ipc_contracts/date_filters.rs, with a Rust\n  exhaustiveness test so a new DATE_FILTER token unhandled by the aggregator match\n  arms fails (default-equal mappings can't masquerade; only 'month' may equal default)\n- a11y: role=\"status\"/aria-live on the aggregator key-hint and the empty-state swap\n- i18n: jobs.emptyNoAdzunaKeys (+ CTA) in en + de\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs: document date-filter codegen and catalog-driven autopilot picker\n\nAdd date_filters.rs to the codegen note (source: DATE_FILTER_OPTIONS in\npackages/shared), record 'aggregator' + AGGREGATOR_BOARD_ID in the board\nregistry doc, and note the autopilot picker is now board-catalog-driven.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: gate missing-adzuna-keys empty-state on resolved key queries\n\nuseHasProviderKey returns undefined while loading, so the prior check treated\nan unresolved query as \"keys missing\" and could flash the wrong empty-state for\nusers who have keys. Gate on isSuccess and check .has === false explicitly.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* test: strengthen jobs empty-state key tests (provider-aware mock + click path)\n\nMake the useHasProviderKey mock per-slot so a test can't pass with the wrong\nslot queried, and add an interaction test asserting the missing-keys CTA fires\nsetSettings({ activeSection: 'job' }) and navigates to /settings.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* test: honor the enabled arg in the jobs key-mock to mirror the real hook\n\nuseHasProviderKey returns undefined / isSuccess:false when disabled; the mock\nnow respects its second (enabled) arg so a test can't pass if the component\nbreaks the isEmpty query-gating.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-22T18:30:12+02:00",
+          "tree_id": "7c115e376f7a98e1193b45dda86cf51b31ce21f1",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/99e7286d3a68571af4de811362d41c94a9d156b5"
+        },
+        "date": 1782146340212,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2015258,
+            "range": "± 44662",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2672096,
+            "range": "± 87523",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 320329,
+            "range": "± 6760",
             "unit": "ns/iter"
           }
         ]
