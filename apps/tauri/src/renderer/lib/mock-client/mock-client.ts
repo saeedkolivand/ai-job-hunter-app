@@ -272,6 +272,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       resume: noop,
       onStep: () => () => {},
       onFocus: () => () => {},
+      takePendingFocus: () => Promise.resolve(null),
     },
 
     menu: {

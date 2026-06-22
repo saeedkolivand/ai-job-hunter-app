@@ -24,6 +24,16 @@ export interface AutopilotContract {
    *  focus an autopilot's found-jobs panel. An empty `autopilotId` is a pure
    *  "refresh the list" signal (e.g. after a tray Pause-All) with no navigation. */
   onFocus(handler: (event: AutopilotFocusEvent) => void): () => void;
+
+  /** Atomically take + clear the autopilot-focus intent buffered by the shell.
+   *  A cold-start `ajh://autopilot/<id>` deep link fires the `autopilot:focus`
+   *  emit during Rust setup, before the renderer's `useAutopilotFocusNavigation`
+   *  listener attaches, so the event is lost; the shell buffers the id and the
+   *  renderer pulls it once its JS loop is live (on mount + on the emitted
+   *  event). The IPC response is reliable where the event was not. Resolves to
+   *  the buffered `autopilotId`, or `null` when nothing is buffered (the common
+   *  case — only set by a cold-start deep link). Mirrors `menu.takePending`. */
+  takePendingFocus(): Promise<string | null>;
 }
 
 export interface AutopilotStepEvent {

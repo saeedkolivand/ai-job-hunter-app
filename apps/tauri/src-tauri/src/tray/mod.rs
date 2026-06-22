@@ -45,6 +45,16 @@ struct NewJobs {
 /// `(event_name, payload)`; the renderer takes-and-clears it atomically.
 pub struct PendingMenu(pub Mutex<Option<(String, serde_json::Value)>>);
 
+/// The last autopilot-focus intent, buffered by `dispatch_focus` and pulled by
+/// the renderer (`autopilot_take_pending_focus`) so a cold-start
+/// `ajh://autopilot/<id>` deep link isn't lost to the fire-and-forget `emit`
+/// race — the deep link fires during Rust setup, before the renderer's
+/// `useAutopilotFocusNavigation` listener attaches. A dedicated buffer (autopilot
+/// focus is a distinct domain from the navigate/action menu intents). Single-slot
+/// (last delivery wins) holding the `autopilotId`; the renderer takes-and-clears
+/// it atomically.
+pub struct PendingFocus(pub Mutex<Option<String>>);
+
 /// Build the tray icon + menu and register `TrayState`. Called once from setup.
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let show = MenuItemBuilder::with_id(SHOW_ID, "Show AI Job Hunter").build(app)?;
@@ -117,6 +127,9 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     });
     // Buffer for a menu intent missed by a backgrounded webview (see `dispatch_menu`).
     app.manage(PendingMenu(Mutex::new(None)));
+    // NOTE: the sibling `PendingFocus` buffer (autopilot-focus deep links) is
+    // managed earlier in `lib.rs` setup — BEFORE the cold-start deep-link block,
+    // which runs well before this `tray::build`. See the comment there.
     Ok(())
 }
 
@@ -242,9 +255,43 @@ pub fn dispatch_extension_pairing(app: &AppHandle) {
     );
 }
 
+/// Restore the window and deliver an autopilot-focus intent so the renderer jumps
+/// to a specific autopilot's found-jobs panel.
+///
+/// Mirrors [`dispatch_menu`] for the cold-start race: `emit` is fire-and-forget,
+/// so a focus fired during Rust setup (a cold-start `ajh://autopilot/<id>` deep
+/// link) lands BEFORE the renderer's `useAutopilotFocusNavigation` listener
+/// attaches and is lost. So we ALWAYS buffer the id in [`PendingFocus`] (written
+/// BEFORE `show_focus` so it's in place no matter how quickly the renderer pulls)
+/// and let the renderer PULL it (`autopilot_take_pending_focus`) once its JS loop
+/// is provably live. `autopilot_take_pending_focus` takes-and-clears atomically,
+/// so the intent is delivered exactly once and can't re-fire on a later unrelated
+/// focus. The immediate emit stays purely as a low-latency *trigger* for the
+/// already-running case where a live webview drains immediately, plus a deferred
+/// re-emit (same rationale as `dispatch_menu`).
+pub fn dispatch_focus(app: &AppHandle, autopilot_id: &str) {
+    // Buffer BEFORE showing so the renderer's pull (which may fire as soon as the
+    // window is shown / focused / mounted) always finds the intent.
+    if let Some(s) = app.try_state::<PendingFocus>() {
+        *s.0.lock() = Some(autopilot_id.to_string());
+    }
+    show_focus(app);
+    emit_focus(app, autopilot_id);
+    // Deferred re-trigger for the case where the immediate emit was dropped (the
+    // renderer drains `PendingFocus` exactly-once, so this duplicate is a no-op if
+    // the first emit already landed). Same rationale + timing as `dispatch_menu`.
+    let app_retry = app.clone();
+    let id_retry = autopilot_id.to_string();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(120)).await;
+        emit_focus(&app_retry, &id_retry);
+    });
+}
+
 /// Emit a focus event so the renderer jumps to a specific autopilot's found-jobs
-/// panel (or, with an empty id, just refreshes the list). Shared by the tray and
-/// the single-instance deep-link guard.
+/// panel (or, with an empty id, just refreshes the list). The low-latency trigger
+/// used by the already-running tray path; the cold-start deep-link path goes
+/// through [`dispatch_focus`] which also buffers in [`PendingFocus`].
 pub fn emit_focus(app: &AppHandle, autopilot_id: &str) {
     emit_event(
         app,
