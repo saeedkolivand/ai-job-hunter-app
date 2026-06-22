@@ -3,6 +3,7 @@ export * from './events/index.js';
 export * from './ipc/contracts/index.js';
 export * from './ipc/extension-protocol.js';
 export * from './language-detection.js';
+export * from './provider-slots.js';
 export * from './schemas/index.js';
 export * from './types/index.js';
 export * from './utils.js';
