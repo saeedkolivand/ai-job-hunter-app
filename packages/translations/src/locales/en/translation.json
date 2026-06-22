@@ -1295,7 +1295,9 @@
         "summaryHint": "Get an AI summary of this posting — key responsibilities, requirements, and signals.",
         "generating": "Summarizing the job ad…",
         "editHelper": "Edits here are used for generation — fix a bad scrape before tailoring.",
-        "summaryLanguage": "Summary language"
+        "summaryLanguage": "Summary language",
+        "pasteHint": "Paste the full job ad here…",
+        "truncatedHint": "This looks like a partial listing — paste the full ad for the best result."
       },
       "tryAgain": "Try again",
       "hintNoResume": "Add your resume to generate",
