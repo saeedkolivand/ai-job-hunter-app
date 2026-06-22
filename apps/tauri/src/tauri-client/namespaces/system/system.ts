@@ -6,8 +6,6 @@ import { EVENT_CHANNELS, type PerformanceBackendConfig } from '@ajh/shared';
 import { asyncUnsub } from '../../utils.js';
 
 export const system = {
-  appReady: () => invoke<void>('app_ready'),
-  setThemeMirror: (scheme: 'light' | 'dark') => invoke<void>('set_theme_mirror', { scheme }),
   health: () => invoke('system_health'),
   getVersion: () => invoke('system_get_version'),
   getLocale: () => invoke('system_get_locale'),
