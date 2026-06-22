@@ -6,6 +6,7 @@ export {
   generateInterviewQuestions,
   generateJobAdSummary,
   generateReferral,
+  generateReferralImprove,
   generateResume,
   type GenerationMeta,
   type GenerationMode,

@@ -1,5 +1,5 @@
 import { Check, Copy, Download, FileText, LayoutTemplate } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, Dropdown, Switch } from '@ajh/ui';
@@ -7,6 +7,7 @@ import { Button, cn, Dropdown, Switch } from '@ajh/ui';
 import { EditableOutput } from '@/components/generation/EditableOutput';
 import { type ExportFormat, ExportPicker } from '@/components/generation/ExportPicker';
 import { PdfPreview } from '@/components/generation/PdfPreview';
+import { useDebouncedCommit } from '@/hooks/use-debounced-commit';
 import {
   buildFilename,
   type GenerationMeta,
@@ -84,33 +85,67 @@ export function GenerationOutput({
   const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
   const atsSwitchId = useId();
 
-  // Committed text per doc — what PdfPreview renders (recompiles only on discrete
-  // events: generation/regenerate/tab-switch/Save, never per keystroke). This
-  // component only ever sees the ACTIVE doc's `output`, so we key by `activeOut`.
+  // Committed text per doc — what PdfPreview renders. Local edits auto-commit
+  // after ~700 ms via useDebouncedCommit; generation/regeneration commits immediately.
   const [committed, setCommitted] = useState<Record<'resume' | 'cover', string>>({
     resume: activeOut === 'resume' ? output : '',
     cover: activeOut === 'cover' ? output : '',
   });
+  const [pending, setPending] = useState(false);
+
   const lastEditRef = useRef<Record<'resume' | 'cover', string | null>>({
     resume: null,
     cover: null,
   });
 
-  // Refresh committed for the active doc when `output` changes for a reason OTHER
-  // than a local edit (generation, regenerate, or a tab switch that swaps `output`
-  // to the other doc's canonical text). A local edit sets lastEditRef so it does
-  // NOT refresh — the preview waits for Save.
+  const commitToDoc = useCallback((out: 'resume' | 'cover', text: string) => {
+    setCommitted((c) => ({ ...c, [out]: text }));
+    setPending(false);
+  }, []);
+
+  const { scheduleCommit, flush, cancel } = useDebouncedCommit<'resume' | 'cover'>(commitToDoc);
+
+  // Flush on doc/tab switch so a pending edit commits to ITS OWN doc before the
+  // view changes. flush() uses the (out, value) pair captured at scheduleCommit
+  // time — never the current activeOut — so the edit always lands in the right doc.
+  const prevActiveOutRef = useRef(activeOut);
+  useEffect(() => {
+    if (prevActiveOutRef.current !== activeOut) {
+      flush();
+      prevActiveOutRef.current = activeOut;
+    }
+  }, [activeOut, flush]);
+
+  // Cancel on unmount.
+  useEffect(() => cancel, [cancel]);
+
+  // Refresh committed when `output` changes for a reason OTHER than a local edit
+  // (generation, regenerate, or tab switch). A local edit sets lastEditRef so the
+  // debounce handles it instead.
   useEffect(() => {
     if (output !== lastEditRef.current[activeOut]) {
       setCommitted((c) => ({ ...c, [activeOut]: output }));
+      setPending(false);
       lastEditRef.current[activeOut] = null;
     }
   }, [output, activeOut]);
 
-  const handleEdit = (value: string) => {
-    lastEditRef.current[activeOut] = value;
-    onEdit(value);
-  };
+  const handleEdit = useCallback(
+    (value: string) => {
+      lastEditRef.current[activeOut] = value;
+      setPending(true);
+      // Capture (activeOut, value) pair now — tab switches can't misroute the commit.
+      scheduleCommit(activeOut, value);
+      onEdit(value);
+    },
+    [activeOut, scheduleCommit, onEdit]
+  );
+
+  const handleBlur = useCallback(() => {
+    // flush() commits the (out, value) pair captured at scheduleCommit time —
+    // uses the typed value, never the prop, and always routes to the correct doc.
+    flush();
+  }, [flush]);
   const docType = activeOut === 'resume' ? 'resume' : 'cover-letter';
 
   // Template picker (mirrors GenerateWizard.handleTemplateChange): selecting a
@@ -293,8 +328,8 @@ export function GenerationOutput({
           <EditableOutput
             value={output}
             onChange={handleEdit}
-            onSave={() => setCommitted((c) => ({ ...c, [activeOut]: output }))}
-            canSave={output !== committed[activeOut]}
+            onBlur={handleBlur}
+            isPending={pending}
             disabled={!editable}
             docType={docType}
             meta={meta}

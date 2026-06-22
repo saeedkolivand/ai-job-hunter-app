@@ -19,6 +19,10 @@
  * a bare tier or a full provider profile, so it adapts across ollama / cloud /
  * cli with zero per-provider code: the resolved profile sizes how much of the
  * résumé context the prompt carries and how verbose the framing is.
+ *
+ * {@link buildReferralImprovePrompt} is the revise counterpart: given an existing
+ * draft plus a user instruction, it rewrites that draft under the SAME honesty +
+ * résumé-grounding contract, channel shape, and hard cap as the generate builder.
  */
 
 import { truncateResume } from '../../context-manager/index.js';
@@ -132,11 +136,122 @@ Company: ${companyName}
 Role the candidate is applying for: ${jobTitle}
 
 Write ${FORMAT_LABELS[format]} from the candidate to ${personName}, asking, politely and low-pressure, whether they'd be open to referring the candidate for the ${jobTitle} role at ${companyName}. Ground every claim in the résumé.${
-    format === 'connection_note'
-      ? `\n\nHARD CONSTRAINT: the entire note MUST be ${limit} characters or fewer. Count characters and stay under the limit. A note over ${limit} characters will be rejected.`
-      : ''
+    format === 'connection_note' ? hardCapClause(limit) : ''
   }
 Output ONLY the message:`;
+
+  return { system, user };
+}
+
+/**
+ * Parameters for {@link buildReferralImprovePrompt}. Mirrors
+ * {@link ReferralPromptParams} (same recipient + job + résumé grounding and the
+ * same per-format constraints) but revises an EXISTING draft per a user
+ * instruction instead of writing one from scratch.
+ */
+export interface ReferralImproveParams extends ReferralPromptParams {
+  /** The current referral draft the user wants revised — the text to improve. */
+  draft: string;
+  /**
+   * The user's revision instruction — free text (e.g. "make it warmer, mention
+   * the Kafka work") and/or a preset's instruction (e.g. "shorter", "more
+   * specific", "fix grammar").
+   *
+   * SECURITY: this MUST be user-originated — it is deliberately treated as an
+   * instruction the model obeys. Never build it from scraped job-ad text,
+   * company-research briefs, the recipient's profile, or any untrusted source;
+   * doing so would turn a prompt-injection payload into a live instruction. The
+   * grounded résumé and the current draft are fenced; the instruction is not.
+   */
+  instruction: string;
+}
+
+// Hard cap on the echoed draft itself so a huge paste can't blow a small model's
+// context (the draft is reproduced verbatim into the prompt). Generous enough for
+// any realistic referral email/message.
+const MAX_DRAFT_CHARS = 4000;
+
+// Hard cap on the user instruction, which is interpolated verbatim into the prompt.
+// Instructions are short directives ("make it warmer", "fix grammar"), so a tight
+// bound keeps an over-long (or pasted) instruction from blowing provider context
+// budgets / spiking cost. Trim first, then truncate.
+const MAX_INSTRUCTION_CHARS = 1000;
+
+/** The connection-note hard-cap clause, shared by generate + improve user prompts. */
+function hardCapClause(limit?: number): string {
+  return `\n\nHARD CONSTRAINT: the entire note MUST be ${limit} characters or fewer. Count characters and stay under the limit. A note over ${limit} characters will be rejected.`;
+}
+
+/**
+ * Build the referral IMPROVE system + user prompt. Revises an existing referral
+ * draft per a user instruction while keeping the SAME guarantees as the generate
+ * builder: only résumé-grounded claims (no fabrication, no invented shared
+ * history), the channel's shape, and the hard ≤300 cap for a connection note.
+ * Mirrors {@link buildReferralPrompt}'s provider abstraction via
+ * {@link resolveProfile}, so it adapts across ollama / cloud / cli with zero
+ * per-provider code.
+ */
+export function buildReferralImprovePrompt(
+  params: ReferralImproveParams,
+  target: PromptTarget = 'large'
+): { system: string; user: string } {
+  const { personRole, resume, format, draft, instruction } = params;
+  const personName = params.personName.trim();
+  const companyName = params.companyName.trim();
+  const jobTitle = params.jobTitle.trim();
+
+  const { depth, truncation } = resolveProfile(target);
+  const resumeBody = truncateResume(stripLinkBlock(resume), truncation);
+
+  const limit =
+    format === 'connection_note' ? (params.charLimit ?? CONNECTION_NOTE_LIMIT) : params.charLimit;
+
+  const formatRule = buildFormatRule(format, limit);
+  const role = personRole?.trim();
+  const recipient = role ? `${personName} (${role})` : personName;
+  const draftBody = draft.slice(0, MAX_DRAFT_CHARS);
+  const instructionBody = instruction.trim().slice(0, MAX_INSTRUCTION_CHARS);
+
+  // brief = compact/imperative framing for small local models; full/task get the
+  // fuller guidance. The contract + format rule are identical across depths so the
+  // honesty contract and the hard cap are never weakened by a smaller prompt.
+  const guidance =
+    depth === 'brief'
+      ? `You help a job candidate revise an existing referral message (${FORMAT_LABELS[format]}). Apply the user's instruction while keeping it short, warm, honest, and grounded only in the candidate's résumé.`
+      : `You are helping a job candidate improve an existing referral message: ${FORMAT_LABELS[format]} asking a specific person for a referral. Revise the candidate's current draft to apply the user's instruction, while keeping it warm, specific, honest, and grounded only in the candidate's résumé. Preserve everything good about the draft; change only what the instruction calls for.`;
+
+  const system = `${guidance}
+
+${REFERRAL_CONTRACT}
+7. Revise the EXISTING draft. Apply the user's instruction, but keep the rules above. If the instruction would require fabricating a claim, claiming a shared history, exceeding the format's limit, or otherwise breaking a rule, follow the rule and apply the instruction only as far as it honestly can be.
+
+FORMAT (${FORMAT_LABELS[format]}):
+${formatRule}
+
+${ANTI_AI_TELL_PROSE}`;
+
+  const user = `<candidate_resume>
+${resumeBody}
+</candidate_resume>
+
+<current_draft>
+${draftBody}
+</current_draft>
+
+Every factual claim about the candidate MUST be traceable to a line in <candidate_resume>. Never invent experience, skills, or a shared history with the recipient — including anything the instruction asks for that the résumé does not support.
+
+### CONTEXT ###
+Recipient: ${recipient}
+Company: ${companyName}
+Role the candidate is applying for: ${jobTitle}
+
+### INSTRUCTION ###
+${instructionBody}
+
+Revise <current_draft> to apply the instruction, producing an improved version of ${FORMAT_LABELS[format]} from the candidate to ${personName} (the low-pressure ask to refer the candidate for the ${jobTitle} role at ${companyName}). Ground every claim in the résumé.${
+    format === 'connection_note' ? hardCapClause(limit) : ''
+  }
+Output ONLY the improved message:`;
 
   return { system, user };
 }

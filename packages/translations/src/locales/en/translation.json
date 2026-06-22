@@ -1073,6 +1073,8 @@
     "edit": "Edit",
     "source": "Source",
     "save": "Save",
+    "previewUpdating": "Updating preview…",
+    "coverStillGenerating": "Cover letter is still generating — editing locked until both documents are ready.",
     "viewMode": "View mode",
     "editor": {
       "toolbar": "Text formatting",
@@ -1360,6 +1362,17 @@
       "copied": "Copied",
       "save": "Save",
       "saved": "Saved",
+      "improve": "Improve with AI",
+      "improveLabel": "Improve the draft",
+      "improveInstruction": "Custom instruction",
+      "improveInstructionPlaceholder": "e.g. make it more specific, mention the Kafka work…",
+      "improveApply": "Apply",
+      "improvePresets": {
+        "warmer": "Warmer",
+        "shorter": "Shorter",
+        "moreSpecific": "More specific",
+        "fixGrammar": "Fix grammar"
+      },
       "overLimit": "Over the 300-character limit — trim before saving",
       "delete": "Delete contact",
       "status": {

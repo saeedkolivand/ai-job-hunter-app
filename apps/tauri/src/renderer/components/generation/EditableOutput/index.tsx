@@ -1,7 +1,8 @@
-import { Code, Eye, Pencil, Save, Sparkles } from 'lucide-react';
+import { Code, Eye, Loader2, Pencil, Sparkles } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
+import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import {
   Button,
@@ -43,14 +44,15 @@ interface EditableOutputProps {
    */
   previewSlot?: React.ReactNode;
   /**
-   * Optional explicit-save handler. When provided, a **Save** button appears in the
-   * edit-view toolbar; clicking it commits the current edits (e.g. so a heavy
-   * `previewSlot` recompiles only on Save instead of on every keystroke). When
-   * omitted, behavior is unchanged — editing flows straight through `onChange`.
+   * When true, a subtle "Updating preview…" indicator is shown — set while a
+   * debounced commit is pending or the PdfPreview is recompiling.
    */
-  onSave?: () => void;
-  /** Enables the Save button — true when there are unsaved edits. */
-  canSave?: boolean;
+  isPending?: boolean;
+  /**
+   * Called when focus leaves the editor. Callers use this to flush any pending
+   * debounced commit immediately (e.g. on blur or tab switch).
+   */
+  onBlur?: () => void;
   /**
    * The source résumé text (the uploaded/original), when available. Feeds the
    * link dialog's suggestion pick-list with the full extracted link map. Optional
@@ -119,8 +121,8 @@ export function EditableOutput({
   textAreaClassName,
   placeholder,
   previewSlot,
-  onSave,
-  canSave = false,
+  isPending = false,
+  onBlur,
   sourceResume,
 }: EditableOutputProps) {
   const { t } = useTranslation();
@@ -303,18 +305,19 @@ export function EditableOutput({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {/* Save — in Edit/Source when a save handler is supplied; commits the
-              current edits (e.g. so the preview recompiles on Save, not per keystroke). */}
-          {onSave && isEditing && (
-            <Button
-              type="button"
-              onClick={onSave}
-              disabled={disabled || !canSave}
-              className="flex h-auto items-center gap-1.5 rounded-lg bg-brand/15 px-2.5 py-1 text-[11px] font-medium text-brand-soft transition-colors hover:bg-brand/20 disabled:pointer-events-none disabled:opacity-30"
+          {/* "Updating preview…" — shown while a debounced commit is pending or
+              the PdfPreview is recompiling. Sits left of the view-mode control. */}
+          {isPending && (
+            <span
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              data-testid={TEST_IDS.generation.pendingCommit}
+              className="flex items-center gap-1 text-[10px] text-foreground/35"
             >
-              <Save size={11} />
-              {t('aiGenerate.save')}
-            </Button>
+              <Loader2 size={10} className="animate-spin" />
+              {t('aiGenerate.previewUpdating')}
+            </span>
           )}
 
           <SegmentedControl<'preview' | 'edit' | 'source'>
@@ -334,7 +337,14 @@ export function EditableOutput({
       </div>
 
       {view === 'edit' ? (
-        <div className="relative flex-1 min-h-0 w-full">
+        <div
+          className="relative flex-1 min-h-0 w-full"
+          onBlur={(e) => {
+            // Only fire when focus truly leaves the container (not between internal
+            // controls like toolbar buttons → editor body).
+            if (!e.currentTarget.contains(e.relatedTarget)) onBlur?.();
+          }}
+        >
           {/* WYSIWYG edit surface — same canonical `value`/`onChange` as Source.
               Lock with readOnly while a rewrite streams (mirrors the Source path). */}
           <RichTextEditor
@@ -355,7 +365,14 @@ export function EditableOutput({
           {rewriteOverlay}
         </div>
       ) : view === 'source' ? (
-        <div className="relative flex-1 min-h-0 w-full">
+        <div
+          className="relative flex-1 min-h-0 w-full"
+          onBlur={(e) => {
+            // Only fire when focus truly leaves the container (not to the rewrite
+            // overlay buttons or other internal elements).
+            if (!e.currentTarget.contains(e.relatedTarget)) onBlur?.();
+          }}
+        >
           {/* Source — raw markdown power-user / inspection view (hand-editable). */}
           <TextArea
             ref={textareaRef}
