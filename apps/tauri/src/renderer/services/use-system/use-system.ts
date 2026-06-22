@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { type Locale, PROTOCOL_VERSION } from '@ajh/shared';
-import { getResolvedScheme, reapplySystemAccent } from '@ajh/ui';
+import { reapplySystemAccent } from '@ajh/ui';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 import { usePreferencesStore } from '@/store/preferences-store';
@@ -221,44 +221,4 @@ export const useCheckBrowser = () => {
     queryFn: () => api.system.checkBrowser(),
     staleTime: Infinity,
   });
-};
-
-/**
- * Keeps the native theme mirror in sync with the renderer's effective color
- * scheme. Fires on boot AND on every scheme change (user-picked or OS
- * `prefers-color-scheme` toggle).
- *
- * Strategy: observe `data-color-scheme` on `<html>` with a MutationObserver.
- * Every call to `applyTheme` (boot, user change, OS change) writes this
- * attribute, so one observer covers all three triggers — no need to subscribe
- * to the localStorage-backed theme store directly.
- *
- * Mount ONCE in the root layout. `getResolvedScheme` is a pure function from
- * `@ajh/ui`; the IPC call stays here, never inside `@ajh/ui` (package boundary).
- */
-export const useSyncThemeMirror = () => {
-  const api = useAppClient();
-
-  useEffect(() => {
-    // Push the current scheme immediately on mount (covers boot).
-    const push = () => {
-      const raw = document.documentElement.dataset.colorScheme;
-      // data-color-scheme is always written as 'light' or 'dark' by applyTheme.
-      // Fall back to getResolvedScheme('system') in case the attribute isn't set yet.
-      const resolved: 'light' | 'dark' =
-        raw === 'light' || raw === 'dark' ? raw : getResolvedScheme('system');
-      void api.system.setThemeMirror(resolved);
-    };
-    push();
-
-    // Re-push whenever applyTheme writes a new value to data-color-scheme.
-    const observer = new MutationObserver(push);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-color-scheme'],
-    });
-    return () => {
-      observer.disconnect();
-    };
-  }, [api]);
 };

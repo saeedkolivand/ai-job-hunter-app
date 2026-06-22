@@ -5,6 +5,7 @@ import { createRouter, RouterProvider } from '@tanstack/react-router';
 
 import { restoreTheme } from '@ajh/ui';
 
+import { AppSplash } from '@/components/layout/AppSplash';
 import { AppClientProvider } from '@/providers/AppClientProvider';
 import { PerformanceModeProvider } from '@/providers/PerformanceModeProvider';
 
@@ -36,6 +37,7 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <AppClientProvider>
       <PerformanceModeProvider>
         <QueryClientProvider client={queryClient}>
+          <AppSplash />
           <RouterProvider router={router} />
         </QueryClientProvider>
       </PerformanceModeProvider>

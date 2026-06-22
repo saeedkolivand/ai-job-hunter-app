@@ -32,36 +32,12 @@ import {
   useApplicationEvents,
   useNotificationEvents,
   useSyncCloseToTray,
-  useSyncThemeMirror,
 } from '@/services';
 import {
   useOnboardingCompleted,
   usePreferencesStore,
   useSidebarCollapsed,
 } from '@/store/preferences-store';
-
-/** Signals the Tauri shell that the renderer has painted its first frame so the
- *  native splash window is dismissed and the main window revealed. Fire-and-forget
- *  — the Rust 10s safety timeout is the backstop. Mounted once at root. */
-function AppReadyBridge() {
-  const api = useAppClient();
-  const fired = useRef(false);
-  useEffect(() => {
-    if (fired.current) return;
-    fired.current = true;
-    void api.system.appReady().catch(() => {
-      // Swallowed: the Rust-side 10 s safety timeout reveals the window anyway.
-    });
-  }, [api]);
-  return null;
-}
-
-/** Keeps the native splash theme mirror in sync with the renderer's effective
- *  color scheme. Mounted once at root. */
-function ThemeMirrorBridge() {
-  useSyncThemeMirror();
-  return null;
-}
 
 /** Drives the native-menu navigation/actions. Rendered INSIDE
  *  `NotificationProvider` so its check-for-updates feedback can raise toasts. */
@@ -218,8 +194,6 @@ function RootLayout() {
 
   return (
     <NotificationProvider>
-      <AppReadyBridge />
-      <ThemeMirrorBridge />
       <MenuNavigationBridge />
       <ApplicationEventsBridge />
       <NotificationEventsBridge />

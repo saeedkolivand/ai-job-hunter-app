@@ -500,39 +500,5 @@ pub fn system_get_protocol_version() -> String {
     PROTOCOL_VERSION.to_string()
 }
 
-/// Signal from the renderer that the app has painted and is ready. Closes the
-/// native splash window and reveals the (config-hidden) main window, honoring the
-/// minimum splash-display window so a fast cold start does not flash the splash.
-///
-/// Idempotent and crash-safe: the reveal goes through the guarded
-/// [`crate::splash::reveal_main`], so a duplicate `app_ready`, the safety timeout,
-/// or a splash that failed to create at boot can never double-reveal or panic. If
-/// the splash never started (so there is no recorded shown-at), the renderer is
-/// already visible and this is a cheap no-op reveal.
-#[tauri::command]
-pub fn app_ready(app: AppHandle) -> AppResult<()> {
-    match app.try_state::<crate::splash::SplashShownAt>() {
-        Some(shown) => crate::splash::reveal_after_min_display(&app, shown.0),
-        // No splash was shown (creation failed at boot → main already revealed).
-        // Still call the guarded reveal so any edge case converges to "main shown".
-        None => crate::splash::reveal_main(&app),
-    }
-    Ok(())
-}
-
-/// Persist the renderer's effective color scheme to the splash theme-mirror file
-/// (`<data_dir>/ui-theme`) so the NEXT cold start themes the native splash
-/// before first paint — the write side of [`crate::splash`]'s theme contract.
-///
-/// `scheme` is validated to the closed `"light"`|`"dark"` set inside the splash
-/// module (rejecting anything else as [`AppError::Validation`] WITHOUT writing);
-/// the filename is fixed and never renderer-controlled, so this cannot write
-/// arbitrary data. Writer and reader share the same path constant, so they can
-/// never drift.
-#[tauri::command]
-pub fn set_theme_mirror(scheme: String) -> AppResult<()> {
-    crate::splash::write_theme_mirror(&scheme)
-}
-
 #[cfg(test)]
 mod test;

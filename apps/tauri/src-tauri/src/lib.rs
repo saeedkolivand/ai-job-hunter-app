@@ -45,7 +45,6 @@ pub mod profile_import;
 pub mod recommend;
 pub mod referrals;
 pub mod scraping;
-pub mod splash;
 pub mod theme;
 pub mod tray;
 pub mod updater;
@@ -454,16 +453,6 @@ pub fn run() {
 
             let handle = app.handle();
 
-            // Native splash screen FIRST: create the instant, theme-aware splash
-            // window (main window is config-hidden) so the user sees branded
-            // chrome immediately while the heavy store init below + the webview
-            // load run. The splash is revealed-away by `app_ready` (renderer first
-            // paint) or a safety timeout — see `splash`. Spawns its safety-timeout
-            // task via `tauri::async_runtime::spawn` (never bare tokio at setup).
-            if let Some(shown_at) = splash::spawn(handle) {
-                app.manage(splash::SplashShownAt(shown_at));
-            }
-
             // `ajh://` deep links. The OS routes a cold/click-launched URL here
             // (macOS via `on_open_url`; Windows/Linux a second instance forwards
             // it as argv → the single-instance guard above). Every URL is funneled
@@ -506,19 +495,13 @@ pub fn run() {
                         .and_then(|urls| deeplink::parse_focus_target(&urls))
                 });
                 if initial.is_some() {
-                    // Cold start: the always-on-top splash is already up (created
-                    // by `splash::spawn` above). Reveal main through the guarded
-                    // `reveal_main` — NOT a direct `tray::show_focus` `show()` —
-                    // so the splash CLOSES immediately and main is shown+focused
-                    // beneath it, instead of being shown UNDER the still-on-top
-                    // splash until `app_ready`/the 10s timeout. Keeps every reveal
-                    // path funneled through the one `RevealGuard` (managed by the
-                    // `splash::spawn` call above, so it's available here). On this
-                    // fresh-launch path the macOS Dock-icon/activation-policy
-                    // restore `show_focus` adds is a no-op (the app launched
-                    // `Regular`, never hid to the tray), so show+focus is the full
-                    // intent; deep-link routing below is unchanged.
-                    splash::reveal_main(handle);
+                    // Cold start with a deep link: the main window is visible from
+                    // boot (config `visible: true`), so just show+focus it before
+                    // routing. On this fresh-launch path the macOS Dock-icon/
+                    // activation-policy restore `show_focus` adds is a no-op (the
+                    // app launched `Regular`, never hid to the tray), so show+focus
+                    // is the full intent; deep-link routing below is unchanged.
+                    tray::show_focus(handle);
                     handle_deep_link(handle, initial);
                 }
             }
@@ -727,10 +710,6 @@ pub fn run() {
             commands::system::system_check_browser,
             commands::system::system_open_devtools,
             commands::system::system_get_protocol_version,
-            // splash reveal: renderer signals first paint → reveal main window
-            commands::system::app_ready,
-            // splash theme mirror: renderer persists effective scheme for next cold start
-            commands::system::set_theme_mirror,
             // native menu (pull buffered intent after close-to-tray restore)
             commands::menu::menu_take_pending,
             // jobs

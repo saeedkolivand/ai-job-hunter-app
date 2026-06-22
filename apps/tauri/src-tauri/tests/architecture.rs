@@ -71,10 +71,6 @@ const L3: &[&str] = &[
     "updater",
     "tray",
     "deeplink",
-    // Native cold-start splash window. Shell-role: builds a Tauri webview window,
-    // holds an AppHandle, schedules the reveal via the Tauri async runtime, and is
-    // driven by the `app_ready` command — never depended on by a lower layer.
-    "splash",
     // Loopback WS bridge for the browser extension. Shell-role: holds an
     // AppHandle, emits Tauri events, and reaches down into L1 (applications,
     // scraping) — never the reverse.
