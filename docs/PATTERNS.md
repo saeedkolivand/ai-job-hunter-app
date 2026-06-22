@@ -668,22 +668,18 @@ For 3+ way conditional rendering based on a discriminated union (section IDs, pa
 
 ### Pattern
 
+Define a `Record<Union, () => ReactNode>` keyed by the discriminated-union variants, where each value is a thunk that returns the section/stage content for that variant. Thunks are evaluated only on render; they can capture props/state via closure. Register anchors or data attributes in the thunk to co-locate layout hints with the rendered content.
+
 ```typescript
-import type { SectionId } from '@/features/settings/constants';
+// Type shape (not a concrete implementation):
+// Record<SectionId, () => ReactNode>
+//
+// Where SectionId is the discriminated union (e.g., 'general' | 'appearance' | 'contact' | …),
+// and each thunk returns the ReactNode for that variant.
 
-// Inside the component:
-const sectionRegistry: Record<SectionId, () => ReactNode> = {
-  general: () => <GeneralSection {...props} />,
-  appearance: () => <AppearanceCard />,
-  contact: () => <ContactProfileTab />,
-  // ... all other SectionId variants
-};
-
-// Render:
+// Usage:
 <div>{sectionRegistry[activeSection]()}</div>
 ```
-
-Thunks are evaluated only on render; they can capture props/state via closure. Register anchors or data attributes in the thunk to co-locate layout hints with the rendered content.
 
 ### References
 
