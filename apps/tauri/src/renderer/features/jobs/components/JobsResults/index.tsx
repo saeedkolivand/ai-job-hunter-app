@@ -1,13 +1,18 @@
-import { Loader2, Plus, Search } from 'lucide-react';
+import { Loader2, Plus, Search, Settings } from 'lucide-react';
 import { useMemo, useRef } from 'react';
+import { useRouter } from '@tanstack/react-router';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
+import { PROVIDER_SLOTS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, EmptyState, GlassCard, RowSkeleton } from '@ajh/ui';
 
+import { ROUTES } from '@/constants/routes/routes';
 import { PostingRow } from '@/features/jobs/components/PostingRow';
 import { useMatchScores } from '@/features/jobs/providers';
 import type { Posting } from '@/features/jobs/types';
+import { useHasProviderKey } from '@/services/use-ai-provider';
+import { useSessionStore } from '@/store/session-store';
 
 interface JobsResultsProps {
   filtered: Posting[];
@@ -42,6 +47,23 @@ export function JobsResults({
 }: JobsResultsProps) {
   const { t } = useTranslation();
   const { getScore, isPending, hasResume, isError } = useMatchScores();
+  const router = useRouter();
+  const setSettings = useSessionStore((s) => s.setSettings);
+
+  // Check whether Adzuna keys are configured — only query when the list is empty
+  // and not scraping, to avoid unnecessary IPC calls during normal operation.
+  const isEmpty = !scraping && filtered.length === 0;
+  const { data: adzunaIdData, isSuccess: adzunaIdReady } = useHasProviderKey(
+    PROVIDER_SLOTS.adzunaAppId,
+    isEmpty
+  );
+  const { data: adzunaKeyData, isSuccess: adzunaKeyReady } = useHasProviderKey(
+    PROVIDER_SLOTS.adzunaAppKey,
+    isEmpty
+  );
+  const keysKnown = adzunaIdReady && adzunaKeyReady;
+  const missingAdzunaKeys =
+    isEmpty && keysKnown && (adzunaIdData?.has === false || adzunaKeyData?.has === false);
 
   const waiting = scraping || (hasResume && isPending && !isError);
 
@@ -70,6 +92,11 @@ export function JobsResults({
     getItemKey: (index) => display[index]?.id ?? index,
   });
 
+  const openAggregatorSettings = () => {
+    setSettings({ activeSection: 'job' });
+    void router.navigate({ to: ROUTES.SETTINGS });
+  };
+
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-10 pb-10">
       {waiting ? (
@@ -92,16 +119,32 @@ export function JobsResults({
         </GlassCard>
       ) : display.length === 0 ? (
         <GlassCard>
-          <EmptyState
-            icon={Search}
-            title={t('jobs.empty')}
-            action={
-              <Button variant="primary" onClick={onScrape}>
-                <Search size={13} /> {t('jobs.emptyCta')}
-              </Button>
-            }
-            className="py-10"
-          />
+          <div role="status" aria-live="polite">
+            {missingAdzunaKeys ? (
+              <EmptyState
+                icon={Search}
+                title={t('jobs.empty')}
+                description={t('jobs.emptyNoAdzunaKeys')}
+                action={
+                  <Button variant="primary" onClick={openAggregatorSettings}>
+                    <Settings size={13} /> {t('jobs.emptyNoAdzunaKeysCta')}
+                  </Button>
+                }
+                className="py-10"
+              />
+            ) : (
+              <EmptyState
+                icon={Search}
+                title={t('jobs.empty')}
+                action={
+                  <Button variant="primary" onClick={onScrape}>
+                    <Search size={13} /> {t('jobs.emptyCta')}
+                  </Button>
+                }
+                className="py-10"
+              />
+            )}
+          </div>
         </GlassCard>
       ) : (
         <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>

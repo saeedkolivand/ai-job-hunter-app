@@ -768,3 +768,78 @@ fn jsearch_date_posted_maps_correctly() {
     assert_eq!(jsearch_date_posted(None), "month");
     assert_eq!(jsearch_date_posted(Some("99y")), "month");
 }
+
+// ── Date-filter exhaustiveness: every generated TS token is handled ────────────
+//
+// `DATE_FILTER_OPTIONS` is the codegen'd mirror of the TS `DATE_FILTER_OPTIONS`
+// (the single source of truth in `packages/shared/src/schemas/index.ts`). Both
+// match arms fall through to a DEFAULT for an unknown token, so a NEW TS token
+// would silently collapse to that default instead of getting a real mapping.
+//
+// This test pins the EXPECTED non-default mapping for every known token and
+// iterates the generated list, asserting each token maps to its expected value
+// for BOTH `adzuna_max_days_old` and `jsearch_date_posted`. A new TS token added
+// without a Rust match arm (or without an entry here) FAILS this test, so the
+// cross-language drift surfaces at `cargo test` rather than at runtime.
+
+/// Expected `(adzuna_max_days_old, jsearch_date_posted)` for a known token, or
+/// `None` if the token is unrecognised (which must FAIL — every generated token
+/// is required to have a real, non-default mapping).
+fn expected_mapping(token: &str) -> Option<(u32, &'static str)> {
+    match token {
+        "30m" | "1h" | "2h" | "4h" | "8h" | "24h" => Some((1, "today")),
+        "week" => Some((7, "week")),
+        "month" => Some((30, "month")),
+        _ => None,
+    }
+}
+
+/// The single token whose mapping is INTENDED to equal the no-filter default
+/// pair (`adzuna_max_days_old(None)`, `jsearch_date_posted(None)`). Any OTHER
+/// token collapsing to that pair is the silent-default bug this guard catches.
+const INTENDED_DEFAULT_EQUAL_TOKEN: &str = "month";
+
+#[test]
+fn every_generated_date_filter_token_has_a_real_mapping() {
+    // The no-filter default pair, read from the SAME mappers (not a literal), so
+    // this guard tracks the real defaults even if they ever change.
+    let default_pair = (adzuna_max_days_old(None), jsearch_date_posted(None));
+
+    for &token in crate::ipc_contracts::date_filters::DATE_FILTER_OPTIONS {
+        let (exp_days, exp_posted) = expected_mapping(token).unwrap_or_else(|| {
+            panic!(
+                "generated date-filter token {token:?} has no expected mapping — a new TS token \
+                 was added without a Rust match arm in `adzuna_max_days_old` / `jsearch_date_posted`"
+            )
+        });
+
+        assert_eq!(
+            adzuna_max_days_old(Some(token)),
+            exp_days,
+            "adzuna_max_days_old({token:?}) must map to its expected value, not the default"
+        );
+        assert_eq!(
+            jsearch_date_posted(Some(token)),
+            exp_posted,
+            "jsearch_date_posted({token:?}) must map to its expected value, not the default"
+        );
+
+        // Companion guard: a token whose mapping equals BOTH no-filter defaults at
+        // once has silently collapsed to the default in both arms. That is only
+        // legitimate for the one documented default-equal token; any other token
+        // doing so (e.g. a future token given a default-equal expected mapping by
+        // mistake) FAILS here even though its expected-mapping assertion passed.
+        let token_pair = (
+            adzuna_max_days_old(Some(token)),
+            jsearch_date_posted(Some(token)),
+        );
+        if token != INTENDED_DEFAULT_EQUAL_TOKEN {
+            assert_ne!(
+                token_pair, default_pair,
+                "date-filter token {token:?} maps to the no-filter default pair {default_pair:?} \
+                 in BOTH arms — it has silently collapsed to the default instead of getting a real \
+                 mapping (only {INTENDED_DEFAULT_EQUAL_TOKEN:?} may equal the default pair)"
+            );
+        }
+    }
+}

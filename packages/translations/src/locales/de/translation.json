@@ -1532,6 +1532,8 @@
     "searchPlaceholder": "Nach Titel, Unternehmen, Ort filtern…",
     "empty": "Noch keine Anzeigen. Starten Sie einen Scrape, um dieses Board zu füllen.",
     "emptyCta": "Jobs suchen",
+    "emptyNoAdzunaKeys": "Fügen Sie Ihren kostenlosen Adzuna-API-Schlüssel in den Einstellungen hinzu, um die aggregierte Jobsuche zu aktivieren.",
+    "emptyNoAdzunaKeysCta": "Adzuna-Schlüssel hinzufügen",
     "open": "Öffnen",
     "view": "Ansehen",
     "copyLink": "Link kopieren",
