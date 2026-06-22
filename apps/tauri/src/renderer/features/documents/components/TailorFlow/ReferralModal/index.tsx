@@ -1,4 +1,4 @@
-import { Check, Copy, Save, ShieldCheck, Sparkles, UserPlus, X } from 'lucide-react';
+import { Check, Copy, Save, ShieldCheck, Sparkles, UserPlus, Wand2, X } from 'lucide-react';
 import { useState } from 'react';
 
 import type { AutopilotFoundJob } from '@ajh/shared';
@@ -23,6 +23,10 @@ interface Props {
 }
 
 const CHANNELS: ReferralChannel[] = ['email', 'linkedin_message', 'connection_note'];
+
+/** Preset improve instructions — key matches i18n `improvePresets.*`. */
+const IMPROVE_PRESETS = ['warmer', 'shorter', 'moreSpecific', 'fixGrammar'] as const;
+type ImprovePreset = (typeof IMPROVE_PRESETS)[number];
 
 /** Map the chosen channel to the matching persisted draft field. */
 function draftField(channel: ReferralChannel): 'emailDraft' | 'messageDraft' | 'inviteNoteDraft' {
@@ -50,6 +54,7 @@ export function ReferralModal({ job, resume, onClose }: Props) {
   const [channel, setChannel] = useState<ReferralChannel>('linkedin_message');
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [improveInstruction, setImproveInstruction] = useState('');
 
   const contacts = useReferrals(job.url);
   const upsert = useUpsertReferral();
@@ -119,6 +124,13 @@ export function ReferralModal({ job, resume, onClose }: Props) {
         },
       }
     );
+  };
+
+  const submitImprove = (instruction: string) => {
+    const trimmed = instruction.trim();
+    if (!trimmed) return;
+    void gen.improve(trimmed);
+    setImproveInstruction('');
   };
 
   const channelLabel = (c: ReferralChannel) => t(`autopilot.referral.channel.${c}`);
@@ -277,7 +289,7 @@ export function ReferralModal({ job, resume, onClose }: Props) {
           {gen.error && <p className="text-[11px] text-red-300/80">{gen.error}</p>}
         </div>
 
-        {/* Draft output — only the generated message and its actions. */}
+        {/* Draft output — generated message, Improve with AI affordance, and actions. */}
         {(gen.draft || gen.generating) && (
           <div className="space-y-1.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
             <StreamingText text={gen.draft} isStreaming={gen.generating} />
@@ -316,6 +328,61 @@ export function ReferralModal({ job, resume, onClose }: Props) {
                 </Button>
               </div>
             </div>
+
+            {/* Improve with AI — only visible when a draft exists and not streaming. */}
+            {gen.draft && !gen.generating && (
+              <div className="space-y-2 border-t border-white/[0.06] pt-2">
+                {/* Preset chips */}
+                <div
+                  className="flex flex-wrap gap-1.5"
+                  role="group"
+                  aria-label={t('autopilot.referral.improveLabel')}
+                >
+                  {IMPROVE_PRESETS.map((preset: ImprovePreset) => (
+                    <Button
+                      key={preset}
+                      variant="glass"
+                      disabled={!gen.canGenerate}
+                      onClick={() =>
+                        submitImprove(t(`autopilot.referral.improvePresets.${preset}`))
+                      }
+                      className="h-auto px-2 py-0.5 text-[10px]"
+                    >
+                      {t(`autopilot.referral.improvePresets.${preset}`)}
+                    </Button>
+                  ))}
+                </div>
+
+                {/* Free-text instruction */}
+                <div className="flex gap-1.5">
+                  <Input
+                    id="referral-improve-instruction"
+                    variant="default"
+                    className="min-w-0 flex-1 shadow-none"
+                    value={improveInstruction}
+                    onChange={(e) => setImproveInstruction(e.target.value)}
+                    placeholder={t('autopilot.referral.improveInstructionPlaceholder')}
+                    aria-label={t('autopilot.referral.improveInstruction')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        submitImprove(improveInstruction);
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="glass"
+                    disabled={!gen.canGenerate || !improveInstruction.trim()}
+                    onClick={() => submitImprove(improveInstruction)}
+                    aria-label={t('autopilot.referral.improveApply')}
+                    className="shrink-0"
+                  >
+                    <Wand2 size={12} />
+                    {t('autopilot.referral.improveApply')}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

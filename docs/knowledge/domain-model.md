@@ -1,6 +1,6 @@
 # Domain model (core types, traits, registries)
 
-Last updated: 2026-06-21
+Last updated: 2026-06-22
 
 Describes the **shape**; the source is authoritative for field-level detail. Use `graphify explain "<type>"` then read the owning file.
 
@@ -24,7 +24,7 @@ Describes the **shape**; the source is authoritative for field-level detail. Use
 
 - **`referrals` store** — `referrals/mod.rs` (L1 domain); full CRUD via `commands/referrals.rs`. Each record captures a contact (name, company, role, relationship) plus a generated or hand-edited referral note in up to three formats (email, LinkedIn message, cold-ask). Local-only — no data leaves the device.
 - **`ReferralModal`** — `apps/tauri/src/renderer/features/autopilot/components/ReferralModal` (or adjacent apply-flow component); surfaced in the autopilot apply flow.
-- **Prompt layer** — `buildReferralPrompt` / `generateReferral` in `packages/prompts`; produces connection-note (≤ 300 chars), email, and LinkedIn-message variants; reuses `streamGenerate`.
+- **Prompt layer** — `buildReferralPrompt` / `generateReferral` in `packages/prompts`; produces connection-note (≤ 300 chars), email, and LinkedIn-message variants; reuses `streamGenerate`. **Improve variant** — `buildReferralImprovePrompt` / `gen.improve()` accept a preset or free-text instruction (warmer/shorter/more specific/fix grammar) and stream a revised draft via the same streaming infra.
 - **Data lifecycle** — wired into `manage_resettable` (full reset) and `commands/data.rs::build_bundle` (export/import). See [ADR-011](decision-records/adr-011-referral-helper-manual-only.md) for the decision to keep entry manual and discard LinkedIn scraping.
 
 ## Automation traits + registries

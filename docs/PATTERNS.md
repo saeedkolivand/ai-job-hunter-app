@@ -1,6 +1,6 @@
 # Patterns — AI Job Hunter
 
-Last updated: 2026-06-03
+Last updated: 2026-06-22
 
 This document describes the recurring architectural and implementation patterns used throughout the codebase. Understanding these patterns is essential for contributing consistently.
 
@@ -711,6 +711,22 @@ Define a `Record<Union, () => ReactNode>` keyed by the discriminated-union varia
 | `import { os } from "@tauri-apps/plugin-os"` in features/routes  | `useWindowControls()` service hook; exports OS platform checks (e.g. `isMacos`) alongside window actions                                     |
 | `import { Store } from "@tauri-apps/plugin-store"` in features   | Dedicated store wrapper that allowlists keys via module-level constants (example: `renderer/lib/onboarding-mirror.ts`); never user input     |
 | `section === 'foo' && <Foo /> \|\| section === 'bar' && <Bar />` | Render registry: `Record<SectionId, () => ReactNode>` with lazy thunks (§16)                                                                 |
+
+---
+
+## 17. Debounced Commit Pattern
+
+When an expensive derived render (e.g. Typst preview recompile) must be refreshed on user edits, but per-keystroke updates are cost-prohibitive, use debounced commit to gate the expensive operation while keeping local edits live.
+
+**Characteristics:**
+
+- **Local edits are live** for copy/paste/export (the local state is unaffected).
+- **Expensive operation (e.g. Typst recompile) is gated** behind ~700ms debounce per keystroke.
+- **External changes (generation/regeneration) bypass debounce** and recompile immediately.
+- **Flush on blur/doc-switch** ensures edits are committed before navigation.
+- **Visual hint** (e.g. "Updating preview…") indicates a pending commit.
+
+**Reference:** `useDebouncedCommit()` hook in `apps/tauri/src/renderer/hooks/use-debounced-commit/use-debounced-commit.ts`; integrated in `OutputPanelDone` for resume/cover-letter preview rendering. On each keystroke, `setLocalEditorText` captures the live state (unaffected by debounce), while `scheduleCommit` gates the expensive Typst recompile. On blur or doc-switch, `flush()` commits any pending edits immediately; external content generation (e.g. AI regeneration) bypasses the timer via replacement semantics.
 
 [tauri]: https://tauri.app
 [tanstack-query]: https://tanstack.com/query
