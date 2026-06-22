@@ -1528,6 +1528,8 @@
     "searchPlaceholder": "Filter by title, company, location…",
     "empty": "No postings yet. Start a scrape to populate this board.",
     "emptyCta": "Search jobs",
+    "emptyNoAdzunaKeys": "Add your free Adzuna API key in Settings to enable aggregated job search.",
+    "emptyNoAdzunaKeysCta": "Add Adzuna keys",
     "open": "Open",
     "view": "View",
     "copyLink": "Copy link",

@@ -8,6 +8,7 @@ Describes the job-scraping subsystem: board registry (16 active scrapers), compa
 
 - **`Scraper` trait** — `apps/tauri/src-tauri/src/scraping/boards/mod.rs`. Every board implements `Scraper: Clone + Send + Sync + Debug`.
 - **`SCRAPERS`** — registry of all enabled scrapers (built at compile time, no runtime plugin system).
+- **`BOARD_IDS`** — const array in `packages/shared/src/schemas/index.ts`; lists all scrapeable boards (16 active scrapers + aggregator). `AGGREGATOR_BOARD_ID = 'aggregator'` is the stable catalog id for the Adzuna/JSearch provider.
 - **Catalog** — `ScraperEngine::catalog()` (Rust) → `boards.catalog()` IPC → `useBoardsCatalog()` hook. Exposes per-board metadata:
   - `id` (slug)
   - `name`, `icon` (UI)
