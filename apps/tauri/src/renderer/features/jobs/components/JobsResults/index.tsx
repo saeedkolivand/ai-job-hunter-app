@@ -53,9 +53,17 @@ export function JobsResults({
   // Check whether Adzuna keys are configured — only query when the list is empty
   // and not scraping, to avoid unnecessary IPC calls during normal operation.
   const isEmpty = !scraping && filtered.length === 0;
-  const { data: adzunaIdData } = useHasProviderKey(PROVIDER_SLOTS.adzunaAppId, isEmpty);
-  const { data: adzunaKeyData } = useHasProviderKey(PROVIDER_SLOTS.adzunaAppKey, isEmpty);
-  const missingAdzunaKeys = isEmpty && !(adzunaIdData?.has && adzunaKeyData?.has);
+  const { data: adzunaIdData, isSuccess: adzunaIdReady } = useHasProviderKey(
+    PROVIDER_SLOTS.adzunaAppId,
+    isEmpty
+  );
+  const { data: adzunaKeyData, isSuccess: adzunaKeyReady } = useHasProviderKey(
+    PROVIDER_SLOTS.adzunaAppKey,
+    isEmpty
+  );
+  const keysKnown = adzunaIdReady && adzunaKeyReady;
+  const missingAdzunaKeys =
+    isEmpty && keysKnown && (adzunaIdData?.has === false || adzunaKeyData?.has === false);
 
   const waiting = scraping || (hasResume && isPending && !isError);
 

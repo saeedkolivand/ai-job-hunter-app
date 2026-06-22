@@ -38,11 +38,15 @@ vi.mock('@/store/session-store', () => ({
     sel({ setSettings: vi.fn() }),
 }));
 
-// ── useHasProviderKey stub — keys present by default (no hint shown) ──────────
+// ── useHasProviderKey stub — keys present + resolved by default ───────────────
+//
+// isSuccess must be true for the new guard (keysKnown) to let missingAdzunaKeys
+// become true.  stubbedKeyIsSuccess=false simulates the query still loading.
 
 let stubbedHasKey = true;
+let stubbedKeyIsSuccess = true;
 vi.mock('@/services/use-ai-provider', () => ({
-  useHasProviderKey: () => ({ data: { has: stubbedHasKey } }),
+  useHasProviderKey: () => ({ data: { has: stubbedHasKey }, isSuccess: stubbedKeyIsSuccess }),
 }));
 
 // ── useJobMatchScores stub — module-level ref set BEFORE each render ───────────
@@ -162,6 +166,7 @@ function rowOrder(): string[] {
 beforeEach(() => {
   stubbedQuery = { scoresById: new Map(), isPending: false, isError: false };
   stubbedHasKey = true;
+  stubbedKeyIsSuccess = true;
 });
 
 describe('JobsResults — gating', () => {
@@ -256,6 +261,18 @@ describe('JobsResults — no résumé', () => {
 
   it('shows the generic CTA when the list is empty and keys are present', () => {
     stubbedHasKey = true;
+    renderResults({ filtered: [], resumeId: null });
+
+    expect(screen.getByText('jobs.emptyCta')).toBeInTheDocument();
+    expect(screen.queryByText('jobs.emptyNoAdzunaKeys')).not.toBeInTheDocument();
+  });
+
+  it('shows the generic CTA (not the keys CTA) while the key queries are still loading', () => {
+    // isSuccess=false means the query has not resolved yet — keys may exist but
+    // we don't know.  missingAdzunaKeys must be false so the generic empty-state
+    // is shown, preventing a false-positive "add keys" flash.
+    stubbedHasKey = false; // would trigger CTA if isSuccess were true
+    stubbedKeyIsSuccess = false; // queries unresolved / loading
     renderResults({ filtered: [], resumeId: null });
 
     expect(screen.getByText('jobs.emptyCta')).toBeInTheDocument();
