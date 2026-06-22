@@ -44,6 +44,11 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
  * Render the hook with a mock client whose `autopilot.takePendingFocus` resolves
  * to `pending`. On mount the hook drains once; tests can also override for later
  * drain triggers.
+ *
+ * Override shape: `createMockClient` from `@/test-support` accepts dotted-key
+ * overrides (`'namespace.method': fn`) via a Proxy — NOT nested objects. The
+ * Proxy `get` trap checks `overrides['autopilot.takePendingFocus']` directly so
+ * the override IS applied; call assertions below prove it each time.
  */
 function renderWithPending(
   pending: string | null,
@@ -71,8 +76,10 @@ afterEach(() => {
 
 describe('useAutopilotFocusNavigation — pull drain (buffered deep-link path)', () => {
   it('navigates to /autopilot and sets focusedId when a buffered id is pulled on mount', async () => {
-    renderWithPending('ap-123');
+    const { takePendingFocus } = renderWithPending('ap-123');
 
+    // Prove the override was actually called (not a default-null path passing by luck).
+    await waitFor(() => expect(takePendingFocus).toHaveBeenCalledOnce());
     await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/autopilot' }));
     expect(setAutopilot).toHaveBeenCalledExactlyOnceWith({ focusedId: 'ap-123' });
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['autopilot'] });
@@ -91,7 +98,10 @@ describe('useAutopilotFocusNavigation — pull drain (buffered deep-link path)',
     const takePendingFocus = vi.fn().mockResolvedValueOnce('ap-once').mockResolvedValue(null);
     renderWithPending(null, takePendingFocus);
 
-    await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+    // Prove the override fn fired (not a default-null path) and produced navigation.
+    await waitFor(() => expect(takePendingFocus).toHaveBeenCalledOnce());
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/autopilot' }));
+    expect(setAutopilot).toHaveBeenCalledWith({ focusedId: 'ap-once' });
 
     await act(async () => {
       window.dispatchEvent(new Event('focus'));
@@ -108,7 +118,8 @@ describe('useAutopilotFocusNavigation — pull drain (buffered deep-link path)',
     const takePendingFocus = vi.fn().mockResolvedValue(null);
     renderWithPending(null, takePendingFocus);
 
-    await waitFor(() => expect(takePendingFocus).toHaveBeenCalled());
+    // Mount drain called the override (not the default) and correctly did nothing.
+    await waitFor(() => expect(takePendingFocus).toHaveBeenCalledOnce());
     expect(navigate).not.toHaveBeenCalled();
 
     takePendingFocus.mockResolvedValueOnce('ap-focus');
@@ -117,6 +128,8 @@ describe('useAutopilotFocusNavigation — pull drain (buffered deep-link path)',
       await Promise.resolve();
     });
 
+    // Override called a second time (window focus trigger) and produced navigation.
+    await waitFor(() => expect(takePendingFocus).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/autopilot' }));
     expect(setAutopilot).toHaveBeenCalledWith({ focusedId: 'ap-focus' });
   });
@@ -125,7 +138,9 @@ describe('useAutopilotFocusNavigation — pull drain (buffered deep-link path)',
     const takePendingFocus = vi.fn().mockResolvedValue(null);
     renderWithPending(null, takePendingFocus);
 
-    await waitFor(() => expect(takePendingFocus).toHaveBeenCalled());
+    // Mount drain: override called, nothing buffered.
+    await waitFor(() => expect(takePendingFocus).toHaveBeenCalledOnce());
+    expect(navigate).not.toHaveBeenCalled();
 
     takePendingFocus.mockResolvedValueOnce('ap-vis');
     // jsdom defaults visibilityState to 'visible', so we simulate the transition.
@@ -138,7 +153,10 @@ describe('useAutopilotFocusNavigation — pull drain (buffered deep-link path)',
       await Promise.resolve();
     });
 
+    // Override called a second time (visibility trigger) and drove navigation.
+    await waitFor(() => expect(takePendingFocus).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/autopilot' }));
+    expect(setAutopilot).toHaveBeenCalledWith({ focusedId: 'ap-vis' });
   });
 
   it('silently swallows IPC errors (no unhandled rejection)', async () => {
