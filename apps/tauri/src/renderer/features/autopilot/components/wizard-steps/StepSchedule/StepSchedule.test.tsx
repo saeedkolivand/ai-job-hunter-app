@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import { TEST_IDS } from '@ajh/test-ids';
+
 import type { WizardState } from '@/features/autopilot/types';
 
 import { StepSchedule } from './index';
@@ -50,7 +52,7 @@ function Probe() {
   const { watch } = useFormContext<WizardState>();
   const v = watch();
   return (
-    <output data-testid="probe">
+    <output data-testid={TEST_IDS.autopilot.probe}>
       {JSON.stringify({
         schedule: v.schedule,
         scheduleHour: v.scheduleHour,
@@ -75,7 +77,7 @@ function renderStep(overrides: Partial<WizardState> = {}) {
 }
 
 function readProbe(): Pick<WizardState, 'schedule' | 'scheduleHour' | 'scheduleMinute'> {
-  return JSON.parse(screen.getByTestId('probe').textContent ?? '{}');
+  return JSON.parse(screen.getByTestId(TEST_IDS.autopilot.probe).textContent ?? '{}');
 }
 
 /** Open the Dropdown identified by its trigger button id attribute and pick an option. */

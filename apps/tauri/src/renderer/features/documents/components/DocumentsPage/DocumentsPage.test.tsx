@@ -29,6 +29,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
 import type { AiGenerationRecord } from '@ajh/shared/ipc';
+import { TEST_IDS } from '@ajh/test-ids';
 
 import { useSessionStore } from '@/store/session-store';
 
@@ -84,7 +85,7 @@ vi.mock('@/features/documents/components/GenerationCard', () => ({
     onToggleSelect?: (id: string) => void;
   }) => (
     <div
-      data-testid="generation-card"
+      data-testid={TEST_IDS.documents.generationCard}
       data-genid={gen.id}
       data-selected={selected ? '1' : '0'}
       // The whole point of the change: the card is only "selectable" (renders its
@@ -99,7 +100,7 @@ vi.mock('@/features/documents/components/GenerationCard', () => ({
 // ── InteractionRow stub (Résumés tab never renders it; import must resolve) ────
 
 vi.mock('@/features/documents/components/InteractionRow', () => ({
-  InteractionRow: () => <div data-testid="interaction-row" />,
+  InteractionRow: () => <div data-testid={TEST_IDS.documents.interactionRow} />,
 }));
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -163,7 +164,7 @@ describe('DocumentsPage — selection mode', () => {
     expect(screen.queryByRole('button', { name: SELECT_DONE })).not.toBeInTheDocument();
 
     // Cards render but are NOT selectable (no onToggleSelect → no checkbox).
-    const cards = screen.getAllByTestId('generation-card');
+    const cards = screen.getAllByTestId(TEST_IDS.documents.generationCard);
     expect(cards).toHaveLength(2);
     cards.forEach((c) => expect(c).toHaveAttribute('data-selectable', '0'));
   });
@@ -180,7 +181,7 @@ describe('DocumentsPage — selection mode', () => {
 
     // Every card is now selectable (received onToggleSelect).
     screen
-      .getAllByTestId('generation-card')
+      .getAllByTestId(TEST_IDS.documents.generationCard)
       .forEach((c) => expect(c).toHaveAttribute('data-selectable', '1'));
   });
 
@@ -196,7 +197,7 @@ describe('DocumentsPage — selection mode', () => {
     expect(screen.queryByLabelText(SELECT_ALL)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: SELECT_START })).toBeInTheDocument();
     screen
-      .getAllByTestId('generation-card')
+      .getAllByTestId(TEST_IDS.documents.generationCard)
       .forEach((c) => expect(c).toHaveAttribute('data-selectable', '0'));
   });
 
@@ -207,7 +208,7 @@ describe('DocumentsPage — selection mode', () => {
 
     expect(screen.queryByRole('button', { name: SELECT_START })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(SELECT_ALL)).not.toBeInTheDocument();
-    expect(screen.queryByTestId('generation-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.generationCard)).not.toBeInTheDocument();
   });
 
   it('keeps the Select button when a search filter matches no documents', () => {
@@ -223,7 +224,7 @@ describe('DocumentsPage — selection mode', () => {
     expect(screen.getByRole('button', { name: SELECT_START })).toBeInTheDocument();
 
     // No cards survive the filter, and the no-results empty state is shown.
-    expect(screen.queryByTestId('generation-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.generationCard)).not.toBeInTheDocument();
     expect(screen.getByText('resumes.noResults')).toBeInTheDocument();
   });
 
@@ -234,14 +235,14 @@ describe('DocumentsPage — selection mode', () => {
 
     // Before Select-all: no card is selected.
     screen
-      .getAllByTestId('generation-card')
+      .getAllByTestId(TEST_IDS.documents.generationCard)
       .forEach((c) => expect(c).toHaveAttribute('data-selected', '0'));
 
     fireEvent.click(screen.getByLabelText(SELECT_ALL));
 
     // After Select-all: every card is selected.
     screen
-      .getAllByTestId('generation-card')
+      .getAllByTestId(TEST_IDS.documents.generationCard)
       .forEach((c) => expect(c).toHaveAttribute('data-selected', '1'));
   });
 });

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 
 import type { BoardCatalogEntry } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { Button, CardSkeleton, cn, GlassCard, Input, transition } from '@ajh/ui';
 
@@ -311,7 +312,7 @@ export function ScrapeForm({
             {/* Aggregator key hint — shown when aggregator selected but Adzuna keys absent */}
             {showAggregatorKeyHint && (
               <p
-                data-testid="aggregator-key-hint"
+                data-testid={TEST_IDS.jobs.aggregatorKeyHint}
                 className="mb-3 flex items-center gap-1.5 text-[11px] text-amber-400/70"
               >
                 <Info size={11} aria-hidden="true" />
@@ -430,7 +431,7 @@ export function ScrapeForm({
                 aria-describedby={
                   !scraping && blockedByRequiredLogin ? 'scrape-blocked-hint' : undefined
                 }
-                data-testid="scrape-start-button"
+                data-testid={TEST_IDS.jobs.scrapeStartButton}
                 className="transition-all duration-150 ease-out"
               >
                 {!scraping && <Search size={12} />}

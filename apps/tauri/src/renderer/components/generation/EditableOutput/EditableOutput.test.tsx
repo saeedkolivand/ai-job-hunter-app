@@ -2,6 +2,7 @@ import { forwardRef, useImperativeHandle } from 'react';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import { TEST_IDS } from '@ajh/test-ids';
 import type * as AjhUi from '@ajh/ui';
 import type { RichTextEditorHandle, RichTextEditorProps } from '@ajh/ui';
 
@@ -50,13 +51,16 @@ vi.mock('@ajh/ui', async (importOriginal) => {
       );
 
       return (
-        <div data-testid="rich-text-editor">
-          <span data-testid="rte-value">{value}</span>
-          <actual.Button data-testid="rte-select-trigger" onClick={() => onSelectionChange?.(true)}>
+        <div data-testid={TEST_IDS.generation.richTextEditor}>
+          <span data-testid={TEST_IDS.generation.rteValue}>{value}</span>
+          <actual.Button
+            data-testid={TEST_IDS.generation.rteSelectTrigger}
+            onClick={() => onSelectionChange?.(true)}
+          >
             simulate selection
           </actual.Button>
           <actual.Button
-            data-testid="rte-deselect-trigger"
+            data-testid={TEST_IDS.generation.rteDeselectTrigger}
             onClick={() => onSelectionChange?.(false)}
           >
             deselect
@@ -380,7 +384,7 @@ describe('EditableOutput — tab wiring', () => {
 
     switchToWysiwygEdit();
 
-    expect(screen.getByTestId('rich-text-editor')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.generation.richTextEditor)).toBeInTheDocument();
     // No raw <textarea> in WYSIWYG Edit view.
     expect(screen.queryByRole('textbox')).toBeNull();
   });
@@ -392,7 +396,7 @@ describe('EditableOutput — tab wiring', () => {
 
     expect(screen.getByRole('textbox')).toBeInTheDocument();
     expect(screen.getByRole<HTMLTextAreaElement>('textbox').tagName).toBe('TEXTAREA');
-    expect(screen.queryByTestId('rich-text-editor')).toBeNull();
+    expect(screen.queryByTestId(TEST_IDS.generation.richTextEditor)).toBeNull();
   });
 });
 
@@ -434,7 +438,7 @@ describe('EditableOutput — F4 inline rewrite splice (Editor/WYSIWYG path)', ()
     switchToWysiwygEdit();
 
     // Simulate the user making a selection inside the editor.
-    fireEvent.click(screen.getByTestId('rte-select-trigger'));
+    fireEvent.click(screen.getByTestId(TEST_IDS.generation.rteSelectTrigger));
 
     // Rewrite trigger should now be visible.
     openRewritePopover();
@@ -464,7 +468,7 @@ describe('EditableOutput — F4 inline rewrite splice (Editor/WYSIWYG path)', ()
     render(<EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />);
 
     switchToWysiwygEdit();
-    fireEvent.click(screen.getByTestId('rte-select-trigger'));
+    fireEvent.click(screen.getByTestId(TEST_IDS.generation.rteSelectTrigger));
     openRewritePopover();
 
     // Cancel without starting a rewrite.
@@ -488,7 +492,7 @@ describe('EditableOutput — F4 inline rewrite splice (Editor/WYSIWYG path)', ()
     render(<EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />);
 
     switchToWysiwygEdit();
-    fireEvent.click(screen.getByTestId('rte-select-trigger'));
+    fireEvent.click(screen.getByTestId(TEST_IDS.generation.rteSelectTrigger));
     openRewritePopover();
 
     // getSelectionContext must have been invoked when the popover opened.
@@ -511,7 +515,7 @@ describe('EditableOutput — F4 inline rewrite splice (Editor/WYSIWYG path)', ()
     render(<EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />);
 
     switchToWysiwygEdit();
-    fireEvent.click(screen.getByTestId('rte-select-trigger'));
+    fireEvent.click(screen.getByTestId(TEST_IDS.generation.rteSelectTrigger));
     openRewritePopover();
 
     await act(async () => {
@@ -544,10 +548,10 @@ describe('EditableOutput — preview surface (#24)', () => {
         value="Led **payments** work."
         onChange={vi.fn()}
         docType="resume"
-        previewSlot={<div data-testid="custom-preview">PDF</div>}
+        previewSlot={<div data-testid={TEST_IDS.generation.customPreview}>PDF</div>}
       />
     );
-    expect(screen.getByTestId('custom-preview')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.generation.customPreview)).toBeInTheDocument();
     // The markdown fallback must NOT also render when a slot is supplied.
     expect(screen.queryByText('payments')).toBeNull();
   });

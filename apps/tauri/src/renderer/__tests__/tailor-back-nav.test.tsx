@@ -38,6 +38,7 @@ import {
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import type { Application } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 
 import { installUnknownPathRedirect } from '@/lib/router-guard';
 import { createMockClient, withProviders } from '@/test-support';
@@ -59,7 +60,7 @@ vi.mock('@/features/jobs/hooks/useDefaultResumeId', () => ({
 }));
 
 vi.mock('@/features/documents/components/TailorFlow', () => ({
-  TailorFlow: () => <div data-testid="tailor-flow-stub" />,
+  TailorFlow: () => <div data-testid={TEST_IDS.documents.tailorFlowStub} />,
 }));
 
 const APPLICATION_FIXTURE: Application = {
@@ -128,17 +129,17 @@ function buildRouter(initial: string) {
 
   const rootRoute = createRootRoute({
     component: () => <Outlet />,
-    notFoundComponent: () => <div data-testid="notfound">Page not found</div>,
+    notFoundComponent: () => <div data-testid={TEST_IDS.layout.notFound}>Page not found</div>,
   });
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/',
-    component: () => <div data-testid="dashboard">dashboard</div>,
+    component: () => <div data-testid={TEST_IDS.layout.dashboard}>dashboard</div>,
   });
   const jobsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/jobs',
-    component: () => <div data-testid="jobs-list">jobs</div>,
+    component: () => <div data-testid={TEST_IDS.jobs.jobsList}>jobs</div>,
   });
   const applicationsLayout = createRoute({
     getParentRoute: () => rootRoute,
@@ -148,7 +149,7 @@ function buildRouter(initial: string) {
   const applicationsIndex = createRoute({
     getParentRoute: () => applicationsLayout,
     path: '/',
-    component: () => <div data-testid="applications-list">list</div>,
+    component: () => <div data-testid={TEST_IDS.applications.list}>list</div>,
   });
   const applicationsDetail = createRoute({
     getParentRoute: () => applicationsLayout,
@@ -184,7 +185,7 @@ describe('Tailor → documents-tab → Back regression', () => {
       expect(router.state.isLoading).toBe(false);
     });
     expect(router.state.location.pathname).toBe('/jobs');
-    expect(screen.queryByTestId('dashboard')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.layout.dashboard)).not.toBeInTheDocument();
   });
 
   it('Back from a deep-link (no `from`) defaults to /applications, not the dashboard, with the guard active', async () => {
@@ -199,6 +200,6 @@ describe('Tailor → documents-tab → Back regression', () => {
       expect(router.state.isLoading).toBe(false);
     });
     expect(router.state.location.pathname).toBe('/applications');
-    expect(screen.queryByTestId('dashboard')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.layout.dashboard)).not.toBeInTheDocument();
   });
 });

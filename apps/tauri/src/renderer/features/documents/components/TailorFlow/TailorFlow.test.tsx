@@ -27,6 +27,8 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import { TEST_IDS } from '@ajh/test-ids';
+
 // ── i18n ──────────────────────────────────────────────────────────────────────
 
 vi.mock('@ajh/translations', () => ({
@@ -182,14 +184,19 @@ vi.mock('./TailorWizard', () => ({
     onGenerate: (v: { resume: string; outputType: 'resume'; researchCompany: boolean }) => void;
     jobDesc?: string;
   }) => (
-    <div data-testid="tailor-wizard" data-step={step} data-jobdesc={jobDesc}>
-      <div role="button" tabIndex={0} data-testid="wizard-next" onClick={() => setStep(step + 1)}>
+    <div data-testid={TEST_IDS.documents.tailorWizard} data-step={step} data-jobdesc={jobDesc}>
+      <div
+        role="button"
+        tabIndex={0}
+        data-testid={TEST_IDS.documents.wizardNext}
+        onClick={() => setStep(step + 1)}
+      >
         next-step
       </div>
       <div
         role="button"
         tabIndex={0}
-        data-testid="wizard-generate"
+        data-testid={TEST_IDS.documents.wizardGenerate}
         onClick={() =>
           onGenerate({ resume: 'my-resume', outputType: 'resume', researchCompany: false })
         }
@@ -201,7 +208,7 @@ vi.mock('./TailorWizard', () => ({
 }));
 
 vi.mock('./GeneratingPanel', () => ({
-  GeneratingPanel: () => <div data-testid="generating-panel" />,
+  GeneratingPanel: () => <div data-testid={TEST_IDS.documents.generatingPanel} />,
 }));
 
 vi.mock('./ResultsPanel', () => ({
@@ -220,7 +227,11 @@ vi.mock('./ResultsPanel', () => ({
     templateId?: string;
     atsMode?: boolean;
   }) => (
-    <div data-testid="results-panel" data-templateid={templateId} data-atsmode={String(atsMode)}>
+    <div
+      data-testid={TEST_IDS.documents.resultsPanel}
+      data-templateid={templateId}
+      data-atsmode={String(atsMode)}
+    >
       <div role="button" tabIndex={0} onClick={onEditSettings}>
         edit-settings
       </div>
@@ -236,7 +247,7 @@ vi.mock('./ResultsPanel', () => ({
 
 vi.mock('./ApplicationQuestionsModal', () => ({
   ApplicationQuestionsModal: ({ onClose }: { onClose: () => void }) => (
-    <div data-testid="questions-modal">
+    <div data-testid={TEST_IDS.documents.questionsModal}>
       <div role="button" tabIndex={0} onClick={onClose}>
         close-questions
       </div>
@@ -246,7 +257,7 @@ vi.mock('./ApplicationQuestionsModal', () => ({
 
 vi.mock('./InterviewQuestionsModal', () => ({
   InterviewQuestionsModal: ({ onClose }: { onClose: () => void }) => (
-    <div data-testid="interview-modal">
+    <div data-testid={TEST_IDS.documents.interviewModal}>
       <div role="button" tabIndex={0} onClick={onClose}>
         close-interview
       </div>
@@ -256,7 +267,7 @@ vi.mock('./InterviewQuestionsModal', () => ({
 
 vi.mock('./ReferralModal', () => ({
   ReferralModal: ({ onClose }: { onClose: () => void }) => (
-    <div data-testid="referral-modal">
+    <div data-testid={TEST_IDS.documents.referralModal}>
       <div role="button" tabIndex={0} onClick={onClose}>
         close-referral
       </div>
@@ -383,33 +394,33 @@ beforeEach(() => {
 describe('TailorFlow — stage derivation', () => {
   it('renders the wizard (configuring) when not generating and no output', () => {
     renderFlow({});
-    expect(screen.getByTestId('tailor-wizard')).toBeInTheDocument();
-    expect(screen.queryByTestId('generating-panel')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('results-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.generatingPanel)).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.resultsPanel)).not.toBeInTheDocument();
   });
 
   it('renders the generating panel when generating=true (no output)', () => {
     genMock.generating = true;
     renderFlow({});
-    expect(screen.getByTestId('generating-panel')).toBeInTheDocument();
-    expect(screen.queryByTestId('tailor-wizard')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('results-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.documents.generatingPanel)).toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.tailorWizard)).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.resultsPanel)).not.toBeInTheDocument();
   });
 
   it('renders the results panel when resumeOut is set and not generating', () => {
     genMock.resumeOut = 'Generated resume text';
     genMock.output = 'Generated resume text';
     renderFlow({});
-    expect(screen.getByTestId('results-panel')).toBeInTheDocument();
-    expect(screen.queryByTestId('tailor-wizard')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('generating-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.documents.resultsPanel)).toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.tailorWizard)).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.generatingPanel)).not.toBeInTheDocument();
   });
 
   it('renders the results panel when only coverOut is set', () => {
     genMock.coverOut = 'Generated cover letter';
     genMock.output = 'Generated cover letter';
     renderFlow({});
-    expect(screen.getByTestId('results-panel')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.documents.resultsPanel)).toBeInTheDocument();
   });
 
   it('generating=true WINS over existing output (generating stage takes priority)', () => {
@@ -417,8 +428,8 @@ describe('TailorFlow — stage derivation', () => {
     genMock.resumeOut = 'Previous output';
     genMock.output = 'Previous output';
     renderFlow({});
-    expect(screen.getByTestId('generating-panel')).toBeInTheDocument();
-    expect(screen.queryByTestId('results-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.documents.generatingPanel)).toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.resultsPanel)).not.toBeInTheDocument();
   });
 
   it('clicking "edit-settings" from done stage reverts to the wizard (forceConfiguring)', async () => {
@@ -428,14 +439,14 @@ describe('TailorFlow — stage derivation', () => {
     renderFlow({});
 
     // We are in done stage — results panel visible.
-    expect(screen.getByTestId('results-panel')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.documents.resultsPanel)).toBeInTheDocument();
 
     // The stubbed ResultsPanel exposes an edit-settings button that calls onEditSettings.
     await user.click(screen.getByRole('button', { name: 'edit-settings' }));
 
     // After clicking, TailorFlow sets forceConfiguring → wizard shown.
-    expect(screen.getByTestId('tailor-wizard')).toBeInTheDocument();
-    expect(screen.queryByTestId('results-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.resultsPanel)).not.toBeInTheDocument();
 
     // Output is preserved under forceConfiguring — gen mock still has output.
     expect(genMock.resumeOut).toBe('Generated resume');
@@ -451,7 +462,7 @@ describe('TailorFlow — persistence injection', () => {
     // The stub renders `data-step={step}` so we can assert the value was forwarded.
     const persistence = makePersistence({ wizardStep: 2 });
     renderFlow({ persistence });
-    expect(screen.getByTestId('tailor-wizard')).toHaveAttribute('data-step', '2');
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute('data-step', '2');
   });
 
   it('reads wizardForm from persistence to seed the RHF defaultValues (non-null form)', () => {
@@ -462,7 +473,7 @@ describe('TailorFlow — persistence injection', () => {
       wizardForm: { resume: 'Seeded resume', outputType: 'resume', researchCompany: false },
     });
     renderFlow({ persistence });
-    expect(screen.getByTestId('tailor-wizard')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toBeInTheDocument();
   });
 
   it('calls persistence.setWizardForm AND persistence.setWizardStep when advancing a step', async () => {
@@ -474,7 +485,7 @@ describe('TailorFlow — persistence injection', () => {
     const persistence = makePersistence({ wizardStep: 0 });
     renderFlow({ persistence });
 
-    await user.click(screen.getByTestId('wizard-next'));
+    await user.click(screen.getByTestId(TEST_IDS.documents.wizardNext));
 
     // setWizardForm is called with the current RHF values (persistForm snapshot).
     expect(persistence.setWizardForm).toHaveBeenCalledTimes(1);
@@ -490,7 +501,7 @@ describe('TailorFlow — persistence injection', () => {
     const persistence = makePersistence();
     renderFlow({ persistence });
 
-    await user.click(screen.getByTestId('wizard-generate'));
+    await user.click(screen.getByTestId(TEST_IDS.documents.wizardGenerate));
 
     // persistForm is always called before generation starts.
     expect(persistence.setWizardForm).toHaveBeenCalledTimes(1);
@@ -509,7 +520,7 @@ describe('TailorFlow — persistence injection', () => {
     const persistence = makePersistence({ templateId: 'classic', atsMode: true });
     renderFlow({ persistence });
 
-    const panel = screen.getByTestId('results-panel');
+    const panel = screen.getByTestId(TEST_IDS.documents.resultsPanel);
     expect(panel).toHaveAttribute('data-templateid', 'classic');
     expect(panel).toHaveAttribute('data-atsmode', 'true');
   });
@@ -620,14 +631,14 @@ describe('TailorFlow — controller seam', () => {
       },
     });
 
-    expect(screen.queryByTestId('questions-modal')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.questionsModal)).not.toBeInTheDocument();
 
     // Wrap the imperative state-update in act() so React flushes synchronously.
     act(() => {
       capturedController?.openQuestions();
     });
 
-    expect(await screen.findByTestId('questions-modal')).toBeInTheDocument();
+    expect(await screen.findByTestId(TEST_IDS.documents.questionsModal)).toBeInTheDocument();
   });
 
   it('calling openReferral() opens the ReferralModal', async () => {
@@ -638,13 +649,13 @@ describe('TailorFlow — controller seam', () => {
       },
     });
 
-    expect(screen.queryByTestId('referral-modal')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.referralModal)).not.toBeInTheDocument();
 
     act(() => {
       capturedController?.openReferral();
     });
 
-    expect(await screen.findByTestId('referral-modal')).toBeInTheDocument();
+    expect(await screen.findByTestId(TEST_IDS.documents.referralModal)).toBeInTheDocument();
   });
 
   it('closing the questions modal removes it from the DOM', async () => {
@@ -659,10 +670,10 @@ describe('TailorFlow — controller seam', () => {
     act(() => {
       capturedController?.openQuestions();
     });
-    expect(await screen.findByTestId('questions-modal')).toBeInTheDocument();
+    expect(await screen.findByTestId(TEST_IDS.documents.questionsModal)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'close-questions' }));
-    expect(screen.queryByTestId('questions-modal')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.questionsModal)).not.toBeInTheDocument();
   });
 
   it('closing the referral modal removes it from the DOM', async () => {
@@ -677,16 +688,16 @@ describe('TailorFlow — controller seam', () => {
     act(() => {
       capturedController?.openReferral();
     });
-    expect(await screen.findByTestId('referral-modal')).toBeInTheDocument();
+    expect(await screen.findByTestId(TEST_IDS.documents.referralModal)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'close-referral' }));
-    expect(screen.queryByTestId('referral-modal')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.referralModal)).not.toBeInTheDocument();
   });
 
   it('onController is not required — component renders without it', () => {
     // Verify no crash when onController prop is omitted.
     expect(() => renderFlow({})).not.toThrow();
-    expect(screen.getByTestId('tailor-wizard')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toBeInTheDocument();
   });
 });
 
@@ -749,7 +760,10 @@ describe('TailorFlow — prefer-longer / useResolveJobUrl branch', () => {
     });
 
     // jobDesc flowed into TailorWizard as the jobDesc prop → exposed as data-jobdesc.
-    expect(screen.getByTestId('tailor-wizard')).toHaveAttribute('data-jobdesc', longFetched);
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
+      'data-jobdesc',
+      longFetched
+    );
   });
 
   it('(b) long initialDesc (≥800) → useResolveJobUrl called with shouldFetch=false', () => {
@@ -775,6 +789,9 @@ describe('TailorFlow — prefer-longer / useResolveJobUrl branch', () => {
     });
 
     // jobDesc must equal the carried initialDesc, not the fetched one.
-    expect(screen.getByTestId('tailor-wizard')).toHaveAttribute('data-jobdesc', carried);
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
+      'data-jobdesc',
+      carried
+    );
   });
 });

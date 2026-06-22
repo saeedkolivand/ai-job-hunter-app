@@ -16,6 +16,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 import type { BoardCatalogEntry } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 
 // ---------------------------------------------------------------------------
 // Stubs — boards catalog
@@ -53,7 +54,7 @@ vi.mock('@/services/use-ai-provider', () => ({
 // ---------------------------------------------------------------------------
 
 vi.mock('./ScrapeFilters', () => ({
-  ScrapeFilters: () => <div data-testid="scrape-filters" />,
+  ScrapeFilters: () => <div data-testid={TEST_IDS.jobs.scrapeFilters} />,
 }));
 
 vi.mock('./BoardConnectChip', () => ({
@@ -153,7 +154,7 @@ describe('ScrapeForm — aggregator key hint', () => {
     stubKeyHas = false;
     renderForm(['aggregator']);
 
-    expect(screen.getByTestId('aggregator-key-hint')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.jobs.aggregatorKeyHint)).toBeInTheDocument();
     expect(screen.getByText('jobs.aggregatorKeyHint')).toBeInTheDocument();
   });
 
@@ -162,7 +163,7 @@ describe('ScrapeForm — aggregator key hint', () => {
     stubKeyHas = true;
     renderForm(['aggregator']);
 
-    expect(screen.queryByTestId('aggregator-key-hint')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.jobs.aggregatorKeyHint)).not.toBeInTheDocument();
   });
 
   it('shows the hint when aggregator is selected and only App ID is absent (App Key present)', () => {
@@ -171,7 +172,7 @@ describe('ScrapeForm — aggregator key hint', () => {
     renderForm(['aggregator']);
 
     // Both keys must be present to suppress the hint
-    expect(screen.getByTestId('aggregator-key-hint')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.jobs.aggregatorKeyHint)).toBeInTheDocument();
   });
 
   it('shows the hint when aggregator is selected and only App Key is absent (App ID present)', () => {
@@ -179,7 +180,7 @@ describe('ScrapeForm — aggregator key hint', () => {
     stubKeyHas = false;
     renderForm(['aggregator']);
 
-    expect(screen.getByTestId('aggregator-key-hint')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.jobs.aggregatorKeyHint)).toBeInTheDocument();
   });
 
   it('hides the hint when aggregator is NOT selected (even with keys absent)', () => {
@@ -187,7 +188,7 @@ describe('ScrapeForm — aggregator key hint', () => {
     stubKeyHas = false;
     renderForm(['greenhouse']); // no aggregator board selected
 
-    expect(screen.queryByTestId('aggregator-key-hint')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.jobs.aggregatorKeyHint)).not.toBeInTheDocument();
   });
 
   it('hides the hint when aggregator is deselected (multiple boards, aggregator removed)', () => {
@@ -195,6 +196,6 @@ describe('ScrapeForm — aggregator key hint', () => {
     stubKeyHas = false;
     renderForm(['greenhouse']); // aggregator not in selection
 
-    expect(screen.queryByTestId('aggregator-key-hint')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.jobs.aggregatorKeyHint)).not.toBeInTheDocument();
   });
 });

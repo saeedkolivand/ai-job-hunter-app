@@ -8,6 +8,7 @@ export default defineConfig({
     projects: [
       'packages/shared',
       'packages/prompts',
+      'packages/test-ids',
       'packages/ui',
       // Storybook browser-test project (headless Chromium via Playwright). Runs
       // every story as a test; selectable on its own with `--project storybook`.

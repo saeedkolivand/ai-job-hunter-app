@@ -19,6 +19,7 @@
   "dependencies": {
     "@ajh/prompts": "workspace:*",
     "@ajh/shared": "workspace:*",
+    "@ajh/test-ids": "workspace:*",
     "@ajh/translations": "workspace:*",
     "@ajh/ui": "workspace:*",
     "@hookform/resolvers": "^5.4.0",

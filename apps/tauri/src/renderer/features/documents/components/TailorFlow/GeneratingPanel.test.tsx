@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
+import { TEST_IDS } from '@ajh/test-ids';
 import type * as AjhUi from '@ajh/ui';
 
 import { GeneratingPanel } from './GeneratingPanel';
@@ -15,7 +16,7 @@ vi.mock('@ajh/translations', () => ({
 // without the real streaming infrastructure.
 vi.mock('@/components/generation/ThinkingBubble', () => ({
   ThinkingBubble: ({ thinking }: { thinking: string }) => (
-    <div data-testid="thinking-bubble">{thinking}</div>
+    <div data-testid={TEST_IDS.documents.thinkingBubble}>{thinking}</div>
   ),
 }));
 
@@ -27,7 +28,7 @@ vi.mock('@ajh/ui', async (importOriginal) => {
     ...actual,
     StepDots: ({ currentStep, totalSteps }: { currentStep: number; totalSteps: number }) => (
       <div
-        data-testid="step-dots"
+        data-testid={TEST_IDS.documents.stepDots}
         data-current={String(currentStep)}
         data-total={String(totalSteps)}
       />
@@ -54,7 +55,7 @@ function makeProps(overrides: Partial<Parameters<typeof GeneratingPanel>[0]> = {
 // ── Helper to read StepDots props ─────────────────────────────────────────────
 
 function stepDotsProps(): { current: number; total: number } {
-  const el = screen.getByTestId('step-dots');
+  const el = screen.getByTestId(TEST_IDS.documents.stepDots);
   return {
     current: Number(el.getAttribute('data-current')),
     total: Number(el.getAttribute('data-total')),
