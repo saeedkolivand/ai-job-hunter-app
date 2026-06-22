@@ -207,6 +207,10 @@ matching jobs (the user tailors & applies with the assistant; there is no auto-a
 
 #### `autopilot.resume(id: string): Promise<void>`
 
+#### `autopilot.takePendingFocus(): Promise<string | null>`
+
+Atomically take and clear the autopilot-focus intent buffered by the shell while the app was starting (cold-start deep link `ajh://autopilot/<id>`). A deep-link deep-link emitted during Rust setup fires before the renderer's `onFocus` listener attaches, so the event is lost; the renderer pulls the buffered `autopilotId` once its JS loop is live (on mount and when focus is regained). Returns `null` when nothing is buffered (the common case—only set by a cold-start deep link). Mirrors `menu.takePending()`.
+
 ```typescript
 interface WorkflowDefinition {
   name: string;
