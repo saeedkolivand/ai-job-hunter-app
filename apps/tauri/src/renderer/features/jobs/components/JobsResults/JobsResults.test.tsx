@@ -57,9 +57,9 @@ let stubbedHasByProvider: Record<string, boolean> = {
 };
 let stubbedKeyIsSuccess = true;
 vi.mock('@/services/use-ai-provider', () => ({
-  useHasProviderKey: (provider: string) => ({
-    data: { has: stubbedHasByProvider[provider] ?? false },
-    isSuccess: stubbedKeyIsSuccess,
+  useHasProviderKey: (provider: string, enabled = true) => ({
+    data: enabled ? { has: stubbedHasByProvider[provider] ?? false } : undefined,
+    isSuccess: enabled ? stubbedKeyIsSuccess : false,
   }),
 }));
 
