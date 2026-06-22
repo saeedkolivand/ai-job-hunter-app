@@ -41,13 +41,19 @@ vi.mock('@/services/use-boards', () => ({
 let stubIdHas = false;
 let stubKeyHas = false;
 
-vi.mock('@/services/use-ai-provider', () => ({
-  useHasProviderKey: (slot: string) => {
-    if (slot === 'adzuna-app-id') return { data: { has: stubIdHas } };
-    if (slot === 'adzuna-app-key') return { data: { has: stubKeyHas } };
-    return { data: { has: false } };
-  },
-}));
+vi.mock('@/services/use-ai-provider', async () => {
+  const shared = await vi.importActual<{
+    PROVIDER_SLOTS: { adzunaAppId: string; adzunaAppKey: string };
+  }>('@ajh/shared');
+  const PS = shared.PROVIDER_SLOTS;
+  return {
+    useHasProviderKey: (slot: string) => {
+      if (slot === PS.adzunaAppId) return { data: { has: stubIdHas } };
+      if (slot === PS.adzunaAppKey) return { data: { has: stubKeyHas } };
+      return { data: { has: false } };
+    },
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Stubs — ScrapeFilters, BoardConnectChip, i18n, roving tabindex

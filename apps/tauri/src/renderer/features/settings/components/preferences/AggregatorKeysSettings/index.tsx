@@ -1,6 +1,7 @@
 import { Check, Eye, EyeOff, Key, Loader2, Search, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
+import { PROVIDER_SLOTS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, ConfirmModal, Input, SettingsSection, useNotification } from '@ajh/ui';
 
@@ -161,7 +162,7 @@ export function AggregatorKeysSettings() {
 
       <div className="space-y-4">
         <AggregatorKeyField
-          slot="adzuna-app-id"
+          slot={PROVIDER_SLOTS.adzunaAppId}
           labelKey="settings.aggregatorKeys.adzunaAppId.label"
           placeholderKey="settings.aggregatorKeys.adzunaAppId.placeholder"
           connectedKey="settings.aggregatorKeys.adzunaAppId.connected"
@@ -170,7 +171,7 @@ export function AggregatorKeysSettings() {
         />
 
         <AggregatorKeyField
-          slot="adzuna-app-key"
+          slot={PROVIDER_SLOTS.adzunaAppKey}
           labelKey="settings.aggregatorKeys.adzunaAppKey.label"
           placeholderKey="settings.aggregatorKeys.adzunaAppKey.placeholder"
           connectedKey="settings.aggregatorKeys.adzunaAppKey.connected"
@@ -179,7 +180,7 @@ export function AggregatorKeysSettings() {
         />
 
         <AggregatorKeyField
-          slot="jsearch-key"
+          slot={PROVIDER_SLOTS.jsearchKey}
           labelKey="settings.aggregatorKeys.jsearchKey.label"
           placeholderKey="settings.aggregatorKeys.jsearchKey.placeholder"
           connectedKey="settings.aggregatorKeys.jsearchKey.connected"

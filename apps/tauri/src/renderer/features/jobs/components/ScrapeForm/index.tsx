@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 
-import type { BoardCatalogEntry } from '@ajh/shared';
+import { type BoardCatalogEntry, PROVIDER_SLOTS } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { Button, CardSkeleton, cn, GlassCard, Input, transition } from '@ajh/ui';
@@ -123,8 +123,11 @@ export function ScrapeForm({
   // Adzuna keys aren't configured. Derived from service hooks; no hardcoded values
   // beyond the board's stable catalog id ('aggregator').
   const aggregatorSelected = selectedSet.has('aggregator');
-  const { data: adzunaIdData } = useHasProviderKey('adzuna-app-id', aggregatorSelected);
-  const { data: adzunaKeyData } = useHasProviderKey('adzuna-app-key', aggregatorSelected);
+  const { data: adzunaIdData } = useHasProviderKey(PROVIDER_SLOTS.adzunaAppId, aggregatorSelected);
+  const { data: adzunaKeyData } = useHasProviderKey(
+    PROVIDER_SLOTS.adzunaAppKey,
+    aggregatorSelected
+  );
   const showAggregatorKeyHint = aggregatorSelected && !(adzunaIdData?.has && adzunaKeyData?.has);
 
   const handleSelectAll = () => {

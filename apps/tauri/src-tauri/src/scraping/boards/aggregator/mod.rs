@@ -9,10 +9,13 @@
 ///   - Adzuna not configured → try JSearch if configured.
 ///   - Neither configured → `Ok(vec![])` (keyless-empty, never an error).
 /// * Keys are optional: absent = keyless-empty.  Never hardcoded, never logged.
-/// * Keys are read from the OS keychain via `credentials::read_credential`:
-///   - `ai:adzuna-app-id`   — Adzuna application ID
-///   - `ai:adzuna-app-key`  — Adzuna application key
-///   - `ai:jsearch-key`     — RapidAPI key for JSearch
+/// * Keys are read from the OS keychain via `credentials::read_credential`,
+///   under the `ai:` keyring namespace + the BARE slot names generated from the
+///   cross-language source of truth in `ipc_contracts::provider_slots`
+///   (`packages/shared/src/provider-slots.ts`):
+///   - `ai:adzuna-app-id`   (`provider_slots::ADZUNA_APP_ID`)  — Adzuna application ID
+///   - `ai:adzuna-app-key`  (`provider_slots::ADZUNA_APP_KEY`) — Adzuna application key
+///   - `ai:jsearch-key`     (`provider_slots::JSEARCH_KEY`)    — RapidAPI key for JSearch
 ///
 /// Rate-limiting and cancellation are honoured: every network call flows
 /// through `scraping::http::fetch_json` (which checks `ctx.signal` and calls
@@ -130,15 +133,18 @@ pub(crate) struct AdzunaProvider {
 
 impl AdzunaProvider {
     fn new() -> Self {
+        use crate::ipc_contracts::provider_slots::{ADZUNA_APP_ID, ADZUNA_APP_KEY};
         Self {
-            app_id: crate::credentials::read_credential("ai:adzuna-app-id").unwrap_or_else(|e| {
-                log::warn!("[aggregator] adzuna-app-id keyring error: {e}");
-                None
-            }),
-            app_key: crate::credentials::read_credential("ai:adzuna-app-key").unwrap_or_else(|e| {
-                log::warn!("[aggregator] adzuna-app-key keyring error: {e}");
-                None
-            }),
+            app_id: crate::credentials::read_credential(&format!("ai:{ADZUNA_APP_ID}"))
+                .unwrap_or_else(|e| {
+                    log::warn!("[aggregator] {ADZUNA_APP_ID} keyring error: {e}");
+                    None
+                }),
+            app_key: crate::credentials::read_credential(&format!("ai:{ADZUNA_APP_KEY}"))
+                .unwrap_or_else(|e| {
+                    log::warn!("[aggregator] {ADZUNA_APP_KEY} keyring error: {e}");
+                    None
+                }),
         }
     }
 }
@@ -262,11 +268,13 @@ pub(crate) struct JSearchProvider {
 
 impl JSearchProvider {
     fn new() -> Self {
+        use crate::ipc_contracts::provider_slots::JSEARCH_KEY;
         Self {
-            api_key: crate::credentials::read_credential("ai:jsearch-key").unwrap_or_else(|e| {
-                log::warn!("[aggregator] jsearch-key keyring error: {e}");
-                None
-            }),
+            api_key: crate::credentials::read_credential(&format!("ai:{JSEARCH_KEY}"))
+                .unwrap_or_else(|e| {
+                    log::warn!("[aggregator] {JSEARCH_KEY} keyring error: {e}");
+                    None
+                }),
         }
     }
 }
