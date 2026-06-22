@@ -19,6 +19,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { BoardCatalogEntry } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 
 // ---------------------------------------------------------------------------
 // Module-level stubs
@@ -48,7 +49,7 @@ vi.mock('@/services/use-ai-provider', () => ({
 }));
 
 vi.mock('./ScrapeFilters', () => ({
-  ScrapeFilters: () => <div data-testid="scrape-filters" />,
+  ScrapeFilters: () => <div data-testid={TEST_IDS.jobs.scrapeFilters} />,
 }));
 
 vi.mock('./BoardConnectChip', () => ({
@@ -352,7 +353,7 @@ function renderFormWithQuery(
 
 /** Returns the primary Start/Scrape button (variant=primary, no aria-pressed). */
 function getStartButton(): HTMLElement {
-  return screen.getByTestId('scrape-start-button');
+  return screen.getByTestId(TEST_IDS.jobs.scrapeStartButton);
 }
 
 describe('ScrapeForm — required-board login gate', () => {

@@ -22,6 +22,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 import type { Application } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 
 import { useSessionStore } from '@/store/session-store';
 
@@ -73,7 +74,11 @@ vi.mock('@/services/use-applications', () => ({
 
 vi.mock('@/features/applications/components/ApplicationRow', () => ({
   ApplicationRow: ({ application }: { application: Application }) => (
-    <div data-testid="application-row" data-appid={application.id} data-status={application.status}>
+    <div
+      data-testid={TEST_IDS.applications.row}
+      data-appid={application.id}
+      data-status={application.status}
+    >
       {application.title}
     </div>
   ),
@@ -82,14 +87,14 @@ vi.mock('@/features/applications/components/ApplicationRow', () => ({
 // ── TrackJobModal stub ────────────────────────────────────────────────────────
 
 vi.mock('@/features/applications/components/TrackJobModal', () => ({
-  TrackJobModal: () => <div data-testid="track-job-modal" />,
+  TrackJobModal: () => <div data-testid={TEST_IDS.applications.trackJobModal} />,
 }));
 
 // ── PageShell stub — render children directly ─────────────────────────────────
 
 vi.mock('@/components/layout/PageShell', () => ({
   PageShell: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="page-shell">{children}</div>
+    <div data-testid={TEST_IDS.layout.pageShell}>{children}</div>
   ),
 }));
 
@@ -183,19 +188,19 @@ describe('ApplicationsPage — grouped rendering', () => {
 
     // Two ApplicationRow stubs for 'applied'.
     const appliedRows = screen
-      .getAllByTestId('application-row')
+      .getAllByTestId(TEST_IDS.applications.row)
       .filter((el) => el.getAttribute('data-status') === 'applied');
     expect(appliedRows).toHaveLength(2);
 
     // One row for 'interviewing'.
     const interviewingRows = screen
-      .getAllByTestId('application-row')
+      .getAllByTestId(TEST_IDS.applications.row)
       .filter((el) => el.getAttribute('data-status') === 'interviewing');
     expect(interviewingRows).toHaveLength(1);
 
     // One row for 'saved'.
     const savedRows = screen
-      .getAllByTestId('application-row')
+      .getAllByTestId(TEST_IDS.applications.row)
       .filter((el) => el.getAttribute('data-status') === 'saved');
     expect(savedRows).toHaveLength(1);
   });
@@ -212,7 +217,7 @@ describe('ApplicationsPage — grouped rendering', () => {
     // The empty-list EmptyState uses the 'applications.empty' key as its title.
     expect(screen.getByText('applications.empty')).toBeInTheDocument();
     // No section headers rendered.
-    expect(screen.queryByTestId('application-row')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.applications.row)).not.toBeInTheDocument();
   });
 
   it('does not render empty-stage sections (stages with zero apps are hidden)', () => {
@@ -244,7 +249,7 @@ describe('ApplicationsPage — grouped rendering', () => {
     const { container } = render(<ApplicationsPage />);
 
     // Negative: no app rows and no empty-state.
-    expect(screen.queryByTestId('application-row')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.applications.row)).not.toBeInTheDocument();
     expect(screen.queryByText('applications.empty')).not.toBeInTheDocument();
 
     // Positive: RowSkeleton renders elements with the animate-skeleton class.
@@ -264,7 +269,7 @@ describe('ApplicationsPage — grouped rendering', () => {
     render(<ApplicationsPage />);
 
     expect(screen.getByText('applications.errorTitle')).toBeInTheDocument();
-    expect(screen.queryByTestId('application-row')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.applications.row)).not.toBeInTheDocument();
   });
 
   // Gap 7 (MEDIUM): filter — only matching rows render when session-store filter is set.
@@ -282,7 +287,7 @@ describe('ApplicationsPage — grouped rendering', () => {
 
     render(<ApplicationsPage />);
 
-    const rows = screen.getAllByTestId('application-row');
+    const rows = screen.getAllByTestId(TEST_IDS.applications.row);
     // APPS_MULTI_STAGE has company 'Alpha' (a1) and 'AlphaB' (a2) — both match 'alpha'.
     // 'Beta' (a3) and 'Gamma' (a4) must NOT appear.
     expect(rows).toHaveLength(2);
@@ -308,6 +313,6 @@ describe('ApplicationsPage — grouped rendering', () => {
 
     // noResults empty state is shown when allApps has rows but sections is empty.
     expect(screen.getByText('applications.noResults')).toBeInTheDocument();
-    expect(screen.queryByTestId('application-row')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.applications.row)).not.toBeInTheDocument();
   });
 });

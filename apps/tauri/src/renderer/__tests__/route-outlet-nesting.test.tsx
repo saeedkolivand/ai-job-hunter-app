@@ -52,6 +52,7 @@ import {
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import type { Application } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 
 import { installUnknownPathRedirect } from '@/lib/router-guard';
 import { useSessionStore } from '@/store/session-store';
@@ -92,7 +93,7 @@ vi.mock('@/components/layout/PageShell', () => ({
     title?: string;
     subtitle?: string;
   }) => (
-    <div data-testid="page-shell">
+    <div data-testid={TEST_IDS.layout.pageShell}>
       {actions}
       {children}
     </div>
@@ -103,28 +104,28 @@ vi.mock('@/components/layout/PageShell', () => ({
 
 vi.mock('@/components/layout/PageTransition', () => ({
   PageTransition: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="page-transition">{children}</div>
+    <div data-testid={TEST_IDS.layout.pageTransition}>{children}</div>
   ),
 }));
 
 // ── GenerationCard stub ───────────────────────────────────────────────────────
 
 vi.mock('@/features/documents/components/GenerationCard', () => ({
-  GenerationCard: () => <div data-testid="generation-card" />,
+  GenerationCard: () => <div data-testid={TEST_IDS.documents.generationCard} />,
 }));
 
 // ── AutopilotPage leaf stubs ───────────────────────────────────────────────────
 
 vi.mock('@/features/autopilot/components/AutopilotCard', () => ({
-  AutopilotCard: () => <div data-testid="autopilot-card" />,
+  AutopilotCard: () => <div data-testid={TEST_IDS.autopilot.card} />,
 }));
 
 vi.mock('@/features/autopilot/components/CreationWizard', () => ({
-  CreationWizard: () => <div data-testid="creation-wizard" />,
+  CreationWizard: () => <div data-testid={TEST_IDS.autopilot.creationWizard} />,
 }));
 
 vi.mock('@/features/autopilot/components/EmptyState', () => ({
-  EmptyState: () => <div data-testid="autopilot-empty-state" />,
+  EmptyState: () => <div data-testid={TEST_IDS.autopilot.emptyState} />,
 }));
 
 vi.mock('@/features/autopilot/hooks/useAutopilotRun', () => ({
@@ -212,7 +213,7 @@ vi.mock('@/services/use-ai-generations', () => ({
 // not TailorFlow internals, so stubbing the leaf is the correct approach.
 
 vi.mock('@/features/documents/components/TailorFlow', () => ({
-  TailorFlow: () => <div data-testid="tailor-flow-stub" />,
+  TailorFlow: () => <div data-testid={TEST_IDS.documents.tailorFlowStub} />,
 }));
 
 // ── Import real page components (after all mocks) ─────────────────────────────
@@ -348,7 +349,7 @@ describe('Route Outlet nesting — regression guard', () => {
 
     // Critically: ApplicationsPage's "application-row" testid must NOT be present
     // — confirms the list page did NOT mount (layout Outlet served the child).
-    expect(screen.queryByTestId('application-row')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.applications.row)).not.toBeInTheDocument();
   });
 
   /**
@@ -413,7 +414,7 @@ describe('Route Outlet nesting — regression guard', () => {
     expect(defaultTab).toHaveAttribute('aria-selected', 'true');
 
     // Sanity: the list page must not have rendered.
-    expect(screen.queryByTestId('application-row')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.applications.row)).not.toBeInTheDocument();
   });
 
   /**
@@ -442,12 +443,12 @@ describe('Route Outlet nesting — regression guard', () => {
     const indexRoute = createRoute({
       getParentRoute: () => rootRoute,
       path: '/',
-      component: () => <div data-testid="dashboard">dashboard</div>,
+      component: () => <div data-testid={TEST_IDS.layout.dashboard}>dashboard</div>,
     });
     const jobsRoute = createRoute({
       getParentRoute: () => rootRoute,
       path: '/jobs',
-      component: () => <div data-testid="jobs-list">jobs</div>,
+      component: () => <div data-testid={TEST_IDS.jobs.jobsList}>jobs</div>,
     });
     const applicationsLayout = createRoute({
       getParentRoute: () => rootRoute,
@@ -490,7 +491,7 @@ describe('Route Outlet nesting — regression guard', () => {
       expect(router.state.location.pathname).toBe('/jobs');
     });
     expect(router.state.location.pathname).toBe('/jobs');
-    expect(screen.queryByTestId('dashboard')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.layout.dashboard)).not.toBeInTheDocument();
   });
 
   /**
@@ -515,7 +516,7 @@ describe('Route Outlet nesting — regression guard', () => {
     const indexRoute = createRoute({
       getParentRoute: () => rootRoute,
       path: '/',
-      component: () => <div data-testid="dashboard">dashboard</div>,
+      component: () => <div data-testid={TEST_IDS.layout.dashboard}>dashboard</div>,
     });
     const applicationsLayout = createRoute({
       getParentRoute: () => rootRoute,
@@ -557,6 +558,6 @@ describe('Route Outlet nesting — regression guard', () => {
       expect(router.state.location.pathname).toBe('/applications');
     });
     expect(router.state.location.pathname).toBe('/applications');
-    expect(screen.queryByTestId('dashboard')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.layout.dashboard)).not.toBeInTheDocument();
   });
 });

@@ -17,6 +17,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import type { AutopilotFoundJob } from '@ajh/shared';
 import type { ReferralContact, ReferralUpsertRequest } from '@ajh/shared/ipc';
+import { TEST_IDS } from '@ajh/test-ids';
 import type * as AjhUi from '@ajh/ui';
 
 // ── service mocks ─────────────────────────────────────────────────────────────
@@ -87,7 +88,7 @@ vi.mock('@ajh/ui', async (importOriginal) => {
   return {
     ...actual,
     ModalShell: ({ children }: { children: React.ReactNode }) => (
-      <div data-testid="modal-shell">{children}</div>
+      <div data-testid={TEST_IDS.documents.modalShell}>{children}</div>
     ),
   };
 });

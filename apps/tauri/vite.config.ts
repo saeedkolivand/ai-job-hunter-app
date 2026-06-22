@@ -25,6 +25,12 @@ export default defineConfig({
         find: /^@ajh\/translations$/,
         replacement: path.resolve(__dirname, '../../packages/translations/src/index.ts'),
       },
+      // Resolve test-id constants to SOURCE — production components import this
+      // package so Vite must know the path in both dev and build modes.
+      {
+        find: /^@ajh\/test-ids$/,
+        replacement: path.resolve(__dirname, '../../packages/test-ids/src/index.ts'),
+      },
       { find: '@', replacement: path.resolve(__dirname, 'src/renderer') },
     ],
   },

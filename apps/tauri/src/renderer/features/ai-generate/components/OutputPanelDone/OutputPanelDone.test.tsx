@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
+import { TEST_IDS } from '@ajh/test-ids';
+
 import { OutputPanelDone } from './index';
 
 // Stub the real-PDF preview (#24) — it renders the export via IPC, out of scope
 // for this panel's preview/edit wiring test (covered in PdfPreview's own suite).
 vi.mock('@/components/generation/PdfPreview', () => ({
-  PdfPreview: () => <div data-testid="pdf-preview">PDF</div>,
+  PdfPreview: () => <div data-testid={TEST_IDS.documents.pdfPreview}>PDF</div>,
 }));
 
 // EditableOutput (rendered inside OutputPanelDone) calls useContactProfile() which
@@ -46,7 +48,7 @@ describe('OutputPanelDone — preview/edit', () => {
   it('shows the real-PDF preview by default (#24), not markdown or a textarea', () => {
     renderPanel();
     // The default Preview tab renders the real-PDF view, not the markdown fallback.
-    expect(screen.getByTestId('pdf-preview')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.documents.pdfPreview)).toBeInTheDocument();
     expect(screen.queryByText(/\*\*payments\*\*/)).toBeNull();
     // No editable textarea while previewing.
     expect(screen.queryByRole('textbox')).toBeNull();

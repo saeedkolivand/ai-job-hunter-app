@@ -132,6 +132,9 @@ importers:
       '@ajh/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@ajh/test-ids':
+        specifier: workspace:*
+        version: link:../../packages/test-ids
       '@ajh/translations':
         specifier: workspace:*
         version: link:../../packages/translations
@@ -269,6 +272,15 @@ importers:
       tsx:
         specifier: ^4.22.4
         version: 4.22.4
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@types/node@25.9.2)(@vitest/browser-playwright@4.1.9)(@vitest/coverage-v8@4.1.9)(jsdom@29.1.1)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/test-ids:
+    devDependencies:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3

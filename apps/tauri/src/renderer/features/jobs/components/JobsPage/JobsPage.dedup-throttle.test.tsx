@@ -27,6 +27,8 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, waitFor } from '@testing-library/react';
 
+import { TEST_IDS } from '@ajh/test-ids';
+
 import type { Posting } from '@/features/jobs/types';
 
 // ---------------------------------------------------------------------------
@@ -104,7 +106,9 @@ vi.mock('@/hooks/use-format-relative-time', () => ({
 }));
 
 vi.mock('@/components/layout/PageHeader', () => ({
-  PageHeader: ({ title }: { title: string }) => <div data-testid="page-header">{title}</div>,
+  PageHeader: ({ title }: { title: string }) => (
+    <div data-testid={TEST_IDS.layout.pageHeader}>{title}</div>
+  ),
 }));
 
 vi.mock('@/components/layout/PageTransition', () => ({
@@ -121,9 +125,9 @@ vi.mock('@/features/jobs/components/JobsResults', () => ({
   JobsResults: ({ filtered }: { filtered: Posting[] }) => {
     lastFiltered.value = filtered;
     return (
-      <ul data-testid="jobs-results">
+      <ul data-testid={TEST_IDS.jobs.jobsResults}>
         {filtered.map((p) => (
-          <li key={p.id} data-testid="posting-row" data-id={p.id}>
+          <li key={p.id} data-testid={TEST_IDS.jobs.postingRow} data-id={p.id}>
             {p.title}
           </li>
         ))}
@@ -133,7 +137,7 @@ vi.mock('@/features/jobs/components/JobsResults', () => ({
 }));
 
 vi.mock('@/features/jobs/components/ScrapeForm', () => ({
-  ScrapeForm: () => <div data-testid="scrape-form" />,
+  ScrapeForm: () => <div data-testid={TEST_IDS.jobs.scrapeForm} />,
 }));
 
 vi.mock('@ajh/translations', () => ({
@@ -194,7 +198,7 @@ function fireStreamEvent(item: Posting, jobId = 'job-abc') {
  * noUncheckedIndexedAccess-safe: getAttribute returns string | null.
  */
 function renderedIds(): string[] {
-  return Array.from(document.querySelectorAll('[data-testid="posting-row"]')).map(
+  return Array.from(document.querySelectorAll(`[data-testid="${TEST_IDS.jobs.postingRow}"]`)).map(
     (el) => el.getAttribute('data-id') ?? ''
   );
 }

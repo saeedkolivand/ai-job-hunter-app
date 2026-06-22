@@ -21,11 +21,12 @@ Local-first **Tauri** desktop app. **Tauri is the shell** — Rust core does the
 `rtk rg` not `grep` · `rtk fd` not `find` · `rtk bat` not `cat`. Always Bash, never PowerShell.
 Never `find -exec`. Git Bash paths: `/c/Users/...`.
 
-## Monorepo packages (exactly four workspace packages)
+## Monorepo packages (five workspace packages)
 - `packages/shared` (`@ajh/shared`) — IPC contracts + Zod schemas + types. No React, no Node APIs.
 - `packages/ui` (`@ajh/ui`) — React component library + design system. No app logic (no Zustand, no IPC).
 - `packages/prompts` (`@ajh/prompts`) — AI prompt templates. Pure TypeScript, zero deps. No UI, no `window`.
 - `packages/translations` (`@ajh/translations`) — i18next config + en/de resources. No app/IPC/renderer imports.
+- `packages/test-ids` (`@ajh/test-ids`) — Central data-testid constants shared by components and tests.
 
 The Rust core lives in `apps/tauri/src-tauri/`; the React renderer in `apps/tauri/src/renderer/`.
 

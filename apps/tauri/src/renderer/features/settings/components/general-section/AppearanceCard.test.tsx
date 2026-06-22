@@ -35,6 +35,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import { TEST_IDS } from '@ajh/test-ids';
 import type { ThemePrefs } from '@ajh/ui';
 
 // ── i18n stub ─────────────────────────────────────────────────────────────────
@@ -119,7 +120,9 @@ describe('AppearanceCard — preset accent swatches', () => {
     const { container } = render(<AppearanceCard />);
     // The Default chip contains a <span> tagged with a stable test id; locating it
     // by `data-testid` keeps element detection CSS-independent (no style matching).
-    const dot = container.querySelector<HTMLElement>('[data-testid="default-accent-dot"]');
+    const dot = container.querySelector<HTMLElement>(
+      `[data-testid="${TEST_IDS.settings.defaultAccentDot}"]`
+    );
     if (!dot) throw new Error('expected default chip dot with CSS-var gradient background');
     const dotStyle = dot.getAttribute('style') ?? '';
     expect(dotStyle).toContain('var(--color-brand-base)');

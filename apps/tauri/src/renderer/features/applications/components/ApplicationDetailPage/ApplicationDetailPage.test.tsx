@@ -30,6 +30,7 @@ import userEvent from '@testing-library/user-event';
 
 import type { Application } from '@ajh/shared';
 import type { AiGenerationRecord } from '@ajh/shared/ipc';
+import { TEST_IDS } from '@ajh/test-ids';
 
 import type { TailorWizardState } from '@/features/documents/components/TailorFlow/lib/tailor-state';
 import type { TemplateId } from '@/lib/generate';
@@ -106,7 +107,7 @@ vi.mock('@/features/documents/components/TailorFlow', () => ({
   // Surface the injected seedGeneration id so we can assert DocumentsTab wires the
   // latest matching record (cold-entry hydration source).
   TailorFlow: ({ seedGeneration }: { seedGeneration?: { id: string } }) => (
-    <div data-testid="tailor-flow" data-seedgenid={seedGeneration?.id ?? ''} />
+    <div data-testid={TEST_IDS.documents.tailorFlow} data-seedgenid={seedGeneration?.id ?? ''} />
   ),
 }));
 
@@ -114,7 +115,7 @@ vi.mock('@/features/documents/components/TailorFlow', () => ({
 
 vi.mock('@/features/documents/components/GenerationCard', () => ({
   GenerationCard: ({ gen }: { gen: AiGenerationRecord }) => (
-    <div data-testid="generation-card" data-genid={gen.id} />
+    <div data-testid={TEST_IDS.documents.generationCard} data-genid={gen.id} />
   ),
 }));
 
@@ -255,8 +256,8 @@ describe('ApplicationDetailPage — generation matching (Documents tab)', () => 
 
     // The Documents tab is now a full-height host for TailorFlow (mirrors the
     // autopilot apply flow); the previously-saved generations list was removed.
-    expect(screen.queryByTestId('generation-card')).not.toBeInTheDocument();
-    expect(screen.getByTestId('tailor-flow')).toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.generationCard)).not.toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.documents.tailorFlow)).toBeInTheDocument();
   });
 
   it('shows no saved GenerationCard when no generation matches', () => {
@@ -274,9 +275,9 @@ describe('ApplicationDetailPage — generation matching (Documents tab)', () => 
 
     render(<ApplicationDetailPage />);
 
-    expect(screen.queryByTestId('generation-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.generationCard)).not.toBeInTheDocument();
     // TailorFlow still mounts so the user can generate inline.
-    expect(screen.getByTestId('tailor-flow')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.documents.tailorFlow)).toBeInTheDocument();
   });
 
   it('passes the matching generation to TailorFlow as the seedGeneration (cold-entry source)', () => {
@@ -298,7 +299,10 @@ describe('ApplicationDetailPage — generation matching (Documents tab)', () => 
     render(<ApplicationDetailPage />);
 
     // Only gen-1 matches the application's jobUrl → it seeds the flow.
-    expect(screen.getByTestId('tailor-flow')).toHaveAttribute('data-seedgenid', 'gen-1');
+    expect(screen.getByTestId(TEST_IDS.documents.tailorFlow)).toHaveAttribute(
+      'data-seedgenid',
+      'gen-1'
+    );
   });
 
   it('passes no seedGeneration to TailorFlow when nothing matches', () => {
@@ -316,7 +320,7 @@ describe('ApplicationDetailPage — generation matching (Documents tab)', () => 
 
     render(<ApplicationDetailPage />);
 
-    expect(screen.getByTestId('tailor-flow')).toHaveAttribute('data-seedgenid', '');
+    expect(screen.getByTestId(TEST_IDS.documents.tailorFlow)).toHaveAttribute('data-seedgenid', '');
   });
 
   it('does NOT match generations when the application jobUrl is empty', () => {
@@ -335,7 +339,7 @@ describe('ApplicationDetailPage — generation matching (Documents tab)', () => 
 
     render(<ApplicationDetailPage />);
 
-    expect(screen.queryByTestId('generation-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.generationCard)).not.toBeInTheDocument();
   });
 });
 
@@ -579,7 +583,7 @@ describe('ApplicationDetailPage — not-found / error state', () => {
     render(<ApplicationDetailPage />);
 
     expect(screen.getByText('applications.detail.notFound')).toBeInTheDocument();
-    expect(screen.queryByTestId('generation-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.generationCard)).not.toBeInTheDocument();
   });
 
   it('shows the not-found error state when isError=true', () => {
@@ -608,7 +612,7 @@ describe('ApplicationDetailPage — loading state', () => {
     const { container } = render(<ApplicationDetailPage />);
 
     // No GenerationCard and no not-found text while loading.
-    expect(screen.queryByTestId('generation-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.documents.generationCard)).not.toBeInTheDocument();
     expect(screen.queryByText('applications.detail.notFound')).not.toBeInTheDocument();
 
     // RowSkeleton / CardSkeleton render real elements with animate-skeleton class.
@@ -912,7 +916,7 @@ describe('ApplicationDetailPage — Documents tab toolbar', () => {
   it('renders the TailorFlow stub on the Documents tab', () => {
     mockTab = 'documents';
     renderLoaded();
-    expect(screen.getByTestId('tailor-flow')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.documents.tailorFlow)).toBeInTheDocument();
   });
 
   it('does NOT render the Questions button when controller stage is not "done"', () => {

@@ -22,6 +22,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import { TEST_IDS } from '@ajh/test-ids';
 import { Button } from '@ajh/ui';
 
 import { usePreferencesStore } from '@/store/preferences-store';
@@ -51,7 +52,11 @@ vi.mock('../steps/WelcomeStep', () => ({
     stepIndex: number;
     totalSteps: number;
   }) => (
-    <div data-testid="step-welcome" data-step-index={stepIndex} data-total-steps={totalSteps}>
+    <div
+      data-testid={TEST_IDS.onboarding.stepWelcome}
+      data-step-index={stepIndex}
+      data-total-steps={totalSteps}
+    >
       <Button onClick={onNext}>next</Button>
       {onBack && <Button onClick={onBack}>back</Button>}
     </div>
@@ -70,7 +75,11 @@ vi.mock('../steps/ResumeStep', () => ({
     stepIndex: number;
     totalSteps: number;
   }) => (
-    <div data-testid="step-resume" data-step-index={stepIndex} data-total-steps={totalSteps}>
+    <div
+      data-testid={TEST_IDS.onboarding.stepResume}
+      data-step-index={stepIndex}
+      data-total-steps={totalSteps}
+    >
       <Button onClick={onNext}>next</Button>
       {onBack && <Button onClick={onBack}>back</Button>}
     </div>
@@ -89,7 +98,11 @@ vi.mock('../steps/AISelectionStep', () => ({
     stepIndex: number;
     totalSteps: number;
   }) => (
-    <div data-testid="step-ai" data-step-index={stepIndex} data-total-steps={totalSteps}>
+    <div
+      data-testid={TEST_IDS.onboarding.stepAi}
+      data-step-index={stepIndex}
+      data-total-steps={totalSteps}
+    >
       <Button onClick={onNext}>next</Button>
       {onBack && <Button onClick={onBack}>back</Button>}
     </div>
@@ -108,7 +121,11 @@ vi.mock('../steps/ResearchStep', () => ({
     stepIndex: number;
     totalSteps: number;
   }) => (
-    <div data-testid="step-research" data-step-index={stepIndex} data-total-steps={totalSteps}>
+    <div
+      data-testid={TEST_IDS.onboarding.stepResearch}
+      data-step-index={stepIndex}
+      data-total-steps={totalSteps}
+    >
       <Button onClick={onNext}>next</Button>
       {onBack && <Button onClick={onBack}>back</Button>}
     </div>
@@ -127,7 +144,11 @@ vi.mock('../steps/BrowserStep', () => ({
     stepIndex: number;
     totalSteps: number;
   }) => (
-    <div data-testid="step-browser" data-step-index={stepIndex} data-total-steps={totalSteps}>
+    <div
+      data-testid={TEST_IDS.onboarding.stepBrowser}
+      data-step-index={stepIndex}
+      data-total-steps={totalSteps}
+    >
       <Button onClick={onNext}>next</Button>
       {onBack && <Button onClick={onBack}>back</Button>}
     </div>
@@ -146,7 +167,11 @@ vi.mock('../steps/AdzunaKeyStep', () => ({
     stepIndex: number;
     totalSteps: number;
   }) => (
-    <div data-testid="step-adzunaKey" data-step-index={stepIndex} data-total-steps={totalSteps}>
+    <div
+      data-testid={TEST_IDS.onboarding.stepAdzunaKey}
+      data-step-index={stepIndex}
+      data-total-steps={totalSteps}
+    >
       <Button onClick={onNext}>next</Button>
       {onBack && <Button onClick={onBack}>back</Button>}
     </div>
@@ -165,7 +190,11 @@ vi.mock('../steps/ExtensionStep', () => ({
     stepIndex: number;
     totalSteps: number;
   }) => (
-    <div data-testid="step-extension" data-step-index={stepIndex} data-total-steps={totalSteps}>
+    <div
+      data-testid={TEST_IDS.onboarding.stepExtension}
+      data-step-index={stepIndex}
+      data-total-steps={totalSteps}
+    >
       <Button onClick={onNext}>next</Button>
       {onBack && <Button onClick={onBack}>back</Button>}
     </div>
@@ -184,7 +213,11 @@ vi.mock('../steps/AppearanceStep', () => ({
     stepIndex: number;
     totalSteps: number;
   }) => (
-    <div data-testid="step-appearance" data-step-index={stepIndex} data-total-steps={totalSteps}>
+    <div
+      data-testid={TEST_IDS.onboarding.stepAppearance}
+      data-step-index={stepIndex}
+      data-total-steps={totalSteps}
+    >
       <Button onClick={onNext}>next</Button>
       {onBack && <Button onClick={onBack}>back</Button>}
     </div>
@@ -195,7 +228,7 @@ vi.mock('../steps/AppearanceStep', () => ({
 
 vi.mock('../SpotlightTour', () => ({
   SpotlightTour: ({ onFinish }: { onFinish: () => void }) => (
-    <div data-testid="tour">
+    <div data-testid={TEST_IDS.onboarding.tour}>
       <Button onClick={onFinish}>finish-tour</Button>
     </div>
   ),
@@ -251,7 +284,7 @@ describe('OnboardingWizard — step filter', () => {
     });
     renderWizard();
 
-    const welcome = screen.getByTestId('step-welcome');
+    const welcome = screen.getByTestId(TEST_IDS.onboarding.stepWelcome);
     expect(totalStepsOf(welcome)).toBe(8);
   });
 
@@ -261,7 +294,7 @@ describe('OnboardingWizard — step filter', () => {
     });
     renderWizard();
 
-    const welcome = screen.getByTestId('step-welcome');
+    const welcome = screen.getByTestId(TEST_IDS.onboarding.stepWelcome);
     expect(totalStepsOf(welcome)).toBe(7);
   });
 
@@ -269,7 +302,7 @@ describe('OnboardingWizard — step filter', () => {
     usePreferencesStore.setState({ aiProviderConfig: undefined });
     renderWizard();
 
-    const welcome = screen.getByTestId('step-welcome');
+    const welcome = screen.getByTestId(TEST_IDS.onboarding.stepWelcome);
     expect(totalStepsOf(welcome)).toBe(7);
   });
 
@@ -281,11 +314,11 @@ describe('OnboardingWizard — step filter', () => {
     renderWizard();
 
     // welcome → resume → ai → research (index 3)
-    await clickNext(user, screen.getByTestId('step-welcome'));
-    await clickNext(user, screen.getByTestId('step-resume'));
-    await clickNext(user, screen.getByTestId('step-ai'));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepWelcome));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepResume));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAi));
 
-    expect(screen.getByTestId('step-research')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.onboarding.stepResearch)).toBeInTheDocument();
   });
 
   it('research stub never appears when activeProvider is openai', async () => {
@@ -296,12 +329,12 @@ describe('OnboardingWizard — step filter', () => {
     renderWizard();
 
     // welcome → resume → ai → browser (research skipped)
-    await clickNext(user, screen.getByTestId('step-welcome'));
-    await clickNext(user, screen.getByTestId('step-resume'));
-    await clickNext(user, screen.getByTestId('step-ai'));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepWelcome));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepResume));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAi));
 
-    expect(screen.queryByTestId('step-research')).not.toBeInTheDocument();
-    expect(screen.getByTestId('step-browser')).toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.onboarding.stepResearch)).not.toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.onboarding.stepBrowser)).toBeInTheDocument();
   });
 });
 
@@ -310,25 +343,25 @@ describe('OnboardingWizard — navigation', () => {
     const user = userEvent.setup();
     renderWizard();
 
-    expect(screen.getByTestId('step-welcome')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.onboarding.stepWelcome)).toBeInTheDocument();
 
-    await clickNext(user, screen.getByTestId('step-welcome'));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepWelcome));
 
-    expect(screen.queryByTestId('step-welcome')).not.toBeInTheDocument();
-    expect(screen.getByTestId('step-resume')).toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.onboarding.stepWelcome)).not.toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.onboarding.stepResume)).toBeInTheDocument();
   });
 
   it('stepIndex prop increments correctly on each onNext', async () => {
     const user = userEvent.setup();
     renderWizard();
 
-    expect(stepIndexOf(screen.getByTestId('step-welcome'))).toBe(0);
+    expect(stepIndexOf(screen.getByTestId(TEST_IDS.onboarding.stepWelcome))).toBe(0);
 
-    await clickNext(user, screen.getByTestId('step-welcome'));
-    expect(stepIndexOf(screen.getByTestId('step-resume'))).toBe(1);
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepWelcome));
+    expect(stepIndexOf(screen.getByTestId(TEST_IDS.onboarding.stepResume))).toBe(1);
 
-    await clickNext(user, screen.getByTestId('step-resume'));
-    expect(stepIndexOf(screen.getByTestId('step-ai'))).toBe(2);
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepResume));
+    expect(stepIndexOf(screen.getByTestId(TEST_IDS.onboarding.stepAi))).toBe(2);
   });
 
   it('renders SpotlightTour after onNext on the last step', async () => {
@@ -339,16 +372,16 @@ describe('OnboardingWizard — navigation', () => {
     renderWizard();
 
     // 7-step sequence (openai): welcome(0) → resume(1) → ai(2) → browser(3) → adzunaKey(4) → extension(5) → appearance(6)
-    await clickNext(user, screen.getByTestId('step-welcome'));
-    await clickNext(user, screen.getByTestId('step-resume'));
-    await clickNext(user, screen.getByTestId('step-ai'));
-    await clickNext(user, screen.getByTestId('step-browser'));
-    await clickNext(user, screen.getByTestId('step-adzunaKey'));
-    await clickNext(user, screen.getByTestId('step-extension'));
-    await clickNext(user, screen.getByTestId('step-appearance'));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepWelcome));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepResume));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAi));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepBrowser));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAdzunaKey));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepExtension));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAppearance));
 
-    expect(screen.getByTestId('tour')).toBeInTheDocument();
-    expect(screen.queryByTestId('step-appearance')).not.toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.onboarding.tour)).toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.onboarding.stepAppearance)).not.toBeInTheDocument();
   });
 
   it('calling onFinish on the tour marks onboarding complete (renders null)', async () => {
@@ -359,13 +392,13 @@ describe('OnboardingWizard — navigation', () => {
     const { container } = renderWizard();
 
     // Advance through all 7 steps to reach the tour
-    await clickNext(user, screen.getByTestId('step-welcome'));
-    await clickNext(user, screen.getByTestId('step-resume'));
-    await clickNext(user, screen.getByTestId('step-ai'));
-    await clickNext(user, screen.getByTestId('step-browser'));
-    await clickNext(user, screen.getByTestId('step-adzunaKey'));
-    await clickNext(user, screen.getByTestId('step-extension'));
-    await clickNext(user, screen.getByTestId('step-appearance'));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepWelcome));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepResume));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAi));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepBrowser));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAdzunaKey));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepExtension));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAppearance));
 
     // Tour is visible; click finish
     await user.click(screen.getByRole('button', { name: 'finish-tour' }));
@@ -381,19 +414,19 @@ describe('OnboardingWizard — goBack floor', () => {
     renderWizard();
 
     // Advance to step 1, then go back to step 0
-    await clickNext(user, screen.getByTestId('step-welcome'));
-    expect(screen.getByTestId('step-resume')).toBeInTheDocument();
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepWelcome));
+    expect(screen.getByTestId(TEST_IDS.onboarding.stepResume)).toBeInTheDocument();
 
     // Go back to welcome
-    await clickBack(user, screen.getByTestId('step-resume'));
+    await clickBack(user, screen.getByTestId(TEST_IDS.onboarding.stepResume));
 
-    expect(screen.getByTestId('step-welcome')).toBeInTheDocument();
-    expect(stepIndexOf(screen.getByTestId('step-welcome'))).toBe(0);
+    expect(screen.getByTestId(TEST_IDS.onboarding.stepWelcome)).toBeInTheDocument();
+    expect(stepIndexOf(screen.getByTestId(TEST_IDS.onboarding.stepWelcome))).toBe(0);
 
     // Clicking the (non-existent / inert) back at index 0 must not crash.
     // The WelcomeStep stub only shows a back button when onBack is provided.
     // The wizard passes goBack unconditionally; verify the step renders fine.
-    expect(screen.getByTestId('step-welcome')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.onboarding.stepWelcome)).toBeInTheDocument();
   });
 
   it('stepIndex stays at 0 when goBack is triggered at first step', async () => {
@@ -401,14 +434,14 @@ describe('OnboardingWizard — goBack floor', () => {
     renderWizard();
 
     // Navigate forward then back to index 0
-    await clickNext(user, screen.getByTestId('step-welcome'));
-    await clickBack(user, screen.getByTestId('step-resume'));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepWelcome));
+    await clickBack(user, screen.getByTestId(TEST_IDS.onboarding.stepResume));
 
     // Now at index 0. The WelcomeStep stub only renders a back button when
     // onBack is provided; the wizard always passes goBack so the button IS
     // present. Assert it exists (non-vacuous), click it, and confirm the
     // wizard stays at index 0 — goBack is a floor-clamped no-op at step 0.
-    const welcomeEl = screen.getByTestId('step-welcome');
+    const welcomeEl = screen.getByTestId(TEST_IDS.onboarding.stepWelcome);
     expect(stepIndexOf(welcomeEl)).toBe(0);
 
     const welcomeBackBtn = within(welcomeEl).queryByRole('button', { name: 'back' });
@@ -416,8 +449,8 @@ describe('OnboardingWizard — goBack floor', () => {
     if (welcomeBackBtn) await user.click(welcomeBackBtn);
 
     // Identity of the visible step must not change
-    expect(screen.getByTestId('step-welcome')).toBeInTheDocument();
-    expect(stepIndexOf(screen.getByTestId('step-welcome'))).toBe(0);
+    expect(screen.getByTestId(TEST_IDS.onboarding.stepWelcome)).toBeInTheDocument();
+    expect(stepIndexOf(screen.getByTestId(TEST_IDS.onboarding.stepWelcome))).toBe(0);
   });
 });
 
@@ -430,18 +463,18 @@ describe('OnboardingWizard — clamp on provider flip', () => {
     renderWizard();
 
     // Advance to the last step of the 8-step ollama sequence (index 7 = appearance)
-    await clickNext(user, screen.getByTestId('step-welcome'));
-    await clickNext(user, screen.getByTestId('step-resume'));
-    await clickNext(user, screen.getByTestId('step-ai'));
-    await clickNext(user, screen.getByTestId('step-research'));
-    await clickNext(user, screen.getByTestId('step-browser'));
-    await clickNext(user, screen.getByTestId('step-adzunaKey'));
-    await clickNext(user, screen.getByTestId('step-extension'));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepWelcome));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepResume));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAi));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepResearch));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepBrowser));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAdzunaKey));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepExtension));
 
     // At index 7 (appearance), totalSteps 8
-    expect(screen.getByTestId('step-appearance')).toBeInTheDocument();
-    expect(stepIndexOf(screen.getByTestId('step-appearance'))).toBe(7);
-    expect(totalStepsOf(screen.getByTestId('step-appearance'))).toBe(8);
+    expect(screen.getByTestId(TEST_IDS.onboarding.stepAppearance)).toBeInTheDocument();
+    expect(stepIndexOf(screen.getByTestId(TEST_IDS.onboarding.stepAppearance))).toBe(7);
+    expect(totalStepsOf(screen.getByTestId(TEST_IDS.onboarding.stepAppearance))).toBe(8);
 
     // Flip provider to openai — array shrinks to 7 steps (max valid index = 6).
     // The clamp effect must land the wizard on step 6 = appearance.
@@ -474,6 +507,6 @@ describe('OnboardingWizard — completion gate', () => {
   it('renders the wizard when onboardingCompleted is false', () => {
     usePreferencesStore.setState({ onboardingCompleted: false });
     renderWizard();
-    expect(screen.getByTestId('step-welcome')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.onboarding.stepWelcome)).toBeInTheDocument();
   });
 });

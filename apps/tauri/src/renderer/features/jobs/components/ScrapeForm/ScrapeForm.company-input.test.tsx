@@ -28,6 +28,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
 import type { BoardCatalogEntry } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 
 // ---------------------------------------------------------------------------
 // Module-level stubs — reset before each test to prevent state leaks.
@@ -56,7 +57,7 @@ vi.mock('@/services/use-ai-provider', () => ({
 }));
 
 vi.mock('./ScrapeFilters', () => ({
-  ScrapeFilters: () => <div data-testid="scrape-filters" />,
+  ScrapeFilters: () => <div data-testid={TEST_IDS.jobs.scrapeFilters} />,
 }));
 
 vi.mock('./BoardConnectChip', () => ({

@@ -22,6 +22,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 
+import { TEST_IDS } from '@ajh/test-ids';
+
 // ── matchMedia leak guard ─────────────────────────────────────────────────────
 // Several describe blocks override window.matchMedia in their beforeEach to
 // simulate prefers-reduced-motion.  Save the original once here and restore it
@@ -37,46 +39,46 @@ vi.mock('@ajh/translations', () => ({
 // ── Stub every section component so SettingsContent renders without IPC ───────
 
 vi.mock('@/features/settings/components/general-section', () => ({
-  GeneralSection: () => <div data-testid="general-section" />,
+  GeneralSection: () => <div data-testid={TEST_IDS.settings.generalSection} />,
 }));
 vi.mock('@/features/settings/components/general-section/AppearanceCard', () => ({
-  AppearanceCard: () => <div data-testid="appearance-card" />,
+  AppearanceCard: () => <div data-testid={TEST_IDS.settings.appearanceCard} />,
 }));
 vi.mock('@/features/settings/components/contact/ContactProfileTab', () => ({
-  ContactProfileTab: () => <div data-testid="contact-tab" />,
+  ContactProfileTab: () => <div data-testid={TEST_IDS.settings.contactTab} />,
 }));
 vi.mock('@/features/settings/components/ai-settings/AISettingsTab', () => ({
-  AISettingsTab: () => <div data-testid="ai-tab" />,
+  AISettingsTab: () => <div data-testid={TEST_IDS.settings.aiTab} />,
 }));
 vi.mock('@/features/settings/components/preferences/OutputTonePreferences', () => ({
-  OutputTonePreferences: () => <div data-testid="tone-prefs" />,
+  OutputTonePreferences: () => <div data-testid={TEST_IDS.settings.tonePrefs} />,
 }));
 vi.mock('@/features/settings/components/preferences/JobLocationPreferences', () => ({
-  JobLocationPreferences: () => <div data-testid="job-location" />,
+  JobLocationPreferences: () => <div data-testid={TEST_IDS.settings.jobLocation} />,
 }));
 vi.mock('@/features/settings/components/preferences/TechStackPreferences', () => ({
-  TechStackPreferences: () => <div data-testid="tech-stack" />,
+  TechStackPreferences: () => <div data-testid={TEST_IDS.settings.techStack} />,
 }));
 vi.mock('@/features/settings/components/preferences/AggregatorKeysSettings', () => ({
-  AggregatorKeysSettings: () => <div data-testid="aggregator" />,
+  AggregatorKeysSettings: () => <div data-testid={TEST_IDS.settings.aggregator} />,
 }));
 vi.mock('@/features/settings/components/preferences/ResumePreferences', () => ({
-  ResumePreferences: () => <div data-testid="resume-prefs" />,
+  ResumePreferences: () => <div data-testid={TEST_IDS.settings.resumePrefs} />,
 }));
 vi.mock('@/features/settings/components/accounts/AccountsSettingsTab', () => ({
-  AccountsSettingsTab: () => <div data-testid="accounts-tab" />,
+  AccountsSettingsTab: () => <div data-testid={TEST_IDS.settings.accountsTab} />,
 }));
 vi.mock('@/features/settings/components/privacy/PrivacySettingsTab', () => ({
-  PrivacySettingsTab: () => <div data-testid="privacy-tab" />,
+  PrivacySettingsTab: () => <div data-testid={TEST_IDS.settings.privacyTab} />,
 }));
 vi.mock('@/features/settings/components/preferences/PerformancePreferences', () => ({
-  PerformancePreferences: () => <div data-testid="perf-prefs" />,
+  PerformancePreferences: () => <div data-testid={TEST_IDS.settings.perfPrefs} />,
 }));
 vi.mock('@/features/settings/components/preferences/DeveloperPreferences', () => ({
-  DeveloperPreferences: () => <div data-testid="dev-prefs" />,
+  DeveloperPreferences: () => <div data-testid={TEST_IDS.settings.devPrefs} />,
 }));
 vi.mock('@/features/settings/components/about/AboutTab', () => ({
-  AboutTab: () => <div data-testid="about-tab" />,
+  AboutTab: () => <div data-testid={TEST_IDS.settings.aboutTab} />,
 }));
 
 // ── component under test ──────────────────────────────────────────────────────

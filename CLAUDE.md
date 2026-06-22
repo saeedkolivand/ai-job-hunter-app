@@ -64,6 +64,7 @@ packages/shared       ← IPC contracts, Zod schemas, shared types (no UI, no No
 packages/ui           ← React component library + design system (no app logic)
 packages/prompts      ← AI prompt templates — provider-aware + locale-driven (pure TS, zero deps)
 packages/translations ← i18next config + UI translation resources (en/de) → @ajh/translations (no app/IPC deps)
+packages/test-ids     ← Central nested TEST_IDS map shared by components + tests (drift-proof data-testid constants) → @ajh/test-ids
 apps/tauri            ← Tauri app: Rust core (scraping, login, documents, AI) + React renderer
 ```
 

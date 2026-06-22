@@ -10,6 +10,8 @@ import type React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
+import { TEST_IDS } from '@ajh/test-ids';
+
 // ── i18n stub ─────────────────────────────────────────────────────────────────
 
 vi.mock('@ajh/translations', () => ({
@@ -20,10 +22,12 @@ vi.mock('@ajh/translations', () => ({
 
 vi.mock('../ProfileUrlInput', () => ({ ProfileUrlInput: () => null }));
 vi.mock('../ResumeReviewPanel', () => ({
-  ResumeReviewPanel: () => <div data-testid="review" />,
+  ResumeReviewPanel: () => <div data-testid={TEST_IDS.resume.review} />,
 }));
 vi.mock('../SavedResumeMenu', () => ({ SavedResumeMenu: () => null }));
-vi.mock('../UploadZone', () => ({ UploadZone: () => <div data-testid="upload-zone" /> }));
+vi.mock('../UploadZone', () => ({
+  UploadZone: () => <div data-testid={TEST_IDS.resume.uploadZone} />,
+}));
 
 // ── useResumeInput stub ───────────────────────────────────────────────────────
 // Module-level mutable object: set BEFORE each render, never after.
@@ -128,7 +132,7 @@ describe('ResumeInputCard — resting / expanded flow', () => {
 
     expect(screen.getByText('My CV')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /resumeInput\.change/i })).toBeInTheDocument();
-    expect(screen.queryByTestId('upload-zone')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.resume.uploadZone)).not.toBeInTheDocument();
   });
 
   it('clicking Change expands the card (setExpanded(true))', () => {
@@ -149,16 +153,16 @@ describe('ResumeInputCard — resting / expanded flow', () => {
     stubbedHook = { ...baseHook, expanded: true };
     render(<ResumeInputCard {...defaultProps} />);
 
-    expect(screen.getByTestId('upload-zone')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.resume.uploadZone)).toBeInTheDocument();
   });
 
   it('renders the review panel only when review is present', () => {
     stubbedHook = { ...baseHook, expanded: true, review: undefined };
     const { rerender } = render(<ResumeInputCard {...defaultProps} />);
-    expect(screen.queryByTestId('review')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.resume.review)).not.toBeInTheDocument();
 
     stubbedHook = { ...baseHook, expanded: true, review: { reviewRequired: true } };
     rerender(<ResumeInputCard {...defaultProps} value="x" />);
-    expect(screen.getByTestId('review')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.resume.review)).toBeInTheDocument();
   });
 });
