@@ -18,6 +18,12 @@ Centralized, one-way event channels — the complement to IPC request/response (
 - Wire namespace derived from colon prefix; key from registry key
 - Regenerate: `pnpm gen:ipc` (enforced in CI: `pnpm gen:ipc --check`)
 
+**Rust credential-slot constants:** same codegen script → `apps/tauri/src-tauri/src/ipc_contracts/provider_slots.rs` (source: `packages/shared/src/provider-slots.ts`)
+
+- Emits screaming-snake const names for AI-provider keyring slots (e.g. `pub const ADZUNA_APP_ID: &str = "adzuna-app-id"`)
+- Single cross-language source: `PROVIDER_SLOTS` object in the shared package
+- Regenerate alongside events: `pnpm gen:ipc`
+
 ## Emission layer
 
 **L3 emit helper:** `apps/tauri/src-tauri/src/events/mod.rs`
