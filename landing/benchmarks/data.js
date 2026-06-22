@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782146340852,
+  "lastUpdate": 1782149991580,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1379,6 +1379,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 320329,
             "range": "± 6760",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1196b8c901b0f39e49c79b9e3e674797160ec8d3",
+          "message": "refactor: centralize timeouts/durations and use section/stage registries (#474)\n\n* refactor: centralize timeouts/durations and use section/stage registries\n\nConstants-cleanup pass (pure refactor, values/behavior byte-identical):\n\n- Rust: 26 AI-provider HTTP .timeout() literals -> a named-by-operation\n  commands/ai_provider/timeouts.rs module (stream/completion/embed/web-search/\n  list-models/health/show/model-pull; same-value-different-purpose kept separate)\n- Renderer: scattered React Query staleTime/gcTime/refetchInterval -> named\n  QUERY_TIMES constants; recurring setTimeout UX delays -> lib/timings.ts\n  (genuine one-offs left inline)\n- Replace hardcoded string-literal conditional chains with typed lazy render\n  registries Record<Key, () => ReactNode> (compile-time exhaustive): SettingsContent\n  (11-branch activeSection), TailorFlow / AnalyzePage / ResumeBuilderPage (stage)\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs: codify the render-registry dispatch pattern\n\nAdd a thin patterns section for the typed Record<Union, () => ReactNode> render\nregistry (lazy, compile-time exhaustive) used for section/stage dispatch, plus\nan anti-pattern entry pointing the old string-literal conditional chains at it.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs: slim the render-registry pattern to thin pointers\n\nDrop the embedded registry snippet with literal component names (drift risk);\nkeep the concept, the Record<Union, () => ReactNode> type shape, and the\nexisting source references, per the docs thin-pointer rule.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-22T19:31:25+02:00",
+          "tree_id": "1b5ce67e50633439eb8342371f0ec43c539552c3",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/1196b8c901b0f39e49c79b9e3e674797160ec8d3"
+        },
+        "date": 1782149991107,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1881151,
+            "range": "± 45861",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2501546,
+            "range": "± 81534",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 289683,
+            "range": "± 3085",
             "unit": "ns/iter"
           }
         ]
