@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
@@ -15,22 +15,22 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-// EditableOutput mock — exposes onChange/onSave/canSave + renders previewSlot.
+// EditableOutput mock — exposes onChange/onBlur/isPending + renders previewSlot.
 // Uses divs (not raw <textarea>/<button>) to stay clear of the @ajh/ui ESLint rule.
-// The mock is intentionally richer than the original so edit/save/preview tests
+// The mock is intentionally richer than the original so edit/debounce/preview tests
 // can drive the component's committed-text logic without the real editor tree.
 vi.mock('@/components/generation/EditableOutput', () => ({
   EditableOutput: ({
     value,
     onChange,
-    onSave,
-    canSave,
+    onBlur,
+    isPending,
     previewSlot,
   }: {
     value: string;
     onChange?: (v: string) => void;
-    onSave?: () => void;
-    canSave?: boolean;
+    onBlur?: () => void;
+    isPending?: boolean;
     previewSlot?: React.ReactNode;
   }) => (
     <div data-testid={TEST_IDS.documents.editableOutput}>
@@ -41,17 +41,9 @@ vi.mock('@/components/generation/EditableOutput', () => ({
         contentEditable
         suppressContentEditableWarning
         onInput={(e) => onChange?.((e.target as HTMLElement).textContent ?? '')}
+        onBlur={onBlur}
       />
-      {onSave && (
-        <div
-          role="button"
-          data-testid={TEST_IDS.documents.saveBtn}
-          data-can-save={String(canSave)}
-          onClick={onSave}
-        >
-          save
-        </div>
-      )}
+      {isPending && <div data-testid={TEST_IDS.generation.pendingCommit}>updating</div>}
       {previewSlot && <div data-testid={TEST_IDS.documents.previewSlot}>{previewSlot}</div>}
     </div>
   ),
@@ -578,10 +570,13 @@ describe('GenerationOutput', () => {
   // ── 8. Edit → save → preview committed-text logic ────────────────────────────
   // The component is controlled: onEdit informs the parent which passes the new
   // output back down. ControlledWrapper simulates that round-trip.
-  // PdfPreview (inside previewSlot) always renders the COMMITTED text, not the
-  // live keystroke value — it only updates when Save is clicked.
+  // PdfPreview (inside previewSlot) always renders the COMMITTED text, which now
+  // auto-commits via a ~700 ms debounce — no manual Save button.
 
-  describe('Edit → save → preview flow', () => {
+  describe('Edit → debounce → preview flow', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
     it('preview text matches the initial output on first render', () => {
       render(
         <ControlledWrapper
@@ -597,79 +592,84 @@ describe('GenerationOutput', () => {
       const props = makeProps({ activeOut: 'resume', output: 'Version 1', editable: true });
       const { rerender } = render(<GenerationOutput {...props} />);
 
-      // No local edit has happened — the effect must update committed when output changes.
+      // No local edit — external change must update committed immediately.
       rerender(<GenerationOutput {...props} output="Version 2" />);
 
       expect(screen.getByTestId(TEST_IDS.documents.pdfPreview)).toHaveTextContent('Version 2');
     });
 
-    it('after a local edit the preview still shows the last committed (pre-save) text', async () => {
-      const user = userEvent.setup();
+    it('before 700 ms the preview still shows the last committed text', () => {
       render(
         <ControlledWrapper
           {...makeProps({ activeOut: 'resume', output: 'Committed text', editable: true })}
         />
       );
 
-      // Verify preview shows initial committed text before any edit.
       expect(screen.getByTestId(TEST_IDS.documents.pdfPreview)).toHaveTextContent('Committed text');
 
-      // Simulate a local edit: type into the contentEditable box.
       const editBox = screen.getByTestId(TEST_IDS.documents.editableInput);
-      await user.click(editBox);
-      await user.type(editBox, 'Edited text');
+      void act(() => {
+        editBox.textContent = 'Edited text';
+        editBox.dispatchEvent(new Event('input', { bubbles: true }));
+      });
 
-      // Preview must still show the old committed text — Save not clicked yet.
+      void act(() => vi.advanceTimersByTime(699));
+
+      // Preview must still show old committed text — debounce not yet fired.
       expect(screen.getByTestId(TEST_IDS.documents.pdfPreview)).toHaveTextContent('Committed text');
     });
 
-    it('canSave becomes true after a local edit', async () => {
-      const user = userEvent.setup();
+    it('after 700 ms the debounce auto-commits and the preview updates', () => {
       render(
         <ControlledWrapper
-          {...makeProps({ activeOut: 'resume', output: 'Original', editable: true })}
+          {...makeProps({ activeOut: 'resume', output: 'Old text', editable: true })}
         />
       );
 
-      const saveBtn = screen.getByTestId(TEST_IDS.documents.saveBtn);
-      expect(saveBtn).toHaveAttribute('data-can-save', 'false');
-
       const editBox = screen.getByTestId(TEST_IDS.documents.editableInput);
-      await user.click(editBox);
-      await user.type(editBox, 'Changed');
+      void act(() => {
+        editBox.textContent = 'New text';
+        editBox.dispatchEvent(new Event('input', { bubbles: true }));
+      });
 
-      expect(screen.getByTestId(TEST_IDS.documents.saveBtn)).toHaveAttribute(
-        'data-can-save',
-        'true'
-      );
+      void act(() => vi.advanceTimersByTime(700));
+
+      expect(screen.getByTestId(TEST_IDS.documents.pdfPreview)).toHaveTextContent('New text');
     });
 
-    it('clicking save commits the current output to the preview and canSave goes false', async () => {
-      const user = userEvent.setup();
+    it('blur flushes the debounce immediately without waiting 700 ms', async () => {
+      // Switch to real timers for this test — the blur flush is synchronous and
+      // fake-timer + async-act interaction can hide the state update.
+      vi.useRealTimers();
+
       render(
         <ControlledWrapper
-          {...makeProps({ activeOut: 'resume', output: 'Before save', editable: true })}
+          {...makeProps({ activeOut: 'resume', output: 'Before blur', editable: true })}
         />
       );
 
-      // Edit to diverge committed from output.
       const editBox = screen.getByTestId(TEST_IDS.documents.editableInput);
-      await user.click(editBox);
-      await user.type(editBox, 'After save');
+      await act(async () => {
+        editBox.textContent = 'After blur';
+        editBox.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await act(async () => {
+        editBox.dispatchEvent(new Event('blur', { bubbles: true }));
+      });
 
-      // Preview still shows old text before Save.
-      expect(screen.getByTestId(TEST_IDS.documents.pdfPreview)).toHaveTextContent('Before save');
+      // Blur flushes the commit synchronously; waitFor handles React's async render.
+      await waitFor(() => {
+        expect(screen.getByTestId(TEST_IDS.documents.pdfPreview)).toHaveTextContent('After blur');
+      });
+    });
 
-      // Click Save.
-      await user.click(screen.getByTestId(TEST_IDS.documents.saveBtn));
-
-      // After save the preview must reflect the new committed text.
-      // The component sets committed[activeOut] = output (which the wrapper
-      // already updated to include the typed text).
-      expect(screen.getByTestId(TEST_IDS.documents.saveBtn)).toHaveAttribute(
-        'data-can-save',
-        'false'
+    it('no Save button is rendered', () => {
+      render(
+        <ControlledWrapper
+          {...makeProps({ activeOut: 'resume', output: 'Some text', editable: true })}
+        />
       );
+      expect(screen.queryByTestId(TEST_IDS.documents.saveBtn)).not.toBeInTheDocument();
     });
   });
 

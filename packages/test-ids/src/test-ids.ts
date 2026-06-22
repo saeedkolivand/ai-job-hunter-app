@@ -109,6 +109,7 @@ export const TEST_IDS = {
     rteValue: 'rte-value',
     rteDeselectTrigger: 'rte-deselect-trigger',
     customPreview: 'custom-preview',
+    pendingCommit: 'pending-commit',
   },
 
   /** Onboarding wizard */

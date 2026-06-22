@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReferralChannel } from '@ajh/shared/ipc';
 import { detectLanguages } from '@ajh/shared/language-detection';
 
-import { CONNECTION_NOTE_LIMIT, generateReferral } from '@/lib/generate';
+import { CONNECTION_NOTE_LIMIT, generateReferral, generateReferralImprove } from '@/lib/generate';
 
 interface Params {
   personName: string;
@@ -114,5 +114,47 @@ export function useReferralDraft({
     }
   };
 
-  return { draft, generating, error, generate, abort, canGenerate, reset };
+  /**
+   * Revise the current draft per a user instruction. Streams the revised draft
+   * into the same draft state (replaces in-place), reusing abort/generating/error.
+   * Respects `canGenerate` gating and requires a non-empty draft to act on.
+   *
+   * SECURITY: `instruction` must be user-originated. Never pass scraped or
+   * AI-generated content as the instruction.
+   */
+  const improve = async (instruction: string) => {
+    if (!canGenerate || !draft) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setGenerating(true);
+    setError(null);
+    setDraft('');
+    try {
+      const text = await generateReferralImprove({
+        personName: personName.trim(),
+        personRole: personRole.trim() || undefined,
+        companyName,
+        jobTitle,
+        resume,
+        draft,
+        instruction,
+        format: channel,
+        charLimit: channel === 'connection_note' ? CONNECTION_NOTE_LIMIT : undefined,
+        model,
+        locale: detectLanguages(resume, '').resumeName,
+        onToken: (tok) => setDraft((prev) => prev + tok),
+        signal: controller.signal,
+      });
+      setDraft(text);
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        setError(err instanceof Error ? err.message : 'Failed to improve the draft');
+      }
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
+      setGenerating(false);
+    }
+  };
+
+  return { draft, generating, error, generate, improve, abort, canGenerate, reset };
 }

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildReferralPrompt, CONNECTION_NOTE_LIMIT, type ReferralFormat } from './referral.js';
+import {
+  buildReferralImprovePrompt,
+  buildReferralPrompt,
+  CONNECTION_NOTE_LIMIT,
+  type ReferralFormat,
+} from './referral.js';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -249,5 +254,121 @@ describe('buildReferralPrompt — custom charLimit override', () => {
 
     expect(system).not.toContain('300');
     expect(user).not.toContain('300');
+  });
+});
+
+// ─── buildReferralImprovePrompt — revise an existing draft ─────────────────────
+
+const DRAFT =
+  'Hi Bob, I noticed Globex is hiring a Senior Backend Engineer. ' +
+  'I led a billing-platform migration at Acme and would value a referral. Thanks!';
+
+const IMPROVE_BASE: Parameters<typeof buildReferralImprovePrompt>[0] = {
+  ...BASE,
+  draft: DRAFT,
+  instruction: 'Make it warmer and a bit shorter.',
+};
+
+describe('buildReferralImprovePrompt — draft + instruction inclusion', () => {
+  it('embeds the current draft inside a fenced <current_draft> block', () => {
+    const { user } = buildReferralImprovePrompt(IMPROVE_BASE);
+    expect(user).toContain('<current_draft>');
+    expect(user).toContain('</current_draft>');
+    expect(user).toContain('billing-platform migration at Acme');
+  });
+
+  it('includes the user instruction in an ### INSTRUCTION ### block', () => {
+    const { user } = buildReferralImprovePrompt(IMPROVE_BASE);
+    expect(user).toMatch(/### INSTRUCTION ###/);
+    expect(user).toContain('Make it warmer and a bit shorter.');
+  });
+
+  it('truncates an over-long draft to the MAX_DRAFT_CHARS cap', () => {
+    const huge = 'A'.repeat(10_000);
+    const { user } = buildReferralImprovePrompt({ ...IMPROVE_BASE, draft: huge });
+    const m = /<current_draft>\n([\s\S]*?)\n<\/current_draft>/.exec(user);
+    if (!m?.[1]) throw new Error('current_draft block not found');
+    // Bounded well below the raw 10k input (the cap is 4000).
+    expect(m[1].length).toBeLessThanOrEqual(4000);
+    expect(m[1].length).toBeGreaterThan(0);
+  });
+});
+
+describe('buildReferralImprovePrompt — preserves generate grounding', () => {
+  it('carries the fenced <candidate_resume> block', () => {
+    const { user } = buildReferralImprovePrompt(IMPROVE_BASE);
+    expect(user).toContain('<candidate_resume>');
+    expect(user).toContain('</candidate_resume>');
+  });
+
+  it('re-states the no-fabrication rule for instruction-driven additions', () => {
+    const { user } = buildReferralImprovePrompt(IMPROVE_BASE);
+    // The instruction must not become a license to fabricate.
+    expect(user).toMatch(/never invent/i);
+    expect(user).toMatch(/instruction asks for that the résumé does not support/i);
+  });
+
+  it('system prompt keeps the honesty contract (no invented shared history)', () => {
+    const { system } = buildReferralImprovePrompt(IMPROVE_BASE);
+    expect(system).toMatch(/never invent/i);
+    expect(system).toMatch(/shared history|already know each other/i);
+  });
+
+  it('system prompt tells the model to keep the rules over the instruction', () => {
+    const { system } = buildReferralImprovePrompt(IMPROVE_BASE);
+    expect(system).toMatch(/revise the existing draft/i);
+    expect(system).toMatch(/follow the rule/i);
+  });
+
+  it('includes recipient, company, and job title in the user prompt', () => {
+    const { user } = buildReferralImprovePrompt(IMPROVE_BASE);
+    expect(user).toContain('Bob Chen (Engineering Director)');
+    expect(user).toContain('Globex');
+    expect(user).toContain('Senior Backend Engineer');
+  });
+});
+
+describe('buildReferralImprovePrompt — channel + length cap', () => {
+  it('enforces the ≤300 hard cap in both prompts for connection_note', () => {
+    const { system, user } = buildReferralImprovePrompt({
+      ...IMPROVE_BASE,
+      format: 'connection_note',
+    });
+    expect(system).toMatch(/hard limit/i);
+    expect(system).toContain('300');
+    expect(user).toMatch(/hard constraint/i);
+    expect(user).toContain('300');
+  });
+
+  it('honors a custom charLimit override for connection_note', () => {
+    const { system, user } = buildReferralImprovePrompt({
+      ...IMPROVE_BASE,
+      format: 'connection_note',
+      charLimit: 180,
+    });
+    expect(system).toContain('180');
+    expect(user).toContain('180');
+    expect(system).not.toContain('300');
+    expect(user).not.toContain('300');
+  });
+
+  it('omits the hard-cap clause for email and linkedin_message', () => {
+    for (const format of ['email', 'linkedin_message'] as ReferralFormat[]) {
+      const { user } = buildReferralImprovePrompt({ ...IMPROVE_BASE, format });
+      expect(user).not.toMatch(/hard constraint/i);
+    }
+  });
+
+  it('large tier renders MORE résumé context than small tier', () => {
+    const longResume = 'Jane Doe\nSenior Engineer\n\nEXPERIENCE\n' + 'X'.repeat(20_000);
+    const params = { ...IMPROVE_BASE, resume: longResume };
+    const extract = (u: string): string => {
+      const m = /<candidate_resume>([\s\S]*?)<\/candidate_resume>/.exec(u);
+      if (!m?.[1]) throw new Error('candidate_resume block not found');
+      return m[1];
+    };
+    const { user: large } = buildReferralImprovePrompt(params, 'large');
+    const { user: small } = buildReferralImprovePrompt(params, 'small');
+    expect(extract(large).length).toBeGreaterThan(extract(small).length);
   });
 });

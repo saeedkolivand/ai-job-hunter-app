@@ -1077,6 +1077,7 @@
     "edit": "Bearbeiten",
     "source": "Quelltext",
     "save": "Speichern",
+    "previewUpdating": "Vorschau wird aktualisiert…",
     "viewMode": "Ansichtsmodus",
     "editor": {
       "toolbar": "Textformatierung",
@@ -1364,6 +1365,18 @@
       "copied": "Kopiert",
       "save": "Speichern",
       "saved": "Gespeichert",
+      "improve": "Mit KI verbessern",
+      "improving": "Wird verbessert…",
+      "improveLabel": "Entwurf verbessern",
+      "improveInstruction": "Eigene Anweisung",
+      "improveInstructionPlaceholder": "z. B. persönlicher formulieren, Kafka-Projekt erwähnen…",
+      "improveApply": "Anwenden",
+      "improvePresets": {
+        "warmer": "Wärmer",
+        "shorter": "Kürzer",
+        "moreSpecific": "Spezifischer",
+        "fixGrammar": "Grammatik korrigieren"
+      },
       "overLimit": "Über dem 300-Zeichen-Limit — vor dem Speichern kürzen",
       "delete": "Kontakt löschen",
       "status": {

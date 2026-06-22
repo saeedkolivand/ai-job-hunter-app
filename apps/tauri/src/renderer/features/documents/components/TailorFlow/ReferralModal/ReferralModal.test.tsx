@@ -58,6 +58,7 @@ vi.mock('@/components/ui/ModelSelector', () => ({
 // it() can set its own value before rendering.
 let stubbedDraft = '';
 const mockGenerate = vi.fn<() => Promise<void>>(async () => {});
+const mockImprove = vi.fn<(instruction: string) => Promise<void>>(async () => {});
 
 vi.mock('./useReferralDraft', () => ({
   useReferralDraft: () => ({
@@ -65,6 +66,7 @@ vi.mock('./useReferralDraft', () => ({
     generating: false,
     error: null,
     generate: mockGenerate,
+    improve: mockImprove,
     abort: vi.fn(),
     canGenerate: true,
     // save()'s onSuccess now calls reset() (the add-another flow) — stub it so the
@@ -102,6 +104,7 @@ beforeEach(() => {
   stubbedContacts = [];
   mockUpsertMutate.mockClear();
   mockGenerate.mockClear();
+  mockImprove.mockClear();
 });
 
 afterEach(() => {
@@ -362,5 +365,87 @@ describe('ReferralModal — over-limit counter text', () => {
     switchChannel('connection_note');
 
     expect(screen.getByText(/autopilot\.referral\.overLimit/)).toBeInTheDocument();
+  });
+});
+
+describe('ReferralModal — Improve with AI affordance', () => {
+  it('is NOT rendered when draft is empty', () => {
+    // stubbedDraft = '' (reset in beforeEach)
+    renderModal();
+    fillPersonName('Bob Chen');
+
+    // The improve section is conditionally rendered only when gen.draft is non-empty.
+    expect(
+      screen.queryByRole('button', { name: /autopilot\.referral\.improvePresets\.warmer/i })
+    ).toBeNull();
+    expect(screen.queryByLabelText('autopilot.referral.improveInstruction')).toBeNull();
+  });
+
+  it('IS rendered when a draft exists and not generating', () => {
+    stubbedDraft = 'Hi Bob, I wanted to reach out.';
+    renderModal();
+    fillPersonName('Bob Chen');
+
+    // All four preset chips must be present.
+    expect(
+      screen.getByRole('button', { name: 'autopilot.referral.improvePresets.warmer' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'autopilot.referral.improvePresets.shorter' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'autopilot.referral.improvePresets.moreSpecific' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'autopilot.referral.improvePresets.fixGrammar' })
+    ).toBeInTheDocument();
+
+    // Free-text input and Apply button must be present.
+    expect(screen.getByLabelText('autopilot.referral.improveInstruction')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'autopilot.referral.improveApply' })
+    ).toBeInTheDocument();
+  });
+
+  it('clicking a preset chip calls gen.improve with the preset i18n label', () => {
+    stubbedDraft = 'Hi Bob, I wanted to reach out.';
+    renderModal();
+    fillPersonName('Bob Chen');
+
+    act(() => {
+      fireEvent.click(
+        screen.getByRole('button', { name: 'autopilot.referral.improvePresets.warmer' })
+      );
+    });
+
+    // The mock t() returns the key itself, so the instruction passed is the full key.
+    expect(mockImprove).toHaveBeenCalledTimes(1);
+    expect(mockImprove).toHaveBeenCalledWith('autopilot.referral.improvePresets.warmer');
+  });
+
+  it('submitting a custom instruction via Apply button calls gen.improve', () => {
+    stubbedDraft = 'Hi Bob, I wanted to reach out.';
+    renderModal();
+    fillPersonName('Bob Chen');
+
+    const instructionInput = screen.getByLabelText('autopilot.referral.improveInstruction');
+    fireEvent.change(instructionInput, { target: { value: 'mention the Kafka work' } });
+
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'autopilot.referral.improveApply' }));
+    });
+
+    expect(mockImprove).toHaveBeenCalledTimes(1);
+    expect(mockImprove).toHaveBeenCalledWith('mention the Kafka work');
+  });
+
+  it('Apply button is disabled when the instruction input is blank', () => {
+    stubbedDraft = 'Hi Bob, I wanted to reach out.';
+    renderModal();
+    fillPersonName('Bob Chen');
+
+    const applyBtn = screen.getByRole('button', { name: 'autopilot.referral.improveApply' });
+    // Instruction is empty (default state) → Apply must be disabled.
+    expect(applyBtn).toBeDisabled();
   });
 });

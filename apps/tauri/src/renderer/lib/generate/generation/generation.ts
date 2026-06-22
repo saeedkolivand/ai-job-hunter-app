@@ -24,6 +24,7 @@ import {
   buildJobAdSummaryPrompt,
   buildJobAdSummarySystemPrompt,
   buildMetadataPrompt,
+  buildReferralImprovePrompt,
   buildReferralPrompt,
   buildResumePrompt,
   buildResumeSystemPrompt,
@@ -579,6 +580,75 @@ export async function generateReferral(params: {
 
   const { system, user } = buildReferralPrompt(
     { personName, personRole, companyName, jobTitle, resume, format, charLimit },
+    profile
+  );
+  const raw = await streamGenerate(
+    model,
+    system,
+    user,
+    onToken ?? (() => {}),
+    resolveTemperature('referral', 0.4),
+    locale,
+    signal
+  );
+  return extractPlainText(raw);
+}
+
+/**
+ * Revise an existing referral draft per a user instruction (F3a improve). Mirrors
+ * {@link generateReferral} in every way (provider config, streaming pipeline, no
+ * new IPC) but uses {@link buildReferralImprovePrompt} so the revision preserves
+ * the same honesty + résumé-grounding contract, channel shape, and the ≤300 hard
+ * cap for connection notes.
+ *
+ * SECURITY: `instruction` MUST be user-originated. Never pass scraped job-ad text,
+ * company-research briefs, or any untrusted source as the instruction — it is
+ * treated as a live directive by the model. The draft and résumé are fenced.
+ */
+export async function generateReferralImprove(params: {
+  personName: string;
+  personRole?: string;
+  companyName: string;
+  jobTitle: string;
+  resume: string;
+  draft: string;
+  instruction: string;
+  format: ReferralFormat;
+  charLimit?: number;
+  model: string;
+  locale?: string;
+  onToken?: (tok: string) => void;
+  signal?: AbortSignal;
+}): Promise<string> {
+  const {
+    personName,
+    personRole,
+    companyName,
+    jobTitle,
+    resume,
+    draft,
+    instruction,
+    format,
+    charLimit,
+    model,
+    locale = 'en',
+    onToken,
+    signal,
+  } = params;
+  const profile = buildProviderProfile(model);
+
+  const { system, user } = buildReferralImprovePrompt(
+    {
+      personName,
+      personRole,
+      companyName,
+      jobTitle,
+      resume,
+      draft,
+      instruction,
+      format,
+      charLimit,
+    },
     profile
   );
   const raw = await streamGenerate(

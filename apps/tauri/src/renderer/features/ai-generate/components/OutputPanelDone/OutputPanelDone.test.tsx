@@ -17,6 +17,16 @@ vi.mock('@/services/use-contact-profile', () => ({
   useContactProfile: () => ({ data: undefined }),
 }));
 
+// Stub useDebouncedCommit so tests don't depend on fake timers.
+// scheduleCommit immediately calls onCommit — simulates instant commit in tests.
+vi.mock('@/hooks/use-debounced-commit', () => ({
+  useDebouncedCommit: (onCommit: (v: string) => void) => ({
+    scheduleCommit: (v: string) => onCommit(v),
+    flush: (v: string) => onCommit(v),
+    cancel: () => undefined,
+  }),
+}));
+
 const RAW = 'Led **payments** migration at scale.';
 
 function renderPanel(overrides: Partial<React.ComponentProps<typeof OutputPanelDone>> = {}) {
@@ -66,5 +76,12 @@ describe('OutputPanelDone — preview/edit', () => {
     expect(textarea.value).toBe(RAW);
     // Switching views must not mutate the canonical output.
     expect(onOutputChange).not.toHaveBeenCalled();
+  });
+
+  it('no Save button is rendered (auto-debounce replaced manual save)', () => {
+    renderPanel();
+    // Switch to Source so the full edit toolbar is visible.
+    fireEvent.click(screen.getByRole('radio', { name: /source/i }));
+    expect(screen.queryByRole('button', { name: /save/i })).toBeNull();
   });
 });

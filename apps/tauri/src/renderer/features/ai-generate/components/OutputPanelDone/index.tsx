@@ -7,6 +7,7 @@ import { Button, cn } from '@ajh/ui';
 
 import { EditableOutput } from '@/components/generation/EditableOutput';
 import { PdfPreview } from '@/components/generation/PdfPreview';
+import { useDebouncedCommit } from '@/hooks/use-debounced-commit';
 import {
   buildFilename,
   type GenerationMeta,
@@ -65,51 +66,96 @@ export function OutputPanelDone({
   const [exportOpen, setExportOpen] = useState(false);
 
   // ── Committed preview text (decoupled from the live edited string) ────────────
-  // The PdfPreview renders the COMMITTED text, which only changes on discrete
-  // events — initial generation, regeneration, or an explicit Save — never on raw
-  // keystrokes. Typing still updates the canonical string (resumeOut/coverOut) so
-  // copy/export stay live and correct, but the heavy Typst recompile is deferred.
+  // PdfPreview renders COMMITTED text. Local edits auto-commit after ~700 ms via
+  // useDebouncedCommit; generation/regeneration commits immediately.
   const [committedResume, setCommittedResume] = useState(resumeOut);
   const [committedCover, setCommittedCover] = useState(coverOut);
-  // The last value the editor emitted per doc — lets us tell a generation/regenerate
-  // (external change) apart from a local edit, so the former auto-refreshes the
-  // preview and the latter does not.
+  // Track whether there is a pending debounced commit (drives the "Updating…" hint).
+  const [pendingResume, setPendingResume] = useState(false);
+  const [pendingCover, setPendingCover] = useState(false);
+
+  // The last value the editor emitted per doc — distinguishes external changes
+  // (generation / regeneration) from local edits, so external changes bypass the
+  // debounce and refresh the preview immediately.
   const lastEditRef = useRef<{ resume: string | null; cover: string | null }>({
     resume: null,
     cover: null,
   });
 
-  // Auto-refresh the committed text when resumeOut/coverOut change for a reason
-  // OTHER than the local editor (generation, regeneration). If the incoming text
-  // matches what the editor last emitted for that doc, it's a local edit → leave
-  // the committed text alone (preview waits for Save).
+  const setCommitted = useCallback((out: 'resume' | 'cover', text: string) => {
+    if (out === 'resume') {
+      setCommittedResume(text);
+      setPendingResume(false);
+    } else {
+      setCommittedCover(text);
+      setPendingCover(false);
+    }
+  }, []);
+
+  const { scheduleCommit, flush, cancel } = useDebouncedCommit(
+    useCallback((text: string) => setCommitted(activeOut, text), [activeOut, setCommitted])
+  );
+
+  // Flush on doc/tab switch so a pending edit commits before the view changes.
+  const prevActiveOutRef = useRef(activeOut);
+  useEffect(() => {
+    if (prevActiveOutRef.current !== activeOut) {
+      const prev = prevActiveOutRef.current;
+      const pendingText = prev === 'resume' ? resumeOut : coverOut;
+      flush(pendingText);
+      prevActiveOutRef.current = activeOut;
+    }
+  }, [activeOut, resumeOut, coverOut, flush]);
+
+  // Cancel on unmount.
+  useEffect(() => cancel, [cancel]);
+
+  // Auto-refresh committed when resumeOut/coverOut change for a reason OTHER than
+  // a local edit (generation, regeneration). A local edit sets lastEditRef so the
+  // debounce handles it instead.
   useEffect(() => {
     if (resumeOut !== lastEditRef.current.resume) {
       setCommittedResume(resumeOut);
+      setPendingResume(false);
       lastEditRef.current.resume = null;
     }
   }, [resumeOut]);
   useEffect(() => {
     if (coverOut !== lastEditRef.current.cover) {
       setCommittedCover(coverOut);
+      setPendingCover(false);
       lastEditRef.current.cover = null;
     }
   }, [coverOut]);
 
-  const commit = useCallback((out: 'resume' | 'cover', text: string) => {
-    if (out === 'resume') setCommittedResume(text);
-    else setCommittedCover(text);
-  }, []);
-
-  // Record the emitted value as a local edit, then propagate it to the canonical
-  // string (which keeps copy/export live without recompiling the preview).
+  // Record the emitted value as a local edit, schedule the debounced commit, and
+  // propagate the canonical string (copy/export stay live without recompiling).
   const handleOutputChange = useCallback(
     (value: string) => {
       lastEditRef.current[activeOut] = value;
+      if (activeOut === 'resume') setPendingResume(true);
+      else setPendingCover(true);
+      scheduleCommit(value);
       onOutputChange(value);
     },
-    [activeOut, onOutputChange]
+    [activeOut, scheduleCommit, onOutputChange]
   );
+
+  // Stable refs so handleBlur always reads the latest values.
+  const activeOutRef = useRef(activeOut);
+  activeOutRef.current = activeOut;
+  const resumeOutRef = useRef(resumeOut);
+  resumeOutRef.current = resumeOut;
+  const coverOutRef = useRef(coverOut);
+  coverOutRef.current = coverOut;
+
+  const handleBlur = useCallback(() => {
+    const doc = activeOutRef.current;
+    // Prefer the last locally-typed value (may be ahead of the prop in the same render).
+    const latest =
+      lastEditRef.current[doc] ?? (doc === 'resume' ? resumeOutRef.current : coverOutRef.current);
+    flush(latest);
+  }, [flush]);
 
   const docType = activeOut === 'resume' ? 'resume' : 'cover-letter';
   // The cover letter's preview layout follows the resolved market (job country →
@@ -132,6 +178,7 @@ export function OutputPanelDone({
   const currentOutput = activeOut === 'resume' ? resumeOut : coverOut;
   // Committed text for the active doc — what PdfPreview actually renders.
   const committed = activeOut === 'resume' ? committedResume : committedCover;
+  const isPending = activeOut === 'resume' ? pendingResume : pendingCover;
   const currentMeta = meta;
 
   return (
@@ -231,8 +278,8 @@ export function OutputPanelDone({
         <EditableOutput
           value={currentOutput}
           onChange={handleOutputChange}
-          onSave={() => commit(activeOut, currentOutput)}
-          canSave={currentOutput !== committed}
+          onBlur={handleBlur}
+          isPending={isPending}
           disabled={isGenerating}
           docType={docType}
           meta={meta}
