@@ -337,7 +337,14 @@ export function EditableOutput({
       </div>
 
       {view === 'edit' ? (
-        <div className="relative flex-1 min-h-0 w-full" onBlur={onBlur}>
+        <div
+          className="relative flex-1 min-h-0 w-full"
+          onBlur={(e) => {
+            // Only fire when focus truly leaves the container (not between internal
+            // controls like toolbar buttons → editor body).
+            if (!e.currentTarget.contains(e.relatedTarget)) onBlur?.();
+          }}
+        >
           {/* WYSIWYG edit surface — same canonical `value`/`onChange` as Source.
               Lock with readOnly while a rewrite streams (mirrors the Source path). */}
           <RichTextEditor
@@ -358,13 +365,19 @@ export function EditableOutput({
           {rewriteOverlay}
         </div>
       ) : view === 'source' ? (
-        <div className="relative flex-1 min-h-0 w-full">
+        <div
+          className="relative flex-1 min-h-0 w-full"
+          onBlur={(e) => {
+            // Only fire when focus truly leaves the container (not to the rewrite
+            // overlay buttons or other internal elements).
+            if (!e.currentTarget.contains(e.relatedTarget)) onBlur?.();
+          }}
+        >
           {/* Source — raw markdown power-user / inspection view (hand-editable). */}
           <TextArea
             ref={textareaRef}
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            onBlur={onBlur}
             onSelect={updateSelection}
             onMouseUp={updateSelection}
             onKeyUp={updateSelection}

@@ -451,6 +451,58 @@ describe('useReferralDraft — improve()', () => {
     expect(result.current.error).toBeNull();
     expect(result.current.generating).toBe(false);
   });
+
+  // ── BUG 3 regression guard: draft must survive failed / aborted improve ────────
+
+  it('draft is preserved (not cleared) when improve() fails with a network error', async () => {
+    mockGenerateReferralImprove.mockRejectedValueOnce(new Error('network failure'));
+
+    const { result } = render();
+
+    // Seed a draft.
+    await act(async () => {
+      await result.current.generate();
+    });
+    const originalDraft = result.current.draft;
+    expect(originalDraft).not.toBe('');
+
+    // improve() fails — draft must be restored to the pre-improve value.
+    await act(async () => {
+      await result.current.improve('make it shorter');
+    });
+
+    expect(result.current.draft).toBe(originalDraft);
+    expect(result.current.error).toBe('network failure');
+    expect(result.current.generating).toBe(false);
+  });
+
+  it('draft is preserved (not cleared) when improve() is aborted mid-stream', async () => {
+    mockGenerateReferralImprove.mockImplementationOnce(async (): Promise<string> => {
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    });
+
+    const { result } = render();
+
+    // Seed a draft.
+    await act(async () => {
+      await result.current.generate();
+    });
+    const originalDraft = result.current.draft;
+    expect(originalDraft).not.toBe('');
+
+    // Start improve then abort — draft must survive.
+    act(() => {
+      void result.current.improve('make it shorter');
+    });
+
+    await act(async () => {
+      result.current.abort();
+    });
+
+    expect(result.current.draft).toBe(originalDraft);
+    expect(result.current.error).toBeNull();
+    expect(result.current.generating).toBe(false);
+  });
 });
 
 // ── channel-switch clears draft ───────────────────────────────────────────────

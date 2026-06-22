@@ -18,11 +18,13 @@ vi.mock('@/services/use-contact-profile', () => ({
 }));
 
 // Stub useDebouncedCommit so tests don't depend on fake timers.
-// scheduleCommit immediately calls onCommit — simulates instant commit in tests.
+// scheduleCommit immediately calls onCommit with the (out, value) pair —
+// simulates instant commit in tests. flush() with no argument is also a no-op
+// (the pair was just committed by scheduleCommit already).
 vi.mock('@/hooks/use-debounced-commit', () => ({
-  useDebouncedCommit: (onCommit: (v: string) => void) => ({
-    scheduleCommit: (v: string) => onCommit(v),
-    flush: (v: string) => onCommit(v),
+  useDebouncedCommit: (onCommit: (out: string, v: string) => void) => ({
+    scheduleCommit: (out: string, v: string) => onCommit(out, v),
+    flush: () => undefined,
     cancel: () => undefined,
   }),
 }));

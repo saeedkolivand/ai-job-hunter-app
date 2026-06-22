@@ -1074,6 +1074,7 @@
     "source": "Source",
     "save": "Save",
     "previewUpdating": "Updating preview…",
+    "coverStillGenerating": "Cover letter is still generating — editing locked until both documents are ready.",
     "viewMode": "View mode",
     "editor": {
       "toolbar": "Text formatting",
@@ -1362,7 +1363,6 @@
       "save": "Save",
       "saved": "Saved",
       "improve": "Improve with AI",
-      "improving": "Improving…",
       "improveLabel": "Improve the draft",
       "improveInstruction": "Custom instruction",
       "improveInstructionPlaceholder": "e.g. make it more specific, mention the Kafka work…",

@@ -97,30 +97,24 @@ export function GenerationOutput({
     resume: null,
     cover: null,
   });
-  // Always hold the latest output/activeOut so handleBlur doesn't close over stale values.
-  const outputRef = useRef(output);
-  outputRef.current = output;
-  const activeOutRef = useRef(activeOut);
-  activeOutRef.current = activeOut;
 
-  const commitToDoc = useCallback(
-    (text: string) => {
-      setCommitted((c) => ({ ...c, [activeOut]: text }));
-      setPending(false);
-    },
-    [activeOut]
-  );
+  const commitToDoc = useCallback((out: 'resume' | 'cover', text: string) => {
+    setCommitted((c) => ({ ...c, [out]: text }));
+    setPending(false);
+  }, []);
 
-  const { scheduleCommit, flush, cancel } = useDebouncedCommit(commitToDoc);
+  const { scheduleCommit, flush, cancel } = useDebouncedCommit<'resume' | 'cover'>(commitToDoc);
 
-  // Flush on doc/tab switch so a pending edit commits before the view changes.
+  // Flush on doc/tab switch so a pending edit commits to ITS OWN doc before the
+  // view changes. flush() uses the (out, value) pair captured at scheduleCommit
+  // time — never the current activeOut — so the edit always lands in the right doc.
   const prevActiveOutRef = useRef(activeOut);
   useEffect(() => {
     if (prevActiveOutRef.current !== activeOut) {
-      flush(output);
+      flush();
       prevActiveOutRef.current = activeOut;
     }
-  }, [activeOut, output, flush]);
+  }, [activeOut, flush]);
 
   // Cancel on unmount.
   useEffect(() => cancel, [cancel]);
@@ -140,17 +134,17 @@ export function GenerationOutput({
     (value: string) => {
       lastEditRef.current[activeOut] = value;
       setPending(true);
-      scheduleCommit(value);
+      // Capture (activeOut, value) pair now — tab switches can't misroute the commit.
+      scheduleCommit(activeOut, value);
       onEdit(value);
     },
     [activeOut, scheduleCommit, onEdit]
   );
 
   const handleBlur = useCallback(() => {
-    // Use the last-edited value if a local edit is in flight; else the current prop.
-    const activeKey = activeOutRef.current;
-    const latest = lastEditRef.current[activeKey] ?? outputRef.current;
-    flush(latest);
+    // flush() commits the (out, value) pair captured at scheduleCommit time —
+    // uses the typed value, never the prop, and always routes to the correct doc.
+    flush();
   }, [flush]);
   const docType = activeOut === 'resume' ? 'resume' : 'cover-letter';
 

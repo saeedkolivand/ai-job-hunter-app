@@ -92,20 +92,18 @@ export function OutputPanelDone({
     }
   }, []);
 
-  const { scheduleCommit, flush, cancel } = useDebouncedCommit(
-    useCallback((text: string) => setCommitted(activeOut, text), [activeOut, setCommitted])
-  );
+  const { scheduleCommit, flush, cancel } = useDebouncedCommit<'resume' | 'cover'>(setCommitted);
 
-  // Flush on doc/tab switch so a pending edit commits before the view changes.
+  // Flush on doc/tab switch so a pending edit commits to ITS OWN doc before the
+  // view changes. flush() uses the (out, value) pair captured at scheduleCommit
+  // time — never the current activeOut — so the edit always lands in the right doc.
   const prevActiveOutRef = useRef(activeOut);
   useEffect(() => {
     if (prevActiveOutRef.current !== activeOut) {
-      const prev = prevActiveOutRef.current;
-      const pendingText = prev === 'resume' ? resumeOut : coverOut;
-      flush(pendingText);
+      flush();
       prevActiveOutRef.current = activeOut;
     }
-  }, [activeOut, resumeOut, coverOut, flush]);
+  }, [activeOut, flush]);
 
   // Cancel on unmount.
   useEffect(() => cancel, [cancel]);
@@ -130,31 +128,23 @@ export function OutputPanelDone({
 
   // Record the emitted value as a local edit, schedule the debounced commit, and
   // propagate the canonical string (copy/export stay live without recompiling).
+  // Pass (activeOut, value) so the pair is captured now — tab switches can't
+  // misroute the commit to a different doc.
   const handleOutputChange = useCallback(
     (value: string) => {
       lastEditRef.current[activeOut] = value;
       if (activeOut === 'resume') setPendingResume(true);
       else setPendingCover(true);
-      scheduleCommit(value);
+      scheduleCommit(activeOut, value);
       onOutputChange(value);
     },
     [activeOut, scheduleCommit, onOutputChange]
   );
 
-  // Stable refs so handleBlur always reads the latest values.
-  const activeOutRef = useRef(activeOut);
-  activeOutRef.current = activeOut;
-  const resumeOutRef = useRef(resumeOut);
-  resumeOutRef.current = resumeOut;
-  const coverOutRef = useRef(coverOut);
-  coverOutRef.current = coverOut;
-
   const handleBlur = useCallback(() => {
-    const doc = activeOutRef.current;
-    // Prefer the last locally-typed value (may be ahead of the prop in the same render).
-    const latest =
-      lastEditRef.current[doc] ?? (doc === 'resume' ? resumeOutRef.current : coverOutRef.current);
-    flush(latest);
+    // flush() commits the (out, value) pair captured at scheduleCommit time —
+    // uses the typed value, never the prop, and always routes to the correct doc.
+    flush();
   }, [flush]);
 
   const docType = activeOut === 'resume' ? 'resume' : 'cover-letter';
@@ -268,7 +258,7 @@ export function OutputPanelDone({
       {generatingDoc === 'cover' && (
         <div className="shrink-0 flex items-center gap-2 border-b border-amber-400/20 bg-amber-400/5 px-6 py-2 text-[11px] text-amber-400/80">
           <Loader2 size={11} className="animate-spin shrink-0" />
-          Cover letter is still generating — editing locked until both documents are ready.
+          {t('aiGenerate.coverStillGenerating')}
         </div>
       )}
 

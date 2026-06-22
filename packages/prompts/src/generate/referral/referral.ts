@@ -171,6 +171,12 @@ export interface ReferralImproveParams extends ReferralPromptParams {
 // any realistic referral email/message.
 const MAX_DRAFT_CHARS = 4000;
 
+// Hard cap on the user instruction, which is interpolated verbatim into the prompt.
+// Instructions are short directives ("make it warmer", "fix grammar"), so a tight
+// bound keeps an over-long (or pasted) instruction from blowing provider context
+// budgets / spiking cost. Trim first, then truncate.
+const MAX_INSTRUCTION_CHARS = 1000;
+
 /** The connection-note hard-cap clause, shared by generate + improve user prompts. */
 function hardCapClause(limit?: number): string {
   return `\n\nHARD CONSTRAINT: the entire note MUST be ${limit} characters or fewer. Count characters and stay under the limit. A note over ${limit} characters will be rejected.`;
@@ -204,6 +210,7 @@ export function buildReferralImprovePrompt(
   const role = personRole?.trim();
   const recipient = role ? `${personName} (${role})` : personName;
   const draftBody = draft.slice(0, MAX_DRAFT_CHARS);
+  const instructionBody = instruction.trim().slice(0, MAX_INSTRUCTION_CHARS);
 
   // brief = compact/imperative framing for small local models; full/task get the
   // fuller guidance. The contract + format rule are identical across depths so the
@@ -239,7 +246,7 @@ Company: ${companyName}
 Role the candidate is applying for: ${jobTitle}
 
 ### INSTRUCTION ###
-${instruction}
+${instructionBody}
 
 Revise <current_draft> to apply the instruction, producing an improved version of ${FORMAT_LABELS[format]} from the candidate to ${personName} (the low-pressure ask to refer the candidate for the ${jobTitle} role at ${companyName}). Ground every claim in the résumé.${
     format === 'connection_note' ? hardCapClause(limit) : ''

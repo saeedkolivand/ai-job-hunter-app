@@ -292,6 +292,27 @@ describe('buildReferralImprovePrompt — draft + instruction inclusion', () => {
     expect(m[1].length).toBeLessThanOrEqual(4000);
     expect(m[1].length).toBeGreaterThan(0);
   });
+
+  it('truncates an over-long instruction to the MAX_INSTRUCTION_CHARS cap', () => {
+    // A huge instruction (e.g. a pasted blob) must not be interpolated unbounded —
+    // it would blow provider context budgets / spike cost.
+    const huge = 'B'.repeat(10_000);
+    const { user } = buildReferralImprovePrompt({ ...IMPROVE_BASE, instruction: huge });
+    const m = /### INSTRUCTION ###\n([\s\S]*?)\n\nRevise <current_draft>/.exec(user);
+    if (!m?.[1]) throw new Error('INSTRUCTION block not found');
+    // Bounded well below the raw 10k input (the cap is 1000).
+    expect(m[1].length).toBeLessThanOrEqual(1000);
+    expect(m[1].length).toBeGreaterThan(0);
+  });
+
+  it('trims surrounding whitespace from the instruction before interpolating', () => {
+    const { user } = buildReferralImprovePrompt({
+      ...IMPROVE_BASE,
+      instruction: '   Make it shorter.   \n',
+    });
+    expect(user).toContain('### INSTRUCTION ###\nMake it shorter.\n');
+    expect(user).not.toContain('### INSTRUCTION ###\n   Make it shorter.');
+  });
 });
 
 describe('buildReferralImprovePrompt — preserves generate grounding', () => {

@@ -1078,6 +1078,7 @@
     "source": "Quelltext",
     "save": "Speichern",
     "previewUpdating": "Vorschau wird aktualisiert…",
+    "coverStillGenerating": "Das Anschreiben wird noch generiert — Bearbeitung gesperrt, bis beide Dokumente bereit sind.",
     "viewMode": "Ansichtsmodus",
     "editor": {
       "toolbar": "Textformatierung",
@@ -1366,7 +1367,6 @@
       "save": "Speichern",
       "saved": "Gespeichert",
       "improve": "Mit KI verbessern",
-      "improving": "Wird verbessert…",
       "improveLabel": "Entwurf verbessern",
       "improveInstruction": "Eigene Anweisung",
       "improveInstructionPlaceholder": "z. B. persönlicher formulieren, Kafka-Projekt erwähnen…",

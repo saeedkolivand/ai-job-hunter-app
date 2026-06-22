@@ -119,16 +119,22 @@ export function useReferralDraft({
    * into the same draft state (replaces in-place), reusing abort/generating/error.
    * Respects `canGenerate` gating and requires a non-empty draft to act on.
    *
+   * The existing draft is preserved (not cleared) until the first streaming token
+   * arrives, so a failed or aborted improve never destroys the user's draft.
+   *
    * SECURITY: `instruction` must be user-originated. Never pass scraped or
    * AI-generated content as the instruction.
    */
   const improve = async (instruction: string) => {
     if (!canGenerate || !draft) return;
+    // Snapshot the current draft — if the request fails or is aborted, restore it.
+    const snapshot = draft;
     const controller = new AbortController();
     abortRef.current = controller;
     setGenerating(true);
     setError(null);
-    setDraft('');
+    // Do NOT clear the draft up front. The first streaming token replaces it.
+    let firstToken = true;
     try {
       const text = await generateReferralImprove({
         personName: personName.trim(),
@@ -136,13 +142,21 @@ export function useReferralDraft({
         companyName,
         jobTitle,
         resume,
-        draft,
+        draft: snapshot,
         instruction,
         format: channel,
         charLimit: channel === 'connection_note' ? CONNECTION_NOTE_LIMIT : undefined,
         model,
         locale: detectLanguages(resume, '').resumeName,
-        onToken: (tok) => setDraft((prev) => prev + tok),
+        onToken: (tok) => {
+          if (firstToken) {
+            // Replace the snapshot with the first streaming token.
+            firstToken = false;
+            setDraft(tok);
+          } else {
+            setDraft((prev) => prev + tok);
+          }
+        },
         signal: controller.signal,
       });
       setDraft(text);
@@ -150,6 +164,8 @@ export function useReferralDraft({
       if (!controller.signal.aborted) {
         setError(err instanceof Error ? err.message : 'Failed to improve the draft');
       }
+      // Restore the snapshot so the draft survives a failed or aborted improve.
+      setDraft(snapshot);
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       setGenerating(false);

@@ -448,4 +448,38 @@ describe('ReferralModal — Improve with AI affordance', () => {
     // Instruction is empty (default state) → Apply must be disabled.
     expect(applyBtn).toBeDisabled();
   });
+
+  // ── Keyboard behaviour on the improve instruction input ───────────────────────
+
+  it('pressing Enter on the instruction input submits the instruction (calls improve)', () => {
+    stubbedDraft = 'Hi Bob, I wanted to reach out.';
+    renderModal();
+    fillPersonName('Bob Chen');
+
+    const instructionInput = screen.getByLabelText('autopilot.referral.improveInstruction');
+    fireEvent.change(instructionInput, { target: { value: 'be more concise' } });
+
+    act(() => {
+      fireEvent.keyDown(instructionInput, { key: 'Enter', code: 'Enter', shiftKey: false });
+    });
+
+    expect(mockImprove).toHaveBeenCalledTimes(1);
+    expect(mockImprove).toHaveBeenCalledWith('be more concise');
+  });
+
+  it('pressing Shift+Enter on the instruction input does NOT submit', () => {
+    stubbedDraft = 'Hi Bob, I wanted to reach out.';
+    renderModal();
+    fillPersonName('Bob Chen');
+
+    const instructionInput = screen.getByLabelText('autopilot.referral.improveInstruction');
+    fireEvent.change(instructionInput, { target: { value: 'be more concise' } });
+
+    act(() => {
+      // Shift+Enter must not trigger improve (allows line breaks in a future multi-line variant).
+      fireEvent.keyDown(instructionInput, { key: 'Enter', code: 'Enter', shiftKey: true });
+    });
+
+    expect(mockImprove).not.toHaveBeenCalled();
+  });
 });
