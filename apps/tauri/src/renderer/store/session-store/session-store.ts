@@ -39,7 +39,7 @@ interface AnalyzeSlice {
   analysisMode: AnalysisMode;
 }
 
-type ResumeBuilderStage = 'interview' | 'generating' | 'done';
+export type ResumeBuilderStage = 'interview' | 'generating' | 'done';
 
 export interface ResumeBuilderSlice {
   answers: InterviewAnswers;

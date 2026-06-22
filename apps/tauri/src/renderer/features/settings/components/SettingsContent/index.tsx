@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { type RefObject, useEffect } from 'react';
+import { type ReactNode, type RefObject, useEffect } from 'react';
 
 import { IconBadge, transition, variants } from '@ajh/ui';
 
@@ -50,6 +50,63 @@ export function SettingsContent({
   userName,
   onAnchorConsumed,
 }: Props) {
+  const sectionRegistry: Record<SectionId, () => ReactNode> = {
+    general: () => (
+      <GeneralSection
+        localName={localName}
+        setLocalName={setLocalName}
+        setUserName={setUserName}
+        userName={userName}
+      />
+    ),
+    appearance: () => <AppearanceCard />,
+    contact: () => <ContactProfileTab />,
+    ai: () => (
+      <>
+        <div data-settings-anchor="ai-provider">
+          <AISettingsTab />
+        </div>
+        <div data-settings-anchor="ai-tone">
+          <OutputTonePreferences />
+        </div>
+      </>
+    ),
+    job: () => (
+      <>
+        <div data-settings-anchor="job-location">
+          <JobLocationPreferences />
+        </div>
+        <div data-settings-anchor="job-techstack">
+          <TechStackPreferences />
+        </div>
+        <div data-settings-anchor="job-aggregator">
+          <AggregatorKeysSettings />
+        </div>
+      </>
+    ),
+    resume: () => (
+      <div data-settings-anchor="resume-manage">
+        <ResumePreferences />
+      </div>
+    ),
+    accounts: () => <AccountsSettingsTab />,
+    privacy: () => <PrivacySettingsTab />,
+    performance: () => (
+      <div data-settings-anchor="performance-mode">
+        <PerformancePreferences />
+      </div>
+    ),
+    developer: () => (
+      <div data-settings-anchor="developer-tools">
+        <DeveloperPreferences />
+      </div>
+    ),
+    about: () => (
+      <div data-settings-anchor="about-info">
+        <AboutTab />
+      </div>
+    ),
+  };
   /**
    * Scroll to + briefly ring-highlight an anchored element after the section
    * mounts. Keyed on both activeSection and pendingAnchor so it re-fires when
@@ -122,61 +179,7 @@ export function SettingsContent({
             transition={transition.normal}
             className="max-w-2xl space-y-4"
           >
-            {activeSection === 'general' && (
-              <GeneralSection
-                localName={localName}
-                setLocalName={setLocalName}
-                setUserName={setUserName}
-                userName={userName}
-              />
-            )}
-            {activeSection === 'appearance' && <AppearanceCard />}
-            {activeSection === 'contact' && <ContactProfileTab />}
-            {activeSection === 'ai' && (
-              <>
-                <div data-settings-anchor="ai-provider">
-                  <AISettingsTab />
-                </div>
-                <div data-settings-anchor="ai-tone">
-                  <OutputTonePreferences />
-                </div>
-              </>
-            )}
-            {activeSection === 'job' && (
-              <>
-                <div data-settings-anchor="job-location">
-                  <JobLocationPreferences />
-                </div>
-                <div data-settings-anchor="job-techstack">
-                  <TechStackPreferences />
-                </div>
-                <div data-settings-anchor="job-aggregator">
-                  <AggregatorKeysSettings />
-                </div>
-              </>
-            )}
-            {activeSection === 'resume' && (
-              <div data-settings-anchor="resume-manage">
-                <ResumePreferences />
-              </div>
-            )}
-            {activeSection === 'accounts' && <AccountsSettingsTab />}
-            {activeSection === 'privacy' && <PrivacySettingsTab />}
-            {activeSection === 'performance' && (
-              <div data-settings-anchor="performance-mode">
-                <PerformancePreferences />
-              </div>
-            )}
-            {activeSection === 'developer' && (
-              <div data-settings-anchor="developer-tools">
-                <DeveloperPreferences />
-              </div>
-            )}
-            {activeSection === 'about' && (
-              <div data-settings-anchor="about-info">
-                <AboutTab />
-              </div>
-            )}
+            {sectionRegistry[activeSection]()}
           </motion.div>
         </AnimatePresence>
       </div>

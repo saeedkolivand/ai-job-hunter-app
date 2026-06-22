@@ -2,7 +2,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
-import { keys } from '../query-client';
+import { keys, QUERY_TIMES } from '../query-client';
 import { useCheckBrowser } from '../use-system';
 
 const KEYS = {
@@ -17,7 +17,7 @@ export const useLinkedInStatus = () => {
   return useQuery({
     queryKey: KEYS.linkedinStatus,
     queryFn: () => api.linkedin.getStatus(),
-    refetchInterval: 30_000,
+    refetchInterval: QUERY_TIMES.MEDIUM,
   });
 };
 
@@ -67,7 +67,7 @@ export const useBoardStatus = (boardId: string) => {
   return useQuery({
     queryKey: KEYS.boardStatus(boardId),
     queryFn: () => api.boards.getStatus({ boardId }),
-    refetchInterval: 30_000,
+    refetchInterval: QUERY_TIMES.MEDIUM,
     enabled: !!boardId,
   });
 };
@@ -129,12 +129,12 @@ export const useBoardStatuses = (boardIds: string[] = []) => {
         ? {
             queryKey: KEYS.linkedinStatus,
             queryFn: () => api.linkedin.getStatus(),
-            refetchInterval: 30_000,
+            refetchInterval: QUERY_TIMES.MEDIUM,
           }
         : {
             queryKey: KEYS.boardStatus(id),
             queryFn: () => api.boards.getStatus({ boardId: id }),
-            refetchInterval: 30_000,
+            refetchInterval: QUERY_TIMES.MEDIUM,
             enabled: !!id,
           }
     ),

@@ -26,6 +26,7 @@ import {
   resolveMarket,
   type TemplateId,
 } from '@/lib/generate';
+import { COPY_FEEDBACK_LONG_MS } from '@/lib/timings';
 import { useExtractText } from '@/services';
 import { useSaveAiGeneration } from '@/services/use-ai-generations';
 import { useContactPromptSeen, usePreferencesStore } from '@/store/preferences-store';
@@ -179,7 +180,7 @@ export function AIGeneratePage() {
     const text = activeOut === 'resume' ? resumeOut : coverOut;
     await navigator.clipboard.writeText(text);
     setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    setTimeout(() => setCopied(false), COPY_FEEDBACK_LONG_MS);
   };
 
   const currentOutput = activeOut === 'resume' ? resumeOut : coverOut;

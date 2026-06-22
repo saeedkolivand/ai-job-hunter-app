@@ -11,7 +11,7 @@ import {
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
-import { keys } from '../query-client';
+import { keys, QUERY_TIMES } from '../query-client';
 
 export type UpdateStatus =
   | { state: 'idle' }
@@ -124,6 +124,6 @@ export function useChangelog(enabled: boolean) {
     queryKey: keys.updater.changelog,
     queryFn: () => api.updater.changelog(),
     enabled,
-    staleTime: 10 * 60_000,
+    staleTime: QUERY_TIMES.TEN_MIN,
   });
 }
