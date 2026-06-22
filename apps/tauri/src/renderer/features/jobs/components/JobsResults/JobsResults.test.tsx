@@ -25,6 +25,26 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 
+// ── router stub — navigate is a no-op spy ─────────────────────────────────────
+
+vi.mock('@tanstack/react-router', () => ({
+  useRouter: () => ({ navigate: vi.fn() }),
+}));
+
+// ── session-store stub — setSettings is a no-op spy ──────────────────────────
+
+vi.mock('@/store/session-store', () => ({
+  useSessionStore: (sel: (s: { setSettings: () => void }) => unknown) =>
+    sel({ setSettings: vi.fn() }),
+}));
+
+// ── useHasProviderKey stub — keys present by default (no hint shown) ──────────
+
+let stubbedHasKey = true;
+vi.mock('@/services/use-ai-provider', () => ({
+  useHasProviderKey: () => ({ data: { has: stubbedHasKey } }),
+}));
+
 // ── useJobMatchScores stub — module-level ref set BEFORE each render ───────────
 
 let stubbedQuery: { scoresById: Map<string, MatchScore>; isPending: boolean; isError: boolean } = {
@@ -141,6 +161,7 @@ function rowOrder(): string[] {
 
 beforeEach(() => {
   stubbedQuery = { scoresById: new Map(), isPending: false, isError: false };
+  stubbedHasKey = true;
 });
 
 describe('JobsResults — gating', () => {
@@ -221,5 +242,34 @@ describe('JobsResults — no résumé', () => {
     expect(screen.queryByText('jobs.scoring')).not.toBeInTheDocument();
     expect(screen.queryByText('jobs.searching')).not.toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.jobs.postingRow)).not.toBeInTheDocument();
+  });
+
+  it('shows the Adzuna-keys CTA when the list is empty and keys are missing', () => {
+    stubbedHasKey = false;
+    renderResults({ filtered: [], resumeId: null });
+
+    // Secondary message and settings CTA are shown instead of the generic scrape CTA.
+    expect(screen.getByText('jobs.emptyNoAdzunaKeys')).toBeInTheDocument();
+    expect(screen.getByText('jobs.emptyNoAdzunaKeysCta')).toBeInTheDocument();
+    expect(screen.queryByText('jobs.emptyCta')).not.toBeInTheDocument();
+  });
+
+  it('shows the generic CTA when the list is empty and keys are present', () => {
+    stubbedHasKey = true;
+    renderResults({ filtered: [], resumeId: null });
+
+    expect(screen.getByText('jobs.emptyCta')).toBeInTheDocument();
+    expect(screen.queryByText('jobs.emptyNoAdzunaKeys')).not.toBeInTheDocument();
+  });
+
+  it('wraps the empty-state variant swap in a live region so AT users hear the change', () => {
+    // The missingAdzunaKeys → keys-present swap replaces the EmptyState in place;
+    // a single polite live region around both variants announces the new text.
+    stubbedHasKey = false;
+    const { container } = renderResults({ filtered: [], resumeId: null });
+
+    const live = container.querySelector('[role="status"][aria-live="polite"]');
+    expect(live).not.toBeNull();
+    expect(live).toHaveTextContent('jobs.emptyNoAdzunaKeys');
   });
 });
