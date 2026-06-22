@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782154283780,
+  "lastUpdate": 1782165852059,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1463,6 +1463,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 286170,
             "range": "± 3211",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f15e83d190cf720aa3eb0af4d6e6253664b9ce10",
+          "message": "fix: buffer cold-start deep-link autopilot focus so it isn't lost (#477)\n\n* fix: buffer cold-start deep-link autopilot focus so it isn't lost\n\nA cold-start ajh://autopilot/<id> deep link emitted the focus event during\nRust setup, before the renderer's useAutopilotFocusNavigation listener\nattached, so the focus intent was lost. Mirror the proven menu cold-start\npattern:\n\n- tray: dedicated PendingFocus buffer + dispatch_focus (buffer the id BEFORE\n  show_focus, then emit as the low-latency trigger + deferred re-emit)\n- commands/autopilot: autopilot_take_pending_focus (atomic take-and-clear)\n- lib: route handle_deep_link's autopilot arm through dispatch_focus; manage\n  PendingFocus EARLY in setup (before the deep-link block — managing it later\n  in tray::build would no-op the cold-start write) + register the command\n- renderer: useAutopilotFocusNavigation keeps the live event AND pulls the\n  buffer on mount + window focus/visibility, exactly-once via the atomic take\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs: document the cold-start deep-link focus buffering pattern\n\nNote autopilot.takePendingFocus in API.md and add a cold-start-buffering\nsection to the event-system doc (shell buffers before show_focus; renderer\npulls via take-and-clear), with the early-manage ordering warning. Points at\nPendingFocus / autopilot_take_pending_focus alongside the menu equivalents.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* test: anchor deep-link focus-pull tests with call assertions\n\nThe dotted-key mock override is correct for this repo's Proxy-based\ncreateMockClient (test-support.tsx resolves dotted keys), but the\nbuffered-pull tests lacked explicit takePendingFocus call assertions.\nAdd toHaveBeenCalledOnce/Times so they provably exercise the pull path\nand fail loudly if the override ever stops applying.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-22T23:55:14+02:00",
+          "tree_id": "cdfbbdadb1d0d0fefa2c7490de472f82d23593ac",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/f15e83d190cf720aa3eb0af4d6e6253664b9ce10"
+        },
+        "date": 1782165851512,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1922520,
+            "range": "± 36969",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2597156,
+            "range": "± 41563",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 304441,
+            "range": "± 15480",
             "unit": "ns/iter"
           }
         ]
