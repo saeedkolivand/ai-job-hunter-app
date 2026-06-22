@@ -13,6 +13,7 @@ use crate::error::{AppError, AppResult};
 use super::research;
 use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
+use super::timeouts;
 use super::{
     friendly_api_error, AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace,
     TokenParam,
@@ -209,7 +210,7 @@ impl AiProvider for OpenAiClient {
 
         let response = crate::net::http::shared()
             .post(&endpoint)
-            .timeout(std::time::Duration::from_secs(300))
+            .timeout(timeouts::STREAM)
             .bearer_auth(&api_key)
             .json(&body)
             .send()
@@ -274,7 +275,7 @@ impl AiProvider for OpenAiClient {
         let resp = send_with_retry(|| {
             crate::net::http::shared()
                 .post(&endpoint)
-                .timeout(std::time::Duration::from_secs(120))
+                .timeout(timeouts::COMPLETION)
                 .bearer_auth(&api_key)
                 .json(&body)
         })
@@ -342,7 +343,7 @@ impl AiProvider for OpenAiClient {
         });
         let resp = crate::net::http::shared()
             .post(&endpoint)
-            .timeout(std::time::Duration::from_secs(25))
+            .timeout(timeouts::WEB_SEARCH)
             .bearer_auth(&api_key)
             .json(&body)
             .send()
@@ -381,7 +382,7 @@ impl AiProvider for OpenAiClient {
         let resp = send_with_retry(|| {
             crate::net::http::shared()
                 .post(&endpoint)
-                .timeout(std::time::Duration::from_secs(30))
+                .timeout(timeouts::EMBED)
                 .bearer_auth(&api_key)
                 .json(&body)
         })
@@ -432,7 +433,7 @@ impl AiProvider for OpenAiClient {
         let resp = client
             .get(format!("{}/models", self.base_url))
             .bearer_auth(&api_key)
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(timeouts::LIST_MODELS)
             .send()
             .await;
         if let Ok(r) = resp {
@@ -460,7 +461,7 @@ impl AiProvider for OpenAiClient {
         let resp = client
             .get(format!("{}/models", self.base_url))
             .bearer_auth(&api_key)
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(timeouts::LIST_MODELS)
             .send()
             .await
             .map_err(|e| format!("Request failed: {e}"))?;

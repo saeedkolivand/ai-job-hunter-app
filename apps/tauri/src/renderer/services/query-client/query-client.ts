@@ -1,6 +1,27 @@
 import { QueryClient } from '@tanstack/react-query';
 
 /**
+ * Named duration constants for React Query staleTime / gcTime / refetchInterval.
+ * All values are in milliseconds. Co-locate here so every service hook references
+ * the same semantic constant rather than a bare magic number.
+ *
+ *   SHORT         10 s  — fast-moving data (embedding status)
+ *   POLLING_STALE 20 s  — paired with 30 s refetchInterval (health / metrics)
+ *   MEDIUM        30 s  — default; board/bridge polling; provider key check
+ *   LONG          60 s  — AI model list (changes rarely mid-session)
+ *   VERY_LONG      5 min — gc default; provider models; resolved job URL
+ *   TEN_MIN       10 min — match scores; changelog (expensive, rarely stale)
+ */
+export const QUERY_TIMES = {
+  SHORT: 10_000,
+  POLLING_STALE: 20_000,
+  MEDIUM: 30_000,
+  LONG: 60_000,
+  VERY_LONG: 300_000,
+  TEN_MIN: 600_000,
+} as const;
+
+/**
  * Shared QueryClient for the renderer.
  *
  * Tuned for a local-first desktop app (applies equally to Electron, Tauri, or a
@@ -20,8 +41,8 @@ import { QueryClient } from '@tanstack/react-query';
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,
-      gcTime: 5 * 60_000,
+      staleTime: QUERY_TIMES.MEDIUM,
+      gcTime: QUERY_TIMES.VERY_LONG,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       retry: 1,

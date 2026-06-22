@@ -11,6 +11,7 @@ use crate::error::{AppError, AppResult};
 use super::research;
 use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
+use super::timeouts;
 use super::{
     friendly_api_error, AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace,
     TokenParam,
@@ -251,7 +252,7 @@ impl AiProvider for GeminiClient {
         let url = format!("{BASE}{endpoint_label}");
         let response = crate::net::http::shared()
             .post(&url)
-            .timeout(std::time::Duration::from_secs(300))
+            .timeout(timeouts::STREAM)
             .header("x-goog-api-key", &api_key)
             .json(&body)
             .send()
@@ -309,7 +310,7 @@ impl AiProvider for GeminiClient {
         let resp = send_with_retry(|| {
             crate::net::http::shared()
                 .post(&url)
-                .timeout(std::time::Duration::from_secs(120))
+                .timeout(timeouts::COMPLETION)
                 .header("x-goog-api-key", &api_key)
                 .json(&body)
         })
@@ -369,7 +370,7 @@ impl AiProvider for GeminiClient {
         let url = format!("{BASE}{endpoint_label}");
         let resp = crate::net::http::shared()
             .post(&url)
-            .timeout(std::time::Duration::from_secs(25))
+            .timeout(timeouts::WEB_SEARCH)
             .header("x-goog-api-key", &api_key)
             .json(&body)
             .send()
@@ -413,7 +414,7 @@ impl AiProvider for GeminiClient {
         let resp = send_with_retry(|| {
             crate::net::http::shared()
                 .post(&url)
-                .timeout(std::time::Duration::from_secs(30))
+                .timeout(timeouts::EMBED)
                 .header("x-goog-api-key", &api_key)
                 .json(&body)
         })
@@ -457,7 +458,7 @@ impl AiProvider for GeminiClient {
         let resp = client
             .get(format!("{BASE}/v1/models"))
             .header("x-goog-api-key", &api_key)
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(timeouts::LIST_MODELS)
             .send()
             .await;
         if let Ok(r) = resp {
@@ -481,7 +482,7 @@ impl AiProvider for GeminiClient {
         let resp = client
             .get(format!("{BASE}/v1/models"))
             .header("x-goog-api-key", &api_key)
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(timeouts::LIST_MODELS)
             .send()
             .await
             .map_err(|e| format!("Request failed: {e}"))?;

@@ -13,6 +13,7 @@ import {
   PERSIST_DEBOUNCE_MS,
   type TemplateId,
 } from '@/lib/generate';
+import { COPY_FEEDBACK_MS } from '@/lib/timings';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { keys } from '@/services/query-client';
 import { useUpdateAiGeneration } from '@/services/use-ai-generations';
@@ -203,7 +204,7 @@ export function useTailorGeneration({
     if (!output) return;
     await navigator.clipboard.writeText(output);
     setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
   };
 
   const exportAs = async (fmt: 'pdf' | 'docx' | 'txt') => {

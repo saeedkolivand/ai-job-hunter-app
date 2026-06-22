@@ -8,6 +8,7 @@ import { Button, Input, ModalShell, SegmentedControl, StreamingText, TextArea } 
 
 import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { CONNECTION_NOTE_LIMIT } from '@/lib/generate';
+import { COPY_FEEDBACK_MS, TOOLTIP_HIDE_MS } from '@/lib/timings';
 import { useReferrals, useUpsertReferral } from '@/services';
 
 import { WizardField } from '../WizardField';
@@ -70,7 +71,7 @@ export function ReferralModal({ job, resume, onClose }: Props) {
     if (!gen.draft || overLimit) return;
     await navigator.clipboard.writeText(gen.draft);
     setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
   };
 
   const save = () => {
@@ -108,7 +109,7 @@ export function ReferralModal({ job, resume, onClose }: Props) {
       {
         onSuccess: () => {
           setSaved(true);
-          setTimeout(() => setSaved(false), 2000);
+          setTimeout(() => setSaved(false), TOOLTIP_HIDE_MS);
           // Add-another: clear the form + draft so the next person can be entered.
           setPersonName('');
           setPersonRole('');

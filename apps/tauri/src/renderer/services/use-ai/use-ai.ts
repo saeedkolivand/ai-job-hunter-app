@@ -5,14 +5,14 @@ import type { AiGenerateRequest, AiStreamChunk } from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
-import { keys } from '../query-client';
+import { keys, QUERY_TIMES } from '../query-client';
 
 export const useAIModels = () => {
   const api = useAppClient();
   return useQuery({
     queryKey: keys.ai.models,
     queryFn: () => api.ai.listModels(),
-    staleTime: 60_000,
+    staleTime: QUERY_TIMES.LONG,
   });
 };
 

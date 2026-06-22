@@ -5,6 +5,8 @@ import { APPLICATION_QUESTIONS } from '@ajh/prompts/generate';
 import { useTranslation } from '@ajh/translations';
 import { Button, Input, ModalShell } from '@ajh/ui';
 
+import { COPY_FEEDBACK_MS } from '@/lib/timings';
+
 import { MAX_CUSTOM_QUESTION_LEN } from './useApplicationAnswers';
 
 interface Props {
@@ -48,7 +50,7 @@ export function ApplicationQuestionsModal({
   const copy = async (id: string, text: string) => {
     await navigator.clipboard.writeText(text);
     setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 1500);
+    setTimeout(() => setCopiedId(null), COPY_FEEDBACK_MS);
   };
 
   const submitCustom = () => {

@@ -27,6 +27,7 @@ mod openai;
 mod research; // shared company-research prompt spec + helpers used by every `research()`
 mod retry; // bounded exponential backoff for the non-streaming complete/embed paths
 mod stream; // shared streaming loop (cancel-check + chunk read + emit + complete) for cloud adapters
+mod timeouts; // semantically-named per-request HTTP timeouts (pure extraction of the magic-number literals)
 
 use anthropic::AnthropicClient;
 use cli_agent::CliAgentClient;

@@ -11,6 +11,7 @@ use crate::error::{AppError, AppResult};
 use super::research;
 use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
+use super::timeouts;
 use super::{
     friendly_api_error, AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace,
     TokenParam,
@@ -198,7 +199,7 @@ impl AiProvider for AnthropicClient {
 
         let response = crate::net::http::shared()
             .post(&endpoint)
-            .timeout(std::time::Duration::from_secs(300))
+            .timeout(timeouts::STREAM)
             .header("x-api-key", &api_key)
             .header("anthropic-version", VERSION)
             .json(&body)
@@ -259,7 +260,7 @@ impl AiProvider for AnthropicClient {
         let resp = send_with_retry(|| {
             crate::net::http::shared()
                 .post(&endpoint)
-                .timeout(std::time::Duration::from_secs(120))
+                .timeout(timeouts::COMPLETION)
                 .header("x-api-key", &api_key)
                 .header("anthropic-version", VERSION)
                 .json(&body)
@@ -327,7 +328,7 @@ impl AiProvider for AnthropicClient {
 
         let resp = crate::net::http::shared()
             .post(&endpoint)
-            .timeout(std::time::Duration::from_secs(25))
+            .timeout(timeouts::WEB_SEARCH)
             .header("x-api-key", &api_key)
             .header("anthropic-version", VERSION)
             .json(&body)
@@ -380,7 +381,7 @@ impl AiProvider for AnthropicClient {
             .get(format!("{BASE}/models"))
             .header("x-api-key", &api_key)
             .header("anthropic-version", VERSION)
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(timeouts::LIST_MODELS)
             .send()
             .await;
         if let Ok(r) = resp {
@@ -410,7 +411,7 @@ impl AiProvider for AnthropicClient {
             .get(format!("{BASE}/models"))
             .header("x-api-key", &api_key)
             .header("anthropic-version", VERSION)
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(timeouts::LIST_MODELS)
             .send()
             .await
             .map_err(|e| format!("Request failed: {e}"))?;

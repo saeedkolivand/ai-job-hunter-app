@@ -45,6 +45,7 @@ import {
   type TemplateId,
   TEMPLATES,
 } from '@/lib/generate';
+import { COPY_FEEDBACK_LONG_MS } from '@/lib/timings';
 import { useOpenExternal } from '@/services';
 import { useRemoveAiGeneration, useUpdateAiGeneration } from '@/services/use-ai-generations';
 import { useReferrals, useUpsertReferral } from '@/services/use-referrals/use-referrals';
@@ -140,7 +141,10 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
     await navigator.clipboard.writeText(draft);
     setCopiedReferral(contact.id);
     notify.success({ message: t('resumes.generated.referralCopied') });
-    setTimeout(() => setCopiedReferral((id) => (id === contact.id ? null : id)), 1800);
+    setTimeout(
+      () => setCopiedReferral((id) => (id === contact.id ? null : id)),
+      COPY_FEEDBACK_LONG_MS
+    );
   };
 
   // Mark a referral as sent. The backend upsert overwrites the whole row by id

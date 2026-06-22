@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { useAiProviderConfig } from '@/store/preferences-store';
 
-import { keys } from '../query-client';
+import { keys, QUERY_TIMES } from '../query-client';
 
 export const useHasProviderKey = (provider: string, enabled = true) => {
   const api = useAppClient();
@@ -11,7 +11,7 @@ export const useHasProviderKey = (provider: string, enabled = true) => {
     queryKey: [...keys.ai.models, 'provider-key', provider],
     queryFn: () => api.ai.hasProviderKey({ provider }),
     enabled: enabled && provider !== 'ollama',
-    staleTime: 30_000,
+    staleTime: QUERY_TIMES.MEDIUM,
   });
 };
 
@@ -45,7 +45,7 @@ export const useListProviderModels = (provider: string, enabled = true, baseUrl?
     queryKey: [...keys.ai.models, 'provider-models', provider, baseUrl ?? ''],
     queryFn: () => api.ai.listProviderModels({ provider, baseUrl }),
     enabled: enabled && provider !== 'ollama',
-    staleTime: 300_000,
+    staleTime: QUERY_TIMES.VERY_LONG,
   });
 };
 
@@ -91,7 +91,7 @@ export const useEmbeddingStatus = () => {
   return useQuery({
     queryKey: keys.ai.embeddingStatus,
     queryFn: () => api.ai.embeddingStatus(),
-    staleTime: 10_000,
+    staleTime: QUERY_TIMES.SHORT,
   });
 };
 

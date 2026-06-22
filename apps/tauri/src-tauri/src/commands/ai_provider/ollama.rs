@@ -15,6 +15,7 @@ use crate::events::{emit_event, JobEvent, JOBS_EVENT};
 
 use super::research::{self, SearchResult};
 use super::stream::{stream_response, StreamPiece};
+use super::timeouts;
 use super::{
     AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace, TokenParam,
 };
@@ -92,7 +93,7 @@ impl AiProvider for OllamaClient {
         let resp = match super::retry::send_with_retry(|| {
             crate::net::http::shared()
                 .post(&endpoint)
-                .timeout(std::time::Duration::from_secs(300))
+                .timeout(timeouts::OLLAMA_COMPLETION)
                 .json(&body)
         })
         .await
@@ -150,7 +151,7 @@ impl AiProvider for OllamaClient {
         let client = crate::net::http::shared();
         match client
             .get(format!("{}/api/tags", host()))
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(timeouts::LIST_MODELS)
             .send()
             .await
         {
@@ -170,7 +171,7 @@ impl AiProvider for OllamaClient {
 pub async fn list_tag_models() -> Vec<Value> {
     let resp = match crate::net::http::shared()
         .get(format!("{}/api/tags", host()))
-        .timeout(std::time::Duration::from_secs(10))
+        .timeout(timeouts::LIST_MODELS)
         .send()
         .await
     {
@@ -196,7 +197,7 @@ pub async fn list_tag_models() -> Vec<Value> {
 pub async fn reachable_model() -> (bool, Option<String>) {
     match crate::net::http::shared()
         .get(format!("{}/api/tags", host()))
-        .timeout(std::time::Duration::from_secs(3))
+        .timeout(timeouts::HEALTH)
         .send()
         .await
     {
@@ -227,7 +228,7 @@ pub async fn embed_with(model: &str, text: &str) -> AppResult<Vec<f64>> {
     let resp = super::retry::send_with_retry(|| {
         crate::net::http::shared()
             .post(&endpoint)
-            .timeout(std::time::Duration::from_secs(15))
+            .timeout(timeouts::OLLAMA_EMBED)
             .json(&body)
     })
     .await
@@ -261,7 +262,7 @@ pub async fn ollama_web_search(
 ) -> AppResult<Vec<SearchResult>> {
     let resp = crate::net::http::shared()
         .post(WEB_SEARCH_URL)
-        .timeout(std::time::Duration::from_secs(15))
+        .timeout(timeouts::OLLAMA_WEB_SEARCH)
         .bearer_auth(key)
         .json(&json!({ "query": query, "max_results": limit.min(10) }))
         .send()
@@ -361,7 +362,7 @@ pub async fn show_model(model: &str) -> Value {
     let body = json!({ "model": model });
     let resp = match crate::net::http::shared()
         .post(format!("{}/api/show", host()))
-        .timeout(std::time::Duration::from_secs(15))
+        .timeout(timeouts::OLLAMA_SHOW)
         .json(&body)
         .send()
         .await
@@ -427,7 +428,7 @@ fn normalize_show(data: &Value) -> Value {
 pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> AppResult<()> {
     let mut response = crate::net::http::shared()
         .post(format!("{}/api/pull", host()))
-        .timeout(std::time::Duration::from_secs(3600))
+        .timeout(timeouts::MODEL_PULL)
         .json(&json!({ "model": model, "stream": true }))
         .send()
         .await
@@ -573,7 +574,7 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
 
     let response = crate::net::http::shared()
         .post(&endpoint)
-        .timeout(std::time::Duration::from_secs(300))
+        .timeout(timeouts::STREAM)
         .json(&body)
         .send()
         .await;

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 
@@ -275,6 +275,62 @@ export function TailorFlow({
     });
   }, [stage, questionsCount, interviewQuestionsCount, onController]);
 
+  const stageRegistry: Record<TailorFlowStage, () => ReactNode> = {
+    configuring: () => (
+      <TailorWizard
+        methods={methods}
+        step={step}
+        setStep={handleStep}
+        jobDesc={jobDesc}
+        onJobDescChange={setJobDescOverride}
+        hasDesc={hasDesc}
+        fetchingDesc={fetchingDesc}
+        jobUrl={job.url}
+        canUse={canUse}
+        reason={reason}
+        onGenerate={startGeneration}
+        jobAdSummary={jobAdSummary}
+      />
+    ),
+    generating: () => (
+      <GeneratingPanel
+        target={generatedTarget}
+        phase={gen.phase}
+        phaseLabel={gen.phaseLabel}
+        thinking={gen.thinking}
+        output={gen.output}
+        onCancel={() => gen.abort()}
+      />
+    ),
+    done: () => (
+      <ResultsPanel
+        target={generatedTarget}
+        jobDesc={jobDesc}
+        onJobDescChange={setJobDescOverride}
+        hasDesc={hasDesc}
+        fetchingDesc={fetchingDesc}
+        jobUrl={job.url}
+        jobAdSummary={jobAdSummary}
+        activeOut={gen.activeOut}
+        setActiveOut={gen.setActiveOut}
+        templateId={persistence.templateId}
+        atsMode={persistence.atsMode}
+        onTemplateChange={setTemplateId}
+        onAtsModeChange={setAtsMode}
+        output={gen.output}
+        onEdit={gen.editActiveOutput}
+        meta={gen.meta}
+        copied={gen.copied}
+        onCopy={() => void gen.copy()}
+        exportOpen={gen.exportOpen}
+        setExportOpen={gen.setExportOpen}
+        onExport={(fmt) => void gen.exportAs(fmt)}
+        onRegenerate={() => startGeneration(methods.getValues())}
+        onEditSettings={() => setForceConfiguring(true)}
+      />
+    ),
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Stage body */}
@@ -288,61 +344,7 @@ export function TailorFlow({
             transition={transition.fast}
             className="h-full"
           >
-            {stage === 'configuring' && (
-              <TailorWizard
-                methods={methods}
-                step={step}
-                setStep={handleStep}
-                jobDesc={jobDesc}
-                onJobDescChange={setJobDescOverride}
-                hasDesc={hasDesc}
-                fetchingDesc={fetchingDesc}
-                jobUrl={job.url}
-                canUse={canUse}
-                reason={reason}
-                onGenerate={startGeneration}
-                jobAdSummary={jobAdSummary}
-              />
-            )}
-
-            {stage === 'generating' && (
-              <GeneratingPanel
-                target={generatedTarget}
-                phase={gen.phase}
-                phaseLabel={gen.phaseLabel}
-                thinking={gen.thinking}
-                output={gen.output}
-                onCancel={() => gen.abort()}
-              />
-            )}
-
-            {stage === 'done' && (
-              <ResultsPanel
-                target={generatedTarget}
-                jobDesc={jobDesc}
-                onJobDescChange={setJobDescOverride}
-                hasDesc={hasDesc}
-                fetchingDesc={fetchingDesc}
-                jobUrl={job.url}
-                jobAdSummary={jobAdSummary}
-                activeOut={gen.activeOut}
-                setActiveOut={gen.setActiveOut}
-                templateId={persistence.templateId}
-                atsMode={persistence.atsMode}
-                onTemplateChange={setTemplateId}
-                onAtsModeChange={setAtsMode}
-                output={gen.output}
-                onEdit={gen.editActiveOutput}
-                meta={gen.meta}
-                copied={gen.copied}
-                onCopy={() => void gen.copy()}
-                exportOpen={gen.exportOpen}
-                setExportOpen={gen.setExportOpen}
-                onExport={(fmt) => void gen.exportAs(fmt)}
-                onRegenerate={() => startGeneration(methods.getValues())}
-                onEditSettings={() => setForceConfiguring(true)}
-              />
-            )}
+            {stageRegistry[stage]()}
           </motion.div>
         </AnimatePresence>
       </div>
