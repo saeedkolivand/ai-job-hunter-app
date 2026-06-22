@@ -24,4 +24,5 @@ export const autopilot = {
     asyncUnsub(() =>
       listen<AutopilotFocusEvent>(EVENT_CHANNELS.autopilot.focus, (e) => handler(e.payload))
     ),
+  takePendingFocus: () => invoke<string | null>('autopilot_take_pending_focus'),
 };
