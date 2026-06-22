@@ -1,13 +1,16 @@
-import { useRef } from 'react';
+import { Info } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 
-import { BOARD_IDS } from '@ajh/shared';
+import { AGGREGATOR_BOARD_ID, type BoardCatalogEntry, PROVIDER_SLOTS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, Dropdown, Input, LocationInput, NumberField } from '@ajh/ui';
 
 import type { Prefilled, WizardState } from '@/features/autopilot/types';
 import { makeMultiSelectKeyHandler } from '@/hooks/use-roving-tabindex';
 import { useAppClient } from '@/providers/AppClientProvider';
+import { useHasProviderKey } from '@/services/use-ai-provider';
+import { useBoardsCatalog } from '@/services/use-boards';
 
 import { ComingSoonBadge } from '../ComingSoonBadge';
 import { PrefilledBadge } from '../PrefilledBadge';
@@ -25,12 +28,39 @@ interface StepTargetProps {
 export function StepTarget({ prefilled }: StepTargetProps) {
   const { t } = useTranslation();
   const api = useAppClient();
-  const { control } = useFormContext<WizardState>();
+  const { control, setValue } = useFormContext<WizardState>();
   // Disabled "coming soon" control — display the current value without binding.
   const workType = useWatch({ control, name: 'workType' });
+  const boards = useWatch({ control, name: 'boards' });
 
   const boardRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const focusedBoardIdx = useRef<number>(0);
+
+  const { data: catalogRaw, isLoading: catalogLoading } = useBoardsCatalog();
+  const listedBoards: BoardCatalogEntry[] = (catalogRaw ?? []).filter((e) => e.listed);
+
+  // Normalize: ensure every persisted board id still exists in the catalog.
+  // Mirror ScrapeForm normalization guard — prevents an infinite re-render loop
+  // by only calling onChange when the normalized set actually differs.
+  useEffect(() => {
+    if (catalogLoading || listedBoards.length === 0) return;
+    const listedIds = new Set(listedBoards.map((e) => e.id));
+    const valid = boards.filter((id) => listedIds.has(id));
+    const needsUpdate = valid.length !== boards.length || boards.length === 0;
+    if (!needsUpdate) return;
+    const fallback = listedBoards[0]?.id ?? '';
+    setValue('boards', valid.length > 0 ? valid : fallback ? [fallback] : []);
+  }, [catalogLoading, listedBoards, boards, setValue]);
+
+  // Aggregator key hint — shown when aggregator is selected but Adzuna keys absent.
+  const selectedSet = new Set(boards);
+  const aggregatorSelected = selectedSet.has(AGGREGATOR_BOARD_ID);
+  const { data: adzunaIdData } = useHasProviderKey(PROVIDER_SLOTS.adzunaAppId, aggregatorSelected);
+  const { data: adzunaKeyData } = useHasProviderKey(
+    PROVIDER_SLOTS.adzunaAppKey,
+    aggregatorSelected
+  );
+  const showAggregatorKeyHint = aggregatorSelected && !(adzunaIdData?.has && adzunaKeyData?.has);
 
   return (
     <div className="space-y-4">
@@ -68,11 +98,9 @@ export function StepTarget({ prefilled }: StepTargetProps) {
         control={control}
         name="boards"
         render={({ field }) => {
-          const selectedSet = new Set(field.value);
+          const sel = new Set(field.value);
           const toggle = (b: string) => {
-            const next = selectedSet.has(b)
-              ? field.value.filter((id) => id !== b)
-              : [...field.value, b];
+            const next = sel.has(b) ? field.value.filter((id) => id !== b) : [...field.value, b];
             // Always keep at least one board selected.
             if (next.length > 0) field.onChange(next);
           };
@@ -83,20 +111,20 @@ export function StepTarget({ prefilled }: StepTargetProps) {
                 aria-label={t('autopilot.wizard.target.board')}
                 className="grid grid-cols-2 gap-1.5 max-h-28 overflow-y-auto pr-1 @sm:grid-cols-4"
                 onKeyDown={makeMultiSelectKeyHandler(
-                  BOARD_IDS.length,
+                  listedBoards.length,
                   focusedBoardIdx,
                   boardRefs,
                   (idx) => {
-                    const b = BOARD_IDS[idx];
+                    const b = listedBoards[idx]?.id;
                     if (b !== undefined) toggle(b);
                   }
                 )}
               >
-                {BOARD_IDS.map((b, i) => {
-                  const active = selectedSet.has(b);
+                {listedBoards.map(({ id }, i) => {
+                  const active = sel.has(id);
                   return (
                     <Button
-                      key={b}
+                      key={id}
                       ref={(el) => {
                         boardRefs.current[i] = el;
                       }}
@@ -104,7 +132,7 @@ export function StepTarget({ prefilled }: StepTargetProps) {
                       tabIndex={i === focusedBoardIdx.current ? 0 : -1}
                       onClick={() => {
                         focusedBoardIdx.current = i;
-                        toggle(b);
+                        toggle(id);
                       }}
                       className={cn(
                         'rounded-lg border px-2 py-1.5 text-[10px] font-medium capitalize transition-all h-auto',
@@ -113,11 +141,22 @@ export function StepTarget({ prefilled }: StepTargetProps) {
                           : 'border-white/[0.06] text-foreground/40 hover:border-white/10 hover:text-foreground/65'
                       )}
                     >
-                      {t(`jobs.boards.${b}`)}
+                      {t(`jobs.boards.${id}`)}
                     </Button>
                   );
                 })}
               </div>
+
+              {/* Aggregator key hint — mirrors ScrapeForm */}
+              {showAggregatorKeyHint && (
+                <p
+                  role="status"
+                  className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-400/70"
+                >
+                  <Info size={11} aria-hidden="true" />
+                  {t('jobs.aggregatorKeyHint')}
+                </p>
+              )}
             </WizardField>
           );
         }}

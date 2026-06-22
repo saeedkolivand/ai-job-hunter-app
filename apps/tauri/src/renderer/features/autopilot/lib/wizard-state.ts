@@ -1,4 +1,9 @@
-import type { Autopilot, AutopilotCreate, JobPreferences } from '@ajh/shared';
+import {
+  AGGREGATOR_BOARD_ID,
+  type Autopilot,
+  type AutopilotCreate,
+  type JobPreferences,
+} from '@ajh/shared';
 
 import type { WizardState } from '@/features/autopilot/types';
 
@@ -59,7 +64,7 @@ export function wizardStateToPayload(form: WizardState): AutopilotCreate {
 export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
   return {
     name: '',
-    boards: ['aggregator'],
+    boards: [AGGREGATOR_BOARD_ID],
     query: '',
     location: jobPrefs?.location ?? '',
     // No job-preference field seeds work type; default to the 'any' sentinel.
@@ -95,7 +100,7 @@ export function autopilotToWizardState(ap: Autopilot): WizardState {
       ? target.boards
       : target.board
         ? [target.board]
-        : ['aggregator'];
+        : [AGGREGATOR_BOARD_ID];
   return {
     name: ap.name,
     boards,

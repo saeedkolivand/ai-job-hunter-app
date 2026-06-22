@@ -1,7 +1,11 @@
 import { ListFilter, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import type { BoardScrapeSummary, DATE_FILTER_OPTIONS } from '@ajh/shared';
+import {
+  AGGREGATOR_BOARD_ID,
+  type BoardScrapeSummary,
+  type DATE_FILTER_OPTIONS,
+} from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, ConfirmModal, Dropdown, Input, useNotification } from '@ajh/ui';
 
@@ -44,7 +48,7 @@ export function JobsPage() {
   const [showScrapeForm, setShowScrapeForm] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [scrapeForm, setScrapeForm] = useState<ScrapeFormState>({
-    boards: ['aggregator'],
+    boards: [AGGREGATOR_BOARD_ID],
     query: '',
     location: '',
     radiusKm: 0,

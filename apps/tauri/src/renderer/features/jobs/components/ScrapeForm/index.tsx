@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 
-import { type BoardCatalogEntry, PROVIDER_SLOTS } from '@ajh/shared';
+import { AGGREGATOR_BOARD_ID, type BoardCatalogEntry, PROVIDER_SLOTS } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { Button, CardSkeleton, cn, GlassCard, Input, transition } from '@ajh/ui';
@@ -122,7 +122,7 @@ export function ScrapeForm({
   // Aggregator key hint — shown when the aggregator board is selected but the
   // Adzuna keys aren't configured. Derived from service hooks; no hardcoded values
   // beyond the board's stable catalog id ('aggregator').
-  const aggregatorSelected = selectedSet.has('aggregator');
+  const aggregatorSelected = selectedSet.has(AGGREGATOR_BOARD_ID);
   const { data: adzunaIdData } = useHasProviderKey(PROVIDER_SLOTS.adzunaAppId, aggregatorSelected);
   const { data: adzunaKeyData } = useHasProviderKey(
     PROVIDER_SLOTS.adzunaAppKey,
@@ -315,6 +315,7 @@ export function ScrapeForm({
             {/* Aggregator key hint — shown when aggregator selected but Adzuna keys absent */}
             {showAggregatorKeyHint && (
               <p
+                role="status"
                 data-testid={TEST_IDS.jobs.aggregatorKeyHint}
                 className="mb-3 flex items-center gap-1.5 text-[11px] text-amber-400/70"
               >

@@ -24,6 +24,12 @@ Centralized, one-way event channels — the complement to IPC request/response (
 - Single cross-language source: `PROVIDER_SLOTS` object in the shared package
 - Regenerate alongside events: `pnpm gen:ipc`
 
+**Rust date-filter constants:** same codegen script → `apps/tauri/src-tauri/src/ipc_contracts/date_filters.rs` (source: `packages/shared/src/schemas/index.ts`)
+
+- Emits a const array `pub const DATE_FILTER_OPTIONS: &[&str]` for the scraper's date-range tokens defined in `DATE_FILTER_OPTIONS`
+- The aggregator Rust match arms for `adzuna_max_days_old` and `jsearch_date_posted` map each token to a provider-specific value; an exhaustiveness test fails if a new TS token isn't handled
+- Regenerate alongside events: `pnpm gen:ipc`
+
 ## Emission layer
 
 **L3 emit helper:** `apps/tauri/src-tauri/src/events/mod.rs`
