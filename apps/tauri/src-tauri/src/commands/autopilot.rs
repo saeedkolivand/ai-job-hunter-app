@@ -271,6 +271,28 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     json!({ "jobId": job_id, "found": kept, "applied": 0 })
 }
 
+/// Take + clear the buffered autopilot-focus id. Split from the command so it's
+/// unit-testable without a Tauri `State`. Atomic: the lock is held across the take.
+pub(crate) fn take_pending_focus(buf: &crate::tray::PendingFocus) -> Option<String> {
+    buf.0.lock().take()
+}
+
+/// Atomically take + clear the autopilot-focus intent buffered by
+/// `tray::dispatch_focus` (a cold-start `ajh://autopilot/<id>` deep link fires
+/// during Rust setup, before the renderer's `useAutopilotFocusNavigation`
+/// listener attaches, so the `autopilot:focus` emit is lost). The renderer PULLS
+/// this once its JS loop is provably live (on mount + on the emitted event). The
+/// atomic take means an intent is delivered exactly once and can't re-fire on a
+/// later unrelated focus. Returns `None` (the common case) when nothing is
+/// buffered. Returns the `autopilotId` string. Infallible — just a lock take — so
+/// no `AppResult`.
+#[tauri::command]
+pub fn autopilot_take_pending_focus(
+    state: tauri::State<'_, crate::tray::PendingFocus>,
+) -> Option<String> {
+    take_pending_focus(state.inner())
+}
+
 #[tauri::command]
 pub fn autopilot_pause(app: AppHandle, autopilot_id: String) -> Value {
     store(&app)
@@ -458,5 +480,20 @@ mod tests {
         // No resume / no description → no score → never filtered out by the gate.
         assert!(passes_min_score(&found(None), 50.0));
         assert!(passes_min_score(&found(None), 100.0));
+    }
+
+    #[test]
+    fn take_pending_focus_returns_buffered_id_then_clears() {
+        let buf = crate::tray::PendingFocus(Mutex::new(Some("autopilot-123".to_string())));
+        assert_eq!(take_pending_focus(&buf), Some("autopilot-123".to_string()));
+        // Atomic take cleared the slot — a second pull (e.g. a later focus) is empty,
+        // so a cold-start deep-link focus is delivered exactly once and can't re-fire.
+        assert_eq!(take_pending_focus(&buf), None);
+    }
+
+    #[test]
+    fn take_pending_focus_returns_none_when_empty() {
+        let buf = crate::tray::PendingFocus(Mutex::new(None));
+        assert_eq!(take_pending_focus(&buf), None);
     }
 }

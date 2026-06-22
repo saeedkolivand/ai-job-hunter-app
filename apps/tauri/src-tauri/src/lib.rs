@@ -145,12 +145,14 @@ fn nav_route_for(id: &str) -> Option<&'static str> {
 /// Drive the renderer for a validated deep-link target. Shared by every delivery
 /// path (single-instance relaunch, `on_open_url`, cold first-instance launch) so
 /// they stay in lockstep. `None` (a hostile/unrecognized URL) navigates nowhere
-/// — the caller has already focused the window. Each arm picks the right
-/// renderer signal: autopilot uses the fire-and-forget focus emit; pairing uses
-/// the cold-start-robust buffered `menu:navigate` intent.
+/// — the caller has already focused the window. Both arms use a cold-start-robust
+/// buffered intent so the signal survives a renderer that hasn't attached its
+/// listeners yet (the cold first-instance launch fires during Rust setup):
+/// autopilot buffers in `PendingFocus` (`dispatch_focus`); pairing buffers the
+/// `menu:navigate` intent (`dispatch_extension_pairing`).
 fn handle_deep_link(app: &AppHandle, target: Option<deeplink::FocusTarget>) {
     match target {
-        Some(deeplink::FocusTarget::Autopilot(id)) => tray::emit_focus(app, &id),
+        Some(deeplink::FocusTarget::Autopilot(id)) => tray::dispatch_focus(app, &id),
         Some(deeplink::FocusTarget::ExtensionPairing) => tray::dispatch_extension_pairing(app),
         None => {}
     }
@@ -452,6 +454,14 @@ pub fn run() {
             }
 
             let handle = app.handle();
+
+            // Buffer for an autopilot-focus intent (cold-start `ajh://autopilot/<id>`)
+            // managed HERE, before the cold-start deep-link block below — that block
+            // runs during setup, well before `tray::build` (which manages the sibling
+            // `PendingMenu`). `dispatch_focus` writes the id into this buffer BEFORE
+            // emitting, so it must already be in state when the cold-start deep link
+            // is handled, or the write silently no-ops and the intent is lost.
+            app.manage(tray::PendingFocus(Mutex::new(None)));
 
             // `ajh://` deep links. The OS routes a cold/click-launched URL here
             // (macOS via `on_open_url`; Windows/Linux a second instance forwards
@@ -794,6 +804,7 @@ pub fn run() {
             commands::autopilot::autopilot_run,
             commands::autopilot::autopilot_pause,
             commands::autopilot::autopilot_resume,
+            commands::autopilot::autopilot_take_pending_focus,
             // ai generations
             commands::ai_generations::ai_generations_list,
             commands::ai_generations::ai_generations_save,
