@@ -178,6 +178,10 @@ It is **provider-aware** and **locale-driven**:
 - **Modular folders** — every concern (`analyze/`, `generate/`, `context-manager/`, `provider/`, `locale/`, `workspace/`) is a folder with an `index.ts` barrel (the `@ajh/prompts/<name>` subpath entry) plus focused submodules and a colocated test. `context-manager/model-size.ts` parses a model's parameter size generically from its tag and defaults unknown local models to the smaller/safer prompt; CLI-agent / hosted model names (sonnet/opus/haiku/codex/gpt/claude/gemini) are treated as capable.
 - **Validators** (`validateAndRepair`, `validateMetadata`) remain the universal fallback for every provider.
 
+### `packages/test-ids` — Test-ID Constants (`@ajh/test-ids`)
+
+Centralized, feature-namespaced `TEST_IDS` constant map mirroring translation-key structure: `TEST_IDS.<feature>.<name>` ↔ `t('<feature>.<name>')`. Consumed as a production dependency by both components (for `data-testid` attributes) and tests (for queries), ensuring test IDs cannot drift between a component's implementation and its test suite. See `packages/test-ids/src/test-ids.ts`.
+
 > The heavy work (scraping, document extraction, AI generation, embeddings) runs natively in the Rust core under `apps/tauri/src-tauri/` — see the Component Breakdown above. Earlier Node packages (`@ajh/core`, `@ajh/ai`, `@ajh/data`, `@ajh/workers`) implemented this for a now-removed sidecar and have been deleted.
 
 ---
@@ -447,17 +451,21 @@ graph TD
     UI["packages/ui"]
     Prompts["packages/prompts"]
     Translations["packages/translations"]
+    TestIds["packages/test-ids"]
 
     Renderer --> Shared
     Renderer --> UI
     Renderer --> Prompts
     Renderer --> Translations
+    Renderer --> TestIds
     UI --> Shared
+    UI --> TestIds
 
     style Renderer fill:#4f46e5,color:#fff
     style UI fill:#7c3aed,color:#fff
     style Shared fill:#0f766e,color:#fff
     style Translations fill:#7c3aed,color:#fff
+    style TestIds fill:#b91c1c,color:#fff
 ```
 
 **Hard rules:**
@@ -466,7 +474,8 @@ graph TD
 - `packages/ui` — no [Zustand][zustand], no IPC, no routing
 - `packages/prompts` — no UI, no `window`
 - `packages/translations` — i18next singleton + adapters; no app-specific or IPC imports
-- The renderer imports only `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`
+- `packages/test-ids` — pure string constants only; no React, no Node, no test-framework imports
+- The renderer imports only `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`, `@ajh/test-ids`
 
 [tauri]: https://tauri.app
 [react]: https://react.dev
