@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782086009400,
+  "lastUpdate": 1782140574420,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1295,6 +1295,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 302261,
             "range": "± 8338",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5299a13cdb04e239761e5a45c2ed28915b551324",
+          "message": "refactor: centralize credential slot names in @ajh/shared via codegen (#472)\n\n* refactor: centralize credential slot names in @ajh/shared via codegen\n\nMake the Adzuna/JSearch credential slot names a single cross-language source of\ntruth, killing the TS<->Rust literal duplication. Keyring slot strings and wire\nvalues are byte-identical (pure refactor).\n\n- new packages/shared/src/provider-slots.ts — PROVIDER_SLOTS (bare names; the\n  ai: keyring namespace is applied Rust-side at read time)\n- gen-ipc-rust.ts genSlots() (mirrors genEvents) emits ipc_contracts/provider_slots.rs,\n  guarded by gen:ipc:check in CI\n- renderer (AggregatorKeysSettings, ScrapeForm, AdzunaKeyStep) + Rust aggregator\n  and tests reference the one source instead of scattered literals\n- architecture.rs R7 allowlist entry for scraping -> ipc_contracts (compile-time\n  consts, same pattern as the events channel consts)\n- add packages/shared/scripts/tsconfig.json so the IDE resolves node: imports in\n  scripts/; fixes a latent noUncheckedIndexedAccess slip it surfaced in genEvents\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs: document provider-slots codegen and scraping upward-import allowlist\n\nSync architecture docs for the credential-slot single-source change: add the\nscraping -> ipc_contracts entry to the R7 upward-import allowlist table, and\nnote the provider_slots.rs codegen (source: packages/shared/src/provider-slots.ts)\nalongside the existing events.rs pattern.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs: reference provider-slot symbol instead of hardcoded literal\n\nDrop the hardcoded \"adzuna-app-id\" value from the event-system codegen note;\npoint at PROVIDER_SLOTS / ADZUNA_APP_ID instead, per the docs thin-pointer rule.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-22T16:44:21+02:00",
+          "tree_id": "23174c3443b304bbf15be035191412dabd3ba65e",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/5299a13cdb04e239761e5a45c2ed28915b551324"
+        },
+        "date": 1782140574050,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1891334,
+            "range": "± 104360",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2496638,
+            "range": "± 48791",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 285552,
+            "range": "± 7244",
             "unit": "ns/iter"
           }
         ]
