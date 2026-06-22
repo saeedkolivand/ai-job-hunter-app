@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.114.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.113.0...v0.114.0) (2026-06-22)
+
+### ✨ Features
+
+* settings search, theme-aware splash, aggregator default + tailoring fix, extension polish ([#470](https://github.com/saeedkolivand/ai-job-hunter-app/issues/470)) ([ca59779](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ca59779f66c173afedf177895ee75c5d42dcfc1f))
+
 ## [0.113.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.112.0...v0.113.0) (2026-06-21)
 
 ### ✨ Features
