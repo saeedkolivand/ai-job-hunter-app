@@ -84,7 +84,7 @@ IPC contract: `packages/shared/src/ipc/contracts.ts`.
 
 **10. Data fetching** — React Query via service hooks only. No `useState + useEffect` for remote data.
 
-**11. Package boundaries** — renderer imports only `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`.
+**11. Package boundaries** — renderer imports only `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`, `@ajh/test-ids`.
 
 **12. State machines** — 3+ state flows use `useMachine` + machines in `lib/machines/`.
 

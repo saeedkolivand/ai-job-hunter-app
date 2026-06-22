@@ -59,7 +59,7 @@ Exception: `<input type="range|file|checkbox|radio|hidden">`.
 
 **9. Data fetching** — React Query via service hooks only. No `useState + useEffect` for remote data.
 
-**10. Package boundaries** — workspace packages are exactly `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`. The renderer reaches the Rust core only via IPC service hooks.
+**10. Package boundaries** — workspace packages are five: `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`, `@ajh/test-ids`. The renderer reaches the Rust core only via IPC service hooks.
 
 **11. No ESLint bypass** — no `// eslint-disable`, no `@ts-ignore`. `eslint.config.mjs` scoped overrides only.
 

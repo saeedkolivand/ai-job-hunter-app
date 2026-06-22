@@ -8,8 +8,8 @@ alwaysApply: true
 
 > Canonical rules: see `CLAUDE.md` + `.claude/skills/*` — this file is a pointer + the load-bearing subset; CLAUDE.md wins on any conflict.
 
-There are exactly four workspace packages: `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`.
-There are no separate backend TS packages — backend logic lives in the Rust core under
+There are exactly five workspace packages: `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`,
+`@ajh/test-ids`. There are no separate backend TS packages — backend logic lives in the Rust core under
 `apps/tauri/src-tauri/`, reached only via the IPC contract.
 
 ## Path Privacy
@@ -36,9 +36,14 @@ There are no separate backend TS packages — backend logic lives in the Rust co
 - i18next config + UI translation resources (en/de) → consumed as `@ajh/translations`
 - No app / IPC / renderer imports (the locale→main listener stays in the renderer's `@/i18n` shim)
 
+## @ajh/test-ids (packages/test-ids)
+- Central nested feature-namespaced `TEST_IDS` constant map
+- Shared by production components (for `data-testid`) and tests
+- No app logic, zero deps
+
 ## Dependency direction
 ```
-renderer → @ajh/ui, @ajh/shared, @ajh/prompts, @ajh/translations
+renderer → @ajh/ui, @ajh/shared, @ajh/prompts, @ajh/translations, @ajh/test-ids
 Rust core (apps/tauri/src-tauri) ← reached only via IPC (packages/shared contract)
 ```
 Lower packages never import from upper packages.
