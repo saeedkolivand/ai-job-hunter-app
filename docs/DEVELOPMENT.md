@@ -135,6 +135,7 @@ packages/
   shared/               ← IPC contracts + Zod schemas + shared types
   ui/                   ← @ajh/ui component library
   prompts/              ← AI prompt templates
+  test-ids/             ← @ajh/test-ids — centralized test-id constants (drift-proof data-testid)
 ```
 
 ---

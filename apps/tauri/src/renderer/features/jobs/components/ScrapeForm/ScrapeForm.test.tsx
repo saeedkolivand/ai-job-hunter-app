@@ -19,6 +19,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 import type { BoardCatalogEntry } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 
 // ---------------------------------------------------------------------------
 // Module-level stub for useBoardsCatalog — set before each test via the ref
@@ -43,7 +44,7 @@ vi.mock('@/services/use-ai-provider', () => ({
 
 // Stub ScrapeFilters — deep component; not under test here
 vi.mock('./ScrapeFilters', () => ({
-  ScrapeFilters: () => <div data-testid="scrape-filters" />,
+  ScrapeFilters: () => <div data-testid={TEST_IDS.jobs.scrapeFilters} />,
 }));
 
 // Stub BoardConnectChip — not under test here

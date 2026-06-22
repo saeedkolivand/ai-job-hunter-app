@@ -17,6 +17,7 @@ const sharedSrc = resolve(here, '../../packages/shared/src');
 const promptsSrc = resolve(here, '../../packages/prompts/src');
 const uiSrc = resolve(here, '../../packages/ui/src');
 const translationsSrc = resolve(here, '../../packages/translations/src');
+const testIdsSrc = resolve(here, '../../packages/test-ids/src');
 
 export default defineConfig({
   plugins: [react()],
@@ -52,6 +53,7 @@ export default defineConfig({
       { find: '@ajh/prompts', replacement: resolve(promptsSrc, 'index.ts') },
       { find: '@ajh/ui', replacement: resolve(uiSrc, 'index.ts') },
       { find: '@ajh/translations', replacement: resolve(translationsSrc, 'index.ts') },
+      { find: '@ajh/test-ids', replacement: resolve(testIdsSrc, 'index.ts') },
       { find: '@', replacement: resolve(here, 'src/renderer') },
     ],
   },

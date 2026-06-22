@@ -15,6 +15,8 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 
+import { TEST_IDS } from '@ajh/test-ids';
+
 import { useSessionStore } from '@/store/session-store';
 
 import { AutopilotPage } from './index';
@@ -55,15 +57,15 @@ vi.mock('@/services', async (importOriginal) => {
 // ── Heavy sub-component stubs ─────────────────────────────────────────────────
 
 vi.mock('@/features/autopilot/components/AutopilotCard', () => ({
-  AutopilotCard: () => <div data-testid="autopilot-card" />,
+  AutopilotCard: () => <div data-testid={TEST_IDS.autopilot.card} />,
 }));
 
 vi.mock('@/features/autopilot/components/CreationWizard', () => ({
-  CreationWizard: () => <div data-testid="creation-wizard" />,
+  CreationWizard: () => <div data-testid={TEST_IDS.autopilot.creationWizard} />,
 }));
 
 vi.mock('@/features/autopilot/components/EmptyState', () => ({
-  EmptyState: () => <div data-testid="autopilot-empty-state" />,
+  EmptyState: () => <div data-testid={TEST_IDS.autopilot.emptyState} />,
 }));
 
 vi.mock('@/features/autopilot/hooks/useAutopilotRun', () => ({
@@ -80,7 +82,7 @@ vi.mock('@/features/autopilot/hooks/useAutopilotRun', () => ({
 
 vi.mock('@/components/layout/PageTransition', () => ({
   PageTransition: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="page-transition">{children}</div>
+    <div data-testid={TEST_IDS.layout.pageTransition}>{children}</div>
   ),
 }));
 

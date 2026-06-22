@@ -17,6 +17,8 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, waitFor } from '@testing-library/react';
 
+import { TEST_IDS } from '@ajh/test-ids';
+
 // ---------------------------------------------------------------------------
 // Shared containers — these are objects so vi.mock factories can mutate their
 // properties even though factories run in an isolated scope.
@@ -86,7 +88,9 @@ vi.mock('@/hooks/use-format-relative-time', () => ({
 }));
 
 vi.mock('@/components/layout/PageHeader', () => ({
-  PageHeader: ({ title }: { title: string }) => <div data-testid="page-header">{title}</div>,
+  PageHeader: ({ title }: { title: string }) => (
+    <div data-testid={TEST_IDS.layout.pageHeader}>{title}</div>
+  ),
 }));
 
 vi.mock('@/components/layout/PageTransition', () => ({
@@ -94,11 +98,11 @@ vi.mock('@/components/layout/PageTransition', () => ({
 }));
 
 vi.mock('@/features/jobs/components/JobsResults', () => ({
-  JobsResults: () => <div data-testid="jobs-results" />,
+  JobsResults: () => <div data-testid={TEST_IDS.jobs.jobsResults} />,
 }));
 
 vi.mock('@/features/jobs/components/ScrapeForm', () => ({
-  ScrapeForm: () => <div data-testid="scrape-form" />,
+  ScrapeForm: () => <div data-testid={TEST_IDS.jobs.scrapeForm} />,
 }));
 
 vi.mock('@/features/jobs/providers', () => ({

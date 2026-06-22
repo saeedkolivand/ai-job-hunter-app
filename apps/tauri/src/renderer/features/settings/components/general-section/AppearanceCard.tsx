@@ -1,6 +1,7 @@
 import { Monitor, Palette, Type } from 'lucide-react';
 import { useRef, useState } from 'react';
 
+import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import {
   applyThemeAnimated,
@@ -150,7 +151,7 @@ export function AppearanceCard() {
               )}
             >
               <span
-                data-testid="default-accent-dot"
+                data-testid={TEST_IDS.settings.defaultAccentDot}
                 className="h-3 w-3 rounded-full"
                 style={{
                   // BASE brand tokens (never overridden by the runtime accent

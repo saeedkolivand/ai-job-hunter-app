@@ -17,6 +17,7 @@ import { screen } from '@testing-library/dom';
 import { render } from '@testing-library/react';
 
 import type { MatchScore } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 
 // ── i18n stub — identity t() so we assert on keys ─────────────────────────────
 
@@ -40,7 +41,7 @@ vi.mock('@/services', () => ({
 
 vi.mock('@/features/jobs/components/PostingRow', () => ({
   PostingRow: ({ posting }: { posting: { id: string; title: string } }) => (
-    <div data-testid="posting-row" data-id={posting.id}>
+    <div data-testid={TEST_IDS.jobs.postingRow} data-id={posting.id}>
       {posting.title}
     </div>
   ),
@@ -131,7 +132,7 @@ function renderResults(opts: {
 }
 
 function rowOrder(): string[] {
-  return Array.from(document.querySelectorAll('[data-testid="posting-row"]')).map(
+  return Array.from(document.querySelectorAll(`[data-testid="${TEST_IDS.jobs.postingRow}"]`)).map(
     (el) => el.getAttribute('data-id') ?? ''
   );
 }
@@ -147,7 +148,7 @@ describe('JobsResults — gating', () => {
     renderResults({ filtered: [posting('a', 'A'), posting('b', 'B')], scraping: true });
 
     expect(screen.getByText('jobs.searching')).toBeInTheDocument();
-    expect(screen.queryByTestId('posting-row')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.jobs.postingRow)).not.toBeInTheDocument();
     // "Show more" is hidden while waiting.
     expect(screen.queryByText('jobs.showMore')).not.toBeInTheDocument();
   });
@@ -159,7 +160,7 @@ describe('JobsResults — gating', () => {
     });
 
     expect(screen.getByText('jobs.scoring')).toBeInTheDocument();
-    expect(screen.queryByTestId('posting-row')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.jobs.postingRow)).not.toBeInTheDocument();
   });
 
   it('reveals results (escape hatch) when scoring errors even while the batch is still pending', () => {
@@ -219,6 +220,6 @@ describe('JobsResults — no résumé', () => {
     expect(screen.getByText('jobs.empty')).toBeInTheDocument();
     expect(screen.queryByText('jobs.scoring')).not.toBeInTheDocument();
     expect(screen.queryByText('jobs.searching')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('posting-row')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(TEST_IDS.jobs.postingRow)).not.toBeInTheDocument();
   });
 });

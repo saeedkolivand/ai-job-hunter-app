@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import { TEST_IDS } from '@ajh/test-ids';
 import type * as AjhUi from '@ajh/ui';
 
 import { GenerationOutput } from './GenerationOutput';
@@ -32,21 +33,26 @@ vi.mock('@/components/generation/EditableOutput', () => ({
     canSave?: boolean;
     previewSlot?: React.ReactNode;
   }) => (
-    <div data-testid="editable-output">
+    <div data-testid={TEST_IDS.documents.editableOutput}>
       {value}
       <div
         role="textbox"
-        data-testid="editable-input"
+        data-testid={TEST_IDS.documents.editableInput}
         contentEditable
         suppressContentEditableWarning
         onInput={(e) => onChange?.((e.target as HTMLElement).textContent ?? '')}
       />
       {onSave && (
-        <div role="button" data-testid="save-btn" data-can-save={String(canSave)} onClick={onSave}>
+        <div
+          role="button"
+          data-testid={TEST_IDS.documents.saveBtn}
+          data-can-save={String(canSave)}
+          onClick={onSave}
+        >
           save
         </div>
       )}
-      {previewSlot && <div data-testid="preview-slot">{previewSlot}</div>}
+      {previewSlot && <div data-testid={TEST_IDS.documents.previewSlot}>{previewSlot}</div>}
     </div>
   ),
 }));
@@ -54,7 +60,9 @@ vi.mock('@/components/generation/EditableOutput', () => ({
 // PdfPreview mock — renders its `text` prop into a testid so tests can inspect
 // the committed text without launching the real Typst/PDF pipeline.
 vi.mock('@/components/generation/PdfPreview', () => ({
-  PdfPreview: ({ text }: { text: string }) => <div data-testid="pdf-preview">{text}</div>,
+  PdfPreview: ({ text }: { text: string }) => (
+    <div data-testid={TEST_IDS.documents.pdfPreview}>{text}</div>
+  ),
 }));
 
 // Dropdown mock — preserves all other @ajh/ui exports unchanged via
@@ -179,7 +187,7 @@ describe('GenerationOutput', () => {
       expect(screen.getByDisplayValue('Full job description text')).toBeInTheDocument();
 
       // The doc EditableOutput must NOT be mounted while the Job ad tab is active.
-      expect(screen.queryByTestId('editable-output')).not.toBeInTheDocument();
+      expect(screen.queryByTestId(TEST_IDS.documents.editableOutput)).not.toBeInTheDocument();
     });
 
     it('shows the summary empty-state Generate button and calls generate on click', async () => {
@@ -250,12 +258,12 @@ describe('GenerationOutput', () => {
       render(<GenerationOutput {...makeProps()} />);
 
       // EditableOutput is present initially (doc view).
-      expect(screen.getByTestId('editable-output')).toBeInTheDocument();
+      expect(screen.getByTestId(TEST_IDS.documents.editableOutput)).toBeInTheDocument();
 
       await clickJobAdTab(user);
 
       // EditableOutput must be gone after switching to job-ad view.
-      expect(screen.queryByTestId('editable-output')).not.toBeInTheDocument();
+      expect(screen.queryByTestId(TEST_IDS.documents.editableOutput)).not.toBeInTheDocument();
     });
   });
 
@@ -412,12 +420,12 @@ describe('GenerationOutput', () => {
   describe('Template picker', () => {
     it('renders the template picker on the resume tab (doc view)', () => {
       render(<GenerationOutput {...makeProps({ activeOut: 'resume' })} />);
-      expect(screen.getByTestId('template-picker')).toBeInTheDocument();
+      expect(screen.getByTestId(TEST_IDS.documents.templatePicker)).toBeInTheDocument();
     });
 
     it('renders the template picker on the cover tab (doc view)', () => {
       render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'cover' })} />);
-      expect(screen.getByTestId('template-picker')).toBeInTheDocument();
+      expect(screen.getByTestId(TEST_IDS.documents.templatePicker)).toBeInTheDocument();
     });
 
     it('is absent after switching to the job-ad view', async () => {
@@ -426,7 +434,7 @@ describe('GenerationOutput', () => {
 
       await clickJobAdTab(user);
 
-      expect(screen.queryByTestId('template-picker')).not.toBeInTheDocument();
+      expect(screen.queryByTestId(TEST_IDS.documents.templatePicker)).not.toBeInTheDocument();
     });
 
     it('calls onTemplateChange with the selected id when a two-column template is picked', async () => {
@@ -495,7 +503,7 @@ describe('GenerationOutput', () => {
           {...makeProps({ target: 'both', activeOut: 'cover', templateId: 'atelier' })}
         />
       );
-      expect(screen.getByTestId('template-picker')).toBeInTheDocument();
+      expect(screen.getByTestId(TEST_IDS.documents.templatePicker)).toBeInTheDocument();
       expect(screen.queryByRole('switch')).not.toBeInTheDocument();
     });
 
@@ -580,7 +588,9 @@ describe('GenerationOutput', () => {
           {...makeProps({ activeOut: 'resume', output: 'Initial content', editable: true })}
         />
       );
-      expect(screen.getByTestId('pdf-preview')).toHaveTextContent('Initial content');
+      expect(screen.getByTestId(TEST_IDS.documents.pdfPreview)).toHaveTextContent(
+        'Initial content'
+      );
     });
 
     it('a parent-driven output change (no local edit) refreshes the preview immediately', () => {
@@ -590,7 +600,7 @@ describe('GenerationOutput', () => {
       // No local edit has happened — the effect must update committed when output changes.
       rerender(<GenerationOutput {...props} output="Version 2" />);
 
-      expect(screen.getByTestId('pdf-preview')).toHaveTextContent('Version 2');
+      expect(screen.getByTestId(TEST_IDS.documents.pdfPreview)).toHaveTextContent('Version 2');
     });
 
     it('after a local edit the preview still shows the last committed (pre-save) text', async () => {
@@ -602,15 +612,15 @@ describe('GenerationOutput', () => {
       );
 
       // Verify preview shows initial committed text before any edit.
-      expect(screen.getByTestId('pdf-preview')).toHaveTextContent('Committed text');
+      expect(screen.getByTestId(TEST_IDS.documents.pdfPreview)).toHaveTextContent('Committed text');
 
       // Simulate a local edit: type into the contentEditable box.
-      const editBox = screen.getByTestId('editable-input');
+      const editBox = screen.getByTestId(TEST_IDS.documents.editableInput);
       await user.click(editBox);
       await user.type(editBox, 'Edited text');
 
       // Preview must still show the old committed text — Save not clicked yet.
-      expect(screen.getByTestId('pdf-preview')).toHaveTextContent('Committed text');
+      expect(screen.getByTestId(TEST_IDS.documents.pdfPreview)).toHaveTextContent('Committed text');
     });
 
     it('canSave becomes true after a local edit', async () => {
@@ -621,14 +631,17 @@ describe('GenerationOutput', () => {
         />
       );
 
-      const saveBtn = screen.getByTestId('save-btn');
+      const saveBtn = screen.getByTestId(TEST_IDS.documents.saveBtn);
       expect(saveBtn).toHaveAttribute('data-can-save', 'false');
 
-      const editBox = screen.getByTestId('editable-input');
+      const editBox = screen.getByTestId(TEST_IDS.documents.editableInput);
       await user.click(editBox);
       await user.type(editBox, 'Changed');
 
-      expect(screen.getByTestId('save-btn')).toHaveAttribute('data-can-save', 'true');
+      expect(screen.getByTestId(TEST_IDS.documents.saveBtn)).toHaveAttribute(
+        'data-can-save',
+        'true'
+      );
     });
 
     it('clicking save commits the current output to the preview and canSave goes false', async () => {
@@ -640,20 +653,23 @@ describe('GenerationOutput', () => {
       );
 
       // Edit to diverge committed from output.
-      const editBox = screen.getByTestId('editable-input');
+      const editBox = screen.getByTestId(TEST_IDS.documents.editableInput);
       await user.click(editBox);
       await user.type(editBox, 'After save');
 
       // Preview still shows old text before Save.
-      expect(screen.getByTestId('pdf-preview')).toHaveTextContent('Before save');
+      expect(screen.getByTestId(TEST_IDS.documents.pdfPreview)).toHaveTextContent('Before save');
 
       // Click Save.
-      await user.click(screen.getByTestId('save-btn'));
+      await user.click(screen.getByTestId(TEST_IDS.documents.saveBtn));
 
       // After save the preview must reflect the new committed text.
       // The component sets committed[activeOut] = output (which the wrapper
       // already updated to include the typed text).
-      expect(screen.getByTestId('save-btn')).toHaveAttribute('data-can-save', 'false');
+      expect(screen.getByTestId(TEST_IDS.documents.saveBtn)).toHaveAttribute(
+        'data-can-save',
+        'false'
+      );
     });
   });
 

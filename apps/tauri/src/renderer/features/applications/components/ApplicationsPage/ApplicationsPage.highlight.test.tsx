@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 
 import type { Application } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 
 import { useSessionStore } from '@/store/session-store';
 
@@ -64,7 +65,7 @@ vi.mock('@/features/applications/components/ApplicationRow', () => ({
     highlighted?: boolean;
   }) => (
     <div
-      data-testid="application-row"
+      data-testid={TEST_IDS.applications.row}
       data-appid={application.id}
       data-status={application.status}
       data-highlighted={highlighted ? 'true' : 'false'}
@@ -77,12 +78,12 @@ vi.mock('@/features/applications/components/ApplicationRow', () => ({
 // ── Stubs for page dependencies ───────────────────────────────────────────────
 
 vi.mock('@/features/applications/components/TrackJobModal', () => ({
-  TrackJobModal: () => <div data-testid="track-job-modal" />,
+  TrackJobModal: () => <div data-testid={TEST_IDS.applications.trackJobModal} />,
 }));
 
 vi.mock('@/components/layout/PageShell', () => ({
   PageShell: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="page-shell">{children}</div>
+    <div data-testid={TEST_IDS.layout.pageShell}>{children}</div>
   ),
 }));
 
@@ -148,7 +149,7 @@ describe('ApplicationsPage — ?highlight consumption', () => {
     });
 
     const targetRow = screen
-      .getAllByTestId('application-row')
+      .getAllByTestId(TEST_IDS.applications.row)
       .find((el) => el.getAttribute('data-appid') === TARGET_ID);
     expect(targetRow).toBeDefined();
     expect(targetRow?.getAttribute('data-highlighted')).toBe('true');
@@ -163,7 +164,7 @@ describe('ApplicationsPage — ?highlight consumption', () => {
     });
 
     const otherRow = screen
-      .getAllByTestId('application-row')
+      .getAllByTestId(TEST_IDS.applications.row)
       .find((el) => el.getAttribute('data-appid') === OTHER_ID);
     expect(otherRow).toBeDefined();
     expect(otherRow?.getAttribute('data-highlighted')).toBe('false');
@@ -202,7 +203,7 @@ describe('ApplicationsPage — ?highlight consumption', () => {
     // This confirms the section was actually un-collapsed in the rendered output,
     // not just in store state.
     const targetRow = screen
-      .getAllByTestId('application-row')
+      .getAllByTestId(TEST_IDS.applications.row)
       .find((el) => el.getAttribute('data-appid') === TARGET_ID);
     expect(targetRow).toBeDefined();
     expect(targetRow).toBeInTheDocument();
@@ -218,7 +219,7 @@ describe('ApplicationsPage — ?highlight consumption', () => {
 
     // Flash active right after mount.
     let targetRow = screen
-      .getAllByTestId('application-row')
+      .getAllByTestId(TEST_IDS.applications.row)
       .find((el) => el.getAttribute('data-appid') === TARGET_ID);
     expect(targetRow?.getAttribute('data-highlighted')).toBe('true');
 
@@ -228,7 +229,7 @@ describe('ApplicationsPage — ?highlight consumption', () => {
     });
 
     targetRow = screen
-      .getAllByTestId('application-row')
+      .getAllByTestId(TEST_IDS.applications.row)
       .find((el) => el.getAttribute('data-appid') === TARGET_ID);
     expect(targetRow?.getAttribute('data-highlighted')).toBe('false');
   });
@@ -242,7 +243,7 @@ describe('ApplicationsPage — ?highlight consumption', () => {
     });
 
     expect(mockNavigate).not.toHaveBeenCalled();
-    const rows = screen.getAllByTestId('application-row');
+    const rows = screen.getAllByTestId(TEST_IDS.applications.row);
     rows.forEach((row) => {
       expect(row.getAttribute('data-highlighted')).toBe('false');
     });
@@ -264,7 +265,7 @@ describe('ApplicationsPage — ?highlight consumption', () => {
     );
 
     // No row is highlighted — the unknown id matches nothing.
-    const rows = screen.getAllByTestId('application-row');
+    const rows = screen.getAllByTestId(TEST_IDS.applications.row);
     rows.forEach((row) => {
       expect(row.getAttribute('data-highlighted')).toBe('false');
     });
