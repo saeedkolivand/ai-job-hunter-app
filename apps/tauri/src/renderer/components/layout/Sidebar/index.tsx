@@ -23,6 +23,7 @@ import { Button, cn, Image, NavPill, transition, variants } from '@ajh/ui';
 
 import { ROUTES } from '@/constants/routes';
 import { getTimeGreeting } from '@/lib/greeting';
+import { TOOLTIP_HIDE_MS } from '@/lib/timings';
 import { useContactProfile } from '@/services';
 import { useAppVersion } from '@/services/use-system';
 import { useToggleSidebar, useUserName } from '@/store/preferences-store';
@@ -93,7 +94,7 @@ export function Sidebar() {
   const showVersion = () => {
     setVersionTooltip(true);
     if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
-    tooltipTimer.current = setTimeout(() => setVersionTooltip(false), 2000);
+    tooltipTimer.current = setTimeout(() => setVersionTooltip(false), TOOLTIP_HIDE_MS);
   };
 
   const renderNavItem = ({ to, label, icon: Icon, tourId }: NavItem) => {

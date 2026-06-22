@@ -6,7 +6,7 @@ import type { MatchResumeRequest, MatchScore } from '@ajh/shared';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { useSemanticScoring } from '@/store/preferences-store';
 
-import { keys } from '../query-client';
+import { keys, QUERY_TIMES } from '../query-client';
 
 /**
  * Score a resume against a job posting on demand. The result is expensive to
@@ -39,7 +39,7 @@ export const useJobMatchScore = (resumeId: string | null, jobId: string, enabled
         semanticScoringEnabled: semanticScoring,
       }),
     enabled: enabled && !!resumeId && !!jobId,
-    staleTime: 10 * 60 * 1000,
+    staleTime: QUERY_TIMES.TEN_MIN,
   });
 };
 
@@ -63,7 +63,7 @@ export const useJobMatchScores = (resumeId: string | null, jobIds: string[]) => 
         semanticScoringEnabled: semanticScoring,
       }),
     enabled: !!resumeId && ids.length > 0,
-    staleTime: 10 * 60 * 1000,
+    staleTime: QUERY_TIMES.TEN_MIN,
     placeholderData: keepPreviousData,
   });
   const scoresById = useMemo(() => {

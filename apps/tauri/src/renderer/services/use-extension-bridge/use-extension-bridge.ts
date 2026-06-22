@@ -4,7 +4,7 @@ import type { ExtensionBridgeStatus, ExtensionBridgeTokenResult } from '@ajh/sha
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
-import { keys } from '../query-client';
+import { keys, QUERY_TIMES } from '../query-client';
 
 /**
  * Live view of the local extension-bridge status (bound port, whether a browser
@@ -22,7 +22,7 @@ export const useExtensionBridgeStatus = () => {
   return useQuery<ExtensionBridgeStatus>({
     queryKey: keys.extensionBridge.status,
     queryFn: () => api.extensionBridge.status(),
-    refetchInterval: 30_000,
+    refetchInterval: QUERY_TIMES.MEDIUM,
   });
 };
 

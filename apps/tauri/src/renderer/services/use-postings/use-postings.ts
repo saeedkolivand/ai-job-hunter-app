@@ -5,7 +5,7 @@ import type { ScrapeBoardsRequest, ScrapeUrlRequest } from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
-import { keys } from '../query-client';
+import { keys, QUERY_TIMES } from '../query-client';
 
 export const usePostings = () => {
   const api = useAppClient();
@@ -46,7 +46,7 @@ export const useResolveJobUrl = (url: string, enabled = true) => {
     queryKey: keys.postings.resolve(url),
     queryFn: () => api.scrape.resolveUrl({ url }),
     enabled: enabled && !!url,
-    staleTime: 5 * 60_000,
+    staleTime: QUERY_TIMES.VERY_LONG,
   });
 };
 

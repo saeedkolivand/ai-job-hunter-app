@@ -7,15 +7,15 @@ import { getResolvedScheme, reapplySystemAccent } from '@ajh/ui';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { usePreferencesStore } from '@/store/preferences-store';
 
-import { keys, queryClient } from '../query-client';
+import { keys, QUERY_TIMES, queryClient } from '../query-client';
 
 export const useSystemHealth = () => {
   const api = useAppClient();
   return useQuery({
     queryKey: keys.system.health,
     queryFn: () => api.system.health(),
-    refetchInterval: 30_000,
-    staleTime: 20_000,
+    refetchInterval: QUERY_TIMES.MEDIUM,
+    staleTime: QUERY_TIMES.POLLING_STALE,
   });
 };
 
@@ -147,8 +147,8 @@ export const useSystemMetrics = () => {
   return useQuery({
     queryKey: keys.system.metrics,
     queryFn: () => api.system.getMetrics(),
-    refetchInterval: 30_000,
-    staleTime: 20_000,
+    refetchInterval: QUERY_TIMES.MEDIUM,
+    staleTime: QUERY_TIMES.POLLING_STALE,
   });
 };
 

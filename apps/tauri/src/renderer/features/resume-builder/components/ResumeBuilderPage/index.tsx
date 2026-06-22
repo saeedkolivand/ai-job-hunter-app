@@ -1,6 +1,6 @@
 import { ArrowRight, RotateCcw } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 import { Button, ErrorState } from '@ajh/ui';
@@ -18,6 +18,8 @@ import {
   isTwoColumnTemplate,
   type TemplateId,
 } from '@/lib/generate';
+import { COPY_FEEDBACK_LONG_MS } from '@/lib/timings';
+import type { ResumeBuilderStage } from '@/store/session-store';
 
 import { useResumeBuilder } from '../../hooks/useResumeBuilder';
 import { BuilderWizard } from '../BuilderWizard';
@@ -61,7 +63,7 @@ export function ResumeBuilderPage() {
     if (isGenerating || !output) return;
     await navigator.clipboard.writeText(output);
     setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    setTimeout(() => setCopied(false), COPY_FEEDBACK_LONG_MS);
   };
 
   const doExport = async (fmt: 'pdf' | 'docx' | 'txt') => {
@@ -70,6 +72,68 @@ export function ResumeBuilderPage() {
     if (fmt === 'pdf') await exportPDF(output, name, 'resume', meta, templateId, atsMode, locale);
     if (fmt === 'docx') await exportDOCX(output, name, 'resume', meta, templateId, atsMode, locale);
     if (fmt === 'txt') exportTXT(output, name);
+  };
+
+  const stageRegistry: Record<ResumeBuilderStage, () => ReactNode> = {
+    interview: () => (
+      <BuilderWizard
+        key="wizard"
+        language={language}
+        templateId={templateId}
+        atsMode={atsMode}
+        isComplete={isComplete}
+        canUseAI={canUseAI}
+        isGenerating={isGenerating}
+        onLanguageChange={onLanguageChange}
+        onTemplateChange={onTemplateChange}
+        onAtsModeChange={onAtsModeChange}
+        onGenerate={() => void synthesize()}
+      />
+    ),
+    generating: () => (
+      <OutputPanelGenerating
+        key="generating"
+        stageLabel={t('build.wizard.generating')}
+        streamBuffer={streamBuffer}
+        activeOut="resume"
+        thinkingBuffer={thinkingBuffer}
+        modelLoading={modelLoading}
+        tokenCount={tokenCount}
+        tokenStartMs={tokenStartMs}
+      />
+    ),
+    done: () => (
+      <div key="done" className="flex flex-1 flex-col overflow-hidden">
+        <OutputPanelDone
+          resumeOut={output}
+          coverOut=""
+          activeOut="resume"
+          meta={meta}
+          mode="ats"
+          templateId={templateId}
+          atsMode={atsMode}
+          locale={locale}
+          onActiveOutChange={() => {}}
+          onCopy={() => void copyOutput()}
+          onExport={doExport}
+          onOutputChange={(value) => setResumeBuilder({ output: value })}
+          onRegenerate={() => void synthesize()}
+          copied={copied}
+          isGenerating={isGenerating}
+          generatingDoc={null}
+        />
+        <div className="shrink-0 flex items-center justify-end gap-2 border-t border-[var(--border-soft)] px-8 py-3">
+          <Button onClick={reset} variant="ghost" className="gap-1.5">
+            <RotateCcw size={14} />
+            {t('build.output.startOver')}
+          </Button>
+          <Button onClick={tailorToJob} variant="glass" className="gap-1.5">
+            {t('build.output.tailor')}
+            <ArrowRight size={14} />
+          </Button>
+        </div>
+      </div>
+    ),
   };
 
   return (
@@ -88,69 +152,7 @@ export function ResumeBuilderPage() {
         </div>
 
         <div className="flex flex-1 flex-col overflow-hidden">
-          <AnimatePresence mode="wait">
-            {stage === 'interview' && (
-              <BuilderWizard
-                key="wizard"
-                language={language}
-                templateId={templateId}
-                atsMode={atsMode}
-                isComplete={isComplete}
-                canUseAI={canUseAI}
-                isGenerating={isGenerating}
-                onLanguageChange={onLanguageChange}
-                onTemplateChange={onTemplateChange}
-                onAtsModeChange={onAtsModeChange}
-                onGenerate={() => void synthesize()}
-              />
-            )}
-
-            {stage === 'generating' && (
-              <OutputPanelGenerating
-                key="generating"
-                stageLabel={t('build.wizard.generating')}
-                streamBuffer={streamBuffer}
-                activeOut="resume"
-                thinkingBuffer={thinkingBuffer}
-                modelLoading={modelLoading}
-                tokenCount={tokenCount}
-                tokenStartMs={tokenStartMs}
-              />
-            )}
-
-            {stage === 'done' && (
-              <div key="done" className="flex flex-1 flex-col overflow-hidden">
-                <OutputPanelDone
-                  resumeOut={output}
-                  coverOut=""
-                  activeOut="resume"
-                  meta={meta}
-                  mode="ats"
-                  templateId={templateId}
-                  atsMode={atsMode}
-                  locale={locale}
-                  onActiveOutChange={() => {}}
-                  onCopy={() => void copyOutput()}
-                  onExport={doExport}
-                  onOutputChange={(value) => setResumeBuilder({ output: value })}
-                  onRegenerate={() => void synthesize()}
-                  copied={copied}
-                  isGenerating={isGenerating}
-                  generatingDoc={null}
-                />
-                <div className="shrink-0 flex items-center justify-end gap-2 border-t border-[var(--border-soft)] px-8 py-3">
-                  <Button onClick={reset} variant="ghost" className="gap-1.5">
-                    <RotateCcw size={14} />
-                    {t('build.output.startOver')}
-                  </Button>
-                  <Button onClick={tailorToJob} variant="glass" className="gap-1.5">
-                    {t('build.output.tailor')}
-                    <ArrowRight size={14} />
-                  </Button>
-                </div>
-              </div>
-            )}
-          </AnimatePresence>
+          <AnimatePresence mode="wait">{stageRegistry[stage]()}</AnimatePresence>
 
           {error && (
             <div className="shrink-0 mx-6 mb-4">
