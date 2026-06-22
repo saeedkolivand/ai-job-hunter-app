@@ -1,6 +1,6 @@
 # ADR-012: Live preview renders the real exported document via SVG; templates stay single-source
 
-Last updated: 2026-06-09
+Last updated: 2026-06-22
 
 **Status:** Accepted (revised during implementation)
 
@@ -49,7 +49,11 @@ validation — but stop at vector SVG instead of PDF bytes.
 ## Consequences
 
 - **Preview is the authoritative output** — it IS the Typst render, not an approximation.
-- Each edit triggers a Rust round-trip (cost acceptable for ~500ms debounce; covers both resume and letter).
+- Each edit triggers a Rust round-trip (cost acceptable for ~700ms debounce; covers both resume and letter).
+  **Debounce amendment (2026-06-22):** The explicit Save button is no longer required. Local edits now
+  commit to the preview on a ~700ms debounce (`useDebouncedCommit` hook), while generation/regeneration
+  commits immediately. This preserves the intent of the earlier save-gating (no per-keystroke Typst
+  recompiles) while removing the manual step. An "Updating preview…" hint shows while a commit is pending.
 - No HTML render path → zero drift. Template changes in Typst automatically appear in the preview.
 - **SVG sanitization:** Typst leaves raw `&` in link hrefs. Before wrapping as `<img>`, escape them
   to `&amp;` so the XML parses. See `escapeSvgAmpersands()` in `export/export.ts`.
@@ -64,5 +68,7 @@ validation — but stop at vector SVG instead of PDF bytes.
 
 - `renderDocumentPreview()` – `apps/tauri/src/renderer/lib/generate/export/export.ts`
 - `PdfPreview` – `apps/tauri/src/renderer/features/ai-generate/components/PdfPreview/`
+- `useDebouncedCommit()` – `apps/tauri/src/renderer/hooks/use-debounced-commit/use-debounced-commit.ts` (debounced local-edit commit)
+- `OutputPanelDone` – `apps/tauri/src/renderer/features/ai-generate/components/OutputPanelDone/index.tsx` (integration point)
 - `documents_render_preview_images` – `apps/tauri/src-tauri/src/export/commands/mod.rs`
 - `render_resume_svg_pages` / `render_letter_svg_pages` – `apps/tauri/src-tauri/src/export/typst_engine/render.rs`
