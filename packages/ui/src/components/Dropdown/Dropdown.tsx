@@ -40,9 +40,9 @@ export interface DropdownProps {
    * Trigger accent.
    * - `default` — neutral glass trigger (border-clear / bg-field).
    * - `primary` — brand-tinted trigger (e.g. application-status selector).
-   * - `field`   — form-field appearance matching Input/NumberField controls:
-   *               border-white/[0.06], bg-white/[0.03], text-foreground/80 at
-   *               rest; brand border preserved when open (no twMerge regression).
+   * - `field`   — glass surface matching Input/NumberField controls:
+   *               glass border + text-foreground/80 at rest; brand border
+   *               preserved when open (no twMerge regression).
    */
   tone?: 'default' | 'primary' | 'field';
   /** Extra classes merged onto the trigger button — appended last so they reliably override height/bg/border defaults. */
@@ -192,10 +192,10 @@ export function Dropdown({
               )
             : tone === 'field'
               ? cn(
-                  'border border-white/[0.06] bg-white/[0.03] text-foreground/80',
+                  'bg-field border border-[var(--border-clear)] text-foreground/80',
                   open
-                    ? 'border-brand/45 bg-white/[0.05] text-foreground/90'
-                    : 'hover:border-white/10 hover:bg-white/[0.04] hover:text-foreground/90'
+                    ? 'border-brand/35 text-foreground/90'
+                    : 'hover:bg-muted hover:text-foreground/90'
                 )
               : cn(
                   'border border-[var(--border-clear)] bg-field',
@@ -264,7 +264,7 @@ export function Dropdown({
                       onClick={() => select(option.value)}
                       className={cn(
                         'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs transition-colors duration-100',
-                        isHighlighted && !isSelected && 'bg-white/[0.05] text-foreground/90',
+                        isHighlighted && !isSelected && 'bg-muted text-foreground/90',
                         isSelected ? 'bg-brand/15 text-brand-soft' : 'text-foreground/65'
                       )}
                     >

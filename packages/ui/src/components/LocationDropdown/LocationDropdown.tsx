@@ -75,7 +75,7 @@ export function LocationDropdown({
               'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs transition-colors',
               activeIndex < 0
                 ? 'bg-brand/15 text-brand-soft'
-                : 'text-foreground/70 hover:bg-white/[0.05] hover:text-foreground/90'
+                : 'text-foreground/70 hover:bg-muted hover:text-foreground/90'
             )}
           >
             <CornerDownLeft size={11} className="shrink-0 text-foreground/35" />
@@ -97,7 +97,7 @@ export function LocationDropdown({
               'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs transition-colors',
               i === activeIndex
                 ? 'bg-brand/15 text-brand-soft'
-                : 'text-foreground/70 hover:bg-white/[0.05] hover:text-foreground/90'
+                : 'text-foreground/70 hover:bg-muted hover:text-foreground/90'
             )}
           >
             <MapPin size={11} className="shrink-0 text-foreground/35" />

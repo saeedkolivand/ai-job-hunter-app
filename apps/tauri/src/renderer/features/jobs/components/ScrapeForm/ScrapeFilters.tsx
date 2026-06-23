@@ -96,7 +96,7 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
               value={form.amount}
               onChange={(n) => onFormChange({ amount: n })}
               disabled={scraping}
-              className="w-full bg-white/[0.03] text-xs text-foreground disabled:opacity-50"
+              className="w-full bg-field shadow-none text-xs text-foreground disabled:opacity-50"
             />
           </div>
           <div>
@@ -108,7 +108,7 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
               value={form.radiusKm}
               onChange={(n) => onFormChange({ radiusKm: n })}
               disabled={scraping}
-              className="w-full bg-white/[0.03] text-xs text-foreground disabled:opacity-50"
+              className="w-full bg-field shadow-none text-xs text-foreground disabled:opacity-50"
             />
           </div>
         </div>

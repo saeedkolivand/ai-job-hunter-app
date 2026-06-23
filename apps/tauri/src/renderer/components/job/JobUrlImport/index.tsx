@@ -73,12 +73,12 @@ export function JobUrlImport({ onImport, disabled }: Props) {
           }}
           placeholder={t('jobUrlImport.placeholder')}
           disabled={disabled || busy}
-          className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-foreground/80 placeholder:text-foreground/25 outline-none transition-colors focus:border-brand/40"
+          className="flex-1 rounded-lg border border-[var(--border-clear)] bg-field px-3 py-2 text-xs text-foreground/80 placeholder:text-foreground/25 outline-none transition-colors focus:border-brand/40"
         />
         <Button
           onClick={() => void handleImport()}
           disabled={disabled || busy || !url.trim()}
-          className="flex h-auto shrink-0 items-center gap-1.5 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-xs font-medium text-foreground/70 transition-colors hover:border-white/10 hover:text-foreground/90 disabled:opacity-40"
+          className="flex h-auto shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border-clear)] bg-card px-3 py-2 text-xs font-medium text-foreground/70 transition-colors hover:bg-muted hover:text-foreground/90 disabled:opacity-40"
         >
           {busy ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />}
           {t('jobUrlImport.import')}

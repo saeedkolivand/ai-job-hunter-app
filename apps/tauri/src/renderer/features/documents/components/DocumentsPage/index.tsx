@@ -149,7 +149,7 @@ function DocumentsPage() {
                         }
                         onChange={() => toggleSelectAll(generationDocs.map((g) => g.id))}
                         aria-label={t('resumes.select.selectAll')}
-                        className="h-4 w-4 cursor-pointer accent-[color:var(--color-brand)] rounded border border-white/20"
+                        className="h-4 w-4 cursor-pointer accent-[color:var(--color-brand)] rounded border border-[var(--border-clear)]"
                       />
                       {t('resumes.select.selectAll')}
                     </label>
@@ -183,14 +183,14 @@ function DocumentsPage() {
               className={cn(
                 'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150 h-auto',
                 tab === id
-                  ? 'bg-white/[0.07] text-foreground/90 ring-1 ring-white/10'
-                  : 'text-foreground/45 hover:bg-white/[0.04] hover:text-foreground/70'
+                  ? 'bg-card text-foreground/90 ring-1 ring-[var(--border-clear)]'
+                  : 'text-foreground/45 hover:bg-muted hover:text-foreground/70'
               )}
             >
               <Icon size={12} className={tab === id ? color : ''} />
               {t(labelKey)}
               {counts[id] > 0 && (
-                <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] text-foreground/60">
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-foreground/60">
                   {counts[id]}
                 </span>
               )}

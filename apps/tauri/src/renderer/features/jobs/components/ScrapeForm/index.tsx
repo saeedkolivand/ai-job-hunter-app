@@ -173,7 +173,7 @@ export function ScrapeForm({
                 variant="ghost"
                 aria-label={t('common.close')}
                 onClick={onToggle}
-                className="rounded-md p-1 text-foreground/40 hover:bg-white/5 hover:text-foreground/70 h-auto"
+                className="rounded-md p-1 text-foreground/40 hover:bg-muted hover:text-foreground/70 h-auto"
               >
                 <X size={13} />
               </Button>
@@ -204,7 +204,7 @@ export function ScrapeForm({
                 placeholder={t('jobs.queryPlaceholder')}
                 disabled={scraping}
                 allowClear
-                className="w-full bg-white/[0.03] text-sm text-foreground placeholder:text-foreground/25 disabled:opacity-50"
+                className="w-full bg-field shadow-none text-sm text-foreground placeholder:text-foreground/25 disabled:opacity-50"
               />
             </div>
 
@@ -290,7 +290,7 @@ export function ScrapeForm({
                           'rounded-lg px-2.5 py-1 text-[11px] transition-all',
                           active
                             ? 'bg-brand/20 text-brand-soft ring-1 ring-brand/40'
-                            : 'bg-white/[0.04] text-foreground/50 hover:bg-white/[0.07] hover:text-foreground/80',
+                            : 'bg-card border border-[var(--border-clear)] text-foreground/50 hover:bg-muted hover:text-foreground/80',
                           'disabled:cursor-not-allowed disabled:opacity-40'
                         )}
                       >
@@ -347,7 +347,7 @@ export function ScrapeForm({
                   placeholder={t('jobs.companies.placeholder')}
                   disabled={scraping}
                   allowClear
-                  className="w-full bg-white/[0.03] text-sm text-foreground placeholder:text-foreground/25 disabled:opacity-50"
+                  className="w-full bg-field shadow-none text-sm text-foreground placeholder:text-foreground/25 disabled:opacity-50"
                 />
                 <p id="scrape-companies-hint" className="mt-1 text-[10px] text-foreground/40">
                   {t('jobs.companies.hint')}

@@ -48,7 +48,7 @@ export function UploadZone({
           ? 'border-brand/50 bg-brand/5'
           : hasValue
             ? 'border-emerald-500/30 bg-emerald-500/5'
-            : 'border-white/[0.08] hover:border-white/[0.15] hover:bg-white/[0.02]'
+            : 'border-[var(--border-clear)] hover:bg-muted'
       )}
     >
       {uploading ? (

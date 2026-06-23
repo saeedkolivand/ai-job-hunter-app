@@ -27,7 +27,7 @@ const NAVIGATE: Row[] = [
 
 function Kbd({ children }: { children: string }) {
   return (
-    <kbd className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-md border border-white/10 bg-white/[0.06] px-1.5 font-mono text-[11px] text-foreground/70">
+    <kbd className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-md border border-[var(--border-clear)] bg-muted px-1.5 font-mono text-[11px] text-foreground/70">
       {children}
     </kbd>
   );
@@ -84,13 +84,13 @@ export function ShortcutsOverlay() {
       ariaLabel={t('shortcuts.title')}
       maxWidth="max-w-lg"
       header={
-        <div className="flex items-center gap-2 border-b border-white/5 px-6 py-4">
+        <div className="flex items-center gap-2 border-b border-[var(--border-clear)] px-6 py-4">
           <Command size={15} className="text-brand-soft" />
           <span className="text-sm font-medium text-foreground/90">{t('shortcuts.title')}</span>
         </div>
       }
       footer={
-        <div className="border-t border-white/5 px-6 py-3 text-center text-[11px] text-foreground/35">
+        <div className="border-t border-[var(--border-clear)] px-6 py-3 text-center text-[11px] text-foreground/35">
           {t('shortcuts.hint')}
         </div>
       }

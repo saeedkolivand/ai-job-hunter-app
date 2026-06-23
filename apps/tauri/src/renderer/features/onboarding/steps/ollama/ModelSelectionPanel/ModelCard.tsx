@@ -36,8 +36,8 @@ export function ModelCard({
         selected
           ? 'border-brand/40 bg-brand/10'
           : tooHeavy
-            ? 'border-white/[0.04] bg-white/[0.01] opacity-40 cursor-not-allowed'
-            : 'border-white/[0.07] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
+            ? 'border-[var(--border-clear)] bg-card opacity-40 cursor-not-allowed'
+            : 'border-[var(--border-clear)] bg-card hover:bg-muted'
       }`}
     >
       <div className="flex items-center justify-between gap-3">

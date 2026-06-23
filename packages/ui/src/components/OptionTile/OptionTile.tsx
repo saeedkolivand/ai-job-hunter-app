@@ -33,13 +33,13 @@ export function OptionTile({
         'relative flex flex-col items-center gap-2 rounded-xl border p-4 text-center transition-all duration-150',
         selected
           ? 'border-brand-soft/50 bg-brand-soft/10'
-          : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10'
+          : 'border-[var(--border-clear)] bg-card hover:bg-muted'
       )}
     >
       <div
         className={cn(
           'rounded-full p-2 transition-colors',
-          selected ? 'bg-brand-soft/20' : 'bg-white/5'
+          selected ? 'bg-brand-soft/20' : 'bg-muted'
         )}
       >
         <Icon

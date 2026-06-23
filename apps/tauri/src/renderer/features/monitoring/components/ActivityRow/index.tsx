@@ -26,7 +26,7 @@ export function ActivityRow({ a }: Props) {
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0 }}
       transition={transition.fast}
-      className="flex items-start gap-2.5 rounded-lg px-2 py-1.5 hover:bg-white/[0.02] transition-colors"
+      className="flex items-start gap-2.5 rounded-lg px-2 py-1.5 hover:bg-muted transition-colors"
     >
       <span
         className={cn(

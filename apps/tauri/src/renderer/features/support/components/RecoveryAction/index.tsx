@@ -51,7 +51,7 @@ export function RecoveryAction({
     <div
       className={cn(
         'flex items-start justify-between p-4 rounded-xl border',
-        destructive ? 'border-red-400/20 bg-red-400/5' : 'border-white/10 bg-white/[0.02]'
+        destructive ? 'border-red-400/20 bg-red-400/5' : 'border-[var(--border-clear)] bg-card'
       )}
     >
       <div className="flex-1">

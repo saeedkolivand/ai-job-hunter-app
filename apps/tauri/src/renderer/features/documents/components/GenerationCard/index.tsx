@@ -19,15 +19,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { AiGenerationRecord, ReferralChannel, ReferralContact } from '@ajh/shared/ipc';
 import { useTranslation } from '@ajh/translations';
-import {
-  ActionMenu,
-  Button,
-  cn,
-  ConfirmModal,
-  GlassCard,
-  transition,
-  useNotification,
-} from '@ajh/ui';
+import { ActionMenu, Button, cn, ConfirmModal, transition, useNotification } from '@ajh/ui';
 
 import { EditableOutput } from '@/components/generation/EditableOutput';
 import {
@@ -215,7 +207,7 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
 
   return (
     <>
-      <GlassCard className="rounded-xl overflow-hidden p-0">
+      <div className="surface-card rounded-xl overflow-hidden p-0">
         {/* Header row — collapsed by default; click the title area to expand (#27).
             Low-value actions (open posting / export / delete) live in the 3-dots
             overflow menu (#28/#32/#33). */}
@@ -227,7 +219,7 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
                 checked={selected}
                 onChange={() => onToggleSelect(gen.id)}
                 aria-label={t('resumes.select.selectItem')}
-                className="h-4 w-4 cursor-pointer accent-[color:var(--color-brand)] rounded border border-white/20"
+                className="h-4 w-4 cursor-pointer accent-[color:var(--color-brand)] rounded border border-[var(--border-clear)]"
               />
             </div>
           )}
@@ -265,7 +257,7 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
                   {gen.mode}
                 </span>
                 {gen.board && (
-                  <span className="rounded-full border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 text-[9px] uppercase tracking-wider text-foreground/55">
+                  <span className="rounded-full border border-[var(--border-clear)] bg-muted px-2 py-0.5 text-[9px] uppercase tracking-wider text-foreground/55">
                     {gen.board}
                   </span>
                 )}
@@ -332,7 +324,7 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
             >
               {/* Extracted keywords — on top, labelled (#29). */}
               {gen.topRequirements.length > 0 && (
-                <div className="border-t border-white/[0.04] px-5 py-4">
+                <div className="border-t border-[var(--border-clear)] px-5 py-4">
                   <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
                     {t('resumes.generated.keywords')}
                   </span>
@@ -340,7 +332,7 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
                     {gen.topRequirements.map((req) => (
                       <span
                         key={req}
-                        className="rounded-full border border-white/[0.06] bg-white/[0.03] px-2.5 py-1 text-[10px] text-foreground/55"
+                        className="rounded-full border border-[var(--border-clear)] bg-muted px-2.5 py-1 text-[10px] text-foreground/55"
                       >
                         {req}
                       </span>
@@ -454,7 +446,7 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
                       return (
                         <div
                           key={contact.id}
-                          className="space-y-2.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3.5 py-3"
+                          className="surface-card space-y-2.5 rounded-lg px-3.5 py-3"
                         >
                           <div className="flex flex-wrap items-start justify-between gap-2">
                             <div className="min-w-0">
@@ -521,7 +513,7 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
             </motion.div>
           )}
         </AnimatePresence>
-      </GlassCard>
+      </div>
 
       {/* Export — moved off the row into a modal (#28). */}
       <ExportPicker
@@ -548,7 +540,7 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
           <Button
             disabled={exporting === 'cover'}
             onClick={() => void doExport('cover')}
-            className="flex h-auto items-center gap-1.5 rounded-lg border-white/[0.06] bg-white/5 px-3 py-1.5 text-[11px] text-foreground/60 transition-colors hover:text-foreground"
+            className="flex h-auto items-center gap-1.5 rounded-lg border-[var(--border-clear)] bg-muted px-3 py-1.5 text-[11px] text-foreground/60 transition-colors hover:text-foreground"
           >
             <ExportActionIcon loading={exporting === 'cover'} />
             {t('resumes.generated.exportCoverLetter')}

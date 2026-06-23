@@ -129,7 +129,7 @@ export function PdfPreview({
   return (
     <div
       className={cn(
-        'relative h-full w-full overflow-hidden rounded-lg border border-white/[0.06] bg-white/[0.02]',
+        'relative h-full w-full overflow-hidden rounded-lg border border-[var(--border-clear)] bg-card',
         className
       )}
     >

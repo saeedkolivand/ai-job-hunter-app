@@ -36,7 +36,7 @@ export function InterviewQuestionsAccordion({ questions }: Props) {
           content={
             <ul className="space-y-3">
               {items.map((q) => (
-                <li key={q.id} className="border-l border-white/[0.06] pl-3">
+                <li key={q.id} className="border-l border-[var(--border-clear)] pl-3">
                   <p className="select-text text-[12px] leading-relaxed text-foreground/85">
                     {q.question}
                   </p>

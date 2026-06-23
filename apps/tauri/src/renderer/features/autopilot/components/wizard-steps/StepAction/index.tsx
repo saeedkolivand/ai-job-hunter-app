@@ -28,7 +28,7 @@ export function StepAction() {
         {flow.map(({ icon: Icon, text }, i) => (
           <div
             key={i}
-            className="flex items-start gap-3 rounded-xl border border-white/[0.05] bg-white/[0.02] px-4 py-3"
+            className="flex items-start gap-3 rounded-xl border border-[var(--border-clear)] bg-card px-4 py-3"
           >
             <Icon size={15} className="mt-0.5 shrink-0 text-brand-soft" />
             <div className="text-[11px] leading-relaxed text-foreground/70">{text}</div>

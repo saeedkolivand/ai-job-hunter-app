@@ -105,7 +105,7 @@ export function AISystemStatus() {
     idle: {
       icon: CheckCircle,
       color: 'text-foreground/40',
-      bg: 'bg-white/[0.06]',
+      bg: 'bg-muted',
       dot: 'bg-foreground/30',
     },
     error: { icon: XCircle, color: 'text-red-400', bg: 'bg-red-500/15', dot: 'bg-red-400' },
@@ -121,7 +121,7 @@ export function AISystemStatus() {
         <Button
           onClick={() => void refresh()}
           disabled={isFetching || refreshing}
-          className="flex items-center gap-1 rounded-lg bg-white/5 px-2 py-1 text-[10px] text-foreground/40 hover:text-foreground/70 h-auto border-transparent"
+          className="flex items-center gap-1 rounded-lg bg-muted px-2 py-1 text-[10px] text-foreground/40 hover:text-foreground/70 h-auto border-transparent"
         >
           <RefreshCw size={10} className={isFetching || refreshing ? 'animate-spin' : ''} />
           {t('dashboard.status.refresh')}
@@ -135,7 +135,7 @@ export function AISystemStatus() {
           const RowIcon = row.icon;
           const content = (
             <>
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/[0.04]">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted">
                 <RowIcon size={13} className="text-foreground/35" />
               </div>
               <div className="min-w-0 flex-1 text-left">
@@ -156,16 +156,13 @@ export function AISystemStatus() {
             </>
           );
           const rowClass =
-            'flex w-full items-center gap-3 rounded-lg border border-white/[0.04] bg-white/[0.02] px-3 py-2.5';
+            'flex w-full items-center gap-3 rounded-lg border border-[var(--border-clear)] bg-card px-3 py-2.5';
           return row.onClick ? (
             <Button
               key={row.name}
               variant="unstyled"
               onClick={row.onClick}
-              className={cn(
-                rowClass,
-                'transition-colors hover:border-white/10 hover:bg-white/[0.04]'
-              )}
+              className={cn(rowClass, 'transition-colors hover:bg-muted')}
             >
               {content}
             </Button>
@@ -178,7 +175,7 @@ export function AISystemStatus() {
       </div>
 
       {rendererMem != null && (
-        <div className="mt-3 flex items-center justify-between rounded-lg border border-white/[0.04] bg-white/[0.02] px-3 py-2">
+        <div className="mt-3 flex items-center justify-between rounded-lg border border-[var(--border-clear)] bg-card px-3 py-2">
           <span className="text-[11px] text-foreground/35">{t('dashboard.status.memory')}</span>
           <span className="font-mono text-[11px] text-foreground/50">
             {Math.round(rendererMem / 1024)} MB
