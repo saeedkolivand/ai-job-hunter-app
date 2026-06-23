@@ -175,19 +175,32 @@ async fn only_jsearch_configured_uses_jsearch() {
     assert_eq!(result[0].external_id, jsearch_posting.external_id);
 }
 
-/// Adzuna Err and JSearch not configured → Ok(empty), never an error.
+/// Adzuna configured + Err, JSearch not configured → diagnostic Err (not silent empty).
+/// Previously this returned Ok(empty), which was the silent-zero bug. The new contract
+/// surfaces an actionable error so the engine records it in BoardScrapeSummary.error.
 #[tokio::test]
-async fn adzuna_err_and_no_jsearch_returns_empty() {
+async fn adzuna_configured_err_and_no_jsearch_returns_diagnostic_err() {
     let providers: Vec<Box<dyn JobProvider>> = vec![
         Box::new(FakeProvider::err("adzuna", "timeout")),
         Box::new(FakeProvider::unconfigured("jsearch")),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, make_token())
-        .await
-        .unwrap();
+    let result =
+        search_with_providers(&providers, "engineer", "berlin", "de", None, make_token()).await;
 
-    assert!(result.is_empty());
+    assert!(
+        result.is_err(),
+        "Adzuna configured+failed with no JSearch must surface an Err, not silent Ok(empty)"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("timeout"),
+        "diagnostic error must include the original Adzuna failure ('timeout'); got: {msg}"
+    );
+    assert!(
+        msg.contains("add a JSearch key in Settings"),
+        "diagnostic error must include the actionable JSearch-remedy suffix; got: {msg}"
+    );
 }
 
 /// Deduplication: two items with the same external_id → only first kept.
@@ -842,4 +855,197 @@ fn every_generated_date_filter_token_has_a_real_mapping() {
             );
         }
     }
+}
+
+// ── Adzuna country allowlist ──────────────────────────────────────────────────
+
+/// Every code in ADZUNA_SUPPORTED_COUNTRIES must be accepted by `adzuna_supports_country`.
+#[test]
+fn adzuna_supported_countries_all_accepted() {
+    for &cc in ADZUNA_SUPPORTED_COUNTRIES {
+        assert!(
+            adzuna_supports_country(cc),
+            "country '{cc}' is in the allowlist but adzuna_supports_country returned false"
+        );
+    }
+}
+
+/// Codes not in the allowlist must be rejected (case-sensitive — country is
+/// lowercased at the `AggregatorScraper::search` call site, line ~504).
+#[test]
+fn adzuna_unsupported_countries_rejected() {
+    for cc in &["xx", "yy", "kp", "ir", "ru", "cn", "jp", "GB", "US"] {
+        assert!(
+            !adzuna_supports_country(cc),
+            "'{cc}' should not be in the Adzuna allowlist"
+        );
+    }
+}
+
+/// Empty country string resolves to "de" (the Adzuna default) and must pass
+/// the allowlist check. Calls the real `AdzunaProvider::search` with an empty
+/// country string to prove the production `if country.is_empty() { "de" }` guard
+/// fires and that the resulting error is NOT the allowlist-rejection error.
+#[tokio::test]
+async fn adzuna_empty_country_resolves_to_supported_de() {
+    let p = AdzunaProvider {
+        app_id: Some("fake-id".to_string()),
+        app_key: Some("fake-key".to_string()),
+    };
+    // Empty country → production code resolves to "de" → passes allowlist → fails
+    // downstream at the network/auth layer (no real keys), NOT at country validation.
+    let result = p.search("engineer", "Berlin", "", None, make_token()).await;
+    let e = result.unwrap_err();
+    let msg = e.to_string();
+    assert!(
+        !msg.contains("not in Adzuna's supported market list"),
+        "empty country must resolve to 'de' and pass the allowlist; \
+         got allowlist-rejection error instead: {msg}"
+    );
+}
+
+/// Unsupported country + JSearch configured → JSearch used (transparent fallback).
+#[tokio::test]
+async fn unsupported_country_with_jsearch_falls_back_to_jsearch() {
+    let jsearch_posting = sample_posting("js1", "jsearch");
+
+    // AdzunaProvider::search returns Err for unsupported countries; simulate that
+    // with a FakeProvider that errors, which is the exact path AdzunaProvider takes.
+    let providers_with_adzuna_err: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::err(
+            "adzuna",
+            "adzuna: country 'xx' is not in Adzuna's supported market list",
+        )),
+        Box::new(FakeProvider::ok("jsearch", vec![jsearch_posting.clone()])),
+    ];
+
+    let result = search_with_providers(
+        &providers_with_adzuna_err,
+        "engineer",
+        "Seoul",
+        "xx",
+        None,
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].external_id, jsearch_posting.external_id);
+}
+
+/// Unsupported country + Adzuna configured + NO JSearch → diagnostic Err,
+/// not silent Ok(empty). This is the key UX regression test.
+#[tokio::test]
+async fn unsupported_country_no_jsearch_returns_diagnostic_err() {
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::err(
+            "adzuna",
+            "adzuna: country 'xx' is not in Adzuna's supported market list",
+        )),
+        Box::new(FakeProvider::unconfigured("jsearch")),
+    ];
+
+    let result =
+        search_with_providers(&providers, "engineer", "Seoul", "xx", None, make_token()).await;
+
+    assert!(
+        result.is_err(),
+        "unsupported country with no JSearch fallback must return Err, not silent Ok(empty)"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("adzuna:")
+            && msg.contains("'xx'")
+            && msg.contains("not in Adzuna's supported market list"),
+        "diagnostic error must name the provider ('adzuna:'), the country code (\"'xx'\"), \
+         and the supported-market-list phrase; got: {msg}"
+    );
+}
+
+/// Supported country → Adzuna used normally (allowlist does not interfere).
+#[tokio::test]
+async fn supported_country_uses_adzuna_normally() {
+    let adzuna_posting = sample_posting("de1", "adzuna");
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::ok("adzuna", vec![adzuna_posting.clone()])),
+        Box::new(FakeProvider::err("jsearch", "should not be called")),
+    ];
+
+    let result = search_with_providers(&providers, "engineer", "Berlin", "de", None, make_token())
+        .await
+        .unwrap();
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].external_id, adzuna_posting.external_id);
+}
+
+/// Neither configured + unsupported country → keyless-empty (no keys = no
+/// diagnostic; the user hasn't set up any provider at all).
+#[tokio::test]
+async fn unsupported_country_no_keys_returns_keyless_empty() {
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::unconfigured("adzuna")),
+        Box::new(FakeProvider::unconfigured("jsearch")),
+    ];
+
+    let result = search_with_providers(&providers, "engineer", "Seoul", "xx", None, make_token())
+        .await
+        .unwrap();
+
+    assert!(
+        result.is_empty(),
+        "no keys at all must still return keyless-empty (no diagnostic needed)"
+    );
+}
+
+/// `AdzunaProvider::search` returns Err for an unsupported country without
+/// making any network call — confirmed by the fact that the provider has
+/// valid-looking (non-None) credentials but the country check fires first.
+#[tokio::test]
+async fn adzuna_provider_rejects_unsupported_country_before_network() {
+    let p = AdzunaProvider {
+        app_id: Some("fake-id".to_string()),
+        app_key: Some("fake-key".to_string()),
+    };
+    // "xx" is not in the allowlist.
+    let result = p
+        .search("engineer", "Seoul", "xx", None, make_token())
+        .await;
+    assert!(
+        result.is_err(),
+        "AdzunaProvider must Err for unsupported country without a network call"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("not in Adzuna's supported market list"),
+        "error must mention the allowlist; got: {msg}"
+    );
+    assert!(
+        msg.contains("JSearch"),
+        "error must mention JSearch as the remedy; got: {msg}"
+    );
+}
+
+/// `AdzunaProvider::search` accepts a supported country and proceeds past the
+/// allowlist check (it will fail further on network/auth, not on country).
+#[tokio::test]
+async fn adzuna_provider_accepts_supported_country_passes_allowlist() {
+    let p = AdzunaProvider {
+        app_id: Some("fake-id".to_string()),
+        app_key: Some("fake-key".to_string()),
+    };
+    // "de" is in the allowlist; the error that comes back must NOT mention the
+    // allowlist — it should be a network/auth error (or similar), not a country error.
+    let result = p
+        .search("engineer", "Berlin", "de", None, make_token())
+        .await;
+    // We expect an error (no real API key) — an unexpected Ok would mean the test
+    // environment somehow hit the real API, which must not silently pass unnoticed.
+    let e = result.unwrap_err();
+    assert!(
+        !e.to_string()
+            .contains("not in Adzuna's supported market list"),
+        "supported country 'de' must pass the allowlist check; got: {e}"
+    );
 }

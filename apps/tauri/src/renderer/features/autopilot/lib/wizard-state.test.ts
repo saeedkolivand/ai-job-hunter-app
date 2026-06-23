@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Autopilot } from '@ajh/shared';
+import { AGGREGATOR_BOARD_ID, type Autopilot, type JobPreferences } from '@ajh/shared';
 
 import type { WizardState } from '@/features/autopilot/types';
 
@@ -18,9 +18,7 @@ const BASE_AUTOPILOT: Autopilot = {
   name: 'My autopilot',
   status: 'active',
   target: {
-    // Autopilot.target type still carries the legacy `board: string` shape; runtime
-    // sends `boards: string[]` — the cast in autopilotToWizardState handles both.
-    board: 'linkedin',
+    boards: ['linkedin'],
     query: 'react developer',
     location: 'Berlin',
     workType: 'remote',
@@ -81,6 +79,18 @@ describe('buildDefaults()', () => {
   it('defaults to boards: ["aggregator"]', () => {
     expect(buildDefaults().boards).toEqual(['aggregator']);
   });
+
+  it('keywords is empty string even when jobPrefs has a techStack (Fix B regression lock)', () => {
+    // Before the fix, keywords was seeded with the entire tech stack joined by ", ".
+    // After: always '' so the must-include filter starts opt-in, not pre-populated.
+    const prefs: JobPreferences = {
+      techStack: [
+        { name: 'react', category: 'frontend' },
+        { name: 'typescript', category: 'language' },
+      ],
+    };
+    expect(buildDefaults(prefs).keywords).toBe('');
+  });
 });
 
 // ── autopilotToWizardState ────────────────────────────────────────────────────
@@ -114,7 +124,6 @@ describe('autopilotToWizardState()', () => {
   it('round-trips all other top-level fields correctly', () => {
     const state = autopilotToWizardState(BASE_AUTOPILOT);
     expect(state.name).toBe('My autopilot');
-    // Legacy `board: string` autopilots are normalized to `boards: [board]`.
     expect(state.boards).toEqual(['linkedin']);
     expect(state.query).toBe('react developer');
     expect(state.schedule).toBe('daily');
@@ -122,15 +131,37 @@ describe('autopilotToWizardState()', () => {
     expect(state.resumeText).toBe('My resume text');
   });
 
-  it('reads boards array from new-style autopilots', () => {
-    // Runtime payload has `boards: string[]`; the static Autopilot type still carries
-    // the legacy `board: string`. Use a double-cast to simulate the runtime shape.
-    const ap = {
+  it('reads all boards from a multi-board autopilot', () => {
+    const ap: Autopilot = {
       ...BASE_AUTOPILOT,
       target: { ...BASE_AUTOPILOT.target, boards: ['linkedin', 'indeed'] },
-    } as unknown as Autopilot;
+    };
     const state = autopilotToWizardState(ap);
     expect(state.boards).toEqual(['linkedin', 'indeed']);
+  });
+
+  it('falls back to aggregator when target.boards is empty', () => {
+    const ap: Autopilot = {
+      ...BASE_AUTOPILOT,
+      target: { ...BASE_AUTOPILOT.target, boards: [] },
+    };
+    const state = autopilotToWizardState(ap);
+    expect(state.boards).toEqual([AGGREGATOR_BOARD_ID]);
+  });
+
+  it('round-trips countryCode when target carries one (Fix A)', () => {
+    const ap: Autopilot = {
+      ...BASE_AUTOPILOT,
+      target: { ...BASE_AUTOPILOT.target, countryCode: 'us' },
+    };
+    const state = autopilotToWizardState(ap);
+    expect(state.countryCode).toBe('us');
+  });
+
+  it('yields undefined countryCode when target does not carry one', () => {
+    // BASE_AUTOPILOT.target has no countryCode → wizard state must be undefined.
+    const state = autopilotToWizardState(BASE_AUTOPILOT);
+    expect(state.countryCode).toBeUndefined();
   });
 
   it('joins keywords array to a comma-separated string', () => {
@@ -272,6 +303,24 @@ describe('wizardStateToPayload()', () => {
       expect(payload.target.location).toBeUndefined();
       expect(payload.target.dateFilter).toBeUndefined();
       expect(payload.resumeText).toBeUndefined();
+    });
+  });
+
+  describe('countryCode forwarding (Fix A)', () => {
+    it('forwards a non-empty countryCode from the form to target', () => {
+      const payload = wizardStateToPayload(makeForm({ countryCode: 'gb' }));
+      expect(payload.target.countryCode).toBe('gb');
+    });
+
+    it('drops countryCode when it is undefined in the form', () => {
+      const payload = wizardStateToPayload(makeForm({ countryCode: undefined }));
+      expect(payload.target.countryCode).toBeUndefined();
+    });
+
+    it('drops countryCode when it is an empty string in the form', () => {
+      // The || undefined guard collapses '' to undefined so it is not forwarded.
+      const payload = wizardStateToPayload(makeForm({ countryCode: '' }));
+      expect(payload.target.countryCode).toBeUndefined();
     });
   });
 });

@@ -143,7 +143,13 @@ export const ScrapeBoardsRequestSchema = z.object({
   dateFilter: z.enum(DATE_FILTER_OPTIONS).optional(),
   // Structured location (from a picked geocode suggestion) — lets boards filter
   // by precise place/country/radius instead of fuzzy free text (#49/#40).
-  countryCode: z.string().optional(),
+  // ISO 3166-1 alpha-2 (the geocode suggestion's countryCode is always 2 letters);
+  // validated here so a malformed value can't propagate through IPC/scraping.
+  countryCode: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z]{2}$/)
+    .optional(),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
   radiusKm: z.number().int().min(0).max(200).optional(),
@@ -353,6 +359,13 @@ export const AutopilotTargetSchema = z.object({
   boards: z.array(z.string().min(1)).min(1).max(6),
   query: z.string().min(1),
   location: z.string().optional(),
+  // ISO 3166-1 alpha-2 (sourced from the same geocode suggestion as the manual
+  // search); validated here so a malformed value can't propagate to scraping.
+  countryCode: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z]{2}$/)
+    .optional(),
   workType: z.enum(['remote', 'hybrid', 'on-site']).optional(),
   pages: z.number().int().min(1).max(10).default(2),
   dateFilter: z.string().optional(),

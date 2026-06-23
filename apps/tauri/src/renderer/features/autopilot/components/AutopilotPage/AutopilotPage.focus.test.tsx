@@ -1,5 +1,5 @@
 /**
- * AutopilotPage — ?focus deep-link consumption (Priority 4)
+ * AutopilotPage — ?focus deep-link consumption + board provenance (Priority 4)
  *
  * Strategy:
  *  - Effect-level test: stub every heavy sub-component (AutopilotCard, CreationWizard,
@@ -9,12 +9,15 @@
  *  - Assert: with `?focus=<id>`, `setAutopilot({ focusedId: focus })` is called
  *    (observed via session-store) and navigate({to:'/autopilot',search:{},replace:true})
  *    is called to clear the param.
+ *  - Board provenance: AutopilotCard stub captures `onApply` so tests invoke
+ *    handleApply directly and assert the `board` forwarded to saveFromPosting.
  */
 
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 
+import type { Autopilot, AutopilotFoundJob } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 
 import { useSessionStore } from '@/store/session-store';
@@ -43,21 +46,29 @@ vi.mock('@/routes/autopilot.index', () => ({
 // ── Services ──────────────────────────────────────────────────────────────────
 
 const mockInvalidateAutopilots = vi.fn();
+const mockMutateAsync = vi.fn();
+let mockAutopilotList: Autopilot[] = [];
 
 vi.mock('@/services', async (importOriginal) => {
   const orig = await importOriginal();
   return {
     ...(orig as object),
-    useAutopilots: () => ({ data: [], isLoading: false }),
+    useAutopilots: () => ({ data: mockAutopilotList, isLoading: false }),
     useInvalidateAutopilots: () => mockInvalidateAutopilots,
-    useSaveFromPosting: () => ({ mutateAsync: vi.fn() }),
+    useSaveFromPosting: () => ({ mutateAsync: mockMutateAsync }),
   };
 });
 
 // ── Heavy sub-component stubs ─────────────────────────────────────────────────
 
+// Captures the onApply callback so board-provenance tests can invoke handleApply directly.
+let capturedOnApply: ((job: AutopilotFoundJob) => void) | null = null;
+
 vi.mock('@/features/autopilot/components/AutopilotCard', () => ({
-  AutopilotCard: () => <div data-testid={TEST_IDS.autopilot.card} />,
+  AutopilotCard: ({ onApply }: { onApply: (job: AutopilotFoundJob) => void }) => {
+    capturedOnApply = onApply;
+    return <div data-testid={TEST_IDS.autopilot.card} />;
+  },
 }));
 
 vi.mock('@/features/autopilot/components/CreationWizard', () => ({
@@ -94,6 +105,9 @@ beforeEach(() => {
   }));
   mockNavigate.mockReset();
   mockInvalidateAutopilots.mockReset();
+  mockMutateAsync.mockReset();
+  mockAutopilotList = [];
+  capturedOnApply = null;
   currentSearch = {};
 });
 
@@ -164,5 +178,77 @@ describe('AutopilotPage — lastAppliedId (re-expand on Back)', () => {
     const { autopilot } = useSessionStore.getState();
     expect(autopilot.focusedId).toBe('ap-7');
     expect(autopilot.lastAppliedId).toBeNull();
+  });
+});
+
+// Minimal fixtures for board-provenance tests
+const makeAutopilot = (boards: string[]): Autopilot => ({
+  _id: 'ap-1',
+  name: 'Test autopilot',
+  status: 'active',
+  target: { boards, query: 'engineer', pages: 1 },
+  filter: { minMatchScore: 0 },
+  schedule: 'manual',
+  totalFound: 0,
+  totalApplied: 0,
+  createdAt: 0,
+  updatedAt: 0,
+});
+
+const makeFoundJob = (board?: string): AutopilotFoundJob => ({
+  title: 'Engineer',
+  company: 'Acme',
+  url: 'https://example.com/job/1',
+  foundAt: 0,
+  board,
+});
+
+describe('AutopilotPage — handleApply board provenance', () => {
+  it('uses job.board when present, ignoring ap.target.boards[0]', async () => {
+    mockAutopilotList = [makeAutopilot(['indeed'])];
+    mockMutateAsync.mockResolvedValue({ id: 'app-99' });
+
+    await act(async () => {
+      render(<AutopilotPage />);
+    });
+
+    if (!capturedOnApply) throw new Error('AutopilotCard onApply was not captured');
+    await act(async () => {
+      (capturedOnApply as (job: AutopilotFoundJob) => void)(makeFoundJob('linkedin'));
+    });
+
+    expect(mockMutateAsync).toHaveBeenCalledWith(expect.objectContaining({ board: 'linkedin' }));
+  });
+
+  it('falls back to ap.target.boards[0] when job.board is absent', async () => {
+    mockAutopilotList = [makeAutopilot(['indeed'])];
+    mockMutateAsync.mockResolvedValue({ id: 'app-99' });
+
+    await act(async () => {
+      render(<AutopilotPage />);
+    });
+
+    if (!capturedOnApply) throw new Error('AutopilotCard onApply was not captured');
+    await act(async () => {
+      (capturedOnApply as (job: AutopilotFoundJob) => void)(makeFoundJob(undefined));
+    });
+
+    expect(mockMutateAsync).toHaveBeenCalledWith(expect.objectContaining({ board: 'indeed' }));
+  });
+
+  it('falls back to AGGREGATOR_BOARD_ID when both job.board and boards[0] are absent', async () => {
+    mockAutopilotList = [makeAutopilot([])];
+    mockMutateAsync.mockResolvedValue({ id: 'app-99' });
+
+    await act(async () => {
+      render(<AutopilotPage />);
+    });
+
+    if (!capturedOnApply) throw new Error('AutopilotCard onApply was not captured');
+    await act(async () => {
+      (capturedOnApply as (job: AutopilotFoundJob) => void)(makeFoundJob(undefined));
+    });
+
+    expect(mockMutateAsync).toHaveBeenCalledWith(expect.objectContaining({ board: 'aggregator' }));
   });
 });

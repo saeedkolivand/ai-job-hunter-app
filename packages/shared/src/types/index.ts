@@ -205,9 +205,10 @@ export interface Autopilot {
   name: string;
   status: AutopilotStatus;
   target: {
-    board: string;
+    boards: string[];
     query: string;
     location?: string;
+    countryCode?: string;
     workType?: 'remote' | 'hybrid' | 'on-site';
     pages: number;
     dateFilter?: string;
@@ -248,6 +249,9 @@ export interface AutopilotFoundJob {
   company: string;
   url: string;
   location?: string;
+  /** Board id the posting was scraped from (its JobPosting.source). Lets the apply
+   *  flow record accurate per-job provenance for multi-board autopilots. */
+  board?: string;
   /** Full job description — used to pre-fill a tailored generation. */
   description?: string;
   /** Match score (0–100) when the posting passed ranking. */

@@ -17,6 +17,7 @@ fn test_autopilot_target_serialization() {
         boards: vec!["linkedin".to_string()],
         query: "software engineer".to_string(),
         location: Some("Berlin".to_string()),
+        country_code: None,
         work_type: None,
         pages: 5,
         date_filter: None,
@@ -412,6 +413,7 @@ fn target_round_trips_as_boards_array() {
         boards: vec!["linkedin".to_string(), "remotive".to_string()],
         query: "rust".to_string(),
         location: None,
+        country_code: None,
         work_type: None,
         pages: 2,
         date_filter: None,
@@ -431,6 +433,69 @@ fn target_round_trips_as_boards_array() {
     assert_eq!(restored.boards, vec!["linkedin", "remotive"]);
 }
 
+// ── AutopilotTarget country_code serde ───────────────────────────────────────
+
+#[test]
+fn target_country_code_absent_deserializes_to_none() {
+    // Backward-compat: a persisted autopilot that pre-dates the country_code field
+    // (i.e. the JSON simply omits "countryCode") must still deserialize cleanly and
+    // yield country_code: None. This guarantees old autopilots continue to load.
+    let json = r#"{
+        "boards": ["aggregator"],
+        "query": "rust developer",
+        "location": "London",
+        "pages": 2,
+        "topN": 3
+    }"#;
+    let target: AutopilotTarget =
+        serde_json::from_str(json).expect("missing countryCode must not fail deserialization");
+    assert!(
+        target.country_code.is_none(),
+        "absent countryCode field must deserialize to None"
+    );
+}
+
+#[test]
+fn target_country_code_round_trips_and_none_is_omitted() {
+    // Round-trip: Some("us") survives serialize → deserialize.
+    // Absence (None) must be omitted from JSON entirely (skip_serializing_if).
+    let with_code = AutopilotTarget {
+        boards: vec!["aggregator".to_string()],
+        query: "frontend engineer".to_string(),
+        location: None,
+        country_code: Some("us".to_string()),
+        work_type: None,
+        pages: 1,
+        date_filter: None,
+        top_n: 3,
+    };
+    let json = serde_json::to_string(&with_code).unwrap();
+    // camelCase rename_all means the field is "countryCode" on the wire.
+    assert!(
+        json.contains("\"countryCode\":\"us\""),
+        "country_code Some(\"us\") must serialize as camelCase countryCode"
+    );
+    let restored: AutopilotTarget = serde_json::from_str(&json).unwrap();
+    assert_eq!(restored.country_code, Some("us".to_string()));
+
+    // None must be omitted — not written as null or empty string.
+    let without_code = AutopilotTarget {
+        boards: vec!["aggregator".to_string()],
+        query: "frontend engineer".to_string(),
+        location: None,
+        country_code: None,
+        work_type: None,
+        pages: 1,
+        date_filter: None,
+        top_n: 3,
+    };
+    let json_none = serde_json::to_string(&without_code).unwrap();
+    assert!(
+        !json_none.contains("countryCode"),
+        "country_code None must be omitted from serialized JSON (skip_serializing_if)"
+    );
+}
+
 // ── found_job helper ──────────────────────────────────────────────────────────
 
 fn found_job(url: &str, found_at: u64) -> FoundJob {
@@ -439,6 +504,7 @@ fn found_job(url: &str, found_at: u64) -> FoundJob {
         company: "Acme".into(),
         url: url.into(),
         location: None,
+        board: None,
         description: None,
         score: None,
         found_at,
@@ -523,5 +589,61 @@ fn record_run_reports_only_newly_surfaced_jobs() {
     assert_eq!(
         store.record_run("missing", 5, 0, vec![found_job("x", 1)]),
         0
+    );
+}
+
+#[test]
+fn found_job_without_board_deserializes_to_none() {
+    // Old persisted FoundJob records pre-date the `board` field. The
+    // `#[serde(default)]` must let them load with `board: None` rather than failing.
+    let json = r#"{
+        "title": "Engineer",
+        "company": "Acme",
+        "url": "https://a.com/1",
+        "foundAt": 100
+    }"#;
+    let job: FoundJob = serde_json::from_str(json).expect("legacy FoundJob must deserialize");
+    assert_eq!(job.board, None, "absent board must default to None");
+}
+
+#[test]
+fn found_job_with_board_round_trips() {
+    // A FoundJob carrying a board serializes the camelCase key and round-trips.
+    let mut job = found_job("https://a.com/1", 100);
+    job.board = Some("aggregator".into());
+    let json = serde_json::to_string(&job).unwrap();
+    assert!(
+        json.contains("\"board\":\"aggregator\""),
+        "board must serialize as a camelCase string; got {json}"
+    );
+    let restored: FoundJob = serde_json::from_str(&json).unwrap();
+    assert_eq!(restored.board, Some("aggregator".to_string()));
+}
+
+#[test]
+fn merge_preserves_and_refreshes_board_across_resurface() {
+    // An existing row persisted before `board` existed (None) must pick up the
+    // board when the same URL re-surfaces, and a never-seen URL keeps its board.
+    let mut existing = found_job("https://a.com/1", 100);
+    existing.board = None; // legacy row, no provenance yet
+
+    let mut resurfaced = found_job("https://a.com/1", 999);
+    resurfaced.board = Some("linkedin".into());
+    let mut fresh = found_job("https://a.com/2", 200);
+    fresh.board = Some("aggregator".into());
+
+    let merged = merge_found_jobs(&[existing], vec![resurfaced, fresh]);
+
+    let a1 = merged.iter().find(|j| j.url == "https://a.com/1").unwrap();
+    assert_eq!(
+        a1.board,
+        Some("linkedin".to_string()),
+        "re-surfaced existing row picks up the incoming board"
+    );
+    let a2 = merged.iter().find(|j| j.url == "https://a.com/2").unwrap();
+    assert_eq!(
+        a2.board,
+        Some("aggregator".to_string()),
+        "appended new row keeps its board (via ..inc spread)"
     );
 }

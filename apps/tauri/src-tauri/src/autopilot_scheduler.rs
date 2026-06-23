@@ -204,6 +204,7 @@ mod test {
                 boards: vec!["linkedin".into()],
                 query: "rust".into(),
                 location: None,
+                country_code: None,
                 work_type: None,
                 pages: 1,
                 date_filter: None,

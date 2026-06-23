@@ -193,7 +193,14 @@ export function StepTarget({ prefilled }: StepTargetProps) {
               <div className="space-y-1.5">
                 <LocationInput
                   value={field.value}
-                  onChange={field.onChange}
+                  onChange={(v) => {
+                    field.onChange(v);
+                    setValue('countryCode', undefined, { shouldDirty: true });
+                  }}
+                  onSelectSuggestion={(s) => {
+                    field.onChange(s.display);
+                    setValue('countryCode', s.countryCode ?? undefined, { shouldDirty: true });
+                  }}
                   placeholder={t('autopilot.wizard.target.locationPlaceholder')}
                   onFetchSuggestions={(q) => api.geocode.suggest(q)}
                 />

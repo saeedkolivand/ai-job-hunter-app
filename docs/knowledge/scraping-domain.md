@@ -1,6 +1,6 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-06-21
+Last updated: 2026-06-23
 
 Describes the job-scraping subsystem: board registry (16 active scrapers), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
@@ -54,10 +54,16 @@ These five boards were retired as direct scrapers (ADR-026, 2026-06-21). Their R
 
 **Provider details, endpoints, and fallback logic:** see `apps/tauri/src-tauri/src/scraping/boards/aggregator/mod.rs` (AdzunaProvider, JSearchProvider, and JobProvider trait).
 
+**Adzuna country-code limitation (PR #483):**
+
+Adzuna's API is path-based per country (`/jobs/{country}/search/1`) and only hosts a fixed set of ~19 markets — see `ADZUNA_SUPPORTED_COUNTRIES` in `apps/tauri/src-tauri/src/scraping/boards/aggregator/mod.rs`. Unsupported country codes return non-2xx errors. The aggregator gates Adzuna requests with this allowlist; unsupported countries trigger a diagnostic `Err` (not silent empty) that surfaces as `BoardScrapeSummary.error` with a JSearch remedy suggestion. JSearch has no country restriction and serves as the fallback for unsupported markets.
+
 **Behavior:**
 
 - **Keyless:** Returns empty results (never crashes; logged as warning).
-- **Provider errors:** Fallback to next provider (Adzuna error → JSearch; empty results are legitimate and do NOT trigger fallback).
+- **Configured-failed:** If a provider is configured (keys present) and fails, diagnostic error surfaces as `BoardScrapeSummary.error` (not silent empty); fallback to next provider.
+- **Unsupported country (Adzuna only):** Pre-request guard rejects before HTTP invocation; error includes remedy (add JSearch key for global coverage).
+- **Empty results:** Legitimate (do NOT trigger fallback to next provider; only errors do).
 - **Cancellation:** Pre-fallback cancel signal skips the paid provider entirely.
 
 ## Scrape results persistence (PR #463)
