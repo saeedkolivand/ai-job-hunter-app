@@ -770,6 +770,36 @@ fn relax_is_noop_on_already_relaxed_record() {
 }
 
 #[test]
+fn relax_keeps_keywords_when_not_legacy() {
+    // Pins the documented narrow gap (autopilot/mod.rs `was_legacy`): a record
+    // with prefilled keywords where the user ALSO changed BOTH the score (≠50.0)
+    // AND the date (≠"24h") reads as non-legacy, so its keywords are KEPT. This
+    // guards against a future change to the `was_legacy` predicate silently
+    // regressing the "err toward keeping user data" direction.
+    let mut ap = base_autopilot();
+    ap.filter.min_match_score = 30.0; // ≠ 50.0
+    ap.target.date_filter = Some("week".into()); // ≠ "24h"
+    ap.filter.keywords = Some(vec!["python".into()]);
+
+    relax_legacy_filters(&mut ap);
+
+    assert_eq!(
+        ap.filter.keywords.as_deref(),
+        Some(["python".to_string()].as_ref()),
+        "non-legacy record (score≠50 AND date≠24h) must keep its keywords"
+    );
+    assert_eq!(
+        ap.filter.min_match_score, 30.0,
+        "non-default score must be left untouched"
+    );
+    assert_eq!(
+        ap.target.date_filter.as_deref(),
+        Some("week"),
+        "non-default date_filter must be left untouched"
+    );
+}
+
+#[test]
 fn relax_clears_none_keywords_remains_none() {
     // keywords already None → still None (no-op, no panic).
     let mut ap = base_autopilot();
