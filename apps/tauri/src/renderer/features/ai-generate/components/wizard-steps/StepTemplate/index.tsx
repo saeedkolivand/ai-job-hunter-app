@@ -53,11 +53,11 @@ export function StepTemplate({
                 'flex flex-col items-start gap-1.5 rounded-xl border p-2 text-left transition-all h-auto',
                 selected
                   ? 'border-brand/50 bg-brand/10 ring-2 ring-brand/40'
-                  : 'border-white/[0.06] bg-white/[0.02] hover:border-white/10'
+                  : 'border-[var(--border-clear)] bg-card hover:bg-muted'
               )}
             >
               {/* Thumbnail */}
-              <div className="relative w-full rounded-lg overflow-hidden bg-white/[0.03] aspect-[3/4] flex items-center justify-center">
+              <div className="relative w-full rounded-lg overflow-hidden bg-muted aspect-[3/4] flex items-center justify-center">
                 {image ? (
                   <Image
                     src={image}
@@ -109,7 +109,7 @@ export function StepTemplate({
             'w-full flex items-center justify-between rounded-xl border px-3 py-2.5 transition-all text-left',
             atsMode
               ? 'border-brand/35 bg-brand/8'
-              : 'border-white/[0.05] bg-transparent hover:border-white/[0.08]'
+              : 'border-[var(--border-clear)] bg-card hover:bg-muted'
           )}
         >
           <div>
@@ -128,7 +128,7 @@ export function StepTemplate({
           <div
             className={cn(
               'h-4 w-7 rounded-full transition-colors shrink-0 ml-3 relative',
-              atsMode ? 'bg-brand' : 'bg-white/10'
+              atsMode ? 'bg-brand' : 'bg-muted'
             )}
           >
             <div

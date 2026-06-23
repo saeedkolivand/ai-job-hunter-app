@@ -179,7 +179,7 @@ export function OutputPanelDone({
       className="flex flex-1 flex-col overflow-hidden"
     >
       {/* Output toolbar */}
-      <div className="shrink-0 flex items-center justify-between border-b border-white/[0.05] px-6 py-3">
+      <div className="shrink-0 flex items-center justify-between border-b border-[var(--border-clear)] px-6 py-3">
         <div className="flex items-center gap-1">
           {(
             [
@@ -213,7 +213,7 @@ export function OutputPanelDone({
           <Button
             onClick={onCopy}
             disabled={isGenerating}
-            className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-[11px] text-foreground/55 hover:bg-white/[0.06] hover:text-foreground transition-colors h-auto disabled:opacity-30 disabled:pointer-events-none"
+            className="flex items-center gap-1.5 rounded-lg bg-muted px-2.5 py-1.5 text-[11px] text-foreground/55 hover:bg-card hover:text-foreground transition-colors h-auto disabled:opacity-30 disabled:pointer-events-none"
           >
             {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
             {copied ? t('aiGenerate.copied') : t('aiGenerate.copy')}
@@ -232,7 +232,7 @@ export function OutputPanelDone({
       {/* Filename preview + active template (#12 — template info on top of the
           resume box; templates apply to résumés, so it's hidden for cover letters). */}
       {(currentMeta || activeOut === 'resume') && (
-        <div className="shrink-0 border-b border-white/[0.05] px-6 py-2 flex items-center gap-2 text-[10px] text-foreground/30">
+        <div className="shrink-0 border-b border-[var(--border-clear)] px-6 py-2 flex items-center gap-2 text-[10px] text-foreground/30">
           {currentMeta && (
             <>
               <FileText size={10} />
@@ -246,7 +246,7 @@ export function OutputPanelDone({
             </>
           )}
           {activeOut === 'resume' && (
-            <span className="ml-auto flex items-center gap-1 rounded bg-white/[0.04] px-1.5 py-0.5 text-foreground/45">
+            <span className="ml-auto flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-foreground/45">
               <LayoutTemplate size={10} />
               {t('aiGenerate.templateLabel')}: {TEMPLATES[templateId].name}
             </span>
@@ -291,7 +291,7 @@ export function OutputPanelDone({
       </div>
 
       {/* Re-generate option */}
-      <div className="shrink-0 border-t border-white/[0.05] px-6 py-3 flex items-center justify-between">
+      <div className="shrink-0 border-t border-[var(--border-clear)] px-6 py-3 flex items-center justify-between">
         <span className="text-[10px] text-foreground/30">
           {MODES[mode as keyof typeof MODES].label} · {meta?.targetLanguage?.toUpperCase() ?? 'EN'}
           {meta?.mismatch && ` · ${t('aiGenerate.localized')}`}

@@ -63,7 +63,7 @@ export function BrowserDetectedState({ browserPath, onBack, onNext }: BrowserDet
         initial={{ y: 10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={withDelay(0.2)}
-        className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4"
+        className="surface-card rounded-xl p-4"
       >
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-red-500 via-yellow-500 to-green-500">
@@ -85,7 +85,7 @@ export function BrowserDetectedState({ browserPath, onBack, onNext }: BrowserDet
         <Button
           variant="default"
           onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
-          className="h-auto w-full justify-between rounded-lg border-white/[0.06] bg-white/[0.02] px-4 py-2.5 text-left font-normal hover:border-white/10 hover:bg-white/[0.04]"
+          className="h-auto w-full justify-between rounded-lg border-[var(--border-clear)] bg-card px-4 py-2.5 text-left font-normal hover:bg-muted"
         >
           <span className="text-xs text-foreground/40">View technical details</span>
           {showTechnicalDetails ? (
@@ -103,7 +103,7 @@ export function BrowserDetectedState({ browserPath, onBack, onNext }: BrowserDet
               transition={transition.normal}
               className="overflow-hidden"
             >
-              <div className="mt-2 rounded-lg border border-white/[0.06] bg-black/30 p-3">
+              <div className="mt-2 rounded-lg border border-[var(--border-clear)] bg-black/30 p-3">
                 <p className="text-xs font-mono text-foreground/30 break-all">{browserPath}</p>
               </div>
             </motion.div>

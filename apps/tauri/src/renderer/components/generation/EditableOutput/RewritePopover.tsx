@@ -149,9 +149,9 @@ export function RewritePopover({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 6, scale: 0.98 }}
       transition={transition.fast}
-      className="w-[22rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-white/10 bg-secondary shadow-2xl"
+      className="w-[22rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-[var(--border-clear)] bg-secondary shadow-2xl"
     >
-      <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
+      <div className="flex items-center justify-between border-b border-[var(--border-clear)] px-3 py-2">
         <span className="flex items-center gap-1.5 text-[11px] font-medium text-foreground/70">
           <Sparkles size={12} className="text-brand-soft" />
           {t('aiGenerate.rewrite.title')}
@@ -173,7 +173,7 @@ export function RewritePopover({
           <p className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-foreground/35">
             {t('aiGenerate.rewrite.selectionLabel')}
           </p>
-          <p className="max-h-16 overflow-y-auto whitespace-pre-wrap rounded-md bg-white/[0.03] px-2 py-1.5 text-[11px] leading-relaxed text-foreground/55">
+          <p className="max-h-16 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted px-2 py-1.5 text-[11px] leading-relaxed text-foreground/55">
             {target.selection}
           </p>
         </div>
@@ -241,7 +241,7 @@ export function RewritePopover({
       </div>
 
       {/* Actions */}
-      <div className="flex items-center justify-end gap-2 border-t border-white/[0.06] px-3 py-2">
+      <div className="flex items-center justify-end gap-2 border-t border-[var(--border-clear)] px-3 py-2">
         <Button
           variant="unstyled"
           type="button"
@@ -254,7 +254,7 @@ export function RewritePopover({
           <Button
             type="button"
             onClick={() => run(lastInstructionRef.current)}
-            className="rounded-lg border-transparent bg-white/[0.05] px-2.5 py-1 text-[11px] text-foreground/60 transition-colors hover:text-foreground h-auto"
+            className="rounded-lg border-transparent bg-muted px-2.5 py-1 text-[11px] text-foreground/60 transition-colors hover:text-foreground h-auto"
           >
             {t('aiGenerate.rewrite.regenerate')}
           </Button>

@@ -84,7 +84,7 @@ function renderBlocks(text: string, onLinkClick: LinkClick): React.ReactNode[] {
     }
 
     if (/^---+$/.test(line.trim())) {
-      nodes.push(<hr key={nodes.length} className="my-3 border-white/10" />);
+      nodes.push(<hr key={nodes.length} className="my-3 border-[var(--border-clear)]" />);
       i++;
       continue;
     }

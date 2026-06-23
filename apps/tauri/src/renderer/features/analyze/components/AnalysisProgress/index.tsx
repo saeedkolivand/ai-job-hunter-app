@@ -100,7 +100,7 @@ export function AnalysisProgress({
         : '';
 
   return (
-    <div className="mt-4 rounded-xl border border-white/[0.07] bg-white/[0.02] px-6 py-6 space-y-5">
+    <div className="mt-4 rounded-xl border border-[var(--border-clear)] bg-card px-6 py-6 space-y-5">
       {/* Top row */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">

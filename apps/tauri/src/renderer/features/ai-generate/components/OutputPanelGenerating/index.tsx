@@ -44,7 +44,7 @@ export function OutputPanelGenerating({
       className="flex flex-1 flex-col overflow-hidden"
     >
       {/* Stage label */}
-      <div className="shrink-0 border-b border-white/[0.05] px-6 py-4">
+      <div className="shrink-0 border-b border-[var(--border-clear)] px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Loader2
@@ -74,7 +74,7 @@ export function OutputPanelGenerating({
             </span>
           )}
         </div>
-        <div className="mt-2 h-0.5 overflow-hidden rounded-full bg-white/[0.06]">
+        <div className="mt-2 h-0.5 overflow-hidden rounded-full bg-muted">
           <motion.div
             className="h-full rounded-full bg-gradient-to-r from-brand to-brand-soft"
             initial={{ width: '0%' }}

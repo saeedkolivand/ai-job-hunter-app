@@ -104,7 +104,7 @@ export function WelcomeStep({ onNext, direction, stepIndex, totalSteps }: Props)
                     'flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-all duration-150 h-auto w-full',
                     active
                       ? 'border-brand/40 bg-brand/10 text-foreground/90'
-                      : 'border-white/[0.06] bg-white/[0.02] text-foreground/55 hover:border-white/10 hover:bg-white/[0.05] hover:text-foreground/80'
+                      : 'border-[var(--border-clear)] bg-card text-foreground/55 hover:bg-muted hover:text-foreground/80'
                   )}
                 >
                   <span className="text-sm leading-none">{flag}</span>

@@ -30,12 +30,12 @@ export function HardwarePopover({
     <HoverPopover
       placement="bottom"
       ariaLabel={t('onboarding.ai.systemPerformance')}
-      contentClassName="w-64 rounded-xl border border-white/[0.1] bg-[var(--color-card)] p-4 shadow-2xl"
+      contentClassName="w-64 rounded-xl border border-[var(--border-clear)] bg-card p-4 shadow-2xl"
       trigger={
         <Button
           variant="unstyled"
           aria-label={t('onboarding.ai.systemPerformance')}
-          className="flex w-full items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 cursor-help text-left"
+          className="flex w-full items-center gap-3 rounded-xl border border-[var(--border-clear)] bg-card px-4 py-3 cursor-help text-left"
         >
           <MemoryStick size={14} className="text-foreground/30" />
           <div className="flex-1">

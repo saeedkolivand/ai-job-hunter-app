@@ -30,7 +30,7 @@ export function TabSwitcher({ mode, onModeChange }: TabSwitcherProps) {
       initial={{ y: 10, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={withDelay(0.1)}
-      className="mb-5 flex rounded-xl border border-white/[0.07] bg-white/[0.02] p-1"
+      className="mb-5 flex rounded-xl border border-[var(--border-clear)] bg-muted p-1"
     >
       {TABS.map(({ id, label, icon: Icon }) => (
         <Button

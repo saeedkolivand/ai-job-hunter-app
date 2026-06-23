@@ -161,7 +161,7 @@ export function ModelSelectionPanel({
                     <span>{Math.round(pullProgress)}%</span>
                   </div>
                 </div>
-                <div className="h-1 overflow-hidden rounded-full bg-white/[0.06]">
+                <div className="h-1 overflow-hidden rounded-full bg-muted">
                   <motion.div
                     className={`h-full rounded-full bg-gradient-to-r from-brand via-brand-soft to-brand-soft ${
                       pullState === 'done' ? 'bg-emerald-500' : ''

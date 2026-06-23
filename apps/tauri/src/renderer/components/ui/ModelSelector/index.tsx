@@ -172,7 +172,7 @@ export function ModelSelector({ className }: ModelSelectorProps) {
       </div>
       {guidance && (
         <p className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] leading-relaxed text-foreground/40">
-          <span className="rounded bg-white/[0.06] px-1.5 py-0.5 font-medium text-foreground/55">
+          <span className="rounded bg-muted px-1.5 py-0.5 font-medium text-foreground/55">
             {t(`models.tier.${guidance.tier}`)}
           </span>
           <span className="text-foreground/55">{t(`models.guidance.task.${guidance.task}`)}</span>
