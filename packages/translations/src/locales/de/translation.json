@@ -1252,8 +1252,6 @@
       "back": "Zurück zum Autopilot",
       "match": "Übereinstimmung",
       "jobDescription": "Stellenbeschreibung",
-      "noDescription": "Für diesen Job wurde keine Beschreibung erfasst.",
-      "loadFailed": "Diese Anzeige konnte nicht geladen werden — sie ist möglicherweise geschlossen oder erfordert eine Anmeldung.",
       "fetchingDescription": "Stellenbeschreibung wird abgerufen…",
       "generate": "Generieren",
       "generating": "Generiere…",

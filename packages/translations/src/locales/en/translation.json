@@ -1248,8 +1248,6 @@
       "back": "Back to autopilot",
       "match": "match",
       "jobDescription": "Job description",
-      "noDescription": "No description was captured for this job.",
-      "loadFailed": "Couldn't load this posting — it may be closed or require sign-in.",
       "fetchingDescription": "Fetching job description…",
       "generate": "Generate",
       "generating": "Generating…",
