@@ -1,5 +1,5 @@
 import { ExternalLink as ExternalLinkIcon, Loader2, Sparkles } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
@@ -65,6 +65,16 @@ export function JobAdView({
   const [tab, setTab] = useState<'summary' | 'source'>(
     !hasDesc || truncated ? 'source' : 'summary'
   );
+
+  // Re-pick the default sub-tab only when the POSTING changes (new jobUrl), not on
+  // every jobDesc edit — pasting into the source textarea changes `truncated`, and
+  // resyncing on that would yank the user out of the textarea they're editing.
+  const prevJobUrl = useRef(jobUrl);
+  useEffect(() => {
+    if (prevJobUrl.current === jobUrl) return;
+    prevJobUrl.current = jobUrl;
+    setTab(!hasDesc || looksPartial(jobDesc) ? 'source' : 'summary');
+  }, [jobUrl, hasDesc, jobDesc]);
 
   // Sourced from OUTPUT_LANGUAGES (the single locale source of truth) so each value
   // is a locale CODE the generation pipeline's safeLocale accepts — display names

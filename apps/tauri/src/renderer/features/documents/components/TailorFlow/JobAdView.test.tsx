@@ -280,3 +280,85 @@ describe('JobAdView — TextArea a11y wiring', () => {
     );
   });
 });
+
+// ── 7. Tab resync on posting change ──────────────────────────────────────────
+
+describe('JobAdView — tab resync on posting change', () => {
+  it('does NOT switch tab when jobDesc changes but jobUrl stays the same (no-yank guard)', () => {
+    // Start on source tab (truncated posting).
+    const { rerender } = render(
+      <JobAdView
+        {...makeProps({ jobUrl: 'https://example.com/job/1', jobDesc: 'Partial…', hasDesc: true })}
+      />
+    );
+    // Confirm we started on source.
+    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea)).toBeInTheDocument();
+
+    // Simulate the user pasting a full description — jobDesc changes, jobUrl stays the same.
+    rerender(
+      <JobAdView
+        {...makeProps({
+          jobUrl: 'https://example.com/job/1',
+          jobDesc: 'Full description that is no longer truncated.',
+          hasDesc: true,
+        })}
+      />
+    );
+
+    // Tab must NOT flip to summary — the user is still editing in the textarea.
+    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea)).toBeInTheDocument();
+  });
+
+  it('re-derives to summary when a new jobUrl arrives with a full description', () => {
+    // Posting #1 — truncated, starts on source.
+    const { rerender } = render(
+      <JobAdView
+        {...makeProps({ jobUrl: 'https://example.com/job/1', jobDesc: 'Partial…', hasDesc: true })}
+      />
+    );
+    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea)).toBeInTheDocument();
+
+    // Navigate to posting #2 — full description, different URL.
+    rerender(
+      <JobAdView
+        {...makeProps({
+          jobUrl: 'https://example.com/job/2',
+          jobDesc: 'Full description with plenty of content.',
+          hasDesc: true,
+        })}
+      />
+    );
+
+    // Tab should re-derive to summary (full desc, not truncated).
+    expect(screen.queryByTestId(TEST_IDS.documents.jobAdViewTextarea)).not.toBeInTheDocument();
+    expect(screen.getByText('autopilot.apply.jobAdView.generateSummary')).toBeInTheDocument();
+  });
+
+  it('re-derives to source when a new jobUrl arrives with no description (hasDesc false)', () => {
+    // Posting #1 — full description, starts on summary.
+    const { rerender } = render(
+      <JobAdView
+        {...makeProps({
+          jobUrl: 'https://example.com/job/1',
+          jobDesc: 'Full description with plenty of content.',
+          hasDesc: true,
+        })}
+      />
+    );
+    expect(screen.queryByTestId(TEST_IDS.documents.jobAdViewTextarea)).not.toBeInTheDocument();
+
+    // Navigate to posting #2 — no description.
+    rerender(
+      <JobAdView
+        {...makeProps({
+          jobUrl: 'https://example.com/job/2',
+          jobDesc: '',
+          hasDesc: false,
+        })}
+      />
+    );
+
+    // Tab should re-derive to source (no desc).
+    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea)).toBeInTheDocument();
+  });
+});
