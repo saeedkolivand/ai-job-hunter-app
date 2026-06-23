@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.115.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.114.0...v0.115.0) (2026-06-23)
+
+### ✨ Features
+
+* auto-commit preview edits and add referral improve-with-ai ([#476](https://github.com/saeedkolivand/ai-job-hunter-app/issues/476)) ([bc78377](https://github.com/saeedkolivand/ai-job-hunter-app/commit/bc7837727cb151e430f14e86542ce85bae993f4d))
+
+### 🐛 Bug Fixes
+
+* buffer cold-start deep-link autopilot focus so it isn't lost ([#477](https://github.com/saeedkolivand/ai-job-hunter-app/issues/477)) ([f15e83d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f15e83d190cf720aa3eb0af4d6e6253664b9ce10))
+* show aggregator in autopilot; centralize board and date-filter constants ([#473](https://github.com/saeedkolivand/ai-job-hunter-app/issues/473)) ([99e7286](https://github.com/saeedkolivand/ai-job-hunter-app/commit/99e7286d3a68571af4de811362d41c94a9d156b5))
+
+### 🎨 UI/UX
+
+* flat white content surfaces in light mode + invalid-field borders ([#482](https://github.com/saeedkolivand/ai-job-hunter-app/issues/482)) ([e49dac1](https://github.com/saeedkolivand/ai-job-hunter-app/commit/e49dac1687d7bb3ba7fcb17e97a5e805211f3aa0))
+
+### ♻️ Refactors
+
+* centralize credential slot names in @ajh/shared via codegen ([#472](https://github.com/saeedkolivand/ai-job-hunter-app/issues/472)) ([5299a13](https://github.com/saeedkolivand/ai-job-hunter-app/commit/5299a13cdb04e239761e5a45c2ed28915b551324))
+* centralize data-testid literals into @ajh/test-ids package ([#471](https://github.com/saeedkolivand/ai-job-hunter-app/issues/471)) ([1198158](https://github.com/saeedkolivand/ai-job-hunter-app/commit/11981580c5f2c5dc53579c95932129557ce69855))
+* centralize timeouts/durations and use section/stage registries ([#474](https://github.com/saeedkolivand/ai-job-hunter-app/issues/474)) ([1196b8c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/1196b8c901b0f39e49c79b9e3e674797160ec8d3))
+* replace the native splash window with an in-app overlay ([#475](https://github.com/saeedkolivand/ai-job-hunter-app/issues/475)) ([48f9158](https://github.com/saeedkolivand/ai-job-hunter-app/commit/48f9158f178aff1ccdaa1a6f2dc349d1b29c1c7b))
+
 ## [0.114.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.113.0...v0.114.0) (2026-06-22)
 
 ### ✨ Features
