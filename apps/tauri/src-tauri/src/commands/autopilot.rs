@@ -192,6 +192,14 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
                 company: p.company.clone(),
                 url: p.url.clone(),
                 location: p.location.clone(),
+                board: {
+                    let s = p.source.trim();
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.to_string())
+                    }
+                },
                 description: p.description.clone(),
                 score,
                 found_at,
@@ -460,6 +468,7 @@ mod tests {
             company: "c".into(),
             url: "https://example.com/job".into(),
             location: None,
+            board: None,
             description: None,
             score,
             found_at: 0,

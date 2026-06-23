@@ -80,7 +80,7 @@ function AutopilotPage() {
     try {
       const res = await saveFromPosting.mutateAsync({
         jobUrl: job.url,
-        board: ap.target.boards[0] ?? AGGREGATOR_BOARD_ID,
+        board: job.board ?? ap.target.boards[0] ?? AGGREGATOR_BOARD_ID,
         company: job.company,
         title: job.title,
       });

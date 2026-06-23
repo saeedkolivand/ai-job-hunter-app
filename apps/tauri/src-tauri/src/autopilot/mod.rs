@@ -129,6 +129,10 @@ pub struct FoundJob {
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
+    /// Board id the posting was scraped from (its JobPosting.source). Persisted so the
+    /// apply flow records accurate per-job provenance for multi-board autopilots.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board: Option<String>,
     /// Full job description — used to pre-fill a tailored resume/cover letter generation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -526,6 +530,12 @@ fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<Found
                 row.company = inc.company.clone();
                 if inc.location.is_some() {
                     row.location = inc.location.clone();
+                }
+                // Carry the board over: existing rows persisted before `board` existed
+                // (`None`) pick it up when the same URL re-surfaces; the append branch
+                // (`..inc`) preserves it for never-seen URLs.
+                if inc.board.is_some() {
+                    row.board = inc.board.clone();
                 }
                 if inc.description.is_some() {
                     row.description = inc.description.clone();

@@ -504,6 +504,7 @@ fn found_job(url: &str, found_at: u64) -> FoundJob {
         company: "Acme".into(),
         url: url.into(),
         location: None,
+        board: None,
         description: None,
         score: None,
         found_at,
@@ -588,5 +589,61 @@ fn record_run_reports_only_newly_surfaced_jobs() {
     assert_eq!(
         store.record_run("missing", 5, 0, vec![found_job("x", 1)]),
         0
+    );
+}
+
+#[test]
+fn found_job_without_board_deserializes_to_none() {
+    // Old persisted FoundJob records pre-date the `board` field. The
+    // `#[serde(default)]` must let them load with `board: None` rather than failing.
+    let json = r#"{
+        "title": "Engineer",
+        "company": "Acme",
+        "url": "https://a.com/1",
+        "foundAt": 100
+    }"#;
+    let job: FoundJob = serde_json::from_str(json).expect("legacy FoundJob must deserialize");
+    assert_eq!(job.board, None, "absent board must default to None");
+}
+
+#[test]
+fn found_job_with_board_round_trips() {
+    // A FoundJob carrying a board serializes the camelCase key and round-trips.
+    let mut job = found_job("https://a.com/1", 100);
+    job.board = Some("aggregator".into());
+    let json = serde_json::to_string(&job).unwrap();
+    assert!(
+        json.contains("\"board\":\"aggregator\""),
+        "board must serialize as a camelCase string; got {json}"
+    );
+    let restored: FoundJob = serde_json::from_str(&json).unwrap();
+    assert_eq!(restored.board, Some("aggregator".to_string()));
+}
+
+#[test]
+fn merge_preserves_and_refreshes_board_across_resurface() {
+    // An existing row persisted before `board` existed (None) must pick up the
+    // board when the same URL re-surfaces, and a never-seen URL keeps its board.
+    let mut existing = found_job("https://a.com/1", 100);
+    existing.board = None; // legacy row, no provenance yet
+
+    let mut resurfaced = found_job("https://a.com/1", 999);
+    resurfaced.board = Some("linkedin".into());
+    let mut fresh = found_job("https://a.com/2", 200);
+    fresh.board = Some("aggregator".into());
+
+    let merged = merge_found_jobs(&[existing], vec![resurfaced, fresh]);
+
+    let a1 = merged.iter().find(|j| j.url == "https://a.com/1").unwrap();
+    assert_eq!(
+        a1.board,
+        Some("linkedin".to_string()),
+        "re-surfaced existing row picks up the incoming board"
+    );
+    let a2 = merged.iter().find(|j| j.url == "https://a.com/2").unwrap();
+    assert_eq!(
+        a2.board,
+        Some("aggregator".to_string()),
+        "appended new row keeps its board (via ..inc spread)"
     );
 }
