@@ -29,7 +29,7 @@ export function StepTarget({ target, onTargetChange }: StepTargetProps) {
             'flex flex-col items-center gap-2 rounded-xl border py-6 text-xs font-medium transition-all h-auto',
             target === id
               ? 'border-brand/40 bg-brand/10 text-brand-soft'
-              : 'border-white/[0.06] bg-white/[0.02] text-foreground/45 hover:border-white/10 hover:text-foreground/70'
+              : 'border-[var(--border-clear)] bg-card text-foreground/45 hover:bg-muted hover:text-foreground/70'
           )}
         >
           <Icon size={20} />

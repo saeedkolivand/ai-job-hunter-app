@@ -237,7 +237,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     return (
       <div
         className={cn(
-          'flex flex-col overflow-hidden rounded-lg border border-white/[0.08] bg-white/[0.02]',
+          'flex flex-col overflow-hidden rounded-lg border border-[var(--border-clear)] bg-field',
           'focus-within:border-brand/40 focus-within:ring-1 focus-within:ring-brand/30',
           disabled && 'pointer-events-none opacity-60',
           className

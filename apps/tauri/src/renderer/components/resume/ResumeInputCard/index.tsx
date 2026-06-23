@@ -75,7 +75,7 @@ export function ResumeInputCard({ value, onChange, disabled, placeholder }: Prop
   return (
     <div
       className={cn(
-        'glass-graphite glass-highlight rounded-xl transition-colors',
+        'bg-card border border-[var(--border-clear)] rounded-xl transition-colors',
         value && 'border-brand/20'
       )}
     >
@@ -115,9 +115,9 @@ export function ResumeInputCard({ value, onChange, disabled, placeholder }: Prop
 
           {!disabled && (
             <Button
-              variant="ghost"
+              variant="primary"
               onClick={() => setExpanded(true)}
-              className="h-6 shrink-0 px-2 text-[10px] text-foreground/45 hover:text-foreground/70"
+              className="h-6 shrink-0 px-2 text-[10px]"
             >
               {t('resumeInput.change')}
             </Button>

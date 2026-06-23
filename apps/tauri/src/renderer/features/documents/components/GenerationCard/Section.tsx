@@ -32,7 +32,7 @@ interface SectionProps {
  */
 export function Section({ label, icon: Icon, open, onToggle, badge, children }: SectionProps) {
   return (
-    <div className="border-t border-white/[0.04]">
+    <div className="border-t border-[var(--border-clear)]">
       <Button
         variant="unstyled"
         onClick={onToggle}
@@ -42,7 +42,7 @@ export function Section({ label, icon: Icon, open, onToggle, badge, children }: 
         <span className="flex items-center gap-2">
           <Icon size={12} /> {label}
           {badge !== undefined && (
-            <span className="rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px] text-foreground/45">
+            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-foreground/45">
               {badge}
             </span>
           )}

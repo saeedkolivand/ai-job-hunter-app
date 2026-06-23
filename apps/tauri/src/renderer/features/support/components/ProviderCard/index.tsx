@@ -30,7 +30,7 @@ export function ProviderCard({
   const Icon = config.icon;
 
   return (
-    <div className="flex items-start justify-between p-4 rounded-xl bg-white/[0.02]">
+    <div className="flex items-start justify-between p-4 rounded-xl bg-card border border-[var(--border-clear)]">
       <div className="flex items-start gap-3">
         <Icon size={16} className={cn('mt-0.5 shrink-0', config.color)} />
         <div>

@@ -120,7 +120,7 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
           'focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-1 focus-visible:outline-none',
           dragActive
             ? 'border-brand/50 bg-brand/5'
-            : 'border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]',
+            : 'border-[var(--border-clear)] bg-card hover:bg-muted',
           uploading && 'cursor-default opacity-60'
         )}
       >
@@ -148,7 +148,7 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
           </div>
         ) : (
           <div className="flex flex-col items-center gap-3">
-            <div className={cn('rounded-full p-3', dragActive ? 'bg-brand/15' : 'bg-white/5')}>
+            <div className={cn('rounded-full p-3', dragActive ? 'bg-brand/15' : 'bg-muted')}>
               <Upload
                 size={22}
                 className={cn(

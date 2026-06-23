@@ -86,11 +86,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             // Default height matches Button's default (h-8) so toolbars line up;
             // overridable via wrapperClassName. Skipped for the unstyled escape hatch.
             !unstyled && 'h-8',
-            !unstyled &&
-              variant !== 'glass' && ['border border-[var(--border-clear)] bg-field shadow-sm'],
-            !unstyled && variant === 'glass' && 'glass shadow-sm',
+            !unstyled && 'border border-[var(--border-clear)] bg-field',
             // Focus ring on the wrapper, not the input.
             'focus-within:outline-none focus-within:ring-2 focus-within:ring-brand/50 focus-within:ring-offset-1 focus-within:ring-offset-transparent',
+            !unstyled && 'has-[input[aria-invalid=true]]:border-red-500/60',
             wrapperClassName
           )}
         >
@@ -122,8 +121,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         className={cn(
           !unstyled &&
             'input-field h-8 rounded-lg px-3 text-sm text-foreground placeholder:text-foreground/30 transition-shadow duration-150',
-          variant === 'default' && 'border border-[var(--border-clear)] bg-field shadow-sm',
-          variant === 'glass' && 'glass shadow-sm',
+          // `glass` is now an alias of `default` (both flat white/field), kept for API compatibility.
+          (variant === 'default' || variant === 'glass') &&
+            'border border-[var(--border-clear)] bg-field aria-[invalid=true]:border-red-500/60',
           // Reserve room so long text doesn't slide under the clear button.
           allowClear && 'pr-9',
           className

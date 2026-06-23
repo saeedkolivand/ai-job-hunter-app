@@ -82,7 +82,7 @@ export function CliAgentPanel({ selectedProvider, onProviderChange }: CliAgentPa
               className={`flex w-full items-center gap-3 rounded-xl border px-4 py-2.5 text-left transition-all duration-150 ${
                 isSelected
                   ? 'border-brand/40 bg-brand/10'
-                  : 'border-white/[0.07] bg-white/[0.02] hover:border-white/20'
+                  : 'border-[var(--border-clear)] bg-card hover:bg-muted'
               }`}
             >
               <Bot size={14} className={isSelected ? a.color : 'text-foreground/30'} />

@@ -56,7 +56,7 @@ export function StepModel({ canUse, reason }: StepModelProps) {
               'flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-all',
               field.value
                 ? 'border-brand/35 bg-brand/8'
-                : 'border-white/[0.05] bg-transparent hover:border-white/[0.08]'
+                : 'border-[var(--border-clear)] bg-transparent hover:bg-muted'
             )}
           >
             <span className="flex min-w-0 items-start gap-2">
@@ -78,7 +78,7 @@ export function StepModel({ canUse, reason }: StepModelProps) {
             <span
               className={cn(
                 'relative ml-3 h-4 w-7 shrink-0 rounded-full transition-colors',
-                field.value ? 'bg-brand' : 'bg-white/10'
+                field.value ? 'bg-brand' : 'bg-muted'
               )}
             >
               <span

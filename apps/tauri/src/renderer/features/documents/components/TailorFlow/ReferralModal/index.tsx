@@ -146,7 +146,7 @@ export function ReferralModal({ job, resume, onClose }: Props) {
       zIndex={650}
       ariaLabelledby="referral-modal-title"
       header={
-        <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] px-5 py-4">
+        <div className="flex items-start justify-between gap-3 border-b border-[var(--border-clear)] px-5 py-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <UserPlus size={14} className="shrink-0 text-brand-soft" />
@@ -174,7 +174,7 @@ export function ReferralModal({ job, resume, onClose }: Props) {
       {/* Body */}
       <div className="space-y-4 px-5 py-4">
         {/* Privacy note — this stores another person's details. */}
-        <div className="flex items-start gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2">
+        <div className="flex items-start gap-2 rounded-lg border border-[var(--border-clear)] bg-card px-3 py-2">
           <ShieldCheck size={13} className="mt-0.5 shrink-0 text-brand-soft" />
           <p className="text-[10px] leading-relaxed text-foreground/55">
             {t('autopilot.referral.privacy')}
@@ -231,7 +231,7 @@ export function ReferralModal({ job, resume, onClose }: Props) {
             <TextArea
               id="referral-notes"
               variant="default"
-              className="w-full rounded-lg bg-white/5 px-3 py-2 shadow-none"
+              className="w-full shadow-none"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
@@ -291,7 +291,7 @@ export function ReferralModal({ job, resume, onClose }: Props) {
 
         {/* Draft output — generated message, Improve with AI affordance, and actions. */}
         {(gen.draft || gen.generating) && (
-          <div className="space-y-1.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+          <div className="surface-card space-y-1.5 rounded-lg px-3 py-2.5">
             <StreamingText text={gen.draft} isStreaming={gen.generating} />
             <div className="flex items-center justify-between gap-2 pt-1">
               {isNote ? (
@@ -331,7 +331,7 @@ export function ReferralModal({ job, resume, onClose }: Props) {
 
             {/* Improve with AI — only visible when a draft exists and not streaming. */}
             {gen.draft && !gen.generating && (
-              <div className="space-y-2 border-t border-white/[0.06] pt-2">
+              <div className="space-y-2 border-t border-[var(--border-clear)] pt-2">
                 {/* Preset chips */}
                 <div
                   className="flex flex-wrap gap-1.5"

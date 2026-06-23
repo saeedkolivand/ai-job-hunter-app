@@ -61,9 +61,9 @@ export function ExportModal({ open, onClose, meta, docType, onExport }: Props) {
                 key={id}
                 onClick={() => void handle(id)}
                 disabled={loading !== null}
-                className="flex w-full items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 text-left transition-colors hover:border-brand/30 hover:bg-brand/5 h-auto disabled:opacity-50"
+                className="flex w-full items-center gap-3 rounded-xl border border-[var(--border-clear)] bg-card px-4 py-3 text-left transition-colors hover:border-brand/30 hover:bg-brand/5 h-auto disabled:opacity-50"
               >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.04]">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted">
                   {loading === id ? (
                     <Loader2 size={14} className="animate-spin text-brand-soft" />
                   ) : (

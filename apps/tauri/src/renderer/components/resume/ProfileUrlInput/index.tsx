@@ -27,7 +27,7 @@ export function ProfileUrlInput({
   if (!show) return null;
 
   return (
-    <div className="flex flex-col border-t border-white/[0.05]">
+    <div className="flex flex-col border-t border-[var(--border-clear)]">
       <div className="flex items-center gap-2 px-3 py-2">
         <Input
           variant="unstyled"

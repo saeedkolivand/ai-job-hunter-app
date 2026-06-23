@@ -21,11 +21,11 @@ export function AnalysisRewrites({ result }: AnalysisRewritesProps) {
       </div>
       <div className="space-y-4">
         {result.rewrites.map((rw, i) => (
-          <div key={i} className="rounded-xl border border-white/[0.06] overflow-hidden">
-            <div className="border-b border-white/[0.06] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-foreground/55">
+          <div key={i} className="rounded-xl border border-[var(--border-clear)] overflow-hidden">
+            <div className="border-b border-[var(--border-clear)] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-foreground/55">
               {rw.section}
             </div>
-            <div className="grid @lg:grid-cols-2 divide-y @lg:divide-y-0 @lg:divide-x divide-white/[0.06]">
+            <div className="grid @lg:grid-cols-2 divide-y @lg:divide-y-0 @lg:divide-x divide-[var(--border-clear)]">
               <div className="px-3 py-2.5">
                 <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-foreground/55">
                   Before
@@ -40,7 +40,7 @@ export function AnalysisRewrites({ result }: AnalysisRewritesProps) {
               </div>
             </div>
             {rw.reason && (
-              <div className="border-t border-white/[0.06] px-3 py-1.5 text-[10px] text-foreground/30">
+              <div className="border-t border-[var(--border-clear)] px-3 py-1.5 text-[10px] text-foreground/30">
                 💡 {rw.reason}
               </div>
             )}

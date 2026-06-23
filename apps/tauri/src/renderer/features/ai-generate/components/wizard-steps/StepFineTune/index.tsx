@@ -110,7 +110,7 @@ export function StepFineTune({
                   'w-full flex items-center gap-3 rounded-xl border px-3 py-2 text-left transition-all h-auto',
                   mode === id
                     ? 'border-brand/35 bg-brand/8 text-foreground/90'
-                    : 'border-white/[0.05] bg-transparent text-foreground/50 hover:border-white/[0.08] hover:text-foreground/75'
+                    : 'border-[var(--border-clear)] bg-card text-foreground/50 hover:bg-muted hover:text-foreground/75'
                 )}
               >
                 <div className="flex-1 min-w-0">
@@ -141,13 +141,13 @@ export function StepFineTune({
                   'flex items-center gap-2 rounded-xl border px-3 py-2 text-left transition-all h-auto',
                   active
                     ? 'border-brand/35 bg-brand/8 text-foreground/90'
-                    : 'border-white/[0.05] bg-transparent text-foreground/50 hover:border-white/[0.08] hover:text-foreground/75'
+                    : 'border-[var(--border-clear)] bg-card text-foreground/50 hover:bg-muted hover:text-foreground/75'
                 )}
               >
                 <span
                   className={cn(
                     'flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border',
-                    active ? 'border-brand bg-brand text-white' : 'border-white/15'
+                    active ? 'border-brand bg-brand text-white' : 'border-[var(--border-clear)]'
                   )}
                 >
                   {active && <Check size={10} />}
@@ -180,7 +180,7 @@ export function StepFineTune({
                 'w-full flex items-center gap-3 rounded-xl border px-3 py-2 text-left transition-all h-auto',
                 promptQuality === id
                   ? 'border-brand/35 bg-brand/8 text-foreground/90'
-                  : 'border-white/[0.05] bg-transparent text-foreground/50 hover:border-white/[0.08] hover:text-foreground/75'
+                  : 'border-[var(--border-clear)] bg-card text-foreground/50 hover:bg-muted hover:text-foreground/75'
               )}
             >
               <Icon size={14} className="shrink-0 text-brand-soft" />
@@ -233,7 +233,7 @@ export function StepFineTune({
       {/* Company research — cover letter only */}
       {showCoverOptions && (
         <div>
-          <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2">
+          <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--border-clear)] bg-card px-3 py-2">
             <input
               type="checkbox"
               checked={researchCompany}

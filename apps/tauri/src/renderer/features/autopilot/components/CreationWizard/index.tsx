@@ -115,7 +115,7 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
       header={
         <>
           {/* Wizard header */}
-          <div className="flex items-center justify-between border-white/[0.1] px-6 py-4">
+          <div className="flex items-center justify-between px-6 py-4">
             <div className="flex items-center gap-2">
               <Zap size={14} className="text-brand-soft" />
               <span id="creation-wizard-title" className="text-sm font-semibold text-foreground/80">
@@ -159,7 +159,7 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
         </>
       }
       footer={
-        <div className="border-t border-white/[0.1]">
+        <div className="border-t border-[var(--border-clear)]">
           {error && (
             <div className="mx-6 mt-4 rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2 text-xs text-red-300/80 flex items-center gap-2">
               <AlertCircle size={11} /> {error}
@@ -167,10 +167,11 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
           )}
           <div className="flex items-center justify-between px-6 py-4">
             <Button
+              variant="ghost"
               onClick={() => (step > 0 ? setStep(step - 1) : onCancel())}
-              className="flex items-center gap-1.5 text-xs text-foreground/40 hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent"
+              className="text-foreground/60 hover:text-foreground"
             >
-              <ChevronLeft size={13} />{' '}
+              <ChevronLeft size={16} />{' '}
               {step === 0 ? t('autopilot.wizard.cancel') : t('autopilot.wizard.back')}
             </Button>
             {step < STEPS.length - 1 ? (

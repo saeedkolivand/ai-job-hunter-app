@@ -136,7 +136,7 @@ export function MonitoringPage() {
           <Sparkline data={last24h} />
         </GlassCard>
 
-        <div className="flex items-center justify-between rounded-xl border border-white/[0.05] px-4 py-3 text-[11px] text-foreground/35">
+        <div className="flex items-center justify-between rounded-xl border border-[var(--border-clear)] px-4 py-3 text-[11px] text-foreground/35">
           <div className="flex items-center gap-2">
             <Cpu size={11} className="text-foreground/25" />
             {t('monitoring.footer.localProcessing')}

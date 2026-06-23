@@ -32,7 +32,7 @@ export function ActiveJobRow({ job, kindLabel, t }: Props) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 4 }}
       transition={transition.normal}
-      className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2"
+      className="rounded-lg border border-[var(--border-clear)] bg-card px-3 py-2"
     >
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <div className="flex items-center gap-1.5">

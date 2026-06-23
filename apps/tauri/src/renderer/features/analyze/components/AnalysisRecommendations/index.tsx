@@ -40,10 +40,13 @@ export function AnalysisRecommendations({ result, t }: AnalysisRecommendationsPr
                 ? 'bg-amber-400'
                 : 'bg-blue-400';
           return (
-            <div key={i} className="flex items-start gap-3 rounded-lg bg-white/[0.02] px-3 py-2.5">
+            <div
+              key={i}
+              className="flex items-start gap-3 rounded-lg bg-card border border-[var(--border-clear)] px-3 py-2.5"
+            >
               <span className={cn('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', priorityColor)} />
               <div className="flex-1 text-sm text-foreground/75">{r.text}</div>
-              <span className="shrink-0 rounded-md border border-white/[0.06] bg-white/[0.03] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-foreground/55">
+              <span className="shrink-0 rounded-md border border-[var(--border-clear)] bg-muted px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-foreground/55">
                 {categoryBadge[r.category]}
               </span>
             </div>

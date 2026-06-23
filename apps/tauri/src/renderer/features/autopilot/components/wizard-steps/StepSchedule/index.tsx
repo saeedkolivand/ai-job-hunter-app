@@ -102,7 +102,7 @@ export function StepSchedule() {
               'w-full flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all h-auto',
               schedule === id
                 ? 'border-brand/35 bg-brand/10'
-                : 'border-white/[0.05] hover:border-white/[0.08]'
+                : 'border-[var(--border-clear)] bg-card hover:bg-muted'
             )}
           >
             <Clock
@@ -172,7 +172,7 @@ export function StepSchedule() {
       )}
 
       {/* Summary */}
-      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 space-y-1.5">
+      <div className="rounded-xl border border-[var(--border-clear)] bg-card px-4 py-3 space-y-1.5">
         <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">
           {t('autopilot.wizard.schedule.summary')}
         </div>

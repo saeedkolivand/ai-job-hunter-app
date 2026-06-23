@@ -61,7 +61,7 @@ export function OnboardingStepWrapper({
     >
       <div
         data-onboarding-wrapper
-        className="@container rounded-2xl border border-white/[0.08] p-8 onboarding-glass-modal"
+        className="@container rounded-2xl border border-[var(--border-clear)] p-8 onboarding-glass-modal"
       >
         {children}
         {showStepDots && <StepDots currentStep={stepIndex} totalSteps={totalSteps} />}

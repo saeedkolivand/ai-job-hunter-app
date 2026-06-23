@@ -10,10 +10,7 @@ import { MATCH_LEVELS, scoreToLevel } from '@/lib/match-level';
 import { PrefilledBadge } from '../PrefilledBadge';
 import { WizardField } from '../WizardField';
 
-// Matches the @ajh/ui Dropdown / LocationInput trigger (h-9, same border &
-// bg) so the wizard's text inputs stay consistent across steps.
-const inputCls =
-  'w-full h-9 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 text-xs text-foreground/80 placeholder:text-foreground/25 outline-none focus:border-brand/40 transition-colors';
+const fieldCls = 'h-9 w-full text-xs shadow-none';
 
 interface StepFilterProps {
   prefilled: Prefilled;
@@ -51,7 +48,7 @@ export function StepFilter({ prefilled }: StepFilterProps) {
                       'flex flex-col items-center gap-0.5 rounded-lg border px-2 py-2 transition-all h-auto',
                       active === id
                         ? 'border-brand/40 bg-brand/10 text-brand-soft'
-                        : 'border-white/[0.06] text-foreground/45 hover:border-white/10 hover:text-foreground/70'
+                        : 'border-[var(--border-clear)] bg-card text-foreground/45 hover:bg-muted hover:text-foreground/70'
                     )}
                   >
                     <span className="text-xs font-semibold capitalize">
@@ -96,8 +93,8 @@ export function StepFilter({ prefilled }: StepFilterProps) {
               <div className="space-y-1.5">
                 <Input
                   id="autopilot-keywords"
-                  variant="unstyled"
-                  className={inputCls}
+                  variant="default"
+                  className={fieldCls}
                   placeholder={t('autopilot.wizard.filter.keywordsPlaceholder')}
                   value={field.value}
                   onChange={field.onChange}
@@ -121,8 +118,8 @@ export function StepFilter({ prefilled }: StepFilterProps) {
             >
               <Input
                 id="autopilot-exclude-keywords"
-                variant="unstyled"
-                className={inputCls}
+                variant="default"
+                className={fieldCls}
                 placeholder={t('autopilot.wizard.filter.excludePlaceholder')}
                 value={field.value}
                 onChange={field.onChange}

@@ -153,7 +153,7 @@ export function TailorWizard({
       )}
 
       {/* Footer */}
-      <div className="flex shrink-0 items-center justify-between border-t border-white/[0.06] px-8 py-4">
+      <div className="flex shrink-0 items-center justify-between border-t border-[var(--border-clear)] px-8 py-4">
         <Button
           variant="ghost"
           onClick={() => step > 0 && setStep(step - 1)}

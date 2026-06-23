@@ -53,11 +53,11 @@ export function GeneratingPanel({ target, phase, phaseLabel, thinking, output, o
       <div className="mx-auto mt-5 flex w-full max-w-2xl min-h-0 flex-1 flex-col overflow-y-auto">
         <ThinkingBubble thinking={thinking} done={false} />
         {output ? (
-          <div className="select-text flex-1 whitespace-pre-wrap rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] leading-relaxed text-foreground/60">
+          <div className="select-text flex-1 whitespace-pre-wrap rounded-lg border border-[var(--border-clear)] bg-card px-3 py-2 text-[11px] leading-relaxed text-foreground/60">
             {output}
           </div>
         ) : (
-          <div className="space-y-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-3">
+          <div className="space-y-2 rounded-lg border border-[var(--border-clear)] bg-card px-3 py-3">
             <Skeleton className="h-2.5 w-full" />
             <Skeleton className="h-2.5 w-11/12" />
             <Skeleton className="h-2.5 w-4/5" />

@@ -61,7 +61,7 @@ export function SavedResumeMenu({
               key={doc.id}
               className={cn(
                 'flex items-center gap-1 rounded-lg pr-1 transition-colors',
-                isSelected ? 'bg-brand/15' : 'hover:bg-white/[0.05]'
+                isSelected ? 'bg-brand/15' : 'hover:bg-muted'
               )}
             >
               <Button

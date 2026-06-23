@@ -138,10 +138,10 @@ export function AutopilotCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
             <span className="text-sm font-semibold text-foreground/85 truncate">{ap.name}</span>
-            <span className="text-[10px] text-foreground/30 font-mono bg-white/[0.04] px-1.5 py-0.5 rounded">
+            <span className="text-[10px] text-foreground/30 font-mono bg-muted px-1.5 py-0.5 rounded">
               {ap.target.board}
             </span>
-            <span className="text-[10px] text-foreground/30 bg-white/[0.04] px-1.5 py-0.5 rounded capitalize">
+            <span className="text-[10px] text-foreground/30 bg-muted px-1.5 py-0.5 rounded capitalize">
               {ap.schedule.replace('_', ' ')}
             </span>
             {!running && (ap.runStatus === 'failed' || ap.runStatus === 'interrupted') && (
@@ -196,7 +196,7 @@ export function AutopilotCard({
                 'flex items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition-colors h-auto border-transparent',
                 showFound
                   ? 'bg-brand/15 text-brand-soft'
-                  : 'bg-white/[0.04] text-foreground/50 hover:text-foreground/80'
+                  : 'bg-muted text-foreground/50 hover:text-foreground/80'
               )}
             >
               <Briefcase size={11} />
@@ -217,7 +217,7 @@ export function AutopilotCard({
             transition={transition.normal}
             className="overflow-hidden"
           >
-            <div className="rounded-lg bg-white/[0.03] border border-white/[0.05] px-3 py-2 space-y-1 max-h-32 overflow-y-auto">
+            <div className="rounded-lg bg-card border border-[var(--border-clear)] px-3 py-2 space-y-1 max-h-32 overflow-y-auto">
               {stepLogs.map((log, i) => (
                 <div key={i} className="flex items-start gap-2 text-[10px] leading-relaxed">
                   <span className="text-brand-soft/70 shrink-0 w-3 text-center">
@@ -241,8 +241,8 @@ export function AutopilotCard({
             transition={transition.fast}
             className="overflow-hidden"
           >
-            <div className="overflow-hidden rounded-lg border border-white/[0.05] bg-white/[0.03]">
-              <div className="flex items-center justify-between border-b border-white/[0.05] px-3 py-2">
+            <div className="overflow-hidden rounded-lg border border-[var(--border-clear)] bg-card">
+              <div className="flex items-center justify-between border-b border-[var(--border-clear)] px-3 py-2">
                 <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">
                   {t('autopilot.foundJobs')} · {foundJobs.length}
                 </span>
@@ -257,11 +257,11 @@ export function AutopilotCard({
                   <ChevronUp size={12} />
                 </Button>
               </div>
-              <div className="max-h-64 divide-y divide-white/[0.04] overflow-y-auto">
+              <div className="max-h-64 divide-y divide-[var(--border-clear)] overflow-y-auto">
                 {foundJobs.map((job, i) => (
                   <div
                     key={`${job.url}-${i}`}
-                    className="flex items-center gap-2 px-3 py-2 transition-colors hover:bg-white/[0.03]"
+                    className="flex items-center gap-2 px-3 py-2 transition-colors hover:bg-muted"
                   >
                     <Button
                       variant="unstyled"

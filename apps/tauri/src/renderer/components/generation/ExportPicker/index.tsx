@@ -115,7 +115,7 @@ export function ExportPicker(props: ExportPickerProps) {
                 type="button"
                 onClick={() => handleFormatSelect(fmt)}
                 className={cn(
-                  'flex w-full items-center gap-2.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-left transition-colors hover:border-brand/30 hover:bg-brand/8'
+                  'flex w-full items-center gap-2.5 rounded-lg border border-[var(--border-clear)] bg-card px-3 py-2.5 text-left transition-colors hover:border-brand/30 hover:bg-brand/8'
                 )}
               >
                 <Download size={14} className="shrink-0 text-brand-soft" />

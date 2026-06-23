@@ -9,7 +9,7 @@ interface KBArticleCardProps {
 
 export function KBArticleCard({ article }: KBArticleCardProps) {
   return (
-    <div className="glass-card rounded-xl p-4 hover:bg-white/[0.03] transition-colors cursor-pointer">
+    <div className="surface-card rounded-xl p-4 hover:bg-muted transition-colors cursor-pointer">
       <div className="flex items-start gap-3">
         <div className="flex-1">
           <div className="text-sm font-medium text-foreground/90 mb-1">{article.title}</div>
