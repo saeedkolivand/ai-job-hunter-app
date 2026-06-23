@@ -1288,7 +1288,8 @@
         "both": "Beides"
       },
       "tabs": {
-        "jobAd": "Stellenanzeige"
+        "jobAd": "Stellenanzeige",
+        "outputTabs": "Ausgabe-Tabs"
       },
       "jobAdView": {
         "label": "Stellenanzeige-Ansicht",

@@ -178,11 +178,13 @@ vi.mock('./TailorWizard', () => ({
     setStep,
     onGenerate,
     jobDesc,
+    onJobDescChange,
   }: {
     step: number;
     setStep: (n: number) => void;
     onGenerate: (v: { resume: string; outputType: 'resume'; researchCompany: boolean }) => void;
     jobDesc?: string;
+    onJobDescChange?: (v: string) => void;
   }) => (
     <div data-testid={TEST_IDS.documents.tailorWizard} data-step={step} data-jobdesc={jobDesc}>
       <div
@@ -202,6 +204,14 @@ vi.mock('./TailorWizard', () => ({
         }
       >
         generate
+      </div>
+      <div
+        role="button"
+        tabIndex={0}
+        data-testid="wizard-edit-jobdesc"
+        onClick={() => onJobDescChange?.('edited-job-ad')}
+      >
+        edit-jobdesc
       </div>
     </div>
   ),
@@ -350,6 +360,7 @@ function renderFlow(opts: {
   onController?: (c: TailorFlowController) => void;
   seedGeneration?: AiGenerationRecord;
   job?: AutopilotFoundJob;
+  onJobDescChange?: (text: string) => void;
 }) {
   const persistence = opts.persistence ?? makePersistence();
   const job = opts.job ?? JOB;
@@ -363,6 +374,7 @@ function renderFlow(opts: {
       seedGeneration={opts.seedGeneration}
       persistence={persistence}
       onController={opts.onController}
+      onJobDescChange={opts.onJobDescChange}
     />
   );
 }
@@ -792,6 +804,49 @@ describe('TailorFlow — prefer-longer / useResolveJobUrl branch', () => {
     expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
       'data-jobdesc',
       carried
+    );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. onJobDescChange prop — host persist callback
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('TailorFlow — onJobDescChange host callback', () => {
+  it('calls onJobDescChange when the user edits the job ad in the configuring stage', async () => {
+    // The TailorWizard stub exposes an "edit-jobdesc" button that calls
+    // onJobDescChange('edited-job-ad'). TailorFlow must forward this to the host
+    // via the new prop, in addition to updating its internal jobDescOverride.
+    const onJobDescChange = vi.fn();
+    const user = userEvent.setup();
+    renderFlow({ onJobDescChange });
+
+    await user.click(screen.getByTestId('wizard-edit-jobdesc'));
+
+    expect(onJobDescChange).toHaveBeenCalledTimes(1);
+    expect(onJobDescChange).toHaveBeenCalledWith('edited-job-ad');
+  });
+
+  it('does NOT throw when onJobDescChange is omitted (autopilot callers unaffected)', async () => {
+    // Omitting the prop must not throw — the optional-call guard `onJobDescChange?.()` covers it.
+    const user = userEvent.setup();
+    expect(() => renderFlow({})).not.toThrow();
+
+    await expect(user.click(screen.getByTestId('wizard-edit-jobdesc'))).resolves.not.toThrow();
+  });
+
+  it('still updates the internal jobDesc (forwarded to TailorWizard) even without the host prop', async () => {
+    // Editing with no onJobDescChange still updates jobDescOverride so the
+    // job ad textarea reflects the user's paste in the wizard.
+    const user = userEvent.setup();
+    renderFlow({});
+
+    await user.click(screen.getByTestId('wizard-edit-jobdesc'));
+
+    // After the edit, jobDesc is 'edited-job-ad' — forwarded to the wizard as data-jobdesc.
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
+      'data-jobdesc',
+      'edited-job-ad'
     );
   });
 });

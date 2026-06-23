@@ -85,6 +85,14 @@ export interface TailorFlowProps {
   applicationId?: string;
   /** Persisted job summary from the application record (pre-seeds the summary panel). */
   initialSummary?: string;
+  /**
+   * Called whenever the user edits the job-ad textarea, in addition to the
+   * internal `setJobDescOverride`. DocumentsTab uses this to debounce-persist
+   * the edit back to `application.jobDescription` so other tabs (e.g. Interview
+   * prep) can read the updated text without requiring a page reload.
+   * Autopilot callers that don't pass this prop are unaffected.
+   */
+  onJobDescChange?: (text: string) => void;
 }
 
 /**
@@ -109,6 +117,7 @@ export function TailorFlow({
   onController,
   applicationId,
   initialSummary,
+  onJobDescChange,
 }: TailorFlowProps) {
   const model = useSelectedModel();
   const { canUse, reason } = useCanUseAI();
@@ -145,6 +154,13 @@ export function TailorFlow({
   const resolved = useResolveJobUrl(job.url, initialDesc.length < SHORT_DESC_FLOOR);
   const fetchedDesc = (resolved.data?.description ?? '').trim();
   const [jobDescOverride, setJobDescOverride] = useState<string | null>(null);
+  // Combine the local override with the optional host persist callback so the
+  // host can react to edits (e.g. debounce-persist to application.jobDescription)
+  // without TailorFlow caring about storage details.
+  const handleJobDescEdit = (v: string) => {
+    setJobDescOverride(v);
+    onJobDescChange?.(v);
+  };
   const jobDesc =
     jobDescOverride ?? (fetchedDesc.length > initialDesc.length ? fetchedDesc : initialDesc);
   const hasDesc = jobDesc.length > 0;
@@ -282,7 +298,7 @@ export function TailorFlow({
         step={step}
         setStep={handleStep}
         jobDesc={jobDesc}
-        onJobDescChange={setJobDescOverride}
+        onJobDescChange={handleJobDescEdit}
         hasDesc={hasDesc}
         fetchingDesc={fetchingDesc}
         jobUrl={job.url}
@@ -306,7 +322,7 @@ export function TailorFlow({
       <ResultsPanel
         target={generatedTarget}
         jobDesc={jobDesc}
-        onJobDescChange={setJobDescOverride}
+        onJobDescChange={handleJobDescEdit}
         hasDesc={hasDesc}
         fetchingDesc={fetchingDesc}
         jobUrl={job.url}

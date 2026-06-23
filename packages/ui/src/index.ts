@@ -68,6 +68,7 @@ export {
 export { SetupHint, type SetupHintProps } from './components/SetupHint/index';
 export { SourceBadge, type SourceBadgeProps } from './components/SourceBadge/index';
 export { Switch, type SwitchProps } from './components/Switch/index';
+export { type TabItem, Tabs, type TabsProps } from './components/Tabs/index';
 export {
   type CheckableTagProps,
   Tag,

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import {
+  Alert,
   Button,
   Dropdown,
   MarkdownMessage,
@@ -126,7 +127,7 @@ export function JobAdView({
                 role="status"
                 aria-live="polite"
                 aria-label={t('autopilot.apply.jobAdView.generating')}
-                className="min-h-0 flex-1 select-text overflow-y-auto rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2"
+                className="min-h-0 flex-1 select-text overflow-y-auto rounded-lg border border-foreground/[0.06] bg-foreground/[0.02] px-3 py-2"
               >
                 <StreamingText
                   text={summary}
@@ -135,11 +136,11 @@ export function JobAdView({
                 />
               </div>
             ) : summary ? (
-              <div className="min-h-0 flex-1 select-text overflow-y-auto rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] leading-relaxed text-foreground/70">
+              <div className="min-h-0 flex-1 select-text overflow-y-auto rounded-lg border border-foreground/[0.06] bg-foreground/[0.02] px-3 py-2 text-[11px] leading-relaxed text-foreground/70">
                 <MarkdownMessage content={summary} />
               </div>
             ) : (
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-6 py-8 text-center">
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 rounded-lg border border-foreground/[0.06] bg-foreground/[0.02] px-6 py-8 text-center">
                 <p className="text-[11px] leading-relaxed text-foreground/40">
                   {t('autopilot.apply.jobAdView.summaryHint')}
                 </p>
@@ -155,7 +156,7 @@ export function JobAdView({
             )}
           </div>
         ) : fetchingDesc ? (
-          <div className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] text-foreground/40">
+          <div className="flex items-center gap-2 rounded-lg border border-foreground/[0.06] bg-foreground/[0.02] px-3 py-2 text-[11px] text-foreground/40">
             <Loader2 size={12} className="animate-spin" />
             {t('autopilot.apply.fetchingDescription')}
           </div>
@@ -163,23 +164,20 @@ export function JobAdView({
           // Source tab — always editable. Empty when scrape failed / no description captured.
           <div className="flex min-h-0 flex-1 flex-col gap-1">
             {truncated && (
-              <p
-                id="job-ad-truncated-hint"
-                className="shrink-0 rounded-md border border-amber-400/20 bg-amber-400/5 px-2 py-1 text-[10px] text-amber-200/80"
-              >
-                {t('autopilot.apply.jobAdView.truncatedHint')}
-              </p>
+              <Alert
+                type="warning"
+                message={t('autopilot.apply.jobAdView.truncatedHint')}
+                className="shrink-0"
+              />
             )}
             <TextArea
               variant="glass"
               value={jobDesc}
               onChange={(e) => onJobDescChange(e.target.value)}
               placeholder={t('autopilot.apply.jobAdView.pasteHint')}
-              className="h-full flex-1 resize-none text-[11px] leading-relaxed"
+              className="h-full flex-1 resize-none text-[11px] leading-relaxed shadow-none"
               aria-label={t('autopilot.apply.tabs.jobAd')}
-              aria-describedby={
-                truncated ? 'job-ad-edit-helper job-ad-truncated-hint' : 'job-ad-edit-helper'
-              }
+              aria-describedby="job-ad-edit-helper"
               data-testid={TEST_IDS.documents.jobAdViewTextarea}
             />
             <p id="job-ad-edit-helper" className="shrink-0 text-[10px] text-foreground/35">

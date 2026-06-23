@@ -174,25 +174,32 @@ describe('JobAdView — onJobDescChange callback', () => {
 // ── 4. Truncation hint ────────────────────────────────────────────────────────
 
 describe('JobAdView — truncation hint', () => {
-  it('shows the truncation hint when jobDesc ends with unicode ellipsis', () => {
+  it('shows the truncation hint Alert when jobDesc ends with unicode ellipsis', () => {
     render(<JobAdView {...makeProps({ jobDesc: 'Short snippet…', hasDesc: true })} />);
-    expect(screen.getByText('autopilot.apply.jobAdView.truncatedHint')).toBeInTheDocument();
+    // The hint is now an Alert (role="alert") — auto-announced by screen readers.
+    const alert = screen.getByRole('alert');
+    expect(alert).toBeInTheDocument();
+    expect(alert).toHaveTextContent('autopilot.apply.jobAdView.truncatedHint');
   });
 
-  it('shows the truncation hint when jobDesc ends with three dots', () => {
+  it('shows the truncation hint Alert when jobDesc ends with three dots', () => {
     render(<JobAdView {...makeProps({ jobDesc: 'Short snippet...', hasDesc: true })} />);
-    expect(screen.getByText('autopilot.apply.jobAdView.truncatedHint')).toBeInTheDocument();
+    const alert = screen.getByRole('alert');
+    expect(alert).toBeInTheDocument();
+    expect(alert).toHaveTextContent('autopilot.apply.jobAdView.truncatedHint');
   });
 
   it('does NOT show the truncation hint for a normal (non-truncated) description', async () => {
     render(<JobAdView {...makeProps({ jobDesc: 'Normal full description.', hasDesc: true })} />);
     // Switch to source tab to inspect.
     await userEvent.click(screen.getByText('autopilot.apply.tabs.jobAd'));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText('autopilot.apply.jobAdView.truncatedHint')).not.toBeInTheDocument();
   });
 
   it('does NOT show the truncation hint when jobDesc is empty (no text to hint about)', () => {
     render(<JobAdView {...makeProps({ hasDesc: false, jobDesc: '' })} />);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText('autopilot.apply.jobAdView.truncatedHint')).not.toBeInTheDocument();
   });
 });
@@ -255,17 +262,19 @@ describe('JobAdView — TextArea a11y wiring', () => {
     expect(helperPara).toHaveTextContent('autopilot.apply.jobAdView.editHelper');
   });
 
-  it('includes the truncation-hint id in aria-describedby when a truncated description is shown', () => {
+  it('always uses only the helper id in aria-describedby (truncation hint is now an Alert, not an id-referenced element)', () => {
     render(<JobAdView {...makeProps({ jobDesc: 'Short snippet…', hasDesc: true })} />);
     // Truncated → starts on source tab automatically
     const textarea = screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea);
-    expect(textarea).toHaveAttribute(
+    // The Alert has role="alert" so screen readers auto-announce it;
+    // aria-describedby only references the persistent helper paragraph.
+    expect(textarea).toHaveAttribute('aria-describedby', 'job-ad-edit-helper');
+    expect(textarea).not.toHaveAttribute(
       'aria-describedby',
-      'job-ad-edit-helper job-ad-truncated-hint'
+      expect.stringContaining('job-ad-truncated-hint')
     );
-    // Both paragraphs must carry their stable ids
+    // The helper paragraph must carry its stable id
     expect(document.getElementById('job-ad-edit-helper')).toBeInTheDocument();
-    expect(document.getElementById('job-ad-truncated-hint')).toBeInTheDocument();
   });
 
   it('does NOT include truncation-hint id when description is not truncated', async () => {

@@ -1,6 +1,6 @@
 import { ChevronLeft, PanelLeft, Sparkles } from 'lucide-react';
 import { type ComponentType, useEffect, useState } from 'react';
-import { useNavigate, useRouterState } from '@tanstack/react-router';
+import { useCanGoBack, useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
 
 import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
@@ -26,6 +26,8 @@ export function Titlebar() {
 
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
+  const router = useRouter();
+  const canGoBack = useCanGoBack();
   const parent = parentRoute(pathname);
 
   useEffect(() => {
@@ -57,13 +59,16 @@ export function Titlebar() {
       {/* Left cluster: fixed-width spacer (mirrors window-controls on the right) holding
           the global back button (detail routes) + the expand-sidebar toggle (shown when
           the sidebar is collapsed). `app-no-drag` keeps them clickable. */}
-      <div className={`app-no-drag flex items-center gap-1 pl-1 ${isMacos ? 'w-20' : 'w-[132px]'}`}>
-        {parent !== null && (
+      <div className={`app-no-drag flex items-center gap-1 pl-3 ${isMacos ? 'w-20' : 'w-[132px]'}`}>
+        {(parent !== null || canGoBack) && (
           <Button
             variant="ghost"
             size="sm"
             aria-label={t('nav.back')}
-            onClick={() => void navigate({ to: parent })}
+            onClick={() => {
+              if (parent) void navigate({ to: parent });
+              else router.history.back();
+            }}
             className="text-foreground/60 hover:text-foreground"
           >
             <ChevronLeft size={16} />
