@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782207899882,
+  "lastUpdate": 1782214297626,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1547,6 +1547,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 282087,
             "range": "± 10275",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "16ebdf751de96dc998f9f6b3e477517c95f6e243",
+          "message": "fix(autopilot): match manual-search filters and surface zero-result reasons (#484)\n\n* fix(autopilot): match manual-search filters and surface zero-result reasons\n\nAn autopilot run returned zero jobs from the aggregator while a manual\nsearch with the same query returned jobs. The run applied three filters\nmanual search never does, all silently:\n\n- a 24h date-window default (manual defaults to any-time),\n- a must-include-ALL keyword filter auto-prefilled with the whole tech\n  stack on pre-#483 saves,\n- a min-match-score gate (default 50).\n\n#483 only changed wizard defaults for NEW autopilots; existing saved ones\nstill zeroed out, and a zero run gave no reason.\n\nFixes:\n- Realign defaults to manual parity. The authoritative AutopilotFilter\n  minMatchScore Zod default goes .default(50) -> .default(0) (regenerates\n  the IPC contract), and wizard buildDefaults dateFilter '24h' -> ''.\n- One-time, marker-gated migration (relax_legacy_filters_once, marker\n  autopilot_relax_v1.done) loosens existing saved autopilots: clears\n  must-include keywords; resets min-score 50->0 and date \"24h\"->None only\n  when they still equal the old defaults. Persist-then-mark, so a failed\n  save retries on next launch.\n- Zero-result diagnostics: scrape_diagnostics surfaces per-board skip and\n  error reasons (no API keys, unsupported Adzuna country) into the run\n  step log, and scrape_done reports raw-scraped vs after-keyword-filter\n  counts.\n- Wizard gains an \"Any\" (no-minimum) match-score tile with aria-pressed,\n  and the schedule summary mirrors it.\n\nTests: 73 cargo autopilot tests (migration orchestrator incl. the\npersist-failure retry guarantee, relax_legacy_filters sentinels,\nscrape_diagnostics format, create fallback default) and renderer\nregression locks on the new defaults.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* ui(autopilot): give the scrape diagnostics step a warning glyph\n\nThe scrape_diag run step surfaces why a run found zero jobs; without its\nown step icon it fell back to the generic dot and didn't stand out in the\nrun log. Add a unicode warning glyph matching the existing step icons.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* test(autopilot): replace 10-arg fixture with base_autopilot override helper\n\nThe migration tests used a 10-positional-arg make_autopilot constructor\nthat tripped clippy::too_many_arguments. Replace it with a zero-arg\nbase_autopilot() returning the worst-case legacy record; each test mutates\nonly the field it exercises, matching the existing found_job fixture style.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(autopilot): make legacy-filter migration idempotent and redact run diagnostics\n\nAddresses CodeRabbit review on #484.\n\n- relax_legacy_filters now gates the must-include keyword clear on a\n  was_legacy sentinel (min_match_score == 50.0 || date_filter == \"24h\"),\n  computed before the resets. An already-relaxed record is a full no-op,\n  so a failed marker write that reruns the migration can no longer erase\n  keywords the user added in between. The marker is now a pure\n  optimization; the common legacy autopilot is still fully relaxed.\n- scrape_diagnostics now runs each per-board reason through sanitize_reason\n  before it reaches the renderer step log: redacts URLs (closing the\n  Adzuna app_id/app_key leak in reqwest transport errors), absolute and\n  drive-less home paths, and bare host:port/IPv4, capped at 200 chars.\n  A control test guards against over-redacting status codes and timestamps.\n- Thin the autopilot/scraping knowledge docs back to symbol pointers\n  (no copied literals).\n\nTests: 79 cargo autopilot tests (idempotency rerun-safety, redaction +\nover-redaction control).\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-23T13:22:41+02:00",
+          "tree_id": "328e540d099199d293a01b187f211bbedd65d9e4",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/16ebdf751de96dc998f9f6b3e477517c95f6e243"
+        },
+        "date": 1782214297117,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1917526,
+            "range": "± 51505",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2498874,
+            "range": "± 100910",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 278396,
+            "range": "± 1361",
             "unit": "ns/iter"
           }
         ]
