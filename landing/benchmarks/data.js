@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782165852059,
+  "lastUpdate": 1782207899882,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1505,6 +1505,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 304441,
             "range": "± 15480",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bc5e00e1040936ed59ee4dfef71b36f71fe75d86",
+          "message": "fix(autopilot): forward country to aggregator + stop keyword-prefill (with dep bump, landing OG fix) (#483)\n\n* fix(autopilot): forward country code to aggregator and stop pre-filling keyword filter\n\nAutopilot returned zero jobs from the aggregator board while a manual search\nreturned jobs for the same query, due to two divergences from manual search.\n\n1. Autopilot never forwarded a country code, so the aggregator's Adzuna provider\n   defaulted to \"de\" (Germany) for every run. Manual search captures countryCode\n   from the location geocode suggestion and forwards it into Adzuna's URL path.\n   Thread an optional countryCode/country_code end-to-end (shared Zod schema,\n   regenerated IPC contract, AutopilotTarget, autopilot_helpers forwarding) and\n   capture it in the creation wizard's LocationInput, mirroring manual ScrapeFilters.\n\n2. The wizard pre-filled the \"Must include\" keyword filter from the user's entire\n   tech stack, and the backend requires ALL keywords present, so nearly every\n   posting was dropped. Leave the filter empty by default (opt-in) and remove the\n   now-dead prefill plumbing plus the orphaned i18n key.\n\nThe field is optional and absent-by-default: old persisted autopilots deserialize\nto None and behavior is unchanged when unset.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* chore(deps): bump dev and runtime dependencies\n\nBatch dependency update bundled in at the user's request.\n\n- Tooling: @commitlint/cli, @types/node, eslint, eslint-plugin-storybook,\n  globals, knip, lint-staged, typescript-eslint, jsdom, playwright, vite,\n  tailwindcss, @tauri-apps/cli, @tanstack/router-vite-plugin.\n- Runtime: @tanstack/react-router, @tanstack/react-virtual, @tauri-apps/api\n  and plugins (shell, store, websocket, notification, os, positioner,\n  global-shortcut), @tiptap/*, lucide-react, motion, react-hook-form, zustand,\n  @wxt-dev/browser (extension).\n- pnpm-workspace.yaml: minimumReleaseAgeExclude entries to opt the freshly\n  released typescript-eslint 8.62.0 family, globals 17.7.0 and knip 6.18.0\n  out of the new-release cooldown guard.\n\nFull typecheck, lint:strict, cargo and vitest suites pass with these versions.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(landing): remove stray authoring note from og:description\n\nThe og:description meta tag contained a leftover authoring note —\n\"(the OG image should be the deep-fried 'IT DOES EVERYTHING ELSE' frame)\" —\ninside its content string, so link-preview unfurlers rendered it verbatim.\nDrop the parenthetical so it matches the already-clean twitter:description.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(autopilot): clear captured country code when the location is edited freely\n\nAfter picking a geocode suggestion (which captures the country) and then editing\nthe location text without re-picking, the stale countryCode was still forwarded to\nthe aggregator. Clear it on the free-text onChange; the suggestion-pick path re-sets\nit (LocationInput fires onChange before onSelectSuggestion, so a pick clears then\nsets). Addresses CodeRabbit review on #483.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* chore(deps): document the pnpm release-age cooldown exemptions\n\nAdd a comment explaining the exemption list opts freshly released tooling versions\nout of the new-release cooldown, and that each entry is transient (remove once the\nversion ages past the window). Addresses CodeRabbit review on #483.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(autopilot): render the boards array in card and drop the stale singular type\n\nThe shared Autopilot target type still declared singular `board: string`, but the\nbackend serializes `boards: string[]`, so `ap.target.board` was undefined at runtime\nand the card's board badge rendered blank.\n\n- Shared type: `board: string` -> `boards: string[]` (now matches the Rust struct and\n  the Zod schema; resolves the drift).\n- AutopilotCard badge: one board shows its localized label via `jobs.boards.*`,\n  multiple show a translated `autopilot.card.boardsCount` (\"{{count}} boards\", de\n  \"{{count}} Boards\").\n- AutopilotPage: passes `boards[0] ?? AGGREGATOR_BOARD_ID` to the application save\n  (was the undefined singular field).\n- wizard-state: drops the now-unnecessary `as unknown as` cast and reads `boards`\n  directly.\n\nAddresses CodeRabbit review on #483.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(autopilot): persist per-job source board so multi-board apply is accurate\n\nRecord the scraping board on each found job (its JobPosting.source) instead of\nfalling back to target.boards[0] in the apply flow, which was wrong for\nmulti-board autopilots. The aggregator board collapses both Adzuna and JSearch\npostings to source \"aggregator\", so the persisted board stays a clean board id.\n\n- Add FoundJob.board (Option<String>, serde-default so old persisted records\n  load as None) and set it from the posting source, empty treated as absent.\n- Carry the board across the record_run dedup merge (append via ..inc; existing\n  rows refresh from the incoming posting like location/description).\n- Expose board?: string on the AutopilotFoundJob TS type (no Zod schema exists\n  for found jobs, so only the type changes).\n- AutopilotPage prefers job.board, falling back to boards[0] then the aggregator\n  default for legacy records.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(scraping): surface a diagnostic for adzuna-unsupported countries instead of zero\n\nAdzuna's API is path-based per country (/jobs/{country}/search/1) and only hosts ~19\nmarkets. When the aggregator forwarded a country Adzuna doesn't cover, the request\n404'd and — with no JSearch key — the result was swallowed into an empty list, so the\nrun silently found nothing. Now made worse once autopilot started forwarding the\ngeocode country.\n\n- Add an Adzuna supported-country allowlist; unsupported countries short-circuit before\n  the doomed HTTP call and fall through to JSearch (global) when it is configured.\n- When neither provider can serve the country (Adzuna can't, JSearch unconfigured),\n  return an actionable error via the board summary instead of a silent empty: \"add a\n  JSearch key in Settings for global coverage\". The keyless-empty case (no provider\n  configured at all) is unchanged.\n- Log board errors in autopilot runs alongside skipped boards.\n\nFixes both the manual and autopilot aggregator paths (shared board). Addresses\nCodeRabbit review on #483.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs: note the adzuna country-code limitation in the scraping knowledge base\n\nThin pointer to the new ADZUNA_SUPPORTED_COUNTRIES allowlist and the\ndiagnostic-vs-silent-empty behavior in the aggregator board (PR #483).\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* style(scraping): apply rustfmt to the aggregator country-guard changes\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(shared): validate the country code as iso 3166 alpha-2 at the schema boundary\n\nBoth the manual scrape request and autopilot target schemas accepted any string for\nthe country code; the value is geocode-sourced (always alpha-2), so a 2-letter regex\nstops malformed values propagating through IPC and scraping without rejecting valid\ninput. Addresses CodeRabbit review on #483.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* test(autopilot): lock the empty-boards fallback for saved autopilots\n\nAddresses CodeRabbit review on #483.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* test(scraping): tighten the adzuna unsupported-country diagnostic assertion\n\nRequire the provider prefix, the searched country code, and the supported-market-list\nphrase together (was a 3-way OR satisfiable by a partial match). Addresses CodeRabbit\nreview on #483.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs: point to the adzuna allowlist constant instead of listing country codes\n\nReplace the embedded 19-country list with a pointer to ADZUNA_SUPPORTED_COUNTRIES so\nthe knowledge base can't drift from the source of truth. Addresses CodeRabbit on #483.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-23T11:25:26+02:00",
+          "tree_id": "3b7fbab0cfb48ec9f7d43774abebca20771d8c81",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/bc5e00e1040936ed59ee4dfef71b36f71fe75d86"
+        },
+        "date": 1782207899304,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1920703,
+            "range": "± 62176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2536380,
+            "range": "± 32625",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 282087,
+            "range": "± 10275",
             "unit": "ns/iter"
           }
         ]
