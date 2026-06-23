@@ -93,6 +93,8 @@ pub struct AutopilotTarget {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub country_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub work_type: Option<String>,
     pub pages: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -251,6 +253,7 @@ impl AutopilotStore {
                     boards: Vec::new(),
                     query: String::new(),
                     location: None,
+                    country_code: None,
                     work_type: None,
                     pages: 1,
                     date_filter: None,

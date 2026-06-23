@@ -1452,7 +1452,6 @@
         "mustInclude": "Must include keywords",
         "commaSeparated": "(comma separated)",
         "keywordsPlaceholder": "TypeScript, React",
-        "fromTechStackSettings": "from tech stack settings",
         "excludeKeywords": "Exclude keywords",
         "excludePlaceholder": "intern, junior"
       },

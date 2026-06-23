@@ -353,6 +353,7 @@ export const AutopilotTargetSchema = z.object({
   boards: z.array(z.string().min(1)).min(1).max(6),
   query: z.string().min(1),
   location: z.string().optional(),
+  countryCode: z.string().optional(),
   workType: z.enum(['remote', 'hybrid', 'on-site']).optional(),
   pages: z.number().int().min(1).max(10).default(2),
   dateFilter: z.string().optional(),

@@ -43,6 +43,7 @@ export function wizardStateToPayload(form: WizardState): AutopilotCreate {
       boards: form.boards,
       query: form.query,
       location: form.location || undefined,
+      countryCode: form.countryCode || undefined,
       workType: form.workType !== 'any' ? form.workType : undefined,
       pages: itemsToPages(form.amount),
       dateFilter: form.dateFilter || undefined,
@@ -72,7 +73,7 @@ export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
     amount: 50,
     dateFilter: '24h',
     minMatchScore: 50,
-    keywords: jobPrefs?.techStack?.map((t) => t.name).join(', ') ?? '',
+    keywords: '',
     excludeKeywords: '',
     resumeText: '',
     schedule: 'daily',
@@ -91,6 +92,7 @@ export function autopilotToWizardState(ap: Autopilot): WizardState {
     board?: string;
     query: string;
     location?: string;
+    countryCode?: string;
     workType?: 'remote' | 'hybrid' | 'on-site';
     pages: number;
     dateFilter?: string;
@@ -106,6 +108,7 @@ export function autopilotToWizardState(ap: Autopilot): WizardState {
     boards,
     query: target.query,
     location: target.location ?? '',
+    countryCode: target.countryCode,
     workType: target.workType ?? 'any',
     // Stored as pages; surface back as an approximate item count for editing.
     amount: target.pages * PAGE_SIZE,

@@ -25,6 +25,7 @@ export const autopilotWizardSchema = z.object({
   boards: z.array(z.string().min(1)).min(1, 'autopilot.wizard.validation.missingFields').max(6),
   query: z.string().trim().min(1, 'autopilot.wizard.validation.queryRequired'),
   location: z.string(),
+  countryCode: z.string().optional(),
   workType: z.enum(['remote', 'hybrid', 'on-site', 'any']),
   amount: z.number().int().min(1).max(500),
   dateFilter: z.string(),

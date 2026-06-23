@@ -26,7 +26,7 @@ pub async fn autopilot_scrape(
         actively_hiring: None,
         verified: None,
         sort_by: None,
-        country_code: None,
+        country_code: target.country_code.clone(),
         latitude: None,
         longitude: None,
         radius_km: None,

@@ -17,6 +17,7 @@ fn test_autopilot_target_serialization() {
         boards: vec!["linkedin".to_string()],
         query: "software engineer".to_string(),
         location: Some("Berlin".to_string()),
+        country_code: None,
         work_type: None,
         pages: 5,
         date_filter: None,
@@ -412,6 +413,7 @@ fn target_round_trips_as_boards_array() {
         boards: vec!["linkedin".to_string(), "remotive".to_string()],
         query: "rust".to_string(),
         location: None,
+        country_code: None,
         work_type: None,
         pages: 2,
         date_filter: None,
@@ -429,6 +431,69 @@ fn target_round_trips_as_boards_array() {
 
     let restored: AutopilotTarget = serde_json::from_str(&serialized).unwrap();
     assert_eq!(restored.boards, vec!["linkedin", "remotive"]);
+}
+
+// ── AutopilotTarget country_code serde ───────────────────────────────────────
+
+#[test]
+fn target_country_code_absent_deserializes_to_none() {
+    // Backward-compat: a persisted autopilot that pre-dates the country_code field
+    // (i.e. the JSON simply omits "countryCode") must still deserialize cleanly and
+    // yield country_code: None. This guarantees old autopilots continue to load.
+    let json = r#"{
+        "boards": ["aggregator"],
+        "query": "rust developer",
+        "location": "London",
+        "pages": 2,
+        "topN": 3
+    }"#;
+    let target: AutopilotTarget =
+        serde_json::from_str(json).expect("missing countryCode must not fail deserialization");
+    assert!(
+        target.country_code.is_none(),
+        "absent countryCode field must deserialize to None"
+    );
+}
+
+#[test]
+fn target_country_code_round_trips_and_none_is_omitted() {
+    // Round-trip: Some("us") survives serialize → deserialize.
+    // Absence (None) must be omitted from JSON entirely (skip_serializing_if).
+    let with_code = AutopilotTarget {
+        boards: vec!["aggregator".to_string()],
+        query: "frontend engineer".to_string(),
+        location: None,
+        country_code: Some("us".to_string()),
+        work_type: None,
+        pages: 1,
+        date_filter: None,
+        top_n: 3,
+    };
+    let json = serde_json::to_string(&with_code).unwrap();
+    // camelCase rename_all means the field is "countryCode" on the wire.
+    assert!(
+        json.contains("\"countryCode\":\"us\""),
+        "country_code Some(\"us\") must serialize as camelCase countryCode"
+    );
+    let restored: AutopilotTarget = serde_json::from_str(&json).unwrap();
+    assert_eq!(restored.country_code, Some("us".to_string()));
+
+    // None must be omitted — not written as null or empty string.
+    let without_code = AutopilotTarget {
+        boards: vec!["aggregator".to_string()],
+        query: "frontend engineer".to_string(),
+        location: None,
+        country_code: None,
+        work_type: None,
+        pages: 1,
+        date_filter: None,
+        top_n: 3,
+    };
+    let json_none = serde_json::to_string(&without_code).unwrap();
+    assert!(
+        !json_none.contains("countryCode"),
+        "country_code None must be omitted from serialized JSON (skip_serializing_if)"
+    );
 }
 
 // ── found_job helper ──────────────────────────────────────────────────────────

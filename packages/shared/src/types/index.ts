@@ -208,6 +208,7 @@ export interface Autopilot {
     board: string;
     query: string;
     location?: string;
+    countryCode?: string;
     workType?: 'remote' | 'hybrid' | 'on-site';
     pages: number;
     dateFilter?: string;

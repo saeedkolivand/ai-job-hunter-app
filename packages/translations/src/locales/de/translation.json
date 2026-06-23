@@ -1456,7 +1456,6 @@
         "mustInclude": "Muss Stichwörter enthalten",
         "commaSeparated": "(kommagetrennt)",
         "keywordsPlaceholder": "TypeScript, React",
-        "fromTechStackSettings": "aus Tech-Stack-Einstellungen",
         "excludeKeywords": "Stichwörter ausschließen",
         "excludePlaceholder": "Praktikant, Junior"
       },

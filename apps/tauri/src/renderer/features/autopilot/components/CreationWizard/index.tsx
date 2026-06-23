@@ -74,7 +74,6 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
   // Suppressed when editing — those values come from the autopilot, not settings.
   const prefilledFields = {
     location: !editing && !!jobPrefs?.location,
-    keywords: !editing && (jobPrefs?.techStack?.length ?? 0) > 0,
   };
 
   const handleNext = async () => {
@@ -209,7 +208,7 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
               transition={transition.normal}
             >
               {step === 0 && <StepTarget prefilled={prefilledFields} />}
-              {step === 1 && <StepFilter prefilled={prefilledFields} />}
+              {step === 1 && <StepFilter />}
               {step === 2 && <StepAction />}
               {step === 3 && <StepSchedule />}
             </motion.div>
