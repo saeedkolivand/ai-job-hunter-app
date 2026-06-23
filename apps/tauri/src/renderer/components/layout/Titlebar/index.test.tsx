@@ -43,10 +43,16 @@ vi.mock('@ajh/translations', () => ({
 
 // ── Router ────────────────────────────────────────────────────────────────────
 
+const mockNavigate = vi.fn();
+const mockHistoryBack = vi.fn();
+const routerState = { canGoBack: false };
+
 vi.mock('@tanstack/react-router', () => ({
   useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
     select({ location: { pathname: '/' } }),
-  useNavigate: () => vi.fn(),
+  useNavigate: () => mockNavigate,
+  useCanGoBack: () => routerState.canGoBack,
+  useRouter: () => ({ history: { back: mockHistoryBack } }),
 }));
 
 // ── preferences-store — onboarding off so NotificationBell is not mounted ─────
@@ -69,10 +75,12 @@ vi.mock('@/lib/window-controls-registry', () => ({
   onWindowControlsRegistered: vi.fn(),
 }));
 
-// ── parent-route — no back button ─────────────────────────────────────────────
+// ── parent-route — controllable for back-button tests ────────────────────────
+
+const parentRouteState = { value: null as string | null };
 
 vi.mock('@/lib/parent-route', () => ({
-  parentRoute: () => null,
+  parentRoute: () => parentRouteState.value,
 }));
 
 // ── @tauri-apps/plugin-os — return 'windows' so isMac=false in jsdom ─────────
@@ -124,7 +132,11 @@ beforeEach(() => {
   mockToggleMaximize.mockReset();
   mockToggleMaximize.mockResolvedValue(undefined);
   mockToggleSidebar.mockReset();
+  mockNavigate.mockReset();
+  mockHistoryBack.mockReset();
   prefsState.sidebarCollapsed = false;
+  routerState.canGoBack = false;
+  parentRouteState.value = null;
 });
 
 // ── Branch 1: left double-click mousedown on bare drag region ─────────────────
@@ -244,5 +256,40 @@ describe('Titlebar — collapsed sidebar', () => {
     await user.click(screen.getByRole('button', { name: 'nav.expandSidebar' }));
 
     expect(mockToggleSidebar).toHaveBeenCalledOnce();
+  });
+});
+
+// ── Back button — hybrid visibility + navigation ───────────────────────────────
+
+describe('Titlebar — back button hybrid', () => {
+  it('shows back button when canGoBack is true and parent is null (history-only route)', () => {
+    routerState.canGoBack = true;
+    // parentRouteState.value remains null (no logical parent)
+    renderTitlebar();
+    expect(screen.getByRole('button', { name: 'nav.back' })).toBeInTheDocument();
+  });
+
+  it('clicking back button when parent is set calls navigate({to: parent}), not history.back()', async () => {
+    parentRouteState.value = '/applications';
+    const user = userEvent.setup();
+    renderTitlebar();
+
+    await user.click(screen.getByRole('button', { name: 'nav.back' }));
+
+    expect(mockNavigate).toHaveBeenCalledOnce();
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/applications' });
+    expect(mockHistoryBack).not.toHaveBeenCalled();
+  });
+
+  it('clicking back button with no parent but canGoBack calls router.history.back()', async () => {
+    routerState.canGoBack = true;
+    // parentRouteState.value remains null → history path
+    const user = userEvent.setup();
+    renderTitlebar();
+
+    await user.click(screen.getByRole('button', { name: 'nav.back' }));
+
+    expect(mockHistoryBack).toHaveBeenCalledOnce();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
