@@ -955,10 +955,11 @@ async fn unsupported_country_no_jsearch_returns_diagnostic_err() {
     );
     let msg = result.unwrap_err().to_string();
     assert!(
-        msg.contains("not in Adzuna's supported market list")
-            || msg.contains("JSearch")
-            || msg.contains("xx"),
-        "diagnostic error must mention the failure context; got: {msg}"
+        msg.contains("adzuna:")
+            && msg.contains("'xx'")
+            && msg.contains("not in Adzuna's supported market list"),
+        "diagnostic error must name the provider ('adzuna:'), the country code (\"'xx'\"), \
+         and the supported-market-list phrase; got: {msg}"
     );
 }
 
