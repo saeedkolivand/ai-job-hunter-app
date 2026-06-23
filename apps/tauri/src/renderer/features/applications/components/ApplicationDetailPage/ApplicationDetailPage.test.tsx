@@ -1098,4 +1098,89 @@ describe('ApplicationDetailPage — DocumentsTab debounced jobDescription persis
       jobDescription: 'second draft — the keeper',
     });
   });
+
+  it('wrong-application regression: flush targets the id captured at edit time, not the current application id', () => {
+    // Regression guard for Fix 1 (CodeRabbit MAJOR):
+    // User edits Application A's job ad. Before the 600ms fires, the component
+    // instance is reused for Application B (same DocumentsTab instance, different
+    // `application` prop). The flush must write to A's id, not B's.
+    //
+    // We simulate the A→B reuse by rendering with app A, calling onJobDescChange,
+    // then re-rendering with app B (no unmount), then advancing the timer.
+    mockTab = 'documents';
+    const appA = makeApp({ id: 'app-a', jobDescription: '' });
+    mockUseApplication.mockReturnValue({
+      data: { application: appA, events: [] },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+
+    const { rerender } = render(<ApplicationDetailPage />);
+
+    // Simulate A's job-ad edit (captures id='app-a' + text).
+    act(() => {
+      capturedOnJobDescChange?.("Application A's job ad");
+    });
+
+    // Reuse: re-render with application B before the debounce fires.
+    const appB = makeApp({ id: 'app-b', jobDescription: '' });
+    mockUseApplication.mockReturnValue({
+      data: { application: appB, events: [] },
+      isLoading: false,
+      isError: false,
+    });
+    rerender(<ApplicationDetailPage />);
+
+    // Advance past the debounce window — the pending flush from A must fire.
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+
+    // Must have been called exactly once with A's id and A's text.
+    expect(mockUpdateApplicationMutate).toHaveBeenCalledTimes(1);
+    expect(mockUpdateApplicationMutate).toHaveBeenCalledWith({
+      id: 'app-a',
+      jobDescription: "Application A's job ad",
+    });
+    // B's id must never appear in the mutate call.
+    expect(mockUpdateApplicationMutate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'app-b' })
+    );
+  });
+
+  it('multiple complete debounce cycles each persist their own value independently', () => {
+    // Verifies that after the first debounce fires and clears pendingJd, a second
+    // edit round-trips correctly and is not lost or merged with the first.
+    mockTab = 'documents';
+    renderLoaded({ id: 'app-jdc-cycles' });
+
+    // First edit cycle.
+    act(() => {
+      capturedOnJobDescChange?.('first value');
+    });
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+
+    expect(mockUpdateApplicationMutate).toHaveBeenCalledTimes(1);
+    expect(mockUpdateApplicationMutate).toHaveBeenNthCalledWith(1, {
+      id: 'app-jdc-cycles',
+      jobDescription: 'first value',
+    });
+
+    // Second edit cycle — after the first timer has already fired.
+    act(() => {
+      capturedOnJobDescChange?.('second value');
+    });
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+
+    expect(mockUpdateApplicationMutate).toHaveBeenCalledTimes(2);
+    expect(mockUpdateApplicationMutate).toHaveBeenNthCalledWith(2, {
+      id: 'app-jdc-cycles',
+      jobDescription: 'second value',
+    });
+  });
 });

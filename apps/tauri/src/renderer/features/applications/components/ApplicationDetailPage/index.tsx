@@ -373,6 +373,7 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
             items={DETAIL_TABS.map((tb) => ({
               value: tb,
               label: t(`applications.detail.tabs.${tb}` as const),
+              ariaControls: `appdetail-panel-${tb}`,
             }))}
             value={tab}
             onChange={setTab}
@@ -793,10 +794,11 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
   // so the Interview prep tab (and BriefTab) can read the updated text without
   // navigating away and back. 600ms debounce avoids a mutation per keystroke.
   // Refs keep the unmount flush free of stale-closure issues (no dep on application/mutate).
+  // The id is captured together with the text at schedule time so a reuse of this
+  // component instance for a different application (before the timer fires) cannot
+  // flush A's text onto B's id.
   const jdPersistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingJd = useRef<string | null>(null);
-  const appIdRef = useRef(application.id);
-  appIdRef.current = application.id;
+  const pendingJd = useRef<{ id: string; text: string } | null>(null);
   const mutateRef = useRef(updateApplication.mutate);
   mutateRef.current = updateApplication.mutate;
 
@@ -806,13 +808,13 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
       jdPersistTimer.current = null;
     }
     if (pendingJd.current !== null) {
-      mutateRef.current({ id: appIdRef.current, jobDescription: pendingJd.current });
+      mutateRef.current({ id: pendingJd.current.id, jobDescription: pendingJd.current.text });
       pendingJd.current = null;
     }
   };
 
   const handleJobDescChange = (text: string) => {
-    pendingJd.current = text;
+    pendingJd.current = { id: application.id, text };
     if (jdPersistTimer.current !== null) clearTimeout(jdPersistTimer.current);
     jdPersistTimer.current = setTimeout(flushJd, 600);
   };
