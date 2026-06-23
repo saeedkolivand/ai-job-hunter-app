@@ -7,5 +7,5 @@ pub mod rate_limiter;
 pub mod scrape_url;
 pub mod types;
 
-pub use engine::ScraperEngine;
+pub use engine::{BoardScrapeSummary, ScraperEngine};
 pub use types::{BoardSearchInput, JobPosting};

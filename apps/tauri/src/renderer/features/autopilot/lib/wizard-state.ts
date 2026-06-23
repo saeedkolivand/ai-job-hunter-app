@@ -71,8 +71,8 @@ export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
     // No job-preference field seeds work type; default to the 'any' sentinel.
     workType: 'any',
     amount: 50,
-    dateFilter: '24h',
-    minMatchScore: 50,
+    dateFilter: '',
+    minMatchScore: 0,
     keywords: '',
     excludeKeywords: '',
     resumeText: '',

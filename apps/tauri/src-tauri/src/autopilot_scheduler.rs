@@ -146,6 +146,12 @@ pub fn start(app: AppHandle) {
     // rather than a stuck "running" state.
     store.lock().mark_interrupted_runs();
 
+    // One-shot, idempotent loosen of autopilots saved with the old auto-prefilled
+    // restrictive filters (the zero-jobs bug). Gated by a sidecar marker file, so
+    // it is a no-op after the first run. Synchronous file IO — fine here on the
+    // setup path, before the sweep loop spawns below.
+    store.lock().relax_legacy_filters_once();
+
     tauri::async_runtime::spawn(async move {
         // Catch up on autopilots that fell overdue while the app was closed:
         // run one sweep shortly after launch rather than waiting a full tick

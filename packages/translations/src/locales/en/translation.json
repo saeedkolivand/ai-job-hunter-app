@@ -1441,6 +1441,8 @@
         "matchScore": "Match score",
         "matchScoreHint": "How strict the resume match must be",
         "matchLevel": {
+          "any": "Any",
+          "anyDesc": "No minimum",
           "low": "Low",
           "lowDesc": "Lenient",
           "medium": "Medium",
