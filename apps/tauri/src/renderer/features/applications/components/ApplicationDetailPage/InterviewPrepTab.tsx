@@ -32,7 +32,12 @@ export function InterviewPrepTab({ application, matchingGenerations }: Props) {
   const resumeQuery = useDocumentText(defaultResumeId);
 
   const saved = matchingGenerations[0];
-  const initialDesc = (saved?.jobAd ?? '').trim();
+  // application.jobDescription is the primary source — it is persisted whenever
+  // the user edits the job-ad textarea in the Documents tab (via the debounced
+  // onJobDescChange wired in DocumentsTab). Saved generation jobAd is a fallback
+  // for older records that pre-date the persist flow; URL resolution only fires
+  // when neither source has content yet.
+  const initialDesc = (application.jobDescription ?? '').trim() || (saved?.jobAd ?? '').trim();
   const resolved = useResolveJobUrl(application.jobUrl, !initialDesc);
   const jobDesc = initialDesc || (resolved.data?.description ?? '').trim();
   const hasDesc = jobDesc.length > 0;

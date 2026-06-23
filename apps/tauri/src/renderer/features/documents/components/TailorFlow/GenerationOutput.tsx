@@ -1,8 +1,8 @@
 import { Check, Copy, Download, FileText, LayoutTemplate } from 'lucide-react';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, cn, Dropdown, Switch } from '@ajh/ui';
+import { Button, cn, Dropdown, Switch, type TabItem, Tabs } from '@ajh/ui';
 
 import { EditableOutput } from '@/components/generation/EditableOutput';
 import { type ExportFormat, ExportPicker } from '@/components/generation/ExportPicker';
@@ -166,60 +166,50 @@ export function GenerationOutput({
   const activeTabId = `tailor-tab-${activeTabKey}`;
   const activePanelId = `tailor-panel-${activeTabKey}`;
 
+  type TabKey = 'resume' | 'cover' | 'jobad';
+  const tabItems = useMemo<readonly TabItem<TabKey>[]>(() => {
+    const docKeys: ('resume' | 'cover')[] = target === 'both' ? ['resume', 'cover'] : [activeOut];
+    const items: TabItem<TabKey>[] = docKeys.map((o) => ({
+      value: o,
+      label:
+        o === 'resume' ? t('autopilot.apply.target.resume') : t('autopilot.apply.target.cover'),
+      id: `tailor-tab-${o}`,
+      ariaControls: `tailor-panel-${o}`,
+    }));
+    items.push({
+      value: 'jobad',
+      label: t('autopilot.apply.tabs.jobAd'),
+      id: 'tailor-tab-jobad',
+      ariaControls: 'tailor-panel-jobad',
+    });
+    return items;
+  }, [target, activeOut, t]);
+
+  const handleTabChange = (key: TabKey) => {
+    if (key === 'jobad') {
+      setView('jobAd');
+    } else {
+      setView('doc');
+      setActiveOut(key);
+    }
+  };
+
   return (
-    <div className="flex min-h-56 flex-1 flex-col rounded-lg border border-white/[0.06] bg-white/[0.02]">
-      <div className="shrink-0 flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
-        <div role="tablist" className="flex items-center gap-1">
-          {(target === 'both' ? (['resume', 'cover'] as const) : ([activeOut] as const)).map(
-            (o) => (
-              <Button
-                key={o}
-                id={`tailor-tab-${o}`}
-                variant="unstyled"
-                type="button"
-                role="tab"
-                aria-selected={view === 'doc' && activeOut === o}
-                aria-controls={`tailor-panel-${o}`}
-                onClick={() => {
-                  setView('doc');
-                  setActiveOut(o);
-                }}
-                className={cn(
-                  'rounded px-2 py-0.5 text-[10px] font-medium transition-colors',
-                  view === 'doc' && activeOut === o
-                    ? 'bg-brand/15 text-brand-soft'
-                    : 'text-foreground/40 hover:text-foreground/70'
-                )}
-              >
-                {o === 'resume'
-                  ? t('autopilot.apply.target.resume')
-                  : t('autopilot.apply.target.cover')}
-              </Button>
-            )
-          )}
-          <Button
-            id="tailor-tab-jobad"
-            variant="unstyled"
-            type="button"
-            role="tab"
-            aria-selected={view === 'jobAd'}
-            aria-controls="tailor-panel-jobad"
-            onClick={() => setView('jobAd')}
-            className={cn(
-              'rounded px-2 py-0.5 text-[10px] font-medium transition-colors',
-              view === 'jobAd'
-                ? 'bg-brand/15 text-brand-soft'
-                : 'text-foreground/40 hover:text-foreground/70'
-            )}
-          >
-            {t('autopilot.apply.tabs.jobAd')}
-          </Button>
-        </div>
+    <div className="flex min-h-56 flex-1 flex-col rounded-lg border border-foreground/[0.06] bg-foreground/[0.02]">
+      <div className="shrink-0 flex items-center justify-between border-b border-foreground/[0.06] px-3 py-2">
+        <Tabs
+          ariaLabel={t('autopilot.apply.tabs.outputTabs')}
+          items={tabItems}
+          value={activeTabKey}
+          onChange={handleTabChange}
+          size="sm"
+          className="border-none"
+        />
         <div className="flex items-center gap-1">
           <Button
             onClick={() => void onCopy()}
             disabled={!output || view === 'jobAd'}
-            className="flex h-auto items-center gap-1.5 rounded border border-transparent bg-transparent px-2 py-1 text-[10px] text-foreground/45 transition-colors hover:bg-white/[0.04] hover:text-foreground/70 disabled:opacity-40 disabled:pointer-events-none"
+            className="flex h-auto items-center gap-1.5 rounded border border-transparent bg-transparent px-2 py-1 text-[10px] text-foreground/45 transition-colors hover:bg-foreground/[0.04] hover:text-foreground/70 disabled:opacity-40 disabled:pointer-events-none"
           >
             {copied ? <Check size={11} /> : <Copy size={11} />}
             {copied ? t('autopilot.apply.copied') : t('autopilot.apply.copy')}
@@ -251,7 +241,7 @@ export function GenerationOutput({
           tab. The ATS-safe toggle stays résumé-only (ATS single-column linearization
           is a résumé concept; cover letters aren't two-column). */}
       {view === 'doc' && (
-        <div className="shrink-0 flex flex-wrap items-center gap-2 border-b border-white/[0.06] px-3 py-1.5 text-[10px] text-foreground/30">
+        <div className="shrink-0 flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] px-3 py-1.5 text-[10px] text-foreground/30">
           {meta && (
             <>
               <FileText size={10} />
@@ -281,7 +271,7 @@ export function GenerationOutput({
                   'flex h-auto items-center gap-1.5 rounded-lg border px-2 py-1 transition-all',
                   atsMode
                     ? 'border-brand/35 bg-brand/8 text-foreground/80'
-                    : 'border-white/[0.06] bg-transparent text-foreground/45'
+                    : 'border-foreground/[0.06] bg-transparent text-foreground/45'
                 )}
               >
                 {/* Real <label htmlFor> so clicking the text toggles the switch
