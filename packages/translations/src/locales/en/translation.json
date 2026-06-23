@@ -1284,7 +1284,8 @@
         "both": "Both"
       },
       "tabs": {
-        "jobAd": "Job ad"
+        "jobAd": "Job ad",
+        "outputTabs": "Output tabs"
       },
       "jobAdView": {
         "label": "Job ad view",
