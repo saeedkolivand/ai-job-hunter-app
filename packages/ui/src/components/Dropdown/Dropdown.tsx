@@ -37,11 +37,16 @@ export interface DropdownProps {
   /** Trigger height — 'sm' matches Button size="sm" (h-7); 'md' is the default, matches Button md (h-8). */
   size?: 'sm' | 'md';
   /**
-   * Trigger accent. `default` is the neutral glass trigger; `primary` tints the
-   * trigger with the brand colour (e.g. an application-status selector). Opt-in
-   * per call site — other dropdowns stay neutral.
+   * Trigger accent.
+   * - `default` — neutral glass trigger (border-clear / bg-field).
+   * - `primary` — brand-tinted trigger (e.g. application-status selector).
+   * - `field`   — form-field appearance matching Input/NumberField controls:
+   *               border-white/[0.06], bg-white/[0.03], text-foreground/80 at
+   *               rest; brand border preserved when open (no twMerge regression).
    */
-  tone?: 'default' | 'primary';
+  tone?: 'default' | 'primary' | 'field';
+  /** Extra classes merged onto the trigger button — appended last so they reliably override height/bg/border defaults. */
+  className?: string;
 }
 
 export function Dropdown({
@@ -56,6 +61,7 @@ export function Dropdown({
   listClassName,
   size = 'md',
   tone = 'default',
+  className,
 }: DropdownProps) {
   const generatedId = useId();
   const id = idProp ?? generatedId;
@@ -184,12 +190,20 @@ export function Dropdown({
                 'border border-brand/30 bg-brand/10 text-brand-soft',
                 open ? 'border-brand/55 bg-brand/15' : 'hover:border-brand/45 hover:bg-brand/15'
               )
-            : cn(
-                'border border-[var(--border-clear)] bg-field',
-                open
-                  ? 'border-brand/45 bg-muted text-foreground/90'
-                  : 'text-foreground/75 hover:border-[var(--border-clear)] hover:bg-muted hover:text-foreground/90'
-              )
+            : tone === 'field'
+              ? cn(
+                  'border border-white/[0.06] bg-white/[0.03] text-foreground/80',
+                  open
+                    ? 'border-brand/45 bg-white/[0.05] text-foreground/90'
+                    : 'hover:border-white/10 hover:bg-white/[0.04] hover:text-foreground/90'
+                )
+              : cn(
+                  'border border-[var(--border-clear)] bg-field',
+                  open
+                    ? 'border-brand/45 bg-muted text-foreground/90'
+                    : 'text-foreground/75 hover:border-[var(--border-clear)] hover:bg-muted hover:text-foreground/90'
+                ),
+          className
         )}
       >
         <span className="flex min-w-0 items-center gap-2">
@@ -202,7 +216,11 @@ export function Dropdown({
           size={12}
           className={cn(
             'shrink-0 transition-transform duration-150',
-            tone === 'primary' ? 'text-brand-soft/70' : 'text-foreground/30',
+            tone === 'primary'
+              ? 'text-brand-soft/70'
+              : tone === 'field'
+                ? 'text-foreground/40'
+                : 'text-foreground/30',
             open && 'rotate-180'
           )}
         />

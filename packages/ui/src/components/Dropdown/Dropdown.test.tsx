@@ -224,6 +224,56 @@ describe('Dropdown', () => {
     });
   });
 
+  describe('className passthrough', () => {
+    it('merges className onto the trigger button, overriding the default height', () => {
+      render(
+        <Dropdown options={LANG_OPTIONS} value="" onChange={() => {}} className="h-9 shadow-none" />
+      );
+      const trigger = screen.getByRole('button');
+      // className is appended last inside cn() so twMerge resolves h-9 over the default h-8
+      expect(trigger.className).toContain('h-9');
+      expect(trigger.className).not.toMatch(/\bh-8\b/);
+    });
+  });
+
+  describe('tone="field"', () => {
+    it('keeps a brand border when open and does not retain the rest border-white class', async () => {
+      render(<Dropdown options={LANG_OPTIONS} value="" onChange={() => {}} tone="field" />);
+      const trigger = screen.getByRole('button');
+      // Open the dropdown
+      await userEvent.click(trigger);
+      await screen.findByRole('listbox');
+      // Must have brand border in open state
+      expect(trigger.className).toMatch(/border-brand/);
+      // Must NOT retain the rest-state white border class once open
+      expect(trigger.className).not.toMatch(/border-white/);
+    });
+
+    it('applies text-foreground/40 to the chevron (matching form-field icon opacity)', () => {
+      render(<Dropdown options={LANG_OPTIONS} value="" onChange={() => {}} tone="field" />);
+      // The ChevronDown svg is the last svg inside the trigger (SVGAnimatedString — use getAttribute)
+      const trigger = screen.getByRole('button');
+      const chevron = trigger.querySelector('svg:last-of-type');
+      expect(chevron).not.toBeNull();
+      if (!chevron) return;
+      const cls = chevron.getAttribute('class') ?? '';
+      // text-foreground/40 must be on the chevron, not the dimmer /30 (default) or brand (primary)
+      expect(cls).toContain('text-foreground/40');
+      expect(cls).not.toContain('text-foreground/30');
+    });
+
+    it('keeps the default chevron at text-foreground/30 when tone is default', () => {
+      render(<Dropdown options={LANG_OPTIONS} value="" onChange={() => {}} tone="default" />);
+      const trigger = screen.getByRole('button');
+      const chevron = trigger.querySelector('svg:last-of-type');
+      expect(chevron).not.toBeNull();
+      if (!chevron) return;
+      const cls = chevron.getAttribute('class') ?? '';
+      expect(cls).toContain('text-foreground/30');
+      expect(cls).not.toContain('text-foreground/40');
+    });
+  });
+
   describe('listClassName override', () => {
     it('applies the custom class to the list container', async () => {
       render(
