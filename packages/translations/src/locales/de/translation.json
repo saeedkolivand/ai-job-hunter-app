@@ -1248,6 +1248,9 @@
       "failed": "Fehlgeschlagen",
       "interrupted": "Unterbrochen"
     },
+    "card": {
+      "boardsCount": "{{count}} Boards"
+    },
     "apply": {
       "back": "Zurück zum Autopilot",
       "match": "Übereinstimmung",
@@ -1456,7 +1459,6 @@
         "mustInclude": "Muss Stichwörter enthalten",
         "commaSeparated": "(kommagetrennt)",
         "keywordsPlaceholder": "TypeScript, React",
-        "fromTechStackSettings": "aus Tech-Stack-Einstellungen",
         "excludeKeywords": "Stichwörter ausschließen",
         "excludePlaceholder": "Praktikant, Junior"
       },
