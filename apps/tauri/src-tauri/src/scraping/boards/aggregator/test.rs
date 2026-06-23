@@ -946,15 +946,8 @@ async fn unsupported_country_no_jsearch_returns_diagnostic_err() {
         Box::new(FakeProvider::unconfigured("jsearch")),
     ];
 
-    let result = search_with_providers(
-        &providers,
-        "engineer",
-        "Seoul",
-        "xx",
-        None,
-        make_token(),
-    )
-    .await;
+    let result =
+        search_with_providers(&providers, "engineer", "Seoul", "xx", None, make_token()).await;
 
     assert!(
         result.is_err(),
@@ -978,10 +971,9 @@ async fn supported_country_uses_adzuna_normally() {
         Box::new(FakeProvider::err("jsearch", "should not be called")),
     ];
 
-    let result =
-        search_with_providers(&providers, "engineer", "Berlin", "de", None, make_token())
-            .await
-            .unwrap();
+    let result = search_with_providers(&providers, "engineer", "Berlin", "de", None, make_token())
+        .await
+        .unwrap();
 
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].external_id, adzuna_posting.external_id);
@@ -996,16 +988,9 @@ async fn unsupported_country_no_keys_returns_keyless_empty() {
         Box::new(FakeProvider::unconfigured("jsearch")),
     ];
 
-    let result = search_with_providers(
-        &providers,
-        "engineer",
-        "Seoul",
-        "xx",
-        None,
-        make_token(),
-    )
-    .await
-    .unwrap();
+    let result = search_with_providers(&providers, "engineer", "Seoul", "xx", None, make_token())
+        .await
+        .unwrap();
 
     assert!(
         result.is_empty(),
@@ -1023,7 +1008,9 @@ async fn adzuna_provider_rejects_unsupported_country_before_network() {
         app_key: Some("fake-key".to_string()),
     };
     // "xx" is not in the allowlist.
-    let result = p.search("engineer", "Seoul", "xx", None, make_token()).await;
+    let result = p
+        .search("engineer", "Seoul", "xx", None, make_token())
+        .await;
     assert!(
         result.is_err(),
         "AdzunaProvider must Err for unsupported country without a network call"
@@ -1049,12 +1036,15 @@ async fn adzuna_provider_accepts_supported_country_passes_allowlist() {
     };
     // "de" is in the allowlist; the error that comes back must NOT mention the
     // allowlist — it should be a network/auth error (or similar), not a country error.
-    let result = p.search("engineer", "Berlin", "de", None, make_token()).await;
+    let result = p
+        .search("engineer", "Berlin", "de", None, make_token())
+        .await;
     // We expect an error (no real API key) — an unexpected Ok would mean the test
     // environment somehow hit the real API, which must not silently pass unnoticed.
     let e = result.unwrap_err();
     assert!(
-        !e.to_string().contains("not in Adzuna's supported market list"),
+        !e.to_string()
+            .contains("not in Adzuna's supported market list"),
         "supported country 'de' must pass the allowlist check; got: {e}"
     );
 }
