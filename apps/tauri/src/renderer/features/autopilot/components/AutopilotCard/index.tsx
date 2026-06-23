@@ -139,7 +139,12 @@ export function AutopilotCard({
           <div className="flex items-center gap-2 mb-0.5">
             <span className="text-sm font-semibold text-foreground/85 truncate">{ap.name}</span>
             <span className="text-[10px] text-foreground/30 font-mono bg-muted px-1.5 py-0.5 rounded">
-              {ap.target.board}
+              {(() => {
+                const [firstBoard] = ap.target.boards;
+                return ap.target.boards.length === 1
+                  ? t(`jobs.boards.${firstBoard}`, { defaultValue: firstBoard ?? '' })
+                  : t('autopilot.card.boardsCount', { count: ap.target.boards.length });
+              })()}
             </span>
             <span className="text-[10px] text-foreground/30 bg-muted px-1.5 py-0.5 rounded capitalize">
               {ap.schedule.replace('_', ' ')}

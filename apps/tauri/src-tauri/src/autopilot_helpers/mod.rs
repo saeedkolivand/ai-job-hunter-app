@@ -26,7 +26,7 @@ pub async fn autopilot_scrape(
         actively_hiring: None,
         verified: None,
         sort_by: None,
-        country_code: None,
+        country_code: target.country_code.clone(),
         latitude: None,
         longitude: None,
         radius_km: None,
@@ -68,7 +68,7 @@ pub async fn autopilot_scrape(
         .await;
 
     // Return only the postings; the caller (autopilot run) doesn't use per-board summaries.
-    // Log any skipped boards so operators can diagnose unexpected empty runs without
+    // Log any skipped or errored boards so operators can diagnose unexpected empty runs without
     // changing the result shape or IPC contract.
     result
         .map(|(postings, summaries)| {
@@ -79,6 +79,9 @@ pub async fn autopilot_scrape(
                         s.board,
                         reason
                     );
+                }
+                if let Some(ref err) = s.error {
+                    log::warn!("[autopilot] board '{}' failed (error='{}')", s.board, err);
                 }
             }
             postings

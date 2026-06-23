@@ -4,19 +4,14 @@ import { useTranslation } from '@ajh/translations';
 import { Button, cn, Input } from '@ajh/ui';
 
 import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
-import type { Prefilled, WizardState } from '@/features/autopilot/types';
+import type { WizardState } from '@/features/autopilot/types';
 import { MATCH_LEVELS, scoreToLevel } from '@/lib/match-level';
 
-import { PrefilledBadge } from '../PrefilledBadge';
 import { WizardField } from '../WizardField';
 
 const fieldCls = 'h-9 w-full text-xs shadow-none';
 
-interface StepFilterProps {
-  prefilled: Prefilled;
-}
-
-export function StepFilter({ prefilled }: StepFilterProps) {
+export function StepFilter() {
   const { t } = useTranslation();
   const { control } = useFormContext<WizardState>();
 
@@ -100,9 +95,6 @@ export function StepFilter({ prefilled }: StepFilterProps) {
                   onChange={field.onChange}
                   onBlur={field.onBlur}
                 />
-                {prefilled.keywords && (
-                  <PrefilledBadge field={t('autopilot.wizard.filter.fromTechStackSettings')} />
-                )}
               </div>
             </WizardField>
           )}

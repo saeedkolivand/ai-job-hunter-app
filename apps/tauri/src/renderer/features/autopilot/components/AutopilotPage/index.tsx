@@ -3,7 +3,7 @@ import { AnimatePresence } from 'motion/react';
 import { useEffect } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
-import type { Autopilot, AutopilotFoundJob } from '@ajh/shared';
+import { AGGREGATOR_BOARD_ID, type Autopilot, type AutopilotFoundJob } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, CardSkeleton } from '@ajh/ui';
 
@@ -80,7 +80,7 @@ function AutopilotPage() {
     try {
       const res = await saveFromPosting.mutateAsync({
         jobUrl: job.url,
-        board: ap.target.board,
+        board: job.board ?? ap.target.boards[0] ?? AGGREGATOR_BOARD_ID,
         company: job.company,
         title: job.title,
       });

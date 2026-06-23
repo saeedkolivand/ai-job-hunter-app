@@ -1244,6 +1244,9 @@
       "failed": "Failed",
       "interrupted": "Interrupted"
     },
+    "card": {
+      "boardsCount": "{{count}} boards"
+    },
     "apply": {
       "back": "Back to autopilot",
       "match": "match",
@@ -1452,7 +1455,6 @@
         "mustInclude": "Must include keywords",
         "commaSeparated": "(comma separated)",
         "keywordsPlaceholder": "TypeScript, React",
-        "fromTechStackSettings": "from tech stack settings",
         "excludeKeywords": "Exclude keywords",
         "excludePlaceholder": "intern, junior"
       },

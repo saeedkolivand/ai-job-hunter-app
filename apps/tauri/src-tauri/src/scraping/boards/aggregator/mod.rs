@@ -95,6 +95,43 @@ pub(crate) trait JobProvider: Send + Sync {
     ) -> anyhow::Result<Vec<JobPosting>>;
 }
 
+// ── Adzuna supported-country allowlist ───────────────────────────────────────
+
+/// ISO 3166-1 alpha-2 country codes hosted by Adzuna's job-search API.
+///
+/// Source: Adzuna API documentation at <https://api.adzuna.com/v1/doc>
+/// (path-parameter enumeration visible in the interactive endpoint reference).
+/// Verified against the known set as of 2026-06-23; update this list if
+/// Adzuna adds new markets (the path `/v1/api/jobs/{country}/search/1` returns
+/// a non-2xx error body for any code not in this set, which is indistinguishable
+/// from an auth failure without real keys — see code comment in `search`).
+const ADZUNA_SUPPORTED_COUNTRIES: &[&str] = &[
+    "at", // Austria
+    "au", // Australia
+    "be", // Belgium
+    "br", // Brazil
+    "ca", // Canada
+    "ch", // Switzerland
+    "de", // Germany
+    "es", // Spain
+    "fr", // France
+    "gb", // United Kingdom
+    "in", // India
+    "it", // Italy
+    "mx", // Mexico
+    "nl", // Netherlands
+    "nz", // New Zealand
+    "pl", // Poland
+    "sg", // Singapore
+    "us", // United States
+    "za", // South Africa
+];
+
+#[inline]
+fn adzuna_supports_country(country: &str) -> bool {
+    ADZUNA_SUPPORTED_COUNTRIES.contains(&country)
+}
+
 // ── Adzuna provider ───────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -171,10 +208,23 @@ impl JobProvider for AdzunaProvider {
             return Err(anyhow::anyhow!("adzuna: not configured"));
         }
 
+        // Reject unsupported countries before issuing any HTTP request.
+        // Adzuna only hosts a fixed set of markets; an unsupported country code
+        // would produce a non-2xx response (indistinguishable from an auth error
+        // at the HTTP level without real keys). Returning Err here lets the
+        // `search_with_providers` fallback chain transparently route to JSearch
+        // (which uses free-text location and is globally scoped).
+        let country = if country.is_empty() { "de" } else { country };
+        if !adzuna_supports_country(country) {
+            return Err(anyhow::anyhow!(
+                "adzuna: country '{country}' is not in Adzuna's supported market list \
+                 (supported: {}); configure a JSearch key for global coverage",
+                ADZUNA_SUPPORTED_COUNTRIES.join(", ")
+            ));
+        }
+
         let app_id = self.app_id.as_deref().unwrap_or("");
         let app_key = self.app_key.as_deref().unwrap_or("");
-
-        let country = if country.is_empty() { "de" } else { country };
         let country_enc = urlencoding::encode(country);
         let app_id_enc = urlencoding::encode(app_id);
         let app_key_enc = urlencoding::encode(app_key);
@@ -396,6 +446,8 @@ impl JobProvider for JSearchProvider {
 /// - Adzuna configured, `Err(_)`                 → log; try JSearch if configured.
 /// - Adzuna not configured                        → try JSearch if configured.
 /// - Neither configured                           → `Ok(vec![])` (keyless-empty).
+/// - Adzuna configured + `Err(_)`, JSearch absent → `Err(diagnostic)` so the
+///   engine surfaces it as a board error rather than a silent zero-result run.
 ///
 /// Items from each provider are keyed by their `external_id` to deduplicate.
 async fn search_with_providers(
@@ -414,6 +466,10 @@ async fn search_with_providers(
     let primary = providers.iter().find(|p| p.provider_id() == "adzuna");
     let fallback = providers.iter().find(|p| p.provider_id() == "jsearch");
 
+    // Track whether Adzuna was configured-but-failed so we can distinguish
+    // "keys present, request failed" from "no keys at all" at the end.
+    let mut adzuna_configured_failed: Option<anyhow::Error> = None;
+
     // Run primary if configured.
     if let Some(p) = primary {
         if p.is_configured() {
@@ -427,6 +483,7 @@ async fn search_with_providers(
                 }
                 Err(e) => {
                     log::warn!("[aggregator] adzuna error, attempting jsearch fallback: {e}");
+                    adzuna_configured_failed = Some(e);
                     // Fall through to JSearch below.
                 }
             }
@@ -448,7 +505,17 @@ async fn search_with_providers(
         }
     }
 
-    // Neither configured.
+    // Adzuna had keys but failed (e.g. unsupported country) AND JSearch is not
+    // configured → surface a diagnostic error instead of a silent empty result.
+    // The engine records this in BoardScrapeSummary.error, which the Jobs page
+    // renders as a partial-failure warning and autopilot logs as a skipped board.
+    if let Some(e) = adzuna_configured_failed {
+        return Err(anyhow::anyhow!(
+            "{e}; add a JSearch key in Settings → API Keys for global coverage"
+        ));
+    }
+
+    // Neither provider configured → keyless-empty (intended, never an error).
     Ok(vec![])
 }
 

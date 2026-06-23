@@ -23,3 +23,22 @@ autoInstallPeers: true
 
 # Build settings
 enablePrePostScripts: true
+
+# minimumReleaseAge cooldown exemptions — these exact versions may be installed
+# before the cooldown window elapses (added alongside this change's dependency bump).
+# TRANSIENT: each entry can be removed once that version has aged past the cooldown
+# window; they are not permanent pins.
+minimumReleaseAgeExclude:
+  - '@typescript-eslint/eslint-plugin@8.62.0'
+  - '@typescript-eslint/parser@8.62.0'
+  - '@typescript-eslint/project-service@8.62.0'
+  - '@typescript-eslint/scope-manager@8.62.0'
+  - '@typescript-eslint/tsconfig-utils@8.62.0'
+  - '@typescript-eslint/type-utils@8.62.0'
+  - '@typescript-eslint/types@8.62.0'
+  - '@typescript-eslint/typescript-estree@8.62.0'
+  - '@typescript-eslint/utils@8.62.0'
+  - '@typescript-eslint/visitor-keys@8.62.0'
+  - globals@17.7.0
+  - knip@6.18.0
+  - typescript-eslint@8.62.0

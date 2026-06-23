@@ -6,6 +6,8 @@ export interface WizardState {
   boards: string[];
   query: string;
   location: string;
+  /** Country code captured when the user picks a geocode suggestion (e.g. "gb", "us"). */
+  countryCode?: string;
   workType: 'remote' | 'hybrid' | 'on-site' | 'any';
   /** Target number of jobs to fetch; converted to scraper pages on save (mirrors the jobs page). */
   amount: number;
@@ -23,4 +25,4 @@ export interface WizardState {
   scheduleMinute: number;
 }
 
-export type Prefilled = { location: boolean; keywords: boolean };
+export type Prefilled = { location: boolean };

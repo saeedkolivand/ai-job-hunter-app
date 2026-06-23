@@ -43,6 +43,7 @@ export function wizardStateToPayload(form: WizardState): AutopilotCreate {
       boards: form.boards,
       query: form.query,
       location: form.location || undefined,
+      countryCode: form.countryCode || undefined,
       workType: form.workType !== 'any' ? form.workType : undefined,
       pages: itemsToPages(form.amount),
       dateFilter: form.dateFilter || undefined,
@@ -72,7 +73,7 @@ export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
     amount: 50,
     dateFilter: '24h',
     minMatchScore: 50,
-    keywords: jobPrefs?.techStack?.map((t) => t.name).join(', ') ?? '',
+    keywords: '',
     excludeKeywords: '',
     resumeText: '',
     schedule: 'daily',
@@ -83,29 +84,14 @@ export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
 
 /** Map a persisted autopilot back into the wizard form for editing. */
 export function autopilotToWizardState(ap: Autopilot): WizardState {
-  // The runtime payload uses `boards: string[]` (post-migration). The static
-  // `Autopilot` type still carries the legacy `board: string` shape; cast to
-  // read whichever field exists until the shared type is regenerated.
-  const target = ap.target as unknown as {
-    boards?: string[];
-    board?: string;
-    query: string;
-    location?: string;
-    workType?: 'remote' | 'hybrid' | 'on-site';
-    pages: number;
-    dateFilter?: string;
-  };
-  const boards: string[] =
-    target.boards && target.boards.length > 0
-      ? target.boards
-      : target.board
-        ? [target.board]
-        : [AGGREGATOR_BOARD_ID];
+  const { target } = ap;
+  const boards: string[] = target.boards.length > 0 ? target.boards : [AGGREGATOR_BOARD_ID];
   return {
     name: ap.name,
     boards,
     query: target.query,
     location: target.location ?? '',
+    countryCode: target.countryCode,
     workType: target.workType ?? 'any',
     // Stored as pages; surface back as an approximate item count for editing.
     amount: target.pages * PAGE_SIZE,
