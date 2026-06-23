@@ -60,6 +60,7 @@ export function JobUrlImport({ onImport, disabled }: Props) {
         <Input
           ref={inputRef}
           value={url}
+          aria-invalid={!!error}
           onChange={(e) => {
             setUrl(e.target.value);
             if (error) setError(null);

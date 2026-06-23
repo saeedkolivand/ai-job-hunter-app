@@ -173,7 +173,7 @@ export function RewritePopover({
           <p className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-foreground/35">
             {t('aiGenerate.rewrite.selectionLabel')}
           </p>
-          <p className="max-h-16 overflow-y-auto whitespace-pre-wrap rounded-md bg-white/[0.03] px-2 py-1.5 text-[11px] leading-relaxed text-foreground/55">
+          <p className="max-h-16 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted px-2 py-1.5 text-[11px] leading-relaxed text-foreground/55">
             {target.selection}
           </p>
         </div>
@@ -254,7 +254,7 @@ export function RewritePopover({
           <Button
             type="button"
             onClick={() => run(lastInstructionRef.current)}
-            className="rounded-lg border-transparent bg-white/[0.05] px-2.5 py-1 text-[11px] text-foreground/60 transition-colors hover:text-foreground h-auto"
+            className="rounded-lg border-transparent bg-muted px-2.5 py-1 text-[11px] text-foreground/60 transition-colors hover:text-foreground h-auto"
           >
             {t('aiGenerate.rewrite.regenerate')}
           </Button>

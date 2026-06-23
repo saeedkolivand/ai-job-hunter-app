@@ -30,7 +30,7 @@ export function HardwarePopover({
     <HoverPopover
       placement="bottom"
       ariaLabel={t('onboarding.ai.systemPerformance')}
-      contentClassName="w-64 rounded-xl border border-[var(--border-clear)] bg-[var(--color-card)] p-4 shadow-2xl"
+      contentClassName="w-64 rounded-xl border border-[var(--border-clear)] bg-card p-4 shadow-2xl"
       trigger={
         <Button
           variant="unstyled"

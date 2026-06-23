@@ -115,7 +115,7 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
       header={
         <>
           {/* Wizard header */}
-          <div className="flex items-center justify-between border-[var(--border-clear)] px-6 py-4">
+          <div className="flex items-center justify-between px-6 py-4">
             <div className="flex items-center gap-2">
               <Zap size={14} className="text-brand-soft" />
               <span id="creation-wizard-title" className="text-sm font-semibold text-foreground/80">
