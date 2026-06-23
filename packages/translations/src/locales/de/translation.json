@@ -1252,8 +1252,6 @@
       "back": "Zurück zum Autopilot",
       "match": "Übereinstimmung",
       "jobDescription": "Stellenbeschreibung",
-      "noDescription": "Für diesen Job wurde keine Beschreibung erfasst.",
-      "loadFailed": "Diese Anzeige konnte nicht geladen werden — sie ist möglicherweise geschlossen oder erfordert eine Anmeldung.",
       "fetchingDescription": "Stellenbeschreibung wird abgerufen…",
       "generate": "Generieren",
       "generating": "Generiere…",
@@ -1299,7 +1297,9 @@
         "summaryHint": "Erhalte eine KI-Zusammenfassung dieser Anzeige — wichtigste Aufgaben, Anforderungen und Signale.",
         "generating": "Stellenanzeige wird zusammengefasst…",
         "editHelper": "Änderungen hier werden für die Generierung verwendet — korrigiere einen fehlerhaften Scrape vor dem Anpassen.",
-        "summaryLanguage": "Zusammenfassungssprache"
+        "summaryLanguage": "Zusammenfassungssprache",
+        "pasteHint": "Vollständige Stellenanzeige hier einfügen…",
+        "truncatedHint": "Dies sieht wie ein unvollständiges Inserat aus — füge die vollständige Anzeige ein, um das beste Ergebnis zu erzielen."
       },
       "tryAgain": "Erneut versuchen",
       "hintNoResume": "Fügen Sie Ihren Lebenslauf hinzu, um zu generieren",
