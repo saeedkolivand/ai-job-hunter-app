@@ -91,10 +91,113 @@ pub async fn autopilot_scrape(
         .map_err(AppError::from)
 }
 
+/// Max length of a single board's sanitized reason in the user-visible step log.
+/// Diagnostics are a hint, not a full error dump — keep them short and bounded.
+const MAX_REASON_LEN: usize = 200;
+
+/// Redact a board's raw error/skip text before it reaches the user-visible step
+/// log. The text can originate from an upstream `e.to_string()` and may carry
+/// absolute filesystem paths, full URLs, or request internals — emitting those raw
+/// violates the repo path-privacy rule. This collapses each such fragment to a
+/// neutral placeholder, normalises whitespace, and caps the length.
+///
+/// Deliberately conservative: it errs toward over-redaction (a placeholder is
+/// always safe) and keeps the high-level message (e.g. `"429 Too Many Requests"`,
+/// `"needs-login"`, `"network timeout"`) intact. Pure + unit-testable.
+fn sanitize_reason(reason: &str) -> String {
+    let mut out = String::with_capacity(reason.len());
+
+    for token in reason.split_whitespace() {
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.push_str(&redact_token(token));
+    }
+
+    if out.chars().count() > MAX_REASON_LEN {
+        let truncated: String = out.chars().take(MAX_REASON_LEN).collect();
+        out = format!("{truncated}…");
+    }
+    out
+}
+
+/// Classify a single whitespace-delimited token and replace it with a neutral
+/// placeholder when it looks like a path / URL / request internal; otherwise keep
+/// it verbatim. Whitespace-token granularity keeps the surrounding human message
+/// (`"failed: <path>"` → `"failed: <path-redacted>"`) readable.
+fn redact_token(token: &str) -> String {
+    // Strip surrounding punctuation (quotes, parens, braces, backticks, trailing
+    // `.,:;|`) so a token like `(C:\Users\x)`, `` `https://…` ``, or `{path}` still
+    // matches, then re-attach it.
+    let trimmed = token.trim_matches(|c: char| {
+        matches!(
+            c,
+            '"' | '\''
+                | '`'
+                | '('
+                | ')'
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '<'
+                | '>'
+                | '|'
+                | ','
+                | ';'
+                | ':'
+        )
+    });
+
+    let is_url = trimmed.contains("://");
+    // Windows absolute path: drive letter + `:\` or `:/` (e.g. `C:\Users\…`).
+    let mut chars = trimmed.chars();
+    let is_windows_path = matches!(
+        (chars.next(), chars.next(), chars.next()),
+        (Some(c), Some(':'), Some('\\' | '/')) if c.is_ascii_alphabetic()
+    );
+    // Unix absolute path: starts with `/` and has a further separator (a lone `/`
+    // or a fraction like `1/2` is not a path).
+    let is_unix_path = trimmed.starts_with('/') && trimmed[1..].contains('/');
+    // Drive-less home/user path: a fragment like `Users\alice\…` or `home/alice/…`
+    // that lost its drive letter / leading `/` (common in unwound error chains).
+    // Lowercased substring match catches both separators and any case.
+    let lower = trimmed.to_ascii_lowercase();
+    let is_homeish_path =
+        lower.contains("users\\") || lower.contains("users/") || lower.contains("home/");
+
+    // Bare IPv4 / host:port — leaks the user's network surroundings. Require an
+    // embedded `.` AND either a trailing `:<digits>` port or an all-numeric dotted
+    // IPv4, so `429:`, `12:34` timestamps, and plain integers stay untouched.
+    let is_host_port = trimmed.contains('.') && {
+        let segs: Vec<&str> = trimmed.split('.').filter(|s| !s.is_empty()).collect();
+        let dotted_ipv4 = segs.len() == 4
+            && segs
+                .iter()
+                .all(|seg| seg.chars().all(|c| c.is_ascii_digit()));
+        let host_with_port = trimmed.rsplit_once(':').is_some_and(|(host, port)| {
+            host.contains('.') && !port.is_empty() && port.chars().all(|c| c.is_ascii_digit())
+        });
+        dotted_ipv4 || host_with_port
+    };
+
+    if is_url {
+        token.replace(trimmed, "<url-redacted>")
+    } else if is_windows_path || is_unix_path || is_homeish_path {
+        token.replace(trimmed, "<path-redacted>")
+    } else if is_host_port {
+        token.replace(trimmed, "<host-redacted>")
+    } else {
+        token.to_string()
+    }
+}
+
 /// Turn the per-board scrape summaries into a single human-readable reason string
 /// explaining why a run may have come up short — `"<board>: <error>"` for each
-/// board that errored or was skipped, joined with `"; "`. Returns an empty string
-/// when no board reported a problem. Pure + unit-testable.
+/// board that errored or was skipped, joined with `"; "`. The per-board reason is
+/// run through [`sanitize_reason`] so absolute paths / URLs never leak into the
+/// user-visible step log. Returns an empty string when no board reported a
+/// problem. Pure + unit-testable.
 pub(crate) fn scrape_diagnostics(summaries: &[BoardScrapeSummary]) -> String {
     summaries
         .iter()
@@ -102,7 +205,7 @@ pub(crate) fn scrape_diagnostics(summaries: &[BoardScrapeSummary]) -> String {
             s.error
                 .as_deref()
                 .or(s.skipped.as_deref())
-                .map(|reason| format!("{}: {reason}", s.board))
+                .map(|reason| format!("{}: {}", s.board, sanitize_reason(reason)))
         })
         .collect::<Vec<_>>()
         .join("; ")
@@ -216,5 +319,114 @@ mod tests {
             !diag.contains("; "),
             "single problem board must not add trailing separator; got: {diag}"
         );
+    }
+
+    #[test]
+    fn diagnostics_redact_absolute_paths_and_urls() {
+        // A raw error from an upstream `e.to_string()` carrying an absolute
+        // Windows path, a Unix path, and a full URL must NOT leak any of them into
+        // the user-visible step log (repo path-privacy rule).
+        let raw = "failed to open C:\\Users\\alice\\secret.json or /home/alice/cfg via https://api.example.com/v1/jobs?token=abc";
+        let diag = scrape_diagnostics(&[summary("aggregator", Some(raw), None)]);
+
+        assert!(
+            !diag.contains("C:\\Users\\alice"),
+            "windows path leaked; got: {diag}"
+        );
+        assert!(
+            !diag.contains("/home/alice"),
+            "unix path leaked; got: {diag}"
+        );
+        assert!(
+            !diag.contains("https://api.example.com"),
+            "url leaked; got: {diag}"
+        );
+        assert!(
+            !diag.contains("token=abc"),
+            "url query/secret leaked; got: {diag}"
+        );
+        // The high-level message + placeholders survive.
+        assert!(
+            diag.contains("aggregator:"),
+            "board prefix missing; got: {diag}"
+        );
+        assert!(
+            diag.contains("failed to open"),
+            "message dropped; got: {diag}"
+        );
+        assert!(
+            diag.contains("<path-redacted>"),
+            "path placeholder missing; got: {diag}"
+        );
+        assert!(
+            diag.contains("<url-redacted>"),
+            "url placeholder missing; got: {diag}"
+        );
+    }
+
+    #[test]
+    fn sanitize_reason_caps_overlong_input() {
+        let long = "x".repeat(500);
+        let out = sanitize_reason(&long);
+        assert!(
+            out.chars().count() <= super::MAX_REASON_LEN + 1, // +1 for the ellipsis
+            "sanitized reason must be length-capped; got {} chars",
+            out.chars().count()
+        );
+        assert!(
+            out.ends_with('…'),
+            "overlong input must be truncated with …"
+        );
+    }
+
+    #[test]
+    fn sanitize_reason_keeps_benign_messages_verbatim() {
+        // No paths/URLs → unchanged (modulo whitespace normalisation).
+        assert_eq!(
+            sanitize_reason("429 Too Many Requests"),
+            "429 Too Many Requests"
+        );
+        assert_eq!(sanitize_reason("needs-login"), "needs-login");
+    }
+
+    #[test]
+    fn redact_host_port_ipv4_and_driveless_home_path() {
+        // host:port, dotted IPv4 (with and without port), and a drive-less
+        // `Users\…` / `home/…` fragment must all be redacted — they leak the
+        // user's network/home surroundings (hard path-privacy rule).
+        for raw in [
+            "connect to api.adzuna.com:443 failed",
+            "connect to 93.184.216.34:443 failed",
+            "peer 93.184.216.34 unreachable",
+            "open Users\\alice\\cache denied",
+            "open home/alice/cache denied",
+        ] {
+            let out = sanitize_reason(raw);
+            assert!(
+                !out.contains("api.adzuna.com")
+                    && !out.contains("93.184.216.34")
+                    && !out.contains("alice"),
+                "sensitive fragment leaked from {raw:?}; got: {out}"
+            );
+            assert!(
+                out.contains("<host-redacted>") || out.contains("<path-redacted>"),
+                "a redaction placeholder must appear for {raw:?}; got: {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn over_redaction_control_keeps_codes_timestamps_and_numbers() {
+        // Guard against the widened rules eating benign tokens: a trailing-colon
+        // status (`429:`), a `HH:MM` timestamp (`12:34`), a plain integer, and a
+        // plain word must ALL survive verbatim (no embedded `.` / no path markers).
+        let out = sanitize_reason("429: 12:34 503 timeout reached");
+        assert_eq!(
+            out, "429: 12:34 503 timeout reached",
+            "benign codes/timestamps/numbers must not be redacted; got: {out}"
+        );
+        // A dotted version with no port and a non-IPv4 shape (3 segments) is left
+        // alone too — not a host:port and not a 4-octet IPv4.
+        assert_eq!(sanitize_reason("v1.2.3"), "v1.2.3");
     }
 }

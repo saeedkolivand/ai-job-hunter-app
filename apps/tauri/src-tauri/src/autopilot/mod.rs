@@ -558,8 +558,7 @@ const RELAX_MARKER_FILE: &str = "autopilot_relax_v1.done";
 /// Surgically loosen one autopilot's auto-prefilled restrictive filters in place.
 /// Kills the zero-jobs bug while preserving deliberate user customizations:
 ///
-/// - `filter.keywords` → `None` **unconditionally** (the auto-prefill that
-///   manual search never applies),
+/// - `filter.keywords` → `None` **only on a legacy record** (see below),
 /// - `filter.min_match_score` → `0.0` **only if** it is still the old auto
 ///   default `50.0`,
 /// - `target.date_filter` → `None` **only if** it is still the old auto default
@@ -568,8 +567,34 @@ const RELAX_MARKER_FILE: &str = "autopilot_relax_v1.done";
 /// Everything else (`exclude_keywords`, `query`, `location`, `country_code`,
 /// `boards`, `pages`, `work_type`, `top_n`) is left untouched. Pure + filesystem-
 /// free so it is unit-testable on a bare `&mut Autopilot`.
+///
+/// **Idempotency guarantee.** "Legacy" is decided up front from the two *sentinel*
+/// fields (`min_match_score == 50.0` OR `date_filter == Some("24h")`) — the
+/// prefilled `keywords` clear is gated on that flag, NOT applied unconditionally.
+/// So a record that's already been relaxed (score `0.0`, date `None`) is NOT
+/// legacy → the whole function is a no-op → re-running can never erase keywords
+/// the user added after the first relaxation. This matters because the done-marker
+/// write in [`AutopilotStore::relax_legacy_filters_once`] is best-effort
+/// (`.ok()`-swallowed): if it fails, the migration re-runs on next launch, and
+/// this no-op-on-relaxed property is what makes that rerun safe. The marker is now
+/// purely an optimization, not a correctness gate.
+///
+/// Narrow accepted gap: a record with prefilled keywords where the user ALSO
+/// changed *both* the score (≠50) *and* the date (≠"24h") reads as non-legacy, so
+/// its keywords are kept. That's rare and diagnosable, and erring toward keeping
+/// user data is the safe direction.
 pub(crate) fn relax_legacy_filters(ap: &mut Autopilot) {
-    ap.filter.keywords = None;
+    // Decide legacy-ness from the sentinels BEFORE mutating them, so the decision
+    // can't be invalidated by our own resets below.
+    let was_legacy =
+        ap.filter.min_match_score == 50.0 || ap.target.date_filter.as_deref() == Some("24h");
+
+    if was_legacy {
+        // Only legacy records carry the auto-prefilled keyword list manual search
+        // never applies; clearing it on an already-relaxed record would erase
+        // user-added keywords on a migration rerun.
+        ap.filter.keywords = None;
+    }
 
     if ap.filter.min_match_score == 50.0 {
         ap.filter.min_match_score = 0.0;

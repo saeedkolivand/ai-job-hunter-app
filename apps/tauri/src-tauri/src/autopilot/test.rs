@@ -735,15 +735,38 @@ fn base_autopilot() -> Autopilot {
 }
 
 #[test]
-fn relax_clears_keywords_unconditionally() {
-    // keywords with values → None after relax.
+fn relax_clears_keywords_for_legacy_record() {
+    // base_autopilot() is legacy (score 50 + date "24h"), so the auto-prefilled
+    // keyword list is cleared. The clear is gated on legacy-ness (see
+    // `relax_is_noop_on_already_relaxed_record` for the non-legacy path).
     let mut ap = base_autopilot();
     ap.filter.keywords = Some(vec!["rust".into(), "go".into()]);
     relax_legacy_filters(&mut ap);
     assert!(
         ap.filter.keywords.is_none(),
-        "keywords must be cleared to None"
+        "legacy record's prefilled keywords must be cleared to None"
     );
+}
+
+#[test]
+fn relax_is_noop_on_already_relaxed_record() {
+    // A record already relaxed (score 0.0, date None) is NOT legacy, so re-running
+    // the migration must NOT touch keywords the user added afterwards. This is the
+    // idempotency property that makes a marker-write failure (→ rerun) safe.
+    let mut ap = base_autopilot();
+    ap.filter.min_match_score = 0.0;
+    ap.target.date_filter = None;
+    ap.filter.keywords = Some(vec!["python".into()]);
+
+    relax_legacy_filters(&mut ap);
+
+    assert_eq!(
+        ap.filter.keywords.as_deref(),
+        Some(["python".to_string()].as_ref()),
+        "user-added keywords on an already-relaxed record must survive a rerun"
+    );
+    assert_eq!(ap.filter.min_match_score, 0.0);
+    assert!(ap.target.date_filter.is_none());
 }
 
 #[test]
