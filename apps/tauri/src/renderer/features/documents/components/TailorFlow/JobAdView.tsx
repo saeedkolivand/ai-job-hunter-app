@@ -1,6 +1,7 @@
 import { ExternalLink as ExternalLinkIcon, Loader2, Sparkles } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
+import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import {
   Button,
@@ -28,11 +29,20 @@ interface Props {
   jobUrl?: string;
 }
 
+/** Returns true when the text ends with the ellipsis character or three dots. */
+function looksPartial(text: string) {
+  const t = text.trimEnd();
+  return t.endsWith('…') || t.endsWith('...');
+}
+
 /**
  * Shared two-tab job-ad surface (Summary | Job Ad) used by both the wizard's
  * first step and the results panel's job-ad tab. The Summary sub-tab lazily
  * streams an AI summary on an explicit click; the Job Ad sub-tab shows the raw
  * posting as an EDITABLE textarea so a bad scrape can be fixed before tailoring.
+ *
+ * Default tab is `source` when the description is missing or looks truncated so
+ * paste is immediately discoverable; otherwise `summary`.
  */
 export function JobAdView({
   jobDesc,
@@ -48,7 +58,23 @@ export function JobAdView({
   jobUrl,
 }: Props) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<'summary' | 'source'>('summary');
+
+  // Start on `source` when there's nothing to show or the snippet is truncated —
+  // that's when paste is the most useful action. `summary` otherwise (normal case).
+  const truncated = looksPartial(jobDesc);
+  const [tab, setTab] = useState<'summary' | 'source'>(
+    !hasDesc || truncated ? 'source' : 'summary'
+  );
+
+  // Re-pick the default sub-tab only when the POSTING changes (new jobUrl), not on
+  // every jobDesc edit — pasting into the source textarea changes `truncated`, and
+  // resyncing on that would yank the user out of the textarea they're editing.
+  const prevJobUrl = useRef(jobUrl);
+  useEffect(() => {
+    if (prevJobUrl.current === jobUrl) return;
+    prevJobUrl.current = jobUrl;
+    setTab(!hasDesc || looksPartial(jobDesc) ? 'source' : 'summary');
+  }, [jobUrl, hasDesc, jobDesc]);
 
   // Sourced from OUTPUT_LANGUAGES (the single locale source of truth) so each value
   // is a locale CODE the generation pipeline's safeLocale accepts — display names
@@ -133,33 +159,41 @@ export function JobAdView({
             <Loader2 size={12} className="animate-spin" />
             {t('autopilot.apply.fetchingDescription')}
           </div>
-        ) : hasDesc || jobDesc ? (
+        ) : (
+          // Source tab — always editable. Empty when scrape failed / no description captured.
           <div className="flex min-h-0 flex-1 flex-col gap-1">
+            {truncated && (
+              <p
+                id="job-ad-truncated-hint"
+                className="shrink-0 rounded-md border border-amber-400/20 bg-amber-400/5 px-2 py-1 text-[10px] text-amber-200/80"
+              >
+                {t('autopilot.apply.jobAdView.truncatedHint')}
+              </p>
+            )}
             <TextArea
               variant="glass"
               value={jobDesc}
               onChange={(e) => onJobDescChange(e.target.value)}
+              placeholder={t('autopilot.apply.jobAdView.pasteHint')}
               className="h-full flex-1 resize-none text-[11px] leading-relaxed"
-              aria-label={t('autopilot.apply.jobAdView.editHelper')}
+              aria-label={t('autopilot.apply.tabs.jobAd')}
+              aria-describedby={
+                truncated ? 'job-ad-edit-helper job-ad-truncated-hint' : 'job-ad-edit-helper'
+              }
+              data-testid={TEST_IDS.documents.jobAdViewTextarea}
             />
-            <p className="shrink-0 text-[10px] text-foreground/35">
+            <p id="job-ad-edit-helper" className="shrink-0 text-[10px] text-foreground/35">
               {t('autopilot.apply.jobAdView.editHelper')}
             </p>
-          </div>
-        ) : jobUrl ? (
-          <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-[11px] text-amber-200/80">
-            {t('autopilot.apply.loadFailed')}{' '}
-            <ExternalLink
-              href={jobUrl}
-              className="inline-flex items-center gap-0.5 font-medium text-brand-soft hover:underline"
-            >
-              {t('autopilot.viewJob')}
-              <ExternalLinkIcon size={10} />
-            </ExternalLink>
-          </div>
-        ) : (
-          <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-[11px] text-amber-200/80">
-            {t('autopilot.apply.noDescription')}
+            {jobUrl && (
+              <ExternalLink
+                href={jobUrl}
+                className="shrink-0 inline-flex items-center gap-0.5 self-start text-[10px] font-medium text-brand-soft hover:underline"
+              >
+                {t('autopilot.viewJob')}
+                <ExternalLinkIcon size={10} />
+              </ExternalLink>
+            )}
           </div>
         )}
       </div>

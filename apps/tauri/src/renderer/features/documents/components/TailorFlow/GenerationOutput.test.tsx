@@ -15,6 +15,20 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+// ExternalLink uses useAppClient (requires AppClientProvider) — stub it with a
+// plain anchor so tests that reach the Job-ad source tab don't need a provider.
+vi.mock('@/components/ui/ExternalLink', () => ({
+  ExternalLink: ({
+    href,
+    children,
+    ...rest
+  }: { href: string; children: React.ReactNode } & React.HTMLAttributes<HTMLAnchorElement>) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  ),
+}));
+
 // EditableOutput mock — exposes onChange/onBlur/isPending + renders previewSlot.
 // Uses divs (not raw <textarea>/<button>) to stay clear of the @ajh/ui ESLint rule.
 // The mock is intentionally richer than the original so edit/debounce/preview tests

@@ -111,13 +111,16 @@ hr.scrawl{border:none; height:1px; margin:54px auto; width:min(560px,90%);
 .route h3{font-family:var(--head); font-weight:700; letter-spacing:-.01em; font-size:19px; margin:0 0 2px; color:var(--text)}
 .route .area{font-family:var(--mono); font-size:13px; color:var(--muted); margin:0 0 14px}
 .flow{list-style:none; margin:0; padding:0}
-.flow li{display:flex; gap:10px; align-items:baseline; margin:0 0 10px; line-height:1.45}
+.flow li{display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline; margin:0 0 10px; line-height:1.45}
 .flow .lbl{font-family:var(--mono); font-size:12px; color:var(--muted); min-width:78px; flex:0 0 78px; text-transform:uppercase; letter-spacing:.04em; padding-top:1px}
 .flow .who{font-size:15px}
 .flow .who b{font-family:var(--mono); font-weight:400; font-size:13px; background:var(--surface-2); padding:2px 7px; border-radius:6px; color:var(--text); border:1px solid var(--border)}
 .flow .who .crit{background:var(--critic-tint); border-color:rgba(244,114,182,.4); color:var(--text)}
 .flow .who .sec{background:var(--author-tint); border-color:rgba(52,211,153,.4); color:var(--text)}
-.flow .why{font-size:14px; color:var(--muted)}
+.flow .who .gate{background:rgba(251,191,36,.12); border-color:rgba(251,191,36,.4); color:var(--text)}
+.flow .why{font-size:14px; color:var(--muted); flex-basis:100%; margin-left:88px}
+.flow li.area{flex-wrap:nowrap}
+.flow li.area .why{flex-basis:auto; margin-left:0}
 
 /* route panel re-trigger animation */
 @media (prefers-reduced-motion: no-preference){
@@ -130,6 +133,7 @@ hr.scrawl{border:none; height:1px; margin:54px auto; width:min(560px,90%);
   .route.swap .flow li:nth-child(2){animation-delay:.15s}
   .route.swap .flow li:nth-child(3){animation-delay:.2s}
   .route.swap .flow li:nth-child(4){animation-delay:.25s}
+  .route.swap .flow li:nth-child(5){animation-delay:.3s}
   @keyframes route-in{from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none}}
 }
 
@@ -438,10 +442,18 @@ footer{margin-top:64px; text-align:center}
       </div>
     </div>
     <div class="step">
+      <div class="connector" aria-hidden="true"></div>
       <div class="num">8</div>
       <div class="body">
         <h3>project-steward closes <span class="tag">sole doc writer</span></h3>
         <p><span class="a">project-steward</span> syncs <span class="a">docs/</span> + <span class="a">docs/knowledge</span>, persists any lesson, and runs <span class="a">graphify update .</span> + <span class="a">codegraph sync</span> so the graphs match reality again.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">9</div>
+      <div class="body">
+        <h3>pr-reviewer gate <span class="tag">before the PR</span></h3>
+        <p>The final internal pass before <span class="a">git push</span>. <span class="a">pr-reviewer</span> runs the repo's real tools (typecheck, lint, clippy, tests) + cross-file blast-radius + a verification gate so CodeRabbit finds less. 🔴+🟠 findings block the PR. Invoke with <span class="a">/review</span>.</p>
       </div>
     </div>
   </div>
@@ -608,35 +620,44 @@ footer{margin-top:64px; text-align:center}
         ['detected','UI / renderer code — a focus-ring is a renderer + a11y concern.'],
         ['author','frontend-author','author','adds the focus style on the @ajh/ui primitive'],
         ['critic','frontend-reviewer','crit','checks ports-&-adapters + design tokens'],
-        ['critic','ui-ux-expert','crit','the a11y / visual taste lens — is the ring actually visible?'] ] },
+        ['critic','ui-ux-expert','crit','the a11y / visual taste lens — is the ring actually visible?'],
+        ['gate','pr-reviewer','gate','final pre-PR gate — runs the real tools + blast-radius before the PR (/review)'] ] },
     ats:    { title:'ATS score seems wrong', area:'commands/match_resume.rs, validate/, recommend/ → ATS scoring',
       rows:[
         ['detected','Scoring / matching logic — owned by the job-match domain, not export formatting.'],
         ['author','job-match-author','author','fixes the scoring kernel / keyword extraction'],
-        ['critic','job-match-expert','crit','audits match quality + recommendation correctness'] ] },
+        ['critic','job-match-expert','crit','audits match quality + recommendation correctness'],
+        ['gate','pr-reviewer','gate','final pre-PR gate — runs the real tools + blast-radius before the PR (/review)'] ] },
     ipc:    { title:'Add an IPC command for X', area:'commands/**, commands/mod.rs, packages/shared/** → backend + IPC',
       rows:[
         ['detected','New IPC surface — Rust backend, and a new attack surface.'],
         ['author','rust-backend-author','author','implements the command + wires the contract'],
         ['critic','rust-backend-architect','crit','reviews boundaries, errors, data integrity'],
-        ['secondary','tauri-security-reviewer','sec','default risk Secondary — every new command is IPC attack surface'] ] },
+        ['secondary','tauri-security-reviewer','sec','default risk Secondary — every new command is IPC attack surface'],
+        ['gate','pr-reviewer','gate','final pre-PR gate — runs the real tools + blast-radius before the PR (/review)'] ] },
     pdf:    { title:'PDF export overflows a page', area:'export/**, layout/**, measure/** → resume/export',
       rows:[
         ['detected','Export rendering + pagination — the resume/export domain (perf-sensitive).'],
         ['author','pdf-docx-generator','author','fixes layout / pagination in the renderer'],
         ['critic','resume-export-expert','crit','audits ATS-safe structure + template correctness'],
-        ['secondary','performance-profiler','sec','export is a hot path — perf lens rides along'] ] },
+        ['secondary','performance-profiler','sec','export is a hot path — perf lens rides along'],
+        ['gate','pr-reviewer','gate','final pre-PR gate — runs the real tools + blast-radius before the PR (/review)'] ] },
     scrape: { title:'Scraper stopped matching LinkedIn', area:'scraping/**, browser/**, SCRAPERS registry → scraping',
       rows:[
         ['detected','Selector resilience + browser automation — the scraping domain.'],
         ['author','scraping-applier-author','author','repairs the LinkedIn selectors in the registry'],
-        ['critic','scraping-applier-expert','crit','audits selector resilience + workflow reliability'] ] },
+        ['critic','scraping-applier-expert','crit','audits selector resilience + workflow reliability'],
+        ['gate','pr-reviewer','gate','final pre-PR gate — runs the real tools + blast-radius before the PR (/review)'] ] },
   };
 
   function routeHTML(r){
     var rows = r.rows.map(function(row){
       if(row[0]==='detected'){
-        return '<li><span class="lbl">area</span><span class="why">'+esc(row[1])+'</span></li>';
+        return '<li class="area"><span class="lbl">area</span><span class="why">'+esc(row[1])+'</span></li>';
+      }
+      if(row[0]==='gate'){
+        return '<li><span class="lbl">gate</span><span class="who"><b class="gate">'+esc(row[1])+'</b></span>'+
+               '<span class="why">— '+esc(row[3])+'</span></li>';
       }
       var lbl = row[0]==='author' ? 'author' : row[0]==='secondary' ? 'secondary' : 'critic';
       var cls = row[2]==='author' ? '' : row[2]==='sec' ? 'sec' : 'crit';

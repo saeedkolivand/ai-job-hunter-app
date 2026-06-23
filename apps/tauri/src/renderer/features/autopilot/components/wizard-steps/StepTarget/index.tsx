@@ -16,8 +16,9 @@ import { ComingSoonBadge } from '../ComingSoonBadge';
 import { PrefilledBadge } from '../PrefilledBadge';
 import { WizardField } from '../WizardField';
 
-// Matches the @ajh/ui Dropdown / LocationInput trigger (h-9, same border &
-// bg) so text inputs sit flush with the dropdowns beside them on the same row.
+// Matches @ajh/ui LocationInput trigger (h-9, same border & bg) so text inputs
+// sit flush with sibling controls on the same row. The Dropdown uses tone="field"
+// for matching border/bg, plus className="h-9 shadow-none" for height alignment.
 const inputCls =
   'w-full h-9 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 text-xs text-foreground/80 placeholder:text-foreground/25 outline-none focus:border-brand/40 transition-colors';
 
@@ -261,6 +262,8 @@ export function StepTarget({ prefilled }: StepTargetProps) {
                 value={field.value}
                 onChange={field.onChange}
                 placeholder={t('autopilot.wizard.target.anyTime')}
+                tone="field"
+                className="h-9 shadow-none"
               />
             </WizardField>
           )}

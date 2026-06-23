@@ -94,6 +94,7 @@ export const TEST_IDS = {
     pdfPreview: 'pdf-preview',
     thinkingBubble: 'thinking-bubble',
     stepDots: 'step-dots',
+    jobAdViewTextarea: 'job-ad-view-textarea',
   },
 
   /** Resume shared components (ResumeInputCard) */
