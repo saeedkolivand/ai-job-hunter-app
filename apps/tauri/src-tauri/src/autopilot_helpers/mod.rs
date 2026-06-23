@@ -68,7 +68,7 @@ pub async fn autopilot_scrape(
         .await;
 
     // Return only the postings; the caller (autopilot run) doesn't use per-board summaries.
-    // Log any skipped boards so operators can diagnose unexpected empty runs without
+    // Log any skipped or errored boards so operators can diagnose unexpected empty runs without
     // changing the result shape or IPC contract.
     result
         .map(|(postings, summaries)| {
@@ -78,6 +78,13 @@ pub async fn autopilot_scrape(
                         "[autopilot] board '{}' skipped (reason='{}')",
                         s.board,
                         reason
+                    );
+                }
+                if let Some(ref err) = s.error {
+                    log::warn!(
+                        "[autopilot] board '{}' failed (error='{}')",
+                        s.board,
+                        err
                     );
                 }
             }
