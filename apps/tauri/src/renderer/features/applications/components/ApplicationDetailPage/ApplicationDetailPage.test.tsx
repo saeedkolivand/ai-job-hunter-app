@@ -23,8 +23,8 @@
  *  - noUncheckedIndexedAccess: all array accesses are guarded.
  */
 
-import React from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import React, { act } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -103,12 +103,25 @@ vi.mock('@/features/jobs/hooks/useDefaultResumeId', () => ({
 
 // ── TailorFlow stub — keep the heavy generation tree out of the render ────────
 
+// Capture the onJobDescChange callback so DocumentsTab debounce tests can
+// simulate a job-ad edit without mounting real TailorFlow internals.
+let capturedOnJobDescChange: ((text: string) => void) | undefined = undefined;
+
 vi.mock('@/features/documents/components/TailorFlow', () => ({
   // Surface the injected seedGeneration id so we can assert DocumentsTab wires the
   // latest matching record (cold-entry hydration source).
-  TailorFlow: ({ seedGeneration }: { seedGeneration?: { id: string } }) => (
-    <div data-testid={TEST_IDS.documents.tailorFlow} data-seedgenid={seedGeneration?.id ?? ''} />
-  ),
+  TailorFlow: ({
+    seedGeneration,
+    onJobDescChange,
+  }: {
+    seedGeneration?: { id: string };
+    onJobDescChange?: (text: string) => void;
+  }) => {
+    capturedOnJobDescChange = onJobDescChange;
+    return (
+      <div data-testid={TEST_IDS.documents.tailorFlow} data-seedgenid={seedGeneration?.id ?? ''} />
+    );
+  },
 }));
 
 // ── GenerationCard stub ───────────────────────────────────────────────────────
@@ -231,6 +244,7 @@ beforeEach(() => {
   mockNavigate.mockClear();
   mockImportJobUrlMutate.mockReset();
   mockImportJobUrlIsError = false;
+  capturedOnJobDescChange = undefined;
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -930,5 +944,158 @@ describe('ApplicationDetailPage — Documents tab toolbar', () => {
     ).not.toBeInTheDocument();
     // Referral button always present.
     expect(screen.getByRole('button', { name: /autopilot\.referral\.open/i })).toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ApplicationDetailPage — DocumentsTab debounced jobDescription persist
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('ApplicationDetailPage — DocumentsTab debounced jobDescription persist', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('passes onJobDescChange to TailorFlow on the documents tab', () => {
+    mockTab = 'documents';
+    renderLoaded({ id: 'app-jdc-1' });
+    // The TailorFlow stub captures onJobDescChange — it must be a function.
+    expect(typeof capturedOnJobDescChange).toBe('function');
+  });
+
+  it('calls updateApplication.mutate with jobDescription after the 600ms debounce', () => {
+    mockTab = 'documents';
+    renderLoaded({ id: 'app-jdc-2' });
+
+    // Simulate a job-ad edit via the captured callback (mirrors what TailorFlow calls).
+    act(() => {
+      capturedOnJobDescChange?.('New pasted job ad text');
+    });
+
+    // Before the debounce fires: mutate must NOT have been called yet.
+    expect(mockUpdateApplicationMutate).not.toHaveBeenCalled();
+
+    // Advance past the 600ms debounce window.
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+
+    expect(mockUpdateApplicationMutate).toHaveBeenCalledTimes(1);
+    expect(mockUpdateApplicationMutate).toHaveBeenCalledWith({
+      id: 'app-jdc-2',
+      jobDescription: 'New pasted job ad text',
+    });
+  });
+
+  it('debounce resets on rapid edits — only the last value is persisted', () => {
+    mockTab = 'documents';
+    renderLoaded({ id: 'app-jdc-3' });
+
+    act(() => {
+      capturedOnJobDescChange?.('first');
+    });
+    act(() => {
+      vi.advanceTimersByTime(300); // 300ms — debounce not yet fired
+    });
+    act(() => {
+      capturedOnJobDescChange?.('second');
+    });
+    act(() => {
+      vi.advanceTimersByTime(300); // another 300ms — debounce for 'first' would have fired, but was reset
+    });
+
+    // Debounce not yet complete for 'second' (only 300ms since last edit).
+    expect(mockUpdateApplicationMutate).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(300); // total 600ms since 'second' → fires
+    });
+
+    // Only one call, with the last value.
+    expect(mockUpdateApplicationMutate).toHaveBeenCalledTimes(1);
+    expect(mockUpdateApplicationMutate).toHaveBeenCalledWith({
+      id: 'app-jdc-3',
+      jobDescription: 'second',
+    });
+  });
+
+  it('unmount flushes the pending edit immediately — edit is not lost when tab changes before 600ms', () => {
+    // Regression guard for the blocking bug: user pastes job ad then switches tabs
+    // within 600ms → DocumentsTab unmounts → pending write must still fire.
+    mockTab = 'documents';
+    const { unmount } = render(
+      (() => {
+        const app = makeApp({ id: 'app-jdc-flush' });
+        mockUseApplication.mockReturnValue({
+          data: { application: app, events: [] },
+          isLoading: false,
+          isError: false,
+        });
+        mockUseAiGenerations.mockReturnValue({ data: [] });
+        return <ApplicationDetailPage />;
+      })()
+    );
+
+    // Simulate the user editing the job ad text.
+    act(() => {
+      capturedOnJobDescChange?.('Pasted job ad — not yet saved');
+    });
+
+    // The debounce window has NOT elapsed yet — mutate must not have fired.
+    expect(mockUpdateApplicationMutate).not.toHaveBeenCalled();
+
+    // User switches tabs: DocumentsTab unmounts before the 600ms window.
+    act(() => {
+      unmount();
+    });
+
+    // The cleanup flush must have fired the mutate with the latest pending value.
+    expect(mockUpdateApplicationMutate).toHaveBeenCalledTimes(1);
+    expect(mockUpdateApplicationMutate).toHaveBeenCalledWith({
+      id: 'app-jdc-flush',
+      jobDescription: 'Pasted job ad — not yet saved',
+    });
+  });
+
+  it('unmount flush uses the latest edit value when multiple rapid edits preceded the unmount', () => {
+    // Edge case: user types 'first', then 'second', then unmounts — only 'second' should flush.
+    mockTab = 'documents';
+    const { unmount } = render(
+      (() => {
+        const app = makeApp({ id: 'app-jdc-flush-latest' });
+        mockUseApplication.mockReturnValue({
+          data: { application: app, events: [] },
+          isLoading: false,
+          isError: false,
+        });
+        mockUseAiGenerations.mockReturnValue({ data: [] });
+        return <ApplicationDetailPage />;
+      })()
+    );
+
+    act(() => {
+      capturedOnJobDescChange?.('first draft');
+    });
+    act(() => {
+      vi.advanceTimersByTime(200); // still within debounce
+    });
+    act(() => {
+      capturedOnJobDescChange?.('second draft — the keeper');
+    });
+
+    // Unmount before the debounce completes.
+    act(() => {
+      unmount();
+    });
+
+    // Only one flush call with the most-recent pending value.
+    expect(mockUpdateApplicationMutate).toHaveBeenCalledTimes(1);
+    expect(mockUpdateApplicationMutate).toHaveBeenCalledWith({
+      id: 'app-jdc-flush-latest',
+      jobDescription: 'second draft — the keeper',
+    });
   });
 });

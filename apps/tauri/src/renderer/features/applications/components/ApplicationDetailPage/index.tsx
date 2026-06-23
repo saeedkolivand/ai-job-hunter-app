@@ -12,7 +12,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
 import {
@@ -27,7 +27,6 @@ import {
   ActionMenu,
   Button,
   CardSkeleton,
-  cn,
   ConfirmModal,
   Dropdown,
   ErrorState,
@@ -35,6 +34,7 @@ import {
   Input,
   RowSkeleton,
   SectionLabel,
+  Tabs,
   TextArea,
   Timeline,
   transition,
@@ -238,20 +238,6 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
       replace: true,
     });
 
-  // Roving arrow-key navigation across the tablist: ArrowRight/Left move to the
-  // next/previous tab (wrapping), select it, and move focus to its button.
-  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const onTabKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
-    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-    e.preventDefault();
-    const delta = e.key === 'ArrowRight' ? 1 : -1;
-    const nextIndex = (index + delta + DETAIL_TABS.length) % DETAIL_TABS.length;
-    const nextTab = DETAIL_TABS[nextIndex];
-    if (!nextTab) return;
-    setTab(nextTab);
-    tabRefs.current[nextIndex]?.focus();
-  };
-
   // Reset the in-progress wizard form when this surface switches to a different
   // application so one application's résumé text doesn't bleed into another.
   // Template / ATS stay sticky globals. The guard makes this idempotent: once
@@ -383,36 +369,18 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
       {/* Bordered tabbed panel */}
       <div className="min-h-0 flex-1 p-4">
         <PanelShell>
-          <div
-            role="tablist"
-            aria-label={t('applications.detail.tabsLabel')}
-            className="flex shrink-0 items-center gap-1 border-b border-[var(--border-soft)] px-3 py-2"
-          >
-            {DETAIL_TABS.map((tb, i) => (
-              <Button
-                key={tb}
-                ref={(el) => {
-                  tabRefs.current[i] = el;
-                }}
-                id={`appdetail-tab-${tb}`}
-                variant="unstyled"
-                type="button"
-                role="tab"
-                aria-selected={tab === tb}
-                tabIndex={tab === tb ? 0 : -1}
-                onClick={() => setTab(tb)}
-                onKeyDown={(e) => onTabKeyDown(e, i)}
-                className={cn(
-                  'rounded px-2.5 py-1 text-[11px] font-medium transition-colors',
-                  tab === tb
-                    ? 'bg-brand/15 text-brand-soft'
-                    : 'text-foreground/40 hover:text-foreground/70'
-                )}
-              >
-                {t(`applications.detail.tabs.${tb}` as const)}
-              </Button>
-            ))}
-          </div>
+          <Tabs
+            items={DETAIL_TABS.map((tb) => ({
+              value: tb,
+              label: t(`applications.detail.tabs.${tb}` as const),
+            }))}
+            value={tab}
+            onChange={setTab}
+            ariaLabel={t('applications.detail.tabsLabel')}
+            size="sm"
+            idBase="appdetail-tab"
+            className="shrink-0 px-3 py-2"
+          />
 
           <div
             role="tabpanel"
@@ -819,6 +787,48 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
   const applicationApply = useSessionStore((s) => s.applicationApply);
   const setApplicationApply = useSessionStore((s) => s.setApplicationApply);
   const [controller, setController] = useState<TailorFlowController | null>(null);
+  const updateApplication = useUpdateApplication();
+
+  // Debounce-persist job-ad edits from TailorFlow back to application.jobDescription
+  // so the Interview prep tab (and BriefTab) can read the updated text without
+  // navigating away and back. 600ms debounce avoids a mutation per keystroke.
+  // Refs keep the unmount flush free of stale-closure issues (no dep on application/mutate).
+  const jdPersistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingJd = useRef<string | null>(null);
+  const appIdRef = useRef(application.id);
+  appIdRef.current = application.id;
+  const mutateRef = useRef(updateApplication.mutate);
+  mutateRef.current = updateApplication.mutate;
+
+  const flushJd = () => {
+    if (jdPersistTimer.current !== null) {
+      clearTimeout(jdPersistTimer.current);
+      jdPersistTimer.current = null;
+    }
+    if (pendingJd.current !== null) {
+      mutateRef.current({ id: appIdRef.current, jobDescription: pendingJd.current });
+      pendingJd.current = null;
+    }
+  };
+
+  const handleJobDescChange = (text: string) => {
+    pendingJd.current = text;
+    if (jdPersistTimer.current !== null) clearTimeout(jdPersistTimer.current);
+    jdPersistTimer.current = setTimeout(flushJd, 600);
+  };
+
+  // Flush any pending edit on unmount instead of discarding it — this prevents
+  // the edit from being lost when the user switches tabs before the 600ms fires.
+  // All state accessed here is via refs so the empty-dep array is correct: the
+  // cleanup reads the live ref values at the time it runs, not stale captures.
+  const flushJdRef = useRef(flushJd);
+  flushJdRef.current = flushJd;
+  useEffect(
+    () => () => {
+      flushJdRef.current();
+    },
+    []
+  );
 
   // Seed the résumé text ONCE at mount — wait for BOTH the documents list (which
   // resolves `defaultResumeId`) and the default résumé text so the one-shot
@@ -926,6 +936,7 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
           onController={setController}
           applicationId={application.id}
           initialSummary={application.jobSummary ?? undefined}
+          onJobDescChange={handleJobDescChange}
         />
       </div>
     </div>
