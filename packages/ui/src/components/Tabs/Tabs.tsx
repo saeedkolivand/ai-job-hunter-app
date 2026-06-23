@@ -52,6 +52,7 @@ export function Tabs<T extends string>({
   className,
 }: TabsProps<T>) {
   const btnRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const focusedIndex = useRef<number>(0);
   const currentIndex = items.findIndex((item) => item.value === value);
 
   const move = (toIndex: number) => {
@@ -65,16 +66,17 @@ export function Tabs<T extends string>({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const base = currentIndex >= 0 ? currentIndex : focusedIndex.current;
     switch (e.key) {
       case 'ArrowLeft':
       case 'ArrowUp':
         e.preventDefault();
-        move(currentIndex - 1);
+        move(base - 1);
         break;
       case 'ArrowRight':
       case 'ArrowDown':
         e.preventDefault();
-        move(currentIndex + 1);
+        move(base + 1);
         break;
       case 'Home':
         e.preventDefault();
@@ -114,6 +116,9 @@ export function Tabs<T extends string>({
             aria-selected={selected}
             aria-controls={item.ariaControls}
             tabIndex={selected || (currentIndex === -1 && i === 0) ? 0 : -1}
+            onFocus={() => {
+              focusedIndex.current = i;
+            }}
             onClick={() => onChange(item.value)}
             className={cn(
               'inline-flex min-h-[24px] items-center gap-1 rounded px-2.5 py-1 font-medium transition-colors whitespace-nowrap',

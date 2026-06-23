@@ -91,6 +91,27 @@ describe('Tabs', () => {
     expect(onChange).toHaveBeenCalledWith('notes');
   });
 
+  it('ArrowRight from a focused tab when value is not in items moves to the tab after the focused one', async () => {
+    // value 'other' is not in ITEMS, so currentIndex === -1.
+    // The first tab gets tabIndex=0 by the roving fallback, but we manually
+    // focus the middle tab ('details', index 1) and press ArrowRight — the
+    // result must be 'notes' (index 2), NOT 'details' (index 1 = 0 + 1).
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <Tabs
+        ariaLabel="Application sections"
+        items={ITEMS}
+        value={'other' as Section}
+        onChange={onChange}
+      />
+    );
+    // Focus the middle tab explicitly so focusedIndex.current becomes 1.
+    screen.getByRole('tab', { name: 'Details' }).focus();
+    await user.keyboard('{ArrowRight}');
+    expect(onChange).toHaveBeenCalledWith('notes');
+  });
+
   it('Home jumps to first tab, End jumps to last tab', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
