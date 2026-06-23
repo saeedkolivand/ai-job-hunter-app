@@ -183,7 +183,9 @@ export function StepSchedule() {
           [t('autopilot.wizard.schedule.summarySchedule'), scheduleSummary],
           [
             t('autopilot.wizard.schedule.summaryMinScore'),
-            t(`autopilot.wizard.filter.matchLevel.${scoreToLevel(minMatchScore)}`),
+            minMatchScore <= 0
+              ? t('autopilot.wizard.filter.matchLevel.any')
+              : t(`autopilot.wizard.filter.matchLevel.${scoreToLevel(minMatchScore)}`),
           ],
         ].map(([k, v]) => (
           <div key={k} className="flex items-center justify-between">

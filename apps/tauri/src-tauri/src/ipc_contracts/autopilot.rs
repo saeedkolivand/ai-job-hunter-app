@@ -110,7 +110,7 @@ fn default_autopilot_create_request_target_pages() -> u32 {
 }
 
 fn default_autopilot_create_request_filter_min_match_score() -> f64 {
-    50.0
+    0.0
 }
 
 fn default_autopilot_update_request_target_pages() -> u32 {
@@ -118,5 +118,5 @@ fn default_autopilot_update_request_target_pages() -> u32 {
 }
 
 fn default_autopilot_update_request_filter_min_match_score() -> f64 {
-    50.0
+    0.0
 }

@@ -28,16 +28,18 @@ export function StepFilter() {
         control={control}
         name="minMatchScore"
         render={({ field }) => {
-          const active = scoreToLevel(field.value);
+          const active = field.value <= 0 ? 'any' : scoreToLevel(field.value);
+          const levels = [{ id: 'any' as const, value: 0 }, ...MATCH_LEVELS];
           return (
             <WizardField
               label={t('autopilot.wizard.filter.matchScore')}
               hint={t('autopilot.wizard.filter.matchScoreHint')}
             >
-              <div className="grid grid-cols-1 gap-1.5 @xs:grid-cols-3">
-                {MATCH_LEVELS.map(({ id, value }) => (
+              <div className="grid grid-cols-2 gap-1.5 @xs:grid-cols-4">
+                {levels.map(({ id, value }) => (
                   <Button
                     key={id}
+                    aria-pressed={active === id}
                     onClick={() => field.onChange(value)}
                     className={cn(
                       'flex flex-col items-center gap-0.5 rounded-lg border px-2 py-2 transition-all h-auto',

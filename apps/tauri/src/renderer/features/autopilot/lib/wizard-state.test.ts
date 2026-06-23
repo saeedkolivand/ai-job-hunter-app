@@ -91,6 +91,18 @@ describe('buildDefaults()', () => {
     };
     expect(buildDefaults(prefs).keywords).toBe('');
   });
+
+  it('dateFilter defaults to "" not "24h" (Fix C regression lock)', () => {
+    // Pre-fix the wizard defaulted to '24h', which caused autopilot zero-jobs by
+    // persisting a narrow date window. The default must now be '' (no filter).
+    expect(buildDefaults().dateFilter).toBe('');
+  });
+
+  it('minMatchScore defaults to 0 not 50 (Fix C regression lock)', () => {
+    // Pre-fix the default was 50, silently dropping most postings. Must be 0 so
+    // every scraped posting is eligible unless the user raises the threshold.
+    expect(buildDefaults().minMatchScore).toBe(0);
+  });
 });
 
 // ── autopilotToWizardState ────────────────────────────────────────────────────
@@ -303,6 +315,20 @@ describe('wizardStateToPayload()', () => {
       expect(payload.target.location).toBeUndefined();
       expect(payload.target.dateFilter).toBeUndefined();
       expect(payload.resumeText).toBeUndefined();
+    });
+
+    it('maps dateFilter: "" → undefined in target (Fix C regression lock)', () => {
+      // The new buildDefaults() seeds '' (not '24h'). This confirms '' collapses
+      // to undefined on the wire so no date restriction is forwarded to the scraper.
+      const payload = wizardStateToPayload(makeForm({ dateFilter: '' }));
+      expect(payload.target.dateFilter).toBeUndefined();
+    });
+
+    it('passes minMatchScore: 0 through to filter.minMatchScore (Fix C regression lock)', () => {
+      // 0 is a legitimate "keep everything" threshold; it must not be treated as
+      // falsy and dropped. The payload must carry 0 as-is.
+      const payload = wizardStateToPayload(makeForm({ minMatchScore: 0 }));
+      expect(payload.filter.minMatchScore).toBe(0);
     });
   });
 

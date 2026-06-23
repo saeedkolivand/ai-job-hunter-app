@@ -265,8 +265,11 @@ impl AutopilotStore {
                 }
             }),
             filter: serde_json::from_value(input["filter"].clone()).unwrap_or({
+                // Creation default when no explicit filter is supplied: keep
+                // everything (0.0). A non-zero default silently dropped jobs a
+                // manual search would have returned — the autopilot zero-jobs bug.
                 AutopilotFilter {
-                    min_match_score: 50.0,
+                    min_match_score: 0.0,
                     keywords: None,
                     exclude_keywords: None,
                 }
@@ -444,25 +447,43 @@ impl AutopilotStore {
     }
 
     fn save(&self, map: HashMap<String, Autopilot>) {
+        // Existing behavior: best-effort write, errors swallowed. Migrations that
+        // need to *observe* a successful persist call `write_to_disk` directly.
+        self.write_to_disk(&map).ok();
+        *self.cache.lock() = Some(map);
+    }
+
+    /// Serialize + flush the map to `autopilots.json`, returning the IO outcome so
+    /// a caller can gate on a successful persist (e.g. the one-shot migration's
+    /// done-marker). Does NOT update the in-memory cache — that's `save`'s job.
+    /// `Ok(())` is also returned on the no-op-write path (state already on disk).
+    fn write_to_disk(&self, map: &HashMap<String, Autopilot>) -> std::io::Result<()> {
         let list: Vec<&Autopilot> = {
             let mut v: Vec<&Autopilot> = map.values().collect();
             v.sort_by(|a, b| cmp_autopilot_newest_first(a, b));
             v
         };
-        if let Ok(json) = serde_json::to_string_pretty(&list) {
-            // No-op-write skip: many mutations (set_run_status, stamp_last_run, …)
-            // re-serialize identical state. Skip the disk write when the bytes
-            // match what's already persisted — a pure dirty check, NOT debouncing,
-            // so state is still flushed synchronously the instant it changes (no
-            // crash-loss window). A missing/unreadable file never matches → write.
-            let unchanged = std::fs::read_to_string(&self.data_file)
-                .map(|existing| existing == json)
-                .unwrap_or(false);
-            if !unchanged {
-                std::fs::write(&self.data_file, json).ok();
-            }
+        let Ok(json) = serde_json::to_string_pretty(&list) else {
+            // Serialization can't fail for this shape, but if it ever did there's
+            // nothing on disk to trust — surface it as an IO-style error so the
+            // migration won't mark itself done on un-persisted data.
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "failed to serialize autopilots",
+            ));
+        };
+        // No-op-write skip: many mutations (set_run_status, stamp_last_run, …)
+        // re-serialize identical state. Skip the disk write when the bytes
+        // match what's already persisted — a pure dirty check, NOT debouncing,
+        // so state is still flushed synchronously the instant it changes (no
+        // crash-loss window). A missing/unreadable file never matches → write.
+        let unchanged = std::fs::read_to_string(&self.data_file)
+            .map(|existing| existing == json)
+            .unwrap_or(false);
+        if unchanged {
+            return Ok(()); // desired state already persisted
         }
-        *self.cache.lock() = Some(map);
+        std::fs::write(&self.data_file, json)
     }
 
     /// Replace all autopilots with the given set (preserving their ids). Used by
@@ -471,6 +492,120 @@ impl AutopilotStore {
         let map: HashMap<String, Autopilot> =
             items.into_iter().map(|ap| (ap.id.clone(), ap)).collect();
         self.save(map);
+    }
+
+    /// One-shot, idempotent migration that loosens autopilots saved with the old
+    /// auto-prefilled restrictive filters (the cause of "autopilot returns ZERO
+    /// jobs while manual search returns jobs for the same query"). Runs once per
+    /// install, gated by a sidecar marker file beside `autopilots.json` — NOT a
+    /// schema_version field, so the persisted/IPC shape is unchanged and gen:ipc
+    /// can't drift.
+    ///
+    /// If the marker already exists this returns immediately. Otherwise it loads
+    /// every autopilot, applies [`relax_legacy_filters`] to each, saves once, and
+    /// writes the marker. Synchronous file IO — call it from the setup path, never
+    /// from an async worker.
+    ///
+    /// Lock safety: [`Self::load`] takes `self.cache.lock()` but drops the guard
+    /// before returning a cloned map, and [`Self::save`] re-takes the lock. This
+    /// method only ever holds the owned clone from `load()` across the `save()`
+    /// call — no `load()` guard is alive when `save()` re-locks, so there is no
+    /// re-entrant lock / deadlock.
+    pub fn relax_legacy_filters_once(&self) {
+        let marker = self
+            .data_file
+            .parent()
+            .map(|p| p.join(RELAX_MARKER_FILE))
+            .unwrap_or_else(|| PathBuf::from(RELAX_MARKER_FILE));
+        if marker.exists() {
+            return;
+        }
+
+        let mut map = self.load(); // owned clone; the cache guard is already dropped
+        for ap in map.values_mut() {
+            relax_legacy_filters(ap);
+        }
+
+        // Persist FIRST and observe the result. Only write the done-marker once the
+        // relaxed data is known to have hit disk — otherwise a save failure plus a
+        // successful marker write would leave autopilots restrictive forever
+        // ("done" but never relaxed). On a save error we skip the marker, the cache
+        // stays as-loaded, and the next launch retries (harmless — the pass is
+        // idempotent). `write_to_disk` returns Ok on the no-op path too (state
+        // already persisted), which is also a valid "done" condition.
+        let persisted = self.write_to_disk(&map);
+        // Keep the in-memory cache consistent with whatever we just (attempted to)
+        // persist; on success this is the relaxed map, mirroring `save`.
+        *self.cache.lock() = Some(map);
+
+        if persisted.is_ok() {
+            // Mark done even if some autopilots were already loose: the goal is to
+            // run the loosen pass exactly once, not to gate on whether it changed
+            // anything.
+            if let Some(parent) = self.data_file.parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+            std::fs::write(&marker, b"1").ok();
+        }
+    }
+}
+
+/// Sidecar marker that records the legacy-filter loosen migration ran. Lives
+/// beside `autopilots.json` in the data dir; its presence makes
+/// [`AutopilotStore::relax_legacy_filters_once`] a no-op on subsequent launches.
+const RELAX_MARKER_FILE: &str = "autopilot_relax_v1.done";
+
+/// Surgically loosen one autopilot's auto-prefilled restrictive filters in place.
+/// Kills the zero-jobs bug while preserving deliberate user customizations:
+///
+/// - `filter.keywords` → `None` **only on a legacy record** (see below),
+/// - `filter.min_match_score` → `0.0` **only if** it is still the old auto
+///   default `50.0`,
+/// - `target.date_filter` → `None` **only if** it is still the old auto default
+///   `Some("24h")`.
+///
+/// Everything else (`exclude_keywords`, `query`, `location`, `country_code`,
+/// `boards`, `pages`, `work_type`, `top_n`) is left untouched. Pure + filesystem-
+/// free so it is unit-testable on a bare `&mut Autopilot`.
+///
+/// **Idempotency guarantee.** "Legacy" is decided up front from the two *sentinel*
+/// fields (`min_match_score == 50.0` OR `date_filter == Some("24h")`) — the
+/// prefilled `keywords` clear is gated on that flag, NOT applied unconditionally.
+/// So a record that's already been relaxed (score `0.0`, date `None`) is NOT
+/// legacy → the whole function is a no-op → re-running can never erase keywords
+/// the user added after the first relaxation. This matters because the done-marker
+/// write in [`AutopilotStore::relax_legacy_filters_once`] is best-effort
+/// (`.ok()`-swallowed): if it fails, the migration re-runs on next launch, and
+/// this no-op-on-relaxed property is what makes that rerun safe. The marker is now
+/// purely an optimization, not a correctness gate.
+///
+/// Narrow accepted gap: a record with prefilled keywords where the user ALSO
+/// changed *both* the score (≠50) *and* the date (≠"24h") reads as non-legacy, so
+/// its keywords are kept. That's rare and diagnosable, and erring toward keeping
+/// user data is the safe direction.
+pub(crate) fn relax_legacy_filters(ap: &mut Autopilot) {
+    // Decide legacy-ness from the sentinels BEFORE mutating them, so the decision
+    // can't be invalidated by our own resets below.
+    let was_legacy =
+        ap.filter.min_match_score == 50.0 || ap.target.date_filter.as_deref() == Some("24h");
+
+    if was_legacy {
+        // Only legacy records carry the auto-prefilled keyword list manual search
+        // never applies; clearing it on an already-relaxed record would erase
+        // user-added keywords on a migration rerun.
+        ap.filter.keywords = None;
+    }
+
+    if ap.filter.min_match_score == 50.0 {
+        ap.filter.min_match_score = 0.0;
+    }
+
+    // `"24h"` is the ONLY restrictive legacy auto-default: the pre-#483 wizard's
+    // `buildDefaults` set `dateFilter: '24h'`, while "any time" persisted as `None`
+    // (`wizardStateToPayload` maps `'' → undefined`). A user-picked `'week'`/
+    // `'month'` is therefore deliberate and left untouched.
+    if ap.target.date_filter.as_deref() == Some("24h") {
+        ap.target.date_filter = None;
     }
 }
 

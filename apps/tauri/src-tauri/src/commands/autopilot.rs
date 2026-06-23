@@ -133,8 +133,8 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         &format!("Scraping {}", target.boards.join(", ")),
     );
 
-    let postings = match autopilot_scrape(&engine, &target, &job_id, &app).await {
-        Ok(p) => p,
+    let (postings, summaries) = match autopilot_scrape(&engine, &target, &job_id, &app).await {
+        Ok(out) => out,
         Err(e) => {
             engine.unregister_token(&job_id).await;
             store(&app)
@@ -145,6 +145,20 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
             return json!({ "error": e, "jobId": job_id });
         }
     };
+
+    // Raw count BEFORE the keyword filter, so `scrape_done` can distinguish "no
+    // board returned anything" from "boards returned jobs but your keyword filter
+    // dropped them all" — the difference between a scraping problem and an
+    // over-restrictive filter (the autopilot zero-jobs bug).
+    let raw = postings.len();
+
+    // Surface *why* a run came up short: when any board errored or was skipped,
+    // emit a diagnostic step (esp. relevant when `raw == 0`) so the UI can show
+    // "aggregator: 429 rate limited" instead of a silent empty result.
+    let reasons = crate::autopilot_helpers::scrape_diagnostics(&summaries);
+    if !reasons.is_empty() {
+        emit_step(&app, &job_id, "scrape_diag", &reasons);
+    }
 
     // Apply the user's keyword filters to the scraped postings — must-include
     // (all keywords present) + exclude (any keyword present drops it). These were
@@ -159,7 +173,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         &app,
         &job_id,
         "scrape_done",
-        &format!("Found {total_found} postings after filters"),
+        &format!("Scraped {raw}; {total_found} passed your keyword filter"),
     );
 
     // Snapshot each posting, scored 0–100 against the resume when one is set, then

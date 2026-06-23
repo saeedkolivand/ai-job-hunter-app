@@ -647,3 +647,406 @@ fn merge_preserves_and_refreshes_board_across_resurface() {
         "appended new row keeps its board (via ..inc spread)"
     );
 }
+
+// ── AutopilotStore::create filter fallback ────────────────────────────────────
+
+#[test]
+fn create_with_missing_filter_defaults_min_match_score_to_zero() {
+    use tempfile::TempDir;
+
+    // When `filter` is absent (or null) the store must default min_match_score
+    // to 0.0 — NOT 50.0. A 50.0 default silently drops most scraped jobs.
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+
+    let ap = store.create(serde_json::json!({
+        "name": "No filter",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        // `filter` key completely omitted
+        "schedule": "daily",
+    }));
+    assert_eq!(
+        ap.filter.min_match_score, 0.0,
+        "absent filter must default to min_match_score 0.0, not 50.0"
+    );
+    assert!(ap.filter.keywords.is_none());
+    assert!(ap.filter.exclude_keywords.is_none());
+}
+
+#[test]
+fn create_with_null_filter_defaults_min_match_score_to_zero() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+
+    let ap = store.create(serde_json::json!({
+        "name": "Null filter",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": null,
+        "schedule": "daily",
+    }));
+    assert_eq!(
+        ap.filter.min_match_score, 0.0,
+        "null filter must default to min_match_score 0.0"
+    );
+}
+
+// ── relax_legacy_filters ──────────────────────────────────────────────────────
+
+/// Return a fully-populated `Autopilot` that each test can mutate in place.
+/// Starts with the legacy restrictive defaults (the zero-jobs configuration)
+/// so most tests only need to tweak the one field they care about.
+/// Zero args → well under the 8-arg clippy limit.
+fn base_autopilot() -> Autopilot {
+    let now = 1_000_000u64;
+    Autopilot {
+        id: "test-id".into(),
+        name: "Test AP".into(),
+        status: AutopilotStatus::Active,
+        target: AutopilotTarget {
+            boards: vec!["linkedin".into()],
+            query: "engineer".into(),
+            location: None,
+            country_code: None,
+            work_type: None,
+            pages: 1,
+            date_filter: Some("24h".into()),
+            top_n: 3,
+        },
+        filter: AutopilotFilter {
+            min_match_score: 50.0,
+            keywords: Some(vec!["rust".into(), "go".into()]),
+            exclude_keywords: None,
+        },
+        schedule: "daily".into(),
+        schedule_hour: None,
+        schedule_minute: None,
+        resume_text: None,
+        cover_letter: None,
+        total_found: 0,
+        total_applied: 0,
+        found_jobs: Vec::new(),
+        run_status: None,
+        last_run_at: None,
+        created_at: now,
+        updated_at: now,
+    }
+}
+
+#[test]
+fn relax_clears_keywords_for_legacy_record() {
+    // base_autopilot() is legacy (score 50 + date "24h"), so the auto-prefilled
+    // keyword list is cleared. The clear is gated on legacy-ness (see
+    // `relax_is_noop_on_already_relaxed_record` for the non-legacy path).
+    let mut ap = base_autopilot();
+    ap.filter.keywords = Some(vec!["rust".into(), "go".into()]);
+    relax_legacy_filters(&mut ap);
+    assert!(
+        ap.filter.keywords.is_none(),
+        "legacy record's prefilled keywords must be cleared to None"
+    );
+}
+
+#[test]
+fn relax_is_noop_on_already_relaxed_record() {
+    // A record already relaxed (score 0.0, date None) is NOT legacy, so re-running
+    // the migration must NOT touch keywords the user added afterwards. This is the
+    // idempotency property that makes a marker-write failure (→ rerun) safe.
+    let mut ap = base_autopilot();
+    ap.filter.min_match_score = 0.0;
+    ap.target.date_filter = None;
+    ap.filter.keywords = Some(vec!["python".into()]);
+
+    relax_legacy_filters(&mut ap);
+
+    assert_eq!(
+        ap.filter.keywords.as_deref(),
+        Some(["python".to_string()].as_ref()),
+        "user-added keywords on an already-relaxed record must survive a rerun"
+    );
+    assert_eq!(ap.filter.min_match_score, 0.0);
+    assert!(ap.target.date_filter.is_none());
+}
+
+#[test]
+fn relax_clears_none_keywords_remains_none() {
+    // keywords already None → still None (no-op, no panic).
+    let mut ap = base_autopilot();
+    ap.filter.keywords = None;
+    relax_legacy_filters(&mut ap);
+    assert!(ap.filter.keywords.is_none());
+}
+
+#[test]
+fn relax_resets_min_match_score_only_when_exactly_50() {
+    // 50.0 → reset to 0.0.
+    let mut ap = base_autopilot();
+    ap.filter.min_match_score = 50.0;
+    relax_legacy_filters(&mut ap);
+    assert_eq!(
+        ap.filter.min_match_score, 0.0,
+        "default 50.0 must be reset to 0.0"
+    );
+}
+
+#[test]
+fn relax_leaves_custom_min_match_score_untouched() {
+    // 75.0 (deliberate user setting) → unchanged.
+    let mut ap = base_autopilot();
+    ap.filter.min_match_score = 75.0;
+    relax_legacy_filters(&mut ap);
+    assert_eq!(
+        ap.filter.min_match_score, 75.0,
+        "custom 75.0 must not be touched"
+    );
+}
+
+#[test]
+fn relax_leaves_already_zero_min_match_score_at_zero() {
+    // Already 0.0 → stays 0.0 (idempotent / already relaxed).
+    let mut ap = base_autopilot();
+    ap.filter.min_match_score = 0.0;
+    relax_legacy_filters(&mut ap);
+    assert_eq!(ap.filter.min_match_score, 0.0);
+}
+
+#[test]
+fn relax_leaves_near_fifty_min_match_score_untouched() {
+    // 49.9 is close to but NOT the magic 50.0 → unchanged.
+    let mut ap = base_autopilot();
+    ap.filter.min_match_score = 49.9;
+    relax_legacy_filters(&mut ap);
+    assert_eq!(
+        ap.filter.min_match_score, 49.9,
+        "49.9 is not the legacy default; must be left unchanged"
+    );
+}
+
+#[test]
+fn relax_clears_date_filter_only_for_24h() {
+    // "24h" is the legacy auto-default → should become None.
+    let mut ap = base_autopilot();
+    ap.target.date_filter = Some("24h".into());
+    relax_legacy_filters(&mut ap);
+    assert!(
+        ap.target.date_filter.is_none(),
+        "\"24h\" legacy default must be cleared to None"
+    );
+}
+
+#[test]
+fn relax_leaves_week_date_filter_untouched() {
+    let mut ap = base_autopilot();
+    ap.target.date_filter = Some("week".into());
+    relax_legacy_filters(&mut ap);
+    assert_eq!(
+        ap.target.date_filter.as_deref(),
+        Some("week"),
+        "user-picked \"week\" must be left alone"
+    );
+}
+
+#[test]
+fn relax_leaves_month_date_filter_untouched() {
+    let mut ap = base_autopilot();
+    ap.target.date_filter = Some("month".into());
+    relax_legacy_filters(&mut ap);
+    assert_eq!(
+        ap.target.date_filter.as_deref(),
+        Some("month"),
+        "user-picked \"month\" must be left alone"
+    );
+}
+
+#[test]
+fn relax_leaves_none_date_filter_as_none() {
+    let mut ap = base_autopilot();
+    ap.target.date_filter = None;
+    relax_legacy_filters(&mut ap);
+    assert!(ap.target.date_filter.is_none());
+}
+
+#[test]
+fn relax_preserves_all_unrelated_fields() {
+    let mut ap = base_autopilot();
+    // Set the fields relax touches (legacy defaults).
+    ap.filter.keywords = Some(vec!["rust".into()]);
+    ap.filter.min_match_score = 50.0;
+    ap.target.date_filter = Some("24h".into());
+    // Set non-relax fields to non-default values so we can assert they survive.
+    ap.filter.exclude_keywords = Some(vec!["senior".into()]);
+    ap.target.query = "backend engineer".into();
+    ap.target.location = Some("Berlin".into());
+    ap.target.country_code = Some("de".into());
+    ap.target.boards = vec!["linkedin".into(), "indeed".into()];
+    ap.target.pages = 3;
+    ap.target.work_type = Some("remote".into());
+
+    relax_legacy_filters(&mut ap);
+
+    // The fix clears keywords + resets score + clears date_filter.
+    assert!(ap.filter.keywords.is_none());
+    assert_eq!(ap.filter.min_match_score, 0.0);
+    assert!(ap.target.date_filter.is_none());
+
+    // Everything else must be untouched.
+    assert_eq!(
+        ap.filter.exclude_keywords.as_deref(),
+        Some(["senior".to_string()].as_ref()),
+        "exclude_keywords must be preserved"
+    );
+    assert_eq!(ap.target.query, "backend engineer");
+    assert_eq!(ap.target.location.as_deref(), Some("Berlin"));
+    assert_eq!(ap.target.country_code.as_deref(), Some("de"));
+    assert_eq!(ap.target.boards, vec!["linkedin", "indeed"]);
+    assert_eq!(ap.target.pages, 3);
+    assert_eq!(ap.target.work_type.as_deref(), Some("remote"));
+}
+
+#[test]
+fn relax_is_idempotent() {
+    // Calling relax_legacy_filters twice must equal calling it once — the
+    // second call is a no-op on an already-relaxed autopilot.
+    let mut ap = base_autopilot();
+    // Start from the worst-case legacy state.
+    ap.filter.keywords = Some(vec!["rust".into()]);
+    ap.filter.exclude_keywords = Some(vec!["senior".into()]);
+    ap.filter.min_match_score = 50.0;
+    ap.target.date_filter = Some("24h".into());
+
+    relax_legacy_filters(&mut ap);
+    let after_first = (
+        ap.filter.keywords.clone(),
+        ap.filter.min_match_score,
+        ap.target.date_filter.clone(),
+    );
+
+    relax_legacy_filters(&mut ap);
+    let after_second = (
+        ap.filter.keywords.clone(),
+        ap.filter.min_match_score,
+        ap.target.date_filter.clone(),
+    );
+
+    assert_eq!(after_first, after_second, "second call must be a no-op");
+}
+
+// ── relax_legacy_filters_once (I/O orchestration) ────────────────────────────
+
+/// Seed a store with one restrictive autopilot (the legacy defaults that caused
+/// zero-jobs) and return its id. Shared setup for the `_once` tests.
+fn seed_restrictive(store: &AutopilotStore) -> String {
+    store
+        .create(serde_json::json!({
+            "name": "Legacy",
+            "target": {
+                "board": "linkedin",
+                "query": "rust",
+                "pages": 1,
+                "dateFilter": "24h"
+            },
+            "filter": {
+                "minMatchScore": 50.0,
+                "keywords": ["rust", "go"]
+            },
+            "schedule": "daily",
+        }))
+        .id
+}
+
+#[test]
+fn relax_legacy_filters_once_relaxes_and_writes_marker_on_first_run() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
+    let store = AutopilotStore::new(&dir);
+    let id = seed_restrictive(&store);
+
+    // Marker must not exist before the first run.
+    let marker = dir.join(RELAX_MARKER_FILE);
+    assert!(!marker.exists(), "marker must be absent before migration");
+
+    store.relax_legacy_filters_once();
+
+    // (a) Marker written after a successful first run.
+    assert!(marker.exists(), "marker must be created after first run");
+
+    // (b) On-disk autopilot has been relaxed.
+    let ap = store.get(&id).expect("autopilot must still exist");
+    assert_eq!(
+        ap.filter.min_match_score, 0.0,
+        "min_match_score must be reset from 50.0 to 0.0"
+    );
+    assert!(
+        ap.filter.keywords.is_none(),
+        "keywords must be cleared to None"
+    );
+    assert!(
+        ap.target.date_filter.is_none(),
+        "date_filter must be cleared from \"24h\" to None"
+    );
+}
+
+#[test]
+fn relax_legacy_filters_once_skips_when_marker_present() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
+    let store = AutopilotStore::new(&dir);
+    let id = seed_restrictive(&store);
+
+    // Pre-create the marker — simulates a store that was already migrated.
+    let marker = dir.join(RELAX_MARKER_FILE);
+    std::fs::write(&marker, b"1").unwrap();
+
+    store.relax_legacy_filters_once();
+
+    // The autopilot must be completely unchanged (still restrictive).
+    let ap = store.get(&id).expect("autopilot must still exist");
+    assert_eq!(
+        ap.filter.min_match_score, 50.0,
+        "min_match_score must be left at 50.0 when marker is present"
+    );
+    assert!(
+        ap.filter.keywords.is_some(),
+        "keywords must remain Some([...]) when marker is present"
+    );
+    assert_eq!(
+        ap.target.date_filter.as_deref(),
+        Some("24h"),
+        "date_filter must remain \"24h\" when marker is present"
+    );
+}
+
+#[test]
+fn relax_legacy_filters_once_does_not_write_marker_when_persist_fails() {
+    use tempfile::TempDir;
+
+    // Force write_to_disk to fail: create a DIRECTORY at the data_file path
+    // (autopilots.json). std::fs::write() to a path that is a directory fails
+    // on every platform. The marker's parent dir remains writable, so the only
+    // thing that can gate the marker write is whether write_to_disk returned Ok.
+    let temp = TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
+
+    // Create <dir>/autopilots.json as a directory, not a file.
+    let data_file = dir.join("autopilots.json");
+    std::fs::create_dir_all(&data_file).unwrap();
+
+    // AutopilotStore::new expects the *parent* dir to exist, which it does (temp).
+    // Passing `dir` means data_file = dir/autopilots.json — already a dir above.
+    let store = AutopilotStore::new(&dir);
+
+    // load() will return an empty map (can't read a dir as JSON), which is fine —
+    // we just need write_to_disk to fail so the marker is NOT written.
+    store.relax_legacy_filters_once();
+
+    let marker = dir.join(RELAX_MARKER_FILE);
+    assert!(
+        !marker.exists(),
+        "marker must NOT be written when write_to_disk fails (retry guarantee)"
+    );
+}
