@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.115.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.115.0...v0.115.1) (2026-06-23)
+
+### 🐛 Bug Fixes
+
+* **autopilot:** forward country to aggregator + stop keyword-prefill (with dep bump, landing OG fix) ([#483](https://github.com/saeedkolivand/ai-job-hunter-app/issues/483)) ([bc5e00e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/bc5e00e1040936ed59ee4dfef71b36f71fe75d86))
+* **autopilot:** match manual-search filters and surface zero-result reasons ([#484](https://github.com/saeedkolivand/ai-job-hunter-app/issues/484)) ([16ebdf7](https://github.com/saeedkolivand/ai-job-hunter-app/commit/16ebdf751de96dc998f9f6b3e477517c95f6e243)), closes [pre-#483](https://github.com/saeedkolivand/pre-/issues/483) [#483](https://github.com/saeedkolivand/ai-job-hunter-app/issues/483)
+* **autopilot:** redact standalone credential tokens in scrape diagnostics ([#485](https://github.com/saeedkolivand/ai-job-hunter-app/issues/485)) ([b53e296](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b53e296b023f83930f9fc574c922fc7c9284ca92)), closes [#484](https://github.com/saeedkolivand/ai-job-hunter-app/issues/484)
+
 ## [0.115.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.114.0...v0.115.0) (2026-06-23)
 
 ### ✨ Features
