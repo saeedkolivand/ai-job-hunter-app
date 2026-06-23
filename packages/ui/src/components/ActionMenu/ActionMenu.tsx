@@ -142,7 +142,7 @@ export function ActionMenu({
                     'disabled:pointer-events-none disabled:opacity-45',
                     item.destructive
                       ? 'text-red-400 hover:bg-red-400/10'
-                      : 'text-foreground/75 hover:bg-white/[0.06] hover:text-foreground'
+                      : 'text-foreground/75 hover:bg-muted hover:text-foreground'
                   )}
                 >
                   {item.icon && <span className="shrink-0">{item.icon}</span>}
