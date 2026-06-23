@@ -694,39 +694,30 @@ fn create_with_null_filter_defaults_min_match_score_to_zero() {
 
 // ── relax_legacy_filters ──────────────────────────────────────────────────────
 
-/// Build a minimal `Autopilot` with all fields explicit, so tests can change
-/// only what they care about without dealing with the file-backed store.
-fn make_autopilot(
-    keywords: Option<Vec<String>>,
-    exclude_keywords: Option<Vec<String>>,
-    min_match_score: f64,
-    date_filter: Option<String>,
-    query: &str,
-    location: Option<String>,
-    country_code: Option<String>,
-    boards: Vec<String>,
-    pages: u32,
-    work_type: Option<String>,
-) -> Autopilot {
+/// Return a fully-populated `Autopilot` that each test can mutate in place.
+/// Starts with the legacy restrictive defaults (the zero-jobs configuration)
+/// so most tests only need to tweak the one field they care about.
+/// Zero args → well under the 8-arg clippy limit.
+fn base_autopilot() -> Autopilot {
     let now = 1_000_000u64;
     Autopilot {
         id: "test-id".into(),
         name: "Test AP".into(),
         status: AutopilotStatus::Active,
         target: AutopilotTarget {
-            boards,
-            query: query.into(),
-            location,
-            country_code,
-            work_type,
-            pages,
-            date_filter,
+            boards: vec!["linkedin".into()],
+            query: "engineer".into(),
+            location: None,
+            country_code: None,
+            work_type: None,
+            pages: 1,
+            date_filter: Some("24h".into()),
             top_n: 3,
         },
         filter: AutopilotFilter {
-            min_match_score,
-            keywords,
-            exclude_keywords,
+            min_match_score: 50.0,
+            keywords: Some(vec!["rust".into(), "go".into()]),
+            exclude_keywords: None,
         },
         schedule: "daily".into(),
         schedule_hour: None,
@@ -746,18 +737,8 @@ fn make_autopilot(
 #[test]
 fn relax_clears_keywords_unconditionally() {
     // keywords with values → None after relax.
-    let mut ap = make_autopilot(
-        Some(vec!["rust".into(), "go".into()]),
-        None,
-        0.0,
-        None,
-        "engineer",
-        None,
-        None,
-        vec!["linkedin".into()],
-        1,
-        None,
-    );
+    let mut ap = base_autopilot();
+    ap.filter.keywords = Some(vec!["rust".into(), "go".into()]);
     relax_legacy_filters(&mut ap);
     assert!(
         ap.filter.keywords.is_none(),
@@ -768,18 +749,8 @@ fn relax_clears_keywords_unconditionally() {
 #[test]
 fn relax_clears_none_keywords_remains_none() {
     // keywords already None → still None (no-op, no panic).
-    let mut ap = make_autopilot(
-        None,
-        None,
-        0.0,
-        None,
-        "engineer",
-        None,
-        None,
-        vec!["linkedin".into()],
-        1,
-        None,
-    );
+    let mut ap = base_autopilot();
+    ap.filter.keywords = None;
     relax_legacy_filters(&mut ap);
     assert!(ap.filter.keywords.is_none());
 }
@@ -787,18 +758,8 @@ fn relax_clears_none_keywords_remains_none() {
 #[test]
 fn relax_resets_min_match_score_only_when_exactly_50() {
     // 50.0 → reset to 0.0.
-    let mut ap = make_autopilot(
-        None,
-        None,
-        50.0,
-        None,
-        "engineer",
-        None,
-        None,
-        vec!["linkedin".into()],
-        1,
-        None,
-    );
+    let mut ap = base_autopilot();
+    ap.filter.min_match_score = 50.0;
     relax_legacy_filters(&mut ap);
     assert_eq!(
         ap.filter.min_match_score, 0.0,
@@ -809,18 +770,8 @@ fn relax_resets_min_match_score_only_when_exactly_50() {
 #[test]
 fn relax_leaves_custom_min_match_score_untouched() {
     // 75.0 (deliberate user setting) → unchanged.
-    let mut ap = make_autopilot(
-        None,
-        None,
-        75.0,
-        None,
-        "engineer",
-        None,
-        None,
-        vec!["linkedin".into()],
-        1,
-        None,
-    );
+    let mut ap = base_autopilot();
+    ap.filter.min_match_score = 75.0;
     relax_legacy_filters(&mut ap);
     assert_eq!(
         ap.filter.min_match_score, 75.0,
@@ -831,18 +782,8 @@ fn relax_leaves_custom_min_match_score_untouched() {
 #[test]
 fn relax_leaves_already_zero_min_match_score_at_zero() {
     // Already 0.0 → stays 0.0 (idempotent / already relaxed).
-    let mut ap = make_autopilot(
-        None,
-        None,
-        0.0,
-        None,
-        "engineer",
-        None,
-        None,
-        vec!["linkedin".into()],
-        1,
-        None,
-    );
+    let mut ap = base_autopilot();
+    ap.filter.min_match_score = 0.0;
     relax_legacy_filters(&mut ap);
     assert_eq!(ap.filter.min_match_score, 0.0);
 }
@@ -850,18 +791,8 @@ fn relax_leaves_already_zero_min_match_score_at_zero() {
 #[test]
 fn relax_leaves_near_fifty_min_match_score_untouched() {
     // 49.9 is close to but NOT the magic 50.0 → unchanged.
-    let mut ap = make_autopilot(
-        None,
-        None,
-        49.9,
-        None,
-        "engineer",
-        None,
-        None,
-        vec!["linkedin".into()],
-        1,
-        None,
-    );
+    let mut ap = base_autopilot();
+    ap.filter.min_match_score = 49.9;
     relax_legacy_filters(&mut ap);
     assert_eq!(
         ap.filter.min_match_score, 49.9,
@@ -872,18 +803,8 @@ fn relax_leaves_near_fifty_min_match_score_untouched() {
 #[test]
 fn relax_clears_date_filter_only_for_24h() {
     // "24h" is the legacy auto-default → should become None.
-    let mut ap = make_autopilot(
-        None,
-        None,
-        0.0,
-        Some("24h".into()),
-        "engineer",
-        None,
-        None,
-        vec!["linkedin".into()],
-        1,
-        None,
-    );
+    let mut ap = base_autopilot();
+    ap.target.date_filter = Some("24h".into());
     relax_legacy_filters(&mut ap);
     assert!(
         ap.target.date_filter.is_none(),
@@ -893,18 +814,8 @@ fn relax_clears_date_filter_only_for_24h() {
 
 #[test]
 fn relax_leaves_week_date_filter_untouched() {
-    let mut ap = make_autopilot(
-        None,
-        None,
-        0.0,
-        Some("week".into()),
-        "engineer",
-        None,
-        None,
-        vec!["linkedin".into()],
-        1,
-        None,
-    );
+    let mut ap = base_autopilot();
+    ap.target.date_filter = Some("week".into());
     relax_legacy_filters(&mut ap);
     assert_eq!(
         ap.target.date_filter.as_deref(),
@@ -915,18 +826,8 @@ fn relax_leaves_week_date_filter_untouched() {
 
 #[test]
 fn relax_leaves_month_date_filter_untouched() {
-    let mut ap = make_autopilot(
-        None,
-        None,
-        0.0,
-        Some("month".into()),
-        "engineer",
-        None,
-        None,
-        vec!["linkedin".into()],
-        1,
-        None,
-    );
+    let mut ap = base_autopilot();
+    ap.target.date_filter = Some("month".into());
     relax_legacy_filters(&mut ap);
     assert_eq!(
         ap.target.date_filter.as_deref(),
@@ -937,36 +838,28 @@ fn relax_leaves_month_date_filter_untouched() {
 
 #[test]
 fn relax_leaves_none_date_filter_as_none() {
-    let mut ap = make_autopilot(
-        None,
-        None,
-        0.0,
-        None,
-        "engineer",
-        None,
-        None,
-        vec!["linkedin".into()],
-        1,
-        None,
-    );
+    let mut ap = base_autopilot();
+    ap.target.date_filter = None;
     relax_legacy_filters(&mut ap);
     assert!(ap.target.date_filter.is_none());
 }
 
 #[test]
 fn relax_preserves_all_unrelated_fields() {
-    let mut ap = make_autopilot(
-        Some(vec!["rust".into()]),
-        Some(vec!["senior".into()]),
-        50.0,
-        Some("24h".into()),
-        "backend engineer",
-        Some("Berlin".into()),
-        Some("de".into()),
-        vec!["linkedin".into(), "indeed".into()],
-        3,
-        Some("remote".into()),
-    );
+    let mut ap = base_autopilot();
+    // Set the fields relax touches (legacy defaults).
+    ap.filter.keywords = Some(vec!["rust".into()]);
+    ap.filter.min_match_score = 50.0;
+    ap.target.date_filter = Some("24h".into());
+    // Set non-relax fields to non-default values so we can assert they survive.
+    ap.filter.exclude_keywords = Some(vec!["senior".into()]);
+    ap.target.query = "backend engineer".into();
+    ap.target.location = Some("Berlin".into());
+    ap.target.country_code = Some("de".into());
+    ap.target.boards = vec!["linkedin".into(), "indeed".into()];
+    ap.target.pages = 3;
+    ap.target.work_type = Some("remote".into());
+
     relax_legacy_filters(&mut ap);
 
     // The fix clears keywords + resets score + clears date_filter.
@@ -992,18 +885,13 @@ fn relax_preserves_all_unrelated_fields() {
 fn relax_is_idempotent() {
     // Calling relax_legacy_filters twice must equal calling it once — the
     // second call is a no-op on an already-relaxed autopilot.
-    let mut ap = make_autopilot(
-        Some(vec!["rust".into()]),
-        Some(vec!["senior".into()]),
-        50.0,
-        Some("24h".into()),
-        "engineer",
-        None,
-        None,
-        vec!["linkedin".into()],
-        1,
-        None,
-    );
+    let mut ap = base_autopilot();
+    // Start from the worst-case legacy state.
+    ap.filter.keywords = Some(vec!["rust".into()]);
+    ap.filter.exclude_keywords = Some(vec!["senior".into()]);
+    ap.filter.min_match_score = 50.0;
+    ap.target.date_filter = Some("24h".into());
+
     relax_legacy_filters(&mut ap);
     let after_first = (
         ap.filter.keywords.clone(),
