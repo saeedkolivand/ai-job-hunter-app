@@ -372,7 +372,11 @@ export const AutopilotTargetSchema = z.object({
 });
 
 export const AutopilotFilterSchema = z.object({
-  minMatchScore: z.number().min(0).max(100).default(50),
+  // Default 0 = keep everything. A non-zero default silently dropped jobs a
+  // manual search would have returned (the autopilot zero-jobs bug); the user
+  // raises this deliberately. Drives both create + update generated Rust
+  // defaults (update reuses this schema via `.partial()`).
+  minMatchScore: z.number().min(0).max(100).default(0),
   keywords: z.array(z.string()).optional(),
   excludeKeywords: z.array(z.string()).optional(),
 });

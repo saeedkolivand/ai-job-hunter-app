@@ -56,7 +56,7 @@ These five boards were retired as direct scrapers (ADR-026, 2026-06-21). Their R
 
 **Adzuna country-code limitation (PR #483):**
 
-Adzuna's API is path-based per country (`/jobs/{country}/search/1`) and only hosts a fixed set of ~19 markets — see `ADZUNA_SUPPORTED_COUNTRIES` in `apps/tauri/src-tauri/src/scraping/boards/aggregator/mod.rs`. Unsupported country codes return non-2xx errors. The aggregator gates Adzuna requests with this allowlist; unsupported countries trigger a diagnostic `Err` (not silent empty) that surfaces as `BoardScrapeSummary.error` with a JSearch remedy suggestion. JSearch has no country restriction and serves as the fallback for unsupported markets.
+Adzuna's API is country-scoped with a fixed market allowlist; see `ADZUNA_SUPPORTED_COUNTRIES` in the aggregator module. Unsupported countries trigger a diagnostic error (not silent empty) that surfaces as `BoardScrapeSummary.error` with JSearch as fallback. Autopilot skip/error reasons surface in the run step log via `scrape_diagnostics`.
 
 **Behavior:**
 
