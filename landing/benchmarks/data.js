@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782214297626,
+  "lastUpdate": 1782216669484,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1589,6 +1589,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 278396,
             "range": "± 1361",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b53e296b023f83930f9fc574c922fc7c9284ca92",
+          "message": "fix(autopilot): redact standalone credential tokens in scrape diagnostics (#485)\n\n* fix(autopilot): redact standalone credential tokens in scrape diagnostics\n\nFollow-up to CodeRabbit on #484 (two 🔵 nitpicks).\n\n- redact_token now redacts standalone credential-assignment tokens\n  (app_key=, app_id=, api_key=, key=, secret=, token=, password=, …) to\n  <credential-redacted>, gated on the literal '=' so benign words\n  (keyword, bare token, v1.2.3) are untouched. Ordered after the URL\n  branch so a full https://…?app_key=… token still wins <url-redacted>.\n  Defense-in-depth: no current provider emits a bare key into a board\n  error (Adzuna's is only inside the full URL; JSearch's is a header).\n- Add a regression test pinning the documented was_legacy gap: a record\n  with prefilled keywords but score != 50 and date != \"24h\" reads\n  non-legacy, so relax_legacy_filters keeps the keywords.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* refactor(autopilot): drop credential markers subsumed by key=\n\nThe is_credential substring check used app_key=, apikey= and api_key=,\nbut all three contain key=, so that marker already matches them. Remove\nthe three dead entries and note why. Behavior is byte-identical; the\nredaction tests pass unchanged.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-23T14:02:38+02:00",
+          "tree_id": "7815f8a3d6d8a1bc89758f335568bdf2a65d6466",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/b53e296b023f83930f9fc574c922fc7c9284ca92"
+        },
+        "date": 1782216669040,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1934519,
+            "range": "± 52924",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2580244,
+            "range": "± 23297",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 290676,
+            "range": "± 1635",
             "unit": "ns/iter"
           }
         ]
