@@ -55,6 +55,7 @@ interface AutopilotCardProps {
 const STEP_ICON: Record<string, string> = {
   scrape_start: '⟳',
   scrape_done: '✓',
+  scrape_diag: '⚠',
   rank_done: '★',
   cancelled: '⊘',
   complete: '✓',
