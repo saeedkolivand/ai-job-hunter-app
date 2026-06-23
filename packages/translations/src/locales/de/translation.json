@@ -1445,6 +1445,8 @@
         "matchScore": "Übereinstimmung",
         "matchScoreHint": "Wie streng die Lebenslauf-Übereinstimmung sein muss",
         "matchLevel": {
+          "any": "Beliebig",
+          "anyDesc": "Kein Minimum",
           "low": "Niedrig",
           "lowDesc": "Locker",
           "medium": "Mittel",

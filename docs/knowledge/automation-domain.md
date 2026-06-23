@@ -1,6 +1,6 @@
 # Automation domain (scraping + apply assistant + AI provider)
 
-Last updated: 2026-06-17
+Last updated: 2026-06-23
 
 Merged knowledge for `scraping-applier-expert` and `ai-provider-expert`. Source is authoritative for board/provider counts.
 
@@ -19,6 +19,7 @@ Merged knowledge for `scraping-applier-expert` and `ai-provider-expert`. Source 
 - **What the assistant does** — from a found or scraped job the user tailors a résumé + cover letter (`renderer/features/autopilot/.../ApplyJobModal`, `renderer/store/generation-store/`), gets résumé-grounded application answers, opens the posting in the browser, and submits it themselves. Autopilot (`autopilot/`, `autopilot_scheduler`) **finds → ranks → notifies**; it never submits. Found-jobs PostingRow "Tailor" seeds the AI Generate workspace for any board.
 - **Autopilot board picker** — dynamically driven by the board catalog (`useBoardsCatalog()`), so new boards appear automatically without UI changes. The wizard board-select component (`StepTarget`) filters catalog entries by `listed` flag; includes the aggregator board.
 - **Autopilot scheduling** — **clock-anchored** (PR #266; was interval-based). `autopilot_scheduler.rs` computes the most-recent scheduled occurrence in local time (`chrono::Local`) via `last_occurrence_ms` / `is_due`; on launch it catches up to any missed run (single catch-up, no double-fire). Frequency modes: `daily` = HH:MM; `twice_daily` = HH:MM + 12 h; `hourly` = :MM; `manual` = no scheduling. Fields `scheduleHour` (0–23) and `scheduleMinute` (0–59) on the autopilot model — Zod-validated client-side, range-guarded in the store. Legacy records default to 09:00.
+- **Autopilot RUN filters** — a run applies three filters (date window, must-include keywords, min-match-score) that manual search does not; defaults realigned to manual parity via `AutopilotFilterSchema` Zod schema (packages/shared/src/schemas/index.ts) → generated Rust contract. Wizard `buildDefaults()` mirrors schema defaults. One-shot, marker-file-gated migration on first `autopilot_scheduler::start` calls `relax_legacy_filters_once` → `relax_legacy_filters` (pure logic) to loosen legacy saved autopilots per sentinel rules. Diagnostics: `scrape_diagnostics` surfaces per-board skip/error reasons into the autopilot run step log; `scrape_done` reports raw vs post-keyword-filter job counts.
 - **"Applied" tracking** — derived, never auto-set: a found job is "applied" when a saved generation's `jobUrl` matches it (`commands/autopilot.rs: enrich_applied`). Each autopilot keeps an optional **base cover letter** (`coverLetter`) the assistant tailors per job.
 - **Security** — never log credentials/cookies; board session handling for **scraping** is co-reviewed by `tauri-security-reviewer`.
 
