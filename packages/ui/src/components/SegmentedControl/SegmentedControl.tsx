@@ -38,7 +38,7 @@ const TRACK_ITEM_SIZE: Record<NonNullable<SegmentedControlProps<string>['size']>
 
 const TRACK_ACTIVE: Record<NonNullable<SegmentedControlProps<string>['tone']>, string> = {
   brand: 'bg-brand/15 text-brand-soft',
-  neutral: 'bg-white/10 text-foreground/90',
+  neutral: 'bg-foreground/10 text-foreground/90',
 };
 
 const ICON_SIZE = { sm: 11, md: 13 } as const;
@@ -106,7 +106,7 @@ export function SegmentedControl<T extends string>({
       className={cn(
         isGrid
           ? 'grid gap-1.5'
-          : 'inline-flex items-center gap-0.5 rounded-lg bg-white/[0.04] p-0.5',
+          : 'inline-flex items-center gap-0.5 rounded-lg bg-foreground/[0.04] p-0.5',
         className
       )}
       style={
@@ -135,7 +135,7 @@ export function SegmentedControl<T extends string>({
                     'rounded-lg border py-1.5 text-[11px] font-medium',
                     selected
                       ? 'border-brand/40 bg-brand/10 text-brand-soft'
-                      : 'border-white/[0.06] bg-white/[0.02] text-foreground/45 hover:border-white/10 hover:text-foreground/70'
+                      : 'border-foreground/[0.06] bg-foreground/[0.02] text-foreground/45 hover:border-foreground/10 hover:text-foreground/70'
                   )
                 : cn(
                     TRACK_ITEM_SIZE[size],

@@ -92,4 +92,36 @@ describe('SegmentedControl', () => {
     const group = screen.getByRole('radiogroup', { name: 'Quality' });
     expect(group.style.gridTemplateColumns).toBe('repeat(3, minmax(0, 1fr))');
   });
+
+  it('track container uses foreground-based opacity (not white) for theme-adaptive visibility', () => {
+    render(<Harness initial="auto" />);
+    const group = screen.getByRole('radiogroup', { name: 'Prompt quality' });
+    expect(group.className).toContain('bg-foreground/');
+    expect(group.className).not.toContain('bg-white');
+  });
+
+  it('track neutral active button uses foreground-based opacity (not white)', () => {
+    render(<Harness initial="auto" />);
+    const active = screen.getByRole('radio', { name: 'Auto' });
+    expect(active.className).toContain('bg-foreground/');
+    expect(active.className).not.toContain('bg-white');
+  });
+
+  it('grid inactive buttons use foreground-based border/bg opacity (not white)', () => {
+    render(
+      <SegmentedControl
+        ariaLabel="Quality"
+        variant="grid"
+        options={OPTIONS}
+        value="full"
+        onChange={() => {}}
+      />
+    );
+    // Inactive buttons (not the selected one) must use foreground-based classes
+    const inactive = screen.getByRole('radio', { name: 'Auto' });
+    expect(inactive.className).toContain('border-foreground/');
+    expect(inactive.className).toContain('bg-foreground/');
+    expect(inactive.className).not.toContain('border-white');
+    expect(inactive.className).not.toContain('bg-white');
+  });
 });
