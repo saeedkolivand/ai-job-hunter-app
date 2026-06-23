@@ -109,7 +109,8 @@ describe('Tabs', () => {
     // Focus the middle tab explicitly so focusedIndex.current becomes 1.
     screen.getByRole('tab', { name: 'Details' }).focus();
     await user.keyboard('{ArrowRight}');
-    expect(onChange).toHaveBeenCalledWith('notes');
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith('notes');
   });
 
   it('Home jumps to first tab, End jumps to last tab', async () => {
