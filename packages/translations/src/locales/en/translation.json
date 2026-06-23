@@ -1244,6 +1244,9 @@
       "failed": "Failed",
       "interrupted": "Interrupted"
     },
+    "card": {
+      "boardsCount": "{{count}} boards"
+    },
     "apply": {
       "back": "Back to autopilot",
       "match": "match",

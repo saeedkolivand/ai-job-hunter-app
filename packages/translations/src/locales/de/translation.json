@@ -1248,6 +1248,9 @@
       "failed": "Fehlgeschlagen",
       "interrupted": "Unterbrochen"
     },
+    "card": {
+      "boardsCount": "{{count}} Boards"
+    },
     "apply": {
       "back": "Zurück zum Autopilot",
       "match": "Übereinstimmung",

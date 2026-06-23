@@ -18,9 +18,7 @@ const BASE_AUTOPILOT: Autopilot = {
   name: 'My autopilot',
   status: 'active',
   target: {
-    // Autopilot.target type still carries the legacy `board: string` shape; runtime
-    // sends `boards: string[]` — the cast in autopilotToWizardState handles both.
-    board: 'linkedin',
+    boards: ['linkedin'],
     query: 'react developer',
     location: 'Berlin',
     workType: 'remote',
@@ -126,7 +124,6 @@ describe('autopilotToWizardState()', () => {
   it('round-trips all other top-level fields correctly', () => {
     const state = autopilotToWizardState(BASE_AUTOPILOT);
     expect(state.name).toBe('My autopilot');
-    // Legacy `board: string` autopilots are normalized to `boards: [board]`.
     expect(state.boards).toEqual(['linkedin']);
     expect(state.query).toBe('react developer');
     expect(state.schedule).toBe('daily');
@@ -134,23 +131,20 @@ describe('autopilotToWizardState()', () => {
     expect(state.resumeText).toBe('My resume text');
   });
 
-  it('reads boards array from new-style autopilots', () => {
-    // Runtime payload has `boards: string[]`; the static Autopilot type still carries
-    // the legacy `board: string`. Use a double-cast to simulate the runtime shape.
-    const ap = {
+  it('reads all boards from a multi-board autopilot', () => {
+    const ap: Autopilot = {
       ...BASE_AUTOPILOT,
       target: { ...BASE_AUTOPILOT.target, boards: ['linkedin', 'indeed'] },
-    } as unknown as Autopilot;
+    };
     const state = autopilotToWizardState(ap);
     expect(state.boards).toEqual(['linkedin', 'indeed']);
   });
 
   it('round-trips countryCode when target carries one (Fix A)', () => {
-    // Simulate a runtime payload that includes countryCode (e.g. "us").
-    const ap = {
+    const ap: Autopilot = {
       ...BASE_AUTOPILOT,
       target: { ...BASE_AUTOPILOT.target, countryCode: 'us' },
-    } as unknown as Autopilot;
+    };
     const state = autopilotToWizardState(ap);
     expect(state.countryCode).toBe('us');
   });

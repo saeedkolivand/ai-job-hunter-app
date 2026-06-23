@@ -205,7 +205,7 @@ export interface Autopilot {
   name: string;
   status: AutopilotStatus;
   target: {
-    board: string;
+    boards: string[];
     query: string;
     location?: string;
     countryCode?: string;

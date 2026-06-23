@@ -84,25 +84,8 @@ export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
 
 /** Map a persisted autopilot back into the wizard form for editing. */
 export function autopilotToWizardState(ap: Autopilot): WizardState {
-  // The runtime payload uses `boards: string[]` (post-migration). The static
-  // `Autopilot` type still carries the legacy `board: string` shape; cast to
-  // read whichever field exists until the shared type is regenerated.
-  const target = ap.target as unknown as {
-    boards?: string[];
-    board?: string;
-    query: string;
-    location?: string;
-    countryCode?: string;
-    workType?: 'remote' | 'hybrid' | 'on-site';
-    pages: number;
-    dateFilter?: string;
-  };
-  const boards: string[] =
-    target.boards && target.boards.length > 0
-      ? target.boards
-      : target.board
-        ? [target.board]
-        : [AGGREGATOR_BOARD_ID];
+  const { target } = ap;
+  const boards: string[] = target.boards.length > 0 ? target.boards : [AGGREGATOR_BOARD_ID];
   return {
     name: ap.name,
     boards,
