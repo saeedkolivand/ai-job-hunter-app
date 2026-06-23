@@ -172,11 +172,10 @@ fn redact_token(token: &str) -> String {
     // prose "token". The `://` branch below runs first, so a full
     // `https://…?app_key=…` still collapses to `<url-redacted>`, not this.
     let is_credential = [
-        "app_key=",
-        "app_id=",
-        "apikey=",
-        "api_key=",
+        // `key=` (substring match) subsumes the `*key=` variants — `app_key=`,
+        // `apikey=`, `api_key=` all CONTAIN it — so don't re-add those here.
         "key=",
+        "app_id=",
         "secret=",
         "token=",
         "password=",
