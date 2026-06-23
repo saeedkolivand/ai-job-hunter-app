@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Autopilot, JobPreferences } from '@ajh/shared';
+import { AGGREGATOR_BOARD_ID, type Autopilot, type JobPreferences } from '@ajh/shared';
 
 import type { WizardState } from '@/features/autopilot/types';
 
@@ -138,6 +138,15 @@ describe('autopilotToWizardState()', () => {
     };
     const state = autopilotToWizardState(ap);
     expect(state.boards).toEqual(['linkedin', 'indeed']);
+  });
+
+  it('falls back to aggregator when target.boards is empty', () => {
+    const ap: Autopilot = {
+      ...BASE_AUTOPILOT,
+      target: { ...BASE_AUTOPILOT.target, boards: [] },
+    };
+    const state = autopilotToWizardState(ap);
+    expect(state.boards).toEqual([AGGREGATOR_BOARD_ID]);
   });
 
   it('round-trips countryCode when target carries one (Fix A)', () => {
