@@ -372,8 +372,6 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn linux_flatpak_paths_written_only_for_installed_apps() {
-        use std::path::Path;
-
         // The table must match what register.rs writes. If the table in
         // register.rs changes, this test catches the drift.
         struct FlatpakCase {
