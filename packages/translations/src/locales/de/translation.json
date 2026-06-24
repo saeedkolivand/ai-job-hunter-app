@@ -757,7 +757,9 @@
       "historyClearedSuccess": "Interaktionsverlauf gelöscht.",
       "exportSuccess": "Daten erfolgreich exportiert.",
       "importSuccess": "{{count}} Datensatz{{plural}} importiert.",
-      "importPartial": "Einige Elemente konnten nicht wiederhergestellt werden. Ihre Daten sind möglicherweise unvollständig."
+      "importPartial": "Einige Elemente konnten nicht wiederhergestellt werden. Ihre Daten sind möglicherweise unvollständig.",
+      "fetchCompanyLogosTitle": "Unternehmenslogos abrufen",
+      "fetchCompanyLogosDescription": "Wenn aktiviert, wird der Unternehmensname jeder Stellenanzeige an einen Drittanbieter (Clearbit) gesendet, um ein Logo abzurufen. Standardmäßig deaktiviert."
     },
     "location": {
       "title": "Bevorzugter Standort",

@@ -1,4 +1,7 @@
-import { cn } from '@ajh/ui';
+import { cn, Image } from '@ajh/ui';
+
+import { useCompanyLogo } from '@/services';
+import { useFetchCompanyLogos } from '@/store/preferences-store';
 
 interface CompanyAvatarProps {
   company: string;
@@ -37,16 +40,37 @@ export function CompanyAvatar({ company, sourceFallback, size = 'sm' }: CompanyA
   const mono = initials(label);
   const slot = SLOTS[label.charCodeAt(0) % SLOTS.length] ?? SLOTS[0];
 
+  // Logo enrichment: only fires when the user has opted in.
+  // Zero requests when off; any failure falls back to monogram via Image's
+  // built-in error handling (onError hides the img layer, monogram stays visible).
+  const logosEnabled = useFetchCompanyLogos();
+  const logoUrl = useCompanyLogo(company, logosEnabled);
+
+  const showLogo = logosEnabled && !!logoUrl;
+
   return (
     <div
       aria-hidden="true"
       className={cn(
-        'flex shrink-0 items-center justify-center rounded-xl font-semibold ring-1 ring-inset',
+        'relative flex shrink-0 items-center justify-center overflow-hidden rounded-xl font-semibold ring-1 ring-inset',
         slot,
         size === 'sm' ? 'h-8 w-8 text-[10px]' : 'h-10 w-10 text-[11px]'
       )}
     >
-      {mono}
+      {/* Monogram — always rendered; covered by logo layer when logo is shown */}
+      <span className={showLogo ? 'invisible' : undefined}>{mono}</span>
+
+      {/* Logo layer — absolutely fills the avatar over the monogram.
+          Image handles onError internally (clears the src on failure); preview=false
+          disables the click-to-zoom lightbox (decorative avatar, not interactive). */}
+      {showLogo && (
+        <Image
+          src={logoUrl}
+          alt=""
+          preview={false}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      )}
     </div>
   );
 }

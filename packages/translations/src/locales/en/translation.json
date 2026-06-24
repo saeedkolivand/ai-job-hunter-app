@@ -757,7 +757,9 @@
       "historyClearedSuccess": "Interaction history cleared.",
       "exportSuccess": "Data exported successfully.",
       "importSuccess": "Imported {{count}} record{{plural}}.",
-      "importPartial": "Some items could not be restored. Your data may be incomplete."
+      "importPartial": "Some items could not be restored. Your data may be incomplete.",
+      "fetchCompanyLogosTitle": "Fetch company logos",
+      "fetchCompanyLogosDescription": "When on, the company name of each job posting is sent to a third-party logo provider (Clearbit) to fetch a logo image. Off by default."
     },
     "location": {
       "title": "Preferred Location",

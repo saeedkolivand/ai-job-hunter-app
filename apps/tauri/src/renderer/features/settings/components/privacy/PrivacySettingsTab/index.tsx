@@ -2,7 +2,7 @@ import { Download, LogOut, RotateCcw, Shield, Trash2, Upload } from 'lucide-reac
 import { useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { ConfirmModal, SettingsSection, useNotification } from '@ajh/ui';
+import { ConfirmModal, SettingsSection, Switch, useNotification } from '@ajh/ui';
 
 import {
   useClearInteractions,
@@ -11,6 +11,7 @@ import {
   useResetApp,
   useSignOutAll,
 } from '@/services';
+import { useFetchCompanyLogos, usePreferencesStore } from '@/store/preferences-store';
 
 import { ActionCard, type ActionCardProps } from './ActionCard';
 
@@ -29,6 +30,9 @@ export function PrivacySettingsTab() {
   const exportData = useExportData();
   const importData = useImportData();
   const resetApp = useResetApp();
+
+  const fetchCompanyLogos = useFetchCompanyLogos();
+  const setFetchCompanyLogos = usePreferencesStore((s) => s.setFetchCompanyLogos);
 
   const busy: Partial<Record<ConfirmAction | 'export' | 'import', boolean>> = {
     signOut: signOutAll.isPending,
@@ -194,6 +198,27 @@ export function PrivacySettingsTab() {
 
   return (
     <div className="space-y-3">
+      {/* ── Enrichment ─────────────────────────────────────────────────── */}
+      <div data-settings-anchor="privacy-enrichment">
+        <SettingsSection icon={Shield} label={t('settings.privacy.fetchCompanyLogosTitle')}>
+          <div className="flex items-start gap-4 rounded-xl border border-foreground/10 px-4 py-3.5">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-foreground/90">
+                {t('settings.privacy.fetchCompanyLogosTitle')}
+              </div>
+              <div className="mt-0.5 text-xs leading-snug text-foreground/40">
+                {t('settings.privacy.fetchCompanyLogosDescription')}
+              </div>
+            </div>
+            <Switch
+              checked={fetchCompanyLogos}
+              onCheckedChange={setFetchCompanyLogos}
+              aria-label={t('settings.privacy.fetchCompanyLogosTitle')}
+            />
+          </div>
+        </SettingsSection>
+      </div>
+
       <div data-settings-anchor="privacy-data">
         <SettingsSection icon={Shield} label={t('settings.privacy.dataTitle')}>
           <div className="space-y-3">
