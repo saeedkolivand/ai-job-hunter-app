@@ -164,15 +164,21 @@ export function applyTheme(prefs: ThemePrefs): void {
  * Apply prefs with a smooth full-page crossfade (View Transition API) when it's
  * supported, so switching scheme — especially dark→light — eases instead of
  * snapping (no "flashbang"). Falls back to an instant apply where the API is
- * unavailable or the user prefers reduced motion. Use for user-initiated
- * changes; boot and OS-driven re-applies stay instant.
+ * unavailable, the user prefers reduced motion, or the platform is Linux
+ * (WebKitGTK crashes the web process inside startViewTransition). Use for
+ * user-initiated changes; boot and OS-driven re-applies stay instant.
  */
 export function applyThemeAnimated(prefs: ThemePrefs): void {
   const doc = document as Document & {
     startViewTransition?: (callback: () => void) => unknown;
   };
   const reduceMotion = mq('(prefers-reduced-motion: reduce)')?.matches ?? false;
-  if (typeof doc.startViewTransition === 'function' && !reduceMotion) {
+  // WebKitGTK (Linux) crashes the compositor inside startViewTransition — detect
+  // via navigator.userAgent (pure, no IPC) and skip the transition there.
+  const isLinux = typeof navigator !== 'undefined' && /\bLinux\b/i.test(navigator.userAgent);
+  const canViewTransition =
+    typeof doc.startViewTransition === 'function' && !reduceMotion && !isLinux;
+  if (canViewTransition) {
     doc.startViewTransition(() => applyTheme(prefs));
   } else {
     applyTheme(prefs);
