@@ -42,9 +42,11 @@ impl PostingsCache {
     /// Mirrors the existing linear-scan-by-`id` in [`Self::update_description`].
     pub fn add(&mut self, item: Value) {
         if let Some(incoming_id) = item.get("id").and_then(Value::as_str) {
-            if let Some(existing) = self.items.iter_mut().find(|existing| {
-                existing.get("id").and_then(Value::as_str) == Some(incoming_id)
-            }) {
+            if let Some(existing) = self
+                .items
+                .iter_mut()
+                .find(|existing| existing.get("id").and_then(Value::as_str) == Some(incoming_id))
+            {
                 *existing = item;
                 return;
             }
