@@ -50,7 +50,7 @@ export function PostingListItem({
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       className={cn(
-        'flex h-[60px] cursor-pointer items-center gap-2 border-b border-[var(--border-clear)] px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
+        'flex h-[68px] cursor-pointer items-center gap-3 border-b border-[var(--border-clear)] px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
         selected ? 'border-l-2 border-l-brand bg-brand/15' : 'hover:bg-muted'
       )}
     >
@@ -71,7 +71,11 @@ export function PostingListItem({
               'min-w-0 flex-1 truncate text-[12px] font-semibold',
               // Selected: full-opacity foreground.
               // Viewed (not selected): dimmed title per LinkedIn-style treatment.
-              selected ? 'text-foreground' : isViewed ? 'text-foreground/55' : 'text-foreground/90'
+              selected
+                ? 'text-foreground'
+                : isViewed
+                  ? 'text-muted-foreground'
+                  : 'text-foreground/90'
             )}
           >
             {posting.title}
@@ -96,8 +100,7 @@ export function PostingListItem({
         <div
           className={cn(
             'flex items-center gap-1.5 text-[10px]',
-            // Viewed (not selected): dimmed meta.
-            selected ? 'text-brand-soft/70' : isViewed ? 'text-foreground/40' : 'text-foreground/50'
+            selected ? 'text-brand-soft/70' : 'text-foreground/50'
           )}
         >
           <span className="truncate">{posting.company}</span>
@@ -110,7 +113,7 @@ export function PostingListItem({
             {has('applied') && <CircleCheck size={9} aria-hidden="true" />}
             {/* "Viewed" text label replaces the eye icon — aria-hidden since SR uses the summary above */}
             {isViewed && !selected && (
-              <span aria-hidden="true" className="text-[9px]">
+              <span aria-hidden="true" className="text-[10px]">
                 {t('jobs.viewed')}
               </span>
             )}

@@ -33,7 +33,7 @@ export function JobsSplitView({
   const virtualizer = useVirtualizer({
     count: display.length,
     getScrollElement: () => listScrollRef.current,
-    estimateSize: () => 60,
+    estimateSize: () => 68,
     overscan: 6,
     getItemKey: (index) => display[index]?.id ?? index,
   });

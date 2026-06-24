@@ -168,7 +168,6 @@ function DetailContent({
   trackInteractionRef.current = trackInteraction;
   const viewedFiredRef = useRef(false);
   useEffect(() => {
-    viewedFiredRef.current = false;
     const id = setTimeout(() => {
       if (!viewedFiredRef.current) {
         viewedFiredRef.current = true;
@@ -177,6 +176,9 @@ function DetailContent({
     }, VIEWED_DWELL_MS);
     return () => clearTimeout(id);
   }, [posting.id]);
+
+  // Shared className for status Tag pills — applied/saved in the header.
+  const statusTagCls = 'rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider';
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -211,31 +213,14 @@ function DetailContent({
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <RowMatchScore jobId={posting.id} />
-              {/* Status badges — near the title, like LinkedIn */}
+              {/* Status badges — applied + saved only; Viewed is redundant in the detail pane */}
               {has('applied') && (
-                <Tag
-                  color="purple"
-                  icon={<CircleCheck size={8} />}
-                  className="rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
-                >
+                <Tag color="purple" icon={<CircleCheck size={8} />} className={statusTagCls}>
                   {t('jobs.applied')}
                 </Tag>
               )}
-              {(has('opened') || has('viewed')) && (
-                <Tag
-                  color="blue"
-                  icon={<Eye size={8} />}
-                  className="rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
-                >
-                  {t('jobs.viewed')}
-                </Tag>
-              )}
               {has('bookmarked') && (
-                <Tag
-                  color="warning"
-                  icon={<Bookmark size={8} />}
-                  className="rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
-                >
+                <Tag color="warning" icon={<Bookmark size={8} />} className={statusTagCls}>
                   {t('jobs.saved')}
                 </Tag>
               )}
@@ -243,7 +228,7 @@ function DetailContent({
           </div>
 
           {/* RIGHT: action cluster — Save/View, Tailor, ActionMenu */}
-          <div className="flex shrink-0 flex-wrap items-center gap-2 ml-auto">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             <motion.div layout transition={transition.fast} className="shrink-0">
               <Button
                 variant="primary"
@@ -300,7 +285,7 @@ function DetailContent({
         ) : (
           <>
             {/* "About the job" section label */}
-            <h3 className="mb-3 text-[11px] uppercase tracking-wider text-foreground/50">
+            <h3 className="mb-3 text-[11px] uppercase tracking-wider text-muted-foreground">
               {t('jobs.aboutTheJob')}
             </h3>
 
