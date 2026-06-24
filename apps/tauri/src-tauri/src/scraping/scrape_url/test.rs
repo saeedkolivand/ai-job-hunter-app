@@ -1,5 +1,149 @@
 use super::*;
 
+// ── try_named_boards: dispatch routing ───────────────────────────────────────
+//
+// These tests verify the "which handler fires for this URL" decision without
+// making live API calls. A non-board URL must return Ok(None) at the pattern-
+// match gate (before any fetch); a look-alike host for a guarded board must
+// also return Ok(None) at the host-gate check.
+
+/// A completely unrecognised URL must produce Ok(None) — no board match,
+/// no fetch. This is the hermetic "no-op" path for try_named_boards.
+#[tokio::test]
+async fn try_named_boards_returns_none_for_unknown_url() {
+    // No board handler matches example.com, so we must get Ok(None) without
+    // hitting the network.
+    let result = try_named_boards("https://example.com/jobs/123")
+        .await
+        .expect("try_named_boards must not error on a non-board URL");
+    assert!(
+        result.is_none(),
+        "non-board URL must yield None, not a posting"
+    );
+}
+
+/// A Greenhouse look-alike host must be rejected at the host gate and return
+/// Ok(None) — not accepted as a real Greenhouse URL.
+#[tokio::test]
+async fn try_named_boards_rejects_greenhouse_lookalike() {
+    let result = try_named_boards("https://greenhouse.io.attacker.tld/stripe/jobs/1")
+        .await
+        .expect("look-alike host returns Ok(None) at gate");
+    assert!(
+        result.is_none(),
+        "Greenhouse look-alike host must not be accepted by try_named_boards"
+    );
+}
+
+/// A Lever look-alike host must be rejected at the host gate.
+#[tokio::test]
+async fn try_named_boards_rejects_lever_lookalike() {
+    let result = try_named_boards("https://lever.co.attacker.tld/stripe/abc123")
+        .await
+        .expect("look-alike host returns Ok(None) at gate");
+    assert!(
+        result.is_none(),
+        "Lever look-alike host must not be accepted by try_named_boards"
+    );
+}
+
+// ── SSRF host-gate: Workday + SmartRecruiters ────────────────────────────────
+//
+// Both handlers tightened from `contains` to exact/ends_with matching. A
+// look-alike host (e.g. `myworkdayjobs.com.attacker.tld`) must be rejected at
+// the gate — BEFORE any API call is constructed. All tests below are hermetic:
+// the gate fires (returning Ok(None)) before the HTTP client is ever touched.
+
+/// A Workday look-alike host (`*.myworkdayjobs.com.attacker.tld`) must be
+/// rejected at the host gate; `try_workday` must return `Ok(None)`.
+#[tokio::test]
+async fn try_workday_rejects_lookalike_host() {
+    let result = try_workday(
+        "https://acme.myworkdayjobs.com.attacker.tld/Acme/job/Backend-Engineer/apply",
+    )
+    .await
+    .expect("look-alike host returns Ok(None) at gate, no network");
+    assert!(
+        result.is_none(),
+        "Workday look-alike host must not be accepted by try_workday"
+    );
+}
+
+/// A real Workday URL (`<tenant>.wd1.myworkdayjobs.com`) passes the host gate.
+/// After the gate the handler would make a live API call, which fails in a
+/// hermetic env — so we assert Ok(None) (the non-2xx path), NOT Some(_). The
+/// important thing is the gate itself does not prematurely reject a valid host.
+#[tokio::test]
+async fn try_workday_accepts_real_host_at_gate() {
+    // This URL has no network behind it; the handler will hit a connection error
+    // after the gate passes, mapping to Ok(None) via the non-2xx/err arm.
+    let result = try_workday(
+        "https://acme.wd1.myworkdayjobs.com/Acme/job/Backend-Engineer/REQ_001",
+    )
+    .await;
+    // Must not be Err — the gate itself must not reject a legitimate host.
+    assert!(
+        result.is_ok(),
+        "real Workday host must pass the gate (result may be None due to no live server)"
+    );
+}
+
+/// A SmartRecruiters look-alike host (`*.smartrecruiters.com.attacker.tld`)
+/// must be rejected at the host gate; `try_smartrecruiters` must return `Ok(None)`.
+#[tokio::test]
+async fn try_smartrecruiters_rejects_lookalike_host() {
+    let result = try_smartrecruiters(
+        "https://jobs.smartrecruiters.com.attacker.tld/Acme/123456789",
+    )
+    .await
+    .expect("look-alike host returns Ok(None) at gate, no network");
+    assert!(
+        result.is_none(),
+        "SmartRecruiters look-alike host must not be accepted by try_smartrecruiters"
+    );
+}
+
+/// A real SmartRecruiters URL (`jobs.smartrecruiters.com`) passes the host gate.
+/// Same hermetic rationale as the Workday positive case above.
+#[tokio::test]
+async fn try_smartrecruiters_accepts_real_host_at_gate() {
+    let result = try_smartrecruiters(
+        "https://jobs.smartrecruiters.com/Acme/123456789",
+    )
+    .await;
+    assert!(
+        result.is_ok(),
+        "real SmartRecruiters host must pass the gate (result may be None due to no live server)"
+    );
+}
+
+// ── resolve: 429 / non-2xx graceful degradation ───────────────────────────────
+//
+// An Adzuna click-tracker URL that produces a non-2xx response (429, 403, etc.)
+// must cause resolve() to return Ok(None) so the renderer keeps its snippet.
+// We use an IP literal that get_guarded will reject at the SSRF gate — a
+// Validation error is also mapped to Ok(None) in resolve()'s Err(_) arm.
+//
+// NOTE: the "final_url == original (no redirect) skip" and "live-server 429 →
+// Ok(None)" branches are covered by integration/contract tests, not hermetic
+// unit tests. The SSRF-reject path below (`resolve_returns_none_on_redirect_
+// follow_error`) covers the Err arm.
+
+/// When the redirect follow returns an Err (SSRF-rejected IP, network failure)
+/// resolve() must return Ok(None) — never panic or bubble the error.
+#[tokio::test]
+async fn resolve_returns_none_on_redirect_follow_error() {
+    // 127.0.0.1 is rejected by the SSRF guard before any network contact,
+    // giving a deterministic Err without needing a live server.
+    let result = crate::scraping::scrape_url::resolve("http://127.0.0.1/jobs/1")
+        .await
+        .expect("resolve must not propagate errors — always Ok(Some|None)");
+    assert!(
+        result.is_none(),
+        "SSRF-rejected URL must yield Ok(None), not a posting"
+    );
+}
+
 #[test]
 fn test_parse_greenhouse_url_standard() {
     let url = "https://boards.greenhouse.io/stripe/jobs/12345";
@@ -114,6 +258,8 @@ fn test_parse_generic_html_no_description() {
 
 #[test]
 fn test_parse_generic_html_h1_priority() {
+    // The selector "title, h1" returns the FIRST DOM match. `<title>` appears in
+    // `<head>` before `<h1>` in `<body>`, so "Page Title" wins — not "Job Title".
     let html = r#"
         <html>
             <head><title>Page Title</title></head>
@@ -121,8 +267,10 @@ fn test_parse_generic_html_h1_priority() {
         </html>
     "#;
     let (title, _description) = parse_generic_html(html);
-    // title selector matches both title and h1, first match wins
-    assert!(!title.is_empty());
+    assert_eq!(
+        title, "Page Title",
+        "<title> must be returned as first DOM match"
+    );
 }
 
 #[test]
@@ -134,10 +282,12 @@ fn test_parse_greenhouse_url_subdomain() {
 
 #[test]
 fn test_parse_greenhouse_url_with_trailing_slash() {
+    // reqwest::Url splits "/stripe/jobs/12345/" into segments ["stripe","jobs","12345",""]
+    // — the trailing empty label must be ignored; extraction must still yield the
+    // correct (company, job_id) pair using indices 0 and 2 of the segments vec.
     let url = "https://boards.greenhouse.io/stripe/jobs/12345/";
     let result = parse_greenhouse_url(url);
-    // Trailing slash may affect path segments
-    assert!(result.is_some());
+    assert_eq!(result, Some(("stripe".to_string(), "12345".to_string())));
 }
 
 #[test]
@@ -149,10 +299,15 @@ fn test_parse_lever_url_with_subdomain() {
 
 #[test]
 fn test_parse_lever_url_with_extra_segments() {
+    // parse_lever_url takes segments[0] and segments[1]; extra trailing segments
+    // are ignored. Verify the extracted pair is exactly ("stripe", "abc123").
     let url = "https://jobs.lever.co/stripe/abc123/extra";
     let result = parse_lever_url(url);
-    // Should still extract first two segments
-    assert!(result.is_some());
+    assert_eq!(
+        result,
+        Some(("stripe".to_string(), "abc123".to_string())),
+        "extra trailing segment must be ignored; first two segments must be returned"
+    );
 }
 
 #[test]

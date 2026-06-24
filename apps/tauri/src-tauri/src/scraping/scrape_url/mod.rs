@@ -2,38 +2,97 @@
 //!
 //! Given an arbitrary job posting URL, return a `JobPosting` by:
 //! 1. Recognising known board URL patterns and hitting their public API
-//!    (Greenhouse, Lever, Ashby).
-//! 2. Falling back to a generic HTML scraper that extracts the `<title>`
-//!    and meta description.
+//!    (Greenhouse, Lever, Ashby, LinkedIn, Workday, SmartRecruiters, Personio).
+//! 2. If no named board matched the original URL, following the redirect chain
+//!    (via the IP-guarded client) to the FINAL URL, then re-dispatching the
+//!    named-board handlers on that URL — so an aggregator click-tracker
+//!    (e.g. Adzuna `redirect_url`) that lands on a Greenhouse/Lever/… posting
+//!    yields the full board-API text rather than weak generic-HTML extraction.
+//! 3. Falling back to a generic HTML parse on the final URL/body.
 
 use crate::scraping::types::JobPosting;
 use anyhow::Result;
 use scraper::{Html, Selector};
 use std::collections::HashMap;
 
+/// Try every named-board handler on `url` in order; return the first match.
+/// Returns `Ok(None)` when no board recognises the URL (without making any
+/// network request beyond the board-pattern parse — each handler does an early
+/// return on a non-matching host).
+async fn try_named_boards(url: &str) -> Result<Option<JobPosting>> {
+    if let Some(p) = try_greenhouse(url).await? {
+        return Ok(Some(p));
+    }
+    if let Some(p) = try_lever(url).await? {
+        return Ok(Some(p));
+    }
+    if let Some(p) = try_ashby(url).await? {
+        return Ok(Some(p));
+    }
+    if let Some(p) = try_linkedin(url).await? {
+        return Ok(Some(p));
+    }
+    if let Some(p) = try_workday(url).await? {
+        return Ok(Some(p));
+    }
+    if let Some(p) = try_smartrecruiters(url).await? {
+        return Ok(Some(p));
+    }
+    if let Some(p) = try_personio(url).await? {
+        return Ok(Some(p));
+    }
+    Ok(None)
+}
+
 pub async fn resolve(url: &str) -> Result<Option<JobPosting>> {
-    if let Some(posting) = try_greenhouse(url).await? {
+    // Pass 1: try named boards on the original URL (fast path — no redirect
+    // follow needed when the caller already holds a direct board URL).
+    if let Some(posting) = try_named_boards(url).await? {
         return Ok(Some(posting));
     }
-    if let Some(posting) = try_lever(url).await? {
-        return Ok(Some(posting));
+
+    // Pass 2: follow the redirect chain to the FINAL URL through the IP-guarded
+    // client (closes SSRF / DNS-rebinding TOCTOU). Each hop is re-validated.
+    // Cap: 2 hops (aggregator click-tracker → real posting is typically 1 hop;
+    // 2 covers a CDN bounce). Callers (scrape_resolve_url command and
+    // extension_bridge handle_import) are responsible for acquiring a limiter
+    // slot before calling resolve() — this fn is limiter-agnostic.
+    let res = match crate::net::http::get_guarded_following_redirects(url, 2).await {
+        Ok(r) => r,
+        // Redirect chain failed (DNS, SSRF, network) → keep snippet, no panic.
+        Err(_) => return Ok(None),
+    };
+
+    // 429 / login-wall / any non-2xx (e.g. Adzuna click-tracker error) →
+    // return None so the renderer keeps its existing snippet.
+    if !res.status().is_success() {
+        return Ok(None);
     }
-    if let Some(posting) = try_ashby(url).await? {
-        return Ok(Some(posting));
+
+    // `res.url()` is the URL of the last-hop request — it equals the final
+    // destination because get_guarded uses redirect::Policy::none() on every
+    // hop, so each response is exactly the request we sent (no silent redirect
+    // following inside reqwest that would shift the URL under us).
+    let final_url = res.url().to_string();
+
+    // Pass 3: re-dispatch named boards on the FINAL URL. This is the key step
+    // for aggregator redirects: an Adzuna `redirect_url` → Greenhouse page will
+    // now hit the Greenhouse API handler and return full board-API text.
+    // Skip if the URL didn't change (no redirect occurred) — we already tried.
+    if final_url != url {
+        if let Some(posting) = try_named_boards(&final_url).await? {
+            return Ok(Some(posting));
+        }
     }
-    if let Some(posting) = try_linkedin(url).await? {
-        return Ok(Some(posting));
-    }
-    if let Some(posting) = try_workday(url).await? {
-        return Ok(Some(posting));
-    }
-    if let Some(posting) = try_smartrecruiters(url).await? {
-        return Ok(Some(posting));
-    }
-    if let Some(posting) = try_personio(url).await? {
-        return Ok(Some(posting));
-    }
-    generic_html(url).await
+
+    // Pass 4: generic HTML fallback on the already-fetched body — no second
+    // fetch. The body was fetched through the guarded client so the host is
+    // already validated; parse it directly.
+    let html = match res.text().await {
+        Ok(h) => h,
+        Err(_) => return Ok(None),
+    };
+    Ok(parse_from_html(&final_url, &html))
 }
 
 /// Map a board's search / SPA "list + detail pane" view URL (where the SELECTED
@@ -340,33 +399,11 @@ async fn try_ashby(url: &str) -> Result<Option<JobPosting>> {
 
 // ── Generic HTML fallback ───────────────────────────────────────────────────
 
-async fn generic_html(url: &str) -> Result<Option<JobPosting>> {
-    // The only egress that fetches the raw, attacker-controlled user URL. The
-    // guarded fetch IP-validates + IP-pins the resolved address (closing the
-    // DNS-rebinding TOCTOU); a rejected/unsafe host is treated as "no scraper
-    // matched" so the paste-a-URL flow degrades gracefully (the bridge then
-    // replies a clean "could not parse" import error).
-    // Follow redirects (e.g. an aggregator `redirect_url` that bounces to the real
-    // posting) — each hop is re-validated by get_guarded. Capped to 2 hops: an
-    // aggregator redirect_url → real posting is typically 1 hop, and 2 covers a CDN
-    // bounce. The cap is deliberately small because the per-slot rate limiter on the
-    // calling IPC command charges ONE slot per resolve, so one slot must equal a
-    // small, bounded number of outbound fetches (worst case 1 + 2 = 3).
-    let res = match crate::net::http::get_guarded_following_redirects(url, 2).await {
-        Ok(r) => r,
-        Err(_) => return Ok(None),
-    };
-    if !res.status().is_success() {
-        return Ok(None);
-    }
-    let html = res.text().await?;
-    Ok(parse_from_html(url, &html))
-}
-
-/// Build a `JobPosting` from already-fetched HTML — the fetch-free half of
-/// [`generic_html`]. The extension-bridge **Scan mode** supplies the
-/// authenticated DOM (a logged-in board page the desktop's anonymous fetch
-/// can't see), so it reuses this exact parse path instead of re-fetching.
+/// Build a `JobPosting` from already-fetched HTML.  The extension-bridge
+/// **Scan mode** supplies the authenticated DOM (a logged-in board page the
+/// desktop's anonymous fetch can't see), so it reuses this exact parse path
+/// instead of re-fetching.  [`resolve`] calls this after it has followed any
+/// redirect chain and exhausted the named-board re-dispatch.
 ///
 /// Prefers JSON-LD `JobPosting` fields (title/description/location/company) when
 /// the page ships them, falling back to the generic `<title>`/`<h1>` + meta
@@ -845,7 +882,10 @@ async fn try_workday(url: &str) -> Result<Option<JobPosting>> {
         Some(h) => h,
         None => return Ok(None),
     };
-    if !host_str.contains("myworkdayjobs.com") {
+    // Exact/suffix match only — a substring gate (`contains`) would accept a
+    // look-alike host (`myworkdayjobs.com.attacker.tld`) which matters now that
+    // re-dispatch runs these handlers on attacker-influenced redirect targets.
+    if host_str != "myworkdayjobs.com" && !host_str.ends_with(".myworkdayjobs.com") {
         return Ok(None);
     }
 
@@ -925,7 +965,10 @@ async fn try_smartrecruiters(url: &str) -> Result<Option<JobPosting>> {
         Some(h) => h,
         None => return Ok(None),
     };
-    if !host.contains("smartrecruiters.com") {
+    // Exact/suffix match only — same rationale as the Workday gate above:
+    // re-dispatch runs this handler on redirect-resolved, attacker-influenceable
+    // URLs, so a substring gate widens the surface.
+    if host != "smartrecruiters.com" && !host.ends_with(".smartrecruiters.com") {
         return Ok(None);
     }
     let segments: Vec<&str> = u.path_segments().map(|s| s.collect()).unwrap_or_default();
