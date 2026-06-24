@@ -238,7 +238,7 @@ export function AIGeneratePage() {
 
   return (
     <PageTransition className="h-full overflow-hidden">
-      <div className="flex h-full flex-col md:flex-row">
+      <div className="mx-auto flex h-full w-full max-w-6xl flex-col md:flex-row 2xl:max-w-7xl">
         <LeftPanel
           resume={resume}
           jobAd={jobAd}
