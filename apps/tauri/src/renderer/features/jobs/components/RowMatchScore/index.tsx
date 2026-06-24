@@ -3,8 +3,8 @@ import { Info } from 'lucide-react';
 import { useTranslation } from '@ajh/translations';
 import { Button, HoverPopover } from '@ajh/ui';
 
-import { MatchBand } from '@/features/jobs/lib/score';
 import { useRowMatchScore } from '@/features/jobs/providers';
+import { MatchBand } from '@/lib/match-band';
 
 /**
  * Presentational per-row match score. The combined keyword/semantic score is

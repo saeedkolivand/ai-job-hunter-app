@@ -80,18 +80,19 @@ describe('RowMatchScore — score state', () => {
       pending: false,
       hasResume: true,
     });
-    expect(screen.getByText('High')).toBeInTheDocument();
+    // t stub returns the full key; MatchBand uses jobs.matchBand.High
+    expect(screen.getByText('jobs.matchBand.High')).toBeInTheDocument();
     expect(container.querySelector('[aria-busy="true"]')).not.toBeInTheDocument();
   });
 
   it('renders the Medium MatchBand label for a combined score in [50, 74]', () => {
     renderRow({ score: { ...BASE_SCORE, combined: 60 }, pending: false, hasResume: true });
-    expect(screen.getByText('Medium')).toBeInTheDocument();
+    expect(screen.getByText('jobs.matchBand.Medium')).toBeInTheDocument();
   });
 
   it('renders the Low MatchBand label for a combined score < 50', () => {
     renderRow({ score: { ...BASE_SCORE, combined: 30 }, pending: false, hasResume: true });
-    expect(screen.getByText('Low')).toBeInTheDocument();
+    expect(screen.getByText('jobs.matchBand.Low')).toBeInTheDocument();
   });
 
   it('prefers the score over the pending placeholder when both are set', () => {
@@ -100,7 +101,7 @@ describe('RowMatchScore — score state', () => {
       pending: true,
       hasResume: true,
     });
-    expect(screen.getByText('High')).toBeInTheDocument();
+    expect(screen.getByText('jobs.matchBand.High')).toBeInTheDocument();
     expect(container.querySelector('[aria-busy="true"]')).not.toBeInTheDocument();
   });
 
