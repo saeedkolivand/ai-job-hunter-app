@@ -25,6 +25,13 @@ A change requires authoring tests iff a changed `.rs`/`.ts`/`.tsx` file (not tes
 - Allowed: external APIs, AI providers, third-party, expensive ops.
 - **Never mock** internal business logic, ATS scoring, resume generation, or export pipelines — use realistic fixtures.
 
+## Cross-OS / cfg-gated & environment tests (each of these cost a CI round-trip on #486)
+
+- **`#[cfg(target_os = …)]` tests run only on that OS's CI runner** — never on a Windows/macOS dev host. A green local `cargo test` does **not** cover them; cross-target-check the gated module (`cargo check --target <triple> --tests`, or a dep-light standalone-crate check) before claiming done.
+- **Never assume the runner lacks a system binary/lib** — CI runners ship `/usr/bin/google-chrome`, `libwayland-client.so.0`, etc. A test that passes only because the host has _no_ native browser / _no_ host lib is env-fragile. Drive the code with an injected dir / temp `HOME` and assert the **decision**, not the ambient system.
+- **Never reach a process-replacing path in-process** — a test that calls a fn which may `exec()`/re-exec replaces or loops the test binary and **cancels the CI job**. Extract the exec-free decision (pure fn / enum) and assert that; leave the `exec()` tail intentionally uncovered.
+- **`#[serial]` every env-mutating test** — `std::env::set_var` is not thread-safe and cargo runs tests in parallel. Use fully-qualified `#[serial_test::serial]` (so it resolves inside a `mod` submodule) + restore/temp-`HOME`.
+
 ## Golden/snapshot
 
 Deterministic, reviewed when updated, prevents visual regressions. A non-deterministic snapshot is a finding.
