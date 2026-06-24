@@ -55,6 +55,9 @@ export interface ResumeBuilderSlice {
 interface JobsSlice {
   filter: string;
   sortBy: 'newest' | 'oldest' | 'company';
+  viewMode: 'list' | 'split';
+  selectedId: string | null;
+  detailCollapsed: boolean;
 }
 
 type ResumesTab = 'resumes' | 'coverLetters' | 'activity';
@@ -231,7 +234,13 @@ export const useSessionStore = create<SessionState>((set) => ({
   aiGenerate: { ...AI_GENERATE_DEFAULTS },
   analyze: { ...ANALYZE_DEFAULTS },
   resumeBuilder: { ...RESUME_BUILDER_DEFAULTS },
-  jobs: { filter: '', sortBy: 'newest' },
+  jobs: {
+    filter: '',
+    sortBy: 'newest',
+    viewMode: 'split',
+    selectedId: null,
+    detailCollapsed: false,
+  },
   resumes: { tab: 'resumes', filter: '' },
   settings: { activeSection: 'general' },
   autopilot: {

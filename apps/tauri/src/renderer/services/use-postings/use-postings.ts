@@ -66,12 +66,27 @@ export const useClearPostings = () => {
   });
 };
 
+/** Persist the full resolved description back to the backend cache.
+ *  On success, invalidates the postings list so consumers re-render with the
+ *  full description rather than the stale truncated snippet. */
+export const useUpdatePostingDescription = () => {
+  const api = useAppClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: { id: string; description: string }) => api.scrape.updateDescription(req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.postings.all }),
+  });
+};
+
 export const usePersistJob = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: { job: Record<string, unknown>; interactionType: string }) =>
       api.scrape.persistJob(req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.postings.interactions() }),
+    // Invalidate the PREFIX so every typed interactions query ('viewed', 'opened', …)
+    // refetches — keys.postings.interactions(type) = ['postings','interactions',type]
+    // and React Query matches on prefix, so omitting the type segment hits all of them.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['postings', 'interactions'] }),
   });
 };

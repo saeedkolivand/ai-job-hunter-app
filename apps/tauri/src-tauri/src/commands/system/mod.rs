@@ -81,7 +81,9 @@ pub fn system_check_browser() -> Value {
     let detected = crate::platform::detect_system_chrome();
     json!({
         "detected": detected.is_some(),
-        "path": detected.map(|p| p.to_string_lossy().to_string())
+        // `path` carries the human-readable launch command for display; for
+        // Flatpak installs this is "flatpak run <id>" (not a raw binary path).
+        "path": detected.map(|b| b.display_command())
     })
 }
 

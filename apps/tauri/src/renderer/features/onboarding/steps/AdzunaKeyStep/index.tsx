@@ -1,10 +1,10 @@
-import { ArrowLeft, ArrowRight, Check, Eye, EyeOff, Key, Loader2, Search } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Eye, EyeOff, Loader2, Search } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState } from 'react';
 
 import { PROVIDER_SLOTS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, FloatingIcon, Input, useNotification, withDelay } from '@ajh/ui';
+import { Alert, Button, FloatingIcon, Input, useNotification, withDelay } from '@ajh/ui';
 
 import { useHasProviderKey, useOpenExternal, useSetProviderKey } from '@/services';
 
@@ -105,10 +105,7 @@ export function AdzunaKeyStep({ onBack, onNext, direction, stepIndex, totalSteps
         className="mb-6"
       >
         {bothSaved ? (
-          <div className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-2.5 text-sm text-emerald-300/80">
-            <Key size={13} className="text-emerald-400" />
-            {t('onboarding.adzunaKey.connected')}
-          </div>
+          <Alert type="success" showIcon message={t('onboarding.adzunaKey.connected')} />
         ) : (
           <div className="space-y-3">
             <p className="text-xs text-foreground/40">
@@ -125,11 +122,11 @@ export function AdzunaKeyStep({ onBack, onNext, direction, stepIndex, totalSteps
             {/* App ID field */}
             <div>
               {idSaved ? (
-                <div className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-3 py-2 text-xs text-emerald-300/80">
-                  <Key size={12} className="text-emerald-400" />
-                  {t('onboarding.adzunaKey.appIdLabel')} —{' '}
-                  {t('settings.aggregatorKeys.adzunaAppId.connected')}
-                </div>
+                <Alert
+                  type="success"
+                  showIcon
+                  message={`${t('onboarding.adzunaKey.appIdLabel')} — ${t('settings.aggregatorKeys.adzunaAppId.connected')}`}
+                />
               ) : (
                 <div className="relative">
                   <label
@@ -168,11 +165,11 @@ export function AdzunaKeyStep({ onBack, onNext, direction, stepIndex, totalSteps
             {/* App Key field */}
             <div>
               {keySaved ? (
-                <div className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-3 py-2 text-xs text-emerald-300/80">
-                  <Key size={12} className="text-emerald-400" />
-                  {t('onboarding.adzunaKey.appKeyLabel')} —{' '}
-                  {t('settings.aggregatorKeys.adzunaAppKey.connected')}
-                </div>
+                <Alert
+                  type="success"
+                  showIcon
+                  message={`${t('onboarding.adzunaKey.appKeyLabel')} — ${t('settings.aggregatorKeys.adzunaAppKey.connected')}`}
+                />
               ) : (
                 <div>
                   <label
@@ -209,7 +206,7 @@ export function AdzunaKeyStep({ onBack, onNext, direction, stepIndex, totalSteps
             </div>
 
             {(idSaved || keySaved) && !bothSaved && (
-              <p className="text-xs text-amber-400/70">{t('onboarding.adzunaKey.partialSaved')}</p>
+              <Alert type="warning" showIcon message={t('onboarding.adzunaKey.partialSaved')} />
             )}
 
             <div className="flex justify-end">

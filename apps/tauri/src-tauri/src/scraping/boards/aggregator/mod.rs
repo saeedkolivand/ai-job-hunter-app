@@ -23,7 +23,7 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::scraping::http::{fetch_json, strip_html, FetchOptions};
+use crate::scraping::http::{fetch_json, html_to_markdown, FetchOptions};
 use crate::scraping::types::{
     AuthRequirement, BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode,
 };
@@ -275,7 +275,7 @@ impl JobProvider for AdzunaProvider {
                     location: j.location.and_then(|l| l.display_name),
                     url: j.redirect_url,
                     source: "aggregator".to_string(),
-                    description: j.description.map(|d| strip_html(&d)),
+                    description: j.description.map(|d| html_to_markdown(&d)),
                     requirements: None,
                     posted_at: j
                         .created
@@ -420,7 +420,7 @@ impl JobProvider for JSearchProvider {
                     location,
                     url,
                     source: "aggregator".to_string(),
-                    description: j.job_description.map(|d| strip_html(&d)),
+                    description: j.job_description.map(|d| html_to_markdown(&d)),
                     requirements: None,
                     posted_at: j
                         .job_posted_at_datetime_utc

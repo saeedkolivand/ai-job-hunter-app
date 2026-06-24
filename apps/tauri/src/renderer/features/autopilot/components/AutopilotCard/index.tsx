@@ -3,6 +3,7 @@ import {
   Check,
   ChevronUp,
   ExternalLink,
+  Eye,
   Pause,
   Pencil,
   Play,
@@ -11,7 +12,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Autopilot, AutopilotFoundJob } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
@@ -22,13 +23,14 @@ import {
   cn,
   ConfirmModal,
   GlassCard,
+  Tag,
   transition,
 } from '@ajh/ui';
 
 import { type AutopilotRunState, RUN_STATE_LABEL } from '@/lib/machines/autopilot-run.machine';
-import { scoreToLevel } from '@/lib/match-level';
+import { MatchBand } from '@/lib/match-band';
 import { timeAgo } from '@/lib/time';
-import { useOpenExternal } from '@/services';
+import { useInteractions, useOpenExternal, usePersistJob } from '@/services';
 
 interface StepLog {
   step: string;
@@ -61,6 +63,8 @@ const STEP_ICON: Record<string, string> = {
   complete: '✓',
 };
 
+const STATUS_TAG = 'rounded-full px-1.5 py-0.5 text-[8px] uppercase tracking-wider';
+
 export function AutopilotCard({
   autopilot: ap,
   runState,
@@ -77,10 +81,23 @@ export function AutopilotCard({
   const running = runState === 'scraping' || runState === 'ranking';
   const { t, i18n } = useTranslation();
   const openExternal = useOpenExternal();
+  const persistJob = usePersistJob();
   const [showFound, setShowFound] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
   const foundJobs = ap.foundJobs ?? [];
+
+  // Build viewed-url sets from persisted interactions (viewed + opened).
+  const { data: viewedData } = useInteractions('viewed');
+  const { data: openedData } = useInteractions('opened');
+  const viewedUrls = useMemo(
+    () =>
+      new Set([
+        ...(viewedData ?? []).map((r: { url?: string }) => r.url ?? ''),
+        ...(openedData ?? []).map((r: { url?: string }) => r.url ?? ''),
+      ]),
+    [viewedData, openedData]
+  );
 
   // Tray "New jobs" / deep-link focus: open this card's found-jobs and scroll to
   // it, then tell the page to clear the focus so a later click re-triggers.
@@ -118,9 +135,62 @@ export function AutopilotCard({
     },
   ];
 
+  // Toggle expand/collapse when clicking anywhere on the header row (if there
+  // are found jobs). The actions cluster gets stopPropagation so its buttons
+  // don't double-fire the toggle.
+  const handleHeaderToggle = () => {
+    if (foundJobs.length > 0) setShowFound((v) => !v);
+  };
+  const handleHeaderKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.key === 'Enter' || e.key === ' ') && foundJobs.length > 0) {
+      e.preventDefault();
+      setShowFound((v) => !v);
+    }
+  };
+  const stopProp = (e: React.MouseEvent | React.KeyboardEvent) => e.stopPropagation();
+
+  const handleJobClick = async (job: AutopilotFoundJob) => {
+    void openExternal.mutate(job.url);
+    // Also persist 'viewed' so the badge appears immediately and survives reload.
+    try {
+      await persistJob.mutateAsync({
+        job: {
+          url: job.url,
+          title: job.title,
+          company: job.company ?? '',
+          location: job.location ?? '',
+          source: 'autopilot',
+          externalId: job.url,
+          description: '',
+          capturedAt: Date.now(),
+        },
+        interactionType: 'viewed',
+      });
+    } catch {
+      // non-fatal: badge already shows optimistically via viewedUrls query refetch
+    }
+  };
+
   return (
     <GlassCard className="flex flex-col gap-3">
-      <div ref={headerRef} className="flex items-center gap-4">
+      {/* Header row — click-to-expand when foundJobs exist */}
+      <div
+        ref={headerRef}
+        className={cn(
+          'flex items-center gap-4',
+          foundJobs.length > 0 && 'cursor-pointer select-none rounded-lg'
+        )}
+        role={foundJobs.length > 0 ? 'button' : undefined}
+        tabIndex={foundJobs.length > 0 ? 0 : undefined}
+        aria-expanded={foundJobs.length > 0 ? showFound : undefined}
+        aria-label={
+          foundJobs.length > 0
+            ? `${showFound ? t('autopilot.collapse') : t('autopilot.foundJobs')}: ${ap.name}`
+            : undefined
+        }
+        onClick={handleHeaderToggle}
+        onKeyDown={handleHeaderKeyDown}
+      >
         {/* Status dot */}
         <div
           className={cn(
@@ -173,18 +243,14 @@ export function AutopilotCard({
             <span>
               · {t('autopilot.wizard.lastRun')} {lastRun}
             </span>
-            {/* Use the same source as the view-jobs button badge (the cumulative
-                merged found-jobs list) so the row count never contradicts it
-                (#47 — was ap.totalFound, the per-run kept count, which diverges
-                from the accumulated foundJobs list). */}
             <span>
               · {t('autopilot.wizard.found')} {foundJobs.length}
             </span>
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        {/* Actions — stopPropagation so these don't toggle expand */}
+        <div className="flex items-center gap-1.5 shrink-0" onClick={stopProp} onKeyDown={stopProp}>
           <Button
             onClick={onRun}
             disabled={running}
@@ -272,7 +338,7 @@ export function AutopilotCard({
                     <Button
                       variant="unstyled"
                       type="button"
-                      onClick={() => void openExternal.mutate(job.url)}
+                      onClick={() => void handleJobClick(job)}
                       title={t('autopilot.viewJob')}
                       className="flex min-w-0 flex-1 items-center gap-2 text-left"
                     >
@@ -291,6 +357,11 @@ export function AutopilotCard({
                               <Check size={8} /> {t('autopilot.badge.applied')}
                             </span>
                           )}
+                          {viewedUrls.has(job.url) && (
+                            <Tag color="blue" icon={<Eye size={7} />} className={STATUS_TAG}>
+                              {t('jobs.viewed')}
+                            </Tag>
+                          )}
                         </div>
                         <div className="flex items-center gap-1.5 text-[10px] text-foreground/40">
                           <span className="truncate">{job.company}</span>
@@ -298,9 +369,7 @@ export function AutopilotCard({
                         </div>
                       </div>
                       {typeof job.score === 'number' && (
-                        <span className="shrink-0 rounded bg-brand/10 px-1.5 py-0.5 text-[9px] text-brand-soft">
-                          {t(`autopilot.wizard.filter.matchLevel.${scoreToLevel(job.score)}`)}
-                        </span>
+                        <MatchBand value={job.score} variant="coverage" />
                       )}
                       <ExternalLink size={11} className="shrink-0 text-foreground/25" />
                     </Button>

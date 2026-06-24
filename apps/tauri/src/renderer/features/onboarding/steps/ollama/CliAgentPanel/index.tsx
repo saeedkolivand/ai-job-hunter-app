@@ -1,7 +1,8 @@
 import { Bot, CheckCircle2, ExternalLink, Terminal, WifiOff } from 'lucide-react';
 import { motion } from 'motion/react';
 
-import { Button, transition } from '@ajh/ui';
+import { useTranslation } from '@ajh/translations';
+import { Alert, Button, transition } from '@ajh/ui';
 
 import { useOpenExternal, useSystemHealth } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
@@ -46,6 +47,7 @@ interface CliAgentPanelProps {
  * selection is intentionally deferred to Settings → AI after onboarding.
  */
 export function CliAgentPanel({ selectedProvider, onProviderChange }: CliAgentPanelProps) {
+  const { t } = useTranslation();
   const openExternal = useOpenExternal();
   const { data: health } = useSystemHealth();
   const cliAgents = health?.cliAgents ?? {};
@@ -111,18 +113,21 @@ export function CliAgentPanel({ selectedProvider, onProviderChange }: CliAgentPa
 
       {/* Install hint when the selected agent isn't found */}
       {!detected && (
-        <div className="space-y-2 rounded-xl border border-amber-400/15 bg-amber-400/[0.04] px-4 py-3">
-          <p className="text-xs text-foreground/50">
-            {label} CLI not detected. Install it and sign in once, then continue.
-          </p>
-          <Button
-            variant="glass"
-            onClick={() => void openExternal.mutateAsync(docsUrl)}
-            className="h-auto px-2 py-1 text-xs"
-          >
-            <ExternalLink size={11} className="mr-1" /> Install {label}
-          </Button>
-        </div>
+        <Alert
+          type="warning"
+          showIcon
+          message={t('onboarding.ai.cliNotDetected', { agent: label })}
+          action={
+            <Button
+              variant="glass"
+              onClick={() => void openExternal.mutateAsync(docsUrl)}
+              className="h-auto px-2 py-1 text-xs"
+            >
+              <ExternalLink size={11} className="mr-1" />{' '}
+              {t('onboarding.ai.installAgent', { agent: label })}
+            </Button>
+          }
+        />
       )}
     </motion.div>
   );

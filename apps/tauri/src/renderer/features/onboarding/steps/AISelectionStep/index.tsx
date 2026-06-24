@@ -1,10 +1,10 @@
-import { AlertTriangle, ArrowLeft, ArrowRight, Bot, SkipForward } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Bot, SkipForward } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { getRecommended } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, FloatingIcon, withDelay } from '@ajh/ui';
+import { Alert, Button, FloatingIcon, withDelay } from '@ajh/ui';
 
 import { useAIModels, useSystemHealth, useSystemResources } from '@/services';
 import { keys, queryClient } from '@/services/query-client';
@@ -232,13 +232,8 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
         )}
 
         {skipping && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex items-center gap-2 text-xs text-amber-400/70"
-          >
-            <AlertTriangle size={12} />
-            {t('onboarding.ai.skipWarning')}
+          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
+            <Alert type="warning" showIcon message={t('onboarding.ai.skipWarning')} />
           </motion.div>
         )}
 

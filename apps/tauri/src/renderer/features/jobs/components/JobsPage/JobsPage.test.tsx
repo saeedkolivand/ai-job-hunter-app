@@ -40,6 +40,14 @@ const notifyMock = {
   warning: vi.fn(),
 };
 
+// setJobs spy — lifted so SegmentedControl onChange tests can assert call args.
+const setJobsSpy = vi.fn();
+
+// SegmentedControl onChange container — set by the stub when the component mounts.
+const segmentedControlContainer = {
+  onChange: null as ((v: string) => void) | null,
+};
+
 // ---------------------------------------------------------------------------
 // Module mocks (hoisted; factories run lazily but MUST NOT close over test-file
 // let/const — use the shared object containers declared above instead)
@@ -69,7 +77,6 @@ vi.mock('@/services', () => ({
   useJobEvents: (cb: (event: unknown) => void) => {
     jobEvents.handler = cb;
   },
-  useJobMatchScores: () => ({ scoresById: new Map(), isPending: false, isError: false }),
 }));
 
 vi.mock('@/features/jobs/hooks/useDefaultResumeId', () => ({
@@ -78,8 +85,9 @@ vi.mock('@/features/jobs/hooks/useDefaultResumeId', () => ({
 
 vi.mock('@/store/session-store', () => ({
   useSessionStore: () => ({
-    jobs: { filter: '', sortBy: 'newest' },
-    setJobs: vi.fn(),
+    jobs: { filter: '', sortBy: 'newest', viewMode: 'list' },
+    setJobs: (...args: unknown[]) => setJobsSpy(...args),
+    setSettings: vi.fn(),
   }),
 }));
 
@@ -88,8 +96,11 @@ vi.mock('@/hooks/use-format-relative-time', () => ({
 }));
 
 vi.mock('@/components/layout/PageHeader', () => ({
-  PageHeader: ({ title }: { title: string }) => (
-    <div data-testid={TEST_IDS.layout.pageHeader}>{title}</div>
+  PageHeader: ({ title, actions }: { title: string; actions?: ReactNode }) => (
+    <div data-testid={TEST_IDS.layout.pageHeader}>
+      {title}
+      {actions}
+    </div>
   ),
 }));
 
@@ -131,6 +142,10 @@ vi.mock('@ajh/ui', () => ({
   ConfirmModal: () => null,
   Dropdown: () => null,
   Input: () => null,
+  SegmentedControl: ({ onChange }: { onChange?: (v: string) => void }) => {
+    segmentedControlContainer.onChange = onChange ?? null;
+    return null;
+  },
   useNotification: () => notifyMock,
 }));
 
@@ -515,5 +530,41 @@ describe('JobsPage — job.completed event handler', () => {
     const outcome = scrapingMock.noteScrapeFinished.mock.calls[0]?.[1];
     expect(outcome?.ok).toBe(true);
     expect(outcome?.note).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SegmentedControl view-mode toggle — setJobs branching behavior
+// ---------------------------------------------------------------------------
+
+describe('JobsPage — SegmentedControl viewMode toggle', () => {
+  beforeEach(() => {
+    setJobsSpy.mockClear();
+    segmentedControlContainer.onChange = null;
+  });
+
+  it('switching to "split" calls setJobs with viewMode:split AND detailCollapsed:false', () => {
+    renderJobsPage();
+    expect(segmentedControlContainer.onChange).toBeTypeOf('function');
+
+    act(() => {
+      segmentedControlContainer.onChange?.('split');
+    });
+
+    expect(setJobsSpy).toHaveBeenCalledWith({ viewMode: 'split', detailCollapsed: false });
+  });
+
+  it('switching to "list" calls setJobs with only viewMode:list (no detailCollapsed)', () => {
+    renderJobsPage();
+    expect(segmentedControlContainer.onChange).toBeTypeOf('function');
+
+    act(() => {
+      segmentedControlContainer.onChange?.('list');
+    });
+
+    expect(setJobsSpy).toHaveBeenCalledWith({ viewMode: 'list' });
+    // Critically: detailCollapsed must NOT be present in the list-mode call.
+    const callArg = setJobsSpy.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+    expect(callArg).not.toHaveProperty('detailCollapsed');
   });
 });

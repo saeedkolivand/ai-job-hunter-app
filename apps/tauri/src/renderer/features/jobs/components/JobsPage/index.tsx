@@ -1,4 +1,4 @@
-import { ListFilter, Plus, Trash2 } from 'lucide-react';
+import { LayoutList, LayoutPanelLeft, ListFilter, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -7,7 +7,7 @@ import {
   type DATE_FILTER_OPTIONS,
 } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, ConfirmModal, Dropdown, Input, useNotification } from '@ajh/ui';
+import { Button, ConfirmModal, Dropdown, Input, SegmentedControl, useNotification } from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
@@ -42,7 +42,7 @@ export function JobsPage() {
   const invalidatePostings = useInvalidatePostings();
 
   const { jobs, setJobs } = useSessionStore();
-  const { filter, sortBy } = jobs;
+  const { filter, sortBy, viewMode } = jobs;
   const setFilter = (v: string) => setJobs({ filter: v });
   const setSortBy = (v: 'newest' | 'oldest' | 'company') => setJobs({ sortBy: v });
   const [showScrapeForm, setShowScrapeForm] = useState(false);
@@ -251,10 +251,9 @@ export function JobsPage() {
   }, [allPostings, filter, sortBy]);
 
   const resumeId = useDefaultResumeId();
-  const jobIds = useMemo(() => filtered.map((p) => p.id), [filtered]);
 
   return (
-    <MatchScoresProvider resumeId={resumeId} jobIds={jobIds}>
+    <MatchScoresProvider resumeId={resumeId}>
       <PageTransition className="flex h-full flex-col overflow-hidden">
         {/* Pinned header + scrape form; the list below owns the scroll. */}
         <div className="shrink-0 px-10 pt-10">
@@ -283,6 +282,8 @@ export function JobsPage() {
                   </Button>
                 )}
                 <Input
+                  id="jobs-filter-query"
+                  name="jobs-filter-query"
                   prefix={<ListFilter size={12} />}
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
@@ -305,6 +306,28 @@ export function JobsPage() {
                 <span className="text-[11px] text-foreground/40">
                   {filtered.length} / {allPostings.length}
                 </span>
+                {/* View mode toggle — SegmentedControl (WAI-ARIA radiogroup + roving arrow keys) */}
+                <SegmentedControl
+                  ariaLabel={t('jobs.viewMode')}
+                  value={viewMode}
+                  onChange={(v) =>
+                    setJobs(
+                      v === 'split'
+                        ? { viewMode: 'split', detailCollapsed: false }
+                        : { viewMode: v }
+                    )
+                  }
+                  options={[
+                    { value: 'list', label: <LayoutList size={13} />, title: t('jobs.viewList') },
+                    {
+                      value: 'split',
+                      label: <LayoutPanelLeft size={13} />,
+                      title: t('jobs.viewSplit'),
+                    },
+                  ]}
+                  tone="brand"
+                  size="sm"
+                />
               </div>
             }
           />

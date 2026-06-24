@@ -74,6 +74,10 @@ Same as [DEVELOPMENT.md](DEVELOPMENT.md), plus platform-specific:
 sudo apt-get install libwebkit2gtk-4.1-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
+### Linux AppImage — Wayland + Mesa safeguard
+
+On Wayland + Mesa (common on Steam Deck and modern Linux), the bundled `libwayland-client` in the AppImage can shadow the host's WebGL/EGL stack and crash at startup. Mitigations (environment-aware, idempotent, applied at boot) are implemented in `apps/tauri/src-tauri/src/platform/linux_appimage.rs`; the app detects the AppImage/Wayland environment automatically and requires no user configuration.
+
 ### Build all packages then package
 
 ```bash

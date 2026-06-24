@@ -499,3 +499,71 @@ async fn test_fetch_text_cancelled() {
     let result = fetch_text(&mock_server.uri(), FetchOptions::default(), signal).await;
     assert!(result.is_err());
 }
+
+// ── html_to_markdown ────────────────────────────────────────────────────────
+
+/// Representative job HTML with heading, paragraph, list, and bold renders to
+/// proper Markdown (heading prefix, list dashes/asterisks, **bold**).
+#[test]
+fn test_html_to_markdown_job_html() {
+    let html = r#"
+        <h3>About the Role</h3>
+        <p>We are looking for a <strong>Senior Engineer</strong> to join our team.</p>
+        <ul>
+            <li>Build scalable systems</li>
+            <li>Write clean code</li>
+        </ul>
+    "#;
+    let md = html_to_markdown(html);
+    // Heading renders as ATX-style Markdown heading.
+    assert!(
+        md.contains("### About the Role"),
+        "expected h3 → '### About the Role', got: {md}"
+    );
+    // Bold renders as **…**.
+    assert!(
+        md.contains("**Senior Engineer**"),
+        "expected **Senior Engineer**, got: {md}"
+    );
+    // List items render as Markdown bullets.
+    assert!(
+        md.contains("Build scalable systems"),
+        "expected list item text, got: {md}"
+    );
+    assert!(
+        md.contains("Write clean code"),
+        "expected list item text, got: {md}"
+    );
+    // Must not be a flat single-line blob — structure is preserved.
+    assert!(md.contains('\n'), "expected multi-line output, got: {md}");
+}
+
+/// Empty HTML must return an empty string (no panic, no extraneous whitespace).
+#[test]
+fn test_html_to_markdown_empty() {
+    assert_eq!(html_to_markdown(""), "");
+}
+
+/// Plain text (no HTML tags) passes through unchanged and does not panic.
+#[test]
+fn test_html_to_markdown_plain_text() {
+    let plain = "Senior Rust Engineer — remote, full-time";
+    let result = html_to_markdown(plain);
+    assert!(
+        result.contains("Senior Rust Engineer"),
+        "plain text must pass through, got: {result}"
+    );
+}
+
+/// When htmd produces an empty result (e.g. HTML that is only whitespace/comments)
+/// the fallback to html_to_text fires and does not panic.
+#[test]
+fn test_html_to_markdown_falls_back_on_empty_output() {
+    // An HTML comment — htmd strips it and returns ""; we fall back to html_to_text
+    // which also returns "". The important thing is no panic and no empty-check bypass.
+    let html = "<!-- just a comment -->";
+    let result = html_to_markdown(html);
+    // Both paths return empty for a comment-only input; assert it doesn't panic and
+    // returns a clean string (trimmed).
+    assert_eq!(result.trim(), result, "result must already be trimmed");
+}

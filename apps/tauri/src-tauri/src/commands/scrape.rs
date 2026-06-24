@@ -1,4 +1,5 @@
 use crate::db::{new_job_id, now_ms};
+use crate::error::{AppError, AppResult};
 use crate::postings::{InteractionRecord, InteractionStore, PostingsCache};
 use crate::scraping::{BoardSearchInput, ScraperEngine};
 use parking_lot::Mutex;
@@ -40,6 +41,19 @@ pub struct ScrapePersistJobRequest {
 pub struct ScrapeListFilter {
     pub interaction_type: Option<String>,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapeUpdateDescriptionRequest {
+    pub id: String,
+    pub description: String,
+}
+
+/// Upper bound on a write-back description. A full JD is on the order of a few KB;
+/// 256 KB is generous headroom while bounding a looping/XSS'd renderer from
+/// ballooning a cached entry. Over-cap input is rejected, not silently truncated,
+/// so a caller can tell the write didn't take effect as sent.
+const MAX_DESCRIPTION_LEN: usize = 256 * 1024;
 
 #[tauri::command]
 pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
@@ -295,7 +309,7 @@ pub async fn scrape_resolve_url(app: AppHandle, url: String) -> Value {
         .inner()
         .clone();
     // NOTE: one slot here covers a single resolve, which may fan out a SHORT,
-    // bounded redirect chain — `generic_html` follows at most 2 hops
+    // bounded redirect chain — `resolve` follows at most 2 hops
     // (get_guarded_following_redirects with max_hops=2 → up to 3 fetches: the
     // initial request + 2 redirect hops). The hop budget is kept small precisely so
     // one slot stays a small, honest, bounded number of outbound fetches.
@@ -311,6 +325,45 @@ pub async fn scrape_resolve_url(app: AppHandle, url: String) -> Value {
         Ok(Some(posting)) => serde_json::to_value(&posting).unwrap_or(json!(null)),
         _ => json!(null),
     }
+}
+
+/// Write a freshly-resolved full description back into the live postings cache,
+/// keyed by posting id. The detail pane resolves a fuller description on demand
+/// (see [`scrape_resolve_url`]); without this, match scoring would continue reading the
+/// truncated aggregator snippet from the cache and produce incorrect scores.
+///
+/// Mutates the EXISTING cache entry in place (no new row, no persistence beyond
+/// the in-memory cache — matching the cache's lifecycle). Returns `true` when an
+/// entry was updated, `false` when the id isn't in the live cache (e.g. the cache
+/// was cleared by a new search between resolve and write-back). The match-score
+/// cache is job-text-hash-keyed, so updating the description invalidates cached
+/// scores for that job; on-demand scoring via `useJobMatchScore` will recompute.
+/// Validate the write-back inputs, returning the trimmed id on success. Pure (no
+/// `AppHandle`) so the error paths are unit-tested directly. Rejects an empty id
+/// and an over-cap description rather than silently truncating, so the caller can
+/// tell the write didn't take effect as sent.
+fn validate_update_description(id: &str, description: &str) -> AppResult<String> {
+    let id = id.trim();
+    if id.is_empty() {
+        return Err(AppError::Validation("id is required".to_string()));
+    }
+    if description.len() > MAX_DESCRIPTION_LEN {
+        return Err(AppError::Validation(format!(
+            "description exceeds the {MAX_DESCRIPTION_LEN}-byte cap"
+        )));
+    }
+    Ok(id.to_string())
+}
+
+#[tauri::command]
+pub fn scrape_update_description(
+    app: AppHandle,
+    req: ScrapeUpdateDescriptionRequest,
+) -> AppResult<bool> {
+    let id = validate_update_description(&req.id, &req.description)?;
+    let cache = app.state::<Mutex<PostingsCache>>();
+    let updated = cache.lock().update_description(&id, &req.description);
+    Ok(updated)
 }
 
 #[tauri::command]
@@ -332,4 +385,58 @@ pub fn scrape_list_interactions(app: AppHandle, filter: Option<ScrapeListFilter>
     let binding = app.state::<Mutex<InteractionStore>>();
     let mut store = binding.lock();
     json!(store.list(filter_type.as_deref()))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    // The request must deserialize from the camelCase wire shape the renderer
+    // sends (`id`/`description`). Pins the serde contract without an AppHandle.
+    #[test]
+    fn update_description_request_deserializes_camel_case() {
+        let json = r#"{"id":"job-1","description":"full text"}"#;
+        let req: ScrapeUpdateDescriptionRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.id, "job-1");
+        assert_eq!(req.description, "full text");
+    }
+
+    #[test]
+    fn validate_rejects_empty_or_whitespace_id() {
+        assert!(
+            matches!(
+                validate_update_description("", "text"),
+                Err(AppError::Validation(_))
+            ),
+            "empty id must be a validation error"
+        );
+        assert!(
+            matches!(
+                validate_update_description("   ", "text"),
+                Err(AppError::Validation(_))
+            ),
+            "whitespace-only id must be a validation error"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_over_cap_description() {
+        let too_long = "x".repeat(MAX_DESCRIPTION_LEN + 1);
+        assert!(
+            matches!(
+                validate_update_description("job-1", &too_long),
+                Err(AppError::Validation(_))
+            ),
+            "a description past the cap must be rejected, not truncated"
+        );
+    }
+
+    #[test]
+    fn validate_accepts_valid_input_and_trims_id() {
+        // At-cap is allowed (boundary): only strictly-over-cap is rejected.
+        let at_cap = "x".repeat(MAX_DESCRIPTION_LEN);
+        let id = validate_update_description("  job-1  ", &at_cap)
+            .expect("a trimmed non-empty id with an at-cap description must validate");
+        assert_eq!(id, "job-1", "the validated id must be trimmed");
+    }
 }
