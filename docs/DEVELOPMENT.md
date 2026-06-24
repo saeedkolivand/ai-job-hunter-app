@@ -274,7 +274,7 @@ graphify update .
 cp .mcp.json.example .mcp.json
 ```
 
-The committed `scripts/graphify-mcp.mjs` launcher resolves your machine's interpreter at runtime, so no local path is ever committed. Skip this entirely if you don't use graphify — nothing else depends on it.
+`.mcp.json` runs the `graphify-mcp` executable (installed on your PATH by step 1) against the local `graphify-out/graph.json`. Skip this entirely if you don't use graphify — nothing else depends on it.
 
 ---
 
