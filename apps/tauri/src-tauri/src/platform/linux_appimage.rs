@@ -149,7 +149,10 @@ mod linux {
     /// Roll back the `LD_PRELOAD` / re-exec-guard mutation done just before a
     /// re-exec attempt that did not happen. Restores `LD_PRELOAD` to `prior`
     /// (or removes it when there was none) and clears the guard.
-    fn restore_preload_env(prior: Option<&std::ffi::OsStr>) {
+    ///
+    /// `pub(super)` (like `apply` / `first_elf64_match` / `prepend_ld_preload`)
+    /// so the sibling `tests` module can exercise the rollback directly.
+    pub(super) fn restore_preload_env(prior: Option<&std::ffi::OsStr>) {
         // SAFETY: see `apply` — single-threaded top-of-main, no data race.
         unsafe {
             match prior {
