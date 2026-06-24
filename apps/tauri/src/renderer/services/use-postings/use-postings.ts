@@ -39,14 +39,17 @@ export const useScrapeUrl = () => {
   return useMutation({ mutationFn: (req: ScrapeUrlRequest) => api.scrape.url(req) });
 };
 
-/** Resolve a single posting (incl. full description) from its URL, on demand. */
+/** Resolve a single posting (incl. full description) from its URL, on demand.
+ *  A job description is immutable within a session, so cache it for the session
+ *  lifetime — fetched once per URL, never re-fetched or GC'd until the app restarts. */
 export const useResolveJobUrl = (url: string, enabled = true) => {
   const api = useAppClient();
   return useQuery({
     queryKey: keys.postings.resolve(url),
     queryFn: () => api.scrape.resolveUrl({ url }),
     enabled: enabled && !!url,
-    staleTime: QUERY_TIMES.VERY_LONG,
+    staleTime: QUERY_TIMES.INFINITE,
+    gcTime: QUERY_TIMES.INFINITE,
   });
 };
 
