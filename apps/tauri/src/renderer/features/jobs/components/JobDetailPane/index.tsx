@@ -322,7 +322,7 @@ function DetailContent({
             {/* fold 9: space-y-4 for block rhythm; headings use mt-2 not mt-4 */}
             <JobDescription
               markdown={description}
-              className="max-w-prose space-y-4 text-caption text-foreground/80"
+              className="space-y-4 text-caption text-foreground/80"
             />
 
             {/* blocker 7: show error hint when resolve failed AND the gate fired;
