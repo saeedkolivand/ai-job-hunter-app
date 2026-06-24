@@ -14,7 +14,9 @@ import { act, waitFor } from '@testing-library/react';
 
 import { createMockClient, exerciseServiceHooks, renderHookWithClient } from '@/test-support';
 
+import { useInteractions } from '../use-postings/use-postings';
 import * as mod from './use-privacy';
+import { useClearInteractions } from './use-privacy';
 
 // ── hoisted spies ─────────────────────────────────────────────────────────────
 
@@ -90,5 +92,87 @@ describe('useResetApp', () => {
 
     expect(mockClearOnboardingMirror).not.toHaveBeenCalled();
     expect(mockResetPreferences).not.toHaveBeenCalled();
+  });
+});
+
+// ── useClearInteractions — prefix invalidation refetches typed interactions ────
+
+describe('useClearInteractions — interactions prefix invalidation', () => {
+  /**
+   * Real-chain test: uses the REAL useClearInteractions + REAL useInteractions
+   * hooks with only the IPC client mocked. Verifies that after clearInteractions
+   * settles, the interactions query for a typed key ('viewed') refetches — i.e.
+   * the prefix ['postings','interactions'] hits ['postings','interactions','viewed'].
+   *
+   * This guards against the prior bug where invalidating the full key
+   * ['postings','interactions',undefined] did NOT match typed queries and stale
+   * "viewed/saved" badges lingered until reload.
+   */
+  it('refetches useInteractions("viewed") after clearInteractions mutates', async () => {
+    const listInteractions = vi.fn().mockResolvedValue([]);
+    const clearInteractions = vi.fn().mockResolvedValue(undefined);
+
+    const client = createMockClient({
+      'scrape.listInteractions': listInteractions,
+      'privacy.clearInteractions': clearInteractions,
+    });
+
+    const { result } = renderHookWithClient(
+      () => ({
+        interactions: useInteractions('viewed'),
+        clear: useClearInteractions(),
+      }),
+      { client }
+    );
+
+    // Wait for the initial interactions query to settle.
+    await waitFor(() => expect(result.current.interactions.isSuccess).toBe(true));
+    const callCountBefore = listInteractions.mock.calls.length;
+
+    // Trigger the mutation.
+    await act(async () => {
+      await result.current.clear.mutateAsync();
+    });
+
+    // The interactions query for 'viewed' must have re-fired (prefix invalidation).
+    await waitFor(() => {
+      expect(listInteractions.mock.calls.length).toBeGreaterThan(callCountBefore);
+    });
+
+    // The refetch must have been for the 'viewed' type.
+    const refetchCall = listInteractions.mock.calls[callCountBefore];
+    expect(refetchCall?.[0]).toMatchObject({ interactionType: 'viewed' });
+  });
+
+  it('does not refetch interactions when clearInteractions rejects', async () => {
+    const listInteractions = vi.fn().mockResolvedValue([]);
+    const clearInteractions = vi.fn().mockRejectedValue(new Error('backend error'));
+
+    const client = createMockClient({
+      'scrape.listInteractions': listInteractions,
+      'privacy.clearInteractions': clearInteractions,
+    });
+
+    const { result } = renderHookWithClient(
+      () => ({
+        interactions: useInteractions('viewed'),
+        clear: useClearInteractions(),
+      }),
+      { client }
+    );
+
+    await waitFor(() => expect(result.current.interactions.isSuccess).toBe(true));
+    const callCountBefore = listInteractions.mock.calls.length;
+
+    await act(async () => {
+      try {
+        await result.current.clear.mutateAsync();
+      } catch {
+        // expected rejection
+      }
+    });
+
+    // onSuccess must NOT have fired — call count unchanged.
+    expect(listInteractions.mock.calls.length).toBe(callCountBefore);
   });
 });
