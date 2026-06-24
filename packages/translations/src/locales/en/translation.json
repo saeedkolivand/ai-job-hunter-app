@@ -1562,10 +1562,10 @@
     "tailor": "Tailor",
     "tailorHint": "Tailor your résumé & cover letter for this job",
     "tailorError": "Couldn't start tailoring. Please try again.",
+    "saveError": "Couldn't save to tracking. Please try again.",
     "scrapeJobs": "Scrape Jobs",
     "scrapeFailed": "Scraping failed",
     "searching": "Searching for jobs…",
-    "scoring": "Scoring matches…",
     "cancel": "Cancel",
     "clear": "Clear",
     "clearScrapedJobs": "Clear scraped jobs",
@@ -1654,7 +1654,24 @@
       "placeholder": "e.g. stripe, airbnb",
       "hint": "Comma-separated company slugs for ATS boards."
     },
-    "partialScrapeNote": "{{done}} of {{total}} boards · {{failed}} failed"
+    "partialScrapeNote": "{{done}} of {{total}} boards · {{failed}} failed",
+    "viewList": "List",
+    "viewSplit": "Split",
+    "viewMode": "View mode",
+    "backToList": "Back to list",
+    "collapseDetail": "Collapse detail",
+    "expandDetail": "Expand detail",
+    "selectAJob": "Select a job to see details",
+    "copyLinkError": "Failed to copy link",
+    "loadingDescription": "Loading description…",
+    "loadFullDescription": "Load full description",
+    "fullDescriptionLoaded": "Full description loaded",
+    "descriptionLoadError": "Could not load the full description. You can try again.",
+    "matchBand": {
+      "High": "High",
+      "Medium": "Medium",
+      "Low": "Low"
+    }
   },
   "resumes": {
     "title": "Documents",
@@ -2260,7 +2277,11 @@
       "downloadFailed": "Download failed. Please try again.",
       "apiKeyStored": "API key stored",
       "getApiKeyAt": "Get your API key at",
-      "saveKey": "Save Key"
+      "saveKey": "Save Key",
+      "cliNotDetected": "{{agent}} CLI not detected. Install it and sign in once, then continue.",
+      "installAgent": "Install {{agent}}",
+      "testKey": "Test",
+      "testingKey": "Testing key…"
     },
     "research": {
       "title": "Smarter cover letters",
@@ -2309,7 +2330,10 @@
       "skip": "Skip for now",
       "envVar": "You can also set the CHROME environment variable to point to a custom browser installation.",
       "back": "Back",
-      "next": "Continue"
+      "next": "Continue",
+      "ready": "Browser Ready",
+      "willUse": "We'll use your browser for secure LinkedIn sign-in",
+      "readyLabel": "Detected and ready"
     },
     "extension": {
       "title": "Install the browser extension",

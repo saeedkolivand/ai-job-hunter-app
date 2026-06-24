@@ -11,9 +11,29 @@ interface BrowserDetectedStateProps {
   onNext: () => void;
 }
 
+/**
+ * Derive a friendly browser label from the launch command / path returned by
+ * `system_check_browser`. Covers native paths, Snap wrappers, and Flatpak
+ * `flatpak run <app-id>` strings. Falls back to `null` so the caller can use a
+ * generic label instead of silently showing the wrong brand.
+ */
+export function getBrowserLabel(browserPath: string | null | undefined): string | null {
+  if (!browserPath) return null;
+  const lower = browserPath.toLowerCase();
+  if (lower.includes('brave')) return 'Brave';
+  if (lower.includes('vivaldi')) return 'Vivaldi';
+  if (lower.includes('edge') || lower.includes('msedge')) return 'Edge';
+  if (lower.includes('chromium')) return 'Chromium';
+  if (lower.includes('chrome')) return 'Chrome';
+  return null;
+}
+
 export function BrowserDetectedState({ browserPath, onBack, onNext }: BrowserDetectedStateProps) {
   const { t } = useTranslation();
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
+
+  const browserLabel = getBrowserLabel(browserPath);
+  const displayName = browserLabel ?? t('onboarding.browser.detected');
 
   return (
     <div className="space-y-5">
@@ -46,7 +66,7 @@ export function BrowserDetectedState({ browserPath, onBack, onNext }: BrowserDet
           transition={withDelay(0.1)}
           className="text-2xl font-semibold text-foreground/95"
         >
-          Chrome Ready
+          {t('onboarding.browser.ready')}
         </motion.h2>
         <motion.p
           initial={{ y: 10, opacity: 0 }}
@@ -54,7 +74,7 @@ export function BrowserDetectedState({ browserPath, onBack, onNext }: BrowserDet
           transition={withDelay(0.1)}
           className="mt-2 text-sm text-foreground/50"
         >
-          We'll use Chrome for secure LinkedIn authentication
+          {t('onboarding.browser.willUse')}
         </motion.p>
       </div>
 
@@ -67,11 +87,13 @@ export function BrowserDetectedState({ browserPath, onBack, onNext }: BrowserDet
       >
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-red-500 via-yellow-500 to-green-500">
-            <span className="text-lg font-bold text-white">C</span>
+            <span className="text-lg font-bold text-white">{displayName[0] ?? '?'}</span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-foreground/90">Google Chrome</p>
-            <p className="text-xs text-foreground/40 truncate">Detected and ready</p>
+            <p className="text-sm font-medium text-foreground/90">{displayName}</p>
+            <p className="text-xs text-foreground/40 truncate">
+              {t('onboarding.browser.readyLabel')}
+            </p>
           </div>
         </div>
       </motion.div>

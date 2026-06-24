@@ -142,6 +142,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       boards: noop,
       url: noop,
       resolveUrl: async () => null,
+      updateDescription: async () => false,
       persistJob: noop,
       listPostings: emptyList,
       clearPostings: noop,

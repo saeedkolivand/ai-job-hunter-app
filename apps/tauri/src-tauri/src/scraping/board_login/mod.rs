@@ -162,8 +162,13 @@ where
         .arg("--no-first-run");
 
     // Use system Chrome/Edge if available to avoid chromiumoxide's 120 MB download.
-    if let Some(chrome_path) = crate::platform::detect_system_chrome() {
-        builder = builder.chrome_executable(chrome_path);
+    // Flatpak browsers cannot be passed as a raw binary path to chromiumoxide
+    // (they require `flatpak run <id>`), so we only set the executable for
+    // installs that expose a native binary path.
+    if let Some(launch) = crate::platform::detect_system_chrome() {
+        if let Some(chrome_path) = launch.to_executable_path() {
+            builder = builder.chrome_executable(chrome_path);
+        }
     }
 
     let browser_config = builder

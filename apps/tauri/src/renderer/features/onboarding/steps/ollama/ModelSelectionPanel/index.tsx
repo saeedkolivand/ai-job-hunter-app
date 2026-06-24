@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 
 import { formatBytes, MODEL_RECS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, transition } from '@ajh/ui';
+import { Alert, Button, transition } from '@ajh/ui';
 
 import { HardwarePopover } from './HardwarePopover';
 import { ModelCard } from './ModelCard';
@@ -63,10 +63,7 @@ export function ModelSelectionPanel({
       className="mb-6 space-y-4"
     >
       {/* Ollama ready badge */}
-      <div className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-2.5">
-        <CheckCircle2 size={14} className="text-emerald-400" />
-        <span className="text-sm text-emerald-200/80">{t('onboarding.ai.readyBadge')}</span>
-      </div>
+      <Alert type="success" showIcon message={t('onboarding.ai.readyBadge')} />
 
       <HardwarePopover
         totalRamGb={totalRamGb}
@@ -118,7 +115,7 @@ export function ModelSelectionPanel({
                 className="space-y-2 overflow-hidden"
               >
                 {pullState === 'error' && (
-                  <p className="text-xs text-red-400">{t('onboarding.ai.downloadFailed')}</p>
+                  <Alert type="error" showIcon message={t('onboarding.ai.downloadFailed')} />
                 )}
                 <Button
                   variant="glass"

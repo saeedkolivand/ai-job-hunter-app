@@ -56,13 +56,35 @@ describe('useSessionStore', () => {
 
   it('patches jobs, resumes and settings slices', () => {
     useSessionStore.getState().setJobs({ filter: 'react', sortBy: 'company' });
-    expect(useSessionStore.getState().jobs).toEqual({ filter: 'react', sortBy: 'company' });
+    expect(useSessionStore.getState().jobs).toEqual({
+      filter: 'react',
+      sortBy: 'company',
+      viewMode: 'split',
+      selectedId: null,
+      detailCollapsed: false,
+    });
 
     useSessionStore.getState().setResumes({ tab: 'activity' });
     expect(useSessionStore.getState().resumes.tab).toBe('activity');
 
     useSessionStore.getState().setSettings({ activeSection: 'ai' });
     expect(useSessionStore.getState().settings.activeSection).toBe('ai');
+  });
+
+  it('jobs slice defaults to split view with no selection', () => {
+    const { jobs } = useSessionStore.getState();
+    expect(jobs.viewMode).toBe('split');
+    expect(jobs.selectedId).toBeNull();
+    expect(jobs.detailCollapsed).toBe(false);
+  });
+
+  it('setJobs selects a job and can collapse detail', () => {
+    useSessionStore.getState().setJobs({ selectedId: 'abc', detailCollapsed: false });
+    expect(useSessionStore.getState().jobs.selectedId).toBe('abc');
+    expect(useSessionStore.getState().jobs.detailCollapsed).toBe(false);
+    useSessionStore.getState().setJobs({ detailCollapsed: true });
+    expect(useSessionStore.getState().jobs.detailCollapsed).toBe(true);
+    expect(useSessionStore.getState().jobs.selectedId).toBe('abc'); // unchanged
   });
 
   it('patches the autopilot slice and resets the wizard', () => {

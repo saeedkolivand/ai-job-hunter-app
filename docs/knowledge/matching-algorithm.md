@@ -64,6 +64,10 @@ Rationale: the match score is a **guidance estimate** surfaced to the user, not 
 
 If knockout gating is added in future, the entry point is `documents/keywords.rs::keyword_coverage` and the hybrid formula in `commands/match_resume.rs::score_one`.
 
+## UI Rendering
+
+Both metrics are rendered using the `MatchBand` component (`apps/tauri/src/renderer/lib/match-band.tsx`), which provides formula-aware visualization with variant-specific score thresholds. See the component's `scoreTier()` function for the current cut points; thresholds are tuned to the underlying formula (keyword-only vs. hybrid semantic+ATS).
+
 ## Related Decisions
 
 - **ADR-020**: Unified autopilot scoring — explains why keyword-coverage is the single source for Autopilot.

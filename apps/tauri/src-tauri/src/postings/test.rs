@@ -1,6 +1,21 @@
 use tempfile::TempDir;
 
+use crate::commands::ai_provider::{EmbeddingSpace, EmbeddingVector};
+
 use super::*;
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+fn fake_embedding() -> EmbeddingVector {
+    EmbeddingVector {
+        values: vec![0.1, 0.2, 0.3],
+        space: EmbeddingSpace {
+            provider: "test".to_string(),
+            model: "test-model".to_string(),
+            dim: 3,
+        },
+    }
+}
 
 #[test]
 fn test_postings_cache_default() {
@@ -23,6 +38,131 @@ fn test_postings_cache_clear() {
     cache.add(item);
     cache.clear_all();
     assert!(cache.get_all().is_empty());
+}
+
+#[test]
+fn update_description_patches_existing_item_in_place() {
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({"id": "job-1", "title": "Engineer", "description": "short"}));
+    cache.add(serde_json::json!({"id": "job-2", "title": "Designer", "description": "other"}));
+
+    let updated = cache.update_description("job-1", "the full, much longer description text");
+    assert!(updated, "updating an existing id must return true");
+
+    // No duplicate row was created — still exactly two items.
+    assert_eq!(cache.get_all().len(), 2, "update must not push a new entry");
+
+    // The new text is readable back via get_all on the SAME entry.
+    let item = cache
+        .get_all()
+        .iter()
+        .find(|p| p.get("id").and_then(serde_json::Value::as_str) == Some("job-1"))
+        .expect("job-1 must still be present");
+    assert_eq!(
+        item.get("description").and_then(serde_json::Value::as_str),
+        Some("the full, much longer description text"),
+        "description must be replaced with the full text"
+    );
+    // Sibling untouched.
+    let other = cache
+        .get_all()
+        .iter()
+        .find(|p| p.get("id").and_then(serde_json::Value::as_str) == Some("job-2"))
+        .expect("job-2 must be untouched");
+    assert_eq!(
+        other.get("description").and_then(serde_json::Value::as_str),
+        Some("other"),
+        "unrelated postings must not be mutated"
+    );
+}
+
+#[test]
+fn update_description_unknown_id_returns_false_and_adds_no_row() {
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({"id": "job-1", "description": "short"}));
+
+    let updated = cache.update_description("does-not-exist", "ignored");
+    assert!(!updated, "unknown id must return false");
+    assert_eq!(
+        cache.get_all().len(),
+        1,
+        "a missing id must NOT create a new row"
+    );
+    // The existing entry is unchanged.
+    assert_eq!(
+        cache.get_all()[0]
+            .get("description")
+            .and_then(serde_json::Value::as_str),
+        Some("short"),
+        "existing entry must be untouched on a miss"
+    );
+}
+
+/// When `update_description` writes new text, the previously cached embedding for
+/// that id must be invalidated so the next score re-embeds the full description
+/// instead of reusing the stale snippet vector.
+#[test]
+fn update_description_invalidates_cached_embedding_on_change() {
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({"id": "job-1", "description": "short snippet"}));
+
+    // Prime the embedding cache with a synthetic vector for this posting.
+    cache.set_embedding("job-1".to_string(), fake_embedding());
+    assert!(
+        cache.get_embedding("job-1").is_some(),
+        "embedding must be present before update"
+    );
+
+    // Update the description with new (longer) text — different from the current.
+    let updated = cache.update_description("job-1", "the full, much longer description text");
+    assert!(updated, "update must succeed on a known id");
+
+    // Stale embedding must be gone.
+    assert!(
+        cache.get_embedding("job-1").is_none(),
+        "cached embedding must be invalidated after description change"
+    );
+}
+
+/// When `update_description` is called with the SAME text that is already stored,
+/// the cached embedding must NOT be invalidated (it is still valid).
+#[test]
+fn update_description_keeps_embedding_when_text_unchanged() {
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({"id": "job-1", "description": "full description"}));
+    cache.set_embedding("job-1".to_string(), fake_embedding());
+
+    // Call update_description with the identical text.
+    let updated = cache.update_description("job-1", "full description");
+    assert!(updated, "update must return true even for a no-op change");
+
+    // Embedding must still be present (nothing changed).
+    assert!(
+        cache.get_embedding("job-1").is_some(),
+        "embedding must be preserved when description text is unchanged"
+    );
+}
+
+#[test]
+fn update_description_does_not_create_duplicates_on_repeat() {
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({"id": "job-1", "description": "v0"}));
+
+    assert!(cache.update_description("job-1", "v1"));
+    assert!(cache.update_description("job-1", "v2"));
+
+    assert_eq!(
+        cache.get_all().len(),
+        1,
+        "repeated updates of the same id must never duplicate the entry"
+    );
+    assert_eq!(
+        cache.get_all()[0]
+            .get("description")
+            .and_then(serde_json::Value::as_str),
+        Some("v2"),
+        "the latest update wins"
+    );
 }
 
 #[test]

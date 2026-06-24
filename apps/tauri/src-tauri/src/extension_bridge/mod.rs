@@ -635,15 +635,38 @@ async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<ImportOk> {
         ));
     }
 
+    // Shared rate + concurrency budget with the scrape_resolve_url IPC command.
+    // resolve() now follows up to 2 redirect hops per call (up to 3 outbound
+    // fetches), so every resolve() call must hold a limiter slot — the same
+    // "scrape_url" key and constants the command uses. `try_state` gracefully
+    // handles the (startup-failure) case where Limiter was never managed.
+    let limiter = app
+        .try_state::<std::sync::Arc<crate::limits::Limiter>>()
+        .map(|s| s.inner().clone());
+    let acquire_slot = || -> AppResult<Option<crate::limits::ConcurrencyGuard>> {
+        match &limiter {
+            Some(l) => l
+                .acquire(
+                    "scrape_url",
+                    crate::limits::SCRAPE_RATE_MAX,
+                    crate::limits::SCRAPE_CONCURRENCY_MAX,
+                )
+                .map(Some),
+            None => Ok(None), // Limiter not managed (startup failure) — allow through
+        }
+    };
+
     // At most one network fetch. The captured DOM is parsed ONLY for a direct page
     // (no canonical rewrite) — for a SPA/list view the DOM is the list shell, not the
     // selected job, so we resolve the canonical URL instead and never parse the shell.
     let mut posting: Option<crate::scraping::types::JobPosting> =
         if let Some(c) = canonical.as_deref() {
+            let _guard = acquire_slot()?;
             crate::scraping::scrape_url::resolve(c).await? // SPA/list view → selected job's canonical URL
         } else if let Some(h) = html.as_deref() {
             crate::scraping::scrape_url::parse_from_html(&url, h) // direct page → captured authenticated DOM
         } else {
+            let _guard = acquire_slot()?;
             crate::scraping::scrape_url::resolve(effective_url).await? // URL mode, no DOM → server fetch
         };
 
@@ -651,6 +674,7 @@ async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<ImportOk> {
     // (a board API may resolve the same URL where the DOM parse missed). Skipped for the
     // canonical and URL-mode branches because they already fetched `effective_url`.
     if !posting.as_ref().is_some_and(usable) && canonical.is_none() && html.is_some() {
+        let _guard = acquire_slot()?;
         if let Some(p) = crate::scraping::scrape_url::resolve(effective_url).await? {
             if usable(&p) || posting.is_none() {
                 posting = Some(p);

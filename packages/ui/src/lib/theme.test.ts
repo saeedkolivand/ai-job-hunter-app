@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   applyTheme,
+  applyThemeAnimated,
   getResolvedScheme,
   getThemePrefs,
   restoreTheme,
@@ -371,5 +372,150 @@ describe('theme engine — accent sweep middle (brand-mid)', () => {
     applyTheme({ ...base, accentSource: 'default' });
     expect(cssVar('--color-brand-mid')).toBe('');
     expect(cssVar('--color-brand-mid-soft')).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyThemeAnimated — View Transition gating (Linux / reduced-motion / missing API)
+// ---------------------------------------------------------------------------
+
+describe('applyThemeAnimated — view-transition gating', () => {
+  const prefs: ThemePrefs = {
+    scheme: 'dark',
+    reduceTransparency: false,
+    contrast: 'normal',
+    textScale: 'default',
+    accentSource: 'default',
+  };
+
+  function stubMatchMediaNoMotion() {
+    vi.stubGlobal(
+      'matchMedia',
+      (query: string) =>
+        ({
+          matches: false,
+          media: query,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+          addListener: () => {},
+          removeListener: () => {},
+          dispatchEvent: () => false,
+          onchange: null,
+        }) as unknown as MediaQueryList
+    );
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.removeAttribute('data-color-scheme');
+    document.documentElement.removeAttribute('data-reduce-transparency');
+    document.documentElement.removeAttribute('data-contrast');
+    document.documentElement.removeAttribute('data-text-scale');
+    document.documentElement.className = '';
+    document.documentElement.style.cssText = '';
+    stubMatchMediaNoMotion();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it('calls startViewTransition on non-Linux UA when the API is present', () => {
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' });
+    const spy = vi.fn((cb: () => void) => {
+      cb();
+    });
+    Object.defineProperty(document, 'startViewTransition', {
+      value: spy,
+      configurable: true,
+      writable: true,
+    });
+
+    applyThemeAnimated(prefs);
+
+    expect(spy).toHaveBeenCalledOnce();
+    // Theme must still apply (data-color-scheme written inside the callback).
+    expect(document.documentElement.dataset.colorScheme).toBe('dark');
+
+    // Cleanup
+    Object.defineProperty(document, 'startViewTransition', {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  it('does NOT call startViewTransition on Linux UA — applies theme directly', () => {
+    vi.stubGlobal('navigator', {
+      userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15',
+    });
+    const spy = vi.fn();
+    Object.defineProperty(document, 'startViewTransition', {
+      value: spy,
+      configurable: true,
+      writable: true,
+    });
+
+    applyThemeAnimated(prefs);
+
+    expect(spy).not.toHaveBeenCalled();
+    // Theme still applied directly.
+    expect(document.documentElement.dataset.colorScheme).toBe('dark');
+
+    Object.defineProperty(document, 'startViewTransition', {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  it('applies theme directly when startViewTransition is absent (older browsers)', () => {
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' });
+    // Ensure startViewTransition is not present.
+    Object.defineProperty(document, 'startViewTransition', {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    });
+
+    applyThemeAnimated(prefs);
+
+    expect(document.documentElement.dataset.colorScheme).toBe('dark');
+  });
+
+  it('skips startViewTransition when prefers-reduced-motion is set', () => {
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' });
+    vi.stubGlobal(
+      'matchMedia',
+      (query: string) =>
+        ({
+          matches: query === '(prefers-reduced-motion: reduce)',
+          media: query,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+          addListener: () => {},
+          removeListener: () => {},
+          dispatchEvent: () => false,
+          onchange: null,
+        }) as unknown as MediaQueryList
+    );
+    const spy = vi.fn();
+    Object.defineProperty(document, 'startViewTransition', {
+      value: spy,
+      configurable: true,
+      writable: true,
+    });
+
+    applyThemeAnimated(prefs);
+
+    expect(spy).not.toHaveBeenCalled();
+    expect(document.documentElement.dataset.colorScheme).toBe('dark');
+
+    Object.defineProperty(document, 'startViewTransition', {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    });
   });
 });

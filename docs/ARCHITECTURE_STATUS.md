@@ -2,7 +2,7 @@
 
 Implementation status tracker. Updated as features ship.
 
-Last updated: 2026-06-14
+Last updated: 2026-06-24
 
 ---
 
@@ -157,32 +157,32 @@ Active scrapers: 16 boards. Five boards (Indeed, StepStone, Xing, Workday, Glass
 
 ## UI / UX
 
-| Feature                   | Status | Notes                                                                                                           |
-| ------------------------- | ------ | --------------------------------------------------------------------------------------------------------------- |
-| Dashboard route           | ✅     | Pipeline overview, recent activity                                                                              |
-| Jobs route                | ✅     | List (virtualized via `@tanstack/react-virtual`), filter, interaction history                                   |
-| Search route              | ✅     | Hybrid semantic search (⌘/Ctrl+K only — removed from sidebar)                                                   |
-| AI route                  | ✅     | Model selection, [Ollama][ollama] health                                                                        |
-| AI Generate route         | ✅     | Full generation UI                                                                                              |
-| Analyze route             | ✅     | Resume analysis panels                                                                                          |
-| Autopilot route           | ✅     | Workflow builder + runner                                                                                       |
-| Documents route           | ✅     | Three-tab view — Résumés / Cover Letters / Activity (lenses over `ai_generations`); route stays `/resumes`      |
-| Settings route            | ✅     | All settings tabs; keyboard-reachable sidebar (`@ajh/ui Button` + `aria-current`); `SettingsSection` throughout |
-| Support route             | ✅     | Diagnostics, FAQ, logs                                                                                          |
-| Onboarding wizard         | ✅     | First-run experience                                                                                            |
-| Light/dark/system theme   | ✅     |                                                                                                                 |
-| i18n (11 languages)       | ✅     | UI translations                                                                                                 |
-| Keyboard shortcuts        | ✅     | Global handler + `?` cheat-sheet modal (`useKeyboardShortcuts`)                                                 |
-| Auto-updater banner       | ✅     |                                                                                                                 |
-| Performance mode selector | ✅     |                                                                                                                 |
-| Spotlight tour            | ✅     | Interactive tutorial                                                                                            |
-| Sidebar nav groups        | ✅     | Workspace / Automation / pinned — `nav.sections.workspace\|automation` i18n keys                                |
-| Grouped nav pill          | ✅     | `@ajh/ui NavPill` slides within each list (`layoutId` scoped per group)                                         |
-| `SegmentedControl`        | ✅     | `@ajh/ui` — radiogroup + roving arrow-key nav; `track`/`grid` variants                                          |
-| `SetupHint`               | ✅     | `@ajh/ui` — generalized contextual setup nudge (AI + future board/chrome)                                       |
-| Visible focus rings       | ✅     | Global `:focus-visible` ring; `ModalShell` `aria-labelledby`; `role="switch"` toggles                           |
-| Optimistic delete         | ✅     | `onMutate` snapshot+filter / `onError` rollback on generations + autopilots                                     |
-| macOS window vibrancy     | ⬜     | Deferred — requires a Mac-capable dev session (`window-vibrancy` crate)                                         |
+| Feature                   | Status | Notes                                                                                                                                                                                         |
+| ------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dashboard route           | ✅     | Pipeline overview, recent activity                                                                                                                                                            |
+| Jobs route                | ✅     | Master-detail split view (default) + list-only toggle; virtualized list; filter, interaction history, viewed/applied badges. See `apps/tauri/src/renderer/features/jobs/` for layout details. |
+| Search route              | ✅     | Hybrid semantic search (⌘/Ctrl+K only — removed from sidebar)                                                                                                                                 |
+| AI route                  | ✅     | Model selection, [Ollama][ollama] health                                                                                                                                                      |
+| AI Generate route         | ✅     | Full generation UI                                                                                                                                                                            |
+| Analyze route             | ✅     | Resume analysis panels                                                                                                                                                                        |
+| Autopilot route           | ✅     | Workflow builder + runner                                                                                                                                                                     |
+| Documents route           | ✅     | Three-tab view — Résumés / Cover Letters / Activity (lenses over `ai_generations`); route stays `/resumes`                                                                                    |
+| Settings route            | ✅     | All settings tabs; keyboard-reachable sidebar (`@ajh/ui Button` + `aria-current`); `SettingsSection` throughout                                                                               |
+| Support route             | ✅     | Diagnostics, FAQ, logs                                                                                                                                                                        |
+| Onboarding wizard         | ✅     | First-run experience                                                                                                                                                                          |
+| Light/dark/system theme   | ✅     |                                                                                                                                                                                               |
+| i18n (11 languages)       | ✅     | UI translations                                                                                                                                                                               |
+| Keyboard shortcuts        | ✅     | Global handler + `?` cheat-sheet modal (`useKeyboardShortcuts`)                                                                                                                               |
+| Auto-updater banner       | ✅     |                                                                                                                                                                                               |
+| Performance mode selector | ✅     |                                                                                                                                                                                               |
+| Spotlight tour            | ✅     | Interactive tutorial                                                                                                                                                                          |
+| Sidebar nav groups        | ✅     | Workspace / Automation / pinned — `nav.sections.workspace\|automation` i18n keys                                                                                                              |
+| Grouped nav pill          | ✅     | `@ajh/ui NavPill` slides within each list (`layoutId` scoped per group)                                                                                                                       |
+| `SegmentedControl`        | ✅     | `@ajh/ui` — radiogroup + roving arrow-key nav; `track`/`grid` variants                                                                                                                        |
+| `SetupHint`               | ✅     | `@ajh/ui` — generalized contextual setup nudge (AI + future board/chrome)                                                                                                                     |
+| Visible focus rings       | ✅     | Global `:focus-visible` ring; `ModalShell` `aria-labelledby`; `role="switch"` toggles                                                                                                         |
+| Optimistic delete         | ✅     | `onMutate` snapshot+filter / `onError` rollback on generations + autopilots                                                                                                                   |
+| macOS window vibrancy     | ⬜     | Deferred — requires a Mac-capable dev session (`window-vibrancy` crate)                                                                                                                       |
 
 ---
 

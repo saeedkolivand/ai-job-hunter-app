@@ -87,7 +87,6 @@ vi.mock('@/services', () => ({
   useJobEvents: (cb: (event: unknown) => void) => {
     jobEvents.handler = cb;
   },
-  useJobMatchScores: () => ({ scoresById: new Map(), isPending: false, isError: false }),
 }));
 
 vi.mock('@/features/jobs/hooks/useDefaultResumeId', () => ({
@@ -96,8 +95,9 @@ vi.mock('@/features/jobs/hooks/useDefaultResumeId', () => ({
 
 vi.mock('@/store/session-store', () => ({
   useSessionStore: () => ({
-    jobs: { filter: '', sortBy: 'newest' },
+    jobs: { filter: '', sortBy: 'newest', viewMode: 'list' },
     setJobs: vi.fn(),
+    setSettings: vi.fn(),
   }),
 }));
 
@@ -153,6 +153,7 @@ vi.mock('@ajh/ui', () => ({
   ConfirmModal: () => null,
   Dropdown: () => null,
   Input: () => null,
+  SegmentedControl: () => null,
   useNotification: () => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }),
 }));
 

@@ -1,6 +1,6 @@
 # Extension domain (browser extension + desktop bridge)
 
-Last updated: 2026-06-19
+Last updated: 2026-06-24 (cross-distro + Flatpak support)
 
 Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tauri-security-reviewer`.
 
@@ -22,6 +22,12 @@ The auth boundary lives in `extension_bridge/mod.rs` (`classify_frame` / the soc
 ## Transport
 
 Primary: **native messaging** (browser spawns desktop `--native-host` as a stdio relay; immune to Firefox HTTPS-Only Mode `ws://→wss://` upgrade). Fallback: loopback WebSocket. Both transports share the same wire envelope defined in the shared protocol constants.
+
+### Native-messaging host registration
+
+The desktop bridge (`extension_bridge/register.rs`) writes the browser's native-messaging manifest to OS-specific directories on every startup (idempotent, best-effort, non-fatal on failure). **Browser detection** across native paths, Snap, and Flatpak installs populates the manifest with the current exe path, so manifest tracks app moves/updates automatically.
+
+Native-messaging registry locations are OS- and sandboxing-aware. See `apps/tauri/src-tauri/src/extension_bridge/register.rs` and `apps/tauri/src-tauri/src/platform/chrome/mod.rs` for per-platform registry paths, Flatpak sandbox handling, and fallback WebSocket bridge logic for sandboxed browsers.
 
 ## Protocol lockstep rule
 

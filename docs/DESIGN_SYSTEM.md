@@ -1,6 +1,6 @@
 # Design System — AI Job Hunter
 
-Last updated: 2026-06-11
+Last updated: 2026-06-24 (v0.116.0)
 
 The design system lives in `packages/ui` and is published as the `@ajh/ui` internal package. It provides design tokens, a component library, motion primitives, and theming infrastructure.
 
@@ -78,6 +78,16 @@ Use these instead of raw hex values or arbitrary colors:
 
 **Never use** `[#RRGGBB]` in `className` strings — ESLint enforces this.
 
+### Contrast & Accessibility
+
+Muted text is expressed as `text-foreground/NN` opacity steps. To meet WCAG AA contrast ratios:
+
+- **At ≥14px (body, caption)**: `text-foreground/50` is acceptable (≥4.5:1 on light backgrounds).
+- **At <14px (fine-print, nav-link, labels)**: use **`text-foreground/70` as the minimum floor** (≥4.5:1 on light backgrounds; <50% fails).
+- **For tertiary/metadata text** (timestamps, cache hints): `text-foreground/60` is only safe if paired visually with a darker primary label (e.g., "Posted • 2 days ago" where "Posted" is at /80 and "2 days ago" is /60).
+
+Rationale: Tailwind's opacity modifier works against `var(--color-foreground)`, which is ~#1a1a1a on light and ~#f5f5f5 on dark. At small sizes, even slight opacity loss defeats readability. Always verify opacity choices against both light and dark themes — the opacity floor differs per scheme because the foreground color differs.
+
 ### Typography Scale (Apple)
 
 The Apple type scale lives in `tokens.css` as Tailwind v4 `--text-*` tokens — each carries its line-height, weight, and letter-spacing. Authored so **body = `1rem`** with the rem root at **17px** (Apple's body baseline), so they hit Apple's exact px at the default UI size and scale with `TextScale`. Negative letter-spacing at ≥17px is the "Apple tight" cadence. **Weight ladder: 300 / 400 / 600 / 700 — `font-medium` (500) is intentionally avoided in new UI.**
@@ -147,7 +157,7 @@ data attributes on `<html>` that the token layer keys off:
 </html>
 ```
 
-- **Color scheme** — `dark` is the default token set (`tokens.css` `:root`). `[data-color-scheme='light']` overrides only the tokens that change, so flipping the tokens flips the whole UI. `system` resolves from `prefers-color-scheme` and tracks live OS changes. User-initiated scheme changes go through `applyThemeAnimated()`, which crossfades via the View Transition API (reduced-motion / unsupported-API guarded). A **pre-paint boot script in `index.html`** applies the persisted scheme/text-scale/a11y modifiers before first paint (mirrors `theme.ts`) so there is no light-theme flicker/FOUC.
+- **Color scheme** — `dark` is the default token set (`tokens.css` `:root`). `[data-color-scheme='light']` overrides only the tokens that change, so flipping the tokens flips the whole UI. `system` resolves from `prefers-color-scheme` and tracks live OS changes. User-initiated scheme changes go through `applyThemeAnimated()`, which crossfades via the View Transition API (reduced-motion / unsupported-API / **WebKitGTK on Linux** guarded — see below). A **pre-paint boot script in `index.html`** applies the persisted scheme/text-scale/a11y modifiers before first paint (mirrors `theme.ts`) so there is no light-theme flicker/FOUC.
 - **Light legibility** — light overrides only what changes, but two systemic remaps live in `utilities.css`: bright Tailwind palette text steps (`--color-emerald-400`, …) map to their deeper `600/700` so accent/status/gradient text stays legible on white, and faint `text-foreground/NN` steps are lifted to the macOS hierarchy (secondary `~#6E6E73`, muted `~#8E8E93`) — no per-site sweep.
 - **Text size** — `data-text-scale` sets the rem root (`small 16px` / `default 17px` / `large 19px` — default is the Apple body baseline, up from 16px to fix "texts too small"); a 12px floor in `utilities.css` lifts sub-12px arbitrary sizes. Both are rem-based, so they scale together.
 - **Accessibility modifiers** — `[data-reduce-transparency]` solidifies all glass (also wired to `@media (prefers-reduced-transparency)` as a JS-independent fallback); `[data-contrast='more']` strengthens borders. Each is either forced on or "auto" (follows the matching OS query).
@@ -158,6 +168,10 @@ elevation = the `--color-card` step over `--color-background`). Frosted **glass 
 and reads a single material token set (`--glass-rgb`, `--glass-alpha-*`, `--glass-sat`,
 `--glass-specular`) — see `utilities.css`. Never hard-code colors that don't exist in the
 token system.
+
+### Platform notes
+
+**WebKitGTK on Linux** — `document.startViewTransition()` (used for View Transition crossfades in `applyThemeAnimated`) **crashes the web process** on WebKitGTK (the web engine for GTK apps on Linux, used by Tauri on Linux). Theme changes apply directly there without animation — see `packages/ui/src/lib/theme.ts` for the Linux user-agent detection that gates the feature off.
 
 ### Accent Color System
 
@@ -505,6 +519,16 @@ Displays streaming text with a blinking cursor and smooth character append:
 ```typescript
 <StreamingText text={delta} done={isDone} />
 ```
+
+#### `Alert`
+
+Step-level status messages in wizard flows (onboarding, autopilot). Types: `success`, `warning`, `error`, `info`. Field-level validation stays inline:
+
+```typescript
+<Alert type="warning" message="No key entered" description="Add your API key to proceed" />
+```
+
+See `packages/ui/src/components/Alert/Alert.tsx` for full props (`message`, `description`, `type`, `showIcon`, `action`, `closable`, `banner`).
 
 #### `EmptyState`
 

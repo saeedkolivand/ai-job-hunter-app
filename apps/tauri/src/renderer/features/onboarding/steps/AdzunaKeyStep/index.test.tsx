@@ -138,11 +138,13 @@ describe('AdzunaKeyStep — render', () => {
 });
 
 describe('AdzunaKeyStep — connected state', () => {
-  it('shows the connected banner when both keys are saved', () => {
+  it('shows the connected Alert (success) when both keys are saved', () => {
     stubIdHas = true;
     stubKeyHas = true;
     renderStep();
-    expect(screen.getByText('onboarding.adzunaKey.connected')).toBeInTheDocument();
+    const alert = screen.getByRole('alert');
+    expect(alert).toBeInTheDocument();
+    expect(alert).toHaveTextContent('onboarding.adzunaKey.connected');
   });
 
   it('hides the input fields when both keys are saved', () => {
@@ -165,11 +167,16 @@ describe('AdzunaKeyStep — connected state', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('shows partial-saved hint when only App ID is saved', () => {
+  it('shows partial-saved Alert (warning) when only App ID is saved', () => {
     stubIdHas = true;
     stubKeyHas = false;
     renderStep();
-    expect(screen.getByText('onboarding.adzunaKey.partialSaved')).toBeInTheDocument();
+    // Alert renders role="alert"; message is the warning key
+    const alerts = screen.getAllByRole('alert');
+    const partialAlert = alerts.find((el) =>
+      el.textContent?.includes('onboarding.adzunaKey.partialSaved')
+    );
+    expect(partialAlert).toBeInTheDocument();
   });
 });
 

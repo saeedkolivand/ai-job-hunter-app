@@ -36,6 +36,56 @@ impl PostingsCache {
         &self.items
     }
 
+    /// Patch the `description` of the cached posting whose `id` matches, in place.
+    ///
+    /// Aggregator list scrapes store only a truncated snippet; once the detail
+    /// pane resolves the full description we write it back here so the match
+    /// scorer (which reads title+description+requirements from this cache) sees
+    /// the full text. We mutate the EXISTING entry rather than pushing a new one:
+    /// [`Self::add`] is a blind `push` with no id-dedup and the scorer's
+    /// `job_texts_for` is first-wins by id, so a second copy would be ignored and
+    /// leave a duplicate behind. Each item is stored as a JSON object, so we patch
+    /// the `description` field on the matching object directly.
+    ///
+    /// Returns `true` when an entry was updated, `false` when no item carries that
+    /// id (no row is created in either case).
+    pub fn update_description(&mut self, id: &str, description: &str) -> bool {
+        // Two-pass approach to avoid holding a simultaneous mutable borrow on
+        // `self.items` while also mutating `self.embeddings`.
+        //
+        // Pass 1: check whether the description is actually changing and patch
+        //         the item. Track whether an invalidation is needed.
+        let mut needs_embedding_invalidation = false;
+        let mut found = false;
+        for item in &mut self.items {
+            if item.get("id").and_then(Value::as_str) == Some(id) {
+                if let Some(obj) = item.as_object_mut() {
+                    // Only invalidate the cached embedding when the text actually
+                    // changes. If the full description is identical to what's
+                    // already stored (e.g. a duplicate resolve-on-open call) we
+                    // keep the embedding; otherwise the stale snippet embedding
+                    // would be reused on the next score after a description update,
+                    // defeating the resolve-on-open re-score.
+                    let existing = obj.get("description").and_then(Value::as_str).unwrap_or("");
+                    if existing != description {
+                        needs_embedding_invalidation = true;
+                    }
+                    obj.insert(
+                        "description".to_string(),
+                        Value::String(description.to_string()),
+                    );
+                    found = true;
+                    break;
+                }
+            }
+        }
+        // Pass 2: drop the stale embedding now that `self.items` borrow is released.
+        if needs_embedding_invalidation {
+            self.embeddings.remove(id);
+        }
+        found
+    }
+
     pub fn clear_all(&mut self) {
         self.items.clear();
         self.embeddings.clear();

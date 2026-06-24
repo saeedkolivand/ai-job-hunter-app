@@ -1,7 +1,8 @@
-import { ExternalLink, Loader2, WifiOff } from 'lucide-react';
+import { ExternalLink, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
-import { Button, transition } from '@ajh/ui';
+import { useTranslation } from '@ajh/translations';
+import { Alert, Button, transition } from '@ajh/ui';
 
 import { useOpenExternal } from '@/services';
 
@@ -10,6 +11,7 @@ interface OllamaNotInstalledProps {
 }
 
 export function OllamaNotInstalled({ onRecheck }: OllamaNotInstalledProps) {
+  const { t } = useTranslation();
   const openExternal = useOpenExternal();
 
   return (
@@ -21,15 +23,12 @@ export function OllamaNotInstalled({ onRecheck }: OllamaNotInstalledProps) {
       transition={transition.normal}
       className="mb-6 space-y-4"
     >
-      <div className="flex items-start gap-3 rounded-xl border border-amber-400/20 bg-amber-400/5 p-4">
-        <WifiOff size={16} className="mt-0.5 shrink-0 text-amber-400" />
-        <div>
-          <p className="text-sm font-medium text-amber-200">Ollama not found</p>
-          <p className="mt-1 text-xs text-amber-200/60">
-            We couldn't detect Ollama on your system. Install it to use local AI models.
-          </p>
-        </div>
-      </div>
+      <Alert
+        type="warning"
+        showIcon
+        message={t('onboarding.ai.notFound')}
+        description={t('onboarding.ai.notFoundDesc')}
+      />
 
       <div className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-widest text-foreground/55">

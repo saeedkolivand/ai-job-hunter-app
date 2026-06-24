@@ -53,6 +53,7 @@ export { IconBadge, type IconBadgeProps } from './components/IconBadge/index';
 export { IconText } from './components/IconText/index';
 export { Image, type ImageProps } from './components/Image/index';
 export { Input, type InputProps } from './components/Input/index';
+export { JobDescription } from './components/JobDescription/index';
 export { LocationInput, type LocationInputProps } from './components/LocationInput/index';
 export { NumberField, type NumberFieldProps } from './components/NumberField/index';
 export { OptionalHint, type OptionalHintProps } from './components/OptionalHint/index';

@@ -182,6 +182,8 @@ export function ScrapeForm({
             {/* Query — hero input */}
             <div className="mb-4">
               <Input
+                id="jobs-scrape-query"
+                name="jobs-scrape-query"
                 type="text"
                 value={form.query}
                 onChange={(e) => onFormChange({ query: e.target.value })}
