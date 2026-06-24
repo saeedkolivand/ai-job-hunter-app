@@ -20,7 +20,7 @@ External best-practices for ATS scoring, JD analysis, and resume↔job matching.
 - **Normalize keywords + synonyms** (title/skill aliases, seniority mapping) — helps both literal (Taleo) and semantic (iCIMS/Lever) parsers.
 - **Evidence-based scoring** — credit skills backed by experience/context, not raw frequency; **never reward keyword stuffing** (semantic + AI-content detection penalize it). https://www.jobscan.co/blog/can-ats-detect-ai-resume/
 - **Explainable output** — per-requirement match + reason bullets; be honest the number is _our_ estimate.
-- **Invalidate derived caches on input change** — when a posting's text changes (e.g. the full description is resolved on open), drop its cached **embedding** and any text-hash-keyed score so the next score recomputes on the new text; a left-behind embedding silently scores the old snippet (#486).
+- **Invalidate derived caches on input change** — when a posting's text changes (e.g. the full description is resolved on open), drop its cached **embedding** + any text-hash-keyed score, **and** invalidate the renderer query that reads that posting. Otherwise the next score reuses the stale snippet embedding _and_ the UI keeps showing the truncated text (#486).
 
 ## ⚠️ 2026 legal / AI constraints on automated screening — flag prominently
 

@@ -14,8 +14,8 @@ Authoritative: `docs/DESIGN_SYSTEM.md`, `docs/PATTERNS.md`.
 
 ## React Query & async mutations (HIGH on correctness)
 
-- **Invalidation must match** — `invalidateQueries({ queryKey })` is a **prefix** match; a key factory that appends a trailing `undefined`/optional segment (`keys.x.y()` → `['x','y',undefined]`) will **not** match the typed queries (`['x','y','viewed']`). Invalidate the shorter prefix (`['x','y']`) or pass `exact`. After a mutation, confirm the key you invalidate hits the queries that render the affected UI (#486: shipped this twice → stale viewed/saved badges).
-- **Mutations** — every `mutateAsync` in a `void`/fire-and-forget caller needs a `.catch` → a fixed `@ajh/translations` error key (never raw `err.message`); apply optimistic state / emit tracking events / show success **only after** the awaited mutation resolves, never before.
+- **Invalidation must match** — `invalidateQueries({ queryKey })` is a **prefix** match; a key factory that appends a trailing `undefined`/optional segment (`keys.x.y()` → `['x','y',undefined]`) will **not** match the typed queries (`['x','y','viewed']`). Fix it with the **correct key**: the shorter prefix (`['x','y']`), or a deliberate `predicate` — note `exact: true` does **not** fix it (an exact match on the wrong shape `['x','y',undefined]` still misses `['x','y','viewed']`). After a mutation, confirm the key you invalidate hits the queries that render the affected UI (#486: shipped this twice → stale viewed/saved badges).
+- **Mutations** — never show success / apply optimistic state / emit tracking events **before** the mutation resolves. Two cases: (a) **awaited** — `await mutateAsync()`, then run the success effects, in `try/catch`; (b) **detached** (`void`/fire-and-forget) — attach a `.catch` surfacing a fixed `@ajh/translations` error key (never raw `err.message`) and put the success effects in `.then`, not on the line after the call.
 - **Nullable at the IPC boundary** — guard a contract-optional/`null` value (a field a command may return absent) before string/array ops (`.toLowerCase()`/`[0]`/`.split()`).
 
 ## Design system

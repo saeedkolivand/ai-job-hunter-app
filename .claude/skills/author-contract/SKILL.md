@@ -60,7 +60,9 @@ This is not optional and you do **not** declare done on assumption — **run** t
 gate command (per-package, `--force` where caching can mask failures) — a wrapped/cached "no errors"
 is not proof. Anything red → revert that change and report what + why. **Cross-OS caveat:** a same-host
 `cargo`/`pnpm` build **silently excludes** `#[cfg(target_os=…)]` code for other targets — a green local
-run does NOT verify it; cross-target-check (`cargo check --target <triple>`) any OS-gated code you touch,
-or flag it unverified-on-this-host for CI. Never hand a red or unverified diff to the critic. End with a short summary: files touched, issues resolved, anything left for the
+run does NOT verify it; cross-target-check (`cargo check --target <triple>`) any OS-gated code you touch.
+If your host genuinely can't build that target, say so explicitly in the handoff (`cross-OS-unverified — CI
+runs it`) — that labeled exception is the ONLY unverified hand-off allowed; otherwise never hand a red or
+unverified diff to the critic. End with a short summary: files touched, issues resolved, anything left for the
 critic. Propose durable lessons as `LESSON · <category> · Context/Decision/Outcome` (only
 `project-steward` persists them).
