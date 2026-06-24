@@ -17,6 +17,8 @@
   --paper:#f4ecdc;
   --ink:#1c1812;
   --red:#e24b4a;
+  /* brand-violet cameo — bridges notebook palette to the app's identity */
+  --violet:#7c3aed;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%}
@@ -74,6 +76,9 @@ body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;opac
 @keyframes fadein{from{opacity:0}to{opacity:1}}
 @keyframes stampin{from{opacity:0;transform:scale(2.4) rotate(7deg)}to{opacity:1;transform:none}}
 
+/* ---- global focus-visible ring ---- */
+a:focus-visible,button:focus-visible,[tabindex]:focus-visible,[role="button"]:focus-visible{
+  outline:2px solid var(--red);outline-offset:2px}
 /* ---- hud / controls / progress ---- */
 #hud{position:fixed;top:12px;left:76px;z-index:6;font-family:var(--mono);
   font-size:clamp(10px,1.5vmin,14px);line-height:1.7;opacity:.92;white-space:pre}
@@ -82,6 +87,7 @@ body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;opac
   background:var(--paper);border:2px solid var(--ink);font-family:var(--hand);
   border-radius:46% 54% 52% 48%/55% 46% 54% 45%;box-shadow:2px 2px 0 rgba(28,24,18,.22)}
 #controls button:active{transform:translate(1px,2px);box-shadow:none}
+#controls button:focus-visible{outline:2.5px solid var(--red);outline-offset:3px}
 #progress{position:fixed;left:50%;bottom:10px;transform:translateX(-50%);z-index:6;
   width:min(640px,72vw);display:flex;align-items:center;gap:12px;
   font-family:var(--mono);font-size:clamp(9px,1.4vmin,13px);opacity:.92}
@@ -109,12 +115,17 @@ body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;opac
 #endcard h2{font-family:var(--impact);font-size:clamp(40px,9vmin,100px);line-height:1.05;transform:rotate(-1deg)}
 .esub{font-size:clamp(18px,3vmin,30px);max-width:34em}
 .erow{display:flex;gap:3vmin;align-items:center;flex-wrap:wrap;justify-content:center;margin-top:1vmin}
+/* violet cameo on endcard back-link: bridges notebook palette → app identity */
+#endcard .back{color:var(--violet);text-decoration-color:var(--violet)}
+#endcard .back:focus-visible{outline-color:var(--violet)}
 .hbtn{font-family:var(--hand);font-size:clamp(16px,2.6vmin,24px);color:var(--ink);cursor:pointer;
   background:var(--paper);border:2.5px solid var(--ink);padding:.3em 1em;
   border-radius:46% 54% 52% 48%/55% 46% 54% 45%;box-shadow:2px 2px 0 rgba(28,24,18,.22)}
 .hbtn:active{transform:translate(1px,2px);box-shadow:none}
+.hbtn:focus-visible{outline:2.5px solid var(--red);outline-offset:3px}
 .back{font-family:var(--hand);font-size:clamp(15px,2.4vmin,22px);color:var(--ink);
   text-decoration:underline wavy var(--red);text-underline-offset:5px}
+.back:focus-visible{outline:2px solid var(--red);outline-offset:2px;border-radius:2px}
 
 /* ---- static margin doodles ---- */
 .doodle{position:fixed;z-index:0;pointer-events:none;opacity:.45}
@@ -128,6 +139,8 @@ body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;opac
 @media (prefers-reduced-motion:reduce){
   .cap,.say,.scrawlNote,.stampWrap{animation:fadein .3s both}
   #play:hover svg,#play:focus-visible svg{animation:none}
+  /* static ring replaces the suppressed wig animation so focus is never invisible */
+  #play:focus-visible{outline:3px solid var(--red);outline-offset:6px;border-radius:50%}
 }
 </style>
 </head>
@@ -210,7 +223,7 @@ body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;opac
     <a class="back" href="/">← back to the notebook</a>
   </div>
 </div>
-<p style="position:relative;z-index:10;text-align:center;font-family:var(--mono);font-size:12px;color:#6f6650;margin:12px 0 0;padding-bottom:14px"><a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener" style="color:#6f6650">♥ sponsor</a> · <a href="/" style="color:#6f6650">home</a> · <a href="https://github.com/saeedkolivand/ai-job-hunter-app" target="_blank" rel="noopener" style="color:#6f6650">GitHub</a></p>
+<p id="sitefoot" style="position:fixed;bottom:0;left:0;right:0;z-index:6;text-align:center;font-family:var(--mono);font-size:12px;color:#4a4030;padding:4px 0 6px;background:rgba(244,236,220,.82);pointer-events:none"><a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener" style="color:#4a4030;pointer-events:auto">♥ sponsor</a> · <a href="/" style="color:#4a4030;pointer-events:auto">home</a> · <a href="https://github.com/saeedkolivand/ai-job-hunter-app" target="_blank" rel="noopener" style="color:#4a4030;pointer-events:auto">GitHub</a></p>
 
 <script>
 'use strict';

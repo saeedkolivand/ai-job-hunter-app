@@ -375,6 +375,11 @@
       .controls button:hover {
         border-color: #444;
       }
+      .controls button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+        border-radius: 8px;
+      }
       .legend {
         position: absolute;
         left: 14px;
@@ -404,6 +409,77 @@
         border-radius: 3px;
         display: inline-block;
         border: 1.4px solid;
+      }
+
+      /* ── Responsive layout ─────────────────────────────────────────────────── */
+      @media (max-width: 640px) {
+        #side {
+          flex: 0 0 240px;
+          max-width: 55vw;
+          font-size: 12px;
+          padding: 12px 10px 32px;
+        }
+        header h1 {
+          font-size: 13px;
+        }
+        .chips {
+          margin-left: 0;
+          width: 100%;
+        }
+      }
+      @media (max-width: 480px) {
+        #side {
+          display: none;
+        }
+        .controls {
+          bottom: 10px;
+          right: 10px;
+        }
+        .legend {
+          display: none;
+        }
+      }
+
+      /* ── Focus-visible rings (AA keyboard navigation) ──────────────────────── */
+      a:focus-visible,
+      button:focus-visible,
+      [tabindex]:focus-visible,
+      [role="button"]:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
+      /* Chip buttons have pill shape */
+      .chip:focus-visible {
+        border-radius: 999px;
+      }
+      /* SVG node focus ring is the stroke variant — suppress outline there */
+      .node:focus-visible {
+        outline: none;
+      }
+
+      /* ── Reduced motion ────────────────────────────────────────────────────── */
+      @media (prefers-reduced-motion: reduce) {
+        /* Kill transitions on non-focus elements; preserve the focus-visible
+           outline so keyboard users keep the ring */
+        .node rect.box {
+          transition: none;
+        }
+        /* Suppress any CSS animation (none used currently; guard for future) */
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          /* Do NOT touch transition on :focus-visible elements */
+        }
+        /* Restore focus-visible outline transitions explicitly */
+        a:focus-visible,
+        button:focus-visible,
+        [tabindex]:focus-visible,
+        [role="button"]:focus-visible {
+          transition: outline-color 0s;
+        }
       }
     </style>
   </head>
@@ -473,15 +549,15 @@
             </g>
           </svg>
           <div class="controls">
-            <button id="zin" title="Zoom in">+</button>
-            <button id="zout" title="Zoom out">−</button>
-            <button id="fit" title="Fit" style="font-size: 11px">Fit</button>
-            <button id="help-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
+            <button id="zin" title="Zoom in" aria-label="Zoom in">+</button>
+            <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
+            <button id="fit" title="Fit to screen" aria-label="Fit to screen" style="font-size: 11px">Fit</button>
+            <button id="help-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" aria-expanded="false">
               ?
             </button>
           </div>
           <div class="legend" id="legend"></div>
-          <div id="kbd-help" hidden role="dialog" aria-label="Keyboard shortcuts">
+          <div id="kbd-help" hidden role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
             <div class="kbd-title">Navigate</div>
             <ul>
               <li><kbd>drag</kbd> · <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> pan</li>
@@ -3782,11 +3858,16 @@
           'chip' + (id === 'overview' ? ' active' : '') + (id === 'bugs' ? ' bugchip' : '');
         b.textContent = label;
         b.dataset.f = id;
+        b.setAttribute('aria-pressed', id === 'overview' ? 'true' : 'false');
         b.addEventListener('click', () => {
           filter = id;
           pinned = null;
           hover = null;
-          [...chipsBox.children].forEach((c) => c.classList.toggle('active', c.dataset.f === id));
+          [...chipsBox.children].forEach((c) => {
+            const on = c.dataset.f === id;
+            c.classList.toggle('active', on);
+            c.setAttribute('aria-pressed', on ? 'true' : 'false');
+          });
           renderSidebar(null);
           applyView();
         });
@@ -3907,9 +3988,17 @@
 
       /* ---- keyboard shortcuts + help overlay ---- */
       const helpEl = document.getElementById('kbd-help');
-      const toggleHelp = () => helpEl.toggleAttribute('hidden');
-      const closeHelp = () => helpEl.setAttribute('hidden', '');
-      document.getElementById('help-btn').onclick = toggleHelp;
+      const helpBtn = document.getElementById('help-btn');
+      const toggleHelp = () => {
+        const nowHidden = helpEl.hasAttribute('hidden');
+        helpEl.toggleAttribute('hidden');
+        helpBtn.setAttribute('aria-expanded', nowHidden ? 'true' : 'false');
+      };
+      const closeHelp = () => {
+        helpEl.setAttribute('hidden', '');
+        helpBtn.setAttribute('aria-expanded', 'false');
+      };
+      helpBtn.onclick = toggleHelp;
       window.addEventListener('keydown', (ev) => {
         const t = ev.target;
         if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
@@ -3975,7 +4064,7 @@
       /* ---- boot ---- */
       renderSidebar(null);
       applyView();
-      window.addEventListener('resize', () => {});
+      window.addEventListener('resize', fit);
       fit();
     </script>
     <script>

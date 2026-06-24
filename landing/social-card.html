@@ -54,6 +54,27 @@
     color:#111; font-size:30px; margin:26px auto 0; max-width:30ch; line-height:1.25;
     text-shadow:0 0 4px #fff, 1px 1px 0 #fff, -1px -1px 0 #fff;
   }
+  /* a11y: focus-visible ring using page accent (#ff00d4) */
+  a:focus-visible,
+  button:focus-visible,
+  [tabindex]:focus-visible,
+  [role="button"]:focus-visible{
+    outline:2px solid #ff00d4;
+    outline-offset:2px;
+    border-radius:2px;
+  }
+  /* a11y: reduced motion — no keyframes on this page; suppress filter transitions defensively */
+  @media(prefers-reduced-motion:reduce){
+    *{transition:none!important;animation:none!important}
+    /* preserve focus-visible outline (not a transition/animation) */
+    a:focus-visible,
+    button:focus-visible,
+    [tabindex]:focus-visible,
+    [role="button"]:focus-visible{
+      outline:2px solid #ff00d4;
+      outline-offset:2px;
+    }
+  }
 </style>
 </head>
 <body>
