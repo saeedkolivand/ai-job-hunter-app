@@ -379,3 +379,148 @@ describe('JobsResults — split-mode auto-select', () => {
     expect(autoSelectCalls).toHaveLength(0);
   });
 });
+
+// ── selection-preservation across re-scrapes and show-more ───────────────────
+//
+// Regression guard for the justFinished removal:
+//   OLD: auto-select fired whenever justFinished=true, overriding the user's job.
+//   NEW: auto-select only fires when !selectionInDisplay (no valid selection).
+// These tests verify that a user's chosen job is NOT replaced when new items
+// arrive (show-more, live prepend, or a re-scrape that keeps their selection).
+
+describe('JobsResults — selection preserved across re-scrapes and show-more', () => {
+  it('preserves the selected job when show-more completes (scraping true→false, selection stays in list)', () => {
+    // Regression guard: the OLD code would call setJobs({ selectedId: topId })
+    // whenever justFinished=true, which fires as scraping transitions true→false.
+    // The NEW code must NOT call setJobs when selectionInDisplay is already true.
+    STORE_STATE.jobs = { viewMode: 'split', selectedId: 'b' };
+    const p1 = posting('a', 'A');
+    const p2 = posting('b', 'B');
+
+    // Initial render: list is already populated (show-more scenario, not fresh search).
+    const { rerender } = renderResults({ filtered: [p1, p2], scraping: true, resumeId: null });
+    mockSetJobs.mockClear();
+
+    // Show-more completes: more items arrive prepended, scraping=false.
+    // The previously selected 'b' is still in the list.
+    const p0 = posting('new', 'New');
+    rerender(
+      <JobsResults
+        filtered={[p0, p1, p2]}
+        formatRelativeTime={() => ''}
+        scraping={false}
+        onShowMore={noop}
+        onScrape={noop}
+      />
+    );
+
+    // Selection 'b' is still valid — setJobs must NOT be called to replace it.
+    const overrideCalls = mockSetJobs.mock.calls.filter(
+      (args) => (args[0] as { selectedId?: string }).selectedId !== 'b'
+    );
+    expect(overrideCalls).toHaveLength(0);
+  });
+
+  it('preserves the selected job when new items are live-prepended during an active scrape', () => {
+    // Simulates live prepend: scraping stays true, new items arrive at top.
+    STORE_STATE.jobs = { viewMode: 'split', selectedId: 'original' };
+    const original = posting('original', 'Original');
+
+    const { rerender } = renderResults({
+      filtered: [original],
+      scraping: true,
+      resumeId: null,
+    });
+    mockSetJobs.mockClear();
+
+    // New items are prepended while scraping continues. 'original' stays in list.
+    const newer1 = posting('newer1', 'Newer 1');
+    const newer2 = posting('newer2', 'Newer 2');
+    rerender(
+      <JobsResults
+        filtered={[newer2, newer1, original]}
+        formatRelativeTime={() => ''}
+        scraping={true}
+        onShowMore={noop}
+        onScrape={noop}
+      />
+    );
+
+    // topId is now 'newer2', but selectedId 'original' is still in the list.
+    // setJobs must NOT fire to replace the user's selection.
+    const overrideCalls = mockSetJobs.mock.calls.filter(
+      (args) => (args[0] as { selectedId?: string }).selectedId !== 'original'
+    );
+    expect(overrideCalls).toHaveLength(0);
+  });
+
+  it('auto-selects the new topId when a re-scrape returns results but selection is absent (null)', () => {
+    // Complementary case: selection was null going into the re-scrape (e.g. user
+    // cleared it). When results arrive the detail pane must not stay blank.
+    STORE_STATE.jobs = { viewMode: 'split', selectedId: null };
+    const p1 = posting('a', 'A');
+    const p2 = posting('b', 'B');
+
+    const { rerender } = renderResults({ filtered: [], scraping: true, resumeId: null });
+    mockSetJobs.mockClear();
+
+    rerender(
+      <JobsResults
+        filtered={[p1, p2]}
+        formatRelativeTime={() => ''}
+        scraping={false}
+        onShowMore={noop}
+        onScrape={noop}
+      />
+    );
+
+    expect(mockSetJobs).toHaveBeenCalledWith({ selectedId: 'a' });
+  });
+
+  it('auto-selects topId when selection is filtered out during show-more rerender', () => {
+    // Edge case: show-more changes the active filter, removing the selected job.
+    // The effect must fall back to topId (not leave detail pane blank).
+    STORE_STATE.jobs = { viewMode: 'split', selectedId: 'b' };
+    const p1 = posting('a', 'A');
+    const p2 = posting('b', 'B');
+
+    const { rerender } = renderResults({ filtered: [p1, p2], scraping: true, resumeId: null });
+    mockSetJobs.mockClear();
+
+    // After show-more, 'b' is no longer in the filtered list.
+    const p3 = posting('c', 'C');
+    rerender(
+      <JobsResults
+        filtered={[p1, p3]}
+        formatRelativeTime={() => ''}
+        scraping={false}
+        onShowMore={noop}
+        onScrape={noop}
+      />
+    );
+
+    expect(mockSetJobs).toHaveBeenCalledWith({ selectedId: 'a' });
+  });
+
+  it('does NOT auto-select in list mode during show-more rerenders', () => {
+    // List mode is always a no-op regardless of scraping transitions.
+    STORE_STATE.jobs = { viewMode: 'list', selectedId: null };
+    const p1 = posting('a', 'A');
+
+    const { rerender } = renderResults({ filtered: [p1], scraping: true, resumeId: null });
+    mockSetJobs.mockClear();
+
+    const p2 = posting('b', 'B');
+    rerender(
+      <JobsResults
+        filtered={[p1, p2]}
+        formatRelativeTime={() => ''}
+        scraping={false}
+        onShowMore={noop}
+        onScrape={noop}
+      />
+    );
+
+    expect(mockSetJobs).not.toHaveBeenCalled();
+  });
+});
