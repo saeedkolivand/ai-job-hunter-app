@@ -1,6 +1,6 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-06-23
+Last updated: 2026-06-24
 
 Describes the job-scraping subsystem: board registry (16 active scrapers), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
@@ -42,9 +42,11 @@ When a company-scoped board is selected with an empty `companies` list:
 
 These five boards were retired as direct scrapers (ADR-026, 2026-06-21). Their Rust modules are deleted; the registry went from 21 → 16 boards. Coverage is now provided by the Aggregator. The single-job import resolvers (`scrape_url::canonical_job_url` for Indeed, `scrape_url::try_workday`) and the dormant `board_login`/credential machinery are **deliberately kept** — see ADR-026 for the full keep-list and rationale.
 
-## Aggregator board (PR #465)
+## Aggregator board (Adzuna + JSearch)
 
 **Purpose:** Cover anti-bot sites (Indeed, Glassdoor, Xing, Workday, StepStone) that return empty results or errors when self-scraped. Uses a provider registry pattern: Adzuna (primary, free) with JSearch (paid fallback, invoked only on Adzuna errors).
+
+**Full-description resolve for aggregator short snippets:** Adzuna's search API returns snippets only (~200–500 chars); full descriptions live at the redirect URL (employer ATS or landing page). The detail pane auto-fetches on open when aggregator source + description < 700 chars, following the redirect chain and re-dispatching named-board handlers on the final URL. If the resolved text is meaningfully longer, it replaces the snippet; otherwise the snippet floor is kept. Redirect following is IP-guarded per-hop (closes DNS-rebinding TOCTOU); 429/login-wall/error returns Ok(None) and the snippet is retained.
 
 **Keys and configuration:**
 
@@ -74,10 +76,19 @@ Results now persist across navigation thanks to React Query + backend cache:
 - **Frontend:** Throttled `invalidatePostings()` on `job.stream` event (~1 ms throttle; eager on first item of new search)
 - **Hydration:** React Query re-fetches cache on component remount → results reappear
 
+## Full-description resolution on detail-pane open
+
+**Aggregator short snippets → full descriptions:** Adzuna search API returns snippets (~200–500 chars). Detail pane auto-fetches on open when aggregator source + description < 700 chars, following the redirect chain and re-dispatching named-board handlers on the final URL. If the resolved text is meaningfully longer, it replaces the snippet; otherwise the snippet floor is kept. Redirect following is IP-guarded per-hop (closes DNS-rebinding TOCTOU); 429/login-wall/error returns Ok(None) and the snippet is retained.
+
+- **Resolver:** `apps/tauri/src-tauri/src/commands/scrape.rs: scrape_resolve_url(req)` — public command invoked by detail pane
+- **Re-dispatch:** `apps/tauri/src-tauri/src/scraping/scrape_url/mod.rs: resolve_full_description()` — follows redirect and re-dispatches handlers per final URL
+- **Pane gate:** `apps/tauri/src/renderer/features/jobs/components/JobDetailPane/index.tsx` — on-open resolve if (isAggregatorSource && descLength < 700); keep-longer merge logic
+- **Description mutation:** New backend command `scrape_update_description(id, text)` writes resolved text to the live `PostingsCache`, invalidates `['match-batch']` query so the match scorer recomputes on full text. See IPC contract in `packages/shared/src/ipc/contracts/scrape.ts`.
+
 ## Source pointers
 
 - **Board enum + registry:** `apps/tauri/src-tauri/src/scraping/boards/mod.rs` (`Scraper`, `SCRAPERS`)
-- **IPC contract:** `packages/shared/src/ipc/contracts/scrape.ts` (`BoardSearchInput`)
+- **IPC contract:** `packages/shared/src/ipc/contracts/scrape.ts` (`BoardSearchInput`, `updateDescription`)
 - **Engine skip logic:** `apps/tauri/src-tauri/src/scraping/engine/mod.rs` (handles `needs-login` + `needs-company`)
 - **Company-scoped implementations:**
   - Greenhouse: `apps/tauri/src-tauri/src/scraping/boards/greenhouse/mod.rs`
@@ -92,6 +103,12 @@ Results now persist across navigation thanks to React Query + backend cache:
   - JSearch provider: `apps/tauri/src-tauri/src/scraping/boards/aggregator/jsearch.rs`
 - **Frontend:** Service hook `apps/tauri/src/renderer/services/boards.ts` (scrape mutations)
 - **Settings UI:** `apps/tauri/src/renderer/features/settings/routes/JobsSettings.tsx`
+- **Detail pane:**
+  - Resolve + merge gate: `apps/tauri/src/renderer/features/jobs/components/JobDetailPane/index.tsx` (on-open resolve if short snippet; keep-longer merge logic; calls `scrape_resolve_url` + `scrape_update_description` IPC)
+  - Description formatter: `apps/tauri/src/renderer/features/jobs/lib/format-description.ts` — pure text→blocks parser (paragraphs / lists / headings; CRLF-normalized; no content loss)
+  - Rendering: `JobDetailPane` renders `DescriptionBlock[]` as formatted sections (no markdown/HTML engine)
+- **Rust commands:** `apps/tauri/src-tauri/src/commands/scrape.rs` (`scrape_resolve_url`, `scrape_update_description`)
+- **PostingsCache mutation:** `apps/tauri/src-tauri/src/postings/mod.rs: update_description(job_id, text)` — in-place cache mutation; text-hash-keyed result/embedding caches auto-invalidate on changed job text
 
 ## See also
 

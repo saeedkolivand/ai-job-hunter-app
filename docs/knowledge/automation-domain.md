@@ -1,6 +1,6 @@
 # Automation domain (scraping + apply assistant + AI provider)
 
-Last updated: 2026-06-23
+Last updated: 2026-06-24
 
 Merged knowledge for `scraping-applier-expert` and `ai-provider-expert`. Source is authoritative for board/provider counts.
 
@@ -12,6 +12,8 @@ Merged knowledge for `scraping-applier-expert` and `ai-provider-expert`. Source 
 - **Transport** — HTTP via `scraping/http/` (pooled rustls client). Chromium ([chromiumoxide][chromiumoxide]) used exclusively by `scraping/board_login/` for manual login + encrypted cookie import (reads Chromium's v10/v11 stores, decrypts, writes artifacts via `import_cookies`; see `commands/boards.rs: boards_import_cookies`). LinkedIn-specific flow: `scraping/linkedin/` (HTTP clients using LinkedIn's rate-limit rules).
 - **Context** — `ScrapeContext` carries a **cancellation token** + progress/item callbacks. Honoring cancellation, bounded retries/backoff, and per-board rate limits are reliability requirements (ignoring the token or unbounded retries on a network loop = HIGH).
 - **Selector resilience** — core boards need fallback selectors; a brittle single-selector parse on a core board is HIGH (it breaks on the next site redesign).
+- **Full-description resolve on detail-pane open** — for aggregator sources with short snippets (<700 chars), the detail pane auto-fetches on open by following the redirect chain (IP-guarded, per-hop) and re-dispatching named-board handlers on the final URL. This yields full board-API text when the redirect resolves to a supported ATS; falls back to generic HTML or returns Ok(None) on error. The pane keeps the snippet floor if resolved text is not meaningfully longer (guards against 429/generic degrading the display).
+  - **Re-score path:** If resolved text is meaningfully longer than the snippet, the pane calls `scrape_update_description(id, text)` to mutate the `PostingsCache` entry in-place and invokes `['match-batch']` query invalidation. The match scorer re-computes that job on the full text (old result/embedding cached entries miss due to text-hash key change). Unopened aggregator jobs retain cached snippet-based scores (efficient for large batches; convergent per opened job).
 
 ## Apply assistant (no auto-apply engine)
 
