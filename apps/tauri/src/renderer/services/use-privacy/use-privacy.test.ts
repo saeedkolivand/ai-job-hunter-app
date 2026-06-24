@@ -164,15 +164,14 @@ describe('useClearInteractions — interactions prefix invalidation', () => {
     await waitFor(() => expect(result.current.interactions.isSuccess).toBe(true));
     const callCountBefore = listInteractions.mock.calls.length;
 
-    await act(async () => {
-      try {
-        await result.current.clear.mutateAsync();
-      } catch {
-        // expected rejection
-      }
-    });
+    // 1. The mutation must actually reject — proves the error path was exercised.
+    await expect(result.current.clear.mutateAsync()).rejects.toThrow('backend error');
 
-    // onSuccess must NOT have fired — call count unchanged.
+    // 2. clearInteractions was called — the mutation ran, it didn't silently no-op.
+    expect(clearInteractions).toHaveBeenCalledOnce();
+
+    // 3. onSuccess was skipped — listInteractions did not refetch.
+    await waitFor(() => expect(result.current.clear.isError).toBe(true));
     expect(listInteractions.mock.calls.length).toBe(callCountBefore);
   });
 });
