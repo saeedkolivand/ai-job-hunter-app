@@ -28,7 +28,7 @@
   --paper:#f4ecdc;
   --ink:#1c1812;
   --red:#e24b4a;
-  --muted:#6f6650;
+  --muted:#4a4030;
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%; text-size-adjust:100%}
@@ -42,7 +42,7 @@ code{font-family:var(--mono); font-size:.85em; background:#e6dcc4; padding:1px 6
 
 .wrap{max-width:680px; margin:0 auto; padding:56px 22px 90px}
 
-.top-back{display:inline-block; font-family:var(--mono); font-size:12px; color:var(--muted); border:none; margin-bottom:30px}
+.top-back{display:inline-block; font-family:var(--mono); font-size:13px; color:var(--muted); border:none; margin-bottom:30px}
 .top-back:hover{color:var(--ink)}
 
 h1{font-family:var(--impact); text-transform:uppercase; font-size:clamp(38px,9vw,64px); line-height:.95; margin:0 0 10px; letter-spacing:1px}
@@ -50,7 +50,7 @@ h1{font-family:var(--impact); text-transform:uppercase; font-size:clamp(38px,9vw
 .lede{font-family:var(--mono); font-size:14px; line-height:1.85; color:#2c271c; margin:22px 0 0}
 
 h2{font-family:var(--scrawl); font-size:clamp(20px,4.5vw,26px); margin:48px 0 4px; color:var(--ink)}
-h2 .anchor{font-family:var(--mono); font-size:11px; color:var(--red); vertical-align:super; opacity:0; transition:opacity .15s; outline-offset:2px}
+h2 .anchor{font-family:var(--mono); font-size:13px; color:var(--red); vertical-align:super; opacity:0; transition:opacity .15s; outline-offset:2px}
 h2:hover .anchor, h2 .anchor:focus{opacity:1}
 h3{font-family:var(--hand); font-size:20px; margin:26px 0 6px}
 p{margin:12px 0}
@@ -67,7 +67,7 @@ ul{margin:12px 0; padding-left:0; list-style:none}
 li{position:relative; padding-left:26px; margin:10px 0}
 li::before{content:"→"; position:absolute; left:0; top:0; color:var(--red); font-family:var(--mono); font-weight:700}
 
-.label{font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.8px; color:var(--muted); display:block; margin-bottom:4px}
+.label{font-family:var(--mono); font-size:13px; text-transform:uppercase; letter-spacing:.8px; color:var(--muted); display:block; margin-bottom:4px}
 
 .flag{font-family:var(--mono); font-size:13px; line-height:1.7; background:#f6e7c8; border-left:4px solid #e0a32a; border-radius:0 10px 10px 0; padding:12px 16px; margin:18px 0; color:#5a4a22}
 
@@ -78,9 +78,41 @@ hr.scrawl{border:none; height:14px; margin:48px auto; width:160px;
 
 footer{margin-top:60px; text-align:center}
 .byline{font-family:var(--scrawl); font-size:14px; color:var(--muted)}
-.foot-links{font-family:var(--mono); font-size:12px; color:var(--muted); margin-top:10px}
+.foot-links{font-family:var(--mono); font-size:13px; color:var(--muted); margin-top:10px}
 .foot-links a{color:var(--muted); border:none}
 .foot-links a:hover{color:var(--ink)}
+
+/* ── focus-visible ring for all interactive elements ── */
+a:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible,
+[role="button"]:focus-visible{
+  outline:2px solid var(--red);
+  outline-offset:2px;
+  border-radius:3px;
+}
+/* anchor links inside headings keep their own radius */
+h2 .anchor:focus-visible{border-radius:2px}
+
+/* ── reduced-motion ── */
+@media (prefers-reduced-motion: reduce){
+  /* kill decorative animations but preserve focus-visible outline transitions */
+  *,*::before,*::after{
+    animation-duration:.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;
+    scroll-behavior:auto !important;
+  }
+  /* restore focus-visible outline transition so the ring appears immediately */
+  a:focus-visible,
+  button:focus-visible,
+  [tabindex]:focus-visible,
+  [role="button"]:focus-visible{
+    transition:none;
+  }
+  /* reveal-on-scroll: opacity only, no translateY */
+  .reveal{transform:none !important}
+}
 </style>
 </head>
 <body>
@@ -100,7 +132,7 @@ footer{margin-top:60px; text-align:center}
   </p>
 
   <!-- ============ SHORT VERSION ============ -->
-  <h2 id="short">The short version <a class="anchor" href="#short">#</a></h2>
+  <h2 id="short">The short version <a class="anchor" href="#short" aria-label="Link to The short version">#</a></h2>
   <div class="card tldr">
     <ul>
       <li><b>No accounts.</b> Nothing to register. We never see your data because there is no "we" server to see it.</li>
@@ -112,7 +144,7 @@ footer{margin-top:60px; text-align:center}
   </div>
 
   <!-- ============ BROWSER EXTENSION ============ -->
-  <h2 id="extension">Browser extension <a class="anchor" href="#extension">#</a></h2>
+  <h2 id="extension">Browser extension <a class="anchor" href="#extension" aria-label="Link to Browser extension">#</a></h2>
   <p>
     The <b>AI Job Hunter — Job Importer</b> extension (Chrome and Firefox) exists to do one thing:
     take the job posting you're looking at and hand it to the desktop app running on the same machine.
@@ -152,7 +184,7 @@ footer{margin-top:60px; text-align:center}
   </div>
 
   <!-- ============ DESKTOP APP ============ -->
-  <h2 id="desktop">Desktop app <a class="anchor" href="#desktop">#</a></h2>
+  <h2 id="desktop">Desktop app <a class="anchor" href="#desktop" aria-label="Link to Desktop app">#</a></h2>
   <p>
     The desktop app is local-first: it stores your data on your machine and does its work there.
     But it is an AI job-hunting tool, so some features do reach out over the network — by design,
@@ -223,7 +255,7 @@ footer{margin-top:60px; text-align:center}
   </div>
 
   <!-- ============ YOUR CONTROL ============ -->
-  <h2 id="control">Your control <a class="anchor" href="#control">#</a></h2>
+  <h2 id="control">Your control <a class="anchor" href="#control" aria-label="Link to Your control">#</a></h2>
   <ul>
     <li><b>Rotate the pairing token</b> any time from the app's <i>Settings → Browser extension</i>. Re-pairing invalidates the old token.</li>
     <li><b>Uninstall the extension</b> to remove its stored pairing token — it lives only in the browser's extension storage.</li>
@@ -232,7 +264,7 @@ footer{margin-top:60px; text-align:center}
   </ul>
 
   <!-- ============ CHANGES ============ -->
-  <h2 id="changes">Changes to this policy <a class="anchor" href="#changes">#</a></h2>
+  <h2 id="changes">Changes to this policy <a class="anchor" href="#changes" aria-label="Link to Changes to this policy">#</a></h2>
   <p>
     If this policy changes, we'll bump the <b>"Last updated"</b> date at the top of this page and publish the
     revised version here. Material changes will be reflected in the app's store listings. There are no
@@ -240,7 +272,7 @@ footer{margin-top:60px; text-align:center}
   </p>
 
   <!-- ============ CONTACT ============ -->
-  <h2 id="contact">Contact <a class="anchor" href="#contact">#</a></h2>
+  <h2 id="contact">Contact <a class="anchor" href="#contact" aria-label="Link to Contact">#</a></h2>
   <p>
     Questions about privacy, or a data request? Email
     <a href="mailto:contact@aijobhunter.app">contact@aijobhunter.app</a>.
@@ -251,7 +283,7 @@ footer{margin-top:60px; text-align:center}
   <footer>
     <p class="byline">made by Saeed, between rejections.</p>
     <p class="foot-links">
-      <a href="/">home</a> · <a href="/creature">▶ the short film</a> · privacy · <a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener">♥ sponsor</a>
+      <a href="/">home</a> · <a href="/creature">▶ the short film</a> · privacy · <a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener noreferrer">♥ sponsor</a>
     </p>
   </footer>
 

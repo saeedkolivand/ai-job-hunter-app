@@ -53,6 +53,7 @@ body{
 }
 a{color:var(--accent); text-decoration:none; border-bottom:1px solid var(--accent-soft); transition:border-color .2s}
 a:hover{border-bottom-color:var(--accent)}
+a:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:3px}
 code{font-family:var(--mono); font-size:.82em; background:var(--surface-2); padding:1px 6px; border-radius:6px; color:var(--text)}
 
 /* click-to-copy command chip */
@@ -66,6 +67,7 @@ code{font-family:var(--mono); font-size:.82em; background:var(--surface-2); padd
 
 .top-back{display:inline-block; font-family:var(--mono); font-size:13px; color:var(--muted); border:none; margin-bottom:30px; transition:color .2s, transform .2s}
 .top-back:hover{color:var(--text); transform:translateX(-3px)}
+.top-back:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; color:var(--text)}
 
 h1{font-family:var(--head); font-weight:700; font-size:clamp(40px,9vw,72px); line-height:1.02; margin:0 0 10px; letter-spacing:-.02em}
 .lede{font-size:17px; line-height:1.65; color:var(--text); margin:18px 0 0; max-width:68ch}
@@ -148,6 +150,7 @@ hr.scrawl{border:none; height:1px; margin:54px auto; width:min(560px,90%);
 .fleet-svg .node.critic rect{fill:var(--critic-tint); stroke:var(--critic)}
 .fleet-svg .node:hover rect, .fleet-svg .node.active rect{fill:var(--accent); stroke:var(--accent)}
 .fleet-svg .node:hover text, .fleet-svg .node.active text{fill:#fff}
+.fleet-svg .node:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
 .fleet-svg .node:focus-visible rect{stroke:var(--accent); stroke-width:2.4}
 .fleet-svg .link{fill:none; stroke:rgba(255,255,255,.22); stroke-width:1.6; stroke-linecap:round; opacity:.6; transition:opacity .2s, stroke .2s, stroke-width .2s}
 .fleet-svg .link.risk{stroke:var(--accent); opacity:.55}
@@ -171,7 +174,14 @@ hr.scrawl{border:none; height:1px; margin:54px auto; width:min(560px,90%);
   @keyframes riskflow{to{stroke-dashoffset:-16}}
 }
 @media (prefers-reduced-motion: reduce){
-  *{ transition:none !important; animation:none !important }
+  *, *::before, *::after{
+    animation-duration:0.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:0.01ms !important;
+    scroll-behavior:auto !important;
+  }
+  /* preserve focus-visible outline transitions so keyboard focus remains visible */
+  :focus-visible{ transition:outline-offset 0s !important }
 }
 
 /* ---------- scroll reveal (transform/opacity only) ---------- */
@@ -227,7 +237,7 @@ hr.scrawl{border:none; height:1px; margin:54px auto; width:min(560px,90%);
 }
 .big-prompt .copy-cmd{display:block; font-family:var(--mono); font-size:14px; line-height:1.6; background:var(--surface-2); color:var(--text); border:1px solid var(--border); border-radius:12px; padding:15px 17px; margin:0 0 18px}
 .big-prompt .copy-cmd:hover{background:var(--bg); border-color:var(--accent)}
-.big-prompt .copy-cmd:focus-visible{outline-color:var(--accent)}
+.big-prompt .copy-cmd:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
 .big-prompt .copy-cmd.copied{background:var(--author-tint); color:var(--text)}
 .teams{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin:0}
 .team{background:var(--surface-2); border:1px solid var(--border); border-radius:var(--r); padding:15px 16px; transition:transform .2s ease, border-color .2s ease}
@@ -259,6 +269,7 @@ footer{margin-top:64px; text-align:center}
 .foot-links{font-family:var(--mono); font-size:13px; color:var(--muted); margin-top:10px}
 .foot-links a{color:var(--muted); border:none; transition:color .2s}
 .foot-links a:hover{color:var(--text)}
+.foot-links a:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; color:var(--text)}
 
 @media (max-width:680px){
   .intake{grid-template-columns:1fr}
@@ -309,7 +320,8 @@ footer{margin-top:64px; text-align:center}
   <p class="section-sub">authors (left, green) write. critics (right, pink) audit. hover a node to light its pairing.</p>
 
   <div class="map-shell">
-    <svg class="fleet-svg" viewBox="0 0 680 560" role="img" aria-label="Map of the agent fleet: each author paired to its independent critic, with security and performance secondaries connecting in red.">
+    <svg class="fleet-svg" viewBox="0 0 680 560" aria-labelledby="fleet-svg-title" focusable="false">
+      <title id="fleet-svg-title">Map of the agent fleet: each author paired to its independent critic, with security and performance secondaries connecting in red.</title>
       <!-- column headers -->
       <text class="domain-lbl" x="70" y="20">AUTHORS · write</text>
       <text class="domain-lbl" x="400" y="20">CRITICS · audit</text>
@@ -545,7 +557,7 @@ footer{margin-top:64px; text-align:center}
   <hr class="scrawl">
 
   <footer>
-    <p class="byline">23 specialists, zero of them with a real job either.</p>
+    <p class="byline">24 specialists, zero of them with a real job either.</p>
     <p class="foot-links">
       <a href="index.html">home</a> · <a href="download.html">download</a> · <a href="https://github.com/saeedkolivand/ai-job-hunter-app" target="_blank" rel="noopener">GitHub</a> · <a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener">♥ sponsor</a>
     </p>
@@ -699,6 +711,12 @@ footer{margin-top:64px; text-align:center}
       n.addEventListener('mouseleave', function(){ light(pair,false); });
       n.addEventListener('focus', function(){ light(pair,true); });
       n.addEventListener('blur', function(){ light(pair,false); });
+      n.addEventListener('keydown', function(e){
+        if(e.key==='Enter' || e.key===' '){ e.preventDefault(); light(pair,true); }
+      });
+      n.addEventListener('keyup', function(e){
+        if(e.key===' '){ light(pair,true); }
+      });
     });
   })();
 

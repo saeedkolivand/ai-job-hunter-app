@@ -42,7 +42,7 @@ body{
   overflow-x:hidden;
   cursor:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'><path d='M4 24 L9 19 L20 8 L22 6 L24 8 L22 10 L11 21 L6 26 Z' fill='orange' stroke='black' stroke-width='1.4' stroke-linejoin='round'/><path d='M9 19 L11 21' stroke='black' stroke-width='1.4'/></svg>") 4 24, auto;
 }
-a,button,.tap{cursor:pointer}
+a,button,.tap,[role="button"]{cursor:pointer}
 img,svg{display:block}
 
 /* grain + film texture over everything */
@@ -418,9 +418,45 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   .collage{gap:12px}
 }
 
+/* ---------- focus-visible ring ----------
+   Accent red (#e24b4a) ring on every focusable element; 2px offset keeps the
+   ring clear of the element border. Radius matches per-element shape where
+   possible (button/a inherit their own border-radius; plain [tabindex] gets 4px).
+   The rule is additive — it never strips an existing ring. */
+a:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible,
+[role="button"]:focus-visible{
+  outline:2px solid #e24b4a;
+  outline-offset:2px;
+}
+/* shape-matched overrides */
+a.filmhint:focus-visible{ border-radius:12px 9px 13px 8px }
+a.cta:focus-visible     { border-radius:12px 9px 13px 8px }
+#sound-toggle:focus-visible{ border-radius:9px }
+#cookie button:focus-visible{ border-radius:10px }
+.dialog button:focus-visible{ border-radius:4px }
+
 /* reduced motion */
 @media (prefers-reduced-motion: reduce){
+  /* Kill decorative animations and transitions. The focus-visible outline is a
+     selector rule with no associated transition, so transition-duration:0 does
+     not remove it. We then re-assert the outline explicitly as a belt-and-suspenders
+     guard so that even if a future author adds a transition to a focus state, it
+     still resolves immediately and remains visible. */
   *{animation-duration:.001s !important; animation-iteration-count:1 !important; transition-duration:.001s !important}
+  /* belt-and-suspenders: focus outline is always instant and visible */
+  a:focus-visible,
+  button:focus-visible,
+  [tabindex]:focus-visible,
+  [role="button"]:focus-visible{
+    outline:2px solid #e24b4a !important;
+    outline-offset:2px !important;
+    transition:none !important;
+  }
+  /* reveal: opacity-only under reduce — no positional jump (translateY) */
+  .reveal{transform:none !important}
+  .reveal,.in .reveal{transition-property:opacity !important}
   .scrollhint .arr,.feed .scroller{animation:none}
   .doodle.flailing{animation:none}
   html{scroll-behavior:auto}
@@ -498,7 +534,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
     <svg class="deco draw sm-hide" style="left:-14px; top:42%; width:30px" viewBox="0 0 30 30" aria-hidden="true"><path pathLength="1" d="M15 3 v9 M15 18 v9 M3 15 h9 M18 15 h9" style="stroke-width:2.4"/></svg>
     <svg class="deco draw sm-hide" style="right:-12px; top:56%; width:22px" viewBox="0 0 24 24" aria-hidden="true"><path pathLength="1" d="M12 2 v8 M12 14 v8 M2 12 h8 M14 12 h8" style="stroke-width:2.2"/></svg>
     <svg class="deco draw sm-hide" style="left:5%; bottom:6px; width:46px" viewBox="0 0 50 50" aria-hidden="true"><path pathLength="1" d="M22 5 l9 3 7 -1 3 8 7 5 -5 6 1 8 -8 3 -3 7 -9 -1 -7 4 -5 -7 -8 -3 3 -8 -3 -7 7 -5 1 -7 Z"/><path pathLength="1" d="M17 16 l8 6 -3 8 9 4" style="stroke-width:2"/></svg>
-    <div class="doodle hero-dood reveal tap" id="hero-dood">
+    <div class="doodle hero-dood reveal tap" id="hero-dood" role="button" tabindex="0" aria-label="poke the guy">
       <div class="bubble"></div>
       <div class="dontclick" aria-hidden="true">
         <div class="dc-inner">
@@ -546,7 +582,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
       <path pathLength="1" d="M17 16 q-3 -5 0 -10 M25 15 q-3 -5 0 -10" style="stroke-width:2.2; opacity:.8"/>
     </svg>
     <svg class="deco draw sm-hide" style="left:-6px; top:44%; width:34px" viewBox="0 0 36 36" aria-hidden="true"><path pathLength="1" d="M16 4 l7 2 5 -1 2 6 5 4 -4 4 1 6 -6 2 -2 5 -7 -1 -5 3 -4 -5 -6 -2 2 -6 -2 -5 5 -4 1 -5 Z" style="stroke-width:2.4"/><path pathLength="1" d="M12 12 l6 4 -2 6 7 3" style="stroke-width:1.8"/></svg>
-    <div class="doodle beat1-dood reveal tap" data-scream data-voice="sad" data-lines="...hi.|please hire me|i haven't slept|anyone? hello?">
+    <div class="doodle beat1-dood reveal tap" data-scream data-voice="sad" data-lines="...hi.|please hire me|i haven't slept|anyone? hello?" role="button" tabindex="0" aria-label="poke the sad guy">
       <div class="bubble"></div>
       <svg viewBox="0 0 320 240">
         <rect x="26" y="198" width="268" height="9" rx="3" class="dood-fill" style="fill:#5a6273"/>
@@ -579,7 +615,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   <div class="photo"></div><div class="grade"></div>
   <div class="inner">
     <h2 class="reveal">the descent</h2>
-    <div class="doodle beat2-dood reveal tap" data-scream data-flail data-voice="frazzled" data-lines="WHY won't they reply|i can't keep up|so many tabs|make it STOP|aaaaaa">
+    <div class="doodle beat2-dood reveal tap" data-scream data-flail data-voice="frazzled" data-lines="WHY won't they reply|i can't keep up|so many tabs|make it STOP|aaaaaa" role="button" tabindex="0" aria-label="poke the frazzled guy">
       <div class="bubble"></div>
       <svg class="deco draw sm-hide" style="left:-54px; top:4px; width:44px" viewBox="0 0 48 48" aria-hidden="true"><path pathLength="1" d="M42 10 C18 0 4 18 14 28 C22 36 36 30 31 19 C27 11 16 14 19 22"/></svg>
       <svg class="deco draw sm-hide" style="right:-50px; top:24px; width:40px" viewBox="0 0 44 44" aria-hidden="true"><path pathLength="1" d="M8 34 q4 -16 12 -6 q3 -14 11 -4 q7 -9 9 3" style="stroke-width:2.6"/><path pathLength="1" d="M22 40 h.1 M30 41 h.1" style="stroke-width:4"/></svg>
@@ -651,7 +687,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
 <section class="stage beat3">
   <div class="photo"></div><div class="grade"></div>
   <div class="inner">
-    <div class="doodle beat3-dood reveal tap" data-scream data-voice="fried" data-lines="IT WRITES IT FOR ME|I HAVE THE POWER|NO MORE COVER LETTERS|unlimited POWER|YESSS">
+    <div class="doodle beat3-dood reveal tap" data-scream data-voice="fried" data-lines="IT WRITES IT FOR ME|I HAVE THE POWER|NO MORE COVER LETTERS|unlimited POWER|YESSS" role="button" tabindex="0" aria-label="poke the fried guy">
       <div class="bubble"></div>
       <svg viewBox="0 0 260 240">
         <circle class="dood" cx="130" cy="104" r="48" style="stroke-width:4"/>
@@ -696,7 +732,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   <svg class="stonks" viewBox="0 0 100 70"><path d="M6 64 L34 40 L52 50 L92 8" fill="none" stroke="#2a7d2a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M74 8 L92 8 L92 26" fill="none" stroke="#2a7d2a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>
   <div class="inner">
     <h2 class="sr-only">godmode</h2>
-    <div class="doodle beat4-dood reveal tap" data-scream data-voice="smug" data-lines="effortless.|told you.|still got it.|too easy.|yawn.">
+    <div class="doodle beat4-dood reveal tap" data-scream data-voice="smug" data-lines="effortless.|told you.|still got it.|too easy.|yawn." role="button" tabindex="0" aria-label="poke the smug guy">
       <div class="bubble"></div>
       <svg viewBox="0 0 280 200">
         <circle class="dood" cx="120" cy="74" r="26"/>
@@ -779,7 +815,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
   <svg class="deco draw sm-hide" style="right:9%; top:20%; width:56px; transform:scale(-1,1)" viewBox="0 0 64 64" aria-hidden="true"><path pathLength="1" d="M8 16 l8 6 M30 6 v8 M52 12 l-7 6 M14 38 l7 -4 M50 36 l-8 -3" style="stroke-width:2.6"/><path pathLength="1" d="M22 22 q4 4 0 8 M42 22 q-4 5 1 9" style="stroke-width:2.2"/></svg>
   <svg class="deco draw sm-hide" style="left:6%; top:44%; width:44px" viewBox="0 0 48 80" aria-hidden="true"><path pathLength="1" d="M24 4 q16 0 16 18 q0 16 -16 18 q-16 -2 -16 -18 q0 -18 16 -18 Z" style="stroke-width:2.6"/><path pathLength="1" d="M21 40 h6 l-3 6 Z" style="stroke-width:2"/><path pathLength="1" class="dashed" stroke-dasharray=".06 .05" d="M24 46 q-8 10 0 18 q8 8 0 14" style="stroke-width:2"/></svg>
   <svg class="deco draw sm-hide" style="right:6%; top:48%; width:46px; transform:rotate(-20deg)" viewBox="0 0 52 60" aria-hidden="true"><path pathLength="1" d="M10 50 L24 22 L40 38 Z" style="stroke-width:2.6"/><path pathLength="1" d="M28 14 l2 -10 M36 18 l8 -8 M42 28 l10 -2" style="stroke-width:2.4"/><path pathLength="1" d="M33 6 h.1 M48 14 h.1 M50 34 h.1" style="stroke-width:3.6"/></svg>
-  <div class="doodle finale-dood tap" id="finale-dood" data-scream data-voice="smug" data-lines="we're still here?|ok, last one|…just go apply">
+  <div class="doodle finale-dood tap" id="finale-dood" data-scream data-voice="smug" data-lines="we're still here?|ok, last one|…just go apply" role="button" tabindex="0" aria-label="poke the finale guy">
     <div class="bubble"></div>
     <svg viewBox="0 0 200 175">
       <circle class="dood" cx="100" cy="66" r="26"/>
@@ -1141,11 +1177,15 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
     var b=d.querySelector('.bubble'), n=0, to;
     var lines = d.dataset.lines ? d.dataset.lines.split('|') : screams;
     var voice = VOICES[d.dataset.voice] || null;
-    d.addEventListener('click', function(){
+    function poke(){
       if(b){ b.textContent = lines[n % lines.length];
         b.classList.add('show'); clearTimeout(to); to=setTimeout(function(){ b.classList.remove('show'); }, 1600); }
       AUDIO.say(voice, Math.min(n*0.18, 1));
       n++;
+    }
+    d.addEventListener('click', poke);
+    d.addEventListener('keydown', function(e){
+      if(e.key==='Enter' || e.key===' '){ e.preventDefault(); poke(); }
     });
   });
 
@@ -1157,7 +1197,7 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
     var sign=hero.querySelector('.dc-text');
     var protests=["i said don't click me","stop. seriously.","...why are you like this","okay— you win.","...are you hiring?? hiring?? HIRING??"];
     var n=0, to;
-    hero.addEventListener('click', function(){
+    function pokeHero(){
       var step=n % protests.length;
       if(bubble){ bubble.textContent=protests[step];
         bubble.classList.add('show'); clearTimeout(to); to=setTimeout(function(){ bubble.classList.remove('show'); }, 1600); }
@@ -1165,6 +1205,10 @@ svg.inkline{display:block; margin:0 auto; pointer-events:none; overflow:visible;
       hero.classList.remove('shake'); void hero.offsetWidth; hero.classList.add('shake');
       AUDIO.say(VOICES.annoyed, step/4);
       n++;
+    }
+    hero.addEventListener('click', pokeHero);
+    hero.addEventListener('keydown', function(e){
+      if(e.key==='Enter' || e.key===' '){ e.preventDefault(); pokeHero(); }
     });
   })();
 

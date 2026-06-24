@@ -29,9 +29,15 @@ Authoritative: `docs/DESIGN_SYSTEM.md`, `docs/PATTERNS.md`.
 
 Import `useTranslation` / `TFunction` from `@ajh/translations`, never `react-i18next` directly (the renderer init shim is `@/i18n`). All user-facing strings localized.
 
-## Accessibility
+## Accessibility (WCAG 2.2 AA floor — non-negotiable; the design-audit recurring gaps)
 
-Interactive controls keyboard-reachable + labeled; focus management on modals; sufficient contrast (use tokens).
+- **Visible focus** — every interactive element has a `:focus-visible` ring (≥2px, `outline-offset`, visible against its bg). NEVER strip native focus with `all: unset` / `border: none` / `background: none` without replacing it; a focusable custom widget needs more than a stroke/color shift.
+- **Reduced motion** — gate every animation/transition behind `@media (prefers-reduced-motion: reduce)`; a blanket `* { animation: none }` must NOT also kill focus-visible transitions. Reveal-on-scroll under reduce: drop the translate (no positional jump), keep opacity.
+- **Contrast** — meet AA (4.5:1 normal, 3:1 for ≥24px/bold). Muted text on light/"paper" backgrounds is the usual failure (the audit found ≈3.3–3.8:1) — darken the muted token, don't ship it.
+- **Real controls** — prefer an `@ajh/ui` primitive (`Button`/`Switch`/…) over a hand-rolled control; raw `<button>` is banned in the renderer (see Primitives). If a click handler must live on a `<div>`/`<span>`, it needs `role="button"` + React `tabIndex={0}` + an `onKeyDown` Enter/Space handler. Icon-only controls need `aria-label` (not just `title`); toggle/filter/segmented controls need `aria-pressed`.
+- **Dialogs/overlays** — a custom modal needs `role="dialog"`/`"alertdialog"` + `aria-modal="true"` + `aria-labelledby`/`-describedby` + focus management/trap; transient banners get `role="status"` + `aria-live`.
+- **SVG** — informative SVG: `role="img"` + `aria-label` on the root, no conflicting roles on children; decorative SVG `aria-hidden="true"`. A focusable SVG node needs a real visible focus indicator.
+- **aria reference guards** — `aria-controls`/`aria-*` id references use the **same** render guard as the element they point to (no reference to never-rendered DOM); Enter/Space activation gates on the same enable/disable predicate as the click.
 
 ## Structure
 
