@@ -1,6 +1,6 @@
 # Design System — AI Job Hunter
 
-Last updated: 2026-06-11
+Last updated: 2026-06-24
 
 The design system lives in `packages/ui` and is published as the `@ajh/ui` internal package. It provides design tokens, a component library, motion primitives, and theming infrastructure.
 
@@ -77,6 +77,16 @@ Use these instead of raw hex values or arbitrary colors:
 | Error text        | `text-error`      |
 
 **Never use** `[#RRGGBB]` in `className` strings — ESLint enforces this.
+
+### Contrast & Accessibility
+
+Muted text is expressed as `text-foreground/NN` opacity steps. To meet WCAG AA contrast ratios:
+
+- **At ≥14px (body, caption)**: `text-foreground/50` is acceptable (≥4.5:1 on light backgrounds).
+- **At <14px (fine-print, nav-link, labels)**: use **`text-foreground/70` as the minimum floor** (≥4.5:1 on light backgrounds; <50% fails).
+- **For tertiary/metadata text** (timestamps, cache hints): `text-foreground/60` is only safe if paired visually with a darker primary label (e.g., "Posted • 2 days ago" where "Posted" is at /80 and "2 days ago" is /60).
+
+Rationale: Tailwind's opacity modifier works against `var(--color-foreground)`, which is ~#1a1a1a on light and ~#f5f5f5 on dark. At small sizes, even slight opacity loss defeats readability. Always verify opacity choices against both light and dark themes — the opacity floor differs per scheme because the foreground color differs.
 
 ### Typography Scale (Apple)
 
