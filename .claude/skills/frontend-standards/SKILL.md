@@ -12,6 +12,12 @@ Authoritative: `docs/DESIGN_SYSTEM.md`, `docs/PATTERNS.md`.
 - **No `window.api.*`** in `features/`, `routes/`, `components/` — use service hooks from `renderer/services/` (React Query). ESLint errors on direct access.
 - **Data fetching** — React Query via service hooks only; no `useState + useEffect` for remote data.
 
+## React Query & async mutations (HIGH on correctness)
+
+- **Invalidation must match** — `invalidateQueries({ queryKey })` is a **prefix** match; a key factory that appends a trailing `undefined`/optional segment (`keys.x.y()` → `['x','y',undefined]`) will **not** match the typed queries (`['x','y','viewed']`). Invalidate the shorter prefix (`['x','y']`) or pass `exact`. After a mutation, confirm the key you invalidate hits the queries that render the affected UI (#486: shipped this twice → stale viewed/saved badges).
+- **Mutations** — every `mutateAsync` in a `void`/fire-and-forget caller needs a `.catch` → a fixed `@ajh/translations` error key (never raw `err.message`); apply optimistic state / emit tracking events / show success **only after** the awaited mutation resolves, never before.
+- **Nullable at the IPC boundary** — guard a contract-optional/`null` value (a field a command may return absent) before string/array ops (`.toLowerCase()`/`[0]`/`.split()`).
+
 ## Design system
 
 - **Tokens** — `text-brand`/`bg-brand`/`border-brand`/`ring-brand`; CSS vars `var(--color-brand)`. No `[#RRGGBB]` in className.
