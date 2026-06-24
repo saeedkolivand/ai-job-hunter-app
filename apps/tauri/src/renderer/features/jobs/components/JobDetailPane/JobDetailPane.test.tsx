@@ -352,6 +352,28 @@ describe('JobDetailPane — viewed dwell timer', () => {
     expect(mockTrackInteraction).toHaveBeenCalledTimes(1);
     expect(mockTrackInteraction).toHaveBeenCalledWith('viewed');
   });
+
+  it('unmount cancels the pending timer — "viewed" is never tracked after unmount', async () => {
+    // Render a posting and advance 4s (timer is pending, has not fired yet).
+    const { unmount } = render(
+      <JobDetailPane posting={makePosting('job-unmount')} formatRelativeTime={formatRelativeTime} />
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(4000);
+    });
+    // No call yet — still within the 5s dwell.
+    expect(mockTrackInteraction).not.toHaveBeenCalledWith('viewed');
+
+    // Unmount before the timer fires — clearTimeout in the cleanup must cancel it.
+    unmount();
+
+    // Advance well past the threshold; the callback must NOT fire post-unmount.
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(mockTrackInteraction).not.toHaveBeenCalledWith('viewed');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

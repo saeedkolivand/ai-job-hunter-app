@@ -330,15 +330,21 @@ describe('JobsPage — allPostings dedup (via rendered list)', () => {
 
 describe('allPostings merge formula — pure function', () => {
   /**
-   * Inline replica of the component's allPostings useMemo:
-   *   seen = new Set(postings.map(p => p.id))
-   *   extra = livePostings.filter(p => !seen.has(p.id))
-   *   return [...extra, ...postings]
+   * Inline replica of the component's allPostings useMemo (single-pass dedup):
+   *   const seen = new Set<string>();
+   *   return [...livePostings, ...postings].filter((p) => {
+   *     if (seen.has(p.id)) return false;
+   *     seen.add(p.id);
+   *     return true;
+   *   });
    */
   function mergePostings(postings: Posting[], livePostings: Posting[]): Posting[] {
-    const seen = new Set(postings.map((p) => p.id));
-    const extra = livePostings.filter((p) => !seen.has(p.id));
-    return [...extra, ...postings];
+    const seen = new Set<string>();
+    return [...livePostings, ...postings].filter((p) => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
   }
 
   it('item in both livePostings and postings appears exactly once', () => {
@@ -385,6 +391,26 @@ describe('allPostings merge formula — pure function', () => {
     const result = mergePostings(both, both);
     expect(result).toHaveLength(2);
     expect(new Set(result.map((p) => p.id)).size).toBe(2);
+  });
+
+  it('duplicate within livePostings itself — only the first occurrence is kept (old formula missed this)', () => {
+    // The old formula only deduped livePostings against postings; if livePostings itself
+    // contained duplicates they would both appear. The single-pass formula removes them.
+    const dup = posting('dup');
+    const backend = posting('backend');
+    const result = mergePostings([backend], [dup, dup]);
+    // 'dup' must appear exactly once, and before 'backend'.
+    expect(result.map((p) => p.id)).toEqual(['dup', 'backend']);
+  });
+
+  it('livePostings-first ordering preserved when no duplicates exist', () => {
+    // Ordering regression guard: livePostings items must precede postings items.
+    const live1 = posting('live-1');
+    const live2 = posting('live-2');
+    const stored1 = posting('stored-1');
+    const stored2 = posting('stored-2');
+    const result = mergePostings([stored1, stored2], [live1, live2]);
+    expect(result.map((p) => p.id)).toEqual(['live-1', 'live-2', 'stored-1', 'stored-2']);
   });
 });
 

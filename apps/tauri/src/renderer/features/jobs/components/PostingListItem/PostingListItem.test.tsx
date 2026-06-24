@@ -504,6 +504,82 @@ describe('PostingListItem — sr-only status summary', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Title dim — text-muted-foreground when viewed && !selected
+// cn() is a passthrough so class names are directly assertable on the element.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('PostingListItem — title dim on viewed', () => {
+  function viewedPosting(interactionType: 'opened' | 'viewed') {
+    return makePosting({
+      interactions: [
+        {
+          interactionType,
+          jobId: 'post-1',
+          timestamp: 0,
+          title: 'T',
+          company: 'C',
+          url: 'u',
+          source: 's',
+        },
+      ],
+    });
+  }
+
+  it('title span carries text-muted-foreground when opened interaction present and not selected', () => {
+    render(
+      <PostingListItem
+        posting={viewedPosting('opened')}
+        selected={false}
+        formatRelativeTime={formatRelativeTime}
+        onSelect={vi.fn()}
+      />
+    );
+    // The title span renders posting.title as its text content.
+    const titleSpan = screen.getByText('Software Engineer');
+    expect(titleSpan.className).toContain('text-muted-foreground');
+  });
+
+  it('title span carries text-muted-foreground when viewed interaction present and not selected', () => {
+    render(
+      <PostingListItem
+        posting={viewedPosting('viewed')}
+        selected={false}
+        formatRelativeTime={formatRelativeTime}
+        onSelect={vi.fn()}
+      />
+    );
+    const titleSpan = screen.getByText('Software Engineer');
+    expect(titleSpan.className).toContain('text-muted-foreground');
+  });
+
+  it('title span does NOT carry text-muted-foreground when viewed but selected=true', () => {
+    render(
+      <PostingListItem
+        posting={viewedPosting('viewed')}
+        selected={true}
+        formatRelativeTime={formatRelativeTime}
+        onSelect={vi.fn()}
+      />
+    );
+    const titleSpan = screen.getByText('Software Engineer');
+    expect(titleSpan.className).not.toContain('text-muted-foreground');
+  });
+
+  it('title span does NOT carry text-muted-foreground when no interactions (unviewed)', () => {
+    render(
+      <PostingListItem
+        posting={makePosting({ interactions: undefined })}
+        selected={false}
+        formatRelativeTime={formatRelativeTime}
+        onSelect={vi.fn()}
+      />
+    );
+    const titleSpan = screen.getByText('Software Engineer');
+    expect(titleSpan.className).not.toContain('text-muted-foreground');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Source badge — 2-letter abbreviation slot
 // ─────────────────────────────────────────────────────────────────────────────
 
