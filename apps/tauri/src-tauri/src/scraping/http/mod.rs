@@ -372,5 +372,33 @@ pub fn html_to_text(html: &str) -> String {
     s.trim().to_string()
 }
 
+/// Convert HTML to Markdown for job description fields.
+///
+/// Uses `htmd` (turndown-inspired, lol_html-based) for faithful structure
+/// preservation — headings, lists, bold, links — so the frontend can render
+/// the description with react-markdown instead of a flat text blob.
+///
+/// Falls back to [`html_to_text`] on any htmd error so we never regress to
+/// `strip_html`'s whitespace-collapsing behaviour.
+pub fn html_to_markdown(html: &str) -> String {
+    match htmd::convert(html) {
+        Ok(md) => {
+            let trimmed = md.trim().to_string();
+            if trimmed.is_empty() {
+                // htmd produced nothing; fall through to the text fallback.
+                html_to_text(html)
+            } else {
+                trimmed
+            }
+        }
+        Err(e) => {
+            log::warn!(
+                "[scraping::http] htmd conversion failed ({e}); falling back to html_to_text"
+            );
+            html_to_text(html)
+        }
+    }
+}
+
 #[cfg(test)]
 mod test;

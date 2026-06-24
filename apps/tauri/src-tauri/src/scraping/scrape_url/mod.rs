@@ -185,7 +185,7 @@ async fn try_greenhouse(url: &str) -> Result<Option<JobPosting>> {
     let description = v
         .get("content")
         .and_then(|s| s.as_str())
-        .map(crate::scraping::http::strip_html);
+        .map(crate::scraping::http::html_to_markdown);
     let abs_url = v
         .get("absolute_url")
         .and_then(|s| s.as_str())
@@ -281,7 +281,7 @@ async fn try_lever(url: &str) -> Result<Option<JobPosting>> {
         .or_else(|| {
             v.get("description")
                 .and_then(|s| s.as_str())
-                .map(crate::scraping::http::strip_html)
+                .map(crate::scraping::http::html_to_markdown)
         });
     let abs_url = v
         .get("hostedUrl")
@@ -550,7 +550,7 @@ fn job_from_node(node: &serde_json::Value) -> Option<JsonLdJob> {
     let description = node
         .get("description")
         .and_then(|s| s.as_str())
-        .map(crate::scraping::http::strip_html)
+        .map(crate::scraping::http::html_to_markdown)
         .filter(|s| !s.trim().is_empty());
     Some(JsonLdJob {
         title,
@@ -616,7 +616,7 @@ fn next_data_job(html: &str) -> Option<JsonLdJob> {
         let description = node
             .get("description")
             .and_then(|s| s.as_str())
-            .map(crate::scraping::http::strip_html)
+            .map(crate::scraping::http::html_to_markdown)
             .filter(|s| !s.trim().is_empty());
         JsonLdJob {
             title,
@@ -667,7 +667,7 @@ fn main_content_text(html: &str) -> Option<String> {
     let doc = Html::parse_document(html);
     let sel = Selector::parse(r#"main, [role="main"], article"#).ok()?;
     doc.select(&sel)
-        .map(|el| crate::scraping::http::html_to_text(&el.inner_html()))
+        .map(|el| crate::scraping::http::html_to_markdown(&el.inner_html()))
         .filter(|t| !t.trim().is_empty())
         .max_by_key(|t| t.len())
 }
@@ -933,7 +933,7 @@ async fn try_workday(url: &str) -> Result<Option<JobPosting>> {
         .get("jobPostingInfo")
         .and_then(|info| info.get("jobDescription"))
         .and_then(|s| s.as_str())
-        .map(crate::scraping::http::strip_html);
+        .map(crate::scraping::http::html_to_markdown);
 
     Ok(Some(JobPosting {
         id: format!("workday:{}", req_id),
@@ -1015,7 +1015,7 @@ async fn try_smartrecruiters(url: &str) -> Result<Option<JobPosting>> {
             sections
                 .values()
                 .filter_map(|sec| sec.get("text").and_then(|t| t.as_str()))
-                .map(crate::scraping::http::strip_html)
+                .map(crate::scraping::http::html_to_markdown)
                 .collect::<Vec<_>>()
                 .join("\n\n")
         });

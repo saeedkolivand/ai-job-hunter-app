@@ -171,6 +171,7 @@ aes-gcm = "0.10"
 # deterministic, restart-stable hash so a stale or wrong-language cache row is a
 # natural miss. Resolves to 0.10.9 already in the tree (lopdf/tauri-codegen).
 sha2 = "0.10"
+htmd = "0.5.4"
 
 [target.'cfg(windows)'.dependencies]
 wmi = "0.18"
