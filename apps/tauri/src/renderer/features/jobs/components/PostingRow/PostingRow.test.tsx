@@ -4,8 +4,10 @@
  * Strategy:
  *  - useSaveFromPosting is mocked (the mutation is the observable under test).
  *  - Heavy deps (router, services, store, ui) are stubbed at the module level.
- *  - RowMatchScore, motion/react, lucide-react, @ajh/ui primitives are stubbed
- *    so no QueryClient / AppClient / Tauri provider is needed.
+ *  - motion/react, lucide-react, @ajh/ui primitives are stubbed.
+ *  - @/features/jobs/providers mocked so usePostingActions (which calls useRowMatchScore
+ *    internally) does not require MatchScoresProvider.
+ *  - No QueryClient / AppClient / Tauri provider is needed.
  *  - The core assertion: mutateAsync is called with an object that includes
  *    `jobDescription: posting.description` for BOTH the Tailor and Save buttons.
  *
@@ -77,13 +79,10 @@ vi.mock('@ajh/ui', () => ({
   useNotification: () => ({ success: vi.fn(), error: vi.fn() }),
 }));
 
-// ── RowMatchScore — suppress provider requirement ─────────────────────────────
-
-vi.mock('@/features/jobs/components/RowMatchScore', () => ({
-  RowMatchScore: () => null,
-}));
-
-// ── useRowMatchScore — no score ───────────────────────────────────────────────
+// ── useRowMatchScore (via usePostingActions → MatchScoresProvider) ────────────
+// PostingRow no longer renders RowMatchScore directly, but usePostingActions
+// still calls useRowMatchScore internally. Mock the provider to avoid the
+// "must be used within MatchScoresProvider" throw.
 
 vi.mock('@/features/jobs/providers', () => ({
   useRowMatchScore: () => ({ score: undefined }),
@@ -122,12 +121,6 @@ const mockSetApplicationApply = vi.fn();
 vi.mock('@/store/session-store', () => ({
   useSessionStore: (sel: (s: { setApplicationApply: typeof mockSetApplicationApply }) => unknown) =>
     sel({ setApplicationApply: mockSetApplicationApply }),
-}));
-
-// ── scoreToLevel ──────────────────────────────────────────────────────────────
-
-vi.mock('@/lib/match-level', () => ({
-  scoreToLevel: (n: number) => (n >= 0.7 ? 'high' : 'medium'),
 }));
 
 // ── component under test (after all mocks) ───────────────────────────────────
