@@ -66,12 +66,7 @@ If knockout gating is added in future, the entry point is `documents/keywords.rs
 
 ## UI Rendering
 
-Both metrics are rendered using the `MatchBand` component (`apps/tauri/src/renderer/lib/match-band.tsx`), which provides formula-aware visualization:
-
-- **`variant='coverage'`** (Autopilot): relaxed thresholds (High ≥55%, Medium ≥30%) suited to keyword-only data distribution.
-- **`variant='combined'`** (Jobs page): strict thresholds (High ≥75%, Medium ≥50%) suited to hybrid semantic+ATS scores.
-
-The same component owns both rendering contracts, so the tier colors and labels are consistent, but the cut points differ to match the underlying formula. See the component's `scoreTier()` function for the current thresholds.
+Both metrics are rendered using the `MatchBand` component (`apps/tauri/src/renderer/lib/match-band.tsx`), which provides formula-aware visualization with variant-specific score thresholds. See the component's `scoreTier()` function for the current cut points; thresholds are tuned to the underlying formula (keyword-only vs. hybrid semantic+ATS).
 
 ## Related Decisions
 

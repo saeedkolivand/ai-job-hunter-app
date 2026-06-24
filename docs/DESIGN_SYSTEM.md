@@ -522,13 +522,13 @@ Displays streaming text with a blinking cursor and smooth character append:
 
 #### `Alert`
 
-Step-level status messages in wizard flows (onboarding, autopilot). Variants: `success` (green), `warning` (yellow), `error` (red), `info` (blue). Field-level validation stays inline:
+Step-level status messages in wizard flows (onboarding, autopilot). Types: `success`, `warning`, `error`, `info`. Field-level validation stays inline:
 
 ```typescript
-<Alert variant="warning" title="No key entered">
-  Add your API key to proceed
-</Alert>
+<Alert type="warning" message="No key entered" description="Add your API key to proceed" />
 ```
+
+See `packages/ui/src/components/Alert/Alert.tsx` for full props (`message`, `description`, `type`, `showIcon`, `action`, `closable`, `banner`).
 
 #### `EmptyState`
 

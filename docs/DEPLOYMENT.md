@@ -76,13 +76,7 @@ sudo apt-get install libwebkit2gtk-4.1-dev libssl-dev libayatana-appindicator3-d
 
 ### Linux AppImage — Wayland + Mesa safeguard
 
-On Wayland + Mesa (common on Steam Deck and modern Linux), the bundled `libwayland-client` in the AppImage can shadow the host's WebGL/EGL stack and crash at startup (`EGL_BAD_PARAMETER`). The app applies **three mitigations at boot** (`apps/tauri/src-tauri/src/platform/linux_appimage.rs`):
-
-1. **Disable DMABUF renderer** via `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
-2. **Disable accelerated compositing** via `WEBKIT_DISABLE_COMPOSITING_MODE=1`.
-3. **Preload the host `libwayland-client.so.0`** via `LD_PRELOAD` (requires re-exec so the dynamic linker picks it up).
-
-All three are applied idempotently at startup before WebKit/GTK init — the app detects the AppImage/Wayland environment automatically and requires no user configuration.
+On Wayland + Mesa (common on Steam Deck and modern Linux), the bundled `libwayland-client` in the AppImage can shadow the host's WebGL/EGL stack and crash at startup. Mitigations (environment-aware, idempotent, applied at boot) are implemented in `apps/tauri/src-tauri/src/platform/linux_appimage.rs`; the app detects the AppImage/Wayland environment automatically and requires no user configuration.
 
 ### Build all packages then package
 
