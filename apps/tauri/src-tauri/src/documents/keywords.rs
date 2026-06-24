@@ -294,7 +294,7 @@ pub fn markdown_to_plain(text: &str) -> String {
             // Emit the text before the `[`.
             out.push_str(&remaining[..open]);
             let after_open = &remaining[open + 1..]; // char after `[`
-            // Look for `](` that closes this link's anchor.
+                                                     // Look for `](` that closes this link's anchor.
             if let Some(close_bracket) = after_open.find("](") {
                 let anchor = &after_open[..close_bracket];
                 let after_bracket = &after_open[close_bracket + 2..]; // past `](`
@@ -324,9 +324,7 @@ pub fn markdown_to_plain(text: &str) -> String {
             let tail = &remaining[pos..];
             if tail.starts_with("https://") || tail.starts_with("http://") {
                 // Skip all non-whitespace chars of the URL.
-                let url_len = tail
-                    .find(|c: char| c.is_whitespace())
-                    .unwrap_or(tail.len());
+                let url_len = tail.find(|c: char| c.is_whitespace()).unwrap_or(tail.len());
                 remaining = &tail[url_len..];
             } else {
                 // "http" but not a full URL prefix — emit the char and advance.
@@ -717,7 +715,8 @@ mod test {
             "anchor text 'apply' (or its stem) must survive in keyword set; got {kw:?}"
         );
         assert!(
-            kw.iter().any(|w| w.starts_with("backend") || w.starts_with("backEnd") || w == "backend"),
+            kw.iter()
+                .any(|w| w.starts_with("backend") || w.starts_with("backEnd") || w == "backend"),
             "real JD word 'backend' must survive; got {kw:?}"
         );
     }
@@ -754,7 +753,10 @@ mod test {
         assert!(!plain.contains("**"), "bold markers must be removed");
         assert!(!plain.contains('_'), "italic markers must be removed");
         assert!(plain.contains("Strong"), "bold text content must survive");
-        assert!(plain.contains("communication"), "italic text content must survive");
+        assert!(
+            plain.contains("communication"),
+            "italic text content must survive"
+        );
     }
 
     /// Bare-URL-only description: after stripping, no real words remain, so the
@@ -784,7 +786,9 @@ mod test {
         let blob = posting_text_blob("", Some(desc), None)
             .expect("description with real word must yield Some blob");
         let kw = keywords(&blob, &stemmer);
-        for bad in &["https", "http", "postings", "acme", "example", "careers", "io"] {
+        for bad in &[
+            "https", "http", "postings", "acme", "example", "careers", "io",
+        ] {
             assert!(
                 !kw.contains(*bad),
                 "URL-fragment token '{bad}' must not appear in keyword set; got {kw:?}"
@@ -808,8 +812,7 @@ mod test {
     /// keywords were silently dropped from the JD keyword set.
     #[test]
     fn markdown_to_plain_preserves_german_utf8() {
-        let input =
-            "Softwareentwickler für Berlin, gute Qualität — [mehr](https://x.io/p/1)";
+        let input = "Softwareentwickler für Berlin, gute Qualität — [mehr](https://x.io/p/1)";
         let plain = markdown_to_plain(input);
 
         // Umlauts must survive intact.
@@ -837,7 +840,10 @@ mod test {
         );
 
         // The anchor text "mehr" must survive.
-        assert!(plain.contains("mehr"), "anchor text 'mehr' must survive; got: {plain:?}");
+        assert!(
+            plain.contains("mehr"),
+            "anchor text 'mehr' must survive; got: {plain:?}"
+        );
 
         // Keyword set must be byte-identical whether or not a markdown link is present.
         // A JD with the same German words but no link must produce the same keywords.
