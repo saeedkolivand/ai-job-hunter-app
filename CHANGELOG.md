@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.117.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.116.1...v0.117.0) (2026-06-24)
+
+### ✨ Features
+
+* **jobs:** linkedin-style jobs page, viewed dwell, show-more dedup ([#499](https://github.com/saeedkolivand/ai-job-hunter-app/issues/499)) ([be378fb](https://github.com/saeedkolivand/ai-job-hunter-app/commit/be378fb5637673ed443dcc0da56a3cea8026c9d5))
+
 ## [0.116.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.116.0...v0.116.1) (2026-06-24)
 
 ### 🐛 Bug Fixes
