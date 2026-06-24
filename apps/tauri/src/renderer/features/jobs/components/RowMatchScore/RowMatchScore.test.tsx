@@ -99,14 +99,16 @@ describe('RowMatchScore — score present', () => {
     expect(screen.getByRole('button', { name: 'jobs.scoreGuidanceLabel' })).toBeInTheDocument();
   });
 
-  it('reveals guidance popover content when the trigger wrapper receives focus', () => {
-    const { container } = renderRow({
+  it('reveals guidance popover content when the info button receives focus', () => {
+    renderRow({
       score: { ...BASE_SCORE, combined: 82 },
       hasResume: true,
     });
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
 
-    fireEvent.focus(container.firstChild as HTMLElement);
+    // Focus the scoreGuidanceLabel button — a real user-focusable target that
+    // triggers the HoverPopover's onFocus handler on the wrapper div.
+    fireEvent.focus(screen.getByRole('button', { name: 'jobs.scoreGuidanceLabel' }));
 
     const tooltip = screen.getByRole('tooltip');
     expect(tooltip).toBeInTheDocument();

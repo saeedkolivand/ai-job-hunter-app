@@ -100,9 +100,16 @@ describe('JobDescription — markdown image suppression', () => {
   });
 
   it('renders nothing (not null-error) when the image has no alt text', () => {
-    // Should not throw.
-    expect(() =>
-      render(<JobDescription markdown="![](https://cdn.example.com/logo.png)" />)
-    ).not.toThrow();
+    // img override: alt ? <span>{alt}</span> : null — empty alt must produce nothing.
+    const { container } = render(
+      <JobDescription markdown="![](https://cdn.example.com/logo.png)" />
+    );
+    // No <img> element — the override must suppress it.
+    expect(container.querySelector('img')).toBeNull();
+    // No stray placeholder <span> either — empty alt returns null, not a span.
+    // The only elements present are the wrapper div and its direct children from
+    // react-markdown (a <p> containing nothing meaningful — no alt text to surface).
+    const spans = container.querySelectorAll('span');
+    expect(spans.length).toBe(0);
   });
 });

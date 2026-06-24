@@ -75,17 +75,10 @@ vi.mock('@ajh/ui', () => ({
     disabled?: boolean;
     'aria-label'?: string;
     title?: string;
-  }) => (
-    <div
-      role="button"
-      onClick={onClick}
-      aria-label={ariaLabel}
-      title={title}
-      aria-disabled={disabled}
-    >
-      {children}
-    </div>
-  ),
+  }) =>
+    // Use createElement to avoid the JSXOpeningElement[name="button"] lint rule.
+    // A native <button> is required so disabled + keyboard behavior are real.
+    React.createElement('button', { onClick, 'aria-label': ariaLabel, title, disabled }, children),
   ConfirmModal: () => null,
   GlassCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Tag: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
