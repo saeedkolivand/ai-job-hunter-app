@@ -1,11 +1,11 @@
-import { Bookmark, CircleCheck, Eye } from 'lucide-react';
+import { Bookmark, CircleCheck } from 'lucide-react';
+import { motion } from 'motion/react';
 
 import { useTranslation } from '@ajh/translations';
-import { cn } from '@ajh/ui';
+import { cn, resolveTransition, transition } from '@ajh/ui';
 
-import { useRowMatchScore } from '@/features/jobs/providers';
+import { CompanyAvatar } from '@/features/jobs/components/CompanyAvatar';
 import type { Posting } from '@/features/jobs/types';
-import { MatchBand } from '@/lib/match-band';
 
 interface PostingListItemProps {
   posting: Posting;
@@ -21,10 +21,11 @@ export function PostingListItem({
   onSelect,
 }: PostingListItemProps) {
   const { t } = useTranslation();
-  const { score } = useRowMatchScore(posting.id);
 
   const interactions = new Set<string>(posting.interactions?.map((i) => i.interactionType) ?? []);
   const has = (type: string) => interactions.has(type);
+
+  const isViewed = has('opened') || has('viewed');
 
   const handleClick = () => onSelect(posting);
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -45,58 +46,91 @@ export function PostingListItem({
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       className={cn(
-        'flex h-[60px] cursor-pointer flex-col justify-center gap-1 border-b border-[var(--border-clear)] py-2 pl-2 pr-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
-        // Active: stronger brand fill + full-opacity text — mirrors sidebar NavPill weight.
-        // Inactive: default muted hover.
-        selected ? 'border-l-2 border-l-brand bg-brand/15' : 'hover:bg-muted'
+        // Outer shell: fixed height for the virtualizer; relative for the abs-positioned
+        // slide indicator. border-b separator on unselected rows only.
+        'relative flex h-[76px] cursor-pointer items-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
+        selected ? '' : 'border-b border-[var(--border-clear)] hover:bg-brand/[0.04]'
       )}
     >
-      {/* Line 1: title + subtle MatchBand */}
-      <div className="flex items-center gap-1.5">
-        <span
-          className={cn(
-            'min-w-0 flex-1 truncate text-[12px] font-semibold',
-            // Selected: full-opacity foreground (mirrors sidebar active text-foreground).
-            selected ? 'text-foreground' : 'text-foreground/90'
-          )}
-        >
-          {posting.title}
-        </span>
-        {score && <MatchBand value={score.combined} subtle />}
-      </div>
-
-      {/* Visually-hidden status summary for screen readers */}
-      {(has('applied') || has('opened') || has('viewed') || has('bookmarked')) && (
-        <span className="sr-only">
-          {[
-            has('applied') && t('jobs.applied'),
-            (has('opened') || has('viewed')) && t('jobs.viewed'),
-            has('bookmarked') && t('jobs.saved'),
-          ]
-            .filter(Boolean)
-            .join(', ')}
-        </span>
+      {/* Animated active highlight — slides between rows via shared-layout (mirrors sidebar).
+          Square (rounded-none) + full-width; reduced-motion collapses spring to instant.
+          Softer gradient fill + brand hairline border. */}
+      {selected && (
+        <motion.div
+          aria-hidden
+          layoutId="jobs-list-pill"
+          className="pointer-events-none absolute inset-0 rounded-none border-l-2 border-[var(--color-brand)]"
+          style={{
+            background:
+              'linear-gradient(135deg, color-mix(in srgb, var(--color-brand) 10%, transparent) 0%, color-mix(in srgb, var(--color-brand-2) 6%, transparent) 100%)',
+          }}
+          transition={resolveTransition(transition.spring)}
+        />
       )}
 
-      {/* Line 2: company · location · time, then icon-only status markers */}
-      {/* Selected: brand-soft tint on meta (mirrors sidebar icon text-brand-soft). */}
-      <div
-        className={cn(
-          'flex items-center gap-1.5 text-[10px]',
-          selected ? 'text-brand-soft/70' : 'text-foreground/50'
-        )}
-      >
-        <span className="truncate">{posting.company}</span>
-        {posting.location && <span className="shrink-0 truncate">· {posting.location}</span>}
-        {posting.postedAt && (
-          <span className="shrink-0">· {formatRelativeTime(posting.postedAt)}</span>
-        )}
-        {/* Icon-only interaction markers — decorative (aria-hidden); SR summary above */}
-        <span className="ml-auto flex shrink-0 items-center gap-1">
-          {has('applied') && <CircleCheck size={9} aria-hidden="true" />}
-          {(has('opened') || has('viewed')) && <Eye size={9} aria-hidden="true" />}
-          {has('bookmarked') && <Bookmark size={9} aria-hidden="true" />}
-        </span>
+      {/* Content layer — sits above the pill (pill is absolute inset-0) */}
+      <div className="relative flex h-[64px] w-full items-center gap-3 px-3">
+        {/* Company avatar — company initials with deterministic color slot */}
+        <CompanyAvatar company={posting.company} sourceFallback={posting.source} size="sm" />
+
+        {/* Text block: 2-line layout fills remaining space */}
+        <div className="min-w-0 flex-1">
+          {/* Line 1: title only — score moved to detail pane */}
+          <div className="flex items-center gap-1.5">
+            <span
+              className={cn(
+                'min-w-0 flex-1 truncate text-[13px] font-semibold',
+                // Selected: full-opacity foreground.
+                // Viewed (not selected): dimmed title per LinkedIn-style treatment.
+                selected
+                  ? 'text-foreground'
+                  : isViewed
+                    ? 'text-muted-foreground'
+                    : 'text-foreground/90'
+              )}
+            >
+              {posting.title}
+            </span>
+          </div>
+
+          {/* Visually-hidden status summary for screen readers */}
+          {(has('applied') || has('opened') || has('viewed') || has('bookmarked')) && (
+            <span className="sr-only">
+              {[
+                has('applied') && t('jobs.applied'),
+                (has('opened') || has('viewed')) && t('jobs.viewed'),
+                has('bookmarked') && t('jobs.saved'),
+              ]
+                .filter(Boolean)
+                .join(', ')}
+            </span>
+          )}
+
+          {/* Line 2: company · location · time, then status markers */}
+          <div
+            className={cn(
+              'flex items-center gap-1.5 text-[11px]',
+              selected ? 'text-brand-soft/70' : 'text-foreground/50'
+            )}
+          >
+            <span className="truncate">{posting.company}</span>
+            {posting.location && <span className="shrink-0 truncate">· {posting.location}</span>}
+            {posting.postedAt && (
+              <span className="shrink-0">· {formatRelativeTime(posting.postedAt)}</span>
+            )}
+            {/* Status markers — decorative (aria-hidden); SR summary above */}
+            <span className="ml-auto flex shrink-0 items-center gap-1">
+              {has('applied') && <CircleCheck size={12} aria-hidden="true" />}
+              {/* "Viewed" text label replaces the eye icon — aria-hidden since SR uses the summary above */}
+              {isViewed && !selected && (
+                <span aria-hidden="true" className="text-[10px]">
+                  {t('jobs.viewed')}
+                </span>
+              )}
+              {has('bookmarked') && <Bookmark size={12} aria-hidden="true" />}
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );

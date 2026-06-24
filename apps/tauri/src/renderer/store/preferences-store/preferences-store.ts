@@ -14,7 +14,7 @@ import {
 } from '../preferences-schema';
 
 // Migration function to handle version updates
-const STORE_VERSION = 3;
+const STORE_VERSION = 4;
 
 // Cap on the persisted "Recent locations" list (most-recent first).
 const MAX_RECENT_LOCATIONS = 5;
@@ -23,11 +23,6 @@ const migratePreferences = (state: Record<string, unknown>, version: number): Pr
   // v0 → v1: baseline
   if (version < 1) {
     state = { ...state, version: 1, lastUpdated: new Date().toISOString() };
-  }
-
-  // v2 → v3: add promptQuality default
-  if (version < 3) {
-    state = { ...state, promptQuality: 'auto', version: 3, lastUpdated: new Date().toISOString() };
   }
 
   // v1 → v2: flatten { provider, model, baseUrl } → { activeProvider, providers: { … } }
@@ -49,6 +44,21 @@ const migratePreferences = (state: Record<string, unknown>, version: number): Pr
     }
   }
 
+  // v2 → v3: add promptQuality default
+  if (version < 3) {
+    state = { ...state, promptQuality: 'auto', version: 3, lastUpdated: new Date().toISOString() };
+  }
+
+  // v3 → v4: add fetchCompanyLogos (DEFAULT OFF — third-party egress, privacy opt-in)
+  if (version < 4) {
+    state = {
+      ...state,
+      fetchCompanyLogos: false,
+      version: 4,
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+
   return state as Preferences;
 };
 
@@ -67,6 +77,7 @@ const defaultPreferences: Preferences = {
   onboardingCompleted: false,
   contactPromptSeen: false,
   sidebarCollapsed: false,
+  fetchCompanyLogos: false,
   lastUpdated: new Date().toISOString(),
 };
 
@@ -100,6 +111,7 @@ interface PreferencesActions {
   setContactPromptSeen: () => void;
   toggleSidebar: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
+  setFetchCompanyLogos: (enabled: boolean) => void;
   resetPreferences: () => void;
 }
 
@@ -304,6 +316,13 @@ export const usePreferencesStore = create<PreferencesStore>()(
           lastUpdated: new Date().toISOString(),
         })),
 
+      setFetchCompanyLogos: (fetchCompanyLogos: boolean) =>
+        set((state) => ({
+          ...state,
+          fetchCompanyLogos,
+          lastUpdated: new Date().toISOString(),
+        })),
+
       resetPreferences: () =>
         set((state) => ({
           ...state,
@@ -351,3 +370,5 @@ export const useRecentLocations = () => usePreferencesStore((state) => state.rec
 export const useSidebarCollapsed = () =>
   usePreferencesStore((state) => state.sidebarCollapsed ?? false);
 export const useToggleSidebar = () => usePreferencesStore((state) => state.toggleSidebar);
+export const useFetchCompanyLogos = () =>
+  usePreferencesStore((state) => state.fetchCompanyLogos ?? false);

@@ -1,7 +1,7 @@
 ---
 name: pdf-docx-generator
 description: WRITE-access implementer for the resume/export domain — PDF/DOCX rendering, layout, fonts, pagination, golden snapshots, AND the DocumentModel/theme/locale/templates authoring. The paired author for resume-export-expert (who reviews); never approves its own work. Implements under export/, model/, theme/, locale/, layout/, measure/.
-tools: Read, Grep, Glob, Edit, Write, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify
 model: sonnet
 ---
 

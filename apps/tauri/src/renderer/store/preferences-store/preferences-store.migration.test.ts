@@ -54,4 +54,21 @@ describe('preferences-store migrations', () => {
     expect(state.promptQuality).toBe('auto');
     expect(state.outputTone).toBe('formal');
   });
+
+  it('adds fetchCompanyLogos=false when migrating a v3 payload (existing users default OFF)', async () => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({ version: 3, state: { language: 'en', promptQuality: 'full' } })
+    );
+    const state = await hydrate();
+    expect(state.fetchCompanyLogos).toBe(false);
+    // Existing preferences are preserved
+    expect(state.promptQuality).toBe('full');
+  });
+
+  it('fetchCompanyLogos defaults to false on a fresh store (no persisted data)', async () => {
+    // No localStorage seed — fresh hydration
+    const state = await hydrate();
+    expect(state.fetchCompanyLogos).toBe(false);
+  });
 });

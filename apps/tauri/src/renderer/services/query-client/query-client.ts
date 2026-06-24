@@ -9,8 +9,9 @@ import { QueryClient } from '@tanstack/react-query';
  *   POLLING_STALE 20 s  — paired with 30 s refetchInterval (health / metrics)
  *   MEDIUM        30 s  — default; board/bridge polling; provider key check
  *   LONG          60 s  — AI model list (changes rarely mid-session)
- *   VERY_LONG      5 min — gc default; provider models; resolved job URL
+ *   VERY_LONG      5 min — gc default; provider models
  *   TEN_MIN       10 min — match scores; changelog (expensive, rarely stale)
+ *   INFINITE       ∞    — React Query sentinel: never stale / never GC'd (session-lifetime cache)
  */
 export const QUERY_TIMES = {
   SHORT: 10_000,
@@ -19,6 +20,7 @@ export const QUERY_TIMES = {
   LONG: 60_000,
   VERY_LONG: 300_000,
   TEN_MIN: 600_000,
+  INFINITE: Infinity,
 } as const;
 
 /**

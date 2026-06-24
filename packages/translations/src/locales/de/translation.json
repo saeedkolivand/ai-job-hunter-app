@@ -757,7 +757,9 @@
       "historyClearedSuccess": "Interaktionsverlauf gelöscht.",
       "exportSuccess": "Daten erfolgreich exportiert.",
       "importSuccess": "{{count}} Datensatz{{plural}} importiert.",
-      "importPartial": "Einige Elemente konnten nicht wiederhergestellt werden. Ihre Daten sind möglicherweise unvollständig."
+      "importPartial": "Einige Elemente konnten nicht wiederhergestellt werden. Ihre Daten sind möglicherweise unvollständig.",
+      "fetchCompanyLogosTitle": "Unternehmenslogos abrufen",
+      "fetchCompanyLogosDescription": "Wenn aktiviert, wird der Unternehmensname jeder Stellenanzeige an einen Drittanbieter (Clearbit) gesendet, um ein Logo abzurufen. Standardmäßig deaktiviert."
     },
     "location": {
       "title": "Bevorzugter Standort",
@@ -1663,14 +1665,14 @@
     "viewSplit": "Zweispaltig",
     "viewMode": "Ansichtsmodus",
     "backToList": "Zurück zur Liste",
-    "collapseDetail": "Detail einklappen",
-    "expandDetail": "Detail ausklappen",
     "selectAJob": "Job auswählen, um Details anzuzeigen",
     "copyLinkError": "Link konnte nicht kopiert werden",
     "loadingDescription": "Beschreibung wird geladen…",
+    "updatingDescription": "Wird aktualisiert…",
     "loadFullDescription": "Vollständige Beschreibung laden",
     "fullDescriptionLoaded": "Vollständige Beschreibung geladen",
     "descriptionLoadError": "Vollständige Beschreibung konnte nicht geladen werden. Bitte erneut versuchen.",
+    "aboutTheJob": "Über die Stelle",
     "matchBand": {
       "High": "Hoch",
       "Medium": "Mittel",

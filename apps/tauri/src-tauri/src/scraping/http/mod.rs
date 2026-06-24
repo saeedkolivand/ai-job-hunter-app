@@ -46,6 +46,14 @@ static TT_BLANKS_RE: std::sync::LazyLock<regex::Regex> =
 static TT_BULLET_TIGHT_RE: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r"\n{2,}•").unwrap());
 
+// Detects whether a string contains at least one HTML tag.
+// ponytail: simple `<tag` / `</tag` scan — good enough for the aggregator inputs
+// that are either pure HTML or plain-text/already-markdown; won't catch every
+// hand-crafted edge case (e.g. lone `<` in code), but correct for our use-case.
+static HTML_TAG_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"<[a-zA-Z/][^>]*>").expect("static HTML-tag detection regex is valid")
+});
+
 #[derive(Debug, Clone)]
 pub struct FetchOptions {
     pub headers: Option<Vec<(String, String)>>,
@@ -374,19 +382,37 @@ pub fn html_to_text(html: &str) -> String {
 
 /// Convert HTML to Markdown for job description fields.
 ///
-/// Uses `htmd` (turndown-inspired, lol_html-based) for faithful structure
-/// preservation — headings, lists, bold, links — so the frontend can render
-/// the description with react-markdown instead of a flat text blob.
+/// When the input contains HTML tags (detected by a simple `<tag>` scan) it is
+/// passed through `htmd` for faithful structure preservation — headings, lists,
+/// bold, links — so the frontend can render the description with react-markdown
+/// instead of a flat text blob.
+///
+/// When the input has NO HTML tags (plain text or already-markdown, which is
+/// common for Adzuna/JSearch descriptions) it is returned as-is (trimmed).
+/// Running htmd on already-markdown text is destructive: htmd escapes markdown
+/// special chars (`*`, `_`, etc.) in text nodes, turning `**bold**` into
+/// `\*\*bold\*\*`, which react-markdown renders as literal `**`.
 ///
 /// Falls back to [`html_to_text`] on any htmd error so we never regress to
 /// `strip_html`'s whitespace-collapsing behaviour.
 pub fn html_to_markdown(html: &str) -> String {
-    match htmd::convert(html) {
+    let trimmed_input = html.trim();
+    if trimmed_input.is_empty() {
+        return String::new();
+    }
+
+    // If the input has no HTML tags, treat it as plain text / already-markdown
+    // and return it as-is — skipping htmd avoids escaping existing ** markers.
+    if !HTML_TAG_RE.is_match(trimmed_input) {
+        return trimmed_input.to_string();
+    }
+
+    match htmd::convert(trimmed_input) {
         Ok(md) => {
             let trimmed = md.trim().to_string();
             if trimmed.is_empty() {
                 // htmd produced nothing; fall through to the text fallback.
-                html_to_text(html)
+                html_to_text(trimmed_input)
             } else {
                 trimmed
             }
@@ -395,7 +421,7 @@ pub fn html_to_markdown(html: &str) -> String {
             log::warn!(
                 "[scraping::http] htmd conversion failed ({e}); falling back to html_to_text"
             );
-            html_to_text(html)
+            html_to_text(trimmed_input)
         }
     }
 }

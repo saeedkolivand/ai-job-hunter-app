@@ -39,14 +39,20 @@ export const useScrapeUrl = () => {
   return useMutation({ mutationFn: (req: ScrapeUrlRequest) => api.scrape.url(req) });
 };
 
-/** Resolve a single posting (incl. full description) from its URL, on demand. */
+/** Resolve a single posting (incl. full description) from its URL, on demand.
+ *  staleTime=INFINITE: a cached description is never re-fetched while it is
+ *  still in the cache — no re-fetch on re-open, no flash of truncated text.
+ *  gcTime=TEN_MIN: inactive entries are evicted after 10 min to bound memory
+ *  as the user browses many jobs. Re-opening an evicted job uses the persisted
+ *  backend description rather than re-fetching in the common case. */
 export const useResolveJobUrl = (url: string, enabled = true) => {
   const api = useAppClient();
   return useQuery({
     queryKey: keys.postings.resolve(url),
     queryFn: () => api.scrape.resolveUrl({ url }),
     enabled: enabled && !!url,
-    staleTime: QUERY_TIMES.VERY_LONG,
+    staleTime: QUERY_TIMES.INFINITE,
+    gcTime: QUERY_TIMES.TEN_MIN,
   });
 };
 
@@ -84,9 +90,11 @@ export const usePersistJob = () => {
   return useMutation({
     mutationFn: (req: { job: Record<string, unknown>; interactionType: string }) =>
       api.scrape.persistJob(req),
-    // Invalidate the PREFIX so every typed interactions query ('viewed', 'opened', …)
-    // refetches — keys.postings.interactions(type) = ['postings','interactions',type]
-    // and React Query matches on prefix, so omitting the type segment hits all of them.
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['postings', 'interactions'] }),
+    // Invalidate both the postings list (so interaction badges update in PostingListItem)
+    // and the interactions queries (typed views like 'viewed', 'opened', 'bookmarked').
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.postings.all });
+      void qc.invalidateQueries({ queryKey: ['postings', 'interactions'] });
+    },
   });
 };

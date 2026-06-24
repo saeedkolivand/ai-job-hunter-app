@@ -274,7 +274,7 @@ graphify update .
 cp .mcp.json.example .mcp.json
 ```
 
-The committed `scripts/graphify-mcp.mjs` launcher resolves your machine's interpreter at runtime, so no local path is ever committed. Skip this entirely if you don't use graphify — nothing else depends on it.
+`.mcp.json` registers the graphify MCP server. See `.mcp.json.example` (`mcpServers.graphify` key) for the exact command and arguments. Skip this entirely if you don't use graphify — nothing else depends on it.
 
 ---
 

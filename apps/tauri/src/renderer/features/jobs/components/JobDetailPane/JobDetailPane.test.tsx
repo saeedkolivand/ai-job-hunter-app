@@ -15,7 +15,7 @@
  */
 
 import React from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
@@ -91,12 +91,17 @@ vi.mock('@ajh/ui', () => ({
   SourceBadge: () => null,
   Tag: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   transition: { fast: {} },
+  resolveTransition: (t: unknown) => t,
+  variants: {
+    fadeSlideUp: { initial: {}, animate: {}, exit: {} },
+    fadeSlideDown: { initial: {}, animate: {}, exit: {} },
+  },
 }));
 
 // ── RowMatchScore ─────────────────────────────────────────────────────────────
 
 vi.mock('@/features/jobs/components/RowMatchScore', () => ({
-  RowMatchScore: () => null,
+  RowMatchScore: () => <span data-testid="row-match-score" />,
 }));
 
 // ── @ajh/shared ───────────────────────────────────────────────────────────────
@@ -265,26 +270,56 @@ describe('JobDetailPane — description rendering', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// viewed-on-mount — keyed by posting.id
+// viewed dwell — fires after 5s, not on mount; keyed by posting.id
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('JobDetailPane — viewed-on-mount', () => {
-  it('calls trackInteraction("viewed") exactly once when a posting is displayed', async () => {
+describe('JobDetailPane — viewed dwell timer', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    mockTrackInteraction.mockClear();
+  });
+
+  it('does NOT call trackInteraction("viewed") before 5s have elapsed', async () => {
     await act(async () => {
       render(
         <JobDetailPane posting={makePosting('job-1')} formatRelativeTime={formatRelativeTime} />
       );
     });
+    // Advance to just under the threshold — must not have fired yet.
+    await act(async () => {
+      vi.advanceTimersByTime(4999);
+    });
+    expect(mockTrackInteraction).not.toHaveBeenCalledWith('viewed');
+  });
+
+  it('calls trackInteraction("viewed") exactly once after 5s dwell', async () => {
+    await act(async () => {
+      render(
+        <JobDetailPane posting={makePosting('job-1')} formatRelativeTime={formatRelativeTime} />
+      );
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
     expect(mockTrackInteraction).toHaveBeenCalledTimes(1);
     expect(mockTrackInteraction).toHaveBeenCalledWith('viewed');
   });
 
-  it('does NOT re-fire when re-rendered with the same posting.id', async () => {
+  it('does NOT re-fire when re-rendered with the same posting.id after dwell', async () => {
     const posting = makePosting('job-1');
     const { rerender } = render(
       <JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />
     );
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+    mockTrackInteraction.mockClear();
 
+    // Re-render with same id (e.g. title update) — timer must NOT restart/refire.
     await act(async () => {
       rerender(
         <JobDetailPane
@@ -293,24 +328,56 @@ describe('JobDetailPane — viewed-on-mount', () => {
         />
       );
     });
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
 
-    expect(mockTrackInteraction).toHaveBeenCalledTimes(1);
+    expect(mockTrackInteraction).not.toHaveBeenCalledWith('viewed');
   });
 
-  it('fires again when posting.id changes to a different value', async () => {
+  it('cancels and restarts timer when posting.id changes; fires once per job', async () => {
     const { rerender } = render(
       <JobDetailPane posting={makePosting('job-1')} formatRelativeTime={formatRelativeTime} />
     );
-
+    // Switch jobs before the dwell fires — old timer cancels.
+    await act(async () => {
+      vi.advanceTimersByTime(3000);
+    });
     await act(async () => {
       rerender(
         <JobDetailPane posting={makePosting('job-2')} formatRelativeTime={formatRelativeTime} />
       );
     });
+    // Advance 5s from job-2 mount — only job-2's timer fires.
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
 
-    expect(mockTrackInteraction).toHaveBeenCalledTimes(2);
-    expect(mockTrackInteraction.mock.calls[0]?.[0]).toBe('viewed');
-    expect(mockTrackInteraction.mock.calls[1]?.[0]).toBe('viewed');
+    // job-1's timer was cancelled; only job-2 fires.
+    expect(mockTrackInteraction).toHaveBeenCalledTimes(1);
+    expect(mockTrackInteraction).toHaveBeenCalledWith('viewed');
+  });
+
+  it('unmount cancels the pending timer — "viewed" is never tracked after unmount', async () => {
+    // Render a posting and advance 4s (timer is pending, has not fired yet).
+    const { unmount } = render(
+      <JobDetailPane posting={makePosting('job-unmount')} formatRelativeTime={formatRelativeTime} />
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(4000);
+    });
+    // No call yet — still within the 5s dwell.
+    expect(mockTrackInteraction).not.toHaveBeenCalledWith('viewed');
+
+    // Unmount before the timer fires — clearTimeout in the cleanup must cancel it.
+    unmount();
+
+    // Advance well past the threshold; the callback must NOT fire post-unmount.
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(mockTrackInteraction).not.toHaveBeenCalledWith('viewed');
   });
 });
 
@@ -605,7 +672,10 @@ describe('JobDetailPane — useResolveJobUrl fallback', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('JobDetailPane — aggregator short-description gate', () => {
-  it('shows loading state when aggregator posting has a short snippet and resolve is in-flight', async () => {
+  it('shows updating hint (not full loading state) when aggregator has a snippet and resolve is in-flight', async () => {
+    // New behaviour: existing snippet text is rendered immediately; a small
+    // "Updating…" hint appears inline while the full text is being fetched.
+    // The full "Loading description…" spinner is only shown when there is NO text.
     mockUseResolveJobUrl.mockReturnValue({
       data: undefined,
       isLoading: true,
@@ -622,7 +692,12 @@ describe('JobDetailPane — aggregator short-description gate', () => {
       render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
     });
 
-    expect(screen.getByText('jobs.loadingDescription')).toBeInTheDocument();
+    // Snippet is rendered immediately (no flash to full spinner)
+    expect(screen.getByText('Short Adzuna snippet.')).toBeInTheDocument();
+    // Inline updating hint shown while fetching
+    expect(screen.getByText('jobs.updatingDescription')).toBeInTheDocument();
+    // Full "loading" spinner NOT shown (that is reserved for when there is no text)
+    expect(screen.queryByText('jobs.loadingDescription')).not.toBeInTheDocument();
     expect(mockUseResolveJobUrl).toHaveBeenCalledWith(posting.url, true);
   });
 
@@ -731,7 +806,9 @@ describe('JobDetailPane — load full description button', () => {
       render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
     });
 
-    expect(screen.getByText('jobs.loadingDescription')).toBeInTheDocument();
+    // Snippet is shown immediately; inline updating hint visible; full-load button hidden.
+    expect(screen.getByText('Short snippet.')).toBeInTheDocument();
+    expect(screen.getByText('jobs.updatingDescription')).toBeInTheDocument();
     expect(screen.queryByText('jobs.loadFullDescription')).not.toBeInTheDocument();
   });
 
@@ -952,5 +1029,25 @@ describe('JobDetailPane — load full description button calls refetch', () => {
     });
 
     expect(mockRefetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RowMatchScore visibility — score renders in the detail header
+// (score was removed from list rows; this guards it stays in the detail pane)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('JobDetailPane — RowMatchScore renders in detail header', () => {
+  it('renders RowMatchScore in the detail pane when a posting is open', async () => {
+    const posting = makePosting('score-visible', { description: 'Full description.' });
+    await act(async () => {
+      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    });
+    expect(screen.getByTestId('row-match-score')).toBeInTheDocument();
+  });
+
+  it('does NOT render RowMatchScore when posting is null (empty state)', () => {
+    render(<JobDetailPane posting={null} formatRelativeTime={formatRelativeTime} />);
+    expect(screen.queryByTestId('row-match-score')).not.toBeInTheDocument();
   });
 });

@@ -57,7 +57,6 @@ interface JobsSlice {
   sortBy: 'newest' | 'oldest' | 'company';
   viewMode: 'list' | 'split';
   selectedId: string | null;
-  detailCollapsed: boolean;
 }
 
 type ResumesTab = 'resumes' | 'coverLetters' | 'activity';
@@ -239,7 +238,6 @@ export const useSessionStore = create<SessionState>((set) => ({
     sortBy: 'newest',
     viewMode: 'split',
     selectedId: null,
-    detailCollapsed: false,
   },
   resumes: { tab: 'resumes', filter: '' },
   settings: { activeSection: 'general' },

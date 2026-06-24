@@ -61,39 +61,26 @@ export function JobsResults({
   const missingAdzunaKeys =
     isEmpty && keysKnown && (adzunaIdData?.has === false || adzunaKeyData?.has === false);
 
-  // List is shown immediately once scraping finishes; scores arrive per-job on open.
-  const waiting = scraping;
+  // Show the full skeleton only on a fresh search (no results yet).
+  // During show-more (scraping=true but results already visible) we keep the
+  // list rendered — the "Show more" button's own loading={scraping} covers the
+  // in-progress state without displacing existing results.
+  const waiting = scraping && filtered.length === 0;
 
   // Derive selection validity during render so display changes flow into deps.
   const topId = filtered[0]?.id ?? null;
   const selectionInDisplay = selectedId !== null && filtered.some((p) => p.id === selectedId);
 
-  // Unified selection effect — subsumes both the old null-reconciliation effect
-  // and the split-mode auto-select:
-  //
-  //   In split mode with results:
-  //     • justFinished (waiting true→false): re-select topId so fresh scrape
-  //       results are immediately visible in the detail pane.
-  //     • !selectionInDisplay: selection is absent OR was filtered out of the
-  //       list; select topId so the detail pane is never left blank.
-  //     • selectionInDisplay && !justFinished: user has a valid manual selection,
-  //       leave it alone even if topId changes (live prepend, filter change).
-  //
-  //   In list mode: no-op — list mode has no auto-select requirement.
-  //
-  // Deps include derived booleans (topId, selectionInDisplay) so a filter change
-  // triggers the effect even when selectedId hasn't changed.
-  const prevWaitingRef = useRef(waiting);
+  // Auto-select: pick topId only when there is NO valid selection in the display.
+  // This preserves the user's chosen job across re-scrapes, show-more, and live
+  // prepends — we only step in when the detail pane would otherwise be blank
+  // (fresh search with nothing selected, or selection was filtered out).
   useEffect(() => {
-    const justFinished = prevWaitingRef.current && !waiting;
-    prevWaitingRef.current = waiting;
-
     if (viewMode !== 'split' || topId === null) return;
-
-    if (justFinished || !selectionInDisplay) {
-      setJobs({ selectedId: topId, detailCollapsed: false });
+    if (!selectionInDisplay) {
+      setJobs({ selectedId: topId });
     }
-  }, [waiting, viewMode, topId, selectionInDisplay, setJobs]);
+  }, [viewMode, topId, selectionInDisplay, setJobs]);
 
   // Windowed list: only visible rows (+ overscan) mount. Keyed by posting id so
   // measurement survives live-prepended rows during a scrape.
@@ -174,15 +161,19 @@ export function JobsResults({
   // Split mode: two-pane layout — JobsSplitView owns the virtualizer + layout.
   // px-10 pb-10 aligns the list's left edge and the detail's right edge to the
   // page header's 40px horizontal margin.
+  // surface-card wraps the two panes as one cohesive themed card (white in light
+  // theme, dark tile in dark theme) so the split reads like a single LinkedIn-style card.
   if (viewMode === 'split') {
     return (
       <div className="min-h-0 flex-1 overflow-hidden px-10 pb-10">
-        <JobsSplitView
-          display={filtered}
-          formatRelativeTime={formatRelativeTime}
-          scraping={scraping}
-          onShowMore={onShowMore}
-        />
+        <div className="surface-card flex h-full min-h-0 overflow-hidden rounded-2xl">
+          <JobsSplitView
+            display={filtered}
+            formatRelativeTime={formatRelativeTime}
+            scraping={scraping}
+            onShowMore={onShowMore}
+          />
+        </div>
       </div>
     );
   }
@@ -218,7 +209,7 @@ export function JobsResults({
       </div>
 
       <div className="flex justify-center pt-4">
-        <Button variant="ghost" onClick={onShowMore} loading={scraping}>
+        <Button variant="primary" onClick={onShowMore} loading={scraping}>
           {!scraping && <Plus size={12} />}
           {t('jobs.showMore')}
         </Button>

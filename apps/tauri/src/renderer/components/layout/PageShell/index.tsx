@@ -15,7 +15,7 @@ interface PageShellProps {
   children: ReactNode;
   /** Override the default scrollable content class */
   contentClassName?: string;
-  /** Max-width of the inner content column — default max-w-6xl */
+  /** Max-width of the inner content column — default max-w-6xl 2xl:max-w-7xl */
   maxWidth?: string;
 }
 
@@ -35,7 +35,7 @@ export function PageShell({
   actions,
   children,
   contentClassName,
-  maxWidth = 'max-w-6xl',
+  maxWidth = 'max-w-6xl 2xl:max-w-7xl',
 }: PageShellProps) {
   return (
     <PageTransition className="flex h-full flex-col overflow-hidden">
