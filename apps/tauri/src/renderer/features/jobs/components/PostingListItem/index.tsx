@@ -47,74 +47,91 @@ export function PostingListItem({
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       className={cn(
-        'flex h-[68px] cursor-pointer items-center gap-3 border-b border-[var(--border-clear)] px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
-        selected ? 'border-l-2 border-l-brand bg-brand/15' : 'hover:bg-muted'
+        // Outer shell: fixed height for the virtualizer; no padding — inner pill handles that.
+        // border-b separator only on unselected rows (selected pill has its own frame).
+        'flex h-[76px] cursor-pointer items-center px-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
+        selected ? '' : 'border-b border-[var(--border-clear)] hover:bg-muted'
       )}
     >
-      {/* 32×32 source-badge logo slot — mirrors PostingRow's 40×40 at smaller size */}
+      {/* NavPill-style active pill: rounded, brand gradient, inset — mirrors sidebar active item */}
       <div
-        aria-hidden="true"
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-brand/10 text-[10px] font-semibold text-brand-soft"
+        className={cn('flex h-[64px] w-full items-center gap-3 px-2', selected ? 'rounded-xl' : '')}
+        style={
+          selected
+            ? {
+                background:
+                  'linear-gradient(135deg, color-mix(in srgb, var(--color-brand) 18%, transparent) 0%, color-mix(in srgb, var(--color-brand-2, var(--color-brand)) 10%, transparent) 100%)',
+                border: '1px solid color-mix(in srgb, var(--color-brand) 25%, transparent)',
+                boxShadow: '0 0 16px color-mix(in srgb, var(--color-brand) 12%, transparent)',
+              }
+            : undefined
+        }
       >
-        {sourceBadge}
-      </div>
-
-      {/* Text block: 2-line layout fills remaining space */}
-      <div className="min-w-0 flex-1">
-        {/* Line 1: title only — score moved to detail pane */}
-        <div className="flex items-center gap-1.5">
-          <span
-            className={cn(
-              'min-w-0 flex-1 truncate text-[12px] font-semibold',
-              // Selected: full-opacity foreground.
-              // Viewed (not selected): dimmed title per LinkedIn-style treatment.
-              selected
-                ? 'text-foreground'
-                : isViewed
-                  ? 'text-muted-foreground'
-                  : 'text-foreground/90'
-            )}
-          >
-            {posting.title}
-          </span>
+        {/* 32×32 source-badge logo slot — mirrors PostingRow's 40×40 at smaller size */}
+        <div
+          aria-hidden="true"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-brand/10 text-[10px] font-semibold text-brand-soft"
+        >
+          {sourceBadge}
         </div>
 
-        {/* Visually-hidden status summary for screen readers */}
-        {(has('applied') || has('opened') || has('viewed') || has('bookmarked')) && (
-          <span className="sr-only">
-            {[
-              has('applied') && t('jobs.applied'),
-              (has('opened') || has('viewed')) && t('jobs.viewed'),
-              has('bookmarked') && t('jobs.saved'),
-            ]
-              .filter(Boolean)
-              .join(', ')}
-          </span>
-        )}
+        {/* Text block: 2-line layout fills remaining space */}
+        <div className="min-w-0 flex-1">
+          {/* Line 1: title only — score moved to detail pane */}
+          <div className="flex items-center gap-1.5">
+            <span
+              className={cn(
+                'min-w-0 flex-1 truncate text-[13px] font-semibold',
+                // Selected: full-opacity foreground.
+                // Viewed (not selected): dimmed title per LinkedIn-style treatment.
+                selected
+                  ? 'text-foreground'
+                  : isViewed
+                    ? 'text-muted-foreground'
+                    : 'text-foreground/90'
+              )}
+            >
+              {posting.title}
+            </span>
+          </div>
 
-        {/* Line 2: company · location · time, then status markers */}
-        <div
-          className={cn(
-            'flex items-center gap-1.5 text-[10px]',
-            selected ? 'text-brand-soft/70' : 'text-foreground/50'
+          {/* Visually-hidden status summary for screen readers */}
+          {(has('applied') || has('opened') || has('viewed') || has('bookmarked')) && (
+            <span className="sr-only">
+              {[
+                has('applied') && t('jobs.applied'),
+                (has('opened') || has('viewed')) && t('jobs.viewed'),
+                has('bookmarked') && t('jobs.saved'),
+              ]
+                .filter(Boolean)
+                .join(', ')}
+            </span>
           )}
-        >
-          <span className="truncate">{posting.company}</span>
-          {posting.location && <span className="shrink-0 truncate">· {posting.location}</span>}
-          {posting.postedAt && (
-            <span className="shrink-0">· {formatRelativeTime(posting.postedAt)}</span>
-          )}
-          {/* Status markers — decorative (aria-hidden); SR summary above */}
-          <span className="ml-auto flex shrink-0 items-center gap-1">
-            {has('applied') && <CircleCheck size={9} aria-hidden="true" />}
-            {/* "Viewed" text label replaces the eye icon — aria-hidden since SR uses the summary above */}
-            {isViewed && !selected && (
-              <span aria-hidden="true" className="text-[10px]">
-                {t('jobs.viewed')}
-              </span>
+
+          {/* Line 2: company · location · time, then status markers */}
+          <div
+            className={cn(
+              'flex items-center gap-1.5 text-[11px]',
+              selected ? 'text-brand-soft/70' : 'text-foreground/50'
             )}
-            {has('bookmarked') && <Bookmark size={9} aria-hidden="true" />}
-          </span>
+          >
+            <span className="truncate">{posting.company}</span>
+            {posting.location && <span className="shrink-0 truncate">· {posting.location}</span>}
+            {posting.postedAt && (
+              <span className="shrink-0">· {formatRelativeTime(posting.postedAt)}</span>
+            )}
+            {/* Status markers — decorative (aria-hidden); SR summary above */}
+            <span className="ml-auto flex shrink-0 items-center gap-1">
+              {has('applied') && <CircleCheck size={9} aria-hidden="true" />}
+              {/* "Viewed" text label replaces the eye icon — aria-hidden since SR uses the summary above */}
+              {isViewed && !selected && (
+                <span aria-hidden="true" className="text-[10px]">
+                  {t('jobs.viewed')}
+                </span>
+              )}
+              {has('bookmarked') && <Bookmark size={9} aria-hidden="true" />}
+            </span>
+          </div>
         </div>
       </div>
     </div>

@@ -200,13 +200,13 @@ export function JobsPage() {
   }, [livePostings.length]);
 
   const allPostings = useMemo(() => {
-    // Dedup by id across both arrays; livePostings first preserves the prepend order.
-    const seen = new Set<string>();
-    return [...livePostings, ...postings].filter((p) => {
-      if (seen.has(p.id)) return false;
-      seen.add(p.id);
-      return true;
-    });
+    // Backend `postings` win on duplicate ids — they carry interactions and the
+    // persisted full description. Streamed `livePostings` are only added when
+    // they have no backend counterpart yet (mid-scrape, not yet persisted).
+    const byId = new Map<string, Posting>();
+    for (const p of postings) byId.set(p.id, p);
+    for (const p of livePostings) if (!byId.has(p.id)) byId.set(p.id, p);
+    return [...byId.values()];
   }, [postings, livePostings]);
 
   const handleClearPostings = async () => {

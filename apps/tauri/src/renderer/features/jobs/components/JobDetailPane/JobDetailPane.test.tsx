@@ -667,7 +667,10 @@ describe('JobDetailPane — useResolveJobUrl fallback', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('JobDetailPane — aggregator short-description gate', () => {
-  it('shows loading state when aggregator posting has a short snippet and resolve is in-flight', async () => {
+  it('shows updating hint (not full loading state) when aggregator has a snippet and resolve is in-flight', async () => {
+    // New behaviour: existing snippet text is rendered immediately; a small
+    // "Updating…" hint appears inline while the full text is being fetched.
+    // The full "Loading description…" spinner is only shown when there is NO text.
     mockUseResolveJobUrl.mockReturnValue({
       data: undefined,
       isLoading: true,
@@ -684,7 +687,12 @@ describe('JobDetailPane — aggregator short-description gate', () => {
       render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
     });
 
-    expect(screen.getByText('jobs.loadingDescription')).toBeInTheDocument();
+    // Snippet is rendered immediately (no flash to full spinner)
+    expect(screen.getByText('Short Adzuna snippet.')).toBeInTheDocument();
+    // Inline updating hint shown while fetching
+    expect(screen.getByText('jobs.updatingDescription')).toBeInTheDocument();
+    // Full "loading" spinner NOT shown (that is reserved for when there is no text)
+    expect(screen.queryByText('jobs.loadingDescription')).not.toBeInTheDocument();
     expect(mockUseResolveJobUrl).toHaveBeenCalledWith(posting.url, true);
   });
 
@@ -793,7 +801,9 @@ describe('JobDetailPane — load full description button', () => {
       render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
     });
 
-    expect(screen.getByText('jobs.loadingDescription')).toBeInTheDocument();
+    // Snippet is shown immediately; inline updating hint visible; full-load button hidden.
+    expect(screen.getByText('Short snippet.')).toBeInTheDocument();
+    expect(screen.getByText('jobs.updatingDescription')).toBeInTheDocument();
     expect(screen.queryByText('jobs.loadFullDescription')).not.toBeInTheDocument();
   });
 

@@ -213,7 +213,12 @@ function DetailContent({
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <RowMatchScore jobId={posting.id} />
-              {/* Status badges — applied + saved only; Viewed is redundant in the detail pane */}
+              {/* Status badges — viewed + applied + saved */}
+              {(has('opened') || has('viewed')) && (
+                <Tag color="blue" icon={<Eye size={8} />} className={statusTagCls}>
+                  {t('jobs.viewed')}
+                </Tag>
+              )}
               {has('applied') && (
                 <Tag color="purple" icon={<CircleCheck size={8} />} className={statusTagCls}>
                   {t('jobs.applied')}
@@ -273,7 +278,13 @@ function DetailContent({
           {announced ? t('jobs.fullDescriptionLoaded') : ''}
         </span>
 
-        {descLoading ? (
+        {/* "About the job" section label */}
+        <h3 className="mb-3 text-[11px] uppercase tracking-wider text-muted-foreground">
+          {t('jobs.aboutTheJob')}
+        </h3>
+
+        {/* Loading state: only shown when there is NO text to display yet */}
+        {descLoading && !description && (
           <div
             role="status"
             aria-busy="true"
@@ -282,13 +293,22 @@ function DetailContent({
             <Loader2 size={14} aria-hidden="true" className="animate-spin" />
             {t('jobs.loadingDescription')}
           </div>
-        ) : (
-          <>
-            {/* "About the job" section label */}
-            <h3 className="mb-3 text-[11px] uppercase tracking-wider text-muted-foreground">
-              {t('jobs.aboutTheJob')}
-            </h3>
+        )}
 
+        {/* Inline updating hint: text exists but we're still fetching a longer version */}
+        {descLoading && description && (
+          <p
+            className="mb-2 flex items-center gap-1.5 text-[10px] text-foreground/40"
+            aria-live="polite"
+          >
+            <Loader2 size={10} aria-hidden="true" className="animate-spin" />
+            {t('jobs.updatingDescription')}
+          </p>
+        )}
+
+        {/* Description — rendered immediately when any text is available */}
+        {description && (
+          <>
             {/* fold 9: space-y-4 for block rhythm; headings use mt-2 not mt-4 */}
             <JobDescription
               markdown={description}

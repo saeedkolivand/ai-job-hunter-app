@@ -172,12 +172,21 @@ beforeEach(() => {
 // ── gating ────────────────────────────────────────────────────────────────────
 
 describe('JobsResults — gating', () => {
-  it('shows the searching state and no rows while scraping', () => {
-    renderResults({ filtered: [posting('a', 'A'), posting('b', 'B')], scraping: true });
+  it('shows the searching state and no rows while scraping with no results yet (fresh search)', () => {
+    // Skeleton only fires on a fresh search: scraping=true AND filtered is empty.
+    // During show-more (filtered has items + scraping) the list stays visible.
+    renderResults({ filtered: [], scraping: true });
 
     expect(screen.getByText('jobs.searching')).toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.jobs.postingRow)).not.toBeInTheDocument();
     expect(screen.queryByText('jobs.showMore')).not.toBeInTheDocument();
+  });
+
+  it('keeps existing rows visible during show-more (scraping=true with results already present)', () => {
+    renderResults({ filtered: [posting('a', 'A'), posting('b', 'B')], scraping: true });
+
+    expect(screen.queryByText('jobs.searching')).not.toBeInTheDocument();
+    expect(rowOrder()).toEqual(['a', 'b']);
   });
 
   it('reveals rows immediately when not scraping (no score-batch wait)', () => {
@@ -331,14 +340,20 @@ describe('JobsResults — split-mode auto-select', () => {
     expect(mockSetJobs).toHaveBeenCalledWith({ selectedId: 'a' });
   });
 
-  it('re-selects display[0] when scraping transitions true→false in split mode', () => {
+  it('re-selects display[0] when a fresh scrape finishes (filtered empty→populated, scraping true→false)', () => {
+    // waiting = scraping && filtered.length === 0.
+    // Fresh search: start with empty filtered + scraping=true (waiting=true),
+    // then results arrive + scraping=false (waiting=false, justFinished=true).
+    // Show-more does NOT trigger this path — it starts with items already present.
     STORE_STATE.jobs = { viewMode: 'split', selectedId: null };
     const p1 = posting('x', 'X');
     const p2 = posting('y', 'Y');
 
-    const { rerender } = renderResults({ filtered: [p1, p2], resumeId: null, scraping: true });
+    // Initial render: no results yet, scraping in progress → waiting=true
+    const { rerender } = renderResults({ filtered: [], resumeId: null, scraping: true });
     mockSetJobs.mockClear();
 
+    // Scrape finishes: results arrive + scraping done → waiting=false, justFinished=true
     rerender(
       <JobsResults
         filtered={[p1, p2]}

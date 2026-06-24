@@ -61,8 +61,11 @@ export function JobsResults({
   const missingAdzunaKeys =
     isEmpty && keysKnown && (adzunaIdData?.has === false || adzunaKeyData?.has === false);
 
-  // List is shown immediately once scraping finishes; scores arrive per-job on open.
-  const waiting = scraping;
+  // Show the full skeleton only on a fresh search (no results yet).
+  // During show-more (scraping=true but results already visible) we keep the
+  // list rendered — the "Show more" button's own loading={scraping} covers the
+  // in-progress state without displacing existing results.
+  const waiting = scraping && filtered.length === 0;
 
   // Derive selection validity during render so display changes flow into deps.
   const topId = filtered[0]?.id ?? null;
