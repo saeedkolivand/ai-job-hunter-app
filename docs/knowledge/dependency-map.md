@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-01
 
-For the live graph use **graphify** — `graphify query "what depends on <X>"`, `graphify path "<A>" "<B>"`, or `graphify-out/GRAPH_REPORT.md` for hubs/communities. This file only fixes the **boundary rules** and where manifests live.
+For the live graph use **graphify** — MCP `query_graph "what depends on <X>"` / `shortest_path "<A>" "<B>"` when connected, else the `graphify query` / `graphify path` CLI, or `graphify-out/GRAPH_REPORT.md` for hubs/communities. This file only fixes the **boundary rules** and where manifests live.
 
 ## Package boundaries (must not be violated)
 

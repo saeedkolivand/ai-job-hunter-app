@@ -138,7 +138,7 @@ export function ResumeBuilderPage() {
 
   return (
     <PageTransition className="h-full overflow-hidden">
-      <div className="flex h-full flex-col">
+      <div className="mx-auto flex h-full w-full max-w-6xl flex-col 2xl:max-w-7xl">
         {/* Header: title + model picker */}
         <div className="shrink-0 flex items-center justify-between gap-4 border-b border-[var(--border-soft)] px-8 py-4">
           <div>

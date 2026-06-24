@@ -110,7 +110,7 @@ function AutopilotPage() {
 
   return (
     <PageTransition className="h-full overflow-hidden">
-      <div className="flex h-full flex-col">
+      <div className="mx-auto flex h-full w-full max-w-6xl flex-col 2xl:max-w-7xl">
         {/* Header */}
         <div className="flex items-center justify-between px-8 py-5 shrink-0">
           <div className="flex items-center gap-3">

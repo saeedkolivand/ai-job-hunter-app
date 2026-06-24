@@ -757,7 +757,9 @@
       "historyClearedSuccess": "Interaction history cleared.",
       "exportSuccess": "Data exported successfully.",
       "importSuccess": "Imported {{count}} record{{plural}}.",
-      "importPartial": "Some items could not be restored. Your data may be incomplete."
+      "importPartial": "Some items could not be restored. Your data may be incomplete.",
+      "fetchCompanyLogosTitle": "Fetch company logos",
+      "fetchCompanyLogosDescription": "When on, the company name of each job posting is sent to a third-party logo provider (Clearbit) to fetch a logo image. Off by default."
     },
     "location": {
       "title": "Preferred Location",
@@ -1659,14 +1661,14 @@
     "viewSplit": "Split",
     "viewMode": "View mode",
     "backToList": "Back to list",
-    "collapseDetail": "Collapse detail",
-    "expandDetail": "Expand detail",
     "selectAJob": "Select a job to see details",
     "copyLinkError": "Failed to copy link",
     "loadingDescription": "Loading description…",
+    "updatingDescription": "Updating…",
     "loadFullDescription": "Load full description",
     "fullDescriptionLoaded": "Full description loaded",
     "descriptionLoadError": "Could not load the full description. You can try again.",
+    "aboutTheJob": "About the job",
     "matchBand": {
       "High": "High",
       "Medium": "Medium",

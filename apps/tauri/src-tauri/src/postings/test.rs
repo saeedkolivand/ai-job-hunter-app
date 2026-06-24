@@ -17,6 +17,19 @@ fn fake_embedding() -> EmbeddingVector {
     }
 }
 
+fn interaction(job_id: &str, interaction_type: &str) -> InteractionRecord {
+    InteractionRecord {
+        job_id: job_id.to_string(),
+        interaction_type: interaction_type.to_string(),
+        timestamp: 0,
+        title: "Test".to_string(),
+        company: "Test".to_string(),
+        url: "https://example.com".to_string(),
+        source: "test".to_string(),
+        location: "Remote".to_string(),
+    }
+}
+
 #[test]
 fn test_postings_cache_default() {
     let cache = PostingsCache::default();
@@ -29,6 +42,251 @@ fn test_postings_cache_add() {
     let item = serde_json::json!({"id": "1", "title": "Test"});
     cache.add(item);
     assert_eq!(cache.get_all().len(), 1);
+}
+
+#[test]
+fn add_upserts_by_id_keeping_latest_fields() {
+    // "Show more" re-streams the same posting (same id). The second add must
+    // replace the first in place — not append a duplicate — and the newer fields
+    // must win.
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({"id": "1", "title": "Old", "description": "v0"}));
+    cache.add(serde_json::json!({"id": "1", "title": "New", "description": "v1"}));
+
+    assert_eq!(
+        cache.get_all().len(),
+        1,
+        "re-adding the same id must not duplicate the entry"
+    );
+    let item = &cache.get_all()[0];
+    assert_eq!(
+        item.get("title").and_then(serde_json::Value::as_str),
+        Some("New"),
+        "the latest copy of a re-added id must win"
+    );
+    assert_eq!(
+        item.get("description").and_then(serde_json::Value::as_str),
+        Some("v1"),
+        "all fields from the latest copy must win"
+    );
+}
+
+#[test]
+fn add_upsert_invalidates_cached_embedding() {
+    // A re-streamed posting (same id) may carry changed text, so the cached
+    // embedding for that id must be dropped on replace — otherwise the next score
+    // would reuse a vector built from the stale content. Mirrors the invalidation
+    // `update_description` performs on a text change.
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({"id": "1", "title": "Old"}));
+    cache.set_embedding("1".to_string(), fake_embedding());
+    assert!(
+        cache.get_embedding("1").is_some(),
+        "embedding must be present before the re-add"
+    );
+
+    // Re-add the same id with newer fields — the upsert replaces in place.
+    cache.add(serde_json::json!({"id": "1", "title": "New"}));
+
+    assert!(
+        cache.get_embedding("1").is_none(),
+        "the cached embedding must be invalidated when the id is replaced"
+    );
+    assert_eq!(
+        cache.get_all().len(),
+        1,
+        "re-adding the same id must not duplicate the entry"
+    );
+    assert_eq!(
+        cache.get_all()[0]
+            .get("title")
+            .and_then(serde_json::Value::as_str),
+        Some("New"),
+        "the latest copy of a re-added id must win"
+    );
+}
+
+#[test]
+fn add_upsert_preserves_insertion_order() {
+    // Re-adding an existing id must replace it in place, NOT move it to the end —
+    // the streamed order the user sees in the list must stay stable.
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({"id": "1", "title": "A"}));
+    cache.add(serde_json::json!({"id": "2", "title": "B"}));
+    cache.add(serde_json::json!({"id": "3", "title": "C"}));
+
+    // Re-add the middle entry with updated fields.
+    cache.add(serde_json::json!({"id": "2", "title": "B-updated"}));
+
+    let ids: Vec<&str> = cache
+        .get_all()
+        .iter()
+        .filter_map(|p| p.get("id").and_then(serde_json::Value::as_str))
+        .collect();
+    assert_eq!(
+        ids,
+        ["1", "2", "3"],
+        "re-adding id 2 must keep it in its original position, not move it to the end"
+    );
+
+    // Entry 2 was updated in place.
+    let second = &cache.get_all()[1];
+    assert_eq!(
+        second.get("title").and_then(serde_json::Value::as_str),
+        Some("B-updated"),
+        "the in-place entry must carry the updated fields"
+    );
+}
+
+#[test]
+fn add_keeps_distinct_ids() {
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({"id": "1"}));
+    cache.add(serde_json::json!({"id": "2"}));
+    cache.add(serde_json::json!({"id": "3"}));
+
+    assert_eq!(
+        cache.get_all().len(),
+        3,
+        "distinct ids must each get their own row"
+    );
+}
+
+#[test]
+fn add_never_collapses_id_less_items() {
+    // Items with no `"id"` (or a null id) must always push — two distinct id-less
+    // rows must not be collapsed onto each other.
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({}));
+    cache.add(serde_json::json!({}));
+
+    assert_eq!(
+        cache.get_all().len(),
+        2,
+        "id-less items must always push, never collapse"
+    );
+
+    // A null id behaves like a missing id (serde `as_str` on null is None).
+    cache.add(serde_json::json!({"id": serde_json::Value::Null}));
+    cache.add(serde_json::json!({"id": serde_json::Value::Null}));
+    assert_eq!(
+        cache.get_all().len(),
+        4,
+        "null-id items must also always push, never collapse"
+    );
+}
+
+#[test]
+fn attach_interactions_joins_records_by_job_id() {
+    // `scrape_list_postings` joins InteractionStore records onto each posting so
+    // the jobs list can render viewed/applied/saved badges. The join keys on the
+    // posting's string `"id"` == record `job_id`, and serializes the records in
+    // the renderer's camelCase `JobInteraction` shape.
+    let items = vec![
+        serde_json::json!({"id": "1", "title": "Has two"}),
+        serde_json::json!({"id": "2", "title": "Has one"}),
+        serde_json::json!({"id": "3", "title": "Has none"}),
+        serde_json::json!({"title": "No id"}),
+    ];
+    let interactions = vec![
+        interaction("1", "viewed"),
+        interaction("1", "applied"),
+        interaction("2", "bookmarked"),
+    ];
+
+    let joined = attach_interactions(&items, &interactions);
+    assert_eq!(joined.len(), 4, "every input item is returned, in order");
+
+    // Item "1" collects both of its interactions, exposed under camelCase keys.
+    let first = joined[0]
+        .get("interactions")
+        .and_then(serde_json::Value::as_array)
+        .expect("item 1 must carry an interactions array");
+    assert_eq!(first.len(), 2, "item 1 has two interactions");
+    let types: Vec<&str> = first
+        .iter()
+        .filter_map(|i| i.get("interactionType").and_then(serde_json::Value::as_str))
+        .collect();
+    assert!(
+        types.contains(&"viewed") && types.contains(&"applied"),
+        "item 1 must carry viewed + applied under the camelCase interactionType key, got {types:?}"
+    );
+
+    // The projected object must carry EXACTLY the `JobInteraction` contract keys —
+    // no extra storage-only fields can leak if `InteractionRecord` grows later.
+    let obj = first[0]
+        .as_object()
+        .expect("each interaction must be a JSON object");
+    let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "company",
+            "interactionType",
+            "jobId",
+            "location",
+            "source",
+            "timestamp",
+            "title",
+            "url",
+        ],
+        "interaction object must contain exactly the JobInteraction contract keys"
+    );
+
+    // Item "2" gets exactly its one interaction.
+    let second = joined[1]
+        .get("interactions")
+        .and_then(serde_json::Value::as_array)
+        .expect("item 2 must carry an interactions array");
+    assert_eq!(second.len(), 1, "item 2 has one interaction");
+
+    // Item "3" has an id but no recorded interactions → empty array (stable shape).
+    let third = joined[2]
+        .get("interactions")
+        .and_then(serde_json::Value::as_array)
+        .expect("item 3 must carry an interactions array even with no matches");
+    assert!(
+        third.is_empty(),
+        "an id with no interactions gets an empty array"
+    );
+
+    // The id-less item must not panic and gets an empty array too.
+    let fourth = joined[3]
+        .get("interactions")
+        .and_then(serde_json::Value::as_array)
+        .expect("an id-less item must still get an interactions array");
+    assert!(fourth.is_empty(), "an id-less item gets an empty array");
+}
+
+#[test]
+fn attach_interactions_clamps_unknown_interaction_type_to_viewed() {
+    // The persisted `interaction_type` is a free String on disk, but the shared
+    // `JobInteraction` contract is a strict union. A corrupt/out-of-union value
+    // must be coerced to "viewed" so it never breaks the cross-layer contract;
+    // valid types pass through unchanged.
+    let items = vec![serde_json::json!({"id": "1"})];
+    let interactions = vec![
+        interaction("1", "garbage"),
+        interaction("1", "applied"),
+        interaction("1", "opened"),
+    ];
+
+    let joined = attach_interactions(&items, &interactions);
+    let arr = joined[0]
+        .get("interactions")
+        .and_then(serde_json::Value::as_array)
+        .expect("item 1 must carry an interactions array");
+
+    let types: Vec<&str> = arr
+        .iter()
+        .filter_map(|i| i.get("interactionType").and_then(serde_json::Value::as_str))
+        .collect();
+    assert_eq!(
+        types,
+        ["viewed", "applied", "opened"],
+        "an unknown type is coerced to \"viewed\"; valid types pass through unchanged"
+    );
 }
 
 #[test]

@@ -58,24 +58,26 @@ export function SettingsPage() {
   const current = allItems.find((i: NavItem) => i.id === activeSection) as NavItem;
 
   return (
-    <PageTransition className="flex h-full overflow-hidden">
-      <SettingsSidebar
-        navGroups={navGroups}
-        activeSection={activeSection}
-        onSectionChange={handleSectionChange}
-        onResultSelect={handleResultSelect}
-      />
-      <SettingsContent
-        activeSection={activeSection}
-        current={current}
-        localName={localName}
-        setLocalName={setLocalName}
-        setUserName={setUserName}
-        userName={userName ?? ''}
-        scrollRef={scrollRef}
-        pendingAnchor={pendingAnchor}
-        onAnchorConsumed={handleAnchorConsumed}
-      />
+    <PageTransition className="h-full overflow-hidden">
+      <div className="mx-auto flex h-full w-full max-w-6xl overflow-hidden 2xl:max-w-7xl">
+        <SettingsSidebar
+          navGroups={navGroups}
+          activeSection={activeSection}
+          onSectionChange={handleSectionChange}
+          onResultSelect={handleResultSelect}
+        />
+        <SettingsContent
+          activeSection={activeSection}
+          current={current}
+          localName={localName}
+          setLocalName={setLocalName}
+          setUserName={setUserName}
+          userName={userName ?? ''}
+          scrollRef={scrollRef}
+          pendingAnchor={pendingAnchor}
+          onAnchorConsumed={handleAnchorConsumed}
+        />
+      </div>
     </PageTransition>
   );
 }

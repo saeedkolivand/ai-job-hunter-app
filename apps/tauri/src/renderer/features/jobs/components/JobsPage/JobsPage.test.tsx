@@ -543,7 +543,7 @@ describe('JobsPage — SegmentedControl viewMode toggle', () => {
     segmentedControlContainer.onChange = null;
   });
 
-  it('switching to "split" calls setJobs with viewMode:split AND detailCollapsed:false', () => {
+  it('switching to "split" calls setJobs with viewMode:split', () => {
     renderJobsPage();
     expect(segmentedControlContainer.onChange).toBeTypeOf('function');
 
@@ -551,10 +551,10 @@ describe('JobsPage — SegmentedControl viewMode toggle', () => {
       segmentedControlContainer.onChange?.('split');
     });
 
-    expect(setJobsSpy).toHaveBeenCalledWith({ viewMode: 'split', detailCollapsed: false });
+    expect(setJobsSpy).toHaveBeenCalledWith({ viewMode: 'split' });
   });
 
-  it('switching to "list" calls setJobs with only viewMode:list (no detailCollapsed)', () => {
+  it('switching to "list" calls setJobs with viewMode:list', () => {
     renderJobsPage();
     expect(segmentedControlContainer.onChange).toBeTypeOf('function');
 
@@ -563,8 +563,5 @@ describe('JobsPage — SegmentedControl viewMode toggle', () => {
     });
 
     expect(setJobsSpy).toHaveBeenCalledWith({ viewMode: 'list' });
-    // Critically: detailCollapsed must NOT be present in the list-mode call.
-    const callArg = setJobsSpy.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
-    expect(callArg).not.toHaveProperty('detailCollapsed');
   });
 });

@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::commands::ai_provider::EmbeddingVector;
 
@@ -27,8 +27,34 @@ pub struct PostingsCache {
 }
 
 impl PostingsCache {
-    #[allow(dead_code)]
+    /// Insert a streamed posting, upserting by its `"id"` string.
+    ///
+    /// "Show more" re-scrapes with the same search signature (`replace=false`), so
+    /// the same postings stream in again and would otherwise be appended a second
+    /// time — the backend cache returned by `scrape_list_postings` then contained
+    /// duplicates of the first batch. To prevent that, an incoming item whose `"id"`
+    /// already exists **replaces that entry in place** (preserving its position /
+    /// insertion order); the latest copy wins. An item with no `"id"` or a null id
+    /// always pushes — distinct id-less rows must not be collapsed onto each other.
+    ///
+    /// Linear scan over a `Vec` is correct here: the frontend caps the list at ~500
+    /// items, so the O(n) scan is cheap and a HashMap/index map would be premature.
+    /// Mirrors the existing linear-scan-by-`id` in [`Self::update_description`].
+    ///
+    /// When a replace happens, any cached embedding for that id is also dropped:
+    /// a re-streamed posting may carry changed text, so reusing the old vector
+    /// would score against stale content. This mirrors the invalidation
+    /// [`Self::update_description`] performs on a text change.
     pub fn add(&mut self, item: Value) {
+        if let Some(incoming_id) = item.get("id").and_then(Value::as_str).map(str::to_string) {
+            if let Some(pos) = self.items.iter().position(|existing| {
+                existing.get("id").and_then(Value::as_str) == Some(incoming_id.as_str())
+            }) {
+                self.items[pos] = item;
+                self.embeddings.remove(&incoming_id);
+                return;
+            }
+        }
         self.items.push(item);
     }
 
@@ -42,10 +68,11 @@ impl PostingsCache {
     /// pane resolves the full description we write it back here so the match
     /// scorer (which reads title+description+requirements from this cache) sees
     /// the full text. We mutate the EXISTING entry rather than pushing a new one:
-    /// [`Self::add`] is a blind `push` with no id-dedup and the scorer's
-    /// `job_texts_for` is first-wins by id, so a second copy would be ignored and
-    /// leave a duplicate behind. Each item is stored as a JSON object, so we patch
-    /// the `description` field on the matching object directly.
+    /// [`Self::add`] upserts by id (it would replace, not duplicate, the row) and
+    /// the scorer's `job_texts_for` is first-wins by id, so routing the patch
+    /// through `add` would needlessly rebuild the whole value. Each item is stored
+    /// as a JSON object, so we patch the `description` field on the matching object
+    /// directly.
     ///
     /// Returns `true` when an entry was updated, `false` when no item carries that
     /// id (no row is created in either case).
@@ -104,6 +131,78 @@ impl PostingsCache {
     pub fn clear_embeddings(&mut self) {
         self.embeddings.clear();
     }
+}
+
+/// Join the recorded interactions onto each cached posting so the jobs list can
+/// render viewed/applied/saved state.
+///
+/// `scrape_list_postings` returns the raw [`PostingsCache`] items, which never
+/// carry interactions (those live in the [`InteractionStore`]). Without this join
+/// `posting.interactions` is always empty in the renderer and no badges show.
+///
+/// Each returned object gets an `interactions` array of the records whose
+/// `job_id` equals the posting's string `"id"`, projected onto the renderer's
+/// `JobInteraction` contract (`packages/shared/src/types/index.ts`:
+/// `{ jobId, title, company, url, source, location?, interactionType, timestamp }`).
+/// We map each record to those fields EXPLICITLY rather than serializing the whole
+/// [`InteractionRecord`], so adding a storage-only field later can't silently leak
+/// into this IPC response or drift from the shared contract. An item with no `"id"`
+/// — or one whose id has no recorded interactions — gets an empty array, keeping
+/// the posting shape stable. The records are grouped once into a map, so the join
+/// is O(postings + interactions) (n ≤ ~500).
+pub fn attach_interactions(items: &[Value], interactions: &[InteractionRecord]) -> Vec<Value> {
+    let mut by_job_id: HashMap<&str, Vec<&InteractionRecord>> = HashMap::new();
+    for record in interactions {
+        by_job_id
+            .entry(record.job_id.as_str())
+            .or_default()
+            .push(record);
+    }
+
+    items
+        .iter()
+        .map(|item| {
+            let mut item = item.clone();
+            let matched: Vec<Value> = item
+                .get("id")
+                .and_then(Value::as_str)
+                .and_then(|id| by_job_id.get(id))
+                .map_or_else(Vec::new, |records| {
+                    records.iter().map(|r| interaction_value(r)).collect()
+                });
+            if let Some(obj) = item.as_object_mut() {
+                obj.insert("interactions".to_string(), Value::Array(matched));
+            }
+            item
+        })
+        .collect()
+}
+
+/// Project an [`InteractionRecord`] onto the renderer's `JobInteraction` contract,
+/// carrying ONLY the contract fields. Decouples the IPC response from the storage
+/// struct so a future storage-only field can't leak into `scrape_list_postings`.
+///
+/// `interactionType` is a strict union in the shared contract
+/// (`viewed | opened | applied | bookmarked`), but the persisted value is a free
+/// `String` on disk — a corrupt or unexpected entry must not break the cross-layer
+/// contract at runtime, so an out-of-union value is coerced to `"viewed"`.
+fn interaction_value(record: &InteractionRecord) -> Value {
+    // ponytail: clamp the on-disk type to the shared union; unknown → "viewed"
+    // (the most benign default — it only dims the row, never marks applied/saved).
+    let interaction_type = match record.interaction_type.as_str() {
+        "viewed" | "opened" | "applied" | "bookmarked" => record.interaction_type.as_str(),
+        _ => "viewed",
+    };
+    json!({
+        "jobId": record.job_id.as_str(),
+        "title": record.title.as_str(),
+        "company": record.company.as_str(),
+        "url": record.url.as_str(),
+        "source": record.source.as_str(),
+        "location": record.location.as_str(),
+        "interactionType": interaction_type,
+        "timestamp": record.timestamp,
+    })
 }
 
 // ── InteractionStore ──────────────────────────────────────────────────────────

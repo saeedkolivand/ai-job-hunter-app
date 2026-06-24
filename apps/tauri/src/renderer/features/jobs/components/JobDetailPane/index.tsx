@@ -21,9 +21,11 @@ import {
   Button,
   EmptyState,
   JobDescription,
+  resolveTransition,
   SourceBadge,
   Tag,
   transition,
+  variants,
 } from '@ajh/ui';
 
 import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
@@ -35,6 +37,9 @@ import { useResolveJobUrl, useUpdatePostingDescription } from '@/services';
 // ponytail: heuristic threshold — Adzuna search snippets are ~200–500 chars;
 // anything under 700 chars for aggregator postings gets an on-demand resolve.
 const SHORT_DESCRIPTION_CHARS = 700;
+
+// Dwell threshold before a job is marked as viewed (5s per spec).
+const VIEWED_DWELL_MS = 5000;
 
 interface JobDetailPaneProps {
   posting: Posting | null;
@@ -158,97 +163,115 @@ function DetailContent({
     prevDescLen.current = description.length;
   }, [announced, description.length]);
 
-  // Mark 'viewed' once on display (effect keyed by posting.id; dedupe via Rust upsert).
+  // Mark 'viewed' after a 5s dwell (fire-once per job mount via key={posting.id}).
+  // Depends ONLY on posting.id so a description-resolve re-render can't reset/refire it.
+  // clearTimeout in cleanup cancels on job-switch or unmount.
   const trackInteractionRef = useRef(trackInteraction);
   trackInteractionRef.current = trackInteraction;
+  const viewedFiredRef = useRef(false);
   useEffect(() => {
-    void trackInteractionRef.current('viewed');
+    const id = setTimeout(() => {
+      if (!viewedFiredRef.current) {
+        viewedFiredRef.current = true;
+        void trackInteractionRef.current('viewed');
+      }
+    }, VIEWED_DWELL_MS);
+    return () => clearTimeout(id);
   }, [posting.id]);
 
+  // Shared className for status Tag pills — applied/saved in the header.
+  const statusTagCls = 'rounded-full px-1.5 py-0.5 text-fine-print uppercase tracking-wider';
+
+  // Reduced-motion: keep opacity fade but drop the y-translate (no positional jump).
+  const resolvedTransition = resolveTransition(transition.fast);
+  const isInstant = resolvedTransition.duration === 0;
+
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* Header */}
-      <div className="shrink-0 border-b border-[var(--border-clear)] py-4 pl-5 pr-0">
-        <div className="mb-1 flex items-start gap-3">
+    <motion.div
+      initial={isInstant ? { opacity: 0 } : variants.fadeSlideUp.initial}
+      animate={isInstant ? { opacity: 1 } : variants.fadeSlideUp.animate}
+      exit={isInstant ? { opacity: 0 } : variants.fadeSlideUp.exit}
+      transition={resolvedTransition}
+      className="flex h-full flex-col overflow-hidden"
+    >
+      {/* Header — flush with hairline bottom divider; no outer card margin */}
+      <div className="shrink-0 border-b border-[var(--border-clear)] px-5 pb-4 pt-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          {/* LEFT: title + meta + match score + status tags */}
           <div className="min-w-0 flex-1">
-            <h2 className="text-base font-semibold leading-snug text-foreground/95">
-              {posting.title}
-            </h2>
+            <h2 className="text-body-strong text-foreground/95">{posting.title}</h2>
             {/* fold 10: bump metadata row from /60 to /70 (contrast floor at <14px) */}
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-foreground/70">
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-fine-print text-foreground/70">
               <span className="font-semibold text-foreground/80">{posting.company}</span>
               {posting.location && (
                 <span className="flex items-center gap-1">
                   <MapPin size={9} /> {posting.location}
                 </span>
               )}
+              {posting.remote && (
+                <Tag color="green" className={statusTagCls}>
+                  {t('jobs.remote')}
+                </Tag>
+              )}
               <span role="presentation">
                 <SourceBadge source={posting.source} url={posting.url} />
               </span>
               {posting.postedAt && <span>· {formatRelativeTime(posting.postedAt)}</span>}
             </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <RowMatchScore jobId={posting.id} />
+              {/* Status badges — viewed + applied + saved */}
+              {(has('opened') || has('viewed')) && (
+                <Tag color="blue" icon={<Eye size={8} />} className={statusTagCls}>
+                  {t('jobs.viewed')}
+                </Tag>
+              )}
+              {has('applied') && (
+                <Tag color="purple" icon={<CircleCheck size={8} />} className={statusTagCls}>
+                  {t('jobs.applied')}
+                </Tag>
+              )}
+              {has('bookmarked') && (
+                <Tag color="warning" icon={<Bookmark size={8} />} className={statusTagCls}>
+                  {t('jobs.saved')}
+                </Tag>
+              )}
+            </div>
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <RowMatchScore jobId={posting.id} />
-          </div>
-        </div>
 
-        {/* Action cluster */}
-        <div className="mt-3 flex items-center gap-2">
-          <motion.div layout transition={transition.fast} className="shrink-0">
+          {/* RIGHT: action cluster — Save/View, Tailor, ActionMenu */}
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <motion.div layout transition={transition.fast} className="shrink-0">
+              <Button
+                variant="primary"
+                onClick={saved ? handleView : handleSave}
+                disabled={pending}
+                loading={pending}
+                title={saved ? t('jobs.view') : t('applications.saveToTracking')}
+              >
+                {saved ? <Eye size={11} /> : <Save size={11} />}{' '}
+                {saved ? t('jobs.view') : t('applications.save')}
+              </Button>
+            </motion.div>
             <Button
-              variant="primary"
-              onClick={saved ? handleView : handleSave}
-              disabled={pending}
-              loading={pending}
-              title={saved ? t('jobs.view') : t('applications.saveToTracking')}
+              variant="glass"
+              onClick={() => void handleTailor()}
+              title={t('jobs.tailorHint')}
             >
-              {saved ? <Eye size={11} /> : <Save size={11} />}{' '}
-              {saved ? t('jobs.view') : t('applications.save')}
+              <Wand2 size={11} /> {t('jobs.tailor')}
             </Button>
-          </motion.div>
-          <Button variant="glass" onClick={() => void handleTailor()} title={t('jobs.tailorHint')}>
-            <Wand2 size={11} /> {t('jobs.tailor')}
-          </Button>
-          <ActionMenu
-            label={t('jobs.actions')}
-            items={[
-              { label: t('jobs.open'), icon: <ExternalLink size={14} />, onSelect: handleOpen },
-              {
-                label: t('jobs.copyLink'),
-                icon: <Copy size={14} />,
-                onSelect: () => void handleCopyLink(),
-              },
-            ]}
-          />
-          {/* Status badges — use Tag primitives, mirror PostingRow */}
-          {has('applied') && (
-            <Tag
-              color="purple"
-              icon={<CircleCheck size={8} />}
-              className="rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
-            >
-              {t('jobs.applied')}
-            </Tag>
-          )}
-          {(has('opened') || has('viewed')) && (
-            <Tag
-              color="blue"
-              icon={<Eye size={8} />}
-              className="rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
-            >
-              {t('jobs.viewed')}
-            </Tag>
-          )}
-          {has('bookmarked') && (
-            <Tag
-              color="warning"
-              icon={<Bookmark size={8} />}
-              className="rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
-            >
-              {t('jobs.saved')}
-            </Tag>
-          )}
+            <ActionMenu
+              label={t('jobs.actions')}
+              items={[
+                { label: t('jobs.open'), icon: <ExternalLink size={14} />, onSelect: handleOpen },
+                {
+                  label: t('jobs.copyLink'),
+                  icon: <Copy size={14} />,
+                  onSelect: () => void handleCopyLink(),
+                },
+              ]}
+            />
+          </div>
         </div>
       </div>
 
@@ -256,13 +279,19 @@ function DetailContent({
           The live region is a small visually-hidden sentinel only (blocker 4):
           it announces the single "full description loaded" message once on
           the snippet→full upgrade, without noisily re-announcing the whole body. */}
-      <div className="min-h-0 flex-1 overflow-y-auto py-4 pl-5 pr-0">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-1">
         {/* Visually-hidden AT sentinel — announces once when description upgrades */}
         <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
           {announced ? t('jobs.fullDescriptionLoaded') : ''}
         </span>
 
-        {descLoading ? (
+        {/* "About the job" section label */}
+        <h3 className="mb-3 text-fine-print uppercase tracking-wider text-muted-foreground">
+          {t('jobs.aboutTheJob')}
+        </h3>
+
+        {/* Loading state: only shown when there is NO text to display yet */}
+        {descLoading && !description && (
           <div
             role="status"
             aria-busy="true"
@@ -271,12 +300,26 @@ function DetailContent({
             <Loader2 size={14} aria-hidden="true" className="animate-spin" />
             {t('jobs.loadingDescription')}
           </div>
-        ) : (
+        )}
+
+        {/* Inline updating hint: text exists but we're still fetching a longer version */}
+        {descLoading && description && (
+          <p
+            className="mb-2 flex items-center gap-1.5 text-[10px] text-foreground/40"
+            aria-hidden="true"
+          >
+            <Loader2 size={10} aria-hidden="true" className="animate-spin" />
+            {t('jobs.updatingDescription')}
+          </p>
+        )}
+
+        {/* Description — rendered immediately when any text is available */}
+        {description && (
           <>
             {/* fold 9: space-y-4 for block rhythm; headings use mt-2 not mt-4 */}
             <JobDescription
               markdown={description}
-              className="max-w-prose space-y-4 text-caption text-foreground/80"
+              className="space-y-4 text-caption text-foreground/80"
             />
 
             {/* blocker 7: show error hint when resolve failed AND the gate fired;
@@ -301,7 +344,7 @@ function DetailContent({
           </>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 

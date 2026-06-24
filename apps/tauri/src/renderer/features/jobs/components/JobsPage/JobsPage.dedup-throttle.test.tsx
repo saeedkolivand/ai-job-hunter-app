@@ -3,9 +3,10 @@
  *
  * Phase-1 bug-fix coverage. Two non-trivial behaviours:
  *
- * 1. allPostings dedup/merge (useMemo):
+ * 1. allPostings dedup/merge (useMemo — backend-wins):
  *    - An item in both livePostings and postings appears exactly once.
- *    - livePostings-only items appear (and sort to the front).
+ *    - Backend copy wins on duplicate ids (carries interactions + full description).
+ *    - livePostings-only items appear (streamed mid-scrape, not yet persisted).
  *    - postings-only items appear.
  *    - Empty livePostings → list equals postings.
  *
@@ -29,6 +30,7 @@ import { act, render, waitFor } from '@testing-library/react';
 
 import { TEST_IDS } from '@ajh/test-ids';
 
+import { mergePostings } from '@/features/jobs/lib/merge-postings';
 import type { Posting } from '@/features/jobs/types';
 
 // ---------------------------------------------------------------------------
@@ -329,17 +331,8 @@ describe('JobsPage — allPostings dedup (via rendered list)', () => {
 // ---------------------------------------------------------------------------
 
 describe('allPostings merge formula — pure function', () => {
-  /**
-   * Inline replica of the component's allPostings useMemo:
-   *   seen = new Set(postings.map(p => p.id))
-   *   extra = livePostings.filter(p => !seen.has(p.id))
-   *   return [...extra, ...postings]
-   */
-  function mergePostings(postings: Posting[], livePostings: Posting[]): Posting[] {
-    const seen = new Set(postings.map((p) => p.id));
-    const extra = livePostings.filter((p) => !seen.has(p.id));
-    return [...extra, ...postings];
-  }
+  // Uses the real mergePostings helper imported from features/jobs/lib/merge-postings
+  // so test behaviour stays in lockstep with the component's useMemo.
 
   it('item in both livePostings and postings appears exactly once', () => {
     const shared = posting('shared');
@@ -347,11 +340,21 @@ describe('allPostings merge formula — pure function', () => {
     expect(result.filter((p) => p.id === 'shared')).toHaveLength(1);
   });
 
-  it('livePostings-only item appears and is placed before postings items', () => {
+  it('backend copy wins when id is in both — livePostings copy is dropped', () => {
+    // Backend posting has interactions; live posting does not. Backend must win.
+    const backendCopy: Posting = { ...posting('shared'), company: 'BackendCo' };
+    const liveCopy: Posting = { ...posting('shared'), company: 'LiveCo' };
+    const result = mergePostings([backendCopy], [liveCopy]);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.company).toBe('BackendCo');
+  });
+
+  it('livePostings-only item appears (streamed mid-scrape, not yet in backend)', () => {
     const live = posting('live');
     const backend = posting('backend');
     const result = mergePostings([backend], [live]);
-    expect(result.map((p) => p.id)).toEqual(['live', 'backend']);
+    expect(result.map((p) => p.id)).toContain('live');
+    expect(result.map((p) => p.id)).toContain('backend');
   });
 
   it('postings-only item appears', () => {
@@ -366,12 +369,12 @@ describe('allPostings merge formula — pure function', () => {
     expect(result.map((p) => p.id)).toEqual(['a', 'b', 'c']);
   });
 
-  it('multiple livePostings-only items all appear, ordered before postings', () => {
+  it('livePostings-only items appear when postings is empty', () => {
     const live1 = posting('live-1');
     const live2 = posting('live-2');
-    const backend = posting('backend');
-    const result = mergePostings([backend], [live1, live2]);
-    expect(result.map((p) => p.id)).toEqual(['live-1', 'live-2', 'backend']);
+    const result = mergePostings([], [live1, live2]);
+    expect(result.map((p) => p.id)).toContain('live-1');
+    expect(result.map((p) => p.id)).toContain('live-2');
   });
 
   it('item present in livePostings but NOT in postings is not filtered out', () => {
@@ -385,6 +388,22 @@ describe('allPostings merge formula — pure function', () => {
     const result = mergePostings(both, both);
     expect(result).toHaveLength(2);
     expect(new Set(result.map((p) => p.id)).size).toBe(2);
+  });
+
+  it('duplicate within livePostings itself — only one occurrence appears', () => {
+    // Two DISTINCT objects with the same id: backend wins; only one entry emitted.
+    const dup1 = posting('dup');
+    const dup2 = posting('dup');
+    const backend = posting('backend');
+    const result = mergePostings([backend], [dup1, dup2]);
+    expect(result.filter((p) => p.id === 'dup')).toHaveLength(1);
+  });
+
+  it('backend ordering preserved when no live items exist', () => {
+    const stored1 = posting('stored-1');
+    const stored2 = posting('stored-2');
+    const result = mergePostings([stored1, stored2], []);
+    expect(result.map((p) => p.id)).toEqual(['stored-1', 'stored-2']);
   });
 });
 

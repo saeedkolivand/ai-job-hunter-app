@@ -19,6 +19,7 @@ export * from './use-applications';
 export * from './use-autopilot';
 export * from './use-boards';
 export * from './use-cli-agents';
+export * from './use-company-logo';
 export * from './use-contact-profile';
 export * from './use-credentials';
 export * from './use-data';

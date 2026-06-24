@@ -1,23 +1,21 @@
 /**
- * PostingListItem — keyboard/click selection, interaction markers, MatchBand, aria.
+ * PostingListItem — keyboard/click selection, interaction markers, source badge, aria.
  *
- * The 2-line compact design (no avatar, no SourceBadge, icon-only status markers).
+ * 2-line compact design with a 32×32 source badge on the left.
+ * Viewed rows (opened|viewed interaction, not selected) show a "Viewed" text label
+ * and dim the title. Match score is shown only in the detail pane (removed from list rows).
  *
  * Strategy:
- *  - Component is fully rendered (MatchBand stubbed with data-testid).
- *  - useRowMatchScore is a vi.fn() so score-present / score-absent branches are both tested.
- *  - Interaction state comes from posting.interactions — icon markers use aria-label.
+ *  - Interaction state comes from posting.interactions.
  *  - onSelect is a vi.fn() spy captured per describe.
  *
  * noUncheckedIndexedAccess: all mock.calls[0] accesses are guarded.
  */
 
 import React from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-
-import type { MatchScore } from '@ajh/shared';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
 
@@ -25,36 +23,46 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 
-// ── lucide-react — icons are aria-hidden in the real component; find by testid ──
+// ── lucide-react — Eye removed (no longer imported by PostingListItem) ─────────
 
 vi.mock('lucide-react', () => ({
   Bookmark: () => <svg aria-hidden="true" data-testid="icon-bookmark" />,
   CircleCheck: () => <svg aria-hidden="true" data-testid="icon-circlecheck" />,
-  Eye: () => <svg aria-hidden="true" data-testid="icon-eye" />,
+}));
+
+// ── motion/react — forwardRef-safe div stub ───────────────────────────────────
+
+vi.mock('motion/react', () => ({
+  motion: {
+    div: React.forwardRef(
+      (
+        { children, ...rest }: React.HTMLAttributes<HTMLDivElement>,
+        ref: React.Ref<HTMLDivElement>
+      ) => (
+        <div ref={ref} {...rest}>
+          {children}
+        </div>
+      )
+    ),
+  },
 }));
 
 // ── @ajh/ui — pass-through stubs ─────────────────────────────────────────────
 
 vi.mock('@ajh/ui', () => ({
   cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
+  transition: { spring: {} },
+  resolveTransition: (t: unknown) => t,
 }));
 
-// ── MatchBand stub — data-testid so presence/absence is assertable ────────────
+// ── CompanyAvatar — renders company initials via passthrough ──────────────────
 
-vi.mock('@/lib/match-band', () => ({
-  MatchBand: ({ value, subtle }: { value: number; subtle?: boolean }) => (
-    <span data-testid="match-band" data-value={value} data-subtle={subtle ? 'true' : 'false'} />
-  ),
-}));
-
-// ── useRowMatchScore — vi.fn() for per-test score control ─────────────────────
-
-const mockUseRowMatchScore = vi.fn<
-  () => { score?: MatchScore; pending: boolean; hasResume: boolean }
->(() => ({ score: undefined, pending: false, hasResume: false }));
-
-vi.mock('@/features/jobs/providers', () => ({
-  useRowMatchScore: (..._args: unknown[]) => mockUseRowMatchScore(),
+vi.mock('@/features/jobs/components/CompanyAvatar', () => ({
+  CompanyAvatar: ({ company, sourceFallback }: { company: string; sourceFallback?: string }) => {
+    const label = company.trim() || (sourceFallback ?? '');
+    const mono = label ? label.slice(0, 2).toUpperCase() : '?';
+    return <div aria-hidden="true">{mono}</div>;
+  },
 }));
 
 // ── component under test ──────────────────────────────────────────────────────
@@ -80,23 +88,7 @@ function makePosting(overrides: Partial<Posting> = {}): Posting {
   };
 }
 
-const BASE_SCORE: MatchScore = {
-  resumeId: 'r',
-  jobId: 'post-1',
-  ats: 70,
-  semantic: 80,
-  combined: 75,
-  gaps: [],
-  recommendations: [],
-};
-
 const formatRelativeTime = () => '2d ago';
-
-// ── reset ─────────────────────────────────────────────────────────────────────
-
-beforeEach(() => {
-  mockUseRowMatchScore.mockReturnValue({ score: undefined, pending: false, hasResume: false });
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // handleClick and handleKeyDown — onSelect dispatch
@@ -246,10 +238,10 @@ describe('PostingListItem — aria-selected and tabIndex', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Interaction markers — icon-only (no text labels in the 2-line design)
+// Interaction markers
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('PostingListItem — interaction markers (icon-only)', () => {
+describe('PostingListItem — interaction markers', () => {
   it('shows CircleCheck icon when applied interaction present', () => {
     render(
       <PostingListItem
@@ -274,7 +266,7 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
     expect(screen.getByTestId('icon-circlecheck')).toBeInTheDocument();
   });
 
-  it('shows Eye icon when opened interaction present', () => {
+  it('shows "Viewed" text label when opened interaction present (not selected)', () => {
     render(
       <PostingListItem
         posting={makePosting({
@@ -295,10 +287,14 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
         onSelect={vi.fn()}
       />
     );
-    expect(screen.getByTestId('icon-eye')).toBeInTheDocument();
+    // Assert specifically against the aria-hidden marker span, not the sr-only summary.
+    // getAllByText would pass even if only the sr-only node contained the text.
+    const ariaHiddenSpans = document.querySelectorAll('[aria-hidden="true"]');
+    const viewedLabel = Array.from(ariaHiddenSpans).find((el) => el.textContent === 'jobs.viewed');
+    expect(viewedLabel).toBeDefined();
   });
 
-  it('shows Eye icon when viewed interaction present', () => {
+  it('shows "Viewed" text label when viewed interaction present (not selected)', () => {
     render(
       <PostingListItem
         posting={makePosting({
@@ -319,7 +315,37 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
         onSelect={vi.fn()}
       />
     );
-    expect(screen.getByTestId('icon-eye')).toBeInTheDocument();
+    const ariaHiddenSpans = document.querySelectorAll('[aria-hidden="true"]');
+    const viewedLabel = Array.from(ariaHiddenSpans).find((el) => el.textContent === 'jobs.viewed');
+    expect(viewedLabel).toBeDefined();
+  });
+
+  it('does NOT show "Viewed" text label when viewed but selected (selected rows never dim)', () => {
+    render(
+      <PostingListItem
+        posting={makePosting({
+          interactions: [
+            {
+              interactionType: 'viewed',
+              jobId: 'post-1',
+              timestamp: 0,
+              title: 'T',
+              company: 'C',
+              url: 'u',
+              source: 's',
+            },
+          ],
+        })}
+        selected={true}
+        formatRelativeTime={formatRelativeTime}
+        onSelect={vi.fn()}
+      />
+    );
+    // The sr-only summary uses t('jobs.viewed') but the aria-hidden label span must not render.
+    // The sr-only span is inside role=option — query specifically for the aria-hidden span.
+    const ariaHiddenSpans = document.querySelectorAll('[aria-hidden="true"]');
+    const viewedLabel = Array.from(ariaHiddenSpans).find((el) => el.textContent === 'jobs.viewed');
+    expect(viewedLabel).toBeUndefined();
   });
 
   it('shows Bookmark icon when bookmarked interaction present', () => {
@@ -346,7 +372,7 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
     expect(screen.getByTestId('icon-bookmark')).toBeInTheDocument();
   });
 
-  it('shows no icons when interactions is undefined', () => {
+  it('shows no icons and no Viewed label when interactions is undefined', () => {
     render(
       <PostingListItem
         posting={makePosting({ interactions: undefined })}
@@ -356,8 +382,8 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
       />
     );
     expect(screen.queryByTestId('icon-circlecheck')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('icon-eye')).not.toBeInTheDocument();
     expect(screen.queryByTestId('icon-bookmark')).not.toBeInTheDocument();
+    expect(screen.queryByText('jobs.viewed')).not.toBeInTheDocument();
   });
 
   it('shows only the marker icons whose interaction types are present (no false positives)', () => {
@@ -383,12 +409,12 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
     );
     expect(screen.getByTestId('icon-bookmark')).toBeInTheDocument();
     expect(screen.queryByTestId('icon-circlecheck')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('icon-eye')).not.toBeInTheDocument();
+    expect(screen.queryByText('jobs.viewed')).not.toBeInTheDocument();
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// sr-only status summary — icons are aria-hidden; summary announces states to AT
+// sr-only status summary — icons/labels are aria-hidden; summary announces to AT
 // i18n: the component calls t('jobs.applied') etc., so with the passthrough mock
 // the rendered text is the i18n key itself (e.g. "jobs.applied"), not raw English.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -472,34 +498,120 @@ describe('PostingListItem — sr-only status summary', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MatchBand renders from useRowMatchScore
+// Title dim — text-muted-foreground when viewed && !selected
+// cn() is a passthrough so class names are directly assertable on the element.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('PostingListItem — MatchBand', () => {
-  it('renders MatchBand when useRowMatchScore returns a score', () => {
-    mockUseRowMatchScore.mockReturnValue({
-      score: BASE_SCORE,
-      pending: false,
-      hasResume: true,
+describe('PostingListItem — title dim on viewed', () => {
+  function viewedPosting(interactionType: 'opened' | 'viewed') {
+    return makePosting({
+      interactions: [
+        {
+          interactionType,
+          jobId: 'post-1',
+          timestamp: 0,
+          title: 'T',
+          company: 'C',
+          url: 'u',
+          source: 's',
+        },
+      ],
     });
+  }
 
+  it('title span carries text-muted-foreground when opened interaction present and not selected', () => {
     render(
       <PostingListItem
-        posting={makePosting()}
+        posting={viewedPosting('opened')}
         selected={false}
         formatRelativeTime={formatRelativeTime}
         onSelect={vi.fn()}
       />
     );
-
-    const band = screen.getByTestId('match-band');
-    expect(band).toBeInTheDocument();
-    expect(band).toHaveAttribute('data-value', '75');
+    // The title span renders posting.title as its text content.
+    const titleSpan = screen.getByText('Software Engineer');
+    expect(titleSpan.className).toContain('text-muted-foreground');
   });
 
-  it('does not render MatchBand when score is undefined', () => {
-    mockUseRowMatchScore.mockReturnValue({ score: undefined, pending: false, hasResume: false });
+  it('title span carries text-muted-foreground when viewed interaction present and not selected', () => {
+    render(
+      <PostingListItem
+        posting={viewedPosting('viewed')}
+        selected={false}
+        formatRelativeTime={formatRelativeTime}
+        onSelect={vi.fn()}
+      />
+    );
+    const titleSpan = screen.getByText('Software Engineer');
+    expect(titleSpan.className).toContain('text-muted-foreground');
+  });
 
+  it('title span does NOT carry text-muted-foreground when viewed but selected=true', () => {
+    render(
+      <PostingListItem
+        posting={viewedPosting('viewed')}
+        selected={true}
+        formatRelativeTime={formatRelativeTime}
+        onSelect={vi.fn()}
+      />
+    );
+    const titleSpan = screen.getByText('Software Engineer');
+    expect(titleSpan.className).not.toContain('text-muted-foreground');
+  });
+
+  it('title span does NOT carry text-muted-foreground when no interactions (unviewed)', () => {
+    render(
+      <PostingListItem
+        posting={makePosting({ interactions: undefined })}
+        selected={false}
+        formatRelativeTime={formatRelativeTime}
+        onSelect={vi.fn()}
+      />
+    );
+    const titleSpan = screen.getByText('Software Engineer');
+    expect(titleSpan.className).not.toContain('text-muted-foreground');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Source badge — 2-letter abbreviation slot
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('PostingListItem — company avatar', () => {
+  it('renders company initials via CompanyAvatar', () => {
+    render(
+      <PostingListItem
+        posting={makePosting({ company: 'Acme' })}
+        selected={false}
+        formatRelativeTime={formatRelativeTime}
+        onSelect={vi.fn()}
+      />
+    );
+    // CompanyAvatar mock renders first 2 chars of company name uppercased
+    expect(screen.getByText('AC')).toBeInTheDocument();
+  });
+
+  it('falls back to source initials when company is empty', () => {
+    render(
+      <PostingListItem
+        posting={makePosting({ company: '', source: 'linkedin' })}
+        selected={false}
+        formatRelativeTime={formatRelativeTime}
+        onSelect={vi.fn()}
+      />
+    );
+    expect(screen.getByText('LI')).toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Match score intentionally absent from list rows
+// (score moved to the detail pane — lock in the removal so it can't silently
+//  re-appear in the list without a deliberate test update)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('PostingListItem — no match score in list row', () => {
+  it('does not render a match-band element regardless of posting state', () => {
     render(
       <PostingListItem
         posting={makePosting()}
@@ -508,26 +620,6 @@ describe('PostingListItem — MatchBand', () => {
         onSelect={vi.fn()}
       />
     );
-
     expect(screen.queryByTestId('match-band')).not.toBeInTheDocument();
-  });
-
-  it('passes subtle=true to MatchBand so list rows use muted-neutral for non-High tiers', () => {
-    mockUseRowMatchScore.mockReturnValue({
-      score: BASE_SCORE,
-      pending: false,
-      hasResume: true,
-    });
-
-    render(
-      <PostingListItem
-        posting={makePosting()}
-        selected={false}
-        formatRelativeTime={formatRelativeTime}
-        onSelect={vi.fn()}
-      />
-    );
-
-    expect(screen.getByTestId('match-band')).toHaveAttribute('data-subtle', 'true');
   });
 });

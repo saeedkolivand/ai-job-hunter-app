@@ -212,10 +212,7 @@ describe('JobsResults — selectedId reconciliation', () => {
       renderResults([posting('job-present')]);
     });
 
-    expect(mockSetJobs).toHaveBeenCalledWith({
-      selectedId: 'job-present',
-      detailCollapsed: false,
-    });
+    expect(mockSetJobs).toHaveBeenCalledWith({ selectedId: 'job-present' });
   });
 
   it('does NOT call setJobs in split mode when selectedId is still present', async () => {

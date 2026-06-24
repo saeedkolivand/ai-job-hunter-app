@@ -83,6 +83,11 @@ vi.mock('@ajh/ui', () => ({
   SourceBadge: () => null,
   Tag: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   transition: { fast: {} },
+  resolveTransition: (t: unknown) => t,
+  variants: {
+    fadeSlideUp: { initial: {}, animate: {}, exit: {} },
+    fadeSlideDown: { initial: {}, animate: {}, exit: {} },
+  },
   useNotification: () => ({
     success: vi.fn(),
     error: vi.fn(),
@@ -242,7 +247,7 @@ describe('JobDetailPane — key remount prevents interaction-state leak', () => 
 
     // Switch to job B — key={posting.id} remounts DetailContent, resetting
     // usePostingActions' lazy useState. B has no applied interaction so the badge
-    // must not appear (unlike 'viewed' which is added by the viewed-on-mount effect).
+    // must not appear (the 5s dwell timer is also reset but won't fire in this sync test).
     await act(async () => {
       rerender(<JobDetailPane posting={postingB} formatRelativeTime={formatRelativeTime} />);
     });

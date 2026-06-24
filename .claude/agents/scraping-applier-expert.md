@@ -1,7 +1,7 @@
 ---
 name: scraping-applier-expert
 description: Primary reviewer for job scraping, browser automation, application automation, selector resilience, registry management, and workflow reliability. Use for changes under scraping/, applying/, the SCRAPERS/APPLIERS registries, and chromiumoxide browser automation.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, mcp__graphify
 model: sonnet
 ---
 

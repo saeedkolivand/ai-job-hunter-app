@@ -1,6 +1,6 @@
 use crate::db::{new_job_id, now_ms};
 use crate::error::{AppError, AppResult};
-use crate::postings::{InteractionRecord, InteractionStore, PostingsCache};
+use crate::postings::{attach_interactions, InteractionRecord, InteractionStore, PostingsCache};
 use crate::scraping::{BoardSearchInput, ScraperEngine};
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -368,9 +368,19 @@ pub fn scrape_update_description(
 
 #[tauri::command]
 pub fn scrape_list_postings(app: AppHandle) -> Value {
+    // Snapshot the interactions first and DROP that guard before locking the
+    // postings cache, so the two mutexes are never held at once (no lock-order
+    // deadlock). `list` takes `&mut` because it lazily hydrates from disk.
+    let interactions = {
+        let store = app.state::<Mutex<InteractionStore>>();
+        let mut guard = store.lock();
+        guard.list(None)
+    };
+    // Now join the interactions onto the live postings so the jobs list can show
+    // viewed/applied/saved badges (the cache items carry no interactions).
     let cache = app.state::<Mutex<PostingsCache>>();
     let guard = cache.lock();
-    json!(guard.get_all())
+    json!(attach_interactions(guard.get_all(), &interactions))
 }
 
 #[tauri::command]

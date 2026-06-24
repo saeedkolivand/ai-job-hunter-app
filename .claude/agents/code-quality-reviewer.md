@@ -1,7 +1,7 @@
 ---
 name: code-quality-reviewer
 description: Use to AUDIT code quality — clean-code, DRY, KISS, best-practice violations — and produce a severity-graded report. Read-only; never edits. Invoke after changes or on a package/path on request.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, mcp__graphify
 model: sonnet
 skills: [code-quality]
 ---

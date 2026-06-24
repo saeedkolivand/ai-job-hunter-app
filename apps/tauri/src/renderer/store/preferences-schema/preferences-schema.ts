@@ -192,6 +192,9 @@ export const PreferencesSchema = z.object({
   // Sidebar
   sidebarCollapsed: z.boolean().default(false).optional(),
 
+  // Privacy — third-party logo enrichment (DEFAULT OFF: sends company name to Clearbit)
+  fetchCompanyLogos: z.boolean().default(false),
+
   // Metadata
   lastUpdated: z.string().optional(),
 });
