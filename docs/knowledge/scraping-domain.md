@@ -105,8 +105,8 @@ Results now persist across navigation thanks to React Query + backend cache:
 - **Settings UI:** `apps/tauri/src/renderer/features/settings/routes/JobsSettings.tsx`
 - **Detail pane:**
   - Resolve + merge gate: `apps/tauri/src/renderer/features/jobs/components/JobDetailPane/index.tsx` (on-open resolve if short snippet; keep-longer merge logic; calls `scrape_resolve_url` + `scrape_update_description` IPC)
-  - Description formatter: `apps/tauri/src/renderer/features/jobs/lib/format-description.ts` — pure text→blocks parser (paragraphs / lists / headings; CRLF-normalized; no content loss)
-  - Rendering: `JobDetailPane` renders `DescriptionBlock[]` as formatted sections (no markdown/HTML engine)
+  - Description formatting: `apps/tauri/src-tauri/src/scraping/http/html_to_markdown` — Rust module converting HTML job descriptions to Markdown
+  - Rendering: `JobDescription` component (`packages/ui/src/components/JobDescription/index.tsx`) renders Markdown via react-markdown with design-token-only styling
 - **Rust commands:** `apps/tauri/src-tauri/src/commands/scrape.rs` (`scrape_resolve_url`, `scrape_update_description`)
 - **PostingsCache mutation:** `apps/tauri/src-tauri/src/postings/mod.rs: update_description(job_id, text)` — in-place cache mutation; text-hash-keyed result/embedding caches auto-invalidate on changed job text
 

@@ -329,15 +329,15 @@ pub async fn scrape_resolve_url(app: AppHandle, url: String) -> Value {
 
 /// Write a freshly-resolved full description back into the live postings cache,
 /// keyed by posting id. The detail pane resolves a fuller description on demand
-/// (see [`scrape_resolve_url`]); without this, the match scorer keeps reading the
-/// truncated aggregator snippet from the cache and produces a wrong score.
+/// (see [`scrape_resolve_url`]); without this, match scoring would continue reading the
+/// truncated aggregator snippet from the cache and produce incorrect scores.
 ///
 /// Mutates the EXISTING cache entry in place (no new row, no persistence beyond
 /// the in-memory cache — matching the cache's lifecycle). Returns `true` when an
 /// entry was updated, `false` when the id isn't in the live cache (e.g. the cache
-/// was cleared by a new search between resolve and write-back). The renderer can
-/// then invalidate the batch score; the result cache is job-text-hash-keyed, so
-/// only that job recomputes.
+/// was cleared by a new search between resolve and write-back). The match-score
+/// cache is job-text-hash-keyed, so updating the description invalidates cached
+/// scores for that job; on-demand scoring via `useJobMatchScore` will recompute.
 /// Validate the write-back inputs, returning the trimmed id on success. Pure (no
 /// `AppHandle`) so the error paths are unit-tested directly. Rejects an empty id
 /// and an over-cap description rather than silently truncating, so the caller can

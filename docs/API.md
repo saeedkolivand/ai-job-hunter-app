@@ -615,7 +615,7 @@ Single-job scoring (legacy path; retained for one-off callers).
 
 #### `match.batch(resumeId: string, jobIds: string[]): Promise<MatchScore[]>`
 
-Scores all postings in one Rust pass via `match_resume_batch` command. Caller supplies `semanticScoringEnabled` flag (defaults false). Frontend use: `MatchScoresProvider` (wraps `useJobMatchScores` batch hook) distributes results per-row via `useRowMatchScore(jobId)`. Batch cap: 1000 jobs (enforced server-side; prevents DoS).
+Scores all postings in one Rust pass via `match_resume_batch` command. Caller supplies `semanticScoringEnabled` flag (defaults false). Frontend use: `MatchScoresProvider` distributes results per-row via `useRowMatchScore(jobId)` on-demand. Batch cap: 1000 jobs (enforced server-side; prevents DoS).
 
 ```typescript
 interface MatchScore {
