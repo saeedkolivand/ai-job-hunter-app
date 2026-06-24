@@ -81,6 +81,22 @@ fn write_manifest(path: &Path, bytes: &[u8]) {
     }
 }
 
+/// Write `bytes` to `path` only when `guard_dir` already exists on disk.
+///
+/// Used for Flatpak per-app config paths: `~/.var/app/<id>` is created by
+/// Flatpak only when the app is installed. If that directory is absent we skip
+/// silently — no directories are created, so we don't leave ghost paths for
+/// browsers that aren't installed.
+// Used only in the Linux branch (Flatpak guard logic); the cfg mirrors the
+// call-sites so the compiler doesn't emit a dead_code warning on other platforms.
+#[cfg(any(target_os = "linux", test))]
+fn write_manifest_if_app_dir_exists(guard_dir: &Path, path: &Path, bytes: &[u8]) {
+    if !guard_dir.exists() {
+        return;
+    }
+    write_manifest(path, bytes);
+}
+
 /// Register the native-messaging host for Firefox + Chrome. Best-effort and
 /// idempotent — safe to call on every launch.
 pub fn register_native_host(data_dir: &Path) {
@@ -137,14 +153,95 @@ pub fn register_native_host(data_dir: &Path) {
 
         #[cfg(target_os = "linux")]
         {
+            // ── Native (non-sandboxed) browser paths ─────────────────────────
             let firefox_path = home
                 .join(".mozilla/native-messaging-hosts")
                 .join(NATIVE_HOST_MANIFEST);
             let chrome_path = home
                 .join(".config/google-chrome/NativeMessagingHosts")
                 .join(NATIVE_HOST_MANIFEST);
+            let chromium_path = home
+                .join(".config/chromium/NativeMessagingHosts")
+                .join(NATIVE_HOST_MANIFEST);
+            let brave_path = home
+                .join(".config/BraveSoftware/Brave-Browser/NativeMessagingHosts")
+                .join(NATIVE_HOST_MANIFEST);
+            let edge_path = home
+                .join(".config/microsoft-edge/NativeMessagingHosts")
+                .join(NATIVE_HOST_MANIFEST);
             write_manifest(&firefox_path, &firefox_json);
             write_manifest(&chrome_path, &chrome_json);
+            write_manifest(&chromium_path, &chrome_json);
+            write_manifest(&brave_path, &chrome_json);
+            write_manifest(&edge_path, &chrome_json);
+
+            // ── Flatpak per-app config dirs ───────────────────────────────────
+            // Sandboxed Flatpak browsers cannot read ~/.config; they read their
+            // own per-app dir at ~/.var/app/<id>/config/…/NativeMessagingHosts/.
+            // We guard on the per-app root (~/.var/app/<id>) — that directory
+            // exists only when the Flatpak is installed, so we never create
+            // ghost paths for absent browsers.
+            let flatpak_base = home.join(".var/app");
+            struct FlatpakEntry {
+                app_id: &'static str,
+                manifest_rel: &'static str,
+                firefox: bool,
+            }
+            let flatpak_entries: &[FlatpakEntry] = &[
+                FlatpakEntry {
+                    app_id: "com.google.Chrome",
+                    manifest_rel: "config/google-chrome/NativeMessagingHosts",
+                    firefox: false,
+                },
+                FlatpakEntry {
+                    app_id: "org.chromium.Chromium",
+                    manifest_rel: "config/chromium/NativeMessagingHosts",
+                    firefox: false,
+                },
+                FlatpakEntry {
+                    app_id: "com.brave.Browser",
+                    manifest_rel: "config/BraveSoftware/Brave-Browser/NativeMessagingHosts",
+                    firefox: false,
+                },
+                FlatpakEntry {
+                    app_id: "com.microsoft.Edge",
+                    manifest_rel: "config/microsoft-edge/NativeMessagingHosts",
+                    firefox: false,
+                },
+                // NECESSARY BUT NOT SUFFICIENT for sandboxed Firefox Flatpak:
+                // Writing the manifest here is correct and harmless, but a
+                // sandboxed Firefox Flatpak cannot spawn the native-messaging
+                // host binary because that binary lives outside the Flatpak
+                // sandbox.  The user must either run:
+                //
+                //   flatpak override --user --filesystem=host org.mozilla.firefox
+                //
+                // or wait for portal-based native-messaging support.  Without
+                // this override, Firefox Flatpak will find the manifest but fail
+                // to execute the host.
+                //
+                // Chromium-family Flatpaks (Chrome/Chromium/Brave/Edge) generally
+                // ship with broader filesystem access so manifest-only placement
+                // works for them without an override.
+                //
+                // Note: the loopback WebSocket bridge path is unaffected by this
+                // sandbox limitation — it connects via TCP, not stdio.
+                FlatpakEntry {
+                    app_id: "org.mozilla.firefox",
+                    manifest_rel: ".mozilla/native-messaging-hosts",
+                    firefox: true,
+                },
+            ];
+            for entry in flatpak_entries {
+                let guard = flatpak_base.join(entry.app_id);
+                let path = guard.join(entry.manifest_rel).join(NATIVE_HOST_MANIFEST);
+                let bytes = if entry.firefox {
+                    &firefox_json
+                } else {
+                    &chrome_json
+                };
+                write_manifest_if_app_dir_exists(&guard, &path, bytes);
+            }
         }
     }
 }
@@ -232,5 +329,162 @@ mod tests {
         assert_eq!(v["allowed_origins"][0], CHROME_ALLOWED_ORIGIN);
         assert!(v["allowed_origins"][0].as_str().unwrap().ends_with('/'));
         assert!(v.get("allowed_extensions").is_none());
+    }
+
+    // ── write_manifest_if_app_dir_exists ─────────────────────────────────────
+
+    #[test]
+    fn write_manifest_if_app_dir_exists_skips_when_guard_absent() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let guard = tmp.path().join("nonexistent-app");
+        let target = guard.join("config/NativeMessagingHosts/host.json");
+        // Must NOT create any file or directory when the guard dir is absent.
+        write_manifest_if_app_dir_exists(&guard, &target, b"{}");
+        assert!(
+            !target.exists(),
+            "should not create file when guard is absent"
+        );
+        assert!(!guard.exists(), "should not create guard dir");
+    }
+
+    #[test]
+    fn write_manifest_if_app_dir_exists_writes_when_guard_present() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let guard = tmp.path().join("com.google.Chrome");
+        std::fs::create_dir_all(&guard).unwrap();
+        let target = guard
+            .join("config/google-chrome/NativeMessagingHosts")
+            .join("host.json");
+        write_manifest_if_app_dir_exists(&guard, &target, b"{\"ok\":true}");
+        assert!(
+            target.exists(),
+            "manifest should be written when guard exists"
+        );
+        let content = std::fs::read(&target).unwrap();
+        assert_eq!(content, b"{\"ok\":true}");
+    }
+
+    // ── Linux flatpak path coverage ──────────────────────────────────────────
+
+    /// Enumerate the expected Flatpak app-id → NativeMessagingHosts subpath
+    /// mappings and confirm each one ends up written when the per-app guard dir
+    /// is present, and NOT written when it is absent.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_flatpak_paths_written_only_for_installed_apps() {
+        use std::path::Path;
+
+        // The table must match what register.rs writes. If the table in
+        // register.rs changes, this test catches the drift.
+        struct FlatpakCase {
+            app_id: &'static str,
+            manifest_subdir: &'static str,
+            firefox: bool,
+        }
+        let cases = [
+            FlatpakCase {
+                app_id: "com.google.Chrome",
+                manifest_subdir: "config/google-chrome/NativeMessagingHosts",
+                firefox: false,
+            },
+            FlatpakCase {
+                app_id: "org.chromium.Chromium",
+                manifest_subdir: "config/chromium/NativeMessagingHosts",
+                firefox: false,
+            },
+            FlatpakCase {
+                app_id: "com.brave.Browser",
+                manifest_subdir: "config/BraveSoftware/Brave-Browser/NativeMessagingHosts",
+                firefox: false,
+            },
+            FlatpakCase {
+                app_id: "com.microsoft.Edge",
+                manifest_subdir: "config/microsoft-edge/NativeMessagingHosts",
+                firefox: false,
+            },
+            FlatpakCase {
+                app_id: "org.mozilla.firefox",
+                manifest_subdir: ".mozilla/native-messaging-hosts",
+                firefox: true,
+            },
+        ];
+
+        let exe = PathBuf::from("/opt/aijobhunter/app");
+        let manifest_name = NATIVE_HOST_MANIFEST;
+
+        for case in &cases {
+            let tmp = tempfile::TempDir::new().unwrap();
+            let flatpak_base = tmp.path().join(".var/app");
+            let guard = flatpak_base.join(case.app_id);
+            let target = guard.join(case.manifest_subdir).join(manifest_name);
+
+            // 1. Guard absent → file must NOT be written.
+            let bytes = if case.firefox {
+                manifest_json(&exe, true)
+            } else {
+                manifest_json(&exe, false)
+            };
+            write_manifest_if_app_dir_exists(&guard, &target, &bytes);
+            assert!(
+                !target.exists(),
+                "app_id={} must not write when guard absent",
+                case.app_id
+            );
+
+            // 2. Guard present → file IS written with correct JSON.
+            std::fs::create_dir_all(&guard).unwrap();
+            write_manifest_if_app_dir_exists(&guard, &target, &bytes);
+            assert!(
+                target.exists(),
+                "app_id={} must write when guard present",
+                case.app_id
+            );
+            let v: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&target).unwrap()).unwrap();
+            assert_eq!(v["name"], NATIVE_HOST_NAME);
+            if case.firefox {
+                assert!(
+                    v.get("allowed_extensions").is_some(),
+                    "firefox needs allowed_extensions"
+                );
+                assert!(v.get("allowed_origins").is_none());
+            } else {
+                assert!(
+                    v.get("allowed_origins").is_some(),
+                    "chrome needs allowed_origins"
+                );
+                assert!(v.get("allowed_extensions").is_none());
+            }
+        }
+    }
+
+    // ── Linux native paths coverage ──────────────────────────────────────────
+
+    /// Confirm that Chromium, Brave, and Edge native config paths are also
+    /// covered (not just google-chrome), by checking write_manifest writes
+    /// to each destination without error.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_native_browser_paths_are_writable() {
+        let exe = PathBuf::from("/opt/aijobhunter/app");
+        let chrome_bytes = manifest_json(&exe, false);
+        let firefox_bytes = manifest_json(&exe, true);
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let native_paths: &[(&[u8], &str)] = &[
+            (&firefox_bytes, ".mozilla/native-messaging-hosts"),
+            (&chrome_bytes, ".config/google-chrome/NativeMessagingHosts"),
+            (&chrome_bytes, ".config/chromium/NativeMessagingHosts"),
+            (
+                &chrome_bytes,
+                ".config/BraveSoftware/Brave-Browser/NativeMessagingHosts",
+            ),
+            (&chrome_bytes, ".config/microsoft-edge/NativeMessagingHosts"),
+        ];
+        for (bytes, rel) in native_paths {
+            let path = tmp.path().join(rel).join(NATIVE_HOST_MANIFEST);
+            write_manifest(&path, bytes);
+            assert!(path.exists(), "native path not written: {rel}");
+        }
     }
 }

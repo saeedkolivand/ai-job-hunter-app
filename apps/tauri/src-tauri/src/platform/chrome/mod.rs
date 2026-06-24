@@ -1,11 +1,48 @@
-/// Detect system Chrome or Edge to avoid chromiumoxide's 120 MB download.
-/// Returns the path if found, None otherwise.
-pub fn detect_system_chrome() -> Option<std::path::PathBuf> {
+/// How to launch a detected browser.
+///
+/// Callers that need a plain binary path (e.g. chromiumoxide) call
+/// [`BrowserLaunch::to_executable_path`] — it returns `Some` only for native
+/// paths and Snap wrappers that live on the filesystem. Flatpak browsers are
+/// launched via `flatpak run <id>` and cannot be used as a bare binary, so
+/// that method returns `None` for them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BrowserLaunch {
+    /// A regular on-disk binary (native package, Homebrew, Snap wrapper, etc.).
+    NativePath(std::path::PathBuf),
+    /// Installed as a Flatpak; launch with `flatpak run <app-id>`.
+    FlatpakApp(String),
+}
+
+impl BrowserLaunch {
+    /// Returns the binary path for callers that need a real file (e.g.
+    /// chromiumoxide's `.chrome_executable()`). Returns `None` for Flatpak
+    /// installs, because those cannot be invoked as a bare binary path.
+    pub fn to_executable_path(&self) -> Option<std::path::PathBuf> {
+        match self {
+            BrowserLaunch::NativePath(p) => Some(p.clone()),
+            BrowserLaunch::FlatpakApp(_) => None,
+        }
+    }
+
+    /// A human-readable launch command string, suitable for display or logging.
+    pub fn display_command(&self) -> String {
+        match self {
+            BrowserLaunch::NativePath(p) => p.to_string_lossy().into_owned(),
+            BrowserLaunch::FlatpakApp(id) => format!("flatpak run {id}"),
+        }
+    }
+}
+
+/// Detect system Chrome, Chromium, Brave, Edge, or Vivaldi to avoid
+/// chromiumoxide's 120 MB download. Returns how to launch it, or `None`.
+///
+/// Checks `$CHROME` first, then falls back to platform detection.
+pub fn detect_system_chrome() -> Option<BrowserLaunch> {
     // Check $CHROME env var first.
     if let Ok(path) = std::env::var("CHROME") {
         let pb = std::path::PathBuf::from(path);
         if pb.exists() {
-            return Some(pb);
+            return Some(BrowserLaunch::NativePath(pb));
         }
     }
 
@@ -26,7 +63,7 @@ pub fn detect_system_chrome() -> Option<std::path::PathBuf> {
 }
 
 #[cfg(target_os = "windows")]
-fn detect_chrome_windows() -> Option<std::path::PathBuf> {
+fn detect_chrome_windows() -> Option<BrowserLaunch> {
     use std::process::Command;
 
     use crate::platform::NoWindow;
@@ -50,7 +87,7 @@ fn detect_chrome_windows() -> Option<std::path::PathBuf> {
                             let path = parts[1].trim();
                             let pb = std::path::PathBuf::from(path);
                             if pb.exists() {
-                                return Some(pb);
+                                return Some(BrowserLaunch::NativePath(pb));
                             }
                         }
                     }
@@ -62,7 +99,7 @@ fn detect_chrome_windows() -> Option<std::path::PathBuf> {
 }
 
 #[cfg(target_os = "macos")]
-fn detect_chrome_macos() -> Option<std::path::PathBuf> {
+fn detect_chrome_macos() -> Option<BrowserLaunch> {
     use std::process::Command;
 
     // Check well-known macOS application bundle paths first.
@@ -71,11 +108,13 @@ fn detect_chrome_macos() -> Option<std::path::PathBuf> {
         "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
         "/Applications/Chromium.app/Contents/MacOS/Chromium",
         "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+        "/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
     ];
     for path in &bundle_paths {
         let pb = std::path::PathBuf::from(path);
         if pb.exists() {
-            return Some(pb);
+            return Some(BrowserLaunch::NativePath(pb));
         }
     }
 
@@ -86,17 +125,28 @@ fn detect_chrome_macos() -> Option<std::path::PathBuf> {
             "Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
             "Applications/Chromium.app/Contents/MacOS/Chromium",
             "Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            "Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+            "Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
         ];
         for rel in &user_bundle_paths {
             let pb = std::path::PathBuf::from(&home).join(rel);
             if pb.exists() {
-                return Some(pb);
+                return Some(BrowserLaunch::NativePath(pb));
             }
         }
     }
 
     // Fallback: binaries in PATH (e.g. installed via Homebrew).
-    for bin in &["google-chrome", "chromium", "chromium-browser"] {
+    for bin in &[
+        "google-chrome",
+        "google-chrome-stable",
+        "chromium",
+        "chromium-browser",
+        "brave-browser",
+        "microsoft-edge",
+        "microsoft-edge-stable",
+        "vivaldi-stable",
+    ] {
         let output = Command::new("which").arg(bin).output();
         if let Ok(out) = output {
             if out.status.success() {
@@ -104,7 +154,7 @@ fn detect_chrome_macos() -> Option<std::path::PathBuf> {
                 if !path.is_empty() {
                     let pb = std::path::PathBuf::from(path);
                     if pb.exists() {
-                        return Some(pb);
+                        return Some(BrowserLaunch::NativePath(pb));
                     }
                 }
             }
@@ -113,26 +163,161 @@ fn detect_chrome_macos() -> Option<std::path::PathBuf> {
     None
 }
 
+/// All Flatpak app-ids we probe for Chromium-family browsers, in priority order.
 #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-fn detect_chrome_linux() -> Option<std::path::PathBuf> {
+const FLATPAK_IDS: &[&str] = &[
+    "com.google.Chrome",
+    "org.chromium.Chromium",
+    "com.brave.Browser",
+    "com.microsoft.Edge",
+    "com.vivaldi.Vivaldi",
+];
+
+/// Detect Chrome-family browsers on Linux/Steam Deck across native packages,
+/// Snap installs, and Flatpak sandboxed installs.
+///
+/// Detection order (first match wins):
+/// 1. PATH (`which`) — covers native + distro packages
+/// 2. Absolute fallback paths — `/opt/google/chrome/…`, `/opt/microsoft/msedge/…`, etc.
+/// 3. Snap — `/snap/bin/<name>` wrappers
+/// 4. Flatpak — exported wrappers (`/var/lib/flatpak/exports/bin/` and
+///    `~/.local/share/flatpak/exports/bin/`) and, if those aren't present,
+///    `flatpak list` probe (requires `flatpak` on PATH and is bounded by a
+///    short timeout)
+///
+/// Safety: no untrusted data is interpolated into shell strings. All
+/// `Command` calls use fixed arg vectors.
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+pub(crate) fn detect_chrome_linux() -> Option<BrowserLaunch> {
     use std::process::Command;
 
-    // Linux: try `which google-chrome` or `which chromium`.
-    for bin in &["google-chrome", "chromium", "chromium-browser"] {
+    // 1. PATH binaries — native packages and distro repos.
+    let which_bins = [
+        "google-chrome",
+        "google-chrome-stable",
+        "chromium",
+        "chromium-browser",
+        "brave-browser",
+        "microsoft-edge",
+        "microsoft-edge-stable",
+        "vivaldi-stable",
+    ];
+    for bin in &which_bins {
         let output = Command::new("which").arg(bin).output();
         if let Ok(out) = output {
             if out.status.success() {
                 let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
                 if !path.is_empty() {
-                    let pb = std::path::PathBuf::from(path);
+                    let pb = std::path::PathBuf::from(&path);
                     if pb.exists() {
-                        return Some(pb);
+                        return Some(BrowserLaunch::NativePath(pb));
                     }
                 }
             }
         }
     }
+
+    // 2. Absolute fallback paths — common non-PATH install locations.
+    let abs_paths: &[&str] = &[
+        "/opt/google/chrome/google-chrome",
+        "/opt/google/chrome-unstable/google-chrome-unstable",
+        "/opt/chromium.org/chromium/chrome",
+        "/opt/microsoft/msedge/msedge",
+        "/opt/brave.com/brave/brave",
+        "/opt/vivaldi/vivaldi",
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/brave-browser",
+        "/usr/bin/microsoft-edge",
+        "/usr/bin/microsoft-edge-stable",
+        "/usr/bin/vivaldi-stable",
+    ];
+    for path in abs_paths {
+        let pb = std::path::PathBuf::from(path);
+        if pb.exists() {
+            return Some(BrowserLaunch::NativePath(pb));
+        }
+    }
+
+    // 3. Snap — the wrapper scripts live in /snap/bin/.
+    let snap_bins: &[&str] = &[
+        "/snap/bin/chromium",
+        "/snap/bin/google-chrome",
+        "/snap/bin/brave",
+        "/snap/bin/microsoft-edge",
+    ];
+    for path in snap_bins {
+        let pb = std::path::PathBuf::from(path);
+        if pb.exists() {
+            return Some(BrowserLaunch::NativePath(pb));
+        }
+    }
+
+    // 4. Flatpak — probe exported wrappers first (cheap: stat only).
+    //    System-wide: /var/lib/flatpak/exports/bin/<app-id>
+    //    Per-user:    ~/.local/share/flatpak/exports/bin/<app-id>
+    //    These wrappers are created by Flatpak automatically and can be exec'd
+    //    directly — but we represent them as FlatpakApp so callers know the
+    //    binary needs `flatpak run` semantics for CDP (chromiumoxide can't use
+    //    the wrapper).
+    let user_flatpak_exports = std::env::var_os("HOME")
+        .map(|h| std::path::PathBuf::from(h).join(".local/share/flatpak/exports/bin"));
+
+    for id in FLATPAK_IDS {
+        // System-wide export
+        let sys = std::path::PathBuf::from("/var/lib/flatpak/exports/bin").join(id);
+        if sys.exists() {
+            return Some(BrowserLaunch::FlatpakApp(id.to_string()));
+        }
+        // Per-user export
+        if let Some(ref base) = user_flatpak_exports {
+            let user = base.join(id);
+            if user.exists() {
+                return Some(BrowserLaunch::FlatpakApp(id.to_string()));
+            }
+        }
+    }
+
+    // Last resort: ask `flatpak list` (only if `flatpak` binary is on PATH —
+    // avoids hanging on systems that don't have Flatpak at all).
+    if flatpak_binary_available() {
+        for id in FLATPAK_IDS {
+            if flatpak_app_installed(id) {
+                return Some(BrowserLaunch::FlatpakApp(id.to_string()));
+            }
+        }
+    }
+
     None
+}
+
+/// Returns true if the `flatpak` CLI is available on PATH.
+/// Cheap: just checks the exit status of `flatpak --version`.
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+fn flatpak_binary_available() -> bool {
+    use std::process::Command;
+    Command::new("flatpak")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Returns true if `flatpak info <id>` exits 0 (app is installed).
+/// Bounded: inherits the OS process timeout; `flatpak info` is fast.
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+fn flatpak_app_installed(app_id: &str) -> bool {
+    use std::process::Command;
+    // Fixed arg vector — `app_id` comes from our own constant slice, never
+    // from user input, so no shell-injection risk. We use Command::new rather
+    // than a shell so there is no interpolation path at all.
+    Command::new("flatpak")
+        .args(["info", app_id])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 // ── Browser user-data roots ──────────────────────────────────────────────────
