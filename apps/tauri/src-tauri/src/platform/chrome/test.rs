@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(test)]
+use serial_test::serial;
 
 // ── BrowserLaunch helpers ─────────────────────────────────────────────────────
 
@@ -30,10 +32,16 @@ fn flatpak_display_command_is_flatpak_run() {
 
 // ── CHROME env var override ───────────────────────────────────────────────────
 
+// `#[serial]` serializes all tests that mutate $CHROME / $HOME so they don't
+// race under plain `cargo test` (which shares the process environment across
+// threads).  nextest already process-isolates, but the attribute is harmless
+// there and makes the intent explicit.
 #[test]
+#[serial]
 fn chrome_env_nonexistent_path_is_skipped() {
     // SAFETY: test-only; nextest runs each test in its own process so
-    // set_var is safe against data races.
+    // set_var is safe against data races.  Under plain cargo test the
+    // #[serial] attribute ensures only one env-mutating test runs at a time.
     unsafe {
         std::env::set_var("CHROME", "/nonexistent/path/to/chrome-does-not-exist");
     }
@@ -131,6 +139,7 @@ mod linux {
     // branch fires before any PATH/abs-path walk) and confirm the return type.
 
     #[test]
+    #[serial]
     fn env_chrome_wins_over_flatpak_export() {
         // Create a real temp "binary" so the env-var branch returns it.
         let tmp = TempDir::new().expect("tempdir");

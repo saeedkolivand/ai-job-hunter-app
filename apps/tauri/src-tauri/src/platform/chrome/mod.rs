@@ -182,8 +182,9 @@ const FLATPAK_IDS: &[&str] = &[
 /// 3. Snap — `/snap/bin/<name>` wrappers
 /// 4. Flatpak — exported wrappers (`/var/lib/flatpak/exports/bin/` and
 ///    `~/.local/share/flatpak/exports/bin/`) and, if those aren't present,
-///    `flatpak list` probe (requires `flatpak` on PATH and is bounded by a
-///    short timeout)
+///    `flatpak info` probe (requires `flatpak` on PATH; each subprocess is
+///    bounded by a 2-second `wait_timeout` — the child is killed on expiry so
+///    a hung Flatpak daemon never blocks detection)
 ///
 /// Safety: no untrusted data is interpolated into shell strings. All
 /// `Command` calls use fixed arg vectors.
@@ -307,31 +308,56 @@ pub(crate) fn probe_flatpak(home: Option<&std::path::Path>) -> Option<BrowserLau
     None
 }
 
+/// How long to wait for a `flatpak` subprocess before killing it.
+/// 2 seconds is generous for a version/info query; a hung daemon shouldn't
+/// block browser detection indefinitely.
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+const FLATPAK_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Spawn `cmd`, wait up to `FLATPAK_PROBE_TIMEOUT`, kill on expiry.
+/// Returns the exit status if the process finished in time, or `None` on
+/// timeout / spawn failure.
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+fn run_with_timeout(mut cmd: std::process::Command) -> Option<std::process::ExitStatus> {
+    use wait_timeout::ChildExt;
+    let mut child = cmd.spawn().ok()?;
+    match child.wait_timeout(FLATPAK_PROBE_TIMEOUT).ok()? {
+        Some(status) => Some(status),
+        None => {
+            // Timed out — kill and reap so we don't leave a zombie.
+            let _ = child.kill();
+            let _ = child.wait();
+            None
+        }
+    }
+}
+
 /// Returns true if the `flatpak` CLI is available on PATH.
-/// Cheap: just checks the exit status of `flatpak --version`.
+/// Cheap: just checks the exit status of `flatpak --version`, bounded by
+/// `FLATPAK_PROBE_TIMEOUT`.
 #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
 fn flatpak_binary_available() -> bool {
     use std::process::Command;
-    Command::new("flatpak")
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    let mut cmd = Command::new("flatpak");
+    cmd.arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    run_with_timeout(cmd).map(|s| s.success()).unwrap_or(false)
 }
 
 /// Returns true if `flatpak info <id>` exits 0 (app is installed).
-/// Bounded: inherits the OS process timeout; `flatpak info` is fast.
+/// Bounded by `FLATPAK_PROBE_TIMEOUT` — the child is killed on expiry.
 #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
 fn flatpak_app_installed(app_id: &str) -> bool {
     use std::process::Command;
     // Fixed arg vector — `app_id` comes from our own constant slice, never
     // from user input, so no shell-injection risk. We use Command::new rather
     // than a shell so there is no interpolation path at all.
-    Command::new("flatpak")
-        .args(["info", app_id])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    let mut cmd = Command::new("flatpak");
+    cmd.args(["info", app_id])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    run_with_timeout(cmd).map(|s| s.success()).unwrap_or(false)
 }
 
 // ── Browser user-data roots ──────────────────────────────────────────────────

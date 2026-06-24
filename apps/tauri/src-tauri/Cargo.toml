@@ -190,6 +190,9 @@ core-foundation-sys = "0.8.7"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust", "vendored"] }
+# Bounded subprocess wait for Flatpak probes: spawn + wait_timeout(2s) + kill so a
+# hung `flatpak --version` / `flatpak info` never blocks browser detection.
+wait-timeout = "0.2"
 
 # Unix Chromium key derivation: PBKDF2-HMAC-SHA1 over the OS-stored "Safe
 # Storage" password → AES-128-CBC decrypt of v10/v11 blobs (best-effort; the

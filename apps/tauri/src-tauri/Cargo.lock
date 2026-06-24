@@ -171,6 +171,7 @@ dependencies = [
  "typst-svg",
  "urlencoding",
  "uuid",
+ "wait-timeout",
  "whatlang",
  "windows 0.62.2",
  "windows-native-keyring-store",

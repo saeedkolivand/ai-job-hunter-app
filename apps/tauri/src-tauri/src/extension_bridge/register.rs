@@ -169,11 +169,15 @@ pub fn register_native_host(data_dir: &Path) {
             let edge_path = home
                 .join(".config/microsoft-edge/NativeMessagingHosts")
                 .join(NATIVE_HOST_MANIFEST);
+            let vivaldi_path = home
+                .join(".config/vivaldi/NativeMessagingHosts")
+                .join(NATIVE_HOST_MANIFEST);
             write_manifest(&firefox_path, &firefox_json);
             write_manifest(&chrome_path, &chrome_json);
             write_manifest(&chromium_path, &chrome_json);
             write_manifest(&brave_path, &chrome_json);
             write_manifest(&edge_path, &chrome_json);
+            write_manifest(&vivaldi_path, &chrome_json);
 
             // ── Flatpak per-app config dirs ───────────────────────────────────
             // Sandboxed Flatpak browsers cannot read ~/.config; they read their
@@ -206,6 +210,12 @@ pub fn register_native_host(data_dir: &Path) {
                 FlatpakEntry {
                     app_id: "com.microsoft.Edge",
                     manifest_rel: "config/microsoft-edge/NativeMessagingHosts",
+                    firefox: false,
+                },
+                // Vivaldi is Chromium-family → Chrome-style manifest (allowed_origins).
+                FlatpakEntry {
+                    app_id: "com.vivaldi.Vivaldi",
+                    manifest_rel: "config/vivaldi/NativeMessagingHosts",
                     firefox: false,
                 },
                 // NECESSARY BUT NOT SUFFICIENT for sandboxed Firefox Flatpak:
@@ -401,6 +411,11 @@ mod tests {
                 firefox: false,
             },
             FlatpakCase {
+                app_id: "com.vivaldi.Vivaldi",
+                manifest_subdir: "config/vivaldi/NativeMessagingHosts",
+                firefox: false,
+            },
+            FlatpakCase {
                 app_id: "org.mozilla.firefox",
                 manifest_subdir: ".mozilla/native-messaging-hosts",
                 firefox: true,
@@ -478,6 +493,7 @@ mod tests {
                 ".config/BraveSoftware/Brave-Browser/NativeMessagingHosts",
             ),
             (&chrome_bytes, ".config/microsoft-edge/NativeMessagingHosts"),
+            (&chrome_bytes, ".config/vivaldi/NativeMessagingHosts"),
         ];
         for (bytes, rel) in native_paths {
             let path = tmp.path().join(rel).join(NATIVE_HOST_MANIFEST);
