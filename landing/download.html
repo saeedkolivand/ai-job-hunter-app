@@ -28,6 +28,8 @@
   --paper:#f4ecdc;
   --ink:#1c1812;
   --red:#e24b4a;
+  /* --red-link: darkened red (4.74:1 on --paper) — used for body links to meet WCAG AA 4.5:1 */
+  --red-link:#b83433;
   --muted:#5a4f3a;
   /* legibility floor: Space Mono >=13px copy, Gloria Hallelujah >=15px copy, Patrick Hand >=14px */
 }
@@ -37,18 +39,18 @@ body{
   margin:0; background:var(--paper); color:var(--ink);
   font-family:var(--hand); font-size:18px; line-height:1.75;
 }
-a{color:var(--red); text-decoration:none; border-bottom:1.5px solid rgba(226,75,74,.4)}
-a:hover{border-bottom-color:var(--red)}
-/* global focus ring — accent outline for all interactive elements */
+a{color:var(--red-link); text-decoration:none; border-bottom:1.5px solid rgba(184,52,51,.4)}
+a:hover{border-bottom-color:var(--red-link)}
+/* global focus ring — ink outline (≥9:1 on all page backgrounds) for all interactive elements */
 a:focus-visible,
 button:focus-visible,
 [tabindex]:focus-visible,
-[role="button"]:focus-visible{outline:2px solid var(--red); outline-offset:2px; border-radius:3px}
+[role="button"]:focus-visible{outline:2px solid var(--ink); outline-offset:2px; border-radius:3px}
 code{font-family:var(--mono); font-size:.8em; background:#e6dcc4; padding:1px 6px; border-radius:4px}
 /* click-to-copy command chip */
 .copy-cmd{cursor:pointer; display:inline-block; margin:3px 0; transition:background .15s, color .15s}
 .copy-cmd:hover{background:#dccdaa}
-.copy-cmd:focus-visible{outline:2px solid var(--red); outline-offset:2px; border-radius:4px}
+.copy-cmd:focus-visible{outline:2px solid var(--ink); outline-offset:2px; border-radius:4px}
 .copy-cmd.copied{background:#cfe6cf; color:#2f5d2f}
 .copy-cmd.copied::after{content:" ✓"; font-weight:700}
 
@@ -56,7 +58,7 @@ code{font-family:var(--mono); font-size:.8em; background:#e6dcc4; padding:1px 6p
 
 .top-back{display:inline-block; font-family:var(--mono); font-size:13px; color:var(--muted); border:none; margin-bottom:30px}
 .top-back:hover{color:var(--ink)}
-.top-back:focus-visible{outline:2px solid var(--red); outline-offset:2px; border-radius:3px}
+.top-back:focus-visible{outline:2px solid var(--ink); outline-offset:2px; border-radius:3px}
 
 h1{font-family:var(--impact); text-transform:uppercase; font-size:clamp(38px,9vw,64px); line-height:.95; margin:0 0 10px; letter-spacing:1px}
 .lede{font-family:var(--mono); font-size:15px; line-height:1.85; color:#2c271c; margin:22px 0 0}
@@ -88,9 +90,11 @@ h2{font-family:var(--scrawl); font-size:clamp(18px,4vw,24px); margin:0; color:va
   text-align:center; transition:transform .14s; text-decoration:none;
 }
 .dl-btn:hover{transform:translateY(-2px)}
-.dl-btn:focus-visible{outline:2px solid var(--red); outline-offset:3px; border-radius:12px}
+/* dark-bg primary button: paper-color ring (contrast vs #1c1812 ≈ 13.7:1) */
+.dl-btn:focus-visible{outline:2px solid var(--paper); outline-offset:3px; border-radius:12px}
 .dl-btn.alt{background:transparent; color:var(--ink); border:2.6px solid var(--ink); box-shadow:2px 3px 0 rgba(0,0,0,.14); font-size:15px; padding:7px 16px}
-.dl-btn.alt:focus-visible{outline:2px solid var(--red); outline-offset:3px; border-radius:12px}
+/* alt button on light pcard bg: ink ring (high contrast) */
+.dl-btn.alt:focus-visible{outline:2px solid var(--ink); outline-offset:3px; border-radius:12px}
 /* note drops to its own full-width line beneath the head + buttons */
 .dl-note{flex-basis:100%; font-family:var(--mono); font-size:14px; line-height:1.6; color:var(--muted); margin:2px 0 0}
 
@@ -115,14 +119,15 @@ hr.scrawl{border:none; height:14px; margin:48px auto; width:160px;
   box-shadow:3px 4px 0 rgba(0,0,0,.2); transition:transform .14s; margin-top:auto;
 }
 .ext-btn:hover{transform:translateY(-2px)}
-.ext-btn:focus-visible{outline:2px solid var(--red); outline-offset:3px; border-radius:11px}
+/* dark-bg ext button: paper-color ring (contrast vs #1c1812 ≈ 13.7:1) */
+.ext-btn:focus-visible{outline:2px solid var(--paper); outline-offset:3px; border-radius:11px}
 
 footer{margin-top:60px; text-align:center}
 .byline{font-family:var(--scrawl); font-size:15px; color:var(--muted)}
 .foot-links{font-family:var(--mono); font-size:13px; color:var(--muted); margin-top:10px}
 .foot-links a{color:var(--muted); border:none}
 .foot-links a:hover{color:var(--ink)}
-.foot-links a:focus-visible{outline:2px solid var(--red); outline-offset:2px; border-radius:2px}
+.foot-links a:focus-visible{outline:2px solid var(--ink); outline-offset:2px; border-radius:2px}
 
 /* reduced motion — disable transitions/transforms but keep focus-visible rings */
 @media (prefers-reduced-motion: reduce) {
@@ -182,8 +187,9 @@ footer{margin-top:60px; text-align:center}
 
   <p class="auto-note">
     Installed apps <b>auto-update</b> — grab it once and you never need this page again. Builds are signed for
-    the updater, just not for Gatekeeper/SmartScreen. macOS users can also install with Homebrew —
-    <code>brew tap saeedkolivand/ai-job-hunter-app https://github.com/saeedkolivand/ai-job-hunter-app</code> then <code>brew install --cask ai-job-hunter</code>.
+    the updater, just not for Gatekeeper/SmartScreen. macOS users can also install with Homebrew —<br>
+    <code class="copy-cmd" role="button" tabindex="0" aria-label="Click to copy: brew tap saeedkolivand/ai-job-hunter-app https://github.com/saeedkolivand/ai-job-hunter-app" data-copy="brew tap saeedkolivand/ai-job-hunter-app https://github.com/saeedkolivand/ai-job-hunter-app">brew tap saeedkolivand/ai-job-hunter-app https://github.com/saeedkolivand/ai-job-hunter-app</code><br>
+    then <code class="copy-cmd" role="button" tabindex="0" aria-label="Click to copy: brew install --cask ai-job-hunter" data-copy="brew install --cask ai-job-hunter">brew install --cask ai-job-hunter</code>.
   </p>
 
   <hr class="scrawl">

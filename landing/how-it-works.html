@@ -777,6 +777,18 @@
         grid-column: 1 / -1;
         border-top: 1px solid var(--line);
       }
+      /* Screen-reader only — visually hidden but accessible */
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
     </style>
   </head>
   <body>
@@ -788,13 +800,13 @@
           <p>Architecture walkthrough</p>
         </div>
       </div>
-      <nav id="nav">
-        <button data-view="overview" class="active"><span class="nidx">01</span> Overview</button>
-        <button data-view="boot"><span class="nidx">02</span> Boot sequence</button>
-        <button data-view="flows"><span class="nidx">03</span> Flow simulator</button>
-        <button data-view="ipc"><span class="nidx">04</span> IPC reference</button>
-        <button data-view="subsystems"><span class="nidx">05</span> Subsystems</button>
-        <button data-view="cheatsheet"><span class="nidx">06</span> Interview cheat‑sheet</button>
+      <nav id="nav" aria-label="Page sections">
+        <button data-view="overview" class="active" aria-current="true"><span class="nidx">01</span> Overview</button>
+        <button data-view="boot" aria-current="false"><span class="nidx">02</span> Boot sequence</button>
+        <button data-view="flows" aria-current="false"><span class="nidx">03</span> Flow simulator</button>
+        <button data-view="ipc" aria-current="false"><span class="nidx">04</span> IPC reference</button>
+        <button data-view="subsystems" aria-current="false"><span class="nidx">05</span> Subsystems</button>
+        <button data-view="cheatsheet" aria-current="false"><span class="nidx">06</span> Interview cheat‑sheet</button>
       </nav>
       <div class="legend">
         <div><span class="dot" style="background: var(--ui)"></span>Renderer (React)</div>
@@ -895,8 +907,8 @@
           </div>
         </div>
 
-        <div class="detail" id="nodeDetail">
-          <h4>Click a box above ☝️</h4>
+        <div class="detail" id="nodeDetail" aria-live="polite" aria-atomic="true">
+          <h4>Click a box above</h4>
           <p class="muted">
             Each box shows its responsibility, the real files it maps to, and the key types or
             functions an interviewer might ask about.
@@ -951,7 +963,8 @@
           <span class="count" id="ipcCount" aria-live="polite" aria-atomic="true"></span>
         </div>
         <div class="card" style="padding: 0; overflow: hidden">
-          <table>
+          <table aria-label="IPC endpoint reference">
+            <caption class="sr-only">AppClient IPC endpoint reference — all invoke commands and event channels</caption>
             <thead>
               <tr>
                 <th>Namespace</th>
@@ -1023,17 +1036,21 @@
     <script>
       /* ============================ NAV ============================ */
       const nav = document.getElementById('nav');
+      const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       nav.addEventListener('click', (e) => {
         const b = e.target.closest('button');
         if (!b) return;
         document
           .querySelectorAll('#nav button')
-          .forEach((x) => x.classList.toggle('active', x === b));
+          .forEach((x) => {
+            x.classList.toggle('active', x === b);
+            x.setAttribute('aria-current', x === b ? 'true' : 'false');
+          });
         const v = b.dataset.view;
         document
           .querySelectorAll('section.view')
           .forEach((s) => s.classList.toggle('active', s.id === 'view-' + v));
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
       });
 
       /* ============================ OVERVIEW NODE DETAILS ============================ */
@@ -1267,7 +1284,7 @@
             )
             .join('') +
           '</div>' +
-          '<div class="stage" data-stage></div>' +
+          '<div class="stage" data-stage aria-live="polite" aria-atomic="true"></div>' +
           '<div class="controls">' +
           '<button data-prev>‹ Back</button>' +
           '<div class="progress"><i data-bar></i></div>' +

@@ -27,7 +27,8 @@
   --mono:'Space Mono', monospace;
   --paper:#f4ecdc;
   --ink:#1c1812;
-  --red:#e24b4a;
+  /* #b02b2a gives 5.25:1 on --paper — meets AA for 13px text */
+  --red:#b02b2a;
   --muted:#4a4030;
 }
 *{box-sizing:border-box}
@@ -36,7 +37,7 @@ body{
   margin:0; background:var(--paper); color:var(--ink);
   font-family:var(--hand); font-size:18px; line-height:1.75;
 }
-a{color:var(--red); text-decoration:none; border-bottom:1.5px solid rgba(226,75,74,.4)}
+a{color:var(--red); text-decoration:none; border-bottom:1.5px solid rgba(176,43,42,.4)}
 a:hover{border-bottom-color:var(--red)}
 code{font-family:var(--mono); font-size:.85em; background:#e6dcc4; padding:1px 6px; border-radius:4px}
 
@@ -82,13 +83,16 @@ footer{margin-top:60px; text-align:center}
 .foot-links a{color:var(--muted); border:none}
 .foot-links a:hover{color:var(--ink)}
 
-/* ── focus-visible ring for all interactive elements ── */
+/* ── focus-visible ring for all interactive elements ──
+   Using --ink (#1c1812) gives ~12.6:1 contrast on --paper, well above the
+   WCAG 2.2 SC 1.4.11 non-text-contrast floor of 3:1.
+   --red alone on --paper is only ~5.25:1 (now improved) but ink is unambiguous. */
 a:focus-visible,
 button:focus-visible,
 [tabindex]:focus-visible,
 [role="button"]:focus-visible{
-  outline:2px solid var(--red);
-  outline-offset:2px;
+  outline:2px solid var(--ink);
+  outline-offset:3px;
   border-radius:3px;
 }
 /* anchor links inside headings keep their own radius */

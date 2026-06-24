@@ -150,8 +150,8 @@ hr.scrawl{border:none; height:1px; margin:54px auto; width:min(560px,90%);
 .fleet-svg .node.critic rect{fill:var(--critic-tint); stroke:var(--critic)}
 .fleet-svg .node:hover rect, .fleet-svg .node.active rect{fill:var(--accent); stroke:var(--accent)}
 .fleet-svg .node:hover text, .fleet-svg .node.active text{fill:#fff}
-.fleet-svg .node:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
-.fleet-svg .node:focus-visible rect{stroke:var(--accent); stroke-width:2.4}
+.fleet-svg .node:focus-visible{outline:none}
+.fleet-svg .node:focus-visible rect{stroke:#fff; stroke-width:2.8; filter:drop-shadow(0 0 2px rgba(0,0,0,.7))}
 .fleet-svg .link{fill:none; stroke:rgba(255,255,255,.22); stroke-width:1.6; stroke-linecap:round; opacity:.6; transition:opacity .2s, stroke .2s, stroke-width .2s}
 .fleet-svg .link.risk{stroke:var(--accent); opacity:.55}
 .fleet-svg .link.lit{opacity:1; stroke-width:2.6; stroke:var(--text)}
@@ -203,8 +203,8 @@ hr.scrawl{border:none; height:1px; margin:54px auto; width:min(560px,90%);
 .agent:hover{transform:translateY(-3px); border-color:rgba(255,255,255,.18)}
 .agent .name{font-family:var(--mono); font-weight:700; font-size:14px; color:var(--text); word-break:break-word}
 .agent .role-pill{font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.05em; padding:2px 9px; border-radius:var(--pill); align-self:flex-start; border:1px solid var(--border)}
-.role-author{background:var(--author-tint); border-color:rgba(52,211,153,.4); color:var(--author)}
-.role-critic{background:var(--critic-tint); border-color:rgba(244,114,182,.4); color:var(--critic)}
+.role-author{background:rgba(52,211,153,.18); border-color:rgba(52,211,153,.5); color:var(--author)}
+.role-critic{background:rgba(244,114,182,.08); border-color:rgba(244,114,182,.4); color:var(--critic)}
 .role-cross{background:var(--surface-2); color:var(--muted)}
 .agent .role{font-size:15px; line-height:1.45; color:var(--text)}
 .agent .pair{font-family:var(--mono); font-size:12px; color:var(--muted); line-height:1.5}
@@ -308,7 +308,7 @@ footer{margin-top:64px; text-align:center}
       <button class="issue" type="button" aria-pressed="false" data-issue="scrape"><span class="ico" aria-hidden="true">🕸️</span>Scraper stopped matching LinkedIn</button>
     </div>
 
-    <div class="route" id="route" aria-live="polite">
+    <div class="route" id="route" aria-live="polite" aria-atomic="true">
       <p class="placeholder">pick an issue to see who handles it — and why.</p>
     </div>
   </div>

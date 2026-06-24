@@ -17,6 +17,8 @@
   --paper:#f4ecdc;
   --ink:#1c1812;
   --red:#e24b4a;
+  /* red-dark: AA-compliant (#b5160e on --paper ≥4.5:1) for body-size text */
+  --red-dark:#b5160e;
   /* brand-violet cameo — bridges notebook palette to the app's identity */
   --violet:#7c3aed;
 }
@@ -61,14 +63,14 @@ body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;opac
   border-right:calc(2.5px*var(--s)) solid var(--ink);border-bottom:calc(2.5px*var(--s)) solid var(--ink);
   transform:skewX(28deg) rotate(45deg)}
 .say.small{font-size:calc(17px*var(--s))}
-.scrawlNote{font-family:var(--scrawl);color:var(--red);font-size:calc(19px*var(--s));
+.scrawlNote{font-family:var(--scrawl);color:var(--red-dark);font-size:calc(19px*var(--s));
   max-width:calc(270px*var(--s));line-height:1.35;animation:fadein .5s both}
 .scrawlNote .arr{display:block;width:calc(64px*var(--s));margin-top:calc(2px*var(--s))}
 .arr-l{transform:scaleX(-1)} .arr-d{transform:rotate(48deg)} .arr-r{transform:rotate(8deg)}
 .stampWrap{text-align:center;animation:stampin .4s cubic-bezier(.2,1.8,.5,1) both}
 .stampEyebrow{font-family:var(--scrawl);font-size:calc(17px*var(--s));color:var(--ink);margin-bottom:calc(4px*var(--s))}
-.stamp{display:inline-block;font-family:var(--impact);font-size:calc(52px*var(--s));line-height:1.15;color:var(--red);
-  border:calc(5px*var(--s)) solid var(--red);border-radius:10px 16px 9px 18px/16px 9px 18px 10px;
+.stamp{display:inline-block;font-family:var(--impact);font-size:calc(52px*var(--s));line-height:1.15;color:var(--red-dark);
+  border:calc(5px*var(--s)) solid var(--red-dark);border-radius:10px 16px 9px 18px/16px 9px 18px 10px;
   padding:calc(4px*var(--s)) calc(22px*var(--s));letter-spacing:.04em;max-width:calc(880px*var(--s));
   background:rgba(244,236,220,.92);transform:rotate(-4deg)}
 @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
@@ -77,8 +79,9 @@ body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;opac
 @keyframes stampin{from{opacity:0;transform:scale(2.4) rotate(7deg)}to{opacity:1;transform:none}}
 
 /* ---- global focus-visible ring ---- */
+/* --ink (#1c1812) on --paper (#f4ecdc) ≈17:1; meets SC 1.4.11 ≥3:1 for UI components */
 a:focus-visible,button:focus-visible,[tabindex]:focus-visible,[role="button"]:focus-visible{
-  outline:2px solid var(--red);outline-offset:2px}
+  outline:3px solid var(--ink);outline-offset:3px;border-radius:2px}
 /* ---- hud / controls / progress ---- */
 #hud{position:fixed;top:12px;left:76px;z-index:6;font-family:var(--mono);
   font-size:clamp(10px,1.5vmin,14px);line-height:1.7;opacity:.92;white-space:pre}
@@ -87,8 +90,9 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible,[role="button"]:fo
   background:var(--paper);border:2px solid var(--ink);font-family:var(--hand);
   border-radius:46% 54% 52% 48%/55% 46% 54% 45%;box-shadow:2px 2px 0 rgba(28,24,18,.22)}
 #controls button:active{transform:translate(1px,2px);box-shadow:none}
-#controls button:focus-visible{outline:2.5px solid var(--red);outline-offset:3px}
-#progress{position:fixed;left:50%;bottom:10px;transform:translateX(-50%);z-index:6;
+#controls button:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+/* bottom:36px clears the sitefoot (~22px) + 8px gap; z-index:7 renders above controls layer */
+#progress{position:fixed;left:50%;bottom:36px;transform:translateX(-50%);z-index:7;
   width:min(640px,72vw);display:flex;align-items:center;gap:12px;
   font-family:var(--mono);font-size:clamp(9px,1.4vmin,13px);opacity:.92}
 #bar{flex:1;height:8px;border:2px solid var(--ink);border-radius:5px;position:relative}
@@ -99,13 +103,14 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible,[role="button"]:fo
 .overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:2vmin;text-align:center;background:var(--paper);padding:4vmin}
 #titlecard{z-index:10}
-#endcard{z-index:5;background:rgba(244,236,220,.97)}
+/* endcard must sit above controls (6) and progress (7) when revealed */
+#endcard{z-index:9;background:rgba(244,236,220,.97)}
 [hidden]{display:none!important}
 #titlecard h1{font-family:var(--impact);font-size:clamp(52px,13vmin,150px);line-height:1;letter-spacing:.02em;
   transform:rotate(-1.5deg);text-decoration:underline wavy var(--red);
   text-decoration-thickness:clamp(3px,.6vmin,7px);text-underline-offset:clamp(8px,1.6vmin,18px)}
 .tsub{font-family:var(--accent);font-size:clamp(20px,3.4vmin,34px)}
-.tnote{font-family:var(--scrawl);color:var(--red);font-size:clamp(15px,2.4vmin,24px);transform:rotate(-2.5deg)}
+.tnote{font-family:var(--scrawl);color:var(--red-dark);font-size:clamp(15px,2.4vmin,24px);transform:rotate(-2.5deg)}
 .tmono{font-family:var(--mono);font-size:clamp(10px,1.7vmin,15px);opacity:.85}
 .thint{opacity:.55}
 #play{background:none;border:none;cursor:pointer;margin:1vmin 0}
@@ -122,10 +127,10 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible,[role="button"]:fo
   background:var(--paper);border:2.5px solid var(--ink);padding:.3em 1em;
   border-radius:46% 54% 52% 48%/55% 46% 54% 45%;box-shadow:2px 2px 0 rgba(28,24,18,.22)}
 .hbtn:active{transform:translate(1px,2px);box-shadow:none}
-.hbtn:focus-visible{outline:2.5px solid var(--red);outline-offset:3px}
+.hbtn:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 .back{font-family:var(--hand);font-size:clamp(15px,2.4vmin,22px);color:var(--ink);
   text-decoration:underline wavy var(--red);text-underline-offset:5px}
-.back:focus-visible{outline:2px solid var(--red);outline-offset:2px;border-radius:2px}
+.back:focus-visible{outline:3px solid var(--ink);outline-offset:2px;border-radius:2px}
 
 /* ---- static margin doodles ---- */
 .doodle{position:fixed;z-index:0;pointer-events:none;opacity:.45}
@@ -140,7 +145,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible,[role="button"]:fo
   .cap,.say,.scrawlNote,.stampWrap{animation:fadein .3s both}
   #play:hover svg,#play:focus-visible svg{animation:none}
   /* static ring replaces the suppressed wig animation so focus is never invisible */
-  #play:focus-visible{outline:3px solid var(--red);outline-offset:6px;border-radius:50%}
+  #play:focus-visible{outline:3px solid var(--ink);outline-offset:6px;border-radius:50%}
 }
 </style>
 </head>
@@ -182,14 +187,14 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible,[role="button"]:fo
       <g id="frameline"></g>
       <g id="sceneRoot"></g>
     </svg>
-    <div id="caps"></div>
+    <div id="caps" aria-live="polite" aria-atomic="false"></div>
     <div id="fig"></div>
   </div>
 </div>
 
 <div id="hud" aria-hidden="true"><div id="hud1"></div><div id="hud2"></div><div id="hud3"></div></div>
 
-<div id="controls">
+<div id="controls" inert>
   <button id="pauseBtn" aria-label="pause">⏸</button>
   <button id="speedBtn" aria-label="speed 1x">1×</button>
   <button id="muteBtn" aria-label="mute">🔊</button>
@@ -213,14 +218,14 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible,[role="button"]:fo
   <div class="tmono thint">sound on · space pause · 2× button · m mute · → skip · r replay</div>
 </div>
 
-<div id="endcard" class="overlay" hidden>
-  <h2>THE END</h2>
-  <p class="esub">the creature is fine. it lives in the app now. it answers to “send”.</p>
-  <div class="tnote">no recruiters were harmed. several were automated.</div>
-  <div class="tmono">rejections survived: 1,247 · dignity: rebooting · you: press send</div>
-  <div class="erow">
-    <button id="replay2" class="hbtn">↺ watch it again</button>
-    <a class="back" href="/">← back to the notebook</a>
+<div id=”endcard” class=”overlay” hidden role=”dialog” aria-modal=”true” aria-labelledby=”endcard-title”>
+  <h2 id=”endcard-title”>THE END</h2>
+  <p class=”esub”>the creature is fine. it lives in the app now. it answers to “send”.</p>
+  <div class=”tnote”>no recruiters were harmed. several were automated.</div>
+  <div class=”tmono”>rejections survived: 1,247 · dignity: rebooting · you: press send</div>
+  <div class=”erow”>
+    <button id=”replay2” class=”hbtn”>↺ watch it again</button>
+    <a class=”back” href=”/”>← back to the notebook</a>
   </div>
 </div>
 <p id="sitefoot" style="position:fixed;bottom:0;left:0;right:0;z-index:6;text-align:center;font-family:var(--mono);font-size:12px;color:#4a4030;padding:4px 0 6px;background:rgba(244,236,220,.82);pointer-events:none"><a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener" style="color:#4a4030;pointer-events:auto">♥ sponsor</a> · <a href="/" style="color:#4a4030;pointer-events:auto">home</a> · <a href="https://github.com/saeedkolivand/ai-job-hunter-app" target="_blank" rel="noopener" style="color:#4a4030;pointer-events:auto">GitHub</a></p>
@@ -1047,6 +1052,7 @@ function startFilm(){if(started)return;started=true;
  if(AC){if(AC.state==='suspended')AC.resume();
   musicOn=true;stepIdx=0;nextNote=AC.currentTime+0.15;curCue=null;setCue('act1');}
  titleEl.setAttribute('hidden','');
+ $('controls').removeAttribute('inert');
  filmTime=0;lastFrame=0;sceneIdx=-1;endedFilm=false;
  paused=false;updatePauseBtn();}
 function finishFilm(){endedFilm=true;clearCaps();
@@ -1055,14 +1061,16 @@ function finishFilm(){endedFilm=true;clearCaps();
  hud3.textContent='dignity: rebooting · you: press send';
  barFill.style.width='100%';
  plabel.textContent='the end · '+mmss(TOTAL)+'/'+mmss(TOTAL);
- endEl.removeAttribute('hidden');
+ openEndcard();
  if(AC)setCue('act7');}
 function skipScene(){if(!started||endedFilm)return;
  var next=sceneIdx+1;
  if(next>=SCENES.length){finishFilm();return;}
  filmTime=STARTS[next];clearCaps();}
 function replay(){if(!started){startFilm();return;}
- endEl.setAttribute('hidden','');endedFilm=false;sceneIdx=-1;clearCaps();
+ /* dismiss endcard cleanly — removes focus trap listeners and returns focus to opener */
+ if(!endEl.hasAttribute('hidden'))closeEndcard();
+ endedFilm=false;sceneIdx=-1;clearCaps();
  filmTime=0;lastFrame=0;paused=false;updatePauseBtn();
  if(AC){curCue=null;setCue('act1');stepIdx=0;nextNote=AC.currentTime+0.1;}}
 function setMuted(m){muted=m;
@@ -1082,6 +1090,32 @@ function togglePause(){setPaused(!paused);}
 function setRate(r){rate=r;speedBtn.textContent=r+'×';
  speedBtn.setAttribute('aria-label','speed '+r+'x');}
 function toggleRate(){setRate(rate===1?2:1);}
+
+/* ================= endcard dialog focus management ================= */
+var endOpener=null;
+var FOCUSABLE='a[href],button:not([disabled]),[tabindex]:not([tabindex="-1"])';
+function trapFocus(e){
+ var els=Array.prototype.slice.call(endEl.querySelectorAll(FOCUSABLE)).filter(function(n){return !n.closest('[hidden]');});
+ if(!els.length)return;
+ var first=els[0],last=els[els.length-1];
+ if(e.key==='Tab'){
+  if(e.shiftKey){if(document.activeElement===first){e.preventDefault();last.focus();}}
+  else{if(document.activeElement===last){e.preventDefault();first.focus();}}}}
+function openEndcard(){
+ endOpener=document.activeElement||null;
+ $('controls').setAttribute('inert','');
+ endEl.removeAttribute('hidden');
+ var first=endEl.querySelector(FOCUSABLE);
+ if(first)first.focus();
+ endEl.addEventListener('keydown',trapFocus);
+ endEl.addEventListener('keydown',onEndEsc);}
+function closeEndcard(){
+ endEl.setAttribute('hidden','');
+ $('controls').removeAttribute('inert');
+ endEl.removeEventListener('keydown',trapFocus);
+ endEl.removeEventListener('keydown',onEndEsc);
+ if(endOpener&&endOpener.focus)endOpener.focus();}
+function onEndEsc(e){if(e.key==='Escape'){e.preventDefault();closeEndcard();replay();}}
 
 /* ================= wiring ================= */
 $('play').addEventListener('click',startFilm);
