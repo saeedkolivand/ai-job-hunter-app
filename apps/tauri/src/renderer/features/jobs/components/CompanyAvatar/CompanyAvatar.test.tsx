@@ -179,4 +179,26 @@ describe('CompanyAvatar — logo layer (fetchCompanyLogos preference)', () => {
     expect(screen.queryByTestId('logo-image')).toBeNull();
     expect(screen.getByText('AC').className ?? '').not.toContain('invisible');
   });
+
+  it('stale logoFailed resets when rerendered with a new company + working logo', () => {
+    // Render company A with a logo that errors → logoFailed=true → monogram shown.
+    mockFetchLogos = true;
+    mockLogoUrl = 'https://logo.clearbit.com/acme.com';
+    const { rerender } = render(<CompanyAvatar company="Acme" />);
+
+    // Trigger the error so logoFailed becomes true for company A.
+    fireEvent.click(screen.getByTestId('logo-image'));
+    expect(screen.queryByTestId('logo-image')).toBeNull();
+
+    // Rerender with company B + a different (working) logo URL.
+    // logoFailed must reset via the useEffect that watches logoUrl.
+    mockLogoUrl = 'https://logo.clearbit.com/google.com';
+    rerender(<CompanyAvatar company="Google" />);
+
+    // Company B's logo should render (no error fired yet) and monogram invisible.
+    const logoEl = screen.getByTestId('logo-image');
+    expect(logoEl).toBeInTheDocument();
+    expect(logoEl.getAttribute('data-src')).toBe('https://logo.clearbit.com/google.com');
+    expect(screen.getByText('GO').className).toContain('invisible');
+  });
 });

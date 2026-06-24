@@ -561,24 +561,16 @@ fn test_html_to_markdown_plain_text() {
 /// every text node — producing `\*\*We help…\*\*` which react-markdown renders
 /// as literal asterisks instead of bold.
 ///
-/// This test is intentionally written to FAIL against the unfixed code, confirming
-/// the root cause.  After the fix it asserts the correct (unescaped) output.
+/// After the fix the plain-text path bypasses htmd entirely and returns the input
+/// unchanged, so the full output must equal the input exactly.
 #[test]
 fn test_html_to_markdown_plain_text_bold_markers_not_escaped() {
     let plain = "**We help the world run better** At SAP, we keep it simple.\n\n**Summary & Role Information:**\nYou will lead the team.";
     let result = html_to_markdown(plain);
-    assert!(
-        result.contains("**We help the world run better**"),
-        "plain-text ** must survive unescaped, got: {result}"
-    );
-    assert!(
-        result.contains("**Summary & Role Information:**"),
-        "plain-text ** heading must survive unescaped, got: {result}"
-    );
-    // The & must NOT become &amp; either.
-    assert!(
-        !result.contains("&amp;"),
-        "& in plain text must not be HTML-entity-encoded, got: {result}"
+    // Exact-equality: the plain-text path must be a no-op (trimmed input returned as-is).
+    assert_eq!(
+        result, plain,
+        "plain-text ** must pass through unescaped and unchanged"
     );
 }
 
@@ -599,13 +591,14 @@ fn test_html_to_markdown_strong_tag_still_produces_bold() {
 
 /// Plain-text input with double-newline paragraph breaks must preserve them
 /// (react-markdown needs a blank line to render separate paragraphs).
+/// Exact-equality: the plain-text path returns the input unchanged.
 #[test]
 fn test_html_to_markdown_plain_text_paragraph_breaks_preserved() {
     let plain = "First paragraph.\n\nSecond paragraph.";
-    let result = html_to_markdown(plain);
-    assert!(
-        result.contains("\n\n"),
-        "double newlines must be preserved as paragraph breaks, got: {result}"
+    assert_eq!(
+        html_to_markdown(plain),
+        plain,
+        "plain-text double newlines must be preserved as-is"
     );
 }
 

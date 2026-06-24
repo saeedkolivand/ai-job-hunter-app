@@ -343,7 +343,7 @@ describe('JobsResults — split-mode auto-select', () => {
   it('re-selects display[0] when a fresh scrape finishes (filtered empty→populated, scraping true→false)', () => {
     // waiting = scraping && filtered.length === 0.
     // Fresh search: start with empty filtered + scraping=true (waiting=true),
-    // then results arrive + scraping=false (waiting=false, justFinished=true).
+    // then results arrive → !selectionInDisplay fires auto-select.
     // Show-more does NOT trigger this path — it starts with items already present.
     STORE_STATE.jobs = { viewMode: 'split', selectedId: null };
     const p1 = posting('x', 'X');
@@ -353,7 +353,7 @@ describe('JobsResults — split-mode auto-select', () => {
     const { rerender } = renderResults({ filtered: [], resumeId: null, scraping: true });
     mockSetJobs.mockClear();
 
-    // Scrape finishes: results arrive + scraping done → waiting=false, justFinished=true
+    // Scrape finishes: results arrive + scraping done → !selectionInDisplay → auto-select topId
     rerender(
       <JobsResults
         filtered={[p1, p2]}
@@ -382,17 +382,13 @@ describe('JobsResults — split-mode auto-select', () => {
 
 // ── selection-preservation across re-scrapes and show-more ───────────────────
 //
-// Regression guard for the justFinished removal:
-//   OLD: auto-select fired whenever justFinished=true, overriding the user's job.
-//   NEW: auto-select only fires when !selectionInDisplay (no valid selection).
+// auto-select fires only when !selectionInDisplay (selectedId not in filtered).
 // These tests verify that a user's chosen job is NOT replaced when new items
 // arrive (show-more, live prepend, or a re-scrape that keeps their selection).
 
 describe('JobsResults — selection preserved across re-scrapes and show-more', () => {
   it('preserves the selected job when show-more completes (scraping true→false, selection stays in list)', () => {
-    // Regression guard: the OLD code would call setJobs({ selectedId: topId })
-    // whenever justFinished=true, which fires as scraping transitions true→false.
-    // The NEW code must NOT call setJobs when selectionInDisplay is already true.
+    // auto-select must NOT fire when selectionInDisplay is already true.
     STORE_STATE.jobs = { viewMode: 'split', selectedId: 'b' };
     const p1 = posting('a', 'A');
     const p2 = posting('b', 'B');

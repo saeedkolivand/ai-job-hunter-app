@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { cn, Image } from '@ajh/ui';
 
@@ -49,8 +49,11 @@ export function CompanyAvatar({ company, sourceFallback, size = 'sm' }: CompanyA
 
   // Track whether the image itself failed to load (404, CORS on img-src, etc.).
   // When failed: remove the image layer entirely so the monogram is always visible.
-  // key={logoUrl} on <Image> resets this per URL so a new company gets a fresh attempt.
+  // Reset whenever logoUrl changes (new company) so each new URL gets a fresh attempt.
   const [logoFailed, setLogoFailed] = useState(false);
+  useEffect(() => {
+    setLogoFailed(false);
+  }, [logoUrl]);
 
   // Show the logo layer when: setting on + URL resolved + image hasn't errored.
   const showLogoLayer = logosEnabled && !!logoUrl && !logoFailed;

@@ -79,42 +79,46 @@ describe('useCompanyLogo — happy path', () => {
 
 describe('useCompanyLogo — failures return null (never throw)', () => {
   it('returns null when Clearbit returns an empty array', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify([]), { status: 200 })
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
 
     const { result } = renderHook(() => useCompanyLogo('Unknown Co', true), {
       wrapper: makeWrapper(),
     });
 
-    await waitFor(() => result.current === null);
+    // Wait until fetch actually ran (query settled), then assert null outcome.
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledOnce());
     expect(result.current).toBeNull();
   });
 
   it('returns null on a non-OK HTTP response', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 429 }));
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 429 }));
 
     const { result } = renderHook(() => useCompanyLogo('Acme', true), {
       wrapper: makeWrapper(),
     });
 
-    await waitFor(() => result.current === null);
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledOnce());
     expect(result.current).toBeNull();
   });
 
   it('returns null on a network error (fetch throws)', async () => {
-    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network error'));
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network error'));
 
     const { result } = renderHook(() => useCompanyLogo('Acme', true), {
       wrapper: makeWrapper(),
     });
 
-    await waitFor(() => result.current === null);
+    // retry:0 means the query fails immediately after one attempt.
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledOnce());
     expect(result.current).toBeNull();
   });
 
   it('returns null when the logo field is missing from the result', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify([{ name: 'Acme Corp', domain: 'acme.com' /* no logo */ }]), {
         status: 200,
       })
@@ -124,7 +128,7 @@ describe('useCompanyLogo — failures return null (never throw)', () => {
       wrapper: makeWrapper(),
     });
 
-    await waitFor(() => result.current === null);
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledOnce());
     expect(result.current).toBeNull();
   });
 });

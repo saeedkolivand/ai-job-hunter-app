@@ -16,6 +16,7 @@ import { ScrapeForm } from '@/features/jobs/components/ScrapeForm';
 import type { ScrapeFormState } from '@/features/jobs/components/ScrapeForm/constants';
 import { useDefaultResumeId } from '@/features/jobs/hooks/useDefaultResumeId';
 import { useScraping } from '@/features/jobs/hooks/useScraping';
+import { mergePostings } from '@/features/jobs/lib/merge-postings';
 import { MatchScoresProvider } from '@/features/jobs/providers';
 import type { JobEvent, Posting } from '@/features/jobs/types';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
@@ -199,15 +200,10 @@ export function JobsPage() {
     if (livePostings.length > 0) setShowScrapeForm(false);
   }, [livePostings.length]);
 
-  const allPostings = useMemo(() => {
-    // Backend `postings` win on duplicate ids — they carry interactions and the
-    // persisted full description. Streamed `livePostings` are only added when
-    // they have no backend counterpart yet (mid-scrape, not yet persisted).
-    const byId = new Map<string, Posting>();
-    for (const p of postings) byId.set(p.id, p);
-    for (const p of livePostings) if (!byId.has(p.id)) byId.set(p.id, p);
-    return [...byId.values()];
-  }, [postings, livePostings]);
+  const allPostings = useMemo(
+    () => mergePostings(postings, livePostings),
+    [postings, livePostings]
+  );
 
   const handleClearPostings = async () => {
     setConfirmClear(false);

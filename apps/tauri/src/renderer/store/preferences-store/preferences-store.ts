@@ -25,21 +25,6 @@ const migratePreferences = (state: Record<string, unknown>, version: number): Pr
     state = { ...state, version: 1, lastUpdated: new Date().toISOString() };
   }
 
-  // v2 → v3: add promptQuality default
-  if (version < 3) {
-    state = { ...state, promptQuality: 'auto', version: 3, lastUpdated: new Date().toISOString() };
-  }
-
-  // v3 → v4: add fetchCompanyLogos (DEFAULT OFF — third-party egress, privacy opt-in)
-  if (version < 4) {
-    state = {
-      ...state,
-      fetchCompanyLogos: false,
-      version: 4,
-      lastUpdated: new Date().toISOString(),
-    };
-  }
-
   // v1 → v2: flatten { provider, model, baseUrl } → { activeProvider, providers: { … } }
   if (version < 2) {
     const old = state.aiProviderConfig as
@@ -57,6 +42,21 @@ const migratePreferences = (state: Record<string, unknown>, version: number): Pr
         lastUpdated: new Date().toISOString(),
       };
     }
+  }
+
+  // v2 → v3: add promptQuality default
+  if (version < 3) {
+    state = { ...state, promptQuality: 'auto', version: 3, lastUpdated: new Date().toISOString() };
+  }
+
+  // v3 → v4: add fetchCompanyLogos (DEFAULT OFF — third-party egress, privacy opt-in)
+  if (version < 4) {
+    state = {
+      ...state,
+      fetchCompanyLogos: false,
+      version: 4,
+      lastUpdated: new Date().toISOString(),
+    };
   }
 
   return state as Preferences;

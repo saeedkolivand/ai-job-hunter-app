@@ -30,6 +30,7 @@ import { act, render, waitFor } from '@testing-library/react';
 
 import { TEST_IDS } from '@ajh/test-ids';
 
+import { mergePostings } from '@/features/jobs/lib/merge-postings';
 import type { Posting } from '@/features/jobs/types';
 
 // ---------------------------------------------------------------------------
@@ -330,19 +331,8 @@ describe('JobsPage — allPostings dedup (via rendered list)', () => {
 // ---------------------------------------------------------------------------
 
 describe('allPostings merge formula — pure function', () => {
-  /**
-   * Inline replica of the component's allPostings useMemo (backend-wins dedup):
-   *   const byId = new Map<string, Posting>();
-   *   for (const p of postings) byId.set(p.id, p);          // backend wins
-   *   for (const p of livePostings) if (!byId.has(p.id)) byId.set(p.id, p);
-   *   return [...byId.values()];
-   */
-  function mergePostings(postings: Posting[], livePostings: Posting[]): Posting[] {
-    const byId = new Map<string, Posting>();
-    for (const p of postings) byId.set(p.id, p);
-    for (const p of livePostings) if (!byId.has(p.id)) byId.set(p.id, p);
-    return [...byId.values()];
-  }
+  // Uses the real mergePostings helper imported from features/jobs/lib/merge-postings
+  // so test behaviour stays in lockstep with the component's useMemo.
 
   it('item in both livePostings and postings appears exactly once', () => {
     const shared = posting('shared');

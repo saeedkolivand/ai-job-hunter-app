@@ -209,10 +209,7 @@ function DetailContent({
                 </span>
               )}
               {posting.remote && (
-                <Tag
-                  color="green"
-                  className="rounded-full px-1.5 py-0.5 text-fine-print uppercase tracking-wider"
-                >
+                <Tag color="green" className={statusTagCls}>
                   {t('jobs.remote')}
                 </Tag>
               )}

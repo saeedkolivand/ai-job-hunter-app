@@ -50,8 +50,9 @@ static TT_BULLET_TIGHT_RE: std::sync::LazyLock<regex::Regex> =
 // ponytail: simple `<tag` / `</tag` scan — good enough for the aggregator inputs
 // that are either pure HTML or plain-text/already-markdown; won't catch every
 // hand-crafted edge case (e.g. lone `<` in code), but correct for our use-case.
-static HTML_TAG_RE: std::sync::LazyLock<regex::Regex> =
-    std::sync::LazyLock::new(|| regex::Regex::new(r"<[a-zA-Z/][^>]*>").unwrap());
+static HTML_TAG_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"<[a-zA-Z/][^>]*>").expect("static HTML-tag detection regex is valid")
+});
 
 #[derive(Debug, Clone)]
 pub struct FetchOptions {
