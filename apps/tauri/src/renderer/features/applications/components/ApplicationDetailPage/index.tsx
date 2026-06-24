@@ -661,7 +661,9 @@ function BriefTab({ application }: { application: Application }) {
   const hasJd = jobDesc.length > 0;
 
   const startEdit = () => {
-    setJdDraft(application.jobDescription);
+    // Seed from the displayed/resolved content so auto-resolved JD isn't lost
+    // when the user opens the editor before the description has been persisted.
+    setJdDraft(jobDesc);
     setEditingJd(true);
   };
   const cancelEdit = () => setEditingJd(false);

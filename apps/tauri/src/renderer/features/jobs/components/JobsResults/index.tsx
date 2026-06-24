@@ -41,7 +41,8 @@ export function JobsResults({
 }: JobsResultsProps) {
   const { t } = useTranslation();
   const router = useRouter();
-  const { jobs, setJobs } = useSessionStore();
+  const jobs = useSessionStore((s) => s.jobs);
+  const setJobs = useSessionStore((s) => s.setJobs);
   const { viewMode, selectedId } = jobs;
   const setSettings = useSessionStore((s) => s.setSettings);
 

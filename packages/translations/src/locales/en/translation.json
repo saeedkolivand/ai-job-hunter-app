@@ -1562,6 +1562,7 @@
     "tailor": "Tailor",
     "tailorHint": "Tailor your résumé & cover letter for this job",
     "tailorError": "Couldn't start tailoring. Please try again.",
+    "saveError": "Couldn't save to tracking. Please try again.",
     "scrapeJobs": "Scrape Jobs",
     "scrapeFailed": "Scraping failed",
     "searching": "Searching for jobs…",
@@ -2277,7 +2278,10 @@
       "apiKeyStored": "API key stored",
       "getApiKeyAt": "Get your API key at",
       "saveKey": "Save Key",
-      "cliNotDetected": "{{agent}} CLI not detected. Install it and sign in once, then continue."
+      "cliNotDetected": "{{agent}} CLI not detected. Install it and sign in once, then continue.",
+      "installAgent": "Install {{agent}}",
+      "testKey": "Test",
+      "testingKey": "Testing key…"
     },
     "research": {
       "title": "Smarter cover letters",

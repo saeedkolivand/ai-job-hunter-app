@@ -119,14 +119,21 @@ function DetailContent({
     const resolveSettled =
       !shouldResolve || (resolved.isFetched && !resolved.isFetching && !descLoading);
     if (!descReady || !resolveSettled) return;
-    doneRef.current = true;
     if (resolvedLonger) {
       // Persist the full text first, then score on it.
+      // Latch only AFTER persist resolves so a transient IPC failure doesn't
+      // permanently prevent a re-score with the full text.
+      doneRef.current = true;
       void updateDescription({ id: posting.id, description })
-        .catch(() => {})
-        .finally(() => scoreJob(posting.id));
+        .catch(() => {
+          // Persist failure is non-fatal — still score off the in-memory text,
+          // but clear the latch so the pane can retry on next open.
+          doneRef.current = false;
+        })
+        .then(() => scoreJob(posting.id));
     } else {
       // No persist needed — score immediately.
+      doneRef.current = true;
       scoreJob(posting.id);
     }
   }, [

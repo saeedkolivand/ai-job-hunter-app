@@ -17,7 +17,8 @@ interface BrowserDetectedStateProps {
  * `flatpak run <app-id>` strings. Falls back to `null` so the caller can use a
  * generic label instead of silently showing the wrong brand.
  */
-export function getBrowserLabel(browserPath: string): string | null {
+export function getBrowserLabel(browserPath: string | null | undefined): string | null {
+  if (!browserPath) return null;
   const lower = browserPath.toLowerCase();
   if (lower.includes('brave')) return 'Brave';
   if (lower.includes('vivaldi')) return 'Vivaldi';
@@ -86,7 +87,7 @@ export function BrowserDetectedState({ browserPath, onBack, onNext }: BrowserDet
       >
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-red-500 via-yellow-500 to-green-500">
-            <span className="text-lg font-bold text-white">{displayName[0]}</span>
+            <span className="text-lg font-bold text-white">{displayName[0] ?? '?'}</span>
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-foreground/90">{displayName}</p>

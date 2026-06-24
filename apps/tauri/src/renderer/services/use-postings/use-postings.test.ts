@@ -4,7 +4,12 @@ import { act, waitFor } from '@testing-library/react';
 import { createMockClient, exerciseServiceHooks, renderHookWithClient } from '@/test-support';
 
 import * as mod from './use-postings';
-import { useInteractions, usePersistJob } from './use-postings';
+import {
+  useInteractions,
+  usePersistJob,
+  usePostings,
+  useUpdatePostingDescription,
+} from './use-postings';
 
 describe('use-postings services', () => {
   it('renders every exported hook without crashing', async () => {
@@ -59,5 +64,75 @@ describe('usePersistJob — interactions invalidation', () => {
     // The refetch must have been for the 'viewed' type.
     const refetchCall = listInteractions.mock.calls[callCountBefore];
     expect(refetchCall?.[0]).toMatchObject({ interactionType: 'viewed' });
+  });
+});
+
+describe('useUpdatePostingDescription — postings invalidation', () => {
+  /**
+   * Real-chain test: verifies that after updateDescription succeeds the postings
+   * list query refetches (fix #1 — renderer cache sync after backend persist).
+   */
+  it('refetches usePostings() after updateDescription mutates', async () => {
+    const listPostings = vi.fn().mockResolvedValue([]);
+    const updateDescription = vi.fn().mockResolvedValue(undefined);
+
+    const client = createMockClient({
+      'scrape.listPostings': listPostings,
+      'scrape.updateDescription': updateDescription,
+    });
+
+    const { result } = renderHookWithClient(
+      () => ({
+        postings: usePostings(),
+        update: useUpdatePostingDescription(),
+      }),
+      { client }
+    );
+
+    // Wait for the initial postings query to settle.
+    await waitFor(() => expect(result.current.postings.isSuccess).toBe(true));
+    const callCountBefore = listPostings.mock.calls.length;
+
+    // Trigger the mutation.
+    await act(async () => {
+      await result.current.update.mutateAsync({ id: 'job-1', description: 'Full text' });
+    });
+
+    // The postings query must have re-fired (onSuccess invalidation).
+    await waitFor(() => {
+      expect(listPostings.mock.calls.length).toBeGreaterThan(callCountBefore);
+    });
+  });
+
+  it('does not refetch postings when updateDescription rejects', async () => {
+    const listPostings = vi.fn().mockResolvedValue([]);
+    const updateDescription = vi.fn().mockRejectedValue(new Error('network'));
+
+    const client = createMockClient({
+      'scrape.listPostings': listPostings,
+      'scrape.updateDescription': updateDescription,
+    });
+
+    const { result } = renderHookWithClient(
+      () => ({
+        postings: usePostings(),
+        update: useUpdatePostingDescription(),
+      }),
+      { client }
+    );
+
+    await waitFor(() => expect(result.current.postings.isSuccess).toBe(true));
+    const callCountBefore = listPostings.mock.calls.length;
+
+    await act(async () => {
+      try {
+        await result.current.update.mutateAsync({ id: 'job-1', description: 'Full text' });
+      } catch {
+        // expected rejection
+      }
+    });
+
+    // onSuccess must NOT have fired — call count unchanged.
+    expect(listPostings.mock.calls.length).toBe(callCountBefore);
   });
 });

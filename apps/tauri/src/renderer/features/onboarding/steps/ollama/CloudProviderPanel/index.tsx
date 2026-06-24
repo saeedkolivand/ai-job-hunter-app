@@ -177,13 +177,14 @@ export function CloudProviderPanel({
               disabled={testing}
               onClick={() => void handleTestKey()}
               className="h-auto px-2 py-1 text-xs"
+              aria-label={testing ? t('onboarding.ai.testingKey') : undefined}
             >
               {testing ? (
-                <Loader2 size={11} className="animate-spin" />
+                <Loader2 size={11} className="animate-spin" aria-hidden="true" />
               ) : (
                 <>
                   <RefreshCw size={11} className="mr-1" />
-                  Test
+                  {t('onboarding.ai.testKey')}
                 </>
               )}
             </Button>

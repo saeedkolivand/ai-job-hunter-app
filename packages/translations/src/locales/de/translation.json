@@ -1566,6 +1566,7 @@
     "tailor": "Anpassen",
     "tailorHint": "Lebenslauf & Anschreiben für diesen Job anpassen",
     "tailorError": "Anpassung konnte nicht gestartet werden. Bitte erneut versuchen.",
+    "saveError": "Speichern in der Verfolgung fehlgeschlagen. Bitte erneut versuchen.",
     "scrapeJobs": "Jobs scrapen",
     "scrapeFailed": "Scraping fehlgeschlagen",
     "searching": "Suche nach Jobs…",
@@ -2281,7 +2282,10 @@
       "apiKeyStored": "API-Schlüssel gespeichert",
       "getApiKeyAt": "API-Schlüssel erhalten unter",
       "saveKey": "Schlüssel speichern",
-      "cliNotDetected": "{{agent}} CLI nicht erkannt. Installieren Sie es und melden Sie sich einmal an, dann weiter."
+      "cliNotDetected": "{{agent}} CLI nicht erkannt. Installieren Sie es und melden Sie sich einmal an, dann weiter.",
+      "installAgent": "{{agent}} installieren",
+      "testKey": "Testen",
+      "testingKey": "Schlüssel wird getestet…"
     },
     "research": {
       "title": "Bessere Anschreiben",
@@ -2332,7 +2336,7 @@
       "back": "Zurück",
       "next": "Weiter",
       "ready": "Browser bereit",
-      "willUse": "Wir verwenden deinen Browser für die sichere LinkedIn-Anmeldung",
+      "willUse": "Wir verwenden Ihren Browser für die sichere LinkedIn-Anmeldung",
       "readyLabel": "Erkannt und bereit"
     },
     "extension": {

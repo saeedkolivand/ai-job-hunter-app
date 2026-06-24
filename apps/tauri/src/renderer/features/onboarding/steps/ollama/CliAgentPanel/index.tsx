@@ -123,7 +123,8 @@ export function CliAgentPanel({ selectedProvider, onProviderChange }: CliAgentPa
               onClick={() => void openExternal.mutateAsync(docsUrl)}
               className="h-auto px-2 py-1 text-xs"
             >
-              <ExternalLink size={11} className="mr-1" /> Install {label}
+              <ExternalLink size={11} className="mr-1" />{' '}
+              {t('onboarding.ai.installAgent', { agent: label })}
             </Button>
           }
         />

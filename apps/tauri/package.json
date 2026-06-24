@@ -40,8 +40,6 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-hook-form": "^7.80.0",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
     "tesseract.js": "^7.0.0",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"

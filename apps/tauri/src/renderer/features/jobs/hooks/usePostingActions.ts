@@ -71,13 +71,19 @@ export function usePostingActions(posting: Posting) {
 
   const handleTailor = async () => {
     void trackInteraction('applied');
-    const res = await saveFromPostingMutation.mutateAsync({
-      jobUrl: posting.url,
-      board: posting.source,
-      company: posting.company,
-      title: posting.title,
-      jobDescription: posting.description,
-    });
+    let res;
+    try {
+      res = await saveFromPostingMutation.mutateAsync({
+        jobUrl: posting.url,
+        board: posting.source,
+        company: posting.company,
+        title: posting.title,
+        jobDescription: posting.description,
+      });
+    } catch {
+      notify.error({ message: t('jobs.tailorError') });
+      return;
+    }
     if (!res?.id) {
       notify.error({ message: t('jobs.tailorError') });
       return;
@@ -99,15 +105,22 @@ export function usePostingActions(posting: Posting) {
   const handleView = () => void navigate({ to: '/applications' });
 
   const handleSave = () => {
-    void trackInteraction('bookmarked');
-    void saveFromPostingMutation.mutateAsync({
-      jobUrl: posting.url,
-      board: posting.source,
-      company: posting.company,
-      title: posting.title,
-      jobDescription: posting.description,
-    });
-    notify.success({ message: t('applications.savedToTracking') });
+    void saveFromPostingMutation
+      .mutateAsync({
+        jobUrl: posting.url,
+        board: posting.source,
+        company: posting.company,
+        title: posting.title,
+        jobDescription: posting.description,
+      })
+      .then(() => {
+        // Only mark saved and notify AFTER the mutation resolves successfully.
+        void trackInteraction('bookmarked');
+        notify.success({ message: t('applications.savedToTracking') });
+      })
+      .catch(() => {
+        notify.error({ message: t('jobs.saveError') });
+      });
   };
 
   const saved = interactionTypes.has('bookmarked');

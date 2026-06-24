@@ -66,11 +66,15 @@ export const useClearPostings = () => {
   });
 };
 
-/** Persist the full resolved description back to the backend cache. */
+/** Persist the full resolved description back to the backend cache.
+ *  On success, invalidates the postings list so consumers re-render with the
+ *  full description rather than the stale truncated snippet. */
 export const useUpdatePostingDescription = () => {
   const api = useAppClient();
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: { id: string; description: string }) => api.scrape.updateDescription(req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.postings.all }),
   });
 };
 

@@ -440,6 +440,66 @@ describe('usePostingActions — handleOpen error suppression', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// handleTailor — rejected saveFromPosting (fix #5: catch unhandled rejection)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('usePostingActions — handleTailor rejection', () => {
+  it('notifies tailorError and does NOT navigate when saveFromPosting rejects', async () => {
+    mockSaveFromPostingAsync.mockRejectedValueOnce(new Error('IPC failure'));
+
+    const { result } = renderHook(() => usePostingActions(makePosting()));
+    // Must not throw — the catch must swallow the rejection cleanly.
+    await act(async () => {
+      await result.current.handleTailor();
+    });
+
+    expect(notifyError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'jobs.tailorError' })
+    );
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockSetApplicationApply).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// handleSave — optimistic-mark fix (fix #6: only mark saved after success)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('usePostingActions — handleSave after-success guard', () => {
+  it('does NOT mark saved or notify when saveFromPosting rejects', async () => {
+    mockSaveFromPostingAsync.mockRejectedValueOnce(new Error('IPC failure'));
+
+    const { result } = renderHook(() => usePostingActions(makePosting()));
+    await act(async () => {
+      result.current.handleSave();
+      // Flush microtasks so the rejected promise settles.
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.saved).toBe(false);
+    expect(notifySuccess).not.toHaveBeenCalled();
+    expect(notifyError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'jobs.saveError' })
+    );
+  });
+
+  it('marks saved and notifies success AFTER saveFromPosting resolves', async () => {
+    const { result } = renderHook(() => usePostingActions(makePosting()));
+    await act(async () => {
+      result.current.handleSave();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.saved).toBe(true);
+    expect(notifySuccess).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'applications.savedToTracking' })
+    );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // pending mirrors saveFromPosting.isPending
 // ─────────────────────────────────────────────────────────────────────────────
 

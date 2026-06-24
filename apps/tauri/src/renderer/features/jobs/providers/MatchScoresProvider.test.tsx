@@ -123,18 +123,30 @@ describe('MatchScoresProvider — reactive gate', () => {
     expect(lastEnabled).toBe(true);
   });
 
-  it('scoreJob is idempotent (same job scored twice stays in requested once)', async () => {
-    const { result } = renderHook(() => useMatchScores(), {
-      wrapper: wrapper(RESUME_ID),
-    });
+  it('scoreJob is idempotent (same job scored twice does not re-enable the query)', async () => {
+    scoreCache.set(JOB_A, score(JOB_A, 90));
 
+    const { result } = renderHook(
+      () => ({ row: useRowMatchScore(JOB_A), ctrl: useMatchScores() }),
+      { wrapper: wrapper(RESUME_ID) }
+    );
+
+    // Score once — query enables.
     await act(async () => {
-      result.current.scoreJob(JOB_A);
-      result.current.scoreJob(JOB_A);
+      result.current.ctrl.scoreJob(JOB_A);
+    });
+    const callsAfterFirst = mockUseJobMatchScore.mock.calls.length;
+
+    // Score again — must not trigger an additional render/call with a new Set.
+    await act(async () => {
+      result.current.ctrl.scoreJob(JOB_A);
     });
 
-    // Requesting the same job twice doesn't error; query is enabled
-    expect(result.current.hasResume).toBe(true);
+    // The mock call count must not have grown: scoreJob returned the same Set
+    // reference (stable ref guard), so no re-render occurred.
+    expect(mockUseJobMatchScore.mock.calls.length).toBe(callsAfterFirst);
+    // Score is still present.
+    expect(result.current.row.score).toEqual(score(JOB_A, 90));
   });
 
   it('scores different jobs independently (no key collision)', async () => {
@@ -180,6 +192,43 @@ describe('MatchScoresProvider — reactive gate', () => {
     // hasResume=false means enabled=false regardless of requested
     expect(result.current.row.score).toBeUndefined();
     expect(result.current.row.hasResume).toBe(false);
+  });
+});
+
+// ── resumeId change resets requested set (fix #4) ────────────────────────────
+
+describe('MatchScoresProvider — resumeId change resets requested', () => {
+  it('clears requested set when resumeId prop changes', async () => {
+    scoreCache.set(JOB_A, score(JOB_A, 80));
+
+    const RESUME_B = 'resume-bbb';
+
+    // Use a ref-based wrapper so we can change resumeId via rerender.
+    let currentResumeId: string | null = RESUME_ID;
+    const DynamicWrapper = ({ children }: { children: ReactNode }) => (
+      <MatchScoresProvider resumeId={currentResumeId}>{children}</MatchScoresProvider>
+    );
+
+    const { result, rerender } = renderHook(
+      () => ({ row: useRowMatchScore(JOB_A), ctrl: useMatchScores() }),
+      { wrapper: DynamicWrapper }
+    );
+
+    // Score JOB_A under RESUME_ID — query becomes enabled.
+    await act(async () => {
+      result.current.ctrl.scoreJob(JOB_A);
+    });
+    expect(result.current.row.score).toEqual(score(JOB_A, 80));
+
+    // Switch resumeId — the requested set must be cleared.
+    await act(async () => {
+      currentResumeId = RESUME_B;
+      rerender();
+    });
+
+    // After the resumeId change, JOB_A should no longer be in requested,
+    // so the query is disabled and score returns undefined.
+    expect(result.current.row.score).toBeUndefined();
   });
 });
 

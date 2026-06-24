@@ -1,4 +1,12 @@
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react';
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 import type { MatchScore } from '@ajh/shared';
 
@@ -36,6 +44,12 @@ export function MatchScoresProvider({
 }) {
   const [requested, setRequested] = useState<Set<string>>(new Set());
   const hasResume = !!resumeId;
+
+  // Reset the requested set whenever the active resume changes so previously-opened
+  // rows don't fire stale scores against the new resume on mount.
+  useEffect(() => {
+    setRequested(new Set());
+  }, [resumeId]);
 
   const scoreJob = useCallback((jobId: string) => {
     if (!jobId) return;
