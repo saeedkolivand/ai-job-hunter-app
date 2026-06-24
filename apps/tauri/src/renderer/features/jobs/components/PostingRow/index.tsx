@@ -14,6 +14,7 @@ import { motion } from 'motion/react';
 import { useTranslation } from '@ajh/translations';
 import { ActionMenu, Button, SourceBadge, Tag, transition } from '@ajh/ui';
 
+import { CompanyAvatar } from '@/features/jobs/components/CompanyAvatar';
 import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
 import type { Posting } from '@/features/jobs/types';
 
@@ -25,7 +26,7 @@ interface PostingRowProps {
 // Tiny status-pill shape for the in-row display Tags. Plain (non-CheckableTag)
 // Tags render a <span> with no onClick, so clicks bubble to the row's handler
 // instead of being swallowed — the whole row stays clickable.
-const STATUS_TAG = 'rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider';
+const STATUS_TAG = 'rounded-full px-1.5 py-0.5 text-fine-print uppercase tracking-wider';
 
 export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
   const { t } = useTranslation();
@@ -37,11 +38,9 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
   // via the row's "⋯ → Open" action. Save / Tailor are their own buttons.
   return (
     <div className="surface-card flex items-center gap-5 rounded-xl p-4 pl-5">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-[11px] font-semibold uppercase tracking-wider text-brand-soft">
-        {posting.source.slice(0, 2)}
-      </div>
+      <CompanyAvatar company={posting.company} sourceFallback={posting.source} size="md" />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 text-sm font-semibold tracking-tight text-foreground/95">
+        <div className="flex items-center gap-2 text-caption-strong text-foreground/95">
           <span className="truncate">{posting.title}</span>
           {posting.remote && (
             <Tag color="green" className={STATUS_TAG}>
@@ -64,7 +63,7 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
             </Tag>
           )}
         </div>
-        <div className="mt-1 flex items-center gap-4 text-[11px]">
+        <div className="mt-1 flex items-center gap-4 text-fine-print">
           <span className="flex items-center gap-1.5 text-foreground/85">
             <Building2 size={10} /> {posting.company}
           </span>

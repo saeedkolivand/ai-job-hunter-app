@@ -179,7 +179,7 @@ function DetailContent({
   }, [posting.id]);
 
   // Shared className for status Tag pills — applied/saved in the header.
-  const statusTagCls = 'rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider';
+  const statusTagCls = 'rounded-full px-1.5 py-0.5 text-fine-print uppercase tracking-wider';
 
   return (
     <motion.div
@@ -187,16 +187,14 @@ function DetailContent({
       transition={transition.fast}
       className="flex h-full flex-col overflow-hidden"
     >
-      {/* Header — sticky: shrink-0 + overflow-y-auto on body achieves the sticky effect */}
-      <div className="m-3 shrink-0 rounded-xl border border-[var(--border-clear)] p-4">
+      {/* Header — flush with hairline bottom divider; no outer card margin */}
+      <div className="shrink-0 border-b border-[var(--border-clear)] px-5 pb-4 pt-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           {/* LEFT: title + meta + match score + status tags */}
           <div className="min-w-0 flex-1">
-            <h2 className="text-base font-semibold leading-snug text-foreground/95">
-              {posting.title}
-            </h2>
+            <h2 className="text-body-strong text-foreground/95">{posting.title}</h2>
             {/* fold 10: bump metadata row from /60 to /70 (contrast floor at <14px) */}
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-foreground/70">
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-fine-print text-foreground/70">
               <span className="font-semibold text-foreground/80">{posting.company}</span>
               {posting.location && (
                 <span className="flex items-center gap-1">
@@ -206,7 +204,7 @@ function DetailContent({
               {posting.remote && (
                 <Tag
                   color="green"
-                  className="rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
+                  className="rounded-full px-1.5 py-0.5 text-fine-print uppercase tracking-wider"
                 >
                   {t('jobs.remote')}
                 </Tag>
@@ -277,14 +275,14 @@ function DetailContent({
           The live region is a small visually-hidden sentinel only (blocker 4):
           it announces the single "full description loaded" message once on
           the snippet→full upgrade, without noisily re-announcing the whole body. */}
-      <div className="min-h-0 flex-1 overflow-y-auto pb-4 pl-5 pr-0 pt-1">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-1">
         {/* Visually-hidden AT sentinel — announces once when description upgrades */}
         <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
           {announced ? t('jobs.fullDescriptionLoaded') : ''}
         </span>
 
         {/* "About the job" section label */}
-        <h3 className="mb-3 text-[11px] uppercase tracking-wider text-muted-foreground">
+        <h3 className="mb-3 text-fine-print uppercase tracking-wider text-muted-foreground">
           {t('jobs.aboutTheJob')}
         </h3>
 

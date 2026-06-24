@@ -2,8 +2,9 @@ import { Bookmark, CircleCheck } from 'lucide-react';
 import { motion } from 'motion/react';
 
 import { useTranslation } from '@ajh/translations';
-import { cn, transition } from '@ajh/ui';
+import { cn, resolveTransition, transition } from '@ajh/ui';
 
+import { CompanyAvatar } from '@/features/jobs/components/CompanyAvatar';
 import type { Posting } from '@/features/jobs/types';
 
 interface PostingListItemProps {
@@ -34,9 +35,6 @@ export function PostingListItem({
     }
   };
 
-  // Source badge: 2-letter abbreviation, 32×32, mirrors PostingRow's 40×40 at smaller size.
-  const sourceBadge = posting.source.slice(0, 2).toUpperCase();
-
   return (
     <div
       id={`posting-${posting.id}`}
@@ -51,34 +49,29 @@ export function PostingListItem({
         // Outer shell: fixed height for the virtualizer; relative for the abs-positioned
         // slide indicator. border-b separator on unselected rows only.
         'relative flex h-[76px] cursor-pointer items-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
-        selected ? '' : 'border-b border-[var(--border-clear)] hover:bg-muted'
+        selected ? '' : 'border-b border-[var(--border-clear)] hover:bg-brand/[0.04]'
       )}
     >
       {/* Animated active highlight — slides between rows via shared-layout (mirrors sidebar).
-          Square (rounded-none) + full-width; no inset; same brand fill as NavPill. */}
+          Square (rounded-none) + full-width; reduced-motion collapses spring to instant.
+          Softer gradient fill + brand hairline border. */}
       {selected && (
         <motion.div
           aria-hidden
           layoutId="jobs-list-pill"
-          className="pointer-events-none absolute inset-0 rounded-none"
+          className="pointer-events-none absolute inset-0 rounded-none border-l-2 border-[var(--color-brand)]"
           style={{
             background:
-              'linear-gradient(135deg, color-mix(in srgb, var(--color-brand) 18%, transparent) 0%, color-mix(in srgb, var(--color-brand-2) 10%, transparent) 100%)',
-            boxShadow: 'inset 0 0 16px color-mix(in srgb, var(--color-brand) 6%, transparent)',
+              'linear-gradient(135deg, color-mix(in srgb, var(--color-brand) 10%, transparent) 0%, color-mix(in srgb, var(--color-brand-2) 6%, transparent) 100%)',
           }}
-          transition={transition.spring}
+          transition={resolveTransition(transition.spring)}
         />
       )}
 
       {/* Content layer — sits above the pill (pill is absolute inset-0) */}
-      <div className="relative flex h-[64px] w-full items-center gap-3 px-2">
-        {/* 32×32 source-badge logo slot — mirrors PostingRow's 40×40 at smaller size */}
-        <div
-          aria-hidden="true"
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-brand/10 text-[10px] font-semibold text-brand-soft"
-        >
-          {sourceBadge}
-        </div>
+      <div className="relative flex h-[64px] w-full items-center gap-3 px-3">
+        {/* Company avatar — company initials with deterministic color slot */}
+        <CompanyAvatar company={posting.company} sourceFallback={posting.source} size="sm" />
 
         {/* Text block: 2-line layout fills remaining space */}
         <div className="min-w-0 flex-1">
@@ -86,7 +79,7 @@ export function PostingListItem({
           <div className="flex items-center gap-1.5">
             <span
               className={cn(
-                'min-w-0 flex-1 truncate text-[13px] font-semibold',
+                'min-w-0 flex-1 truncate text-caption-strong',
                 // Selected: full-opacity foreground.
                 // Viewed (not selected): dimmed title per LinkedIn-style treatment.
                 selected
@@ -116,7 +109,7 @@ export function PostingListItem({
           {/* Line 2: company · location · time, then status markers */}
           <div
             className={cn(
-              'flex items-center gap-1.5 text-[11px]',
+              'flex items-center gap-1.5 text-fine-print',
               selected ? 'text-brand-soft/70' : 'text-foreground/50'
             )}
           >
@@ -127,14 +120,14 @@ export function PostingListItem({
             )}
             {/* Status markers — decorative (aria-hidden); SR summary above */}
             <span className="ml-auto flex shrink-0 items-center gap-1">
-              {has('applied') && <CircleCheck size={9} aria-hidden="true" />}
+              {has('applied') && <CircleCheck size={12} aria-hidden="true" />}
               {/* "Viewed" text label replaces the eye icon — aria-hidden since SR uses the summary above */}
               {isViewed && !selected && (
                 <span aria-hidden="true" className="text-[10px]">
                   {t('jobs.viewed')}
                 </span>
               )}
-              {has('bookmarked') && <Bookmark size={9} aria-hidden="true" />}
+              {has('bookmarked') && <Bookmark size={12} aria-hidden="true" />}
             </span>
           </div>
         </div>

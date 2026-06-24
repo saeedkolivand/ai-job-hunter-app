@@ -79,6 +79,12 @@ vi.mock('@ajh/ui', () => ({
   useNotification: () => ({ success: vi.fn(), error: vi.fn() }),
 }));
 
+// ── CompanyAvatar ─────────────────────────────────────────────────────────────
+
+vi.mock('@/features/jobs/components/CompanyAvatar', () => ({
+  CompanyAvatar: () => null,
+}));
+
 // ── useRowMatchScore (via usePostingActions → MatchScoresProvider) ────────────
 // PostingRow no longer renders RowMatchScore directly, but usePostingActions
 // still calls useRowMatchScore internally. Mock the provider to avoid the

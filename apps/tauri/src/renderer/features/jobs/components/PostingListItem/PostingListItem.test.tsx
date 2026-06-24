@@ -52,6 +52,17 @@ vi.mock('motion/react', () => ({
 vi.mock('@ajh/ui', () => ({
   cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
   transition: { spring: {} },
+  resolveTransition: (t: unknown) => t,
+}));
+
+// ── CompanyAvatar — renders company initials via passthrough ──────────────────
+
+vi.mock('@/features/jobs/components/CompanyAvatar', () => ({
+  CompanyAvatar: ({ company, sourceFallback }: { company: string; sourceFallback?: string }) => {
+    const label = company.trim() || (sourceFallback ?? '');
+    const mono = label ? label.slice(0, 2).toUpperCase() : '?';
+    return <div aria-hidden="true">{mono}</div>;
+  },
 }));
 
 // ── component under test ──────────────────────────────────────────────────────
@@ -566,11 +577,24 @@ describe('PostingListItem — title dim on viewed', () => {
 // Source badge — 2-letter abbreviation slot
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('PostingListItem — source badge', () => {
-  it('renders the first 2 uppercase letters of source as the badge', () => {
+describe('PostingListItem — company avatar', () => {
+  it('renders company initials via CompanyAvatar', () => {
     render(
       <PostingListItem
-        posting={makePosting({ source: 'linkedin' })}
+        posting={makePosting({ company: 'Acme' })}
+        selected={false}
+        formatRelativeTime={formatRelativeTime}
+        onSelect={vi.fn()}
+      />
+    );
+    // CompanyAvatar mock renders first 2 chars of company name uppercased
+    expect(screen.getByText('AC')).toBeInTheDocument();
+  });
+
+  it('falls back to source initials when company is empty', () => {
+    render(
+      <PostingListItem
+        posting={makePosting({ company: '', source: 'linkedin' })}
         selected={false}
         formatRelativeTime={formatRelativeTime}
         onSelect={vi.fn()}
