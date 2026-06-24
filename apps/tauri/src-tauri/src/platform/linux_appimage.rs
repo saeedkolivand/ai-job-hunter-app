@@ -19,15 +19,22 @@
 //!    bundled copy is shadowed. `LD_PRELOAD` is consulted by the dynamic linker
 //!    only at `exec()` time, so applying it requires re-exec'ing ourselves.
 //!
+//! All three are **scoped to the AppImage + Wayland launch** they target. X11,
+//! non-AppImage, and dev Linux launches don't hit the bundled-vs-host clash, so
+//! none of these mitigations (including the in-process WebKit env vars) are
+//! applied there — disabling DMABUF/compositing on a healthy session is a
+//! needless rendering regression.
+//!
 //! This module is the **sole owner** of the env/process access these mitigations
 //! need, keeping the binary launcher (`main.rs`) free of direct `std::env` /
 //! re-exec calls (architecture rule R4: "env access only in platform/**").
 //!
 //! All of this is Linux-only; the entry point is a no-op on every other target.
 
-/// Always set on Linux (idempotently) so the in-process WebKit env mitigations
-/// land regardless of AppImage / Wayland detection. The user/dev may override
-/// either by exporting their own value.
+/// In-process WebKit env mitigations, set (idempotently) only in the
+/// AppImage + Wayland scenario they target so healthy X11 / non-AppImage / dev
+/// launches keep accelerated rendering. The user/dev may override either by
+/// exporting their own value.
 #[cfg(target_os = "linux")]
 const WEBKIT_DMABUF_ENV: &str = "WEBKIT_DISABLE_DMABUF_RENDERER";
 #[cfg(target_os = "linux")]
@@ -47,7 +54,10 @@ const PRELOAD_ATTEMPTED_ENV: &str = "AJH_APPIMAGE_WAYLAND_PRELOAD_ATTEMPTED";
 /// On a successful preload re-exec this **replaces the current process image**
 /// and never returns. In every other case (non-Linux, non-AppImage, X11 session,
 /// no host libwayland found, already re-exec'd, or `exec()` failure) it returns
-/// normally after applying whatever mitigations it could.
+/// normally. On the `exec()`/`current_exe()` failure path it restores
+/// `LD_PRELOAD` and the re-exec guard to their prior values before returning, so
+/// a process that keeps running (and any child it spawns, e.g. the native-host)
+/// does not inherit a bogus prepended `LD_PRELOAD`.
 pub fn apply_wayland_appimage_safeguard() {
     #[cfg(target_os = "linux")]
     linux::apply();
@@ -75,28 +85,38 @@ mod linux {
     const LIBWAYLAND_SONAME: &str = "libwayland-client.so.0";
 
     pub(super) fn apply() {
-        set_if_unset(WEBKIT_DMABUF_ENV, "1");
-        set_if_unset(WEBKIT_COMPOSITING_ENV, "1");
-
-        // The libwayland preload requires a re-exec; bail out of that part on any
-        // condition where it would be wrong or looping. The WebKit vars above are
-        // already applied regardless.
+        // The whole safeguard is scoped to the AppImage + Wayland launch it
+        // targets. Bail before touching any env on any condition where the
+        // mitigations would be wrong (X11 / non-AppImage / dev) or looping
+        // (already re-exec'd) — disabling DMABUF/compositing on a healthy
+        // session is a needless rendering regression.
         if std::env::var_os(PRELOAD_ATTEMPTED_ENV).is_some() {
-            // Already re-exec'd once — never loop.
+            // Already re-exec'd once — the WebKit vars were set before the
+            // re-exec and inherited here; never loop.
             return;
         }
         if !is_appimage_launch() || !is_wayland_session() {
             // Dev build, extracted run, or X11 — the bundled-vs-host libwayland
-            // clash does not apply, so skip the preload + re-exec.
+            // clash does not apply, so apply none of the mitigations.
             return;
         }
+
+        // In-process WebKit mitigations, read at webview init (no re-exec). Set
+        // here so they're in place before the (potential) re-exec inherits them
+        // and before GTK init, but only in the AppImage + Wayland case.
+        set_if_unset(WEBKIT_DMABUF_ENV, "1");
+        set_if_unset(WEBKIT_COMPOSITING_ENV, "1");
+
         let Some(libwayland) = find_host_libwayland() else {
             // No usable host libwayland — nothing to preload, don't re-exec.
             return;
         };
 
         // Prepend the absolute host path to any existing LD_PRELOAD (colon-sep).
-        let preload = prepend_ld_preload(&libwayland, std::env::var_os("LD_PRELOAD"));
+        // Snapshot the prior value first so we can roll back if the re-exec
+        // cannot happen and this process continues to run.
+        let prior_ld_preload = std::env::var_os("LD_PRELOAD");
+        let preload = prepend_ld_preload(&libwayland, prior_ld_preload.clone());
         // SAFETY: single-threaded, at the very top of main() before any other
         // thread (Tauri runtime, GTK) is spawned — no data race on the env.
         unsafe {
@@ -110,13 +130,34 @@ mod linux {
         // stdio path and all CLI args survive unchanged. `exec()` only returns on
         // error — log and continue so a failed re-exec never blocks the launch.
         let Ok(exe) = std::env::current_exe() else {
-            // No self path to re-exec — continue without the preload.
+            // No self path to re-exec — roll back the env we mutated so this
+            // process (and any child it spawns) doesn't run with a bogus
+            // prepended LD_PRELOAD, then continue without the preload.
+            restore_preload_env(prior_ld_preload.as_deref());
             return;
         };
         let err = Command::new(exe).args(std::env::args_os().skip(1)).exec();
+        // `exec()` returned ⇒ it failed; the process image was NOT replaced and
+        // we keep running. Undo the LD_PRELOAD mutation + guard so we (and any
+        // child, e.g. the native-host) don't inherit the bogus preload.
+        restore_preload_env(prior_ld_preload.as_deref());
         log::warn!(
             "[startup] AppImage Wayland LD_PRELOAD re-exec failed, continuing without preload: {err}"
         );
+    }
+
+    /// Roll back the `LD_PRELOAD` / re-exec-guard mutation done just before a
+    /// re-exec attempt that did not happen. Restores `LD_PRELOAD` to `prior`
+    /// (or removes it when there was none) and clears the guard.
+    fn restore_preload_env(prior: Option<&std::ffi::OsStr>) {
+        // SAFETY: see `apply` — single-threaded top-of-main, no data race.
+        unsafe {
+            match prior {
+                Some(val) => std::env::set_var("LD_PRELOAD", val),
+                None => std::env::remove_var("LD_PRELOAD"),
+            }
+            std::env::remove_var(PRELOAD_ATTEMPTED_ENV);
+        }
     }
 
     /// Set an env var only when it is currently unset (respect a user override).
@@ -292,81 +333,161 @@ mod tests {
     // Linux-only: `apply()` must RETURN (i.e. not re-exec) on the skip paths.
     // Re-exec replaces the process image, so any code after the `apply()` call
     // only runs when no re-exec was attempted — that observable return is the
-    // assertion. We exercise the two skip branches that don't depend on the host
-    // actually being an AppImage. All branches mutate process-global env, so they
-    // live in one serialized test (parallel set/remove on these would race).
+    // assertion. Every case here mutates process-global env, so they live in one
+    // serialized test (parallel set/remove on these would race). nextest runs
+    // each test in its own process, so this test owns the env for its run.
     #[cfg(target_os = "linux")]
     #[test]
-    fn apply_skips_reexec_on_guard_and_non_appimage() {
-        // Snapshot + clear the env we touch so the test is hermetic.
-        let saved: Vec<(&str, Option<std::ffi::OsString>)> = [
+    fn apply_scopes_mitigations_to_appimage_wayland() {
+        // Keys this test reads/writes, so it can snapshot + clear them hermetically.
+        const KEYS: &[&str] = &[
             WEBKIT_DMABUF_ENV,
             WEBKIT_COMPOSITING_ENV,
             PRELOAD_ATTEMPTED_ENV,
+            "LD_PRELOAD",
             "APPIMAGE",
             "APPDIR",
             "WAYLAND_DISPLAY",
             "XDG_SESSION_TYPE",
-        ]
-        .iter()
-        .map(|k| (*k, std::env::var_os(k)))
-        .collect();
-        let restore = || {
-            for (k, v) in &saved {
-                // SAFETY: single-threaded test.
-                unsafe {
-                    match v {
-                        Some(val) => std::env::set_var(k, val),
-                        None => std::env::remove_var(k),
-                    }
+        ];
+        let saved: Vec<(&str, Option<std::ffi::OsString>)> =
+            KEYS.iter().map(|k| (*k, std::env::var_os(k))).collect();
+        let clear_all = || {
+            // SAFETY: single-threaded test mutating process-global env.
+            unsafe {
+                for k in KEYS {
+                    std::env::remove_var(k);
                 }
             }
         };
-        // SAFETY: single-threaded test mutating process-global env.
-        unsafe {
-            for k in [
-                WEBKIT_DMABUF_ENV,
-                WEBKIT_COMPOSITING_ENV,
-                PRELOAD_ATTEMPTED_ENV,
-                "APPIMAGE",
-                "APPDIR",
-                "WAYLAND_DISPLAY",
-                "XDG_SESSION_TYPE",
-            ] {
-                std::env::remove_var(k);
-            }
-        }
+        clear_all();
 
-        // Branch A: re-exec guard already set → must return without re-exec'ing,
-        // even if it otherwise looks like an AppImage Wayland launch.
+        // Branch A: re-exec guard already set → must return without re-exec'ing
+        // AND without setting the WebKit vars, even if it otherwise looks like an
+        // AppImage Wayland launch (the guard means a prior process already set
+        // them and we inherited them).
+        // SAFETY: single-threaded test.
         unsafe {
             std::env::set_var(PRELOAD_ATTEMPTED_ENV, "1");
             std::env::set_var("APPIMAGE", "/tmp/App.AppImage");
             std::env::set_var("WAYLAND_DISPLAY", "wayland-0");
         }
         super::linux::apply(); // returns here ⇒ no re-exec occurred
-                               // The WebKit vars are still applied on every Linux run.
-        assert_eq!(std::env::var(WEBKIT_DMABUF_ENV).ok().as_deref(), Some("1"));
+        assert!(
+            std::env::var_os(WEBKIT_DMABUF_ENV).is_none(),
+            "guard branch must not (re)set the WebKit env"
+        );
+        assert!(std::env::var_os(WEBKIT_COMPOSITING_ENV).is_none());
+        clear_all();
+
+        // Branch B: not an AppImage and X11 session → must return without re-exec
+        // AND without disabling DMABUF/compositing (Finding 1: no needless
+        // rendering regression on a healthy non-AppImage / X11 / dev launch).
+        // SAFETY: single-threaded test.
+        unsafe {
+            std::env::set_var("XDG_SESSION_TYPE", "x11");
+        }
+        super::linux::apply(); // returns here ⇒ no re-exec
+        assert!(
+            std::env::var_os(WEBKIT_DMABUF_ENV).is_none(),
+            "non-AppImage / X11 launch must NOT set WEBKIT_DISABLE_DMABUF_RENDERER"
+        );
+        assert!(
+            std::env::var_os(WEBKIT_COMPOSITING_ENV).is_none(),
+            "non-AppImage / X11 launch must NOT set WEBKIT_DISABLE_COMPOSITING_MODE"
+        );
+        assert!(std::env::var_os(PRELOAD_ATTEMPTED_ENV).is_none());
+        clear_all();
+
+        // Branch C: AppImage + Wayland but no host libwayland → returns without
+        // re-exec, but the in-process WebKit vars ARE applied (Finding 1: the
+        // mitigations land in the scenario they target). `find_host_libwayland`
+        // looks only under fixed system roots that this test's controlled env
+        // can't fabricate, so on the test host it reliably returns `None`.
+        // SAFETY: single-threaded test.
+        unsafe {
+            std::env::set_var("APPIMAGE", "/tmp/App.AppImage");
+            std::env::set_var("WAYLAND_DISPLAY", "wayland-0");
+        }
+        super::linux::apply(); // returns here ⇒ no re-exec (no host lib)
+        assert_eq!(
+            std::env::var(WEBKIT_DMABUF_ENV).ok().as_deref(),
+            Some("1"),
+            "AppImage + Wayland launch must set WEBKIT_DISABLE_DMABUF_RENDERER"
+        );
         assert_eq!(
             std::env::var(WEBKIT_COMPOSITING_ENV).ok().as_deref(),
             Some("1")
         );
+        // No host lib ⇒ we never reached the LD_PRELOAD mutation / guard.
+        assert!(std::env::var_os(PRELOAD_ATTEMPTED_ENV).is_none());
+        assert!(std::env::var_os("LD_PRELOAD").is_none());
 
-        // Branch B: not an AppImage and X11 session → must return without re-exec.
+        // Restore the caller's env.
+        // SAFETY: single-threaded test.
         unsafe {
-            std::env::remove_var(PRELOAD_ATTEMPTED_ENV);
-            std::env::remove_var(WEBKIT_DMABUF_ENV);
-            std::env::remove_var(WEBKIT_COMPOSITING_ENV);
-            std::env::remove_var("APPIMAGE");
-            std::env::remove_var("APPDIR");
-            std::env::remove_var("WAYLAND_DISPLAY");
-            std::env::set_var("XDG_SESSION_TYPE", "x11");
+            for (k, v) in &saved {
+                match v {
+                    Some(val) => std::env::set_var(k, val),
+                    None => std::env::remove_var(k),
+                }
+            }
         }
-        super::linux::apply(); // returns here ⇒ no re-exec
-                               // WebKit vars still applied; guard NOT set (no re-exec was attempted).
-        assert_eq!(std::env::var(WEBKIT_DMABUF_ENV).ok().as_deref(), Some("1"));
+    }
+
+    // Linux-only: Finding 2 — when a re-exec cannot happen the env mutation
+    // (prepended LD_PRELOAD + guard) is rolled back so the still-running process
+    // and its children don't inherit a bogus preload. `restore_preload_env` is
+    // the unit that does that rollback on both failure paths (`current_exe()`
+    // err and `exec()` return); the real `exec()` can't be exercised in-process
+    // without replacing it, so we assert the rollback unit directly.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn restore_preload_env_rolls_back_mutation() {
+        const KEYS: &[&str] = &["LD_PRELOAD", PRELOAD_ATTEMPTED_ENV];
+        let saved: Vec<(&str, Option<std::ffi::OsString>)> =
+            KEYS.iter().map(|k| (*k, std::env::var_os(k))).collect();
+
+        // Case 1: there WAS a prior LD_PRELOAD — restore the exact prior value
+        // and clear the guard (drop the prepended host-lib entry we added).
+        // SAFETY: single-threaded test.
+        unsafe {
+            std::env::set_var("LD_PRELOAD", "/usr/lib64/libwayland-client.so.0:/x/y.so");
+            std::env::set_var(PRELOAD_ATTEMPTED_ENV, "1");
+        }
+        super::linux::restore_preload_env(Some(std::ffi::OsStr::new("/x/y.so")));
+        assert_eq!(
+            std::env::var("LD_PRELOAD").ok().as_deref(),
+            Some("/x/y.so"),
+            "must restore the exact prior LD_PRELOAD"
+        );
+        assert!(
+            std::env::var_os(PRELOAD_ATTEMPTED_ENV).is_none(),
+            "must clear the re-exec guard on rollback"
+        );
+
+        // Case 2: there was NO prior LD_PRELOAD — remove ours entirely.
+        // SAFETY: single-threaded test.
+        unsafe {
+            std::env::set_var("LD_PRELOAD", "/usr/lib64/libwayland-client.so.0");
+            std::env::set_var(PRELOAD_ATTEMPTED_ENV, "1");
+        }
+        super::linux::restore_preload_env(None);
+        assert!(
+            std::env::var_os("LD_PRELOAD").is_none(),
+            "must remove LD_PRELOAD when there was no prior value"
+        );
         assert!(std::env::var_os(PRELOAD_ATTEMPTED_ENV).is_none());
 
-        restore();
+        // Restore the caller's env.
+        // SAFETY: single-threaded test.
+        unsafe {
+            for (k, v) in &saved {
+                match v {
+                    Some(val) => std::env::set_var(k, val),
+                    None => std::env::remove_var(k),
+                }
+            }
+        }
     }
 }
