@@ -23,7 +23,10 @@ export const useClearInteractions = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.privacy.clearInteractions(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.postings.interactions() }),
+    // Invalidate the PREFIX so every typed interactions query ('viewed', 'opened', …)
+    // refetches — keys.postings.interactions(type) = ['postings','interactions',type]
+    // and React Query matches on prefix, so omitting the type segment hits all of them.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['postings', 'interactions'] }),
   });
 };
 
