@@ -107,8 +107,8 @@ Add two new, self-invalidating SQLite tables to `DocumentStore` (`apps/tauri/src
 The default scoring path is now **keyword-only** (`semanticScoring` defaults false → no embedding). The old per-row `ScoringScheduler` (CONCURRENCY=1) serialised N IPC calls and caused visible crawl even for cheap keyword-only work:
 
 - **New command:** `match_resume_batch(resumeId, jobIds[], semanticScoringEnabled)` — scores all postings in **one Rust pass**; the per-job kernel (`score_one`) is shared with the legacy `match_resume` single-job path, ensuring identical logic.
-- **Frontend:** `useJobMatchScores` batch hook + `MatchScoresProvider` context (exposes `useRowMatchScore(jobId)` per-row); `RowMatchScore` is now purely presentational (no scheduling logic).
-- **Deleted:** `apps/tauri/src/renderer/providers/ScoringScheduler/` (dead).
+- **Frontend:** `MatchScoresProvider` context distributes results per-row via `useRowMatchScore(jobId)` on-demand; `RowMatchScore` is now purely presentational (no scheduling logic).
+- **Deleted:** `apps/tauri/src/renderer/providers/ScoringScheduler/` (dead) and `useJobMatchScores` batch hook (replaced by on-demand per-job `useRowMatchScore`).
 - **Batch cap:** `MATCH_BATCH_MAX=1000` enforced in Rust (`commands/match_resume.rs`) — DoS guard against unbounded batch IPC.
 - **Cache alignment:** The batch command shares the ADR-017 `match_scores` cache (keyword keys use `semantic_enabled=0` to keep keyword and semantic paths isolated in the composite PK).
 - **Embedding-batch (Phase E):** Deferred — Ollama `/api/embed` batch + payload trim + warm-on-scrape are opt-in future work; do **not** ship or document as active.
