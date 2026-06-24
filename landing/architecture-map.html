@@ -236,9 +236,37 @@
         display: none;
       }
       #kbd-help .kbd-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
         margin-bottom: 8px;
         color: var(--text);
         font-weight: 600;
+      }
+      #kbd-help-close {
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        background: var(--panel);
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      #kbd-help-close:hover {
+        color: var(--text);
+        border-color: #444;
+      }
+      #kbd-help-close:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+        border-radius: 5px;
       }
       #kbd-help ul {
         margin: 0;
@@ -557,8 +585,11 @@
             </button>
           </div>
           <div class="legend" id="legend"></div>
-          <div id="kbd-help" hidden role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
-            <div class="kbd-title">Navigate</div>
+          <div id="kbd-help" hidden role="dialog" aria-modal="true" aria-labelledby="kbd-help-title">
+            <div class="kbd-title">
+              <span id="kbd-help-title">Keyboard shortcuts</span>
+              <button id="kbd-help-close" aria-label="Close keyboard shortcuts">✕</button>
+            </div>
             <ul>
               <li><kbd>drag</kbd> · <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> pan</li>
               <li><kbd>wheel</kbd> · <kbd>+</kbd><kbd>−</kbd> zoom</li>
@@ -568,7 +599,7 @@
             </ul>
           </div>
         </div>
-        <aside id="side"></aside>
+        <aside id="side" aria-live="polite" aria-atomic="false"></aside>
       </main>
     </div>
 
@@ -3989,20 +4020,76 @@
       /* ---- keyboard shortcuts + help overlay ---- */
       const helpEl = document.getElementById('kbd-help');
       const helpBtn = document.getElementById('help-btn');
-      const toggleHelp = () => {
-        const nowHidden = helpEl.hasAttribute('hidden');
-        helpEl.toggleAttribute('hidden');
-        helpBtn.setAttribute('aria-expanded', nowHidden ? 'true' : 'false');
-      };
-      const closeHelp = () => {
+      const helpClose = document.getElementById('kbd-help-close');
+
+      // Collect all keyboard-focusable elements inside the dialog.
+      function helpFocusables() {
+        return Array.from(
+          helpEl.querySelectorAll(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter((el) => !el.hasAttribute('disabled'));
+      }
+
+      function openHelp() {
+        helpEl.removeAttribute('hidden');
+        helpBtn.setAttribute('aria-expanded', 'true');
+        // Move focus into the dialog (to the close button).
+        const first = helpFocusables()[0];
+        if (first) first.focus();
+      }
+      function closeHelp() {
         helpEl.setAttribute('hidden', '');
         helpBtn.setAttribute('aria-expanded', 'false');
+        // Return focus to the opener.
+        helpBtn.focus();
+      }
+      const toggleHelp = () => {
+        if (helpEl.hasAttribute('hidden')) openHelp();
+        else closeHelp();
       };
+
       helpBtn.onclick = toggleHelp;
+      helpClose.onclick = closeHelp;
+
+      // Focus trap inside the dialog while it is open.
+      helpEl.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape') {
+          ev.stopPropagation();
+          closeHelp();
+          return;
+        }
+        if (ev.key !== 'Tab') return;
+        const focusable = helpFocusables();
+        if (!focusable.length) { ev.preventDefault(); return; }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (ev.shiftKey) {
+          if (document.activeElement === first) {
+            ev.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            ev.preventDefault();
+            first.focus();
+          }
+        }
+      });
+
       window.addEventListener('keydown', (ev) => {
         const t = ev.target;
         if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
         if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+        // While the help dialog is open, only Escape is handled globally
+        // (Tab is trapped inside the dialog via its own listener above).
+        if (!helpEl.hasAttribute('hidden')) {
+          if (ev.key === 'Escape') {
+            ev.preventDefault();
+            closeHelp();
+          }
+          return;
+        }
         const [cx, cy] = stageCenter();
         const step = ev.shiftKey ? 160 : 64;
         switch (ev.key) {
@@ -4047,16 +4134,13 @@
             ev.preventDefault();
             break;
           case 'Escape':
-            if (!helpEl.hasAttribute('hidden')) {
-              closeHelp();
-            } else {
-              pinned = null;
-              hover = null;
-              if (document.activeElement && document.activeElement.blur)
-                document.activeElement.blur();
-              renderSidebar(null);
-              applyView();
-            }
+            pinned = null;
+            hover = null;
+            if (document.activeElement && document.activeElement.blur)
+              document.activeElement.blur();
+            renderSidebar(null);
+            applyView();
+            ev.preventDefault();
             break;
         }
       });

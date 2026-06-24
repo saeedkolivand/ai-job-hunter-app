@@ -99,15 +99,16 @@
         opacity: 0.6;
         cursor: default;
       }
-      /* Focus-visible rings — accent outline for all interactive elements */
+      /* Focus-visible rings — high-contrast white ring meets WCAG 2.2 SC 1.4.11
+         (non-text contrast ≥3:1 vs adjacent bg) on every dark panel/page bg. */
       a:focus-visible,
       button:focus-visible,
       [tabindex]:focus-visible,
       [role="button"]:focus-visible,
       select:focus-visible,
       input:focus-visible {
-        outline: 2px solid var(--accent);
-        outline-offset: 2px;
+        outline: 2px solid #e6edf3;
+        outline-offset: 3px;
       }
       .seg {
         display: inline-flex;
@@ -432,9 +433,9 @@
         color: var(--neutral);
       }
       .control:focus-visible {
-        outline: 2px solid var(--accent);
-        outline-offset: 2px;
-        border-color: var(--accent);
+        outline: 2px solid #e6edf3;
+        outline-offset: 3px;
+        border-color: #e6edf3;
       }
       select.control {
         cursor: pointer;
@@ -716,6 +717,17 @@
       .anomaly {
         box-shadow: inset 3px 0 0 var(--run);
       }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
       footer {
         max-width: 1100px;
         margin: 0 auto;
@@ -792,7 +804,7 @@
       .job-item .status.fail { background: var(--fail); }
       .job-item .status.run { background: var(--run); }
       .job-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .job-item .link { color: var(--accent); font-size: 11px; }
+      .job-item .link { color: #ff8b8a; font-size: 11px; }
 
       @media (max-width: 760px) {
         header {
@@ -891,7 +903,7 @@
         color: var(--muted);
       }
       .auth-panel .auth-note a {
-        color: var(--accent);
+        color: #ff8b8a;
       }
       #auth-btn.authed {
         color: var(--ok);
@@ -901,13 +913,13 @@
   </head>
   <body>
     <header>
-      <h1>AI Job Hunter <span class="dot">●</span> CI status</h1>
+      <h1>AI Job Hunter <span class="dot" aria-hidden="true">●</span> CI status</h1>
       <div class="spacer"></div>
-      <span class="meta" id="updated">Loading…</span>
-      <span class="meta" id="countdown"></span>
-      <span class="meta rate" id="rate-limit"><span class="rate-dot"></span><span>rate limit unknown</span></span>
+      <span class="meta" id="updated" aria-live="polite" aria-atomic="true">Loading…</span>
+      <span class="meta" id="countdown" aria-live="off"></span>
+      <span class="meta rate" id="rate-limit" aria-live="polite" aria-atomic="true"><span class="rate-dot"></span><span>rate limit unknown</span></span>
       <div class="header-controls" aria-label="Dashboard filters">
-        <input class="control" id="global-search" type="search" placeholder="Search workflows, PRs, issues…" />
+        <input class="control" id="global-search" type="search" placeholder="Search workflows, PRs, issues…" aria-label="Search workflows, PRs, issues" />
         <select class="control" id="status-filter" aria-label="Filter by workflow status">
           <option value="all">All statuses</option>
           <option value="passing">Passing</option>
@@ -932,6 +944,8 @@
       <button
         id="auth-btn"
         type="button"
+        aria-expanded="false"
+        aria-controls="auth-panel"
         title="Optional: use a read-only GitHub token to raise the API rate limit (60 → 5000/hour). Stored only in this browser."
       >
         🔑 Sign in
@@ -963,7 +977,7 @@
       </div>
     </header>
 
-    <main id="content">
+    <main id="content" aria-live="polite" aria-atomic="false">
       <div class="skeleton-grid">
         <div class="skeleton"></div>
         <div class="skeleton"></div>
@@ -972,7 +986,7 @@
       </div>
     </main>
 
-    <div id="overlay" role="presentation">
+    <div id="overlay">
       <div
         class="modal"
         role="dialog"
@@ -983,7 +997,7 @@
           <h3 id="modal-title">Run Details</h3>
           <button class="modal-close" id="close-modal" aria-label="Close dialog">&times;</button>
         </div>
-        <div class="modal-body" id="modal-body">
+        <div class="modal-body" id="modal-body" aria-live="polite" aria-atomic="true">
           <div class="notice">Fetching jobs…</div>
         </div>
       </div>
@@ -2352,6 +2366,9 @@
         const overlay = el("overlay");
         overlay.style.display = "grid";
         _prevFocus = document.activeElement;
+        // Inert main content from AT while dialog is open (complements aria-modal)
+        const main = el("content");
+        if (main) main.setAttribute("aria-hidden", "true");
         // Move focus into the modal after paint
         requestAnimationFrame(() => {
           const first = overlay.querySelector("button, [tabindex], a, input");
@@ -2361,6 +2378,8 @@
 
       function closeModal() {
         el("overlay").style.display = "none";
+        const main = el("content");
+        if (main) main.removeAttribute("aria-hidden");
         if (_prevFocus && _prevFocus.focus) _prevFocus.focus();
         _prevFocus = null;
       }
@@ -2438,7 +2457,7 @@
           .map((label, index) => `<tr><td>${esc(label)}</td><td>${esc(detail.values[index] ?? 0)}</td></tr>`)
           .join("");
         el("modal-body").innerHTML = rows
-          ? `<table class="mini-table"><thead><tr><th>Label</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table>`
+          ? `<table class="mini-table"><caption class="sr-only">${esc(detail.title)}</caption><thead><tr><th>Label</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table>`
           : `<div class="notice">No chart data available yet.</div>`;
         openModal();
       }
@@ -2568,9 +2587,11 @@
           if (authPanel.hasAttribute("hidden")) {
             tokenInput.value = state.token;
             authPanel.removeAttribute("hidden");
+            authBtn.setAttribute("aria-expanded", "true");
             tokenInput.focus();
           } else {
             authPanel.setAttribute("hidden", "");
+            authBtn.setAttribute("aria-expanded", "false");
           }
         });
         el("token-save").addEventListener("click", () => {
@@ -2579,6 +2600,7 @@
           if (value) localStorage.setItem(CONFIG.tokenKey, value);
           else localStorage.removeItem(CONFIG.tokenKey);
           authPanel.setAttribute("hidden", "");
+          authBtn.setAttribute("aria-expanded", "false");
           renderAuth();
           refresh(true);
         });
@@ -2587,6 +2609,7 @@
           localStorage.removeItem(CONFIG.tokenKey);
           tokenInput.value = "";
           authPanel.setAttribute("hidden", "");
+          authBtn.setAttribute("aria-expanded", "false");
           renderAuth();
           refresh(true);
         });
