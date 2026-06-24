@@ -255,32 +255,46 @@ pub(crate) fn detect_chrome_linux() -> Option<BrowserLaunch> {
         }
     }
 
-    // 4. Flatpak — probe exported wrappers first (cheap: stat only).
-    //    System-wide: /var/lib/flatpak/exports/bin/<app-id>
-    //    Per-user:    ~/.local/share/flatpak/exports/bin/<app-id>
-    //    These wrappers are created by Flatpak automatically and can be exec'd
-    //    directly — but we represent them as FlatpakApp so callers know the
-    //    binary needs `flatpak run` semantics for CDP (chromiumoxide can't use
-    //    the wrapper).
-    let user_flatpak_exports = std::env::var_os("HOME")
-        .map(|h| std::path::PathBuf::from(h).join(".local/share/flatpak/exports/bin"));
+    // 4. Flatpak — probe exported wrappers first (cheap: stat only), then fall
+    //    back to `flatpak info` if needed.
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    if let Some(result) = probe_flatpak(home.as_deref()) {
+        return Some(result);
+    }
+
+    None
+}
+
+/// Probe Flatpak for a known Chrome-family browser, returning the first match.
+///
+/// Checks (in order):
+/// 1. System-wide exported wrappers — `/var/lib/flatpak/exports/bin/<id>`
+/// 2. Per-user exported wrappers   — `<home>/.local/share/flatpak/exports/bin/<id>`
+/// 3. `flatpak info <id>` — only when the `flatpak` binary is available
+///
+/// Extracted as a standalone function so tests can supply a controlled `home`
+/// directory without depending on the runner's real filesystem state.
+///
+/// Returns `FlatpakApp(id)` for the first installed app-id found, or `None`.
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+pub(crate) fn probe_flatpak(home: Option<&std::path::Path>) -> Option<BrowserLaunch> {
+    let user_exports = home.map(|h| h.join(".local/share/flatpak/exports/bin"));
 
     for id in FLATPAK_IDS {
-        // System-wide export
+        // System-wide export (root-owned — readable by all users).
         let sys = std::path::PathBuf::from("/var/lib/flatpak/exports/bin").join(id);
         if sys.exists() {
             return Some(BrowserLaunch::FlatpakApp(id.to_string()));
         }
-        // Per-user export
-        if let Some(ref base) = user_flatpak_exports {
-            let user = base.join(id);
-            if user.exists() {
+        // Per-user export.
+        if let Some(ref base) = user_exports {
+            if base.join(id).exists() {
                 return Some(BrowserLaunch::FlatpakApp(id.to_string()));
             }
         }
     }
 
-    // Last resort: ask `flatpak list` (only if `flatpak` binary is on PATH —
+    // Last resort: ask `flatpak info` (only if `flatpak` binary is on PATH —
     // avoids hanging on systems that don't have Flatpak at all).
     if flatpak_binary_available() {
         for id in FLATPAK_IDS {

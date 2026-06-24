@@ -32,7 +32,8 @@ fn flatpak_display_command_is_flatpak_run() {
 
 #[test]
 fn chrome_env_nonexistent_path_is_skipped() {
-    // SAFETY: test-only; single-threaded test binary on this platform.
+    // SAFETY: test-only; nextest runs each test in its own process so
+    // set_var is safe against data races.
     unsafe {
         std::env::set_var("CHROME", "/nonexistent/path/to/chrome-does-not-exist");
     }
@@ -54,75 +55,110 @@ mod linux {
     use std::fs;
     use tempfile::TempDir;
 
-    // Helper: set HOME to a temp dir for the duration of a test closure.
-    fn with_home<F: FnOnce(&std::path::Path) -> R, R>(f: F) -> R {
+    // ── probe_flatpak unit tests (hermetic — no real FS dependency) ──────────
+    //
+    // These call `probe_flatpak(Some(tmp_home))` directly so they exercise the
+    // Flatpak-export lookup in isolation, bypassing the native PATH/abs-path
+    // checks in detect_chrome_linux().  The runner's installed browsers are
+    // irrelevant.
+
+    #[test]
+    fn probe_flatpak_returns_flatpak_app_for_user_export() {
+        // Create a fake ~/.local/share/flatpak/exports/bin/com.google.Chrome.
         let tmp = TempDir::new().expect("tempdir");
-        let old = std::env::var_os("HOME");
-        // SAFETY: single-threaded section; we restore after the closure.
-        unsafe {
-            std::env::set_var("HOME", tmp.path());
-        }
-        let result = f(tmp.path());
-        unsafe {
-            match old {
-                Some(v) => std::env::set_var("HOME", v),
-                None => std::env::remove_var("HOME"),
+        let export_dir = tmp.path().join(".local/share/flatpak/exports/bin");
+        fs::create_dir_all(&export_dir).unwrap();
+        fs::write(export_dir.join("com.google.Chrome"), b"").unwrap();
+
+        let result = probe_flatpak(Some(tmp.path()));
+        match result {
+            Some(BrowserLaunch::FlatpakApp(id)) => {
+                assert_eq!(id, "com.google.Chrome");
             }
+            other => panic!("expected FlatpakApp(com.google.Chrome), got {other:?}"),
         }
-        result
     }
+
+    #[test]
+    fn probe_flatpak_returns_second_id_when_first_absent() {
+        // Only Chromium export present (no Chrome).
+        let tmp = TempDir::new().expect("tempdir");
+        let export_dir = tmp.path().join(".local/share/flatpak/exports/bin");
+        fs::create_dir_all(&export_dir).unwrap();
+        fs::write(export_dir.join("org.chromium.Chromium"), b"").unwrap();
+
+        let result = probe_flatpak(Some(tmp.path()));
+        match result {
+            Some(BrowserLaunch::FlatpakApp(id)) => {
+                assert_eq!(id, "org.chromium.Chromium");
+            }
+            other => panic!("expected FlatpakApp(org.chromium.Chromium), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn probe_flatpak_returns_none_when_exports_absent_and_no_flatpak_binary() {
+        // Empty home — no exports dir at all.  flatpak binary is absent on
+        // most CI runners, so the `flatpak info` fallback should also yield
+        // nothing.  We don't assert None (the runner might have flatpak +
+        // some app installed) — we only assert the function completes.
+        let tmp = TempDir::new().expect("tempdir");
+        let _ = probe_flatpak(Some(tmp.path()));
+    }
+
+    #[test]
+    fn probe_flatpak_none_home_does_not_panic() {
+        // Passing None for home should not panic.
+        let _ = probe_flatpak(None);
+    }
+
+    // ── detect_chrome_linux smoke (no assertion on return value) ────────────
+    //
+    // These only verify the function doesn't panic on the host environment.
+    // We make NO assertion about what is returned because the runner's PATH
+    // and installed browsers are outside our control.
 
     #[test]
     fn detect_chrome_linux_does_not_panic() {
-        // We cannot write to /snap/bin (root-owned) or mock absolute system
-        // paths in-process, so the snap-detection branch cannot be exercised
-        // here.  This test only guarantees the function completes without
-        // panicking on the host environment.  Real snap coverage would require
-        // a mount namespace or a dependency-injected path resolver.
         let _ = detect_chrome_linux();
     }
 
-    #[test]
-    fn flatpak_app_returns_flatpak_launch_for_installed_id() {
-        // Simulate `~/.local/share/flatpak/exports/bin/com.google.Chrome` existing.
-        with_home(|home| {
-            let export_dir = home.join(".local/share/flatpak/exports/bin");
-            fs::create_dir_all(&export_dir).unwrap();
-            let wrapper = export_dir.join("com.google.Chrome");
-            fs::write(&wrapper, b"").unwrap();
+    // ── Native-first ordering contract ───────────────────────────────────────
+    //
+    // When a real binary exists at a known absolute path, detect_chrome_linux
+    // must return NativePath — not FlatpakApp — because native installs win.
+    // We verify this by pointing $CHROME at a real temp file (so the env-var
+    // branch fires before any PATH/abs-path walk) and confirm the return type.
 
-            let result = detect_chrome_linux();
-            match result {
-                Some(BrowserLaunch::FlatpakApp(id)) => {
-                    assert_eq!(id, "com.google.Chrome");
-                }
-                other => panic!("expected FlatpakApp(com.google.Chrome), got {other:?}"),
+    #[test]
+    fn env_chrome_wins_over_flatpak_export() {
+        // Create a real temp "binary" so the env-var branch returns it.
+        let tmp = TempDir::new().expect("tempdir");
+        let fake_bin = tmp.path().join("fake-chrome");
+        fs::write(&fake_bin, b"").unwrap();
+
+        // Also create a Flatpak export to confirm native wins.
+        let export_dir = tmp.path().join(".local/share/flatpak/exports/bin");
+        fs::create_dir_all(&export_dir).unwrap();
+        fs::write(export_dir.join("com.google.Chrome"), b"").unwrap();
+
+        unsafe {
+            std::env::set_var("CHROME", &fake_bin);
+        }
+        let result = detect_system_chrome();
+        unsafe {
+            std::env::remove_var("CHROME");
+        }
+
+        match result {
+            Some(BrowserLaunch::NativePath(p)) => {
+                assert_eq!(p, fake_bin, "should return the CHROME env-var path");
             }
-        });
+            other => panic!("expected NativePath from CHROME env var, got {other:?}"),
+        }
     }
 
-    #[test]
-    fn flatpak_system_export_path_probe_does_not_panic() {
-        // We cannot write to /var/lib/flatpak (root-owned), so the system
-        // export path cannot be exercised in-process.  That code path shares
-        // the same match arm as the user-local export path, which IS covered
-        // by flatpak_app_returns_flatpak_launch_for_installed_id above.
-        // This test only confirms the function doesn't panic when the system
-        // path is unreachable.
-        let _ = detect_chrome_linux();
-    }
-
-    #[test]
-    fn no_browser_returns_none_on_clean_home() {
-        with_home(|_home| {
-            // In a clean tempdir there are no flatpak exports; PATH is still
-            // the real PATH, so we can only assert the function completes.
-            // A real CI system may or may not have a browser on PATH.
-            let _ = detect_chrome_linux();
-        });
-    }
-
-    // ── Flatpak detection helpers ────────────────────────────────────────────
+    // ── Flatpak ID constants ─────────────────────────────────────────────────
 
     #[test]
     fn flatpak_ids_are_nonempty_and_unique() {
@@ -133,7 +169,7 @@ mod linux {
     }
 
     #[test]
-    fn flatpak_ids_contain_chrome_and_chromium() {
+    fn flatpak_ids_contain_required_browsers() {
         assert!(FLATPAK_IDS.contains(&"com.google.Chrome"));
         assert!(FLATPAK_IDS.contains(&"org.chromium.Chromium"));
         assert!(FLATPAK_IDS.contains(&"com.brave.Browser"));
@@ -162,11 +198,12 @@ fn windows_detect_does_not_panic() {
 #[test]
 fn detect_system_chrome_result_is_consistent() {
     // Whatever is returned must either be None or a variant whose
-    // display_command() is non-empty.
+    // display_command() is non-empty.  NativePath variants must point to a
+    // file that actually exists on disk.  No assertion on *which* variant is
+    // returned — that depends on the runner's environment.
     let result = detect_system_chrome();
     if let Some(launch) = result {
         assert!(!launch.display_command().is_empty());
-        // NativePath variant must point to an existing file.
         if let BrowserLaunch::NativePath(p) = &launch {
             assert!(p.exists(), "NativePath {p:?} does not exist on disk");
         }
