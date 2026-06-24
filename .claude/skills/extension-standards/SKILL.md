@@ -23,6 +23,10 @@ Standards for the browser extension and the desktop⇄extension bridge. Load wit
 
 A new message type/field is added in the **same change** to: the TS `EXTENSION_MESSAGE_TYPES` constant, the TS zod `ExtensionMessageTypeSchema`, **and** the Rust `msg` module. The envelope shape (`type` / `token` / `reqId` / `payload`) stays identical on both sides. The parity + uniqueness tests must stay green.
 
+**Browser-coverage lockstep** — when browser detection adds a browser (a new Chromium-family or Flatpak id), add its **native-messaging host manifest** entry in the **same change** (native + the per-app Flatpak dir); a detected browser with no manifest can't pair (#486 detected Vivaldi but never registered it). Grep the sibling manifest table for every id the detector can return.
+
+**Rust + tests** — the bridge/detection Rust (`extension_bridge/**`, `platform/chrome/**`) and its tests also obey `rust-standards` + `testing-rules` (cfg-gated/cross-OS, bounded external processes, env-`#[serial]`, no host-coupled/`exec()`-in-test), not just `extension-standards`.
+
 ## Manifest V3 rules (both stores)
 
 - **No remote code (absolute)** — all JS bundled in the package; no `eval`, no external `<script>`, no runtime code fetch. Fetching **data** (JSON) is fine; executing fetched **code** is not. ([CWS MV3](https://developer.chrome.com/docs/webstore/program-policies/mv3-requirements), [AMO policies](https://extensionworkshop.com/documentation/publish/add-on-policies/))
