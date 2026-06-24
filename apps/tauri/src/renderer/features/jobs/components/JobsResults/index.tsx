@@ -1,5 +1,5 @@
 import { Loader2, Plus, Search, Settings } from 'lucide-react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter } from '@tanstack/react-router';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
@@ -10,7 +10,6 @@ import { Button, EmptyState, GlassCard, RowSkeleton } from '@ajh/ui';
 import { ROUTES } from '@/constants/routes/routes';
 import { JobsSplitView } from '@/features/jobs/components/JobsSplitView';
 import { PostingRow } from '@/features/jobs/components/PostingRow';
-import { useMatchScores } from '@/features/jobs/providers';
 import type { Posting } from '@/features/jobs/types';
 import { useHasProviderKey } from '@/services/use-ai-provider';
 import { useSessionStore } from '@/store/session-store';
@@ -25,19 +24,13 @@ interface JobsResultsProps {
 
 /**
  * Owns the results scroll area. Rendered INSIDE `MatchScoresProvider` so it can
- * read the batch-score context (the page itself provides that context and so
- * cannot consume it).
+ * read the score context (the page itself provides that context and so cannot
+ * consume it).
  *
- * Gating: results stay hidden behind a loading state while a scrape is running
- * OR (when a résumé exists) while the match-score batch is in flight. The list
- * is revealed once scraping has finished AND either every score is ready OR the
- * scoring query has errored out (error escape hatch — shows unscored results
- * rather than hanging on an infinite spinner).
- *
- * On reveal (résumé present), rows are re-sorted by `combined` score descending;
- * rows without a score sink to the bottom. `Array.sort` is stable, so ties keep
- * the incoming `filtered` order (already sorted by the user's `sortBy`). With no
- * résumé, `filtered` is shown as-is and only `scraping` gates.
+ * Gating: results stay hidden behind a loading state while a scrape is running.
+ * Scores are fetched on-demand when the user opens a job (`JobDetailPane` calls
+ * `scoreJob`) — no batch-all on mount, no score-based reorder. The list keeps
+ * the user's chosen order (newest/oldest/company) at all times.
  */
 export function JobsResults({
   filtered,
@@ -47,7 +40,6 @@ export function JobsResults({
   onScrape,
 }: JobsResultsProps) {
   const { t } = useTranslation();
-  const { getScore, isPending, hasResume, isError } = useMatchScores();
   const router = useRouter();
   const { jobs, setJobs } = useSessionStore();
   const { viewMode, selectedId } = jobs;
@@ -68,41 +60,28 @@ export function JobsResults({
   const missingAdzunaKeys =
     isEmpty && keysKnown && (adzunaIdData?.has === false || adzunaKeyData?.has === false);
 
-  const waiting = scraping || (hasResume && isPending && !isError);
-
-  // Re-sort by score on reveal. When the query data updates, the provider's
-  // memoized `scoresById` Map changes identity, flowing a new `getScore` closure
-  // into this memo's deps — so this re-runs once the batch settles, exactly when
-  // the gate opens.
-  const display = useMemo(
-    () =>
-      hasResume
-        ? [...filtered].sort(
-            (a, b) => (getScore(b.id)?.combined ?? -1) - (getScore(a.id)?.combined ?? -1)
-          )
-        : filtered,
-    [filtered, hasResume, getScore]
-  );
+  // List is shown immediately once scraping finishes; scores arrive per-job on open.
+  const waiting = scraping;
 
   // Derive selection validity during render so display changes flow into deps.
-  const topId = display[0]?.id ?? null;
-  const selectionInDisplay = selectedId !== null && display.some((p) => p.id === selectedId);
+  const topId = filtered[0]?.id ?? null;
+  const selectionInDisplay = selectedId !== null && filtered.some((p) => p.id === selectedId);
 
   // Unified selection effect — subsumes both the old null-reconciliation effect
   // and the split-mode auto-select:
   //
   //   In split mode with results:
-  //     • justFinished (waiting true→false): re-select topId so fresh scrape/score
+  //     • justFinished (waiting true→false): re-select topId so fresh scrape
   //       results are immediately visible in the detail pane.
-  //     • !selectionInDisplay: selection is absent OR was filtered/sorted out of
-  //       display; select topId so the detail pane is never left blank.
+  //     • !selectionInDisplay: selection is absent OR was filtered out of the
+  //       list; select topId so the detail pane is never left blank.
   //     • selectionInDisplay && !justFinished: user has a valid manual selection,
-  //       leave it alone even if topId changes (score re-sort, live prepend).
+  //       leave it alone even if topId changes (live prepend, filter change).
   //
   //   In list mode: no-op — list mode has no auto-select requirement.
   //
-  // Deps include derived booleans (topId, selectionInDisplay) so a display change
-  // (filter/sort) triggers the effect even when selectedId hasn't changed.
+  // Deps include derived booleans (topId, selectionInDisplay) so a filter change
+  // triggers the effect even when selectedId hasn't changed.
   const prevWaitingRef = useRef(waiting);
   useEffect(() => {
     const justFinished = prevWaitingRef.current && !waiting;
@@ -116,14 +95,14 @@ export function JobsResults({
   }, [waiting, viewMode, topId, selectionInDisplay, setJobs]);
 
   // Windowed list: only visible rows (+ overscan) mount. Keyed by posting id so
-  // measurement survives re-sorting and live-prepended rows during a scrape.
+  // measurement survives live-prepended rows during a scrape.
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
-    count: display.length,
+    count: filtered.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 88,
     overscan: 6,
-    getItemKey: (index) => display[index]?.id ?? index,
+    getItemKey: (index) => filtered[index]?.id ?? index,
   });
 
   const openAggregatorSettings = () => {
@@ -131,7 +110,7 @@ export function JobsResults({
     void router.navigate({ to: ROUTES.SETTINGS });
   };
 
-  // Shared gating block (identical for both modes)
+  // Shared gating block — only scraping gates the list now.
   if (waiting) {
     return (
       <div className="min-h-0 flex-1 overflow-y-auto px-10 pb-10">
@@ -143,7 +122,7 @@ export function JobsResults({
           >
             <div className="flex items-center gap-2 text-sm text-foreground/70">
               <Loader2 size={16} className="animate-spin text-brand-soft" />
-              {scraping ? t('jobs.searching') : t('jobs.scoring')}
+              {t('jobs.searching')}
             </div>
             <div className="w-full max-w-2xl space-y-2">
               <RowSkeleton />
@@ -156,7 +135,7 @@ export function JobsResults({
     );
   }
 
-  if (display.length === 0) {
+  if (filtered.length === 0) {
     return (
       <div className="min-h-0 flex-1 overflow-y-auto px-10 pb-10">
         <GlassCard>
@@ -198,7 +177,7 @@ export function JobsResults({
     return (
       <div className="min-h-0 flex-1 overflow-hidden px-10 pb-10">
         <JobsSplitView
-          display={display}
+          display={filtered}
           formatRelativeTime={formatRelativeTime}
           scraping={scraping}
           onShowMore={onShowMore}
@@ -212,7 +191,7 @@ export function JobsResults({
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-10 pb-10">
       <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
         {virtualizer.getVirtualItems().map((vi) => {
-          const posting = display[vi.index];
+          const posting = filtered[vi.index];
           if (!posting) return null;
           return (
             <div

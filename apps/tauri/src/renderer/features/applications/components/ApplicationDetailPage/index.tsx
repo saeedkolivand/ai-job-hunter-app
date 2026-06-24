@@ -32,6 +32,7 @@ import {
   ErrorState,
   IconBadge,
   Input,
+  JobDescription,
   RowSkeleton,
   SectionLabel,
   Tabs,
@@ -55,6 +56,7 @@ import {
   useImportJobUrl,
   useOpenExternal,
   useRemoveApplication,
+  useResolveJobUrl,
   useSetApplicationStatus,
   useUpdateApplication,
 } from '@/services';
@@ -644,11 +646,19 @@ function BriefTab({ application }: { application: Application }) {
   const { t } = useTranslation();
   const hasBrief = application.brief.trim().length > 0;
   const hasAnswers = application.answers.length > 0;
-  const hasJd = application.jobDescription.trim().length > 0;
   const [editingJd, setEditingJd] = useState(false);
   const [jdDraft, setJdDraft] = useState('');
   const { mutate: updateApp, isPending: isSaving } = useUpdateApplication();
   const { mutate: fetchJd, isPending: isFetching, isError: fetchFailed } = useImportJobUrl();
+
+  // Resolve-on-open: mirrors InterviewPrepTab — auto-fetch from URL when the
+  // saved jobDescription is empty, so the tab is useful without a manual fetch.
+  const initialDesc = application.jobDescription.trim();
+  const shouldAutoResolve = !initialDesc;
+  const resolved = useResolveJobUrl(application.jobUrl, shouldAutoResolve);
+  const jdLoading = shouldAutoResolve && resolved.isFetching;
+  const jobDesc = initialDesc || (resolved.data?.description ?? '').trim();
+  const hasJd = jobDesc.length > 0;
 
   const startEdit = () => {
     setJdDraft(application.jobDescription);
@@ -679,7 +689,7 @@ function BriefTab({ application }: { application: Application }) {
         </div>
       )}
 
-      {/* Job description — read-only with edit toggle when populated; recovery panel when empty */}
+      {/* Job description — markdown render; edit toggle when populated; recovery panel when empty */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
@@ -696,12 +706,18 @@ function BriefTab({ application }: { application: Application }) {
             </Button>
           )}
         </div>
-        {hasJd && !editingJd && (
-          <p className="select-text whitespace-pre-wrap text-[12px] leading-relaxed text-foreground/70">
-            {application.jobDescription}
-          </p>
+        {jdLoading && (
+          <div role="status" aria-busy="true" aria-label={t('jobs.loadingDescription')}>
+            <RowSkeleton />
+          </div>
         )}
-        {(editingJd || !hasJd) && (
+        {!jdLoading && hasJd && !editingJd && (
+          <JobDescription
+            markdown={jobDesc}
+            className="max-w-prose select-text space-y-4 text-caption text-foreground/80"
+          />
+        )}
+        {!jdLoading && (editingJd || !hasJd) && (
           <div className="space-y-2">
             {!hasJd && (
               <p className="text-[11px] text-foreground/55">{t('jobUrlImport.notFound')}</p>

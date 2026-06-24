@@ -87,7 +87,6 @@ vi.mock('@/services', () => ({
   useJobEvents: (cb: (event: unknown) => void) => {
     jobEvents.handler = cb;
   },
-  useJobMatchScores: () => ({ scoresById: new Map(), isPending: false, isError: false }),
 }));
 
 vi.mock('@/features/jobs/hooks/useDefaultResumeId', () => ({

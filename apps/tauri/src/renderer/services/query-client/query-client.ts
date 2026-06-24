@@ -91,8 +91,6 @@ export const keys = {
   },
   match: {
     score: (resumeId: string | null, jobId: string) => ['match', resumeId, jobId] as const,
-    batch: (resumeId: string | null, jobIds: string[], semantic: boolean) =>
-      ['match-batch', resumeId, [...jobIds].sort().join(','), semantic] as const,
   },
   updater: { changelog: ['updater', 'changelog'] as const },
   applications: {

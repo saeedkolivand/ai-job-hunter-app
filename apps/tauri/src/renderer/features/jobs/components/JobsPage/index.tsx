@@ -251,10 +251,9 @@ export function JobsPage() {
   }, [allPostings, filter, sortBy]);
 
   const resumeId = useDefaultResumeId();
-  const jobIds = useMemo(() => filtered.map((p) => p.id), [filtered]);
 
   return (
-    <MatchScoresProvider resumeId={resumeId} jobIds={jobIds}>
+    <MatchScoresProvider resumeId={resumeId}>
       <PageTransition className="flex h-full flex-col overflow-hidden">
         {/* Pinned header + scrape form; the list below owns the scroll. */}
         <div className="shrink-0 px-10 pt-10">

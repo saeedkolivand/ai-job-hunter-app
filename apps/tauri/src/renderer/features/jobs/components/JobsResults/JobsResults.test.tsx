@@ -1,15 +1,12 @@
 /**
- * JobsResults — gating + reveal-sort tests.
+ * JobsResults — gating + list-order tests.
  *
- * JobsResults hides the postings list behind a loading state until scraping has
- * finished AND (when a résumé exists) the match-score batch has settled; on
- * reveal it re-sorts rows by `combined` score descending. These tests drive the
- * REAL MatchScoresProvider with a stubbed useJobMatchScores so the gating
- * (`scraping || (hasResume && isPending)`) and the sort run for real, asserting:
- *  - scraping=true → searching state, no rows
- *  - hasResume + isPending → scoring state, no rows
- *  - settled + hasResume → rows sorted by combined desc (DOM order)
- *  - no résumé → rows render immediately in input order
+ * Scores are now on-demand (fetched when the user opens a job), so:
+ *  - only `scraping` gates the list (no score-batch wait)
+ *  - rows render in the `filtered` input order — never reordered by score
+ *  - the "scoring" spinner is gone; only "searching" gates
+ *
+ * These tests drive the REAL MatchScoresProvider with the on-demand model.
  */
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,23 +14,23 @@ import { screen } from '@testing-library/dom';
 import { render } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { type MatchScore, PROVIDER_SLOTS } from '@ajh/shared';
+import { PROVIDER_SLOTS } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 
-// ── i18n stub — identity t() so we assert on keys ─────────────────────────────
+// ── i18n stub ─────────────────────────────────────────────────────────────────
 
 vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 
-// ── router stub — navigate is a captured spy so tests can assert calls ────────
+// ── router stub ───────────────────────────────────────────────────────────────
 
 const mockNavigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({
   useRouter: () => ({ navigate: mockNavigate }),
 }));
 
-// ── session-store stub — setSettings + jobs slice + setJobs ──────────────────
+// ── session-store stub ────────────────────────────────────────────────────────
 
 const mockSetSettings = vi.fn();
 const mockSetJobs = vi.fn();
@@ -49,20 +46,11 @@ const STORE_STATE: {
 };
 
 vi.mock('@/store/session-store', () => ({
-  // Component calls useSessionStore() (no selector) AND useSessionStore(sel).
   useSessionStore: (sel?: (s: typeof STORE_STATE) => unknown) =>
     sel ? sel(STORE_STATE) : STORE_STATE,
 }));
 
-// ── useHasProviderKey stub — per-provider map so the wrong slot fails ─────────
-//
-// The component calls useHasProviderKey(PROVIDER_SLOTS.adzunaAppId, ...) and
-// useHasProviderKey(PROVIDER_SLOTS.adzunaAppKey, ...) separately. A shared
-// scalar would pass even if the component queried the wrong slot, so we use a
-// per-provider map keyed by slot name. Missing slots default to false.
-//
-// stubbedKeyIsSuccess=false simulates the queries still loading; missingAdzunaKeys
-// stays false so the generic empty-state is shown (no false-positive "add keys" flash).
+// ── useHasProviderKey stub ────────────────────────────────────────────────────
 
 let stubbedHasByProvider: Record<string, boolean> = {
   [PROVIDER_SLOTS.adzunaAppId]: true,
@@ -76,19 +64,13 @@ vi.mock('@/services/use-ai-provider', () => ({
   }),
 }));
 
-// ── useJobMatchScores stub — module-level ref set BEFORE each render ───────────
-
-let stubbedQuery: { scoresById: Map<string, MatchScore>; isPending: boolean; isError: boolean } = {
-  scoresById: new Map(),
-  isPending: false,
-  isError: false,
-};
+// ── MatchScoresProvider dependency — provider calls useJobMatchScore per row ──
 
 vi.mock('@/services', () => ({
-  useJobMatchScores: () => stubbedQuery,
+  useJobMatchScore: () => ({ data: undefined }),
 }));
 
-// ── PostingRow stub — strip router/services; expose title + id for ordering ────
+// ── PostingRow stub ───────────────────────────────────────────────────────────
 
 vi.mock('@/features/jobs/components/PostingRow', () => ({
   PostingRow: ({ posting }: { posting: { id: string; title: string } }) => (
@@ -98,7 +80,7 @@ vi.mock('@/features/jobs/components/PostingRow', () => ({
   ),
 }));
 
-// ── JobsSplitView stub — split mode renders this; keep it minimal ─────────────
+// ── JobsSplitView stub ────────────────────────────────────────────────────────
 
 vi.mock('@/features/jobs/components/JobsSplitView', () => ({
   JobsSplitView: ({ display }: { display: { id: string }[] }) => (
@@ -106,7 +88,7 @@ vi.mock('@/features/jobs/components/JobsSplitView', () => ({
   ),
 }));
 
-// ── virtualizer stub — render every index in order (jsdom has no layout) ───────
+// ── virtualizer stub ──────────────────────────────────────────────────────────
 
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
@@ -143,18 +125,6 @@ function posting(id: string, title: string): Posting {
   };
 }
 
-function score(jobId: string, combined: number): MatchScore {
-  return {
-    resumeId: RESUME_ID,
-    jobId,
-    ats: combined - 10,
-    semantic: combined + 5,
-    combined,
-    gaps: [],
-    recommendations: [],
-  };
-}
-
 const noop = () => {};
 const formatRelativeTime = () => '';
 
@@ -162,21 +132,10 @@ function renderResults(opts: {
   filtered: Posting[];
   scraping?: boolean;
   resumeId?: string | null;
-  scoresById?: Map<string, MatchScore>;
-  isPending?: boolean;
-  isError?: boolean;
 }) {
-  stubbedQuery = {
-    scoresById: opts.scoresById ?? new Map(),
-    isPending: opts.isPending ?? false,
-    isError: opts.isError ?? false,
-  };
   const resumeId = 'resumeId' in opts ? (opts.resumeId ?? null) : RESUME_ID;
-  const jobIds = opts.filtered.map((p) => p.id);
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <MatchScoresProvider resumeId={resumeId} jobIds={jobIds}>
-      {children}
-    </MatchScoresProvider>
+    <MatchScoresProvider resumeId={resumeId}>{children}</MatchScoresProvider>
   );
   return render(
     <JobsResults
@@ -196,10 +155,9 @@ function rowOrder(): string[] {
   );
 }
 
-// ── tests ─────────────────────────────────────────────────────────────────────
+// ── reset ─────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  stubbedQuery = { scoresById: new Map(), isPending: false, isError: false };
   stubbedHasByProvider = {
     [PROVIDER_SLOTS.adzunaAppId]: true,
     [PROVIDER_SLOTS.adzunaAppKey]: true,
@@ -208,9 +166,10 @@ beforeEach(() => {
   mockNavigate.mockClear();
   mockSetSettings.mockClear();
   mockSetJobs.mockClear();
-  // Reset store state to list mode / no selection between tests.
   STORE_STATE.jobs = { viewMode: 'list', selectedId: null };
 });
+
+// ── gating ────────────────────────────────────────────────────────────────────
 
 describe('JobsResults — gating', () => {
   it('shows the searching state and no rows while scraping', () => {
@@ -218,76 +177,57 @@ describe('JobsResults — gating', () => {
 
     expect(screen.getByText('jobs.searching')).toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.jobs.postingRow)).not.toBeInTheDocument();
-    // "Show more" is hidden while waiting.
     expect(screen.queryByText('jobs.showMore')).not.toBeInTheDocument();
   });
 
-  it('shows the scoring state and no rows while the batch is in-flight with a résumé', () => {
-    renderResults({
-      filtered: [posting('a', 'A'), posting('b', 'B')],
-      isPending: true, // hasResume defaults true → waiting
-    });
+  it('reveals rows immediately when not scraping (no score-batch wait)', () => {
+    // With the on-demand model, rows render as soon as scraping=false — no scoring wait.
+    renderResults({ filtered: [posting('a', 'A'), posting('b', 'B')] });
 
-    expect(screen.getByText('jobs.scoring')).toBeInTheDocument();
-    expect(screen.queryByTestId(TEST_IDS.jobs.postingRow)).not.toBeInTheDocument();
-  });
-
-  it('reveals results (escape hatch) when scoring errors even while the batch is still pending', () => {
-    // isError=true collapses waiting=false regardless of isPending=true,
-    // so the gate opens and unscored rows reveal in input order.
-    renderResults({
-      filtered: [posting('x', 'X'), posting('y', 'Y')],
-      isPending: true,
-      isError: true,
-    });
-
-    expect(screen.queryByText('jobs.scoring')).not.toBeInTheDocument();
     expect(screen.queryByText('jobs.searching')).not.toBeInTheDocument();
-    expect(rowOrder()).toEqual(['x', 'y']);
+    expect(rowOrder()).toEqual(['a', 'b']);
   });
 });
 
-describe('JobsResults — reveal sort', () => {
-  it('reveals rows sorted by combined score descending when settled with a résumé', () => {
-    // filtered input order: low, high, mid. Expect reveal order: high, mid, low.
-    const filtered = [posting('low', 'Low'), posting('high', 'High'), posting('mid', 'Mid')];
-    const scoresById = new Map<string, MatchScore>([
-      ['low', score('low', 20)],
-      ['high', score('high', 90)],
-      ['mid', score('mid', 55)],
-    ]);
+// ── list order (input order preserved — no score reorder) ─────────────────────
 
-    renderResults({ filtered, scoresById, isPending: false });
+describe('JobsResults — list order', () => {
+  it('renders rows in filtered input order regardless of any cached scores', () => {
+    const filtered = [
+      posting('first', 'First'),
+      posting('second', 'Second'),
+      posting('third', 'Third'),
+    ];
 
-    expect(screen.queryByText('jobs.scoring')).not.toBeInTheDocument();
-    expect(rowOrder()).toEqual(['high', 'mid', 'low']);
+    renderResults({ filtered });
+
+    expect(rowOrder()).toEqual(['first', 'second', 'third']);
   });
 
-  it('sinks rows without a score to the bottom', () => {
-    const filtered = [posting('scored', 'Scored'), posting('unscored', 'Unscored')];
-    const scoresById = new Map<string, MatchScore>([['scored', score('scored', 40)]]);
+  it('renders rows in filtered input order when no scores are cached', () => {
+    const filtered = [posting('c', 'C'), posting('a', 'A'), posting('b', 'B')];
 
-    renderResults({ filtered, scoresById, isPending: false });
+    renderResults({ filtered, resumeId: null });
 
-    expect(rowOrder()).toEqual(['scored', 'unscored']);
+    expect(rowOrder()).toEqual(['c', 'a', 'b']);
   });
-});
 
-describe('JobsResults — no résumé', () => {
-  it('renders rows immediately in input order without waiting on scores', () => {
+  it('renders rows immediately in input order when resumeId is null', () => {
     const filtered = [posting('a', 'A'), posting('b', 'B'), posting('c', 'C')];
 
     renderResults({ filtered, resumeId: null });
 
-    expect(screen.queryByText('jobs.scoring')).not.toBeInTheDocument();
     expect(rowOrder()).toEqual(['a', 'b', 'c']);
   });
+});
 
-  it('shows the empty state (not a loading state) when there is no résumé and nothing matches', () => {
+// ── empty state ───────────────────────────────────────────────────────────────
+
+describe('JobsResults — empty state', () => {
+  it('shows the empty state when filtered is empty and not scraping', () => {
     renderResults({ filtered: [], resumeId: null });
 
     expect(screen.getByText('jobs.empty')).toBeInTheDocument();
-    expect(screen.queryByText('jobs.scoring')).not.toBeInTheDocument();
     expect(screen.queryByText('jobs.searching')).not.toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.jobs.postingRow)).not.toBeInTheDocument();
   });
@@ -297,14 +237,12 @@ describe('JobsResults — no résumé', () => {
     stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppKey] = false;
     renderResults({ filtered: [], resumeId: null });
 
-    // Secondary message and settings CTA are shown instead of the generic scrape CTA.
     expect(screen.getByText('jobs.emptyNoAdzunaKeys')).toBeInTheDocument();
     expect(screen.getByText('jobs.emptyNoAdzunaKeysCta')).toBeInTheDocument();
     expect(screen.queryByText('jobs.emptyCta')).not.toBeInTheDocument();
   });
 
   it('shows the generic CTA when the list is empty and keys are present', () => {
-    // stubbedHasByProvider defaults to both true in beforeEach — no override needed
     renderResults({ filtered: [], resumeId: null });
 
     expect(screen.getByText('jobs.emptyCta')).toBeInTheDocument();
@@ -312,12 +250,9 @@ describe('JobsResults — no résumé', () => {
   });
 
   it('shows the generic CTA (not the keys CTA) while the key queries are still loading', () => {
-    // isSuccess=false means the query has not resolved yet — keys may exist but
-    // we don't know.  missingAdzunaKeys must be false so the generic empty-state
-    // is shown, preventing a false-positive "add keys" flash.
-    stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppId] = false; // would trigger CTA if isSuccess were true
+    stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppId] = false;
     stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppKey] = false;
-    stubbedKeyIsSuccess = false; // queries unresolved / loading
+    stubbedKeyIsSuccess = false;
     renderResults({ filtered: [], resumeId: null });
 
     expect(screen.getByText('jobs.emptyCta')).toBeInTheDocument();
@@ -325,8 +260,6 @@ describe('JobsResults — no résumé', () => {
   });
 
   it('wraps the empty-state variant swap in a live region so AT users hear the change', () => {
-    // The missingAdzunaKeys → keys-present swap replaces the EmptyState in place;
-    // a single polite live region around both variants announces the new text.
     stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppId] = false;
     stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppKey] = false;
     const { container } = renderResults({ filtered: [], resumeId: null });
@@ -336,20 +269,14 @@ describe('JobsResults — no résumé', () => {
     expect(live).toHaveTextContent('jobs.emptyNoAdzunaKeys');
   });
 
-  it('clicking the missing-keys CTA calls setSettings({activeSection:"job"}) and navigates to /settings', async () => {
-    // Arrange: show the Adzuna-keys empty state (empty list, both slots missing, resolved).
+  it('clicking the missing-keys CTA calls setSettings and navigates to /settings', async () => {
     stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppId] = false;
     stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppKey] = false;
     renderResults({ filtered: [], resumeId: null });
 
-    // The CTA button text is the i18n key (identity t()).
     const cta = screen.getByText('jobs.emptyNoAdzunaKeysCta');
-    expect(cta).toBeInTheDocument();
-
-    // Act: click via user-event (fires real pointer + keyboard events).
     await userEvent.click(cta);
 
-    // Assert: session store receives the correct section, then router navigates.
     expect(mockSetSettings).toHaveBeenCalledOnce();
     expect(mockSetSettings).toHaveBeenCalledWith({ activeSection: 'job' });
     expect(mockNavigate).toHaveBeenCalledOnce();
@@ -357,9 +284,7 @@ describe('JobsResults — no résumé', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Split-mode auto-select
-// ─────────────────────────────────────────────────────────────────────────────
+// ── split-mode auto-select ────────────────────────────────────────────────────
 
 describe('JobsResults — split-mode auto-select', () => {
   it('selects display[0] immediately when split mode has results and no current selection', () => {
@@ -373,8 +298,6 @@ describe('JobsResults — split-mode auto-select', () => {
   });
 
   it('does NOT clobber a valid manual selection on a plain re-render', () => {
-    // User already selected 'b', which is still in display — selectionInDisplay=true
-    // so the effect is a no-op (no auto-select to 'a').
     STORE_STATE.jobs = { viewMode: 'split', selectedId: 'b' };
     const p1 = posting('a', 'A');
     const p2 = posting('b', 'B');
@@ -388,7 +311,6 @@ describe('JobsResults — split-mode auto-select', () => {
   });
 
   it('re-selects display[0] when the selected job is filtered OUT of display after mount', () => {
-    // Start: split mode, 'b' is selected and present in display.
     STORE_STATE.jobs = { viewMode: 'split', selectedId: 'b' };
     const p1 = posting('a', 'A');
     const p2 = posting('b', 'B');
@@ -396,9 +318,6 @@ describe('JobsResults — split-mode auto-select', () => {
     const { rerender } = renderResults({ filtered: [p1, p2], resumeId: null });
     mockSetJobs.mockClear();
 
-    // Simulate filtering: 'b' is removed from display, only 'a' remains.
-    // selectedId is still 'b' in the store (STORE_STATE hasn't changed), but
-    // selectionInDisplay becomes false → effect must re-select 'a'.
     rerender(
       <JobsResults
         filtered={[p1]}
@@ -417,12 +336,9 @@ describe('JobsResults — split-mode auto-select', () => {
     const p1 = posting('x', 'X');
     const p2 = posting('y', 'Y');
 
-    // Initial render: scraping=true → waiting=true, results gated (spinner shown).
     const { rerender } = renderResults({ filtered: [p1, p2], resumeId: null, scraping: true });
     mockSetJobs.mockClear();
 
-    // Transition: scraping false → waiting goes true→false. rerender inherits the
-    // original MatchScoresProvider wrapper automatically.
     rerender(
       <JobsResults
         filtered={[p1, p2]}
@@ -433,7 +349,6 @@ describe('JobsResults — split-mode auto-select', () => {
       />
     );
 
-    // Effect fires on the waiting transition: should auto-select the top result.
     expect(mockSetJobs).toHaveBeenCalledWith({ selectedId: 'x', detailCollapsed: false });
   });
 

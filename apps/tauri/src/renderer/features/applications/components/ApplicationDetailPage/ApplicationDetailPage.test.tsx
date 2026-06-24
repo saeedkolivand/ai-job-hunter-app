@@ -143,6 +143,9 @@ const mockRemoveMutateAsync = vi.fn().mockResolvedValue(undefined);
 // drive onSuccess and toggle the isError messaging path.
 const mockImportJobUrlMutate = vi.fn();
 let mockImportJobUrlIsError = false;
+// JD-resolve (useResolveJobUrl) — controllable so BriefTab loading-state tests
+// can simulate the in-flight window before the auto-resolve settles.
+let mockResolveJobUrlIsFetching = false;
 
 vi.mock('@/services', () => ({
   useApplication: () => mockUseApplication(),
@@ -167,6 +170,13 @@ vi.mock('@/services', () => ({
     mutate: mockImportJobUrlMutate,
     isPending: false,
     isError: mockImportJobUrlIsError,
+  }),
+  useResolveJobUrl: () => ({
+    data: undefined,
+    isFetching: mockResolveJobUrlIsFetching,
+    isError: false,
+    isFetched: false,
+    refetch: vi.fn(),
   }),
 }));
 
@@ -244,6 +254,7 @@ beforeEach(() => {
   mockNavigate.mockClear();
   mockImportJobUrlMutate.mockReset();
   mockImportJobUrlIsError = false;
+  mockResolveJobUrlIsFetching = false;
   capturedOnJobDescChange = undefined;
 });
 
@@ -847,9 +858,25 @@ describe('ApplicationDetailPage — Brief & answers tab', () => {
     mockTab = 'brief';
     renderLoaded({ brief: '', answers: [], jobDescription: '' });
     // The recovery prompt + paste field are shown; the old EmptyState is gone.
+    // useResolveJobUrl mock defaults isFetching=false so jdLoading=false → panel visible.
     expect(screen.getByText('jobUrlImport.notFound')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('applications.detail.jdPlaceholder')).toBeInTheDocument();
     expect(screen.queryByText('applications.detail.briefEmpty')).not.toBeInTheDocument();
+  });
+
+  it('shows loading skeleton while auto-resolve is in-flight (jdLoading gate)', () => {
+    mockTab = 'brief';
+    mockResolveJobUrlIsFetching = true;
+    renderLoaded({ brief: '', answers: [], jobDescription: '' });
+    // While resolve is fetching, the not-found/paste recovery panel must NOT show —
+    // that would be a false-empty flash before the description arrives.
+    expect(screen.queryByText('jobUrlImport.notFound')).not.toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText('applications.detail.jdPlaceholder')
+    ).not.toBeInTheDocument();
+    // The loading sentinel is present (aria-busy).
+    const busyEl = screen.getByRole('status');
+    expect(busyEl).toHaveAttribute('aria-busy', 'true');
   });
 
   it('typing into the paste TextArea updates it and enables the Save button', async () => {

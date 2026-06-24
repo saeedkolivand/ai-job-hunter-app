@@ -1,34 +1,40 @@
 /**
- * MatchScoresProvider — batch-score distribution + derived-flag tests.
+ * MatchScoresProvider — reactive on-demand scoring tests.
  *
- * The provider calls useJobMatchScores(resumeId, jobIds) ONCE and exposes a
- * per-row slice through useRowMatchScore. These tests stub useJobMatchScores
- * and assert:
- *  - getScore distributes the matching MatchScore by jobId (undefined when absent)
- *  - hasResume === !!resumeId
- *  - pending === isPending (gated by resume + jobIds) && the row has NO cached score
- *  - useRowMatchScore throws outside the provider
+ * Reactive model: `scoreJob(jobId)` adds to a `requested` Set in state.
+ * `useRowMatchScore(jobId)` gates `useJobMatchScore(resumeId, jobId, enabled)`
+ * where `enabled = requested.has(jobId) && hasResume`.
+ *
+ * Tests stub `@/services` with `useJobMatchScore` so no IPC or QueryClient needed.
+ *
+ * Exposed surface:
+ *   - hasResume           → !!resumeId
+ *   - useRowMatchScore    → { score, hasResume }; query only fires after scoreJob
+ *   - useMatchScores      → { scoreJob, hasResume }
  */
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 
 import type { MatchScore } from '@ajh/shared';
 
-// ── useJobMatchScores stub ────────────────────────────────────────────────────
-// Module-level ref so each test sets it BEFORE renderHook.
+// ── useJobMatchScore stub ─────────────────────────────────────────────────────
+// Controls what the reactive query returns per (jobId, enabled) call.
 
-let stubbedQuery: { scoresById: Map<string, MatchScore>; isPending: boolean; isError: boolean } = {
-  scoresById: new Map(),
-  isPending: false,
-  isError: false,
-};
+const scoreCache = new Map<string, MatchScore>();
+let lastEnabled = false;
+
+const mockUseJobMatchScore = vi.fn((_resumeId: string | null, _jobId: string, enabled = true) => {
+  lastEnabled = enabled;
+  return { data: enabled ? scoreCache.get(_jobId) : undefined };
+});
 
 vi.mock('@/services', () => ({
-  useJobMatchScores: () => stubbedQuery,
+  useJobMatchScore: (...args: Parameters<typeof mockUseJobMatchScore>) =>
+    mockUseJobMatchScore(...args),
 }));
 
-import { MatchScoresProvider, useRowMatchScore } from './MatchScoresProvider';
+import { MatchScoresProvider, useMatchScores, useRowMatchScore } from './MatchScoresProvider';
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
@@ -36,134 +42,161 @@ const RESUME_ID = 'resume-xyz';
 const JOB_A = 'job-a';
 const JOB_B = 'job-b';
 
-/**
- * Fixture with DISTINCT field values so a future swap of combined/ats/semantic
- * in the context value cannot pass silently. The ats and semantic values are
- * intentionally different from combined and from each other.
- */
 function score(jobId: string, combined: number): MatchScore {
   return {
     resumeId: RESUME_ID,
     jobId,
-    ats: combined - 10, // distinct: always 10 below combined
-    semantic: combined + 5, // distinct: always 5 above combined
+    ats: combined - 10,
+    semantic: combined + 5,
     combined,
     gaps: [],
     recommendations: [],
   };
 }
 
-// ── helper ─────────────────────────────────────────────────────────────────────
+// ── helpers ───────────────────────────────────────────────────────────────────
 
-function renderRow(
-  jobId: string,
-  opts: {
-    resumeId?: string | null;
-    jobIds?: string[];
-    scoresById?: Map<string, MatchScore>;
-    isPending?: boolean;
-  } = {}
-) {
-  stubbedQuery = {
-    scoresById: opts.scoresById ?? new Map(),
-    isPending: opts.isPending ?? false,
-    isError: false,
-  };
-  const resumeId = 'resumeId' in opts ? (opts.resumeId ?? null) : RESUME_ID;
-  const jobIds = opts.jobIds ?? [JOB_A, JOB_B];
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <MatchScoresProvider resumeId={resumeId} jobIds={jobIds}>
-      {children}
-    </MatchScoresProvider>
+function wrapper(resumeId: string | null) {
+  return ({ children }: { children: ReactNode }) => (
+    <MatchScoresProvider resumeId={resumeId}>{children}</MatchScoresProvider>
   );
-  return renderHook(() => useRowMatchScore(jobId), { wrapper });
 }
 
-// ── tests ─────────────────────────────────────────────────────────────────────
+// ── reset ─────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  stubbedQuery = { scoresById: new Map(), isPending: false, isError: false };
+  scoreCache.clear();
+  mockUseJobMatchScore.mockClear();
+  lastEnabled = false;
 });
 
-describe('MatchScoresProvider — score distribution', () => {
-  it('returns the matching score for the requested jobId', () => {
-    const scores = new Map<string, MatchScore>([
-      [JOB_A, score(JOB_A, 82)],
-      [JOB_B, score(JOB_B, 30)],
-    ]);
-    const { result } = renderRow(JOB_A, { scoresById: scores });
-
-    expect(result.current.score).toEqual(score(JOB_A, 82));
-    // Pin that the consumer reads the `combined` field, not ats/semantic.
-    // score(JOB_A, 82) has combined=82, ats=72, semantic=87 — all distinct.
-    expect(result.current.score?.combined).toBe(82);
-    expect(result.current.score?.ats).toBe(72);
-    expect(result.current.score?.semantic).toBe(87);
-  });
-
-  it('returns undefined when the requested jobId has no score', () => {
-    const scores = new Map<string, MatchScore>([[JOB_B, score(JOB_B, 30)]]);
-    const { result } = renderRow(JOB_A, { scoresById: scores });
-
-    expect(result.current.score).toBeUndefined();
-  });
-});
+// ── hasResume ─────────────────────────────────────────────────────────────────
 
 describe('MatchScoresProvider — hasResume', () => {
-  it('is true when a resumeId is present', () => {
-    const { result } = renderRow(JOB_A, { resumeId: RESUME_ID });
+  it('is true when resumeId is present', () => {
+    const { result } = renderHook(() => useRowMatchScore(JOB_A), {
+      wrapper: wrapper(RESUME_ID),
+    });
     expect(result.current.hasResume).toBe(true);
   });
 
   it('is false when resumeId is null', () => {
-    const { result } = renderRow(JOB_A, { resumeId: null });
+    const { result } = renderHook(() => useRowMatchScore(JOB_A), {
+      wrapper: wrapper(null),
+    });
     expect(result.current.hasResume).toBe(false);
   });
 });
 
-describe('MatchScoresProvider — pending', () => {
-  it('is true while the batch is in-flight with a resume and job ids', () => {
-    const { result } = renderRow(JOB_A, { isPending: true });
-    expect(result.current.pending).toBe(true);
-  });
+// ── reactive gate: score is undefined until scoreJob fires ────────────────────
 
-  // FIX 2 pin: a row WITHOUT a cached score during a pending batch → pending === true.
-  // Exhaustive pair with the "cached score suppresses pending" case below.
-  it('is true for a row WITHOUT a cached score while the batch is in-flight', () => {
-    // scoresById has JOB_B but not JOB_A — JOB_A has no cached score.
-    const scores = new Map<string, MatchScore>([[JOB_B, score(JOB_B, 55)]]);
-    const { result } = renderRow(JOB_A, { scoresById: scores, isPending: true });
-    expect(result.current.pending).toBe(true);
+describe('MatchScoresProvider — reactive gate', () => {
+  it('score is undefined before scoreJob is called (query disabled)', () => {
+    scoreCache.set(JOB_A, score(JOB_A, 82));
+
+    const { result } = renderHook(() => useRowMatchScore(JOB_A), {
+      wrapper: wrapper(RESUME_ID),
+    });
+
+    // useJobMatchScore is called with enabled=false (not yet requested)
     expect(result.current.score).toBeUndefined();
+    expect(lastEnabled).toBe(false);
   });
 
-  it('is false for a row WITH a cached score even while the batch is in-flight', () => {
-    const scores = new Map<string, MatchScore>([[JOB_A, score(JOB_A, 70)]]);
-    const { result } = renderRow(JOB_A, { scoresById: scores, isPending: true });
-    expect(result.current.pending).toBe(false);
-    expect(result.current.score).toBeDefined();
+  it('score is returned once scoreJob is called (query enabled)', async () => {
+    scoreCache.set(JOB_A, score(JOB_A, 75));
+
+    const { result } = renderHook(
+      () => ({ row: useRowMatchScore(JOB_A), ctrl: useMatchScores() }),
+      { wrapper: wrapper(RESUME_ID) }
+    );
+
+    // Before scoring: disabled
+    expect(result.current.row.score).toBeUndefined();
+
+    await act(async () => {
+      result.current.ctrl.scoreJob(JOB_A);
+    });
+
+    // After scoring: enabled → stub returns cached score
+    expect(result.current.row.score).toEqual(score(JOB_A, 75));
+    expect(lastEnabled).toBe(true);
   });
 
-  it('is false when isPending but there is no resume', () => {
-    const { result } = renderRow(JOB_A, { resumeId: null, isPending: true });
-    expect(result.current.pending).toBe(false);
+  it('scoreJob is idempotent (same job scored twice stays in requested once)', async () => {
+    const { result } = renderHook(() => useMatchScores(), {
+      wrapper: wrapper(RESUME_ID),
+    });
+
+    await act(async () => {
+      result.current.scoreJob(JOB_A);
+      result.current.scoreJob(JOB_A);
+    });
+
+    // Requesting the same job twice doesn't error; query is enabled
+    expect(result.current.hasResume).toBe(true);
   });
 
-  it('is false when isPending but jobIds is empty', () => {
-    const { result } = renderRow(JOB_A, { jobIds: [], isPending: true });
-    expect(result.current.pending).toBe(false);
+  it('scores different jobs independently (no key collision)', async () => {
+    scoreCache.set(JOB_A, score(JOB_A, 80));
+    scoreCache.set(JOB_B, score(JOB_B, 60));
+
+    const { result } = renderHook(
+      () => ({
+        a: useRowMatchScore(JOB_A),
+        b: useRowMatchScore(JOB_B),
+        ctrl: useMatchScores(),
+      }),
+      { wrapper: wrapper(RESUME_ID) }
+    );
+
+    await act(async () => {
+      result.current.ctrl.scoreJob(JOB_A);
+    });
+
+    // JOB_A scored; JOB_B not yet requested → still undefined
+    expect(result.current.a.score).toEqual(score(JOB_A, 80));
+    expect(result.current.b.score).toBeUndefined();
+
+    await act(async () => {
+      result.current.ctrl.scoreJob(JOB_B);
+    });
+
+    expect(result.current.b.score).toEqual(score(JOB_B, 60));
   });
 
-  it('is false when the batch has settled', () => {
-    const { result } = renderRow(JOB_A, { isPending: false });
-    expect(result.current.pending).toBe(false);
+  it('no score returned when resumeId is null even after scoreJob', async () => {
+    scoreCache.set(JOB_A, score(JOB_A, 70));
+
+    const { result } = renderHook(
+      () => ({ row: useRowMatchScore(JOB_A), ctrl: useMatchScores() }),
+      { wrapper: wrapper(null) }
+    );
+
+    await act(async () => {
+      result.current.ctrl.scoreJob(JOB_A);
+    });
+
+    // hasResume=false means enabled=false regardless of requested
+    expect(result.current.row.score).toBeUndefined();
+    expect(result.current.row.hasResume).toBe(false);
   });
 });
+
+// ── guards ────────────────────────────────────────────────────────────────────
 
 describe('useRowMatchScore — guard', () => {
   it('throws when used outside MatchScoresProvider', () => {
     expect(() => renderHook(() => useRowMatchScore(JOB_A))).toThrow(
       'useRowMatchScore must be used within MatchScoresProvider'
+    );
+  });
+});
+
+describe('useMatchScores — guard', () => {
+  it('throws when used outside MatchScoresProvider', () => {
+    expect(() => renderHook(() => useMatchScores())).toThrow(
+      'useMatchScores must be used within MatchScoresProvider'
     );
   });
 });

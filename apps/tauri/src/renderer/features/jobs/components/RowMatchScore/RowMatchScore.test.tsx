@@ -1,14 +1,13 @@
 /**
  * RowMatchScore — presentational render-state tests.
  *
- * RowMatchScore is now presentational: the combined score, pending flag, and
- * hasResume flag are supplied by MatchScoresProvider via useRowMatchScore (one
- * batch call for all filtered postings). These tests stub useRowMatchScore and
- * assert the three render branches:
+ * Scores are now on-demand: RowMatchScore renders nothing until the user opens
+ * the job and scoreJob fires. There is no "pending" loading placeholder.
+ *
+ * Two render branches:
  *  - hasResume === false → renders nothing
- *  - score present → renders the MatchBand tier label (High/Medium/Low)
- *  - pending (no score yet) → renders the aria-busy loading placeholder
- *  - neither score nor pending → renders nothing
+ *  - score present + hasResume → renders the MatchBand + est. label + info trigger
+ *  - no score (not yet opened) → renders nothing
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
@@ -22,10 +21,8 @@ vi.mock('@ajh/translations', () => ({
 }));
 
 // ── useRowMatchScore stub ─────────────────────────────────────────────────────
-// Module-level ref so each test sets it BEFORE render. Never set after render.
 
-let stubbedRow: { score?: MatchScore; pending: boolean; hasResume: boolean } = {
-  pending: false,
+let stubbedRow: { score?: MatchScore; hasResume: boolean } = {
   hasResume: false,
 };
 
@@ -52,8 +49,6 @@ const BASE_SCORE: MatchScore = {
   recommendations: [],
 };
 
-// ── helper — always set stubbedRow BEFORE calling render ──────────────────────
-
 function renderRow(row: typeof stubbedRow) {
   stubbedRow = row;
   return render(<RowMatchScore jobId={JOB_ID} />);
@@ -63,104 +58,66 @@ function renderRow(row: typeof stubbedRow) {
 
 describe('RowMatchScore — no resume state', () => {
   it('renders nothing when hasResume is false', () => {
-    const { container } = renderRow({ pending: false, hasResume: false });
+    const { container } = renderRow({ hasResume: false });
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders nothing even while pending when hasResume is false', () => {
-    const { container } = renderRow({ pending: true, hasResume: false });
+  it('renders nothing even with a score when hasResume is false', () => {
+    const { container } = renderRow({ score: BASE_SCORE, hasResume: false });
     expect(container.firstChild).toBeNull();
   });
 });
 
-describe('RowMatchScore — score state', () => {
+describe('RowMatchScore — score present', () => {
   it('renders the High MatchBand label for a combined score >= 75', () => {
     const { container } = renderRow({
       score: { ...BASE_SCORE, combined: 82 },
-      pending: false,
       hasResume: true,
     });
-    // t stub returns the full key; MatchBand uses jobs.matchBand.High
     expect(screen.getByText('jobs.matchBand.High')).toBeInTheDocument();
+    // No loading placeholder — on-demand model has no pending spinner.
     expect(container.querySelector('[aria-busy="true"]')).not.toBeInTheDocument();
   });
 
   it('renders the Medium MatchBand label for a combined score in [50, 74]', () => {
-    renderRow({ score: { ...BASE_SCORE, combined: 60 }, pending: false, hasResume: true });
+    renderRow({ score: { ...BASE_SCORE, combined: 60 }, hasResume: true });
     expect(screen.getByText('jobs.matchBand.Medium')).toBeInTheDocument();
   });
 
   it('renders the Low MatchBand label for a combined score < 50', () => {
-    renderRow({ score: { ...BASE_SCORE, combined: 30 }, pending: false, hasResume: true });
+    renderRow({ score: { ...BASE_SCORE, combined: 30 }, hasResume: true });
     expect(screen.getByText('jobs.matchBand.Low')).toBeInTheDocument();
   });
 
-  it('prefers the score over the pending placeholder when both are set', () => {
-    const { container } = renderRow({
-      score: { ...BASE_SCORE, combined: 82 },
-      pending: true,
-      hasResume: true,
-    });
-    expect(screen.getByText('jobs.matchBand.High')).toBeInTheDocument();
-    expect(container.querySelector('[aria-busy="true"]')).not.toBeInTheDocument();
-  });
-
   it('renders the always-visible estimate label adjacent to the band', () => {
-    renderRow({ score: { ...BASE_SCORE, combined: 82 }, pending: false, hasResume: true });
-    // The "est." micro-label is the persistent estimate framing — present without
-    // any interaction. The i18n stub returns the key, so we assert on the key itself.
+    renderRow({ score: { ...BASE_SCORE, combined: 82 }, hasResume: true });
     expect(screen.getByText('jobs.scoreEst')).toBeInTheDocument();
   });
 
   it('renders a guidance info trigger with the scoreGuidanceLabel aria-label', () => {
-    renderRow({ score: { ...BASE_SCORE, combined: 82 }, pending: false, hasResume: true });
-    // aria-label is distinct from the panel content — no duplicate-announcement.
+    renderRow({ score: { ...BASE_SCORE, combined: 82 }, hasResume: true });
     expect(screen.getByRole('button', { name: 'jobs.scoreGuidanceLabel' })).toBeInTheDocument();
   });
 
   it('reveals guidance popover content when the trigger wrapper receives focus', () => {
-    // Popover is closed before interaction.
     const { container } = renderRow({
       score: { ...BASE_SCORE, combined: 82 },
-      pending: false,
       hasResume: true,
     });
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
 
-    // HoverPopover opens on `focus` on its root wrapper div (container.firstChild).
-    // motion/react is shimmed synchronously in vitest.setup.ts, so the portalled
-    // panel is present in the DOM immediately after the event — no waitFor needed.
     fireEvent.focus(container.firstChild as HTMLElement);
 
-    // The panel carries role="tooltip" and contains the guidance key text.
     const tooltip = screen.getByRole('tooltip');
     expect(tooltip).toBeInTheDocument();
     expect(tooltip).toHaveTextContent('jobs.scoreGuidance');
   });
 });
 
-describe('RowMatchScore — pending state', () => {
-  it('shows the aria-busy loading placeholder while the batch is in-flight', () => {
-    const { container } = renderRow({ pending: true, hasResume: true });
-
-    const busyEl = container.querySelector('[aria-busy="true"]');
-    expect(busyEl).toBeInTheDocument();
-    expect(busyEl).toHaveTextContent('…');
-  });
-
-  it('loading placeholder carries the jobs.scoreLoading aria-label', () => {
-    const { container } = renderRow({ pending: true, hasResume: true });
-
-    expect(container.querySelector('[aria-busy="true"]')).toHaveAttribute(
-      'aria-label',
-      'jobs.scoreLoading'
-    );
-  });
-});
-
-describe('RowMatchScore — settled with no score', () => {
-  it('renders nothing when the batch settled but this row has no score', () => {
-    const { container } = renderRow({ pending: false, hasResume: true });
+describe('RowMatchScore — no score (job not yet opened)', () => {
+  it('renders nothing when resume present but job has not been scored yet', () => {
+    // On-demand model: unopened rows have no score and show no badge — not an error state.
+    const { container } = renderRow({ hasResume: true });
     expect(container.firstChild).toBeNull();
   });
 });

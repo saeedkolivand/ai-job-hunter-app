@@ -16,16 +16,21 @@ import { useEffect, useRef, useState } from 'react';
 
 import { AGGREGATOR_BOARD_ID } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { ActionMenu, Button, EmptyState, SourceBadge, Tag, transition } from '@ajh/ui';
+import {
+  ActionMenu,
+  Button,
+  EmptyState,
+  JobDescription,
+  SourceBadge,
+  Tag,
+  transition,
+} from '@ajh/ui';
 
 import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
 import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
-import {
-  type DescriptionBlock,
-  formatJobDescription,
-} from '@/features/jobs/lib/format-description';
+import { useMatchScores } from '@/features/jobs/providers';
 import type { Posting } from '@/features/jobs/types';
-import { useInvalidateMatchBatch, useResolveJobUrl, useUpdatePostingDescription } from '@/services';
+import { useResolveJobUrl, useUpdatePostingDescription } from '@/services';
 
 // ponytail: heuristic threshold — Adzuna search snippets are ~200–500 chars;
 // anything under 700 chars for aggregator postings gets an on-demand resolve.
@@ -34,38 +39,6 @@ const SHORT_DESCRIPTION_CHARS = 700;
 interface JobDetailPaneProps {
   posting: Posting | null;
   formatRelativeTime: (timestamp?: number) => string;
-}
-
-/** Exhaustive block renderer with compile-time guard for future variants. */
-function DescriptionBlockView({ block, index }: { block: DescriptionBlock; index: number }) {
-  switch (block.type) {
-    case 'heading':
-      return (
-        <h3 key={index} className="mt-2 font-semibold leading-snug text-foreground/90 first:mt-0">
-          {block.text}
-        </h3>
-      );
-    case 'list':
-      return (
-        <ul key={index} className="list-disc space-y-1 pl-3 leading-relaxed">
-          {block.items.map((item, j) => (
-            <li key={j}>{item}</li>
-          ))}
-        </ul>
-      );
-    case 'paragraph':
-      return (
-        <p key={index} className="leading-relaxed">
-          {block.text}
-        </p>
-      );
-    default: {
-      // Exhaustiveness guard — triggers a TypeScript error if a new
-      // DescriptionBlock variant is added without updating this renderer.
-      const _exhaustive: never = block;
-      return null;
-    }
-  }
 }
 
 function DetailContent({
@@ -122,29 +95,53 @@ function DetailContent({
   const showLoadButton =
     (isAggregatorShort || descriptionEmpty) && !resolved.isFetching && !resolvedLonger;
 
-  // Re-score on open: when the resolved description is longer than the original
-  // snippet, persist it back to the backend cache and invalidate the batch
-  // match-score query so this job re-scores on the full text. Fires once per
-  // posting (guarded by `upgraded` ref so it doesn't loop on re-renders).
-  // Destructure mutateAsync so the dep array holds the stable function ref (RQ v5),
-  // not the mutation object (new ref every render).
+  // Persist-then-score: one ordered one-shot effect so the backend always reads
+  // the full markdown when computing the match score.
+  //
+  // Race that this fixes: on the render where resolve settles with longer text,
+  // two independent effects could fire in the same commit — scoreJob's match.resume
+  // might hit the backend BEFORE updateDescription persisted the full text, so the
+  // score would be computed on the stale snippet while the pane shows the full text.
+  //
+  // Fix: single effect, single `doneRef` guard. When the resolve produced longer
+  // text, persist FIRST then score inside `.finally()` (persist failure is non-fatal).
+  // When no persist is needed (already-full description or resolve didn't improve),
+  // score immediately. key={posting.id} on the parent resets the ref per job.
+  const { scoreJob } = useMatchScores();
   const { mutateAsync: updateDescription } = useUpdatePostingDescription();
-  const invalidateMatchBatch = useInvalidateMatchBatch();
-  const upgraded = useRef(false);
+  const doneRef = useRef(false);
   useEffect(() => {
-    if (!upgraded.current && resolvedLonger && description) {
-      upgraded.current = true;
+    if (doneRef.current) return;
+    const descReady = description.trim().length > 0;
+    // isFetched guards against the window before the query has started fetching —
+    // without it resolveSettled could be true on the first render (isFetching=false,
+    // data=undefined) and we'd score the snippet before the resolve even begins.
+    const resolveSettled =
+      !shouldResolve || (resolved.isFetched && !resolved.isFetching && !descLoading);
+    if (!descReady || !resolveSettled) return;
+    doneRef.current = true;
+    if (resolvedLonger) {
+      // Persist the full text first, then score on it.
       void updateDescription({ id: posting.id, description })
-        .then(() => invalidateMatchBatch())
-        .catch(() => {
-          // Persist failure is non-fatal: the snippet score remains.
-          // The one-shot guard stays true so we don't loop on rejected persists.
-        });
+        .catch(() => {})
+        .finally(() => scoreJob(posting.id));
+    } else {
+      // No persist needed — score immediately.
+      scoreJob(posting.id);
     }
-  }, [description, invalidateMatchBatch, posting.id, resolvedLonger, updateDescription]);
+  }, [
+    description,
+    descLoading,
+    posting.id,
+    resolved.isFetched,
+    resolved.isFetching,
+    resolvedLonger,
+    scoreJob,
+    shouldResolve,
+    updateDescription,
+  ]);
 
   // Polite AT announcement when the description upgrades to the full text.
-  // We track the previous description length and announce once on the transition.
   const [announced, setAnnounced] = useState(false);
   const prevDescLen = useRef(description.length);
   useEffect(() => {
@@ -155,7 +152,6 @@ function DetailContent({
   }, [announced, description.length]);
 
   // Mark 'viewed' once on display (effect keyed by posting.id; dedupe via Rust upsert).
-  // Use a stable ref so the effect dep is only posting.id (the identity sentinel).
   const trackInteractionRef = useRef(trackInteraction);
   trackInteractionRef.current = trackInteraction;
   useEffect(() => {
@@ -271,11 +267,10 @@ function DetailContent({
         ) : (
           <>
             {/* fold 9: space-y-4 for block rhythm; headings use mt-2 not mt-4 */}
-            <div className="max-w-prose space-y-4 text-[13px] text-foreground/80">
-              {formatJobDescription(description).map((block, i) => (
-                <DescriptionBlockView key={i} block={block} index={i} />
-              ))}
-            </div>
+            <JobDescription
+              markdown={description}
+              className="max-w-prose space-y-4 text-caption text-foreground/80"
+            />
 
             {/* blocker 7: show error hint when resolve failed AND the gate fired;
                 gate on shouldResolve so non-aggregator postings are never affected */}

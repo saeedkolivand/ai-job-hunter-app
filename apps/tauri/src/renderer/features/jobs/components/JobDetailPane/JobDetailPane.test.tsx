@@ -1,19 +1,22 @@
 /**
- * JobDetailPane — viewed-on-mount + EmptyState when no posting.
+ * JobDetailPane — viewed-on-mount, markdown render, score-on-open, EmptyState.
  *
  * Strategy:
- *  - The component is isolated: heavy deps (router, services, store) are stubbed.
- *  - usePostingActions is mocked so trackInteraction is a spy.
+ *  - Heavy deps (router, services, store) are stubbed.
+ *  - useMatchScores is stubbed so scoreJob is a spy.
  *  - The viewed-on-mount effect uses a ref so re-renders with the SAME posting.id
  *    do not re-fire; switching posting.id fires exactly once more.
  *  - posting===null renders EmptyState with jobs.selectAJob.
+ *  - ReactMarkdown renders description text; we assert the text content appears.
+ *  - scoreJob is called ONCE on open after description is ready; NOT called for the
+ *    whole list; NOT called when description is still loading.
  *
  * noUncheckedIndexedAccess: array accesses guarded throughout.
  */
 
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
 
@@ -82,6 +85,9 @@ vi.mock('@ajh/ui', () => ({
     icon?: React.ElementType;
     className?: string;
   }) => <div data-testid="empty-state">{title}</div>,
+  JobDescription: ({ markdown }: { markdown: string; className?: string }) => (
+    <div data-testid="job-description">{markdown}</div>
+  ),
   SourceBadge: () => null,
   Tag: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   transition: { fast: {} },
@@ -99,11 +105,21 @@ vi.mock('@ajh/shared', () => ({
   AGGREGATOR_BOARD_ID: 'aggregator',
 }));
 
-// ── useResolveJobUrl — vi.fn() so tests can override per-call ────────────────
+// ── useMatchScores — scoreJob spy ─────────────────────────────────────────────
+
+const mockScoreJob = vi.fn();
+
+vi.mock('@/features/jobs/providers', () => ({
+  useMatchScores: () => ({
+    scoreJob: mockScoreJob,
+    hasResume: true,
+  }),
+}));
+
+// ── useResolveJobUrl ──────────────────────────────────────────────────────────
 
 const mockRefetch = vi.fn().mockResolvedValue(undefined);
 
-/** Default stub: idle — not fetching, no data yet, no error. */
 function idleStub() {
   return {
     data: undefined,
@@ -116,17 +132,14 @@ function idleStub() {
 }
 
 const mockUseResolveJobUrl = vi.fn().mockReturnValue(idleStub());
-
 const mockUpdateDescMutateAsync = vi.fn().mockResolvedValue(false);
-const mockInvalidateMatchBatch = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('@/services', () => ({
   useResolveJobUrl: (...args: unknown[]) => mockUseResolveJobUrl(...args),
   useUpdatePostingDescription: () => ({ mutateAsync: mockUpdateDescMutateAsync }),
-  useInvalidateMatchBatch: () => mockInvalidateMatchBatch,
 }));
 
-// ── trackInteraction spy — reset per test ─────────────────────────────────────
+// ── trackInteraction spy ──────────────────────────────────────────────────────
 
 const mockTrackInteraction = vi.fn().mockResolvedValue(undefined);
 
@@ -174,7 +187,7 @@ beforeEach(() => {
   mockTrackInteraction.mockClear();
   mockRefetch.mockClear();
   mockUpdateDescMutateAsync.mockClear();
-  mockInvalidateMatchBatch.mockClear();
+  mockScoreJob.mockClear();
   mockUseResolveJobUrl.mockReturnValue(idleStub());
 });
 
@@ -191,6 +204,63 @@ describe('JobDetailPane — null posting', () => {
   it('does not call trackInteraction when posting is null', () => {
     render(<JobDetailPane posting={null} formatRelativeTime={formatRelativeTime} />);
     expect(mockTrackInteraction).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Markdown rendering — description text appears in DOM
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('JobDetailPane — description rendering', () => {
+  // JobDescription is from @ajh/ui (stub renders raw markdown string as text).
+  // These tests verify the correct markdown string is passed through; the
+  // actual GFM rendering is tested in @ajh/ui's own tests.
+
+  it('passes plain description to JobDescription', async () => {
+    const posting = makePosting('md-plain', { description: 'This is a great role.' });
+    await act(async () => {
+      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    });
+    expect(screen.getByTestId('job-description')).toHaveTextContent('This is a great role.');
+  });
+
+  it('passes bold markdown to JobDescription', async () => {
+    const posting = makePosting('md-bold', { description: '**Strong skill** required.' });
+    await act(async () => {
+      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    });
+    expect(screen.getByTestId('job-description')).toHaveTextContent('**Strong skill** required.');
+  });
+
+  it('passes heading markdown to JobDescription', async () => {
+    const posting = makePosting('md-heading', {
+      description: '## Requirements\n\nFive years of experience.',
+    });
+    await act(async () => {
+      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    });
+    expect(screen.getByTestId('job-description')).toHaveTextContent('Requirements');
+  });
+
+  it('passes list markdown to JobDescription', async () => {
+    const posting = makePosting('md-list', { description: '- TypeScript\n- React\n- Rust' });
+    await act(async () => {
+      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    });
+    const el = screen.getByTestId('job-description');
+    expect(el).toHaveTextContent('TypeScript');
+    expect(el).toHaveTextContent('React');
+    expect(el).toHaveTextContent('Rust');
+  });
+
+  it('passes link markdown to JobDescription (no live <a> in stub)', async () => {
+    const posting = makePosting('md-link', { description: '[Apply here](https://example.com)' });
+    await act(async () => {
+      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    });
+    expect(screen.getByTestId('job-description')).toHaveTextContent('Apply here');
+    // Stub does not render an <a> — GFM link-as-span behavior tested in @ajh/ui
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 });
 
@@ -216,7 +286,6 @@ describe('JobDetailPane — viewed-on-mount', () => {
     );
 
     await act(async () => {
-      // Re-render with a new object reference but same id — effect must not re-fire.
       rerender(
         <JobDetailPane
           posting={{ ...posting, title: 'Updated title' }}
@@ -239,18 +308,228 @@ describe('JobDetailPane — viewed-on-mount', () => {
       );
     });
 
-    // Once on mount (job-1), once on id switch (job-2).
     expect(mockTrackInteraction).toHaveBeenCalledTimes(2);
-    const calls = mockTrackInteraction.mock.calls;
-    expect(calls[0]?.[0]).toBe('viewed');
-    expect(calls[1]?.[0]).toBe('viewed');
+    expect(mockTrackInteraction.mock.calls[0]?.[0]).toBe('viewed');
+    expect(mockTrackInteraction.mock.calls[1]?.[0]).toBe('viewed');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Score on open — scoreJob called once when description is ready
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('JobDetailPane — score on open', () => {
+  it('calls scoreJob(posting.id) once when description is immediately available', async () => {
+    const posting = makePosting('score-ready', { description: 'Full description text.' });
+    await act(async () => {
+      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    });
+
+    expect(mockScoreJob).toHaveBeenCalledTimes(1);
+    expect(mockScoreJob).toHaveBeenCalledWith(posting.id);
+  });
+
+  it('does NOT call scoreJob while description is still loading (resolve in-flight)', async () => {
+    mockUseResolveJobUrl.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isFetching: true,
+      isFetched: false,
+      isError: false,
+      refetch: mockRefetch,
+    });
+
+    const posting = makePosting('score-loading', { description: '' });
+    await act(async () => {
+      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    });
+
+    // Description is empty + resolve in-flight → scoreJob must not fire yet.
+    expect(mockScoreJob).not.toHaveBeenCalled();
+  });
+
+  it('does NOT score in the pre-fetch window (isFetched=false, isFetching=false)', async () => {
+    // idleStub has isFetched=false — the query has not started yet.
+    // Before the isFetched guard, resolveSettled would be true here (both flags false)
+    // and scoring would fire on the snippet before the resolve query even begins.
+    const posting = makePosting('score-prefetch', {
+      source: 'aggregator',
+      description: 'Short snippet.',
+    });
+    await act(async () => {
+      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // isFetched=false → resolveSettled=false → scoreJob must NOT fire.
+    expect(mockScoreJob).not.toHaveBeenCalled();
+  });
+
+  it('non-aggregator full description — scores immediately, no persist', async () => {
+    const posting = makePosting('score-full', { description: 'Full description text.' });
+    await act(async () => {
+      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockScoreJob).toHaveBeenCalledTimes(1);
+    expect(mockScoreJob).toHaveBeenCalledWith(posting.id);
+    // No persist needed for already-full descriptions.
+    expect(mockUpdateDescMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('resolve-not-longer — scores immediately, no persist', async () => {
+    // Resolve returns a SHORTER or equal description → resolvedLonger=false.
+    mockUseResolveJobUrl.mockReturnValue({
+      data: { description: 'Shorter.' },
+      isLoading: false,
+      isFetching: false,
+      isFetched: true,
+      isError: false,
+      refetch: mockRefetch,
+    });
+
+    const posting = makePosting('score-not-longer', {
+      source: 'aggregator',
+      description: 'Original snippet that is longer than resolved.',
+    });
+    await act(async () => {
+      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockScoreJob).toHaveBeenCalledTimes(1);
+    expect(mockUpdateDescMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('persist-then-score ORDER — update resolves before scoreJob fires on resolved-longer', async () => {
+    // Track call order: 'update' pushed when persist resolves, 'score' pushed when scoreJob called.
+    const callOrder: string[] = [];
+
+    mockUpdateDescMutateAsync.mockImplementation(async () => {
+      callOrder.push('update');
+      return undefined;
+    });
+    mockScoreJob.mockImplementation((_id: string) => {
+      callOrder.push('score');
+    });
+
+    const fullDesc = 'This is the full job description fetched from the redirect target.';
+    mockUseResolveJobUrl.mockReturnValue({
+      data: { description: fullDesc },
+      isLoading: false,
+      isFetching: false,
+      isFetched: true,
+      isError: false,
+      refetch: mockRefetch,
+    });
+
+    const posting = makePosting('score-order', {
+      source: 'aggregator',
+      description: 'Short snippet.',
+    });
+    await act(async () => {
+      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    });
+    // Let the async persist + scoreJob chain settle.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockUpdateDescMutateAsync).toHaveBeenCalledTimes(1);
+    expect(mockScoreJob).toHaveBeenCalledTimes(1);
+    expect(mockScoreJob).toHaveBeenCalledWith(posting.id);
+    // Critical ordering assertion: update must precede score.
+    expect(callOrder).toEqual(['update', 'score']);
+  });
+
+  it('persist failure is non-fatal — scoreJob still fires after updateDescription rejects', async () => {
+    mockUpdateDescMutateAsync.mockRejectedValue(new Error('persist failed'));
+
+    const fullDesc = 'Full description from resolve endpoint.';
+    mockUseResolveJobUrl.mockReturnValue({
+      data: { description: fullDesc },
+      isLoading: false,
+      isFetching: false,
+      isFetched: true,
+      isError: false,
+      refetch: mockRefetch,
+    });
+
+    const posting = makePosting('score-persist-fail', {
+      source: 'aggregator',
+      description: 'Short snippet.',
+    });
+    await act(async () => {
+      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // scoreJob fires even though persist failed.
+    expect(mockScoreJob).toHaveBeenCalledTimes(1);
+    expect(mockScoreJob).toHaveBeenCalledWith(posting.id);
+  });
+
+  it('one-shot guard — re-render with same posting does NOT call scoreJob again', async () => {
+    const posting = makePosting('score-once', { description: 'Full description.' });
+    const { rerender } = render(
+      <JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockScoreJob).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      rerender(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    });
+
+    // Guard ref blocks a second call.
+    expect(mockScoreJob).toHaveBeenCalledTimes(1);
+  });
+
+  it('remount via new posting.id resets the guard and calls scoreJob for the new job', async () => {
+    const postingA = makePosting('score-a', { description: 'Description A.' });
+    const postingB = makePosting('score-b', { description: 'Description B.' });
+
+    const { rerender } = render(
+      <JobDetailPane posting={postingA} formatRelativeTime={formatRelativeTime} />
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mockScoreJob).toHaveBeenCalledTimes(1);
+
+    // Switch job — key={posting.id} remounts DetailContent, resetting scoredRef.
+    await act(async () => {
+      rerender(<JobDetailPane posting={postingB} formatRelativeTime={formatRelativeTime} />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockScoreJob).toHaveBeenCalledTimes(2);
+    expect(mockScoreJob).toHaveBeenLastCalledWith(postingB.id);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // useResolveJobUrl fallback — empty description triggers on-demand fetch
-// Loading state now gates on isFetching (not isLoading) so any refetch,
-// including the manual retry, drives the spinner consistently.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('JobDetailPane — useResolveJobUrl fallback', () => {
@@ -270,12 +549,6 @@ describe('JobDetailPane — useResolveJobUrl fallback', () => {
 
     expect(screen.getByText('jobs.loadingDescription')).toBeInTheDocument();
 
-    // a11y: the loading container must announce itself to screen readers via
-    // role="status" (an implicit aria-live="polite" region) and signal that the
-    // region is actively updating with aria-busy="true". A future refactor that
-    // strips these attributes would silently regress AT users.
-    // Note: there is also a visually-hidden AT sentinel with role="status" —
-    // pick the one with aria-busy="true" (the spinner container).
     const statusEls = screen.getAllByRole('status');
     const busyEl = statusEls.find((el) => el.getAttribute('aria-busy') === 'true');
     expect(busyEl).toBeInTheDocument();
@@ -316,8 +589,7 @@ describe('JobDetailPane — useResolveJobUrl fallback', () => {
     expect(screen.getByText('jobs.loadingDescription')).toBeInTheDocument();
   });
 
-  it('uses the posting description directly (no loading) when description is non-empty on a non-aggregator source', async () => {
-    // Default stub: isFetching=false. Component should not show the loading state.
+  it('uses the posting description directly when description is non-empty on a non-aggregator source', async () => {
     const posting = { ...makePosting('job-has-desc'), description: 'Original description' };
     await act(async () => {
       render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
@@ -329,7 +601,7 @@ describe('JobDetailPane — useResolveJobUrl fallback', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Aggregator short-description gate — fires resolve for short aggregator snippets
+// Aggregator short-description gate
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('JobDetailPane — aggregator short-description gate', () => {
@@ -342,7 +614,6 @@ describe('JobDetailPane — aggregator short-description gate', () => {
       refetch: mockRefetch,
     });
 
-    // A snippet shorter than SHORT_DESCRIPTION_CHARS (700) on the aggregator board.
     const posting = makePosting('agg-loading', {
       source: 'aggregator',
       description: 'Short Adzuna snippet.',
@@ -352,7 +623,6 @@ describe('JobDetailPane — aggregator short-description gate', () => {
     });
 
     expect(screen.getByText('jobs.loadingDescription')).toBeInTheDocument();
-    // Resolve must have been called with enabled=true for this posting's URL.
     expect(mockUseResolveJobUrl).toHaveBeenCalledWith(posting.url, true);
   });
 
@@ -365,14 +635,12 @@ describe('JobDetailPane — aggregator short-description gate', () => {
       render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
     });
 
-    // enabled=false → resolve called with false (gate not open).
     expect(mockUseResolveJobUrl).toHaveBeenCalledWith(posting.url, false);
     expect(screen.queryByText('jobs.loadingDescription')).not.toBeInTheDocument();
     expect(screen.getByText('Short linkedin snippet.')).toBeInTheDocument();
   });
 
   it('does NOT fire resolve for an aggregator posting whose description exceeds the threshold', async () => {
-    // Build a description longer than 700 chars.
     const longDesc = 'x'.repeat(750);
     const posting = makePosting('agg-long', { source: 'aggregator', description: longDesc });
     await act(async () => {
@@ -385,7 +653,7 @@ describe('JobDetailPane — aggregator short-description gate', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Keep-longer merge — never degrade the pane below the original snippet
+// Keep-longer merge
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('JobDetailPane — keep-longer merge', () => {
@@ -409,11 +677,10 @@ describe('JobDetailPane — keep-longer merge', () => {
     expect(screen.queryByText(snippet)).not.toBeInTheDocument();
   });
 
-  it('keeps the original snippet when resolve returns something shorter (e.g. 429/generic)', async () => {
+  it('keeps the original snippet when resolve returns something shorter', async () => {
     const snippet = 'Original Adzuna snippet that is longer than the resolved result.';
-    const degraded = 'Tiny.';
     mockUseResolveJobUrl.mockReturnValue({
-      data: { description: degraded },
+      data: { description: 'Tiny.' },
       isLoading: false,
       isFetching: false,
       isFetched: true,
@@ -425,41 +692,21 @@ describe('JobDetailPane — keep-longer merge', () => {
       render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
     });
 
-    // The snippet must survive — the degraded result must not replace it.
     expect(screen.getByText(snippet)).toBeInTheDocument();
-    expect(screen.queryByText(degraded)).not.toBeInTheDocument();
+    expect(screen.queryByText('Tiny.')).not.toBeInTheDocument();
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// "Load full description" button — visibility + click behaviour
+// "Load full description" button
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('JobDetailPane — load full description button', () => {
   it('shows the button when aggregator posting has a short snippet and resolve has not fetched', async () => {
-    // idle: isFetching=false, no data — button must be visible.
     const posting = makePosting('agg-btn', {
       source: 'aggregator',
       description: 'Short snippet.',
     });
-    await act(async () => {
-      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
-    });
-
-    expect(screen.getByText('jobs.loadFullDescription')).toBeInTheDocument();
-  });
-
-  it('shows the button when resolve settled but returned nothing longer than the snippet', async () => {
-    const snippet = 'Original snippet that resolve could not beat.';
-    mockUseResolveJobUrl.mockReturnValue({
-      data: { description: 'Tiny.' },
-      isLoading: false,
-      isFetching: false,
-      isFetched: true,
-      refetch: mockRefetch,
-    });
-
-    const posting = makePosting('agg-btn-retry', { source: 'aggregator', description: snippet });
     await act(async () => {
       render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
     });
@@ -484,7 +731,6 @@ describe('JobDetailPane — load full description button', () => {
       render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
     });
 
-    // Loading indicator is shown; the retry button must NOT appear alongside it.
     expect(screen.getByText('jobs.loadingDescription')).toBeInTheDocument();
     expect(screen.queryByText('jobs.loadFullDescription')).not.toBeInTheDocument();
   });
@@ -521,26 +767,6 @@ describe('JobDetailPane — load full description button', () => {
     expect(screen.queryByText('jobs.loadFullDescription')).not.toBeInTheDocument();
   });
 
-  it('clicking the button calls refetch()', async () => {
-    // idle stub: button visible.
-    const posting = makePosting('agg-btn-click', {
-      source: 'aggregator',
-      description: 'Short snippet.',
-    });
-    await act(async () => {
-      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
-    });
-
-    const btn = screen.getByText('jobs.loadFullDescription');
-    expect(btn).toBeInTheDocument();
-
-    await act(async () => {
-      fireEvent.click(btn);
-    });
-
-    expect(mockRefetch).toHaveBeenCalledTimes(1);
-  });
-
   it('button is keyboard-reachable (role=button accessible)', async () => {
     const posting = makePosting('agg-btn-a11y', {
       source: 'aggregator',
@@ -550,14 +776,13 @@ describe('JobDetailPane — load full description button', () => {
       render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
     });
 
-    // The @ajh/ui Button stub renders as role="button" — accessible by keyboard users.
     const btn = screen.getByRole('button', { name: /jobs\.loadFullDescription/i });
     expect(btn).toBeInTheDocument();
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Error state — resolve failure shows hint and keeps retry button (blocker 7)
+// Error state (blocker 7)
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('JobDetailPane — resolve error state', () => {
@@ -579,11 +804,10 @@ describe('JobDetailPane — resolve error state', () => {
       render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
     });
 
-    // Error hint must be visible.
     expect(screen.getByText('jobs.descriptionLoadError')).toBeInTheDocument();
   });
 
-  it('retry button remains visible alongside the error hint so the user can try again', async () => {
+  it('retry button remains visible alongside the error hint', async () => {
     mockUseResolveJobUrl.mockReturnValue({
       data: undefined,
       isLoading: false,
@@ -601,16 +825,11 @@ describe('JobDetailPane — resolve error state', () => {
       render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
     });
 
-    // showLoadButton is still true (not fetching, not resolvedLonger) → button present.
     expect(screen.getByText('jobs.loadFullDescription')).toBeInTheDocument();
   });
 
-  it('does NOT show error hint for a non-aggregator posting (resolve not triggered)', async () => {
-    // isError=true but shouldResolve=false for a non-aggregator with a description.
-    mockUseResolveJobUrl.mockReturnValue({
-      ...idleStub(),
-      isError: true,
-    });
+  it('does NOT show error hint for a non-aggregator posting', async () => {
+    mockUseResolveJobUrl.mockReturnValue({ ...idleStub(), isError: true });
 
     const posting = makePosting('non-agg-no-error-hint', {
       source: 'linkedin',
@@ -620,51 +839,31 @@ describe('JobDetailPane — resolve error state', () => {
       render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
     });
 
-    // Error hint must NOT appear — the resolve gate was not triggered.
     expect(screen.queryByText('jobs.descriptionLoadError')).not.toBeInTheDocument();
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Re-score on open — updateDescription + match-batch invalidation (Part B)
+// updateDescription persist — fires after resolve upgrades description
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Resolved-longer stub used by re-score tests. */
-function resolvedLongerStub(fullDesc: string) {
-  return {
-    data: { description: fullDesc },
-    isLoading: false,
-    isFetching: false,
-    isFetched: true,
-    isError: false,
-    refetch: mockRefetch,
-  };
-}
-
-describe('JobDetailPane — re-score on open', () => {
-  it('invalidate fires AFTER updateDescription resolves (call-order invariant)', async () => {
-    // Instrument call order so we can assert sequence, not just both-called.
-    const callOrder: string[] = [];
-    mockUpdateDescMutateAsync.mockImplementation(async () => {
-      callOrder.push('update');
-      return false;
-    });
-    mockInvalidateMatchBatch.mockImplementation(async () => {
-      callOrder.push('invalidate');
-    });
-
+describe('JobDetailPane — updateDescription persist on upgrade', () => {
+  it('calls updateDescription once when the resolved description is longer', async () => {
     const snippet = 'Short snippet.';
     const fullDesc = 'This is the much longer full job description fetched from the target page.';
-    mockUseResolveJobUrl.mockReturnValue(resolvedLongerStub(fullDesc));
-
-    const posting = makePosting('agg-rescore-order', {
-      source: 'aggregator',
-      description: snippet,
+    mockUseResolveJobUrl.mockReturnValue({
+      data: { description: fullDesc },
+      isLoading: false,
+      isFetching: false,
+      isFetched: true,
+      isError: false,
+      refetch: mockRefetch,
     });
+
+    const posting = makePosting('persist-upgrade', { source: 'aggregator', description: snippet });
     await act(async () => {
       render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
     });
-    // Flush the .then() microtask so invalidate has run.
     await act(async () => {
       await Promise.resolve();
     });
@@ -674,19 +873,22 @@ describe('JobDetailPane — re-score on open', () => {
       id: posting.id,
       description: fullDesc,
     });
-    expect(mockInvalidateMatchBatch).toHaveBeenCalledTimes(1);
-    // The key ordering assertion — invalidate must come AFTER update.
-    expect(callOrder).toEqual(['update', 'invalidate']);
   });
 
-  it('one-shot guard — re-render with same posting does NOT fire updateDescription again', async () => {
-    const snippet = 'Short snippet.';
-    const fullDesc = 'This is the much longer full job description fetched from the target page.';
-    mockUseResolveJobUrl.mockReturnValue(resolvedLongerStub(fullDesc));
+  it('one-shot guard — re-render does NOT call updateDescription again', async () => {
+    const fullDesc = 'Much longer description than the snippet.';
+    mockUseResolveJobUrl.mockReturnValue({
+      data: { description: fullDesc },
+      isLoading: false,
+      isFetching: false,
+      isFetched: true,
+      isError: false,
+      refetch: mockRefetch,
+    });
 
-    const posting = makePosting('agg-rescore-once', {
+    const posting = makePosting('persist-once', {
       source: 'aggregator',
-      description: snippet,
+      description: 'Short snippet.',
     });
     const { rerender } = render(
       <JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />
@@ -697,7 +899,6 @@ describe('JobDetailPane — re-score on open', () => {
 
     expect(mockUpdateDescMutateAsync).toHaveBeenCalledTimes(1);
 
-    // Re-render with same posting id — upgraded ref must block a second fire.
     await act(async () => {
       rerender(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
     });
@@ -705,47 +906,7 @@ describe('JobDetailPane — re-score on open', () => {
     expect(mockUpdateDescMutateAsync).toHaveBeenCalledTimes(1);
   });
 
-  it('remount via new posting.id resets the guard and fires again for the new job', async () => {
-    const fullDesc = 'This is the much longer full job description fetched from the target page.';
-    mockUseResolveJobUrl.mockReturnValue(resolvedLongerStub(fullDesc));
-
-    const postingA = makePosting('agg-rescore-a', {
-      source: 'aggregator',
-      description: 'Short A.',
-    });
-    const postingB = makePosting('agg-rescore-b', {
-      source: 'aggregator',
-      description: 'Short B.',
-    });
-
-    // Render posting A — fires once.
-    const { rerender } = render(
-      <JobDetailPane posting={postingA} formatRelativeTime={formatRelativeTime} />
-    );
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(mockUpdateDescMutateAsync).toHaveBeenCalledTimes(1);
-
-    // Switch to posting B — key={posting.id} remounts DetailContent, resetting
-    // the upgraded ref so the guard fires again for job B.
-    await act(async () => {
-      rerender(<JobDetailPane posting={postingB} formatRelativeTime={formatRelativeTime} />);
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(mockUpdateDescMutateAsync).toHaveBeenCalledTimes(2);
-    // Second call must be for posting B.
-    expect(mockUpdateDescMutateAsync).toHaveBeenLastCalledWith({
-      id: postingB.id,
-      description: fullDesc,
-    });
-  });
-
   it('does NOT call updateDescription when the resolved description is NOT longer', async () => {
-    const snippet = 'A full linkedin description with plenty of text.';
     mockUseResolveJobUrl.mockReturnValue({
       data: { description: 'Tiny.' },
       isLoading: false,
@@ -755,25 +916,41 @@ describe('JobDetailPane — re-score on open', () => {
       refetch: mockRefetch,
     });
 
-    const posting = makePosting('non-upgrade', { source: 'aggregator', description: snippet });
+    const posting = makePosting('no-persist', {
+      source: 'aggregator',
+      description: 'A snippet longer than tiny.',
+    });
     await act(async () => {
       render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
     });
 
     expect(mockUpdateDescMutateAsync).not.toHaveBeenCalled();
-    expect(mockInvalidateMatchBatch).not.toHaveBeenCalled();
   });
+});
 
-  it('does NOT call updateDescription for a non-aggregator posting (resolvedLonger always false)', async () => {
-    const posting = makePosting('linkedin-full', {
-      source: 'linkedin',
-      description: 'A complete description.',
+// ─────────────────────────────────────────────────────────────────────────────
+// "Load full description" button click → refetch
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('JobDetailPane — load full description button calls refetch', () => {
+  it('clicking the button calls resolved.refetch()', async () => {
+    // idleStub: isFetched=false, isFetching=false — button is visible.
+    // aggregator source + short snippet satisfies the showLoadButton gate.
+    const posting = makePosting('btn-refetch', {
+      source: 'aggregator',
+      description: 'Short snippet.',
     });
     await act(async () => {
       render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
     });
 
-    expect(mockUpdateDescMutateAsync).not.toHaveBeenCalled();
-    expect(mockInvalidateMatchBatch).not.toHaveBeenCalled();
+    const btn = screen.getByRole('button', { name: /jobs\.loadFullDescription/i });
+    expect(btn).toBeInTheDocument();
+
+    await act(async () => {
+      btn.click();
+    });
+
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
   });
 });

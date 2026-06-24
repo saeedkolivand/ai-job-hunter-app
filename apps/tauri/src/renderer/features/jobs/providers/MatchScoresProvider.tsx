@@ -1,75 +1,81 @@
-import { createContext, type ReactNode, useContext, useMemo } from 'react';
+import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 
 import type { MatchScore } from '@ajh/shared';
 
-import { useJobMatchScores } from '@/services';
+import { useJobMatchScore } from '@/services';
 
 interface MatchScoresContextValue {
-  getScore: (jobId: string) => MatchScore | undefined;
-  isPending: boolean; // raw batch in-flight flag (gated by resume + jobIds)
-  isError: boolean;
+  requested: Set<string>;
+  resumeId: string | null;
+  scoreJob: (jobId: string) => void;
   hasResume: boolean;
 }
 
 const MatchScoresContext = createContext<MatchScoresContextValue | null>(null);
 
 /**
- * Batch-scores every filtered posting in ONE `useJobMatchScores` call and
- * distributes the result per-row through context, replacing the old N
- * serialised per-row scoring round-trips. Each `RowMatchScore` reads its slice
- * via `useRowMatchScore`, so rows hold no scheduling or fetching logic.
+ * On-demand per-job match scoring provider.
+ *
+ * Replaces the old batch-all-on-mount model. Scores are fetched one at a time,
+ * ONLY when the user opens a job (`scoreJob(jobId)` called by `JobDetailPane`).
+ *
+ * Reactive model: `scoreJob` adds the jobId to a `requested` Set in React state.
+ * Each `RowMatchScore` row calls `useJobMatchScore(resumeId, jobId, requested.has(jobId))`
+ * which is a `useQuery`-backed subscription — not a snapshot. The row re-renders
+ * reactively when the score lands, without any polling or event wiring.
+ *
+ * Per-job cache key (`['match', resumeId, jobId]`) means repeated opens within
+ * `TEN_MIN` are free — no re-embed on every click.
  */
 export function MatchScoresProvider({
   resumeId,
-  jobIds,
   children,
 }: {
   resumeId: string | null;
-  jobIds: string[];
   children: ReactNode;
 }) {
-  const { scoresById, isPending: queryIsPending, isError } = useJobMatchScores(resumeId, jobIds);
-
-  const isPending = queryIsPending && !!resumeId && jobIds.length > 0;
+  const [requested, setRequested] = useState<Set<string>>(new Set());
   const hasResume = !!resumeId;
 
+  const scoreJob = useCallback((jobId: string) => {
+    if (!jobId) return;
+    setRequested((prev) => {
+      if (prev.has(jobId)) return prev; // stable ref when already present
+      return new Set([...prev, jobId]);
+    });
+  }, []);
+
   const value = useMemo<MatchScoresContextValue>(
-    () => ({
-      getScore: (jobId: string) => scoresById.get(jobId),
-      isPending,
-      isError,
-      hasResume,
-    }),
-    [scoresById, isPending, isError, hasResume]
+    () => ({ requested, resumeId, scoreJob, hasResume }),
+    [requested, resumeId, scoreJob, hasResume]
   );
 
   return <MatchScoresContext.Provider value={value}>{children}</MatchScoresContext.Provider>;
 }
 
+/**
+ * Per-row hook: returns `{ score, hasResume }` backed by a reactive `useQuery`
+ * subscription. The query is gated — it only enables when the user has opened
+ * this job (`requested.has(jobId)`), so rows that have never been opened show
+ * no badge rather than a loading placeholder.
+ */
 export function useRowMatchScore(jobId: string): {
-  score?: MatchScore;
-  pending: boolean;
+  score: MatchScore | undefined;
   hasResume: boolean;
 } {
   const ctx = useContext(MatchScoresContext);
   if (!ctx) throw new Error('useRowMatchScore must be used within MatchScoresProvider');
-  const { getScore, isPending, hasResume } = ctx;
-  const score = getScore(jobId);
-  return { score, pending: isPending && !score, hasResume };
+  const { requested, resumeId, hasResume } = ctx;
+  const enabled = requested.has(jobId) && hasResume;
+  const { data } = useJobMatchScore(resumeId, jobId, enabled);
+  return { score: data, hasResume };
 }
 
 /**
- * Reads the whole batch-score context — used by `JobsResults` to gate the list
- * (while `isPending`/scraping) and to re-sort by score on reveal. Rows should
- * keep using `useRowMatchScore` for their per-row slice.
+ * Returns the scoring trigger — used by `JobDetailPane` to call `scoreJob` on open.
  */
-export function useMatchScores(): {
-  getScore: (jobId: string) => MatchScore | undefined;
-  isPending: boolean;
-  isError: boolean;
-  hasResume: boolean;
-} {
+export function useMatchScores(): { scoreJob: (jobId: string) => void; hasResume: boolean } {
   const ctx = useContext(MatchScoresContext);
   if (!ctx) throw new Error('useMatchScores must be used within MatchScoresProvider');
-  return ctx;
+  return { scoreJob: ctx.scoreJob, hasResume: ctx.hasResume };
 }

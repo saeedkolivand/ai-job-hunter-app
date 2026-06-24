@@ -17,14 +17,13 @@
  *  - JobsSplitView is stubbed (so split-mode renders cheaply).
  *  - PostingRow is stubbed (no router/provider deps needed).
  *  - Virtualizer is stubbed to render all items synchronously.
- *  - MatchScoresProvider and useJobMatchScores are stubbed (no AI deps).
+ *  - MatchScoresProvider is stubbed via useJobMatchScore (no AI deps).
  */
 
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 
-import type { MatchScore } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
@@ -65,14 +64,10 @@ vi.mock('@/services/use-ai-provider', () => ({
   }),
 }));
 
-// ── useJobMatchScores — settled with no scores (no résumé) ───────────────────
+// ── MatchScoresProvider dependency — provider calls useJobMatchScore per row ──
 
 vi.mock('@/services', () => ({
-  useJobMatchScores: () => ({
-    scoresById: new Map<string, MatchScore>(),
-    isPending: false,
-    isError: false,
-  }),
+  useJobMatchScore: () => ({ data: undefined }),
 }));
 
 // ── PostingRow stub ───────────────────────────────────────────────────────────
@@ -134,11 +129,8 @@ const noop = () => {};
 const formatRelativeTime = () => '';
 
 function renderResults(filtered: Posting[], resumeId: string | null = null) {
-  const jobIds = filtered.map((p) => p.id);
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <MatchScoresProvider resumeId={resumeId} jobIds={jobIds}>
-      {children}
-    </MatchScoresProvider>
+    <MatchScoresProvider resumeId={resumeId}>{children}</MatchScoresProvider>
   );
   return render(
     <JobsResults

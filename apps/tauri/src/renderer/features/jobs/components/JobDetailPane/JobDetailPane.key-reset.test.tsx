@@ -77,6 +77,9 @@ vi.mock('@ajh/ui', () => ({
     </div>
   ),
   EmptyState: ({ title }: { title: string }) => <div data-testid="empty-state">{title}</div>,
+  JobDescription: ({ markdown }: { markdown: string; className?: string }) => (
+    <div data-testid="job-description">{markdown}</div>
+  ),
   SourceBadge: () => null,
   Tag: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   transition: { fast: {} },
@@ -109,7 +112,8 @@ vi.mock('@/store/session-store', () => ({
 // ── match-score provider ──────────────────────────────────────────────────────
 
 vi.mock('@/features/jobs/providers', () => ({
-  useRowMatchScore: () => ({ score: undefined }),
+  useRowMatchScore: () => ({ score: undefined, hasResume: false }),
+  useMatchScores: () => ({ scoreJob: vi.fn(), hasResume: false }),
 }));
 
 // ── match-level util ──────────────────────────────────────────────────────────
@@ -132,7 +136,6 @@ vi.mock('@/services', () => ({
     refetch: vi.fn().mockResolvedValue(undefined),
   }),
   useUpdatePostingDescription: () => ({ mutateAsync: vi.fn().mockResolvedValue(false) }),
-  useInvalidateMatchBatch: () => vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/services/use-applications', () => ({
