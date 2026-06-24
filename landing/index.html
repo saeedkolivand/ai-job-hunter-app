@@ -509,7 +509,7 @@ a.cta:focus-visible     { border-radius:12px 9px 13px 8px }
 
 <div id="cookie">
   we don't track you. we can barely track ourselves.
-  <div><button onclick="document.getElementById('cookie').remove()">ok</button></div>
+  <div><button onclick="document.getElementById('cookie').remove()" aria-label="dismiss cookie notice">ok</button></div>
 </div>
 
 <div id="slowdown">slow down — you're making it worse</div>
@@ -712,8 +712,8 @@ a.cta:focus-visible     { border-radius:12px 9px 13px 8px }
     <h2 class="fried huge reveal">WAIT.<br>IT DOES<br>EVERYTHING ELSE.</h2>
     <div class="fried mid reveal">it finds them. it writes them. you press send.</div>
     <p class="fried-line reveal">it <b>HITS 16 boards</b> while you do NOTHING. it <b>writes the cover letter</b> — the one you CRIED over. GONE. it <b>scores your résumé</b> so the regex blob can't hurt you anymore. <b>semantic matching????</b> it KNOWS which jobs want you. it knows things you don't. the one thing it <b>won't</b> do? press submit. that terror stays yours.</p>
-    <div class="dialog reveal">
-      <span class="dq">Are you sure?</span><br><span style="font-size:12px; color:#444">(you were not supposed to find this)</span>
+    <div class="dialog reveal" role="region" aria-label="secret confirmation">
+      <span class="dq" aria-live="polite" aria-atomic="true">Are you sure?</span><br><span style="font-size:12px; color:#444">(you were not supposed to find this)</span>
       <div class="btns"><button>yes</button><button class="y2">YES</button></div>
     </div>
   </div>
@@ -835,7 +835,7 @@ a.cta:focus-visible     { border-radius:12px 9px 13px 8px }
   <p class="builtwith">Tauri · Rust · React 19 · TanStack · LanceDB · Typst · Ollama · pure spite</p>
   <p class="byline">made by Saeed, between rejections.</p>
   <svg class="inkline draw" style="width:24px; margin-top:10px" viewBox="0 0 30 28" aria-hidden="true"><path pathLength="1" d="M15 24 C5 16 2 9 8 5 q5 -3 7 4 q2 -7 7 -4 c6 4 3 11 -7 19 Z" style="stroke-width:2.4"/></svg>
-  <p class="footnote"><a href="/privacy" style="color:#6f6650">Privacy</a> · <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll" target="_blank" rel="noopener" style="color:#6f6650">Chrome extension</a> · <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/" target="_blank" rel="noopener" style="color:#6f6650">Firefox extension</a> · <a href="https://github.com/saeedkolivand/ai-job-hunter-app" target="_blank" rel="noopener" style="color:#6f6650">GitHub</a> · <a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener" style="color:#6f6650">♥ sponsor</a></p>
+  <p class="footnote"><a href="/privacy" style="color:#5a4f3b">Privacy</a> · <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll" target="_blank" rel="noopener" style="color:#5a4f3b">Chrome extension</a> · <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/" target="_blank" rel="noopener" style="color:#5a4f3b">Firefox extension</a> · <a href="https://github.com/saeedkolivand/ai-job-hunter-app" target="_blank" rel="noopener" style="color:#5a4f3b">GitHub</a> · <a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener" style="color:#5a4f3b">♥ sponsor</a></p>
 </section>
 
 </main>
@@ -856,6 +856,13 @@ a.cta:focus-visible     { border-radius:12px 9px 13px 8px }
 
 (function(){
   var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---- gate SMIL <animate> elements that CSS prefers-reduced-motion cannot reach ---- */
+  if(reduce){
+    document.querySelectorAll('animate').forEach(function(a){
+      a.setAttribute('dur','0.001s'); a.setAttribute('repeatCount','1');
+    });
+  }
 
   /* ===== shared "gibberish voice" engine — one context, one mute, a voice per mood ===== */
   /* each guy's emotion lives in these knobs: base pitch, tempo (dur), syllable count,
