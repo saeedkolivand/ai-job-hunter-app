@@ -83,7 +83,7 @@ Results now persist across navigation thanks to React Query + backend cache:
 - **Resolver:** `apps/tauri/src-tauri/src/commands/scrape.rs: scrape_resolve_url(req)` — public command invoked by detail pane
 - **Re-dispatch:** `apps/tauri/src-tauri/src/scraping/scrape_url/mod.rs: resolve_full_description()` — follows redirect and re-dispatches handlers per final URL
 - **Pane gate:** `apps/tauri/src/renderer/features/jobs/components/JobDetailPane/index.tsx` — on-open resolve if (isAggregatorSource && descLength < 700); keep-longer merge logic
-- **Description mutation:** New backend command `scrape_update_description(id, text)` writes resolved text to the live `PostingsCache`, invalidates `['match-batch']` query so the match scorer recomputes on full text. See IPC contract in `packages/shared/src/ipc/contracts/scrape.ts`.
+- **Description mutation & re-score:** Backend command `scrape_update_description(id, text)` writes resolved text to the live `PostingsCache`. The frontend's `MatchScoresProvider` holds a reactive `requested` set; when the description is updated, the per-job match score is re-computed on-demand via `useJobMatchScore` (single-job scoring, not batch). See IPC contract in `packages/shared/src/ipc/contracts/scrape.ts`.
 
 ## Source pointers
 
