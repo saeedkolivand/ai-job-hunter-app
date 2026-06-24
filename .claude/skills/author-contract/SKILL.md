@@ -45,6 +45,12 @@ a unit/integration test (via `test-author`) or a minimal self-check. Trivial one
 assertion is weak / tautological / asserts the mock / doesn't exercise the change — is now a **HIGH
 (blocking)** finding for your critic. Cover the error/edge path, not just the happy path. New/changed
 user-facing text must have its i18n key added to **both** `en` and `de` (also HIGH).
+**Hermetic tests (cross-OS) — obey `testing-rules` whichever `<domain>-standards` you loaded:** a
+`#[cfg(target_os=…)]` test must be hermetic (inject dirs / a temp `HOME`, never assume a system
+binary/lib like `/usr/bin/google-chrome` or `libwayland` is _absent_, never reach an
+`exec()`/process-replacing path in-process), `#[serial_test::serial]` (fully-qualified) every
+env-mutating test, and no real network. These only run on that OS's CI runner — #486 lost four CI
+round-trips to exactly this.
 
 ## Validate before "done" (hard gate — MANDATORY, no exceptions)
 
@@ -52,7 +58,11 @@ This is not optional and you do **not** declare done on assumption — **run** t
 **verify** it green with your own eyes: per-package `tsc --noEmit` / `pnpm -F <pkg> typecheck`,
 `pnpm test`, `cargo check`/`cargo test`/`cargo clippy` for `apps/tauri/src-tauri`. Run the **exact**
 gate command (per-package, `--force` where caching can mask failures) — a wrapped/cached "no errors"
-is not proof. Anything red → revert that change and report what + why. Never hand a red or unverified
-diff to the critic. End with a short summary: files touched, issues resolved, anything left for the
+is not proof. Anything red → revert that change and report what + why. **Cross-OS caveat:** a same-host
+`cargo`/`pnpm` build **silently excludes** `#[cfg(target_os=…)]` code for other targets — a green local
+run does NOT verify it; cross-target-check (`cargo check --target <triple>`) any OS-gated code you touch.
+If your host genuinely can't build that target, say so explicitly in the handoff (`cross-OS-unverified — CI
+runs it`) — that labeled exception is the ONLY unverified hand-off allowed; otherwise never hand a red or
+unverified diff to the critic. End with a short summary: files touched, issues resolved, anything left for the
 critic. Propose durable lessons as `LESSON · <category> · Context/Decision/Outcome` (only
 `project-steward` persists them).

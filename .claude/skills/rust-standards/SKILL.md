@@ -33,6 +33,12 @@ Migrations forward-safe and reversible-or-guarded; `*Store` writes go through th
 
 Use `observability.rs` (`Span`) for tracing; don't invent ad-hoc logging.
 
+## Platform-gated code & external processes (#486 lessons)
+
+- **`#[cfg(target_os = …)]` is not compiled on other hosts** — a Windows/macOS dev build silently excludes the Linux module + its tests, so a same-host `cargo test`/`clippy` can't catch a Linux-only unused import, an attribute/`use` not in scope (a `use` is **not** inherited into a `mod` submodule), or a `pub(super)` visibility error. Cross-target-check gated code (`cargo check --target x86_64-unknown-linux-gnu`, or a dep-light standalone-crate check) before relying on a green build.
+- **Global env/process mutations: scope + roll back** — a `set_var`/`LD_PRELOAD`/re-exec must be scoped to the exact case that needs it (not every launch) and reverted on the failure path, so the still-running process and its children don't inherit bogus state. Env access still lives only in `platform/`.
+- **External processes must be bounded** — a `Command` probe must enforce a real timeout (`wait_timeout` + kill on expiry) when it claims to; a missing-binary or slow external tool must not block detection/startup.
+
 ## External standards & best-practices (verified 2026-06-19)
 
 > Latest stable **Rust 1.95**; **Edition 2024** default since 1.85 (2025-02-20). Set `edition = "2024"` + pin MSRV (`rust-version`). Re-verify version-pinned items periodically.
