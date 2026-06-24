@@ -283,6 +283,8 @@ export function JobsPage() {
                   </Button>
                 )}
                 <Input
+                  id="jobs-filter-query"
+                  name="jobs-filter-query"
                   prefix={<ListFilter size={12} />}
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
