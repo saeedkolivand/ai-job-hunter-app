@@ -1,7 +1,7 @@
 ---
 name: testing-reviewer
 description: Read-only test AUDITOR — never writes tests. Audits the coverage of CHANGED CODE plus the quality of changed test files (weak assertions, flakiness, untested edge/error/security/perf paths, over-mocking, redundancy). Runs after test-author in the pipeline (Feature Owner → test-author → testing-reviewer), gated by the testable-logic predicate.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, mcp__graphify
 model: sonnet
 ---
 

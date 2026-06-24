@@ -1,7 +1,7 @@
 ---
 name: cleanup
 description: Finds and removes dead code — unused files, exports, types, and dependencies — across the TS/React + Rust/Tauri monorepo. Use for dead-code audits and cleanup. Report-first; deletes only the safe tier after confirmation.
-tools: Read, Grep, Glob, Bash, Edit, Write
+tools: Read, Grep, Glob, Bash, Edit, Write, mcp__graphify
 model: sonnet
 ---
 
