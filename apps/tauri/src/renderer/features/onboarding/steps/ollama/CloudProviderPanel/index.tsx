@@ -1,9 +1,9 @@
-import { Bot, CheckCircle2, Eye, EyeOff, Key, Loader2, RefreshCw } from 'lucide-react';
+import { Bot, CheckCircle2, Eye, EyeOff, Loader2, RefreshCw } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, Input, transition, useNotification } from '@ajh/ui';
+import { Alert, Button, Input, transition, useNotification } from '@ajh/ui';
 
 import {
   useHasProviderKey,
@@ -167,27 +167,28 @@ export function CloudProviderPanel({
 
       {/* API key input */}
       {hasKey ? (
-        <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-2.5">
-          <div className="flex items-center gap-2">
-            <Key size={13} className="text-emerald-400" />
-            <span className="text-sm text-emerald-300/80">{t('onboarding.ai.apiKeyStored')}</span>
-          </div>
-          <Button
-            variant="glass"
-            disabled={testing}
-            onClick={() => void handleTestKey()}
-            className="h-auto px-2 py-1 text-xs"
-          >
-            {testing ? (
-              <Loader2 size={11} className="animate-spin" />
-            ) : (
-              <>
-                <RefreshCw size={11} className="mr-1" />
-                Test
-              </>
-            )}
-          </Button>
-        </div>
+        <Alert
+          type="success"
+          showIcon
+          message={t('onboarding.ai.apiKeyStored')}
+          action={
+            <Button
+              variant="glass"
+              disabled={testing}
+              onClick={() => void handleTestKey()}
+              className="h-auto px-2 py-1 text-xs"
+            >
+              {testing ? (
+                <Loader2 size={11} className="animate-spin" />
+              ) : (
+                <>
+                  <RefreshCw size={11} className="mr-1" />
+                  Test
+                </>
+              )}
+            </Button>
+          }
+        />
       ) : (
         <div className="space-y-2">
           <p className="text-xs text-foreground/35">

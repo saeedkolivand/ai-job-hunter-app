@@ -2276,7 +2276,8 @@
       "downloadFailed": "Download failed. Please try again.",
       "apiKeyStored": "API key stored",
       "getApiKeyAt": "Get your API key at",
-      "saveKey": "Save Key"
+      "saveKey": "Save Key",
+      "cliNotDetected": "{{agent}} CLI not detected. Install it and sign in once, then continue."
     },
     "research": {
       "title": "Smarter cover letters",
@@ -2325,7 +2326,10 @@
       "skip": "Skip for now",
       "envVar": "You can also set the CHROME environment variable to point to a custom browser installation.",
       "back": "Back",
-      "next": "Continue"
+      "next": "Continue",
+      "ready": "Browser Ready",
+      "willUse": "We'll use your browser for secure LinkedIn sign-in",
+      "readyLabel": "Detected and ready"
     },
     "extension": {
       "title": "Install the browser extension",

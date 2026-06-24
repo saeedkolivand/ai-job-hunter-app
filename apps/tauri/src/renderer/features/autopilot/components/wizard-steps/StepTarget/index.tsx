@@ -1,10 +1,9 @@
-import { Info } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 
 import { AGGREGATOR_BOARD_ID, type BoardCatalogEntry, PROVIDER_SLOTS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, cn, Dropdown, Input, LocationInput, NumberField } from '@ajh/ui';
+import { Alert, Button, cn, Dropdown, Input, LocationInput, NumberField } from '@ajh/ui';
 
 import type { Prefilled, WizardState } from '@/features/autopilot/types';
 import { makeMultiSelectKeyHandler } from '@/hooks/use-roving-tabindex';
@@ -146,13 +145,9 @@ export function StepTarget({ prefilled }: StepTargetProps) {
 
               {/* Aggregator key hint — mirrors ScrapeForm */}
               {showAggregatorKeyHint && (
-                <p
-                  role="status"
-                  className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-400/70"
-                >
-                  <Info size={11} aria-hidden="true" />
-                  {t('jobs.aggregatorKeyHint')}
-                </p>
+                <div className="mt-2">
+                  <Alert type="warning" showIcon message={t('jobs.aggregatorKeyHint')} />
+                </div>
               )}
             </WizardField>
           );

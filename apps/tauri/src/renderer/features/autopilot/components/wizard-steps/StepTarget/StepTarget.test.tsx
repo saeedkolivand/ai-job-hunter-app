@@ -177,6 +177,15 @@ describe('StepTarget — countryCode wiring (Fix A)', () => {
     expect(readProbe().countryCode).toBe('gb');
   });
 
+  it('renders a warning Alert for the aggregator key hint when aggregator is selected and keys are absent', () => {
+    // The mock stubs already have: board=['aggregator'], useHasProviderKey → has:false.
+    // So showAggregatorKeyHint=true and the Alert should appear.
+    renderStep({ boards: ['aggregator'] });
+    const alert = screen.getByRole('alert');
+    expect(alert).toBeInTheDocument();
+    expect(alert).toHaveTextContent('jobs.aggregatorKeyHint');
+  });
+
   it('coerces null countryCode to undefined via the ?? undefined guard', async () => {
     // LocationInput.Suggestion allows countryCode: string | null | undefined.
     // The production handler does `s.countryCode ?? undefined` — null must not

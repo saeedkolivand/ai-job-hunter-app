@@ -2280,7 +2280,8 @@
       "downloadFailed": "Download fehlgeschlagen. Bitte erneut versuchen.",
       "apiKeyStored": "API-Schlüssel gespeichert",
       "getApiKeyAt": "API-Schlüssel erhalten unter",
-      "saveKey": "Schlüssel speichern"
+      "saveKey": "Schlüssel speichern",
+      "cliNotDetected": "{{agent}} CLI nicht erkannt. Installieren Sie es und melden Sie sich einmal an, dann weiter."
     },
     "research": {
       "title": "Bessere Anschreiben",
@@ -2329,7 +2330,10 @@
       "skip": "Vorerst überspringen",
       "envVar": "Sie können auch die Umgebungsvariable CHROME festlegen, um auf eine benutzerdefinierte Browser-Installation zu verweisen.",
       "back": "Zurück",
-      "next": "Weiter"
+      "next": "Weiter",
+      "ready": "Browser bereit",
+      "willUse": "Wir verwenden deinen Browser für die sichere LinkedIn-Anmeldung",
+      "readyLabel": "Erkannt und bereit"
     },
     "extension": {
       "title": "Browser-Erweiterung installieren",

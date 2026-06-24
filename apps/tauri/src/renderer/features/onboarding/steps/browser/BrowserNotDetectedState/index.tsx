@@ -1,8 +1,8 @@
-import { ArrowLeft, ArrowRight, ExternalLink, Globe, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ExternalLink, Globe } from 'lucide-react';
 import { motion } from 'motion/react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, transition, withDelay } from '@ajh/ui';
+import { Alert, Button, transition, withDelay } from '@ajh/ui';
 
 import { useOpenExternal } from '@/services';
 
@@ -63,19 +63,12 @@ export function BrowserNotDetectedState({ onBack, onNext }: BrowserNotDetectedSt
       </div>
 
       {/* Not detected warning */}
-      <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4">
-        <div className="flex items-start gap-3">
-          <X className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-400" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-amber-200">
-              {t('onboarding.browser.notDetected')}
-            </p>
-            <p className="mt-1 text-xs text-amber-200/60">
-              {t('onboarding.browser.notDetectedDesc')}
-            </p>
-          </div>
-        </div>
-      </div>
+      <Alert
+        type="warning"
+        showIcon
+        message={t('onboarding.browser.notDetected')}
+        description={t('onboarding.browser.notDetectedDesc')}
+      />
 
       {/* Download buttons */}
       <div className="space-y-2">
