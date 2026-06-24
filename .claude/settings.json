@@ -10,7 +10,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/graphify-hint.mjs",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/graphify-hint.mjs\"",
             "timeout": 5000
           }
         ]
@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/guard-protected-files.mjs",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-protected-files.mjs\"",
             "timeout": 5000
           }
         ]
@@ -32,7 +32,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/format-on-edit.mjs",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/format-on-edit.mjs\"",
             "timeout": 20000
           }
         ]
@@ -43,7 +43,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/review-gate.mjs",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/review-gate.mjs\"",
             "timeout": 130000
           }
         ]
@@ -54,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/style-policy.mjs",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/style-policy.mjs\"",
             "timeout": 5000
           }
         ]
