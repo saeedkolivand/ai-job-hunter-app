@@ -92,10 +92,12 @@ export function JobsSplitView({
         ].join(' ')}
       >
         {/* List scroll container — virtualizer targets this.
-            tabIndex={-1} so handleBack can programmatically focus it. */}
+            tabIndex={0}: container is the sole tab stop (active-descendant pattern).
+            handleBack also focuses it programmatically to return keyboard focus after
+            closing detail on narrow screens. */}
         <div
           ref={listScrollRef}
-          tabIndex={-1}
+          tabIndex={0}
           className="min-h-0 flex-1 overflow-y-auto focus-visible:outline-none"
           role="listbox"
           aria-label={t('jobs.title')}

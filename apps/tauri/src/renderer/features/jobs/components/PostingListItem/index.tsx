@@ -39,8 +39,9 @@ export function PostingListItem({
       id={`posting-${posting.id}`}
       role="option"
       aria-selected={selected}
-      // Roving tabindex: only the selected item is tab-reachable; others via arrows.
-      tabIndex={selected ? 0 : -1}
+      // Active-descendant pattern: focus stays on the listbox container.
+      // Items are never tab stops; keyboard nav is handled by the container.
+      tabIndex={-1}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       className={cn(

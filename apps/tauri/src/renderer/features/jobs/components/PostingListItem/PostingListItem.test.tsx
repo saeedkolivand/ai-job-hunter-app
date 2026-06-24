@@ -192,7 +192,7 @@ describe('PostingListItem — click and keyboard selection', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// aria-selected and roving tabIndex
+// aria-selected and tabIndex (active-descendant pattern — items never tab stops)
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('PostingListItem — aria-selected and tabIndex', () => {
@@ -220,7 +220,7 @@ describe('PostingListItem — aria-selected and tabIndex', () => {
     expect(screen.getByRole('option')).toHaveAttribute('aria-selected', 'false');
   });
 
-  it('tabIndex is 0 when selected', () => {
+  it('tabIndex is -1 when selected (active-descendant: container is the tab stop)', () => {
     render(
       <PostingListItem
         posting={makePosting()}
@@ -229,7 +229,7 @@ describe('PostingListItem — aria-selected and tabIndex', () => {
         onSelect={vi.fn()}
       />
     );
-    expect(screen.getByRole('option')).toHaveAttribute('tabindex', '0');
+    expect(screen.getByRole('option')).toHaveAttribute('tabindex', '-1');
   });
 
   it('tabIndex is -1 when not selected', () => {

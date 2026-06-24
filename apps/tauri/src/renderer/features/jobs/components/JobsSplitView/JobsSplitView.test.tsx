@@ -1,5 +1,8 @@
 /**
- * JobsSplitView — keyboard navigation + aria-activedescendant + roving tabIndex.
+ * JobsSplitView — keyboard navigation + aria-activedescendant (active-descendant pattern).
+ *
+ * Focus model: the listbox container is the sole tab stop (tabIndex=0); option items
+ * are always tabIndex=-1. Arrow keys on the container move aria-activedescendant.
  *
  * Strategy:
  *  - useSessionStore is the real Zustand store (no mock) so state flows naturally.
@@ -55,6 +58,7 @@ vi.mock('lucide-react', () => ({
 }));
 
 // ── PostingListItem — renders a div with the posting id for easy querying ─────
+// Active-descendant pattern: items always tabIndex={-1}; container is the tab stop.
 
 vi.mock('@/features/jobs/components/PostingListItem', () => ({
   PostingListItem: ({
@@ -71,7 +75,7 @@ vi.mock('@/features/jobs/components/PostingListItem', () => ({
       id={`posting-${posting.id}`}
       role="option"
       aria-selected={selected}
-      tabIndex={selected ? 0 : -1}
+      tabIndex={-1}
       data-testid={`list-item-${posting.id}`}
       onClick={() => onSelect(posting)}
     >
@@ -184,22 +188,28 @@ describe('JobsSplitView — aria-activedescendant', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Roving tabIndex
+// Active-descendant focus model
+// Container is the sole tab stop (tabIndex=0); option items are always tabIndex=-1.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('JobsSplitView — roving tabIndex', () => {
-  it('selected item has tabIndex=0, others have tabIndex=-1', async () => {
+describe('JobsSplitView — active-descendant focus model', () => {
+  it('listbox container has tabIndex=0 (sole tab stop)', () => {
+    renderSplit();
+    expect(screen.getByRole('listbox')).toHaveAttribute('tabindex', '0');
+  });
+
+  it('all option items have tabIndex=-1 when a posting is selected', async () => {
     await act(async () => {
       useSessionStore.setState((s) => ({ jobs: { ...s.jobs, selectedId: 'b' } }));
     });
     renderSplit();
 
     expect(screen.getByTestId('list-item-a')).toHaveAttribute('tabindex', '-1');
-    expect(screen.getByTestId('list-item-b')).toHaveAttribute('tabindex', '0');
+    expect(screen.getByTestId('list-item-b')).toHaveAttribute('tabindex', '-1');
     expect(screen.getByTestId('list-item-c')).toHaveAttribute('tabindex', '-1');
   });
 
-  it('all items have tabIndex=-1 when nothing is selected', () => {
+  it('all option items have tabIndex=-1 when nothing is selected', () => {
     renderSplit();
     expect(screen.getByTestId('list-item-a')).toHaveAttribute('tabindex', '-1');
     expect(screen.getByTestId('list-item-b')).toHaveAttribute('tabindex', '-1');
