@@ -79,7 +79,7 @@ export function PostingListItem({
           <div className="flex items-center gap-1.5">
             <span
               className={cn(
-                'min-w-0 flex-1 truncate text-caption-strong',
+                'min-w-0 flex-1 truncate text-[13px] font-semibold',
                 // Selected: full-opacity foreground.
                 // Viewed (not selected): dimmed title per LinkedIn-style treatment.
                 selected
@@ -109,7 +109,7 @@ export function PostingListItem({
           {/* Line 2: company · location · time, then status markers */}
           <div
             className={cn(
-              'flex items-center gap-1.5 text-fine-print',
+              'flex items-center gap-1.5 text-[11px]',
               selected ? 'text-brand-soft/70' : 'text-foreground/50'
             )}
           >

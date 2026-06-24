@@ -6,6 +6,19 @@ import { QUERY_TIMES } from '../query-client';
 // Defensive contract: ANY failure (network, CORS, non-OK, empty results,
 // Clearbit deprecation) → returns null, never throws.
 // Makes ZERO requests when enabled=false or company is blank.
+//
+// ARCHITECTURE EXCEPTION (ports & adapters Rule 1):
+// This hook performs a direct `fetch()` to a third-party host (Clearbit)
+// from the renderer, bypassing the normal IPC path through the Rust shell.
+// This is a deliberate, security-reviewed exception because:
+//   - The feature is opt-in (fetchCompanyLogos preference, default OFF).
+//   - It is purely decorative — logo failure is silent and non-blocking.
+//   - The call site is fully defensive (try/catch, retry:0, null on any error).
+//   - The CSP is scoped to only the two required Clearbit hosts.
+// The future-correct upgrade path is to route this through a Rust `fetch`
+// command (net::http shared client), which would also eliminate the
+// `connect-src https://autocomplete.clearbit.com` CSP grant entirely.
+// Do NOT add further direct renderer fetches without the same review process.
 
 interface ClearbitSuggestion {
   name: string;

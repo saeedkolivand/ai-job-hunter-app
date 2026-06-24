@@ -21,6 +21,7 @@ import {
   Button,
   EmptyState,
   JobDescription,
+  resolveTransition,
   SourceBadge,
   Tag,
   transition,
@@ -181,10 +182,16 @@ function DetailContent({
   // Shared className for status Tag pills — applied/saved in the header.
   const statusTagCls = 'rounded-full px-1.5 py-0.5 text-fine-print uppercase tracking-wider';
 
+  // Reduced-motion: keep opacity fade but drop the y-translate (no positional jump).
+  const resolvedTransition = resolveTransition(transition.fast);
+  const isInstant = resolvedTransition.duration === 0;
+
   return (
     <motion.div
-      {...variants.fadeSlideUp}
-      transition={transition.fast}
+      initial={isInstant ? { opacity: 0 } : variants.fadeSlideUp.initial}
+      animate={isInstant ? { opacity: 1 } : variants.fadeSlideUp.animate}
+      exit={isInstant ? { opacity: 0 } : variants.fadeSlideUp.exit}
+      transition={resolvedTransition}
       className="flex h-full flex-col overflow-hidden"
     >
       {/* Header — flush with hairline bottom divider; no outer card margin */}
@@ -302,7 +309,7 @@ function DetailContent({
         {descLoading && description && (
           <p
             className="mb-2 flex items-center gap-1.5 text-[10px] text-foreground/40"
-            aria-live="polite"
+            aria-hidden="true"
           >
             <Loader2 size={10} aria-hidden="true" className="animate-spin" />
             {t('jobs.updatingDescription')}

@@ -113,6 +113,7 @@ function ImageBase({
       <img
         src={displaySrc}
         alt={alt ?? ''}
+        referrerPolicy="no-referrer"
         onLoad={() => setStatus('loaded')}
         onError={(e) => {
           setStatus('error');

@@ -1,19 +1,32 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 vi.mock('@ajh/ui', () => ({
   cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
-  // Image stub: renders a div with data-src so tests can assert without a raw <img>
+  // Image stub: renders a div with data-src + a button to simulate onError.
+  // We use a div not an img to avoid the ESLint raw-<img> ban in renderer tests.
   Image: ({
     src,
     className,
+    onError,
   }: {
     src: string;
     alt?: string;
     className?: string;
     preview?: boolean;
-  }) => <div data-testid="logo-image" data-src={src} className={className} />,
+    onError?: () => void;
+  }) => (
+    // The div itself is the error trigger: fireEvent.click fires onError.
+    // data-testid="logo-image" for presence assertions; data-src for src assertions.
+    <div
+      data-testid="logo-image"
+      data-src={src}
+      className={className}
+      onClick={onError}
+      role="presentation"
+    />
+  ),
 }));
 
 // ── preferences store — control fetchCompanyLogos per test ───────────────────
@@ -72,9 +85,10 @@ describe('CompanyAvatar — deterministic color slot', () => {
   });
 
   it('different first-char companies CAN produce different slot classes', () => {
-    // 'A' (65 % 7 = 2) vs 'G' (71 % 7 = 1) → different slots guaranteed here
+    // 'A' (65 % 6 = 5) vs 'G' (71 % 6 = 5) → same slot for these two; pick chars with different slots
+    // 'A' (65 % 6 = 5) vs 'B' (66 % 6 = 0) → guaranteed different
     const { container: a } = render(<CompanyAvatar company="Acme" />);
-    const { container: b } = render(<CompanyAvatar company="Google" />);
+    const { container: b } = render(<CompanyAvatar company="Bobs" />);
     const divA = a.querySelector('[aria-hidden="true"]');
     const divB = b.querySelector('[aria-hidden="true"]');
     expect(divA?.className).not.toBe(divB?.className);
@@ -103,7 +117,7 @@ describe('CompanyAvatar — size prop', () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Logo layer — setting off → monogram only; setting on + logo → img shown.
-// The Image component handles onError internally; we test the render gate.
+// onError → logoFailed=true → monogram visible again (never an empty avatar).
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('CompanyAvatar — logo layer (fetchCompanyLogos preference)', () => {
@@ -123,7 +137,7 @@ describe('CompanyAvatar — logo layer (fetchCompanyLogos preference)', () => {
     expect(screen.getByText('AC')).toBeInTheDocument();
   });
 
-  it('renders the logo image with the correct src when setting is on and logo resolves', () => {
+  it('renders logo image with the correct src when setting is on and logo resolves', () => {
     mockFetchLogos = true;
     mockLogoUrl = 'https://logo.clearbit.com/acme.com';
     render(<CompanyAvatar company="Acme" />);
@@ -132,20 +146,37 @@ describe('CompanyAvatar — logo layer (fetchCompanyLogos preference)', () => {
     expect(logoEl.getAttribute('data-src')).toBe('https://logo.clearbit.com/acme.com');
   });
 
-  it('monogram span carries invisible class when logo is shown', () => {
+  it('monogram span carries invisible class while logo layer is active', () => {
     mockFetchLogos = true;
     mockLogoUrl = 'https://logo.clearbit.com/acme.com';
     render(<CompanyAvatar company="Acme" />);
-    // The monogram span is rendered but visually hidden so the logo covers it
     const mono = screen.getByText('AC');
     expect(mono.className).toContain('invisible');
   });
 
-  it('monogram span has no invisible class when setting is off', () => {
+  it('monogram is visible (no invisible class) when setting is off', () => {
     mockFetchLogos = false;
     mockLogoUrl = null;
     render(<CompanyAvatar company="Acme" />);
     const mono = screen.getByText('AC');
     expect(mono.className ?? '').not.toContain('invisible');
+  });
+
+  it('monogram becomes visible again after the image errors (onError fallback)', () => {
+    mockFetchLogos = true;
+    mockLogoUrl = 'https://logo.clearbit.com/acme.com';
+    render(<CompanyAvatar company="Acme" />);
+
+    // Before error: monogram is invisible, logo image present
+    expect(screen.getByText('AC').className).toContain('invisible');
+    expect(screen.getByTestId('logo-image')).toBeInTheDocument();
+
+    // Simulate the image failing to load (404 / CORS block on img-src).
+    // The mock fires onError when the logo-image div is clicked.
+    fireEvent.click(screen.getByTestId('logo-image'));
+
+    // After error: logo image removed, monogram visible (no invisible class)
+    expect(screen.queryByTestId('logo-image')).toBeNull();
+    expect(screen.getByText('AC').className ?? '').not.toContain('invisible');
   });
 });
