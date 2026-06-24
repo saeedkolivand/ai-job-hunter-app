@@ -1562,6 +1562,7 @@
     "scoreGuidance": "Dieser Score ist eine Schätzung — keine Entscheidung des Arbeitgebers oder eines ATS-Systems.",
     "scoreGuidanceLabel": "Über diese Bewertung",
     "scoreEst": "ca.",
+    "scoreLoading": "Score wird berechnet…",
     "showMore": "Mehr anzeigen",
     "tailor": "Anpassen",
     "tailorHint": "Lebenslauf & Anschreiben für diesen Job anpassen",
@@ -1658,7 +1659,21 @@
       "placeholder": "z. B. stripe, airbnb",
       "hint": "Kommagetrennte Unternehmens-Slugs für ATS-Boards."
     },
-    "partialScrapeNote": "{{done}} von {{total}} Boards · {{failed}} fehlgeschlagen"
+    "partialScrapeNote": "{{done}} von {{total}} Boards · {{failed}} fehlgeschlagen",
+    "viewList": "Liste",
+    "viewSplit": "Zweispaltig",
+    "viewMode": "Ansichtsmodus",
+    "backToList": "Zurück zur Liste",
+    "collapseDetail": "Detail einklappen",
+    "expandDetail": "Detail ausklappen",
+    "selectAJob": "Job auswählen, um Details anzuzeigen",
+    "copyLinkError": "Link konnte nicht kopiert werden",
+    "loadingDescription": "Beschreibung wird geladen…",
+    "matchBand": {
+      "High": "Hoch",
+      "Medium": "Mittel",
+      "Low": "Niedrig"
+    }
   },
   "resumes": {
     "title": "Dokumente",

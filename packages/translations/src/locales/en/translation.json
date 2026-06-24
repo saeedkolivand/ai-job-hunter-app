@@ -1558,6 +1558,7 @@
     "scoreGuidance": "This score is a guidance estimate — not the employer's decision or any ATS system's score.",
     "scoreGuidanceLabel": "About this score",
     "scoreEst": "est.",
+    "scoreLoading": "Calculating score…",
     "showMore": "Show more",
     "tailor": "Tailor",
     "tailorHint": "Tailor your résumé & cover letter for this job",
@@ -1654,7 +1655,21 @@
       "placeholder": "e.g. stripe, airbnb",
       "hint": "Comma-separated company slugs for ATS boards."
     },
-    "partialScrapeNote": "{{done}} of {{total}} boards · {{failed}} failed"
+    "partialScrapeNote": "{{done}} of {{total}} boards · {{failed}} failed",
+    "viewList": "List",
+    "viewSplit": "Split",
+    "viewMode": "View mode",
+    "backToList": "Back to list",
+    "collapseDetail": "Collapse detail",
+    "expandDetail": "Expand detail",
+    "selectAJob": "Select a job to see details",
+    "copyLinkError": "Failed to copy link",
+    "loadingDescription": "Loading description…",
+    "matchBand": {
+      "High": "High",
+      "Medium": "Medium",
+      "Low": "Low"
+    }
   },
   "resumes": {
     "title": "Documents",
