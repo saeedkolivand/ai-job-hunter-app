@@ -40,8 +40,11 @@ export const useScrapeUrl = () => {
 };
 
 /** Resolve a single posting (incl. full description) from its URL, on demand.
- *  A job description is immutable within a session, so cache it for the session
- *  lifetime — fetched once per URL, never re-fetched or GC'd until the app restarts. */
+ *  staleTime=INFINITE: a cached description is never re-fetched while it is
+ *  still in the cache — no re-fetch on re-open, no flash of truncated text.
+ *  gcTime=TEN_MIN: inactive entries are evicted after 10 min to bound memory
+ *  as the user browses many jobs. Re-opening an evicted job uses the persisted
+ *  backend description rather than re-fetching in the common case. */
 export const useResolveJobUrl = (url: string, enabled = true) => {
   const api = useAppClient();
   return useQuery({
@@ -49,7 +52,7 @@ export const useResolveJobUrl = (url: string, enabled = true) => {
     queryFn: () => api.scrape.resolveUrl({ url }),
     enabled: enabled && !!url,
     staleTime: QUERY_TIMES.INFINITE,
-    gcTime: QUERY_TIMES.INFINITE,
+    gcTime: QUERY_TIMES.TEN_MIN,
   });
 };
 

@@ -260,6 +260,36 @@ fn attach_interactions_joins_records_by_job_id() {
 }
 
 #[test]
+fn attach_interactions_clamps_unknown_interaction_type_to_viewed() {
+    // The persisted `interaction_type` is a free String on disk, but the shared
+    // `JobInteraction` contract is a strict union. A corrupt/out-of-union value
+    // must be coerced to "viewed" so it never breaks the cross-layer contract;
+    // valid types pass through unchanged.
+    let items = vec![serde_json::json!({"id": "1"})];
+    let interactions = vec![
+        interaction("1", "garbage"),
+        interaction("1", "applied"),
+        interaction("1", "opened"),
+    ];
+
+    let joined = attach_interactions(&items, &interactions);
+    let arr = joined[0]
+        .get("interactions")
+        .and_then(serde_json::Value::as_array)
+        .expect("item 1 must carry an interactions array");
+
+    let types: Vec<&str> = arr
+        .iter()
+        .filter_map(|i| i.get("interactionType").and_then(serde_json::Value::as_str))
+        .collect();
+    assert_eq!(
+        types,
+        ["viewed", "applied", "opened"],
+        "an unknown type is coerced to \"viewed\"; valid types pass through unchanged"
+    );
+}
+
+#[test]
 fn test_postings_cache_clear() {
     let mut cache = PostingsCache::default();
     let item = serde_json::json!({"id": "1", "title": "Test"});

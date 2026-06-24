@@ -45,8 +45,10 @@ async function fetchClearbitLogo(company: string): Promise<string | null> {
  * Resolve a company logo URL via Clearbit Autocomplete.
  *
  * - Returns `null` when disabled, when company is blank, or on any fetch failure.
- * - Cached for the session lifetime (INFINITE stale + gc time) — logos don't
- *   change mid-session and we never want to re-fetch on remount.
+ * - staleTime=INFINITE: a cached logo is never re-fetched while in the cache —
+ *   logos don't change mid-session and we never want to re-fetch on remount.
+ * - gcTime=TEN_MIN: inactive entries are evicted after 10 min to bound memory
+ *   as the user browses many distinct company names.
  * - retry: 0 — Clearbit errors are deterministic; one failure is the answer.
  */
 export function useCompanyLogo(company: string, enabled: boolean): string | null {
@@ -56,7 +58,7 @@ export function useCompanyLogo(company: string, enabled: boolean): string | null
     queryFn: () => fetchClearbitLogo(trimmed),
     enabled: enabled && !!trimmed,
     staleTime: QUERY_TIMES.INFINITE,
-    gcTime: QUERY_TIMES.INFINITE,
+    gcTime: QUERY_TIMES.TEN_MIN,
     retry: 0,
   });
   return result.data ?? null;
