@@ -10,33 +10,14 @@ import {
   Wand2,
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
 
 import { useTranslation } from '@ajh/translations';
-import { ActionMenu, Button, SourceBadge, Tag, transition, useNotification } from '@ajh/ui';
+import { ActionMenu, Button, SourceBadge, Tag, transition } from '@ajh/ui';
 
 import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
-import { useRowMatchScore } from '@/features/jobs/providers';
-import { scoreToLevel } from '@/lib/match-level';
-import { useOpenExternal, usePersistJob } from '@/services';
-import { useSaveFromPosting } from '@/services/use-applications';
-import { useSessionStore } from '@/store/session-store';
+import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
+import type { Posting } from '@/features/jobs/types';
 
-interface Posting {
-  id: string;
-  source: string;
-  externalId: string;
-  url: string;
-  title: string;
-  company: string;
-  location?: string;
-  remote?: boolean;
-  description: string;
-  postedAt?: number;
-  capturedAt: number;
-  interactions?: { interactionType: string }[];
-}
 interface PostingRowProps {
   posting: Posting;
   formatRelativeTime: (timestamp?: number) => string;
@@ -49,108 +30,8 @@ const STATUS_TAG = 'rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wid
 
 export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
   const { t } = useTranslation();
-  const notify = useNotification();
-  const navigate = useNavigate();
-  const setApplicationApply = useSessionStore((s) => s.setApplicationApply);
-  const openExternalMutation = useOpenExternal();
-  const persistJobMutation = usePersistJob();
-  const saveFromPostingMutation = useSaveFromPosting();
-  const { score } = useRowMatchScore(posting.id);
-
-  const [interactionTypes, setInteractionTypes] = useState(
-    () => new Set(posting.interactions?.map((i) => i.interactionType) || [])
-  );
-
-  const jobPayload = {
-    id: posting.id,
-    source: posting.source,
-    externalId: posting.externalId,
-    url: posting.url,
-    title: posting.title,
-    company: posting.company,
-    location: posting.location,
-    description: posting.description,
-    capturedAt: posting.capturedAt,
-  };
-
-  const trackInteraction = async (
-    interactionType: 'viewed' | 'opened' | 'applied' | 'bookmarked'
-  ) => {
-    setInteractionTypes((prev) => new Set([...prev, interactionType]));
-    try {
-      await persistJobMutation.mutateAsync({ job: jobPayload, interactionType });
-    } catch (err) {
-      console.error('Failed to track interaction:', err);
-    }
-  };
-
-  const handleOpen = () => {
-    void trackInteraction('opened');
-    void openExternalMutation.mutateAsync(posting.url);
-  };
-
-  const handleCopyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(posting.url);
-      notify.success({ message: t('jobs.copyLink') });
-    } catch {
-      notify.error({ message: 'Failed to copy link' });
-    }
-  };
-
-  // Mirror the autopilot Apply flow: save this posting as an application, seed the
-  // apply session (so the detail page's reset effect skips and the match badge
-  // shows), then open the application's apply/tailor surface (the documents tab).
-  const handleTailor = async () => {
-    void trackInteraction('applied');
-    const res = await saveFromPostingMutation.mutateAsync({
-      jobUrl: posting.url,
-      board: posting.source,
-      company: posting.company,
-      title: posting.title,
-      // Carry the scraped description so tailoring has the ad text even when the
-      // posting URL (e.g. an aggregator redirect) can't be re-resolved.
-      jobDescription: posting.description,
-    });
-    if (!res?.id) {
-      notify.error({ message: t('jobs.tailorError') });
-      return;
-    }
-    setApplicationApply({
-      applyForId: res.id,
-      applySeedResume: null,
-      applyMatchLevel: typeof score?.combined === 'number' ? scoreToLevel(score.combined) : null,
-      applyWizardStep: 0,
-      applyWizardForm: null,
-    });
-    void navigate({
-      to: '/applications/$id',
-      params: { id: res.id },
-      search: { tab: 'documents', from: 'jobs' },
-    });
-  };
-
-  // Once saved, the button becomes a "View" link to the tracking list.
-  const handleView = () => void navigate({ to: '/applications' });
-
-  // Jobs-page Save: create an Application with status=saved linked to this posting.
-  const handleSave = () => {
-    // Also mark the posting bookmarked — this persists, shows the "saved" badge,
-    // and flips the Save button to the "View" link (optimistically + on reload).
-    void trackInteraction('bookmarked');
-    void saveFromPostingMutation.mutateAsync({
-      jobUrl: posting.url,
-      board: posting.source,
-      company: posting.company,
-      title: posting.title,
-      // Carry the scraped description so tailoring has the ad text even when the
-      // posting URL (e.g. an aggregator redirect) can't be re-resolved.
-      jobDescription: posting.description,
-    });
-    notify.success({ message: t('applications.savedToTracking') });
-  };
-
-  const saved = interactionTypes.has('bookmarked');
+  const { has, handleOpen, handleCopyLink, handleTailor, handleView, handleSave, saved, pending } =
+    usePostingActions(posting);
 
   // The row is NOT clickable: a posting has no detail page, and clicking it must
   // not open the external job link. Opening the link stays available explicitly
@@ -168,17 +49,17 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
               {t('jobs.remote')}
             </Tag>
           )}
-          {interactionTypes.has('applied') && (
+          {has('applied') && (
             <Tag color="purple" icon={<CircleCheck size={8} />} className={STATUS_TAG}>
               {t('jobs.applied')}
             </Tag>
           )}
-          {interactionTypes.has('opened') && (
+          {(has('opened') || has('viewed')) && (
             <Tag color="blue" icon={<Eye size={8} />} className={STATUS_TAG}>
               {t('jobs.viewed')}
             </Tag>
           )}
-          {interactionTypes.has('bookmarked') && (
+          {has('bookmarked') && (
             <Tag color="warning" icon={<Bookmark size={8} />} className={STATUS_TAG}>
               {t('jobs.saved')}
             </Tag>
@@ -217,9 +98,9 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
           <Button
             variant="primary"
             onClick={saved ? handleView : handleSave}
-            disabled={saveFromPostingMutation.isPending}
+            disabled={pending}
             title={saved ? t('jobs.view') : t('applications.saveToTracking')}
-            loading={saveFromPostingMutation.isPending}
+            loading={pending}
             className="transition-all duration-150 ease-out"
           >
             {saved ? <Eye size={11} /> : <Save size={11} />}{' '}
