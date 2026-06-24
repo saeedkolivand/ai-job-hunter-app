@@ -33,12 +33,25 @@ vi.mock('@tanstack/react-router', () => ({
   useRouter: () => ({ navigate: mockNavigate }),
 }));
 
-// ── session-store stub — setSettings is a captured spy ───────────────────────
+// ── session-store stub — setSettings + jobs slice + setJobs ──────────────────
 
 const mockSetSettings = vi.fn();
+const mockSetJobs = vi.fn();
+
+const STORE_STATE: {
+  setSettings: typeof mockSetSettings;
+  jobs: { viewMode: string; selectedId: string | null };
+  setJobs: typeof mockSetJobs;
+} = {
+  setSettings: mockSetSettings,
+  jobs: { viewMode: 'list', selectedId: null },
+  setJobs: mockSetJobs,
+};
+
 vi.mock('@/store/session-store', () => ({
-  useSessionStore: (sel: (s: { setSettings: typeof mockSetSettings }) => unknown) =>
-    sel({ setSettings: mockSetSettings }),
+  // Component calls useSessionStore() (no selector) AND useSessionStore(sel).
+  useSessionStore: (sel?: (s: typeof STORE_STATE) => unknown) =>
+    sel ? sel(STORE_STATE) : STORE_STATE,
 }));
 
 // ── useHasProviderKey stub — per-provider map so the wrong slot fails ─────────
@@ -82,6 +95,14 @@ vi.mock('@/features/jobs/components/PostingRow', () => ({
     <div data-testid={TEST_IDS.jobs.postingRow} data-id={posting.id}>
       {posting.title}
     </div>
+  ),
+}));
+
+// ── JobsSplitView stub — split mode renders this; keep it minimal ─────────────
+
+vi.mock('@/features/jobs/components/JobsSplitView', () => ({
+  JobsSplitView: ({ display }: { display: { id: string }[] }) => (
+    <div data-testid="jobs-split-view" data-count={display.length} />
   ),
 }));
 
@@ -186,6 +207,9 @@ beforeEach(() => {
   stubbedKeyIsSuccess = true;
   mockNavigate.mockClear();
   mockSetSettings.mockClear();
+  mockSetJobs.mockClear();
+  // Reset store state to list mode / no selection between tests.
+  STORE_STATE.jobs = { viewMode: 'list', selectedId: null };
 });
 
 describe('JobsResults — gating', () => {
@@ -330,5 +354,98 @@ describe('JobsResults — no résumé', () => {
     expect(mockSetSettings).toHaveBeenCalledWith({ activeSection: 'job' });
     expect(mockNavigate).toHaveBeenCalledOnce();
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/settings' });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Split-mode auto-select
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('JobsResults — split-mode auto-select', () => {
+  it('selects display[0] immediately when split mode has results and no current selection', () => {
+    STORE_STATE.jobs = { viewMode: 'split', selectedId: null };
+    const p1 = posting('a', 'A');
+    const p2 = posting('b', 'B');
+
+    renderResults({ filtered: [p1, p2], resumeId: null });
+
+    expect(mockSetJobs).toHaveBeenCalledWith({ selectedId: 'a', detailCollapsed: false });
+  });
+
+  it('does NOT clobber a valid manual selection on a plain re-render', () => {
+    // User already selected 'b', which is still in display — selectionInDisplay=true
+    // so the effect is a no-op (no auto-select to 'a').
+    STORE_STATE.jobs = { viewMode: 'split', selectedId: 'b' };
+    const p1 = posting('a', 'A');
+    const p2 = posting('b', 'B');
+
+    renderResults({ filtered: [p1, p2], resumeId: null });
+
+    const autoSelectCalls = mockSetJobs.mock.calls.filter(
+      (args) => (args[0] as { selectedId?: string }).selectedId === 'a'
+    );
+    expect(autoSelectCalls).toHaveLength(0);
+  });
+
+  it('re-selects display[0] when the selected job is filtered OUT of display after mount', () => {
+    // Start: split mode, 'b' is selected and present in display.
+    STORE_STATE.jobs = { viewMode: 'split', selectedId: 'b' };
+    const p1 = posting('a', 'A');
+    const p2 = posting('b', 'B');
+
+    const { rerender } = renderResults({ filtered: [p1, p2], resumeId: null });
+    mockSetJobs.mockClear();
+
+    // Simulate filtering: 'b' is removed from display, only 'a' remains.
+    // selectedId is still 'b' in the store (STORE_STATE hasn't changed), but
+    // selectionInDisplay becomes false → effect must re-select 'a'.
+    rerender(
+      <JobsResults
+        filtered={[p1]}
+        formatRelativeTime={() => ''}
+        scraping={false}
+        onShowMore={noop}
+        onScrape={noop}
+      />
+    );
+
+    expect(mockSetJobs).toHaveBeenCalledWith({ selectedId: 'a', detailCollapsed: false });
+  });
+
+  it('re-selects display[0] when scraping transitions true→false in split mode', () => {
+    STORE_STATE.jobs = { viewMode: 'split', selectedId: null };
+    const p1 = posting('x', 'X');
+    const p2 = posting('y', 'Y');
+
+    // Initial render: scraping=true → waiting=true, results gated (spinner shown).
+    const { rerender } = renderResults({ filtered: [p1, p2], resumeId: null, scraping: true });
+    mockSetJobs.mockClear();
+
+    // Transition: scraping false → waiting goes true→false. rerender inherits the
+    // original MatchScoresProvider wrapper automatically.
+    rerender(
+      <JobsResults
+        filtered={[p1, p2]}
+        formatRelativeTime={() => ''}
+        scraping={false}
+        onShowMore={noop}
+        onScrape={noop}
+      />
+    );
+
+    // Effect fires on the waiting transition: should auto-select the top result.
+    expect(mockSetJobs).toHaveBeenCalledWith({ selectedId: 'x', detailCollapsed: false });
+  });
+
+  it('does not auto-select in list mode', () => {
+    STORE_STATE.jobs = { viewMode: 'list', selectedId: null };
+    const p1 = posting('a', 'A');
+
+    renderResults({ filtered: [p1], resumeId: null });
+
+    const autoSelectCalls = mockSetJobs.mock.calls.filter(
+      (args) => (args[0] as { selectedId?: string }).selectedId === 'a'
+    );
+    expect(autoSelectCalls).toHaveLength(0);
   });
 });

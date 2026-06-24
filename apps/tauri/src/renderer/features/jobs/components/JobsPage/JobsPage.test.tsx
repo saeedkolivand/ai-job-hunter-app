@@ -78,8 +78,9 @@ vi.mock('@/features/jobs/hooks/useDefaultResumeId', () => ({
 
 vi.mock('@/store/session-store', () => ({
   useSessionStore: () => ({
-    jobs: { filter: '', sortBy: 'newest' },
+    jobs: { filter: '', sortBy: 'newest', viewMode: 'list' },
     setJobs: vi.fn(),
+    setSettings: vi.fn(),
   }),
 }));
 
@@ -131,6 +132,7 @@ vi.mock('@ajh/ui', () => ({
   ConfirmModal: () => null,
   Dropdown: () => null,
   Input: () => null,
+  SegmentedControl: () => null,
   useNotification: () => notifyMock,
 }));
 
