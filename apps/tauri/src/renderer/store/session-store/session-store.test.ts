@@ -77,10 +77,17 @@ describe('useSessionStore', () => {
   });
 
   it('setJobs selects a job and patches only the supplied fields', () => {
+    // Capture an unaffected field before any mutation — it must survive both calls,
+    // proving setJobs merges rather than replaces the whole jobs slice.
+    const { viewMode } = useSessionStore.getState().jobs;
+
     useSessionStore.getState().setJobs({ selectedId: 'abc' });
     expect(useSessionStore.getState().jobs.selectedId).toBe('abc');
+    expect(useSessionStore.getState().jobs.viewMode).toBe(viewMode);
+
     useSessionStore.getState().setJobs({ selectedId: null });
     expect(useSessionStore.getState().jobs.selectedId).toBeNull();
+    expect(useSessionStore.getState().jobs.viewMode).toBe(viewMode);
   });
 
   it('patches the autopilot slice and resets the wizard', () => {

@@ -274,7 +274,7 @@ graphify update .
 cp .mcp.json.example .mcp.json
 ```
 
-`.mcp.json` runs the `graphify-mcp` executable (installed on your PATH by step 1) against the local `graphify-out/graph.json`. Skip this entirely if you don't use graphify — nothing else depends on it.
+`.mcp.json` registers the graphify MCP server. See `.mcp.json.example` (`mcpServers.graphify` key) for the exact command and arguments. Skip this entirely if you don't use graphify — nothing else depends on it.
 
 ---
 

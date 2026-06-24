@@ -59,6 +59,41 @@ fn add_upserts_by_id_keeping_latest_fields() {
 }
 
 #[test]
+fn add_upsert_invalidates_cached_embedding() {
+    // A re-streamed posting (same id) may carry changed text, so the cached
+    // embedding for that id must be dropped on replace — otherwise the next score
+    // would reuse a vector built from the stale content. Mirrors the invalidation
+    // `update_description` performs on a text change.
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({"id": "1", "title": "Old"}));
+    cache.set_embedding("1".to_string(), fake_embedding());
+    assert!(
+        cache.get_embedding("1").is_some(),
+        "embedding must be present before the re-add"
+    );
+
+    // Re-add the same id with newer fields — the upsert replaces in place.
+    cache.add(serde_json::json!({"id": "1", "title": "New"}));
+
+    assert!(
+        cache.get_embedding("1").is_none(),
+        "the cached embedding must be invalidated when the id is replaced"
+    );
+    assert_eq!(
+        cache.get_all().len(),
+        1,
+        "re-adding the same id must not duplicate the entry"
+    );
+    assert_eq!(
+        cache.get_all()[0]
+            .get("title")
+            .and_then(serde_json::Value::as_str),
+        Some("New"),
+        "the latest copy of a re-added id must win"
+    );
+}
+
+#[test]
 fn add_upsert_preserves_insertion_order() {
     // Re-adding an existing id must replace it in place, NOT move it to the end —
     // the streamed order the user sees in the list must stay stable.

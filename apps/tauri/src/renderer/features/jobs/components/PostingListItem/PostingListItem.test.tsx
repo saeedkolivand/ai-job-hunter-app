@@ -296,10 +296,11 @@ describe('PostingListItem — interaction markers', () => {
         onSelect={vi.fn()}
       />
     );
-    // With passthrough t mock, t('jobs.viewed') → 'jobs.viewed'.
-    // The aria-hidden span uses the key; the sr-only summary also contains it.
-    // getAllByText picks up both — assert at least one is present.
-    expect(screen.getAllByText('jobs.viewed').length).toBeGreaterThan(0);
+    // Assert specifically against the aria-hidden marker span, not the sr-only summary.
+    // getAllByText would pass even if only the sr-only node contained the text.
+    const ariaHiddenSpans = document.querySelectorAll('[aria-hidden="true"]');
+    const viewedLabel = Array.from(ariaHiddenSpans).find((el) => el.textContent === 'jobs.viewed');
+    expect(viewedLabel).toBeDefined();
   });
 
   it('shows "Viewed" text label when viewed interaction present (not selected)', () => {
@@ -323,7 +324,9 @@ describe('PostingListItem — interaction markers', () => {
         onSelect={vi.fn()}
       />
     );
-    expect(screen.getAllByText('jobs.viewed').length).toBeGreaterThan(0);
+    const ariaHiddenSpans = document.querySelectorAll('[aria-hidden="true"]');
+    const viewedLabel = Array.from(ariaHiddenSpans).find((el) => el.textContent === 'jobs.viewed');
+    expect(viewedLabel).toBeDefined();
   });
 
   it('does NOT show "Viewed" text label when viewed but selected (selected rows never dim)', () => {

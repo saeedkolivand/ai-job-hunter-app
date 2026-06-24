@@ -40,14 +40,18 @@ impl PostingsCache {
     /// Linear scan over a `Vec` is correct here: the frontend caps the list at ~500
     /// items, so the O(n) scan is cheap and a HashMap/index map would be premature.
     /// Mirrors the existing linear-scan-by-`id` in [`Self::update_description`].
+    ///
+    /// When a replace happens, any cached embedding for that id is also dropped:
+    /// a re-streamed posting may carry changed text, so reusing the old vector
+    /// would score against stale content. This mirrors the invalidation
+    /// [`Self::update_description`] performs on a text change.
     pub fn add(&mut self, item: Value) {
-        if let Some(incoming_id) = item.get("id").and_then(Value::as_str) {
-            if let Some(existing) = self
-                .items
-                .iter_mut()
-                .find(|existing| existing.get("id").and_then(Value::as_str) == Some(incoming_id))
-            {
-                *existing = item;
+        if let Some(incoming_id) = item.get("id").and_then(Value::as_str).map(str::to_string) {
+            if let Some(pos) = self.items.iter().position(|existing| {
+                existing.get("id").and_then(Value::as_str) == Some(incoming_id.as_str())
+            }) {
+                self.items[pos] = item;
+                self.embeddings.remove(&incoming_id);
                 return;
             }
         }

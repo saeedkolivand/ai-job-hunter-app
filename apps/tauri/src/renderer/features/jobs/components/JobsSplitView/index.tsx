@@ -1,5 +1,5 @@
 import { ChevronLeft, Plus } from 'lucide-react';
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 import { useTranslation } from '@ajh/translations';
@@ -42,11 +42,22 @@ export function JobsSplitView({
     setJobs({ selectedId: posting.id });
   };
 
+  // Deferred focus-restore for the Back button on narrow screens:
+  // The <aside> is still `hidden` at the moment handleBack fires (it becomes `flex`
+  // only after the re-render when selectedPosting is null). Focusing synchronously
+  // would drop focus on a hidden element. Instead we set a flag and an effect runs
+  // AFTER the re-render — by which point the aside is visible and focusable.
+  const restoreListFocusRef = useRef(false);
   const handleBack = () => {
+    restoreListFocusRef.current = true;
     setJobs({ selectedId: null });
-    // Return focus to the list scroll container so keyboard users can keep navigating.
-    listScrollRef.current?.focus();
   };
+  useEffect(() => {
+    if (selectedId === null && restoreListFocusRef.current) {
+      restoreListFocusRef.current = false;
+      listScrollRef.current?.focus();
+    }
+  }, [selectedId]);
 
   // Arrow key navigation on the listbox: moves selection + scrolls to keep it visible.
   const handleListKeyDown = useCallback(

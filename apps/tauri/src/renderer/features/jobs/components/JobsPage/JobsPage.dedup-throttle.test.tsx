@@ -396,10 +396,12 @@ describe('allPostings merge formula — pure function', () => {
   it('duplicate within livePostings itself — only the first occurrence is kept (old formula missed this)', () => {
     // The old formula only deduped livePostings against postings; if livePostings itself
     // contained duplicates they would both appear. The single-pass formula removes them.
-    const dup = posting('dup');
+    // Two DISTINCT objects with the same id prove dedup is id-based, not reference-based.
+    const dup1 = posting('dup');
+    const dup2 = posting('dup');
     const backend = posting('backend');
-    const result = mergePostings([backend], [dup, dup]);
-    // 'dup' must appear exactly once, and before 'backend'.
+    const result = mergePostings([backend], [dup1, dup2]);
+    // 'dup' must appear exactly once (first occurrence kept), and before 'backend'.
     expect(result.map((p) => p.id)).toEqual(['dup', 'backend']);
   });
 
