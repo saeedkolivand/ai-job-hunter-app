@@ -259,97 +259,102 @@ export function JobsPage() {
   return (
     <MatchScoresProvider resumeId={resumeId}>
       <PageTransition className="flex h-full flex-col overflow-hidden">
-        {/* Pinned header + scrape form; the list below owns the scroll. */}
-        <div className="shrink-0 px-10 pt-10">
-          <PageHeader
-            title={t('jobs.title')}
-            subtitle={t('jobs.subtitle')}
-            badge={t('jobs.eyebrow')}
-            actions={
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="primary"
-                  onClick={() => setShowScrapeForm(!showScrapeForm)}
-                  className="transition-all duration-150 ease-out"
-                >
-                  <Plus size={12} />
-                  {t('jobs.scrapeJobs')}
-                </Button>
-                {allPostings.length > 0 && !scraping && (
+        {/* Centered column: constrains content to max-w-6xl on large displays,
+            matching the dashboard. Both the pinned header and the scroll area
+            sit inside so they stay visually aligned. */}
+        <div className="mx-auto flex w-full min-h-0 flex-1 flex-col max-w-6xl 2xl:max-w-7xl">
+          {/* Pinned header + scrape form; the list below owns the scroll. */}
+          <div className="shrink-0 px-10 pt-10">
+            <PageHeader
+              title={t('jobs.title')}
+              subtitle={t('jobs.subtitle')}
+              badge={t('jobs.eyebrow')}
+              actions={
+                <div className="flex items-center gap-2">
                   <Button
-                    variant="ghost"
-                    onClick={() => setConfirmClear(true)}
-                    title={t('jobs.clearScrapedJobs')}
+                    variant="primary"
+                    onClick={() => setShowScrapeForm(!showScrapeForm)}
+                    className="transition-all duration-150 ease-out"
                   >
-                    <Trash2 size={12} />
-                    {t('jobs.clear')}
+                    <Plus size={12} />
+                    {t('jobs.scrapeJobs')}
                   </Button>
-                )}
-                <Input
-                  id="jobs-filter-query"
-                  name="jobs-filter-query"
-                  prefix={<ListFilter size={12} />}
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  placeholder={t('jobs.searchPlaceholder')}
-                  className="text-foreground/75 placeholder:text-foreground/30"
-                  variant="default"
-                  wrapperClassName="w-48"
-                  allowClear
-                />
-                <Dropdown
-                  options={[
-                    { value: 'newest', label: t('jobs.sortNewest') },
-                    { value: 'oldest', label: t('jobs.sortOldest') },
-                    { value: 'company', label: t('jobs.sortCompany') },
-                  ]}
-                  value={sortBy}
-                  onChange={(value) => setSortBy(value as 'newest' | 'oldest' | 'company')}
-                  placeholder={t('jobs.sort')}
-                />
-                <span className="text-[11px] text-foreground/40">
-                  {filtered.length} / {allPostings.length}
-                </span>
-                {/* View mode toggle — SegmentedControl (WAI-ARIA radiogroup + roving arrow keys) */}
-                <SegmentedControl
-                  ariaLabel={t('jobs.viewMode')}
-                  value={viewMode}
-                  onChange={(v) => setJobs({ viewMode: v })}
-                  options={[
-                    { value: 'list', label: <LayoutList size={13} />, title: t('jobs.viewList') },
-                    {
-                      value: 'split',
-                      label: <LayoutPanelLeft size={13} />,
-                      title: t('jobs.viewSplit'),
-                    },
-                  ]}
-                  tone="brand"
-                  size="sm"
-                />
-              </div>
-            }
-          />
+                  {allPostings.length > 0 && !scraping && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => setConfirmClear(true)}
+                      title={t('jobs.clearScrapedJobs')}
+                    >
+                      <Trash2 size={12} />
+                      {t('jobs.clear')}
+                    </Button>
+                  )}
+                  <Input
+                    id="jobs-filter-query"
+                    name="jobs-filter-query"
+                    prefix={<ListFilter size={12} />}
+                    value={filter}
+                    onChange={(e) => setFilter(e.target.value)}
+                    placeholder={t('jobs.searchPlaceholder')}
+                    className="text-foreground/75 placeholder:text-foreground/30"
+                    variant="default"
+                    wrapperClassName="w-48"
+                    allowClear
+                  />
+                  <Dropdown
+                    options={[
+                      { value: 'newest', label: t('jobs.sortNewest') },
+                      { value: 'oldest', label: t('jobs.sortOldest') },
+                      { value: 'company', label: t('jobs.sortCompany') },
+                    ]}
+                    value={sortBy}
+                    onChange={(value) => setSortBy(value as 'newest' | 'oldest' | 'company')}
+                    placeholder={t('jobs.sort')}
+                  />
+                  <span className="text-[11px] text-foreground/40">
+                    {filtered.length} / {allPostings.length}
+                  </span>
+                  {/* View mode toggle — SegmentedControl (WAI-ARIA radiogroup + roving arrow keys) */}
+                  <SegmentedControl
+                    ariaLabel={t('jobs.viewMode')}
+                    value={viewMode}
+                    onChange={(v) => setJobs({ viewMode: v })}
+                    options={[
+                      { value: 'list', label: <LayoutList size={13} />, title: t('jobs.viewList') },
+                      {
+                        value: 'split',
+                        label: <LayoutPanelLeft size={13} />,
+                        title: t('jobs.viewSplit'),
+                      },
+                    ]}
+                    tone="brand"
+                    size="sm"
+                  />
+                </div>
+              }
+            />
 
-          <ScrapeForm
-            show={showScrapeForm}
-            form={scrapeForm}
+            <ScrapeForm
+              show={showScrapeForm}
+              form={scrapeForm}
+              scraping={scraping}
+              scrapeOutcome={scrapeOutcome}
+              onToggle={() => setShowScrapeForm(!showScrapeForm)}
+              onFormChange={(updates) => setScrapeForm({ ...scrapeForm, ...updates })}
+              onStart={startScrape}
+              onCancel={cancelScrape}
+              onGeocode={geocodeSuggest}
+            />
+          </div>
+
+          <JobsResults
+            filtered={filtered}
+            formatRelativeTime={formatRelativeTime}
             scraping={scraping}
-            scrapeOutcome={scrapeOutcome}
-            onToggle={() => setShowScrapeForm(!showScrapeForm)}
-            onFormChange={(updates) => setScrapeForm({ ...scrapeForm, ...updates })}
-            onStart={startScrape}
-            onCancel={cancelScrape}
-            onGeocode={geocodeSuggest}
+            onShowMore={handleShowMore}
+            onScrape={() => setShowScrapeForm(true)}
           />
         </div>
-
-        <JobsResults
-          filtered={filtered}
-          formatRelativeTime={formatRelativeTime}
-          scraping={scraping}
-          onShowMore={handleShowMore}
-          onScrape={() => setShowScrapeForm(true)}
-        />
       </PageTransition>
 
       <ConfirmModal
