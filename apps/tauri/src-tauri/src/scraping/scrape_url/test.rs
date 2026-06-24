@@ -1010,9 +1010,7 @@ async fn try_named_boards_routes_greenhouse_final_url_to_handler() {
     // This URL is the form an Adzuna redirect_url would resolve to.
     // No live server: the Greenhouse API call fails → Ok(None), but the test
     // passes because the gate must not reject a legitimate Greenhouse host.
-    let result =
-        try_named_boards("https://boards.greenhouse.io/stripe/jobs/99999999")
-            .await;
+    let result = try_named_boards("https://boards.greenhouse.io/stripe/jobs/99999999").await;
     assert!(
         result.is_ok(),
         "a real Greenhouse final URL must pass the host gate inside try_named_boards \
@@ -1027,8 +1025,7 @@ async fn try_named_boards_routes_greenhouse_final_url_to_handler() {
 #[tokio::test]
 async fn try_named_boards_routes_lever_final_url_to_handler() {
     let result =
-        try_named_boards("https://jobs.lever.co/stripe/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
-            .await;
+        try_named_boards("https://jobs.lever.co/stripe/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").await;
     assert!(
         result.is_ok(),
         "a real Lever final URL must pass the host gate inside try_named_boards \
