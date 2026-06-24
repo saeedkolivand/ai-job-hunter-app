@@ -50,12 +50,11 @@ vi.mock('@/lib/match-band', () => ({
 // ── useRowMatchScore — vi.fn() for per-test score control ─────────────────────
 
 const mockUseRowMatchScore = vi.fn<
-  [],
-  { score?: MatchScore; pending: boolean; hasResume: boolean }
+  () => { score?: MatchScore; pending: boolean; hasResume: boolean }
 >(() => ({ score: undefined, pending: false, hasResume: false }));
 
 vi.mock('@/features/jobs/providers', () => ({
-  useRowMatchScore: (...args: unknown[]) => mockUseRowMatchScore(...(args as [])),
+  useRowMatchScore: (..._args: unknown[]) => mockUseRowMatchScore(),
 }));
 
 // ── component under test ──────────────────────────────────────────────────────
@@ -255,7 +254,17 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
     render(
       <PostingListItem
         posting={makePosting({
-          interactions: [{ interactionType: 'applied', jobId: 'post-1', createdAt: 0 }],
+          interactions: [
+            {
+              interactionType: 'applied',
+              jobId: 'post-1',
+              timestamp: 0,
+              title: 'T',
+              company: 'C',
+              url: 'u',
+              source: 's',
+            },
+          ],
         })}
         selected={false}
         formatRelativeTime={formatRelativeTime}
@@ -269,7 +278,17 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
     render(
       <PostingListItem
         posting={makePosting({
-          interactions: [{ interactionType: 'opened', jobId: 'post-1', createdAt: 0 }],
+          interactions: [
+            {
+              interactionType: 'opened',
+              jobId: 'post-1',
+              timestamp: 0,
+              title: 'T',
+              company: 'C',
+              url: 'u',
+              source: 's',
+            },
+          ],
         })}
         selected={false}
         formatRelativeTime={formatRelativeTime}
@@ -283,7 +302,17 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
     render(
       <PostingListItem
         posting={makePosting({
-          interactions: [{ interactionType: 'viewed', jobId: 'post-1', createdAt: 0 }],
+          interactions: [
+            {
+              interactionType: 'viewed',
+              jobId: 'post-1',
+              timestamp: 0,
+              title: 'T',
+              company: 'C',
+              url: 'u',
+              source: 's',
+            },
+          ],
         })}
         selected={false}
         formatRelativeTime={formatRelativeTime}
@@ -297,7 +326,17 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
     render(
       <PostingListItem
         posting={makePosting({
-          interactions: [{ interactionType: 'bookmarked', jobId: 'post-1', createdAt: 0 }],
+          interactions: [
+            {
+              interactionType: 'bookmarked',
+              jobId: 'post-1',
+              timestamp: 0,
+              title: 'T',
+              company: 'C',
+              url: 'u',
+              source: 's',
+            },
+          ],
         })}
         selected={false}
         formatRelativeTime={formatRelativeTime}
@@ -325,7 +364,17 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
     render(
       <PostingListItem
         posting={makePosting({
-          interactions: [{ interactionType: 'bookmarked', jobId: 'post-1', createdAt: 0 }],
+          interactions: [
+            {
+              interactionType: 'bookmarked',
+              jobId: 'post-1',
+              timestamp: 0,
+              title: 'T',
+              company: 'C',
+              url: 'u',
+              source: 's',
+            },
+          ],
         })}
         selected={false}
         formatRelativeTime={formatRelativeTime}
@@ -340,16 +389,34 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // sr-only status summary — icons are aria-hidden; summary announces states to AT
+// i18n: the component calls t('jobs.applied') etc., so with the passthrough mock
+// the rendered text is the i18n key itself (e.g. "jobs.applied"), not raw English.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('PostingListItem — sr-only status summary', () => {
-  it('renders sr-only text listing active states when interactions are present', () => {
+  it('renders sr-only text using i18n keys when applied+viewed interactions present', () => {
     render(
       <PostingListItem
         posting={makePosting({
           interactions: [
-            { interactionType: 'applied', jobId: 'post-1', createdAt: 0 },
-            { interactionType: 'viewed', jobId: 'post-1', createdAt: 0 },
+            {
+              interactionType: 'applied',
+              jobId: 'post-1',
+              timestamp: 0,
+              title: 'T',
+              company: 'C',
+              url: 'u',
+              source: 's',
+            },
+            {
+              interactionType: 'viewed',
+              jobId: 'post-1',
+              timestamp: 0,
+              title: 'T',
+              company: 'C',
+              url: 'u',
+              source: 's',
+            },
           ],
         })}
         selected={false}
@@ -357,8 +424,35 @@ describe('PostingListItem — sr-only status summary', () => {
         onSelect={vi.fn()}
       />
     );
-    // The sr-only span is in the DOM but visually hidden.
-    expect(screen.getByText(/applied/i)).toBeInTheDocument();
+    // With the passthrough t mock, t('jobs.applied') → 'jobs.applied'.
+    // This confirms the component calls t() rather than hardcoding English strings.
+    const srSpan = screen.getByText(/jobs\.applied/);
+    expect(srSpan).toBeInTheDocument();
+    expect(srSpan.textContent).toContain('jobs.viewed');
+  });
+
+  it('renders sr-only text using t("jobs.saved") for the bookmarked state', () => {
+    render(
+      <PostingListItem
+        posting={makePosting({
+          interactions: [
+            {
+              interactionType: 'bookmarked',
+              jobId: 'post-1',
+              timestamp: 0,
+              title: 'T',
+              company: 'C',
+              url: 'u',
+              source: 's',
+            },
+          ],
+        })}
+        selected={false}
+        formatRelativeTime={formatRelativeTime}
+        onSelect={vi.fn()}
+      />
+    );
+    expect(screen.getByText('jobs.saved')).toBeInTheDocument();
   });
 
   it('does NOT render sr-only summary when no interactions are present', () => {
@@ -370,10 +464,10 @@ describe('PostingListItem — sr-only status summary', () => {
         onSelect={vi.fn()}
       />
     );
-    // No status text — neither "applied", "viewed", nor "saved"
-    expect(screen.queryByText('applied')).not.toBeInTheDocument();
-    expect(screen.queryByText('viewed')).not.toBeInTheDocument();
-    expect(screen.queryByText('saved')).not.toBeInTheDocument();
+    // No i18n status keys present in the DOM.
+    expect(screen.queryByText('jobs.applied')).not.toBeInTheDocument();
+    expect(screen.queryByText('jobs.viewed')).not.toBeInTheDocument();
+    expect(screen.queryByText('jobs.saved')).not.toBeInTheDocument();
   });
 });
 

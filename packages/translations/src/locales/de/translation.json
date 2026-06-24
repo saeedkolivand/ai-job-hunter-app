@@ -1669,6 +1669,9 @@
     "selectAJob": "Job auswählen, um Details anzuzeigen",
     "copyLinkError": "Link konnte nicht kopiert werden",
     "loadingDescription": "Beschreibung wird geladen…",
+    "loadFullDescription": "Vollständige Beschreibung laden",
+    "fullDescriptionLoaded": "Vollständige Beschreibung geladen",
+    "descriptionLoadError": "Vollständige Beschreibung konnte nicht geladen werden. Bitte erneut versuchen.",
     "matchBand": {
       "High": "Hoch",
       "Medium": "Mittel",

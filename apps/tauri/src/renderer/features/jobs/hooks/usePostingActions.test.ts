@@ -135,8 +135,24 @@ describe('usePostingActions — initial interactionTypes', () => {
   it('has() returns true for types already in posting.interactions', () => {
     const posting = makePosting({
       interactions: [
-        { interactionType: 'viewed', jobId: 'post-1', createdAt: 0 },
-        { interactionType: 'bookmarked', jobId: 'post-1', createdAt: 0 },
+        {
+          interactionType: 'viewed',
+          jobId: 'post-1',
+          timestamp: 0,
+          title: 'T',
+          company: 'C',
+          url: 'u',
+          source: 's',
+        },
+        {
+          interactionType: 'bookmarked',
+          jobId: 'post-1',
+          timestamp: 0,
+          title: 'T',
+          company: 'C',
+          url: 'u',
+          source: 's',
+        },
       ],
     });
     const { result } = renderHook(() => usePostingActions(posting));
@@ -147,7 +163,17 @@ describe('usePostingActions — initial interactionTypes', () => {
 
   it('saved derives from bookmarked interaction in initial state', () => {
     const posting = makePosting({
-      interactions: [{ interactionType: 'bookmarked', jobId: 'post-1', createdAt: 0 }],
+      interactions: [
+        {
+          interactionType: 'bookmarked',
+          jobId: 'post-1',
+          timestamp: 0,
+          title: 'T',
+          company: 'C',
+          url: 'u',
+          source: 's',
+        },
+      ],
     });
     const { result } = renderHook(() => usePostingActions(posting));
     expect(result.current.saved).toBe(true);

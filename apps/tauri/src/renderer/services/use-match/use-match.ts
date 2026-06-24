@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
+import { useCallback, useMemo } from 'react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { MatchResumeRequest, MatchScore } from '@ajh/shared';
 
@@ -7,6 +7,16 @@ import { useAppClient } from '@/providers/AppClientProvider';
 import { useSemanticScoring } from '@/store/preferences-store';
 
 import { keys, QUERY_TIMES } from '../query-client';
+
+/**
+ * Returns a stable callback that invalidates the entire match-batch cache.
+ * Call after updating a posting's description so the re-score picks up the
+ * full text on the next batch query.
+ */
+export const useInvalidateMatchBatch = () => {
+  const qc = useQueryClient();
+  return useCallback(() => qc.invalidateQueries({ queryKey: ['match-batch'] }), [qc]);
+};
 
 /**
  * Score a resume against a job posting on demand. The result is expensive to

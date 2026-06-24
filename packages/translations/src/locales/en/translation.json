@@ -1665,6 +1665,9 @@
     "selectAJob": "Select a job to see details",
     "copyLinkError": "Failed to copy link",
     "loadingDescription": "Loading description…",
+    "loadFullDescription": "Load full description",
+    "fullDescriptionLoaded": "Full description loaded",
+    "descriptionLoadError": "Could not load the full description. You can try again.",
     "matchBand": {
       "High": "High",
       "Medium": "Medium",

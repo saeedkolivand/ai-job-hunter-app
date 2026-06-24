@@ -52,6 +52,7 @@ vi.mock('lucide-react', () => ({
   Eye: () => null,
   Loader2: () => null,
   MapPin: () => null,
+  RefreshCw: () => null,
   Save: () => null,
   Wand2: () => null,
 }));
@@ -122,7 +123,16 @@ vi.mock('@/lib/match-level', () => ({
 vi.mock('@/services', () => ({
   useOpenExternal: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) }),
   usePersistJob: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) }),
-  useResolveJobUrl: () => ({ data: undefined, isLoading: false }),
+  useResolveJobUrl: () => ({
+    data: undefined,
+    isLoading: false,
+    isFetching: false,
+    isFetched: false,
+    isError: false,
+    refetch: vi.fn().mockResolvedValue(undefined),
+  }),
+  useUpdatePostingDescription: () => ({ mutateAsync: vi.fn().mockResolvedValue(false) }),
+  useInvalidateMatchBatch: () => vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/services/use-applications', () => ({
@@ -169,7 +179,17 @@ describe('JobDetailPane — key remount prevents interaction-state leak', () => 
   it('shows Save (not View) for job B after switching from bookmarked job A', async () => {
     // Job A is already bookmarked — its interactions seed saved=true in usePostingActions.
     const postingA = makePosting('job-a', {
-      interactions: [{ interactionType: 'bookmarked', jobId: 'job-a', createdAt: 0 }],
+      interactions: [
+        {
+          interactionType: 'bookmarked',
+          jobId: 'job-a',
+          timestamp: 0,
+          title: 'T',
+          company: 'C',
+          url: 'u',
+          source: 's',
+        },
+      ],
     });
     // Job B has no interactions — saved should be false.
     const postingB = makePosting('job-b');
@@ -195,7 +215,17 @@ describe('JobDetailPane — key remount prevents interaction-state leak', () => 
   it('shows applied badge for job A but NOT for job B after switching', async () => {
     // Job A has the applied interaction — its badge must NOT leak into job B.
     const postingA = makePosting('job-a', {
-      interactions: [{ interactionType: 'applied', jobId: 'job-a', createdAt: 0 }],
+      interactions: [
+        {
+          interactionType: 'applied',
+          jobId: 'job-a',
+          timestamp: 0,
+          title: 'T',
+          company: 'C',
+          url: 'u',
+          source: 's',
+        },
+      ],
     });
     // Job B has no interactions at all.
     const postingB = makePosting('job-b');

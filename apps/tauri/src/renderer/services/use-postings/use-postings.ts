@@ -66,6 +66,14 @@ export const useClearPostings = () => {
   });
 };
 
+/** Persist the full resolved description back to the backend cache. */
+export const useUpdatePostingDescription = () => {
+  const api = useAppClient();
+  return useMutation({
+    mutationFn: (req: { id: string; description: string }) => api.scrape.updateDescription(req),
+  });
+};
+
 export const usePersistJob = () => {
   const api = useAppClient();
   const qc = useQueryClient();
