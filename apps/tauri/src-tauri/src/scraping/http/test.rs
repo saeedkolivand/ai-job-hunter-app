@@ -555,6 +555,60 @@ fn test_html_to_markdown_plain_text() {
     );
 }
 
+/// BUG-VERIFY (Step 1): plain-text input containing literal `**` markers must NOT
+/// be escaped to `\*\*` by htmd.  Before the fix, htmd treated the plain text as
+/// an HTML document, found no tags, but still escaped markdown special chars in
+/// every text node — producing `\*\*We help…\*\*` which react-markdown renders
+/// as literal asterisks instead of bold.
+///
+/// This test is intentionally written to FAIL against the unfixed code, confirming
+/// the root cause.  After the fix it asserts the correct (unescaped) output.
+#[test]
+fn test_html_to_markdown_plain_text_bold_markers_not_escaped() {
+    let plain = "**We help the world run better** At SAP, we keep it simple.\n\n**Summary & Role Information:**\nYou will lead the team.";
+    let result = html_to_markdown(plain);
+    assert!(
+        result.contains("**We help the world run better**"),
+        "plain-text ** must survive unescaped, got: {result}"
+    );
+    assert!(
+        result.contains("**Summary & Role Information:**"),
+        "plain-text ** heading must survive unescaped, got: {result}"
+    );
+    // The & must NOT become &amp; either.
+    assert!(
+        !result.contains("&amp;"),
+        "& in plain text must not be HTML-entity-encoded, got: {result}"
+    );
+}
+
+/// After the fix, HTML <strong> still produces clean ** (regression guard).
+#[test]
+fn test_html_to_markdown_strong_tag_still_produces_bold() {
+    let html = "<p><strong>We help the world run better</strong> At SAP.</p>";
+    let result = html_to_markdown(html);
+    assert!(
+        result.contains("**We help the world run better**"),
+        "HTML <strong> must still produce ** bold, got: {result}"
+    );
+    assert!(
+        !result.contains("\\*\\*"),
+        "no escaped \\*\\* in HTML path, got: {result}"
+    );
+}
+
+/// Plain-text input with double-newline paragraph breaks must preserve them
+/// (react-markdown needs a blank line to render separate paragraphs).
+#[test]
+fn test_html_to_markdown_plain_text_paragraph_breaks_preserved() {
+    let plain = "First paragraph.\n\nSecond paragraph.";
+    let result = html_to_markdown(plain);
+    assert!(
+        result.contains("\n\n"),
+        "double newlines must be preserved as paragraph breaks, got: {result}"
+    );
+}
+
 /// When htmd produces an empty result (e.g. HTML that is only whitespace/comments)
 /// the fallback to html_to_text fires and does not panic.
 #[test]
