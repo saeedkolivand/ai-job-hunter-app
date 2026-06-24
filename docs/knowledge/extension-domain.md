@@ -1,6 +1,6 @@
 # Extension domain (browser extension + desktop bridge)
 
-Last updated: 2026-06-19
+Last updated: 2026-06-24 (cross-distro + Flatpak support)
 
 Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tauri-security-reviewer`.
 
@@ -22,6 +22,18 @@ The auth boundary lives in `extension_bridge/mod.rs` (`classify_frame` / the soc
 ## Transport
 
 Primary: **native messaging** (browser spawns desktop `--native-host` as a stdio relay; immune to Firefox HTTPS-Only Mode `ws://→wss://` upgrade). Fallback: loopback WebSocket. Both transports share the same wire envelope defined in the shared protocol constants.
+
+### Native-messaging host registration
+
+The desktop bridge (`extension_bridge/register.rs`) writes the browser's native-messaging manifest to OS-specific directories on every startup (idempotent, best-effort, non-fatal on failure). **Browser detection** across native paths, Snap, and Flatpak installs populates the manifest with the current exe path, so manifest tracks app moves/updates automatically.
+
+| Platform    | Native registry                                                                   | Flatpak per-app dirs (if installed)                                                                                     |
+| ----------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **Windows** | HKCU registry pointers                                                            | (sandboxing N/A)                                                                                                        |
+| **macOS**   | `~/Library/Application Support/{Mozilla,Google}/`                                 | (sandboxing N/A)                                                                                                        |
+| **Linux**   | `~/.mozilla/` + `~/.config/{google-chrome,chromium,BraveSoftware,microsoft-edge}` | `~/.var/app/{com.google.Chrome,org.chromium.Chromium,com.brave.Browser,com.microsoft.Edge,org.mozilla.firefox}/config/` |
+
+**Flatpak Chromium-family browsers** (Chrome, Chromium, Brave, Edge) ship with broad filesystem access, so manifest-only placement works without user overrides. **Firefox Flatpak is sandboxed** and cannot spawn the native-host binary outside the sandbox — users must either apply `flatpak override --user --filesystem=host org.mozilla.firefox` or use the fallback loopback WebSocket bridge.
 
 ## Protocol lockstep rule
 

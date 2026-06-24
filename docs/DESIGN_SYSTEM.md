@@ -1,6 +1,6 @@
 # Design System — AI Job Hunter
 
-Last updated: 2026-06-24
+Last updated: 2026-06-24 (v0.116.0)
 
 The design system lives in `packages/ui` and is published as the `@ajh/ui` internal package. It provides design tokens, a component library, motion primitives, and theming infrastructure.
 
@@ -157,7 +157,7 @@ data attributes on `<html>` that the token layer keys off:
 </html>
 ```
 
-- **Color scheme** — `dark` is the default token set (`tokens.css` `:root`). `[data-color-scheme='light']` overrides only the tokens that change, so flipping the tokens flips the whole UI. `system` resolves from `prefers-color-scheme` and tracks live OS changes. User-initiated scheme changes go through `applyThemeAnimated()`, which crossfades via the View Transition API (reduced-motion / unsupported-API guarded). A **pre-paint boot script in `index.html`** applies the persisted scheme/text-scale/a11y modifiers before first paint (mirrors `theme.ts`) so there is no light-theme flicker/FOUC.
+- **Color scheme** — `dark` is the default token set (`tokens.css` `:root`). `[data-color-scheme='light']` overrides only the tokens that change, so flipping the tokens flips the whole UI. `system` resolves from `prefers-color-scheme` and tracks live OS changes. User-initiated scheme changes go through `applyThemeAnimated()`, which crossfades via the View Transition API (reduced-motion / unsupported-API / **WebKitGTK on Linux** guarded — see below). A **pre-paint boot script in `index.html`** applies the persisted scheme/text-scale/a11y modifiers before first paint (mirrors `theme.ts`) so there is no light-theme flicker/FOUC.
 - **Light legibility** — light overrides only what changes, but two systemic remaps live in `utilities.css`: bright Tailwind palette text steps (`--color-emerald-400`, …) map to their deeper `600/700` so accent/status/gradient text stays legible on white, and faint `text-foreground/NN` steps are lifted to the macOS hierarchy (secondary `~#6E6E73`, muted `~#8E8E93`) — no per-site sweep.
 - **Text size** — `data-text-scale` sets the rem root (`small 16px` / `default 17px` / `large 19px` — default is the Apple body baseline, up from 16px to fix "texts too small"); a 12px floor in `utilities.css` lifts sub-12px arbitrary sizes. Both are rem-based, so they scale together.
 - **Accessibility modifiers** — `[data-reduce-transparency]` solidifies all glass (also wired to `@media (prefers-reduced-transparency)` as a JS-independent fallback); `[data-contrast='more']` strengthens borders. Each is either forced on or "auto" (follows the matching OS query).
@@ -168,6 +168,10 @@ elevation = the `--color-card` step over `--color-background`). Frosted **glass 
 and reads a single material token set (`--glass-rgb`, `--glass-alpha-*`, `--glass-sat`,
 `--glass-specular`) — see `utilities.css`. Never hard-code colors that don't exist in the
 token system.
+
+### Platform notes
+
+**WebKitGTK on Linux** — `document.startViewTransition()` (used for View Transition crossfades in `applyThemeAnimated`) **crashes the web process** on WebKitGTK (the web engine for GTK apps on Linux, used by Tauri on Linux). Theme changes apply directly there without animation — see `packages/ui/src/lib/theme.ts` for the Linux user-agent detection that gates the feature off.
 
 ### Accent Color System
 
@@ -514,6 +518,16 @@ Displays streaming text with a blinking cursor and smooth character append:
 
 ```typescript
 <StreamingText text={delta} done={isDone} />
+```
+
+#### `Alert`
+
+Step-level status messages in wizard flows (onboarding, autopilot). Variants: `success` (green), `warning` (yellow), `error` (red), `info` (blue). Field-level validation stays inline:
+
+```typescript
+<Alert variant="warning" title="No key entered">
+  Add your API key to proceed
+</Alert>
 ```
 
 #### `EmptyState`
