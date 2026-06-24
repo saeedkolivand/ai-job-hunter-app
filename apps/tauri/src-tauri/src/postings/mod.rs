@@ -36,6 +36,34 @@ impl PostingsCache {
         &self.items
     }
 
+    /// Patch the `description` of the cached posting whose `id` matches, in place.
+    ///
+    /// Aggregator list scrapes store only a truncated snippet; once the detail
+    /// pane resolves the full description we write it back here so the match
+    /// scorer (which reads title+description+requirements from this cache) sees
+    /// the full text. We mutate the EXISTING entry rather than pushing a new one:
+    /// [`Self::add`] is a blind `push` with no id-dedup and the scorer's
+    /// `job_texts_for` is first-wins by id, so a second copy would be ignored and
+    /// leave a duplicate behind. Each item is stored as a JSON object, so we patch
+    /// the `description` field on the matching object directly.
+    ///
+    /// Returns `true` when an entry was updated, `false` when no item carries that
+    /// id (no row is created in either case).
+    pub fn update_description(&mut self, id: &str, description: &str) -> bool {
+        for item in &mut self.items {
+            if item.get("id").and_then(Value::as_str) == Some(id) {
+                if let Some(obj) = item.as_object_mut() {
+                    obj.insert(
+                        "description".to_string(),
+                        Value::String(description.to_string()),
+                    );
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     pub fn clear_all(&mut self) {
         self.items.clear();
         self.embeddings.clear();
