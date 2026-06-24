@@ -212,6 +212,28 @@ fn attach_interactions_joins_records_by_job_id() {
         "item 1 must carry viewed + applied under the camelCase interactionType key, got {types:?}"
     );
 
+    // The projected object must carry EXACTLY the `JobInteraction` contract keys —
+    // no extra storage-only fields can leak if `InteractionRecord` grows later.
+    let obj = first[0]
+        .as_object()
+        .expect("each interaction must be a JSON object");
+    let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "company",
+            "interactionType",
+            "jobId",
+            "location",
+            "source",
+            "timestamp",
+            "title",
+            "url",
+        ],
+        "interaction object must contain exactly the JobInteraction contract keys"
+    );
+
     // Item "2" gets exactly its one interaction.
     let second = joined[1]
         .get("interactions")

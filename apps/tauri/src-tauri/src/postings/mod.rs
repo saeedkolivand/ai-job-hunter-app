@@ -141,12 +141,15 @@ impl PostingsCache {
 /// `posting.interactions` is always empty in the renderer and no badges show.
 ///
 /// Each returned object gets an `interactions` array of the records whose
-/// `job_id` equals the posting's string `"id"`, serialized as the renderer's
-/// `JobInteraction` shape (`InteractionRecord` is `camelCase`, so the keys are
-/// `jobId`/`interactionType`/`timestamp`/…). An item with no `"id"` — or one whose
-/// id has no recorded interactions — gets an empty array, keeping the posting
-/// shape stable. The records are grouped once into a map, so the join is
-/// O(postings + interactions) (n ≤ ~500).
+/// `job_id` equals the posting's string `"id"`, projected onto the renderer's
+/// `JobInteraction` contract (`packages/shared/src/types/index.ts`:
+/// `{ jobId, title, company, url, source, location?, interactionType, timestamp }`).
+/// We map each record to those fields EXPLICITLY rather than serializing the whole
+/// [`InteractionRecord`], so adding a storage-only field later can't silently leak
+/// into this IPC response or drift from the shared contract. An item with no `"id"`
+/// — or one whose id has no recorded interactions — gets an empty array, keeping
+/// the posting shape stable. The records are grouped once into a map, so the join
+/// is O(postings + interactions) (n ≤ ~500).
 pub fn attach_interactions(items: &[Value], interactions: &[InteractionRecord]) -> Vec<Value> {
     let mut by_job_id: HashMap<&str, Vec<&InteractionRecord>> = HashMap::new();
     for record in interactions {
@@ -160,17 +163,35 @@ pub fn attach_interactions(items: &[Value], interactions: &[InteractionRecord]) 
         .iter()
         .map(|item| {
             let mut item = item.clone();
-            let matched: Vec<&InteractionRecord> = item
+            let matched: Vec<Value> = item
                 .get("id")
                 .and_then(Value::as_str)
                 .and_then(|id| by_job_id.get(id))
-                .map_or_else(Vec::new, |records| records.clone());
+                .map_or_else(Vec::new, |records| {
+                    records.iter().map(|r| interaction_value(r)).collect()
+                });
             if let Some(obj) = item.as_object_mut() {
-                obj.insert("interactions".to_string(), json!(matched));
+                obj.insert("interactions".to_string(), Value::Array(matched));
             }
             item
         })
         .collect()
+}
+
+/// Project an [`InteractionRecord`] onto the renderer's `JobInteraction` contract,
+/// carrying ONLY the contract fields. Decouples the IPC response from the storage
+/// struct so a future storage-only field can't leak into `scrape_list_postings`.
+fn interaction_value(record: &InteractionRecord) -> Value {
+    json!({
+        "jobId": record.job_id.as_str(),
+        "title": record.title.as_str(),
+        "company": record.company.as_str(),
+        "url": record.url.as_str(),
+        "source": record.source.as_str(),
+        "location": record.location.as_str(),
+        "interactionType": record.interaction_type.as_str(),
+        "timestamp": record.timestamp,
+    })
 }
 
 // ── InteractionStore ──────────────────────────────────────────────────────────
