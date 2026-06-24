@@ -282,8 +282,10 @@ pub fn keyword_coverage(
 ///    behaviour: href dropped, visible text kept).
 /// 2. Bare URLs (`https?://…`) → removed (no visible text to keep).
 /// 3. Heading markers (`# …`) → leading `#` characters stripped.
-/// 4. Emphasis markers (`*` / `_`) → removed (safe: single characters, no
-///    risk of corrupting tech tokens that contain neither).
+/// 4. `*` emphasis markers → removed. `_` is deliberately kept: underscores
+///    are part of real tech tokens (`OPENAI_API_KEY`, `next_js`) and stripping
+///    them blanket-corrupts ATS keyword extraction. Markdown `_` emphasis is
+///    rare in scraped JD text and does not need dedicated removal here.
 pub fn markdown_to_plain(text: &str) -> String {
     // Step 1: collapse `[anchor text](url)` → `anchor text`.
     // Operates entirely on &str slices (char-boundary-safe) — never byte as char.
@@ -337,12 +339,19 @@ pub fn markdown_to_plain(text: &str) -> String {
     };
 
     // Step 3: strip leading heading markers (`# `, `## `, etc.) per line.
-    // Step 4: remove emphasis markers (`*`, `_`).
+    // Step 4: remove `*` emphasis markers only — do NOT strip `_`.
+    //
+    // Underscores are part of real tech tokens (OPENAI_API_KEY, next_js,
+    // MY_ENV_VAR). Stripping every `_` blanket-corrupts those tokens before
+    // keyword extraction, breaking ATS matching. `_` as a markdown emphasis
+    // delimiter is rare in scraped JD text, and even when present the
+    // tokenizer in `keywords_normalized` already splits on non-alphanumeric
+    // characters (excluding `_` is not needed there). Keep `_` intact.
     no_urls
         .lines()
         .map(|line| {
             let trimmed = line.trim_start_matches('#').trim_start();
-            trimmed.replace(['*', '_'], "")
+            trimmed.replace('*', "")
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -743,7 +752,8 @@ mod test {
         assert!(plain.contains("for more"));
     }
 
-    /// markdown_to_plain: heading markers are stripped, emphasis chars removed.
+    /// markdown_to_plain: heading markers are stripped, `*` emphasis removed,
+    /// but `_` is preserved (underscores are real tech-token characters).
     #[test]
     fn markdown_to_plain_strips_headings_and_emphasis() {
         let input = "## Requirements\n**Strong** _communication_ skills";
@@ -751,11 +761,63 @@ mod test {
         assert!(plain.contains("Requirements"), "heading text must survive");
         assert!(!plain.contains("##"), "heading marker must be stripped");
         assert!(!plain.contains("**"), "bold markers must be removed");
-        assert!(!plain.contains('_'), "italic markers must be removed");
+        // `_` is intentionally kept — underscores are part of real tech tokens
+        // (OPENAI_API_KEY, next_js). Markdown `_` emphasis removal is not done.
         assert!(plain.contains("Strong"), "bold text content must survive");
         assert!(
             plain.contains("communication"),
             "italic text content must survive"
+        );
+    }
+
+    /// Underscores inside tech tokens must survive `markdown_to_plain` intact so
+    /// ATS keyword extraction sees `OPENAI_API_KEY` and `next_js`, not the
+    /// corrupted forms `OPENAIAPIKEY` / `nextjs`.
+    #[test]
+    fn markdown_to_plain_preserves_underscores_in_tech_tokens() {
+        let plain =
+            markdown_to_plain("Required: OPENAI_API_KEY env var and next_js framework knowledge");
+        assert!(
+            plain.contains("OPENAI_API_KEY"),
+            "underscore-separated env-var token must survive; got: {plain:?}"
+        );
+        assert!(
+            plain.contains("next_js"),
+            "underscore-separated tech token must survive; got: {plain:?}"
+        );
+    }
+
+    /// `OPENAI_API_KEY` must be tokenised into its component tokens (`openai`, `api`,
+    /// `key`) by the tokenizer's underscore split — not collapsed into the unmatchable
+    /// blob `openaiapikey` by premature underscore removal in `markdown_to_plain`.
+    ///
+    /// Root cause: the old code did `replace(['*', '_'], "")` in `markdown_to_plain`,
+    /// which stripped `_` before the tokenizer ran.  That turned `OPENAI_API_KEY` →
+    /// `openaiapikey` — one token that never matches any JD keyword.  The fix keeps
+    /// `_` in the `markdown_to_plain` output; the tokenizer in `keywords_normalized`
+    /// already splits on `_` (non-alphanumeric), so each component word is extracted
+    /// and matched individually.
+    #[test]
+    fn tech_tokens_with_underscores_survive_keyword_extraction() {
+        let stemmer = Stemmer::create(Algorithm::English);
+        let desc = "Must have OPENAI_API_KEY configured.";
+        let blob = posting_text_blob("Senior Engineer", Some(desc), None)
+            .expect("non-empty blob must be Some");
+        let kw = keywords(&blob, &stemmer);
+
+        // Regression guard: the corrupted collapsed form must not appear.
+        assert!(
+            !kw.contains("openaiapikey"),
+            "collapsed form 'openaiapikey' must NOT appear (regression guard); got {kw:?}"
+        );
+        // The component parts must be present, extracted by the underscore split.
+        assert!(
+            kw.iter().any(|w| w.starts_with("openai")),
+            "'openai' component of OPENAI_API_KEY must be in keyword set; got {kw:?}"
+        );
+        assert!(
+            kw.contains("api"),
+            "'api' component of OPENAI_API_KEY must be in keyword set; got {kw:?}"
         );
     }
 

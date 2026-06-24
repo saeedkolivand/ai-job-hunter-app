@@ -1,6 +1,21 @@
 use tempfile::TempDir;
 
+use crate::commands::ai_provider::{EmbeddingSpace, EmbeddingVector};
+
 use super::*;
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+fn fake_embedding() -> EmbeddingVector {
+    EmbeddingVector {
+        values: vec![0.1, 0.2, 0.3],
+        space: EmbeddingSpace {
+            provider: "test".to_string(),
+            model: "test-model".to_string(),
+            dim: 3,
+        },
+    }
+}
 
 #[test]
 fn test_postings_cache_default() {
@@ -80,6 +95,51 @@ fn update_description_unknown_id_returns_false_and_adds_no_row() {
             .and_then(serde_json::Value::as_str),
         Some("short"),
         "existing entry must be untouched on a miss"
+    );
+}
+
+/// When `update_description` writes new text, the previously cached embedding for
+/// that id must be invalidated so the next score re-embeds the full description
+/// instead of reusing the stale snippet vector.
+#[test]
+fn update_description_invalidates_cached_embedding_on_change() {
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({"id": "job-1", "description": "short snippet"}));
+
+    // Prime the embedding cache with a synthetic vector for this posting.
+    cache.set_embedding("job-1".to_string(), fake_embedding());
+    assert!(
+        cache.get_embedding("job-1").is_some(),
+        "embedding must be present before update"
+    );
+
+    // Update the description with new (longer) text — different from the current.
+    let updated = cache.update_description("job-1", "the full, much longer description text");
+    assert!(updated, "update must succeed on a known id");
+
+    // Stale embedding must be gone.
+    assert!(
+        cache.get_embedding("job-1").is_none(),
+        "cached embedding must be invalidated after description change"
+    );
+}
+
+/// When `update_description` is called with the SAME text that is already stored,
+/// the cached embedding must NOT be invalidated (it is still valid).
+#[test]
+fn update_description_keeps_embedding_when_text_unchanged() {
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({"id": "job-1", "description": "full description"}));
+    cache.set_embedding("job-1".to_string(), fake_embedding());
+
+    // Call update_description with the identical text.
+    let updated = cache.update_description("job-1", "full description");
+    assert!(updated, "update must return true even for a no-op change");
+
+    // Embedding must still be present (nothing changed).
+    assert!(
+        cache.get_embedding("job-1").is_some(),
+        "embedding must be preserved when description text is unchanged"
     );
 }
 
