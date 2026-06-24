@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.116.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.115.1...v0.116.0) (2026-06-24)
+
+### ✨ Features
+
+* jobs split view, markdown descriptions, on-demand scoring, and linux/steam deck support ([#486](https://github.com/saeedkolivand/ai-job-hunter-app/issues/486)) ([bc6c9e8](https://github.com/saeedkolivand/ai-job-hunter-app/commit/bc6c9e8789b39f85c208967163a067d3da6a1f18))
+
 ## [0.115.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.115.0...v0.115.1) (2026-06-23)
 
 ### 🐛 Bug Fixes
