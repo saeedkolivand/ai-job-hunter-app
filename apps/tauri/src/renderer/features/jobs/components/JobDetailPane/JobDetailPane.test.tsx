@@ -96,7 +96,7 @@ vi.mock('@ajh/ui', () => ({
 // ── RowMatchScore ─────────────────────────────────────────────────────────────
 
 vi.mock('@/features/jobs/components/RowMatchScore', () => ({
-  RowMatchScore: () => null,
+  RowMatchScore: () => <span data-testid="row-match-score" />,
 }));
 
 // ── @ajh/shared ───────────────────────────────────────────────────────────────
@@ -1014,5 +1014,25 @@ describe('JobDetailPane — load full description button calls refetch', () => {
     });
 
     expect(mockRefetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RowMatchScore visibility — score renders in the detail header
+// (score was removed from list rows; this guards it stays in the detail pane)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('JobDetailPane — RowMatchScore renders in detail header', () => {
+  it('renders RowMatchScore in the detail pane when a posting is open', async () => {
+    const posting = makePosting('score-visible', { description: 'Full description.' });
+    await act(async () => {
+      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    });
+    expect(screen.getByTestId('row-match-score')).toBeInTheDocument();
+  });
+
+  it('does NOT render RowMatchScore when posting is null (empty state)', () => {
+    render(<JobDetailPane posting={null} formatRelativeTime={formatRelativeTime} />);
+    expect(screen.queryByTestId('row-match-score')).not.toBeInTheDocument();
   });
 });

@@ -3,9 +3,7 @@ import { Bookmark, CircleCheck } from 'lucide-react';
 import { useTranslation } from '@ajh/translations';
 import { cn } from '@ajh/ui';
 
-import { useRowMatchScore } from '@/features/jobs/providers';
 import type { Posting } from '@/features/jobs/types';
-import { MatchBand } from '@/lib/match-band';
 
 interface PostingListItemProps {
   posting: Posting;
@@ -21,7 +19,6 @@ export function PostingListItem({
   onSelect,
 }: PostingListItemProps) {
   const { t } = useTranslation();
-  const { score } = useRowMatchScore(posting.id);
 
   const interactions = new Set<string>(posting.interactions?.map((i) => i.interactionType) ?? []);
   const has = (type: string) => interactions.has(type);
@@ -64,7 +61,7 @@ export function PostingListItem({
 
       {/* Text block: 2-line layout fills remaining space */}
       <div className="min-w-0 flex-1">
-        {/* Line 1: title + subtle MatchBand */}
+        {/* Line 1: title only — score moved to detail pane */}
         <div className="flex items-center gap-1.5">
           <span
             className={cn(
@@ -80,7 +77,6 @@ export function PostingListItem({
           >
             {posting.title}
           </span>
-          {score && <MatchBand value={score.combined} subtle />}
         </div>
 
         {/* Visually-hidden status summary for screen readers */}

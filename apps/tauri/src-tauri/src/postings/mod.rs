@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::commands::ai_provider::EmbeddingVector;
 
@@ -131,6 +131,46 @@ impl PostingsCache {
     pub fn clear_embeddings(&mut self) {
         self.embeddings.clear();
     }
+}
+
+/// Join the recorded interactions onto each cached posting so the jobs list can
+/// render viewed/applied/saved state.
+///
+/// `scrape_list_postings` returns the raw [`PostingsCache`] items, which never
+/// carry interactions (those live in the [`InteractionStore`]). Without this join
+/// `posting.interactions` is always empty in the renderer and no badges show.
+///
+/// Each returned object gets an `interactions` array of the records whose
+/// `job_id` equals the posting's string `"id"`, serialized as the renderer's
+/// `JobInteraction` shape (`InteractionRecord` is `camelCase`, so the keys are
+/// `jobId`/`interactionType`/`timestamp`/…). An item with no `"id"` — or one whose
+/// id has no recorded interactions — gets an empty array, keeping the posting
+/// shape stable. The records are grouped once into a map, so the join is
+/// O(postings + interactions) (n ≤ ~500).
+pub fn attach_interactions(items: &[Value], interactions: &[InteractionRecord]) -> Vec<Value> {
+    let mut by_job_id: HashMap<&str, Vec<&InteractionRecord>> = HashMap::new();
+    for record in interactions {
+        by_job_id
+            .entry(record.job_id.as_str())
+            .or_default()
+            .push(record);
+    }
+
+    items
+        .iter()
+        .map(|item| {
+            let mut item = item.clone();
+            let matched: Vec<&InteractionRecord> = item
+                .get("id")
+                .and_then(Value::as_str)
+                .and_then(|id| by_job_id.get(id))
+                .map_or_else(Vec::new, |records| records.clone());
+            if let Some(obj) = item.as_object_mut() {
+                obj.insert("interactions".to_string(), json!(matched));
+            }
+            item
+        })
+        .collect()
 }
 
 // ── InteractionStore ──────────────────────────────────────────────────────────

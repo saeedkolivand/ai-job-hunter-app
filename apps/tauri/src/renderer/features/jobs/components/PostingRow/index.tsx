@@ -14,7 +14,6 @@ import { motion } from 'motion/react';
 import { useTranslation } from '@ajh/translations';
 import { ActionMenu, Button, SourceBadge, Tag, transition } from '@ajh/ui';
 
-import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
 import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
 import type { Posting } from '@/features/jobs/types';
 
@@ -92,7 +91,6 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
         onKeyDown={(e) => e.stopPropagation()}
         role="presentation"
       >
-        <RowMatchScore jobId={posting.id} />
         {/* motion wrapper animates the width change when Save flips to View. */}
         <motion.div layout transition={transition.fast} className="shrink-0">
           <Button

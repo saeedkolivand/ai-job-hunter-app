@@ -84,9 +84,11 @@ export const usePersistJob = () => {
   return useMutation({
     mutationFn: (req: { job: Record<string, unknown>; interactionType: string }) =>
       api.scrape.persistJob(req),
-    // Invalidate the PREFIX so every typed interactions query ('viewed', 'opened', …)
-    // refetches — keys.postings.interactions(type) = ['postings','interactions',type]
-    // and React Query matches on prefix, so omitting the type segment hits all of them.
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['postings', 'interactions'] }),
+    // Invalidate both the postings list (so interaction badges update in PostingListItem)
+    // and the interactions queries (typed views like 'viewed', 'opened', 'bookmarked').
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.postings.all });
+      void qc.invalidateQueries({ queryKey: ['postings', 'interactions'] });
+    },
   });
 };

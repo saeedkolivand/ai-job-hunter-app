@@ -1,13 +1,11 @@
 /**
- * PostingListItem — keyboard/click selection, interaction markers, MatchBand, aria.
+ * PostingListItem — keyboard/click selection, interaction markers, source badge, aria.
  *
  * 2-line compact design with a 32×32 source badge on the left.
  * Viewed rows (opened|viewed interaction, not selected) show a "Viewed" text label
- * instead of the old Eye icon, and dim title/meta text.
+ * and dim the title. Match score is shown only in the detail pane (removed from list rows).
  *
  * Strategy:
- *  - Component is fully rendered (MatchBand stubbed with data-testid).
- *  - useRowMatchScore is a vi.fn() so score-present / score-absent branches are both tested.
  *  - Interaction state comes from posting.interactions.
  *  - onSelect is a vi.fn() spy captured per describe.
  *
@@ -15,11 +13,9 @@
  */
 
 import React from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-
-import type { MatchScore } from '@ajh/shared';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
 
@@ -38,24 +34,6 @@ vi.mock('lucide-react', () => ({
 
 vi.mock('@ajh/ui', () => ({
   cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
-}));
-
-// ── MatchBand stub — data-testid so presence/absence is assertable ────────────
-
-vi.mock('@/lib/match-band', () => ({
-  MatchBand: ({ value, subtle }: { value: number; subtle?: boolean }) => (
-    <span data-testid="match-band" data-value={value} data-subtle={subtle ? 'true' : 'false'} />
-  ),
-}));
-
-// ── useRowMatchScore — vi.fn() for per-test score control ─────────────────────
-
-const mockUseRowMatchScore = vi.fn<
-  () => { score?: MatchScore; pending: boolean; hasResume: boolean }
->(() => ({ score: undefined, pending: false, hasResume: false }));
-
-vi.mock('@/features/jobs/providers', () => ({
-  useRowMatchScore: (..._args: unknown[]) => mockUseRowMatchScore(),
 }));
 
 // ── component under test ──────────────────────────────────────────────────────
@@ -81,23 +59,7 @@ function makePosting(overrides: Partial<Posting> = {}): Posting {
   };
 }
 
-const BASE_SCORE: MatchScore = {
-  resumeId: 'r',
-  jobId: 'post-1',
-  ats: 70,
-  semantic: 80,
-  combined: 75,
-  gaps: [],
-  recommendations: [],
-};
-
 const formatRelativeTime = () => '2d ago';
-
-// ── reset ─────────────────────────────────────────────────────────────────────
-
-beforeEach(() => {
-  mockUseRowMatchScore.mockReturnValue({ score: undefined, pending: false, hasResume: false });
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // handleClick and handleKeyDown — onSelect dispatch
@@ -601,17 +563,13 @@ describe('PostingListItem — source badge', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MatchBand renders from useRowMatchScore
+// Match score intentionally absent from list rows
+// (score moved to the detail pane — lock in the removal so it can't silently
+//  re-appear in the list without a deliberate test update)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('PostingListItem — MatchBand', () => {
-  it('renders MatchBand when useRowMatchScore returns a score', () => {
-    mockUseRowMatchScore.mockReturnValue({
-      score: BASE_SCORE,
-      pending: false,
-      hasResume: true,
-    });
-
+describe('PostingListItem — no match score in list row', () => {
+  it('does not render a match-band element regardless of posting state', () => {
     render(
       <PostingListItem
         posting={makePosting()}
@@ -620,43 +578,6 @@ describe('PostingListItem — MatchBand', () => {
         onSelect={vi.fn()}
       />
     );
-
-    const band = screen.getByTestId('match-band');
-    expect(band).toBeInTheDocument();
-    expect(band).toHaveAttribute('data-value', '75');
-  });
-
-  it('does not render MatchBand when score is undefined', () => {
-    mockUseRowMatchScore.mockReturnValue({ score: undefined, pending: false, hasResume: false });
-
-    render(
-      <PostingListItem
-        posting={makePosting()}
-        selected={false}
-        formatRelativeTime={formatRelativeTime}
-        onSelect={vi.fn()}
-      />
-    );
-
     expect(screen.queryByTestId('match-band')).not.toBeInTheDocument();
-  });
-
-  it('passes subtle=true to MatchBand so list rows use muted-neutral for non-High tiers', () => {
-    mockUseRowMatchScore.mockReturnValue({
-      score: BASE_SCORE,
-      pending: false,
-      hasResume: true,
-    });
-
-    render(
-      <PostingListItem
-        posting={makePosting()}
-        selected={false}
-        formatRelativeTime={formatRelativeTime}
-        onSelect={vi.fn()}
-      />
-    );
-
-    expect(screen.getByTestId('match-band')).toHaveAttribute('data-subtle', 'true');
   });
 });
