@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.116.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.116.0...v0.116.1) (2026-06-24)
+
+### 🐛 Bug Fixes
+
+* invalidate the interactions query prefix when clearing interactions ([#487](https://github.com/saeedkolivand/ai-job-hunter-app/issues/487)) ([ca3c686](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ca3c686b8379001a3d2155e2bc8a0bf2ebdb01d8))
+* **landing:** a11y-floor pass across all pages and harden the frontend standard ([#489](https://github.com/saeedkolivand/ai-job-hunter-app/issues/489)) ([0c9e2ab](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0c9e2ab16289ee66d492e186357a42db5cbdc6bd))
+* **landing:** point agent-system links to root and add favicons ([#493](https://github.com/saeedkolivand/ai-job-hunter-app/issues/493)) ([03b617f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/03b617feca583ace855efe91d1763bf2b4b88cbf))
+* **landing:** resolve the re-audit second-pass a11y findings and 2 regressions ([#490](https://github.com/saeedkolivand/ai-job-hunter-app/issues/490)) ([20b299d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/20b299d5e2aeb51fc40ee6b374d010d69df72351))
+* **landing:** restore straight quotes so the creature film plays ([#492](https://github.com/saeedkolivand/ai-job-hunter-app/issues/492)) ([e84b518](https://github.com/saeedkolivand/ai-job-hunter-app/commit/e84b518b63d8027d20a5e9741d62ee0b8d085425)), closes [#endcard](https://github.com/saeedkolivand/ai-job-hunter-app/issues/endcard)
+
 ## [0.116.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.115.1...v0.116.0) (2026-06-24)
 
 ### ✨ Features
