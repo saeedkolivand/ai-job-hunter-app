@@ -1,7 +1,8 @@
 import { Bookmark, CircleCheck } from 'lucide-react';
+import { motion } from 'motion/react';
 
 import { useTranslation } from '@ajh/translations';
-import { cn } from '@ajh/ui';
+import { cn, transition } from '@ajh/ui';
 
 import type { Posting } from '@/features/jobs/types';
 
@@ -47,26 +48,30 @@ export function PostingListItem({
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       className={cn(
-        // Outer shell: fixed height for the virtualizer; no padding — inner pill handles that.
-        // border-b separator only on unselected rows (selected pill has its own frame).
-        'flex h-[76px] cursor-pointer items-center px-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
+        // Outer shell: fixed height for the virtualizer; relative for the abs-positioned
+        // slide indicator. border-b separator on unselected rows only.
+        'relative flex h-[76px] cursor-pointer items-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
         selected ? '' : 'border-b border-[var(--border-clear)] hover:bg-muted'
       )}
     >
-      {/* NavPill-style active pill: rounded, brand gradient, inset — mirrors sidebar active item */}
-      <div
-        className={cn('flex h-[64px] w-full items-center gap-3 px-2', selected ? 'rounded-xl' : '')}
-        style={
-          selected
-            ? {
-                background:
-                  'linear-gradient(135deg, color-mix(in srgb, var(--color-brand) 18%, transparent) 0%, color-mix(in srgb, var(--color-brand-2, var(--color-brand)) 10%, transparent) 100%)',
-                border: '1px solid color-mix(in srgb, var(--color-brand) 25%, transparent)',
-                boxShadow: '0 0 16px color-mix(in srgb, var(--color-brand) 12%, transparent)',
-              }
-            : undefined
-        }
-      >
+      {/* Animated active highlight — slides between rows via shared-layout (mirrors sidebar).
+          Square (rounded-none) + full-width; no inset; same brand fill as NavPill. */}
+      {selected && (
+        <motion.div
+          aria-hidden
+          layoutId="jobs-list-pill"
+          className="pointer-events-none absolute inset-0 rounded-none"
+          style={{
+            background:
+              'linear-gradient(135deg, color-mix(in srgb, var(--color-brand) 18%, transparent) 0%, color-mix(in srgb, var(--color-brand-2) 10%, transparent) 100%)',
+            boxShadow: 'inset 0 0 16px color-mix(in srgb, var(--color-brand) 6%, transparent)',
+          }}
+          transition={transition.spring}
+        />
+      )}
+
+      {/* Content layer — sits above the pill (pill is absolute inset-0) */}
+      <div className="relative flex h-[64px] w-full items-center gap-3 px-2">
         {/* 32×32 source-badge logo slot — mirrors PostingRow's 40×40 at smaller size */}
         <div
           aria-hidden="true"

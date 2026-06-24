@@ -133,7 +133,7 @@ export function JobsSplitView({
 
         {/* Show more — mirrors list-mode footer; stays pinned below the scrollable list */}
         <div className="flex shrink-0 items-center justify-center border-t border-[var(--border-clear)] py-2">
-          <Button variant="ghost" onClick={onShowMore} loading={scraping}>
+          <Button variant="primary" onClick={onShowMore} loading={scraping}>
             {!scraping && <Plus size={12} />}
             {t('jobs.showMore')}
           </Button>

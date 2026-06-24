@@ -83,6 +83,10 @@ vi.mock('@ajh/ui', () => ({
   SourceBadge: () => null,
   Tag: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   transition: { fast: {} },
+  variants: {
+    fadeSlideUp: { initial: {}, animate: {}, exit: {} },
+    fadeSlideDown: { initial: {}, animate: {}, exit: {} },
+  },
   useNotification: () => ({
     success: vi.fn(),
     error: vi.fn(),

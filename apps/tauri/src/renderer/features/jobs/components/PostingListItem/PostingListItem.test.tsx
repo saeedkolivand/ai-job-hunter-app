@@ -30,10 +30,28 @@ vi.mock('lucide-react', () => ({
   CircleCheck: () => <svg aria-hidden="true" data-testid="icon-circlecheck" />,
 }));
 
+// ── motion/react — forwardRef-safe div stub ───────────────────────────────────
+
+vi.mock('motion/react', () => ({
+  motion: {
+    div: React.forwardRef(
+      (
+        { children, ...rest }: React.HTMLAttributes<HTMLDivElement>,
+        ref: React.Ref<HTMLDivElement>
+      ) => (
+        <div ref={ref} {...rest}>
+          {children}
+        </div>
+      )
+    ),
+  },
+}));
+
 // ── @ajh/ui — pass-through stubs ─────────────────────────────────────────────
 
 vi.mock('@ajh/ui', () => ({
   cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
+  transition: { spring: {} },
 }));
 
 // ── component under test ──────────────────────────────────────────────────────

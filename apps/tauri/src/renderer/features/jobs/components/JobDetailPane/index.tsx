@@ -24,6 +24,7 @@ import {
   SourceBadge,
   Tag,
   transition,
+  variants,
 } from '@ajh/ui';
 
 import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
@@ -181,7 +182,11 @@ function DetailContent({
   const statusTagCls = 'rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider';
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <motion.div
+      {...variants.fadeSlideUp}
+      transition={transition.fast}
+      className="flex h-full flex-col overflow-hidden"
+    >
       {/* Header — sticky: shrink-0 + overflow-y-auto on body achieves the sticky effect */}
       <div className="m-3 shrink-0 rounded-xl border border-[var(--border-clear)] p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -337,7 +342,7 @@ function DetailContent({
           </>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
