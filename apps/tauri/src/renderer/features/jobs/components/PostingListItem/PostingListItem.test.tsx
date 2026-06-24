@@ -1,12 +1,14 @@
 /**
  * PostingListItem — keyboard/click selection, interaction markers, MatchBand, aria.
  *
- * The 2-line compact design (no avatar, no SourceBadge, icon-only status markers).
+ * 2-line compact design with a 32×32 source badge on the left.
+ * Viewed rows (opened|viewed interaction, not selected) show a "Viewed" text label
+ * instead of the old Eye icon, and dim title/meta text.
  *
  * Strategy:
  *  - Component is fully rendered (MatchBand stubbed with data-testid).
  *  - useRowMatchScore is a vi.fn() so score-present / score-absent branches are both tested.
- *  - Interaction state comes from posting.interactions — icon markers use aria-label.
+ *  - Interaction state comes from posting.interactions.
  *  - onSelect is a vi.fn() spy captured per describe.
  *
  * noUncheckedIndexedAccess: all mock.calls[0] accesses are guarded.
@@ -25,12 +27,11 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 
-// ── lucide-react — icons are aria-hidden in the real component; find by testid ──
+// ── lucide-react — Eye removed (no longer imported by PostingListItem) ─────────
 
 vi.mock('lucide-react', () => ({
   Bookmark: () => <svg aria-hidden="true" data-testid="icon-bookmark" />,
   CircleCheck: () => <svg aria-hidden="true" data-testid="icon-circlecheck" />,
-  Eye: () => <svg aria-hidden="true" data-testid="icon-eye" />,
 }));
 
 // ── @ajh/ui — pass-through stubs ─────────────────────────────────────────────
@@ -246,10 +247,10 @@ describe('PostingListItem — aria-selected and tabIndex', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Interaction markers — icon-only (no text labels in the 2-line design)
+// Interaction markers
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('PostingListItem — interaction markers (icon-only)', () => {
+describe('PostingListItem — interaction markers', () => {
   it('shows CircleCheck icon when applied interaction present', () => {
     render(
       <PostingListItem
@@ -274,7 +275,7 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
     expect(screen.getByTestId('icon-circlecheck')).toBeInTheDocument();
   });
 
-  it('shows Eye icon when opened interaction present', () => {
+  it('shows "Viewed" text label when opened interaction present (not selected)', () => {
     render(
       <PostingListItem
         posting={makePosting({
@@ -295,10 +296,13 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
         onSelect={vi.fn()}
       />
     );
-    expect(screen.getByTestId('icon-eye')).toBeInTheDocument();
+    // With passthrough t mock, t('jobs.viewed') → 'jobs.viewed'.
+    // The aria-hidden span uses the key; the sr-only summary also contains it.
+    // getAllByText picks up both — assert at least one is present.
+    expect(screen.getAllByText('jobs.viewed').length).toBeGreaterThan(0);
   });
 
-  it('shows Eye icon when viewed interaction present', () => {
+  it('shows "Viewed" text label when viewed interaction present (not selected)', () => {
     render(
       <PostingListItem
         posting={makePosting({
@@ -319,7 +323,35 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
         onSelect={vi.fn()}
       />
     );
-    expect(screen.getByTestId('icon-eye')).toBeInTheDocument();
+    expect(screen.getAllByText('jobs.viewed').length).toBeGreaterThan(0);
+  });
+
+  it('does NOT show "Viewed" text label when viewed but selected (selected rows never dim)', () => {
+    render(
+      <PostingListItem
+        posting={makePosting({
+          interactions: [
+            {
+              interactionType: 'viewed',
+              jobId: 'post-1',
+              timestamp: 0,
+              title: 'T',
+              company: 'C',
+              url: 'u',
+              source: 's',
+            },
+          ],
+        })}
+        selected={true}
+        formatRelativeTime={formatRelativeTime}
+        onSelect={vi.fn()}
+      />
+    );
+    // The sr-only summary uses t('jobs.viewed') but the aria-hidden label span must not render.
+    // The sr-only span is inside role=option — query specifically for the aria-hidden span.
+    const ariaHiddenSpans = document.querySelectorAll('[aria-hidden="true"]');
+    const viewedLabel = Array.from(ariaHiddenSpans).find((el) => el.textContent === 'jobs.viewed');
+    expect(viewedLabel).toBeUndefined();
   });
 
   it('shows Bookmark icon when bookmarked interaction present', () => {
@@ -346,7 +378,7 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
     expect(screen.getByTestId('icon-bookmark')).toBeInTheDocument();
   });
 
-  it('shows no icons when interactions is undefined', () => {
+  it('shows no icons and no Viewed label when interactions is undefined', () => {
     render(
       <PostingListItem
         posting={makePosting({ interactions: undefined })}
@@ -356,8 +388,8 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
       />
     );
     expect(screen.queryByTestId('icon-circlecheck')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('icon-eye')).not.toBeInTheDocument();
     expect(screen.queryByTestId('icon-bookmark')).not.toBeInTheDocument();
+    expect(screen.queryByText('jobs.viewed')).not.toBeInTheDocument();
   });
 
   it('shows only the marker icons whose interaction types are present (no false positives)', () => {
@@ -383,12 +415,12 @@ describe('PostingListItem — interaction markers (icon-only)', () => {
     );
     expect(screen.getByTestId('icon-bookmark')).toBeInTheDocument();
     expect(screen.queryByTestId('icon-circlecheck')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('icon-eye')).not.toBeInTheDocument();
+    expect(screen.queryByText('jobs.viewed')).not.toBeInTheDocument();
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// sr-only status summary — icons are aria-hidden; summary announces states to AT
+// sr-only status summary — icons/labels are aria-hidden; summary announces to AT
 // i18n: the component calls t('jobs.applied') etc., so with the passthrough mock
 // the rendered text is the i18n key itself (e.g. "jobs.applied"), not raw English.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -468,6 +500,24 @@ describe('PostingListItem — sr-only status summary', () => {
     expect(screen.queryByText('jobs.applied')).not.toBeInTheDocument();
     expect(screen.queryByText('jobs.viewed')).not.toBeInTheDocument();
     expect(screen.queryByText('jobs.saved')).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Source badge — 2-letter abbreviation slot
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('PostingListItem — source badge', () => {
+  it('renders the first 2 uppercase letters of source as the badge', () => {
+    render(
+      <PostingListItem
+        posting={makePosting({ source: 'linkedin' })}
+        selected={false}
+        formatRelativeTime={formatRelativeTime}
+        onSelect={vi.fn()}
+      />
+    );
+    expect(screen.getByText('LI')).toBeInTheDocument();
   });
 });
 

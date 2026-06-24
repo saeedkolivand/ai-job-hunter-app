@@ -27,8 +27,28 @@ pub struct PostingsCache {
 }
 
 impl PostingsCache {
-    #[allow(dead_code)]
+    /// Insert a streamed posting, upserting by its `"id"` string.
+    ///
+    /// "Show more" re-scrapes with the same search signature (`replace=false`), so
+    /// the same postings stream in again and would otherwise be appended a second
+    /// time — the backend cache returned by `scrape_list_postings` then contained
+    /// duplicates of the first batch. To prevent that, an incoming item whose `"id"`
+    /// already exists **replaces that entry in place** (preserving its position /
+    /// insertion order); the latest copy wins. An item with no `"id"` or a null id
+    /// always pushes — distinct id-less rows must not be collapsed onto each other.
+    ///
+    /// Linear scan over a `Vec` is correct here: the frontend caps the list at ~500
+    /// items, so the O(n) scan is cheap and a HashMap/index map would be premature.
+    /// Mirrors the existing linear-scan-by-`id` in [`Self::update_description`].
     pub fn add(&mut self, item: Value) {
+        if let Some(incoming_id) = item.get("id").and_then(Value::as_str) {
+            if let Some(existing) = self.items.iter_mut().find(|existing| {
+                existing.get("id").and_then(Value::as_str) == Some(incoming_id)
+            }) {
+                *existing = item;
+                return;
+            }
+        }
         self.items.push(item);
     }
 
@@ -42,10 +62,11 @@ impl PostingsCache {
     /// pane resolves the full description we write it back here so the match
     /// scorer (which reads title+description+requirements from this cache) sees
     /// the full text. We mutate the EXISTING entry rather than pushing a new one:
-    /// [`Self::add`] is a blind `push` with no id-dedup and the scorer's
-    /// `job_texts_for` is first-wins by id, so a second copy would be ignored and
-    /// leave a duplicate behind. Each item is stored as a JSON object, so we patch
-    /// the `description` field on the matching object directly.
+    /// [`Self::add`] upserts by id (it would replace, not duplicate, the row) and
+    /// the scorer's `job_texts_for` is first-wins by id, so routing the patch
+    /// through `add` would needlessly rebuild the whole value. Each item is stored
+    /// as a JSON object, so we patch the `description` field on the matching object
+    /// directly.
     ///
     /// Returns `true` when an entry was updated, `false` when no item carries that
     /// id (no row is created in either case).

@@ -1,4 +1,4 @@
-import { Bookmark, CircleCheck, Eye } from 'lucide-react';
+import { Bookmark, CircleCheck } from 'lucide-react';
 
 import { useTranslation } from '@ajh/translations';
 import { cn } from '@ajh/ui';
@@ -26,6 +26,8 @@ export function PostingListItem({
   const interactions = new Set<string>(posting.interactions?.map((i) => i.interactionType) ?? []);
   const has = (type: string) => interactions.has(type);
 
+  const isViewed = has('opened') || has('viewed');
+
   const handleClick = () => onSelect(posting);
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -33,6 +35,9 @@ export function PostingListItem({
       onSelect(posting);
     }
   };
+
+  // Source badge: 2-letter abbreviation, 32×32, mirrors PostingRow's 40×40 at smaller size.
+  const sourceBadge = posting.source.slice(0, 2).toUpperCase();
 
   return (
     <div
@@ -45,58 +50,73 @@ export function PostingListItem({
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       className={cn(
-        'flex h-[60px] cursor-pointer flex-col justify-center gap-1 border-b border-[var(--border-clear)] py-2 pl-2 pr-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
-        // Active: stronger brand fill + full-opacity text — mirrors sidebar NavPill weight.
-        // Inactive: default muted hover.
+        'flex h-[60px] cursor-pointer items-center gap-2 border-b border-[var(--border-clear)] px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
         selected ? 'border-l-2 border-l-brand bg-brand/15' : 'hover:bg-muted'
       )}
     >
-      {/* Line 1: title + subtle MatchBand */}
-      <div className="flex items-center gap-1.5">
-        <span
-          className={cn(
-            'min-w-0 flex-1 truncate text-[12px] font-semibold',
-            // Selected: full-opacity foreground (mirrors sidebar active text-foreground).
-            selected ? 'text-foreground' : 'text-foreground/90'
-          )}
-        >
-          {posting.title}
-        </span>
-        {score && <MatchBand value={score.combined} subtle />}
+      {/* 32×32 source-badge logo slot — mirrors PostingRow's 40×40 at smaller size */}
+      <div
+        aria-hidden="true"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-brand/10 text-[10px] font-semibold text-brand-soft"
+      >
+        {sourceBadge}
       </div>
 
-      {/* Visually-hidden status summary for screen readers */}
-      {(has('applied') || has('opened') || has('viewed') || has('bookmarked')) && (
-        <span className="sr-only">
-          {[
-            has('applied') && t('jobs.applied'),
-            (has('opened') || has('viewed')) && t('jobs.viewed'),
-            has('bookmarked') && t('jobs.saved'),
-          ]
-            .filter(Boolean)
-            .join(', ')}
-        </span>
-      )}
+      {/* Text block: 2-line layout fills remaining space */}
+      <div className="min-w-0 flex-1">
+        {/* Line 1: title + subtle MatchBand */}
+        <div className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              'min-w-0 flex-1 truncate text-[12px] font-semibold',
+              // Selected: full-opacity foreground.
+              // Viewed (not selected): dimmed title per LinkedIn-style treatment.
+              selected ? 'text-foreground' : isViewed ? 'text-foreground/55' : 'text-foreground/90'
+            )}
+          >
+            {posting.title}
+          </span>
+          {score && <MatchBand value={score.combined} subtle />}
+        </div>
 
-      {/* Line 2: company · location · time, then icon-only status markers */}
-      {/* Selected: brand-soft tint on meta (mirrors sidebar icon text-brand-soft). */}
-      <div
-        className={cn(
-          'flex items-center gap-1.5 text-[10px]',
-          selected ? 'text-brand-soft/70' : 'text-foreground/50'
+        {/* Visually-hidden status summary for screen readers */}
+        {(has('applied') || has('opened') || has('viewed') || has('bookmarked')) && (
+          <span className="sr-only">
+            {[
+              has('applied') && t('jobs.applied'),
+              (has('opened') || has('viewed')) && t('jobs.viewed'),
+              has('bookmarked') && t('jobs.saved'),
+            ]
+              .filter(Boolean)
+              .join(', ')}
+          </span>
         )}
-      >
-        <span className="truncate">{posting.company}</span>
-        {posting.location && <span className="shrink-0 truncate">· {posting.location}</span>}
-        {posting.postedAt && (
-          <span className="shrink-0">· {formatRelativeTime(posting.postedAt)}</span>
-        )}
-        {/* Icon-only interaction markers — decorative (aria-hidden); SR summary above */}
-        <span className="ml-auto flex shrink-0 items-center gap-1">
-          {has('applied') && <CircleCheck size={9} aria-hidden="true" />}
-          {(has('opened') || has('viewed')) && <Eye size={9} aria-hidden="true" />}
-          {has('bookmarked') && <Bookmark size={9} aria-hidden="true" />}
-        </span>
+
+        {/* Line 2: company · location · time, then status markers */}
+        <div
+          className={cn(
+            'flex items-center gap-1.5 text-[10px]',
+            // Viewed (not selected): dimmed meta.
+            selected ? 'text-brand-soft/70' : isViewed ? 'text-foreground/40' : 'text-foreground/50'
+          )}
+        >
+          <span className="truncate">{posting.company}</span>
+          {posting.location && <span className="shrink-0 truncate">· {posting.location}</span>}
+          {posting.postedAt && (
+            <span className="shrink-0">· {formatRelativeTime(posting.postedAt)}</span>
+          )}
+          {/* Status markers — decorative (aria-hidden); SR summary above */}
+          <span className="ml-auto flex shrink-0 items-center gap-1">
+            {has('applied') && <CircleCheck size={9} aria-hidden="true" />}
+            {/* "Viewed" text label replaces the eye icon — aria-hidden since SR uses the summary above */}
+            {isViewed && !selected && (
+              <span aria-hidden="true" className="text-[9px]">
+                {t('jobs.viewed')}
+              </span>
+            )}
+            {has('bookmarked') && <Bookmark size={9} aria-hidden="true" />}
+          </span>
+        </div>
       </div>
     </div>
   );

@@ -36,6 +36,9 @@ import { useResolveJobUrl, useUpdatePostingDescription } from '@/services';
 // anything under 700 chars for aggregator postings gets an on-demand resolve.
 const SHORT_DESCRIPTION_CHARS = 700;
 
+// Dwell threshold before a job is marked as viewed (5s per spec).
+const VIEWED_DWELL_MS = 5000;
+
 interface JobDetailPaneProps {
   posting: Posting | null;
   formatRelativeTime: (timestamp?: number) => string;
@@ -158,18 +161,29 @@ function DetailContent({
     prevDescLen.current = description.length;
   }, [announced, description.length]);
 
-  // Mark 'viewed' once on display (effect keyed by posting.id; dedupe via Rust upsert).
+  // Mark 'viewed' after a 5s dwell (fire-once per job mount via key={posting.id}).
+  // Depends ONLY on posting.id so a description-resolve re-render can't reset/refire it.
+  // clearTimeout in cleanup cancels on job-switch or unmount.
   const trackInteractionRef = useRef(trackInteraction);
   trackInteractionRef.current = trackInteraction;
+  const viewedFiredRef = useRef(false);
   useEffect(() => {
-    void trackInteractionRef.current('viewed');
+    viewedFiredRef.current = false;
+    const id = setTimeout(() => {
+      if (!viewedFiredRef.current) {
+        viewedFiredRef.current = true;
+        void trackInteractionRef.current('viewed');
+      }
+    }, VIEWED_DWELL_MS);
+    return () => clearTimeout(id);
   }, [posting.id]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Header */}
-      <div className="shrink-0 border-b border-[var(--border-clear)] py-4 pl-5 pr-0">
-        <div className="mb-1 flex items-start gap-3">
+      {/* Header — sticky: shrink-0 + overflow-y-auto on body achieves the sticky effect */}
+      <div className="shrink-0 border-b border-[var(--border-clear)] py-4 pl-5 pr-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          {/* LEFT: title + meta + match score + status tags */}
           <div className="min-w-0 flex-1">
             <h2 className="text-base font-semibold leading-snug text-foreground/95">
               {posting.title}
@@ -182,73 +196,85 @@ function DetailContent({
                   <MapPin size={9} /> {posting.location}
                 </span>
               )}
+              {posting.remote && (
+                <Tag
+                  color="green"
+                  className="rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
+                >
+                  {t('jobs.remote')}
+                </Tag>
+              )}
               <span role="presentation">
                 <SourceBadge source={posting.source} url={posting.url} />
               </span>
               {posting.postedAt && <span>· {formatRelativeTime(posting.postedAt)}</span>}
             </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <RowMatchScore jobId={posting.id} />
+              {/* Status badges — near the title, like LinkedIn */}
+              {has('applied') && (
+                <Tag
+                  color="purple"
+                  icon={<CircleCheck size={8} />}
+                  className="rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
+                >
+                  {t('jobs.applied')}
+                </Tag>
+              )}
+              {(has('opened') || has('viewed')) && (
+                <Tag
+                  color="blue"
+                  icon={<Eye size={8} />}
+                  className="rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
+                >
+                  {t('jobs.viewed')}
+                </Tag>
+              )}
+              {has('bookmarked') && (
+                <Tag
+                  color="warning"
+                  icon={<Bookmark size={8} />}
+                  className="rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
+                >
+                  {t('jobs.saved')}
+                </Tag>
+              )}
+            </div>
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <RowMatchScore jobId={posting.id} />
-          </div>
-        </div>
 
-        {/* Action cluster */}
-        <div className="mt-3 flex items-center gap-2">
-          <motion.div layout transition={transition.fast} className="shrink-0">
+          {/* RIGHT: action cluster — Save/View, Tailor, ActionMenu */}
+          <div className="flex shrink-0 flex-wrap items-center gap-2 ml-auto">
+            <motion.div layout transition={transition.fast} className="shrink-0">
+              <Button
+                variant="primary"
+                onClick={saved ? handleView : handleSave}
+                disabled={pending}
+                loading={pending}
+                title={saved ? t('jobs.view') : t('applications.saveToTracking')}
+              >
+                {saved ? <Eye size={11} /> : <Save size={11} />}{' '}
+                {saved ? t('jobs.view') : t('applications.save')}
+              </Button>
+            </motion.div>
             <Button
-              variant="primary"
-              onClick={saved ? handleView : handleSave}
-              disabled={pending}
-              loading={pending}
-              title={saved ? t('jobs.view') : t('applications.saveToTracking')}
+              variant="glass"
+              onClick={() => void handleTailor()}
+              title={t('jobs.tailorHint')}
             >
-              {saved ? <Eye size={11} /> : <Save size={11} />}{' '}
-              {saved ? t('jobs.view') : t('applications.save')}
+              <Wand2 size={11} /> {t('jobs.tailor')}
             </Button>
-          </motion.div>
-          <Button variant="glass" onClick={() => void handleTailor()} title={t('jobs.tailorHint')}>
-            <Wand2 size={11} /> {t('jobs.tailor')}
-          </Button>
-          <ActionMenu
-            label={t('jobs.actions')}
-            items={[
-              { label: t('jobs.open'), icon: <ExternalLink size={14} />, onSelect: handleOpen },
-              {
-                label: t('jobs.copyLink'),
-                icon: <Copy size={14} />,
-                onSelect: () => void handleCopyLink(),
-              },
-            ]}
-          />
-          {/* Status badges — use Tag primitives, mirror PostingRow */}
-          {has('applied') && (
-            <Tag
-              color="purple"
-              icon={<CircleCheck size={8} />}
-              className="rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
-            >
-              {t('jobs.applied')}
-            </Tag>
-          )}
-          {(has('opened') || has('viewed')) && (
-            <Tag
-              color="blue"
-              icon={<Eye size={8} />}
-              className="rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
-            >
-              {t('jobs.viewed')}
-            </Tag>
-          )}
-          {has('bookmarked') && (
-            <Tag
-              color="warning"
-              icon={<Bookmark size={8} />}
-              className="rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
-            >
-              {t('jobs.saved')}
-            </Tag>
-          )}
+            <ActionMenu
+              label={t('jobs.actions')}
+              items={[
+                { label: t('jobs.open'), icon: <ExternalLink size={14} />, onSelect: handleOpen },
+                {
+                  label: t('jobs.copyLink'),
+                  icon: <Copy size={14} />,
+                  onSelect: () => void handleCopyLink(),
+                },
+              ]}
+            />
+          </div>
         </div>
       </div>
 
@@ -273,6 +299,11 @@ function DetailContent({
           </div>
         ) : (
           <>
+            {/* "About the job" section label */}
+            <h3 className="mb-3 text-[11px] uppercase tracking-wider text-foreground/50">
+              {t('jobs.aboutTheJob')}
+            </h3>
+
             {/* fold 9: space-y-4 for block rhythm; headings use mt-2 not mt-4 */}
             <JobDescription
               markdown={description}

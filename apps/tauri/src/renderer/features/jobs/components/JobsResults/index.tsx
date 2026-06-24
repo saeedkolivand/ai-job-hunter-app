@@ -91,7 +91,7 @@ export function JobsResults({
     if (viewMode !== 'split' || topId === null) return;
 
     if (justFinished || !selectionInDisplay) {
-      setJobs({ selectedId: topId, detailCollapsed: false });
+      setJobs({ selectedId: topId });
     }
   }, [waiting, viewMode, topId, selectionInDisplay, setJobs]);
 

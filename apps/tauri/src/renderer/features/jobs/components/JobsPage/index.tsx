@@ -200,9 +200,13 @@ export function JobsPage() {
   }, [livePostings.length]);
 
   const allPostings = useMemo(() => {
-    const seen = new Set(postings.map((p) => p.id));
-    const extra = livePostings.filter((p) => !seen.has(p.id));
-    return [...extra, ...postings];
+    // Dedup by id across both arrays; livePostings first preserves the prepend order.
+    const seen = new Set<string>();
+    return [...livePostings, ...postings].filter((p) => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
   }, [postings, livePostings]);
 
   const handleClearPostings = async () => {
@@ -310,13 +314,7 @@ export function JobsPage() {
                 <SegmentedControl
                   ariaLabel={t('jobs.viewMode')}
                   value={viewMode}
-                  onChange={(v) =>
-                    setJobs(
-                      v === 'split'
-                        ? { viewMode: 'split', detailCollapsed: false }
-                        : { viewMode: v }
-                    )
-                  }
+                  onChange={(v) => setJobs({ viewMode: v })}
                   options={[
                     { value: 'list', label: <LayoutList size={13} />, title: t('jobs.viewList') },
                     {

@@ -294,7 +294,7 @@ describe('JobsResults — split-mode auto-select', () => {
 
     renderResults({ filtered: [p1, p2], resumeId: null });
 
-    expect(mockSetJobs).toHaveBeenCalledWith({ selectedId: 'a', detailCollapsed: false });
+    expect(mockSetJobs).toHaveBeenCalledWith({ selectedId: 'a' });
   });
 
   it('does NOT clobber a valid manual selection on a plain re-render', () => {
@@ -328,7 +328,7 @@ describe('JobsResults — split-mode auto-select', () => {
       />
     );
 
-    expect(mockSetJobs).toHaveBeenCalledWith({ selectedId: 'a', detailCollapsed: false });
+    expect(mockSetJobs).toHaveBeenCalledWith({ selectedId: 'a' });
   });
 
   it('re-selects display[0] when scraping transitions true→false in split mode', () => {
@@ -349,7 +349,7 @@ describe('JobsResults — split-mode auto-select', () => {
       />
     );
 
-    expect(mockSetJobs).toHaveBeenCalledWith({ selectedId: 'x', detailCollapsed: false });
+    expect(mockSetJobs).toHaveBeenCalledWith({ selectedId: 'x' });
   });
 
   it('does not auto-select in list mode', () => {

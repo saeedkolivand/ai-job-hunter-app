@@ -265,26 +265,56 @@ describe('JobDetailPane — description rendering', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// viewed-on-mount — keyed by posting.id
+// viewed dwell — fires after 5s, not on mount; keyed by posting.id
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('JobDetailPane — viewed-on-mount', () => {
-  it('calls trackInteraction("viewed") exactly once when a posting is displayed', async () => {
+describe('JobDetailPane — viewed dwell timer', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    mockTrackInteraction.mockClear();
+  });
+
+  it('does NOT call trackInteraction("viewed") before 5s have elapsed', async () => {
     await act(async () => {
       render(
         <JobDetailPane posting={makePosting('job-1')} formatRelativeTime={formatRelativeTime} />
       );
     });
+    // Advance to just under the threshold — must not have fired yet.
+    await act(async () => {
+      vi.advanceTimersByTime(4999);
+    });
+    expect(mockTrackInteraction).not.toHaveBeenCalledWith('viewed');
+  });
+
+  it('calls trackInteraction("viewed") exactly once after 5s dwell', async () => {
+    await act(async () => {
+      render(
+        <JobDetailPane posting={makePosting('job-1')} formatRelativeTime={formatRelativeTime} />
+      );
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
     expect(mockTrackInteraction).toHaveBeenCalledTimes(1);
     expect(mockTrackInteraction).toHaveBeenCalledWith('viewed');
   });
 
-  it('does NOT re-fire when re-rendered with the same posting.id', async () => {
+  it('does NOT re-fire when re-rendered with the same posting.id after dwell', async () => {
     const posting = makePosting('job-1');
     const { rerender } = render(
       <JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />
     );
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+    mockTrackInteraction.mockClear();
 
+    // Re-render with same id (e.g. title update) — timer must NOT restart/refire.
     await act(async () => {
       rerender(
         <JobDetailPane
@@ -293,24 +323,34 @@ describe('JobDetailPane — viewed-on-mount', () => {
         />
       );
     });
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
 
-    expect(mockTrackInteraction).toHaveBeenCalledTimes(1);
+    expect(mockTrackInteraction).not.toHaveBeenCalledWith('viewed');
   });
 
-  it('fires again when posting.id changes to a different value', async () => {
+  it('cancels and restarts timer when posting.id changes; fires once per job', async () => {
     const { rerender } = render(
       <JobDetailPane posting={makePosting('job-1')} formatRelativeTime={formatRelativeTime} />
     );
-
+    // Switch jobs before the dwell fires — old timer cancels.
+    await act(async () => {
+      vi.advanceTimersByTime(3000);
+    });
     await act(async () => {
       rerender(
         <JobDetailPane posting={makePosting('job-2')} formatRelativeTime={formatRelativeTime} />
       );
     });
+    // Advance 5s from job-2 mount — only job-2's timer fires.
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
 
-    expect(mockTrackInteraction).toHaveBeenCalledTimes(2);
-    expect(mockTrackInteraction.mock.calls[0]?.[0]).toBe('viewed');
-    expect(mockTrackInteraction.mock.calls[1]?.[0]).toBe('viewed');
+    // job-1's timer was cancelled; only job-2 fires.
+    expect(mockTrackInteraction).toHaveBeenCalledTimes(1);
+    expect(mockTrackInteraction).toHaveBeenCalledWith('viewed');
   });
 });
 

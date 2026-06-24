@@ -242,7 +242,7 @@ describe('JobDetailPane — key remount prevents interaction-state leak', () => 
 
     // Switch to job B — key={posting.id} remounts DetailContent, resetting
     // usePostingActions' lazy useState. B has no applied interaction so the badge
-    // must not appear (unlike 'viewed' which is added by the viewed-on-mount effect).
+    // must not appear (the 5s dwell timer is also reset but won't fire in this sync test).
     await act(async () => {
       rerender(<JobDetailPane posting={postingB} formatRelativeTime={formatRelativeTime} />);
     });

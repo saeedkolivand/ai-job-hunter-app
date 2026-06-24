@@ -32,6 +32,103 @@ fn test_postings_cache_add() {
 }
 
 #[test]
+fn add_upserts_by_id_keeping_latest_fields() {
+    // "Show more" re-streams the same posting (same id). The second add must
+    // replace the first in place — not append a duplicate — and the newer fields
+    // must win.
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({"id": "1", "title": "Old", "description": "v0"}));
+    cache.add(serde_json::json!({"id": "1", "title": "New", "description": "v1"}));
+
+    assert_eq!(
+        cache.get_all().len(),
+        1,
+        "re-adding the same id must not duplicate the entry"
+    );
+    let item = &cache.get_all()[0];
+    assert_eq!(
+        item.get("title").and_then(serde_json::Value::as_str),
+        Some("New"),
+        "the latest copy of a re-added id must win"
+    );
+    assert_eq!(
+        item.get("description").and_then(serde_json::Value::as_str),
+        Some("v1"),
+        "all fields from the latest copy must win"
+    );
+}
+
+#[test]
+fn add_upsert_preserves_insertion_order() {
+    // Re-adding an existing id must replace it in place, NOT move it to the end —
+    // the streamed order the user sees in the list must stay stable.
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({"id": "1", "title": "A"}));
+    cache.add(serde_json::json!({"id": "2", "title": "B"}));
+    cache.add(serde_json::json!({"id": "3", "title": "C"}));
+
+    // Re-add the middle entry with updated fields.
+    cache.add(serde_json::json!({"id": "2", "title": "B-updated"}));
+
+    let ids: Vec<&str> = cache
+        .get_all()
+        .iter()
+        .filter_map(|p| p.get("id").and_then(serde_json::Value::as_str))
+        .collect();
+    assert_eq!(
+        ids,
+        ["1", "2", "3"],
+        "re-adding id 2 must keep it in its original position, not move it to the end"
+    );
+
+    // Entry 2 was updated in place.
+    let second = &cache.get_all()[1];
+    assert_eq!(
+        second.get("title").and_then(serde_json::Value::as_str),
+        Some("B-updated"),
+        "the in-place entry must carry the updated fields"
+    );
+}
+
+#[test]
+fn add_keeps_distinct_ids() {
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({"id": "1"}));
+    cache.add(serde_json::json!({"id": "2"}));
+    cache.add(serde_json::json!({"id": "3"}));
+
+    assert_eq!(
+        cache.get_all().len(),
+        3,
+        "distinct ids must each get their own row"
+    );
+}
+
+#[test]
+fn add_never_collapses_id_less_items() {
+    // Items with no `"id"` (or a null id) must always push — two distinct id-less
+    // rows must not be collapsed onto each other.
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({}));
+    cache.add(serde_json::json!({}));
+
+    assert_eq!(
+        cache.get_all().len(),
+        2,
+        "id-less items must always push, never collapse"
+    );
+
+    // A null id behaves like a missing id (serde `as_str` on null is None).
+    cache.add(serde_json::json!({"id": serde_json::Value::Null}));
+    cache.add(serde_json::json!({"id": serde_json::Value::Null}));
+    assert_eq!(
+        cache.get_all().len(),
+        4,
+        "null-id items must also always push, never collapse"
+    );
+}
+
+#[test]
 fn test_postings_cache_clear() {
     let mut cache = PostingsCache::default();
     let item = serde_json::json!({"id": "1", "title": "Test"});

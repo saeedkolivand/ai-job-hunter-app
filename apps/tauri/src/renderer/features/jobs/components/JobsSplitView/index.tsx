@@ -1,4 +1,4 @@
-import { ChevronLeft, PanelRightClose, PanelRightOpen, Plus } from 'lucide-react';
+import { ChevronLeft, Plus } from 'lucide-react';
 import { useCallback, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
@@ -25,12 +25,9 @@ export function JobsSplitView({
 }: JobsSplitViewProps) {
   const { t } = useTranslation();
   const { jobs, setJobs } = useSessionStore();
-  const { selectedId, detailCollapsed } = jobs;
+  const { selectedId } = jobs;
 
   const selectedPosting = display.find((p) => p.id === selectedId) ?? null;
-
-  // Detail is visible when a job is selected AND not collapsed.
-  const showDetail = selectedPosting !== null && !detailCollapsed;
 
   const listScrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
@@ -42,17 +39,14 @@ export function JobsSplitView({
   });
 
   const handleSelect = (posting: Posting) => {
-    setJobs({ selectedId: posting.id, detailCollapsed: false });
+    setJobs({ selectedId: posting.id });
   };
 
   const handleBack = () => {
-    setJobs({ detailCollapsed: true });
+    setJobs({ selectedId: null });
     // Return focus to the list scroll container so keyboard users can keep navigating.
     listScrollRef.current?.focus();
   };
-
-  const handleCollapseDetail = () => setJobs({ detailCollapsed: true });
-  const handleExpandDetail = () => setJobs({ detailCollapsed: false });
 
   // Arrow key navigation on the listbox: moves selection + scrolls to keep it visible.
   const handleListKeyDown = useCallback(
@@ -66,7 +60,7 @@ export function JobsSplitView({
           : Math.max(currentIndex - 1, 0);
       const next = display[nextIndex];
       if (!next) return;
-      setJobs({ selectedId: next.id, detailCollapsed: false });
+      setJobs({ selectedId: next.id });
       virtualizer.scrollToIndex(nextIndex, { align: 'auto' });
     },
     [display, selectedId, setJobs, virtualizer]
@@ -76,19 +70,12 @@ export function JobsSplitView({
     // flex-col on mobile, flex-row on md+. min-h-0 required for nested overflow.
     <div className="flex h-full min-h-0 flex-col md:flex-row">
       {/* ── Left: list pane ── */}
-      {/* Narrow: hidden when showing detail. Wide: fixed width, always visible
-          unless detail is explicitly collapsed (then full width). */}
+      {/* Narrow: hidden when a job is selected. Wide: fixed width, always visible. */}
       <aside
         className={[
           'flex flex-col overflow-hidden border-r border-[var(--border-clear)]',
-          showDetail ? 'hidden md:flex' : 'flex',
-          // When collapsed+selected: aside fills available space but leaves room for the
-          // expand strip (section keeps md:min-w-[40px]), so we use flex-1 rather than w-full.
-          detailCollapsed && selectedPosting
-            ? 'md:flex-1'
-            : detailCollapsed
-              ? 'md:w-full'
-              : 'md:w-[320px] xl:w-[380px] 2xl:w-[420px]',
+          selectedPosting ? 'hidden md:flex' : 'flex',
+          'md:w-[420px] xl:w-[480px] 2xl:w-[520px]',
         ].join(' ')}
       >
         {/* List scroll container — virtualizer targets this.
@@ -143,53 +130,19 @@ export function JobsSplitView({
       </aside>
 
       {/* ── Right: detail pane ── */}
-      {/* Narrow: shown only when detail is active. Wide: always visible.
-          When collapsed+selected: shrinks to a 40px strip showing the expand button
-          so it remains reachable by keyboard users. */}
+      {/* Narrow: shown only when a job is selected. Wide: always visible. */}
       <section
         className={[
-          'flex-col overflow-hidden',
-          showDetail ? 'flex' : 'hidden md:flex',
-          // Collapsed+selected: fixed strip so expand button stays visible.
-          detailCollapsed && selectedPosting ? 'md:w-10 md:min-w-[40px]' : 'min-w-0 flex-1',
+          'flex-col overflow-hidden min-w-0 flex-1',
+          selectedPosting ? 'flex' : 'hidden md:flex',
         ].join(' ')}
       >
-        {/* Controls bar — only rendered when there is a selection (avoids phantom strip) */}
-        {(selectedPosting || showDetail) && (
-          <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-clear)] py-2 pl-5 pr-0">
-            {/* Back button — narrow only */}
-            <Button
-              variant="ghost"
-              onClick={handleBack}
-              className="md:hidden"
-              aria-label={t('jobs.backToList')}
-            >
+        {/* Controls bar — mobile Back button only; desktop never shows it */}
+        {selectedPosting && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-clear)] py-2 pl-5 pr-0 md:hidden">
+            <Button variant="ghost" onClick={handleBack} aria-label={t('jobs.backToList')}>
               <ChevronLeft size={13} /> {t('jobs.backToList')}
             </Button>
-            {/* Collapse button — wide only, when detail is visible */}
-            {selectedPosting && !detailCollapsed && (
-              <Button
-                variant="ghost"
-                onClick={handleCollapseDetail}
-                className="hidden md:flex"
-                aria-label={t('jobs.collapseDetail')}
-                title={t('jobs.collapseDetail')}
-              >
-                <PanelRightClose size={13} />
-              </Button>
-            )}
-            {/* Expand button — wide only, when detail is collapsed but a job is selected */}
-            {selectedPosting && detailCollapsed && (
-              <Button
-                variant="ghost"
-                onClick={handleExpandDetail}
-                className="hidden md:flex"
-                aria-label={t('jobs.expandDetail')}
-                title={t('jobs.expandDetail')}
-              >
-                <PanelRightOpen size={13} />
-              </Button>
-            )}
           </div>
         )}
         <div className="min-h-0 flex-1 overflow-hidden">

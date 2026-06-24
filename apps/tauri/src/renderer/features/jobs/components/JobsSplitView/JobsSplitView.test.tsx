@@ -52,8 +52,6 @@ vi.mock('@ajh/ui', () => ({
 
 vi.mock('lucide-react', () => ({
   ChevronLeft: () => null,
-  PanelRightClose: () => null,
-  PanelRightOpen: () => null,
   Plus: () => null,
 }));
 
@@ -325,11 +323,11 @@ describe('JobsSplitView — ArrowDown/ArrowUp navigation', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Selection via list-item click and collapse/expand controls (#5)
+// Selection and Back button (collapse/expand removed — detail always visible on desktop)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('JobsSplitView — selection and collapse controls', () => {
-  it('clicking a list item calls setJobs with selectedId and detailCollapsed:false', async () => {
+describe('JobsSplitView — selection and Back button', () => {
+  it('clicking a list item sets selectedId (no detailCollapsed — field removed)', async () => {
     renderSplit();
 
     await act(async () => {
@@ -338,50 +336,12 @@ describe('JobsSplitView — selection and collapse controls', () => {
 
     const { jobs } = useSessionStore.getState();
     expect(jobs.selectedId).toBe('b');
-    expect(jobs.detailCollapsed).toBe(false);
   });
 
-  it('collapse button sets detailCollapsed:true', async () => {
-    // Select a posting first so the collapse button renders.
-    await act(async () => {
-      useSessionStore.setState((s) => ({
-        jobs: { ...s.jobs, selectedId: 'a', detailCollapsed: false },
-      }));
-    });
-    renderSplit();
-
-    // The collapse button carries aria-label='jobs.collapseDetail'.
-    const collapseBtn = screen.getByRole('button', { name: 'jobs.collapseDetail' });
-    await act(async () => {
-      fireEvent.click(collapseBtn);
-    });
-
-    expect(useSessionStore.getState().jobs.detailCollapsed).toBe(true);
-  });
-
-  it('expand button sets detailCollapsed:false', async () => {
-    // Select a posting with detail already collapsed.
-    await act(async () => {
-      useSessionStore.setState((s) => ({
-        jobs: { ...s.jobs, selectedId: 'a', detailCollapsed: true },
-      }));
-    });
-    renderSplit();
-
-    const expandBtn = screen.getByRole('button', { name: 'jobs.expandDetail' });
-    await act(async () => {
-      fireEvent.click(expandBtn);
-    });
-
-    expect(useSessionStore.getState().jobs.detailCollapsed).toBe(false);
-  });
-
-  it('Back button sets detailCollapsed:true (narrow-screen back navigation)', async () => {
+  it('Back button sets selectedId to null (narrow-screen back navigation)', async () => {
     // Select a posting so the detail section renders and Back button appears.
     await act(async () => {
-      useSessionStore.setState((s) => ({
-        jobs: { ...s.jobs, selectedId: 'a', detailCollapsed: false },
-      }));
+      useSessionStore.setState((s) => ({ jobs: { ...s.jobs, selectedId: 'a' } }));
     });
     renderSplit();
 
@@ -390,32 +350,12 @@ describe('JobsSplitView — selection and collapse controls', () => {
       fireEvent.click(backBtn);
     });
 
-    expect(useSessionStore.getState().jobs.detailCollapsed).toBe(true);
+    expect(useSessionStore.getState().jobs.selectedId).toBeNull();
   });
 
-  it('collapse→expand round-trip: expand button re-opens detail after collapse', async () => {
-    // Start with a selected posting and detail open.
-    await act(async () => {
-      useSessionStore.setState((s) => ({
-        jobs: { ...s.jobs, selectedId: 'a', detailCollapsed: false },
-      }));
-    });
+  it('Back button is not rendered when no job is selected', () => {
     renderSplit();
-
-    // Collapse.
-    const collapseBtn = screen.getByRole('button', { name: 'jobs.collapseDetail' });
-    await act(async () => {
-      fireEvent.click(collapseBtn);
-    });
-    expect(useSessionStore.getState().jobs.detailCollapsed).toBe(true);
-
-    // Expand button must now be reachable and clickable.
-    const expandBtn = screen.getByRole('button', { name: 'jobs.expandDetail' });
-    expect(expandBtn).toBeInTheDocument();
-    await act(async () => {
-      fireEvent.click(expandBtn);
-    });
-    expect(useSessionStore.getState().jobs.detailCollapsed).toBe(false);
+    expect(screen.queryByRole('button', { name: 'jobs.backToList' })).not.toBeInTheDocument();
   });
 });
 

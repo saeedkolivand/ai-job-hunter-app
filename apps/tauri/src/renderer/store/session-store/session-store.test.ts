@@ -61,7 +61,6 @@ describe('useSessionStore', () => {
       sortBy: 'company',
       viewMode: 'split',
       selectedId: null,
-      detailCollapsed: false,
     });
 
     useSessionStore.getState().setResumes({ tab: 'activity' });
@@ -75,16 +74,13 @@ describe('useSessionStore', () => {
     const { jobs } = useSessionStore.getState();
     expect(jobs.viewMode).toBe('split');
     expect(jobs.selectedId).toBeNull();
-    expect(jobs.detailCollapsed).toBe(false);
   });
 
-  it('setJobs selects a job and can collapse detail', () => {
-    useSessionStore.getState().setJobs({ selectedId: 'abc', detailCollapsed: false });
+  it('setJobs selects a job and patches only the supplied fields', () => {
+    useSessionStore.getState().setJobs({ selectedId: 'abc' });
     expect(useSessionStore.getState().jobs.selectedId).toBe('abc');
-    expect(useSessionStore.getState().jobs.detailCollapsed).toBe(false);
-    useSessionStore.getState().setJobs({ detailCollapsed: true });
-    expect(useSessionStore.getState().jobs.detailCollapsed).toBe(true);
-    expect(useSessionStore.getState().jobs.selectedId).toBe('abc'); // unchanged
+    useSessionStore.getState().setJobs({ selectedId: null });
+    expect(useSessionStore.getState().jobs.selectedId).toBeNull();
   });
 
   it('patches the autopilot slice and resets the wizard', () => {
