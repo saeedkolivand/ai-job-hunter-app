@@ -27,7 +27,7 @@ export function usePostingActions(posting: Posting) {
   const { score } = useRowMatchScore(posting.id);
 
   const [interactionTypes, setInteractionTypes] = useState(
-    () => new Set(posting.interactions?.map((i) => i.interactionType) ?? [])
+    () => new Set<string>(posting.interactions?.map((i) => i.interactionType) ?? [])
   );
 
   const jobPayload = {

@@ -1,5 +1,6 @@
 import { Bookmark, CircleCheck, Eye } from 'lucide-react';
 
+import { useTranslation } from '@ajh/translations';
 import { cn } from '@ajh/ui';
 
 import { useRowMatchScore } from '@/features/jobs/providers';
@@ -19,9 +20,10 @@ export function PostingListItem({
   formatRelativeTime,
   onSelect,
 }: PostingListItemProps) {
+  const { t } = useTranslation();
   const { score } = useRowMatchScore(posting.id);
 
-  const interactions = new Set(posting.interactions?.map((i) => i.interactionType) ?? []);
+  const interactions = new Set<string>(posting.interactions?.map((i) => i.interactionType) ?? []);
   const has = (type: string) => interactions.has(type);
 
   const handleClick = () => onSelect(posting);
@@ -66,9 +68,9 @@ export function PostingListItem({
       {(has('applied') || has('opened') || has('viewed') || has('bookmarked')) && (
         <span className="sr-only">
           {[
-            has('applied') && 'applied',
-            (has('opened') || has('viewed')) && 'viewed',
-            has('bookmarked') && 'saved',
+            has('applied') && t('jobs.applied'),
+            (has('opened') || has('viewed')) && t('jobs.viewed'),
+            has('bookmarked') && t('jobs.saved'),
           ]
             .filter(Boolean)
             .join(', ')}
