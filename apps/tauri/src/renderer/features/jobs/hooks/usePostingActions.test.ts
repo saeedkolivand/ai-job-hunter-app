@@ -11,7 +11,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
 
@@ -470,32 +470,36 @@ describe('usePostingActions — handleSave after-success guard', () => {
     mockSaveFromPostingAsync.mockRejectedValueOnce(new Error('IPC failure'));
 
     const { result } = renderHook(() => usePostingActions(makePosting()));
-    await act(async () => {
+    act(() => {
       result.current.handleSave();
-      // Flush microtasks so the rejected promise settles.
-      await Promise.resolve();
-      await Promise.resolve();
+    });
+
+    // Wait for the error notify to fire — deterministic signal that the
+    // rejected promise settled and the .catch() branch ran.
+    await waitFor(() => {
+      expect(notifyError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'jobs.saveError' })
+      );
     });
 
     expect(result.current.saved).toBe(false);
     expect(notifySuccess).not.toHaveBeenCalled();
-    expect(notifyError).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'jobs.saveError' })
-    );
   });
 
   it('marks saved and notifies success AFTER saveFromPosting resolves', async () => {
     const { result } = renderHook(() => usePostingActions(makePosting()));
-    await act(async () => {
+    act(() => {
       result.current.handleSave();
-      await Promise.resolve();
-      await Promise.resolve();
+    });
+
+    // Wait for the success notify — deterministic signal the .then() ran.
+    await waitFor(() => {
+      expect(notifySuccess).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'applications.savedToTracking' })
+      );
     });
 
     expect(result.current.saved).toBe(true);
-    expect(notifySuccess).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'applications.savedToTracking' })
-    );
   });
 });
 

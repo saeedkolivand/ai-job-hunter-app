@@ -84,28 +84,53 @@ mod linux {
     ];
     const LIBWAYLAND_SONAME: &str = "libwayland-client.so.0";
 
-    pub(super) fn apply() {
-        // The whole safeguard is scoped to the AppImage + Wayland launch it
-        // targets. Bail before touching any env on any condition where the
-        // mitigations would be wrong (X11 / non-AppImage / dev) or looping
-        // (already re-exec'd) — disabling DMABUF/compositing on a healthy
-        // session is a needless rendering regression.
+    /// Why the safeguard stopped before re-exec'ing, or that it should proceed.
+    /// Lets the exec-free decisions be unit-tested without ever calling the real
+    /// `apply()` (which can `exec()` and so is not in-process-testable).
+    #[derive(Debug, PartialEq, Eq)]
+    pub(super) enum Plan {
+        /// Not the AppImage + Wayland scenario (or already re-exec'd): apply NO
+        /// mitigations at all.
+        Skip,
+        /// AppImage + Wayland launch: apply the in-process WebKit mitigations and
+        /// proceed to the libwayland preload + re-exec.
+        ApplyAndPreload,
+    }
+
+    /// The exec-free scoping decision. Reads only env, mutates nothing. The whole
+    /// safeguard is scoped to the AppImage + Wayland launch it targets — disabling
+    /// DMABUF/compositing on a healthy session is a needless rendering regression,
+    /// and re-exec'ing twice would loop.
+    pub(super) fn plan_from_env() -> Plan {
         if std::env::var_os(PRELOAD_ATTEMPTED_ENV).is_some() {
             // Already re-exec'd once — the WebKit vars were set before the
             // re-exec and inherited here; never loop.
-            return;
+            return Plan::Skip;
         }
         if !is_appimage_launch() || !is_wayland_session() {
             // Dev build, extracted run, or X11 — the bundled-vs-host libwayland
             // clash does not apply, so apply none of the mitigations.
+            return Plan::Skip;
+        }
+        Plan::ApplyAndPreload
+    }
+
+    /// Set the two in-process WebKit env mitigations (idempotently, respecting a
+    /// user override). Read at webview init; no re-exec needed. Exec-free.
+    pub(super) fn apply_webkit_mitigations() {
+        set_if_unset(WEBKIT_DMABUF_ENV, "1");
+        set_if_unset(WEBKIT_COMPOSITING_ENV, "1");
+    }
+
+    pub(super) fn apply() {
+        if plan_from_env() == Plan::Skip {
             return;
         }
 
         // In-process WebKit mitigations, read at webview init (no re-exec). Set
         // here so they're in place before the (potential) re-exec inherits them
         // and before GTK init, but only in the AppImage + Wayland case.
-        set_if_unset(WEBKIT_DMABUF_ENV, "1");
-        set_if_unset(WEBKIT_COMPOSITING_ENV, "1");
+        apply_webkit_mitigations();
 
         let Some(libwayland) = find_host_libwayland() else {
             // No usable host libwayland — nothing to preload, don't re-exec.
@@ -333,21 +358,27 @@ mod tests {
         );
     }
 
-    // Linux-only: `apply()` must RETURN (i.e. not re-exec) on the skip paths.
-    // Re-exec replaces the process image, so any code after the `apply()` call
-    // only runs when no re-exec was attempted — that observable return is the
-    // assertion. Every case here mutates process-global env, so they live in one
-    // serialized test (parallel set/remove on these would race). nextest runs
-    // each test in its own process, so this test owns the env for its run.
+    // Linux-only: the safeguard's exec-free decisions. We assert `plan_from_env`
+    // (the scoping verdict) and `apply_webkit_mitigations` (the env it sets)
+    // DIRECTLY — never the full `apply()`, which can re-`exec()` the test binary
+    // when the host has a real libwayland (which CI runners do) and would hang
+    // the test process. The exec-capable tail of `apply()` is not unit-testable
+    // in-process and is deliberately left uncovered here.
+    //
+    // Mutates process-global env (APPIMAGE / WAYLAND_DISPLAY / XDG_SESSION_TYPE /
+    // the guard / the WebKit vars), so serialized against the other env-mutating
+    // test to avoid races under threaded `cargo test`.
     #[cfg(target_os = "linux")]
     #[test]
-    fn apply_scopes_mitigations_to_appimage_wayland() {
+    #[serial_test::serial]
+    fn plan_and_webkit_mitigations_are_scoped_to_appimage_wayland() {
+        use super::linux::{apply_webkit_mitigations, plan_from_env, Plan};
+
         // Keys this test reads/writes, so it can snapshot + clear them hermetically.
         const KEYS: &[&str] = &[
             WEBKIT_DMABUF_ENV,
             WEBKIT_COMPOSITING_ENV,
             PRELOAD_ATTEMPTED_ENV,
-            "LD_PRELOAD",
             "APPIMAGE",
             "APPDIR",
             "WAYLAND_DISPLAY",
@@ -365,66 +396,69 @@ mod tests {
         };
         clear_all();
 
-        // Branch A: re-exec guard already set → must return without re-exec'ing
-        // AND without setting the WebKit vars, even if it otherwise looks like an
-        // AppImage Wayland launch (the guard means a prior process already set
-        // them and we inherited them).
+        // Case A: re-exec guard already set → Skip, even if it otherwise looks
+        // like an AppImage Wayland launch (a prior process already applied the
+        // mitigations and we inherited them; re-applying would loop).
         // SAFETY: single-threaded test.
         unsafe {
             std::env::set_var(PRELOAD_ATTEMPTED_ENV, "1");
             std::env::set_var("APPIMAGE", "/tmp/App.AppImage");
             std::env::set_var("WAYLAND_DISPLAY", "wayland-0");
         }
-        super::linux::apply(); // returns here ⇒ no re-exec occurred
-        assert!(
-            std::env::var_os(WEBKIT_DMABUF_ENV).is_none(),
-            "guard branch must not (re)set the WebKit env"
-        );
-        assert!(std::env::var_os(WEBKIT_COMPOSITING_ENV).is_none());
+        assert_eq!(plan_from_env(), Plan::Skip, "guard set ⇒ Skip");
         clear_all();
 
-        // Branch B: not an AppImage and X11 session → must return without re-exec
-        // AND without disabling DMABUF/compositing (Finding 1: no needless
-        // rendering regression on a healthy non-AppImage / X11 / dev launch).
+        // Case B: not an AppImage and X11 session → Skip (Finding 1: no needless
+        // DMABUF/compositing regression on a healthy non-AppImage / X11 / dev
+        // launch). `apply_webkit_mitigations` is NOT called on this path.
         // SAFETY: single-threaded test.
         unsafe {
             std::env::set_var("XDG_SESSION_TYPE", "x11");
         }
-        super::linux::apply(); // returns here ⇒ no re-exec
+        assert_eq!(plan_from_env(), Plan::Skip, "non-AppImage / X11 ⇒ Skip");
         assert!(
             std::env::var_os(WEBKIT_DMABUF_ENV).is_none(),
-            "non-AppImage / X11 launch must NOT set WEBKIT_DISABLE_DMABUF_RENDERER"
+            "Skip path must NOT set WEBKIT_DISABLE_DMABUF_RENDERER"
         );
-        assert!(
-            std::env::var_os(WEBKIT_COMPOSITING_ENV).is_none(),
-            "non-AppImage / X11 launch must NOT set WEBKIT_DISABLE_COMPOSITING_MODE"
-        );
-        assert!(std::env::var_os(PRELOAD_ATTEMPTED_ENV).is_none());
+        assert!(std::env::var_os(WEBKIT_COMPOSITING_ENV).is_none());
         clear_all();
 
-        // Branch C: AppImage + Wayland but no host libwayland → returns without
-        // re-exec, but the in-process WebKit vars ARE applied (Finding 1: the
-        // mitigations land in the scenario they target). `find_host_libwayland`
-        // looks only under fixed system roots that this test's controlled env
-        // can't fabricate, so on the test host it reliably returns `None`.
+        // Case C: AppImage + Wayland → ApplyAndPreload, and the in-process WebKit
+        // mitigations land (Finding 1: applied in the scenario they target). We
+        // call `apply_webkit_mitigations` directly — NOT `apply()` — so no
+        // libwayland search and no re-exec can ever occur from this test.
         // SAFETY: single-threaded test.
         unsafe {
             std::env::set_var("APPIMAGE", "/tmp/App.AppImage");
             std::env::set_var("WAYLAND_DISPLAY", "wayland-0");
         }
-        super::linux::apply(); // returns here ⇒ no re-exec (no host lib)
+        assert_eq!(
+            plan_from_env(),
+            Plan::ApplyAndPreload,
+            "AppImage + Wayland ⇒ ApplyAndPreload"
+        );
+        apply_webkit_mitigations();
         assert_eq!(
             std::env::var(WEBKIT_DMABUF_ENV).ok().as_deref(),
             Some("1"),
-            "AppImage + Wayland launch must set WEBKIT_DISABLE_DMABUF_RENDERER"
+            "AppImage + Wayland must set WEBKIT_DISABLE_DMABUF_RENDERER"
         );
         assert_eq!(
             std::env::var(WEBKIT_COMPOSITING_ENV).ok().as_deref(),
             Some("1")
         );
-        // No host lib ⇒ we never reached the LD_PRELOAD mutation / guard.
-        assert!(std::env::var_os(PRELOAD_ATTEMPTED_ENV).is_none());
-        assert!(std::env::var_os("LD_PRELOAD").is_none());
+
+        // `apply_webkit_mitigations` respects a user override (set_if_unset).
+        // SAFETY: single-threaded test.
+        unsafe {
+            std::env::set_var(WEBKIT_DMABUF_ENV, "user-value");
+        }
+        apply_webkit_mitigations();
+        assert_eq!(
+            std::env::var(WEBKIT_DMABUF_ENV).ok().as_deref(),
+            Some("user-value"),
+            "must not clobber a user-exported WebKit value"
+        );
 
         // Restore the caller's env.
         // SAFETY: single-threaded test.
@@ -444,8 +478,12 @@ mod tests {
     // the unit that does that rollback on both failure paths (`current_exe()`
     // err and `exec()` return); the real `exec()` can't be exercised in-process
     // without replacing it, so we assert the rollback unit directly.
+    //
+    // Mutates process-global env (LD_PRELOAD + the guard), so serialized against
+    // the other env-mutating test to avoid races under threaded `cargo test`.
     #[cfg(target_os = "linux")]
     #[test]
+    #[serial_test::serial]
     fn restore_preload_env_rolls_back_mutation() {
         const KEYS: &[&str] = &["LD_PRELOAD", PRELOAD_ATTEMPTED_ENV];
         let saved: Vec<(&str, Option<std::ffi::OsString>)> =
