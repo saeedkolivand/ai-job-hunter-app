@@ -7,7 +7,7 @@ description: Shared context-discipline contract every agent imports — context-
 
 ## Context-source priority (in order)
 
-1. **graphify** — `graphify query "<question>"`, `graphify explain "<concept>"`, `graphify path "<A>" "<B>"`. Returns a scoped subgraph, far smaller than grep / GRAPH_REPORT.md.
+1. **graphify** — prefer the MCP tools when connected (`query_graph`, `shortest_path`, `get_community` / `get_node` / `god_nodes`); fall back to the CLI (`graphify query "<question>"`, `graphify explain "<concept>"`, `graphify path "<A>" "<B>"`) when MCP is unavailable. Either returns a scoped subgraph, far smaller than grep / GRAPH_REPORT.md.
 2. **source code** — authoritative for any region edited this turn (graphify can lag un-indexed edits until `graphify update .`).
 3. **docs/knowledge/** — shape, contracts, standards.
 4. **lessons** — historical experience, queried on-demand (never bulk-loaded).
@@ -38,8 +38,8 @@ Domain **authors** (write-capable) implement; their independent **critics** audi
 
 **Pattern:**
 
-1. **Pre-harvest** — before spawning, run `graphify query` / `graphify explain` / `graphify path` yourself; collect exact file paths and the relevant function/type signatures. Hand them in the prompt. A pre-harvested spawn costs ~44 tool-uses vs ~120 for cold exploration.
-2. **Graphify-first directive in the prompt** — explicitly tell the spawned agent to run `graphify query "<question>"` before reading any source file. Domain reviewer agents get this from their system prompt; implementation agents do not.
+1. **Pre-harvest** — before spawning, query graphify yourself (MCP `query_graph` / `shortest_path` when connected, else the `graphify query` / `explain` / `path` CLI); collect exact file paths and the relevant function/type signatures. Hand them in the prompt. A pre-harvested spawn costs ~44 tool-uses vs ~120 for cold exploration.
+2. **Graphify-first directive in the prompt** — explicitly tell the spawned agent to query graphify (MCP `query_graph` if its `tools:` allowlist includes `mcp__graphify`, else `graphify query "<question>"`) before reading any source file. Domain reviewer agents get this from their system prompt; implementation agents do not.
 3. **Fewest + largest vertical-slice spawns** — one agent per full feature slice; avoid spawning separate agents for Rust, TS, and tests when they are the same slice.
 4. **Right-size the model** — reserve large-context / high-reasoning models for ambiguous design decisions; use smaller models for mechanical CRUD, test scaffolding, or renaming tasks.
 5. **Batch domain reviews** — collect all reviewable diffs and send them to domain agents in a single pass, not one per file.

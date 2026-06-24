@@ -1,7 +1,7 @@
 ---
 name: ai-provider-author
 description: WRITE-access implementer for AI provider integrations, model routing, embeddings, prompt systems, streaming, and the provider abstraction. Implements to spec; never approves its own work — ai-provider-expert audits it (tauri-security-reviewer on injection/leakage risk).
-tools: Read, Grep, Glob, Edit, Write, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify
 model: opus
 ---
 

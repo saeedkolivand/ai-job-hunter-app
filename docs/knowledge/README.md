@@ -8,7 +8,7 @@ A **thin, pointer-style** index for AI agents (and humans). It describes _shape 
 
 **Context-source priority: graphify → source → docs/knowledge → lessons.**
 
-1. `graphify query "<question>"` / `graphify explain "<concept>"` — scoped subgraph first.
+1. graphify — MCP `query_graph` / `get_node` when connected, else `graphify query "<question>"` / `graphify explain "<concept>"` — scoped subgraph first.
 2. **Source is authoritative** for any region edited this turn (graphify can lag un-indexed edits until `graphify update .`).
 3. These knowledge files for shape/contracts/standards.
 4. Lessons (`.claude/hooks/lessons.mjs query …`) for prior experience — on-demand, never bulk-loaded.

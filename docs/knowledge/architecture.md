@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-13
 
-Canonical: [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md), [`docs/architecture-rules.md`](../architecture-rules.md) (the L0–L3 rules, tested by `cargo test --test architecture`), [`docs/PATTERNS.md`](../PATTERNS.md). Use `graphify explain "<module>"` for a scoped view.
+Canonical: [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md), [`docs/architecture-rules.md`](../architecture-rules.md) (the L0–L3 rules, tested by `cargo test --test architecture`), [`docs/PATTERNS.md`](../PATTERNS.md). Query graphify (MCP `query_graph`, else `graphify explain "<module>"`) for a scoped view.
 
 ## Shape
 

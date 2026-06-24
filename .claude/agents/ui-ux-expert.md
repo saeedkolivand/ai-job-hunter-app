@@ -1,7 +1,7 @@
 ---
 name: ui-ux-expert
 description: Visual/UX design critic for the React renderer and landing pages — visual hierarchy, spacing, typography, motion, usability, deep accessibility, and microcopy. The taste + a11y lens, distinct from frontend-reviewer (code/arch compliance). Use as a Secondary on UI changes under apps/tauri/src/renderer/**, packages/ui/**, landing/**. Read-only; never edits.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, mcp__graphify
 model: sonnet
 ---
 
