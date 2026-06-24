@@ -43,6 +43,9 @@ const mdComponents: React.ComponentProps<typeof ReactMarkdown>['components'] = {
   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
   // Links: render as brand-colored plain text; job descriptions should not be live nav.
   a: ({ children }) => <span className="text-brand">{children}</span>,
+  // Images: suppress the <img> (remote src blocked by CSP, renders broken icon).
+  // Render alt text as plain text so content is not silently lost.
+  img: ({ alt }) => (alt ? <span className="text-foreground/50">{alt}</span> : null),
   // Tables: block-scroll wrapper so wide tables don't overflow max-w-prose.
   table: ({ children }) => (
     <div className="block w-full overflow-x-auto">

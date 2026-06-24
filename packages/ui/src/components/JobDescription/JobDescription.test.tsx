@@ -81,3 +81,28 @@ describe('JobDescription — XSS-suppression invariant', () => {
     expect(container.querySelector('img')).toBeNull();
   });
 });
+
+describe('JobDescription — markdown image suppression', () => {
+  it('does NOT render an <img> for markdown image syntax ![alt](url)', () => {
+    // react-markdown DOES render ![alt](url) as <img> by default — the img
+    // override in mdComponents must suppress it to avoid broken-image icons
+    // (remote src is CSP-blocked) and prevent unexpected network requests.
+    const { container } = render(
+      <JobDescription markdown="![Company logo](https://cdn.example.com/logo.png)" />
+    );
+    expect(container.querySelector('img')).toBeNull();
+  });
+
+  it('renders the alt text as plain text when image is suppressed', () => {
+    render(<JobDescription markdown="![Company logo](https://cdn.example.com/logo.png)" />);
+    // Alt text is surfaced so content is not silently lost.
+    expect(screen.getByText('Company logo')).toBeInTheDocument();
+  });
+
+  it('renders nothing (not null-error) when the image has no alt text', () => {
+    // Should not throw.
+    expect(() =>
+      render(<JobDescription markdown="![](https://cdn.example.com/logo.png)" />)
+    ).not.toThrow();
+  });
+});
