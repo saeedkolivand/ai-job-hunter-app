@@ -1,7 +1,7 @@
 ---
 name: ai-provider-expert
 description: Primary reviewer for AI provider integrations, model routing, embeddings, prompt systems, streaming, token efficiency, and provider abstraction. Use for changes under ai_provider/, commands/ai.rs, documents/embed (infra), and packages/prompts. Enforces the rule that adding a new provider needs config + adapter only — never business-logic coupling.
-tools: Read, Grep, Glob, Bash, mcp__graphify
+tools: Read, Grep, Glob, Bash, mcp__graphify, mcp__codegraph
 model: opus
 ---
 

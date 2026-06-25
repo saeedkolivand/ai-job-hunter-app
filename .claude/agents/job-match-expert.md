@@ -1,7 +1,7 @@
 ---
 name: job-match-expert
-description: Primary reviewer for ATS scoring, job analysis, keyword/skill/requirement extraction, resume-job matching, recommendations, and cover-letter relevance. Use for changes under commands/match_resume.rs, commands/cover_letter.rs, validate/, documents/embed (consumption), and prompts used for JD content. Owns ATS *scoring/matching* (ATS-safe *formatting* belongs to resume-export-expert; provider *infra* belongs to ai-provider-expert).
-tools: Read, Grep, Glob, Bash, mcp__graphify
+description: Primary reviewer for ATS scoring, job analysis, keyword/skill/requirement extraction, resume-job matching, recommendations, and cover-letter relevance. Use for changes under commands/match_resume.rs, commands/cover_letter.rs, validate/, and JD-content prompts (it consumes embeddings, but the documents/embed pipeline itself is ai-provider-expert's). Owns ATS *scoring/matching* (ATS-safe *formatting* belongs to resume-export-expert; provider *infra* belongs to ai-provider-expert).
+tools: Read, Grep, Glob, Bash, mcp__graphify, mcp__codegraph
 model: opus
 ---
 

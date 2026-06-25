@@ -23,7 +23,7 @@ Respect the layer model in `docs/architecture-rules.md`; new cross-layer couplin
 
 ## Registries
 
-New board scraper → `scraping/boards/mod.rs` (`SCRAPERS`, implement `Scraper`). New applier → `applying/registry/mod.rs` (`APPLIERS`, implement `Applier`). Register, don't special-case.
+New board scraper → `scraping/boards/mod.rs` (`SCRAPERS`, implement `Scraper`). Register, don't special-case. (No applier registry — the apply engine was removed.)
 
 ## Data
 

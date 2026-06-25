@@ -1,7 +1,7 @@
 ---
 name: rust-backend-author
 description: WRITE-access implementer for the Rust/Tauri backend (apps/tauri/src-tauri/src/** not owned by a more specific domain, packages/shared/**) — domain modeling, error handling, module boundaries, data/SQLite/migrations. Implements to spec; never approves its own work — rust-backend-architect audits it (tauri-security-reviewer on risk).
-tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify
+tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify, mcp__codegraph
 model: opus
 ---
 

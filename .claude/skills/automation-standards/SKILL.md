@@ -1,17 +1,17 @@
 ---
 name: automation-standards
-description: Scraping + AI-provider standards — Scraper/Applier traits & registries, selector resilience, rate-limiting/cancellation, and the provider-abstraction (zero-change) rule for embeddings/streaming/prompts. Load for changes under scraping/, applying/, ai_provider/, packages/prompts, documents/embed.
+description: Scraping + AI-provider standards — the Scraper trait & SCRAPERS registry, selector resilience, rate-limiting/cancellation, and the provider-abstraction (zero-change) rule for embeddings/streaming/prompts. Load for changes under scraping/, ai_provider/, packages/prompts, documents/embed.
 ---
 
 # Automation standards (scraping + AI-provider)
 
 Authoritative: `docs/knowledge/automation-domain.md`.
 
-## Scraping / applying
+## Scraping
 
-- Register via the registries — `scraping/boards/mod.rs` (`SCRAPERS`, `Scraper` trait, `ScraperMode` Http/Browser) and `applying/registry/mod.rs` (`APPLIERS`, `Applier` trait). Don't special-case boards outside the registry.
+- Register via the registry — `scraping/boards/mod.rs` (`SCRAPERS`, `Scraper` trait, `ScraperMode` Http/Browser). Don't special-case boards outside the registry.
 - **Selector resilience** — core boards need fallback selectors; a brittle single-selector parse on a core board is HIGH.
-- **Reliability** — honor the cancellation token in `ScrapeContext`/`ApplyContext`; bounded retries with backoff; per-board rate limits; graceful failure recovery (don't poison the queue).
+- **Reliability** — honor the cancellation token in `ScrapeContext`; bounded retries with backoff; per-board rate limits; graceful failure recovery (don't poison the queue).
 - **Sessions/cookies** — handled safely; never log credentials/cookies (security lens → `tauri-security-reviewer`).
 
 ## AI provider (the architectural rule — HIGH if violated)
