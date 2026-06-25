@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.118.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.117.0...v0.118.0) (2026-06-25)
+
+### ✨ Features
+
+* github project import, job-summary fixes, and answer rewrite ([#500](https://github.com/saeedkolivand/ai-job-hunter-app/issues/500)) ([5bbc5c7](https://github.com/saeedkolivand/ai-job-hunter-app/commit/5bbc5c7a69746abacd488481f32bc0a222a33df9)), closes [#236](https://github.com/saeedkolivand/ai-job-hunter-app/issues/236)
+
 ## [0.117.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.116.1...v0.117.0) (2026-06-24)
 
 ### ✨ Features
