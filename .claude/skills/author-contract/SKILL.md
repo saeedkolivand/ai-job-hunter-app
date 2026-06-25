@@ -49,8 +49,7 @@ user-facing text must have its i18n key added to **both** `en` and `de` (also HI
 `#[cfg(target_os=…)]` test must be hermetic (inject dirs / a temp `HOME`, never assume a system
 binary/lib like `/usr/bin/google-chrome` or `libwayland` is _absent_, never reach an
 `exec()`/process-replacing path in-process), `#[serial_test::serial]` (fully-qualified) every
-env-mutating test, and no real network. These only run on that OS's CI runner — #486 lost four CI
-round-trips to exactly this.
+env-mutating test, and no real network. These only run on that OS's CI runner.
 
 ## Validate before "done" (hard gate — MANDATORY, no exceptions)
 

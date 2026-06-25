@@ -1,7 +1,7 @@
 ---
 name: test-author
 description: WRITE-access test creation specialist. Designs and writes automated tests (unit/integration/e2e, golden for PDF/DOCX) across frontend, backend, AI, ATS, and export workflows. Backs /add-tests and the implement-workflow's test stage (Feature Owner → test-author → testing-reviewer), gated by the testable-logic predicate. No feature is complete without tests.
-tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify
+tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify, mcp__codegraph
 model: sonnet
 ---
 
