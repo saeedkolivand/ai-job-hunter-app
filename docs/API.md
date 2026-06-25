@@ -30,6 +30,7 @@ All renderer ↔ Rust communication is defined as typed contracts in `packages/s
 | [dialog](#dialog)                 | Native file dialogs                        |
 | [documents](#documents)           | Document import/export                     |
 | [geocode](#geocode)               | Location lookup                            |
+| [github](#github)                 | GitHub repository import for projects      |
 | [jobPreferences](#jobpreferences) | Saved search preferences                   |
 | [jobs](#jobs)                     | Job tracker CRUD + events                  |
 | [linkedin](#linkedin)             | LinkedIn session management                |
@@ -496,6 +497,31 @@ interface GeocodeResult {
   lon: number;
 }
 ```
+
+---
+
+## `github`
+
+GitHub repository import for the resume builder's Projects step.
+
+#### `github.importRepos(input: string): Promise<GitHubRepo[]>`
+
+Fetches the user's public GitHub repositories by username or URL. Input is validated for SSRF (username `^[A-Za-z0-9-]{1,39}$` or a github.com URL with valid host); the backend constructs the API URL server-side. Returns a deduplicated, sorted list (forks excluded, sorted by stars descending). On error, throws `AppError` with one of: `Validation("GitHub user not found")` (404), `RateLimited("GitHub rate limit reached, try again later")` (403/429), or `Network("Failed to reach GitHub")` (other non-2xx).
+
+```typescript
+interface GitHubRepo {
+  name: string; // repository name (deduplicated slug)
+  description?: string; // repository description (up to 400 chars in the builder)
+  htmlUrl: string; // public GitHub repository URL
+  stars: number; // star count (used for sorting)
+  language?: string; // primary language (e.g. "TypeScript")
+  pushedAt?: string; // last push timestamp (ISO 8601)
+}
+```
+
+**Contract & IPC:** `packages/shared/src/ipc/contracts/github.ts` (`GitHubContract.importRepos`). **Client:** `apps/tauri/src/tauri-client/namespaces/github/github.ts` (unwraps `{ repos }` response, throws on `{ error }`). **Service hook:** `useGitHubImport()` mutation in `apps/tauri/src/renderer/services/use-github-import/use-github-import.ts`.
+
+**SSRF hardening:** Input is validated as either a bare username (regex) or a github.com URL (hostname extracted via `github_url_first_segment`, non-GitHub hosts rejected). API URL is constructed server-side in Rust (`api_url()` helper), never forwarded from the client.
 
 ---
 
