@@ -1,6 +1,6 @@
 import { Check, Copy, HelpCircle, Plus, Sparkles, X } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { APPLICATION_QUESTIONS } from '@ajh/prompts/generate';
 import { useTranslation } from '@ajh/translations';
@@ -63,12 +63,10 @@ export function ApplicationQuestionsModal({
   const [draft, setDraft] = useState('');
   // Which answer id currently has the rewrite popover open (one at a time).
   const [rewritingId, setRewritingId] = useState<string | null>(null);
-  // Ref mirror of the `answers` prop — lets the async .catch read the CURRENT
-  // answer at rejection time, not the stale value captured at accept time.
-  const answersRef = useRef(answers);
-  useEffect(() => {
-    answersRef.current = answers;
-  }, [answers]);
+  // Tracks the latest optimistically-written value per answer id. Set
+  // SYNCHRONOUSLY in acceptRewrite (before the async save) so the .catch
+  // guard never races against a React render cycle.
+  const pendingRewriteRef = useRef<Record<string, string>>({});
 
   const copy = async (id: string, text: string) => {
     await navigator.clipboard.writeText(text);
@@ -85,21 +83,16 @@ export function ApplicationQuestionsModal({
   const openRewrite = (id: string) => setRewritingId(id);
   const closeRewrite = () => setRewritingId(null);
   // Close the popover immediately (never leave the user stuck), then fire the
-  // persist. On failure: only revert if the answer hasn't been replaced by a
-  // newer value since this call wrote `text` — guards against a stale .catch
-  // clobbering a second rewrite that was accepted while this save was in-flight.
+  // persist. On failure: only revert if the answer hasn't been superseded by
+  // a second rewrite that was accepted while this save was in-flight.
+  // pendingRewriteRef is set SYNCHRONOUSLY here, so the guard is safe even if
+  // the rejection arrives before React flushes the optimistic re-render.
   const acceptRewrite = (id: string, text: string) => {
     const prev = answers[id] ?? '';
     setRewritingId(null);
+    pendingRewriteRef.current[id] = text; // synchronous — latest-wins sentinel
     updateAnswer(id, text).catch(() => {
-      // Revert only if our optimistic value is still the current one. In
-      // production, the hook's setAnswers commits `text` before awaiting the
-      // save, so answersRef.current[id] === text at catch time on a normal
-      // failure. If it's something else (a second rewrite B landed first),
-      // that newer value must not be clobbered by this stale failure.
-      if (answersRef.current[id] === text) {
-        revertAnswer(id, prev);
-      }
+      if (pendingRewriteRef.current[id] === text) revertAnswer(id, prev);
       notify.error({ message: t('autopilot.apply.questions.rewriteSaveError') });
     });
   };
