@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { APPLICATION_QUESTIONS } from '@ajh/prompts/generate';
@@ -57,6 +57,15 @@ export function useApplicationAnswers({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Snapshot of the last successful generate() context — lets updateAnswer re-save
+  // a single rewritten answer without re-running the whole pipeline.
+  const lastSaveContextRef = useRef<{
+    detected: GenerationMeta;
+    brief: string;
+  } | null>(null);
+  // Mirror of `answers` state for stable access inside callbacks without stale closure.
+  const answersRef = useRef<Record<string, string>>({});
+
   const toggle = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -75,6 +84,33 @@ export function useApplicationAnswers({
 
   const canGenerate =
     canUse && hasDesc && resume.trim().length > 0 && (selected.size > 0 || custom.length > 0);
+
+  const saveAnswers = async (
+    detected: GenerationMeta,
+    brief: string,
+    results: ApplicationAnswer[]
+  ) => {
+    await api.aiGenerations.save({
+      candidateName: detected.candidateName,
+      jobTitle: detected.jobTitle,
+      companyName: detected.companyName,
+      resumeLanguage: detected.resumeLanguage,
+      jobAdLanguage: detected.jobAdLanguage,
+      targetLanguage: detected.targetLanguage,
+      mismatch: detected.mismatch,
+      topRequirements: detected.topRequirements,
+      mode: 'ats',
+      resumeText: '',
+      coverLetterText: '',
+      jobAd: jobDesc,
+      jobUrl,
+      board,
+      applicationAnswers: results,
+      companyBrief: brief,
+    });
+    void qc.invalidateQueries({ queryKey: keys.aiGenerations.all });
+    void qc.invalidateQueries({ queryKey: keys.autopilot.all });
+  };
 
   const generate = async () => {
     if (!canGenerate || generating) return;
@@ -97,36 +133,44 @@ export function useApplicationAnswers({
           companyBrief: brief,
         });
         results.push({ id: q.id, question: q.question, answer });
-        setAnswers((prev) => ({ ...prev, [q.id]: answer }));
+        setAnswers((prev) => {
+          const next = { ...prev, [q.id]: answer };
+          answersRef.current = next;
+          return next;
+        });
       }
 
       // Persist onto the per-job application record (merge-upsert by jobUrl), so
       // answers + brief live alongside the résumé/cover the tailor flow saved.
-      await api.aiGenerations.save({
-        candidateName: detected.candidateName,
-        jobTitle: detected.jobTitle,
-        companyName: detected.companyName,
-        resumeLanguage: detected.resumeLanguage,
-        jobAdLanguage: detected.jobAdLanguage,
-        targetLanguage: detected.targetLanguage,
-        mismatch: detected.mismatch,
-        topRequirements: detected.topRequirements,
-        mode: 'ats',
-        resumeText: '',
-        coverLetterText: '',
-        jobAd: jobDesc,
-        jobUrl,
-        board,
-        applicationAnswers: results,
-        companyBrief: brief,
-      });
-      void qc.invalidateQueries({ queryKey: keys.aiGenerations.all });
-      void qc.invalidateQueries({ queryKey: keys.autopilot.all });
+      await saveAnswers(detected, brief, results);
+      lastSaveContextRef.current = { detected, brief };
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate answers');
     } finally {
       setGenerating(false);
     }
+  };
+
+  /**
+   * Replace a single answer (from an AI rewrite) and re-persist the full answer
+   * set through the same save path as generate(). No-op when no prior save context
+   * exists (i.e. no generate has completed yet — the button is disabled in that case).
+   */
+  const updateAnswer = async (id: string, text: string) => {
+    const ctx = lastSaveContextRef.current;
+    if (!ctx) return;
+    setAnswers((prev) => {
+      const next = { ...prev, [id]: text };
+      answersRef.current = next;
+      return next;
+    });
+    // Build the full answer list from all questions and custom entries using current
+    // answers so the save includes everything (not just the one changed answer).
+    const allAnswers = Object.entries({ ...answersRef.current, [id]: text }).map(([qId, ans]) => {
+      const q = APPLICATION_QUESTIONS.find((p) => p.id === qId) ?? custom.find((c) => c.id === qId);
+      return { id: qId, question: q?.question ?? qId, answer: ans };
+    });
+    await saveAnswers(ctx.detected, ctx.brief, allAnswers);
   };
 
   return {
@@ -140,5 +184,6 @@ export function useApplicationAnswers({
     error,
     generate,
     canGenerate,
+    updateAnswer,
   };
 }

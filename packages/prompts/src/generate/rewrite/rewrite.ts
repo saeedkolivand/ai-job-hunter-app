@@ -15,7 +15,7 @@
 import { type PromptTarget, resolveProfile } from '../../provider/index.js';
 import { ANTI_AI_TELL_LEXICAL, ANTI_AI_TELL_PROSE } from '../natural-voice/index.js';
 
-export type RewriteDocType = 'resume' | 'cover-letter';
+export type RewriteDocType = 'resume' | 'cover-letter' | 'application-answer';
 
 export interface RewriteParams {
   /** The exact selected span the user wants rewritten. */
@@ -44,17 +44,21 @@ export interface RewriteParams {
 const DOC_LABELS: Record<RewriteDocType, string> = {
   resume: 'résumé',
   'cover-letter': 'cover letter',
+  'application-answer': 'application answer',
 };
 
 /**
  * Per-doc-type natural-voice ruleset. A résumé span keeps ATS bullet conventions,
  * so only the lexical word bans apply; a cover-letter span is prose, so the full
- * prose-flow ruleset applies. Mirrors {@link DOC_LABELS} so a new doc type is a
- * compile-time error until a voice is provided (exhaustiveness).
+ * prose-flow ruleset applies. An application-answer span is short, first-person,
+ * honest prose (connected sentences, not ATS bullets), so it takes the same
+ * prose ruleset as a cover letter. Mirrors {@link DOC_LABELS} so a new doc type
+ * is a compile-time error until a voice is provided (exhaustiveness).
  */
 const DOC_VOICE: Record<RewriteDocType, string> = {
   resume: ANTI_AI_TELL_LEXICAL,
   'cover-letter': ANTI_AI_TELL_PROSE,
+  'application-answer': ANTI_AI_TELL_PROSE,
 };
 
 // Hard cap on the selected span itself so a huge selection can't blow a small

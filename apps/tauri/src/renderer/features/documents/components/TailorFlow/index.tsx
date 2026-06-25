@@ -366,7 +366,12 @@ export function TailorFlow({
       </div>
 
       {questionsOpen && (
-        <ApplicationQuestionsModal {...questions} onClose={() => setQuestionsOpen(false)} />
+        <ApplicationQuestionsModal
+          {...questions}
+          model={model}
+          locale={gen.meta?.targetLanguage ?? 'en'}
+          onClose={() => setQuestionsOpen(false)}
+        />
       )}
 
       {interviewOpen && (

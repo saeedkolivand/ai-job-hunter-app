@@ -1,10 +1,12 @@
 import { Check, Copy, HelpCircle, Plus, Sparkles, X } from 'lucide-react';
+import { AnimatePresence } from 'motion/react';
 import { useState } from 'react';
 
 import { APPLICATION_QUESTIONS } from '@ajh/prompts/generate';
 import { useTranslation } from '@ajh/translations';
 import { Button, Input, ModalShell } from '@ajh/ui';
 
+import { RewritePopover } from '@/components/generation/EditableOutput/RewritePopover';
 import { COPY_FEEDBACK_MS } from '@/lib/timings';
 
 import { MAX_CUSTOM_QUESTION_LEN } from './useApplicationAnswers';
@@ -21,6 +23,12 @@ interface Props {
   generate: () => void;
   canGenerate: boolean;
   onClose: () => void;
+  /** Model string for the rewrite popover (same source as the rest of TailorFlow). */
+  model: string;
+  /** Document/answer language — drives the rewrite locale. Defaults to 'en'. */
+  locale?: string;
+  /** Update a single answer text and persist (called on rewrite accept). */
+  updateAnswer: (id: string, text: string) => Promise<void>;
 }
 
 /**
@@ -42,10 +50,15 @@ export function ApplicationQuestionsModal({
   generate,
   canGenerate,
   onClose,
+  model,
+  locale = 'en',
+  updateAnswer,
 }: Props) {
   const { t } = useTranslation();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  // Which answer id currently has the rewrite popover open (one at a time).
+  const [rewritingId, setRewritingId] = useState<string | null>(null);
 
   const copy = async (id: string, text: string) => {
     await navigator.clipboard.writeText(text);
@@ -59,23 +72,59 @@ export function ApplicationQuestionsModal({
     setDraft('');
   };
 
-  // Shared answer + Copy block — reused by predefined and custom rows.
+  const openRewrite = (id: string) => setRewritingId(id);
+  const closeRewrite = () => setRewritingId(null);
+  const acceptRewrite = async (id: string, text: string) => {
+    await updateAnswer(id, text);
+    setRewritingId(null);
+  };
+
+  // Shared answer + Copy + Rewrite block — reused by predefined and custom rows.
   const answerBlock = (id: string, answer: string) => (
     <div className="px-2 pb-2 pl-7">
       <div className="relative rounded-md border border-[var(--border-clear)] bg-card px-2.5 py-2">
-        <p className="whitespace-pre-wrap pr-6 text-[11px] leading-relaxed text-foreground/70">
+        <p className="whitespace-pre-wrap pr-14 text-[11px] leading-relaxed text-foreground/70">
           {answer}
         </p>
-        <Button
-          variant="unstyled"
-          type="button"
-          onClick={() => void copy(id, answer)}
-          title={t('autopilot.apply.questions.copy')}
-          aria-label={t('autopilot.apply.questions.copy')}
-          className="absolute right-1.5 top-1.5 rounded p-0.5 text-foreground/30 transition-colors hover:text-foreground/70"
-        >
-          {copiedId === id ? <Check size={11} /> : <Copy size={11} />}
-        </Button>
+        {/* Action buttons — Copy + Rewrite */}
+        <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5">
+          <Button
+            variant="unstyled"
+            type="button"
+            onClick={() => openRewrite(id)}
+            title={t('autopilot.apply.questions.rewrite')}
+            aria-label={t('autopilot.apply.questions.rewriteAriaLabel')}
+            className="rounded p-0.5 text-foreground/30 transition-colors hover:text-brand-soft"
+          >
+            <Sparkles size={11} />
+          </Button>
+          <Button
+            variant="unstyled"
+            type="button"
+            onClick={() => void copy(id, answer)}
+            title={t('autopilot.apply.questions.copy')}
+            aria-label={t('autopilot.apply.questions.copy')}
+            className="rounded p-0.5 text-foreground/30 transition-colors hover:text-foreground/70"
+          >
+            {copiedId === id ? <Check size={11} /> : <Copy size={11} />}
+          </Button>
+        </div>
+
+        {/* Rewrite popover — rendered inline, anchored below the answer card */}
+        <AnimatePresence>
+          {rewritingId === id && (
+            <div className="absolute right-0 top-full z-[700] mt-1">
+              <RewritePopover
+                target={{ selection: answer, before: '', after: '' }}
+                docType="application-answer"
+                model={model}
+                locale={locale}
+                onAccept={(text) => void acceptRewrite(id, text)}
+                onClose={closeRewrite}
+              />
+            </div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
