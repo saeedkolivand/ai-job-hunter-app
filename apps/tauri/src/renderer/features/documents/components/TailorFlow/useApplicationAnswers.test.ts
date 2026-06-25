@@ -134,4 +134,78 @@ describe('useApplicationAnswers', () => {
     expect(result.current.custom).toHaveLength(1);
     expect(result.current.custom[0]?.question).toBe('Keep me');
   });
+
+  describe('updateAnswer', () => {
+    it('is a no-op before the first generate (no save context yet)', async () => {
+      const { result } = render();
+      // No generate() call — lastSaveContextRef is null.
+      await act(async () => {
+        await result.current.updateAnswer('why-company', 'New text');
+      });
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it('updates state + persists the FULL answer set after a rewrite', async () => {
+      const { result } = render();
+      // Select a predefined question and add a custom one.
+      act(() => result.current.toggle('why-company'));
+      act(() => result.current.addCustom('What excites you about this role?'));
+      const customId = result.current.custom[0]?.id ?? '';
+      expect(customId).not.toBe('');
+
+      // Generate both answers (save is called once here).
+      await act(async () => {
+        await result.current.generate();
+      });
+      expect(save).toHaveBeenCalledTimes(1);
+      save.mockClear();
+
+      // Rewrite only the predefined answer.
+      await act(async () => {
+        await result.current.updateAnswer('why-company', 'Rewritten predefined answer');
+      });
+
+      // State updated for the rewritten answer.
+      expect(result.current.answers['why-company']).toBe('Rewritten predefined answer');
+
+      // Save called once with the FULL set: rewritten predefined + untouched custom.
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          applicationAnswers: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'why-company',
+              answer: 'Rewritten predefined answer',
+            }),
+            expect.objectContaining({
+              id: customId,
+              question: 'What excites you about this role?',
+              answer: 'Because I led a payments migration.',
+            }),
+          ]),
+        })
+      );
+    });
+
+    it('untouched answers survive a rewrite (not dropped from the persisted set)', async () => {
+      const { result } = render();
+      act(() => result.current.toggle('why-company'));
+      act(() => result.current.addCustom('Untouched question'));
+      const customId = result.current.custom[0]?.id ?? '';
+
+      await act(async () => {
+        await result.current.generate();
+      });
+      save.mockClear();
+
+      await act(async () => {
+        await result.current.updateAnswer('why-company', 'Only this changed');
+      });
+
+      const call = save.mock.calls[0]?.[0] as { applicationAnswers: { id: string }[] } | undefined;
+      const savedIds = call?.applicationAnswers.map((a) => a.id) ?? [];
+      expect(savedIds).toContain('why-company');
+      expect(savedIds).toContain(customId);
+    });
+  });
 });

@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 import { APPLICATION_QUESTIONS } from '@ajh/prompts/generate';
 import { useTranslation } from '@ajh/translations';
-import { Button, Input, ModalShell } from '@ajh/ui';
+import { Button, Input, ModalShell, useNotification } from '@ajh/ui';
 
 import { RewritePopover } from '@/components/generation/EditableOutput/RewritePopover';
 import { COPY_FEEDBACK_MS } from '@/lib/timings';
@@ -55,6 +55,7 @@ export function ApplicationQuestionsModal({
   updateAnswer,
 }: Props) {
   const { t } = useTranslation();
+  const notify = useNotification();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   // Which answer id currently has the rewrite popover open (one at a time).
@@ -74,9 +75,13 @@ export function ApplicationQuestionsModal({
 
   const openRewrite = (id: string) => setRewritingId(id);
   const closeRewrite = () => setRewritingId(null);
-  const acceptRewrite = async (id: string, text: string) => {
-    await updateAnswer(id, text);
+  // Always close the popover first so the user isn't stuck; surface a fixed-key
+  // error toast if the IPC re-save fails (consistent with other mutation handlers).
+  const acceptRewrite = (id: string, text: string) => {
     setRewritingId(null);
+    updateAnswer(id, text).catch(() => {
+      notify.error({ message: t('autopilot.apply.questions.rewriteSaveError') });
+    });
   };
 
   // Shared answer + Copy + Rewrite block — reused by predefined and custom rows.

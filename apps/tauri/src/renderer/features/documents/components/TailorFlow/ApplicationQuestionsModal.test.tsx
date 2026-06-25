@@ -64,7 +64,9 @@ vi.mock('@/components/generation/EditableOutput/RewritePopover', () => ({
   RewritePopover: (props: PopoverProps) => RewritePopoverStub(props),
 }));
 
-// ── @ajh/ui — stub ModalShell, keep the rest ─────────────────────────────────
+// ── @ajh/ui — stub ModalShell + useNotification, keep the rest ───────────────
+
+const mockNotifyError = vi.fn();
 
 vi.mock('@ajh/ui', async (importOriginal) => {
   const actual = await importOriginal<typeof AjhUi>();
@@ -76,6 +78,7 @@ vi.mock('@ajh/ui', async (importOriginal) => {
         {children}
       </div>
     ),
+    useNotification: () => ({ error: mockNotifyError, success: vi.fn(), info: vi.fn() }),
   };
 });
 
@@ -123,6 +126,7 @@ function buildProps(
 
 beforeEach(() => {
   RewritePopoverStub.mockClear();
+  mockNotifyError.mockClear();
 });
 
 afterEach(() => {
@@ -205,6 +209,32 @@ describe('ApplicationQuestionsModal — Rewrite with AI', () => {
     expect(updateAnswer).not.toHaveBeenCalled();
   });
 
+  it('popover closes immediately even when updateAnswer rejects, and surfaces a fixed-key error toast', async () => {
+    const updateAnswer = vi
+      .fn<[string, string], Promise<void>>()
+      .mockRejectedValue(new Error('IPC save failed'));
+    render(<ApplicationQuestionsModal {...buildProps({ updateAnswer })} />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'autopilot.apply.questions.rewriteAriaLabel' })
+    );
+    expect(screen.getByTestId('rewrite-popover')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('popover-accept'));
+
+    // Popover closes synchronously (before the promise settles).
+    expect(screen.queryByTestId('rewrite-popover')).toBeNull();
+
+    // Error toast is shown after the rejection settles.
+    await waitFor(() => {
+      expect(mockNotifyError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'autopilot.apply.questions.rewriteSaveError',
+        })
+      );
+    });
+  });
+
   it('Copy button is still present alongside Rewrite', () => {
     render(<ApplicationQuestionsModal {...buildProps()} />);
     expect(screen.getByRole('button', { name: 'autopilot.apply.questions.copy' })).toBeTruthy();
@@ -243,5 +273,3 @@ describe('ApplicationQuestionsModal — Rewrite with AI', () => {
     expect(popover.getAttribute('data-selection')).toBe(secondAnswer);
   });
 });
-
-// ── updateAnswer persistence (hook-level) — covered by useApplicationAnswers.test.ts

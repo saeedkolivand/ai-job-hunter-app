@@ -1305,6 +1305,7 @@
         "copy": "Antwort kopieren",
         "rewrite": "Mit KI umschreiben",
         "rewriteAriaLabel": "Diese Antwort mit KI umschreiben",
+        "rewriteSaveError": "Umgeschriebene Antwort konnte nicht gespeichert werden",
         "customLabel": "Eigene Frage",
         "customPlaceholder": "Frage eingeben oder einfügen…",
         "add": "Hinzufügen",

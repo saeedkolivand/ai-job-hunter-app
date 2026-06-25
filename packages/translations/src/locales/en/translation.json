@@ -1301,6 +1301,7 @@
         "copy": "Copy answer",
         "rewrite": "Rewrite with AI",
         "rewriteAriaLabel": "Rewrite this answer with AI",
+        "rewriteSaveError": "Failed to save the rewritten answer",
         "customLabel": "Your own question",
         "customPlaceholder": "Type or paste a question…",
         "add": "Add",
