@@ -92,7 +92,7 @@ reviews:
         ATS scoring / job-match / cover-letter relevance. Keep scoring rules and
         keyword/skill/requirement extraction consistent; validators stay relaxed/
         future-proof (no hard enum gates that reject new variants).
-    - path: 'apps/tauri/src-tauri/src/{scraping,applying,browser}/**'
+    - path: 'apps/tauri/src-tauri/src/{scraping,browser}/**'
       instructions: >
         Scraping / browser automation. Resilient selectors, rate-limiting,
         cancellation, and registry-driven boards (SCRAPERS). No brittle hardcoded

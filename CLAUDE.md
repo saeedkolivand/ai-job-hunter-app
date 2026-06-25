@@ -304,7 +304,7 @@ This repo ships a Claude Code agent system under `.claude/` (tracked) plus a kno
 Agents are model-tiered by task difficulty (each agent's `model:` frontmatter):
 
 - **Opus** — correctness / reasoning-critical: `rust-backend-architect`, `rust-backend-author`, `tauri-security-reviewer`, `ai-provider-expert`, `ai-provider-author`, `job-match-expert`, `resume-export-expert`, `pr-reviewer` (max defect recall).
-- **Sonnet** — balanced implement/review: `frontend-reviewer`, `frontend-author`, `ui-ux-expert`, `job-match-author`, `scraping-applier-expert`, `scraping-applier-author`, `extension-author`, `extension-reviewer`, `pdf-docx-generator`, `test-author`, `testing-reviewer`, `performance-profiler`, `code-quality-reviewer`, `code-quality-author`.
+- **Sonnet** — balanced implement/review: `frontend-reviewer`, `frontend-author`, `ui-ux-expert`, `job-match-author`, `scraping-applier-expert`, `scraping-applier-author`, `extension-author`, `extension-reviewer`, `pdf-docx-generator`, `test-author`, `testing-reviewer`, `performance-profiler`, `code-quality-reviewer`, `code-quality-author`, `cleanup`.
 - **Haiku** — mechanical: `project-steward` (docs / lessons sync; sonnet override for ambiguous doc rewrites).
 
 Effort (thinking budget) tracks the same axis: extended thinking ("think hard" / "ultrathink") for architecture, security, concurrency, data-loss, and cross-module work; normal effort for routine UI, docs, config, and renames. Override per spawn with the Agent tool's `model` parameter when a task is unusually hard or trivial.
