@@ -121,7 +121,27 @@
         "name": "Name",
         "namePlaceholder": "z. B. Payment-Service",
         "description": "Beschreibung",
-        "descriptionPlaceholder": "Was es leistet und deine Rolle."
+        "descriptionPlaceholder": "Was es leistet und deine Rolle.",
+        "github": {
+          "trigger": "Von GitHub importieren",
+          "modalTitle": "GitHub-Projekte importieren",
+          "modalDescription": "Zeigt deine öffentlichen Repos an (bis zu ~30 nach Sternen, ohne Forks). Wähle beliebige aus – die KI schreibt passende Lebenslauf-Bullets.",
+          "usernamePlaceholder": "GitHub-Benutzername oder Profil-URL",
+          "fetchButton": "Repos abrufen",
+          "loading": "Repositories werden geladen…",
+          "selectAll": "Alle auswählen",
+          "deselectAll": "Alle abwählen",
+          "repoCount_one": "{{count}} Repo",
+          "repoCount_other": "{{count}} Repos",
+          "addSelected_one": "{{count}} ausgewählte hinzufügen",
+          "addSelected_other": "{{count}} ausgewählte hinzufügen",
+          "cancel": "Abbrechen",
+          "generating": "Bullets werden generiert…",
+          "noRepos": "Keine öffentlichen Repos gefunden.",
+          "stars_one": "{{count}} Stern",
+          "stars_other": "{{count}} Sterne",
+          "generateError": "Bullets konnten nicht generiert werden. Erneut versuchen oder schließen."
+        }
       },
       "publications": {
         "title": "Publikationen",
@@ -1281,6 +1301,9 @@
         "generate": "Antworten generieren",
         "generating": "Wird generiert…",
         "copy": "Antwort kopieren",
+        "rewrite": "Mit KI umschreiben",
+        "rewriteAriaLabel": "Diese Antwort mit KI umschreiben",
+        "rewriteSaveError": "Umgeschriebene Antwort konnte nicht gespeichert werden",
         "customLabel": "Eigene Frage",
         "customPlaceholder": "Frage eingeben oder einfügen…",
         "add": "Hinzufügen",

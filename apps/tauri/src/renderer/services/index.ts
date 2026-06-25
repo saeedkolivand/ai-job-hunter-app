@@ -26,6 +26,7 @@ export * from './use-data';
 export * from './use-documents';
 export * from './use-extension-bridge';
 export * from './use-geocode';
+export * from './use-github-import';
 export * from './use-job-preferences';
 export * from './use-jobs';
 export * from './use-match';

@@ -27,6 +27,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [automation-domain.md](automation-domain.md)                     | Scraping + AI-provider: registries, resilience, provider abstraction, embeddings, streaming, prompts                       |
 | [../SCRAPING_ENDPOINTS.md](../SCRAPING_ENDPOINTS.md)             | Per-board scraping endpoint reconnaissance (external snapshot — see the doc)                                               |
 | [extension-domain.md](extension-domain.md)                       | Browser extension (MV3) + desktop bridge: auth model, transport, protocol lockstep, store policy                           |
+| [github-projects-import.md](github-projects-import.md)           | GitHub repository import for resume builder Projects step: Rust fetch + SSRF guard, AI bullet generation, modal UI         |
 | [document-record-wire-format.md](document-record-wire-format.md) | DocumentRecord serde renames = backup-bundle on-disk format; intentional divergence from TS app model                      |
 | [matching-algorithm.md](matching-algorithm.md)                   | Keyword-coverage scoring kernel (Autopilot + ATS), caching, gap analysis, intentional flat-coverage simplification         |
 | [persistence.md](persistence.md)                                 | SQLite + transactions, `db::open`, DataStore trait, backup/restore, Resettable registry                                    |

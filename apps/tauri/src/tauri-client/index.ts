@@ -27,6 +27,7 @@ import { dialog } from './namespaces/dialog/index.js';
 import { documents } from './namespaces/documents/index.js';
 import { extensionBridge } from './namespaces/extensionBridge/index.js';
 import { geocode } from './namespaces/geocode/index.js';
+import { github } from './namespaces/github/index.js';
 import { jobPreferences } from './namespaces/jobPreferences/index.js';
 import { jobs } from './namespaces/jobs/index.js';
 import { linkedin } from './namespaces/linkedin/index.js';
@@ -54,6 +55,7 @@ export function createTauriInvokeClient(): AppClient {
     documents: documents as unknown as AppClient['documents'],
     jobPreferences: jobPreferences as AppClient['jobPreferences'],
     contactProfile: contactProfile as AppClient['contactProfile'],
+    github: github as AppClient['github'],
     extensionBridge: extensionBridge as AppClient['extensionBridge'],
     scrape: scrape as AppClient['scrape'],
     match: match as AppClient['match'],

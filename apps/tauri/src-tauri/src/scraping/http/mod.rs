@@ -63,6 +63,11 @@ pub struct FetchOptions {
     /// Per-request byte cap. `None` falls back to the shared `MAX_BYTES` (8 MB).
     /// Use only for feeds known to exceed 8 MB (e.g. the GTJ RSS feed at ~10 MB).
     pub max_bytes: Option<usize>,
+    /// Per-request wall-clock timeout. `None` preserves the shared client's
+    /// no-global-timeout contract (callers rely on the retry loop for liveness).
+    /// Set it for third-party egresses that need a hard ceiling (e.g. the GitHub
+    /// repo import) so a slow/stalled connection can't hang indefinitely.
+    pub timeout: Option<Duration>,
 }
 
 impl Default for FetchOptions {
@@ -73,6 +78,7 @@ impl Default for FetchOptions {
             body: None,
             retries: 2,
             max_bytes: None,
+            timeout: None,
         }
     }
 }
@@ -145,6 +151,12 @@ pub async fn fetch_text(
 
         if let Some(body) = &opts.body {
             request = request.body(body.clone());
+        }
+
+        // Optional per-request timeout. The shared client has no global timeout
+        // (net/http.rs), so this is the only hard wall-clock ceiling when set.
+        if let Some(timeout) = opts.timeout {
+            request = request.timeout(timeout);
         }
 
         match request.send().await {
