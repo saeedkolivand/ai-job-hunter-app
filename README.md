@@ -5,7 +5,7 @@
 <h1 align="center">AI Job Hunter</h1>
 
 <p align="center">
-  <em>Your local-first, AI-native desktop assistant for intelligent job searching, résumé &amp; cover-letter generation, and assisted applications — run it fully offline with Ollama, or plug in your own OpenAI, Anthropic, or Gemini key.</em>
+  <em>Your local-first, AI-native desktop assistant for intelligent job searching, résumé &amp; cover-letter generation, and assisted applications — run it fully offline with Ollama, plug in your own OpenAI, Anthropic, or Gemini key, or route it through an AI CLI agent (Claude Code, Codex, Gemini CLI).</em>
 </p>
 
 <p align="center">
@@ -51,7 +51,7 @@
 
 ---
 
-<details>
+<details open>
 <summary><strong>📑 Table of contents</strong></summary>
 
 - <a href="#what-it-does" target="_blank" rel="noopener noreferrer">What It Does</a>
