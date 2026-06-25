@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.118.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.118.1...v0.118.2) (2026-06-25)
+
+### 🎨 UI/UX
+
+* **extension:** recolor icons to brand teal and regenerate promo cards ([2a68df9](https://github.com/saeedkolivand/ai-job-hunter-app/commit/2a68df91a26dc112ab40e3aa1be5e450d4da2edd)), closes [#5bb8b7](https://github.com/saeedkolivand/ai-job-hunter-app/issues/5bb8b7)
+
 ## [0.118.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.118.0...v0.118.1) (2026-06-25)
 
 ### 🐛 Bug Fixes
