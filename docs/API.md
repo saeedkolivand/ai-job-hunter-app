@@ -504,7 +504,7 @@ interface GeocodeResult {
 
 GitHub repository import for the resume builder's Projects step.
 
-#### `github.importRepos(input: string): Promise<GitHubRepo[]>`
+### `github.importRepos(input: string): Promise<GitHubRepo[]>`
 
 Fetches the user's public GitHub repositories by username or URL. Input is validated for SSRF (username `^[A-Za-z0-9-]{1,39}$` or a github.com URL with valid host); the backend constructs the API URL server-side. Returns a deduplicated, sorted list (forks excluded, sorted by stars descending). On error, throws `AppError` with one of: `Validation("GitHub user not found")` (404), `RateLimited("GitHub rate limit reached, try again later")` (403/429), or `Network("Failed to reach GitHub")` (other non-2xx).
 

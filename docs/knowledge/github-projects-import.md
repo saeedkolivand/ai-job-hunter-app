@@ -36,9 +36,9 @@ See `apps/tauri/src/renderer/features/resume-builder/components/GitHubImportModa
 
 ## Test coverage
 
-- **Rust** — 38 tests in `profile_import/github.rs` (SSRF validation, status-code mapping, serialization). 1 test in `scraping/http/test.rs` (`FetchOptions.timeout` field). `cargo test github` + `cargo test --lib scraping::http` both pass.
-- **Prompts** — 312 tests (+ 4 net new); fence, parser, link re-attachment, name-based matching, cap boundaries.
-- **Renderer** — 21 tests (+ 7 net new); Enter key fetch, Escape during generation, Add-button disabled when none selected, select-all after deselect-all, generation error recovery, prefill seededRef regression path.
+- **Rust** — Unit-tested in `profile_import/github.rs` (SSRF validation, status-code mapping, serialization) and `scraping/http/test.rs` (`FetchOptions.timeout` field). `cargo test github` + `cargo test --lib scraping::http` both pass.
+- **Prompts** — Covered by the prompts test suite; fence, parser, link re-attachment, name-based matching, cap boundaries.
+- **Renderer** — Covered by the renderer test suite; Enter key fetch, Escape during generation, Add-button disabled when none selected, select-all after deselect-all, generation error recovery, prefill seededRef regression path.
 
 See `.claude/scratch/github-projects-import.md` for full test audit and gates.
 
@@ -49,6 +49,6 @@ See `.claude/scratch/github-projects-import.md` for full test audit and gates.
 
 ## Related patterns
 
-- **Profile import sibling:** `contact_profile/linkedin.rs` (same module co-location, different contract — LinkedIn returns profile fields, GitHub returns repos).
+- **Profile import sibling:** `apps/tauri/src-tauri/src/profile_import/linkedin.rs` (same module co-location, different contract — LinkedIn returns profile fields, GitHub returns repos).
 - **AI bullet generation:** `interview-questions/` prompt generator (same template + streaming + parser pattern).
 - **Resume builder step:** `StepExtras` is one of 7 wizard steps using `useFieldArray` for repeatable sections.
