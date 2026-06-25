@@ -3,6 +3,8 @@ export {
   extractMetadata,
   generateApplicationAnswer,
   generateCoverLetter,
+  type GeneratedGitHubProject,
+  generateGitHubProjects,
   generateInterviewQuestions,
   generateJobAdSummary,
   generateReferral,

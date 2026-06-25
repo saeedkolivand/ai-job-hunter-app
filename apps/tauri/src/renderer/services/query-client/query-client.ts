@@ -78,7 +78,6 @@ export const keys = {
   },
   jobPreferences: { all: ['jobPreferences'] as const },
   contactProfile: { all: ['contactProfile'] as const },
-  github: { repos: (input: string) => ['github', 'repos', input] as const },
   postings: {
     all: ['postings'] as const,
     interactions: (type?: string) => ['postings', 'interactions', type] as const,

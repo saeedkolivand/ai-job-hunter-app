@@ -76,6 +76,25 @@ const MAX_REPOS: usize = 30;
 /// Per-request wall-clock ceiling for the GitHub egress.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// Map a GitHub HTTP status code to the appropriate [`AppError`], or `None` for a
+/// successful 2xx response. Pure helper extracted from `fetch_repos` so it can be
+/// unit-tested without a network call.
+///
+/// - 404 → `Validation("GitHub user not found")`
+/// - 403 / 429 → `RateLimited` (unauthenticated cap is 60 req/hr; 429 on newer secondary-limit)
+/// - any other non-2xx → `Network("Failed to reach GitHub")` (fixed message, no status leak)
+/// - 2xx → `None`
+fn map_status(code: u16) -> Option<AppError> {
+    match code {
+        200..=299 => None,
+        404 => Some(AppError::Validation("GitHub user not found".to_string())),
+        403 | 429 => Some(AppError::RateLimited(
+            "GitHub rate limit reached, try again later".to_string(),
+        )),
+        _ => Some(AppError::Network("Failed to reach GitHub".to_string())),
+    }
+}
+
 /// Fetch a user's public repos, drop forks, sort by stars (desc), cap to 30.
 ///
 /// `input` may be a bare username or a `github.com/<user>` URL. We extract +
@@ -112,20 +131,8 @@ pub async fn fetch_repos(input: &str) -> AppResult<Vec<GitHubRepo>> {
     .map_err(|_| AppError::Network("Failed to reach GitHub".to_string()))?;
 
     let status = res.status_code;
-    if status == 404 {
-        return Err(AppError::Validation("GitHub user not found".to_string()));
-    }
-    if status == 403 || status == 429 {
-        // Unauthenticated GitHub allows 60 req/hr; past that it returns 403 with a
-        // rate-limit body (429 on the newer secondary-limit path).
-        return Err(AppError::RateLimited(
-            "GitHub rate limit reached, try again later".to_string(),
-        ));
-    }
-    if !(200..300).contains(&status) {
-        // Fixed message — no status interpolation that could aid probing and no
-        // URL leak.
-        return Err(AppError::Network("Failed to reach GitHub".to_string()));
+    if let Some(err) = map_status(status) {
+        return Err(err);
     }
 
     let raw: Vec<RawRepo> =
@@ -478,6 +485,105 @@ mod tests {
     fn maps_stargazers_count_to_stars() {
         let out = filter_and_rank(vec![repo("r", 7, false)]);
         assert_eq!(out[0].stars, 7);
+    }
+
+    // ── HTTP status mapping (item 1: pure map_status helper) ─────────────────
+
+    #[test]
+    fn map_status_404_is_validation() {
+        assert!(matches!(map_status(404), Some(AppError::Validation(_))));
+        if let Some(AppError::Validation(msg)) = map_status(404) {
+            assert!(msg.to_lowercase().contains("not found"), "expected 'not found' in {msg:?}");
+        }
+    }
+
+    #[test]
+    fn map_status_403_is_rate_limited() {
+        assert!(matches!(map_status(403), Some(AppError::RateLimited(_))));
+    }
+
+    #[test]
+    fn map_status_429_is_rate_limited() {
+        assert!(matches!(map_status(429), Some(AppError::RateLimited(_))));
+    }
+
+    #[test]
+    fn map_status_500_is_network() {
+        assert!(matches!(map_status(500), Some(AppError::Network(_))));
+    }
+
+    #[test]
+    fn map_status_503_is_network() {
+        assert!(matches!(map_status(503), Some(AppError::Network(_))));
+    }
+
+    #[test]
+    fn map_status_200_is_none() {
+        assert!(map_status(200).is_none());
+    }
+
+    #[test]
+    fn map_status_201_is_none() {
+        assert!(map_status(201).is_none());
+    }
+
+    #[test]
+    fn map_status_299_is_none() {
+        assert!(map_status(299).is_none());
+    }
+
+    // ── parse_username SSRF edge cases (item 2) ───────────────────────────────
+
+    #[test]
+    fn rejects_bare_host_no_path_segment() {
+        // "https://github.com" — host only, no slash-after-host path segment.
+        assert!(matches!(
+            parse_username("https://github.com"),
+            Err(AppError::Validation(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_trailing_slash_empty_segment() {
+        // "https://github.com/" — trailing slash yields an empty first segment.
+        assert!(matches!(
+            parse_username("https://github.com/"),
+            Err(AppError::Validation(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_url_segment_invalid_github_username() {
+        // "https://github.com/-bad" — valid URL segment but invalid GitHub username
+        // (leading hyphen). Two-stage rejection: URL parse succeeds, username validate fails.
+        assert!(matches!(
+            parse_username("https://github.com/-bad"),
+            Err(AppError::Validation(_))
+        ));
+    }
+
+    // ── serde: Some case (item 3) ─────────────────────────────────────────────
+
+    #[test]
+    fn output_some_pushed_at_is_present_and_camel_cased() {
+        let repo = GitHubRepo {
+            name: "my-project".to_string(),
+            description: Some("A great project".to_string()),
+            html_url: "https://github.com/u/my-project".to_string(),
+            language: None,
+            topics: vec![],
+            stars: 1,
+            pushed_at: Some("2026-01-10T12:00:00Z".to_string()),
+        };
+        let v = serde_json::to_value(&repo).unwrap();
+        let obj = v.as_object().unwrap();
+        // `Some` description must appear (not omitted).
+        assert_eq!(obj["description"], "A great project");
+        // `Some` pushedAt serialized under camelCase key — a future rename to
+        // `pushed_at` (snake) or `PushedAt` is caught by this assertion.
+        assert_eq!(obj["pushedAt"], "2026-01-10T12:00:00Z");
+        // No snake_case leakage.
+        assert!(!obj.contains_key("pushed_at"), "snake_case key must not appear");
     }
 
     // ── output serialization ──────────────────────────────────────────────────

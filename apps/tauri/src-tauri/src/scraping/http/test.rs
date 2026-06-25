@@ -10,6 +10,35 @@ fn test_fetch_options_default() {
     assert_eq!(opts.retries, 2);
 }
 
+/// `FetchOptions.timeout` backward-safe contract (item 4):
+/// - `Default` leaves `timeout: None` (backward-safe — no global ceiling for existing callers).
+/// - An explicit `Some(Duration)` round-trips correctly (opt-in ceiling is preserved).
+/// No network call needed — this is a pure struct field assertion.
+#[test]
+fn test_fetch_options_timeout_field_contract() {
+    // Default must leave timeout as None — every existing call-site relies on
+    // the no-global-timeout contract (`..Default::default()`).
+    let defaults = FetchOptions::default();
+    assert!(
+        defaults.timeout.is_none(),
+        "Default FetchOptions must have timeout: None (backward-safe)"
+    );
+
+    // Opt-in: an explicit Some(Duration) survives round-trip through the struct.
+    let with_timeout = FetchOptions {
+        timeout: Some(Duration::from_millis(1)),
+        ..Default::default()
+    };
+    assert_eq!(
+        with_timeout.timeout,
+        Some(Duration::from_millis(1)),
+        "FetchOptions.timeout should round-trip as Some(1ms)"
+    );
+    // Other fields stay at their defaults when only timeout is set.
+    assert!(with_timeout.headers.is_none());
+    assert_eq!(with_timeout.retries, 2);
+}
+
 #[test]
 fn test_strip_html_basic() {
     let html = "<p>Hello <b>World</b></p>";
