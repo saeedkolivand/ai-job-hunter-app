@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782339812990,
+  "lastUpdate": 1782360212513,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1715,6 +1715,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 284074,
             "range": "± 12400",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5bbc5c7a69746abacd488481f32bc0a222a33df9",
+          "message": "feat: github project import, job-summary fixes, and answer rewrite (#500)\n\n* feat(resume): add github repo fetch ipc for project import\n\nAdds the github_import_repos IPC capability: fetch a user's public repos,\ndrop forks, sort by stars (top 30), return them to the renderer. First\nstep of the resume-builder GitHub project import (chunks B/C add AI bullets\nand the UI).\n\n- profile_import/github.rs: fetch_repos with a hardened SSRF guard\n  (host-gated parse, server-constructed api.github.com URL, username\n  validated against GitHub's rule); routed through scraping::http::fetch_text\n  for the 8MB body cap, per-host rate limiter and a 20s timeout.\n- scraping/http: opt-in FetchOptions.timeout (default None, backward-safe).\n- Full IPC wiring: shared contract, tauri-client namespace, service hook,\n  query key, mock-client stub.\n- 26 Rust unit tests (URL/username parsing, SSRF rejection, filter/sort,\n  serde shape); no network in tests.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* feat(resume): import github projects into the resume builder\n\nAdds an 'Import from GitHub' action to the resume builder's Projects step:\nfetch the user's public repos (chunk A), let them multi-select, generate\nAI resume bullets per repo, and append them as project entries.\n\n- packages/prompts: github-projects prompt builder + lenient parser; repo\n  text fenced as untrusted (ADR-010 pattern) and the AI never sees/writes\n  URLs.\n- lib/generate: generateGitHubProjects streams via the shared pipeline (no\n  new IPC, every provider), matches AI bullets back to repos by de-slugged\n  name so a reordered response can't cross a bullet onto the wrong repo\n  link, and falls back to the raw repo description offline.\n- GitHubImportModal: username prefilled from the contact profile, fetch/\n  empty/error/generating states, accessible dialog + live regions, design\n  tokens; failure keeps the modal open with the selection preserved.\n- Tests: SSRF-rejection + status-mapping (Rust), name-match link guard +\n  fallback (generation), modal flows incl. async prefill + abort.\n- Removes an unused github query-key factory (the hook is a mutation).\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs(resume): document github projects import\n\nThin-pointer docs for the GitHub import feature: github.importRepos in\ndocs/API.md, a knowledge pointer, and the README index row.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(resume): resolve pre-pr review on github import\n\nAddress the internal pre-PR gate: cargo fmt wrap on the new test asserts,\na clippy doc_lazy_continuation, the namespace error-unwrap throwing on an\nundefined result (vitest suite exit), the cancel-during-generation guard\n(abort no longer appends fallback entries), and typed test accessors so the\nmodal test passes real tsc.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(documents): show model picker and regenerate job summary on language change\n\nThe job-summary step now renders the shared ModelSelector (same preferences\nstore as StepModel, no second model state), and changing the output language\nre-runs the summary in the new language (guarded: only when a summary already\nexists, aborts any in-flight run, no loop).\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* feat(documents): rewrite application answers with ai\n\nAdds a Rewrite-with-AI affordance to each generated application answer,\nreusing RewritePopover with a new 'application-answer' RewriteDocType\n(prose voice, same grounding/no-fabrication contract). Accepted rewrites\npersist through the existing save path. Includes a scoped eslint test-file\noverride (matches the Storybook pattern) and en/de strings.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs: list cli agents in tagline and open the readme toc by default\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* chore(agents): harden pr-reviewer with coderabbit-derived rules\n\nAdds rules distilled from CodeRabbit findings on the last reviewed PRs:\nstatic-init (LazyLock) panics, json!(struct) IPC contract drift, React\nQuery gcTime/over-broad invalidation, and tautological-assertion patterns\n(boolean-returning waitFor, same-object dedup, partial-patch asserts).\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(documents): surface rewrite save errors and cover answer persistence\n\nacceptRewrite now closes the popover and notifies on a failed re-save\n(was silently swallowed). Adds useApplicationAnswers updateAnswer tests\n(no-op before first generate, full answer-set persisted, untouched answers\nsurvive) and removes a stale 'covered elsewhere' comment.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* test(documents): type vi.fn mocks so tsc passes uncached\n\nUse the vitest 3 function-type generic for updateAnswer/toggle/addCustom\nmocks and drop a non-tuple spread, so the real (uncached) tsc that CI and\npre-push run passes — the scoped typecheck had been returning a stale-cache\npass.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* test(shared): add github to expected ipc namespaces\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(prompts): replace polynomial regexes with linear strips\n\nResolves CodeQL #236 (js/polynomial-redos, HIGH): the <think> strip becomes\nan indexOf-based linear scan and the markdown bold/italic strips use a bounded\n[^*]+ class, so no lazy span between identical delimiters runs on model output.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(resume): surface github ipc failures and document ranking window\n\nimportRepos now throws on an unexpected/undefined result instead of masking it\nas an empty list; the generic namespaces test mocks a valid github envelope.\nDoc comments state the result is top-30-by-stars among the 100 most-recently-\nupdated repos (deliberate v1 scope).\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(documents): guard job-summary mount and revert failed answer rewrite\n\nThe language-regen effect now skips its mount run so a restored summary isn't\nclobbered in the default locale. A failed answer-rewrite save reverts the\noptimistic local edit (revertAnswer, no re-save) and toasts. The answers ref\nsync moves to a useEffect so the setAnswers updater stays pure under StrictMode.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(resume): reset github import modal on reopen and complete plural keys\n\nThe always-mounted modal now clears repos/selection/fetch state when reopened\n(no stale list or duplicate appends). Adds the missing addSelected_one and\ndrops the redundant bare plural keys so i18next v4 resolves _one/_other.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs: fix api heading level, drop test counts, correct sibling path\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(prompts): scan original string when stripping think blocks\n\ntoLowerCase() can change length (e.g. İ), so offsets from a lowercased copy\ndrift from the source and mis-cut the span. Match the ASCII <think>/</think>\ntags case-insensitively against original-string slices instead.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(resume): decouple modal reset from prefill and harden ipc envelope check\n\nThe modal now resets transient state only on an open transition (not on an\nasync prefill update that would wipe an in-progress fetch); the username seed\nis a separate, guarded effect. The github IPC client checks the result is a\nnon-null object before the 'in' check so a primitive response can't throw.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(documents): guard rewrite revert against stale save failures\n\nRevert only when the optimistic value is still current, so a later accepted\nrewrite isn't clobbered by an earlier save's stale rejection. Tests now mirror\nthe production optimistic prop update (the prior mock masked the real flow).\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs: make github import test pointers status-free\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(documents): make rewrite rollback guard timing-independent\n\nTrack the pending rewrite in a synchronously-set ref instead of the\nrender-synced answersRef, so a fast save rejection (before the optimistic\nre-render flushes) still reverts correctly while a superseding rewrite skips.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs: drop gitignored scratch link from github import doc\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-25T05:54:51+02:00",
+          "tree_id": "c89787d66a81e0372d106ef912cd6006c06f6a78",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/5bbc5c7a69746abacd488481f32bc0a222a33df9"
+        },
+        "date": 1782360211936,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1906363,
+            "range": "± 64176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2523928,
+            "range": "± 54869",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 288777,
+            "range": "± 9855",
             "unit": "ns/iter"
           }
         ]
