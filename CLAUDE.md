@@ -252,7 +252,7 @@ Rules:
 
 ## codegraph (structural code graph)
 
-Deterministic, zero-token code index (SQLite at `.codegraph/`, 968 files indexed via tree-sitter). **Complements graphify** — codegraph answers _structural_ questions, graphify answers _semantic / cross-document_ ones. Installed globally (`@colbymchenry/codegraph`); the watcher auto-syncs the index, so no manual rebuild is normally needed.
+Deterministic, zero-token code index (SQLite at `.codegraph/`, indexed via tree-sitter). **Complements graphify** — codegraph answers _structural_ questions, graphify answers _semantic / cross-document_ ones. Installed globally (`@colbymchenry/codegraph`); the watcher auto-syncs the index, so no manual rebuild is normally needed.
 
 Rules:
 
