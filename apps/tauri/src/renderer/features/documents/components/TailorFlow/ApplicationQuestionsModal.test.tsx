@@ -15,7 +15,7 @@
  * rewritingId state, disabled predicate, prop wiring) is exercised directly.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import type * as AjhUi from '@ajh/ui';
 
@@ -215,23 +215,48 @@ describe('ApplicationQuestionsModal — Rewrite with AI', () => {
   });
 
   it('on save failure: popover closes, revertAnswer restores previous text, error toast fires', async () => {
-    const updateAnswer = vi
-      .fn<(id: string, text: string) => Promise<void>>()
-      .mockRejectedValue(new Error('IPC save failed'));
+    // Deferred rejection so we can simulate the optimistic prop update first.
+    let rejectSave!: (e: Error) => void;
+    const savePromise = new Promise<void>((_, rej) => {
+      rejectSave = rej;
+    });
+    const updateAnswer = vi.fn<(id: string, text: string) => Promise<void>>(() => savePromise);
     const revertAnswer = vi.fn<(id: string, prev: string) => void>();
-    render(<ApplicationQuestionsModal {...buildProps({ updateAnswer, revertAnswer })} />);
+    const { rerender } = render(
+      <ApplicationQuestionsModal {...buildProps({ updateAnswer, revertAnswer })} />
+    );
 
     fireEvent.click(
       screen.getByRole('button', { name: 'autopilot.apply.questions.rewriteAriaLabel' })
     );
     expect(screen.getByTestId('rewrite-popover')).toBeTruthy();
 
+    // acceptRewrite fires — popover closes synchronously.
     fireEvent.click(screen.getByTestId('popover-accept'));
-
-    // Popover closes synchronously (before the promise settles).
     expect(screen.queryByTestId('rewrite-popover')).toBeNull();
 
-    // After rejection settles: revertAnswer called with the ORIGINAL text, error toast fired.
+    // In production the hook's setAnswers optimistically commits `text` before
+    // awaiting the save, so the modal re-renders with answers[id] = REWRITE_TEXT.
+    // Simulate that here so answersRef.current[id] matches the production value.
+    const REWRITE_TEXT = 'Rewritten answer text'; // what the stub popover emits
+    await act(async () => {
+      rerender(
+        <ApplicationQuestionsModal
+          {...buildProps({
+            answers: { [QUESTION_ID]: REWRITE_TEXT },
+            updateAnswer,
+            revertAnswer,
+          })}
+        />
+      );
+    });
+
+    // Now reject the save — guard sees current === REWRITE_TEXT === text → reverts.
+    await act(async () => {
+      rejectSave(new Error('IPC save failed'));
+      await Promise.resolve();
+    });
+
     await waitFor(() => {
       expect(revertAnswer).toHaveBeenCalledWith(QUESTION_ID, ANSWER_TEXT);
     });
@@ -280,5 +305,69 @@ describe('ApplicationQuestionsModal — Rewrite with AI', () => {
     expect(screen.getAllByTestId('rewrite-popover')).toHaveLength(1);
     const popover = screen.getByTestId('rewrite-popover');
     expect(popover.getAttribute('data-selection')).toBe(secondAnswer);
+  });
+
+  it('stale revert guard: if answer changed again before save failure lands, revertAnswer is NOT called', async () => {
+    // save A will reject, but only after we re-render with the newer answer B.
+    let rejectA!: (e: Error) => void;
+    const saveAPromise = new Promise<void>((_, rej) => {
+      rejectA = rej;
+    });
+    const updateAnswer = vi.fn<(id: string, text: string) => Promise<void>>(() => saveAPromise);
+    const revertAnswer = vi.fn<(id: string, prev: string) => void>();
+
+    const { rerender } = render(
+      <ApplicationQuestionsModal {...buildProps({ updateAnswer, revertAnswer })} />
+    );
+
+    // Accept rewrite A — stub popover emits 'Rewritten answer text'.
+    const REWRITE_A = 'Rewritten answer text';
+    fireEvent.click(
+      screen.getByRole('button', { name: 'autopilot.apply.questions.rewriteAriaLabel' })
+    );
+    fireEvent.click(screen.getByTestId('popover-accept'));
+
+    // Step 1: hook's optimistic setAnswers commits rewrite A → modal re-renders with text=A.
+    await act(async () => {
+      rerender(
+        <ApplicationQuestionsModal
+          {...buildProps({
+            answers: { [QUESTION_ID]: REWRITE_A },
+            updateAnswer,
+            revertAnswer,
+          })}
+        />
+      );
+    });
+
+    // Step 2: a second rewrite B is accepted while A's save is still in-flight.
+    // answersRef.current[id] becomes B ≠ A → guard must skip the revert.
+    const NEWER_ANSWER = 'Even newer rewrite B';
+    await act(async () => {
+      rerender(
+        <ApplicationQuestionsModal
+          {...buildProps({
+            answers: { [QUESTION_ID]: NEWER_ANSWER },
+            updateAnswer,
+            revertAnswer,
+          })}
+        />
+      );
+    });
+
+    // Now let save A reject — guard sees current === B ≠ A (text) → skips revert.
+    await act(async () => {
+      rejectA(new Error('IPC save failed'));
+      await Promise.resolve();
+    });
+
+    // revertAnswer must NOT have been called — B is the current value, not A's text.
+    expect(revertAnswer).not.toHaveBeenCalled();
+    // Error toast is still shown.
+    await waitFor(() => {
+      expect(mockNotifyError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'autopilot.apply.questions.rewriteSaveError' })
+      );
+    });
   });
 });

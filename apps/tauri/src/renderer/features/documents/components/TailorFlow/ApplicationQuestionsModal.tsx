@@ -1,6 +1,6 @@
 import { Check, Copy, HelpCircle, Plus, Sparkles, X } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { APPLICATION_QUESTIONS } from '@ajh/prompts/generate';
 import { useTranslation } from '@ajh/translations';
@@ -63,6 +63,12 @@ export function ApplicationQuestionsModal({
   const [draft, setDraft] = useState('');
   // Which answer id currently has the rewrite popover open (one at a time).
   const [rewritingId, setRewritingId] = useState<string | null>(null);
+  // Ref mirror of the `answers` prop — lets the async .catch read the CURRENT
+  // answer at rejection time, not the stale value captured at accept time.
+  const answersRef = useRef(answers);
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
 
   const copy = async (id: string, text: string) => {
     await navigator.clipboard.writeText(text);
@@ -79,13 +85,21 @@ export function ApplicationQuestionsModal({
   const openRewrite = (id: string) => setRewritingId(id);
   const closeRewrite = () => setRewritingId(null);
   // Close the popover immediately (never leave the user stuck), then fire the
-  // persist. On failure: revert the optimistic state update so the visible answer
-  // matches the persisted truth, then surface a fixed-key error toast.
+  // persist. On failure: only revert if the answer hasn't been replaced by a
+  // newer value since this call wrote `text` — guards against a stale .catch
+  // clobbering a second rewrite that was accepted while this save was in-flight.
   const acceptRewrite = (id: string, text: string) => {
     const prev = answers[id] ?? '';
     setRewritingId(null);
     updateAnswer(id, text).catch(() => {
-      revertAnswer(id, prev);
+      // Revert only if our optimistic value is still the current one. In
+      // production, the hook's setAnswers commits `text` before awaiting the
+      // save, so answersRef.current[id] === text at catch time on a normal
+      // failure. If it's something else (a second rewrite B landed first),
+      // that newer value must not be clobbered by this stale failure.
+      if (answersRef.current[id] === text) {
+        revertAnswer(id, prev);
+      }
       notify.error({ message: t('autopilot.apply.questions.rewriteSaveError') });
     });
   };
