@@ -19,11 +19,13 @@ A change requires authoring tests iff a changed `.rs`/`.ts`/`.tsx` file (not tes
 
 - Order: **integration → unit → e2e**. Test behavior, not implementation.
 - **Coverage** of changed code: success + failure + **error & security paths** (untested error/security path on changed code = HIGH/blocking) + edge cases + validation.
+- **Prove the guard is real (red-green).** A test locking a bugfix must FAIL on the unfixed code and PASS on the fix — confirm it (temporarily revert the fix, or assert the exact sentinel/branch the fix introduced). A regression test that passes both ways guards nothing; CodeRabbit/CI caught several this run that did exactly that (a mocked dependency hid the real failure path).
 
 ## Mocking
 
 - Allowed: external APIs, AI providers, third-party, expensive ops.
 - **Never mock** internal business logic, ATS scoring, resume generation, or export pipelines — use realistic fixtures.
+- **Mock fidelity — a stub must reproduce the REAL side-effects of what it replaces.** A `vi.fn()` standing in for a fn that commits optimistic state (e.g. `updateAnswer` calling `setAnswers` BEFORE its async save) must reproduce that effect (update the controlled prop/state in the test) — otherwise the test passes against logic production would break. A rollback-guard bug shipped green precisely because the mocked `updateAnswer` never updated state, so the guard's sentinel was never exercised. If a stub can't reproduce the real effect, render the real unit and mock only the leaf (network/provider/IPC).
 
 ## Cross-OS / cfg-gated & environment tests (each of these cost a CI round-trip on #486)
 

@@ -55,14 +55,29 @@ round-trips to exactly this.
 ## Validate before "done" (hard gate — MANDATORY, no exceptions)
 
 This is not optional and you do **not** declare done on assumption — **run** the relevant gate and
-**verify** it green with your own eyes: per-package `tsc --noEmit` / `pnpm -F <pkg> typecheck`,
-`pnpm test`, `cargo check`/`cargo test`/`cargo clippy` for `apps/tauri/src-tauri`. Run the **exact**
-gate command (per-package, `--force` where caching can mask failures) — a wrapped/cached "no errors"
-is not proof. Anything red → revert that change and report what + why. **Cross-OS caveat:** a same-host
-`cargo`/`pnpm` build **silently excludes** `#[cfg(target_os=…)]` code for other targets — a green local
-run does NOT verify it; cross-target-check (`cargo check --target <triple>`) any OS-gated code you touch.
-If your host genuinely can't build that target, say so explicitly in the handoff (`cross-OS-unverified — CI
+**verify** it green with your own eyes: `tsc --noEmit` / `pnpm typecheck`, `pnpm test`,
+`cargo check`/`cargo test`/`cargo clippy` for `apps/tauri/src-tauri`. Anything red → revert that change
+and report what + why.
+
+**Your "green" must match the bar that GATES — the pre-push/CI scope, not a narrower one** (this class
+cost real failed-push cycles):
+
+- **Scope ≥ the gate.** A `pnpm -F <pkg> test`/`typecheck` is for fast iteration only — it does **not**
+  run sibling packages' tests. Any change touching `packages/shared`/the IPC contracts, **or any
+  cross-package public API**, must pass the **whole-graph** `pnpm test` (a shared "every expected
+  namespace" enumeration test lives in `@ajh/shared`, not in `@ajh/tauri` — a scoped run never sees it).
+- **Force past the cache.** Report green from `TURBO_FORCE=1 pnpm typecheck` (or `--force`) — the exact
+  command the pre-push runs. A cached/stale `^build` can mask a real type error; a wrapped "no errors" is
+  not proof.
+- **`tsc` after every test edit — `vitest` is NOT a typecheck.** vitest runs on esbuild and does **zero**
+  type-checking, so `getByTestId(...).value`/`.checked` casts and `noUncheckedIndexedAccess` violations
+  pass `pnpm test` yet fail CI's `tsc`. After writing/editing ANY test file, run `pnpm typecheck` — a
+  green test run is not a green typecheck. (Cast `get*By*` results to `HTMLInputElement` before
+  `.value`/`.checked`; guard indexed access — no `!`.) **Cross-OS caveat:** a same-host
+  `cargo`/`pnpm` build **silently excludes** `#[cfg(target_os=…)]` code for other targets — a green local
+  run does NOT verify it; cross-target-check (`cargo check --target <triple>`) any OS-gated code you touch.
+  If your host genuinely can't build that target, say so explicitly in the handoff (`cross-OS-unverified — CI
 runs it`) — that labeled exception is the ONLY unverified hand-off allowed; otherwise never hand a red or
-unverified diff to the critic. End with a short summary: files touched, issues resolved, anything left for the
-critic. Propose durable lessons as `LESSON · <category> · Context/Decision/Outcome` (only
-`project-steward` persists them).
+  unverified diff to the critic. End with a short summary: files touched, issues resolved, anything left for the
+  critic. Propose durable lessons as `LESSON · <category> · Context/Decision/Outcome` (only
+  `project-steward` persists them).
