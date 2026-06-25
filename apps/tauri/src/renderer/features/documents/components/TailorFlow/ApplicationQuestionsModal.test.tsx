@@ -119,7 +119,7 @@ function buildProps(
     onClose: vi.fn(),
     model: 'llama3',
     locale: 'en',
-    updateAnswer: vi.fn<[string, string], Promise<void>>().mockResolvedValue(undefined),
+    updateAnswer: vi.fn<(id: string, text: string) => Promise<void>>().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -177,7 +177,9 @@ describe('ApplicationQuestionsModal — Rewrite with AI', () => {
   });
 
   it('onAccept calls updateAnswer with the question id and new text, then closes the popover', async () => {
-    const updateAnswer = vi.fn<[string, string], Promise<void>>().mockResolvedValue(undefined);
+    const updateAnswer = vi
+      .fn<(id: string, text: string) => Promise<void>>()
+      .mockResolvedValue(undefined);
     render(<ApplicationQuestionsModal {...buildProps({ updateAnswer })} />);
 
     fireEvent.click(
@@ -195,7 +197,9 @@ describe('ApplicationQuestionsModal — Rewrite with AI', () => {
   });
 
   it('onClose dismisses the popover without calling updateAnswer', () => {
-    const updateAnswer = vi.fn<[string, string], Promise<void>>().mockResolvedValue(undefined);
+    const updateAnswer = vi
+      .fn<(id: string, text: string) => Promise<void>>()
+      .mockResolvedValue(undefined);
     render(<ApplicationQuestionsModal {...buildProps({ updateAnswer })} />);
 
     fireEvent.click(
@@ -211,7 +215,7 @@ describe('ApplicationQuestionsModal — Rewrite with AI', () => {
 
   it('popover closes immediately even when updateAnswer rejects, and surfaces a fixed-key error toast', async () => {
     const updateAnswer = vi
-      .fn<[string, string], Promise<void>>()
+      .fn<(id: string, text: string) => Promise<void>>()
       .mockRejectedValue(new Error('IPC save failed'));
     render(<ApplicationQuestionsModal {...buildProps({ updateAnswer })} />);
 

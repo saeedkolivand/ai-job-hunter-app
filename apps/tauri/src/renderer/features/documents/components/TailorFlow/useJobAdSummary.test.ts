@@ -31,7 +31,7 @@ vi.mock('@ajh/translations', () => ({
 const generateJobAdSummary = vi.fn(async (_params: unknown) => 'SUMMARY');
 
 vi.mock('@/lib/generate', () => ({
-  generateJobAdSummary: (...args: unknown[]) => generateJobAdSummary(...args),
+  generateJobAdSummary: (params: unknown) => generateJobAdSummary(params),
 }));
 
 // ── useUpdateApplication — stub; captures calls ───────────────────────────────
