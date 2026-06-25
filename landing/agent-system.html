@@ -869,6 +869,7 @@ footer{margin-top:64px; text-align:center}
       // ---- horizontal assembly-line scroll fix ----
       var beltSection = document.getElementById('belt-section');
       var beltTrack = document.getElementById('belt-track');
+      var beltViewport = beltTrack && beltTrack.parentElement; // .belt-viewport — the token's positioning context
       var token = document.getElementById('diff-token');
       var stepEl = document.getElementById('belt-step');
       var nameEl = document.getElementById('belt-name');
@@ -892,7 +893,10 @@ footer{margin-top:64px; text-align:center}
         var firstC = stations[0].offsetLeft + stations[0].offsetWidth / 2;
         var lastC = stations[stations.length - 1].offsetLeft + stations[stations.length - 1].offsetWidth / 2;
         var activeX = firstC + (lastC - firstC) * p;
-        var tx = innerWidth / 2 - activeX;
+        // Centre on the belt-viewport (the token sits at its 50%), NOT the window —
+        // the belt lives inside a centred max-width container offset from the viewport edge.
+        var center = (beltViewport ? beltViewport.clientWidth : innerWidth) / 2;
+        var tx = center - activeX;
         
         beltTrack.style.transform = 'translateX(' + tx.toFixed(1) + 'px)';
         
