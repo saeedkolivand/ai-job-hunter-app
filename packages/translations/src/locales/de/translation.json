@@ -132,15 +132,13 @@
           "selectAll": "Alle auswählen",
           "deselectAll": "Alle abwählen",
           "repoCount_one": "{{count}} Repo",
-          "repoCount": "{{count}} Repo",
           "repoCount_other": "{{count}} Repos",
-          "addSelected": "{{count}} ausgewählte hinzufügen",
+          "addSelected_one": "{{count}} ausgewählte hinzufügen",
           "addSelected_other": "{{count}} ausgewählte hinzufügen",
           "cancel": "Abbrechen",
           "generating": "Bullets werden generiert…",
           "noRepos": "Keine öffentlichen Repos gefunden.",
           "stars_one": "{{count}} Stern",
-          "stars": "{{count}} Stern",
           "stars_other": "{{count}} Sterne",
           "generateError": "Bullets konnten nicht generiert werden. Erneut versuchen oder schließen."
         }

@@ -57,27 +57,41 @@ export function GitHubImportModal({ open, onClose, onAppend }: GitHubImportModal
   const model = useSelectedModel();
   const { data: contact } = useContactProfile();
 
-  // Seed username once from the contact profile when it resolves. A plain
-  // `useState(prefill)` traps the user: if prefill arrives after mount the field
-  // stays empty, and if it's non-empty the user can't clear the field because
-  // `resolvedUsername = username || prefill` keeps snapping back to it.
-  // A seededRef avoids reading `username` inside the effect (exhaustive-deps safe).
   const prefill = contact?.github ? extractGitHubUsername(contact.github) : '';
-  const [username, setUsername] = useState('');
-  const seededRef = useRef(false);
-  useEffect(() => {
-    if (prefill && !seededRef.current) {
-      seededRef.current = true;
-      setUsername(prefill);
-    }
-  }, [prefill]);
 
+  const [username, setUsername] = useState('');
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [fetchState, setFetchState] = useState<FetchState>('idle');
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
+
+  // Reset all transient state each time the modal opens so a second open never
+  // shows the previous fetch's repos pre-selected (duplicate-append bug).
+  // Also re-seeds the username prefill so it works correctly on every reopen.
+  // The seededRef pattern is no longer needed: we seed unconditionally on open,
+  // which is the same "exactly once per session" guarantee but per-open-cycle.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      // Modal closed — mark that we should reset+reseed on next open.
+      seededRef.current = false;
+      return;
+    }
+    // Modal opened (or re-opened): reset all fetch/generation state.
+    setRepos([]);
+    setSelected(new Set());
+    setFetchState('idle');
+    setFetchError(null);
+    setGenerateError(null);
+    // Re-seed username from profile (mirrors the original seededRef pattern but
+    // per-open-cycle so reopen always gets the current profile value).
+    if (prefill && !seededRef.current) {
+      seededRef.current = true;
+      setUsername(prefill);
+    }
+  }, [open, prefill]);
 
   const { mutateAsync: importRepos } = useGitHubImport();
   const abortRef = useRef<AbortController | null>(null);

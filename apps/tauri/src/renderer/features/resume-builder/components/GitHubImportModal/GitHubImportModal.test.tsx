@@ -457,4 +457,35 @@ describe('GitHubImportModal', () => {
 
     await waitFor(() => expect(getTextbox().value).toBe('async-jane'));
   });
+
+  // ── item 14: reopen resets state — stale list + duplicate-append regression ──
+
+  it('reopening the modal clears the previous fetch result and selection', async () => {
+    const onAppend = vi.fn();
+    const { rerender } = render(
+      <GitHubImportModal open={true} onClose={vi.fn()} onAppend={onAppend} />
+    );
+
+    // First open: fetch and select repos.
+    await fetchRepos([REPO_A, REPO_B]);
+    expect(getCheckboxes()).toHaveLength(2);
+    expect(getCheckboxes().every((cb) => cb.checked)).toBe(true);
+
+    // Close the modal (open → false).
+    await act(async () => {
+      rerender(<GitHubImportModal open={false} onClose={vi.fn()} onAppend={onAppend} />);
+    });
+
+    // Reopen (false → true): state must be reset — no stale repos visible.
+    await act(async () => {
+      rerender(<GitHubImportModal open={true} onClose={vi.fn()} onAppend={onAppend} />);
+    });
+
+    // No checkboxes rendered (repo list cleared).
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+    // Add button is disabled (nothing selected, fetchState !== done).
+    expect(screen.getByRole('button', { name: /addSelected/i })).toBeDisabled();
+    // No appends happened from the mere close/reopen cycle.
+    expect(onAppend).not.toHaveBeenCalled();
+  });
 });

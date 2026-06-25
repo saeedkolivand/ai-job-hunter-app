@@ -132,15 +132,13 @@
           "selectAll": "Select all",
           "deselectAll": "Deselect all",
           "repoCount_one": "{{count}} repo",
-          "repoCount": "{{count}} repo",
           "repoCount_other": "{{count}} repos",
-          "addSelected": "Add {{count}} selected",
+          "addSelected_one": "Add {{count}} selected",
           "addSelected_other": "Add {{count}} selected",
           "cancel": "Cancel",
           "generating": "Generating bullets…",
           "noRepos": "No public repos found.",
           "stars_one": "{{count}} star",
-          "stars": "{{count}} star",
           "stars_other": "{{count}} stars",
           "generateError": "Could not generate bullets. Try again or close to discard."
         }
