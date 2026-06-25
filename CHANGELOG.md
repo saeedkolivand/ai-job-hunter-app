@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.118.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.118.0...v0.118.1) (2026-06-25)
+
+### 🐛 Bug Fixes
+
+* **landing:** center assembly-line token within belt viewport ([0d73544](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0d73544f969560abfb8a52c979660dc7a417e78a))
+
+### 🎨 UI/UX
+
+* **icons:** recolor app and tray icons from purple to brand teal ([0ab036b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0ab036b0282411c8af9fcf7927efa78fec46f8c8)), closes [#5bb8b7](https://github.com/saeedkolivand/ai-job-hunter-app/issues/5bb8b7)
+* **landing:** rebuild agent-system as dark ink explainer with drawn assembly line ([67526bb](https://github.com/saeedkolivand/ai-job-hunter-app/commit/67526bb35ed8fa4b4bac0ca60575315523045144))
+
+### 📚 Documentation
+
+* **agents:** correct stale agent count and config drift ([b311945](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b31194564fe3f61824a8083e97360307dcbcf04e))
+* drop stale codegraph file count ([81cfb76](https://github.com/saeedkolivand/ai-job-hunter-app/commit/81cfb769d984653240b509a9b7749b8f0e3e8833))
+* fix stale semgrep workflow reference in coderabbit config ([30899a9](https://github.com/saeedkolivand/ai-job-hunter-app/commit/30899a95ddc36143172fee5ef17be2a8cf6f5c0e))
+* update agent system landing page ([f54032c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f54032c6bdc886df31a709513018eb114ecc8b0e))
+
 ## [0.118.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.117.0...v0.118.0) (2026-06-25)
 
 ### ✨ Features
