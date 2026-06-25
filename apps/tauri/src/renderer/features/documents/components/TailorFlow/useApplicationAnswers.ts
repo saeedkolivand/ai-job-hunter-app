@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { APPLICATION_QUESTIONS } from '@ajh/prompts/generate';
@@ -63,8 +63,13 @@ export function useApplicationAnswers({
     detected: GenerationMeta;
     brief: string;
   } | null>(null);
-  // Mirror of `answers` state for stable access inside callbacks without stale closure.
+  // Mirror of `answers` state for stable reads inside async callbacks without stale
+  // closures. Kept in sync by an effect — never mutated inside a setAnswers updater
+  // (updaters must be pure: they may run twice in React 19 StrictMode).
   const answersRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
 
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -133,11 +138,7 @@ export function useApplicationAnswers({
           companyBrief: brief,
         });
         results.push({ id: q.id, question: q.question, answer });
-        setAnswers((prev) => {
-          const next = { ...prev, [q.id]: answer };
-          answersRef.current = next;
-          return next;
-        });
+        setAnswers((prev) => ({ ...prev, [q.id]: answer }));
       }
 
       // Persist onto the per-job application record (merge-upsert by jobUrl), so
@@ -152,20 +153,27 @@ export function useApplicationAnswers({
   };
 
   /**
+   * Replace a single answer in local state WITHOUT persisting — used to revert an
+   * optimistic update when the IPC save fails so the UI matches the stored truth.
+   */
+  const revertAnswer = (id: string, prev: string) => {
+    setAnswers((current) => ({ ...current, [id]: prev }));
+  };
+
+  /**
    * Replace a single answer (from an AI rewrite) and re-persist the full answer
    * set through the same save path as generate(). No-op when no prior save context
    * exists (i.e. no generate has completed yet — the button is disabled in that case).
+   * The caller is responsible for reverting via revertAnswer() if this rejects.
    */
   const updateAnswer = async (id: string, text: string) => {
     const ctx = lastSaveContextRef.current;
     if (!ctx) return;
-    setAnswers((prev) => {
-      const next = { ...prev, [id]: text };
-      answersRef.current = next;
-      return next;
-    });
-    // Build the full answer list from all questions and custom entries using current
-    // answers so the save includes everything (not just the one changed answer).
+    // Optimistic update — answersRef is synced by the effect after the render.
+    setAnswers((prev) => ({ ...prev, [id]: text }));
+    // Build the full answer list from the ref snapshot merged with the new value.
+    // answersRef.current still holds the pre-update snapshot at this point (the
+    // effect hasn't run yet), so we explicitly merge [id]: text on top.
     const allAnswers = Object.entries({ ...answersRef.current, [id]: text }).map(([qId, ans]) => {
       const q = APPLICATION_QUESTIONS.find((p) => p.id === qId) ?? custom.find((c) => c.id === qId);
       return { id: qId, question: q?.question ?? qId, answer: ans };
@@ -185,5 +193,6 @@ export function useApplicationAnswers({
     generate,
     canGenerate,
     updateAnswer,
+    revertAnswer,
   };
 }

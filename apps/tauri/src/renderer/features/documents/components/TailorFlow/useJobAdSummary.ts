@@ -140,6 +140,12 @@ export function useJobAdSummary({
   // Gate for the language auto-regenerate effect: changing language before a
   // summary has been produced just stores the choice silently.
   const hasSummaryRef = useRef(false);
+  // Skips the language effect's mount invocation. `useEffect([language])` fires
+  // once on mount; the seed effect (declared first) may have already set
+  // hasSummaryRef=true for a restored/cached summary, which would cause the
+  // mount run to re-generate and overwrite the restored text. This ref lets the
+  // effect return early on mount and only react to real language changes.
+  const languageSettled = useRef(false);
 
   // Stable ref holding the latest render-cycle values so the language-change
   // effect can read them without listing them as deps. Updated synchronously
@@ -230,6 +236,15 @@ export function useJobAdSummary({
   // a reactive value), so `language` is the only dep — fully satisfying
   // exhaustive-deps with no eslint-disable.
   useEffect(() => {
+    // Skip the mount invocation. The seed effect (declared earlier) may have
+    // already set hasSummaryRef=true for a restored/cached summary before this
+    // effect fires, causing a spurious regeneration that overwrites the
+    // restored text. Mark settled and return — only real language picks proceed.
+    if (!languageSettled.current) {
+      languageSettled.current = true;
+      return;
+    }
+
     const {
       canUse: cu,
       hasDesc: hd,

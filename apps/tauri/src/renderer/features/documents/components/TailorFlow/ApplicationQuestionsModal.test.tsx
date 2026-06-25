@@ -120,6 +120,7 @@ function buildProps(
     model: 'llama3',
     locale: 'en',
     updateAnswer: vi.fn<(id: string, text: string) => Promise<void>>().mockResolvedValue(undefined),
+    revertAnswer: vi.fn<(id: string, prev: string) => void>(),
     ...overrides,
   };
 }
@@ -213,11 +214,12 @@ describe('ApplicationQuestionsModal — Rewrite with AI', () => {
     expect(updateAnswer).not.toHaveBeenCalled();
   });
 
-  it('popover closes immediately even when updateAnswer rejects, and surfaces a fixed-key error toast', async () => {
+  it('on save failure: popover closes, revertAnswer restores previous text, error toast fires', async () => {
     const updateAnswer = vi
       .fn<(id: string, text: string) => Promise<void>>()
       .mockRejectedValue(new Error('IPC save failed'));
-    render(<ApplicationQuestionsModal {...buildProps({ updateAnswer })} />);
+    const revertAnswer = vi.fn<(id: string, prev: string) => void>();
+    render(<ApplicationQuestionsModal {...buildProps({ updateAnswer, revertAnswer })} />);
 
     fireEvent.click(
       screen.getByRole('button', { name: 'autopilot.apply.questions.rewriteAriaLabel' })
@@ -229,7 +231,10 @@ describe('ApplicationQuestionsModal — Rewrite with AI', () => {
     // Popover closes synchronously (before the promise settles).
     expect(screen.queryByTestId('rewrite-popover')).toBeNull();
 
-    // Error toast is shown after the rejection settles.
+    // After rejection settles: revertAnswer called with the ORIGINAL text, error toast fired.
+    await waitFor(() => {
+      expect(revertAnswer).toHaveBeenCalledWith(QUESTION_ID, ANSWER_TEXT);
+    });
     await waitFor(() => {
       expect(mockNotifyError).toHaveBeenCalledWith(
         expect.objectContaining({

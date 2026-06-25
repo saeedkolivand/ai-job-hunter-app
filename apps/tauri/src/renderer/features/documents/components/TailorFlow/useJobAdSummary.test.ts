@@ -180,6 +180,51 @@ describe('useJobAdSummary — no auto-fire when no summary exists', () => {
   });
 });
 
+// ── Regression: mount with a restored summary must NOT auto-regenerate ────────
+//
+// When `initialSummary` or a cached summary is present on mount, the seed effect
+// (declared first) sets hasSummaryRef=true before the language effect's mount
+// run fires. Without the `languageSettled` guard, the mount run would pass the
+// hasSummaryRef check and kick off a spurious generation that overwrites the
+// restored text.
+
+describe('useJobAdSummary — no mount regenerate when summary is restored', () => {
+  it('does NOT call generateJobAdSummary on mount when initialSummary is present', async () => {
+    // Cold-entry hydration: a summary was persisted onto the application record.
+    renderHook(
+      () => useJobAdSummary(makeParams({ initialSummary: 'Prior AI summary of the job ad.' })),
+      { wrapper: makeWrapper() }
+    );
+
+    // Let all mount effects settle.
+    await act(async () => {});
+
+    // The restored summary must survive mount — no generation should have fired.
+    expect(generateJobAdSummary).not.toHaveBeenCalled();
+  });
+
+  it('still auto-regenerates with the new language AFTER mount when the user changes language', async () => {
+    const { result } = renderHook(
+      () => useJobAdSummary(makeParams({ initialSummary: 'Prior AI summary of the job ad.' })),
+      { wrapper: makeWrapper() }
+    );
+
+    // Let mount settle (no auto-fire expected).
+    await act(async () => {});
+    expect(generateJobAdSummary).not.toHaveBeenCalled();
+
+    // User now picks a different language → auto-regenerate must fire.
+    await act(async () => {
+      result.current.setLanguage('de');
+    });
+
+    expect(generateJobAdSummary).toHaveBeenCalledTimes(1);
+    expect(generateJobAdSummary).toHaveBeenLastCalledWith(
+      expect.objectContaining({ language: 'de' })
+    );
+  });
+});
+
 // ── 3. Prior in-flight generation is aborted before the new language run ──────
 
 describe('useJobAdSummary — abort on language change', () => {

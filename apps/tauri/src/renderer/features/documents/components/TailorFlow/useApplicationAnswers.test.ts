@@ -208,4 +208,26 @@ describe('useApplicationAnswers', () => {
       expect(savedIds).toContain(customId);
     });
   });
+
+  describe('revertAnswer', () => {
+    it('restores state to a previous value WITHOUT calling save', async () => {
+      const { result } = render();
+      act(() => result.current.toggle('why-company'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+      save.mockClear();
+
+      // Verify the generated answer is present.
+      expect(result.current.answers['why-company']).toContain('payments migration');
+
+      // Revert to a known previous text.
+      act(() => result.current.revertAnswer('why-company', 'Old text before rewrite'));
+
+      expect(result.current.answers['why-company']).toBe('Old text before rewrite');
+      // No save triggered — revert is local-only.
+      expect(save).not.toHaveBeenCalled();
+    });
+  });
 });

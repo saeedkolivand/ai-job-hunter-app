@@ -29,6 +29,8 @@ interface Props {
   locale?: string;
   /** Update a single answer text and persist (called on rewrite accept). */
   updateAnswer: (id: string, text: string) => Promise<void>;
+  /** Revert a single answer to a previous text WITHOUT persisting (for rollback on save failure). */
+  revertAnswer: (id: string, prev: string) => void;
 }
 
 /**
@@ -53,6 +55,7 @@ export function ApplicationQuestionsModal({
   model,
   locale = 'en',
   updateAnswer,
+  revertAnswer,
 }: Props) {
   const { t } = useTranslation();
   const notify = useNotification();
@@ -75,11 +78,14 @@ export function ApplicationQuestionsModal({
 
   const openRewrite = (id: string) => setRewritingId(id);
   const closeRewrite = () => setRewritingId(null);
-  // Always close the popover first so the user isn't stuck; surface a fixed-key
-  // error toast if the IPC re-save fails (consistent with other mutation handlers).
+  // Close the popover immediately (never leave the user stuck), then fire the
+  // persist. On failure: revert the optimistic state update so the visible answer
+  // matches the persisted truth, then surface a fixed-key error toast.
   const acceptRewrite = (id: string, text: string) => {
+    const prev = answers[id] ?? '';
     setRewritingId(null);
     updateAnswer(id, text).catch(() => {
+      revertAnswer(id, prev);
       notify.error({ message: t('autopilot.apply.questions.rewriteSaveError') });
     });
   };
