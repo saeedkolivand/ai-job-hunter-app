@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import {
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import { generateJobAdSummary, type GenerationMeta } from '@/lib/generate';
 import { useUpdateApplication } from '@/services/use-applications/use-applications';
@@ -17,6 +24,77 @@ interface Params {
   initialSummary?: string;
 }
 
+interface RunParams {
+  jobDesc: string;
+  model: string;
+  language: string;
+  meta?: GenerationMeta | null;
+  applicationId?: string;
+  cacheKey: string;
+  controller: AbortController;
+  abortRef: MutableRefObject<AbortController | null>;
+  summaryForDesc: MutableRefObject<string | null>;
+  hasSummaryRef: MutableRefObject<boolean>;
+  updateApplication: { mutate: (args: { id: string; jobSummary: string }) => void };
+  setCachedJobSummary: (key: string, value: string) => void;
+  setSummary: Dispatch<SetStateAction<string>>;
+  setError: Dispatch<SetStateAction<string | null>>;
+  setGenerating: Dispatch<SetStateAction<boolean>>;
+}
+
+/**
+ * Module-level runner so neither `generate()` nor the language-change effect
+ * need to capture it as a reactive value, satisfying exhaustive-deps cleanly.
+ */
+function runGeneration({
+  jobDesc,
+  model,
+  language,
+  meta,
+  applicationId,
+  cacheKey,
+  controller,
+  abortRef,
+  summaryForDesc,
+  hasSummaryRef,
+  updateApplication,
+  setCachedJobSummary,
+  setSummary,
+  setError,
+  setGenerating,
+}: RunParams): Promise<void> {
+  const target = jobDesc;
+  return generateJobAdSummary({
+    jobAd: target,
+    meta,
+    model,
+    language,
+    onToken: (tok) => setSummary((prev) => prev + tok),
+    signal: controller.signal,
+  })
+    .then((result) => {
+      if (controller.signal.aborted) return;
+      setSummary(result);
+      summaryForDesc.current = target;
+      hasSummaryRef.current = true;
+      if (applicationId) {
+        updateApplication.mutate({ id: applicationId, jobSummary: result });
+      } else {
+        setCachedJobSummary(cacheKey, result);
+      }
+    })
+    .catch((err: unknown) => {
+      if (controller.signal.aborted) return;
+      setError(err instanceof Error ? err.message : 'Failed to generate summary');
+    })
+    .finally(() => {
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setGenerating(false);
+      }
+    });
+}
+
 /**
  * Lazily streams an AI summary of the job ad. Résumé-independent. The component
  * triggers `generate()` on an explicit click — never auto-runs. The summary is
@@ -25,6 +103,11 @@ interface Params {
  *
  * When `applicationId` is set, successful results are persisted to the application
  * record via `useUpdateApplication`; otherwise they are stored in the session cache.
+ *
+ * Language auto-regenerate: when `language` changes AND a summary has already been
+ * produced (or restored from cache/initialSummary), the hook aborts any in-flight
+ * generation and starts a fresh one in the new language. If no summary exists yet,
+ * the language change is stored silently and used on the next manual generate click.
  */
 export function useJobAdSummary({
   jobDesc,
@@ -53,6 +136,36 @@ export function useJobAdSummary({
   // from this, the summary is stale → reset it (so the empty state shows again).
   const summaryForDesc = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // True once a summary has been successfully produced or restored (seed/cache).
+  // Gate for the language auto-regenerate effect: changing language before a
+  // summary has been produced just stores the choice silently.
+  const hasSummaryRef = useRef(false);
+
+  // Stable ref holding the latest render-cycle values so the language-change
+  // effect can read them without listing them as deps. Updated synchronously
+  // during render so the effect always sees the current snapshot when it fires.
+  const latestRef = useRef({
+    jobDesc,
+    model,
+    canUse,
+    hasDesc,
+    meta,
+    applicationId,
+    cacheKey,
+    updateApplication,
+    setCachedJobSummary,
+  });
+  latestRef.current = {
+    jobDesc,
+    model,
+    canUse,
+    hasDesc,
+    meta,
+    applicationId,
+    cacheKey,
+    updateApplication,
+    setCachedJobSummary,
+  };
 
   // Seed summaryForDesc so the stale-desc reset doesn't clobber a restored summary
   // (persisted via initialSummary OR session-cached). jobDesc is intentionally
@@ -61,6 +174,7 @@ export function useJobAdSummary({
   useEffect(() => {
     if ((initialSummary || cachedSummary) && summaryForDesc.current === null) {
       summaryForDesc.current = jobDesc;
+      hasSummaryRef.current = true;
     }
   }, [initialSummary, cachedSummary, jobDesc]);
 
@@ -79,6 +193,7 @@ export function useJobAdSummary({
     setError(null);
     setGenerating(false);
     summaryForDesc.current = null;
+    hasSummaryRef.current = false;
   }
 
   const generate = async () => {
@@ -91,38 +206,74 @@ export function useJobAdSummary({
     setGenerating(true);
     setError(null);
     setSummary('');
-    const target = jobDesc;
-    try {
-      const result = await generateJobAdSummary({
-        jobAd: target,
-        meta,
-        model,
-        language,
-        onToken: (tok) => setSummary((prev) => prev + tok),
-        signal: controller.signal,
-      });
-      // A superseded/unmounted run must not clobber the current state.
-      if (controller.signal.aborted) return;
-      setSummary(result);
-      summaryForDesc.current = target;
-      if (applicationId) {
-        updateApplication.mutate({ id: applicationId, jobSummary: result });
-      } else {
-        // Same key the restore reads from, so a re-open finds this summary.
-        setCachedJobSummary(cacheKey, result);
-      }
-    } catch (err) {
-      // An explicit abort (restart/unmount) is not an error to surface.
-      if (!controller.signal.aborted) {
-        setError(err instanceof Error ? err.message : 'Failed to generate summary');
-      }
-    } finally {
-      if (abortRef.current === controller) {
-        abortRef.current = null;
-        setGenerating(false);
-      }
-    }
+    await runGeneration({
+      jobDesc,
+      model,
+      language,
+      meta,
+      applicationId,
+      cacheKey,
+      controller,
+      abortRef,
+      summaryForDesc,
+      hasSummaryRef,
+      updateApplication,
+      setCachedJobSummary,
+      setSummary,
+      setError,
+      setGenerating,
+    });
   };
+
+  // Auto-regenerate when the user picks a different output language AND a summary
+  // has already been produced or restored. `runGeneration` is module-level (not
+  // a reactive value), so `language` is the only dep — fully satisfying
+  // exhaustive-deps with no eslint-disable.
+  useEffect(() => {
+    const {
+      canUse: cu,
+      hasDesc: hd,
+      jobDesc: jd,
+      model: m,
+      meta: mt,
+      applicationId: appId,
+      cacheKey: ck,
+      updateApplication: upd,
+      setCachedJobSummary: setCache,
+    } = latestRef.current;
+    // Skip if no summary exists yet — language change is a silent pick for later.
+    // Skip if there is nothing to summarise or AI is unavailable.
+    if (!hasSummaryRef.current || !jd.trim() || !cu || !hd) return;
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setGenerating(true);
+    setError(null);
+    setSummary('');
+
+    void runGeneration({
+      jobDesc: jd,
+      model: m,
+      language,
+      meta: mt,
+      applicationId: appId,
+      cacheKey: ck,
+      controller,
+      abortRef,
+      summaryForDesc,
+      hasSummaryRef,
+      updateApplication: upd,
+      setCachedJobSummary: setCache,
+      setSummary,
+      setError,
+      setGenerating,
+    });
+
+    return () => {
+      controller.abort();
+    };
+  }, [language]); // runGeneration is module-level; all other values read via latestRef
 
   return { summary, generating, error, generate, language, setLanguage };
 }
