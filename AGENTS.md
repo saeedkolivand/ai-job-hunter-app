@@ -124,7 +124,7 @@ Two complementary indexes for codebase questions — prefer them over raw `rg`/`
 
 ## Agent system & review conventions
 
-This repo ships a Claude Code agent system under `.claude/` with 12 specialized agents,
+This repo ships a Claude Code agent system under `.claude/` with 24 specialized agents (paired author + critic per domain, plus cross-cutting cleanup / project-steward / pr-reviewer),
 `/review-*` + `/implement-feature`/`/fix-bug`/`/refactor-module`/`/add-tests`/`/update-docs`/`/prepare-release`
 commands, domain skills/checklists, a Stop review-gate hook, and a lessons log.
 
@@ -134,7 +134,7 @@ You cannot invoke those Claude Code sub-agents directly, but **follow the same c
 - Per-change flow: implement → review pass (HIGH/CRITICAL findings block; ≤ 3 reviewers) →
   tests if logic changed → docs sync last.
 - Only HIGH/CRITICAL findings block; style/naming issues are advisory.
-- Model tiering (agent `model:` frontmatter): **Opus** for correctness-critical (`rust-backend-architect`, `tauri-security-reviewer`, `ai-provider-expert`, `job-match-expert`, `resume-export-expert`); **Sonnet** for balanced implement/review (`frontend-reviewer`, `scraping-applier-expert`, `pdf-docx-generator`, `test-author`, `testing-reviewer`, `performance-profiler`); **Haiku** for mechanical docs (`project-steward`).
+- Model tiering (agent `model:` frontmatter): **Opus** for correctness-critical, **Sonnet** for balanced implement/review, **Haiku** for mechanical docs — see the canonical per-agent map in `CLAUDE.md` (§ Model & effort tiering); this file defers to it.
 - Effort: extended thinking for architecture / security / concurrency / data-loss; normal for routine UI / docs / config.
 
 Full operating contract: `CLAUDE.md`.
