@@ -10,7 +10,7 @@
   <a href="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black"><img alt="React 19" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black"></a>
 </p>
 
-The **AI Job Hunter** desktop application — a Tauri 2 shell wrapping a Rust core (scraping, login, documents, AI inference, vector search, export) with a React 19 + TanStack Router renderer. Runs fully offline with Ollama or plugs in OpenAI, Anthropic, Gemini, and any OpenAI-compatible provider.
+The **AI Job Hunter** desktop application — a Tauri 2 shell wrapping a Rust core (scraping, login, documents, AI inference, vector search, export) with a React 19 + TanStack Router renderer. Runs fully offline with Ollama, plugs in OpenAI, Anthropic, Gemini, and any OpenAI-compatible provider, or routes through an AI CLI agent (Claude Code, Codex, Gemini CLI).
 
 ---
 
