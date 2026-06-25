@@ -36,9 +36,9 @@ See `apps/tauri/src/renderer/features/resume-builder/components/GitHubImportModa
 
 ## Test coverage
 
-- **Rust** — Unit-tested in `profile_import/github.rs` (SSRF validation, status-code mapping, serialization) and `scraping/http/test.rs` (`FetchOptions.timeout` field). `cargo test github` + `cargo test --lib scraping::http` both pass.
-- **Prompts** — Covered by the prompts test suite; fence, parser, link re-attachment, name-based matching, cap boundaries.
-- **Renderer** — Covered by the renderer test suite; Enter key fetch, Escape during generation, Add-button disabled when none selected, select-all after deselect-all, generation error recovery, prefill seededRef regression path.
+- **Rust** — Tests in `apps/tauri/src-tauri/src/profile_import/github.rs` (SSRF validation, status-code mapping, serialization) and `apps/tauri/src-tauri/src/scraping/http/test.rs` (`FetchOptions.timeout` field). Run: `cargo test github` + `cargo test --lib scraping::http`.
+- **Prompts** — Tests in `packages/prompts/src/generate/github-projects/`. Scenarios: fence, parser, link re-attachment, name-based matching, cap boundaries. Run: `pnpm -C packages/prompts test`.
+- **Renderer** — Tests in `apps/tauri/src/renderer/features/resume-builder/` (GitHub import modal). Scenarios: Enter key fetch, Escape during generation, Add-button disabled when none selected, select-all after deselect-all, generation error recovery, prefill seededRef regression path. Run: `pnpm -C apps/tauri test`.
 
 See `.claude/scratch/github-projects-import.md` for full test audit and gates.
 
