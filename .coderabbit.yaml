@@ -151,7 +151,7 @@ reviews:
 
   # In-PR linters/SAST. These post advisory inline comments; the deterministic
   # gating ESLint/Clippy/fmt remain in ci-pipeline.yml, and the SARIF Semgrep
-  # (Security tab) remains in semgrep.yml.
+  # (Security tab) remains in security.yml.
   tools:
     eslint:
       enabled: true # replaces the retired reviewdog ESLint lane
