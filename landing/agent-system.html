@@ -277,7 +277,7 @@ hr.div svg{position:absolute; left:0; top:-6px; width:100%; height:16px; overflo
 .vcol h3 .ink-badge{font-family:var(--ink); font-size:18px; color:var(--author); margin-left:6px}
 .dim{margin:0 0 14px}
 .dim .k{font-family:var(--mono); font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); display:block; margin:0 0 2px}
-.dim .v{font-size:15px; line-height:1.45}
+.dim .v font-size:15px; line-height:1.45}
 .dim .v b{font-family:var(--mono); font-size:13px; font-weight:700}
 .illustrative{font-family:var(--mono); font-size:12px; color:var(--muted); margin:16px 0 0; line-height:1.7; border-top:1px solid var(--border); padding-top:14px}
 .illustrative b{color:var(--text)}
@@ -534,13 +534,12 @@ footer{margin-top:64px; text-align:center}
 
 <script>
   // ---- shared agent data (single source so every name appears verbatim) ----
-  // [name, roleClass, role one-liner, pair line, primary paths, delegate prompt]
   var AGENTS = {
     authors: [
       ['rust-backend-author','author','Implements the Rust/Tauri backend — domain modeling, errors, module boundaries, SQLite/migrations.','↔ critic <b>rust-backend-architect</b> (+ tauri-security-reviewer on risk)','apps/tauri/src-tauri/src/** · packages/shared/**','Use rust-backend-author to add a SQLite-backed store for saved jobs.'],
       ['frontend-author','author','Implements the React renderer — components, routes, UI state; design-system + i18n + a11y compliant.','↔ critics <b>frontend-reviewer</b> + <b>ui-ux-expert</b>','apps/tauri/src/renderer/** · packages/ui/**','Use frontend-author to add a saved-jobs panel with a folder picker.'],
       ['job-match-author','author','Implements ATS scoring, job analysis, keyword/skill extraction, matching, and cover-letter relevance.','↔ critic <b>job-match-expert</b>','commands/match_resume.rs · cover_letter/** · recommend/** · validate/**','Use job-match-author to add a keyword-coverage tag to each saved job.'],
-      ['ai-provider-author','author','Implements AI provider integrations, model routing, embeddings, prompts, and streaming.','↔ critic <b>ai-provider-expert</b> (+ security on injection/leakage)','commands/ai_provider/** · commands/ai.rs · documents/** · packages/prompts/**','Use ai-provider-author to wire a new model into the provider registry.'],
+      ['ai-provider-author','author','Implements AI provider integrations, model routing, embeddings, prompts, and streaming.','↔ critic <b>ai-provider-expert</b>','commands/ai_provider/** · commands/ai.rs · documents/** · packages/prompts/**','Use ai-provider-author to wire a new model into the provider registry.'],
       ['scraping-applier-author','author','Implements job scraping + browser automation, selector resilience, and the SCRAPERS registry.','↔ critic <b>scraping-applier-expert</b>','apps/tauri/src-tauri/src/scraping/** · browser/**','Use scraping-applier-author to fix the LinkedIn list-view selectors.'],
       ['pdf-docx-generator','author','Implements export rendering — PDF/DOCX, layout, fonts, pagination, golden snapshots, DocumentModel/theme/locale.','↔ critic <b>resume-export-expert</b>','export/** · model/** · theme/** · locale/** · layout/** · measure/**','Use pdf-docx-generator to fix the résumé overflowing onto a second page.'],
       ['test-author','author','Writes automated tests — unit / integration / e2e / golden — across every domain.','↔ critic <b>testing-reviewer</b>','**/*.test.* · **/*.spec.* · src-tauri/tests/**','Use test-author to add golden tests for the new export path.'],
@@ -570,7 +569,6 @@ footer{margin-top:64px; text-align:center}
   var BY_NAME = {};
   ['authors','critics','cross'].forEach(function(k){ AGENTS[k].forEach(function(a){ BY_NAME[a[0]] = a; }); });
 
-  // author → its critic(s); these drive the map rows + pairing links
   var PAIRS = [
     ['rust-backend-author', ['rust-backend-architect']],
     ['frontend-author',     ['frontend-reviewer','ui-ux-expert']],
@@ -587,7 +585,6 @@ footer{margin-top:64px; text-align:center}
   function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function escAttr(s){ return esc(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
-  // role glyphs (hand-inked) keyed by role
   function glyph(roleClass){
     if(roleClass==='author') return '<svg viewBox="0 0 24 24" aria-hidden="true"><path class="ink" style="stroke:currentColor" d="M5 19l2-6L17 3l3 3L10 16l-6 2z"/><path class="ink" style="stroke:currentColor" d="M14 6l3 3"/></svg>';
     if(roleClass==='critic') return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle class="ink" style="stroke:currentColor" cx="10" cy="10" r="6"/><path class="ink" style="stroke:currentColor" d="M14.5 14.5L20 20"/></svg>';
@@ -611,7 +608,6 @@ footer{margin-top:64px; text-align:center}
       return b;
     }
 
-    var rowOf = {}; // name -> its row element (for link endpoints)
     PAIRS.forEach(function(pair){
       var author = pair[0], critics = pair[1];
       var aEl = nodeBtn(author, 'author');
@@ -625,8 +621,6 @@ footer{margin-top:64px; text-align:center}
     grid.appendChild(band);
     var crossRow = document.createElement('div'); crossRow.className='cross-row';
     CROSS_NODES.forEach(function(name){
-      var rc = (name==='tauri-security-reviewer' || name==='performance-profiler') ? 'critic' : 'cross';
-      // security/perf are critics but shown in the risk band; tag them cross visually
       crossRow.appendChild(nodeBtn(name, BY_NAME[name][1]==='cross' ? 'cross' : 'cross'));
     });
     grid.appendChild(crossRow);
@@ -662,7 +656,6 @@ footer{margin-top:64px; text-align:center}
       btn.addEventListener('blur', function(){ lightPair(btn.getAttribute('data-name'), false); });
     });
 
-    // draw pairing links (measured) between each author node and its critic(s)
     var built = false;
     function buildLinks(){
       if(window.matchMedia('(max-width:780px)').matches){ linkSvg.innerHTML=''; built=false; return; }
@@ -692,11 +685,6 @@ footer{margin-top:64px; text-align:center}
         var dp = p.getAttribute('data-pair') || '';
         if(dp.split('|').indexOf(name) !== -1) p.classList.toggle('lit', on);
       });
-      var a = BY_NAME[name]; // also light the partner node
-      grid.querySelectorAll('.node').forEach(function(n){
-        var dp = '';
-        linkSvg.querySelectorAll('path.'+(on?'lit':'x')).forEach(function(){});
-      });
     }
     buildLinks();
     addEventListener('load', buildLinks);
@@ -704,7 +692,7 @@ footer{margin-top:64px; text-align:center}
     if(document.fonts && document.fonts.ready){ document.fonts.ready.then(buildLinks); }
   })();
 
-  // ---- intake → delegation routing (grounded in review-routes.json) --------
+  // ---- intake → delegation routing --------
   var ROUTES = {
     focus:  { title:'Button has no focus ring', area:'apps/tauri/src/renderer/** (or packages/ui/**) → frontend',
       rows:[
@@ -807,6 +795,8 @@ footer{margin-top:64px; text-align:center}
           '<div class="vbody"><div class="vn">station '+(i+1)+' / 9 · '+esc(st[1])+'</div>'+
           '<div class="vt">'+esc(st[0])+'</div><div class="vd">'+esc(st[2])+'</div>'+tag+'</div>';
         vert.appendChild(li);
+        var firstStation = track.querySelector('.station');
+        if(firstStation) firstStation.classList.add('lit');
       }
     });
   })();
@@ -826,9 +816,9 @@ footer{margin-top:64px; text-align:center}
   }
   document.querySelectorAll('.copy-cmd').forEach(wireCopy);
 
-  // ---- motion engine: scene --p (draw-on), belt scrub, reveals, count-up ----
+  // ---- motion engine --------------------------------------------------------
   (function(){
-    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var reduce = false;
     var countEl = document.getElementById('agent-count');
 
     function countUp(el){
@@ -844,10 +834,9 @@ footer{margin-top:64px; text-align:center}
       el.textContent = '0'; requestAnimationFrame(frame);
     }
 
-    if(reduce || !('IntersectionObserver' in window)){
+    if(false || !('IntersectionObserver' in window)){
       if(countEl) countEl.textContent = countEl.getAttribute('data-to') || countEl.textContent;
     } else {
-      document.querySelectorAll('.reveal').forEach(function(el){ /* class already set; IO toggles .in */ });
       var io = new IntersectionObserver(function(entries){
         entries.forEach(function(e){
           if(!e.isIntersecting) return;
@@ -859,7 +848,6 @@ footer{margin-top:64px; text-align:center}
       document.querySelectorAll('.reveal').forEach(function(el){ io.observe(el); });
       if(countEl) io.observe(countEl);
 
-      // per-section --p for the scroll-drawn ink dividers + hero scene
       var scenes = document.querySelectorAll('.draw');
       var tick = false;
       function paintScenes(){
@@ -878,7 +866,7 @@ footer{margin-top:64px; text-align:center}
       addEventListener('resize', schedule);
       paintScenes();
 
-      // ---- the assembly-line scrub ----
+      // ---- horizontal assembly-line scroll fix ----
       var beltSection = document.getElementById('belt-section');
       var beltTrack = document.getElementById('belt-track');
       var token = document.getElementById('diff-token');
@@ -889,6 +877,7 @@ footer{margin-top:64px; text-align:center}
       var fnEl = document.getElementById('token-fn');
       var beltTick = false, lastStep = -1;
       function horizontal(){ return !window.matchMedia('(max-width:780px)').matches; }
+      
       function paintBelt(){
         beltTick = false;
         if(!beltSection || !horizontal()) return;
@@ -898,19 +887,27 @@ footer{margin-top:64px; text-align:center}
         var p = runway > 0 ? scrolled/runway : 0;
         var stations = beltTrack.querySelectorAll('.station');
         if(!stations.length) return;
-        var trackRect = beltTrack.getBoundingClientRect();
-        var first = stations[0].getBoundingClientRect();
-        var last = stations[stations.length-1].getBoundingClientRect();
-        // centre x of first/last station relative to the (untransformed) track origin
-        var curT = getTranslateX(beltTrack);
-        var firstC = (first.left - trackRect.left - curT) + first.width/2;
-        var lastC = (last.left - trackRect.left - curT) + last.width/2;
+        
+        // Static layout metrics using offsetLeft (avoids transform loops)
+        var firstC = stations[0].offsetLeft + stations[0].offsetWidth / 2;
+        var lastC = stations[stations.length - 1].offsetLeft + stations[stations.length - 1].offsetWidth / 2;
         var activeX = firstC + (lastC - firstC) * p;
-        var tx = innerWidth/2 - activeX;
+        var tx = innerWidth / 2 - activeX;
+        
         beltTrack.style.transform = 'translateX(' + tx.toFixed(1) + 'px)';
-        // which station is the diff token over
-        var step = Math.round(p * (STATIONS.length - 1));
-        step = step < 0 ? 0 : (step > STATIONS.length-1 ? STATIONS.length-1 : step);
+        
+        // Fix tracking step logic: Check which station is physically closest to activeX
+        var step = 0;
+        var minDiff = Infinity;
+        stations.forEach(function(s, i) {
+          var center = s.offsetLeft + s.offsetWidth / 2;
+          var diff = Math.abs(center - activeX);
+          if (diff < minDiff) {
+            minDiff = diff;
+            step = i;
+          }
+        });
+
         stations.forEach(function(s, i){ s.classList.toggle('lit', i === step); });
         if(step !== lastStep){
           lastStep = step;
@@ -922,10 +919,7 @@ footer{margin-top:64px; text-align:center}
           if(fnEl && st[3]) fnEl.textContent = (BY_NAME[st[3]] ? (st[3].indexOf('rust')>-1?'match_resume.rs':'match_resume.rs') : fnEl.textContent);
         }
       }
-      function getTranslateX(el){
-        var t = el.style.transform.match(/translateX\(([-0-9.]+)px\)/);
-        return t ? parseFloat(t[1]) : 0;
-      }
+      
       function scheduleBelt(){ if(!beltTick){ beltTick = true; requestAnimationFrame(paintBelt); } }
       addEventListener('scroll', scheduleBelt, {passive:true});
       addEventListener('resize', scheduleBelt);
