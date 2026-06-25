@@ -85,7 +85,7 @@ function redArrow({ rotate = 0, flip = false, width = 150 } = {}) {
 // edge (constant x across shots), level with the target button's vertical centre
 // (mapped from the capture-time fy/fh fractions). It never crosses the card
 // face — the head points AT the card from outside, regardless of which button
-// (Retry / Save & pair / Import via URL) each shot highlights.
+// (Retry / Save & pair / Import this job) each shot highlights.
 //
 // Rendered as the LAST element in the body (after the card) with the highest
 // z-index, so the head is never occluded by the popup image.
@@ -176,8 +176,8 @@ const STATES = [
     pillText: '● Connected',
     pillClass: 'pill pill--connected',
     show: 'view-import',
-    // Arrow target: the "Import via URL" primary button in the connected card.
-    target: '#btn-url',
+    // Arrow target: the "Import this job" primary button in the connected card.
+    target: '#btn-import',
     importMsg: 'Imported "Senior Frontend Engineer". Open AI Job Hunter → Applications to view it.',
   },
 ];
@@ -289,7 +289,7 @@ async function capturePopups(browser) {
 // Each shot: paper bg + grain, popup PNG as a tilted card, scrawled caption,
 // and a chunky hand-drawn arrow whose tip lands just OUTSIDE the card's LEFT
 // edge, level with that state's primary control (Retry / Save & pair / Import
-// via URL). The tip never crosses the card face: it targets the constant card
+// this job). The tip never crosses the card face: it targets the constant card
 // LEFT EDGE x, and only the button's vertical centre (capture-time fy/fh) moves
 // it up/down — so the arrow is one identical shape translated vertically.
 //
@@ -340,7 +340,7 @@ const SHOTS = [
   {
     file: '03-one-click.png',
     raw: 'popup-connected.png',
-    state: 'connected', // → measured fractions for #btn-url
+    state: 'connected', // → measured fractions for #btn-import
     caption: "one click → the job's saved in your app, tagged New",
     captionPos: 'left:90px; top:150px; width:430px; text-align:left;',
     captionTop: 150,
