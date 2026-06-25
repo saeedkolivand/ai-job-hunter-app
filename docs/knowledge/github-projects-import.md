@@ -40,8 +40,6 @@ See `apps/tauri/src/renderer/features/resume-builder/components/GitHubImportModa
 - **Prompts** — Tests in `packages/prompts/src/generate/github-projects/`. Scenarios: fence, parser, link re-attachment, name-based matching, cap boundaries. Run: `pnpm -C packages/prompts test`.
 - **Renderer** — Tests in `apps/tauri/src/renderer/features/resume-builder/` (GitHub import modal). Scenarios: Enter key fetch, Escape during generation, Add-button disabled when none selected, select-all after deselect-all, generation error recovery, prefill seededRef regression path. Run: `pnpm -C apps/tauri test`.
 
-See `.claude/scratch/github-projects-import.md` for full test audit and gates.
-
 ## Related decisions
 
 - **ADR-010** — Untrusted-input fencing for web-sourced data (applies to the GitHub repo fence).
