@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782360212513,
+  "lastUpdate": 1782429375876,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1757,6 +1757,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 288777,
             "range": "± 9855",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "saeedkolivand1997@gmail.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "saeedkolivand1997@gmail.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "distinct": true,
+          "id": "7702cf828aefd8dca5b92cbf84b439ef7b262a26",
+          "message": "chore(branding): add product hunt launch assets\n\nGallery images (1270x760 @2x), teal thumbnail, maker first comment, and a\nreproducible headless-chrome generator under branding/marketing. Add a\nscoped eslint node-globals override for branding/**/*.mjs so the generator\nlints clean.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-26T01:04:41+02:00",
+          "tree_id": "104ed507ee89cf6b40b994b110681009590fff80",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/7702cf828aefd8dca5b92cbf84b439ef7b262a26"
+        },
+        "date": 1782429375253,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1878629,
+            "range": "± 43122",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2506529,
+            "range": "± 32227",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 289525,
+            "range": "± 6001",
             "unit": "ns/iter"
           }
         ]
