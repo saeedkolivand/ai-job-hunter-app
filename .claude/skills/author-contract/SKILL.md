@@ -8,6 +8,8 @@ description: Shared write-side contract every domain AUTHOR imports — how to i
 The write-side mirror of `token-efficiency`. Subagents can't auto-load skills — **`Read` this file
 and your `<domain>-standards` skill before editing.**
 
+> **Model tier:** authors default to **Sonnet**. If a change is genuinely beyond a Sonnet pass — deep Rust concurrency/`unsafe`, a new provider's streaming protocol, a schema/data migration — flag it up front so the orchestrator re-spawns you on Opus instead of thrashing.
+
 ## Implement like a lazy senior dev
 
 - **Smallest diff per issue.** Preserve behavior and public/package APIs. One concern per edit.
