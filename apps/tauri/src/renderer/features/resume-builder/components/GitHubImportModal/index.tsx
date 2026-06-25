@@ -127,7 +127,8 @@ export function GitHubImportModal({ open, onClose, onAppend }: GitHubImportModal
 
     setGenerating(true);
     setGenerateError(null);
-    abortRef.current = new AbortController();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     try {
       // generateGitHubProjects self-falls-back (raw description per repo) on
@@ -135,8 +136,13 @@ export function GitHubImportModal({ open, onClose, onAppend }: GitHubImportModal
       const generated = await generateGitHubProjects({
         repos: chosenRepos,
         model,
-        signal: abortRef.current.signal,
+        signal: controller.signal,
       });
+      // Guard: if the user cancelled mid-generation, handleClose already called
+      // onClose() and aborted the controller. generateGitHubProjects resolves with
+      // a populated fallback array even on abort (it does NOT throw), so without
+      // this guard we would silently append all selected repos and double-close.
+      if (controller.signal.aborted) return;
       // Success (includes internal per-repo fallbacks): append + close.
       for (const entry of generated) {
         onAppend(entry);

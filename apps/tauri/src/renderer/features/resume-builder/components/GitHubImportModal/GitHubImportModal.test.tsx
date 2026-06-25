@@ -106,10 +106,20 @@ function renderModal({ onClose = vi.fn(), onAppend = vi.fn() }: RenderOpts = {})
   return { onClose, onAppend };
 }
 
+/** Narrowed textbox accessor — tsc requires explicit cast from HTMLElement. */
+function getTextbox(): HTMLInputElement {
+  return screen.getByRole('textbox');
+}
+
+/** Narrowed checkbox list — tsc requires explicit cast from HTMLElement[]. */
+function getCheckboxes(): HTMLInputElement[] {
+  return screen.getAllByRole('checkbox');
+}
+
 /** Type a username, click Fetch, and wait for the mutation to resolve. */
 async function fetchRepos(repos: GitHubRepo[]) {
   mockImportRepos.mockResolvedValue(repos);
-  const input = screen.getByRole('textbox');
+  const input = getTextbox();
   fireEvent.change(input, { target: { value: 'jane' } });
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: /fetchButton/i }));
@@ -150,15 +160,13 @@ describe('GitHubImportModal', () => {
   it('prefills username from contact profile github URL', () => {
     setGithubProfile('https://github.com/jane');
     renderModal();
-    const input = screen.getByRole('textbox');
-    expect(input.value).toBe('jane');
+    expect(getTextbox().value).toBe('jane');
   });
 
   it('prefills bare username from contact profile when no URL', () => {
     setGithubProfile('jane');
     renderModal();
-    const input = screen.getByRole('textbox');
-    expect(input.value).toBe('jane');
+    expect(getTextbox().value).toBe('jane');
   });
 
   it('user can clear a prefilled username (no snap-back)', () => {
@@ -166,15 +174,14 @@ describe('GitHubImportModal', () => {
     // prefill is set, clearing the field must yield '' — not re-snap to prefill.
     setGithubProfile('https://github.com/jane');
     renderModal();
-    const input = screen.getByRole('textbox');
     // Confirm seeded first.
-    expect(input.value).toBe('jane');
+    expect(getTextbox().value).toBe('jane');
     // Clear and confirm it stays empty.
-    fireEvent.change(input, { target: { value: '' } });
-    expect(input.value).toBe('');
+    fireEvent.change(getTextbox(), { target: { value: '' } });
+    expect(getTextbox().value).toBe('');
     // Typing a new name must work.
-    fireEvent.change(input, { target: { value: 'otherperson' } });
-    expect(input.value).toBe('otherperson');
+    fireEvent.change(getTextbox(), { target: { value: 'otherperson' } });
+    expect(getTextbox().value).toBe('otherperson');
   });
 
   // ── Fetch → list ───────────────────────────────────────────────────────────
@@ -211,14 +218,13 @@ describe('GitHubImportModal', () => {
   it('selects all repos by default after fetch', async () => {
     renderModal();
     await fetchRepos([REPO_A, REPO_B]);
-    const checkboxes = screen.getAllByRole('checkbox');
-    expect(checkboxes.every((cb) => cb.checked)).toBe(true);
+    expect(getCheckboxes().every((cb) => cb.checked)).toBe(true);
   });
 
   it('toggles individual repo on checkbox click', async () => {
     renderModal();
     await fetchRepos([REPO_A, REPO_B]);
-    const [first] = screen.getAllByRole('checkbox');
+    const [first] = getCheckboxes();
     if (!first) throw new Error('checkbox not found');
     fireEvent.click(first);
     expect(first.checked).toBe(false);
@@ -228,8 +234,7 @@ describe('GitHubImportModal', () => {
     renderModal();
     await fetchRepos([REPO_A, REPO_B]);
     fireEvent.click(screen.getByRole('button', { name: /deselectAll/i }));
-    const checkboxes = screen.getAllByRole('checkbox');
-    expect(checkboxes.every((cb) => !cb.checked)).toBe(true);
+    expect(getCheckboxes().every((cb) => !cb.checked)).toBe(true);
   });
 
   // ── Add selected → onAppend ────────────────────────────────────────────────
@@ -268,8 +273,7 @@ describe('GitHubImportModal', () => {
     await fetchRepos([REPO_A, REPO_B]);
 
     // Deselect REPO_B (second checkbox).
-    const checkboxes = screen.getAllByRole('checkbox');
-    const second = checkboxes[1];
+    const second = getCheckboxes()[1];
     if (!second) throw new Error('second checkbox not found');
     fireEvent.click(second);
 
@@ -308,8 +312,7 @@ describe('GitHubImportModal', () => {
     // Inline error message visible in the modal body.
     expect(screen.getByText('build.extras.projects.github.generateError')).toBeInTheDocument();
     // Selection is preserved — checkboxes still checked.
-    const checkboxes = screen.getAllByRole('checkbox');
-    expect(checkboxes.every((cb) => cb.checked)).toBe(true);
+    expect(getCheckboxes().every((cb) => cb.checked)).toBe(true);
   });
 
   // ── item 8: Enter-key fetch ────────────────────────────────────────────────
@@ -317,7 +320,7 @@ describe('GitHubImportModal', () => {
   it('Enter key on username input triggers the fetch mutation', async () => {
     renderModal();
     mockImportRepos.mockResolvedValue([REPO_A]);
-    const input = screen.getByRole('textbox');
+    const input = getTextbox();
     fireEvent.change(input, { target: { value: 'jane' } });
     await act(async () => {
       fireEvent.keyDown(input, { key: 'Enter' });
@@ -325,12 +328,13 @@ describe('GitHubImportModal', () => {
     await waitFor(() => expect(mockImportRepos).toHaveBeenCalledWith('jane'));
   });
 
-  // ── item 9: Cancel-while-generating aborts + closes ───────────────────────
+  // ── item 9: Cancel-while-generating aborts + closes (no double-append) ──────
 
-  it('Escape key during generation calls onClose (Cancel button is disabled while generating)', async () => {
-    // The Cancel button is disabled={generating} per the component design — the only
-    // way to dismiss during generation is Escape (or backdrop click), which ModalShell
-    // forwards to its onClose prop (= handleClose → abort + onClose).
+  it('Escape during generation calls onClose exactly once and does NOT append — resolves with non-empty fallback', async () => {
+    // Regression: generateGitHubProjects resolves (not throws) with a populated
+    // fallback array even on abort. Without the aborted-guard, handleClose would
+    // call onClose() once, then the resolved await would loop through onAppend for
+    // each entry and call onClose() a second time — silently appending all repos.
     let resolveGenerate!: (v: { name: string; description: string; link: string }[]) => void;
     mockGenerate.mockImplementation(
       () =>
@@ -339,11 +343,12 @@ describe('GitHubImportModal', () => {
         })
     );
 
+    const onAppend = vi.fn();
     const onClose = vi.fn();
-    renderModal({ onClose });
+    renderModal({ onAppend, onClose });
     await fetchRepos([REPO_A]);
 
-    // Start generation — the promise never settles until we resolve it.
+    // Start generation — the promise is held open.
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /addSelected/i }));
     });
@@ -351,18 +356,28 @@ describe('GitHubImportModal', () => {
     // Confirm generating state: Cancel button is now disabled.
     await waitFor(() => expect(screen.getByRole('button', { name: /cancel/i })).toBeDisabled());
 
-    // Dismiss via Escape — ModalShell listens on window and calls handleClose.
+    // Dismiss via Escape — ModalShell forwards to handleClose → abort + onClose.
     await act(async () => {
       fireEvent.keyDown(window, { key: 'Escape' });
     });
 
+    // handleClose fired onClose exactly once; generation still in flight.
     expect(onClose).toHaveBeenCalledTimes(1);
 
-    // Settle the in-flight call inside act so React state updates from the
-    // finally block don't fire outside the test boundary.
+    // Now settle the in-flight call with a NON-EMPTY fallback array (the real
+    // runtime behaviour: generateGitHubProjects returns raw-description entries on
+    // abort, it does not throw). Without the aborted-guard this would trigger
+    // the append loop and a second onClose call.
     await act(async () => {
-      resolveGenerate([]);
+      resolveGenerate([
+        { name: REPO_A.name, description: REPO_A.description ?? '', link: REPO_A.htmlUrl },
+      ]);
     });
+
+    // onClose must still be exactly 1 (no double-close).
+    expect(onClose).toHaveBeenCalledTimes(1);
+    // onAppend must never have been called — user cancelled.
+    expect(onAppend).not.toHaveBeenCalled();
   });
 
   // ── item 10: Add button disabled when zero repos selected ─────────────────
@@ -396,13 +411,11 @@ describe('GitHubImportModal', () => {
 
     // Deselect all.
     fireEvent.click(screen.getByRole('button', { name: /deselectAll/i }));
-    const afterDeselect = screen.getAllByRole('checkbox');
-    expect(afterDeselect.every((cb) => !cb.checked)).toBe(true);
+    expect(getCheckboxes().every((cb) => !cb.checked)).toBe(true);
 
     // Now the button label should be "selectAll" — click it.
     fireEvent.click(screen.getByRole('button', { name: /selectAll/i }));
-    const afterReselect = screen.getAllByRole('checkbox');
-    expect(afterReselect.every((cb) => cb.checked)).toBe(true);
+    expect(getCheckboxes().every((cb) => cb.checked)).toBe(true);
   });
 
   // ── item 12: Add button re-enabled after generation error ─────────────────
@@ -433,8 +446,7 @@ describe('GitHubImportModal', () => {
       <GitHubImportModal open={true} onClose={vi.fn()} onAppend={vi.fn()} />
     );
 
-    const input = screen.getByRole('textbox');
-    expect(input.value).toBe('');
+    expect(getTextbox().value).toBe('');
 
     // Simulate async arrival: set the profile and re-render (mirrors React Query
     // transitioning from undefined → resolved data). The seededRef must catch it.
@@ -443,6 +455,6 @@ describe('GitHubImportModal', () => {
       rerender(<GitHubImportModal open={true} onClose={vi.fn()} onAppend={vi.fn()} />);
     });
 
-    await waitFor(() => expect(screen.getByRole('textbox').value).toBe('async-jane'));
+    await waitFor(() => expect(getTextbox().value).toBe('async-jane'));
   });
 });

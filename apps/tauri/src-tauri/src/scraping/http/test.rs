@@ -13,6 +13,7 @@ fn test_fetch_options_default() {
 /// `FetchOptions.timeout` backward-safe contract (item 4):
 /// - `Default` leaves `timeout: None` (backward-safe — no global ceiling for existing callers).
 /// - An explicit `Some(Duration)` round-trips correctly (opt-in ceiling is preserved).
+///
 /// No network call needed — this is a pure struct field assertion.
 #[test]
 fn test_fetch_options_timeout_field_contract() {

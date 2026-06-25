@@ -160,9 +160,8 @@ fn parse_username(input: &str) -> AppResult<String> {
 
     let candidate = if trimmed.contains('/') {
         // Slash present → must be a github.com URL; anything else is rejected.
-        github_url_first_segment(trimmed).ok_or_else(|| {
-            AppError::Validation(format!("not a GitHub profile URL: {trimmed:?}"))
-        })?
+        github_url_first_segment(trimmed)
+            .ok_or_else(|| AppError::Validation(format!("not a GitHub profile URL: {trimmed:?}")))?
     } else {
         trimmed.to_string()
     };
@@ -233,9 +232,7 @@ fn validate_username(name: &str) -> AppResult<()> {
 /// Build the api.github.com URL ourselves from a validated username — the only
 /// URL ever handed to the HTTP client.
 fn api_url(username: &str) -> String {
-    format!(
-        "https://api.github.com/users/{username}/repos?per_page=100&sort=updated&type=owner"
-    )
+    format!("https://api.github.com/users/{username}/repos?per_page=100&sort=updated&type=owner")
 }
 
 /// Drop forks, sort by stars descending (name as a stable tiebreaker), cap to
@@ -299,10 +296,7 @@ mod tests {
 
     #[test]
     fn parse_username_from_scheme_less_url() {
-        assert_eq!(
-            parse_username("github.com/octocat").unwrap(),
-            "octocat"
-        );
+        assert_eq!(parse_username("github.com/octocat").unwrap(), "octocat");
     }
 
     #[test]
@@ -438,10 +432,7 @@ mod tests {
 
     #[test]
     fn forks_are_dropped() {
-        let raw = vec![
-            repo("real", 5, false),
-            repo("forked", 100, true),
-        ];
+        let raw = vec![repo("real", 5, false), repo("forked", 100, true)];
         let out = filter_and_rank(raw);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].name, "real");
@@ -461,10 +452,7 @@ mod tests {
 
     #[test]
     fn equal_stars_break_ties_by_name() {
-        let raw = vec![
-            repo("zeta", 10, false),
-            repo("alpha", 10, false),
-        ];
+        let raw = vec![repo("zeta", 10, false), repo("alpha", 10, false)];
         let out = filter_and_rank(raw);
         assert_eq!(out[0].name, "alpha");
         assert_eq!(out[1].name, "zeta");
@@ -493,7 +481,10 @@ mod tests {
     fn map_status_404_is_validation() {
         assert!(matches!(map_status(404), Some(AppError::Validation(_))));
         if let Some(AppError::Validation(msg)) = map_status(404) {
-            assert!(msg.to_lowercase().contains("not found"), "expected 'not found' in {msg:?}");
+            assert!(
+                msg.to_lowercase().contains("not found"),
+                "expected 'not found' in {msg:?}"
+            );
         }
     }
 
@@ -583,7 +574,10 @@ mod tests {
         // `pushed_at` (snake) or `PushedAt` is caught by this assertion.
         assert_eq!(obj["pushedAt"], "2026-01-10T12:00:00Z");
         // No snake_case leakage.
-        assert!(!obj.contains_key("pushed_at"), "snake_case key must not appear");
+        assert!(
+            !obj.contains_key("pushed_at"),
+            "snake_case key must not appear"
+        );
     }
 
     // ── output serialization ──────────────────────────────────────────────────
