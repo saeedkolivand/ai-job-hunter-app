@@ -29,6 +29,7 @@ import { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
 import { DOCUMENTS_CHANNELS, type DocumentsContract } from './documents.js';
 import { EXTENSION_BRIDGE_CHANNELS, type ExtensionBridgeContract } from './extensionBridge.js';
 import { GEOCODE_CHANNELS, type GeocodeContract } from './geocode.js';
+import { GITHUB_CHANNELS, type GitHubContract } from './github.js';
 import { JOB_PREFERENCES_CHANNELS, type JobPreferencesContract } from './jobPreferences.js';
 import { JOBS_CHANNELS, type JobsContract } from './jobs.js';
 import { LINKEDIN_CHANNELS, type LinkedinContract } from './linkedin.js';
@@ -55,6 +56,7 @@ export interface IpcContract {
   documents: DocumentsContract;
   jobPreferences: JobPreferencesContract;
   contactProfile: ContactProfileContract;
+  github: GitHubContract;
   extensionBridge: ExtensionBridgeContract;
   scrape: ScrapeContract;
   match: MatchContract;
@@ -87,6 +89,7 @@ export const IPC_CHANNELS = {
   documents: DOCUMENTS_CHANNELS,
   jobPreferences: JOB_PREFERENCES_CHANNELS,
   contactProfile: CONTACT_PROFILE_CHANNELS,
+  github: GITHUB_CHANNELS,
   extensionBridge: EXTENSION_BRIDGE_CHANNELS,
   scrape: SCRAPE_CHANNELS,
   match: MATCH_CHANNELS,
@@ -199,6 +202,7 @@ export {
   type ExtensionBridgeTokenResult,
 } from './extensionBridge.js';
 export { GEOCODE_CHANNELS, type GeocodeContract, type GeocodeSuggestion } from './geocode.js';
+export { GITHUB_CHANNELS, type GitHubContract, type GitHubRepo } from './github.js';
 export { JOB_PREFERENCES_CHANNELS, type JobPreferencesContract } from './jobPreferences.js';
 export { JOBS_CHANNELS, type JobsContract } from './jobs.js';
 export { LINKEDIN_CHANNELS, type LinkedinContract } from './linkedin.js';

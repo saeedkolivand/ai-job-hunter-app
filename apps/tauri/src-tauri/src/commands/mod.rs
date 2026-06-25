@@ -14,6 +14,7 @@ pub mod dialog;
 pub mod documents;
 pub mod extension_bridge;
 pub mod geocoding;
+pub mod github;
 pub mod job_preferences;
 pub mod jobs;
 pub mod match_resume;

@@ -398,6 +398,16 @@ export default tseslint.config(
     },
   },
 
+  // ── Test files — stubs/fixtures may use raw HTML elements ───────────────────
+  {
+    files: ['**/*.test.@(ts|tsx)', '**/*.spec.@(ts|tsx)'],
+    rules: {
+      // Test stubs deliberately render minimal HTML (e.g. <div role="button">)
+      // without the full @ajh/ui wrapper — the real component is still linted.
+      'no-restricted-syntax': 'off',
+    },
+  },
+
   // ── @ajh/shared package boundary — no React or Node dependencies ───────────
   {
     files: ['packages/shared/**/*.ts', 'packages/shared/**/*.tsx'],

@@ -14,6 +14,7 @@ import {
 } from '@ajh/ui';
 
 import { ExternalLink } from '@/components/ui/ExternalLink';
+import { ModelSelector } from '@/components/ui/ModelSelector';
 import { OUTPUT_LANGUAGES } from '@/lib/generate';
 
 interface Props {
@@ -97,7 +98,7 @@ export function JobAdView({
           ariaLabel={t('autopilot.apply.jobAdView.label')}
         />
         {tab === 'summary' && (
-          <>
+          <div className="flex items-center gap-2">
             {/* Explicit label bound to the trigger (id) — visually redundant with
                 the selected language, so sr-only keeps the toolbar uncluttered. */}
             <label htmlFor="job-ad-summary-language" className="sr-only">
@@ -110,7 +111,8 @@ export function JobAdView({
               options={languageOptions}
               size="sm"
             />
-          </>
+            <ModelSelector className="min-w-0 shrink-0" />
+          </div>
         )}
       </div>
 

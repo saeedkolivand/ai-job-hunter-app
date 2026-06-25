@@ -32,6 +32,14 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+// ── ModelSelector — self-contained store-driven picker; stub for unit tests ────
+// The real component pulls React Query + AppClient; a stub that renders a
+// sentinel element is sufficient to assert it mounts on the summary tab.
+
+vi.mock('@/components/ui/ModelSelector', () => ({
+  ModelSelector: () => <div data-testid="model-selector-stub" />,
+}));
+
 // ── ExternalLink — thin anchor wrapper, no special provider needed ─────────────
 
 vi.mock('@/components/ui/ExternalLink', () => ({
@@ -290,7 +298,41 @@ describe('JobAdView — TextArea a11y wiring', () => {
   });
 });
 
-// ── 7. Tab resync on posting change ──────────────────────────────────────────
+// ── 7. ModelSelector renders on the summary tab ──────────────────────────────
+
+describe('JobAdView — ModelSelector visibility', () => {
+  it('renders ModelSelector when on the summary tab (default for full description)', () => {
+    render(<JobAdView {...makeProps({ jobDesc: 'Normal full description.', hasDesc: true })} />);
+    // Default tab is summary for a non-truncated, present description.
+    expect(screen.getByTestId('model-selector-stub')).toBeInTheDocument();
+  });
+
+  it('does NOT render ModelSelector when on the source tab', () => {
+    // No description → defaults to source tab.
+    render(<JobAdView {...makeProps({ hasDesc: false, jobDesc: '' })} />);
+    expect(screen.queryByTestId('model-selector-stub')).not.toBeInTheDocument();
+  });
+
+  it('shows ModelSelector after switching to the summary tab', async () => {
+    render(<JobAdView {...makeProps({ hasDesc: false, jobDesc: '' })} />);
+    // Starts on source — ModelSelector not yet visible.
+    expect(screen.queryByTestId('model-selector-stub')).not.toBeInTheDocument();
+    // Switch to summary tab.
+    await userEvent.click(screen.getByText('autopilot.apply.jobAdView.summaryTab'));
+    expect(screen.getByTestId('model-selector-stub')).toBeInTheDocument();
+  });
+
+  it('hides ModelSelector after switching away from the summary tab', async () => {
+    render(<JobAdView {...makeProps({ jobDesc: 'Normal full description.', hasDesc: true })} />);
+    // Starts on summary — ModelSelector visible.
+    expect(screen.getByTestId('model-selector-stub')).toBeInTheDocument();
+    // Switch to source tab.
+    await userEvent.click(screen.getByText('autopilot.apply.tabs.jobAd'));
+    expect(screen.queryByTestId('model-selector-stub')).not.toBeInTheDocument();
+  });
+});
+
+// ── 8. Tab resync on posting change ──────────────────────────────────────────
 
 describe('JobAdView — tab resync on posting change', () => {
   it('does NOT switch tab when jobDesc changes but jobUrl stays the same (no-yank guard)', () => {

@@ -133,6 +133,10 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       set: async () => ({ success: true }),
     },
 
+    github: {
+      importRepos: emptyList,
+    },
+
     extensionBridge: {
       status: async () => ({ port: 47615, connected: false, token: 'mock-token' }),
       regenerateToken: async () => ({ token: 'mock-token' }),

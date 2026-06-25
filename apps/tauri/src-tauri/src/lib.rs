@@ -833,6 +833,8 @@ pub fn run() {
             commands::referrals::referrals_remove,
             // profile import
             commands::profile_import::profile_import_from_url,
+            // github repos import (resume-builder projects step)
+            commands::github::github_import_repos,
             // browser-extension bridge (Feature 2 — loopback WS control)
             commands::extension_bridge::extension_bridge_status,
             commands::extension_bridge::extension_bridge_regenerate_token,

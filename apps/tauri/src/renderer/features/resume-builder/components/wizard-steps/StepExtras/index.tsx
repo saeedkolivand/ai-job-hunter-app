@@ -1,11 +1,13 @@
-import { Award, BookText, FolderGit2, HeartHandshake } from 'lucide-react';
+import { Award, BookText, FolderGit2, GitBranch, HeartHandshake } from 'lucide-react';
+import { useState } from 'react';
 import { Controller, useFieldArray, useFormContext } from 'react-hook-form';
 
 import { useTranslation } from '@ajh/translations';
-import { Accordion, Input, TextArea } from '@ajh/ui';
+import { Accordion, Button, Input, TextArea } from '@ajh/ui';
 
 import type { BuilderFormValues } from '../../../types';
 import { FieldArrayList } from '../../FieldArrayList';
+import { GitHubImportModal } from '../../GitHubImportModal';
 import { WizardField } from '../../WizardField';
 
 /** Optional extra sections (projects, publications, awards, volunteering, languages, certs). */
@@ -13,6 +15,7 @@ export function StepExtras() {
   const { t } = useTranslation();
   const { control, formState } = useFormContext<BuilderFormValues>();
   const { errors } = formState;
+  const [githubOpen, setGithubOpen] = useState(false);
 
   // Translate an i18n-key error message (the schema stores keys) or pass through undefined.
   const msg = (key: string | undefined) => (key ? t(key) : undefined);
@@ -24,72 +27,89 @@ export function StepExtras() {
 
   return (
     <div className="space-y-2.5">
+      <GitHubImportModal
+        open={githubOpen}
+        onClose={() => setGithubOpen(false)}
+        onAppend={(entry) => projects.append(entry)}
+      />
+
       <Accordion
         title={t('build.extras.projects.title')}
         content={
-          <FieldArrayList
-            fields={projects.fields}
-            onAppend={() => projects.append({ name: '', description: '', link: '' })}
-            onRemove={projects.remove}
-            addLabel={t('build.extras.projects.add')}
-            removeLabel={t('build.remove')}
-            emptyLabel={t('build.extras.projects.empty')}
-            icon={FolderGit2}
-            render={(index) => (
-              <div className="space-y-2.5">
-                <WizardField label={t('build.extras.projects.name')}>
-                  <Controller
-                    control={control}
-                    name={`projects.${index}.name`}
-                    render={({ field }) => (
-                      <Input
-                        className="w-full"
-                        value={field.value ?? ''}
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        placeholder={t('build.extras.projects.namePlaceholder')}
-                      />
-                    )}
-                  />
-                </WizardField>
-                <WizardField label={t('build.extras.projects.description')}>
-                  <Controller
-                    control={control}
-                    name={`projects.${index}.description`}
-                    render={({ field }) => (
-                      <TextArea
-                        variant="glass"
-                        value={field.value ?? ''}
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        rows={2}
-                        placeholder={t('build.extras.projects.descriptionPlaceholder')}
-                      />
-                    )}
-                  />
-                </WizardField>
-                <WizardField
-                  label={t('build.extras.link')}
-                  hint={t('build.extras.linkHint')}
-                  error={msg(errors.projects?.[index]?.link?.message)}
-                >
-                  <Controller
-                    control={control}
-                    name={`projects.${index}.link`}
-                    render={({ field }) => (
-                      <Input
-                        className="w-full"
-                        value={field.value ?? ''}
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        placeholder={t('build.extras.linkPlaceholder')}
-                      />
-                    )}
-                  />
-                </WizardField>
-              </div>
-            )}
-          />
+          <div className="space-y-3">
+            <Button
+              type="button"
+              variant="ghost"
+              className="gap-1.5"
+              onClick={() => setGithubOpen(true)}
+            >
+              <GitBranch size={14} />
+              {t('build.extras.projects.github.trigger')}
+            </Button>
+            <FieldArrayList
+              fields={projects.fields}
+              onAppend={() => projects.append({ name: '', description: '', link: '' })}
+              onRemove={projects.remove}
+              addLabel={t('build.extras.projects.add')}
+              removeLabel={t('build.remove')}
+              emptyLabel={t('build.extras.projects.empty')}
+              icon={FolderGit2}
+              render={(index) => (
+                <div className="space-y-2.5">
+                  <WizardField label={t('build.extras.projects.name')}>
+                    <Controller
+                      control={control}
+                      name={`projects.${index}.name`}
+                      render={({ field }) => (
+                        <Input
+                          className="w-full"
+                          value={field.value ?? ''}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                          placeholder={t('build.extras.projects.namePlaceholder')}
+                        />
+                      )}
+                    />
+                  </WizardField>
+                  <WizardField label={t('build.extras.projects.description')}>
+                    <Controller
+                      control={control}
+                      name={`projects.${index}.description`}
+                      render={({ field }) => (
+                        <TextArea
+                          variant="glass"
+                          value={field.value ?? ''}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                          rows={2}
+                          placeholder={t('build.extras.projects.descriptionPlaceholder')}
+                        />
+                      )}
+                    />
+                  </WizardField>
+                  <WizardField
+                    label={t('build.extras.link')}
+                    hint={t('build.extras.linkHint')}
+                    error={msg(errors.projects?.[index]?.link?.message)}
+                  >
+                    <Controller
+                      control={control}
+                      name={`projects.${index}.link`}
+                      render={({ field }) => (
+                        <Input
+                          className="w-full"
+                          value={field.value ?? ''}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                          placeholder={t('build.extras.linkPlaceholder')}
+                        />
+                      )}
+                    />
+                  </WizardField>
+                </div>
+              )}
+            />
+          </div>
         }
       />
 

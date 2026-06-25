@@ -206,4 +206,21 @@ describe('buildRewritePrompt — docType label in system prompt', () => {
     const { system } = buildRewritePrompt({ ...BASE_PARAMS, docType: 'cover-letter' });
     expect(system).toContain('cover letter');
   });
+
+  it('embeds "application answer" in the system prompt for docType "application-answer"', () => {
+    const { system } = buildRewritePrompt({ ...BASE_PARAMS, docType: 'application-answer' });
+    expect(system).toContain('application answer');
+  });
+
+  it('applies the prose voice ruleset (em-dash ban) for docType "application-answer"', () => {
+    // application-answer is first-person prose like a cover letter, so it must
+    // carry the PROSE FLOW rules (em-dash hard ban), not just the résumé lexical
+    // bans. Guards the DOC_VOICE arm against silently regressing to LEXICAL.
+    const { system } = buildRewritePrompt({ ...BASE_PARAMS, docType: 'application-answer' });
+    expect(system).toMatch(/em-dash hard ban/i);
+
+    // And it must NOT match the résumé arm, which omits PROSE FLOW.
+    const { system: resumeSystem } = buildRewritePrompt({ ...BASE_PARAMS, docType: 'resume' });
+    expect(resumeSystem).not.toMatch(/em-dash hard ban/i);
+  });
 });

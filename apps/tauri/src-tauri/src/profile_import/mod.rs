@@ -1,3 +1,4 @@
+pub mod github;
 pub mod linkedin;
 
 use crate::error::AppResult;

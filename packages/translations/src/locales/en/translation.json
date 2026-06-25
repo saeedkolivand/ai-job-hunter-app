@@ -121,7 +121,27 @@
         "name": "Name",
         "namePlaceholder": "e.g. Payments service",
         "description": "Description",
-        "descriptionPlaceholder": "What it does and your role."
+        "descriptionPlaceholder": "What it does and your role.",
+        "github": {
+          "trigger": "Import from GitHub",
+          "modalTitle": "Import GitHub Projects",
+          "modalDescription": "Shows your public repos (up to ~30 most-starred, forks excluded). Select any, and AI writes résumé-ready bullets.",
+          "usernamePlaceholder": "GitHub username or profile URL",
+          "fetchButton": "Fetch repos",
+          "loading": "Loading repositories…",
+          "selectAll": "Select all",
+          "deselectAll": "Deselect all",
+          "repoCount_one": "{{count}} repo",
+          "repoCount_other": "{{count}} repos",
+          "addSelected_one": "Add {{count}} selected",
+          "addSelected_other": "Add {{count}} selected",
+          "cancel": "Cancel",
+          "generating": "Generating bullets…",
+          "noRepos": "No public repos found.",
+          "stars_one": "{{count}} star",
+          "stars_other": "{{count}} stars",
+          "generateError": "Could not generate bullets. Try again or close to discard."
+        }
       },
       "publications": {
         "title": "Publications",
@@ -1277,6 +1297,9 @@
         "generate": "Generate answers",
         "generating": "Generating…",
         "copy": "Copy answer",
+        "rewrite": "Rewrite with AI",
+        "rewriteAriaLabel": "Rewrite this answer with AI",
+        "rewriteSaveError": "Failed to save the rewritten answer",
         "customLabel": "Your own question",
         "customPlaceholder": "Type or paste a question…",
         "add": "Add",

@@ -15,6 +15,12 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+// ModelSelector uses useAppClient (requires AppClientProvider) — stub so tests
+// that reach the summary tab don't need a full provider tree.
+vi.mock('@/components/ui/ModelSelector', () => ({
+  ModelSelector: () => <div data-testid="model-selector-stub" />,
+}));
+
 // ExternalLink uses useAppClient (requires AppClientProvider) — stub it with a
 // plain anchor so tests that reach the Job-ad source tab don't need a provider.
 vi.mock('@/components/ui/ExternalLink', () => ({
