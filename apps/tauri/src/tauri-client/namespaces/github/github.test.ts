@@ -42,4 +42,11 @@ describe('github.importRepos', () => {
     invoke.mockResolvedValue({ unexpected: true });
     await expect(github.importRepos('octocat')).rejects.toThrow(/unexpected response/);
   });
+
+  it('throws a clean error (not a raw TypeError) on a primitive result', async () => {
+    // `'error' in "oops"` would throw a TypeError if the `in` check ran on a
+    // primitive; the object guard must catch a bare string first.
+    invoke.mockResolvedValue('oops');
+    await expect(github.importRepos('octocat')).rejects.toThrow(/unexpected response/);
+  });
 });

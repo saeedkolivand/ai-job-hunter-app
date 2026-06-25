@@ -488,4 +488,31 @@ describe('GitHubImportModal', () => {
     // No appends happened from the mere close/reopen cycle.
     expect(onAppend).not.toHaveBeenCalled();
   });
+
+  // ── item 15: async prefill mid-session must NOT reset fetch state ─────────
+
+  it('a late-arriving contact-profile prefill does NOT wipe a fetched repo list', async () => {
+    // Open with no profile — prefill is ''.
+    setGithubProfile(undefined);
+    const { rerender } = render(
+      <GitHubImportModal open={true} onClose={vi.fn()} onAppend={vi.fn()} />
+    );
+
+    // Fetch repos — list is now populated.
+    await fetchRepos([REPO_A, REPO_B]);
+    expect(getCheckboxes()).toHaveLength(2);
+    expect(getCheckboxes().every((cb) => cb.checked)).toBe(true);
+
+    // Profile resolves asynchronously while the modal is still open.
+    setGithubProfile('https://github.com/late-jane');
+    await act(async () => {
+      rerender(<GitHubImportModal open={true} onClose={vi.fn()} onAppend={vi.fn()} />);
+    });
+
+    // The repo list must be PRESERVED — prefill change must not trigger a reset.
+    expect(getCheckboxes()).toHaveLength(2);
+    expect(getCheckboxes().every((cb) => cb.checked)).toBe(true);
+    // Username field must NOT change (user already has a typed value from fetchRepos).
+    expect(getTextbox().value).toBe('jane');
+  });
 });

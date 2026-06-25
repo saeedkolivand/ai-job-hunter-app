@@ -67,29 +67,33 @@ export function GitHubImportModal({ open, onClose, onAppend }: GitHubImportModal
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
 
-  // Reset all transient state each time the modal opens so a second open never
-  // shows the previous fetch's repos pre-selected (duplicate-append bug).
-  // Also re-seeds the username prefill so it works correctly on every reopen.
-  // The seededRef pattern is no longer needed: we seed unconditionally on open,
-  // which is the same "exactly once per session" guarantee but per-open-cycle.
+  // Effect 1: reset transient fetch/generation state ONLY on open transition.
+  // Keyed on [open] alone so an async prefill update mid-session never wipes
+  // a fetched repo list or in-progress selection.
   const seededRef = useRef(false);
   useEffect(() => {
     if (!open) {
-      // Modal closed — mark that we should reset+reseed on next open.
+      // Modal closed — arm the seed so the next open re-seeds from profile.
       seededRef.current = false;
       return;
     }
-    // Modal opened (or re-opened): reset all fetch/generation state.
     setRepos([]);
     setSelected(new Set());
     setFetchState('idle');
     setFetchError(null);
     setGenerateError(null);
-    // Re-seed username from profile (mirrors the original seededRef pattern but
-    // per-open-cycle so reopen always gets the current profile value).
-    if (prefill && !seededRef.current) {
+  }, [open]);
+
+  // Effect 2: seed username from the contact profile exactly once per open-cycle,
+  // and ONLY while the field is still empty (user hasn't typed yet).
+  // Keyed on [open, prefill] so a late-arriving profile fires the effect, but the
+  // seededRef + empty-field guard means it never clobbers a user-typed value.
+  useEffect(() => {
+    if (open && prefill && !seededRef.current) {
       seededRef.current = true;
-      setUsername(prefill);
+      // setUsername with a functional updater: only apply if the current value is
+      // still empty — if the user already typed something, leave it alone.
+      setUsername((cur) => (cur === '' ? prefill : cur));
     }
   }, [open, prefill]);
 
