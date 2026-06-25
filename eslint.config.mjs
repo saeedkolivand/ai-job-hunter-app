@@ -500,5 +500,14 @@ export default tseslint.config(
         ...globals.browser,
       },
     },
+  },
+  // Branding/marketing asset generators run under Node (console / process / fs).
+  {
+    files: ['branding/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
   }
 );
