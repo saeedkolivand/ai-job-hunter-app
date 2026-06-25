@@ -187,6 +187,30 @@ describe('parseGitHubProjects', () => {
     expect(out[0]).toEqual({ name: 'Only a name', description: '' });
   });
 
+  it('removes multiple closed <think> spans (case-insensitive) and keeps the entries', () => {
+    const raw = [
+      '<think>plan one</think>',
+      'NAME: Merry Oasis',
+      '<THINK>second thought</THINK>',
+      'DESC: Built a planner',
+    ].join('\n');
+    const out = parseGitHubProjects(raw);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toEqual({ name: 'Merry Oasis', description: 'Built a planner' });
+  });
+
+  it('leaves an UNCLOSED <think> in place (no closing tag) without swallowing the answer', () => {
+    // The linear stripper, like the old lazy regex, removes only CLOSED spans — an
+    // unclosed <think> must NOT eat the rest of the output (or every entry vanishes).
+    const raw = 'NAME: Merry Oasis\nDESC: Built a planner\n<think>unterminated reasoning';
+    const out = parseGitHubProjects(raw);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.name).toBe('Merry Oasis');
+    // The dangling <think> line is a continuation appended to the description; the
+    // key guarantee is the entry survives.
+    expect(out[0]?.description).toContain('Built a planner');
+  });
+
   it('survives a whole-response wrapped in a single code fence (Ollama tell)', () => {
     // A local model often wraps its ENTIRE answer in one ``` fence. The body must
     // survive (extractPlainText would delete it — see the generation wrapper).

@@ -133,16 +133,48 @@ export interface ParsedGitHubProject {
 }
 
 /**
+ * Remove every CLOSED `<think>…</think>` reasoning span (case-insensitive,
+ * shortest match) via a LINEAR `indexOf` scan — no regex backtracking. Model
+ * output is uncontrolled, so the old lazy `/<think>[\s\S]*?<\/think>/gi` was
+ * O(n²) on input with many `<think>` markers and no closing tag (js/polynomial-
+ * redos). An UNCLOSED `<think>` (no closing tag) is left in place verbatim — the
+ * exact behavior of the old lazy regex.
+ */
+function stripThinkBlocks(s: string): string {
+  const lower = s.toLowerCase();
+  let out = '';
+  let i = 0;
+  for (;;) {
+    const open = lower.indexOf('<think>', i);
+    if (open === -1) {
+      out += s.slice(i);
+      break;
+    }
+    const close = lower.indexOf('</think>', open + 7);
+    if (close === -1) {
+      // Unclosed → keep the remainder as-is (matches the old `*?` semantics).
+      out += s.slice(i);
+      break;
+    }
+    out += s.slice(i, open);
+    i = close + 8; // length of '</think>'
+  }
+  return out;
+}
+
+/**
  * Strip inline markdown (heading hashes / bold / italic / inline-code) from one
  * line. The parser is fed the RAW model output (NOT `extractPlainText`, which
  * deletes a whole ```` ``` ```` -wrapped answer), so it does its own light markdown
- * cleanup here to keep bullet text clean. Linear, no nested backtracking.
+ * cleanup here to keep bullet text clean. Linear, no nested backtracking: every
+ * emphasis pattern uses a bounded `[^*]+` / `[^`]+` content class (never lazy
+ * `(.+?)` between identical delimiters), so it cannot backtrack polynomially.
  */
 function stripInlineMarkdown(line: string): string {
   return line
     .replace(/^#{1,6}\s+/, '') // heading hashes
-    .replace(/\*\*\*(.+?)\*\*\*/g, '$1') // ***bold-italic***
-    .replace(/\*\*(.+?)\*\*/g, '$1') // **bold**
+    .replace(/\*\*\*([^*]+)\*\*\*/g, '$1') // ***bold-italic*** (before **)
+    .replace(/\*\*([^*]+)\*\*/g, '$1') // **bold**
     .replace(/\*([^*]+)\*/g, '$1') // *italic*
     .replace(/`([^`]+)`/g, '$1'); // `inline code`
 }
@@ -158,14 +190,15 @@ function stripInlineMarkdown(line: string): string {
  * Fed the RAW model text by the caller (NOT `extractPlainText`): a local model
  * that wraps its entire answer in one code fence would otherwise have its whole
  * response deleted, silently dropping every AI entry to the raw-description
- * fallback. We strip fence markers + inline markdown here instead. `link` is NOT
+ * fallback. We strip fence markers + inline markdown here instead. Closed
+ * `<think>…</think>` spans are removed via {@link stripThinkBlocks} (a linear,
+ * non-backtracking scan — uncontrolled model output, so no ReDoS). `link` is NOT
  * produced here; the caller re-attaches each repo's canonical URL.
  */
 export function parseGitHubProjects(raw: string): ParsedGitHubProject[] {
-  // Drop reasoning blocks and fence MARKERS (keep the fenced BODY — the model may
-  // wrap its whole NAME:/DESC: answer in one ``` fence).
-  const cleaned = raw
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+  // Drop reasoning blocks (linear scan) and fence MARKERS (keep the fenced BODY —
+  // the model may wrap its whole NAME:/DESC: answer in one ``` fence).
+  const cleaned = stripThinkBlocks(raw)
     .replace(/```[a-zA-Z]*\n?/g, '')
     .replace(/```/g, '');
 
