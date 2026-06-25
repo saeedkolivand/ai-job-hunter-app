@@ -1,7 +1,7 @@
 ---
 name: rust-backend-architect
 description: Primary reviewer for the Rust/Tauri backend — domain modeling, error handling, module boundaries (L0–L3 layers), the centralized platform/net/error layers, data/SQLite/migrations/GDPR, and Rust-first business-logic ownership. Use for changes under apps/tauri/src-tauri/src/** that aren't owned by a more specific domain agent.
-tools: Read, Grep, Glob, Bash, mcp__graphify
+tools: Read, Grep, Glob, Bash, mcp__graphify, mcp__codegraph
 model: opus
 ---
 

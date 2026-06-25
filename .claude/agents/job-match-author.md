@@ -1,7 +1,7 @@
 ---
 name: job-match-author
 description: WRITE-access implementer for ATS scoring, job analysis, keyword/skill/requirement extraction, resume-job matching, recommendations, and cover-letter relevance. Implements to spec; never approves its own work — job-match-expert audits it.
-tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify
+tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify, mcp__codegraph
 model: sonnet
 ---
 

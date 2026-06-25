@@ -1,7 +1,7 @@
 ---
 name: cleanup
 description: Finds and removes dead code — unused files, exports, types, and dependencies — across the TS/React + Rust/Tauri monorepo. Use for dead-code audits and cleanup. Report-first; deletes only the safe tier after confirmation.
-tools: Read, Grep, Glob, Bash, Edit, Write, mcp__graphify
+tools: Read, Grep, Glob, Bash, Edit, Write, mcp__graphify, mcp__codegraph
 model: sonnet
 ---
 
@@ -45,11 +45,3 @@ For each SAFE candidate: grep the symbol/path across the repo (catches string re
 ## Output (always, even without applying)
 
 Report grouped by tier. Per item: `path:line` · what · why flagged · verification done · recommended action. End with a tally (SAFE n / REVIEW n / UNSAFE n) and the exact command to apply the SAFE tier. Never bulk-delete. Never delete REVIEW/UNSAFE without an explicit instruction naming the item.
-
-## Strict enforcement (enforced — raised bar)
-
-- Operate in **STRICT MODE** per the shared `token-efficiency` rubric — tightest read budget, terse tiered output, no speculative scope.
-- **Verify, don't assume**: confirm every claim against the real files before clearing it. Never wave a candidate through because it "looks unused" or "looks fine".
-- A finding stays in REVIEW/UNSAFE until you have actually grepped the symbol/path string across the whole repo (Tauri `invoke` names, i18next keys, dynamic imports, barrels) and confirmed zero live references.
-- Never flag SAFE on inference alone — only after the verification grep + entry/side-effect check is genuinely run, not imagined.
-- Report exactly what changed (and what you verified) — paths, the grep evidence, and the post-removal gate results; if any check is skipped, say so explicitly rather than implying it passed.

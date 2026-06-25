@@ -1,7 +1,7 @@
 ---
 name: project-steward
 description: WRITE-access sole owner of documentation, the knowledge base, ADRs, the lessons log, and release process. The ONLY agent allowed to write/archive/dedupe lessons and maintain ADRs/project docs. Use for /update-docs, /prepare-release, and as the final step of the implement-workflow to sync docs/knowledge and persist lessons.
-tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify
+tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify, mcp__codegraph
 model: haiku
 ---
 
@@ -28,7 +28,7 @@ You are the **only** agent allowed to: write lessons · archive lessons · dedup
 
 ## Release
 
-Own release prep / changelog / versioning review. Repo anchors: `.releaserc.json`, `commitlint.config.mjs`, `.github/workflows/`, `scripts/sync-tauri-version.cjs`, version files. (Semantic-release runs on push to `main`; never manually tag/bump — review correctness of conventional commits + version sync.)
+Own release prep / changelog / versioning review. Repo anchors: `.releaserc.json`, `commitlint.config.mjs`, `.github/workflows/`, `scripts/sync-tauri-version.cjs`, version files. (Release is **manually triggered** — Actions → '🚀 Release' → `action: release`; nothing runs automatically on push to `main`. Semantic-release still derives the version bump from the conventional-commit types; never manually tag/bump — review correctness of conventional commits + version sync.)
 
 ## Invoked by
 
