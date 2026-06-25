@@ -133,24 +133,43 @@ export interface ParsedGitHubProject {
 }
 
 /**
+ * Case-insensitive `indexOf` for an ASCII `needle` in `hay`, starting at `from`.
+ * Scans `hay` DIRECTLY (no lowercased copy) and compares each fixed-length slice
+ * case-insensitively, so every returned offset is an index into the ORIGINAL
+ * `hay`. (`String.toLowerCase()` can change length — e.g. Turkish `İ` U+0130 →
+ * `i`+U+0307 — so lowercasing the whole string first would drift the offsets and
+ * mis-cut the span.) The needle is ASCII; a slice containing a char whose
+ * lowercase form changes length simply won't equal it and is correctly rejected.
+ * Linear, no backtracking. Returns -1 when not found.
+ */
+function indexOfCI(hay: string, needle: string, from: number): number {
+  const last = hay.length - needle.length;
+  for (let pos = from; pos <= last; pos++) {
+    if (hay.slice(pos, pos + needle.length).toLowerCase() === needle) return pos;
+  }
+  return -1;
+}
+
+/**
  * Remove every CLOSED `<think>…</think>` reasoning span (case-insensitive,
- * shortest match) via a LINEAR `indexOf` scan — no regex backtracking. Model
- * output is uncontrolled, so the old lazy `/<think>[\s\S]*?<\/think>/gi` was
- * O(n²) on input with many `<think>` markers and no closing tag (js/polynomial-
- * redos). An UNCLOSED `<think>` (no closing tag) is left in place verbatim — the
- * exact behavior of the old lazy regex.
+ * shortest match) via a LINEAR scan over the ORIGINAL string — no regex
+ * backtracking, no lowercased copy. Model output is uncontrolled, so the old lazy
+ * `/<think>[\s\S]*?<\/think>/gi` was O(n²) on input with many `<think>` markers and
+ * no closing tag (js/polynomial-redos). All offsets index `s` directly (via
+ * {@link indexOfCI}), so a non-ASCII char near the tags can't drift the cut. An
+ * UNCLOSED `<think>` (no closing tag) is left in place verbatim — the exact
+ * behavior of the old lazy regex.
  */
 function stripThinkBlocks(s: string): string {
-  const lower = s.toLowerCase();
   let out = '';
   let i = 0;
   for (;;) {
-    const open = lower.indexOf('<think>', i);
+    const open = indexOfCI(s, '<think>', i);
     if (open === -1) {
       out += s.slice(i);
       break;
     }
-    const close = lower.indexOf('</think>', open + 7);
+    const close = indexOfCI(s, '</think>', open + 7);
     if (close === -1) {
       // Unclosed → keep the remainder as-is (matches the old `*?` semantics).
       out += s.slice(i);

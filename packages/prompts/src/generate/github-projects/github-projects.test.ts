@@ -211,6 +211,23 @@ describe('parseGitHubProjects', () => {
     expect(out[0]?.description).toContain('Built a planner');
   });
 
+  it('removes a <think> block adjacent to non-ASCII text without mis-cutting (offset drift)', () => {
+    // Turkish dotted-İ lowercases to TWO code units (i + combining dot), so a
+    // lowercased-copy scan would drift offsets and slice the wrong span. The scan
+    // runs over the ORIGINAL string, so the think block is removed and the
+    // surrounding non-ASCII text stays intact.
+    const raw =
+      'NAME: İstanbul Planner\nDESC: Built İçin a planner<think>secret İ reasoning</think> with sync';
+    const out = parseGitHubProjects(raw);
+    expect(out).toHaveLength(1);
+    // Non-ASCII text on both sides of the removed block is preserved exactly.
+    expect(out[0]?.name).toBe('İstanbul Planner');
+    expect(out[0]?.description).toBe('Built İçin a planner with sync');
+    // The reasoning span (and its non-ASCII char) is gone.
+    expect(out[0]?.description).not.toContain('secret');
+    expect(out[0]?.description).not.toContain('<think>');
+  });
+
   it('survives a whole-response wrapped in a single code fence (Ollama tell)', () => {
     // A local model often wraps its ENTIRE answer in one ``` fence. The body must
     // survive (extractPlainText would delete it — see the generation wrapper).
