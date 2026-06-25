@@ -1,7 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock the Tauri transport so namespace wrappers can be exercised in node/jsdom.
-const invoke = vi.fn().mockResolvedValue(undefined);
+// Most namespaces tolerate an `undefined` resolve; the few that strictly validate
+// their envelope (e.g. `github_import_repos`, which throws on a malformed result
+// rather than masking a failure as an empty list) get a channel-shaped reply so
+// the generic "exercise every method" sweep doesn't produce an unhandled rejection.
+const invoke = vi.fn(async (...args: unknown[]) => {
+  // Strict-envelope channels get a channel-shaped reply; everything else resolves
+  // undefined (which the tolerant namespaces accept).
+  if (args[0] === 'github_import_repos') return { repos: [] };
+  return undefined;
+});
 let lastListenHandler: ((e: { payload: unknown }) => void) | null = null;
 const unlisten = vi.fn();
 const listen = vi.fn(async (_event: string, handler: (e: { payload: unknown }) => void) => {

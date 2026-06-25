@@ -95,7 +95,15 @@ fn map_status(code: u16) -> Option<AppError> {
     }
 }
 
-/// Fetch a user's public repos, drop forks, sort by stars (desc), cap to 30.
+/// Fetch a user's public repos and return the top [`MAX_REPOS`] by stars.
+///
+/// **Ranking window (v1, no pagination):** we fetch a SINGLE page of the 100
+/// most-recently-updated owner repos (`per_page=100&sort=updated&type=owner`),
+/// then [`filter_and_rank`] drops forks and re-sorts that slice by stars. So the
+/// result is "top 30 by stars **among the 100 most-recently-updated** repos",
+/// NOT a true global top-30-by-stars — a long-dormant high-star repo outside the
+/// recency window won't appear. This is deliberate v1 scope; paginating the full
+/// repo set would be the follow-up if global ranking is ever needed.
 ///
 /// `input` may be a bare username or a `github.com/<user>` URL. We extract +
 /// validate the username, then build the api.github.com URL ourselves.
@@ -231,12 +239,21 @@ fn validate_username(name: &str) -> AppResult<()> {
 
 /// Build the api.github.com URL ourselves from a validated username — the only
 /// URL ever handed to the HTTP client.
+///
+/// Requests a SINGLE page of the 100 most-recently-updated owner repos
+/// (`per_page=100&sort=updated&type=owner`). No pagination (v1), so this is the
+/// recency window [`filter_and_rank`] then ranks by stars — see [`fetch_repos`].
 fn api_url(username: &str) -> String {
     format!("https://api.github.com/users/{username}/repos?per_page=100&sort=updated&type=owner")
 }
 
 /// Drop forks, sort by stars descending (name as a stable tiebreaker), cap to
 /// [`MAX_REPOS`], and map to the output struct.
+///
+/// NOTE: this ranks ONLY the slice handed to it — the 100 most-recently-updated
+/// repos from [`api_url`] — so the output is "top [`MAX_REPOS`] by stars among
+/// the recency window", not a global top-by-stars. See [`fetch_repos`] for the
+/// rationale (v1 scope, no pagination).
 fn filter_and_rank(raw: Vec<RawRepo>) -> Vec<GitHubRepo> {
     let mut repos: Vec<GitHubRepo> = raw
         .into_iter()
