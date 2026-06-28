@@ -13,7 +13,7 @@
   &nbsp;·&nbsp;
   <a href="https://aijobhunter.app">🌐 Live site</a>
   &nbsp;·&nbsp;
-  <a href="https://aijobhunter.app/creature.html">🎬 Short film</a>
+  <a href="https://aijobhunter.app/creature">🎬 Short film</a>
   &nbsp;·&nbsp;
   <a href="#-installation">📦 Install</a>
   &nbsp;·&nbsp;
@@ -446,7 +446,7 @@ Live status of every GitHub Actions workflow. See
 what each one does, its triggers, and whether it gates merges (only **✅ CI OK** does).
 Both are generated from the workflow files by `pnpm gen:workflows`.
 
-**[📊 Live CI dashboard](https://aijobhunter.app/ci-dashboard.html)** —
+**[📊 Live CI dashboard](https://aijobhunter.app/ci-dashboard)** —
 at-a-glance status of every workflow, grouped by role, fetched live from the Actions API
 (selectable auto-refresh — off/1/5/15 min — plus a **Refresh now** button).
 
@@ -506,10 +506,10 @@ See <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBU
 | <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a>                                             | Knowledge base + architecture decision records (ADRs)                                                              |
 | <a href="SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a>                                                     | Security policy &amp; vulnerability reporting                                                                      |
 | <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a>                                             | Code style, branching, PR process                                                                                  |
-| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/how-it-works.html">landing/how-it-works.html</a>         | How the AI Job Hunter works end-to-end (interactive walkthrough)                                                   |
-| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/architecture-map.html">landing/architecture-map.html</a> | Interactive architecture map of the AI Job Hunter                                                                  |
-| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/agent-system.html">landing/agent-system.html</a>         | Interactive agent-fleet walkthrough — 23 paired author+critic agents, intake→delegation routing, per-task pipeline |
-| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/creature.html">landing/creature.html</a>                 | THE CREATURE — a hand-drawn doodle about the recruiter you summon                                                  |
+| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/how-it-works">How it Works</a>         | How the AI Job Hunter works end-to-end (interactive walkthrough)                                                   |
+| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/architecture-map">Architecture Map</a> | Interactive architecture map of the AI Job Hunter                                                                  |
+| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/agent-system">Agent System</a>         | Interactive agent-fleet walkthrough — 23 paired author+critic agents, intake→delegation routing, per-task pipeline |
+| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/creature">THE CREATURE</a>                 | THE CREATURE — a hand-drawn doodle about the recruiter you summon                                                  |
 
 ---
 
