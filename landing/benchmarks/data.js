@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782429375876,
+  "lastUpdate": 1782775839118,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1799,6 +1799,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 289525,
             "range": "± 6001",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f622c5c08421375dd11b5af79a5cac28122eb751",
+          "message": "fix: prevent cover-letter extractor panic on multibyte job ads (#504)\n\nThe job-ad metadata extractor computed a byte offset by searching one\nstring and then sliced a different string with it, panicking on a\nnon-char-boundary when emoji/multibyte text shifted the two apart (the\nreported crash at extractor.rs inside a leading emoji during cover-letter\ngeneration).\n\nReplace the cross-string slicing with an ASCII case-insensitive search\nthat returns an offset valid in the searched string itself, so every\nslice stays on a char boundary and extracted company/role keep their\noriginal casing. Add regression tests whose inputs panic against the\npre-fix code.\n\nAlso install a best-effort panic hook that appends crash payload,\nlocation and backtrace to a local crashes.log in the app data dir\n(chaining the default hook), so future panics are diagnosable.\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-30T01:12:08+02:00",
+          "tree_id": "347806f9d0bb14fdc2902366c6c9f4193b081051",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/f622c5c08421375dd11b5af79a5cac28122eb751"
+        },
+        "date": 1782775838922,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1855172,
+            "range": "± 41016",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2450229,
+            "range": "± 29587",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 281011,
+            "range": "± 3989",
             "unit": "ns/iter"
           }
         ]
