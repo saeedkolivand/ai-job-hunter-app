@@ -56,7 +56,7 @@ jobs:
       - name: 🎨 Check Formatting
         run: |
           echo "::group::prettier --check . on main"
-          if ! npx --yes prettier@3.8.3 --check .; then
+          if ! npx --yes prettier@3.9.1 --check .; then
             echo "::endgroup::"
             echo "::error::Formatting drift on main — likely a file edited directly on GitHub (skips the pre-commit Prettier hook). Run 'pnpm format' locally and push the result, or open a quick PR."
             exit 1
