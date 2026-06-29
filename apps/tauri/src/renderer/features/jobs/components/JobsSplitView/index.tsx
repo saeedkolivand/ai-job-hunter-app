@@ -30,6 +30,9 @@ export function JobsSplitView({
   const selectedPosting = display.find((p) => p.id === selectedId) ?? null;
 
   const listScrollRef = useRef<HTMLDivElement>(null);
+  // Captured once at mount so the restore effect has a stable reference without
+  // being reactive to subsequent scrollTop saves.
+  const initialScrollTop = useRef(jobs.listScrollTop);
   const virtualizer = useVirtualizer({
     count: display.length,
     getScrollElement: () => listScrollRef.current,
@@ -58,6 +61,35 @@ export function JobsSplitView({
       listScrollRef.current?.focus();
     }
   }, [selectedId]);
+
+  // Restore scroll position when remounting after back-navigation (e.g. returning
+  // from /applications/$id). Reads the value captured at mount — not reactive.
+  useEffect(() => {
+    const el = listScrollRef.current;
+    if (el && initialScrollTop.current > 0) {
+      el.scrollTop = initialScrollTop.current;
+    }
+  }, []); // intentional mount-only restore — body only reads stable refs
+
+  // Persist scroll position into the session store (throttled) so the restore
+  // above has a fresh value on the next mount.
+  useEffect(() => {
+    const el = listScrollRef.current;
+    if (!el) return;
+    let rafId: ReturnType<typeof requestAnimationFrame> | null = null;
+    const onScroll = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        setJobs({ listScrollTop: el.scrollTop });
+      });
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [setJobs]);
 
   // Arrow key navigation on the listbox: moves selection + scrolls to keep it visible.
   const handleListKeyDown = useCallback(

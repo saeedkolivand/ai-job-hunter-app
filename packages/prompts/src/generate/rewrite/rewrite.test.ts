@@ -45,6 +45,17 @@ describe('buildRewritePrompt — system prompt', () => {
     expect(system).toMatch(/<before>/);
     expect(system).toMatch(/<after>/);
   });
+
+  it('treats explicit length/character/word constraints as a HARD requirement', () => {
+    const { system } = buildRewritePrompt(BASE_PARAMS);
+    // Rule 5 must declare it a HARD requirement and tell the model to count + trim.
+    expect(system).toMatch(/hard requirement/i);
+    expect(system).toMatch(/trim/i);
+    // Recognisable constraint patterns must be named so the model knows what to
+    // look for in the instruction (covers "max N characters", "under N words", etc.).
+    expect(system).toMatch(/max n characters/i);
+    expect(system).toMatch(/under n words/i);
+  });
 });
 
 // ─── User prompt content ──────────────────────────────────────────────────────
