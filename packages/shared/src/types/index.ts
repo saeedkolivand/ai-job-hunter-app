@@ -10,13 +10,7 @@ import type { AiStreamChunkSchema, JobEventSchema } from '../schemas/index.js';
 export type Locale = 'en' | 'de' | 'fr' | 'es' | 'it' | 'tr' | 'pt' | 'ru' | 'zh' | 'ja' | 'ko';
 
 export type JobStatus =
-  | 'queued'
-  | 'running'
-  | 'streaming'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'retrying';
+  'queued' | 'running' | 'streaming' | 'completed' | 'failed' | 'cancelled' | 'retrying';
 
 export type JobKind =
   | 'ai.generate'
