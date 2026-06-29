@@ -24,11 +24,7 @@ import type { GenerationMeta } from '../modes/index.js';
 import { ANTI_AI_TELL_PROSE } from '../natural-voice/index.js';
 
 export type ApplicationQuestionCategory =
-  | 'motivation'
-  | 'fit'
-  | 'strengths'
-  | 'behavioral'
-  | 'logistics';
+  'motivation' | 'fit' | 'strengths' | 'behavioral' | 'logistics';
 
 export interface ApplicationQuestion {
   /** Stable id — used as the React key, selection key, and persistence key. */

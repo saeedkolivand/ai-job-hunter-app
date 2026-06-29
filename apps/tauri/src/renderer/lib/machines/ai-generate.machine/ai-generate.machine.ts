@@ -19,12 +19,7 @@ import { createMachine } from '@/lib/machine';
  */
 
 export type AiGenerateState =
-  | 'idle'
-  | 'configuring'
-  | 'extracting'
-  | 'generating'
-  | 'done'
-  | 'error';
+  'idle' | 'configuring' | 'extracting' | 'generating' | 'done' | 'error';
 
 export type AiGenerateEvent =
   | 'SUBMIT' // user submits the form

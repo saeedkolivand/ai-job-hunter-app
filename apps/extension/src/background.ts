@@ -165,8 +165,8 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
 
 // ── wiring ────────────────────────────────────────────────────────────────────
 
-browser.runtime.onMessage.addListener(
-  (message: unknown): Promise<PopupResponse> => handleRequest(message as PopupRequest)
+browser.runtime.onMessage.addListener((message: unknown): Promise<PopupResponse> =>
+  handleRequest(message as PopupRequest)
 );
 
 // Re-probe on the lifecycle wake points so a freshly-started worker reconnects.

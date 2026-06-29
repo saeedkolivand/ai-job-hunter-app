@@ -40,15 +40,12 @@ vi.mock('@ajh/ui', async (importOriginal) => {
 
   const RichTextEditorDouble = forwardRef<RichTextEditorHandle, RichTextEditorProps>(
     function RichTextEditorDouble({ onSelectionChange, value }, ref) {
-      useImperativeHandle(
-        ref,
-        (): RichTextEditorHandle => ({
-          getSelectionText: mockGetSelectionText,
-          getSelectionContext: mockGetSelectionContext,
-          replaceSelection: mockReplaceSelection,
-          focus: mockEditorFocus,
-        })
-      );
+      useImperativeHandle(ref, (): RichTextEditorHandle => ({
+        getSelectionText: mockGetSelectionText,
+        getSelectionContext: mockGetSelectionContext,
+        replaceSelection: mockReplaceSelection,
+        focus: mockEditorFocus,
+      }));
 
       return (
         <div data-testid={TEST_IDS.generation.richTextEditor}>

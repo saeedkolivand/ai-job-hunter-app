@@ -1,9 +1,5 @@
 export type CookieImportOutcome =
-  | 'Imported'
-  | 'NoSession'
-  | 'Undecryptable'
-  | 'BrowserNotFound'
-  | 'Error';
+  'Imported' | 'NoSession' | 'Undecryptable' | 'BrowserNotFound' | 'Error';
 
 export interface CookieImportResult {
   outcome: CookieImportOutcome;

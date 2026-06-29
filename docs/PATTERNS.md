@@ -146,12 +146,7 @@ Flows with 3+ states use the minimal state machine from `lib/machine.ts`.
 import { defineMachine } from '@/lib/machine';
 
 export type GenerationState =
-  | 'idle'
-  | 'configuring'
-  | 'generating'
-  | 'extracting'
-  | 'done'
-  | 'error';
+  'idle' | 'configuring' | 'generating' | 'extracting' | 'done' | 'error';
 export type GenerationEvent = 'start' | 'generate' | 'extract' | 'complete' | 'fail' | 'reset';
 
 export const generationMachine = defineMachine<GenerationState, GenerationEvent>({

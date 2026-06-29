@@ -140,10 +140,10 @@ sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 
 # Cross-platform dependencies
 rusqlite = { version = "0.40", features = ["bundled"] }
-pdf-extract = "0.10"
+pdf-extract = "0.12"
 zip = "8"
 docx-rs = "0.4.20"
-lopdf = "0.40"
+lopdf = "0.42"
 typst = "=0.14.2"
 typst-pdf = "=0.14.2"
 # SVG emitter for the live-preview render path (render_*_svg_pages). Runtime dep:

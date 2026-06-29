@@ -5,8 +5,7 @@ import { useAppClient } from '@/providers/AppClientProvider';
 import { keys } from '../query-client';
 
 export type ProfileImportResult =
-  | { text: string; name?: string; platform: string }
-  | { error: string };
+  { text: string; name?: string; platform: string } | { error: string };
 
 export const useProfileImport = () => {
   const api = useAppClient();
