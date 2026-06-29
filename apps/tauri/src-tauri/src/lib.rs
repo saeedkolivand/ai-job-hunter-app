@@ -354,6 +354,46 @@ fn is_native_host_launch<I: IntoIterator<Item = String>>(args: I) -> bool {
 
 /// Build and run the Tauri application. Called by the binary shim in `main.rs`.
 pub fn run() {
+    // Install the crash-reporter panic hook before everything else so panics
+    // that occur during setup are also caught.  We chain the previous hook
+    // (the default) so stderr still prints as usual.
+    // ponytail: file-log panic hook; upgrade to sentry only if remote crash aggregation is ever needed.
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        // Chain default hook first — keeps the familiar stderr output intact.
+        prev_hook(info);
+        // Best-effort append to crashes.log; ignore every IO error so we never
+        // panic inside the panic hook.
+        let _ = (|| -> std::io::Result<()> {
+            use std::io::Write as _;
+            let log_path = crate::platform::config::data_dir().join("crashes.log");
+            if let Some(dir) = log_path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_path)?;
+            let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ");
+            let msg = info
+                .payload()
+                .downcast_ref::<&str>()
+                .copied()
+                .or_else(|| info.payload().downcast_ref::<String>().map(String::as_str))
+                .unwrap_or("<non-string panic payload>");
+            let location = info
+                .location()
+                .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+                .unwrap_or_else(|| String::from("<unknown>"));
+            let bt = std::backtrace::Backtrace::force_capture();
+            writeln!(
+                file,
+                "[{timestamp}] PANIC at {location}: {msg}\nBacktrace:\n{bt}\n---"
+            )?;
+            Ok(())
+        })();
+    }));
+
     // Initialise the OS keyring up front. A failure here is non-fatal: the app
     // still boots, and credential operations (AI provider keys, factory reset)
     // surface the error later through `AppError` rather than aborting startup.
