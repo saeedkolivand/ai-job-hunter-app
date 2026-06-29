@@ -110,6 +110,7 @@ The only outbound calls are to the AI provider **you** configure (and an optiona
 - **Universal "thinking" view** — see the model's reasoning stream live across **every** provider (Anthropic, OpenAI, Gemini, [Ollama][ollama], CLI agents), not just one.
 - **Background generation** — switch tabs, close the modal, or navigate away; generation keeps running and the result is there when you come back.
 - **Smaller PDFs** — fonts are glyph-subsetted per export (only the characters you actually use), shrinking a typical résumé PDF from ~3 MB to ~120 KB.
+
 </details>
 
 <details>
@@ -117,6 +118,7 @@ The only outbound calls are to the AI provider **you** configure (and an optiona
 
 - **Semantic job matching** — hybrid vector + keyword search; scores each posting against your résumé.
 - **Résumé analysis** — ATS scoring, skill-gap detection, language-mismatch warnings, and improvement recommendations.
+
 </details>
 
 <details>
@@ -126,6 +128,7 @@ The only outbound calls are to the AI provider **you** configure (and an optiona
 - **Dedup + New/Applied badges** — re-running a workflow merges results by URL: prior finds are kept, genuinely new ones are badged **New**, and jobs you've generated for are badged **Applied** (derived automatically from your saved generations).
 - **One-click tailoring** — from any found job, click **Tailor** to seed the AI Generate workspace, open the posting, and mark it applied — on any board. Generate a tailored résumé + cover letter and **résumé-grounded answers** to common application questions, with optional company research.
 - **Documents / Activity** — every generated application is stored as a single per-job record (résumé, cover, answers, brief, board, date) and browsable in the **Documents** page (Résumés / Cover Letters / Activity tabs).
+
 </details>
 
 <details>
@@ -136,6 +139,7 @@ The only outbound calls are to the AI provider **you** configure (and an optiona
 - **Two import modes:** **Import via URL** (extension sends the URL, app fetches + parses), or **Scan page** (extension captures the authenticated DOM, useful for login-walled boards).
 - Fully local — jobs are sent to the desktop app over a **loopback-only WebSocket**, paired with a secret token. Zero remote backend, zero analytics.
 - See <a href="apps/extension/README.md" target="_blank" rel="noopener noreferrer">apps/extension/README.md</a> for setup, dev pairing, and architecture. Try it locally — see the extension's <a href="apps/extension/README.md#local-development--testing" target="_blank" rel="noopener noreferrer">Local development & testing</a> guide.
+
 </details>
 
 <details>
@@ -143,6 +147,7 @@ The only outbound calls are to the AI provider **you** configure (and an optiona
 
 - Before writing a cover letter or answers, optionally research the company on the web — using your active AI provider's **own** web search (or the free Ollama Web Search API on Ollama) → a concise, factual brief: what they do, size/stage, products, mission, recent news.
 - Default **off**, cached for a week, and treated as **untrusted** reference context — it never becomes a candidate fact, and the no-fabrication grounding rule still governs every claim.
+
 </details>
 
 <details>
@@ -150,6 +155,7 @@ The only outbound calls are to the AI provider **you** configure (and an optiona
 
 - **Multi-provider** — [Ollama][ollama] (local), OpenAI, Anthropic, Gemini, any OpenAI-compatible server (LM Studio, vLLM, remote [Ollama][ollama]), plus headless **CLI agents** (Claude Code, Codex, Gemini CLI).
 - **Per-model local limits** — analyze a local model's real context window via [Ollama][ollama]'s `/api/show`, then set the context window + max output tokens per model, with a hardware-lag warning so large prompts aren't silently truncated.
+
 </details>
 
 <details>
@@ -159,6 +165,7 @@ The only outbound calls are to the AI provider **you** configure (and an optiona
 - **All data local** — jobs, résumés, generations, applications in a local SQLite database; **zero telemetry**.
 - **Full reset** — one action wipes every store (documents, generations, autopilots, contact/job preferences, caches, keychain entries) back to a clean install.
 - **Multilingual** — UI in English & German; generation in 11 languages: en, de, fr, es, it, tr, pt, ru, zh, ja, ko.
+
 </details>
 
 ---
@@ -490,26 +497,26 @@ See <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBU
 
 ## Documentation
 
-| Document                                                                                                                            | Description                                                                                                        |
-| ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| <a href="apps/tauri/README.md" target="_blank" rel="noopener noreferrer">apps/tauri/README.md</a>                                   | Desktop app architecture, directory map, Rust/React setup                                                          |
-| <a href="apps/extension/README.md" target="_blank" rel="noopener noreferrer">apps/extension/README.md</a>                           | Browser extension (MV3) — job import, local dev pairing, permissions                                               |
-| <a href="docs/ARCHITECTURE.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE.md</a>                                   | System design, data flow, diagrams                                                                                 |
-| <a href="docs/PATTERNS.md" target="_blank" rel="noopener noreferrer">docs/PATTERNS.md</a>                                           | IPC, state machines, AI streaming, search patterns                                                                 |
-| <a href="docs/API.md" target="_blank" rel="noopener noreferrer">docs/API.md</a>                                                     | IPC namespaces + commands                                                                                          |
-| <a href="docs/EXPORT_TEMPLATES.md" target="_blank" rel="noopener noreferrer">docs/EXPORT_TEMPLATES.md</a>                           | Templates, theming, PDF/DOCX export                                                                                |
-| <a href="docs/DESIGN_SYSTEM.md" target="_blank" rel="noopener noreferrer">docs/DESIGN_SYSTEM.md</a>                                 | Tokens, components, motion, theming                                                                                |
-| <a href="docs/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer">docs/DEVELOPMENT.md</a>                                     | Local dev environment setup                                                                                        |
-| <a href="docs/DEPLOYMENT.md" target="_blank" rel="noopener noreferrer">docs/DEPLOYMENT.md</a>                                       | Building and releasing installers                                                                                  |
-| <a href="docs/ARCHITECTURE_STATUS.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE_STATUS.md</a>                     | Implementation status tracker                                                                                      |
-| <a href="docs/SCRAPING_ENDPOINTS.md" target="_blank" rel="noopener noreferrer">docs/SCRAPING_ENDPOINTS.md</a>                       | Job-board scraping endpoint reconnaissance snapshot (20 boards, 2026-06-20)                                        |
-| <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a>                                             | Knowledge base + architecture decision records (ADRs)                                                              |
-| <a href="SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a>                                                     | Security policy &amp; vulnerability reporting                                                                      |
-| <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a>                                             | Code style, branching, PR process                                                                                  |
+| Document                                                                                                          | Description                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| <a href="apps/tauri/README.md" target="_blank" rel="noopener noreferrer">apps/tauri/README.md</a>                 | Desktop app architecture, directory map, Rust/React setup                                                          |
+| <a href="apps/extension/README.md" target="_blank" rel="noopener noreferrer">apps/extension/README.md</a>         | Browser extension (MV3) — job import, local dev pairing, permissions                                               |
+| <a href="docs/ARCHITECTURE.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE.md</a>                 | System design, data flow, diagrams                                                                                 |
+| <a href="docs/PATTERNS.md" target="_blank" rel="noopener noreferrer">docs/PATTERNS.md</a>                         | IPC, state machines, AI streaming, search patterns                                                                 |
+| <a href="docs/API.md" target="_blank" rel="noopener noreferrer">docs/API.md</a>                                   | IPC namespaces + commands                                                                                          |
+| <a href="docs/EXPORT_TEMPLATES.md" target="_blank" rel="noopener noreferrer">docs/EXPORT_TEMPLATES.md</a>         | Templates, theming, PDF/DOCX export                                                                                |
+| <a href="docs/DESIGN_SYSTEM.md" target="_blank" rel="noopener noreferrer">docs/DESIGN_SYSTEM.md</a>               | Tokens, components, motion, theming                                                                                |
+| <a href="docs/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer">docs/DEVELOPMENT.md</a>                   | Local dev environment setup                                                                                        |
+| <a href="docs/DEPLOYMENT.md" target="_blank" rel="noopener noreferrer">docs/DEPLOYMENT.md</a>                     | Building and releasing installers                                                                                  |
+| <a href="docs/ARCHITECTURE_STATUS.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE_STATUS.md</a>   | Implementation status tracker                                                                                      |
+| <a href="docs/SCRAPING_ENDPOINTS.md" target="_blank" rel="noopener noreferrer">docs/SCRAPING_ENDPOINTS.md</a>     | Job-board scraping endpoint reconnaissance snapshot (20 boards, 2026-06-20)                                        |
+| <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a>                           | Knowledge base + architecture decision records (ADRs)                                                              |
+| <a href="SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a>                                   | Security policy &amp; vulnerability reporting                                                                      |
+| <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a>                           | Code style, branching, PR process                                                                                  |
 | <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/how-it-works">How it Works</a>         | How the AI Job Hunter works end-to-end (interactive walkthrough)                                                   |
 | <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/architecture-map">Architecture Map</a> | Interactive architecture map of the AI Job Hunter                                                                  |
 | <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/agent-system">Agent System</a>         | Interactive agent-fleet walkthrough — 23 paired author+critic agents, intake→delegation routing, per-task pipeline |
-| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/creature">THE CREATURE</a>                 | THE CREATURE — a hand-drawn doodle about the recruiter you summon                                                  |
+| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/creature">THE CREATURE</a>             | THE CREATURE — a hand-drawn doodle about the recruiter you summon                                                  |
 
 ---
 

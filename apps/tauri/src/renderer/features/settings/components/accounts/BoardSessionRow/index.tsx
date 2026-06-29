@@ -59,8 +59,7 @@ export function BoardSessionRow({ board }: { board: Board }) {
         ? await linkedInConnect.mutateAsync()
         : await boardConnect.mutateAsync(board.id);
       const res = result as
-        | { connected?: boolean; viaImport?: boolean; error?: string }
-        | undefined;
+        { connected?: boolean; viaImport?: boolean; error?: string } | undefined;
       if (res?.error) {
         notify.error({ message: res.error });
       } else if (res?.viaImport) {

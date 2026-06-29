@@ -298,8 +298,7 @@ describe('header Retry visibility', () => {
   // wire() registers a runtime message listener that calls render() on status pushes.
   // Grab it from the mocked addListener so we can drive render() with a phase.
   const statusListener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
-    | ((message: unknown) => void)
-    | undefined;
+    ((message: unknown) => void) | undefined;
   const push = (phase: ConnectionStatus['phase']) =>
     statusListener?.({ ok: true, kind: 'status', status: { phase, port: null, hasToken: true } });
 
@@ -324,8 +323,7 @@ describe('header Retry visibility', () => {
 describe('offline-sticky — searching after app_not_running must not hide offline view', () => {
   // Reuse the same onMessage listener registered during module load.
   const statusListener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
-    | ((message: unknown) => void)
-    | undefined;
+    ((message: unknown) => void) | undefined;
   if (!statusListener) throw new Error('onMessage status listener not registered');
   const push = (phase: ConnectionStatus['phase']) =>
     statusListener({ ok: true, kind: 'status', status: { phase, port: null, hasToken: false } });

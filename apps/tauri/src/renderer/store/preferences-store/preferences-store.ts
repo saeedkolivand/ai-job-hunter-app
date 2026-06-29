@@ -28,8 +28,7 @@ const migratePreferences = (state: Record<string, unknown>, version: number): Pr
   // v1 → v2: flatten { provider, model, baseUrl } → { activeProvider, providers: { … } }
   if (version < 2) {
     const old = state.aiProviderConfig as
-      | { provider?: string; model?: string; baseUrl?: string }
-      | undefined;
+      { provider?: string; model?: string; baseUrl?: string } | undefined;
     if (old && 'provider' in old) {
       const p = old.provider ?? 'ollama';
       state = {

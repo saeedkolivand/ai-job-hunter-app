@@ -21,12 +21,7 @@ export type NotificationVariant = 'success' | 'error' | 'info' | 'warning';
 
 /** All six corner/edge placements. */
 export type NotificationPlacement =
-  | 'top'
-  | 'topLeft'
-  | 'topRight'
-  | 'bottom'
-  | 'bottomLeft'
-  | 'bottomRight';
+  'top' | 'topLeft' | 'topRight' | 'bottom' | 'bottomLeft' | 'bottomRight';
 
 /** Open a notification. `duration` is in SECONDS; `0` keeps it open until dismissed. */
 export interface NotificationConfig {
