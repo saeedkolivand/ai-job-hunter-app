@@ -587,13 +587,7 @@ interface JobRecord {
 }
 
 type JobStatus =
-  | 'new'
-  | 'viewed'
-  | 'applied'
-  | 'interviewing'
-  | 'offer'
-  | 'rejected'
-  | 'bookmarked';
+  'new' | 'viewed' | 'applied' | 'interviewing' | 'offer' | 'rejected' | 'bookmarked';
 
 interface JobFilters {
   status?: JobStatus[];
@@ -896,9 +890,7 @@ Checks for a new release. Returns a typed result: `{ available: true, version }`
 
 ```typescript
 type UpdateCheckResult =
-  | { available: true; version: string }
-  | { available: false }
-  | { error: string };
+  { available: true; version: string } | { available: false } | { error: string };
 ```
 
 #### `updater.download(): Promise<void>`

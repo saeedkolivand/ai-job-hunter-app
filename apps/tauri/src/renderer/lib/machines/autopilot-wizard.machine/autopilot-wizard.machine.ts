@@ -21,13 +21,7 @@ import { createMachine } from '@/lib/machine';
  */
 
 export type AutopilotWizardState =
-  | 'step_0'
-  | 'step_1'
-  | 'step_2'
-  | 'step_3'
-  | 'saving'
-  | 'done'
-  | 'error';
+  'step_0' | 'step_1' | 'step_2' | 'step_3' | 'saving' | 'done' | 'error';
 
 export type AutopilotWizardEvent =
   | 'NEXT' // advance one step

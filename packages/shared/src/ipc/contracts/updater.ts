@@ -23,9 +23,7 @@ export interface ChangelogResult {
  *  JSON: an available update with its version, no update, or an error string.
  *  Detailed progress still arrives via the `updater:status` event stream. */
 export type UpdateCheckResult =
-  | { available: true; version: string }
-  | { available: false }
-  | { error: string };
+  { available: true; version: string } | { available: false } | { error: string };
 
 export interface UpdaterContract {
   /** Trigger a check. Resolves with the outcome (also emitted on `onStatus`). */

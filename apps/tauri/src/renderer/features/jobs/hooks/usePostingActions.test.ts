@@ -365,8 +365,7 @@ describe('usePostingActions — handleTailor', () => {
 
     expect(mockSetApplicationApply).toHaveBeenCalledTimes(1);
     const callArg = mockSetApplicationApply.mock.calls[0]?.[0] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     expect(callArg?.applyForId).toBe('app-1');
     expect(callArg?.applyMatchLevel).toBeNull();
     expect(callArg?.applyWizardStep).toBe(0);
@@ -398,8 +397,7 @@ describe('usePostingActions — handleTailor', () => {
 
     expect(mockSetApplicationApply).toHaveBeenCalledTimes(1);
     const callArg = mockSetApplicationApply.mock.calls[0]?.[0] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     // scoreToLevel stub: n >= 0.7 → 'high'. combined=80 → 'high'.
     expect(callArg?.applyMatchLevel).toBe('high');
   });
