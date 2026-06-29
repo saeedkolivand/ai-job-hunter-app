@@ -14,12 +14,12 @@ import { PageTransition } from '@/components/layout/PageTransition';
 import { JobsResults } from '@/features/jobs/components/JobsResults';
 import { ScrapeForm } from '@/features/jobs/components/ScrapeForm';
 import type { ScrapeFormState } from '@/features/jobs/components/ScrapeForm/constants';
-import { useDefaultResumeId } from '@/features/jobs/hooks/useDefaultResumeId';
 import { useScraping } from '@/features/jobs/hooks/useScraping';
 import { mergePostings } from '@/features/jobs/lib/merge-postings';
 import { MatchScoresProvider } from '@/features/jobs/providers';
 import type { JobEvent, Posting } from '@/features/jobs/types';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
+import { useDefaultResumeId } from '@/hooks/useDefaultResumeId';
 import {
   useClearPostings,
   useGeocodeSuggest,

@@ -91,7 +91,7 @@ vi.mock('@/services', () => ({
   },
 }));
 
-vi.mock('@/features/jobs/hooks/useDefaultResumeId', () => ({
+vi.mock('@/hooks/useDefaultResumeId', () => ({
   useDefaultResumeId: () => null,
 }));
 

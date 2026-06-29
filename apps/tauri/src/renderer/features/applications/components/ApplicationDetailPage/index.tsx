@@ -46,8 +46,8 @@ import {
   type TailorFlowController,
   type TailorFlowPersistence,
 } from '@/features/documents/components/TailorFlow';
-import { useDefaultResumeId } from '@/features/jobs/hooks/useDefaultResumeId';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
+import { useDefaultResumeId } from '@/hooks/useDefaultResumeId';
 import { DETAIL_TABS, type DetailTab, Route } from '@/routes/applications.$id';
 import {
   useApplication,
@@ -63,6 +63,7 @@ import {
 import { useAiGenerations } from '@/services/use-ai-generations';
 import { useSessionStore } from '@/store/session-store';
 
+import { ApplyByEmailTab } from './ApplyByEmailTab';
 import { InterviewPrepTab } from './InterviewPrepTab';
 
 const STATUS_OPTIONS = APPLICATION_STAGES.map((s) => ({ value: s.id, label: s.id }));
@@ -578,6 +579,13 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
 
                 {tab === 'documents' && (
                   <DocumentsTab
+                    application={application}
+                    matchingGenerations={matchingGenerations}
+                  />
+                )}
+
+                {tab === 'email' && (
+                  <ApplyByEmailTab
                     application={application}
                     matchingGenerations={matchingGenerations}
                   />

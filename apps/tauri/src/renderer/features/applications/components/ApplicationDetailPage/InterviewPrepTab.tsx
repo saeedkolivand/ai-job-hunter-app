@@ -7,8 +7,8 @@ import { Button, CardSkeleton, EmptyState, TextArea } from '@ajh/ui';
 import { AudienceSelector } from '@/components/interview/AudienceSelector';
 import { InterviewQuestionsAccordion } from '@/components/interview/InterviewQuestionsAccordion';
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
-import { useDefaultResumeId } from '@/features/jobs/hooks/useDefaultResumeId';
 import { useInterviewQuestions } from '@/hooks/use-interview-questions';
+import { useDefaultResumeId } from '@/hooks/useDefaultResumeId';
 import { useDocuments, useDocumentText, useResolveJobUrl } from '@/services';
 
 interface Props {

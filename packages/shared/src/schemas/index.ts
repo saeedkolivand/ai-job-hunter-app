@@ -340,6 +340,10 @@ export const ApplicationUpdateSchema = z.object({
     })
     .optional(),
   jobSummary: z.string().max(50_000).optional(),
+  // Employer-side contact for a direct "apply by email" approach — distinct from
+  // the applicant's own contactName/contactEmail on the Application.
+  recipientName: z.string().trim().max(200).optional(),
+  recipientEmail: z.string().trim().max(254).optional(),
 });
 export type ApplicationUpdateRequest = z.infer<typeof ApplicationUpdateSchema>;
 
