@@ -39,6 +39,6 @@ Renderer talks to the shell only via the `AppClient` context (`createTauriInvoke
 - **IPC surface** — treat every `#[tauri::command]` as an untrusted entry point; validate/sanitize args in Rust; keep the command set minimal; gate sensitive commands behind their own narrow capability.
 - **Isolation pattern** — `app.security.pattern = "isolation"` to verify IPC in a sandboxed iframe whenever the frontend renders any remote/untrusted content. https://v2.tauri.app/concept/inter-process-communication/isolation/
 - **Updater signing (mandatory)** — minisign-sign every release; ship the public key in `plugins.updater.pubkey`; private key + password offline (CI secret only); HTTPS manifests. https://v2.tauri.app/plugin/updater/
-- **Dep hygiene** — `cargo audit` clean (e.g. **RUSTSEC-2026-0098** `rustls-webpki` can reach the updater/HTTP TLS stack); minimize plugins; track https://github.com/tauri-apps/desktop/security/advisories
+- **Dep hygiene** — `cargo audit` clean (e.g. **RUSTSEC-2026-0098** `rustls-webpki` can reach the updater/HTTP TLS stack); minimize plugins; track https://github.com/tauri-apps/tauri/security/advisories
 
 **Common mistakes:** over-broad capabilities (one capability → every plugin permission → every window); leaving `shell`/`fs`/`withGlobalTauri` open in prod; weak/default CSP (`unsafe-inline`); trusting command args without Rust-side validation; committing the updater private key or disabling signature verification; skipping `cargo audit` so a transitive advisory ships silently.

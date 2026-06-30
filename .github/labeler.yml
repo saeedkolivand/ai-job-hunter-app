@@ -20,7 +20,7 @@
   - changed-files:
       - any-glob-to-any-file: 'packages/translations/**'
 
-'app/tauri':
+'app/desktop':
   - changed-files:
       - any-glob-to-any-file: 'apps/desktop/**'
 
