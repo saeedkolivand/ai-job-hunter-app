@@ -1,4 +1,4 @@
-import { ClipboardCopy, Mail, Sparkles } from 'lucide-react';
+import { Briefcase, ClipboardCopy, FileText, Mail, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { AiGenerationRecord, Application } from '@ajh/shared';
@@ -254,16 +254,29 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
         aria-atomic="false"
       >
         {!canUse && (
-          <EmptyState title={t('applications.detail.email.needsModel')} className="py-12" />
+          <EmptyState
+            icon={Sparkles}
+            title={t('applications.detail.email.needsModel')}
+            className="py-12"
+          />
         )}
         {canUse && !resume && !hasDraft && !isGenerating && (
-          <EmptyState title={t('applications.detail.email.needsResume')} className="py-12" />
+          <EmptyState
+            icon={FileText}
+            title={t('applications.detail.email.needsResume')}
+            className="py-12"
+          />
         )}
         {canUse && !!resume && !jobDesc && !hasDraft && (
-          <EmptyState title={t('applications.detail.email.needsJob')} className="py-12" />
+          <EmptyState
+            icon={Briefcase}
+            title={t('applications.detail.email.needsJob')}
+            className="py-12"
+          />
         )}
         {canUse && !!resume && !!jobDesc && !hasDraft && !isGenerating && !genError && (
           <EmptyState
+            icon={Mail}
             title={t('applications.detail.email.empty')}
             description={t('applications.detail.email.emptyDesc')}
             className="py-12"
