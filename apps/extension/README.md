@@ -13,7 +13,7 @@
 
 This is the browser half of the **AI Job Hunter** job-import feature. An MV3 extension available for **Chrome on the Web Store** ([install](https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll)) and **Firefox on AMO** ([install](https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/)). It captures the job posting on the current tab and sends it to the **desktop app** running on your machine, over a private loopback WebSocket. No account. No remote backend. It is inert unless the desktop app is running and you have paired it.
 
-**What it does:** while browsing a job board, click the extension button → choose **Import via URL** (extension sends the job URL, desktop fetches + parses it) or **Scan page** (extension captures the rendered DOM, desktop parses it) → the job appears in your **AI Job Hunter** saved applications, tagged **New**. Tick **"I already applied"** to mark it applied instead.
+**What it does:** while browsing a job board, click the extension button → click **Import this job** → the job appears in your **AI Job Hunter** saved applications, tagged **New**. The extension automatically captures the rendered DOM when possible (for login-walled boards like LinkedIn/Indeed that block headless fetching); on restricted pages it falls back to URL-only. Tick **"I already applied"** to mark it applied instead.
 
 The desktop half (bridge server, parser, Applications store) lives in `apps/tauri/src-tauri/src/extension_bridge/`. The wire protocol is shared: `packages/shared/src/ipc/extension-protocol.ts`.
 
@@ -28,10 +28,12 @@ The desktop half (bridge server, parser, Applications store) lives in `apps/taur
    ↓
 3. You copy the pairing token from app Settings → paste into extension
    ↓
-4. Open any job board → click extension button → pick import mode
+4. Open any job board → click extension button → click Import this job
    ↓
 5. Desktop receives frame → fetches/parses job → creates saved Application
 ```
+
+**Rate budget:** extension imports share the desktop's scrape rate budget (30 requests/min, 2 concurrent). This is the same budget as the in-app scrape commands; a rate-limited import returns an error in the popup rather than silently queuing. See `apps/tauri/src-tauri/src/limits/mod.rs` (`SCRAPE_RATE_MAX` / `SCRAPE_CONCURRENCY_MAX`) and the `handle_import` function in `apps/tauri/src-tauri/src/extension_bridge/mod.rs`.
 
 ---
 
@@ -51,8 +53,8 @@ To actually **use** it, pair with the desktop app:
 1. Open the desktop app → go to **Settings → Browser extension**
 2. Copy the pairing token
 3. Open the extension popup → paste the token
-4. You'll see **Import via URL** and **Scan page** buttons
-5. Open a job board and click one of them
+4. You'll see the **Import this job** button
+5. Open a job board posting and click **Import this job**
 
 For **local development**, see the section below — the unpacked extension gets a dev id that doesn't match the published allowlist, so you need to set an env var when starting the desktop app.
 
@@ -97,7 +99,7 @@ The one non-obvious step is **dev pairing**: a locally-loaded (unpacked) extensi
 
 5. **Import a job:**
 
-   Open any job posting → click the extension → **Import via URL** (sends the tab url; the app fetches + parses) or **Scan page** (sends the rendered DOM, for logged-in LinkedIn etc.); tick **"I already applied"** to land it as `applied` instead of `saved`. The job appears live in the app's **Applications** list (deduped by url).
+   Open any job posting → click the extension → click **Import this job**; the extension automatically captures the rendered DOM when possible (for logged-in boards like LinkedIn that block headless fetching) and falls back to URL-only on restricted pages; tick **"I already applied"** to land it as `applied` instead of `saved`. The job appears live in the app's **Applications** list (deduped by url).
 
 **Notes:** the app must be running first (the popup shows an "AI Job Hunter isn't running" state with a Retry button otherwise). **Firefox:** `about:debugging` → **Load Temporary Add-on** → `dist/firefox/manifest.json`; its origin is a per-profile `moz-extension://<uuid>` (find it in `about:debugging`), so set `AJH_EXTENSION_DEV_ORIGINS="moz-extension://<uuid>"`. **Multiple browsers at once:** comma-separate, e.g. `chrome-extension://<id>,moz-extension://<uuid>`.
 
@@ -146,8 +148,7 @@ both browsers; it grants **no** access to any public or LAN host.
   extension. There is no telemetry, no analytics, no external API.
 - The only stored value is the pairing token, kept in `chrome.storage.local`,
   used solely to authenticate to the local desktop app.
-- Scan mode captures the current page's DOM **only when the user clicks "Scan
-  page"**, and the captured HTML is sent only to the local app.
+- The extension captures the page's rendered DOM **only when the user clicks Import this job** — never in the background — and sends it only to the local app. On restricted pages (e.g. browser system pages) DOM capture is skipped and only the URL is sent.
 
 ### Threat model
 
@@ -185,8 +186,7 @@ is expected. A reviewer testing it standalone will see, by design:
   errors, no broken UI.
 - With the app **running but unpaired**: a **pairing screen** asking for the
   64-character token from the app's Settings.
-- With the app **running and paired**: the import view (two buttons + the
-  "I already applied" checkbox).
+- With the app **running and paired**: the import view (a single **Import this job** button + the "I already applied" checkbox).
 - **On Firefox with HTTPS-Only Mode enabled**: the extension connects via
   **native messaging** (the `app.aijobhunter.bridge` host spawned by the browser)
   instead of the loopback WebSocket; this avoids the silent `ws://` → `wss://`
@@ -194,8 +194,7 @@ is expected. A reviewer testing it standalone will see, by design:
 
 To exercise the full path, install the desktop app from the project release,
 open it, copy the token from **Settings → Browser extension**, paste it into the
-extension, then open any job posting and click **Import via URL** or
-**Scan page**.
+extension, then open any job posting and click **Import this job**.
 
 ---
 

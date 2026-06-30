@@ -136,7 +136,7 @@ The only outbound calls are to the AI provider **you** configure (and an optiona
 
 - **Now on the Chrome Web Store and Firefox Add-ons** — <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll" target="_blank" rel="noopener noreferrer">Install for Chrome</a> · <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/" target="_blank" rel="noopener noreferrer">Install for Firefox</a>.
 - MV3 extension for **Chrome & Firefox** — while browsing any job board, click the extension button to import the job into your saved applications.
-- **Two import modes:** **Import via URL** (extension sends the URL, app fetches + parses), or **Scan page** (extension captures the authenticated DOM, useful for login-walled boards).
+- **One-click import** — click **"Import this job"** on any board page; the extension automatically captures the rendered DOM when possible (bypassing bot-walls on logged-in boards like LinkedIn/Indeed) and falls back to URL-only on restricted pages.
 - Fully local — jobs are sent to the desktop app over a **loopback-only WebSocket**, paired with a secret token. Zero remote backend, zero analytics.
 - See <a href="apps/extension/README.md" target="_blank" rel="noopener noreferrer">apps/extension/README.md</a> for setup, dev pairing, and architecture. Try it locally — see the extension's <a href="apps/extension/README.md#local-development--testing" target="_blank" rel="noopener noreferrer">Local development & testing</a> guide.
 
