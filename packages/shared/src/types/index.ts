@@ -349,6 +349,10 @@ export interface Application {
   jobDescription: string;
   /** Persisted AI-generated job-ad summary (server-capped at 50 KB). */
   jobSummary: string;
+  /** Employer-side contact name for a direct "apply by email" approach. */
+  recipientName?: string;
+  /** Employer-side contact email for a direct "apply by email" approach. */
+  recipientEmail?: string;
 }
 
 /** One append-only status-history row. */
