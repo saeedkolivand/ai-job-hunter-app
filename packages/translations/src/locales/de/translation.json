@@ -2171,7 +2171,9 @@
       "quickActions": "Schnellaktionen",
       "copyEnvironmentDetails": "Umgebungsdetails kopieren",
       "copyAppVersion": "App-Version kopieren",
-      "copySystemInfo": "Systeminfo kopieren"
+      "copySystemInfo": "Systeminfo kopieren",
+      "exportBundleSaved": "Diagnosepaket gespeichert.",
+      "exportBundleError": "Export fehlgeschlagen."
     },
     "performance": {
       "memoryUsage": "Speichernutzung",

@@ -536,7 +536,10 @@ mod tests {
             "email address must not leak; got: {out}"
         );
         // Surrounding prose is preserved.
-        assert!(out.contains("contact"), "surrounding word dropped; got: {out}");
+        assert!(
+            out.contains("contact"),
+            "surrounding word dropped; got: {out}"
+        );
     }
 
     #[test]

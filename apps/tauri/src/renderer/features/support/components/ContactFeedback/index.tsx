@@ -83,13 +83,14 @@ export function ContactFeedback() {
             try {
               const res = await exportDiagnostics.mutateAsync(dest);
               if (res.success) {
-                await revealItemInDir(dest);
-                notify.success({ message: 'Diagnostics bundle saved.' });
+                notify.success({ message: t('support.contact.exportBundleSaved') });
+                revealItemInDir(dest).catch(() => {});
               } else {
-                notify.error({ message: 'Export failed.' });
+                notify.error({ message: t('support.contact.exportBundleError') });
               }
             } catch (err) {
-              notify.error({ message: err instanceof Error ? err.message : 'Export failed.' });
+              console.error(err);
+              notify.error({ message: t('support.contact.exportBundleError') });
             }
           }}
         >

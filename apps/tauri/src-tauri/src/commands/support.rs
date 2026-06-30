@@ -33,12 +33,20 @@ fn redact_lines(text: &str) -> String {
 /// `system-info.txt` are written. All other data-dir content is excluded by
 /// construction (no wholesale dir walk). Text files are run through
 /// [`redact_token`] per whitespace-delimited token before being zipped.
-/// Missing inputs (no `crashes.log`, no `logs/`) are non-fatal; the zip will
+/// Missing inputs (no `crashes.log`, no `log_dir`) are non-fatal; the zip will
 /// still be valid and contain at minimum `system-info.txt`.
+///
+/// `crashes.log` is read from `data_dir` (the panic-hook writes it there).
+/// Log files produced by `tauri-plugin-log` are read from `log_dir`, which is
+/// `app_log_dir()` — a **different** base directory from `app_data_dir()` on
+/// Windows (`…\Local\…` vs `…\Roaming\…`) and macOS (`~/Library/Logs/…` vs
+/// `~/Library/Application Support/…`). Passing them as separate parameters
+/// prevents the two from ever being conflated.
 ///
 /// `pub(crate)` so unit tests can call it without a Tauri harness.
 pub(crate) fn build_diagnostics_zip(
     data_dir: &Path,
+    log_dir: Option<&Path>,
     dest: &Path,
     app_version: &str,
 ) -> AppResult<()> {
@@ -68,40 +76,54 @@ pub(crate) fn build_diagnostics_zip(
     // reports `file_type().is_symlink()` rather than `is_file()`, so we skip it.
     // Defense-in-depth against a crafted symlink pointing at the SQLite store or
     // a résumé that would otherwise be read and included in the PUBLIC issue bundle.
+    //
+    // Bytes are read first and decoded with `from_utf8_lossy` so a single invalid
+    // UTF-8 byte (e.g. from a corrupted crash) produces a replacement character
+    // instead of aborting the entire export.
     let crashes_path = data_dir.join("crashes.log");
     if crashes_path
         .symlink_metadata()
         .is_ok_and(|m| m.file_type().is_file())
     {
-        let raw = std::fs::read_to_string(&crashes_path)?;
+        let raw_bytes = std::fs::read(&crashes_path)?;
+        let raw = String::from_utf8_lossy(&raw_bytes);
         zip.start_file("crashes.log", opts.clone())
             .map_err(|e| AppError::Storage(e.to_string()))?;
         zip.write_all(redact_lines(&raw).as_bytes())?;
     }
 
-    // ── logs/ — each file redacted, with flat entry name logs/<name> ─────
-    let logs_dir = data_dir.join("logs");
-    if logs_dir.is_dir() {
-        let rd = std::fs::read_dir(&logs_dir)?;
-        for entry in rd.flatten() {
-            let path = entry.path();
-            // Skip non-files and symlinks — same defense-in-depth as crashes.log.
-            // `symlink_metadata` does not follow symlinks, so a symlink inside logs/
-            // pointing at sensitive data is skipped rather than read and zipped.
-            let Ok(meta) = path.symlink_metadata() else {
-                continue;
-            };
-            if !meta.file_type().is_file() {
-                continue;
+    // ── plugin log files — each redacted, with flat entry name logs/<name> ──
+    // `tauri-plugin-log` with `TargetKind::LogDir { file_name: None }` writes
+    // files directly into `app_log_dir()` (e.g. `ajh-tauri.log` plus rotated
+    // `ajh-tauri_<date>.log` siblings). That is `log_dir` here — NOT a
+    // subdirectory of `data_dir`. Reads are best-effort: an unreadable file or
+    // a directory-listing failure skips that file without aborting the bundle.
+    if let Some(log_dir) = log_dir {
+        if log_dir.is_dir() {
+            if let Ok(rd) = std::fs::read_dir(log_dir) {
+                for entry in rd.flatten() {
+                    let path = entry.path();
+                    // Skip non-files and symlinks — same defense-in-depth as crashes.log.
+                    let Ok(meta) = path.symlink_metadata() else {
+                        continue;
+                    };
+                    if !meta.file_type().is_file() {
+                        continue;
+                    }
+                    let Some(fname) = path.file_name().and_then(|n| n.to_str()) else {
+                        continue;
+                    };
+                    let raw_bytes = match std::fs::read(&path) {
+                        Ok(b) => b,
+                        Err(_) => continue,
+                    };
+                    let raw = String::from_utf8_lossy(&raw_bytes);
+                    let entry_name = format!("logs/{fname}");
+                    zip.start_file(&entry_name, opts.clone())
+                        .map_err(|e| AppError::Storage(e.to_string()))?;
+                    zip.write_all(redact_lines(&raw).as_bytes())?;
+                }
             }
-            let Some(fname) = path.file_name().and_then(|n| n.to_str()) else {
-                continue;
-            };
-            let raw = std::fs::read_to_string(&path)?;
-            let entry_name = format!("logs/{fname}");
-            zip.start_file(&entry_name, opts.clone())
-                .map_err(|e| AppError::Storage(e.to_string()))?;
-            zip.write_all(redact_lines(&raw).as_bytes())?;
         }
     }
 
@@ -117,7 +139,7 @@ pub(crate) fn build_diagnostics_zip(
 /// (tauri-plugin-opener). The zip contains exactly:
 ///   - `system-info.txt`  — generated OS/arch/version info, no user data
 ///   - `crashes.log`      — if present, every token redacted
-///   - `logs/<name>`      — for each file in `logs/`, every token redacted
+///   - `logs/<name>`      — for each file in `app_log_dir()`, every token redacted
 ///
 /// SQLite stores, documents, embeddings, credentials, and all other data-dir
 /// content are excluded by construction.
@@ -127,11 +149,16 @@ pub async fn support_export_diagnostics(app: AppHandle, dest: String) -> Value {
         Ok(d) => d,
         Err(e) => return json!({ "success": false, "error": e.to_string() }),
     };
+    // `app_log_dir()` uses a different base directory from `app_data_dir()` on
+    // Windows (Local vs Roaming) and macOS (Library/Logs vs Library/Application
+    // Support). If the path resolver fails, skip logs gracefully rather than
+    // aborting the whole bundle.
+    let log_dir = app.path().app_log_dir().ok();
     let app_version = env!("CARGO_PKG_VERSION");
     let dest_path = std::path::PathBuf::from(&dest);
     // Offload sync file I/O to the blocking pool.
     match tokio::task::spawn_blocking(move || {
-        build_diagnostics_zip(&data_dir, &dest_path, app_version)
+        build_diagnostics_zip(&data_dir, log_dir.as_deref(), &dest_path, app_version)
     })
     .await
     {
@@ -174,17 +201,52 @@ mod tests {
         out
     }
 
+    /// `crashes.log` must come from `data_dir`; log files must come from the
+    /// SEPARATE `log_dir`; a sensitive file in `data_dir` is excluded even
+    /// when the two directories are distinct. This prevents the two paths from
+    /// ever being conflated again (the Linux-coincidence bug).
+    #[test]
+    fn crashes_from_data_dir_and_logs_from_log_dir_are_independent() {
+        let data = TempDir::new().unwrap();
+        let dp = data.path();
+        let logs = TempDir::new().unwrap();
+        let lp = logs.path();
+
+        // crashes.log in data_dir — must appear in zip
+        std::fs::write(dp.join("crashes.log"), "panic: something happened").unwrap();
+        // Sensitive file in data_dir — must NOT appear
+        std::fs::write(dp.join("store.db"), b"SQLite data").unwrap();
+        // Log file in log_dir (completely separate from data_dir) — must appear
+        std::fs::write(lp.join("ajh-tauri.log"), "WARN something").unwrap();
+
+        let dest_dir = TempDir::new().unwrap();
+        let dest = dest_dir.path().join("diag.zip");
+        build_diagnostics_zip(dp, Some(lp), &dest, "0.0.0-test").unwrap();
+
+        let bytes = std::fs::read(&dest).unwrap();
+        let names: HashSet<String> = zip_entry_names(&bytes).into_iter().collect();
+
+        assert!(names.contains("crashes.log"), "crashes.log must be present");
+        assert!(
+            names.contains("logs/ajh-tauri.log"),
+            "log from log_dir must appear under logs/; entries: {names:?}"
+        );
+        assert!(!names.contains("store.db"), "store.db must be excluded");
+        assert_eq!(names.len(), 3, "unexpected entries: {names:?}");
+    }
+
     /// The zip must contain exactly crashes.log + logs/app.log + system-info.txt
     /// and must NEVER include the SQLite DB or document file.
     #[test]
     fn allowlist_excludes_sensitive_files() {
         let data = TempDir::new().unwrap();
         let dp = data.path();
+        let log_dir = TempDir::new().unwrap();
+        let lp = log_dir.path();
 
         // Allowed inputs
         std::fs::write(dp.join("crashes.log"), "panic: something happened").unwrap();
-        std::fs::create_dir(dp.join("logs")).unwrap();
-        std::fs::write(dp.join("logs").join("app.log"), "WARN something").unwrap();
+        std::fs::write(lp.join("app.log"), "WARN something").unwrap();
 
         // Sensitive — must never appear in the zip
         std::fs::write(dp.join("store.db"), b"SQLite data").unwrap();
@@ -193,7 +255,7 @@ mod tests {
 
         let dest_dir = TempDir::new().unwrap();
         let dest = dest_dir.path().join("diag.zip");
-        build_diagnostics_zip(dp, &dest, "0.0.0-test").unwrap();
+        build_diagnostics_zip(dp, Some(lp), &dest, "0.0.0-test").unwrap();
 
         let bytes = std::fs::read(&dest).unwrap();
         let names: HashSet<String> = zip_entry_names(&bytes).into_iter().collect();
@@ -218,7 +280,7 @@ mod tests {
 
         let dest_dir = TempDir::new().unwrap();
         let dest = dest_dir.path().join("diag.zip");
-        build_diagnostics_zip(dp, &dest, "0.0.0-test").unwrap();
+        build_diagnostics_zip(dp, None, &dest, "0.0.0-test").unwrap();
 
         let bytes = std::fs::read(&dest).unwrap();
         let content = read_zip_entry(&bytes, "crashes.log");
@@ -231,14 +293,17 @@ mod tests {
             content.contains("<credential-redacted>"),
             "token= must be redacted; got: {content}"
         );
-        assert!(!content.contains("alice"), "username must not leak; got: {content}");
+        assert!(
+            !content.contains("alice"),
+            "username must not leak; got: {content}"
+        );
         assert!(
             !content.contains("supersecret"),
             "credential value must not leak; got: {content}"
         );
     }
 
-    /// When both crashes.log and logs/ are absent the zip is still valid and
+    /// When both crashes.log and log_dir are absent the zip is still valid and
     /// contains only system-info.txt.
     #[test]
     fn missing_optional_inputs_produce_valid_zip_with_system_info() {
@@ -246,11 +311,60 @@ mod tests {
         let dest_dir = TempDir::new().unwrap();
         let dest = dest_dir.path().join("diag.zip");
 
-        build_diagnostics_zip(data.path(), &dest, "0.0.0-test").unwrap();
+        build_diagnostics_zip(data.path(), None, &dest, "0.0.0-test").unwrap();
 
         let bytes = std::fs::read(&dest).unwrap();
         let names = zip_entry_names(&bytes);
         assert_eq!(names, vec!["system-info.txt"]);
+    }
+
+    /// A crashes.log containing an invalid UTF-8 byte must not abort the export.
+    /// The bundle is produced with a replacement character instead of erroring.
+    #[test]
+    fn non_utf8_in_crashes_log_does_not_abort_export() {
+        let data = TempDir::new().unwrap();
+        let dp = data.path();
+
+        let mut bad: Vec<u8> = b"panic at boot ".to_vec();
+        bad.push(0xFF); // lone byte — invalid UTF-8
+        bad.extend_from_slice(b" more text");
+        std::fs::write(dp.join("crashes.log"), &bad).unwrap();
+
+        let dest_dir = TempDir::new().unwrap();
+        let dest = dest_dir.path().join("diag.zip");
+        // Before the fix this returned Err (read_to_string fails on invalid UTF-8).
+        // Now it must succeed with lossy decoding.
+        build_diagnostics_zip(dp, None, &dest, "0.0.0-test").unwrap();
+
+        let bytes = std::fs::read(&dest).unwrap();
+        let names: HashSet<String> = zip_entry_names(&bytes).into_iter().collect();
+        assert!(
+            names.contains("crashes.log"),
+            "crashes.log must still be included after lossy decode"
+        );
+    }
+
+    /// A log file containing an invalid UTF-8 byte must not abort the export.
+    #[test]
+    fn non_utf8_in_log_file_does_not_abort_export() {
+        let data = TempDir::new().unwrap();
+        let logs = TempDir::new().unwrap();
+        let lp = logs.path();
+
+        let mut bad: Vec<u8> = b"WARN startup ".to_vec();
+        bad.push(0xFE); // invalid UTF-8 byte
+        std::fs::write(lp.join("ajh-tauri.log"), &bad).unwrap();
+
+        let dest_dir = TempDir::new().unwrap();
+        let dest = dest_dir.path().join("diag.zip");
+        build_diagnostics_zip(data.path(), Some(lp), &dest, "0.0.0-test").unwrap();
+
+        let bytes = std::fs::read(&dest).unwrap();
+        let names: HashSet<String> = zip_entry_names(&bytes).into_iter().collect();
+        assert!(
+            names.contains("logs/ajh-tauri.log"),
+            "log file must still be included after lossy decode"
+        );
     }
 
     // ── M1: symlink skip (Unix only — Windows symlinks require elevated privileges) ──
@@ -274,7 +388,7 @@ mod tests {
 
         let dest_dir = TempDir::new().unwrap();
         let dest = dest_dir.path().join("diag.zip");
-        build_diagnostics_zip(dp, &dest, "0.0.0-test").unwrap();
+        build_diagnostics_zip(dp, None, &dest, "0.0.0-test").unwrap();
 
         let bytes = std::fs::read(&dest).unwrap();
         let names: HashSet<String> = zip_entry_names(&bytes).into_iter().collect();
@@ -287,40 +401,40 @@ mod tests {
         assert!(names.contains("system-info.txt"));
     }
 
-    /// A symlink inside logs/ pointing at a sensitive file must be skipped; other
+    /// A symlink inside log_dir pointing at a sensitive file must be skipped; other
     /// real log files in the same directory must still be included.
     #[cfg(unix)]
     #[test]
-    fn symlinked_log_file_inside_logs_dir_is_skipped() {
+    fn symlinked_log_file_inside_log_dir_is_skipped() {
         use std::os::unix::fs as unix_fs;
 
         let data = TempDir::new().unwrap();
-        let dp = data.path();
+        let logs = TempDir::new().unwrap();
+        let lp = logs.path();
 
-        std::fs::create_dir(dp.join("logs")).unwrap();
         // A real log file — must be included.
-        std::fs::write(dp.join("logs").join("app.log"), "INFO startup").unwrap();
+        std::fs::write(lp.join("ajh-tauri.log"), "INFO startup").unwrap();
 
-        // Sensitive target outside the data dir.
+        // Sensitive target outside the log dir.
         let secret_dir = TempDir::new().unwrap();
         std::fs::write(secret_dir.path().join("credentials.db"), b"creds").unwrap();
 
-        // Symlink logs/secret.log → sensitive file — must be skipped.
+        // Symlink log_dir/secret.log → sensitive file — must be skipped.
         unix_fs::symlink(
             secret_dir.path().join("credentials.db"),
-            dp.join("logs").join("secret.log"),
+            lp.join("secret.log"),
         )
         .unwrap();
 
         let dest_dir = TempDir::new().unwrap();
         let dest = dest_dir.path().join("diag.zip");
-        build_diagnostics_zip(dp, &dest, "0.0.0-test").unwrap();
+        build_diagnostics_zip(data.path(), Some(lp), &dest, "0.0.0-test").unwrap();
 
         let bytes = std::fs::read(&dest).unwrap();
         let names: HashSet<String> = zip_entry_names(&bytes).into_iter().collect();
 
         assert!(
-            names.contains("logs/app.log"),
+            names.contains("logs/ajh-tauri.log"),
             "real log file must be included; entries: {names:?}"
         );
         assert!(

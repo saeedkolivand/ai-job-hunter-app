@@ -27,7 +27,7 @@ exactly three named entries via explicit `zip.start_file` calls:
 - `system-info.txt` — generated at runtime (OS name, OS version, arch, app version, total RAM);
   contains no user PII and needs no redaction pass.
 - `crashes.log` — read from `<data_dir>/crashes.log` if it exists as a plain file.
-- `logs/<name>` — each plain file under `<data_dir>/logs/`.
+- `logs/<name>` — each plain file from the app's log directory (via `app.path().app_log_dir()`), zipped under `logs/<name>`.
 
 No directory walk of the data dir occurs. Any future bundle entry requires an explicit
 `zip.start_file` addition AND must be redaction-safe.

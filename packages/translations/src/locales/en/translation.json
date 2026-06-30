@@ -2167,7 +2167,9 @@
       "quickActions": "Quick Actions",
       "copyEnvironmentDetails": "Copy Environment Details",
       "copyAppVersion": "Copy App Version",
-      "copySystemInfo": "Copy System Info"
+      "copySystemInfo": "Copy System Info",
+      "exportBundleSaved": "Diagnostics bundle saved.",
+      "exportBundleError": "Export failed."
     },
     "performance": {
       "memoryUsage": "Memory Usage",
