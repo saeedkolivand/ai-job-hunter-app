@@ -33,6 +33,10 @@ Native-messaging registry locations are OS- and sandboxing-aware. See `apps/taur
 
 A new message type or field MUST be added to the TS shared constants (`EXTENSION_MESSAGE_TYPES`) and the Rust `msg` constants in `extension_bridge/mod.rs` in the **same change**. The TS side is the wire spec; Rust must follow. A parity test in `extension_bridge/test.rs` pins the constants.
 
+## Import flow
+
+Single unified import: `background.ts::runImport` always tries DOM capture first (`scripting.executeScript` → `content.js`), falls back to URL-only if capture is blocked (restricted pages). No user-visible mode selection — one **Import this job** button. The bridge side (`extension_bridge/mod.rs::handle_import`) acquires the shared `"scrape_url"` rate-limiter slot (same key/constants as `scrape_url` IPC: 30 req/60 s, 2 concurrent — see `limits/mod.rs` `SCRAPE_RATE_MAX` / `SCRAPE_CONCURRENCY_MAX`).
+
 ## Store policy
 
 Chrome Web Store + Firefox AMO: MV3, no remote code, least-privilege permissions, single-purpose, honest metadata, privacy/data disclosure. Full pre-submission checklist in `.claude/skills/extension-standards/SKILL.md`.

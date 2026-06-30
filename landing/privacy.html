@@ -158,18 +158,18 @@ h2 .anchor:focus-visible{border-radius:2px}
   <div class="card">
     <span class="label">What it sends — and where</span>
     <ul>
-      <li><b>Loopback only.</b> The extension opens a WebSocket to <code>ws://127.0.0.1:&lt;port&gt;</code> — your own desktop app, on your own machine. It has <b>no remote backend</b> and contacts <b>no third-party server</b>. Its only host permission is <code>127.0.0.1</code> (loopback); it grants no access to any public or LAN address.</li>
-      <li><b>Import via URL</b> sends just the current tab's job URL to the local app, which fetches and parses it.</li>
-      <li><b>Scan page</b> captures the current page's rendered DOM <b>only when you click "Scan page"</b>, and sends that HTML only to the local app (for logged-in pages a headless fetch can't reach). Nothing is captured in the background or on page load.</li>
+      <li><b>Loopback only.</b> The extension connects to your own desktop app over native messaging (preferred) or a loopback WebSocket at <code>ws://127.0.0.1:&lt;port&gt;</code> (fallback). It has <b>no remote backend</b> and contacts <b>no third-party server</b>. Its only host permission is <code>127.0.0.1</code> (loopback); it grants no access to any public or LAN address.</li>
+      <li><b>Import this job</b> sends the current tab's URL to the local app. The extension also captures the page's rendered DOM when possible (for logged-in boards that a headless server-side fetch cannot reach), and sends that HTML only to the local app. <b>Nothing is captured in the background or on page load.</b> Capture happens only when you click Import.</li>
     </ul>
   </div>
 
   <div class="card">
     <span class="label">Permissions, and why each is there</span>
     <ul>
-      <li><code>activeTab</code> — read the URL and (in Scan mode) the DOM of the tab you clicked, <b>only on that click</b>. No standing access to any site.</li>
+      <li><code>activeTab</code> — read the URL and the DOM of the tab you clicked, <b>only on that click</b>. No standing access to any site.</li>
       <li><code>storage</code> — store the pairing token locally so you only pair once.</li>
-      <li><code>scripting</code> — MV3 requires this to inject the Scan-mode capture on demand; its reach stays limited to the active tab.</li>
+      <li><code>scripting</code> — MV3 requires this to inject the DOM capture into the active tab on import click; its reach stays limited to the active tab.</li>
+      <li><code>nativeMessaging</code> — connect to the AI Job Hunter desktop host (<code>app.aijobhunter.bridge</code>) using the browser's native-messaging channel. This is the primary transport to the local app and is immune to Firefox HTTPS-Only Mode silently upgrading <code>ws://</code> connections. Falls back to the loopback WebSocket if the native host is not registered.</li>
     </ul>
     <p class="note">
       No broad host access (<code>&lt;all_urls&gt;</code>), no <code>tabs</code> permission, no <code>webRequest</code>,
