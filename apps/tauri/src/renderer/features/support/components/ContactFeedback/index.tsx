@@ -1,5 +1,7 @@
 import { Copy } from 'lucide-react';
 import { useState } from 'react';
+import { save } from '@tauri-apps/plugin-dialog';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
 import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown, TextArea, useNotification } from '@ajh/ui';
@@ -47,11 +49,14 @@ export function ContactFeedback() {
           {t('support.contact.exportDiagnosticsBundleDesc')}
         </p>
         <div className="space-y-3">
+          {/* SECURITY: Only list items the Rust build_diagnostics_zip command actually emits
+              (system-info.txt, crashes.log, logs/). Any entry marked included:true MUST be
+              redaction-safe and MUST appear in that allowlist — never add config or API-key
+              bearing files here, even as a future convenience. */}
           {[
             { key: 'systemInformation', included: true },
+            { key: 'crashLog', included: true },
             { key: 'logs', included: true },
-            { key: 'enabledModels', included: true },
-            { key: 'configuration', included: true },
             { key: 'documentContents', included: false },
             { key: 'personalData', included: false },
           ].map(({ key, included }) => (
@@ -69,10 +74,20 @@ export function ContactFeedback() {
           className="mt-4"
           loading={exportDiagnostics.isPending}
           onClick={async () => {
+            const defaultPath = `ajh-diagnostics-${new Date().toISOString().slice(0, 10)}.zip`;
+            const dest = await save({
+              defaultPath,
+              filters: [{ name: 'Zip archive', extensions: ['zip'] }],
+            });
+            if (!dest) return;
             try {
-              const res = await exportDiagnostics.mutateAsync();
-              if (res.success) notify.success({ message: 'Diagnostics bundle exported.' });
-              else notify.error({ message: 'Export failed.' });
+              const res = await exportDiagnostics.mutateAsync(dest);
+              if (res.success) {
+                await revealItemInDir(dest);
+                notify.success({ message: 'Diagnostics bundle saved.' });
+              } else {
+                notify.error({ message: 'Export failed.' });
+              }
             } catch (err) {
               notify.error({ message: err instanceof Error ? err.message : 'Export failed.' });
             }

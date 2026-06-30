@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 export const support = {
-  exportDiagnostics: () => invoke('support_export_diagnostics'),
+  exportDiagnostics: (dest: string) => invoke('support_export_diagnostics', { dest }),
   reloadAiRuntime: () => invoke('support_reload_ai_runtime'),
   unloadAllModels: () => invoke('support_unload_all_models'),
   resetModelConfiguration: () => invoke('support_reset_model_configuration'),

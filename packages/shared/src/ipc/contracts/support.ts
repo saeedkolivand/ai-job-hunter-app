@@ -1,6 +1,6 @@
 export interface SupportContract {
-  /** Export diagnostics bundle containing system info, logs, and configuration */
-  exportDiagnostics(): Promise<{ success: boolean; bundlePath?: string }>;
+  /** Build and save a redacted diagnostics zip to the caller-supplied path */
+  exportDiagnostics(dest: string): Promise<{ success: boolean; path?: string }>;
 
   /** Reload AI runtime and reload all models */
   reloadAiRuntime(): Promise<{ success: boolean }>;
