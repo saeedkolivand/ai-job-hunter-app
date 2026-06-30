@@ -260,6 +260,8 @@ fn update_fields_patches_only_provided() {
             None,
             None,
             None,
+            None,
+            None,
         )
         .unwrap();
     let app = store.get(&id).unwrap();
@@ -449,7 +451,18 @@ fn update_fields_next_action_at_null_clears_and_absent_preserves() {
 
     // Set a value.
     store
-        .update_fields(&id, None, Some(Some(999)), None, None, None, None, None)
+        .update_fields(
+            &id,
+            None,
+            Some(Some(999)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .unwrap();
     assert_eq!(
         store.get(&id).unwrap().next_action_at,
@@ -459,7 +472,18 @@ fn update_fields_next_action_at_null_clears_and_absent_preserves() {
 
     // Passing `Some(None)` must CLEAR the value.
     store
-        .update_fields(&id, None, Some(None), None, None, None, None, None)
+        .update_fields(
+            &id,
+            None,
+            Some(None),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .unwrap();
     assert_eq!(
         store.get(&id).unwrap().next_action_at,
@@ -469,7 +493,18 @@ fn update_fields_next_action_at_null_clears_and_absent_preserves() {
 
     // Set value again.
     store
-        .update_fields(&id, None, Some(Some(456)), None, None, None, None, None)
+        .update_fields(
+            &id,
+            None,
+            Some(Some(456)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .unwrap();
     assert_eq!(
         store.get(&id).unwrap().next_action_at,
@@ -479,7 +514,7 @@ fn update_fields_next_action_at_null_clears_and_absent_preserves() {
 
     // Passing `None` (field absent) must PRESERVE the prior value.
     store
-        .update_fields(&id, None, None, None, None, None, None, None)
+        .update_fields(&id, None, None, None, None, None, None, None, None, None)
         .unwrap();
     assert_eq!(
         store.get(&id).unwrap().next_action_at,
@@ -1260,7 +1295,18 @@ fn job_description_is_clamped_on_char_boundary_via_both_write_paths() {
     let store_b = ApplicationStore::open(dir_b.path()).unwrap();
     let id_b = store_b.track_manual("", "", &meta("C", "T")).unwrap();
     store_b
-        .update_fields(&id_b, None, None, None, None, None, Some(jd.clone()), None)
+        .update_fields(
+            &id_b,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(jd.clone()),
+            None,
+            None,
+            None,
+        )
         .unwrap();
     let stored_b = store_b.get(&id_b).unwrap().job_description;
     assert!(
@@ -1284,6 +1330,8 @@ fn job_description_is_clamped_on_char_boundary_via_both_write_paths() {
         .update_fields(
             &id_b,
             Some("note".into()),
+            None,
+            None,
             None,
             None,
             None,
@@ -1387,6 +1435,8 @@ fn job_summary_update_and_50kb_clamp_truncates_on_char_boundary() {
             None,
             None,
             Some("hello".into()),
+            None,
+            None,
         )
         .unwrap();
     assert_eq!(store.get(&id).unwrap().job_summary, "hello");
@@ -1395,7 +1445,18 @@ fn job_summary_update_and_50kb_clamp_truncates_on_char_boundary() {
     // an all-'é' string is even, so exactly 25_000 whole chars (50_000 bytes) fit.
     let big = "é".repeat(40_000); // 80_000 bytes
     store
-        .update_fields(&id, None, None, None, None, None, None, Some(big))
+        .update_fields(
+            &id,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(big),
+            None,
+            None,
+        )
         .unwrap();
     let stored = store.get(&id).unwrap().job_summary;
     assert!(
@@ -1412,4 +1473,150 @@ fn job_summary_update_and_50kb_clamp_truncates_on_char_boundary() {
         25_000,
         "exactly the whole chars that fit"
     );
+}
+
+/// Migration round-trip: seed a DB at user_version=4 (has job_summary column,
+/// no recipient columns), open the store, verify migration 5 adds them, and
+/// confirm pre-existing rows survive intact with DEFAULT '' values.
+#[test]
+fn recipient_columns_migrate_from_pre_recipient_schema() {
+    let dir = TempDir::new().unwrap();
+    let legacy_id = "app-legacy-recip-001";
+    {
+        let conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE applications (
+                id              TEXT PRIMARY KEY,
+                status          TEXT NOT NULL DEFAULT 'saved',
+                applied_at      INTEGER,
+                created_at      INTEGER NOT NULL,
+                updated_at      INTEGER NOT NULL,
+                job_url         TEXT NOT NULL DEFAULT '',
+                board           TEXT NOT NULL DEFAULT '',
+                company         TEXT NOT NULL DEFAULT '',
+                title           TEXT NOT NULL DEFAULT '',
+                candidate       TEXT NOT NULL DEFAULT '',
+                answers         TEXT NOT NULL DEFAULT '[]',
+                brief           TEXT NOT NULL DEFAULT '',
+                notes           TEXT NOT NULL DEFAULT '',
+                next_action_at  INTEGER,
+                comp            TEXT NOT NULL DEFAULT '',
+                contact_name    TEXT NOT NULL DEFAULT '',
+                contact_email   TEXT NOT NULL DEFAULT '',
+                job_description TEXT NOT NULL DEFAULT '',
+                job_summary     TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_applications_job_url
+                ON applications(job_url);
+            CREATE TABLE status_events (
+                application_id  TEXT NOT NULL,
+                from_status     TEXT NOT NULL DEFAULT '',
+                to_status       TEXT NOT NULL,
+                at              INTEGER NOT NULL,
+                note            TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_status_events_app
+                ON status_events(application_id);
+            PRAGMA user_version = 4;",
+        )
+        .unwrap();
+        // Insert one row — no recipient columns yet.
+        conn.execute(
+            "INSERT INTO applications (id, status, created_at, updated_at)
+             VALUES (?1, 'applied', 1000, 1000)",
+            rusqlite::params![legacy_id],
+        )
+        .unwrap();
+    }
+
+    // Opening the store runs migration 5 (ADD COLUMN recipient_name/email).
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let app = store
+        .get(legacy_id)
+        .expect("legacy row must be readable after migration");
+    assert_eq!(
+        app.recipient_name, "",
+        "legacy row must get DEFAULT '' for recipient_name after migration"
+    );
+    assert_eq!(
+        app.recipient_email, "",
+        "legacy row must get DEFAULT '' for recipient_email after migration"
+    );
+    assert_eq!(app.id, legacy_id, "row id must be unchanged");
+
+    // Write recipient fields and confirm they round-trip.
+    store
+        .update_fields(
+            legacy_id,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("Jane Smith".into()),
+            Some("jane@acme.com".into()),
+        )
+        .unwrap();
+    let updated = store.get(legacy_id).unwrap();
+    assert_eq!(updated.recipient_name, "Jane Smith");
+    assert_eq!(updated.recipient_email, "jane@acme.com");
+}
+
+/// Recipient fields persist and round-trip through update_fields and export/import.
+#[test]
+fn recipient_fields_persist_and_export_import_round_trip() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .track_manual("", "", &meta("Acme", "Engineer"))
+        .unwrap();
+
+    // Set both fields.
+    store
+        .update_fields(
+            &id,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("Jane Smith".into()),
+            Some("jane@acme.com".into()),
+        )
+        .unwrap();
+    let app = store.get(&id).unwrap();
+    assert_eq!(app.recipient_name, "Jane Smith");
+    assert_eq!(app.recipient_email, "jane@acme.com");
+
+    // Export + import round-trips the fields.
+    let bundle = store.export();
+    let dir2 = TempDir::new().unwrap();
+    let store2 = ApplicationStore::open(dir2.path()).unwrap();
+    store2.import(&bundle).unwrap();
+    let imported = store2.get(&id).unwrap();
+    assert_eq!(imported.recipient_name, "Jane Smith");
+    assert_eq!(imported.recipient_email, "jane@acme.com");
+
+    // Clearing via empty string leaves the fields empty.
+    store
+        .update_fields(
+            &id,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(String::new()),
+            Some(String::new()),
+        )
+        .unwrap();
+    let cleared = store.get(&id).unwrap();
+    assert_eq!(cleared.recipient_name, "");
+    assert_eq!(cleared.recipient_email, "");
 }

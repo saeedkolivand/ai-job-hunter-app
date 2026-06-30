@@ -17,6 +17,7 @@ import {
 import {
   buildApplicationAnswerPrompt,
   buildApplicationAnswerSystemPrompt,
+  buildApplicationEmailPrompt,
   buildCoverLetterPrompt,
   buildCoverLetterSystemPrompt,
   buildGitHubProjectsPrompt,
@@ -793,4 +794,49 @@ export async function generateReferralImprove(params: {
     signal
   );
   return extractPlainText(raw);
+}
+
+/**
+ * Generate a short application email and stream tokens to the caller.
+ * Returns the raw output — the caller splits on the first "Subject: " line
+ * (see `buildApplicationEmailPrompt` OUTPUT CONTRACT). Mirrors
+ * {@link generateCoverLetter}: same provider config, streaming pipeline, and
+ * honesty contract — no new IPC.
+ */
+export async function generateApplicationEmail(params: {
+  resume: string;
+  jobAd: string;
+  meta: GenerationMeta;
+  model: string;
+  recipientName?: string;
+  recipientEmail?: string;
+  companyBrief?: string;
+  signal?: AbortSignal;
+  onToken?: (tok: string) => void;
+}): Promise<string> {
+  const {
+    resume,
+    jobAd,
+    meta,
+    model,
+    recipientName,
+    recipientEmail,
+    companyBrief = '',
+    signal,
+    onToken,
+  } = params;
+  const profile = buildProviderProfile(model);
+  const { system, user } = buildApplicationEmailPrompt(
+    { resume, jobAd, meta, recipientName, recipientEmail, companyBrief },
+    profile
+  );
+  return streamGenerate(
+    model,
+    system,
+    user,
+    onToken ?? (() => {}),
+    resolveTemperature('cover', 0.5),
+    meta.targetLanguage ?? 'en',
+    signal
+  );
 }

@@ -5,14 +5,21 @@ import { ApplicationDetailPage } from '@/features/applications/components/Applic
 // Strip order (left→right); the first entry is also the default landing tab
 // (see `?? DETAIL_TABS[0]` in ApplicationDetailPage). Documents leads because the
 // tailor/generate flow is the primary action on an application.
-export const DETAIL_TABS = ['documents', 'interview', 'brief', 'timeline', 'overview'] as const;
+export const DETAIL_TABS = [
+  'documents',
+  'email',
+  'interview',
+  'brief',
+  'timeline',
+  'overview',
+] as const;
 export type DetailTab = (typeof DETAIL_TABS)[number];
 
 /** Closed set of origins the Back button can return to (deep-links omit it). */
 const FROMS = ['jobs', 'autopilot', 'applications'] as const;
 
 export const Route = createFileRoute('/applications/$id')({
-  // `?tab=<documents|interview|brief|timeline|overview>` keeps the active detail tab
+  // `?tab=<documents|email|interview|brief|timeline|overview>` keeps the active detail tab
   // in the URL so it survives reloads / back-forward and is deep-linkable. Unknown
   // values fall back to the first tab. Optional so plain navigations (e.g. opening a
   // row) need not supply it — the page coalesces a missing value to `DETAIL_TABS[0]`.

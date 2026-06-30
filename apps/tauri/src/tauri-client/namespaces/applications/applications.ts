@@ -10,12 +10,16 @@ import {
 
 import { asyncUnsub } from '../../utils.js';
 
+/** Rust's `applications_update` returns `Ok(())` on success or an error-keyed object. */
+type ApplicationMutationResult = { error?: string };
+
 export const applications = {
   list: () => invoke('applications_list'),
   get: (id: string) => invoke('applications_get', { id }),
   setStatus: ({ id, status, note }: { id: string; status: string; note?: string }) =>
     invoke('applications_set_status', { id, status, note }),
-  update: (req: ApplicationUpdateRequest) => invoke('applications_update', { req }),
+  update: (req: ApplicationUpdateRequest) =>
+    invoke<ApplicationMutationResult>('applications_update', { req }),
   // `keepDocuments` reaches the Rust command as the snake_case `keep_documents` arg.
   remove: ({ id, keepDocuments }: { id: string; keepDocuments: boolean }) =>
     invoke('applications_delete', { id, keepDocuments }),
