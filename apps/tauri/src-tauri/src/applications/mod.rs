@@ -204,6 +204,13 @@ pub struct Application {
     pub contact_email: String,
     #[serde(default)]
     pub job_summary: String,
+    /// Employer-side contact name for a direct "apply by email" approach.
+    /// Distinct from the applicant's own `contact_name` on the Application.
+    #[serde(default)]
+    pub recipient_name: String,
+    /// Employer-side contact email for a direct "apply by email" approach.
+    #[serde(default)]
+    pub recipient_email: String,
 }
 
 /// One append-only status-history row.
@@ -282,6 +289,15 @@ impl ApplicationStore {
             up: |conn| {
                 conn.execute_batch(
                     "ALTER TABLE applications ADD COLUMN job_summary TEXT NOT NULL DEFAULT ''",
+                )
+            },
+        },
+        Migration {
+            name: "add_applications_recipient",
+            up: |conn| {
+                conn.execute_batch(
+                    "ALTER TABLE applications ADD COLUMN recipient_name TEXT NOT NULL DEFAULT '';
+                     ALTER TABLE applications ADD COLUMN recipient_email TEXT NOT NULL DEFAULT '';",
                 )
             },
         },
@@ -581,6 +597,8 @@ impl ApplicationStore {
                 contact_name: existing.contact_name.clone(),
                 contact_email: existing.contact_email.clone(),
                 job_summary: pick(&meta.job_summary, &existing.job_summary),
+                recipient_name: existing.recipient_name.clone(),
+                recipient_email: existing.recipient_email.clone(),
             };
             // Row write + the (conditional) status event in ONE transaction so an
             // upsert that changes status can never persist the row without its
@@ -628,6 +646,8 @@ impl ApplicationStore {
             contact_name: String::new(),
             contact_email: String::new(),
             job_summary: meta.job_summary.clone(),
+            recipient_name: String::new(),
+            recipient_email: String::new(),
         };
         // New Application: the row + its seed status event in ONE transaction.
         let mut guard = self.conn.lock();
@@ -693,6 +713,8 @@ impl ApplicationStore {
         contact_email: Option<String>,
         job_description: Option<String>,
         job_summary: Option<String>,
+        recipient_name: Option<String>,
+        recipient_email: Option<String>,
     ) -> AppResult<()> {
         let existing = self
             .get(id)
@@ -709,6 +731,8 @@ impl ApplicationStore {
                 .map(clamp_job_description)
                 .unwrap_or(existing.job_description),
             job_summary: job_summary.unwrap_or(existing.job_summary),
+            recipient_name: recipient_name.unwrap_or(existing.recipient_name),
+            recipient_email: recipient_email.unwrap_or(existing.recipient_email),
             updated_at: now_ms(),
             ..existing
         };
@@ -745,8 +769,9 @@ impl ApplicationStore {
             "INSERT INTO applications
                 (id, status, applied_at, created_at, updated_at, job_url, board,
                  company, title, candidate, answers, brief, notes, next_action_at,
-                 comp, contact_name, contact_email, job_description, job_summary)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)
+                 comp, contact_name, contact_email, job_description, job_summary,
+                 recipient_name, recipient_email)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)
              ON CONFLICT(id) DO UPDATE SET
                 status = excluded.status,
                 applied_at = excluded.applied_at,
@@ -764,7 +789,9 @@ impl ApplicationStore {
                 contact_name = excluded.contact_name,
                 contact_email = excluded.contact_email,
                 job_description = excluded.job_description,
-                job_summary = excluded.job_summary",
+                job_summary = excluded.job_summary,
+                recipient_name = excluded.recipient_name,
+                recipient_email = excluded.recipient_email",
             params![
                 app.id,
                 app.status.as_id(),
@@ -785,6 +812,8 @@ impl ApplicationStore {
                 app.contact_email,
                 app.job_description,
                 job_summary,
+                app.recipient_name,
+                app.recipient_email,
             ],
         )?;
         Ok(())
@@ -809,7 +838,8 @@ const MAX_JOB_SUMMARY_BYTES: usize = 50_000;
 /// Column projection shared by `list`/`get`/`find_by_job_url` so order lives once.
 const SELECT_COLS: &str = "SELECT id, status, applied_at, created_at, updated_at, job_url, board,
             company, title, candidate, answers, brief, notes, next_action_at,
-            comp, contact_name, contact_email, job_description, job_summary
+            comp, contact_name, contact_email, job_description, job_summary,
+            recipient_name, recipient_email
      FROM applications";
 
 fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
@@ -835,6 +865,8 @@ fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
         contact_email: row.get(16)?,
         job_description: row.get(17)?,
         job_summary: row.get(18)?,
+        recipient_name: row.get(19)?,
+        recipient_email: row.get(20)?,
     })
 }
 

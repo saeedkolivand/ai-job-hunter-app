@@ -43,6 +43,54 @@ fn reject_oversized_job_description(jd: Option<&str>) -> AppResult<()> {
     Ok(())
 }
 
+/// Validate and normalise an inbound recipient email address (the apply-by-email sink).
+///
+/// - `None` → `Ok(None)` (field absent — leave unchanged in the store).
+/// - Whitespace-only → `Ok(Some(String::new()))` (clear the field).
+/// - Otherwise: trim, enforce the 254-byte cap, and check the basic shape
+///   (non-empty local part, exactly one `@`, non-empty domain label + TLD with
+///   a dot). Returns `Ok(Some(email))` on success, `Err(AppError::Validation)` on
+///   invalid input so the renderer can surface a clear reason.
+fn validate_recipient_email(raw: Option<String>) -> AppResult<Option<String>> {
+    let Some(s) = raw else {
+        return Ok(None);
+    };
+    let trimmed = s.trim().to_string();
+    if trimmed.is_empty() {
+        return Ok(Some(String::new())); // whitespace-only → clear
+    }
+    // Byte-length cap — mirrors the Zod max(254); this is the real trust boundary.
+    if trimmed.len() > 254 {
+        return Err(AppError::Validation(
+            "recipient_email exceeds the 254-byte limit".into(),
+        ));
+    }
+    // Exactly one '@', non-empty local part, domain must have a dot with a
+    // non-empty label on each side of the last dot.
+    if trimmed.matches('@').count() != 1 {
+        return Err(AppError::Validation(format!(
+            "recipient_email is not a valid address: {trimmed}"
+        )));
+    }
+    let (local, domain) = trimmed.split_once('@').unwrap();
+    if local.is_empty() {
+        return Err(AppError::Validation(
+            "recipient_email local part must not be empty".into(),
+        ));
+    }
+    let Some(dot) = domain.rfind('.') else {
+        return Err(AppError::Validation(format!(
+            "recipient_email domain must contain a dot: {trimmed}"
+        )));
+    };
+    if domain[..dot].is_empty() || domain[dot + 1..].is_empty() {
+        return Err(AppError::Validation(format!(
+            "recipient_email has an invalid domain: {trimmed}"
+        )));
+    }
+    Ok(Some(trimmed))
+}
+
 #[tauri::command]
 pub async fn applications_list(app: AppHandle) -> Value {
     serde_json::to_value(store(&app).list()).unwrap_or(json!([]))
@@ -88,6 +136,18 @@ pub async fn applications_update(app: AppHandle, req: ApplicationUpdateRequest) 
         serde_json::Value::Null => None,
         other => other.as_u64(),
     });
+    // Server-side recipient_email validation: trim, whitespace-only → clear,
+    // bad format → Validation error. This is the apply-by-email sink — a bad
+    // address must never be stored.
+    let recipient_email = match validate_recipient_email(req.recipient_email) {
+        Ok(v) => v,
+        Err(e) => {
+            span.end_with(&e.to_string(), false);
+            return json!({ "error": e });
+        }
+    };
+    // Trim recipient_name; whitespace-only collapses to empty (clear the field).
+    let recipient_name = req.recipient_name.map(|s| s.trim().to_string());
     let result = store(&app).update_fields(
         &req.id,
         req.notes,
@@ -97,6 +157,8 @@ pub async fn applications_update(app: AppHandle, req: ApplicationUpdateRequest) 
         req.contact_email,
         req.job_description,
         req.job_summary,
+        recipient_name,
+        recipient_email,
     );
     match result {
         Ok(()) => {
@@ -295,5 +357,90 @@ mod tests {
             "{} bytes must be accepted (cap is {MAX_JOB_DESCRIPTION_BYTES})",
             s.len()
         );
+    }
+
+    // ── recipient_email validation ────────────────────────────────────────────
+
+    #[test]
+    fn recipient_email_absent_is_passthrough() {
+        // None = field not supplied → no update, no error.
+        assert!(validate_recipient_email(None).unwrap().is_none());
+    }
+
+    #[test]
+    fn recipient_email_whitespace_only_clears_field() {
+        // Whitespace-only → treat as "clear the field" (not an error).
+        let result = validate_recipient_email(Some("   ".into())).unwrap();
+        assert_eq!(result, Some(String::new()));
+    }
+
+    #[test]
+    fn recipient_email_valid_addresses_accepted() {
+        for addr in [
+            "user@example.com",
+            "first.last@sub.domain.org",
+            "user+tag@example.co.uk",
+        ] {
+            let result = validate_recipient_email(Some(addr.into()));
+            assert!(
+                result.is_ok(),
+                "valid address {addr:?} must be accepted, got {result:?}"
+            );
+            assert_eq!(result.unwrap(), Some(addr.to_string()));
+        }
+    }
+
+    #[test]
+    fn recipient_email_trims_surrounding_whitespace() {
+        let result = validate_recipient_email(Some("  user@example.com  ".into()))
+            .unwrap()
+            .unwrap();
+        assert_eq!(result, "user@example.com");
+    }
+
+    #[test]
+    fn recipient_email_missing_at_is_rejected() {
+        let err = validate_recipient_email(Some("notanemail".into()))
+            .expect_err("missing @ must be rejected");
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[test]
+    fn recipient_email_multiple_at_signs_rejected() {
+        let err = validate_recipient_email(Some("a@b@c.com".into()))
+            .expect_err("multiple @ must be rejected");
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[test]
+    fn recipient_email_empty_local_part_rejected() {
+        let err = validate_recipient_email(Some("@example.com".into()))
+            .expect_err("empty local part must be rejected");
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[test]
+    fn recipient_email_domain_without_dot_rejected() {
+        let err = validate_recipient_email(Some("user@nodot".into()))
+            .expect_err("domain without dot must be rejected");
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[test]
+    fn recipient_email_trailing_dot_in_domain_rejected() {
+        // TLD would be empty: "user@example."
+        let err = validate_recipient_email(Some("user@example.".into()))
+            .expect_err("trailing dot (empty TLD) must be rejected");
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[test]
+    fn recipient_email_multibyte_over_254_bytes_rejected() {
+        // 'ü' is 2 UTF-8 bytes; 128 repetitions = 256 bytes > 254-byte cap.
+        let long = format!("{}@example.com", "ü".repeat(128));
+        assert!(long.len() > 254, "fixture must exceed 254 bytes");
+        let err = validate_recipient_email(Some(long))
+            .expect_err("over-254-byte address must be rejected");
+        assert!(matches!(err, AppError::Validation(_)));
     }
 }

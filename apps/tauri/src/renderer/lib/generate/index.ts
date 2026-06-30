@@ -2,6 +2,7 @@ export { buildFilename, exportDOCX, exportPDF, exportTXT, renderDocumentPreview 
 export {
   extractMetadata,
   generateApplicationAnswer,
+  generateApplicationEmail,
   generateCoverLetter,
   type GeneratedGitHubProject,
   generateGitHubProjects,

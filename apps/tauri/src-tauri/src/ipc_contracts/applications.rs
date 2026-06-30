@@ -40,4 +40,8 @@ pub struct ApplicationUpdateRequest {
     pub job_description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub job_summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recipient_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recipient_email: Option<String>,
 }
