@@ -16,6 +16,7 @@
 ///   - `ai:adzuna-app-id`   (`provider_slots::ADZUNA_APP_ID`)  — Adzuna application ID
 ///   - `ai:adzuna-app-key`  (`provider_slots::ADZUNA_APP_KEY`) — Adzuna application key
 ///   - `ai:jsearch-key`     (`provider_slots::JSEARCH_KEY`)    — RapidAPI key for JSearch
+///   - `ai:apify-token`     (`provider_slots::APIFY_TOKEN`)    — Apify Bearer token
 ///
 /// Rate-limiting and cancellation are honoured: every network call flows
 /// through `scraping::http::fetch_json` (which checks `ctx.signal` and calls
@@ -525,6 +526,30 @@ const APIFY_MAX_ITEMS: u32 = 50;
 /// run can't hang the scrape.
 const APIFY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
+/// Server-side USD ceiling for pay-per-event actor overrides. Belt-and-suspenders
+/// on top of `maxItems`: a user who overrides the actor to a pay-per-event model
+/// is still bounded by this hard Apify platform limit.
+const APIFY_MAX_CHARGE_USD: &str = "1.00";
+
+/// Validate an Apify actor id against the platform grammar `user~actor`.
+///
+/// Both parts must be non-empty and consist solely of `[A-Za-z0-9_.-]`.
+/// A malformed id injected via `apifyLinkedinActorId` could otherwise reach
+/// the API URL (even though the host is fixed, a path-traversal like
+/// `../../v1/…` is still a concern). An invalid id falls back silently to
+/// `APIFY_DEFAULT_ACTOR` — the provider logs a warning and continues.
+fn is_valid_apify_actor_id(id: &str) -> bool {
+    let valid_part = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-')
+    };
+    match id.split_once('~') {
+        Some((user, actor)) => valid_part(user) && valid_part(actor),
+        None => false,
+    }
+}
+
 /// Map a UI date-filter token to LinkedIn's `f_TPR` recency parameter. Sub-day
 /// windows collapse to the past 24h (`r86400`); `week` → `r604800`; everything
 /// else (month / no filter / unknown) caps at the past month (`r2592000`),
@@ -668,8 +693,21 @@ impl ApifyLinkedInProvider {
                 None
             });
         let settings = read_aggregator_settings();
+        // Validate the user-supplied actor id before interpolating it into the
+        // API path. Falls back to the default actor on mismatch; never panics.
         let actor_id = settings
             .apify_linkedin_actor_id
+            .filter(|id| {
+                if is_valid_apify_actor_id(id) {
+                    true
+                } else {
+                    log::warn!(
+                        "[aggregator] apifyLinkedinActorId is not a valid Apify actor id \
+                         (expected user~actor grammar); falling back to the default actor"
+                    );
+                    false
+                }
+            })
             .unwrap_or_else(|| APIFY_DEFAULT_ACTOR.to_string());
         Self {
             token,
@@ -705,9 +743,15 @@ impl JobProvider for ApifyLinkedInProvider {
 
         let token = self.token.as_deref().unwrap_or("");
         let search_url = build_linkedin_search_url(query, location, date_filter);
+        // `maxItems` is the Apify platform-enforced server-side cap for this
+        // endpoint (belt over the `count` actor-input field, which a user-
+        // overridden actor may ignore). `maxTotalChargeUsd` adds a USD hard
+        // ceiling for pay-per-event actor overrides. The Bearer token stays in
+        // the Authorization header only — never in the URL or query string.
         let endpoint = format!(
-            "https://api.apify.com/v2/acts/{}/run-sync-get-dataset-items",
-            self.actor_id
+            "https://api.apify.com/v2/acts/{}/run-sync-get-dataset-items\
+             ?maxItems={}&maxTotalChargeUsd={}",
+            self.actor_id, APIFY_MAX_ITEMS, APIFY_MAX_CHARGE_USD
         );
 
         // ponytail: `count` is the hard cost ceiling — bound every run.
@@ -717,25 +761,39 @@ impl JobProvider for ApifyLinkedInProvider {
         })
         .to_string();
 
-        // POST via the shared scraping client (honours `signal` cancellation + the
-        // per-host rate limiter). The token goes in the Authorization header only —
-        // never the URL/query — so it stays out of the request-URL logging.
-        let items = fetch_json::<Vec<ApifyItem>>(
-            &endpoint,
-            FetchOptions {
-                method: Some(reqwest::Method::POST),
-                body: Some(body),
-                headers: Some(vec![
-                    ("authorization".to_string(), format!("Bearer {token}")),
-                    ("content-type".to_string(), "application/json".to_string()),
-                ]),
-                timeout: Some(APIFY_TIMEOUT),
-                ..FetchOptions::default()
-            },
-            signal,
-        )
-        .await?
-        .ok_or_else(|| {
+        // POST via the shared scraping client (the token goes in the Authorization
+        // header only — never the URL/query — so it stays out of request-URL logging).
+        //
+        // INVARIANT: retries=0.  `run-sync-get-dataset-items` is NON-IDEMPOTENT and
+        // billed per result — a retry on 429/503/network would start ANOTHER charged
+        // actor run (up to 3× cost with the default retries=2). Never retry.
+        //
+        // `tokio::select!` races the paid fetch against the cancellation signal so
+        // a user cancel mid-flight is honoured within one poll cycle instead of
+        // waiting up to APIFY_TIMEOUT (300 s) for fetch_text to check the signal
+        // at a retry boundary (there are none, but the response-body stream is also
+        // un-interrupted without this).
+        let raw = tokio::select! {
+            _ = signal.cancelled() => {
+                return Err(anyhow::anyhow!("apify_linkedin: cancelled"));
+            }
+            result = fetch_json::<Vec<ApifyItem>>(
+                &endpoint,
+                FetchOptions {
+                    method: Some(reqwest::Method::POST),
+                    body: Some(body),
+                    headers: Some(vec![
+                        ("authorization".to_string(), format!("Bearer {token}")),
+                        ("content-type".to_string(), "application/json".to_string()),
+                    ]),
+                    timeout: Some(APIFY_TIMEOUT),
+                    retries: 0, // NON-IDEMPOTENT: each run is billed — never retry
+                    ..FetchOptions::default()
+                },
+                signal.clone(),
+            ) => result?
+        };
+        let items = raw.ok_or_else(|| {
             anyhow::anyhow!(
                 "apify_linkedin: non-2xx response, timeout (408), or unparseable dataset body"
             )
@@ -843,6 +901,26 @@ fn dedupe(items: Vec<JobPosting>) -> Vec<JobPosting> {
         .collect()
 }
 
+/// Normalise a URL for deduplication.
+///
+/// For `linkedin.com` hosts, strip the query string so tracking-only variants
+/// (`?trk=…`, `?refId=…`) of the same job URL are treated as identical.
+/// For every other host, keep the query string intact: some boards encode the
+/// job id in query params, so stripping would merge distinct jobs.
+fn canonical_url(url: &str) -> String {
+    let trimmed = url.trim().to_lowercase();
+    if let Ok(mut parsed) = reqwest::Url::parse(&trimmed) {
+        if parsed
+            .host_str()
+            .is_some_and(|h| h.ends_with("linkedin.com"))
+        {
+            parsed.set_query(None);
+            return parsed.to_string();
+        }
+    }
+    trimmed
+}
+
 /// Deduplicate the cross-provider merge by URL, preserving first-seen order.
 ///
 /// `dedupe` keys on `external_id`, which is provider-prefixed (`adzuna-…` vs
@@ -850,11 +928,15 @@ fn dedupe(items: Vec<JobPosting>) -> Vec<JobPosting> {
 /// The additive merge therefore keys on the canonical URL instead, so a posting
 /// surfaced by both the primary chain and the LinkedIn provider appears once
 /// (primary first, since it is extended onto the front).
+///
+/// LinkedIn tracking params (`?trk=…`, `?refId=…`) are stripped by
+/// [`canonical_url`] before keying so the same logical job dedupes regardless
+/// of which tracking variant was captured.
 fn dedupe_by_url(items: Vec<JobPosting>) -> Vec<JobPosting> {
     let mut seen = std::collections::HashSet::new();
     items
         .into_iter()
-        .filter(|p| seen.insert(p.url.trim().to_lowercase()))
+        .filter(|p| seen.insert(canonical_url(&p.url)))
         .collect()
 }
 

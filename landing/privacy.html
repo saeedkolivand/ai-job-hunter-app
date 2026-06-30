@@ -233,9 +233,22 @@ h2 .anchor:focus-visible{border-radius:2px}
       the only board driven through a local Chromium instance using a per-board profile so your login
       persists on your machine. The walled aggregator boards (Indeed, Glassdoor, StepStone, Xing, Workday)
       are reached via the Adzuna/JSearch aggregator API using your own API key — no browser required.
-      These requests go to Adzuna's or JSearch's APIs directly — not to us. We run no proxy or
-      intermediary; there is no AI Job Hunter server in the path. Adzuna and JSearch requests are
-      subject to their respective terms of service and privacy policies.
+      <b>Adzuna</b> requests go directly to Adzuna's API. <b>JSearch</b> requests go through
+      <b>RapidAPI</b> (the API gateway for JSearch) using your RapidAPI key. We run no proxy or
+      intermediary; there is no AI Job Hunter server in the path. Adzuna, JSearch, and RapidAPI requests
+      are subject to their respective terms of service and privacy policies.
+    </p>
+    <p>
+      <b>LinkedIn via Apify (opt-in, off by default).</b> Enabling the "Include LinkedIn (Apify)"
+      toggle <em>and</em> providing an Apify token activates an additional source that sends a search
+      request to <b>Apify's API</b>, which then queries public LinkedIn job listings on your behalf.
+      Both conditions must be met: a token stored <em>and</em> the toggle on. This ensures the feature
+      never runs silently (e.g. during a scheduled autopilot run). What leaves your machine: the
+      <b>search keywords, location, and date-range window</b>, used to build a LinkedIn jobs search URL.
+      No résumé, profile data, or other personal information is included; your Apify token travels in
+      an authentication header only. Requests go directly to Apify's API. No AI Job Hunter server is
+      in the path. Results are billed <b>pay-per-result to your own Apify account</b>. Apify requests
+      are subject to <a href="https://apify.com/privacy-policy" rel="noopener noreferrer">Apify's terms of service and privacy policy</a>.
     </p>
   </div>
 

@@ -703,6 +703,24 @@
         "connected": "JSearch key stored securely",
         "removeConfirmTitle": "Remove JSearch key?",
         "removeConfirmDesc": "This deletes the saved JSearch key. The JSearch fallback will be disabled until you add it again."
+      },
+      "apifyToken": {
+        "label": "Apify API token",
+        "placeholder": "Paste your Apify API token…",
+        "connected": "Apify API token stored securely",
+        "removeConfirmTitle": "Remove Apify token?",
+        "removeConfirmDesc": "This deletes the saved Apify token. LinkedIn results via Apify will stop until you add it again."
+      },
+      "apifyLinkedin": {
+        "sectionLabel": "LinkedIn via Apify (paid)",
+        "enabledLabel": "Include LinkedIn results",
+        "enabledDescription": "Adds LinkedIn jobs to every search via your Apify account. Requires an Apify token.",
+        "costWarning": "LinkedIn results via Apify are billed to your Apify account (~$1 per 1,000 results). Each search requests up to 50 items and may take up to ~5 minutes.",
+        "actorIdLabel": "Actor ID override (optional)",
+        "actorIdPlaceholder": "curious_coder~linkedin-jobs-scraper",
+        "actorIdHelper": "Leave empty to use the built-in default actor.",
+        "saved": "Settings saved.",
+        "saveError": "Could not save settings."
       }
     },
     "accounts": {
