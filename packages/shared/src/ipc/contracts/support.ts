@@ -1,6 +1,8 @@
 export interface SupportContract {
   /** Build and save a redacted diagnostics zip to the caller-supplied path */
-  exportDiagnostics(dest: string): Promise<{ success: boolean; path?: string }>;
+  exportDiagnostics(
+    dest: string
+  ): Promise<{ success: true; path: string } | { success: false; error: string }>;
 
   /** Reload AI runtime and reload all models */
   reloadAiRuntime(): Promise<{ success: boolean }>;

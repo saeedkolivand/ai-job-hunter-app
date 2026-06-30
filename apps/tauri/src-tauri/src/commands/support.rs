@@ -50,6 +50,43 @@ pub(crate) fn build_diagnostics_zip(
     dest: &Path,
     app_version: &str,
 ) -> AppResult<()> {
+    // ── Guard: reject dest if it aliases a bundle source ────────────────────
+    // Use normalized-absolute paths (no symlink resolution — consistent with the
+    // symlink-skip behavior below) so `./x` vs `x` can't sneak past the check.
+    // `std::path::absolute` lexically resolves `.`/`..` without touching the
+    // filesystem; we fall back to the raw path if the cwd can't be obtained.
+    let crashes_path = data_dir.join("crashes.log");
+    let dest_abs = std::path::absolute(dest).unwrap_or_else(|_| dest.to_path_buf());
+    {
+        let crashes_abs =
+            std::path::absolute(&crashes_path).unwrap_or_else(|_| crashes_path.clone());
+        if dest_abs == crashes_abs {
+            return Err(AppError::Validation(
+                "export destination must not overwrite a diagnostic source file".to_owned(),
+            ));
+        }
+    }
+    if let Some(ld) = log_dir {
+        if ld.is_dir() {
+            if let Ok(rd) = std::fs::read_dir(ld) {
+                for entry in rd.flatten() {
+                    let path = entry.path();
+                    let Ok(meta) = path.symlink_metadata() else {
+                        continue;
+                    };
+                    if !meta.file_type().is_file() {
+                        continue;
+                    }
+                    if std::path::absolute(&path).unwrap_or_else(|_| path.clone()) == dest_abs {
+                        return Err(AppError::Validation(
+                            "export destination must not overwrite a diagnostic source file"
+                                .to_owned(),
+                        ));
+                    }
+                }
+            }
+        }
+    }
     let file = std::fs::File::create(dest)?;
     let mut zip = ZipWriter::new(file);
     let opts: FileOptions<ExtendedFileOptions> =
@@ -80,7 +117,6 @@ pub(crate) fn build_diagnostics_zip(
     // Bytes are read first and decoded with `from_utf8_lossy` so a single invalid
     // UTF-8 byte (e.g. from a corrupted crash) produces a replacement character
     // instead of aborting the entire export.
-    let crashes_path = data_dir.join("crashes.log");
     if crashes_path
         .symlink_metadata()
         .is_ok_and(|m| m.file_type().is_file())
@@ -108,6 +144,12 @@ pub(crate) fn build_diagnostics_zip(
                         continue;
                     };
                     if !meta.file_type().is_file() {
+                        continue;
+                    }
+                    // Regression guard: skip dest itself even when it is a newly-created
+                    // file inside log_dir (the pre-flight check only catches files that
+                    // existed before File::create).
+                    if path == dest_abs {
                         continue;
                     }
                     let Some(fname) = path.file_name().and_then(|n| n.to_str()) else {
@@ -440,6 +482,65 @@ mod tests {
         assert!(
             !names.contains("logs/secret.log"),
             "symlinked log must be skipped; entries: {names:?}"
+        );
+    }
+
+    /// `dest` pointing at `crashes.log` must be rejected before `File::create`
+    /// can truncate the source — the file must survive intact.
+    #[test]
+    fn dest_aliasing_crashes_log_is_rejected_without_truncating() {
+        let data = TempDir::new().unwrap();
+        let dp = data.path();
+        let original = "crash: null pointer at boot";
+        std::fs::write(dp.join("crashes.log"), original).unwrap();
+
+        let dest = dp.join("crashes.log");
+        let result = build_diagnostics_zip(dp, None, &dest, "0.0.0-test");
+
+        assert!(
+            result.is_err(),
+            "should error when dest aliases crashes.log"
+        );
+        assert!(
+            matches!(result.unwrap_err(), AppError::Validation(_)),
+            "error must be Validation variant"
+        );
+        // Source file must not be truncated by the aborted File::create.
+        assert_eq!(
+            std::fs::read_to_string(dp.join("crashes.log")).unwrap(),
+            original,
+            "crashes.log must not be truncated"
+        );
+    }
+
+    /// `dest` placed as a new path inside `log_dir` must not appear as an entry
+    /// in the produced zip — the regression guard in the log scan must skip it.
+    #[test]
+    fn dest_inside_log_dir_is_not_embedded_in_zip() {
+        let data = TempDir::new().unwrap();
+        let dp = data.path();
+        let logs = TempDir::new().unwrap();
+        let lp = logs.path();
+
+        // A real log file that should be bundled.
+        std::fs::write(lp.join("ajh-tauri.log"), "INFO boot").unwrap();
+
+        // dest is a new path inside log_dir — the pre-flight check won't catch it
+        // (no existing file at that path); the regression guard in the scan loop
+        // must exclude it from the bundle even after File::create creates it.
+        let dest = lp.join("diag.zip");
+        build_diagnostics_zip(dp, Some(lp), &dest, "0.0.0-test").unwrap();
+
+        let bytes = std::fs::read(&dest).unwrap();
+        let names: HashSet<String> = zip_entry_names(&bytes).into_iter().collect();
+
+        assert!(
+            !names.contains("logs/diag.zip"),
+            "dest must not be embedded in the zip; entries: {names:?}"
+        );
+        assert!(
+            names.contains("logs/ajh-tauri.log"),
+            "other log files must still be included; entries: {names:?}"
         );
     }
 }

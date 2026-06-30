@@ -2146,7 +2146,7 @@
     },
     "contact": {
       "exportDiagnosticsBundle": "Diagnosepaket exportieren",
-      "exportDiagnosticsBundleDesc": "Exportieren Sie ein Diagnosepaket mit Systeminformationen, Protokollen und Konfigurationen zur Fehlerbehebung.",
+      "exportDiagnosticsBundleDesc": "Exportieren Sie ein Diagnosepaket mit Systeminformationen, Absturzprotokoll und Anwendungsprotokollen zur Fehlerbehebung.",
       "systemInformation": "Systeminformationen",
       "systemInformationDesc": "OS-Version, App-Version, Laufzeitversionen",
       "logs": "Anwendungsprotokolle",

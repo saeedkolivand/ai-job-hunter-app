@@ -74,13 +74,17 @@ export function ContactFeedback() {
           className="mt-4"
           loading={exportDiagnostics.isPending}
           onClick={async () => {
-            const defaultPath = `ajh-diagnostics-${new Date().toISOString().slice(0, 10)}.zip`;
-            const dest = await save({
-              defaultPath,
-              filters: [{ name: 'Zip archive', extensions: ['zip'] }],
-            });
-            if (!dest) return;
+            const now = new Date();
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            const defaultPath = `ajh-diagnostics-${yyyy}-${mm}-${dd}.zip`;
             try {
+              const dest = await save({
+                defaultPath,
+                filters: [{ name: 'Zip archive', extensions: ['zip'] }],
+              });
+              if (!dest) return;
               const res = await exportDiagnostics.mutateAsync(dest);
               if (res.success) {
                 notify.success({ message: t('support.contact.exportBundleSaved') });
@@ -89,7 +93,10 @@ export function ContactFeedback() {
                 notify.error({ message: t('support.contact.exportBundleError') });
               }
             } catch (err) {
-              console.error(err);
+              console.error(
+                'diagnostics export failed:',
+                err instanceof Error ? err.name : 'unknown'
+              );
               notify.error({ message: t('support.contact.exportBundleError') });
             }
           }}

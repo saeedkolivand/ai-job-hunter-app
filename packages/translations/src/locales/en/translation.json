@@ -2142,7 +2142,7 @@
     },
     "contact": {
       "exportDiagnosticsBundle": "Export Diagnostics Bundle",
-      "exportDiagnosticsBundleDesc": "Export a diagnostics bundle containing system information, logs, and configuration to help troubleshoot issues.",
+      "exportDiagnosticsBundleDesc": "Export a diagnostics bundle containing system information, crash log, and application logs to help troubleshoot issues.",
       "systemInformation": "System Information",
       "systemInformationDesc": "OS version, app version, runtime versions",
       "logs": "Application logs",
