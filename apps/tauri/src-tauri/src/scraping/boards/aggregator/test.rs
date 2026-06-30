@@ -73,6 +73,7 @@ impl JobProvider for FakeProvider {
         _location: &str,
         _country: &str,
         _date_filter: Option<&str>,
+        _amount: Option<u32>,
         _signal: tokio_util::sync::CancellationToken,
     ) -> anyhow::Result<Vec<JobPosting>> {
         match &self.result {
@@ -94,9 +95,17 @@ async fn adzuna_ok_returns_items_no_jsearch() {
         Box::new(FakeProvider::err("jsearch", "should not be called")),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, make_token())
-        .await
-        .unwrap();
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].external_id, posting.external_id);
@@ -114,9 +123,17 @@ async fn adzuna_ok_empty_does_not_call_jsearch() {
         )),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, make_token())
-        .await
-        .unwrap();
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
 
     // Adzuna returned empty → result is empty (JSearch was bypassed).
     assert_eq!(
@@ -135,9 +152,17 @@ async fn adzuna_err_falls_back_to_jsearch() {
         Box::new(FakeProvider::ok("jsearch", vec![jsearch_posting.clone()])),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, make_token())
-        .await
-        .unwrap();
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].external_id, jsearch_posting.external_id);
@@ -151,9 +176,17 @@ async fn neither_configured_returns_empty() {
         Box::new(FakeProvider::unconfigured("jsearch")),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, make_token())
-        .await
-        .unwrap();
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
 
     assert!(result.is_empty());
 }
@@ -167,9 +200,17 @@ async fn only_jsearch_configured_uses_jsearch() {
         Box::new(FakeProvider::ok("jsearch", vec![jsearch_posting.clone()])),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, make_token())
-        .await
-        .unwrap();
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].external_id, jsearch_posting.external_id);
@@ -185,8 +226,16 @@ async fn adzuna_configured_err_and_no_jsearch_returns_diagnostic_err() {
         Box::new(FakeProvider::unconfigured("jsearch")),
     ];
 
-    let result =
-        search_with_providers(&providers, "engineer", "berlin", "de", None, make_token()).await;
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        None,
+        100,
+        make_token(),
+    )
+    .await;
 
     assert!(
         result.is_err(),
@@ -530,7 +579,7 @@ async fn adzuna_unconfigured_returns_err_without_network() {
         app_key: None,
     };
     let result = p
-        .search("engineer", "berlin", "de", None, make_token())
+        .search("engineer", "berlin", "de", None, None, make_token())
         .await;
     assert!(result.is_err(), "unconfigured Adzuna must return Err");
     assert!(
@@ -543,7 +592,7 @@ async fn adzuna_unconfigured_returns_err_without_network() {
 async fn jsearch_unconfigured_returns_err_without_network() {
     let p = JSearchProvider { api_key: None };
     let result = p
-        .search("engineer", "berlin", "de", None, make_token())
+        .search("engineer", "berlin", "de", None, None, make_token())
         .await;
     assert!(result.is_err(), "unconfigured JSearch must return Err");
     assert!(
@@ -570,7 +619,7 @@ async fn cancelled_before_search_returns_empty_no_provider_call() {
         )),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, signal)
+    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, 100, signal)
         .await
         .unwrap();
     assert!(
@@ -602,6 +651,7 @@ impl JobProvider for CancelOnSearchProvider {
         _location: &str,
         _country: &str,
         _date_filter: Option<&str>,
+        _amount: Option<u32>,
         _signal: tokio_util::sync::CancellationToken,
     ) -> anyhow::Result<Vec<JobPosting>> {
         // Fail AND cancel so the fallback guard (not the top-of-function guard)
@@ -627,7 +677,7 @@ async fn cancelled_after_adzuna_err_skips_jsearch() {
         )),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, signal)
+    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, 100, signal)
         .await
         .unwrap();
     assert!(
@@ -894,7 +944,9 @@ async fn adzuna_empty_country_resolves_to_supported_de() {
     };
     // Empty country → production code resolves to "de" → passes allowlist → fails
     // downstream at the network/auth layer (no real keys), NOT at country validation.
-    let result = p.search("engineer", "Berlin", "", None, make_token()).await;
+    let result = p
+        .search("engineer", "Berlin", "", None, None, make_token())
+        .await;
     let e = result.unwrap_err();
     let msg = e.to_string();
     assert!(
@@ -925,6 +977,7 @@ async fn unsupported_country_with_jsearch_falls_back_to_jsearch() {
         "Seoul",
         "xx",
         None,
+        100,
         make_token(),
     )
     .await
@@ -946,8 +999,16 @@ async fn unsupported_country_no_jsearch_returns_diagnostic_err() {
         Box::new(FakeProvider::unconfigured("jsearch")),
     ];
 
-    let result =
-        search_with_providers(&providers, "engineer", "Seoul", "xx", None, make_token()).await;
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "Seoul",
+        "xx",
+        None,
+        100,
+        make_token(),
+    )
+    .await;
 
     assert!(
         result.is_err(),
@@ -972,9 +1033,17 @@ async fn supported_country_uses_adzuna_normally() {
         Box::new(FakeProvider::err("jsearch", "should not be called")),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "Berlin", "de", None, make_token())
-        .await
-        .unwrap();
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "Berlin",
+        "de",
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].external_id, adzuna_posting.external_id);
@@ -989,9 +1058,17 @@ async fn unsupported_country_no_keys_returns_keyless_empty() {
         Box::new(FakeProvider::unconfigured("jsearch")),
     ];
 
-    let result = search_with_providers(&providers, "engineer", "Seoul", "xx", None, make_token())
-        .await
-        .unwrap();
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "Seoul",
+        "xx",
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
 
     assert!(
         result.is_empty(),
@@ -1010,7 +1087,7 @@ async fn adzuna_provider_rejects_unsupported_country_before_network() {
     };
     // "xx" is not in the allowlist.
     let result = p
-        .search("engineer", "Seoul", "xx", None, make_token())
+        .search("engineer", "Seoul", "xx", None, None, make_token())
         .await;
     assert!(
         result.is_err(),
@@ -1038,7 +1115,7 @@ async fn adzuna_provider_accepts_supported_country_passes_allowlist() {
     // "de" is in the allowlist; the error that comes back must NOT mention the
     // allowlist — it should be a network/auth error (or similar), not a country error.
     let result = p
-        .search("engineer", "Berlin", "de", None, make_token())
+        .search("engineer", "Berlin", "de", None, None, make_token())
         .await;
     // We expect an error (no real API key) — an unexpected Ok would mean the test
     // environment somehow hit the real API, which must not silently pass unnoticed.
@@ -1047,5 +1124,744 @@ async fn adzuna_provider_accepts_supported_country_passes_allowlist() {
         !e.to_string()
             .contains("not in Adzuna's supported market list"),
         "supported country 'de' must pass the allowlist check; got: {e}"
+    );
+}
+
+// ── Apify LinkedIn provider ────────────────────────────────────────────────────
+
+/// Helper: a fully-formed Apify provider with explicit fields (no keyring read).
+fn apify(token: Option<&str>, enabled: bool) -> ApifyLinkedInProvider {
+    ApifyLinkedInProvider {
+        token: token.map(str::to_string),
+        enabled,
+        actor_id: APIFY_DEFAULT_ACTOR.to_string(),
+    }
+}
+
+/// The Rust setting-key literals must equal the cross-language contract in
+/// `packages/shared/src/scraping-settings.ts`. The frontend writes these exact
+/// strings; this pins the Rust read-side so it can't silently drift.
+#[test]
+fn aggregator_settings_keys_match_shared_contract() {
+    assert_eq!(SCRAPING_SETTINGS_FILE, "scraping-settings.json");
+    assert_eq!(SETTING_APIFY_ENABLED, "apifyLinkedinEnabled");
+    assert_eq!(SETTING_APIFY_ACTOR_ID, "apifyLinkedinActorId");
+}
+
+/// `is_configured()` requires BOTH a token AND the opt-in toggle. A token alone
+/// (toggle OFF) must NOT configure the provider — never run a paid scrape just
+/// because a token is stored.
+#[test]
+fn apify_is_configured_requires_token_and_toggle() {
+    assert_eq!(apify(Some("t"), true).provider_id(), "apify_linkedin");
+
+    // token + toggle OFF → not configured (the cost gate).
+    assert!(
+        !apify(Some("t"), false).is_configured(),
+        "token without the opt-in toggle must NOT be configured"
+    );
+    // toggle ON + no token → not configured.
+    assert!(
+        !apify(None, true).is_configured(),
+        "toggle without a token must NOT be configured"
+    );
+    // neither → not configured.
+    assert!(!apify(None, false).is_configured());
+    // both → configured.
+    assert!(
+        apify(Some("t"), true).is_configured(),
+        "token + toggle must be configured"
+    );
+}
+
+/// An unconfigured provider must Err WITHOUT issuing any network request.
+#[tokio::test]
+async fn apify_unconfigured_returns_err_without_network() {
+    let p = apify(Some("t"), false);
+    let result = p
+        .search("engineer", "berlin", "de", None, None, make_token())
+        .await;
+    assert!(result.is_err(), "unconfigured Apify must return Err");
+    assert!(
+        result.unwrap_err().to_string().contains("not configured"),
+        "error must say 'not configured'"
+    );
+}
+
+/// `f_TPR` recency mapping: sub-day → r86400, week → r604800, else (month / none /
+/// unknown) → r2592000.
+#[test]
+fn apify_f_tpr_maps_recency() {
+    assert_eq!(apify_f_tpr(Some("30m")), "r86400");
+    assert_eq!(apify_f_tpr(Some("1h")), "r86400");
+    assert_eq!(apify_f_tpr(Some("24h")), "r86400");
+    assert_eq!(apify_f_tpr(Some("week")), "r604800");
+    assert_eq!(apify_f_tpr(Some("month")), "r2592000");
+    assert_eq!(apify_f_tpr(None), "r2592000");
+    assert_eq!(apify_f_tpr(Some("nonsense")), "r2592000");
+}
+
+/// The LinkedIn search URL is built from query/location/date_filter with
+/// percent-encoding and the mapped `f_TPR`.
+#[test]
+fn apify_builds_linkedin_search_url_with_encoding() {
+    let url = build_linkedin_search_url("Rust & C++", "München", Some("week"));
+    assert!(
+        url.starts_with("https://www.linkedin.com/jobs/search/?"),
+        "must be a LinkedIn jobs-search URL; got: {url}"
+    );
+    // `Rust & C++` → space=%20, &=%26, +=%2B.
+    assert!(
+        url.contains("keywords=Rust%20%26%20C%2B%2B"),
+        "query must be percent-encoded; got: {url}"
+    );
+    assert!(
+        url.contains("location=M%C3%BCnchen"),
+        "location umlaut must be percent-encoded; got: {url}"
+    );
+    assert!(url.contains("f_TPR=r604800"), "week → r604800; got: {url}");
+
+    // No date filter → the month ceiling.
+    let url_none = build_linkedin_search_url("dev", "Berlin", None);
+    assert!(url_none.contains("f_TPR=r2592000"));
+}
+
+/// Representative dataset item (documented field names) → JobPosting.
+#[test]
+fn apify_maps_representative_item() {
+    let json = serde_json::json!({
+        "title": "Senior Rust Engineer",
+        "companyName": "RustCorp",
+        "location": "Berlin, Germany",
+        "jobUrl": "https://www.linkedin.com/jobs/view/123",
+        "id": 123,
+        "postedAt": "2026-06-01T09:00:00Z",
+        "descriptionText": "Build things in Rust."
+    });
+    let item: ApifyItem = serde_json::from_value(json).unwrap();
+    let p = map_apify_item(item, 999).expect("a complete item maps");
+
+    assert_eq!(p.title, "Senior Rust Engineer");
+    assert_eq!(p.company, "RustCorp");
+    assert_eq!(p.location.as_deref(), Some("Berlin, Germany"));
+    assert_eq!(p.url, "https://www.linkedin.com/jobs/view/123");
+    assert_eq!(p.external_id.as_deref(), Some("linkedin-123"));
+    assert_eq!(p.id, "aggregator:linkedin-123");
+    assert_eq!(p.source, "aggregator");
+    assert!(p.description.as_deref().unwrap_or("").contains("Rust"));
+    assert_eq!(p.captured_at, 999);
+    let expected_ts = chrono::DateTime::parse_from_rfc3339("2026-06-01T09:00:00Z")
+        .unwrap()
+        .timestamp_millis();
+    assert_eq!(p.posted_at, Some(expected_ts));
+}
+
+/// Alternate field names (`jobTitle`, `jobDescription`) + no `jobUrl` → URL is
+/// constructed from the numeric `id`, and HTML description is converted.
+#[test]
+fn apify_maps_alternate_field_names_and_constructs_url_from_id() {
+    let json = serde_json::json!({
+        "jobTitle": "Backend Dev",
+        "companyName": "StartupAG",
+        "id": "987",
+        "jobDescription": "<ul><li>Write Rust</li></ul>"
+    });
+    let item: ApifyItem = serde_json::from_value(json).unwrap();
+    let p = map_apify_item(item, 0).expect("alternate-named item maps");
+
+    assert_eq!(p.title, "Backend Dev");
+    assert_eq!(p.url, "https://www.linkedin.com/jobs/view/987");
+    assert_eq!(p.external_id.as_deref(), Some("linkedin-987"));
+    assert!(p
+        .description
+        .as_deref()
+        .unwrap_or("")
+        .contains("Write Rust"));
+}
+
+/// An item with no title — or a title but no URL and no id — is skipped (None).
+#[test]
+fn apify_skips_item_without_title_or_url() {
+    let no_title: ApifyItem = serde_json::from_value(serde_json::json!({
+        "jobUrl": "https://www.linkedin.com/jobs/view/1"
+    }))
+    .unwrap();
+    assert!(
+        map_apify_item(no_title, 0).is_none(),
+        "item without a title must be skipped"
+    );
+
+    let no_url: ApifyItem = serde_json::from_value(serde_json::json!({
+        "title": "Ghost Job"
+    }))
+    .unwrap();
+    assert!(
+        map_apify_item(no_url, 0).is_none(),
+        "item with no jobUrl and no id must be skipped"
+    );
+}
+
+/// The actor returns a JSON ARRAY of items; the array deserializes and each item
+/// maps independently.
+#[test]
+fn apify_parses_dataset_array() {
+    let json = serde_json::json!([
+        { "title": "A", "jobUrl": "https://www.linkedin.com/jobs/view/1" },
+        { "jobTitle": "B", "id": 2 },
+        { "companyName": "Skip Me — no title/url" }
+    ]);
+    let items: Vec<ApifyItem> = serde_json::from_value(json).unwrap();
+    let mapped: Vec<_> = items
+        .into_iter()
+        .filter_map(|i| map_apify_item(i, 0))
+        .collect();
+    assert_eq!(mapped.len(), 2, "the third item (no title/url) is dropped");
+}
+
+// ── Additive merge / dedup ─────────────────────────────────────────────────────
+
+/// Apify results merge ADDITIVELY onto the primary result (not as a fallback) and
+/// dedupe by URL: a LinkedIn item sharing the primary's URL is dropped; the
+/// primary keeps its first-seen position.
+#[tokio::test]
+async fn apify_merges_additively_and_dedupes_by_url() {
+    let primary = sample_posting("1", "adzuna");
+    let li_unique = sample_posting("2", "linkedin");
+    // Same URL as the primary, but a different external_id → must dedupe out.
+    let mut li_dup = sample_posting("3", "linkedin");
+    li_dup.url = primary.url.clone();
+
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::ok("adzuna", vec![primary.clone()])),
+        Box::new(FakeProvider::ok(
+            "apify_linkedin",
+            vec![li_unique.clone(), li_dup.clone()],
+        )),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.len(), 2, "primary + unique LinkedIn; dup dropped");
+    // Deterministic order: primary first, then LinkedIn.
+    assert_eq!(result[0].url, primary.url);
+    assert_eq!(result[1].url, li_unique.url);
+}
+
+/// Only Apify configured (no Adzuna/JSearch) → its results are returned (primary
+/// chain yields keyless-empty, LinkedIn merges onto it).
+#[tokio::test]
+async fn only_apify_configured_returns_apify_items() {
+    let li = sample_posting("x", "linkedin");
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::unconfigured("adzuna")),
+        Box::new(FakeProvider::unconfigured("jsearch")),
+        Box::new(FakeProvider::ok("apify_linkedin", vec![li.clone()])),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].external_id, li.external_id);
+}
+
+/// Apify NOT configured → behaviour is identical to the legacy chain: the primary
+/// result passes through untouched (here, the Adzuna-failed-no-JSearch diagnostic
+/// Err is preserved, NOT swallowed by the merge path).
+#[tokio::test]
+async fn apify_unconfigured_preserves_primary_diagnostic_err() {
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::err("adzuna", "timeout")),
+        Box::new(FakeProvider::unconfigured("jsearch")),
+        Box::new(FakeProvider::unconfigured("apify_linkedin")),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        None,
+        100,
+        make_token(),
+    )
+    .await;
+
+    assert!(result.is_err(), "primary diagnostic Err must be preserved");
+    assert!(result.unwrap_err().to_string().contains("timeout"));
+}
+
+/// Primary fails but Apify is configured and returns results → show the LinkedIn
+/// results rather than hide them behind the primary diagnostic.
+#[tokio::test]
+async fn apify_results_override_primary_error_when_present() {
+    let li = sample_posting("li", "linkedin");
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::err("adzuna", "timeout")),
+        Box::new(FakeProvider::unconfigured("jsearch")),
+        Box::new(FakeProvider::ok("apify_linkedin", vec![li.clone()])),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].external_id, li.external_id);
+}
+
+// ── FIX 1 (finding #4): retries=0 invariant via the real helper ──────────────
+
+/// INVARIANT: the `FetchOptions` object that `ApifyLinkedInProvider::search`
+/// actually constructs (via `apify_fetch_options`) must have `retries == 0`.
+///
+/// Unlike the old version that only checked the constant, this assertion runs
+/// against the REAL helper that `search` calls.  If someone replaces
+/// `retries: APIFY_RETRIES` with `retries: 2` inside the helper, this test
+/// fails — where the old constant-only test would have stayed green.
+#[test]
+fn apify_fetch_options_must_have_retries_zero() {
+    // Baseline: confirm the default is non-zero so the override below is meaningful.
+    assert_eq!(
+        FetchOptions::default().retries,
+        2,
+        "FetchOptions::default() retries is expected to be 2; update this test if the default changes"
+    );
+    // Assert on the ACTUAL options object the production search path constructs.
+    let opts = apify_fetch_options("{}".to_string(), "test-token");
+    assert_eq!(
+        opts.retries, 0,
+        "INVARIANT VIOLATED: apify_fetch_options must set retries=0 — \
+         a retry would start another billed actor run"
+    );
+    // Belt: the shared constant itself must also remain 0.
+    assert_eq!(APIFY_RETRIES, 0, "APIFY_RETRIES constant must be 0");
+}
+
+// ── FIX 2: cancellation mid-flight ──────────────────────────────────────────
+
+/// A signal cancelled BEFORE the fetch_json call fires the tokio::select!
+/// cancel arm immediately — no network call is issued. This tests the
+/// `ApifyLinkedInProvider::search` path directly (not the higher-level guard in
+/// `search_with_providers`), which is what FIX 2 adds.
+#[tokio::test]
+async fn apify_search_pre_cancelled_signal_returns_err() {
+    let p = apify(Some("fake-token"), true);
+    let signal = make_token();
+    signal.cancel(); // pre-cancel before calling search
+
+    let result = p.search("dev", "Berlin", "de", None, None, signal).await;
+    assert!(
+        result.is_err(),
+        "a pre-cancelled signal must make ApifyLinkedInProvider::search return Err"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("cancelled"),
+        "error must indicate cancellation; got: {msg}"
+    );
+}
+
+// ── FIX 3: platform-enforced cost cap in endpoint URL ───────────────────────
+
+/// The run-sync endpoint must carry `maxItems` and `maxTotalChargeUsd` as query
+/// params (server-side cost caps) and must NOT embed the Bearer token in the URL.
+///
+/// Calls the REAL `build_apify_endpoint(actor, max_items)` function that
+/// production code calls, so any future refactor that drops either cap (or
+/// buries the token in the URL) will break this test.
+#[test]
+fn apify_endpoint_url_has_max_items_and_no_token() {
+    // Call the same function production uses — no local copy.
+    // Pass APIFY_MAX_ITEMS as the cap to mirror the full-cap scenario.
+    let endpoint = build_apify_endpoint(APIFY_DEFAULT_ACTOR, APIFY_MAX_ITEMS);
+
+    assert!(
+        endpoint.contains(&format!("maxItems={APIFY_MAX_ITEMS}")),
+        "endpoint must include server-side maxItems={APIFY_MAX_ITEMS}; got: {endpoint}"
+    );
+    assert!(
+        endpoint.contains(&format!("maxTotalChargeUsd={APIFY_MAX_CHARGE_USD}")),
+        "endpoint must include maxTotalChargeUsd={APIFY_MAX_CHARGE_USD}; got: {endpoint}"
+    );
+    // Token must never appear in the URL (lives in the Authorization header only).
+    assert!(
+        !endpoint.to_lowercase().contains("token"),
+        "Bearer token must not appear in the URL; got: {endpoint}"
+    );
+    // Apify host is fixed — no SSRF possible.
+    assert!(
+        endpoint.starts_with("https://api.apify.com/"),
+        "endpoint must be on api.apify.com; got: {endpoint}"
+    );
+    // Actor id is embedded in the path.
+    assert!(
+        endpoint.contains(APIFY_DEFAULT_ACTOR),
+        "endpoint must contain the actor id; got: {endpoint}"
+    );
+}
+
+// ── FIX 4: actor-id validation ───────────────────────────────────────────────
+
+/// Valid `user~actor` ids pass; malformed ids are rejected so they can't reach
+/// the API path.
+#[test]
+fn apify_actor_id_validator_accepts_valid_rejects_malformed() {
+    // Valid ids.
+    assert!(
+        is_valid_apify_actor_id("curious_coder~linkedin-jobs-scraper"),
+        "default actor id must be valid"
+    );
+    assert!(
+        is_valid_apify_actor_id("user123~actor-name.v2"),
+        "alphanumeric + hyphen + dot must be valid"
+    );
+    assert!(
+        is_valid_apify_actor_id("a~b"),
+        "single-char parts must be valid"
+    );
+
+    // No tilde → invalid.
+    assert!(!is_valid_apify_actor_id("nousernamehere"));
+    // Empty user part.
+    assert!(!is_valid_apify_actor_id("~actor"));
+    // Empty actor part.
+    assert!(!is_valid_apify_actor_id("user~"));
+    // Path-traversal chars rejected.
+    assert!(!is_valid_apify_actor_id("../../etc/passwd"));
+    assert!(!is_valid_apify_actor_id("user~actor/path"));
+    // Spaces rejected.
+    assert!(!is_valid_apify_actor_id("user ~actor"));
+    // Two tildes rejected (actor part contains `~` which is not in [A-Za-z0-9_.-]).
+    assert!(!is_valid_apify_actor_id("user~act~or"));
+}
+
+/// The default actor constant must always pass its own validator.
+#[test]
+fn apify_default_actor_passes_validator() {
+    assert!(
+        is_valid_apify_actor_id(APIFY_DEFAULT_ACTOR),
+        "APIFY_DEFAULT_ACTOR must pass is_valid_apify_actor_id; got: {APIFY_DEFAULT_ACTOR}"
+    );
+}
+
+// ── FIX 5: dedupe_by_url strips LinkedIn tracking params ────────────────────
+
+/// Two LinkedIn URLs for the same job that differ only by tracking params
+/// (`?trk=…`, `?refId=…`) must collapse to one entry in `dedupe_by_url`.
+/// Non-LinkedIn URLs with distinct query strings must remain distinct (some
+/// boards encode the job id in the query).
+#[test]
+fn dedupe_by_url_strips_linkedin_tracking_params() {
+    let make_posting = |url: &str| JobPosting {
+        id: url.to_string(),
+        external_id: Some(url.to_string()),
+        title: "Engineer".to_string(),
+        company: "Co".to_string(),
+        location: None,
+        url: url.to_string(),
+        source: "aggregator".to_string(),
+        description: None,
+        requirements: None,
+        posted_at: None,
+        captured_at: 0,
+        extra: std::collections::HashMap::new(),
+    };
+
+    // Same LinkedIn job, two different tracking param variants.
+    let li1 = make_posting("https://www.linkedin.com/jobs/view/123?trk=organic");
+    let li2 = make_posting("https://www.linkedin.com/jobs/view/123?refId=abc&trk=xyz");
+    // Non-LinkedIn: different query → distinct jobs (must NOT be merged).
+    let other1 = make_posting("https://example.com/jobs?id=1");
+    let other2 = make_posting("https://example.com/jobs?id=2");
+
+    let deduped = dedupe_by_url(vec![li1, li2, other1, other2]);
+    assert_eq!(
+        deduped.len(),
+        3,
+        "two LinkedIn tracking-param variants should collapse to 1; \
+         two non-LinkedIn distinct-query URLs stay separate; expected 3 total"
+    );
+    let urls: Vec<&str> = deduped.iter().map(|p| p.url.as_str()).collect();
+    assert!(
+        urls.contains(&"https://example.com/jobs?id=1"),
+        "non-LinkedIn URL with id=1 must be kept"
+    );
+    assert!(
+        urls.contains(&"https://example.com/jobs?id=2"),
+        "non-LinkedIn URL with id=2 must be kept"
+    );
+}
+
+/// `canonical_url` only strips query on `linkedin.com` or `*.linkedin.com` —
+/// a dot boundary is required so look-alike domains like `evillinkedin.com`
+/// (no dot before `linkedin.com`) and `linkedin.example.com` are left intact.
+#[test]
+fn canonical_url_only_strips_linkedin_dot_com_hosts() {
+    // Exact linkedin.com apex → query stripped.
+    let apex = canonical_url("https://linkedin.com/jobs/view/1?trk=foo");
+    assert!(
+        !apex.contains('?'),
+        "query must be stripped for apex linkedin.com; got: {apex}"
+    );
+
+    // Real www.linkedin.com subdomain → query stripped.
+    let li = canonical_url("https://www.linkedin.com/jobs/view/1?trk=foo");
+    assert!(
+        !li.contains('?'),
+        "query must be stripped for www.linkedin.com; got: {li}"
+    );
+
+    // A host that ends with "linkedin.com" but has no dot boundary (`evillinkedin.com`)
+    // must NOT be treated as LinkedIn — its query is preserved.
+    let evil = canonical_url("https://evillinkedin.com/jobs/1?id=99");
+    assert!(
+        evil.contains("id=99"),
+        "query must NOT be stripped for evillinkedin.com (no dot boundary); got: {evil}"
+    );
+
+    // A host that merely *contains* the substring "linkedin" in the wrong position
+    // (`linkedin.example.com`) → NOT stripped.
+    let fake = canonical_url("https://linkedin.example.com/jobs/1?id=1");
+    assert!(
+        fake.contains("id=1"),
+        "query must NOT be stripped for linkedin.example.com; got: {fake}"
+    );
+
+    // Non-LinkedIn host → query kept.
+    let other = canonical_url("https://example.com/jobs?id=42");
+    assert!(
+        other.contains("id=42"),
+        "query must be kept for non-LinkedIn host; got: {other}"
+    );
+}
+
+/// Cancellation before the call → no provider runs, including the paid Apify one.
+#[tokio::test]
+async fn apify_not_run_after_cancellation() {
+    let signal = make_token();
+    signal.cancel();
+
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::ok(
+            "adzuna",
+            vec![sample_posting("1", "adzuna")],
+        )),
+        Box::new(FakeProvider::ok(
+            "apify_linkedin",
+            vec![sample_posting("2", "linkedin")],
+        )),
+    ];
+
+    let result = search_with_providers(&providers, "engineer", "berlin", "de", None, 100, signal)
+        .await
+        .unwrap();
+
+    assert!(
+        result.is_empty(),
+        "a cancelled signal must prevent any (especially the paid) provider call"
+    );
+}
+
+// ── Finding #1: Apify URL validation ─────────────────────────────────────────
+
+/// A `jobUrl` on a non-LinkedIn host is rejected — the item is dropped.
+#[test]
+fn apify_map_item_rejects_non_linkedin_host() {
+    let item: ApifyItem = serde_json::from_value(serde_json::json!({
+        "title": "Rust Engineer",
+        "jobUrl": "https://evil.example.com/jobs/1"
+    }))
+    .unwrap();
+    assert!(
+        map_apify_item(item, 0).is_none(),
+        "non-LinkedIn jobUrl must be rejected"
+    );
+}
+
+/// `http://` (not https) and `javascript:` schemes must be rejected.
+#[test]
+fn apify_map_item_rejects_non_https_scheme() {
+    let item_http: ApifyItem = serde_json::from_value(serde_json::json!({
+        "title": "Rust Engineer",
+        "jobUrl": "http://www.linkedin.com/jobs/view/1"
+    }))
+    .unwrap();
+    assert!(
+        map_apify_item(item_http, 0).is_none(),
+        "http:// LinkedIn URL must be rejected (https required)"
+    );
+
+    let item_js: ApifyItem = serde_json::from_value(serde_json::json!({
+        "title": "Rust Engineer",
+        "jobUrl": "javascript:alert(1)"
+    }))
+    .unwrap();
+    assert!(
+        map_apify_item(item_js, 0).is_none(),
+        "javascript: scheme must be rejected"
+    );
+}
+
+/// A non-numeric `id` (e.g. a path-traversal string) must not be used to
+/// construct a URL — the item is dropped because no safe URL can be built.
+#[test]
+fn apify_map_item_rejects_non_numeric_id_for_url_construction() {
+    let item: ApifyItem = serde_json::from_value(serde_json::json!({
+        "title": "Rust Engineer",
+        "id": "../../etc/passwd"
+    }))
+    .unwrap();
+    // Non-numeric id → URL cannot be constructed → item dropped (None).
+    assert!(
+        map_apify_item(item, 0).is_none(),
+        "non-numeric id must not be used to construct a LinkedIn URL; item must be dropped"
+    );
+}
+
+/// A valid HTTPS `linkedin.com` URL passes validation and produces a JobPosting.
+#[test]
+fn apify_map_item_accepts_valid_linkedin_url() {
+    let item: ApifyItem = serde_json::from_value(serde_json::json!({
+        "title": "Rust Engineer",
+        "jobUrl": "https://www.linkedin.com/jobs/view/99999"
+    }))
+    .unwrap();
+    let p = map_apify_item(item, 0).expect("valid LinkedIn HTTPS URL must be accepted");
+    assert_eq!(p.url, "https://www.linkedin.com/jobs/view/99999");
+}
+
+// ── Finding #2: cost gate — skip Apify when primary fills amount ──────────────
+
+/// Primary provides exactly `amount` items → the paid Apify call must NOT fire.
+/// Uses a `TrackCallProvider` (not FakeProvider::err) because Apify errors are
+/// silently swallowed — only a flag proves the call was skipped.
+#[tokio::test]
+async fn apify_skipped_when_primary_fills_amount() {
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+
+    struct TrackCallProvider {
+        id: &'static str,
+        called: Arc<AtomicBool>,
+    }
+
+    #[async_trait::async_trait]
+    impl JobProvider for TrackCallProvider {
+        fn provider_id(&self) -> &'static str {
+            self.id
+        }
+        fn is_configured(&self) -> bool {
+            true
+        }
+        async fn search(
+            &self,
+            _: &str,
+            _: &str,
+            _: &str,
+            _: Option<&str>,
+            _: Option<u32>,
+            _: tokio_util::sync::CancellationToken,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            self.called.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(vec![])
+        }
+    }
+
+    let apify_called = Arc::new(AtomicBool::new(false));
+    let primary_items: Vec<JobPosting> = (0..5_u32)
+        .map(|i| sample_posting(&i.to_string(), "adzuna"))
+        .collect();
+
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::ok("adzuna", primary_items.clone())),
+        Box::new(TrackCallProvider {
+            id: "apify_linkedin",
+            called: apify_called.clone(),
+        }),
+    ];
+
+    // amount == 5, primary returns 5 → Apify must not be called.
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        None,
+        5,
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.len(), 5, "primary result must be returned unchanged");
+    assert!(
+        !apify_called.load(Ordering::SeqCst),
+        "Apify must NOT be called when primary already fills the requested amount"
+    );
+}
+
+/// `build_apify_endpoint` reflects the dynamic cap in its `maxItems` query param.
+/// - Partial gap (remaining=20): endpoint has `maxItems=20`.
+/// - Full budget (remaining≥APIFY_MAX_ITEMS): endpoint has `maxItems=APIFY_MAX_ITEMS`.
+#[test]
+fn apify_endpoint_cap_reflects_remaining() {
+    // Partial: amount=30, primary=10, remaining=20 → cap=20.
+    let ep_partial = build_apify_endpoint(APIFY_DEFAULT_ACTOR, 20);
+    assert!(
+        ep_partial.contains("maxItems=20"),
+        "partial-gap cap must appear in maxItems; got: {ep_partial}"
+    );
+
+    // Full: remaining exceeds APIFY_MAX_ITEMS → cap clamped to APIFY_MAX_ITEMS.
+    let ep_full = build_apify_endpoint(APIFY_DEFAULT_ACTOR, APIFY_MAX_ITEMS);
+    assert!(
+        ep_full.contains(&format!("maxItems={APIFY_MAX_ITEMS}")),
+        "full-cap scenario must use APIFY_MAX_ITEMS; got: {ep_full}"
+    );
+}
+
+// ── Finding #3: canonical_url preserves query case for non-LinkedIn URLs ──────
+
+/// Two non-LinkedIn URLs differing ONLY by query-string case must NOT collapse
+/// to the same dedup key.  Some boards encode job ids as case-sensitive query
+/// params; the old `.to_lowercase()` on the whole URL would merge them silently.
+#[test]
+fn canonical_url_non_linkedin_query_case_is_preserved() {
+    let key1 = canonical_url("https://board.example.com/jobs?ref=AbCdEf");
+    let key2 = canonical_url("https://board.example.com/jobs?ref=abcdef");
+    assert_ne!(
+        key1, key2,
+        "non-LinkedIn URLs differing only by query case must remain distinct; \
+         both canonicalized to: {key1}"
     );
 }

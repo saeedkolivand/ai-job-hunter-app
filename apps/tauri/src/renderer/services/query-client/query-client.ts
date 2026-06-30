@@ -104,4 +104,5 @@ export const keys = {
   },
   notifications: { all: ['notifications'] as const },
   boards: { catalog: ['boards', 'catalog'] as const },
+  scrapingSettings: { all: ['scrapingSettings'] as const },
 } as const;

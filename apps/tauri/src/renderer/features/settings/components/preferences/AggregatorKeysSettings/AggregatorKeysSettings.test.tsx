@@ -2,7 +2,7 @@
  * AggregatorKeysSettings — focused behaviour tests.
  *
  * Covers:
- *  - not connected: password inputs rendered; Save buttons disabled when empty.
+ *  - not connected: password inputs rendered for all four key fields.
  *  - not connected: eye-toggle buttons have accessible names (a11y guard).
  *  - not connected: toggling show/hide changes input type.
  *  - not connected: Save calls setProviderKey after typing a value.
@@ -12,6 +12,10 @@
  *  - connected: clicking Remove opens the confirm modal.
  *  - connected: confirming Remove calls removeProviderKey.
  *  - connected: Remove does NOT call mutateAsync when removeProviderKey.isPending (re-entrancy guard).
+ *  - Apify LinkedIn section: toggle fires updateScrapingSettings with enabled=true.
+ *  - Apify LinkedIn section: toggle error uses i18n key, not raw error.
+ *  - Apify LinkedIn section: actor-id Save calls updateScrapingSettings with the trimmed value.
+ *  - Apify LinkedIn section: actor-id Save is re-entrancy guarded (isPending).
  *
  * Service hooks are stubbed at the boundary; the real @ajh/ui tree is used
  * (only useNotification is overridden to avoid a Notification provider).
@@ -32,11 +36,21 @@ const keyState: Record<string, boolean> = {};
 
 let setIsPending = false;
 let removeIsPending = false;
+let updateScrapingIsPending = false;
+
+// ── mutable Apify settings so tests can control the initial state ─────────
+
+let mockScrapingData: { apifyLinkedinEnabled: boolean; apifyLinkedinActorId?: string } = {
+  apifyLinkedinEnabled: false,
+  apifyLinkedinActorId: undefined,
+};
 
 afterEach(() => {
   for (const k of Object.keys(keyState)) delete keyState[k];
   setIsPending = false;
   removeIsPending = false;
+  updateScrapingIsPending = false;
+  mockScrapingData = { apifyLinkedinEnabled: false, apifyLinkedinActorId: undefined };
   vi.clearAllMocks();
 });
 
@@ -69,12 +83,18 @@ vi.mock('@ajh/ui', async (importOriginal) => {
 
 const mockSetMutateAsync = vi.fn().mockResolvedValue(undefined);
 const mockRemoveMutateAsync = vi.fn().mockResolvedValue(undefined);
+const mockUpdateScrapingMutateAsync = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('@/services', () => ({
   useHasProviderKey: (slot: string) => ({ data: { has: keyState[slot] ?? false } }),
   useSetProviderKey: () => ({ mutateAsync: mockSetMutateAsync, isPending: setIsPending }),
   useRemoveProviderKey: () => ({ mutateAsync: mockRemoveMutateAsync, isPending: removeIsPending }),
   useOpenExternal: () => ({ mutateAsync: vi.fn() }),
+  useScrapingSettings: () => ({ data: mockScrapingData }),
+  useUpdateScrapingSettings: () => ({
+    mutateAsync: mockUpdateScrapingMutateAsync,
+    isPending: updateScrapingIsPending,
+  }),
 }));
 
 // ── component under test ───────────────────────────────────────────────────
@@ -90,9 +110,9 @@ function getPasswordInputs(container: HTMLElement) {
 // ── tests — not connected (default keyState = all false) ──────────────────
 
 describe('AggregatorKeysSettings — not connected', () => {
-  it('renders password inputs for all three key fields', () => {
+  it('renders password inputs for all four key fields', () => {
     const { container } = render(<AggregatorKeysSettings />);
-    expect(getPasswordInputs(container).length).toBe(3);
+    expect(getPasswordInputs(container).length).toBe(4);
   });
 
   it('Save buttons are disabled when inputs are empty', () => {
@@ -101,27 +121,28 @@ describe('AggregatorKeysSettings — not connected', () => {
     saveButtons.forEach((btn) => expect(btn).toBeDisabled());
   });
 
-  it('eye-toggle buttons have accessible names for all three fields', () => {
+  it('eye-toggle buttons have accessible names for all four fields', () => {
     render(<AggregatorKeysSettings />);
     const eyeToggles = screen.getAllByRole('button', {
       name: 'settings.aiProvider.showKey',
     });
-    expect(eyeToggles.length).toBe(3);
+    expect(eyeToggles.length).toBe(4);
   });
 
   it('toggling the first eye-button switches that field from password to text', async () => {
     const user = userEvent.setup();
     const { container } = render(<AggregatorKeysSettings />);
 
-    expect(getPasswordInputs(container).length).toBe(3);
+    expect(getPasswordInputs(container).length).toBe(4);
 
     const toggles = screen.getAllByRole('button', { name: 'settings.aiProvider.showKey' });
     const firstToggle = toggles[0];
     if (!firstToggle) throw new Error('No eye-toggle found');
     await user.click(firstToggle);
 
-    expect(getPasswordInputs(container).length).toBe(2);
-    expect(Array.from(container.querySelectorAll('input[type="text"]')).length).toBe(1);
+    expect(getPasswordInputs(container).length).toBe(3);
+    // actor-id input is always type="text"; toggled credential input adds a second.
+    expect(Array.from(container.querySelectorAll('input[type="text"]')).length).toBe(2);
   });
 
   it('calls setProviderKey with the correct slot and value on Save', async () => {
@@ -161,7 +182,6 @@ describe('AggregatorKeysSettings — not connected', () => {
   });
 
   it('does NOT call setProviderKey.mutateAsync when isPending (save re-entrancy guard)', async () => {
-    // Simulate a mutation already in-flight so handleSave's early-return fires.
     setIsPending = true;
     mockSetMutateAsync.mockClear();
     const user = userEvent.setup();
@@ -170,19 +190,15 @@ describe('AggregatorKeysSettings — not connected', () => {
     const inputs = getPasswordInputs(container);
     const firstInput = inputs[0];
     if (!firstInput) throw new Error('No password input found');
-    // Type a value so the blank-input guard doesn't fire instead.
     await user.type(firstInput, 'pending-key');
 
-    // Trigger via Enter key (the other branch of the save path).
     await user.keyboard('{Enter}');
 
-    // The Save button click path:
     const saveButtons = screen.getAllByRole('button', { name: /settings\.aggregatorKeys\.save/i });
     const firstSave = saveButtons[0];
     if (!firstSave) throw new Error('No Save button found');
     await user.click(firstSave);
 
-    // Neither trigger should have reached mutateAsync.
     expect(mockSetMutateAsync).not.toHaveBeenCalled();
   });
 
@@ -207,7 +223,6 @@ describe('AggregatorKeysSettings — not connected', () => {
     await waitFor(() => expect(mockNotify.error).toHaveBeenCalledOnce());
     const [call] = mockNotify.error.mock.calls;
     expect(call?.[0]).toEqual({ message: 'settings.aggregatorKeys.saveError' });
-    // raw error text must never reach the notification
     expect(call?.[0]).not.toMatchObject({ message: expect.stringContaining('keyring') });
   });
 });
@@ -262,7 +277,6 @@ describe('AggregatorKeysSettings — connected state', () => {
     if (!firstRemove) throw new Error('No Remove button found');
     await user.click(firstRemove);
 
-    // ConfirmModal is open — find its confirm button inside the dialog
     const dialog = screen.getByRole('dialog');
     const confirmBtn = Array.from(dialog.querySelectorAll('button')).find((b) =>
       /settings\.aggregatorKeys\.remove/i.test(b.textContent ?? '')
@@ -276,16 +290,13 @@ describe('AggregatorKeysSettings — connected state', () => {
   });
 
   it('does NOT call removeProviderKey.mutateAsync when isPending (remove re-entrancy guard)', async () => {
-    // Put a slot in connected state so the Remove button renders.
     keyState[PROVIDER_SLOTS.adzunaAppId] = true;
-    // Simulate a removal already in-flight so handleRemove's early-return fires.
     removeIsPending = true;
     mockRemoveMutateAsync.mockClear();
     const user = userEvent.setup();
 
     render(<AggregatorKeysSettings />);
 
-    // Open the confirm modal via the Remove trigger button.
     const removeButtons = screen.getAllByRole('button', {
       name: /settings\.aggregatorKeys\.remove/i,
     });
@@ -293,10 +304,6 @@ describe('AggregatorKeysSettings — connected state', () => {
     if (!firstRemove) throw new Error('No Remove button found');
     await user.click(firstRemove);
 
-    // Confirm modal is open. The confirm button is disabled (isConfirming=true),
-    // so userEvent ignores it. Use fireEvent to bypass the disabled attribute and
-    // directly invoke the onClick handler — this is the scenario the re-entrancy
-    // guard defends against (programmatic / rapid double-submit while in-flight).
     const dialog = screen.getByRole('dialog');
     const confirmBtn = Array.from(dialog.querySelectorAll('button')).find((b) =>
       /settings\.aggregatorKeys\.remove/i.test(b.textContent ?? '')
@@ -304,7 +311,6 @@ describe('AggregatorKeysSettings — connected state', () => {
     if (!confirmBtn) throw new Error('Confirm button not found in modal');
     fireEvent.click(confirmBtn);
 
-    // handleRemove returned early at the isPending guard — mutateAsync must not fire.
     expect(mockRemoveMutateAsync).not.toHaveBeenCalled();
   });
 
@@ -332,7 +338,98 @@ describe('AggregatorKeysSettings — connected state', () => {
     await waitFor(() => expect(mockNotify.error).toHaveBeenCalledOnce());
     const [call] = mockNotify.error.mock.calls;
     expect(call?.[0]).toEqual({ message: 'settings.aggregatorKeys.removeError' });
-    // raw error text must never reach the notification
     expect(call?.[0]).not.toMatchObject({ message: expect.stringContaining('keyring') });
+  });
+});
+
+// ── tests — Apify LinkedIn section ────────────────────────────────────────
+
+describe('AggregatorKeysSettings — Apify LinkedIn section', () => {
+  it('renders the enable toggle when scrapingSettings are loaded', () => {
+    render(<AggregatorKeysSettings />);
+    expect(
+      screen.getByRole('switch', {
+        name: 'settings.aggregatorKeys.apifyLinkedin.enabledLabel',
+      })
+    ).toBeInTheDocument();
+  });
+
+  it('toggle fires updateScrapingSettings with enabled=true', async () => {
+    mockUpdateScrapingMutateAsync.mockClear();
+    const user = userEvent.setup();
+    render(<AggregatorKeysSettings />);
+
+    const toggle = screen.getByRole('switch', {
+      name: 'settings.aggregatorKeys.apifyLinkedin.enabledLabel',
+    });
+    await user.click(toggle);
+
+    await waitFor(() =>
+      expect(mockUpdateScrapingMutateAsync).toHaveBeenCalledWith({ apifyLinkedinEnabled: true })
+    );
+  });
+
+  it('toggle error shows apifyLinkedin.saveError i18n key (not raw error)', async () => {
+    mockUpdateScrapingMutateAsync.mockRejectedValueOnce(new Error('store write failed'));
+    mockNotify.error.mockClear();
+    const user = userEvent.setup();
+    render(<AggregatorKeysSettings />);
+
+    const toggle = screen.getByRole('switch', {
+      name: 'settings.aggregatorKeys.apifyLinkedin.enabledLabel',
+    });
+    await user.click(toggle);
+
+    await waitFor(() => expect(mockNotify.error).toHaveBeenCalledOnce());
+    const [call] = mockNotify.error.mock.calls;
+    expect(call?.[0]).toEqual({
+      message: 'settings.aggregatorKeys.apifyLinkedin.saveError',
+    });
+  });
+
+  it('actor-id Save calls updateScrapingSettings with the typed value', async () => {
+    mockUpdateScrapingMutateAsync.mockClear();
+    const user = userEvent.setup();
+    render(<AggregatorKeysSettings />);
+
+    const actorInput = screen.getByRole('textbox', {
+      name: 'settings.aggregatorKeys.apifyLinkedin.actorIdLabel',
+    });
+    await user.type(actorInput, 'my~actor');
+
+    // The actor-id Save is a separate button from the credential Save buttons —
+    // get all save buttons and pick the last one (actor-id save renders after them).
+    const saveButtons = screen.getAllByRole('button', { name: /settings\.aggregatorKeys\.save/i });
+    const actorSave = saveButtons[saveButtons.length - 1];
+    if (!actorSave) throw new Error('No actor-id Save button found');
+    await user.click(actorSave);
+
+    await waitFor(() =>
+      expect(mockUpdateScrapingMutateAsync).toHaveBeenCalledWith({
+        apifyLinkedinActorId: 'my~actor',
+      })
+    );
+  });
+
+  it('actor-id Save is re-entrancy guarded when isPending', async () => {
+    updateScrapingIsPending = true;
+    mockUpdateScrapingMutateAsync.mockClear();
+    const user = userEvent.setup();
+    render(<AggregatorKeysSettings />);
+
+    const actorInput = screen.getByRole('textbox', {
+      name: 'settings.aggregatorKeys.apifyLinkedin.actorIdLabel',
+    });
+    await user.type(actorInput, 'blocked~actor');
+    await user.keyboard('{Enter}');
+
+    expect(mockUpdateScrapingMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('renders the cost warning notice', () => {
+    render(<AggregatorKeysSettings />);
+    expect(
+      screen.getByText('settings.aggregatorKeys.apifyLinkedin.costWarning')
+    ).toBeInTheDocument();
   });
 });
