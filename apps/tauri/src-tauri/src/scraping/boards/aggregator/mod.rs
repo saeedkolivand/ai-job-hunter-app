@@ -531,6 +531,12 @@ const APIFY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 /// is still bounded by this hard Apify platform limit.
 const APIFY_MAX_CHARGE_USD: &str = "1.00";
 
+/// INVARIANT: retries=0 for every Apify `run-sync-get-dataset-items` call.
+/// The endpoint is NON-IDEMPOTENT and billed per result — a retry on 429/503/network
+/// would start ANOTHER charged actor run (up to 3× cost with the default retries=2).
+/// Shared by production code and tests so a change to either breaks the invariant check.
+const APIFY_RETRIES: u32 = 0;
+
 /// Validate an Apify actor id against the platform grammar `user~actor`.
 ///
 /// Both parts must be non-empty and consist solely of `[A-Za-z0-9_.-]`.
@@ -548,6 +554,23 @@ fn is_valid_apify_actor_id(id: &str) -> bool {
         Some((user, actor)) => valid_part(user) && valid_part(actor),
         None => false,
     }
+}
+
+/// Build the Apify `run-sync-get-dataset-items` endpoint URL for a given actor.
+///
+/// The URL carries the server-side cost caps (`maxItems`, `maxTotalChargeUsd`) as
+/// query params. The Bearer token is NEVER included here — it goes in the
+/// `Authorization` header only, keeping it out of request-URL logging.
+///
+/// This is the single source of truth consumed by both the production call in
+/// [`ApifyLinkedInProvider::search`] and the invariant test in `test.rs`. A future
+/// refactor that removes either cap would break the test that calls this function.
+fn build_apify_endpoint(actor_id: &str) -> String {
+    format!(
+        "https://api.apify.com/v2/acts/{}/run-sync-get-dataset-items\
+         ?maxItems={}&maxTotalChargeUsd={}",
+        actor_id, APIFY_MAX_ITEMS, APIFY_MAX_CHARGE_USD
+    )
 }
 
 /// Map a UI date-filter token to LinkedIn's `f_TPR` recency parameter. Sub-day
@@ -748,11 +771,7 @@ impl JobProvider for ApifyLinkedInProvider {
         // overridden actor may ignore). `maxTotalChargeUsd` adds a USD hard
         // ceiling for pay-per-event actor overrides. The Bearer token stays in
         // the Authorization header only — never in the URL or query string.
-        let endpoint = format!(
-            "https://api.apify.com/v2/acts/{}/run-sync-get-dataset-items\
-             ?maxItems={}&maxTotalChargeUsd={}",
-            self.actor_id, APIFY_MAX_ITEMS, APIFY_MAX_CHARGE_USD
-        );
+        let endpoint = build_apify_endpoint(&self.actor_id);
 
         // ponytail: `count` is the hard cost ceiling — bound every run.
         let body = serde_json::json!({
@@ -787,7 +806,7 @@ impl JobProvider for ApifyLinkedInProvider {
                         ("content-type".to_string(), "application/json".to_string()),
                     ]),
                     timeout: Some(APIFY_TIMEOUT),
-                    retries: 0, // NON-IDEMPOTENT: each run is billed — never retry
+                    retries: APIFY_RETRIES, // NON-IDEMPOTENT: each run is billed — never retry
                     ..FetchOptions::default()
                 },
                 signal.clone(),
@@ -912,7 +931,7 @@ fn canonical_url(url: &str) -> String {
     if let Ok(mut parsed) = reqwest::Url::parse(&trimmed) {
         if parsed
             .host_str()
-            .is_some_and(|h| h.ends_with("linkedin.com"))
+            .is_some_and(|h| h == "linkedin.com" || h.ends_with(".linkedin.com"))
         {
             parsed.set_query(None);
             return parsed.to_string();

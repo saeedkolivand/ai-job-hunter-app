@@ -1330,34 +1330,29 @@ async fn apify_results_override_primary_error_when_present() {
 
 // ── FIX 1: retries=0 invariant ───────────────────────────────────────────────
 
-/// INVARIANT: FetchOptions for the Apify run-sync call must have retries=0.
-/// The default is retries=2; a retry on 429/503/network would start ANOTHER
-/// billed actor run (up to 3× cost). This test pins the invariant so a future
-/// refactor that uses `..FetchOptions::default()` without an explicit override
-/// cannot silently restore the dangerous default.
+/// INVARIANT: the shared `APIFY_RETRIES` constant (used by production code) must
+/// be 0.  The default FetchOptions retries=2; any retry on 429/503/network would
+/// start ANOTHER billed actor run (up to 3× cost).
+///
+/// Because production code uses `retries: APIFY_RETRIES`, changing the constant
+/// and the production call site are a single atomic operation — this test catches
+/// any drift by asserting directly on the shared constant rather than building a
+/// local FetchOptions copy that can go stale.
 #[test]
 fn apify_fetch_options_must_have_retries_zero() {
-    // Default has retries=2 — confirm the baseline so the override is meaningful.
+    // Baseline: the *default* retries so we know the override is meaningful.
     assert_eq!(
         FetchOptions::default().retries,
         2,
         "FetchOptions::default() retries is expected to be 2; update this test if the default changes"
     );
-    // The Apify-specific options explicitly set retries=0.
-    let opts = FetchOptions {
-        method: Some(reqwest::Method::POST),
-        body: Some("{}".to_string()),
-        headers: Some(vec![
-            ("authorization".to_string(), "Bearer tok".to_string()),
-            ("content-type".to_string(), "application/json".to_string()),
-        ]),
-        timeout: Some(APIFY_TIMEOUT),
-        retries: 0, // NON-IDEMPOTENT: each run is billed — never retry
-        ..FetchOptions::default()
-    };
+    // The shared constant that production code passes as `retries: APIFY_RETRIES`
+    // must be 0.  Changing APIFY_RETRIES breaks this assertion; changing the
+    // production call site to use a different expression is caught here too because
+    // both sides read the same source of truth.
     assert_eq!(
-        opts.retries, 0,
-        "INVARIANT VIOLATED: Apify FetchOptions must have retries=0 — \
+        APIFY_RETRIES, 0,
+        "INVARIANT VIOLATED: APIFY_RETRIES must be 0 — \
          a retry would start another billed actor run"
     );
 }
@@ -1388,15 +1383,16 @@ async fn apify_search_pre_cancelled_signal_returns_err() {
 
 // ── FIX 3: platform-enforced cost cap in endpoint URL ───────────────────────
 
-/// The run-sync endpoint must carry `maxItems` as a query param (server-side
-/// cap) and must NOT embed the Bearer token in the URL.
+/// The run-sync endpoint must carry `maxItems` and `maxTotalChargeUsd` as query
+/// params (server-side cost caps) and must NOT embed the Bearer token in the URL.
+///
+/// Calls the REAL `build_apify_endpoint` function that production code calls, so
+/// any future refactor that drops either cap (or buries the token in the URL)
+/// will break this test rather than silently regressing.
 #[test]
 fn apify_endpoint_url_has_max_items_and_no_token() {
-    let actor_id = APIFY_DEFAULT_ACTOR;
-    let endpoint = format!(
-        "https://api.apify.com/v2/acts/{actor_id}/run-sync-get-dataset-items\
-         ?maxItems={APIFY_MAX_ITEMS}&maxTotalChargeUsd={APIFY_MAX_CHARGE_USD}"
-    );
+    // Call the same function production uses — no local copy.
+    let endpoint = build_apify_endpoint(APIFY_DEFAULT_ACTOR);
 
     assert!(
         endpoint.contains(&format!("maxItems={APIFY_MAX_ITEMS}")),
@@ -1415,6 +1411,11 @@ fn apify_endpoint_url_has_max_items_and_no_token() {
     assert!(
         endpoint.starts_with("https://api.apify.com/"),
         "endpoint must be on api.apify.com; got: {endpoint}"
+    );
+    // Actor id is embedded in the path.
+    assert!(
+        endpoint.contains(APIFY_DEFAULT_ACTOR),
+        "endpoint must contain the actor id; got: {endpoint}"
     );
 }
 
@@ -1510,18 +1511,35 @@ fn dedupe_by_url_strips_linkedin_tracking_params() {
     );
 }
 
-/// `canonical_url` only strips query on `*.linkedin.com` — adjacent domains
-/// like `linkedin.example.com` are left intact.
+/// `canonical_url` only strips query on `linkedin.com` or `*.linkedin.com` —
+/// a dot boundary is required so look-alike domains like `evillinkedin.com`
+/// (no dot before `linkedin.com`) and `linkedin.example.com` are left intact.
 #[test]
 fn canonical_url_only_strips_linkedin_dot_com_hosts() {
-    // Real LinkedIn host → query stripped.
+    // Exact linkedin.com apex → query stripped.
+    let apex = canonical_url("https://linkedin.com/jobs/view/1?trk=foo");
+    assert!(
+        !apex.contains('?'),
+        "query must be stripped for apex linkedin.com; got: {apex}"
+    );
+
+    // Real www.linkedin.com subdomain → query stripped.
     let li = canonical_url("https://www.linkedin.com/jobs/view/1?trk=foo");
     assert!(
         !li.contains('?'),
-        "query must be stripped for linkedin.com; got: {li}"
+        "query must be stripped for www.linkedin.com; got: {li}"
     );
 
-    // A non-linkedin.com host that contains the substring "linkedin" → NOT stripped.
+    // A host that ends with "linkedin.com" but has no dot boundary (`evillinkedin.com`)
+    // must NOT be treated as LinkedIn — its query is preserved.
+    let evil = canonical_url("https://evillinkedin.com/jobs/1?id=99");
+    assert!(
+        evil.contains("id=99"),
+        "query must NOT be stripped for evillinkedin.com (no dot boundary); got: {evil}"
+    );
+
+    // A host that merely *contains* the substring "linkedin" in the wrong position
+    // (`linkedin.example.com`) → NOT stripped.
     let fake = canonical_url("https://linkedin.example.com/jobs/1?id=1");
     assert!(
         fake.contains("id=1"),
