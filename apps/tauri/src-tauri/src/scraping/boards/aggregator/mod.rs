@@ -101,12 +101,17 @@ pub(crate) trait JobProvider: Send + Sync {
     /// True when the necessary API keys are present in the credential store.
     fn is_configured(&self) -> bool;
     /// Run a search.  Non-2xx or network errors are returned as `Err`.
+    ///
+    /// `amount` is a provider-specific result cap that callers may pass to
+    /// cost-bounded providers (currently Apify only).  Providers that have no
+    /// concept of a cap ignore it (`_amount`).
     async fn search(
         &self,
         query: &str,
         location: &str,
         country: &str,
         date_filter: Option<&str>,
+        amount: Option<u32>,
         signal: tokio_util::sync::CancellationToken,
     ) -> anyhow::Result<Vec<JobPosting>>;
 }
@@ -218,6 +223,7 @@ impl JobProvider for AdzunaProvider {
         location: &str,
         country: &str,
         date_filter: Option<&str>,
+        _amount: Option<u32>,
         signal: tokio_util::sync::CancellationToken,
     ) -> anyhow::Result<Vec<JobPosting>> {
         if !self.is_configured() {
@@ -361,6 +367,7 @@ impl JobProvider for JSearchProvider {
         location: &str,
         _country: &str,
         date_filter: Option<&str>,
+        _amount: Option<u32>,
         signal: tokio_util::sync::CancellationToken,
     ) -> anyhow::Result<Vec<JobPosting>> {
         if !self.is_configured() {
@@ -558,18 +565,19 @@ fn is_valid_apify_actor_id(id: &str) -> bool {
 
 /// Build the Apify `run-sync-get-dataset-items` endpoint URL for a given actor.
 ///
-/// The URL carries the server-side cost caps (`maxItems`, `maxTotalChargeUsd`) as
-/// query params. The Bearer token is NEVER included here — it goes in the
-/// `Authorization` header only, keeping it out of request-URL logging.
+/// `max_items` is the server-side platform cap for this request; callers compute
+/// it as `min(APIFY_MAX_ITEMS, amount - primary.len())` so we never fetch more
+/// than actually needed.  The Bearer token is NEVER included here — it goes in
+/// the `Authorization` header only, keeping it out of request-URL logging.
 ///
 /// This is the single source of truth consumed by both the production call in
 /// [`ApifyLinkedInProvider::search`] and the invariant test in `test.rs`. A future
 /// refactor that removes either cap would break the test that calls this function.
-fn build_apify_endpoint(actor_id: &str) -> String {
+fn build_apify_endpoint(actor_id: &str, max_items: u32) -> String {
     format!(
         "https://api.apify.com/v2/acts/{}/run-sync-get-dataset-items\
          ?maxItems={}&maxTotalChargeUsd={}",
-        actor_id, APIFY_MAX_ITEMS, APIFY_MAX_CHARGE_USD
+        actor_id, max_items, APIFY_MAX_CHARGE_USD
     )
 }
 
@@ -639,6 +647,46 @@ struct ApifyItem {
     description_html: Option<String>,
 }
 
+/// Validate that a URL from the Apify actor is HTTPS on a `linkedin.com` host.
+///
+/// A drifting or user-overridden actor could inject arbitrary URLs into
+/// `JobPosting.url`.  We constrain the output to the only expected domain
+/// (`linkedin.com` / `*.linkedin.com`) and scheme (`https`).  Items whose URL
+/// fails validation are dropped — same as items missing title/url.
+fn is_valid_apify_linkedin_url(url: &str) -> bool {
+    if let Ok(parsed) = reqwest::Url::parse(url) {
+        // host_str() is already lowercase after Url::parse (URL standard).
+        return parsed.scheme() == "https"
+            && parsed
+                .host_str()
+                .is_some_and(|h| h == "linkedin.com" || h.ends_with(".linkedin.com"));
+    }
+    false
+}
+
+/// Build the `FetchOptions` for the Apify `run-sync-get-dataset-items` call.
+///
+/// The Bearer token goes in the Authorization header only — never the URL.
+/// `retries` is hardwired to `APIFY_RETRIES` (0): the endpoint is NON-IDEMPOTENT
+/// and billed per result; a retry would start another charged run.
+///
+/// This is the single source of truth consumed by [`ApifyLinkedInProvider::search`]
+/// and by the invariant test in `test.rs`.  Removing the `retries` override here
+/// breaks the test.
+fn apify_fetch_options(body: String, token: &str) -> FetchOptions {
+    FetchOptions {
+        method: Some(reqwest::Method::POST),
+        body: Some(body),
+        headers: Some(vec![
+            ("authorization".to_string(), format!("Bearer {token}")),
+            ("content-type".to_string(), "application/json".to_string()),
+        ]),
+        timeout: Some(APIFY_TIMEOUT),
+        retries: APIFY_RETRIES, // NON-IDEMPOTENT: each run is billed — never retry
+        ..FetchOptions::default()
+    }
+}
+
 /// Defensively map an [`ApifyItem`] to a [`JobPosting`]. Returns `None` when the
 /// item lacks BOTH a usable title and a usable URL (no `jobUrl` and no `id` to
 /// construct one) — such an item can't be opened, so it's dropped.
@@ -655,15 +703,23 @@ fn map_apify_item(item: ApifyItem, now: i64) -> Option<JobPosting> {
         .filter(|s| !s.is_empty())
         .map(str::to_string);
 
-    // URL: explicit jobUrl wins; otherwise construct the canonical view URL from id.
+    // URL: explicit jobUrl wins; for the id-constructed fallback, require a
+    // digits-only id so we never interpolate an arbitrary string into a path.
     let url = item
         .job_url
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .or_else(|| {
             id.as_deref()
+                .filter(|s| s.chars().all(|c| c.is_ascii_digit()))
                 .map(|id| format!("https://www.linkedin.com/jobs/view/{id}"))
         })?;
+
+    // Security: drop items whose URL is not HTTPS on a linkedin.com host.
+    // A drifting actor can inject non-LinkedIn or non-HTTPS URLs; we reject those.
+    if !is_valid_apify_linkedin_url(&url) {
+        return None;
+    }
 
     let description = item
         .description_text
@@ -758,6 +814,7 @@ impl JobProvider for ApifyLinkedInProvider {
         location: &str,
         _country: &str,
         date_filter: Option<&str>,
+        amount: Option<u32>,
         signal: tokio_util::sync::CancellationToken,
     ) -> anyhow::Result<Vec<JobPosting>> {
         if !self.is_configured() {
@@ -766,49 +823,37 @@ impl JobProvider for ApifyLinkedInProvider {
 
         let token = self.token.as_deref().unwrap_or("");
         let search_url = build_linkedin_search_url(query, location, date_filter);
-        // `maxItems` is the Apify platform-enforced server-side cap for this
-        // endpoint (belt over the `count` actor-input field, which a user-
-        // overridden actor may ignore). `maxTotalChargeUsd` adds a USD hard
-        // ceiling for pay-per-event actor overrides. The Bearer token stays in
-        // the Authorization header only — never in the URL or query string.
-        let endpoint = build_apify_endpoint(&self.actor_id);
 
-        // ponytail: `count` is the hard cost ceiling — bound every run.
+        // Dynamic cost cap: honour the caller's remaining budget (amount - primary.len())
+        // passed in by `search_with_providers`, capped at the absolute maximum.
+        // `maxItems` is the Apify platform-enforced server-side cap; `count` in the
+        // actor body is the actor-input budget (a user-overridden actor might ignore
+        // `count`, so both must agree). Bearer token stays in the Authorization header
+        // only — never the URL or query string.
+        let max_items = amount.unwrap_or(APIFY_MAX_ITEMS).min(APIFY_MAX_ITEMS);
+        let endpoint = build_apify_endpoint(&self.actor_id, max_items);
+
         let body = serde_json::json!({
             "urls": [search_url],
-            "count": APIFY_MAX_ITEMS,
+            "count": max_items,
         })
         .to_string();
 
-        // POST via the shared scraping client (the token goes in the Authorization
-        // header only — never the URL/query — so it stays out of request-URL logging).
+        // POST via the shared scraping client.
         //
-        // INVARIANT: retries=0.  `run-sync-get-dataset-items` is NON-IDEMPOTENT and
-        // billed per result — a retry on 429/503/network would start ANOTHER charged
+        // INVARIANT: retries=0 (via `apify_fetch_options`).  The endpoint is
+        // NON-IDEMPOTENT and billed per result — a retry would start ANOTHER charged
         // actor run (up to 3× cost with the default retries=2). Never retry.
         //
         // `tokio::select!` races the paid fetch against the cancellation signal so
-        // a user cancel mid-flight is honoured within one poll cycle instead of
-        // waiting up to APIFY_TIMEOUT (300 s) for fetch_text to check the signal
-        // at a retry boundary (there are none, but the response-body stream is also
-        // un-interrupted without this).
+        // a user cancel mid-flight is honoured within one poll cycle.
         let raw = tokio::select! {
             _ = signal.cancelled() => {
                 return Err(anyhow::anyhow!("apify_linkedin: cancelled"));
             }
             result = fetch_json::<Vec<ApifyItem>>(
                 &endpoint,
-                FetchOptions {
-                    method: Some(reqwest::Method::POST),
-                    body: Some(body),
-                    headers: Some(vec![
-                        ("authorization".to_string(), format!("Bearer {token}")),
-                        ("content-type".to_string(), "application/json".to_string()),
-                    ]),
-                    timeout: Some(APIFY_TIMEOUT),
-                    retries: APIFY_RETRIES, // NON-IDEMPOTENT: each run is billed — never retry
-                    ..FetchOptions::default()
-                },
+                apify_fetch_options(body, token),
                 signal.clone(),
             ) => result?
         };
@@ -863,7 +908,7 @@ async fn primary_chain(
     if let Some(p) = primary {
         if p.is_configured() {
             match p
-                .search(query, location, country, date_filter, signal.clone())
+                .search(query, location, country, date_filter, None, signal.clone())
                 .await
             {
                 Ok(items) => {
@@ -888,7 +933,7 @@ async fn primary_chain(
     if let Some(f) = fallback {
         if f.is_configured() {
             return f
-                .search(query, location, country, date_filter, signal)
+                .search(query, location, country, date_filter, None, signal)
                 .await
                 .map(dedupe);
         }
@@ -927,8 +972,11 @@ fn dedupe(items: Vec<JobPosting>) -> Vec<JobPosting> {
 /// For every other host, keep the query string intact: some boards encode the
 /// job id in query params, so stripping would merge distinct jobs.
 fn canonical_url(url: &str) -> String {
-    let trimmed = url.trim().to_lowercase();
-    if let Ok(mut parsed) = reqwest::Url::parse(&trimmed) {
+    let trimmed = url.trim();
+    // `Url::parse` normalises scheme and host to lowercase (URL standard) while
+    // preserving the original-case path and query — so host comparison below
+    // is already case-insensitive without lowercasing the entire URL string.
+    if let Ok(mut parsed) = reqwest::Url::parse(trimmed) {
         if parsed
             .host_str()
             .is_some_and(|h| h == "linkedin.com" || h.ends_with(".linkedin.com"))
@@ -936,8 +984,12 @@ fn canonical_url(url: &str) -> String {
             parsed.set_query(None);
             return parsed.to_string();
         }
+        // Non-LinkedIn: return the parsed URL (host normalised to lowercase,
+        // path + query preserved in original case — case-significant on boards
+        // that encode the job id in query params or case-sensitive path segments).
+        return parsed.to_string();
     }
-    trimmed
+    trimmed.to_string()
 }
 
 /// Deduplicate the cross-provider merge by URL, preserving first-seen order.
@@ -977,6 +1029,7 @@ async fn search_with_providers(
     location: &str,
     country: &str,
     date_filter: Option<&str>,
+    amount: usize,
     signal: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<Vec<JobPosting>> {
     let primary = primary_chain(
@@ -999,13 +1052,34 @@ async fn search_with_providers(
         return primary;
     }
 
+    // Cost gate: skip the paid Apify call when the primary result already
+    // satisfies the requested amount — LinkedIn is a fill for UNMET capacity,
+    // not unconditional.
+    if let Ok(ref items) = primary {
+        if items.len() >= amount {
+            return primary;
+        }
+    }
+
     // Don't fire a paid Apify run after cancellation.
+    // Cap: only fetch as many results as still needed; never exceed APIFY_MAX_ITEMS.
+    let primary_len = primary.as_ref().map(|v| v.len()).unwrap_or(0);
+    let remaining = amount.saturating_sub(primary_len);
+    let apify_cap = remaining.min(APIFY_MAX_ITEMS as usize) as u32;
+
     let li_items = if signal.is_cancelled() {
         Vec::new()
     } else {
         match linkedin
             .expect("li_configured implies the provider is present")
-            .search(query, location, country, date_filter, signal)
+            .search(
+                query,
+                location,
+                country,
+                date_filter,
+                Some(apify_cap),
+                signal,
+            )
             .await
         {
             Ok(items) => items,
@@ -1084,17 +1158,17 @@ impl Scraper for AggregatorScraper {
             // is present (gated in `ApifyLinkedInProvider::is_configured`).
             Box::new(ApifyLinkedInProvider::new()),
         ];
+        let amount = input.amount as usize;
         let items = search_with_providers(
             &providers,
             query,
             location,
             &country,
             input.date_filter.as_deref(),
+            amount,
             ctx.signal.clone(),
         )
         .await?;
-
-        let amount = input.amount as usize;
         let mut out = Vec::new();
 
         for posting in items.into_iter().take(amount) {

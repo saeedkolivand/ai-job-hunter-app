@@ -144,10 +144,11 @@ describe('useUpdateScrapingSettings', () => {
       await result.current.mutateAsync({ apifyLinkedinActorId: '' });
     });
     expect(mockDelete).toHaveBeenCalledWith(SCRAPING_SETTINGS_KEYS.apifyLinkedinActorId);
-    expect(mockSet).not.toHaveBeenCalledWith(
-      SCRAPING_SETTINGS_KEYS.apifyLinkedinActorId,
-      expect.anything()
-    );
+    // expect.anything() does not match undefined, so a stray set(key, undefined) would pass.
+    // Inspect raw call records instead — any call whose first arg is the actorId key is a bug.
+    expect(
+      mockSet.mock.calls.some(([key]) => key === SCRAPING_SETTINGS_KEYS.apifyLinkedinActorId)
+    ).toBe(false);
     expect(mockSave).toHaveBeenCalledOnce();
   });
 
@@ -171,10 +172,11 @@ describe('useUpdateScrapingSettings', () => {
     await act(async () => {
       await result.current.mutateAsync({ apifyLinkedinEnabled: false });
     });
-    expect(mockSet).not.toHaveBeenCalledWith(
-      SCRAPING_SETTINGS_KEYS.apifyLinkedinActorId,
-      expect.anything()
-    );
+    // expect.anything() does not match undefined, so a stray set(key, undefined) would pass.
+    // Inspect raw call records instead — any call whose first arg is the actorId key is a bug.
+    expect(
+      mockSet.mock.calls.some(([key]) => key === SCRAPING_SETTINGS_KEYS.apifyLinkedinActorId)
+    ).toBe(false);
     expect(mockDelete).not.toHaveBeenCalled();
     expect(mockSave).toHaveBeenCalledOnce();
   });
