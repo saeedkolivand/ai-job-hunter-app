@@ -35,7 +35,7 @@ const SECRET_SCAN_FILES = [
 ];
 
 const IPC_CONTRACTS_DIR = 'packages/shared/src/ipc/contracts';
-const SCRAPERS_FILE = 'apps/tauri/src-tauri/src/scraping/boards/mod.rs';
+const SCRAPERS_FILE = 'apps/desktop/src-tauri/src/scraping/boards/mod.rs';
 
 /** Collected failures, grouped by check for a readable report. */
 const failures = [];

@@ -22,7 +22,7 @@
 
 'app/tauri':
   - changed-files:
-      - any-glob-to-any-file: 'apps/tauri/**'
+      - any-glob-to-any-file: 'apps/desktop/**'
 
 'app/extension':
   - changed-files:
@@ -30,11 +30,11 @@
 
 'frontend':
   - changed-files:
-      - any-glob-to-any-file: 'apps/tauri/src/renderer/**'
+      - any-glob-to-any-file: 'apps/desktop/src/renderer/**'
 
 'rust':
   - changed-files:
-      - any-glob-to-any-file: 'apps/tauri/src-tauri/**'
+      - any-glob-to-any-file: 'apps/desktop/src-tauri/**'
 
 'dependencies':
   - changed-files:

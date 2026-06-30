@@ -57,7 +57,7 @@ env-mutating test, and no real network. These only run on that OS's CI runner.
 
 This is not optional and you do **not** declare done on assumption — **run** the relevant gate and
 **verify** it green with your own eyes: `tsc --noEmit` / `pnpm typecheck`, `pnpm test`,
-`cargo check`/`cargo test`/`cargo clippy` for `apps/tauri/src-tauri`. Anything red → revert that change
+`cargo check`/`cargo test`/`cargo clippy` for `apps/desktop/src-tauri`. Anything red → revert that change
 and report what + why.
 
 **Your "green" must match the bar that GATES — the pre-push/CI scope, not a narrower one** (this class
@@ -66,7 +66,7 @@ cost real failed-push cycles):
 - **Scope ≥ the gate.** A `pnpm -F <pkg> test`/`typecheck` is for fast iteration only — it does **not**
   run sibling packages' tests. Any change touching `packages/shared`/the IPC contracts, **or any
   cross-package public API**, must pass the **whole-graph** `pnpm test` (a shared "every expected
-  namespace" enumeration test lives in `@ajh/shared`, not in `@ajh/tauri` — a scoped run never sees it).
+  namespace" enumeration test lives in `@ajh/shared`, not in `@ajh/desktop` — a scoped run never sees it).
 - **Force past the cache.** Report green from `TURBO_FORCE=1 pnpm typecheck` (or `--force`) — the exact
   command the pre-push runs. A cached/stale `^build` can mask a real type error; a wrapped "no errors" is
   not proof.

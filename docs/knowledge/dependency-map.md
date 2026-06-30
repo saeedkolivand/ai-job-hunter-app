@@ -10,7 +10,7 @@ For the live graph use **graphify** — MCP `query_graph "what depends on <X>"` 
 - `packages/ui` → no [Zustand][zustand], no IPC, no routing, no app logic.
 - `packages/prompts` → pure [TypeScript][typescript], **zero deps**, no UI, no `window`.
 - `packages/translations` → i18next singleton + adapters; **no app-specific or IPC imports** inside the package (renderer couples via thin shim `@/i18n` that owns the listener logic).
-- `apps/tauri` renderer → backend **only** via `AppClient`/service hooks (never `window.api.*` in features/routes/components).
+- `apps/desktop` renderer → backend **only** via `AppClient`/service hooks (never `window.api.*` in features/routes/components).
 
 ## Layer boundaries (Rust, CI-enforced)
 
@@ -18,9 +18,9 @@ For the live graph use **graphify** — MCP `query_graph "what depends on <X>"` 
 
 ## Manifests (where to look)
 
-- Rust: `apps/tauri/src-tauri/Cargo.toml` / `Cargo.lock`; workspace `Cargo.toml`. Supply-chain policy: `deny.toml` (`cargo deny check`, `cargo audit`).
-- JS: root `package.json` + `pnpm-lock.yaml`; per-package `package.json` (`packages/*`, `apps/tauri`). Audit: `pnpm audit` + dependency-review (CI).
-- Tauri: `apps/tauri/src-tauri/tauri.conf.json`, `apps/tauri/src-tauri/capabilities/default.json`.
+- Rust: `apps/desktop/src-tauri/Cargo.toml` / `Cargo.lock`; workspace `Cargo.toml`. Supply-chain policy: `deny.toml` (`cargo deny check`, `cargo audit`).
+- JS: root `package.json` + `pnpm-lock.yaml`; per-package `package.json` (`packages/*`, `apps/desktop`). Audit: `pnpm audit` + dependency-review (CI).
+- Tauri: `apps/desktop/src-tauri/tauri.conf.json`, `apps/desktop/src-tauri/capabilities/default.json`.
 
 ## Registries (the extension points)
 

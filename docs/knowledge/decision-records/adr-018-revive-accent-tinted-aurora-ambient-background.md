@@ -39,7 +39,7 @@ All aurora/nebula animation uses transform-only CSS keyframes (no layout thrashi
 
 ### Implementation
 
-- **React component:** `apps/tauri/src/renderer/components/background/CinematicBackground/index.tsx`.
+- **React component:** `apps/desktop/src/renderer/components/background/CinematicBackground/index.tsx`.
 - **Styles:** CSS keyframes + tokens in `packages/ui/src/css/tokens.css` (`--aurora-*`, `--nebula-*` vars) and `utilities.css` (`.aurora-ribbon`, `.nebula`, `.cursor-glow` classes).
 - **Theme integration:** `applyAccent()` and `restoreTheme()` already handle the brand/brand-2 tokens; the aurora consumes them via CSS variable reference, requiring no new IPC or store updates.
 
@@ -82,7 +82,7 @@ All aurora/nebula animation uses transform-only CSS keyframes (no layout thrashi
 
 ## References
 
-- **Revived component:** `apps/tauri/src/renderer/components/background/CinematicBackground/index.tsx`.
+- **Revived component:** `apps/desktop/src/renderer/components/background/CinematicBackground/index.tsx`.
 - **Token definitions:** `packages/ui/src/css/tokens.css` (aurora/nebula color vars) + `packages/ui/src/css/utilities.css` (aurora/nebula/cursor-glow classes).
 - **Accent derivation:** `packages/ui/src/lib/theme.ts` (`applyAccent()`) + `packages/ui/src/lib/color.ts` (`rotateHueHex()` hue rotation helper).
 - **Commit that introduced two-tone accents:** feat: derive two-tone accent gradients and revive accent-tinted aurora.

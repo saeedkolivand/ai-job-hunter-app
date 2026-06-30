@@ -105,10 +105,10 @@ if [ -n "${PREPUSH_FULL:-}" ] || [ "$HAVE_RANGE" -eq 0 ]; then
     echo "▶ Path filter: FULL gate (push range undetermined)"
   fi
 else
-  if printf '%s\n' "$CHANGED" | grep -qE '^apps/tauri/src-tauri/|(^|/)Cargo\.(toml|lock)$|\.rs$|^\.github/'; then
+  if printf '%s\n' "$CHANGED" | grep -qE '^apps/desktop/src-tauri/|(^|/)Cargo\.(toml|lock)$|\.rs$|^\.github/'; then
     RUST=1
   fi
-  if printf '%s\n' "$CHANGED" | grep -qE '^apps/tauri/src/|^packages/|^package\.json$|^pnpm-lock\.yaml$|^tsconfig.*\.json$|^eslint\.config\.mjs$|^vitest\.config\.ts$|^turbo\.json$|^\.github/'; then
+  if printf '%s\n' "$CHANGED" | grep -qE '^apps/desktop/src/|^packages/|^package\.json$|^pnpm-lock\.yaml$|^tsconfig.*\.json$|^eslint\.config\.mjs$|^vitest\.config\.ts$|^turbo\.json$|^\.github/'; then
     NODE=1
   fi
   if printf '%s\n' "$CHANGED" | grep -qE '^landing/'; then
@@ -176,7 +176,7 @@ node scripts/check-agent-system.mjs
 
 # ── Rust gate (CI `rust` filter) ───────────────────────────────────────────────
 if [ -n "$RUST" ]; then
-  cd apps/tauri/src-tauri
+  cd apps/desktop/src-tauri
 
   echo "▶ Running cargo check..."
   cargo check --all-targets --all-features --locked

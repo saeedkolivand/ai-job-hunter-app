@@ -121,8 +121,8 @@ describe('MenuContract (event-only namespace)', () => {
   it('declares the documented event-name channels', () => {
     // The wire event names the shell emits and the client listens for. Source of
     // truth: the Rust `app.emit("menu:navigate" | "menu:action", …)` in
-    // `apps/tauri/src-tauri/src/lib.rs` and the matching `listen(…)` calls in
-    // `apps/tauri/src/tauri-client/namespaces/menu/menu.ts`. Locked here so a
+    // `apps/desktop/src-tauri/src/lib.rs` and the matching `listen(…)` calls in
+    // `apps/desktop/src/tauri-client/namespaces/menu/menu.ts`. Locked here so a
     // rename on one side without the other is caught.
     const eventNames = ['menu:navigate', 'menu:action'];
     expect(eventNames).toContain('menu:navigate');

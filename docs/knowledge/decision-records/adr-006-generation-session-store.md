@@ -10,7 +10,7 @@ Generation (résumé tailoring, cover letter) can be triggered from a modal (aut
 
 ## Decision
 
-A single [Zustand][zustand] store (`apps/tauri/src/renderer/store/generation-store/`) holds all active and completed generation sessions. Each session is keyed by a **caller-supplied context id** (e.g. `autopilot:<jobUrl>`). The store is the canonical source for any cross-surface generation state — `GenerationSession` tracks phase, streamed text (`resumeOut`, `coverOut`), reasoning (`thinking`), error, and result metadata. Surfaces read from and write to this store; they never duplicate session state locally.
+A single [Zustand][zustand] store (`apps/desktop/src/renderer/store/generation-store/`) holds all active and completed generation sessions. Each session is keyed by a **caller-supplied context id** (e.g. `autopilot:<jobUrl>`). The store is the canonical source for any cross-surface generation state — `GenerationSession` tracks phase, streamed text (`resumeOut`, `coverOut`), reasoning (`thinking`), error, and result metadata. Surfaces read from and write to this store; they never duplicate session state locally.
 
 ## Consequences
 

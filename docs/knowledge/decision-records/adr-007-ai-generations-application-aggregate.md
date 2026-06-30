@@ -12,7 +12,7 @@ The `applied` status of a job (whether the user has generated documents for it) 
 
 ## Decision
 
-`ai_generations` is the **application aggregate**: one row per job URL. `save_application` in `apps/tauri/src-tauri/src/ai_generations/mod.rs` performs a **merge-upsert by `job_url`**: when an incoming record shares a `job_url` with an existing row, it calls the pure `merge_application` function to combine fields (résumé text, cover-letter text, answers, brief) into the existing row rather than inserting a new one. Records without a `job_url` (manual generations) always insert as fresh rows.
+`ai_generations` is the **application aggregate**: one row per job URL. `save_application` in `apps/desktop/src-tauri/src/ai_generations/mod.rs` performs a **merge-upsert by `job_url`**: when an incoming record shares a `job_url` with an existing row, it calls the pure `merge_application` function to combine fields (résumé text, cover-letter text, answers, brief) into the existing row rather than inserting a new one. Records without a `job_url` (manual generations) always insert as fresh rows.
 
 `applied` status is **derived**, not stored: `applied_job_urls()` queries `DISTINCT job_url` from the table and returns the set. Schema additions (e.g. `application_answers` column, `job_link` column) are additive migrations — no destructive column changes.
 

@@ -24,11 +24,11 @@ The **runtime theme engine** applies color scheme (light/dark/system), accessibi
 
 ## Native accent integration
 
-**System accent read:** `system_accent_color()` IPC command in `apps/tauri/src-tauri/src/commands/system/mod.rs`. Async startup call; returns native OS accent (Windows `UISettings::GetColorValue(UIColorType::Accent)`; macOS fixed palette via `defaults`; Linux unsupported).
+**System accent read:** `system_accent_color()` IPC command in `apps/desktop/src-tauri/src/commands/system/mod.rs`. Async startup call; returns native OS accent (Windows `UISettings::GetColorValue(UIColorType::Accent)`; macOS fixed palette via `defaults`; Linux unsupported).
 
 **Service hook:** `useSystemAccent` in renderer/services fetches and caches the result.
 
-**UI:** Appearance card (`apps/tauri/src/renderer/features/settings/components/general-section/AppearanceCard.tsx`) offers Default + 8 presets + System chip (hidden if unsupported).
+**UI:** Appearance card (`apps/desktop/src/renderer/features/settings/components/general-section/AppearanceCard.tsx`) offers Default + 8 presets + System chip (hidden if unsupported).
 
 **Contract:** `packages/shared/src/ipc/contracts/system.ts` (`accentColor()`).
 

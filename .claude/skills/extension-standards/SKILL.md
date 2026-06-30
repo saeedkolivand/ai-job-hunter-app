@@ -10,7 +10,7 @@ Standards for the browser extension and the desktop⇄extension bridge. Load wit
 ## Architecture & paths
 
 - **Extension** (`apps/extension/**`) — MV3, published on Chrome Web Store **and** Firefox AMO. Content scripts on supported job boards → import the user-selected posting into the desktop app.
-- **Bridge** — the extension reaches the desktop app over a **loopback-only WebSocket** (`127.0.0.1`, a fixed port range) and **Chrome Native Messaging** (the native host relays frames verbatim). Server: `apps/tauri/src-tauri/src/extension_bridge/**` + `commands/extension_bridge.rs`.
+- **Bridge** — the extension reaches the desktop app over a **loopback-only WebSocket** (`127.0.0.1`, a fixed port range) and **Chrome Native Messaging** (the native host relays frames verbatim). Server: `apps/desktop/src-tauri/src/extension_bridge/**` + `commands/extension_bridge.rs`.
 - **Wire contract** — `packages/shared/src/ipc/extension-protocol-constants.ts` (envelope + `EXTENSION_MESSAGE_TYPES`), its zod schema `extension-protocol.ts`, and the Rust `msg` constants in the bridge. A Rust↔TS parity test pins the message-type strings together.
 
 ## Auth model (the security boundary)

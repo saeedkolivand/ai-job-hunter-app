@@ -1,5 +1,5 @@
 {
-  "$comment": "Single source of truth for per-market cover-letter conventions. Consumed by the TS prompt layer (packages/prompts/src/locale) and — via a parity test — by the Rust renderer (apps/tauri/src-tauri/src/locale + export). Salutations/sign-offs are in the market's NATIVE language; when the letter is written in a different language the prompt uses the equivalent formal forms (decision 5: letter language, market etiquette). datePosition/senderPosition/recipientPosition/subjectLine drive the exported layout. Sources captured in the PR description.",
+  "$comment": "Single source of truth for per-market cover-letter conventions. Consumed by the TS prompt layer (packages/prompts/src/locale) and — via a parity test — by the Rust renderer (apps/desktop/src-tauri/src/locale + export). Salutations/sign-offs are in the market's NATIVE language; when the letter is written in a different language the prompt uses the equivalent formal forms (decision 5: letter language, market etiquette). datePosition/senderPosition/recipientPosition/subjectLine drive the exported layout. Sources captured in the PR description.",
   "markets": {
     "us": {
       "country": "United States",

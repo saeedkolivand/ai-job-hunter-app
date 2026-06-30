@@ -17,7 +17,7 @@ Resolve all performance modes to a single unified `PerformanceProfile` (the trut
 **Frontend (resolver):**
 
 - `PerformanceProfile` (TypeScript interface) models a user's selection: display tier + backend tier + custom overrides.
-- `resolveBackendConfig(mode, profile)` pure function maps the profile to a concrete `PerformanceBackendConfig` struct with numeric knobs. See `apps/tauri/src/renderer/store/preferences-schema/preferences-schema.ts` lines 274–285.
+- `resolveBackendConfig(mode, profile)` pure function maps the profile to a concrete `PerformanceBackendConfig` struct with numeric knobs. See `apps/desktop/src/renderer/store/preferences-schema/preferences-schema.ts` lines 274–285.
 - The function consults tier-mapping tables (`CONCURRENCY_BY_TIER`, `KEEP_ALIVE_SECS_BY_TIER`, `CACHE_TTL_SECS_BY_TIER`, `CACHE_MAX_ROWS_BY_TIER`) defined in the same file.
 
 **IPC contract:**
@@ -53,7 +53,7 @@ Tiers are defined by their numeric targets (concurrency, keep-alive, cache TTL, 
 | balanced    | 4           | 300            | 7             | 2000       |
 | high (perf) | 8           | 1800           | ∞ (unbounded) | ∞          |
 
-To find the exact numbers and update them, see the tier-mapping tables in `apps/tauri/src/renderer/store/preferences-schema/preferences-schema.ts` (lines 257–268).
+To find the exact numbers and update them, see the tier-mapping tables in `apps/desktop/src/renderer/store/preferences-schema/preferences-schema.ts` (lines 257–268).
 
 ## Consequences
 
@@ -116,14 +116,14 @@ To find the exact numbers and update them, see the tier-mapping tables in `apps/
 
 ## References
 
-- **Config cell:** `apps/tauri/src-tauri/src/performance.rs` — the L0 module.
-- **Tier-mapping tables:** `apps/tauri/src/renderer/store/preferences-schema/preferences-schema.ts` lines 257–268.
-- **Resolver function:** `apps/tauri/src/renderer/store/preferences-schema/preferences-schema.ts` lines 274–285 (`resolveBackendConfig`).
-- **IPC command handler:** `apps/tauri/src-tauri/src/commands/system/mod.rs` (` system_set_performance_mode`, lines 177–199+).
-- **Scraper concurrency:** `apps/tauri/src-tauri/src/scraping/engine/mod.rs` (`set_concurrency`).
-- **Ollama keep-alive:** `apps/tauri/src-tauri/src/commands/ai_provider/ollama.rs` (embed builder calls `performance::ollama_keep_alive()`).
-- **Cache eviction:** `apps/tauri/src-tauri/src/documents/mod.rs` (cache sites query `performance::current()`).
-- **UI provider:** `apps/tauri/src/renderer/providers/PerformanceModeProvider/PerformanceModeProvider.tsx`.
-- **Settings UI:** `apps/tauri/src/renderer/features/settings/components/preferences/PerformancePreferences/index.tsx`.
-- **Cinematic background:** `apps/tauri/src/renderer/components/background/CinematicBackground/index.tsx` (consumes display tier to gate visual layers).
+- **Config cell:** `apps/desktop/src-tauri/src/performance.rs` — the L0 module.
+- **Tier-mapping tables:** `apps/desktop/src/renderer/store/preferences-schema/preferences-schema.ts` lines 257–268.
+- **Resolver function:** `apps/desktop/src/renderer/store/preferences-schema/preferences-schema.ts` lines 274–285 (`resolveBackendConfig`).
+- **IPC command handler:** `apps/desktop/src-tauri/src/commands/system/mod.rs` (` system_set_performance_mode`, lines 177–199+).
+- **Scraper concurrency:** `apps/desktop/src-tauri/src/scraping/engine/mod.rs` (`set_concurrency`).
+- **Ollama keep-alive:** `apps/desktop/src-tauri/src/commands/ai_provider/ollama.rs` (embed builder calls `performance::ollama_keep_alive()`).
+- **Cache eviction:** `apps/desktop/src-tauri/src/documents/mod.rs` (cache sites query `performance::current()`).
+- **UI provider:** `apps/desktop/src/renderer/providers/PerformanceModeProvider/PerformanceModeProvider.tsx`.
+- **Settings UI:** `apps/desktop/src/renderer/features/settings/components/preferences/PerformancePreferences/index.tsx`.
+- **Cinematic background:** `apps/desktop/src/renderer/components/background/CinematicBackground/index.tsx` (consumes display tier to gate visual layers).
 - **Related ADR:** ADR-017 (persisted self-invalidating match-score caches).

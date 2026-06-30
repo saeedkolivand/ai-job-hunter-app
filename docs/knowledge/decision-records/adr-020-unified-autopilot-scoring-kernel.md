@@ -17,9 +17,9 @@ Autopilot's `simple_similarity` was crude (failed to weight keyword importance, 
 
 **Unify scoring: Autopilot now ranks using the shared `documents::keywords::coverage_score` kernel** (the ATS keyword algorithm used by the Jobs page for the `ats` component of the combined score).
 
-**Delete `simple_similarity`.** The keyword-coverage algorithm is the canonical **embedding-free keyword-based ranker** — see `apps/tauri/src-tauri/src/documents/keywords.rs` → `coverage_score()` for the implementation. It is embedding-free, deterministic, and zero API calls (safe for headless Autopilot).
+**Delete `simple_similarity`.** The keyword-coverage algorithm is the canonical **embedding-free keyword-based ranker** — see `apps/desktop/src-tauri/src/documents/keywords.rs` → `coverage_score()` for the implementation. It is embedding-free, deterministic, and zero API calls (safe for headless Autopilot).
 
-**Autopilot's displayed "% match" is now pure keyword-coverage (embedding-free), NOT the Jobs page combined metric.** The Jobs page combines semantic + keyword signals (see `apps/tauri/src-tauri/src/commands/match_resume.rs` → `score_one()` for the exact weights); Autopilot uses keyword coverage alone. Rename the Autopilot metric in UI/analytics as "Keyword Coverage %", clearly distinct from "Match %" (the combined Jobs metric). The two metrics are complementary: Autopilot ranks fast and deterministically on keywords alone; the Jobs page weighs semantic meaning more heavily.
+**Autopilot's displayed "% match" is now pure keyword-coverage (embedding-free), NOT the Jobs page combined metric.** The Jobs page combines semantic + keyword signals (see `apps/desktop/src-tauri/src/commands/match_resume.rs` → `score_one()` for the exact weights); Autopilot uses keyword coverage alone. Rename the Autopilot metric in UI/analytics as "Keyword Coverage %", clearly distinct from "Match %" (the combined Jobs metric). The two metrics are complementary: Autopilot ranks fast and deterministically on keywords alone; the Jobs page weighs semantic meaning more heavily.
 
 ## Consequences
 

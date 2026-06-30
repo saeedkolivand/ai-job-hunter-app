@@ -69,9 +69,8 @@ const IMPORT_TOKENS = [
 // Electron-era arch/package names — only drift when a file claims them as the CURRENT stack, so scan
 // .claude + AI configs only (docs/ legitimately narrate the migration history away from them).
 const ARCH_TOKENS = [
-  /\bapps\/desktop\b/, // Electron-era app dir → apps/tauri
   /@ajh\/(core|ai|data)\b/, // Electron-era packages → tauri Rust core / @ajh/ui|translations|prompts
-  /\bElectron\b/, // the app is Tauri now
+  /\bElectron\b/, // the app is Tauri now (apps/desktop is the current Tauri app dir)
 ];
 
 const failures = [];

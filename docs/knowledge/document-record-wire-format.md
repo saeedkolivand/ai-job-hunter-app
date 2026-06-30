@@ -12,7 +12,7 @@ This divergence is **intentional layering** — do not "fix" it.
 
 ## Serde renames are the on-disk backup format
 
-`DocumentRecord` in `apps/tauri/src-tauri/src/documents/mod.rs` carries four field-level serde renames:
+`DocumentRecord` in `apps/desktop/src-tauri/src/documents/mod.rs` carries four field-level serde renames:
 
 - `id` → `"_id"`
 - `created_at` → `"createdAt"`
@@ -30,7 +30,7 @@ The renderer receives raw IPC JSON with `_id`/`createdAt` and bridges to the app
 - `RawDoc` — `Omit<DocumentRecord, 'id' | 'importedAt'> & { _id: string; createdAt: number }` (local type)
 - `normalise(raw: RawDoc): DocumentRecord` — maps `_id → id`, `createdAt → importedAt`
 
-Both live in `apps/tauri/src/renderer/components/resume/ResumeInputCard/useResumeInput.ts`.
+Both live in `apps/desktop/src/renderer/components/resume/ResumeInputCard/useResumeInput.ts`.
 
 ## Owning symbols
 

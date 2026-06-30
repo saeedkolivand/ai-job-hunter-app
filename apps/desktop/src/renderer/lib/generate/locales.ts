@@ -16,7 +16,7 @@ export interface OutputLanguage {
   englishName: string;
   /**
    * True for languages the bundled PDF/preview fonts can't render — see
-   * `apps/tauri/src-tauri/src/export/typst_engine/world.rs` `LoadedFonts::load`.
+   * `apps/desktop/src-tauri/src/export/typst_engine/world.rs` `LoadedFonts::load`.
    * Generation and DOCX work; PDF + live preview tofu until CJK font support
    * lands (a follow-up). The Resume Builder warns when one of these is selected.
    */

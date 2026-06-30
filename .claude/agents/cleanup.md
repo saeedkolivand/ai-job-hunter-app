@@ -10,7 +10,7 @@ You are a dead-code auditor for a pnpm/Turbo monorepo: React 19 + TypeScript fro
 ## Detect
 
 - Workspaces: read `pnpm-workspace.yaml`, `turbo.json`, package globs.
-- Rust backend: presence of `apps/tauri/src-tauri/Cargo.toml`.
+- Rust backend: presence of `apps/desktop/src-tauri/Cargo.toml`.
 - Scope to the argument if given (package name or path); else whole repo.
 
 ## Scan (read-only, never fail the run)
@@ -20,8 +20,8 @@ TS/JS:
 - `pnpm dlx knip --reporter json --no-exit-code` (add `--workspace <name>` when narrowed). Primary signal: unused files, exports, types, deps, devDeps.
 - `pnpm dlx eslint . --no-error-on-unmatched-pattern --rule '{"@typescript-eslint/no-unused-vars":"warn"}'` for in-file unused locals/imports knip misses.
   Rust (only if src-tauri exists):
-- `cargo machete apps/tauri/src-tauri` — unused deps, no compile.
-- `cargo clippy --manifest-path apps/tauri/src-tauri/Cargo.toml -- -W dead_code 2>&1` — dead items.
+- `cargo machete apps/desktop/src-tauri` — unused deps, no compile.
+- `cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml -- -W dead_code 2>&1` — dead items.
 
 ## Classify every finding into a tier
 
@@ -40,7 +40,7 @@ TS/JS:
 
 ## Verify, then apply (only on confirmation)
 
-For each SAFE candidate: grep the symbol/path across the repo (catches string refs and dynamic keys) and confirm it's not an entry or side-effect. Present the SAFE list and ask for confirmation. After approved removals, run per-package `tsc --noEmit`, `cargo check --manifest-path apps/tauri/src-tauri/Cargo.toml`, and the test suite. If anything goes red, revert the batch and report.
+For each SAFE candidate: grep the symbol/path across the repo (catches string refs and dynamic keys) and confirm it's not an entry or side-effect. Present the SAFE list and ask for confirmation. After approved removals, run per-package `tsc --noEmit`, `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml`, and the test suite. If anything goes red, revert the batch and report.
 
 ## Output (always, even without applying)
 

@@ -6,13 +6,13 @@ Describes the **shape**; the source is authoritative for field-level detail. Que
 
 ## Resume document
 
-- **`DocumentModel`** — `apps/tauri/src-tauri/src/model/` (`document.rs`). The structured résumé: sections → blocks → rich text. The export pipeline and templates consume this; the renderer edits a serialized form via IPC.
+- **`DocumentModel`** — `apps/desktop/src-tauri/src/model/` (`document.rs`). The structured résumé: sections → blocks → rich text. The export pipeline and templates consume this; the renderer edits a serialized form via IPC.
 - **Sections / blocks / rich text** — section ordering, content hierarchy, and customization are owned by `resume-export-expert`; see `model/` + `docs/EXPORT_TEMPLATES.md`.
 - **Contact profile** — `contact_profile/` + `commands/contact_profile.rs` (header source of truth for links/contact). Conflict detection on résumé import: `contact_profile/mod.rs: detect_contact_conflicts` (normalizers + per-field diffing); `documents.import` returns additive `contactConflicts` / `suggestedContact` fields (loose JSON, no schema change, import never gated). Renderer resolution: `components/generation/EditableOutput/` area → `ContactConflictModal` (keep-mine / use-résumé per field). Conflict resolution is **local-only** — no data leaves the device.
 
 ## Export contract
 
-- **`ExportRequest` / `ExportResult`** — `apps/tauri/src-tauri/src/export/types.rs` (the request/response shape: target format, template, ATS mode, locale). Owned by `resume-export-expert`; **implemented** by `pdf-docx-generator`.
+- **`ExportRequest` / `ExportResult`** — `apps/desktop/src-tauri/src/export/types.rs` (the request/response shape: target format, template, ATS mode, locale). Owned by `resume-export-expert`; **implemented** by `pdf-docx-generator`.
 - PDF path: `export/typst_engine/` (sole PDF backend — printpdf removed). DOCX path: `export/docx/`, `export/model_docx/` ([docx-rs][docx-rs]). Templates: `export/templates/`. Gate: `validate/`.
 
 ## Job / matching
@@ -23,7 +23,7 @@ Describes the **shape**; the source is authoritative for field-level detail. Que
 ## Referrals
 
 - **`referrals` store** — `referrals/mod.rs` (L1 domain); full CRUD via `commands/referrals.rs`. Each record captures a contact (name, company, role, relationship) plus a generated or hand-edited referral note in up to three formats (email, LinkedIn message, cold-ask). Local-only — no data leaves the device.
-- **`ReferralModal`** — `apps/tauri/src/renderer/features/autopilot/components/ReferralModal` (or adjacent apply-flow component); surfaced in the autopilot apply flow.
+- **`ReferralModal`** — `apps/desktop/src/renderer/features/autopilot/components/ReferralModal` (or adjacent apply-flow component); surfaced in the autopilot apply flow.
 - **Prompt layer** — `buildReferralPrompt` / `generateReferral` in `packages/prompts`; produces connection-note (≤ 300 chars), email, and LinkedIn-message variants; reuses `streamGenerate`. **Improve variant** — `buildReferralImprovePrompt` / `gen.improve()` accept a preset or free-text instruction (warmer/shorter/more specific/fix grammar) and stream a revised draft via the same streaming infra.
 - **Data lifecycle** — wired into `manage_resettable` (full reset) and `commands/data.rs::build_bundle` (export/import). See [ADR-011](decision-records/adr-011-referral-helper-manual-only.md) for the decision to keep entry manual and discard LinkedIn scraping.
 
@@ -34,7 +34,7 @@ Describes the **shape**; the source is authoritative for field-level detail. Que
 
 ## Application tracking
 
-- **`applications` aggregate** — `apps/tauri/src-tauri/src/applications/mod.rs` (`ApplicationStore`); identity, user-mutable status lifecycle, contact/tracking metadata, an imported/pasted job description (extracted and byte-clamped at import; partial imports become stubs), and an append-only status-event history. A Generation is zero-or-one child. See [ADR-007](decision-records/adr-007-ai-generations-application-aggregate.md).
+- **`applications` aggregate** — `apps/desktop/src-tauri/src/applications/mod.rs` (`ApplicationStore`); identity, user-mutable status lifecycle, contact/tracking metadata, an imported/pasted job description (extracted and byte-clamped at import; partial imports become stubs), and an append-only status-event history. A Generation is zero-or-one child. See [ADR-007](decision-records/adr-007-ai-generations-application-aggregate.md).
 - **`ai_generations` (now child)** — `ai_generations/mod.rs` (`AiGenerationStore`); a produced artifact (résumé + cover-letter text, mode, languages). Formerly the aggregate root; now a child Document of Application (refs via `application_id`). Per-job merge-upsert by `job_url` (single row carries both texts). See [ADR-007](decision-records/adr-007-ai-generations-application-aggregate.md).
 
 ## AI / providers

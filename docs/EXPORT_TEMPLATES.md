@@ -9,20 +9,20 @@ changing it means changing the tests too.
 
 Source of truth in code:
 
-| Concern                           | Where                                                           |
-| --------------------------------- | --------------------------------------------------------------- |
-| Template registry (styling data)  | `apps/tauri/src-tauri/src/export/templates/mod.rs`              |
-| Template IDs + serde fallback     | `apps/tauri/src-tauri/src/export/types.rs` (`TemplateId`)       |
-| Canonical document model          | `apps/tauri/src-tauri/src/model/`                               |
-| PDF engine (Typst adapter)        | `apps/tauri/src-tauri/src/export/typst_engine/`                 |
-| DOCX backend (flow)               | `apps/tauri/src-tauri/src/export/docx/`, `export/model_docx.rs` |
-| Section placement / two-col rules | `apps/tauri/src-tauri/src/theme/mod.rs`                         |
-| Locale profiles (page size, …)    | `apps/tauri/src-tauri/src/locale/mod.rs`                        |
-| Cover-letter market conventions   | `apps/tauri/src-tauri/src/locale/letter.rs`                     |
-| Validation + ATS gate             | `apps/tauri/src-tauri/src/validate/mod.rs`                      |
-| IPC contract                      | `packages/shared/src/ipc/contracts/documents.ts`                |
-| Output languages (renderer SSOT)  | `apps/tauri/src/renderer/lib/generate/locales.ts`               |
-| CJK detection (UI notice gate)    | `packages/shared/src/language-detection.ts` (`isCjkLanguage`)   |
+| Concern                           | Where                                                             |
+| --------------------------------- | ----------------------------------------------------------------- |
+| Template registry (styling data)  | `apps/desktop/src-tauri/src/export/templates/mod.rs`              |
+| Template IDs + serde fallback     | `apps/desktop/src-tauri/src/export/types.rs` (`TemplateId`)       |
+| Canonical document model          | `apps/desktop/src-tauri/src/model/`                               |
+| PDF engine (Typst adapter)        | `apps/desktop/src-tauri/src/export/typst_engine/`                 |
+| DOCX backend (flow)               | `apps/desktop/src-tauri/src/export/docx/`, `export/model_docx.rs` |
+| Section placement / two-col rules | `apps/desktop/src-tauri/src/theme/mod.rs`                         |
+| Locale profiles (page size, …)    | `apps/desktop/src-tauri/src/locale/mod.rs`                        |
+| Cover-letter market conventions   | `apps/desktop/src-tauri/src/locale/letter.rs`                     |
+| Validation + ATS gate             | `apps/desktop/src-tauri/src/validate/mod.rs`                      |
+| IPC contract                      | `packages/shared/src/ipc/contracts/documents.ts`                  |
+| Output languages (renderer SSOT)  | `apps/desktop/src/renderer/lib/generate/locales.ts`               |
+| CJK detection (UI notice gate)    | `packages/shared/src/language-detection.ts` (`isCjkLanguage`)     |
 
 ---
 
@@ -191,7 +191,7 @@ Each preview:
 - Applies the template's visual style (accent, fonts, name_pt/body_pt) via
   `letter_style_from_template`.
 - Exports page 1 as **SVG** (vector, zero rasterisation) to
-  `apps/tauri/src/renderer/features/ai-generate/assets/cover-template-previews/<slug>.svg`.
+  `apps/desktop/src/renderer/features/ai-generate/assets/cover-template-previews/<slug>.svg`.
 - Is consumed by the renderer's `COVER_TEMPLATE_PREVIEWS` Vite glob (in
   `samples/cover-template-previews.ts`), which emits lazy-loaded hashed URLs.
 - Mirrors the existing resume `generate_templates_showcase_banner` test
@@ -215,12 +215,12 @@ and emits per-page SVG strings (via `render_resume_svg_pages` / `render_letter_s
 `export/typst_engine/render.rs`). The validation gate is omitted for the preview (validation is
 redundant; the preview and export follow the same pipeline up to the final emit).
 
-**Frontend:** `renderDocumentPreview()` in `apps/tauri/src/renderer/lib/generate/export/export.ts`
+**Frontend:** `renderDocumentPreview()` in `apps/desktop/src/renderer/lib/generate/export/export.ts`
 calls the backend, XML-escapes stray `&` characters in SVG link hrefs (Typst leaves them raw for
 performance; invalid XML unless escaped), wraps each SVG string in a `Blob` with type
 `image/svg+xml`, and returns per-page `blob:` URLs.
 
-**UI:** `PdfPreview` in `apps/tauri/src/renderer/features/ai-generate/components/PdfPreview/`
+**UI:** `PdfPreview` in `apps/desktop/src/renderer/features/ai-generate/components/PdfPreview/`
 renders a scrollable container of `<img src=blob:>` elements, one per page, with Blob URL
 lifecycle management (revoke on each render batch and on unmount). The preview debounces
 ~500 ms after same-document edits and re-renders immediately on document switches (résumé ↔
@@ -249,7 +249,7 @@ Additional safety measures in `photo.rs`:
 - All errors swallowed; `resolve_photo` returns `None` and templates render
   without a photo rather than failing.
 
-Client-side pipeline (`apps/tauri/src/renderer/lib/photo.ts`): decodes, square-crops,
+Client-side pipeline (`apps/desktop/src/renderer/lib/photo.ts`): decodes, square-crops,
 downscales, EXIF-strips, and produces a bounded JPEG data URL before the IPC call.
 Upload UI lives in `ContactProfileForm`.
 
@@ -257,7 +257,7 @@ Upload UI lives in `ContactProfileForm`.
 
 ## Output languages (11 supported)
 
-**Single source of truth:** `apps/tauri/src/renderer/lib/generate/locales.ts`
+**Single source of truth:** `apps/desktop/src/renderer/lib/generate/locales.ts`
 (`OUTPUT_LANGUAGES`, `VALID_LOCALES`, `SupportedLocale`, `safeLocale`).
 
 Supported locales: en, de, fr, es, it, tr, pt, ru, zh, ja, ko.

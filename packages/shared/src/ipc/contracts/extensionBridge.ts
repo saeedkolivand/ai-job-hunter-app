@@ -4,7 +4,7 @@
  * Read the local WebSocket bridge's status (bound port, whether an extension is
  * currently paired/connected, and the current pairing token) and regenerate the
  * pairing token. The bridge itself is a loopback WS server in
- * `apps/tauri/src-tauri/src/extension_bridge`; this namespace is only the
+ * `apps/desktop/src-tauri/src/extension_bridge`; this namespace is only the
  * renderer's control surface over it (show the token in Settings, rotate it).
  */
 

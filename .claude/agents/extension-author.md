@@ -10,7 +10,7 @@ You implement browser-extension + bridge changes. **First `Read` `.claude/skills
 ## Primary paths
 
 - Extension app: `apps/extension/**` (MV3 — Chrome + Firefox; content scripts, background/service worker, popup, storage).
-- Desktop bridge (server): `apps/tauri/src-tauri/src/extension_bridge/**`, `apps/tauri/src-tauri/src/commands/extension_bridge.rs`.
+- Desktop bridge (server): `apps/desktop/src-tauri/src/extension_bridge/**`, `apps/desktop/src-tauri/src/commands/extension_bridge.rs`.
 - Shared wire contract: `packages/shared/src/ipc/extension-protocol-constants.ts` (the envelope + message types), mirrored by the Rust `msg` constants in the bridge. **Both sides of the protocol must move in lockstep.**
 
 ## Load-bearing rules

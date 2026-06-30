@@ -18,7 +18,7 @@ Collapse all accent color to a **single `--color-brand` source**, from which all
 
 The runtime **accent applier** (`applyAccent()` in `packages/ui/src/lib/theme.ts`, using color math from `packages/ui/src/lib/color.ts`) writes `--color-brand` + `--color-brand-soft` (lightened by 28% on dark scheme, 16% on light to preserve canvas contrast) + `--color-action-foreground` (auto-contrasted: dark label on pale accents, white on dark accents, via WCAG luminance) to the document root before paint, ensuring every accent variant stays legible and cohesive. The applier is **idempotent** and re-runs on scheme change (light/dark swap) to recalculate softness per-canvas.
 
-An **IPC command** `system_accent_color()` (in `apps/tauri/src-tauri/src/commands/system/mod.rs`) fetches the native accent async; a `useSystemAccent` service hook wraps it for React. The Settings → Appearance card UI offers Default + 8 preset swatches + System (chip hidden when `supported:false`).
+An **IPC command** `system_accent_color()` (in `apps/desktop/src-tauri/src/commands/system/mod.rs`) fetches the native accent async; a `useSystemAccent` service hook wraps it for React. The Settings → Appearance card UI offers Default + 8 preset swatches + System (chip hidden when `supported:false`).
 
 **Semantic action colors (run/edit/delete) and status colors (success/warning/error/info) are explicitly NOT accent-driven** and remain their fixed hues. Only primary CTA, secondary text, focus rings, and glows derive from the accent.
 
@@ -43,7 +43,7 @@ An **IPC command** `system_accent_color()` (in `apps/tauri/src-tauri/src/command
 - Theme engine: `packages/ui/src/lib/theme.ts` (`applyAccent`, `ThemePrefs`, `AccentSource`).
 - Color math: `packages/ui/src/lib/color.ts` (`parseHex`, `luminance`, `lightenHex`, `readableForeground`).
 - Tokens: `packages/ui/src/css/tokens.css` (`:root --color-brand`, `[data-color-scheme] --color-brand` overrides).
-- System accent command: `apps/tauri/src-tauri/src/commands/system/mod.rs` (`system_accent_color`).
+- System accent command: `apps/desktop/src-tauri/src/commands/system/mod.rs` (`system_accent_color`).
 - Contracts: `packages/shared/src/ipc/contracts/system.ts` (`accentColor()`).
-- UI: `apps/tauri/src/renderer/features/settings/components/general-section/AppearanceCard.tsx`.
+- UI: `apps/desktop/src/renderer/features/settings/components/general-section/AppearanceCard.tsx`.
 - Tests: `packages/ui/src/lib/color.test.ts` (28 unit tests), `packages/ui/src/lib/theme.test.ts` (accent cases).

@@ -3,10 +3,10 @@
 Last updated: 2026-06-03
 
 > **Status:** discovery report (Phase 1). Read-only — describes the architecture **as it
-> actually exists** in `apps/tauri/src-tauri/`, measured from the source tree, not an
+> actually exists** in `apps/desktop/src-tauri/`, measured from the source tree, not an
 > idealized target. The enforceable rules derived from this report live in
 > [`architecture-rules.md`](architecture-rules.md); they are enforced by
-> `apps/tauri/src-tauri/tests/architecture.rs` and CI.
+> `apps/desktop/src-tauri/tests/architecture.rs` and CI.
 >
 > Measurements taken at commit on branch `feat/rust-arch-enforcement`: **36 top-level
 > modules, 162 source files, ~28,000 non-test LOC.** Regenerate with the methodology in
@@ -17,8 +17,8 @@ Last updated: 2026-06-03
 ## 1. Current architecture overview
 
 AI Job Hunter is a **local-first [Tauri][tauri] 2 desktop app**. The TypeScript side is a [pnpm][pnpm]
-monorepo (`packages/shared`, `packages/ui`, `packages/prompts`, `apps/tauri` renderer);
-the **[Rust][rust] side is a single crate**, `ajh-tauri` (`apps/tauri/src-tauri/`). There is no
+monorepo (`packages/shared`, `packages/ui`, `packages/prompts`, `apps/desktop` renderer);
+the **[Rust][rust] side is a single crate**, `ajh-tauri` (`apps/desktop/src-tauri/`). There is no
 network backend, no sidecar process — all heavy work (scraping, document extraction, AI
 generation, embeddings, PDF/DOCX rendering) runs in-process on [Tokio][tokio].
 
@@ -258,14 +258,14 @@ Extends the `docs/PATTERNS.md` §13 ownership table with the boundaries this ana
 
 ## Appendix — methodology (reproducible)
 
-- **File/LOC inventory:** `git ls-files 'apps/tauri/src-tauri/src/**/*.rs'` + `wc -l`,
+- **File/LOC inventory:** `git ls-files 'apps/desktop/src-tauri/src/**/*.rs'` + `wc -l`,
   excluding `*test.rs`/`tests.rs` and `target/`.
 - **Module graph:** scan each file for `crate::<seg>` references, map the file to its
   first `src/` path segment, aggregate edges; fan-in/out + Tarjan SCC for cycles.
 - **Leakage scans (regex over non-test `*.rs`):** `#[tauri::command]`,
   `tauri(_plugin)?::|AppHandle|Manager|\.emit\(`, `rusqlite::|Connection::open|\.prepare\(|\.execute\(`,
   `Result<_, String>`, `reqwest::Client::(new|builder)`, `std::env::var|AJH_DATA_DIR`.
-- These checks are codified in `apps/tauri/src-tauri/tests/architecture.rs`; run
+- These checks are codified in `apps/desktop/src-tauri/tests/architecture.rs`; run
   `cargo test --test architecture` to reproduce the gated subset.
 
 [tauri]: https://tauri.app

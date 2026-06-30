@@ -1,7 +1,7 @@
 /**
  * TauriInvokeClient — implements AppClient using Tauri v2 invoke + listen.
  *
- * Used by apps/tauri/src/main.tsx instead of the Electron window.api bridge.
+ * Used by apps/desktop/src/main.tsx instead of the Electron window.api bridge.
  * The shape is structurally identical to the Electron client so all service
  * hooks work without modification.
  *

@@ -6,7 +6,7 @@ Last updated: 2026-06-22
 
 ## Context
 
-The AI-Generate wizard (`apps/tauri/src/renderer/features/ai-generate/`) initially showed
+The AI-Generate wizard (`apps/desktop/src/renderer/features/ai-generate/`) initially showed
 generated résumés/cover letters as prettified markdown text only. UX #24 requested a real
 template preview so users could edit while seeing the actual layout.
 
@@ -23,12 +23,12 @@ The AI-Generate live preview renders **SVG page images** from the Rust Typst eng
 document structure as the PDF export — same Typst world, same template compilation, same
 validation — but stop at vector SVG instead of PDF bytes.
 
-- **Backend command:** `documents_render_preview_images` in `apps/tauri/src-tauri/src/export/commands/mod.rs`
+- **Backend command:** `documents_render_preview_images` in `apps/desktop/src-tauri/src/export/commands/mod.rs`
   → parses request, compiles template, renders per-page SVG, returns `RenderPreviewImagesResult { pages: Vec<String> }`.
-- **Frontend:** `renderDocumentPreview()` in `apps/tauri/src/renderer/lib/generate/export/export.ts`
+- **Frontend:** `renderDocumentPreview()` in `apps/desktop/src/renderer/lib/generate/export/export.ts`
   calls the backend, XML-escapes stray `&` in SVG hrefs (Typst leaves them raw), wraps each SVG
   string in a `Blob([svg], { type: 'image/svg+xml' })`, and returns `<img src=blob:>` URLs.
-- **UI:** `PdfPreview` in `apps/tauri/src/renderer/features/ai-generate/components/PdfPreview/`
+- **UI:** `PdfPreview` in `apps/desktop/src/renderer/features/ai-generate/components/PdfPreview/`
   renders a scrollable stack of `<img>` elements, with 500ms debounce on same-doc edits and
   zero-debounce on doc switches (résumé ↔ cover letter).
 
@@ -66,9 +66,9 @@ validation — but stop at vector SVG instead of PDF bytes.
 
 ## Implementation pointers
 
-- `renderDocumentPreview()` – `apps/tauri/src/renderer/lib/generate/export/export.ts`
-- `PdfPreview` – `apps/tauri/src/renderer/features/ai-generate/components/PdfPreview/`
-- `useDebouncedCommit()` – `apps/tauri/src/renderer/hooks/use-debounced-commit/use-debounced-commit.ts` (debounced local-edit commit)
-- `OutputPanelDone` – `apps/tauri/src/renderer/features/ai-generate/components/OutputPanelDone/index.tsx` (integration point)
-- `documents_render_preview_images` – `apps/tauri/src-tauri/src/export/commands/mod.rs`
-- `render_resume_svg_pages` / `render_letter_svg_pages` – `apps/tauri/src-tauri/src/export/typst_engine/render.rs`
+- `renderDocumentPreview()` – `apps/desktop/src/renderer/lib/generate/export/export.ts`
+- `PdfPreview` – `apps/desktop/src/renderer/features/ai-generate/components/PdfPreview/`
+- `useDebouncedCommit()` – `apps/desktop/src/renderer/hooks/use-debounced-commit/use-debounced-commit.ts` (debounced local-edit commit)
+- `OutputPanelDone` – `apps/desktop/src/renderer/features/ai-generate/components/OutputPanelDone/index.tsx` (integration point)
+- `documents_render_preview_images` – `apps/desktop/src-tauri/src/export/commands/mod.rs`
+- `render_resume_svg_pages` / `render_letter_svg_pages` – `apps/desktop/src-tauri/src/export/typst_engine/render.rs`

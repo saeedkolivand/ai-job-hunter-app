@@ -11,8 +11,8 @@
 > code, marks what's closed, and **replaces all screenshots** with fresh captures of the **new Light + Dark
 > themes** (+ reduced-transparency / more-contrast modifiers).
 >
-> **Method.** Code review of `apps/tauri/src/renderer/**` + `packages/ui/**`, plus mock-client Playwright
-> captures (`apps/tauri/e2e` harness, `ajh-theme` seeded per scheme, Chromium 1440×900 — the same engine as
+> **Method.** Code review of `apps/desktop/src/renderer/**` + `packages/ui/**`, plus mock-client Playwright
+> captures (`apps/desktop/e2e` harness, `ajh-theme` seeded per scheme, Chromium 1440×900 — the same engine as
 > the Tauri WebView2 shell, so the CSS glass renders faithfully). Native macOS `NSVisualEffectView` vibrancy
 > is a macOS-only layer the app still doesn't use; CSS `backdrop-filter` is a faithful proxy on Windows.
 
@@ -283,7 +283,7 @@ row; (5) i18n + ARIA sweep + keyboard-reachable nav. **Owner: frontend-reviewer 
 ## 11. Screenshots — captured locally, not committed
 
 Light + Dark + a11y-modifier captures of every route were taken **locally** during this review (mock-client
-Playwright harness, `apps/tauri/e2e`, 1440×900) to ground the visual claims above. They are **not committed**
+Playwright harness, `apps/desktop/e2e`, 1440×900) to ground the visual claims above. They are **not committed**
 — screenshots are large binaries, so `docs/assets/ux-audit/` is gitignored; re-run the harness to regenerate
 them on demand. The first audit's stale pre-#231 flow/settings captures were removed; those flow findings
 (ScrapeForm fake-progress bar; ApplyDrawer auto-submit affordance; "Select an AI model first"
@@ -318,7 +318,7 @@ Ordered by the weighting (consistency → a11y → friction → Autopilot → IA
 ## Appendix — method & attribution
 
 Regenerated against `main` @ `2627f1c6` (post-#231 + #232). Findings are from direct code review of
-`apps/tauri/src/renderer/**` and `packages/ui/**`; visual claims are grounded in the fresh Playwright captures
+`apps/desktop/src/renderer/**` and `packages/ui/**`; visual claims are grounded in the fresh Playwright captures
 (§11). The first audit's raw findings came from five orchestrated reviewer agents (frontend-reviewer,
 resume-export-expert, scraping-applier-expert, tauri-security-reviewer, performance-profiler); this regeneration
 re-verifies them against current code inline. Security items surfaced in passing (`system_open_external` URL

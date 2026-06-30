@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
 // Root config orchestrates every workspace test project and owns the single
-// aggregated coverage report. Each project (packages/*, apps/tauri) supplies
+// aggregated coverage report. Each project (packages/*, apps/desktop) supplies
 // its own environment + module aliases via its local vitest.config.ts.
 export default defineConfig({
   test: {
@@ -13,7 +13,7 @@ export default defineConfig({
       // Storybook browser-test project (headless Chromium via Playwright). Runs
       // every story as a test; selectable on its own with `--project storybook`.
       'packages/ui/vitest.storybook.config.ts',
-      'apps/tauri',
+      'apps/desktop',
     ],
     coverage: {
       provider: 'v8',
@@ -23,7 +23,7 @@ export default defineConfig({
         'packages/shared/src/**/*.ts',
         'packages/prompts/src/**/*.ts',
         'packages/ui/src/**/*.{ts,tsx}',
-        'apps/tauri/src/**/*.{ts,tsx}',
+        'apps/desktop/src/**/*.{ts,tsx}',
       ],
       exclude: [
         '**/*.d.ts',
@@ -33,16 +33,16 @@ export default defineConfig({
         '**/index.ts', // barrel re-exports — no logic to cover
         '**/types/**', // pure type declarations
         '**/*.gen.ts', // generated route tree
-        'apps/tauri/src/main.tsx', // app entry / bootstrap
-        'apps/tauri/src/renderer/main.tsx',
-        'apps/tauri/src/renderer/routes/**', // file-based route trees (thin wrappers)
-        'apps/tauri/src/renderer/i18n/**', // i18n locale resource bundles
+        'apps/desktop/src/main.tsx', // app entry / bootstrap
+        'apps/desktop/src/renderer/main.tsx',
+        'apps/desktop/src/renderer/routes/**', // file-based route trees (thin wrappers)
+        'apps/desktop/src/renderer/i18n/**', // i18n locale resource bundles
         // Feature pages and shared chrome are presentational composition of the
         // (unit-tested) primitives, service hooks, and stores. They are covered
         // by the Playwright E2E suite rather than unit tests — see e2e/.
-        'apps/tauri/src/renderer/features/**',
-        'apps/tauri/src/renderer/components/**',
-        'apps/tauri/src/TauriWindowControls.tsx', // native window-chrome (E2E)
+        'apps/desktop/src/renderer/features/**',
+        'apps/desktop/src/renderer/components/**',
+        'apps/desktop/src/TauriWindowControls.tsx', // native window-chrome (E2E)
         '**/test-support.tsx', // shared test harness (not production code)
         '**/mock-client.ts', // test/storybook/web-adapter stub, not runtime code
       ],
@@ -58,7 +58,7 @@ export default defineConfig({
         // Branch coverage on these layers sits at ~67% (many defensive
         // `??`/optional-chain fallbacks in async stream + store code); held at 65
         // as an honest floor and raised as those paths get covered.
-        'apps/tauri/src/**': { lines: 80, functions: 80, branches: 65 },
+        'apps/desktop/src/**': { lines: 80, functions: 80, branches: 65 },
       },
     },
   },

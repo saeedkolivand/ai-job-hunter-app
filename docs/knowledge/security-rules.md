@@ -6,8 +6,8 @@ For `tauri-security-reviewer` (cross-cutting authority). Security/data findings 
 
 ## Desktop / [Tauri][tauri]
 
-- **Capabilities** — `apps/tauri/src-tauri/capabilities/default.json`: least privilege. A new IPC command exposed without (or with over-broad) capability is HIGH.
-- **CSP** — `apps/tauri/src-tauri/tauri.conf.json`: keep the policy tight; local AI egress is limited to [Ollama][ollama] (`127.0.0.1:11434`). Loosening CSP is HIGH/CRITICAL.
+- **Capabilities** — `apps/desktop/src-tauri/capabilities/default.json`: least privilege. A new IPC command exposed without (or with over-broad) capability is HIGH.
+- **CSP** — `apps/desktop/src-tauri/tauri.conf.json`: keep the policy tight; local AI egress is limited to [Ollama][ollama] (`127.0.0.1:11434`). Loosening CSP is HIGH/CRITICAL.
 - **Updater** — `updater/` + the signing key + `latest.json` integrity. A broken/unsigned update path is CRITICAL.
 
 ## Application / secrets

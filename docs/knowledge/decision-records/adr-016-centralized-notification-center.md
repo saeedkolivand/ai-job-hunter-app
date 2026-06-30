@@ -14,7 +14,7 @@ The app adopts a **centralized, Rust-owned, persisted Notification Center** — 
 
 ### 1. Persisted store (L1 data layer, Phase 1)
 
-A pure `NotificationStore` in `apps/tauri/src-tauri/src/notifications/mod.rs` owns all notification records. It is:
+A pure `NotificationStore` in `apps/desktop/src-tauri/src/notifications/mod.rs` owns all notification records. It is:
 
 - **JSON-file-backed**, persisted to `<dataDir>/notifications.json` — survives app restart and close-to-tray suspend.
 - **Capped at 50 records**, newest-first; pushing past the cap drops the oldest.
@@ -24,7 +24,7 @@ A pure `NotificationStore` in `apps/tauri/src-tauri/src/notifications/mod.rs` ow
 
 ### 2. IPC surface (L3 shell, Phase 2)
 
-Commands in `apps/tauri/src-tauri/src/commands/notifications.rs` expose read/mutate operations:
+Commands in `apps/desktop/src-tauri/src/commands/notifications.rs` expose read/mutate operations:
 
 - `notifications_list()` → all notifications, newest-first.
 - `notifications_mark_read(id)`, `notifications_mark_all_read()`, `notifications_remove(id)`, `notifications_clear_all()` → mutate + emit `notifications:changed` event so the renderer refetches a live inbox.

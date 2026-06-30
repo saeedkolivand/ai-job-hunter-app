@@ -18,7 +18,7 @@
         "lostpixel.config.ts"
       ]
     },
-    "apps/tauri": {
+    "apps/desktop": {
       "entry": ["src/renderer/main.tsx", "src/e2e-main.tsx"]
     },
     "apps/extension": {
