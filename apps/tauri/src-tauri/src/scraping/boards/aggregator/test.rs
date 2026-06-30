@@ -1101,7 +1101,9 @@ fn apify_is_configured_requires_token_and_toggle() {
 #[tokio::test]
 async fn apify_unconfigured_returns_err_without_network() {
     let p = apify(Some("t"), false);
-    let result = p.search("engineer", "berlin", "de", None, make_token()).await;
+    let result = p
+        .search("engineer", "berlin", "de", None, make_token())
+        .await;
     assert!(result.is_err(), "unconfigured Apify must return Err");
     assert!(
         result.unwrap_err().to_string().contains("not configured"),
@@ -1193,7 +1195,11 @@ fn apify_maps_alternate_field_names_and_constructs_url_from_id() {
     assert_eq!(p.title, "Backend Dev");
     assert_eq!(p.url, "https://www.linkedin.com/jobs/view/987");
     assert_eq!(p.external_id.as_deref(), Some("linkedin-987"));
-    assert!(p.description.as_deref().unwrap_or("").contains("Write Rust"));
+    assert!(p
+        .description
+        .as_deref()
+        .unwrap_or("")
+        .contains("Write Rust"));
 }
 
 /// An item with no title — or a title but no URL and no id — is skipped (None).
@@ -1329,7 +1335,10 @@ async fn apify_not_run_after_cancellation() {
     signal.cancel();
 
     let providers: Vec<Box<dyn JobProvider>> = vec![
-        Box::new(FakeProvider::ok("adzuna", vec![sample_posting("1", "adzuna")])),
+        Box::new(FakeProvider::ok(
+            "adzuna",
+            vec![sample_posting("1", "adzuna")],
+        )),
         Box::new(FakeProvider::ok(
             "apify_linkedin",
             vec![sample_posting("2", "linkedin")],

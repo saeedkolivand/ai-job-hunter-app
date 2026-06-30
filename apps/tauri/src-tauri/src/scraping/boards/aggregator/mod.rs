@@ -577,7 +577,11 @@ struct ApifyItem {
     job_url: Option<String>,
     #[serde(default, deserialize_with = "de_opt_string_or_number")]
     id: Option<String>,
-    #[serde(default, rename = "postedAt", deserialize_with = "de_opt_string_or_number")]
+    #[serde(
+        default,
+        rename = "postedAt",
+        deserialize_with = "de_opt_string_or_number"
+    )]
     posted_at: Option<String>,
     #[serde(default, rename = "descriptionText")]
     description_text: Option<String>,
@@ -884,7 +888,9 @@ async fn search_with_providers(
     )
     .await;
 
-    let linkedin = providers.iter().find(|p| p.provider_id() == "apify_linkedin");
+    let linkedin = providers
+        .iter()
+        .find(|p| p.provider_id() == "apify_linkedin");
     let li_configured = linkedin.map(|p| p.is_configured()).unwrap_or(false);
 
     // Not opted in → identical to the legacy Adzuna→JSearch path (Err and all).
