@@ -40,7 +40,7 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
   const model = useSelectedModel();
   const { canUse } = useCanUseAI();
 
-  const docsQuery = useDocuments();
+  const { isLoading: docsLoading } = useDocuments();
   const defaultResumeId = useDefaultResumeId();
   const resumeQuery = useDocumentText(defaultResumeId);
   const updateApplication = useUpdateApplication();
@@ -175,7 +175,7 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
     );
   };
 
-  if (docsQuery.isLoading || (!!defaultResumeId && resumeQuery.isLoading)) {
+  if (docsLoading || (!!defaultResumeId && resumeQuery.isLoading)) {
     return (
       <div className="h-full overflow-y-auto px-6 py-5">
         <CardSkeleton />

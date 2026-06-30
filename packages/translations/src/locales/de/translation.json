@@ -2596,14 +2596,14 @@
         "interview": "Interview-Vorbereitung"
       },
       "email": {
-        "recipientNameLabel": "Empfänger",
+        "recipientNameLabel": "Empfängername",
         "recipientNamePlaceholder": "z. B. Jane Doe",
         "recipientEmailLabel": "E-Mail-Adresse",
         "recipientEmailPlaceholder": "name@unternehmen.com",
         "emailInvalid": "Diese E-Mail-Adresse ist ungültig.",
         "generate": "E-Mail generieren",
         "regenerate": "Neu generieren",
-        "generating": "Schreibe…",
+        "generating": "Generiere…",
         "genError": "Generierung fehlgeschlagen – bitte erneut versuchen.",
         "empty": "Noch keine Bewerbungs-E-Mail",
         "emptyDesc": "Generiere eine kurze, professionelle E-Mail, die du direkt an den Ansprechpartner senden kannst.",
@@ -2613,7 +2613,7 @@
         "bodyLabel": "Inhalt",
         "copy": "Kopieren",
         "copied": "Kopiert!",
-        "openMailto": "Im E-Mail-Client öffnen",
+        "openMailto": "Per E-Mail-Client senden",
         "needsResume": "Füge deinen Lebenslauf hinzu, um eine Bewerbungs-E-Mail zu generieren."
       },
       "tabsLabel": "Bewerbungsdetail-Tabs",

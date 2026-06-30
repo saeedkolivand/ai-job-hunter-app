@@ -66,6 +66,23 @@ Line 2 MUST be blank.
 Line 3+ is the email body.`;
 
 /**
+ * Sanitize a recipient name before it is interpolated into the prompt greeting.
+ *
+ * Removes control characters (including bare newlines / carriage returns) so a
+ * crafted multi-line "name" cannot inject prompt instructions. Collapses
+ * internal whitespace to a single space, trims edges, and caps at 80 chars.
+ * Returns an empty string when the result is blank, which triggers the
+ * "Dear Hiring Manager," fallback in the caller.
+ */
+function sanitizeRecipientName(raw: string): string {
+  return raw
+    .replace(/[\p{Cc}]+/gu, ' ') // fold control chars + newlines into a space
+    .replace(/\s+/g, ' ') // collapse consecutive spaces
+    .trim()
+    .slice(0, 80);
+}
+
+/**
  * Build the application-email system + user prompt.
  *
  * Returns `{ system, user }` — the same shape as every structured builder in
@@ -80,7 +97,8 @@ export function buildApplicationEmailPrompt(
   // never interpolated into the prompt — the email is sent by the client.
   const { resume, jobAd, meta, companyBrief = '' } = params;
 
-  const recipientName = params.recipientName?.trim();
+  const recipientName =
+    params.recipientName != null ? sanitizeRecipientName(params.recipientName) : undefined;
   const candidateName = meta.candidateName?.trim() || 'Unknown';
   const jobTitle = meta.jobTitle?.trim() || 'this role';
   const companyName = meta.companyName?.trim() || 'the company';
