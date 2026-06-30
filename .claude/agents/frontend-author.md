@@ -1,7 +1,7 @@
 ---
 name: frontend-author
 description: WRITE-access implementer for the React renderer (apps/tauri/src/renderer/**, packages/ui/**) — UI components, routes, UI state, design-system + i18n + a11y compliant. Implements to spec; never approves its own work — frontend-reviewer (code/arch) and ui-ux-expert (visual/UX) audit it.
-tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify, mcp__codegraph
+tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: sonnet
 ---
 

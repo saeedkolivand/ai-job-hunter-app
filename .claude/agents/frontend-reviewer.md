@@ -1,7 +1,7 @@
 ---
 name: frontend-reviewer
 description: Primary reviewer for the React renderer ONLY — UI components, routes/pages, UI state, design-system compliance, accessibility, and localization. Use for changes under apps/tauri/src/renderer/**, components/**, pages/**. Does NOT activate for ATS scoring, AI providers, Rust services, export pipelines, scraping, or backend logic.
-tools: Read, Grep, Glob, Bash, mcp__graphify, mcp__codegraph
+tools: Read, Grep, Glob, Bash, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: sonnet
 ---
 
