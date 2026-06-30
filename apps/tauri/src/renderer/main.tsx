@@ -21,6 +21,10 @@ const router = createRouter({
   routeTree,
   defaultPreload: 'intent',
   defaultPreloadStaleTime: 0,
+  // Enable scroll restoration for window-level scroll on back/forward navigation.
+  // Custom nested scroll containers (e.g. the jobs virtualizer) are handled via
+  // the session store in JobsSplitView.
+  scrollRestoration: true,
 });
 
 // Ensure the app starts at the dashboard

@@ -101,20 +101,21 @@ export function ApplicationQuestionsModal({
   const answerBlock = (id: string, answer: string) => (
     <div className="px-2 pb-2 pl-7">
       <div className="relative rounded-md border border-[var(--border-clear)] bg-card px-2.5 py-2">
-        <p className="whitespace-pre-wrap pr-14 text-[11px] leading-relaxed text-foreground/70">
+        <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-foreground/70">
           {answer}
         </p>
-        {/* Action buttons — Copy + Rewrite */}
-        <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5">
+        {/* Action row — Rewrite (primary affordance with label) + Copy */}
+        <div className="mt-1.5 flex items-center justify-end gap-1">
           <Button
-            variant="unstyled"
+            variant="ghost"
             type="button"
             onClick={() => openRewrite(id)}
             title={t('autopilot.apply.questions.rewrite')}
             aria-label={t('autopilot.apply.questions.rewriteAriaLabel')}
-            className="rounded p-0.5 text-foreground/30 transition-colors hover:text-brand-soft"
+            className="h-auto gap-1 px-1.5 py-0.5 text-[11px] text-brand-soft"
           >
             <Sparkles size={11} />
+            {t('autopilot.apply.questions.rewrite')}
           </Button>
           <Button
             variant="unstyled"

@@ -98,8 +98,9 @@ ABSOLUTE RULES (never break these):
 2. Output the rewritten span ONLY. No preamble, no explanation, no quotation marks, no surrounding context, no labels.
 3. Preserve the document's tense, voice, grammatical person, and overall style so the rewrite reads as one continuous piece with the surrounding text.
 4. Never fabricate facts: keep every concrete claim (skills, employers, titles, metrics, dates) that the original span asserts. You may rephrase, tighten, or expand wording, but do not invent new facts not present in the span.
-5. Follow the user's instruction. If it conflicts with these rules, keep the rules.
-6. Stay in the same language as the selected span.
+5. If the instruction contains an explicit length or count constraint ("max N characters", "under N words", "one sentence", etc.), treat it as a HARD requirement: count the characters or words in your output and trim it to fit before replying. A rewrite that exceeds the stated limit is wrong regardless of quality.
+6. Follow the user's instruction. If it conflicts with these rules, keep the rules.
+7. Stay in the same language as the selected span.
 
 ${DOC_VOICE[docType]}`;
 

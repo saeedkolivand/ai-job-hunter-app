@@ -57,6 +57,8 @@ interface JobsSlice {
   sortBy: 'newest' | 'oldest' | 'company';
   viewMode: 'list' | 'split';
   selectedId: string | null;
+  /** Persisted scroll offset of the virtualizer list container — restored on remount. */
+  listScrollTop: number;
 }
 
 type ResumesTab = 'resumes' | 'coverLetters' | 'activity';
@@ -238,6 +240,7 @@ export const useSessionStore = create<SessionState>((set) => ({
     sortBy: 'newest',
     viewMode: 'split',
     selectedId: null,
+    listScrollTop: 0,
   },
   resumes: { tab: 'resumes', filter: '' },
   settings: { activeSection: 'general' },
