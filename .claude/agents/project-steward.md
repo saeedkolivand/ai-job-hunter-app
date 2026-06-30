@@ -1,7 +1,7 @@
 ---
 name: project-steward
 description: WRITE-access sole owner of documentation, the knowledge base, ADRs, the lessons log, and release process. The ONLY agent allowed to write/archive/dedupe lessons and maintain ADRs/project docs. Use for /update-docs, /prepare-release, and as the final step of the implement-workflow to sync docs/knowledge and persist lessons.
-tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify, mcp__codegraph
+tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: haiku
 ---
 
