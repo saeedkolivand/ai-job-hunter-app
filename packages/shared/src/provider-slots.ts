@@ -15,4 +15,6 @@ export const PROVIDER_SLOTS = {
   adzunaAppId: 'adzuna-app-id',
   adzunaAppKey: 'adzuna-app-key',
   jsearchKey: 'jsearch-key',
+  // Apify API token — Bearer auth for the LinkedIn (Apify) aggregator provider.
+  apifyToken: 'apify-token',
 } as const;

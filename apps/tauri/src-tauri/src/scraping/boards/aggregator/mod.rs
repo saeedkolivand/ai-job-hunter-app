@@ -50,6 +50,21 @@ where
     }
 }
 
+/// Like [`de_string_or_number`] but for an OPTIONAL field, tolerating `null` /
+/// absent / string / number. Used for the Apify actor's loosely-typed `id` and
+/// `postedAt`, which vary by run (string id, numeric id, or omitted).
+fn de_opt_string_or_number<'de, D>(de: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(de)?;
+    Ok(value.and_then(|v| match v {
+        serde_json::Value::String(s) => Some(s),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }))
+}
+
 // ── Date-filter helpers ────────────────────────────────────────────────────────
 
 /// Map a UI date-filter token to Adzuna's `max_days_old` integer (whole days).
@@ -437,6 +452,299 @@ impl JobProvider for JSearchProvider {
     }
 }
 
+// ── Non-secret aggregator settings (plugin-store JSON) ──────────────────────────
+//
+// The "Include LinkedIn (Apify)" opt-in toggle and the optional actor-id override
+// are NOT secrets, so they do not belong in the OS keychain. The renderer persists
+// them with `@tauri-apps/plugin-store` to `<app_data_dir>/scraping-settings.json`;
+// plugin-store resolves a relative store path against the app data dir — the SAME
+// directory `platform::config::data_dir()` resolves for AppHandle-less workers, so
+// the provider can read them here without an `AppHandle` (mirrors how API keys are
+// read AppHandle-free via `credentials::read_credential`).
+//
+// The file name + key strings are the cross-language contract in
+// `packages/shared/src/scraping-settings.ts`; the literals below are pinned to it
+// by `aggregator_settings_keys_match_shared_contract` in `test.rs`.
+const SCRAPING_SETTINGS_FILE: &str = "scraping-settings.json";
+const SETTING_APIFY_ENABLED: &str = "apifyLinkedinEnabled";
+const SETTING_APIFY_ACTOR_ID: &str = "apifyLinkedinActorId";
+
+#[derive(Debug, Default, Clone)]
+struct AggregatorSettings {
+    /// Master opt-in for the paid Apify LinkedIn provider. Default `false`.
+    apify_linkedin_enabled: bool,
+    /// Optional actor-id override; `None` → the built-in default actor.
+    apify_linkedin_actor_id: Option<String>,
+}
+
+/// Read the non-secret aggregator settings from the plugin-store JSON file.
+///
+/// Absent file, parse failure, or missing keys all degrade to defaults (toggle
+/// OFF) — never an error. A missing/garbled settings file must never crash a
+/// user-triggered search; it simply means the opt-in provider stays disabled.
+fn read_aggregator_settings() -> AggregatorSettings {
+    let path = crate::platform::config::data_dir().join(SCRAPING_SETTINGS_FILE);
+    let json: serde_json::Value = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(serde_json::Value::Null);
+
+    let apify_linkedin_enabled = json
+        .get(SETTING_APIFY_ENABLED)
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let apify_linkedin_actor_id = json
+        .get(SETTING_APIFY_ACTOR_ID)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+
+    AggregatorSettings {
+        apify_linkedin_enabled,
+        apify_linkedin_actor_id,
+    }
+}
+
+// ── Apify LinkedIn provider (additive, paid) ────────────────────────────────────
+
+/// Default Apify actor: scrapes public LinkedIn jobs with no LinkedIn login,
+/// billed pay-per-event (~$1.00 / 1000 results). Overridable via the non-secret
+/// `apifyLinkedinActorId` setting.
+const APIFY_DEFAULT_ACTOR: &str = "curious_coder~linkedin-jobs-scraper";
+
+// ponytail: HARD cost ceiling. Apify bills per dataset result, so every run is
+// bounded by `count = APIFY_MAX_ITEMS`; we NEVER issue an unbounded fetch. The
+// opt-in toggle (gated in `is_configured`) is the second, mandatory cost gate —
+// a stored token ALONE never triggers a paid run.
+const APIFY_MAX_ITEMS: u32 = 50;
+
+/// `run-sync-get-dataset-items` is capped at 300s server-side (returns 408 on
+/// timeout); give the client a matching wall-clock ceiling so a stalled actor
+/// run can't hang the scrape.
+const APIFY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// Map a UI date-filter token to LinkedIn's `f_TPR` recency parameter. Sub-day
+/// windows collapse to the past 24h (`r86400`); `week` → `r604800`; everything
+/// else (month / no filter / unknown) caps at the past month (`r2592000`),
+/// mirroring the 30-day ceiling the other providers enforce.
+fn apify_f_tpr(date_filter: Option<&str>) -> &'static str {
+    match date_filter {
+        Some("30m" | "1h" | "2h" | "4h" | "8h" | "24h") => "r86400",
+        Some("week") => "r604800",
+        _ => "r2592000",
+    }
+}
+
+/// Build the public LinkedIn jobs-search URL the actor expects as input (it
+/// scrapes pre-built search URLs, not a raw keyword string). Query + location are
+/// percent-encoded; recency comes from [`apify_f_tpr`].
+fn build_linkedin_search_url(query: &str, location: &str, date_filter: Option<&str>) -> String {
+    let q = urlencoding::encode(query);
+    let loc = urlencoding::encode(location);
+    let f_tpr = apify_f_tpr(date_filter);
+    format!("https://www.linkedin.com/jobs/search/?keywords={q}&location={loc}&f_TPR={f_tpr}")
+}
+
+/// Try to parse the actor's `postedAt` into epoch millis: RFC-3339 first, then a
+/// bare epoch (seconds scaled to millis, or millis as-is). A relative string
+/// ("2 weeks ago") yields `None` — an absent posted date is acceptable.
+fn parse_apify_posted_at(s: &str) -> Option<i64> {
+    let s = s.trim();
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Some(dt.timestamp_millis());
+    }
+    if let Ok(n) = s.parse::<i64>() {
+        // < 10^12 ≈ seconds (any plausible ms epoch is far larger).
+        return Some(if n < 1_000_000_000_000 { n * 1000 } else { n });
+    }
+    None
+}
+
+/// One dataset item from the Apify actor. Every field is optional + defensively
+/// aliased: the actor's output shape drifts between runs/versions, so we accept
+/// the documented field names plus sensible fallbacks and skip anything unusable.
+#[derive(Debug, Clone, Deserialize)]
+struct ApifyItem {
+    #[serde(default, alias = "jobTitle")]
+    title: Option<String>,
+    #[serde(default, rename = "companyName")]
+    company_name: Option<String>,
+    #[serde(default)]
+    location: Option<String>,
+    #[serde(default, rename = "jobUrl")]
+    job_url: Option<String>,
+    #[serde(default, deserialize_with = "de_opt_string_or_number")]
+    id: Option<String>,
+    #[serde(default, rename = "postedAt", deserialize_with = "de_opt_string_or_number")]
+    posted_at: Option<String>,
+    #[serde(default, rename = "descriptionText")]
+    description_text: Option<String>,
+    #[serde(default, rename = "jobDescription")]
+    job_description: Option<String>,
+    #[serde(default, rename = "descriptionHtml")]
+    description_html: Option<String>,
+}
+
+/// Defensively map an [`ApifyItem`] to a [`JobPosting`]. Returns `None` when the
+/// item lacks BOTH a usable title and a usable URL (no `jobUrl` and no `id` to
+/// construct one) — such an item can't be opened, so it's dropped.
+fn map_apify_item(item: ApifyItem, now: i64) -> Option<JobPosting> {
+    let title = item
+        .title
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())?;
+
+    let id = item
+        .id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+
+    // URL: explicit jobUrl wins; otherwise construct the canonical view URL from id.
+    let url = item
+        .job_url
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            id.as_deref()
+                .map(|id| format!("https://www.linkedin.com/jobs/view/{id}"))
+        })?;
+
+    let description = item
+        .description_text
+        .or(item.job_description)
+        .or(item.description_html)
+        .map(|d| html_to_markdown(&d));
+
+    let posted_at = item.posted_at.as_deref().and_then(parse_apify_posted_at);
+
+    // Stable external id for dedupe: the LinkedIn job id when present, else the URL.
+    let external_id = id
+        .map(|id| format!("linkedin-{id}"))
+        .unwrap_or_else(|| format!("linkedin-{url}"));
+
+    Some(JobPosting {
+        id: format!("aggregator:{external_id}"),
+        external_id: Some(external_id),
+        title,
+        company: item
+            .company_name
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default(),
+        location: item
+            .location
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+        url,
+        source: "aggregator".to_string(),
+        description,
+        requirements: None,
+        posted_at,
+        captured_at: now,
+        extra: std::collections::HashMap::new(),
+    })
+}
+
+pub(crate) struct ApifyLinkedInProvider {
+    token: Option<String>,
+    /// The opt-in toggle. `is_configured()` requires this AND a token.
+    enabled: bool,
+    actor_id: String,
+}
+
+impl ApifyLinkedInProvider {
+    fn new() -> Self {
+        use crate::ipc_contracts::provider_slots::APIFY_TOKEN;
+        let token = crate::credentials::read_credential(&format!("ai:{APIFY_TOKEN}"))
+            .unwrap_or_else(|e| {
+                log::warn!("[aggregator] {APIFY_TOKEN} keyring error: {e}");
+                None
+            });
+        let settings = read_aggregator_settings();
+        let actor_id = settings
+            .apify_linkedin_actor_id
+            .unwrap_or_else(|| APIFY_DEFAULT_ACTOR.to_string());
+        Self {
+            token,
+            enabled: settings.apify_linkedin_enabled,
+            actor_id,
+        }
+    }
+}
+
+#[async_trait]
+impl JobProvider for ApifyLinkedInProvider {
+    fn provider_id(&self) -> &'static str {
+        "apify_linkedin"
+    }
+
+    fn is_configured(&self) -> bool {
+        // BOTH gates are mandatory: an Apify token present AND the user opted in.
+        // Never run a paid scrape just because a token happens to be stored.
+        self.token.is_some() && self.enabled
+    }
+
+    async fn search(
+        &self,
+        query: &str,
+        location: &str,
+        _country: &str,
+        date_filter: Option<&str>,
+        signal: tokio_util::sync::CancellationToken,
+    ) -> anyhow::Result<Vec<JobPosting>> {
+        if !self.is_configured() {
+            return Err(anyhow::anyhow!("apify_linkedin: not configured"));
+        }
+
+        let token = self.token.as_deref().unwrap_or("");
+        let search_url = build_linkedin_search_url(query, location, date_filter);
+        let endpoint = format!(
+            "https://api.apify.com/v2/acts/{}/run-sync-get-dataset-items",
+            self.actor_id
+        );
+
+        // ponytail: `count` is the hard cost ceiling — bound every run.
+        let body = serde_json::json!({
+            "urls": [search_url],
+            "count": APIFY_MAX_ITEMS,
+        })
+        .to_string();
+
+        // POST via the shared scraping client (honours `signal` cancellation + the
+        // per-host rate limiter). The token goes in the Authorization header only —
+        // never the URL/query — so it stays out of the request-URL logging.
+        let items = fetch_json::<Vec<ApifyItem>>(
+            &endpoint,
+            FetchOptions {
+                method: Some(reqwest::Method::POST),
+                body: Some(body),
+                headers: Some(vec![
+                    ("authorization".to_string(), format!("Bearer {token}")),
+                    ("content-type".to_string(), "application/json".to_string()),
+                ]),
+                timeout: Some(APIFY_TIMEOUT),
+                ..FetchOptions::default()
+            },
+            signal,
+        )
+        .await?
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "apify_linkedin: non-2xx response, timeout (408), or unparseable dataset body"
+            )
+        })?;
+
+        let now = chrono::Utc::now().timestamp_millis();
+        Ok(items
+            .into_iter()
+            .filter_map(|it| map_apify_item(it, now))
+            .collect())
+    }
+}
+
 // ── Fallback logic ────────────────────────────────────────────────────────────
 
 /// Run the provider chain: Adzuna primary, JSearch fallback.
@@ -450,7 +758,7 @@ impl JobProvider for JSearchProvider {
 ///   engine surfaces it as a board error rather than a silent zero-result run.
 ///
 /// Items from each provider are keyed by their `external_id` to deduplicate.
-async fn search_with_providers(
+async fn primary_chain(
     providers: &[Box<dyn JobProvider>],
     query: &str,
     location: &str,
@@ -531,6 +839,95 @@ fn dedupe(items: Vec<JobPosting>) -> Vec<JobPosting> {
         .collect()
 }
 
+/// Deduplicate the cross-provider merge by URL, preserving first-seen order.
+///
+/// `dedupe` keys on `external_id`, which is provider-prefixed (`adzuna-…` vs
+/// `linkedin-…`) and so never collides across providers even for the SAME job.
+/// The additive merge therefore keys on the canonical URL instead, so a posting
+/// surfaced by both the primary chain and the LinkedIn provider appears once
+/// (primary first, since it is extended onto the front).
+fn dedupe_by_url(items: Vec<JobPosting>) -> Vec<JobPosting> {
+    let mut seen = std::collections::HashSet::new();
+    items
+        .into_iter()
+        .filter(|p| seen.insert(p.url.trim().to_lowercase()))
+        .collect()
+}
+
+/// Top-level provider orchestration.
+///
+/// 1. **Primary result** — the Adzuna → JSearch fallback chain ([`primary_chain`]),
+///    with its existing semantics fully preserved.
+/// 2. **Additive LinkedIn (Apify)** — runs IN ADDITION to (never as a fallback of)
+///    the primary result, and ONLY when `apify_linkedin` is configured (the toggle
+///    is ON and a token is present). Its results are merged onto the primary,
+///    deterministically (primary first) and deduped by URL.
+///
+/// When the LinkedIn provider is absent or not configured — the default, and what
+/// the Adzuna/JSearch tests exercise — this returns the primary result byte-for-byte,
+/// so all existing fallback + keyless-empty semantics are unchanged.
+async fn search_with_providers(
+    providers: &[Box<dyn JobProvider>],
+    query: &str,
+    location: &str,
+    country: &str,
+    date_filter: Option<&str>,
+    signal: tokio_util::sync::CancellationToken,
+) -> anyhow::Result<Vec<JobPosting>> {
+    let primary = primary_chain(
+        providers,
+        query,
+        location,
+        country,
+        date_filter,
+        signal.clone(),
+    )
+    .await;
+
+    let linkedin = providers.iter().find(|p| p.provider_id() == "apify_linkedin");
+    let li_configured = linkedin.map(|p| p.is_configured()).unwrap_or(false);
+
+    // Not opted in → identical to the legacy Adzuna→JSearch path (Err and all).
+    if !li_configured {
+        return primary;
+    }
+
+    // Don't fire a paid Apify run after cancellation.
+    let li_items = if signal.is_cancelled() {
+        Vec::new()
+    } else {
+        match linkedin
+            .expect("li_configured implies the provider is present")
+            .search(query, location, country, date_filter, signal)
+            .await
+        {
+            Ok(items) => items,
+            Err(e) => {
+                // Tolerate one provider erroring — log and merge what we have.
+                log::warn!("[aggregator] apify_linkedin error (additive, ignored): {e}");
+                Vec::new()
+            }
+        }
+    };
+
+    match primary {
+        Ok(mut items) => {
+            items.extend(li_items);
+            Ok(dedupe_by_url(items))
+        }
+        // Primary failed (e.g. Adzuna unsupported-country diagnostic + no JSearch).
+        // Surface the diagnostic only when LinkedIn also produced nothing; if it
+        // returned results, prefer showing them over hiding them behind the error.
+        Err(e) => {
+            if li_items.is_empty() {
+                Err(e)
+            } else {
+                Ok(dedupe_by_url(li_items))
+            }
+        }
+    }
+}
+
 // ── Scraper impl ──────────────────────────────────────────────────────────────
 
 pub struct AggregatorScraper;
@@ -576,6 +973,9 @@ impl Scraper for AggregatorScraper {
         let providers: Vec<Box<dyn JobProvider>> = vec![
             Box::new(AdzunaProvider::new()),
             Box::new(JSearchProvider::new()),
+            // Additive, opt-in, paid: only runs when the toggle is ON and a token
+            // is present (gated in `ApifyLinkedInProvider::is_configured`).
+            Box::new(ApifyLinkedInProvider::new()),
         ];
         let items = search_with_providers(
             &providers,
