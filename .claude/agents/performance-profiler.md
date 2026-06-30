@@ -1,7 +1,7 @@
 ---
 name: performance-profiler
 description: Secondary reviewer for the performance lens — startup, memory, CPU, rendering, Rust hot paths, AI request efficiency, token optimization, and export performance. Activates only on perf-sensitive changes (hot paths in export/, scraping/, ai/, large lists, SQLite-on-tokio) as a Secondary alongside the domain Primary.
-tools: Read, Grep, Glob, Bash, mcp__graphify, mcp__codegraph
+tools: Read, Grep, Glob, Bash, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: sonnet
 ---
 

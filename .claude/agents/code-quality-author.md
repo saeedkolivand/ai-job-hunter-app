@@ -1,7 +1,7 @@
 ---
 name: code-quality-author
 description: Use to FIX/refactor code to meet the quality standards — resolve clean-code, DRY, KISS violations with the smallest behavior-preserving change. Can take a reviewer report as input. Edits files, then typechecks and tests.
-tools: Read, Grep, Glob, Bash, Edit, Write, mcp__graphify, mcp__codegraph
+tools: Read, Grep, Glob, Bash, Edit, Write, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: sonnet
 ---
 

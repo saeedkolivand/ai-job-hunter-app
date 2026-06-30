@@ -1,7 +1,7 @@
 ---
 name: extension-author
 description: WRITE-access implementer for the browser extension (apps/extension/** — MV3, Chrome + Firefox) and the desktop⇄extension bridge (native-host + loopback WebSocket, pairing/token auth) plus the shared extension protocol. Implements to spec AND to Chrome Web Store + Firefox AMO store policy; never approves its own work — extension-reviewer audits it (tauri-security-reviewer on auth/permission/data risk).
-tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify, mcp__codegraph
+tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: sonnet
 ---
 

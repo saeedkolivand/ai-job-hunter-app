@@ -1,7 +1,7 @@
 ---
 name: scraping-applier-author
 description: WRITE-access implementer for job scraping, browser automation, selector resilience, and the SCRAPERS registry. Implements to spec; never approves its own work — scraping-applier-expert audits it.
-tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify, mcp__codegraph
+tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: sonnet
 ---
 

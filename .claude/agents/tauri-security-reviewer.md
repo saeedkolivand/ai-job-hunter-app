@@ -1,7 +1,7 @@
 ---
 name: tauri-security-reviewer
 description: The project's cross-cutting SECURITY AUTHORITY — desktop, application, backend, AI, data, abuse-prevention, and supply-chain security. Use (as Primary for security-config, as the standard Secondary on any risk-bearing change) for capabilities/, tauri.conf.json, permissions/, updater/plugins, net/, credentials/, deny.toml, dependency manifests (Cargo.*, package*.json), ai_provider/ + prompts (injection/leakage), new commands/** (IPC attack surface), privacy/ + data stores, and rate-limit/cost/export-limit logic.
-tools: Read, Grep, Glob, Bash, mcp__graphify, mcp__codegraph
+tools: Read, Grep, Glob, Bash, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: opus
 ---
 
