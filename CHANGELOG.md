@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.119.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.118.2...v0.119.0) (2026-06-30)
+
 ## [0.118.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.118.1...v0.118.2) (2026-06-25)
 
 ### 🎨 UI/UX
