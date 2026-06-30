@@ -53,8 +53,8 @@ the full 300 s response window.
 ### (f) Actor id: curated default, grammar-validated override
 
 User-supplied actor id overrides are grammar-validated at construction via `is_valid_apify_actor_id`
-(see `ApifyLinkedInProvider::new()`); if invalid, construction falls back to the default
-`curious_coder~linkedin-jobs-scraper` with a warning. The default actor's validity is guaranteed
+(see `ApifyLinkedInProvider::new()`); if invalid, construction falls back to the default actor
+(`APIFY_DEFAULT_ACTOR`) with a warning. The default actor's validity is guaranteed
 by the dedicated test `apify_default_actor_passes_validator`, not by a runtime check.
 
 ## Alternatives rejected
