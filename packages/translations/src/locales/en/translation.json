@@ -2142,15 +2142,13 @@
     },
     "contact": {
       "exportDiagnosticsBundle": "Export Diagnostics Bundle",
-      "exportDiagnosticsBundleDesc": "Export a diagnostics bundle containing system information, logs, and configuration to help troubleshoot issues.",
+      "exportDiagnosticsBundleDesc": "Export a diagnostics bundle containing system information, crash log, and application logs to help troubleshoot issues.",
       "systemInformation": "System Information",
       "systemInformationDesc": "OS version, app version, runtime versions",
-      "logs": "Logs",
-      "logsDesc": "Recent logs from all components",
-      "enabledModels": "Enabled Models",
-      "enabledModelsDesc": "List of available AI models",
-      "configuration": "Configuration",
-      "configurationDesc": "App settings and preferences",
+      "logs": "Application logs",
+      "logsDesc": "Recent logs from all components (redacted)",
+      "crashLog": "Crash log",
+      "crashLogDesc": "Crash reports (redacted)",
       "documentContents": "Document Contents",
       "documentContentsDesc": "Document text and metadata (excluded for privacy)",
       "personalData": "Personal Data",
@@ -2169,7 +2167,9 @@
       "quickActions": "Quick Actions",
       "copyEnvironmentDetails": "Copy Environment Details",
       "copyAppVersion": "Copy App Version",
-      "copySystemInfo": "Copy System Info"
+      "copySystemInfo": "Copy System Info",
+      "exportBundleSaved": "Diagnostics bundle saved.",
+      "exportBundleError": "Export failed."
     },
     "performance": {
       "memoryUsage": "Memory Usage",

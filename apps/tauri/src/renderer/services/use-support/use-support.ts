@@ -5,7 +5,7 @@ import { useAppClient } from '@/providers/AppClientProvider';
 
 export const useExportDiagnostics = () => {
   const api = useAppClient();
-  return useMutation({ mutationFn: () => api.support.exportDiagnostics() });
+  return useMutation({ mutationFn: (dest: string) => api.support.exportDiagnostics(dest) });
 };
 
 export const useReloadAiRuntime = () => {

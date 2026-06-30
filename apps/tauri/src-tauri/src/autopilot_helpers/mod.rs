@@ -125,7 +125,7 @@ fn sanitize_reason(reason: &str) -> String {
 /// placeholder when it looks like a path / URL / request internal; otherwise keep
 /// it verbatim. Whitespace-token granularity keeps the surrounding human message
 /// (`"failed: <path>"` → `"failed: <path-redacted>"`) readable.
-fn redact_token(token: &str) -> String {
+pub(crate) fn redact_token(token: &str) -> String {
     // Strip surrounding punctuation (quotes, parens, braces, backticks, trailing
     // `.,:;|`) so a token like `(C:\Users\x)`, `` `https://…` ``, or `{path}` still
     // matches, then re-attach it.
@@ -171,6 +171,9 @@ fn redact_token(token: &str) -> String {
     // is what flags it — matching the bare word would over-redact `keyword` / a
     // prose "token". The `://` branch below runs first, so a full
     // `https://…?app_key=…` still collapses to `<url-redacted>`, not this.
+    // The JSON-field shape (`"api_key":"value"` → brace/quote-trimmed to
+    // `api_key":"value`) is also matched via the `key":` / `token":` sub-strings
+    // so structured log lines (e.g. `{"api_key":"sk-…"}`) don't bypass redaction.
     let is_credential = [
         // `key=` (substring match) subsumes the `*key=` variants — `app_key=`,
         // `apikey=`, `api_key=` all CONTAIN it — so don't re-add those here.
@@ -181,6 +184,15 @@ fn redact_token(token: &str) -> String {
         "password=",
         "pwd=",
         "auth=",
+        // JSON field shape: `"api_key":"value"` after brace/quote trimming becomes
+        // `api_key":"value`; the `key":` sub-string flags it. `key":` subsumes
+        // `apikey":`, `api_key":`, etc. The whole token is replaced, matching the
+        // same behaviour as the `=` variants above.
+        "key\":",
+        "secret\":",
+        "token\":",
+        "password\":",
+        "auth\":",
     ]
     .iter()
     .any(|marker| lower.contains(marker));
@@ -200,6 +212,14 @@ fn redact_token(token: &str) -> String {
         dotted_ipv4 || host_with_port
     };
 
+    // Email address: `local@domain.tld` — common in crash logs that include
+    // contact profile data, apply-email generation output, or error context from
+    // profile imports. Require a non-empty local part and a domain bearing a `.`
+    // so bare `@` symbols and TLD-only fragments are left untouched.
+    let is_email = trimmed
+        .split_once('@')
+        .is_some_and(|(local, domain)| !local.is_empty() && domain.contains('.'));
+
     if is_url {
         token.replace(trimmed, "<url-redacted>")
     } else if is_credential {
@@ -208,6 +228,8 @@ fn redact_token(token: &str) -> String {
         token.replace(trimmed, "<path-redacted>")
     } else if is_host_port {
         token.replace(trimmed, "<host-redacted>")
+    } else if is_email {
+        token.replace(trimmed, "<email-redacted>")
     } else {
         token.to_string()
     }
@@ -494,6 +516,112 @@ mod tests {
         assert_eq!(
             sanitize_reason("keyword token apikey missing"),
             "keyword token apikey missing"
+        );
+    }
+
+    // ── H1: email redaction ───────────────────────────────────────────────────
+
+    #[test]
+    fn email_address_in_log_line_is_redacted() {
+        // A bare email token must be replaced and the address must not appear in
+        // the sanitized output (H1 — emails are highly likely in crash/app logs
+        // given the apply-email and contact-profile features).
+        let out = sanitize_reason("contact alice@example.com for support");
+        assert!(
+            out.contains("<email-redacted>"),
+            "email placeholder must appear; got: {out}"
+        );
+        assert!(
+            !out.contains("alice@example.com"),
+            "email address must not leak; got: {out}"
+        );
+        // Surrounding prose is preserved.
+        assert!(
+            out.contains("contact"),
+            "surrounding word dropped; got: {out}"
+        );
+    }
+
+    #[test]
+    fn json_embedded_email_is_redacted() {
+        // `"email":"alice@example.com"` is a single whitespace-delimited token;
+        // after brace/quote trimming it becomes `email":"alice@example.com` which
+        // still contains `@` with a dotted domain — must be caught.
+        let out = redact_token("\"email\":\"alice@example.com\"");
+        assert!(
+            out.contains("<email-redacted>"),
+            "JSON-embedded email must be redacted; got: {out}"
+        );
+        assert!(
+            !out.contains("alice"),
+            "email local-part must not leak; got: {out}"
+        );
+    }
+
+    #[test]
+    fn email_detection_does_not_fire_on_bare_at_or_tld_only() {
+        // Lone `@` and `@nodot` must not be treated as emails (no false positives).
+        assert_eq!(redact_token("@"), "@");
+        assert_eq!(redact_token("@nodot"), "@nodot");
+        assert_eq!(redact_token("user@"), "user@");
+    }
+
+    // ── H2: JSON-shaped credential redaction ──────────────────────────────────
+
+    #[test]
+    fn json_credential_field_is_redacted() {
+        // A compact JSON object `{"api_key":"sk-abc123"}` is a single whitespace
+        // token; after trimming → `api_key":"sk-abc123`; `key":` flags it.
+        let out = sanitize_reason(r#"request {"api_key":"sk-abc123"} failed"#);
+        assert!(
+            out.contains("<credential-redacted>"),
+            "JSON api_key must be redacted; got: {out}"
+        );
+        assert!(
+            !out.contains("sk-abc123"),
+            "secret value must not leak; got: {out}"
+        );
+    }
+
+    #[test]
+    fn json_token_field_is_redacted() {
+        // `"token":"ghp_…"` shape (e.g. structured log output from an HTTP client).
+        let out = sanitize_reason(r#"auth {"token":"ghp_deadbeef"} rejected"#);
+        assert!(
+            out.contains("<credential-redacted>"),
+            "JSON token must be redacted; got: {out}"
+        );
+        assert!(
+            !out.contains("ghp_deadbeef"),
+            "token value must not leak; got: {out}"
+        );
+    }
+
+    #[test]
+    fn json_password_field_is_redacted() {
+        let out = redact_token(r#"{"password":"hunter2"}"#);
+        assert!(
+            out.contains("<credential-redacted>"),
+            "JSON password must be redacted; got: {out}"
+        );
+        assert!(
+            !out.contains("hunter2"),
+            "password value must not leak; got: {out}"
+        );
+    }
+
+    #[test]
+    fn url_branch_still_wins_over_json_credential_marker() {
+        // A URL token containing `key=` in the query string must still collapse to
+        // `<url-redacted>` (URL branch runs first — existing invariant).
+        let out = sanitize_reason("GET https://api.example.com/?api_key=secret failed");
+        assert!(
+            out.contains("<url-redacted>"),
+            "URL branch must win; got: {out}"
+        );
+        assert!(
+            !out.contains("secret"),
+            "secret must not leak through URL token; got: {out}"
         );
     }
 }

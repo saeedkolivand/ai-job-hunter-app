@@ -2146,15 +2146,13 @@
     },
     "contact": {
       "exportDiagnosticsBundle": "Diagnosepaket exportieren",
-      "exportDiagnosticsBundleDesc": "Exportieren Sie ein Diagnosepaket mit Systeminformationen, Protokollen und Konfigurationen zur Fehlerbehebung.",
+      "exportDiagnosticsBundleDesc": "Exportieren Sie ein Diagnosepaket mit Systeminformationen, Absturzprotokoll und Anwendungsprotokollen zur Fehlerbehebung.",
       "systemInformation": "Systeminformationen",
       "systemInformationDesc": "OS-Version, App-Version, Laufzeitversionen",
-      "logs": "Protokolle",
-      "logsDesc": "Aktuelle Protokolle aller Komponenten",
-      "enabledModels": "Aktivierte Modelle",
-      "enabledModelsDesc": "Liste der verfügbaren KI-Modelle",
-      "configuration": "Konfiguration",
-      "configurationDesc": "App-Einstellungen und Präferenzen",
+      "logs": "Anwendungsprotokolle",
+      "logsDesc": "Aktuelle Protokolle aller Komponenten (geschwärzt)",
+      "crashLog": "Absturzprotokoll",
+      "crashLogDesc": "Absturzberichte (geschwärzt)",
       "documentContents": "Dokumentinhalte",
       "documentContentsDesc": "Dokumenttext und Metadaten (ausgeschlossen für Datenschutz)",
       "personalData": "Persönliche Daten",
@@ -2173,7 +2171,9 @@
       "quickActions": "Schnellaktionen",
       "copyEnvironmentDetails": "Umgebungsdetails kopieren",
       "copyAppVersion": "App-Version kopieren",
-      "copySystemInfo": "Systeminfo kopieren"
+      "copySystemInfo": "Systeminfo kopieren",
+      "exportBundleSaved": "Diagnosepaket gespeichert.",
+      "exportBundleError": "Export fehlgeschlagen."
     },
     "performance": {
       "memoryUsage": "Speichernutzung",

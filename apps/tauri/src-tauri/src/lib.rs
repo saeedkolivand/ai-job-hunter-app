@@ -830,7 +830,7 @@ pub fn run() {
             commands::privacy::privacy_sign_out_all,
             commands::privacy::privacy_reset_app,
             // support
-            commands::support::support_export_logs,
+            commands::support::support_export_diagnostics,
             commands::support::support_get_system_info,
             // dialog
             commands::dialog::dialog_open_files,

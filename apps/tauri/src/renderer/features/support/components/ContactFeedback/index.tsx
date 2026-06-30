@@ -1,5 +1,7 @@
 import { Copy } from 'lucide-react';
 import { useState } from 'react';
+import { save } from '@tauri-apps/plugin-dialog';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
 import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown, TextArea, useNotification } from '@ajh/ui';
@@ -47,11 +49,14 @@ export function ContactFeedback() {
           {t('support.contact.exportDiagnosticsBundleDesc')}
         </p>
         <div className="space-y-3">
+          {/* SECURITY: Only list items the Rust build_diagnostics_zip command actually emits
+              (system-info.txt, crashes.log, logs/). Any entry marked included:true MUST be
+              redaction-safe and MUST appear in that allowlist — never add config or API-key
+              bearing files here, even as a future convenience. */}
           {[
             { key: 'systemInformation', included: true },
+            { key: 'crashLog', included: true },
             { key: 'logs', included: true },
-            { key: 'enabledModels', included: true },
-            { key: 'configuration', included: true },
             { key: 'documentContents', included: false },
             { key: 'personalData', included: false },
           ].map(({ key, included }) => (
@@ -69,12 +74,30 @@ export function ContactFeedback() {
           className="mt-4"
           loading={exportDiagnostics.isPending}
           onClick={async () => {
+            const now = new Date();
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            const defaultPath = `ajh-diagnostics-${yyyy}-${mm}-${dd}.zip`;
             try {
-              const res = await exportDiagnostics.mutateAsync();
-              if (res.success) notify.success({ message: 'Diagnostics bundle exported.' });
-              else notify.error({ message: 'Export failed.' });
+              const dest = await save({
+                defaultPath,
+                filters: [{ name: 'Zip archive', extensions: ['zip'] }],
+              });
+              if (!dest) return;
+              const res = await exportDiagnostics.mutateAsync(dest);
+              if (res.success) {
+                notify.success({ message: t('support.contact.exportBundleSaved') });
+                revealItemInDir(dest).catch(() => {});
+              } else {
+                notify.error({ message: t('support.contact.exportBundleError') });
+              }
             } catch (err) {
-              notify.error({ message: err instanceof Error ? err.message : 'Export failed.' });
+              console.error(
+                'diagnostics export failed:',
+                err instanceof Error ? err.name : 'unknown'
+              );
+              notify.error({ message: t('support.contact.exportBundleError') });
             }
           }}
         >
