@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782775839118,
+  "lastUpdate": 1782791639956,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1841,6 +1841,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 281011,
             "range": "± 3989",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "87f0b97c4860479723c8df4a6f31f34edd48b0cb",
+          "message": "feat: export a redacted diagnostics bundle for crash reports (#509)\n\n* feat: export a redacted diagnostics bundle for crash reports\n\nZips a strict allowlist (system-info.txt, redacted crashes.log, redacted logs/) via a native save dialog, then reveals the file to attach to a GitHub issue.\n\nThe database, documents, API keys, and resume/job data are excluded by construction.\n\nBundled text runs through redact_token (now covering email and JSON-shaped secrets, skipping symlinks) so no PII reaches a public issue.\n\nAlso fixes the previously broken support_export_diagnostics command (name/dir mismatch). See ADR-027 for the privacy boundary.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: source diagnostics logs from app log dir and harden export\n\nLogs are written by tauri-plugin-log to app_log_dir(), not app_data_dir()/logs, so the bundle shipped without logs on Windows and macOS.\n\nSource logs from app_log_dir() and decode bytes lossily so a corrupt log byte can't abort the export.\n\nFrontend: a reveal failure no longer flips a successful export to an error; toasts are localized (en+de) and no longer surface raw error strings.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: address coderabbit review on diagnostics bundle\n\nReject save destinations that alias crashes.log or a log file (which would truncate the source before reading) and exclude the dest from the log scan.\n\nModel the export contract as a discriminated union so callers can type the failure path's error field.\n\nUse local date for the default filename, move save() inside the error boundary, and log only the error name (never a path) on failure.\n\nSync the en/de bundle summary to the real three-entry allowlist; keep the security-rules pointer thin; correct the README redaction wording.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-30T05:45:28+02:00",
+          "tree_id": "f4438781499f93d971946fb453b0d942c96eee24",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/87f0b97c4860479723c8df4a6f31f34edd48b0cb"
+        },
+        "date": 1782791639498,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1939834,
+            "range": "± 61031",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2552208,
+            "range": "± 20419",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 288790,
+            "range": "± 2257",
             "unit": "ns/iter"
           }
         ]
