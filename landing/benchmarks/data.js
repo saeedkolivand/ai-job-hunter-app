@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782791639956,
+  "lastUpdate": 1782800688775,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1883,6 +1883,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 288790,
             "range": "± 2257",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "075e24010ea48ba2105a40e8c96c5022ed63c63e",
+          "message": "feat: add apify linkedin aggregator provider (opt-in) (#510)\n\n* wip: apify linkedin provider (paused for #509 coderabbit)\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* chore: apply cargo fmt to apify linkedin provider\n\nPre-format before push so pre-push cargo fmt --check passes.\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n\n* feat: add apify linkedin settings ui and paid-provider cost controls\n\nSettings: Apify token field (keychain) + opt-in 'Include LinkedIn (Apify)' toggle, optional actor-id override, and a cost/latency notice, backed by a use-scraping-settings plugin-store hook.\n\nCost safety: retries:0 on the billed non-idempotent run, mid-flight cancellation via tokio::select!, and platform-enforced maxItems/maxTotalChargeUsd caps; actor-id is grammar-validated.\n\nDocs: privacy disclosure for Apify plus the RapidAPI/JSearch correction, and ADR-028 for the additive-merge + cost-control model.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* test: pin apify cost invariants to the real code path\n\nExtract build_apify_endpoint + an APIFY_RETRIES constant so the cost-cap and retries:0 tests assert on production code, not local copies; fix canonical_url to require a dot boundary on linkedin.com.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: address coderabbit review on apify provider\n\nValidate Apify job URLs (https + linkedin.com host; numeric-only ids) before emitting, so a drifting actor can't inject non-LinkedIn URLs into JobPosting.\n\nSkip the paid LinkedIn run when the free providers already fill the requested count; otherwise cap the fetch to the remaining slots (min of cap and remaining).\n\nDedupe with host-only lowercasing so path/query case is preserved; assert retries:0 and the endpoint via the real builders; tighten the settings test and ADR-028 wording.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs: reference apify default actor symbol in adr-028\n\nPoint at APIFY_DEFAULT_ACTOR instead of copying the actor-id literal so the ADR can't drift.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-30T08:16:06+02:00",
+          "tree_id": "f8df146615edfa13630932f23d896e48cf1ad014",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/075e24010ea48ba2105a40e8c96c5022ed63c63e"
+        },
+        "date": 1782800688300,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1931882,
+            "range": "± 19175",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2558340,
+            "range": "± 36056",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 290524,
+            "range": "± 5608",
             "unit": "ns/iter"
           }
         ]
