@@ -62,7 +62,7 @@ export function PostingListItem({
           className="pointer-events-none absolute inset-0 rounded-none border-l-2 border-[var(--color-brand)]"
           style={{
             background:
-              'linear-gradient(135deg, color-mix(in srgb, var(--color-brand) 10%, transparent) 0%, color-mix(in srgb, var(--color-brand-2) 6%, transparent) 100%)',
+              'linear-gradient(135deg, color-mix(in srgb, var(--color-brand) 32%, transparent) 0%, color-mix(in srgb, var(--color-brand-2) 18%, transparent) 100%)',
           }}
           transition={resolveTransition(transition.spring)}
         />

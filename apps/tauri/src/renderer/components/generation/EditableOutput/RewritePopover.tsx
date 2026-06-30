@@ -9,6 +9,9 @@ import { type RewriteDocType, rewriteSelection } from '@/lib/generate';
 
 /** The quick-action presets — id maps to an i18n label + a preset instruction. */
 const PRESETS = ['shorten', 'expand', 'rephrase', 'impact', 'grammar'] as const;
+
+/** Abort a stalled rewrite after this many ms so the popover never wedges. */
+const REWRITE_TIMEOUT_MS = 60_000;
 type Preset = (typeof PRESETS)[number];
 
 export interface RewriteTarget {
@@ -99,6 +102,15 @@ export function RewritePopover({
     setResult('');
     setStreaming(true);
 
+    // Client-side safety net: abort a stalled provider after REWRITE_TIMEOUT_MS.
+    // `timedOut` distinguishes this from a user-initiated abort (close/unmount/new
+    // run) so the catch block surfaces the error instead of silently swallowing it.
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, REWRITE_TIMEOUT_MS);
+
     rewriteSelection({
       selection: target.selection,
       instruction: trimmed,
@@ -117,10 +129,13 @@ export function RewritePopover({
         if (!cleaned) setError(t('aiGenerate.rewrite.empty'));
       })
       .catch(() => {
-        if (controller.signal.aborted) return;
+        // Suppress error for user-initiated abort (close / unmount / new run).
+        // Always surface error for a timeout-triggered abort.
+        if (controller.signal.aborted && !timedOut) return;
         setError(t('aiGenerate.rewrite.failed'));
       })
       .finally(() => {
+        clearTimeout(timeoutId);
         // Only clear `streaming` for the run that owns the current controller. A
         // newer run() has already set `streaming = true` and swapped `abortRef`;
         // clearing unconditionally here would re-enable the buttons mid-flight.
