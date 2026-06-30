@@ -2,6 +2,26 @@
 
 ## [0.119.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.118.2...v0.119.0) (2026-06-30)
 
+### ✨ Features
+
+* add apify linkedin aggregator provider (opt-in) ([#510](https://github.com/saeedkolivand/ai-job-hunter-app/issues/510)) ([075e240](https://github.com/saeedkolivand/ai-job-hunter-app/commit/075e24010ea48ba2105a40e8c96c5022ed63c63e))
+* export a redacted diagnostics bundle for crash reports ([#509](https://github.com/saeedkolivand/ai-job-hunter-app/issues/509)) ([87f0b97](https://github.com/saeedkolivand/ai-job-hunter-app/commit/87f0b97c4860479723c8df4a6f31f34edd48b0cb))
+* apply by email — generate a tailored application email per job ([#508](https://github.com/saeedkolivand/ai-job-hunter-app/issues/508)) ([708c6fc](https://github.com/saeedkolivand/ai-job-hunter-app/commit/708c6fc852f688840db36083b579442ff7ac0d01))
+
+### 🐛 Bug Fixes
+
+* jobs-list scroll restore, clearer selection, rewrite ux ([#506](https://github.com/saeedkolivand/ai-job-hunter-app/issues/506)) ([8dee5d6](https://github.com/saeedkolivand/ai-job-hunter-app/commit/8dee5d672a25755d307147977546b8098b2e4ae3))
+* prevent cover-letter extractor panic on multibyte job ads ([#504](https://github.com/saeedkolivand/ai-job-hunter-app/issues/504)) ([f622c5c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f622c5c08421375dd11b5af79a5cac28122eb751))
+
+### 🎨 UI/UX
+
+* align landing fleet authors header with its cards ([6efea88](https://github.com/saeedkolivand/ai-job-hunter-app/commit/6efea88298e029dae55a105b467a09ac7bf8f5f8))
+
+### 📚 Documentation
+
+* bump privacy policy last-updated date ([e640c88](https://github.com/saeedkolivand/ai-job-hunter-app/commit/e640c886d226f978997ab2306fac58361f31ae9c))
+* correct extension import mode, disclose native-messaging, note rate budget ([#507](https://github.com/saeedkolivand/ai-job-hunter-app/issues/507)) ([951a480](https://github.com/saeedkolivand/ai-job-hunter-app/commit/951a480726dc850ae0c7c956ddab33d3c0950deb))
+
 ## [0.118.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.118.1...v0.118.2) (2026-06-25)
 
 ### 🎨 UI/UX
