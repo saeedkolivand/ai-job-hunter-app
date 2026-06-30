@@ -5,5 +5,6 @@ export * from './ipc/extension-protocol.js';
 export * from './language-detection.js';
 export * from './provider-slots.js';
 export * from './schemas/index.js';
+export * from './scraping-settings.js';
 export * from './types/index.js';
 export * from './utils.js';

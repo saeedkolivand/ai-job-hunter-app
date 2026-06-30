@@ -703,6 +703,24 @@
         "connected": "JSearch-Schlüssel sicher gespeichert",
         "removeConfirmTitle": "JSearch-Schlüssel entfernen?",
         "removeConfirmDesc": "Dadurch wird der gespeicherte JSearch-Schlüssel gelöscht. Der JSearch-Fallback wird deaktiviert, bis Sie ihn erneut hinzufügen."
+      },
+      "apifyToken": {
+        "label": "Apify API-Token",
+        "placeholder": "Apify API-Token einfügen…",
+        "connected": "Apify API-Token sicher gespeichert",
+        "removeConfirmTitle": "Apify-Token entfernen?",
+        "removeConfirmDesc": "Dadurch wird der gespeicherte Apify-Token gelöscht. LinkedIn-Ergebnisse über Apify stehen nicht mehr zur Verfügung, bis Sie ihn erneut hinzufügen."
+      },
+      "apifyLinkedin": {
+        "sectionLabel": "LinkedIn über Apify (kostenpflichtig)",
+        "enabledLabel": "LinkedIn-Ergebnisse einbeziehen",
+        "enabledDescription": "Fügt LinkedIn-Jobs über Ihr Apify-Konto zu jeder Suche hinzu. Erfordert einen Apify-Token.",
+        "costWarning": "LinkedIn-Ergebnisse über Apify werden Ihrem Apify-Konto in Rechnung gestellt (~1 $ pro 1.000 Ergebnisse). Jede Suche fordert bis zu 50 Einträge an und kann bis zu ~5 Minuten dauern.",
+        "actorIdLabel": "Actor-ID-Überschreibung (optional)",
+        "actorIdPlaceholder": "curious_coder~linkedin-jobs-scraper",
+        "actorIdHelper": "Leer lassen, um den integrierten Standard-Actor zu verwenden.",
+        "saved": "Einstellungen gespeichert.",
+        "saveError": "Einstellungen konnten nicht gespeichert werden."
       }
     },
     "accounts": {

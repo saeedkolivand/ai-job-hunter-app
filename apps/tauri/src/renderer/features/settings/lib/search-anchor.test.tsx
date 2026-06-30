@@ -109,6 +109,10 @@ vi.mock('@/services', () => ({
   useSetDefaultDocument: () => ({ mutateAsync: vi.fn(), isPending: false }),
   // AggregatorKeysSettings
   useHasProviderKey: () => ({ data: { has: false } }),
+  useScrapingSettings: () => ({
+    data: { apifyLinkedinEnabled: false, apifyLinkedinActorId: undefined },
+  }),
+  useUpdateScrapingSettings: () => ({ mutateAsync: vi.fn(), isPending: false }),
   // Window controls (service hook)
   useWindowControls: () => ({
     resetPosition: vi.fn(),

@@ -5,3 +5,4 @@
 pub const ADZUNA_APP_ID: &str = "adzuna-app-id";
 pub const ADZUNA_APP_KEY: &str = "adzuna-app-key";
 pub const JSEARCH_KEY: &str = "jsearch-key";
+pub const APIFY_TOKEN: &str = "apify-token";
