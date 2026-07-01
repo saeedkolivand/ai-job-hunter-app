@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782931009657,
+  "lastUpdate": 1782938226274,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2051,6 +2051,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 286082,
             "range": "± 9401",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "65bf53014ccffcef7611d56444d3496f413c23f7",
+          "message": "feat: add job trust / ghost-job validator with badge (#530)\n\nScore every scraped job for scam/ghost-posting signals and surface a badge\non low-trust listings. A pure Rust validator (scraping/trust) starts each job\nat 100 and subtracts for a missing/invalid apply url, a url-shortener host, or\na company-name/domain mismatch (skipped for known ATS + aggregator hosts,\nincluding api.adzuna.com), then classifies High/Medium/Low. Enrich, never drop.\n\nAttached at the pipeline's single stream funnel and the url-resolve path, and\nin the Autopilot found-jobs projection (build_found_job), so every renderer\nsurface carries it; merge_found_jobs now also carries trust across a resurfaced\njob. Exposed via a trust field on the shared JobPosting/AutopilotFoundJob\ncontract (serde-flatten). The renderer TrustBadge shows only for Medium/Low\n(High = trusted, no badge), reuses the MatchBand warning/error color language,\nexposes the flags via a keyboard-reachable HoverPopover, and uses an opaque\nfill on selected rows to stay AA-contrast over the row gradient.\n\nPorted from santifer/career-ops (_trust-validator.mjs, MIT), attributed in the\nmodule header. The company/host match is an intentionally unanchored substring\nheuristic for V1 (documented, non-gating). Covered by 16 Rust tests (scoring,\nallowlist incl. adzuna, label-boundary anchoring, attach json shape, the real\nbuild_found_job + merge projections) and 12 TrustBadge tests (gating, resolved\ni18n labels, key-drift guard, interactive/strong paths).\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-01T22:28:41+02:00",
+          "tree_id": "8b79349cb74a953ce01a72ed7f71fa0ca62d6084",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/65bf53014ccffcef7611d56444d3496f413c23f7"
+        },
+        "date": 1782938225609,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1890140,
+            "range": "± 85847",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2500918,
+            "range": "± 40460",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 285378,
+            "range": "± 4030",
             "unit": "ns/iter"
           }
         ]
