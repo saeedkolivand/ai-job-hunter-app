@@ -56,14 +56,14 @@ interface ModuleSpec {
 
 const MODULES: ModuleSpec[] = [
   {
-    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/scrape.rs',
+    outFile: 'apps/desktop/src-tauri/src/ipc_contracts/scrape.rs',
     structs: [
       { rustName: 'ScrapeBoardsRequest', schema: ScrapeBoardsRequestSchema },
       { rustName: 'ScrapeUrlRequest', schema: ScrapeUrlRequestSchema },
     ],
   },
   {
-    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/ai.rs',
+    outFile: 'apps/desktop/src-tauri/src/ipc_contracts/ai.rs',
     structs: [
       { rustName: 'AiGenerateRequest', schema: AiGenerateRequestSchema },
       { rustName: 'AiEmbedRequest', schema: EmbedRequestSchema },
@@ -72,7 +72,7 @@ const MODULES: ModuleSpec[] = [
     ],
   },
   {
-    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/documents.rs',
+    outFile: 'apps/desktop/src-tauri/src/ipc_contracts/documents.rs',
     structs: [
       {
         rustName: 'DocumentsImportRequest',
@@ -82,7 +82,7 @@ const MODULES: ModuleSpec[] = [
     ],
   },
   {
-    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/resume.rs',
+    outFile: 'apps/desktop/src-tauri/src/ipc_contracts/resume.rs',
     structs: [
       {
         rustName: 'ResumeExtractTextRequest',
@@ -92,32 +92,32 @@ const MODULES: ModuleSpec[] = [
     ],
   },
   {
-    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/autopilot.rs',
+    outFile: 'apps/desktop/src-tauri/src/ipc_contracts/autopilot.rs',
     structs: [
       { rustName: 'AutopilotCreateRequest', schema: AutopilotCreateSchema },
       { rustName: 'AutopilotUpdateRequest', schema: AutopilotUpdateSchema },
     ],
   },
   {
-    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/applications.rs',
+    outFile: 'apps/desktop/src-tauri/src/ipc_contracts/applications.rs',
     structs: [
       { rustName: 'ApplicationTrackRequest', schema: ApplicationTrackSchema },
       { rustName: 'ApplicationUpdateRequest', schema: ApplicationUpdateSchema },
     ],
   },
   {
-    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/matching.rs',
+    outFile: 'apps/desktop/src-tauri/src/ipc_contracts/matching.rs',
     structs: [
       { rustName: 'MatchResumeRequest', schema: MatchResumeRequestSchema },
       { rustName: 'MatchResumeBatchRequest', schema: MatchResumeBatchRequestSchema },
     ],
   },
   {
-    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/referrals.rs',
+    outFile: 'apps/desktop/src-tauri/src/ipc_contracts/referrals.rs',
     structs: [{ rustName: 'ReferralUpsertRequest', schema: ReferralUpsertSchema }],
   },
   {
-    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/event_payloads.rs',
+    outFile: 'apps/desktop/src-tauri/src/ipc_contracts/event_payloads.rs',
     structs: [
       { rustName: 'AiStreamChunk', schema: AiStreamChunkSchema },
       { rustName: 'JobEvent', schema: JobEventSchema },
@@ -420,15 +420,15 @@ let stale = false;
 const outputs: { outFile: string; content: string }[] = [
   ...MODULES.map((mod) => ({ outFile: mod.outFile, content: genModule(mod) })),
   {
-    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/events.rs',
+    outFile: 'apps/desktop/src-tauri/src/ipc_contracts/events.rs',
     content: genEvents(),
   },
   {
-    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/provider_slots.rs',
+    outFile: 'apps/desktop/src-tauri/src/ipc_contracts/provider_slots.rs',
     content: genSlots(),
   },
   {
-    outFile: 'apps/tauri/src-tauri/src/ipc_contracts/date_filters.rs',
+    outFile: 'apps/desktop/src-tauri/src/ipc_contracts/date_filters.rs',
     content: genDateFilters(),
   },
 ];

@@ -11,7 +11,7 @@ interviewing → offer → accepted`, plus `rejected`/`ghosted`/`withdrawn`), we
 status-bearing entity. The existing `ai_generations` row already doubled as "the
 application aggregate" — keyed and merged by `job_url` via `save_application()` /
 `merge_application()`, carrying job link, board, answers, and the research brief
-([apps/tauri/src-tauri/src/ai_generations/mod.rs](../../apps/tauri/src-tauri/src/ai_generations/mod.rs)).
+([apps/desktop/src-tauri/src/ai_generations/mod.rs](../../apps/desktop/src-tauri/src/ai_generations/mod.rs)).
 But that row only exists once text has been generated, so it cannot represent a `saved`,
 manually-tracked, or externally-submitted application that has **no** documents.
 

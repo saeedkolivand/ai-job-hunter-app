@@ -978,10 +978,10 @@
           </table>
         </div>
         <p class="footer">
-          Source of truth: <span class="path">apps/tauri/src/tauri-client/namespaces/*</span>,
-          assembled in <span class="path">apps/tauri/src/tauri-client/index.ts</span>. Request
+          Source of truth: <span class="path">apps/desktop/src/tauri-client/namespaces/*</span>,
+          assembled in <span class="path">apps/desktop/src/tauri-client/index.ts</span>. Request
           structs are generated from Zod schemas via <code>pnpm gen:ipc</code> into
-          <span class="path">apps/tauri/src-tauri/src/ipc_contracts/</span>.
+          <span class="path">apps/desktop/src-tauri/src/ipc_contracts/</span>.
         </p>
       </section>
 
@@ -1022,7 +1022,7 @@
           </p>
         </div>
         <p class="footer">
-          Generated as living documentation for <span class="path">apps/tauri</span>. Open this file
+          Generated as living documentation for <span class="path">apps/desktop</span>. Open this file
           directly in any browser — it needs no server.
         </p>
       </section>
@@ -1060,27 +1060,27 @@
           t: 'main.tsx — app bootstrap',
           layer: 'ui',
           d: 'The webview entry point. Restores the saved theme, builds the TanStack router, creates the Tauri AppClient, and mounts the provider tree in this order: <b>AppClientProvider → PerformanceModeProvider → QueryClientProvider → RouterProvider</b>, then navigates to <code>/</code>.',
-          f: ['apps/tauri/src/main.tsx'],
+          f: ['apps/desktop/src/main.tsx'],
         },
         routes: {
           t: 'Routes / Pages',
           layer: 'ui',
           d: 'File‑based routes. <code>__root.tsx</code> renders the chrome (Titlebar, Sidebar, StatusBar) plus the onboarding gate. Pages: Dashboard <code>/</code>, <code>/jobs</code>, <code>/ai-generate</code>, <code>/analyze</code>, <code>/resumes</code>, <code>/autopilot</code>, <code>/settings</code>, <code>/ai</code>, <code>/monitoring</code>, <code>/support</code>.',
-          f: ['apps/tauri/src/renderer/routes/__root.tsx', 'apps/tauri/src/renderer/routes/'],
+          f: ['apps/desktop/src/renderer/routes/__root.tsx', 'apps/desktop/src/renderer/routes/'],
         },
         features: {
           t: 'Features & components',
           layer: 'ui',
           d: 'Each route owns a feature folder (<code>features/jobs</code>, <code>features/ai-generate</code>, <code>features/onboarding</code>…). Shared primitives come from the <code>@ajh/ui</code> design‑system package.',
-          f: ['apps/tauri/src/renderer/features/', 'packages/ui/src/index.ts'],
+          f: ['apps/desktop/src/renderer/features/', 'packages/ui/src/index.ts'],
         },
         hooks: {
           t: 'Service hooks (React Query)',
           layer: 'ui',
           d: 'The ONLY way the UI touches the backend. Each hook calls <code>useAppClient()</code> then wraps an IPC call in <code>useQuery</code>/<code>useMutation</code> — giving caching, <code>staleTime</code>, and automatic cache invalidation. Event hooks (e.g. <code>useJobEvents</code>, <code>useAIStream</code>) subscribe to Tauri events.',
           f: [
-            'apps/tauri/src/renderer/services/',
-            'apps/tauri/src/renderer/services/query-client/',
+            'apps/desktop/src/renderer/services/',
+            'apps/desktop/src/renderer/services/query-client/',
           ],
         },
         stores: {
@@ -1088,8 +1088,8 @@
           layer: 'ui',
           d: 'Two stores. <b>Preferences</b> (persisted to localStorage, versioned + migrated): name, language, active AI provider/model, default resume, performance mode, onboarding flag. <b>Session</b> (in‑memory): per‑route UI state like form text, active tab, wizard step.',
           f: [
-            'apps/tauri/src/renderer/store/preferences-store/',
-            'apps/tauri/src/renderer/store/session-store/',
+            'apps/desktop/src/renderer/store/preferences-store/',
+            'apps/desktop/src/renderer/store/session-store/',
           ],
         },
         machines: {
@@ -1097,27 +1097,27 @@
           layer: 'ui',
           d: "Small transition tables for multi‑step flows so impossible states can't happen. e.g. AI generation is <code>idle → configuring → extracting → generating → done</code> (+ error). Driven by <code>useMachine</code>.",
           f: [
-            'apps/tauri/src/renderer/lib/machines/',
-            'apps/tauri/src/renderer/hooks/use-machine/',
+            'apps/desktop/src/renderer/lib/machines/',
+            'apps/desktop/src/renderer/hooks/use-machine/',
           ],
         },
         appclient: {
           t: 'createTauriInvokeClient()',
           layer: 'ipc',
           d: 'Assembles 23 namespace objects (<code>ai</code>, <code>jobs</code>, <code>scrape</code>, <code>apply</code>, <code>documents</code>…) into a single <code>AppClient</code> object. Its shape is identical to the old Electron bridge, so every service hook works unchanged.',
-          f: ['apps/tauri/src/tauri-client/index.ts', 'apps/tauri/src/tauri-client/namespaces/'],
+          f: ['apps/desktop/src/tauri-client/index.ts', 'apps/desktop/src/tauri-client/namespaces/'],
         },
         invoke: {
           t: "invoke('command', args)",
           layer: 'ipc',
           d: "Each namespace method is a thin wrapper, e.g. <code>scrape.boards(req) ⇒ invoke('scrape_boards', { req })</code>. Tauri serializes the args to JSON, sends them across the native bridge, and resolves with the command's return value (or rejects with the error string).",
-          f: ['apps/tauri/src/tauri-client/namespaces/scrape/scrape.ts'],
+          f: ['apps/desktop/src/tauri-client/namespaces/scrape/scrape.ts'],
         },
         listen: {
           t: "listen('channel') — event streams",
           layer: 'ipc',
           d: 'For progress/streaming the renderer subscribes to Tauri events: <span class="chan">ai:stream</span> (tokens), <span class="chan">jobs:event</span> (scrape stream + completion), <span class="chan">autopilot.step</span>, <span class="chan">updater:status</span>. <code>asyncUnsub()</code> turns Tauri\'s async <code>listen()</code> into a synchronous cleanup fn.',
-          f: ['apps/tauri/src/tauri-client/utils.ts'],
+          f: ['apps/desktop/src/tauri-client/utils.ts'],
         },
         contracts: {
           t: 'Contracts + Zod schemas',
@@ -1129,15 +1129,15 @@
           t: '#[tauri::command] handlers',
           layer: 'rust',
           d: '~120 commands registered in <code>main.rs</code> via <code>generate_handler![]</code>. Each receives an <code>AppHandle</code> + a deserialized request struct, reads shared state via <code>app.state::&lt;T&gt;()</code>, does the work, and returns <code>serde_json::Value</code> (or an <code>AppError</code> that serializes to a string).',
-          f: ['apps/tauri/src-tauri/src/main.rs', 'apps/tauri/src-tauri/src/commands/'],
+          f: ['apps/desktop/src-tauri/src/main.rs', 'apps/desktop/src-tauri/src/commands/'],
         },
         provider: {
           t: 'AI provider layer',
           layer: 'rust',
           d: 'Strictly typed: a <code>ProviderId</code> enum (Ollama, OpenAi, OpenAiCompatible, Anthropic, Gemini, ClaudeCode, Codex, GeminiCli) with <b>no silent fallback</b>. <code>resolve(id, base_url)</code> returns a <code>Box&lt;dyn AiProvider&gt;</code>; the trait\'s <code>chat_stream</code> emits <span class="chan">ai:stream</span> deltas. Cloud = HTTP; CLI agents = spawned subprocess.',
           f: [
-            'apps/tauri/src-tauri/src/commands/ai_provider/mod.rs',
-            'apps/tauri/src-tauri/src/commands/ai_provider/cli_agent/mod.rs',
+            'apps/desktop/src-tauri/src/commands/ai_provider/mod.rs',
+            'apps/desktop/src-tauri/src/commands/ai_provider/cli_agent/mod.rs',
           ],
         },
         scraper: {
@@ -1145,8 +1145,8 @@
           layer: 'rust',
           d: '<code>ScraperEngine</code> bounds concurrency with a resizable semaphore and tracks cancellation tokens per job. A static <code>SCRAPERS</code> registry (16 boards) maps an id to a <code>&dyn Scraper</code>. Each scraper is HTTP‑mode or Browser‑mode and emits items through an <code>on_item</code> callback.',
           f: [
-            'apps/tauri/src-tauri/src/scraping/engine/mod.rs',
-            'apps/tauri/src-tauri/src/scraping/boards/mod.rs',
+            'apps/desktop/src-tauri/src/scraping/engine/mod.rs',
+            'apps/desktop/src-tauri/src/scraping/boards/mod.rs',
           ],
         },
         autopilot: {
@@ -1154,23 +1154,23 @@
           layer: 'rust',
           d: 'A saved hunt runs on a schedule: it scrapes the configured boards, embeds &amp; cosine‑ranks new postings against your résumé, registers a <code>JobTracker</code> job and emits <span class="chan">autopilot.step</span> per stage. New matches raise an OS notification + the tray “New jobs: N”. <b>Nothing is auto‑submitted</b> — the user tailors &amp; applies.',
           f: [
-            'apps/tauri/src-tauri/src/autopilot/mod.rs',
-            'apps/tauri/src-tauri/src/tray/mod.rs',
+            'apps/desktop/src-tauri/src/autopilot/mod.rs',
+            'apps/desktop/src-tauri/src/tray/mod.rs',
           ],
         },
         jobtracker: {
           t: 'JobTracker',
           layer: 'rust',
           d: "In‑memory map of every async job's status (queued/running/completed/failed/cancelled). Long commands register a job, return its <code>jobId</code> at once, then update it as events flow. The UI can poll <code>jobs_get</code> or cancel via <code>jobs_cancel</code>.",
-          f: ['apps/tauri/src-tauri/src/jobs/mod.rs'],
+          f: ['apps/desktop/src-tauri/src/jobs/mod.rs'],
         },
         pipeline: {
           t: 'Pipeline (cover letter)',
           layer: 'rust',
           d: "A composable <code>Stage</code> pipeline used for higher‑quality generation: <b>research</b> the company → <b>generate</b> a draft (uses the provider's non‑streaming <code>complete()</code>) → <b>validate</b> there's no fabricated info not in your resume → retry up to 2×. Backed by a small KV cache.",
           f: [
-            'apps/tauri/src-tauri/src/pipeline/mod.rs',
-            'apps/tauri/src-tauri/src/cover_letter/mod.rs',
+            'apps/desktop/src-tauri/src/pipeline/mod.rs',
+            'apps/desktop/src-tauri/src/cover_letter/mod.rs',
           ],
         },
         'stores-rs': {
@@ -1178,45 +1178,45 @@
           layer: 'rust',
           d: 'Managed state created in <code>setup()</code>: <code>DocumentStore</code> (documents.db + vector embeddings), <code>AiGenerationStore</code>, <code>JobPreferencesStore</code> (SQLite); autopilots/interactions/credential‑meta as JSON; API keys &amp; board passwords in the OS keyring.',
           f: [
-            'apps/tauri/src-tauri/src/documents/mod.rs',
-            'apps/tauri/src-tauri/src/platform/config.rs',
-            'apps/tauri/src-tauri/src/credentials/mod.rs',
+            'apps/desktop/src-tauri/src/documents/mod.rs',
+            'apps/desktop/src-tauri/src/platform/config.rs',
+            'apps/desktop/src-tauri/src/credentials/mod.rs',
           ],
         },
         ollama: {
           t: 'Ollama (local LLM)',
           layer: 'ext',
           d: 'A local server on <code>localhost:11434</code>. Keyless. The app probes <code>/api/tags</code> for installed models, streams from <code>/api/generate</code>, and can <code>/api/pull</code> new models with progress events. Also the default embeddings provider.',
-          f: ['apps/tauri/src-tauri/src/commands/ai_provider/ollama.rs'],
+          f: ['apps/desktop/src-tauri/src/commands/ai_provider/ollama.rs'],
         },
         cloud: {
           t: 'Cloud APIs (OpenAI / Anthropic / Gemini)',
           layer: 'ext',
           d: 'HTTP providers. The API key is resolved per request from the keyring; requests are built per‑provider (OpenAI chat/completions SSE, Anthropic messages, Gemini). “OpenAI‑compatible” covers LM Studio, vLLM, OpenRouter, Groq, Together, DeepSeek, Azure via a custom base URL.',
           f: [
-            'apps/tauri/src-tauri/src/commands/ai_provider/openai.rs',
-            'apps/tauri/src-tauri/src/commands/ai_provider/anthropic.rs',
+            'apps/desktop/src-tauri/src/commands/ai_provider/openai.rs',
+            'apps/desktop/src-tauri/src/commands/ai_provider/anthropic.rs',
           ],
         },
         cli: {
           t: 'CLI agents (Claude Code / Codex / Gemini CLI)',
           layer: 'ext',
           d: 'Run headless as a child process — keyless, using your own logged‑in CLI. A registry (<code>cli_agent::all()</code>) defines each agent\'s binary, env override, models, argv, and stdout parser. Output is streamed line‑by‑line and re‑emitted as <span class="chan">ai:stream</span> deltas.',
-          f: ['apps/tauri/src-tauri/src/commands/ai_provider/cli_agent/claude_code.rs'],
+          f: ['apps/desktop/src-tauri/src/commands/ai_provider/cli_agent/claude_code.rs'],
         },
         boards: {
           t: 'Job boards',
           layer: 'ext',
           d: 'LinkedIn is the only browser‑mode scraper: the app drives Chromium through <code>chromiumoxide</code> using a persistent profile so your login survives. Indeed, Glassdoor, Xing, Workday, and StepStone are reached via the <b>Adzuna/JSearch aggregator API</b> — no Chromium needed. The rest (Greenhouse, Lever, Ashby, Personio, Recruitee, and more) are plain‑HTTP ATS/feed scrapers.',
-          f: ['apps/tauri/src-tauri/src/scraping/boards/'],
+          f: ['apps/desktop/src-tauri/src/scraping/boards/'],
         },
         disk: {
           t: 'Disk & OS keyring',
           layer: 'ext',
           d: 'Everything lives under one data dir (resolved once, exported as <code>AJH_DATA_DIR</code>): the SQLite DBs, JSON records, board Chromium profiles, and logs. Secrets never touch disk in plaintext — they go to the OS keyring.',
           f: [
-            'apps/tauri/src-tauri/src/platform/config.rs',
-            'apps/tauri/src-tauri/src/net/http.rs',
+            'apps/desktop/src-tauri/src/platform/config.rs',
+            'apps/desktop/src-tauri/src/net/http.rs',
           ],
         },
       };
@@ -1361,66 +1361,66 @@
           layer: 'rust',
           title: 'OS launches the Tauri binary',
           body: 'The native Rust process starts first. It initializes the OS keyring, registers Tauri plugins (log, dialog, opener, updater, clipboard), and enters the <code>setup()</code> closure that runs once.',
-          files: ['apps/tauri/src-tauri/src/main.rs'],
+          files: ['apps/desktop/src-tauri/src/main.rs'],
         },
         {
           layer: 'rust',
           title: 'setup(): resolve the data directory',
           body: '<code>resolve_and_export_data_dir()</code> decides the single on‑disk home for the app and exports it as the <code>AJH_DATA_DIR</code> env var, so any worker resolves the same path.',
-          files: ['apps/tauri/src-tauri/src/platform/config.rs'],
+          files: ['apps/desktop/src-tauri/src/platform/config.rs'],
         },
         {
           layer: 'rust',
           title: 'setup(): build & manage shared state',
           body: 'All stores and registries are constructed and handed to Tauri via <code>app.manage()</code> so every command can reach them: <code>DocumentStore</code>, <code>AiGenerationStore</code>, <code>JobPreferencesStore</code>, <code>CredentialStore</code>, <code>JobTracker</code>, <code>PostingsCache</code>, <code>InteractionStore</code>, and the <code>ScraperEngine</code>.',
-          files: ['apps/tauri/src-tauri/src/main.rs'],
+          files: ['apps/desktop/src-tauri/src/main.rs'],
         },
         {
           layer: 'rust',
           title: 'setup(): start background tasks',
           body: 'Two timers spin up: the <b>updater</b> checks 10s after launch then every 4h, and the <b>autopilot scheduler</b> wakes every 60s to run any due autopilots.',
           files: [
-            'apps/tauri/src-tauri/src/updater/',
-            'apps/tauri/src-tauri/src/autopilot_scheduler.rs',
+            'apps/desktop/src-tauri/src/updater/',
+            'apps/desktop/src-tauri/src/autopilot_scheduler.rs',
           ],
         },
         {
           layer: 'ui',
           title: 'Webview loads main.tsx',
           body: "In parallel, the webview boots the renderer. It restores the saved theme, registers window controls, and creates the TanStack router with <code>defaultPreload:'intent'</code>.",
-          files: ['apps/tauri/src/main.tsx'],
+          files: ['apps/desktop/src/main.tsx'],
         },
         {
           layer: 'ipc',
           title: 'Create the AppClient',
           body: '<code>createTauriInvokeClient()</code> stitches the 23 namespace modules into one typed client object and hands it to <code>AppClientProvider</code> at the top of the tree.',
           code: '<span class="f">&lt;AppClientProvider</span> client={createTauriInvokeClient()}<span class="f">&gt;</span>\\n  <span class="f">&lt;PerformanceModeProvider&gt;</span>\\n    <span class="f">&lt;QueryClientProvider</span> client={queryClient}<span class="f">&gt;</span>\\n      <span class="f">&lt;RouterProvider</span> router={router} <span class="f">/&gt;</span>',
-          files: ['apps/tauri/src/tauri-client/index.ts'],
+          files: ['apps/desktop/src/tauri-client/index.ts'],
         },
         {
           layer: 'ui',
           title: 'Provider tree mounts, route → /',
           body: 'React renders the provider stack and the router navigates to <code>/</code>. <code>__root.tsx</code> paints the Titlebar, Sidebar, StatusBar and the page Outlet.',
-          files: ['apps/tauri/src/renderer/routes/__root.tsx'],
+          files: ['apps/desktop/src/renderer/routes/__root.tsx'],
         },
         {
           layer: 'ipc',
           title: 'First health poll',
           body: "A service hook fires <code>invoke('system_health')</code> and keeps polling every 5s. The result reports AI readiness, data stores, worker counts, and which CLI agents are detected.",
           code: 'useSystemHealth() ⇒ invoke(<span class="s">\'system_health\'</span>)\\n<span class="c">// → { ai:{ready,model}, data:{sqlite,vector}, workers, cliAgents }</span>',
-          files: ['apps/tauri/src/renderer/services/use-system/'],
+          files: ['apps/desktop/src/renderer/services/use-system/'],
         },
         {
           layer: 'ui',
           title: 'Onboarding gate',
           body: "<code>__root.tsx</code> reads <code>useOnboardingCompleted()</code>. If it's the first run, a full‑screen <code>OnboardingWizard</code> (z‑200) covers the app: <b>Welcome</b> (name + language) → <b>Resume</b> (import + OCR) → <b>AI selection</b> (Local / Cloud / CLI tabs) → <b>Browser</b> check, then a spotlight tour.",
-          files: ['apps/tauri/src/renderer/features/onboarding/'],
+          files: ['apps/desktop/src/renderer/features/onboarding/'],
         },
         {
           layer: 'ui',
           title: 'Ready',
           body: 'Once <code>setOnboardingComplete()</code> fires (or it was already done), the wizard unmounts and the Dashboard is interactive. The app is fully local — nothing was sent anywhere except the health checks you configured.',
-          files: ['apps/tauri/src/renderer/features/dashboard/'],
+          files: ['apps/desktop/src/renderer/features/dashboard/'],
         },
       ];
 
@@ -1434,21 +1434,21 @@
               layer: 'ui',
               title: 'User sets up a generation',
               body: 'On <code>/ai-generate</code> the user pastes their résumé + the job ad, picks a target (résumé / cover / both), a mode (ATS / creative) and the model. The state machine sits in <code>idle</code>.',
-              files: ['apps/tauri/src/renderer/features/ai-generate/'],
+              files: ['apps/desktop/src/renderer/features/ai-generate/'],
             },
             {
               layer: 'ui',
               title: 'Click “Generate” → machine advances',
               body: 'The machine moves <code>idle → configuring</code>. The <code>useGeneration</code> hook first asks the model to <b>extract metadata</b> (candidate name, job title, key skills) before the full write.',
               code: 'send(<span class="s">\'SUBMIT\'</span>) <span class="c">// idle → configuring</span>\\nawait extractMetadata(resume, jobAd, model)',
-              files: ['apps/tauri/src/renderer/services/use-ai/'],
+              files: ['apps/desktop/src/renderer/services/use-ai/'],
             },
             {
               layer: 'ipc',
               title: 'invoke ai_generate',
               body: "The hook calls <code>api.ai.generate(req)</code>, a wrapper over <code>invoke('ai_generate', { req })</code>. The request carries provider, model, messages, temperature, maxTokens and an optional baseUrl.",
               code: 'generate: (req) =&gt; invoke(<span class="s">\'ai_generate\'</span>, { req })',
-              files: ['apps/tauri/src/tauri-client/namespaces/ai/ai.ts'],
+              files: ['apps/desktop/src/tauri-client/namespaces/ai/ai.ts'],
             },
             {
               layer: 'rust',
@@ -1456,8 +1456,8 @@
               body: "The Rust handler parses the provider (<code>ProviderId::parse</code> — a hard error if it's missing/unknown, <b>never</b> a fallback), validates the model, registers a job in the <code>JobTracker</code>, spawns an async task, and <b>returns <code>{ jobId }</code> immediately</b>.",
               code: '<span class="k">let</span> id = ProviderId::parse(req.provider)?;  <span class="c">// no silent fallback</span>\\nid.validate_model(&req.model)?;\\n<span class="k">let</span> provider = resolve(id, req.base_url);\\n<span class="c">// spawn → return { jobId } now</span>',
               files: [
-                'apps/tauri/src-tauri/src/commands/ai.rs',
-                'apps/tauri/src-tauri/src/commands/ai_provider/mod.rs',
+                'apps/desktop/src-tauri/src/commands/ai.rs',
+                'apps/desktop/src-tauri/src/commands/ai_provider/mod.rs',
               ],
             },
             {
@@ -1465,8 +1465,8 @@
               title: 'Provider talks to the model',
               body: "<code>provider.chat_stream()</code> runs. For a <b>cloud/local</b> provider that's an HTTP request (OpenAI SSE / Anthropic / Gemini / Ollama). For a <b>CLI agent</b> it spawns the headless binary and reads its stdout. API keys are resolved from the keyring per request.",
               files: [
-                'apps/tauri/src-tauri/src/commands/ai_provider/openai.rs',
-                'apps/tauri/src-tauri/src/commands/ai_provider/cli_agent/mod.rs',
+                'apps/desktop/src-tauri/src/commands/ai_provider/openai.rs',
+                'apps/desktop/src-tauri/src/commands/ai_provider/cli_agent/mod.rs',
               ],
             },
             {
@@ -1474,14 +1474,14 @@
               title: 'Each token is emitted as an event',
               body: 'As deltas arrive, the provider emits them on the <span class="chan">ai:stream</span> channel, tagged with the <code>jobId</code>. Cancellation is checked per chunk against the JobTracker.',
               code: 'app.emit(<span class="s">"ai:stream"</span>, json!({\\n  <span class="s">"jobId"</span>: id, <span class="s">"delta"</span>: text, <span class="s">"done"</span>: <span class="k">false</span>\\n}));',
-              files: ['apps/tauri/src-tauri/src/commands/ai_provider/anthropic.rs'],
+              files: ['apps/desktop/src-tauri/src/commands/ai_provider/anthropic.rs'],
             },
             {
               layer: 'ui',
               title: 'UI streams the text live',
               body: "<code>useAIStream</code> (a <code>listen('ai:stream')</code> subscription) filters by jobId and appends each delta to a buffer that <code>StreamingText</code> renders — so the résumé appears token‑by‑token. A <code>thinking</code> flag routes reasoning to a separate panel.",
               code: 'api.ai.onStream(c =&gt; {\\n  <span class="k">if</span> (c.jobId !== myJob) <span class="k">return</span>;\\n  setBuffer(b =&gt; b + c.delta);\\n});',
-              files: ['apps/tauri/src/tauri-client/namespaces/ai/ai.ts'],
+              files: ['apps/desktop/src/tauri-client/namespaces/ai/ai.ts'],
             },
             {
               layer: 'ui',
@@ -1489,8 +1489,8 @@
               body: 'On the terminal <code>done:true</code> event the machine reaches <code>done</code> (generating the cover letter next if target was “both”). The user can export to PDF/DOCX or save to the library.',
               code: 'invoke(<span class="s">\'ai_generations_save\'</span>, { req }) <span class="c">// → ai_generations.db</span>',
               files: [
-                'apps/tauri/src/tauri-client/namespaces/aiGenerations/aiGenerations.ts',
-                'apps/tauri/src-tauri/src/ai_generations/mod.rs',
+                'apps/desktop/src/tauri-client/namespaces/aiGenerations/aiGenerations.ts',
+                'apps/desktop/src-tauri/src/ai_generations/mod.rs',
               ],
             },
           ],
@@ -1502,20 +1502,20 @@
               layer: 'ui',
               title: 'User fills the scrape form',
               body: 'On <code>/jobs</code> the user picks a board and enters query, location, pages and a date filter, then clicks “Start scraping”.',
-              files: ['apps/tauri/src/renderer/features/jobs/'],
+              files: ['apps/desktop/src/renderer/features/jobs/'],
             },
             {
               layer: 'ipc',
               title: 'invoke scrape_boards',
               body: "<code>useScrapeBoards().mutateAsync(req)</code> → <code>invoke('scrape_boards', { req })</code>. The UI sets <code>scraping=true</code>, clears the live list, and waits for the jobId. Multi-board: up to 6 boards per run, fanned out ≤3 concurrent.",
               code: 'boards: (req) =&gt; invoke(<span class="s">\'scrape_boards\'</span>, { req })',
-              files: ['apps/tauri/src/tauri-client/namespaces/scrape/scrape.ts'],
+              files: ['apps/desktop/src/tauri-client/namespaces/scrape/scrape.ts'],
             },
             {
               layer: 'rust',
               title: 'Command spawns a scrape job',
               body: 'The handler registers a <code>JobTracker</code> entry, builds a <code>BoardSearchInput</code>, grabs the shared <code>ScraperEngine</code>, spawns the work and returns <code>{ jobId }</code> right away.',
-              files: ['apps/tauri/src-tauri/src/commands/scrape.rs'],
+              files: ['apps/desktop/src-tauri/src/commands/scrape.rs'],
             },
             {
               layer: 'rust',
@@ -1523,8 +1523,8 @@
               body: '<code>ScraperEngine</code> acquires a semaphore permit (default <b>2</b> concurrent scrapes, tunable by performance mode), registers a <code>CancellationToken</code> under the jobId, and resolves the scraper from the registry: <code>boards::get(id)</code>.',
               code: '<span class="k">static</span> SCRAPERS: &[&<span class="k">dyn</span> Scraper] = &[ <span class="c">/* ~16 boards */</span> ];\\nboards::get(board)? <span class="c">// &dyn Scraper</span>',
               files: [
-                'apps/tauri/src-tauri/src/scraping/engine/mod.rs',
-                'apps/tauri/src-tauri/src/scraping/boards/mod.rs',
+                'apps/desktop/src-tauri/src/scraping/engine/mod.rs',
+                'apps/desktop/src-tauri/src/scraping/boards/mod.rs',
               ],
             },
             {
@@ -1532,8 +1532,8 @@
               title: 'Scraper fetches postings',
               body: 'The board runs in HTTP mode (shared <code>reqwest</code> client) or Browser mode (Chromium). For every posting it finds, it invokes the <code>on_item</code> callback — and reports 0→1 progress via <code>on_progress</code>.',
               files: [
-                'apps/tauri/src-tauri/src/scraping/boards/',
-                'apps/tauri/src-tauri/src/net/http.rs',
+                'apps/desktop/src-tauri/src/scraping/boards/',
+                'apps/desktop/src-tauri/src/net/http.rs',
               ],
             },
             {
@@ -1542,8 +1542,8 @@
               body: 'The <code>on_item</code> callback pushes the posting into the <code>PostingsCache</code> and emits it on <span class="chan">jobs:event</span> with <code>type:\'job.stream\'</code>. On finish it emits <code>job.completed</code> or <code>job.failed</code>.',
               code: 'app.emit(<span class="s">"jobs:event"</span>, json!({\\n  <span class="s">"type"</span>:<span class="s">"job.stream"</span>, <span class="s">"jobId"</span>:id, <span class="s">"data"</span>: posting\\n}));',
               files: [
-                'apps/tauri/src-tauri/src/commands/scrape.rs',
-                'apps/tauri/src-tauri/src/postings/mod.rs',
+                'apps/desktop/src-tauri/src/commands/scrape.rs',
+                'apps/desktop/src-tauri/src/postings/mod.rs',
               ],
             },
             {
@@ -1551,8 +1551,8 @@
               title: 'Live postings appear',
               body: "<code>useJobEvents</code> (<code>listen('jobs:event')</code>) prepends each streamed posting to the list (capped at 500) and invalidates the jobs query cache. On <code>job.completed</code> it flips <code>scraping=false</code>.",
               files: [
-                'apps/tauri/src/tauri-client/namespaces/jobs/jobs.ts',
-                'apps/tauri/src/renderer/services/use-jobs/',
+                'apps/desktop/src/tauri-client/namespaces/jobs/jobs.ts',
+                'apps/desktop/src/renderer/services/use-jobs/',
               ],
             },
             {
@@ -1560,7 +1560,7 @@
               title: 'Watchdog fallback',
               body: "In case an event is ever dropped, a <code>useEffect</code> polls <code>invoke('jobs_get', jobId)</code> every 2.5s and reconciles the UI once a terminal status is known. From here the user can queue matches into an Autopilot (next flow).",
               code: 'invoke(<span class="s">\'jobs_get\'</span>, { jobId }) <span class="c">// every 2.5s while running</span>',
-              files: ['apps/tauri/src/tauri-client/namespaces/jobs/jobs.ts'],
+              files: ['apps/desktop/src/tauri-client/namespaces/jobs/jobs.ts'],
             },
           ],
         },
@@ -1571,14 +1571,14 @@
               layer: 'ui',
               title: 'User saves an autopilot',
               body: 'On <code>/autopilot</code> the user defines a saved hunt — boards, filters and a schedule — in the workflow builder. It runs unattended and surfaces matches for the user to tailor &amp; apply.',
-              files: ['apps/tauri/src/renderer/features/autopilot/'],
+              files: ['apps/desktop/src/renderer/features/autopilot/'],
             },
             {
               layer: 'ipc',
               title: 'invoke autopilot_run',
               body: "<code>useAutopilot().run(id)</code> → <code>invoke('autopilot_run', { autopilotId })</code>. List/create/update/pause/resume share the same namespace.",
               code: 'run: (autopilotId) =&gt; invoke(<span class="s">\'autopilot_run\'</span>, { autopilotId })',
-              files: ['apps/tauri/src/tauri-client/namespaces/autopilot/autopilot.ts'],
+              files: ['apps/desktop/src/tauri-client/namespaces/autopilot/autopilot.ts'],
             },
             {
               layer: 'rust',
@@ -1586,30 +1586,30 @@
               body: 'The handler scrapes the configured boards, embeds &amp; cosine‑ranks postings against the résumé, keeps the top matches, registers a <code>JobTracker</code> job and emits <span class="chan">autopilot.step</span> per stage (scrape → rank → notify).',
               code: 'app.emit(<span class="s">"autopilot.step"</span>, json!({\\n  <span class="s">"autopilotId"</span>:id, <span class="s">"step"</span>:step, <span class="s">"detail"</span>:detail\\n}));',
               files: [
-                'apps/tauri/src-tauri/src/commands/autopilot.rs',
-                'apps/tauri/src-tauri/src/autopilot/mod.rs',
+                'apps/desktop/src-tauri/src/commands/autopilot.rs',
+                'apps/desktop/src-tauri/src/autopilot/mod.rs',
               ],
             },
             {
               layer: 'rust',
               title: 'Notify on new matches',
               body: 'New postings raise a permission‑gated OS notification and update the system tray (“New jobs: N” + “Pause all autopilots”). <b>Nothing is auto‑submitted</b> — the app finds &amp; notifies, the user decides.',
-              files: ['apps/tauri/src-tauri/src/tray/mod.rs'],
+              files: ['apps/desktop/src-tauri/src/tray/mod.rs'],
             },
             {
               layer: 'ext',
               title: 'Deep‑link focus',
               body: "Clicking the notification opens <code>ajh://autopilot/&lt;id&gt;</code>, validated against a strict allowlist, which focuses the app on that autopilot's results.",
               code: '<span class="chan">autopilot:focus</span> <span class="c">// ajh://autopilot/&lt;id&gt;</span>',
-              files: ['apps/tauri/src-tauri/src/deeplink/mod.rs'],
+              files: ['apps/desktop/src-tauri/src/deeplink/mod.rs'],
             },
             {
               layer: 'ui',
               title: 'User tailors & applies',
               body: 'The user reviews the ranked matches, generates a tailored résumé/cover letter (the Generate flow), and applies on the board themselves. The run is recorded for the Autopilot history.',
               files: [
-                'apps/tauri/src/renderer/features/autopilot/',
-                'apps/tauri/src-tauri/src/postings/mod.rs',
+                'apps/desktop/src/renderer/features/autopilot/',
+                'apps/desktop/src-tauri/src/postings/mod.rs',
               ],
             },
           ],
@@ -1806,8 +1806,8 @@
     </ul>
     <div class="pillrow"><span>ollama</span><span>openai</span><span>openai‑compatible</span><span>anthropic</span><span>gemini</span><span>claude‑code</span><span>codex</span><span>gemini‑cli</span></div>`,
           f: [
-            'apps/tauri/src-tauri/src/commands/ai_provider/mod.rs',
-            'apps/tauri/src-tauri/src/commands/ai_provider/cli_agent/mod.rs',
+            'apps/desktop/src-tauri/src/commands/ai_provider/mod.rs',
+            'apps/desktop/src-tauri/src/commands/ai_provider/cli_agent/mod.rs',
           ],
         },
         {
@@ -1823,9 +1823,9 @@
         <code>SCRAPERS</code>. Nothing else changes.</li>
     </ul>`,
           f: [
-            'apps/tauri/src-tauri/src/scraping/engine/mod.rs',
-            'apps/tauri/src-tauri/src/scraping/boards/mod.rs',
-            'apps/tauri/src-tauri/src/scraping/types/mod.rs',
+            'apps/desktop/src-tauri/src/scraping/engine/mod.rs',
+            'apps/desktop/src-tauri/src/scraping/boards/mod.rs',
+            'apps/desktop/src-tauri/src/scraping/types/mod.rs',
           ],
         },
         {
@@ -1843,9 +1843,9 @@
         deep link) and focuses that autopilot's results.</li>
     </ul>`,
           f: [
-            'apps/tauri/src-tauri/src/autopilot/mod.rs',
-            'apps/tauri/src-tauri/src/tray/mod.rs',
-            'apps/tauri/src-tauri/src/deeplink/mod.rs',
+            'apps/desktop/src-tauri/src/autopilot/mod.rs',
+            'apps/desktop/src-tauri/src/tray/mod.rs',
+            'apps/desktop/src-tauri/src/deeplink/mod.rs',
           ],
         },
         {
@@ -1859,7 +1859,7 @@
       <li><b>Ranking</b> uses cosine similarity between the résumé vector and each posting vector.</li>
       <li>Changing the embedding config marks vectors stale → re‑embed on demand (<code>ai_reembed_all</code>).</li>
     </ul>`,
-          f: ['apps/tauri/src-tauri/src/documents/mod.rs'],
+          f: ['apps/desktop/src-tauri/src/documents/mod.rs'],
         },
         {
           h: 'Persistence map — where everything lives',
@@ -1875,8 +1875,8 @@
       <li><b>Logs:</b> rotating files via <code>tauri_plugin_log</code></li>
     </ul>`,
           f: [
-            'apps/tauri/src-tauri/src/platform/config.rs',
-            'apps/tauri/src-tauri/src/credentials/mod.rs',
+            'apps/desktop/src-tauri/src/platform/config.rs',
+            'apps/desktop/src-tauri/src/credentials/mod.rs',
           ],
         },
         {
@@ -1887,7 +1887,7 @@
     string</b>, so on the JS side a failed <code>invoke</code> is just a rejected promise with a readable
     message. Every subsystem wraps work in a <code>Span</code> that logs a <code>→</code> line at start and a
     <code>←</code> line with <code>duration=…ms ok=…</code> at the end.</p>`,
-          f: ['apps/tauri/src-tauri/src/error.rs', 'apps/tauri/src-tauri/src/observability.rs'],
+          f: ['apps/desktop/src-tauri/src/error.rs', 'apps/desktop/src-tauri/src/observability.rs'],
         },
       ];
       document.getElementById('subs').innerHTML = SUBS.map(
@@ -1932,7 +1932,7 @@
           q: 'How do you keep types in sync across the TS ↔ Rust boundary?',
           a: `Zod schemas in
     <span class="path">packages/shared/src/schemas</span> are the single source of truth. <code>pnpm gen:ipc</code>
-    generates the matching Rust request structs into <span class="path">apps/tauri/src-tauri/src/ipc_contracts/</span>,
+    generates the matching Rust request structs into <span class="path">apps/desktop/src-tauri/src/ipc_contracts/</span>,
     and CI runs it with <code>--check</code> to fail on drift. TS types come from <code>z.infer</code>. Tauri\'s
     macro deserializes the JSON payload straight into the typed struct via serde.`,
         },

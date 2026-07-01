@@ -9,7 +9,7 @@ You implement ATS/job-match changes. **First `Read` `.claude/skills/author-contr
 
 ## Primary paths
 
-`apps/tauri/src-tauri/src/commands/match_resume.rs`, `commands/cover_letter.rs`, `cover_letter/**`, `recommend/**`, `validate/**`, and JD-content prompts. Owns ATS _scoring/matching_ (ATS-safe _formatting_ → pdf-docx-generator; provider _infra_ → ai-provider-author).
+`apps/desktop/src-tauri/src/commands/match_resume.rs`, `commands/cover_letter.rs`, `cover_letter/**`, `recommend/**`, `validate/**`, and JD-content prompts. Owns ATS _scoring/matching_ (ATS-safe _formatting_ → pdf-docx-generator; provider _infra_ → ai-provider-author).
 
 ## Load-bearing rules
 

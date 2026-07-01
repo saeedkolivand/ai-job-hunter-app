@@ -7,7 +7,7 @@ Prepare release: **$ARGUMENTS**
 
 1. Load `deployment-rules` + `token-efficiency`.
 2. **Bug-catch pre-flight** over the release range (`git diff <last-release-tag>..HEAD`) — no new engine, reuse existing pieces; **HIGH/CRITICAL block the release**, route each fix to the owning **author** → re-audit:
-   - **Green gate** — `pnpm typecheck` + `pnpm test` + `cargo clippy`/`cargo test` (`apps/tauri/src-tauri`) all pass.
+   - **Green gate** — `pnpm typecheck` + `pnpm test` + `cargo clippy`/`cargo test` (`apps/desktop/src-tauri`) all pass.
    - **Bug-focused critic pass** — spawn the touched-domain critics over the range diff with a correctness/bug lens (not just the arch rubric).
    - **Impact sanity** — `codegraph impact <changed-symbol>` for changed public symbols → flag callers not updated in the range.
    - **Over-engineering** — `ponytail:ponytail-review` over the range.

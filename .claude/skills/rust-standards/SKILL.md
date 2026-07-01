@@ -1,6 +1,6 @@
 ---
 name: rust-standards
-description: Rust/Tauri backend standards — L0–L3 layers, centralized platform/net/error ownership, Rust-first business logic, registries, error handling. Load for changes under apps/tauri/src-tauri/src/**.
+description: Rust/Tauri backend standards — L0–L3 layers, centralized platform/net/error ownership, Rust-first business logic, registries, error handling. Load for changes under apps/desktop/src-tauri/src/**.
 ---
 
 # Rust standards (CI-enforced via `cargo test --test architecture`)

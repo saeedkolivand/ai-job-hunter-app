@@ -73,11 +73,11 @@
         "assets": [
           "CHANGELOG.md",
           "package.json",
-          "apps/tauri/package.json",
+          "apps/desktop/package.json",
           "apps/extension/package.json",
-          "apps/tauri/src-tauri/Cargo.toml",
-          "apps/tauri/src-tauri/Cargo.lock",
-          "apps/tauri/src-tauri/tauri.conf.json",
+          "apps/desktop/src-tauri/Cargo.toml",
+          "apps/desktop/src-tauri/Cargo.lock",
+          "apps/desktop/src-tauri/tauri.conf.json",
           "README.md"
         ],
         "message": "chore(release): ${nextRelease.version} [skip ci]"

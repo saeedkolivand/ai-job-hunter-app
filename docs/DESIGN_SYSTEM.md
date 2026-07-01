@@ -196,7 +196,7 @@ A **single-source, user-customizable accent** system colllapses brand-color frag
 
 **Runtime applier** — `applyAccent()` in `packages/ui/src/lib/theme.ts` writes the five accent vars to `<html>.style` before paint, or clears them for `'default'`. It is idempotent and re-runs on scheme changes (light/dark swap). See `ACCENT_VARS` in theme.ts for the full list.
 
-**User picker** — Settings → Appearance card (`apps/tauri/src/renderer/features/settings/components/general-section/AppearanceCard.tsx`) offers:
+**User picker** — Settings → Appearance card (`apps/desktop/src/renderer/features/settings/components/general-section/AppearanceCard.tsx`) offers:
 
 - Default chip + 8 preset macOS-style swatches (each with hand-tuned `color2`) + System chip (hidden when `supported:false`).
 - Swatches preview the two-tone gradient (brand → brand-2), so users see the full accent effect before apply.
@@ -377,7 +377,7 @@ Labeled settings group with optional description:
 Wraps every route page. Provides consistent padding, max-width, and scroll container:
 
 ```typescript
-// apps/tauri/src/renderer/components/layout/PageShell.tsx
+// apps/desktop/src/renderer/components/layout/PageShell.tsx
 <PageShell title="Dashboard">
   {/* page content */}
 </PageShell>

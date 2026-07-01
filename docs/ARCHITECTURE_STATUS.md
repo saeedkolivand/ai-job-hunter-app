@@ -18,29 +18,29 @@ Last updated: 2026-06-24
 
 ## Infrastructure
 
-| Component                                        | Status | Notes                                                                                                                                                                                           |
-| ------------------------------------------------ | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Tauri][tauri] 2.x shell                         | ✅     | Window, tray, menus, IPC                                                                                                                                                                        |
-| [pnpm][pnpm] monorepo + [Turborepo][turborepo]   | ✅     | All packages wired                                                                                                                                                                              |
-| [TypeScript][typescript] 6 across all packages   | ✅     | Strict mode enabled                                                                                                                                                                             |
-| [Vite][vite] + HMR for renderer                  | ✅     |                                                                                                                                                                                                 |
-| [TanStack Router][tanstack-router] (file-based)  | ✅     | All 9 routes                                                                                                                                                                                    |
-| [TanStack Query][tanstack-query] + service hooks | ✅     | All 23 namespaces                                                                                                                                                                               |
-| [Zustand][zustand] stores                        | ✅     | preferences-store, generation-store (`store/generation-store/`), others                                                                                                                         |
-| AppClient / mock transport                       | ✅     | [Tauri][tauri] + mock implementations                                                                                                                                                           |
-| [ESLint][eslint] + [Prettier][prettier]          | ✅     | Enforced in CI                                                                                                                                                                                  |
-| [Husky][husky] + [commitlint][commitlint]        | ✅     | Pre-commit hooks                                                                                                                                                                                |
-| Semantic release pipeline                        | ✅     | Auto-versioning on main                                                                                                                                                                         |
-| Auto-updater                                     | ✅     | GitHub Releases integration                                                                                                                                                                     |
-| Native desktop behaviors                         | ✅     | `apps/tauri/src/desktop-native.ts` (`installDesktopNativeBehaviors`): context-menu, zoom, reload guards (prod-only); selection opt-in via `.select-text` / `[data-selectable]` in `globals.css` |
-| Data backup / restore                            | ✅     | `DataStore` trait → full export/import bundle (Settings → Privacy)                                                                                                                              |
-| Full app reset                                   | ✅     | `privacy_reset_app` wipes every store registered in the `Resettable` registry (`commands/privacy.rs`)                                                                                           |
-| Shared platform layers                           | ✅     | `platform::config`, `net::http`, `error::AppError`, `observability::Span` + provider/board registries (Phases 1–6 — see PATTERNS.md §13)                                                        |
-| Architecture CI guardrails                       | ✅     | grep bans: `std::env::var` outside `platform/config.rs`; `reqwest::Client::new/builder` outside `net/http.rs`; `Result<_, String>` outside `error.rs`                                           |
-| PDF engine migration (printpdf → Typst)          | ✅     | `printpdf` + `ttf-parser` removed; `export/layout_pdf.rs`, `export/pdf_renderer/`, top-level `layout/`, `measure/` deleted; `export/typst_engine/` is the sole PDF backend                      |
-| Centralized SQLite (`db::open`)                  | ✅     | WAL mode + 5s busy_timeout; routed by all stores; atomic transactions on import/migration/status (ADR-022)                                                                                      |
-| Anti-abuse rate + concurrency limits             | ✅     | In-memory `RateLimited` error (H13) on `ai_generate` + scrape commands; per-provider daily ceiling + concurrent-op limit (`limits/` module)                                                     |
-| OS accent live-update watcher                    | ✅     | Windows WinRT `UISettings::ColorValuesChanged` → `system:accentChanged` event; renderer re-applies theme when accentSource='system' (macOS deferred)                                            |
+| Component                                        | Status | Notes                                                                                                                                                                                             |
+| ------------------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Tauri][tauri] 2.x shell                         | ✅     | Window, tray, menus, IPC                                                                                                                                                                          |
+| [pnpm][pnpm] monorepo + [Turborepo][turborepo]   | ✅     | All packages wired                                                                                                                                                                                |
+| [TypeScript][typescript] 6 across all packages   | ✅     | Strict mode enabled                                                                                                                                                                               |
+| [Vite][vite] + HMR for renderer                  | ✅     |                                                                                                                                                                                                   |
+| [TanStack Router][tanstack-router] (file-based)  | ✅     | All 9 routes                                                                                                                                                                                      |
+| [TanStack Query][tanstack-query] + service hooks | ✅     | All 23 namespaces                                                                                                                                                                                 |
+| [Zustand][zustand] stores                        | ✅     | preferences-store, generation-store (`store/generation-store/`), others                                                                                                                           |
+| AppClient / mock transport                       | ✅     | [Tauri][tauri] + mock implementations                                                                                                                                                             |
+| [ESLint][eslint] + [Prettier][prettier]          | ✅     | Enforced in CI                                                                                                                                                                                    |
+| [Husky][husky] + [commitlint][commitlint]        | ✅     | Pre-commit hooks                                                                                                                                                                                  |
+| Semantic release pipeline                        | ✅     | Auto-versioning on main                                                                                                                                                                           |
+| Auto-updater                                     | ✅     | GitHub Releases integration                                                                                                                                                                       |
+| Native desktop behaviors                         | ✅     | `apps/desktop/src/desktop-native.ts` (`installDesktopNativeBehaviors`): context-menu, zoom, reload guards (prod-only); selection opt-in via `.select-text` / `[data-selectable]` in `globals.css` |
+| Data backup / restore                            | ✅     | `DataStore` trait → full export/import bundle (Settings → Privacy)                                                                                                                                |
+| Full app reset                                   | ✅     | `privacy_reset_app` wipes every store registered in the `Resettable` registry (`commands/privacy.rs`)                                                                                             |
+| Shared platform layers                           | ✅     | `platform::config`, `net::http`, `error::AppError`, `observability::Span` + provider/board registries (Phases 1–6 — see PATTERNS.md §13)                                                          |
+| Architecture CI guardrails                       | ✅     | grep bans: `std::env::var` outside `platform/config.rs`; `reqwest::Client::new/builder` outside `net/http.rs`; `Result<_, String>` outside `error.rs`                                             |
+| PDF engine migration (printpdf → Typst)          | ✅     | `printpdf` + `ttf-parser` removed; `export/layout_pdf.rs`, `export/pdf_renderer/`, top-level `layout/`, `measure/` deleted; `export/typst_engine/` is the sole PDF backend                        |
+| Centralized SQLite (`db::open`)                  | ✅     | WAL mode + 5s busy_timeout; routed by all stores; atomic transactions on import/migration/status (ADR-022)                                                                                        |
+| Anti-abuse rate + concurrency limits             | ✅     | In-memory `RateLimited` error (H13) on `ai_generate` + scrape commands; per-provider daily ceiling + concurrent-op limit (`limits/` module)                                                       |
+| OS accent live-update watcher                    | ✅     | Windows WinRT `UISettings::ColorValuesChanged` → `system:accentChanged` event; renderer re-applies theme when accentSource='system' (macOS deferred)                                              |
 
 ---
 
@@ -65,7 +65,7 @@ former `packages/ai` and `packages/data` Node packages were removed.
 
 ---
 
-## Scraping (`apps/tauri/src-tauri/src/scraping/`)
+## Scraping (`apps/desktop/src-tauri/src/scraping/`)
 
 Active scrapers: 16 boards. Five boards (Indeed, StepStone, Xing, Workday, Glassdoor) were retired as direct scrapers in 2026-06-21 and are now covered by the Aggregator (Adzuna/JSearch). See ADR-026.
 
@@ -95,7 +95,7 @@ Active scrapers: 16 boards. Five boards (Indeed, StepStone, Xing, Workday, Glass
 
 ---
 
-## AI Generation (`apps/tauri/src/renderer/features/ai-generate/`)
+## AI Generation (`apps/desktop/src/renderer/features/ai-generate/`)
 
 | Feature                    | Status | Notes                                                                                                                     |
 | -------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------- |
@@ -116,7 +116,7 @@ Active scrapers: 16 boards. Five boards (Indeed, StepStone, Xing, Workday, Glass
 
 ---
 
-## Resume Analysis (`apps/tauri/src/renderer/features/analyze/`)
+## Resume Analysis (`apps/desktop/src/renderer/features/analyze/`)
 
 | Feature                    | Status | Notes |
 | -------------------------- | ------ | ----- |
@@ -130,7 +130,7 @@ Active scrapers: 16 boards. Five boards (Indeed, StepStone, Xing, Workday, Glass
 
 ---
 
-## Autopilot (`apps/tauri/src-tauri/src/autopilot/`)
+## Autopilot (`apps/desktop/src-tauri/src/autopilot/`)
 
 | Feature                      | Status | Notes                                                                                                                                                                            |
 | ---------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -145,7 +145,7 @@ Active scrapers: 16 boards. Five boards (Indeed, StepStone, Xing, Workday, Glass
 | `ai_generations` aggregate   | ✅     | `job_url`, `board`, `application_answers`, `company_brief` columns; per-job merge-upsert (`merge_application`)                                                                   |
 | `run_status` + status badge  | ✅     | `inProgress\|completed\|failed\|interrupted`; amber/red chip on `AutopilotCard`; crash reconciliation on startup                                                                 |
 | OS notification on new jobs  | ✅     | Permission-gated; clicking the notification navigates to `/autopilot`                                                                                                            |
-| Tray module                  | ✅     | Dynamic "New jobs: N" click→focus; "Pause all" — `apps/tauri/src-tauri/src/tray/`                                                                                                |
+| Tray module                  | ✅     | Dynamic "New jobs: N" click→focus; "Pause all" — `apps/desktop/src-tauri/src/tray/`                                                                                              |
 | Deep-link focus guard        | ✅     | `ajh://autopilot/<id>` validated against strict allowlist; registered OS scheme — `deeplink/`                                                                                    |
 | Startup catch-up sweep       | ✅     | Fires ~5 s after launch instead of waiting a full tick interval                                                                                                                  |
 | `minMatchScore` enforcement  | ✅     | Scorable postings below threshold dropped before `record_run`; unscored postings kept                                                                                            |
@@ -157,32 +157,32 @@ Active scrapers: 16 boards. Five boards (Indeed, StepStone, Xing, Workday, Glass
 
 ## UI / UX
 
-| Feature                   | Status | Notes                                                                                                                                                                                         |
-| ------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Dashboard route           | ✅     | Pipeline overview, recent activity                                                                                                                                                            |
-| Jobs route                | ✅     | Master-detail split view (default) + list-only toggle; virtualized list; filter, interaction history, viewed/applied badges. See `apps/tauri/src/renderer/features/jobs/` for layout details. |
-| Search route              | ✅     | Hybrid semantic search (⌘/Ctrl+K only — removed from sidebar)                                                                                                                                 |
-| AI route                  | ✅     | Model selection, [Ollama][ollama] health                                                                                                                                                      |
-| AI Generate route         | ✅     | Full generation UI                                                                                                                                                                            |
-| Analyze route             | ✅     | Resume analysis panels                                                                                                                                                                        |
-| Autopilot route           | ✅     | Workflow builder + runner                                                                                                                                                                     |
-| Documents route           | ✅     | Three-tab view — Résumés / Cover Letters / Activity (lenses over `ai_generations`); route stays `/resumes`                                                                                    |
-| Settings route            | ✅     | All settings tabs; keyboard-reachable sidebar (`@ajh/ui Button` + `aria-current`); `SettingsSection` throughout                                                                               |
-| Support route             | ✅     | Diagnostics, FAQ, logs                                                                                                                                                                        |
-| Onboarding wizard         | ✅     | First-run experience                                                                                                                                                                          |
-| Light/dark/system theme   | ✅     |                                                                                                                                                                                               |
-| i18n (11 languages)       | ✅     | UI translations                                                                                                                                                                               |
-| Keyboard shortcuts        | ✅     | Global handler + `?` cheat-sheet modal (`useKeyboardShortcuts`)                                                                                                                               |
-| Auto-updater banner       | ✅     |                                                                                                                                                                                               |
-| Performance mode selector | ✅     |                                                                                                                                                                                               |
-| Spotlight tour            | ✅     | Interactive tutorial                                                                                                                                                                          |
-| Sidebar nav groups        | ✅     | Workspace / Automation / pinned — `nav.sections.workspace\|automation` i18n keys                                                                                                              |
-| Grouped nav pill          | ✅     | `@ajh/ui NavPill` slides within each list (`layoutId` scoped per group)                                                                                                                       |
-| `SegmentedControl`        | ✅     | `@ajh/ui` — radiogroup + roving arrow-key nav; `track`/`grid` variants                                                                                                                        |
-| `SetupHint`               | ✅     | `@ajh/ui` — generalized contextual setup nudge (AI + future board/chrome)                                                                                                                     |
-| Visible focus rings       | ✅     | Global `:focus-visible` ring; `ModalShell` `aria-labelledby`; `role="switch"` toggles                                                                                                         |
-| Optimistic delete         | ✅     | `onMutate` snapshot+filter / `onError` rollback on generations + autopilots                                                                                                                   |
-| macOS window vibrancy     | ⬜     | Deferred — requires a Mac-capable dev session (`window-vibrancy` crate)                                                                                                                       |
+| Feature                   | Status | Notes                                                                                                                                                                                           |
+| ------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dashboard route           | ✅     | Pipeline overview, recent activity                                                                                                                                                              |
+| Jobs route                | ✅     | Master-detail split view (default) + list-only toggle; virtualized list; filter, interaction history, viewed/applied badges. See `apps/desktop/src/renderer/features/jobs/` for layout details. |
+| Search route              | ✅     | Hybrid semantic search (⌘/Ctrl+K only — removed from sidebar)                                                                                                                                   |
+| AI route                  | ✅     | Model selection, [Ollama][ollama] health                                                                                                                                                        |
+| AI Generate route         | ✅     | Full generation UI                                                                                                                                                                              |
+| Analyze route             | ✅     | Resume analysis panels                                                                                                                                                                          |
+| Autopilot route           | ✅     | Workflow builder + runner                                                                                                                                                                       |
+| Documents route           | ✅     | Three-tab view — Résumés / Cover Letters / Activity (lenses over `ai_generations`); route stays `/resumes`                                                                                      |
+| Settings route            | ✅     | All settings tabs; keyboard-reachable sidebar (`@ajh/ui Button` + `aria-current`); `SettingsSection` throughout                                                                                 |
+| Support route             | ✅     | Diagnostics, FAQ, logs                                                                                                                                                                          |
+| Onboarding wizard         | ✅     | First-run experience                                                                                                                                                                            |
+| Light/dark/system theme   | ✅     |                                                                                                                                                                                                 |
+| i18n (11 languages)       | ✅     | UI translations                                                                                                                                                                                 |
+| Keyboard shortcuts        | ✅     | Global handler + `?` cheat-sheet modal (`useKeyboardShortcuts`)                                                                                                                                 |
+| Auto-updater banner       | ✅     |                                                                                                                                                                                                 |
+| Performance mode selector | ✅     |                                                                                                                                                                                                 |
+| Spotlight tour            | ✅     | Interactive tutorial                                                                                                                                                                            |
+| Sidebar nav groups        | ✅     | Workspace / Automation / pinned — `nav.sections.workspace\|automation` i18n keys                                                                                                                |
+| Grouped nav pill          | ✅     | `@ajh/ui NavPill` slides within each list (`layoutId` scoped per group)                                                                                                                         |
+| `SegmentedControl`        | ✅     | `@ajh/ui` — radiogroup + roving arrow-key nav; `track`/`grid` variants                                                                                                                          |
+| `SetupHint`               | ✅     | `@ajh/ui` — generalized contextual setup nudge (AI + future board/chrome)                                                                                                                       |
+| Visible focus rings       | ✅     | Global `:focus-visible` ring; `ModalShell` `aria-labelledby`; `role="switch"` toggles                                                                                                           |
+| Optimistic delete         | ✅     | `onMutate` snapshot+filter / `onError` rollback on generations + autopilots                                                                                                                     |
+| macOS window vibrancy     | ⬜     | Deferred — requires a Mac-capable dev session (`window-vibrancy` crate)                                                                                                                         |
 
 ---
 

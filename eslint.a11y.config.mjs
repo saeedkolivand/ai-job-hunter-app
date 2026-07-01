@@ -18,7 +18,7 @@ export default [
     ],
   },
   {
-    files: ['apps/tauri/src/renderer/**/*.tsx'],
+    files: ['apps/desktop/src/renderer/**/*.tsx'],
     languageOptions: {
       parser: tseslint.parser,
       parserOptions: { ecmaFeatures: { jsx: true } },

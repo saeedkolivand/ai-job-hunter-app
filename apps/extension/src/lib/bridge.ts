@@ -9,7 +9,7 @@
  *    extension's `ws://127.0.0.1` to `wss://` and breaks the socket path).
  * 2. **WebSocket** (fallback). The desktop binds `127.0.0.1` on the first free
  *    port in the range below (see
- *    `apps/tauri/src-tauri/src/extension_bridge/mod.rs::PORT_RANGE`). Used when
+ *    `apps/desktop/src-tauri/src/extension_bridge/mod.rs::PORT_RANGE`). Used when
  *    the native host isn't registered (old/never-installed app).
  *
  * Either way we hold a SINGLE transport, send `import.request` envelopes (token

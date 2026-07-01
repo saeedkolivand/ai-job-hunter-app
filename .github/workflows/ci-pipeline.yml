@@ -96,7 +96,7 @@ jobs:
         with:
           filters: |
             frontend:
-              - 'apps/tauri/src/**'
+              - 'apps/desktop/src/**'
               - 'packages/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
@@ -106,7 +106,7 @@ jobs:
               - 'turbo.json'
               - '.github/**'
             rust:
-              - 'apps/tauri/src-tauri/**'
+              - 'apps/desktop/src-tauri/**'
               - '.github/**'
             extension:
               - 'apps/extension/**'
@@ -352,7 +352,7 @@ jobs:
       - name: 🗺️ Generate Route Tree
         run: |
           echo "::group::Generating route tree"
-          pnpm --filter @ajh/tauri build:frontend
+          pnpm --filter @ajh/desktop build:frontend
           echo "::endgroup::"
 
       - name: 🔍 Run Type Check
@@ -531,7 +531,7 @@ jobs:
       - name: 🦀 Cargo Test (nextest)
         id: rust-tests
         continue-on-error: true
-        working-directory: apps/tauri/src-tauri
+        working-directory: apps/desktop/src-tauri
         env:
           # Select the nextest [profile.ci] (flaky retries) via env — passing
           # --profile would collide with cargo's build-profile flag via llvm-cov.
@@ -550,7 +550,7 @@ jobs:
       - name: 📊 Rust Coverage → Job Summary
         if: always()
         continue-on-error: true
-        working-directory: apps/tauri/src-tauri
+        working-directory: apps/desktop/src-tauri
         run: |
           # Build the markdown body ONCE into rust-coverage.md, then reuse it for
           # both the job summary and the PR comment (posted by the next step).
@@ -610,7 +610,7 @@ jobs:
         uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
         with:
           header: rust-coverage
-          path: apps/tauri/src-tauri/rust-coverage.md
+          path: apps/desktop/src-tauri/rust-coverage.md
 
       # Surface test results as a rich GitHub check + inline PR annotations
       # (instead of buried in logs). These NEVER gate the build — fail-on-error
@@ -635,7 +635,7 @@ jobs:
           name: Rust tests (nextest)
           # Glob: cargo-llvm-cov redirects the target dir (target/llvm-cov-target),
           # so nextest's junit lands under there, not plain target/nextest.
-          path: apps/tauri/src-tauri/target/**/nextest/ci/junit.xml
+          path: apps/desktop/src-tauri/target/**/nextest/ci/junit.xml
           reporter: java-junit
           list-suites: failed
           list-tests: failed
@@ -658,8 +658,8 @@ jobs:
           # target/ directory routinely produces multi-GB artifacts.
           path: |
             coverage/
-            apps/tauri/src-tauri/target/**/*.log
-            apps/tauri/src-tauri/target/debug/deps/*.json
+            apps/desktop/src-tauri/target/**/*.log
+            apps/desktop/src-tauri/target/debug/deps/*.json
           retention-days: 7
           compression-level: 9
           if-no-files-found: ignore
@@ -673,9 +673,9 @@ jobs:
           js_lines=$(covpct Lines); js_branches=$(covpct Branches); js_funcs=$(covpct Functions)
           # --- Rust (cargo-nextest + cargo-llvm-cov) ---
           # nextest prints one Summary line: "N tests run: N passed, ...".
-          rust_pass=$(grep -aoE '[0-9]+ passed' apps/tauri/src-tauri/rust-test-output.txt 2>/dev/null | grep -oE '[0-9]+' | tail -1)
+          rust_pass=$(grep -aoE '[0-9]+ passed' apps/desktop/src-tauri/rust-test-output.txt 2>/dev/null | grep -oE '[0-9]+' | tail -1)
           # llvm-cov TOTAL row on stable reports three percentages in order: Regions, Functions, Lines.
-          rust_pcts=$(grep -aE '^TOTAL' apps/tauri/src-tauri/rust-coverage.txt 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)?%')
+          rust_pcts=$(grep -aE '^TOTAL' apps/desktop/src-tauri/rust-coverage.txt 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)?%')
           rust_funcs=$(echo "$rust_pcts" | sed -n 2p); rust_lines=$(echo "$rust_pcts" | sed -n 3p)
           rust_branches="—"  # not available from cargo-llvm-cov on stable Rust
           : "${js_pass:=n/a}" "${js_lines:=n/a}" "${js_branches:=n/a}" "${js_funcs:=n/a}"
@@ -759,7 +759,7 @@ jobs:
       - name: 🦀 Cargo Check
         id: cargo-check
         continue-on-error: true
-        working-directory: apps/tauri/src-tauri
+        working-directory: apps/desktop/src-tauri
         run: |
           echo "::group::Running cargo check"
           cargo check --all-targets --all-features --locked
@@ -788,8 +788,8 @@ jobs:
           # Restricted to logs/output to avoid uploading the multi-GB
           # target/ tree on failure.
           path: |
-            apps/tauri/src-tauri/target/**/*.log
-            apps/tauri/src-tauri/target/**/output
+            apps/desktop/src-tauri/target/**/*.log
+            apps/desktop/src-tauri/target/**/output
             node_modules/.cache/
           retention-days: 7
           compression-level: 9
@@ -855,14 +855,14 @@ jobs:
           components: clippy, rustfmt
 
       - name: 🎨 Cargo Format Check
-        working-directory: apps/tauri/src-tauri
+        working-directory: apps/desktop/src-tauri
         run: |
           echo "::group::Running cargo fmt --check"
           cargo fmt --all -- --check
           echo "::endgroup::"
 
       - name: 🦀 Cargo Clippy
-        working-directory: apps/tauri/src-tauri
+        working-directory: apps/desktop/src-tauri
         run: |
           echo "::group::Running cargo clippy"
           cargo clippy --all-targets --all-features --locked -- -D warnings
@@ -873,7 +873,7 @@ jobs:
       # versioned Rust test (tests/architecture.rs) with explicit, dead-entry-guarded
       # allowlists, so drift is blocked and exceptions can't silently rot.
       - name: 🏛️ Architecture Boundary Tests
-        working-directory: apps/tauri/src-tauri
+        working-directory: apps/desktop/src-tauri
         run: |
           echo "::group::Running architecture boundary tests"
           cargo test --test architecture --locked
@@ -888,14 +888,14 @@ jobs:
       # advisory check covers RUSTSEC, gating vulnerabilities on every PR (the
       # weekly standalone cargo-audit in security.yml stays as a scheduled sweep).
       - name: 🛡️ Cargo Deny
-        working-directory: apps/tauri/src-tauri
+        working-directory: apps/desktop/src-tauri
         run: |
           echo "::group::Running cargo deny"
           cargo deny check
           echo "::endgroup::"
 
       - name: 🧹 Cargo Machete (unused dependencies)
-        working-directory: apps/tauri/src-tauri
+        working-directory: apps/desktop/src-tauri
         run: |
           echo "::group::Running cargo machete"
           cargo machete

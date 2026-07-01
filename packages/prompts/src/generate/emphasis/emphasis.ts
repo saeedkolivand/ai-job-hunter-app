@@ -3,7 +3,7 @@
 /**
  * Alias pairs matching the Rust scorer's SYNONYMS constant so evidence
  * grounding normalizes through the same map before the substring test.
- * Keep in sync with `apps/tauri/src-tauri/src/documents/keywords.rs` SYNONYMS.
+ * Keep in sync with `apps/desktop/src-tauri/src/documents/keywords.rs` SYNONYMS.
  */
 const SYNONYMS: ReadonlyArray<readonly [string, string]> = [
   ['js', 'javascript'],

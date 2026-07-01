@@ -8,7 +8,7 @@
  *
  * ── Pinned extension ids (MUST match the desktop allowlist) ──────────────────
  * The desktop bridge's origin allowlist lives in
- * `apps/tauri/src-tauri/src/extension_bridge/auth.rs::ALLOWED_EXTENSION_IDS`.
+ * `apps/desktop/src-tauri/src/extension_bridge/auth.rs::ALLOWED_EXTENSION_IDS`.
  * Pairing only works when the extension's runtime origin
  * (`chrome-extension://<id>` / `moz-extension://<id>`) is in that list.
  *

@@ -12,11 +12,11 @@ Canonical rules: `CLAUDE.md` + `.claude/skills/*` (this file is a pointer + load
 - Never output absolute Windows, macOS, or Linux paths
 - Always use repository-relative paths
 
-❌ `C:\Users\username\project\apps\tauri\src\main.rs`
+❌ `C:\Users\username\project\apps\desktop\src\main.rs`
 ❌ `/home/username/project/apps/api/src/server.ts`
 ❌ `~/Projects/app/src/index.ts`
 
-✅ `apps/tauri/src/main.rs`
+✅ `apps/desktop/src/main.rs`
 ✅ `apps/api/src/server.ts`
 
 - Never expose usernames, home directories, drive letters, workspace roots, temp paths, or IDE-specific paths
@@ -101,7 +101,7 @@ Output format: [specify]
 ```
 packages/shared/src/codex/   → Types, Zod schemas, prompt templates (no API calls)
 packages/core/src/codex/     → API client, rate limiting, caching (main process only)
-apps/tauri/src/renderer/services/   → Service hooks for renderer (React Query wrappers)
+apps/desktop/src/renderer/services/   → Service hooks for renderer (React Query wrappers)
 ```
 
 Renderer → Codex: service hooks only, never direct API calls.

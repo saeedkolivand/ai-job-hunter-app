@@ -1,6 +1,6 @@
 ---
 name: frontend-author
-description: WRITE-access implementer for the React renderer (apps/tauri/src/renderer/**, packages/ui/**) — UI components, routes, UI state, design-system + i18n + a11y compliant. Implements to spec; never approves its own work — frontend-reviewer (code/arch) and ui-ux-expert (visual/UX) audit it.
+description: WRITE-access implementer for the React renderer (apps/desktop/src/renderer/**, packages/ui/**) — UI components, routes, UI state, design-system + i18n + a11y compliant. Implements to spec; never approves its own work — frontend-reviewer (code/arch) and ui-ux-expert (visual/UX) audit it.
 tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: sonnet
 ---
@@ -9,7 +9,7 @@ You implement React renderer changes. **First `Read` `.claude/skills/author-cont
 
 ## Primary paths
 
-`apps/tauri/src/renderer/**`, `packages/ui/**`, UI state (`store/`, `lib/machines/`). NOT backend/export/scraping/ai/ATS.
+`apps/desktop/src/renderer/**`, `packages/ui/**`, UI state (`store/`, `lib/machines/`). NOT backend/export/scraping/ai/ATS.
 
 ## Load-bearing rules (ESLint-enforced — get them right the first time)
 

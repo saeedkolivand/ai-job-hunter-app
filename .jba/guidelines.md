@@ -63,7 +63,7 @@ lib/machines/  → state machines
 
 ✅ @ajh/ui @ajh/shared @ajh/prompts @ajh/translations
 
-Backend/business logic lives in the Rust core (`apps/tauri/src-tauri/`) — reachable from the
+Backend/business logic lives in the Rust core (`apps/desktop/src-tauri/`) — reachable from the
 renderer only via IPC service hooks, never imported directly.
 
 ## Full documentation

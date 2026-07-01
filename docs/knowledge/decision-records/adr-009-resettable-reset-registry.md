@@ -12,7 +12,7 @@ A "factory reset" must wipe **every** persistent user-data store. The original i
 
 Reset is **registry-driven**:
 
-- A pure `Resettable { fn reset(&self); }` trait lives in the shared-infra layer (`apps/tauri/src-tauri/src/data_store.rs`) — a superset of `DataStore` that also covers things excluded from backups (secrets, ephemeral caches, the job log). It is Tauri-free so it stays below the shell layer (architecture rule R2).
+- A pure `Resettable { fn reset(&self); }` trait lives in the shared-infra layer (`apps/desktop/src-tauri/src/data_store.rs`) — a superset of `DataStore` that also covers things excluded from backups (secrets, ephemeral caches, the job log). It is Tauri-free so it stays below the shell layer (architecture rule R2).
 - Each managed store **wrapper type** implements `Resettable` in `commands/privacy.rs` (e.g. `Mutex<PostingsCache>`, `Arc<Mutex<AutopilotStore>>`, bare `DocumentStore`/`KvCache`), dispatching to that store's own clear method.
 - A `ResetRegistry` (managed Tauri state) holds type-erased reset closures. Stores are wired through `manage_resettable(app, &mut registry, label, store)` in `main.rs::setup`, which **manages the store and registers its reset in one call** — so the `.manage()` site is the single place a store is wired for reset coverage.
 - `privacy_reset_app` resolves the `ResetRegistry` and calls `reset_all(&app)`; it contains **no per-store code**.

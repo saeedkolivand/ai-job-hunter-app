@@ -9,7 +9,7 @@ Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tau
 | Area                   | Path                                                                                                          |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------- |
 | Extension app (MV3)    | `apps/extension/src/` — background/service worker, popup, content scripts, `lib/bridge.ts`, `lib/messages.ts` |
-| Desktop bridge (Rust)  | `apps/tauri/src-tauri/src/extension_bridge/` — frame dispatch, token gate, import handler                     |
+| Desktop bridge (Rust)  | `apps/desktop/src-tauri/src/extension_bridge/` — frame dispatch, token gate, import handler                   |
 | Shared wire protocol   | `packages/shared/src/ipc/extension-protocol-constants.ts` + `extension-protocol.ts`                           |
 | Store policy checklist | `.claude/skills/extension-standards/SKILL.md`                                                                 |
 
@@ -27,7 +27,7 @@ Primary: **native messaging** (browser spawns desktop `--native-host` as a stdio
 
 The desktop bridge (`extension_bridge/register.rs`) writes the browser's native-messaging manifest to OS-specific directories on every startup (idempotent, best-effort, non-fatal on failure). **Browser detection** across native paths, Snap, and Flatpak installs populates the manifest with the current exe path, so manifest tracks app moves/updates automatically.
 
-Native-messaging registry locations are OS- and sandboxing-aware. See `apps/tauri/src-tauri/src/extension_bridge/register.rs` and `apps/tauri/src-tauri/src/platform/chrome/mod.rs` for per-platform registry paths, Flatpak sandbox handling, and fallback WebSocket bridge logic for sandboxed browsers.
+Native-messaging registry locations are OS- and sandboxing-aware. See `apps/desktop/src-tauri/src/extension_bridge/register.rs` and `apps/desktop/src-tauri/src/platform/chrome/mod.rs` for per-platform registry paths, Flatpak sandbox handling, and fallback WebSocket bridge logic for sandboxed browsers.
 
 ## Protocol lockstep rule
 

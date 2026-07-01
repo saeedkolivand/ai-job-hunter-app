@@ -69,9 +69,9 @@ These items were considered for removal but kept for good reasons:
 
 ## Related
 
-- `apps/tauri/src-tauri/src/scraping/boards/mod.rs` — board registry (`SCRAPERS`)
-- `apps/tauri/src-tauri/src/scraping/scrape_url/mod.rs` — kept URL resolvers for Indeed + Workday
-- `apps/tauri/src-tauri/src/scraping/boards/aggregator/` — Adzuna/JSearch provider registry
+- `apps/desktop/src-tauri/src/scraping/boards/mod.rs` — board registry (`SCRAPERS`)
+- `apps/desktop/src-tauri/src/scraping/scrape_url/mod.rs` — kept URL resolvers for Indeed + Workday
+- `apps/desktop/src-tauri/src/scraping/boards/aggregator/` — Adzuna/JSearch provider registry
 - `packages/shared/src/schemas/index.ts` — `BOARD_IDS` (4 retired IDs removed; glassdoor was never present)
 - `docs/SCRAPING_ENDPOINTS.md` — per-board endpoint reconnaissance; retired boards noted
 - ADR-019 (performance profile) — mentions scraping concurrency constraints

@@ -15,15 +15,15 @@ Every renderer ↔ Rust interaction follows a strict layered pattern.
 ```
 React Component
     ↓
-Service Hook (React Query)       apps/tauri/src/renderer/services/
+Service Hook (React Query)       apps/desktop/src/renderer/services/
     ↓
-AppClient method                 apps/tauri/src/renderer/lib/app-client.ts
+AppClient method                 apps/desktop/src/renderer/lib/app-client.ts
     ↓
 IPC Contract                     packages/shared/src/ipc/contracts/
     ↓
 Tauri Invoke / Listen            Tauri bridge
     ↓
-Rust Command Handler             apps/tauri/src-tauri/src/commands/
+Rust Command Handler             apps/desktop/src-tauri/src/commands/
 ```
 
 ### Adding a New IPC Capability
@@ -39,7 +39,7 @@ export interface MyFeatureContract {
 }
 ```
 
-**2. Implement the Rust command** (`apps/tauri/src-tauri/src/commands/`):
+**2. Implement the Rust command** (`apps/desktop/src-tauri/src/commands/`):
 
 ```rust
 #[tauri::command]
@@ -48,7 +48,7 @@ pub async fn my_feature_get_data(id: String, state: State<'_, AppState>) -> Resu
 }
 ```
 
-**3. Wire the invoke call** (`apps/tauri/src/tauri-client.ts`):
+**3. Wire the invoke call** (`apps/desktop/src/tauri-client.ts`):
 
 ```typescript
 myFeature: {
@@ -57,7 +57,7 @@ myFeature: {
 }
 ```
 
-**4. Create the service hook** (`apps/tauri/src/renderer/services/use-my-feature.ts`):
+**4. Create the service hook** (`apps/desktop/src/renderer/services/use-my-feature.ts`):
 
 ```typescript
 export function useMyData(id: string) {
@@ -485,7 +485,7 @@ other module may reconstruct its logic:
 - New exporter / parser / integration → register in its registry; compose
   `net::http`, `error::AppError`, `observability::Span`, `platform::config`.
 
-These boundaries are **machine-enforced**. `apps/tauri/src-tauri/tests/architecture.rs`
+These boundaries are **machine-enforced**. `apps/desktop/src-tauri/tests/architecture.rs`
 (run by the `quality-checks` CI job, superseding the old grep guardrails) codifies the
 layer model + ownership as versioned tests with explicit, dead-entry-guarded allowlists.
 See [architecture-rules.md](architecture-rules.md) (the formal contract, rules R1–R8) and
@@ -566,7 +566,7 @@ The app is a resizable desktop window with a hard floor of **900px × 600px** an
 
 ### Window Envelope
 
-Set in `apps/tauri/src-tauri/tauri.conf.json`:
+Set in `apps/desktop/src-tauri/tauri.conf.json`:
 
 ```json
 {
@@ -647,7 +647,7 @@ The panel itself caps height: `max-h-[calc(100vh-2rem)] flex flex-col`. This ens
 
 ### Scroll-to-Top on Navigation
 
-Clicking a sidebar nav item smooth-scrolls the active page's scroll region to the top. The settings page does the same on section click, so re-clicking an already-active section also scrolls. See `apps/tauri/src/renderer/components/layout/Sidebar/index.tsx` and `apps/tauri/src/renderer/features/settings/components/SettingsPage/index.tsx` for the implementation.
+Clicking a sidebar nav item smooth-scrolls the active page's scroll region to the top. The settings page does the same on section click, so re-clicking an already-active section also scrolls. See `apps/desktop/src/renderer/components/layout/Sidebar/index.tsx` and `apps/desktop/src/renderer/features/settings/components/SettingsPage/index.tsx` for the implementation.
 
 ---
 
@@ -678,9 +678,9 @@ Define a `Record<Union, () => ReactNode>` keyed by the discriminated-union varia
 
 ### References
 
-- `apps/tauri/src/renderer/features/settings/components/SettingsContent/index.tsx` (SectionId registry)
-- `apps/tauri/src/renderer/features/documents/components/TailorFlow/index.tsx` (stage registry)
-- `apps/tauri/src/renderer/features/analyze/components/AnalyzePage/index.tsx` (stage registry)
+- `apps/desktop/src/renderer/features/settings/components/SettingsContent/index.tsx` (SectionId registry)
+- `apps/desktop/src/renderer/features/documents/components/TailorFlow/index.tsx` (stage registry)
+- `apps/desktop/src/renderer/features/analyze/components/AnalyzePage/index.tsx` (stage registry)
 
 ---
 
@@ -721,7 +721,7 @@ When an expensive derived render (e.g. Typst preview recompile) must be refreshe
 - **Flush on blur/doc-switch** ensures edits are committed before navigation.
 - **Visual hint** (e.g. "Updating preview…") indicates a pending commit.
 
-**Reference:** `useDebouncedCommit()` hook in `apps/tauri/src/renderer/hooks/use-debounced-commit/use-debounced-commit.ts`; integrated in `OutputPanelDone` for resume/cover-letter preview rendering. On each keystroke, `setLocalEditorText` captures the live state (unaffected by debounce), while `scheduleCommit` gates the expensive Typst recompile. On blur or doc-switch, `flush()` commits any pending edits immediately; external content generation (e.g. AI regeneration) bypasses the timer via replacement semantics.
+**Reference:** `useDebouncedCommit()` hook in `apps/desktop/src/renderer/hooks/use-debounced-commit/use-debounced-commit.ts`; integrated in `OutputPanelDone` for resume/cover-letter preview rendering. On each keystroke, `setLocalEditorText` captures the live state (unaffected by debounce), while `scheduleCommit` gates the expensive Typst recompile. On blur or doc-switch, `flush()` commits any pending edits immediately; external content generation (e.g. AI regeneration) bypasses the timer via replacement semantics.
 
 [tauri]: https://tauri.app
 [tanstack-query]: https://tanstack.com/query

@@ -10,7 +10,7 @@ Different AI providers surface model reasoning in incompatible ways: OpenAI uses
 
 ## Decision
 
-Every provider adapter maps its reasoning signal to the same `ai:stream` event shape — `{ delta, thinking: true }` — before emitting to the renderer. Inline `<think>…</think>` blocks (local models) are parsed by a shared stateful splitter (`apps/tauri/src/renderer/lib/generate/think-split.ts: createThinkSplitter`) that is called by the streaming surface before the delta is passed on, so the renderer has **zero per-provider branching**. Visible answer text goes to `onToken`; reasoning text goes to `onThinking`.
+Every provider adapter maps its reasoning signal to the same `ai:stream` event shape — `{ delta, thinking: true }` — before emitting to the renderer. Inline `<think>…</think>` blocks (local models) are parsed by a shared stateful splitter (`apps/desktop/src/renderer/lib/generate/think-split.ts: createThinkSplitter`) that is called by the streaming surface before the delta is passed on, so the renderer has **zero per-provider branching**. Visible answer text goes to `onToken`; reasoning text goes to `onThinking`.
 
 ## Consequences
 

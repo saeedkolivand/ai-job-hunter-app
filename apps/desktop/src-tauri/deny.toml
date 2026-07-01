@@ -1,5 +1,5 @@
 # cargo-deny policy for the Rust core (docs/architecture-rules.md R11/R12).
-# Run: `cargo deny check` (from apps/tauri/src-tauri). CI gates on this.
+# Run: `cargo deny check` (from apps/desktop/src-tauri). CI gates on this.
 
 [graph]
 # Only audit the platforms we actually ship.

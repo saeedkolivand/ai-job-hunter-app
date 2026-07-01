@@ -2,8 +2,8 @@
 
 > Canonical rules: see `CLAUDE.md` + `.claude/skills/*` — this file is a pointer + the load-bearing subset; CLAUDE.md wins on any conflict.
 
-Local-first Tauri desktop app (Rust core in `apps/tauri/src-tauri/`, React renderer in
-`apps/tauri/src/renderer/`). pnpm monorepo. React 19 + TypeScript strict, Tailwind v4.
+Local-first Tauri desktop app (Rust core in `apps/desktop/src-tauri/`, React renderer in
+`apps/desktop/src/renderer/`). pnpm monorepo. React 19 + TypeScript strict, Tailwind v4.
 ESLint `--max-warnings 0` in CI — every warning is a build failure.
 
 ---
@@ -14,11 +14,11 @@ ESLint `--max-warnings 0` in CI — every warning is a build failure.
 - Never output absolute Windows, macOS, or Linux paths
 - Always use repository-relative paths
 
-❌ `C:\Users\username\project\apps\tauri\src\main.rs`
+❌ `C:\Users\username\project\apps\desktop\src\main.rs`
 ❌ `/home/username/project/apps/api/src/server.ts`
 ❌ `~/Projects/app/src/index.ts`
 
-✅ `apps/tauri/src/main.rs`
+✅ `apps/desktop/src/main.rs`
 ✅ `apps/api/src/server.ts`
 
 - Never expose usernames, home directories, drive letters, workspace roots, temp paths, or IDE-specific paths
@@ -67,8 +67,8 @@ packages/shared        → IPC contracts, types, Zod schemas. No React, no Node.
 packages/ui            → React component library (@ajh/ui). No app logic.
 packages/prompts       → AI prompt templates. Pure TS, zero deps.
 packages/translations  → i18next config + en/de resources (@ajh/translations). No app/IPC imports.
-apps/tauri/src-tauri   → Rust core (scraping, login, documents, AI). The shell does the work.
-apps/tauri/src/renderer → React UI. Reaches the Rust core only via IPC service hooks.
+apps/desktop/src-tauri   → Rust core (scraping, login, documents, AI). The shell does the work.
+apps/desktop/src/renderer → React UI. Reaches the Rust core only via IPC service hooks.
 ```
 
 Renderer → Tauri core: `AppClient` context → service hooks → `invoke`/`listen`. Never `window.api.*` in UI.
@@ -77,7 +77,7 @@ Renderer → Tauri core: `AppClient` context → service hooks → `invoke`/`lis
 
 ## Rules (ESLint-enforced, violations fail CI)
 
-**1. Service hooks only** — never call `window.api.*` in components/routes. Use hooks from `apps/tauri/src/renderer/services/`.
+**1. Service hooks only** — never call `window.api.*` in components/routes. Use hooks from `apps/desktop/src/renderer/services/`.
 
 **2. i18n adapter** — `import { useTranslation } from '@ajh/translations'`, not `react-i18next`. Renderer init shim is `@/i18n`.
 
@@ -99,7 +99,7 @@ Renderer → Tauri core: `AppClient` context → service hooks → `invoke`/`lis
 
 **10. Package boundaries** — workspace packages are exactly `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`. The renderer imports `@ajh/ui` + `@ajh/translations` directly (per rules 2 & 4) and reaches the Rust core only via IPC service hooks.
 
-**11. New IPC capability** — `packages/shared/src/ipc/contracts.ts` → `apps/tauri/src-tauri/src/commands.rs` → `apps/tauri/src/tauri-client.ts` → `apps/tauri/src/renderer/services/` → `services/query-client.ts` (all 5 steps required).
+**11. New IPC capability** — `packages/shared/src/ipc/contracts.ts` → `apps/desktop/src-tauri/src/commands.rs` → `apps/desktop/src/tauri-client.ts` → `apps/desktop/src/renderer/services/` → `services/query-client.ts` (all 5 steps required).
 
 ---
 

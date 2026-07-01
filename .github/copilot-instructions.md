@@ -2,8 +2,8 @@
 
 > Canonical rules: see `CLAUDE.md` + `.claude/skills/*` — this file is a pointer + the load-bearing subset; CLAUDE.md wins on any conflict.
 
-Local-first Tauri desktop app (Rust core in `apps/tauri/src-tauri/`, React renderer in
-`apps/tauri/src/renderer/`). pnpm monorepo. React 19 + TypeScript strict, Tailwind v4.
+Local-first Tauri desktop app (Rust core in `apps/desktop/src-tauri/`, React renderer in
+`apps/desktop/src/renderer/`). pnpm monorepo. React 19 + TypeScript strict, Tailwind v4.
 ESLint `--max-warnings 0` in CI — every warning fails the build.
 
 ---
@@ -14,11 +14,11 @@ ESLint `--max-warnings 0` in CI — every warning fails the build.
 - Never output absolute Windows, macOS, or Linux paths
 - Always use repository-relative paths
 
-❌ `C:\Users\username\project\apps\tauri\src\main.rs`
+❌ `C:\Users\username\project\apps\desktop\src\main.rs`
 ❌ `/home/username/project/apps/api/src/server.ts`
 ❌ `~/Projects/app/src/index.ts`
 
-✅ `apps/tauri/src/main.rs`
+✅ `apps/desktop/src/main.rs`
 ✅ `apps/api/src/server.ts`
 
 - Never expose usernames, home directories, drive letters, workspace roots, temp paths, or IDE-specific paths
@@ -38,7 +38,7 @@ Never `find -exec`, never PowerShell syntax. Git Bash paths: `/c/Users/...`
 
 ## Non-negotiable rules (ESLint-enforced — refuse if user asks to bypass)
 
-**1. No `window.api` in UI** — use service hooks from `apps/tauri/src/renderer/services/` (React Query wrappers).
+**1. No `window.api` in UI** — use service hooks from `apps/desktop/src/renderer/services/` (React Query wrappers).
 
 **2. i18n** — `import { useTranslation } from '@ajh/translations'`, never `react-i18next`. Renderer init shim is `@/i18n`.
 
@@ -76,9 +76,9 @@ If branch gone: `rtk git checkout main && rtk git pull origin main`.
 ## New IPC capability
 
 1. `packages/shared/src/ipc/contracts.ts` — add signature
-2. `apps/tauri/src-tauri/src/commands.rs` — implement Tauri command
-3. `apps/tauri/src/tauri-client.ts` — wire invoke call
-4. `apps/tauri/src/renderer/services/` — create hook
+2. `apps/desktop/src-tauri/src/commands.rs` — implement Tauri command
+3. `apps/desktop/src/tauri-client.ts` — wire invoke call
+4. `apps/desktop/src/renderer/services/` — create hook
 5. `services/query-client.ts` — add query key
 
 ---

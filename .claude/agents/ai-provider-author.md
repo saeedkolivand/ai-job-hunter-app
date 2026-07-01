@@ -9,7 +9,7 @@ You implement AI-provider changes. **First `Read` `.claude/skills/author-contrac
 
 ## Primary paths
 
-`apps/tauri/src-tauri/src/commands/ai_provider/**`, `commands/ai.rs`, `documents/**` (embed infra), `packages/prompts/**`.
+`apps/desktop/src-tauri/src/commands/ai_provider/**`, `commands/ai.rs`, `documents/**` (embed infra), `packages/prompts/**`.
 
 ## Load-bearing rule (the zero-change abstraction)
 

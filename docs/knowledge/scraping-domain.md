@@ -6,7 +6,7 @@ Describes the job-scraping subsystem: board registry (16 active scrapers), compa
 
 ## Board registry & catalog
 
-- **`Scraper` trait** — `apps/tauri/src-tauri/src/scraping/boards/mod.rs`. Every board implements `Scraper: Clone + Send + Sync + Debug`.
+- **`Scraper` trait** — `apps/desktop/src-tauri/src/scraping/boards/mod.rs`. Every board implements `Scraper: Clone + Send + Sync + Debug`.
 - **`SCRAPERS`** — registry of all enabled scrapers (built at compile time, no runtime plugin system).
 - **`BOARD_IDS`** — const array in `packages/shared/src/schemas/index.ts`; lists all scrapeable boards (16 active scrapers + aggregator). `AGGREGATOR_BOARD_ID = 'aggregator'` is the stable catalog id for the Adzuna/JSearch provider.
 - **Catalog** — `ScraperEngine::catalog()` (Rust) → `boards.catalog()` IPC → `useBoardsCatalog()` hook. Exposes per-board metadata:
@@ -18,12 +18,12 @@ Describes the job-scraping subsystem: board registry (16 active scrapers), compa
 
 ## Company-scoped boards (PR #464)
 
-Company-scoped ATS boards require company slugs instead of free-text keyword searches. Each board declares `requiresCompany=true` in the catalog metadata and implements its own fanout and filtering logic. For the authoritative list of boards and per-board limits, see `apps/tauri/src-tauri/src/scraping/boards/` (each module) and the registry `apps/tauri/src-tauri/src/scraping/boards/mod.rs` (`SCRAPERS`).
+Company-scoped ATS boards require company slugs instead of free-text keyword searches. Each board declares `requiresCompany=true` in the catalog metadata and implements its own fanout and filtering logic. For the authoritative list of boards and per-board limits, see `apps/desktop/src-tauri/src/scraping/boards/` (each module) and the registry `apps/desktop/src-tauri/src/scraping/boards/mod.rs` (`SCRAPERS`).
 
 ### BoardSearchInput contract
 
 - **`companies?: string[]`** — optional list of company slugs (e.g. `["stripe", "notion"]`). Populated only when scraping a `requiresCompany` board.
-- Generated from `packages/shared/src/ipc/contracts/scrape.ts` → Zod → `pnpm gen:ipc` → `apps/tauri/src-tauri/src/ipc_contracts/scrape.rs`.
+- Generated from `packages/shared/src/ipc/contracts/scrape.ts` → Zod → `pnpm gen:ipc` → `apps/desktop/src-tauri/src/ipc_contracts/scrape.rs`.
 
 ### Skip state: `needs-company`
 
@@ -46,15 +46,15 @@ These five boards were retired as direct scrapers (ADR-026, 2026-06-21). Their R
 
 **Purpose:** Cover anti-bot sites (Indeed, Glassdoor, Xing, Workday, StepStone) that return empty results or errors when self-scraped. Uses a provider registry pattern: Adzuna (primary, free) with JSearch (paid fallback, invoked only on Adzuna errors).
 
-**Full-description resolution:** Aggregator sources return short snippets; the detail pane auto-fetches full descriptions on open by following redirect chains and re-dispatching to named-board handlers. See `apps/tauri/src-tauri/src/scraping/http/html_to_markdown.rs` and `scraping/boards/aggregator/mod.rs` for fetch logic, IP-guarding, and snippet-vs-resolved floor semantics.
+**Full-description resolution:** Aggregator sources return short snippets; the detail pane auto-fetches full descriptions on open by following redirect chains and re-dispatching to named-board handlers. See `apps/desktop/src-tauri/src/scraping/http/html_to_markdown.rs` and `scraping/boards/aggregator/mod.rs` for fetch logic, IP-guarding, and snippet-vs-resolved floor semantics.
 
 **Keys and configuration:**
 
 - Adzuna and JSearch API keys are stored in the OS keyring and never logged (encrypted at rest, decrypted only in Rust).
 - Settings → Jobs exposes UI to enter/remove credentials.
-- Keys are read on-demand via `credentials::read_credential` (module at `apps/tauri/src-tauri/src/credentials/mod.rs`).
+- Keys are read on-demand via `credentials::read_credential` (module at `apps/desktop/src-tauri/src/credentials/mod.rs`).
 
-**Provider details, endpoints, and fallback logic:** see `apps/tauri/src-tauri/src/scraping/boards/aggregator/mod.rs` (AdzunaProvider, JSearchProvider, and JobProvider trait).
+**Provider details, endpoints, and fallback logic:** see `apps/desktop/src-tauri/src/scraping/boards/aggregator/mod.rs` (AdzunaProvider, JSearchProvider, and JobProvider trait).
 
 **Adzuna country-code limitation (PR #483):**
 
@@ -80,35 +80,35 @@ Results now persist across navigation thanks to React Query + backend cache:
 
 **Aggregator short snippets → full descriptions:** Adzuna search API returns snippets (~200–500 chars). Detail pane auto-fetches on open when aggregator source + description < 700 chars, following the redirect chain and re-dispatching named-board handlers on the final URL. If the resolved text is meaningfully longer, it replaces the snippet; otherwise the snippet floor is kept. Redirect following is IP-guarded per-hop (closes DNS-rebinding TOCTOU); 429/login-wall/error returns Ok(None) and the snippet is retained.
 
-- **Resolver:** `apps/tauri/src-tauri/src/commands/scrape.rs: scrape_resolve_url(req)` — public command invoked by detail pane
-- **Re-dispatch:** `apps/tauri/src-tauri/src/scraping/scrape_url/mod.rs: resolve_full_description()` — follows redirect and re-dispatches handlers per final URL
-- **Pane gate:** `apps/tauri/src/renderer/features/jobs/components/JobDetailPane/index.tsx` — on-open resolve if (isAggregatorSource && descLength < 700); keep-longer merge logic
+- **Resolver:** `apps/desktop/src-tauri/src/commands/scrape.rs: scrape_resolve_url(req)` — public command invoked by detail pane
+- **Re-dispatch:** `apps/desktop/src-tauri/src/scraping/scrape_url/mod.rs: resolve_full_description()` — follows redirect and re-dispatches handlers per final URL
+- **Pane gate:** `apps/desktop/src/renderer/features/jobs/components/JobDetailPane/index.tsx` — on-open resolve if (isAggregatorSource && descLength < 700); keep-longer merge logic
 - **Description mutation & re-score:** Backend command `scrape_update_description(id, text)` writes resolved text to the live `PostingsCache`. The frontend's `MatchScoresProvider` holds a reactive `requested` set; when the description is updated, the per-job match score is re-computed on-demand via `useJobMatchScore` (single-job scoring, not batch). See IPC contract in `packages/shared/src/ipc/contracts/scrape.ts`.
 
 ## Source pointers
 
-- **Board enum + registry:** `apps/tauri/src-tauri/src/scraping/boards/mod.rs` (`Scraper`, `SCRAPERS`)
+- **Board enum + registry:** `apps/desktop/src-tauri/src/scraping/boards/mod.rs` (`Scraper`, `SCRAPERS`)
 - **IPC contract:** `packages/shared/src/ipc/contracts/scrape.ts` (`BoardSearchInput`, `updateDescription`)
-- **Engine skip logic:** `apps/tauri/src-tauri/src/scraping/engine/mod.rs` (handles `needs-login` + `needs-company`)
+- **Engine skip logic:** `apps/desktop/src-tauri/src/scraping/engine/mod.rs` (handles `needs-login` + `needs-company`)
 - **Company-scoped implementations:**
-  - Greenhouse: `apps/tauri/src-tauri/src/scraping/boards/greenhouse/mod.rs`
-  - Lever: `apps/tauri/src-tauri/src/scraping/boards/lever/mod.rs`
-  - Ashby: `apps/tauri/src-tauri/src/scraping/boards/ashby/mod.rs`
-  - Personio: `apps/tauri/src-tauri/src/scraping/boards/personio/mod.rs`
-  - Recruitee: `apps/tauri/src-tauri/src/scraping/boards/recruitee/mod.rs`
-  - SmartRecruiters: `apps/tauri/src-tauri/src/scraping/boards/smartrecruiters/`
+  - Greenhouse: `apps/desktop/src-tauri/src/scraping/boards/greenhouse/mod.rs`
+  - Lever: `apps/desktop/src-tauri/src/scraping/boards/lever/mod.rs`
+  - Ashby: `apps/desktop/src-tauri/src/scraping/boards/ashby/mod.rs`
+  - Personio: `apps/desktop/src-tauri/src/scraping/boards/personio/mod.rs`
+  - Recruitee: `apps/desktop/src-tauri/src/scraping/boards/recruitee/mod.rs`
+  - SmartRecruiters: `apps/desktop/src-tauri/src/scraping/boards/smartrecruiters/`
 - **Aggregator:**
-  - Registry: `apps/tauri/src-tauri/src/scraping/boards/aggregator/`
-  - Adzuna provider: `apps/tauri/src-tauri/src/scraping/boards/aggregator/adzuna.rs`
-  - JSearch provider: `apps/tauri/src-tauri/src/scraping/boards/aggregator/jsearch.rs`
-- **Frontend:** Service hook `apps/tauri/src/renderer/services/boards.ts` (scrape mutations)
-- **Settings UI:** `apps/tauri/src/renderer/features/settings/routes/JobsSettings.tsx`
+  - Registry: `apps/desktop/src-tauri/src/scraping/boards/aggregator/`
+  - Adzuna provider: `apps/desktop/src-tauri/src/scraping/boards/aggregator/adzuna.rs`
+  - JSearch provider: `apps/desktop/src-tauri/src/scraping/boards/aggregator/jsearch.rs`
+- **Frontend:** Service hook `apps/desktop/src/renderer/services/boards.ts` (scrape mutations)
+- **Settings UI:** `apps/desktop/src/renderer/features/settings/routes/JobsSettings.tsx`
 - **Detail pane:**
-  - Resolve + merge gate: `apps/tauri/src/renderer/features/jobs/components/JobDetailPane/index.tsx` (on-open resolve if short snippet; keep-longer merge logic; calls `scrape_resolve_url` + `scrape_update_description` IPC)
-  - Description formatting: `apps/tauri/src-tauri/src/scraping/http/html_to_markdown` — Rust module converting HTML job descriptions to Markdown
+  - Resolve + merge gate: `apps/desktop/src/renderer/features/jobs/components/JobDetailPane/index.tsx` (on-open resolve if short snippet; keep-longer merge logic; calls `scrape_resolve_url` + `scrape_update_description` IPC)
+  - Description formatting: `apps/desktop/src-tauri/src/scraping/http/html_to_markdown` — Rust module converting HTML job descriptions to Markdown
   - Rendering: `JobDescription` component (`packages/ui/src/components/JobDescription/index.tsx`) renders Markdown via react-markdown with design-token-only styling
-- **Rust commands:** `apps/tauri/src-tauri/src/commands/scrape.rs` (`scrape_resolve_url`, `scrape_update_description`)
-- **PostingsCache mutation:** `apps/tauri/src-tauri/src/postings/mod.rs: update_description(job_id, text)` — in-place cache mutation; text-hash-keyed result/embedding caches auto-invalidate on changed job text
+- **Rust commands:** `apps/desktop/src-tauri/src/commands/scrape.rs` (`scrape_resolve_url`, `scrape_update_description`)
+- **PostingsCache mutation:** `apps/desktop/src-tauri/src/postings/mod.rs: update_description(job_id, text)` — in-place cache mutation; text-hash-keyed result/embedding caches auto-invalidate on changed job text
 
 ## See also
 

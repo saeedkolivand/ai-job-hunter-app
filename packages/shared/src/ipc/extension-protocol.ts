@@ -2,7 +2,7 @@
  * Browser-extension ⇄ desktop WebSocket bridge protocol (Feature 2).
  *
  * The single source of truth for the local WS frame format. The Rust side
- * (`apps/tauri/src-tauri/src/extension_bridge`) mirrors these string literals;
+ * (`apps/desktop/src-tauri/src/extension_bridge`) mirrors these string literals;
  * a parity test on the Rust side pins its message-type constants to the
  * `EXTENSION_MESSAGE_TYPES` values here so the two can never drift.
  *
