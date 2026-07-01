@@ -112,6 +112,10 @@ export const BOARD_IDS = [
   'smartrecruiters',
   'recruitee',
   'personio',
+  'pinpoint',
+  'rippling',
+  'breezy',
+  'bamboohr',
   // Remote-first / aggregators
   'aggregator',
   'remoteok',
