@@ -85,6 +85,75 @@ Adzuna's API is country-scoped with a fixed market allowlist; see `ADZUNA_SUPPOR
 - **Empty results:** Legitimate (do NOT trigger fallback to next provider; only errors do).
 - **Cancellation:** Pre-fallback cancel signal skips the paid provider entirely.
 
+## Trust assessment (PR 3, 2026-07-01)
+
+Every finalized `JobPosting` carries a **ghost-job / trust signal** — a pure,
+non-blocking enrichment ported from `santifer/career-ops`'s
+`providers/_trust-validator.mjs` (MIT). V1 is **flag-only: enrich, never
+drop** — a low score never removes a posting, it only lowers the level for a
+renderer badge (separate frontend pass). No config/enabled toggle; always
+computed.
+
+- **Module:** `apps/desktop/src-tauri/src/scraping/trust/mod.rs` —
+  `pub fn assess_trust(url: &str, company: &str) -> TrustAssessment` (pure,
+  no I/O, no new deps — `reqwest::Url`, i.e. the `url` crate reqwest
+  re-exports). All helpers `pub(crate)` for fixture testing.
+- **Shape:** `TrustAssessment { score: u8, level: TrustLevel, flags: Vec<TrustFlag> }`.
+  `score` starts at 100 and is only ever decreased, clamped `0..=100`.
+  `level`: `>=90 High`, `>=60 Medium`, else `Low`. The renderer `TrustBadge` only displays for `'medium'` or `'low'`; `'high'` renders no badge (no badge = trusted, noise-free).
+- **Flags** — four signals, each decrements `score` by a penalty amount (see
+  `SUSPICIOUS_DOMAINS`, `ATS_ALLOWLIST`, and `finish()` in
+  `apps/desktop/src-tauri/src/scraping/trust/mod.rs` for penalty magnitudes
+  and thresholds):
+  - `MissingApplyUrl` (early return) — `url` empty/whitespace.
+  - `InvalidUrl` (early return) — `url` doesn't parse or scheme isn't `http(s)`.
+  - `SuspiciousDomain` — host is a URL shortener (see `SUSPICIOUS_DOMAINS`
+    constant).
+  - `CompanyDomainMismatch` — `company` is non-empty, the host isn't on the
+    ATS allowlist, and the host doesn't plausibly name the company (normalized
+    slug or a ≥3-char word match).
+- **ATS allowlist** — never raises `CompanyDomainMismatch`. See `ATS_ALLOWLIST`
+  constant in `apps/desktop/src-tauri/src/scraping/trust/mod.rs`; includes the
+  standard ATS platforms (Greenhouse, Lever, etc.) plus our 21 `SCRAPERS` boards
+  where `JobPosting.url` is systematically the BOARD's own domain rather than the
+  employer's, plus the Adzuna aggregator (whose redirect host is a constant
+  `api.adzuna.com` — country code is a path segment, not a subdomain).
+- **`company_matches_host` is an unanchored substring heuristic**, not
+  label-boundary matching — see the doc comment in `trust/mod.rs` for the
+  known both-direction trade-off (misses a brand-embedding phishing host like
+  `amazon-careers.xyz`; a short/generic company word can over-match).
+  Deliberately deferred for V1 since the flag is advisory/non-gating; anchor
+  it if a future flow ever gates behavior on `level`.
+- **Wiring — three call sites** (every other `JobPosting`/`FoundJob`
+  construction site is untouched; `JobPosting.trust` is NOT a dedicated
+  struct field, to avoid touching all ~21 board literals — it's attached into
+  the existing `#[serde(flatten)] extra: HashMap<String, Value>` channel, the
+  same one salary/remote-status metadata already uses):
+  - `ScraperEngine::run_one`'s streaming wrapper
+    (`apps/desktop/src-tauri/src/scraping/engine/mod.rs`) — the funnel every
+    board's streamed item passes through before reaching either caller's
+    `on_item` (manual scrape → `PostingsCache` + `job.stream`; Autopilot's
+    _live_ scrape stream → `SCRAPE_ITEM`).
+  - `scrape_url::resolve()` (`apps/desktop/src-tauri/src/scraping/scrape_url/mod.rs`)
+    — the single-URL resolver shared by the `scrape_url`/`scrape_resolve_url`
+    commands and the extension-bridge import (import doesn't persist `trust`
+    — it only ever writes an `ApplicationMeta`, not the postings/`JobPosting`
+    contract).
+  - `commands::autopilot::autopilot_run`'s `postings → FoundJob` `.map()`
+    (`apps/desktop/src-tauri/src/commands/autopilot.rs`) — the **persisted**
+    `AutopilotFoundJob` record the badge UI actually reads is built from the
+    board's separately-returned `Vec<JobPosting>`, not the streamed copy the
+    engine wrapper attaches to, so it calls `assess_trust` directly (a pure,
+    cheap call — no need to round-trip through `extra`). `FoundJob.trust` is
+    `Option<TrustAssessment>` (unlike `JobPosting`'s always-`Some`): a run
+    recorded before this field existed deserializes with `None`
+    (`#[serde(default)]`), every run recorded from here on sets `Some(..)`.
+- **Contract:** `packages/shared/src/types/index.ts` — `JobTrustAssessment`,
+  `JobPosting.trust?`, and `AutopilotFoundJob.trust?`. None are
+  Zod-schema-derived (like the rest of those two interfaces), so none are
+  `gen:ipc`-generated; kept hand-in-sync with the Rust serde shapes, same as
+  every other field on both interfaces.
+
 ## Scrape results persistence (PR #463)
 
 Results now persist across navigation thanks to React Query + backend cache:

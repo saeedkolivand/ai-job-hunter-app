@@ -150,6 +150,14 @@ pub struct FoundJob {
     /// always `false`; the read path fills it in.
     #[serde(default)]
     pub applied: bool,
+    /// Ghost-job trust signal, computed at find-time via
+    /// [`crate::scraping::trust::assess_trust`]. `Option` (not a plain
+    /// [`crate::scraping::trust::TrustAssessment`]) purely so a run recorded
+    /// before this field existed still deserializes — `#[serde(default)]` gives
+    /// `None` for a legacy record; every run recorded from here on always sets
+    /// `Some(..)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trust: Option<crate::scraping::trust::TrustAssessment>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -677,6 +685,12 @@ fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<Found
                 }
                 if inc.score.is_some() {
                     row.score = inc.score;
+                }
+                // Same legacy-migration case as `board` above: an existing row
+                // persisted before `trust` existed (`None`) picks it up when the
+                // same URL re-surfaces on a later run.
+                if inc.trust.is_some() {
+                    row.trust = inc.trust.clone();
                 }
             }
             row
