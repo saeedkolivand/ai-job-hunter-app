@@ -1,4 +1,4 @@
-import type { JobInteraction } from '@ajh/shared';
+import type { JobInteraction, JobTrustAssessment } from '@ajh/shared';
 
 export interface Posting {
   id: string;
@@ -13,6 +13,9 @@ export interface Posting {
   postedAt?: number;
   capturedAt: number;
   interactions?: JobInteraction[];
+  /** Ghost-job trust signal, computed at scrape-time. Absent on postings
+   *  captured before this field existed. */
+  trust?: JobTrustAssessment;
 }
 
 export interface JobEvent {

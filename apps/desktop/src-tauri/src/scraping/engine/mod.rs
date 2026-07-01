@@ -139,9 +139,14 @@ impl ScraperEngine {
             let reached = reached.clone();
             let kept = kept.clone();
             let token_for_wrapper = token.clone();
-            let boxed: Box<dyn Fn(JobPosting) + Send> = Box::new(move |item: JobPosting| {
+            let boxed: Box<dyn Fn(JobPosting) + Send> = Box::new(move |mut item: JobPosting| {
                 let n = streamed.fetch_add(1, Ordering::SeqCst);
                 if n < amount {
+                    // Trust assessment is attached here — the single funnel every
+                    // board's streamed item passes through before it reaches the
+                    // caller's `on_item` (PostingsCache + `job.stream`/`SCRAPE_ITEM`
+                    // for both the manual scrape and Autopilot UIs).
+                    super::trust::attach(&mut item);
                     if let Ok(mut guard) = kept.lock() {
                         guard.push(item.clone());
                     }

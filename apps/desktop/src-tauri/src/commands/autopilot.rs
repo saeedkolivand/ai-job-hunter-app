@@ -186,42 +186,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     let found_at = now_ms();
     let mut found_jobs: Vec<FoundJob> = postings
         .iter()
-        .map(|p| {
-            // Keyword-coverage match %: share of the JD's keywords present in the
-            // résumé, scored over the SAME blob as `commands::match_resume`
-            // (title + description + requirements via `posting_text_blob`).
-            // Embedding-free.
-            let score = if resume.is_empty() {
-                None
-            } else {
-                crate::documents::keywords::posting_text_blob(
-                    &p.title,
-                    p.description.as_deref(),
-                    p.requirements.as_deref(),
-                )
-                .map(|blob| crate::documents::keywords::coverage_score(resume, &blob))
-            };
-            FoundJob {
-                title: p.title.clone(),
-                company: p.company.clone(),
-                url: p.url.clone(),
-                location: p.location.clone(),
-                board: {
-                    let s = p.source.trim();
-                    if s.is_empty() {
-                        None
-                    } else {
-                        Some(s.to_string())
-                    }
-                },
-                description: p.description.clone(),
-                score,
-                found_at,
-                // Set by the dedup merge in `record_run`; `applied` is derived on read.
-                is_new: false,
-                applied: false,
-            }
-        })
+        .map(|p| build_found_job(p, resume, found_at))
         .collect();
 
     // Highest keyword-coverage match first; unscored postings sort to the end.
@@ -332,6 +297,53 @@ pub fn autopilot_resume(app: AppHandle, autopilot_id: String) -> Value {
 }
 
 // Helper functions
+
+/// Pure `JobPosting → FoundJob` projection — the same one `autopilot_run`'s
+/// `postings.iter().map(..)` calls. Extracted so a unit test can exercise the
+/// REAL projection (every field, plus the `assess_trust(&p.url, &p.company)`
+/// call and its arg order) instead of a hand-retyped mirror that could
+/// silently drift from this one (e.g. a dropped field or swapped args).
+pub(crate) fn build_found_job(p: &JobPosting, resume: &str, found_at: u64) -> FoundJob {
+    // Keyword-coverage match %: share of the JD's keywords present in the
+    // résumé, scored over the SAME blob as `commands::match_resume`
+    // (title + description + requirements via `posting_text_blob`).
+    // Embedding-free.
+    let score = if resume.is_empty() {
+        None
+    } else {
+        crate::documents::keywords::posting_text_blob(
+            &p.title,
+            p.description.as_deref(),
+            p.requirements.as_deref(),
+        )
+        .map(|blob| crate::documents::keywords::coverage_score(resume, &blob))
+    };
+    FoundJob {
+        title: p.title.clone(),
+        company: p.company.clone(),
+        url: p.url.clone(),
+        location: p.location.clone(),
+        board: {
+            let s = p.source.trim();
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_string())
+            }
+        },
+        description: p.description.clone(),
+        score,
+        found_at,
+        // Set by the dedup merge in `record_run`; `applied` is derived on read.
+        is_new: false,
+        applied: false,
+        // `p` never went through the engine's streaming wrapper (this Vec is
+        // `scraper.search()`'s own separately-returned copy, not the
+        // on_item-streamed one `ScraperEngine::run_one` attaches trust to) —
+        // compute it directly here, same pure call.
+        trust: Some(crate::scraping::trust::assess_trust(&p.url, &p.company)),
+    }
+}
 
 /// Whether a posting passes the autopilot's keyword filters: it must contain
 /// **all** must-include keywords and **none** of the exclude keywords, matched
@@ -488,6 +500,7 @@ mod tests {
             found_at: 0,
             is_new: false,
             applied: false,
+            trust: None,
         }
     }
 

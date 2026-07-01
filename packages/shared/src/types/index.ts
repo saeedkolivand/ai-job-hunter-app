@@ -65,6 +65,17 @@ export interface DocumentRecord {
   isDefault?: boolean;
 }
 
+/**
+ * Ghost-job / trust signal computed for every scraped posting (backend,
+ * always populated — never absent on a real posting). Flag-only: a low score
+ * never removes a posting, it only badges it in the renderer.
+ */
+export interface JobTrustAssessment {
+  score: number;
+  level: 'high' | 'medium' | 'low';
+  flags: Array<'missingApplyUrl' | 'invalidUrl' | 'suspiciousDomain' | 'companyDomainMismatch'>;
+}
+
 export interface JobPosting {
   id: string;
   externalId?: string;
@@ -77,6 +88,7 @@ export interface JobPosting {
   requirements?: string[];
   postedAt?: number;
   capturedAt: number;
+  trust?: JobTrustAssessment;
   /** Board-specific metadata (salary, remote status, etc.) */
   [key: string]: unknown;
 }
@@ -256,6 +268,9 @@ export interface AutopilotFoundJob {
   /** The user has generated an application for this job (derived from a saved
    *  generation whose `jobUrl` matches `url`). Drives the "Applied" badge. */
   applied?: boolean;
+  /** Ghost-job trust signal, computed at find-time. Absent only on a run
+   *  recorded before this field existed. */
+  trust?: JobTrustAssessment;
 }
 
 /** Result record for a single autopilot run. */
