@@ -16,6 +16,7 @@ pub mod remoteok;
 pub mod remotive;
 pub mod rippling;
 pub mod smartrecruiters;
+pub mod themuse;
 pub mod wwr;
 pub mod ycombinator;
 
@@ -37,6 +38,7 @@ pub use remoteok::RemoteOkScraper;
 pub use remotive::RemotiveScraper;
 pub use rippling::RipplingScraper;
 pub use smartrecruiters::SmartRecruitersScraper;
+pub use themuse::TheMuseScraper;
 pub use wwr::WeWorkRemotelyScraper;
 pub use ycombinator::YCombinatorScraper;
 
@@ -67,6 +69,7 @@ static SCRAPERS: &[&dyn Scraper] = &[
     &RipplingScraper,
     &BreezyScraper,
     &BambooHrScraper,
+    &TheMuseScraper,
 ];
 
 /// All registered scrapers, in catalog display order.

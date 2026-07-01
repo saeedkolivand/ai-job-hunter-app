@@ -121,6 +121,7 @@ export const BOARD_IDS = [
   'remoteok',
   'remotive',
   'arbeitnow',
+  'themuse',
   'wwr',
   'ycombinator',
 ] as const;

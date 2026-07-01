@@ -9,7 +9,7 @@ fn test_browser_sem() -> Arc<TokioSemaphore> {
 fn test_catalog() {
     let engine = ScraperEngine::new();
     let catalog = engine.catalog();
-    assert_eq!(catalog.len(), 20);
+    assert_eq!(catalog.len(), 21);
 
     // Check specific scrapers
     assert!(catalog.iter().any(|s| s.id == "linkedin"));
@@ -102,6 +102,7 @@ fn test_catalog_requires_company_flags() {
         "remoteok",
         "remotive",
         "arbeitnow",
+        "themuse",
         "wwr",
         "berlinstartupjobs",
         "germantechjobs",
@@ -136,9 +137,9 @@ fn test_catalog_listed_flags() {
         "arbeitsagentur must be listed"
     );
 
-    // All 20 active boards are listed
+    // All 21 active boards are listed
     let listed_count = catalog.iter().filter(|e| e.listed).count();
-    assert_eq!(listed_count, 20, "all 20 boards should be listed");
+    assert_eq!(listed_count, 21, "all 21 boards should be listed");
 }
 
 #[test]
@@ -147,7 +148,7 @@ fn test_health() {
     let health = engine.health();
     assert_eq!(health.mode, "in-process");
     assert!(health.ready);
-    assert_eq!(health.scrapers.len(), 20);
+    assert_eq!(health.scrapers.len(), 21);
 }
 
 #[test]

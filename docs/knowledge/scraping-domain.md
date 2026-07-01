@@ -2,13 +2,13 @@
 
 Last updated: 2026-07-01
 
-Describes the job-scraping subsystem: board registry (20 active scrapers), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
+Describes the job-scraping subsystem: board registry (21 active scrapers), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
 ## Board registry & catalog
 
 - **`Scraper` trait** — `apps/desktop/src-tauri/src/scraping/boards/mod.rs`. Every board implements `Scraper: Clone + Send + Sync + Debug`.
 - **`SCRAPERS`** — registry of all enabled scrapers (built at compile time, no runtime plugin system).
-- **`BOARD_IDS`** — const array in `packages/shared/src/schemas/index.ts`; lists all scrapeable boards (20 active scrapers + aggregator). `AGGREGATOR_BOARD_ID = 'aggregator'` is the stable catalog id for the Adzuna/JSearch provider.
+- **`BOARD_IDS`** — const array in `packages/shared/src/schemas/index.ts`; lists all scrapeable boards (21 total, `aggregator` counted once among them). `AGGREGATOR_BOARD_ID = 'aggregator'` is the stable catalog id for the Adzuna/JSearch provider.
 - **Catalog** — `ScraperEngine::catalog()` (Rust) → `boards.catalog()` IPC → `useBoardsCatalog()` hook. Exposes per-board metadata:
   - `id` (slug)
   - `name`, `icon` (UI)
@@ -46,6 +46,14 @@ Four more company-scoped boards, endpoint-reconnaissance-ported from `santifer/c
 - **Rippling** (`api.rippling.com/platform/api/ats/v1/board/{slug}/jobs`) — fixed API host, slug is a percent-encoded **path segment**, not a hostname. The response `url` field is host-locked to `ats.rippling.com` before use (an untrusted response could otherwise inject arbitrary URLs into `JobPosting.url`).
 - **BambooHR** (`{slug}.bamboohr.com/careers/list`) — subdomain-scoped, DNS-label SSRF guard; has a real `id` field (accepted as either JSON number or string), so the job URL is _constructed_ by the scraper (`.../careers/{id}`), not taken from the response.
 - Each board's response→`JobPosting` mapping is a standalone `pub fn parse_<board>_response(...)`, unit-testable against a JSON fixture without a network round-trip (mirrors Personio's `parse_xml_feed`).
+
+### PR 2 of the aggregator-boards program (2026-07-01): The Muse
+
+**The Muse** (`themuse`, `apps/desktop/src-tauri/src/scraping/boards/themuse/mod.rs`) — `requires_company()` stays `false` (default): it's a **keyword aggregator**, not a company-scoped ATS board. Same career-ops reconnaissance provenance and unverified-endpoint caveat as PR 1.
+
+- The Muse's public API (`www.themuse.com/api/public/jobs?page={n}`) has no free-text keyword param — only `category`/`level`/`location`/`company`/`page`. The scraper browses the feed and filters client-side (title+company substring for `query`, location substring for `location`), the same convention as Remotive/RemoteOK/Arbeitnow.
+- Pagination: response includes `page_count`; the scraper reads it from page 0 and iterates up to `min(input.pages, page_count, 5)` — 5-page cap matches Arbeitnow's `input.pages.clamp(1, 5)`, not career-ops's 100-page crawl.
+- No stable job id in the response, so the (validated `^https?://`) posting URL doubles as the id — same precedent as Breezy/Pinpoint.
 
 ## Retired boards (Glassdoor, Indeed, Xing, StepStone, Workday)
 
@@ -110,6 +118,8 @@ Results now persist across navigation thanks to React Query + backend cache:
   - Rippling: `apps/desktop/src-tauri/src/scraping/boards/rippling/mod.rs`
   - Breezy HR: `apps/desktop/src-tauri/src/scraping/boards/breezy/mod.rs`
   - BambooHR: `apps/desktop/src-tauri/src/scraping/boards/bamboohr/mod.rs`
+- **Keyword aggregators (client-side filter, no server-side search):**
+  - The Muse: `apps/desktop/src-tauri/src/scraping/boards/themuse/mod.rs`
 - **Aggregator:**
   - Registry: `apps/desktop/src-tauri/src/scraping/boards/aggregator/`
   - Adzuna provider: `apps/desktop/src-tauri/src/scraping/boards/aggregator/adzuna.rs`
@@ -125,6 +135,6 @@ Results now persist across navigation thanks to React Query + backend cache:
 
 ## See also
 
-- `docs/SCRAPING_ENDPOINTS.md` — verified external endpoint reconnaissance (20 active boards + aggregator; retired boards noted)
+- `docs/SCRAPING_ENDPOINTS.md` — verified external endpoint reconnaissance (21 active boards, `aggregator` counted once among them; retired boards noted)
 - `docs/knowledge/domain-model.md` — brief mention of `Scraper` trait + catalog
 - `docs/ARCHITECTURE.md` — high-level diagram of scraping + IPC boundary
