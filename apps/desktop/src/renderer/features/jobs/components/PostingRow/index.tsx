@@ -17,6 +17,7 @@ import { ActionMenu, Button, SourceBadge, Tag, transition } from '@ajh/ui';
 import { CompanyAvatar } from '@/features/jobs/components/CompanyAvatar';
 import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
 import type { Posting } from '@/features/jobs/types';
+import { TrustBadge } from '@/lib/trust-badge';
 
 interface PostingRowProps {
   posting: Posting;
@@ -62,6 +63,7 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
               {t('jobs.saved')}
             </Tag>
           )}
+          <TrustBadge trust={posting.trust} className={STATUS_TAG} />
         </div>
         <div className="mt-1 flex items-center gap-4 text-fine-print">
           <span className="flex items-center gap-1.5 text-foreground/85">

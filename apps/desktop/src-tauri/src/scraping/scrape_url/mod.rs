@@ -44,7 +44,19 @@ async fn try_named_boards(url: &str) -> Result<Option<JobPosting>> {
     Ok(None)
 }
 
+/// Resolve `url` to a [`JobPosting`], with a trust assessment always attached
+/// (see [`crate::scraping::trust::attach`]) — the single point every caller
+/// (the `scrape_url`/`scrape_resolve_url` commands and the extension-bridge
+/// import) shares, so none of them need to compute it themselves.
 pub async fn resolve(url: &str) -> Result<Option<JobPosting>> {
+    let posting = resolve_uncached(url).await?;
+    Ok(posting.map(|mut p| {
+        crate::scraping::trust::attach(&mut p);
+        p
+    }))
+}
+
+async fn resolve_uncached(url: &str) -> Result<Option<JobPosting>> {
     // Pass 1: try named boards on the original URL (fast path — no redirect
     // follow needed when the caller already holds a direct board URL).
     if let Some(posting) = try_named_boards(url).await? {

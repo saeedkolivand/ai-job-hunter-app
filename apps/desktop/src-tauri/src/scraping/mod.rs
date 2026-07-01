@@ -5,6 +5,7 @@ pub mod http;
 pub mod linkedin;
 pub mod rate_limiter;
 pub mod scrape_url;
+pub mod trust;
 pub mod types;
 
 pub use engine::{BoardScrapeSummary, ScraperEngine};

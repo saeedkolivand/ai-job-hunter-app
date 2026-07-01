@@ -6,6 +6,7 @@ import { cn, resolveTransition, transition } from '@ajh/ui';
 
 import { CompanyAvatar } from '@/features/jobs/components/CompanyAvatar';
 import type { Posting } from '@/features/jobs/types';
+import { TrustBadge } from '@/lib/trust-badge';
 
 interface PostingListItemProps {
   posting: Posting;
@@ -118,7 +119,12 @@ export function PostingListItem({
             {posting.postedAt && (
               <span className="shrink-0">· {formatRelativeTime(posting.postedAt)}</span>
             )}
-            {/* Status markers — decorative (aria-hidden); SR summary above */}
+            {/* Status markers — decorative (aria-hidden); SR summary above.
+                TrustBadge is `interactive={false}` here: rows are never real tab
+                stops (active-descendant pattern below) — a focusable popover
+                trigger would add an unexpected extra stop per row. `strong`
+                forces an opaque fill since the selected row's gradient pill can
+                undercut the default translucent tint's contrast. */}
             <span className="ml-auto flex shrink-0 items-center gap-1">
               {has('applied') && <CircleCheck size={12} aria-hidden="true" />}
               {/* "Viewed" text label replaces the eye icon — aria-hidden since SR uses the summary above */}
@@ -128,6 +134,12 @@ export function PostingListItem({
                 </span>
               )}
               {has('bookmarked') && <Bookmark size={12} aria-hidden="true" />}
+              <TrustBadge
+                trust={posting.trust}
+                className="px-1 py-0 text-[9px]"
+                strong={selected}
+                interactive={false}
+              />
             </span>
           </div>
         </div>

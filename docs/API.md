@@ -736,6 +736,14 @@ interface JobPosting {
   remote?: 'yes' | 'no' | 'hybrid';
   postedAt?: string;
   scrapedAt: string;
+  // Ghost-job trust signal, always populated by the backend (non-blocking —
+  // flag-only, never drops a posting). See docs/knowledge/scraping-domain.md
+  // § Trust assessment.
+  trust?: {
+    score: number; // 0–100
+    level: 'high' | 'medium' | 'low';
+    flags: Array<'missingApplyUrl' | 'invalidUrl' | 'suspiciousDomain' | 'companyDomainMismatch'>;
+  };
 }
 
 interface ScrapeResult {

@@ -1723,6 +1723,18 @@
       "High": "Hoch",
       "Medium": "Mittel",
       "Low": "Niedrig"
+    },
+    "trust": {
+      "level": {
+        "medium": "Fraglich",
+        "low": "Riskant"
+      },
+      "flags": {
+        "missingApplyUrl": "Kein Bewerbungslink",
+        "invalidUrl": "Bewerbungslink fehlerhaft",
+        "suspiciousDomain": "Verdächtige Domain",
+        "companyDomainMismatch": "Domain stimmt nicht mit Unternehmen überein"
+      }
     }
   },
   "resumes": {
