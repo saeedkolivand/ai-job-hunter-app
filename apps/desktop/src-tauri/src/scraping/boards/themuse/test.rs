@@ -165,8 +165,11 @@ fn parse_themuse_response_location_empty_when_missing_or_empty() {
     let jobs = jobs_from(json);
     let postings = parse_themuse_response(jobs, 0);
     assert_eq!(postings.len(), 2);
-    assert_eq!(postings[0].location, Some(String::new()));
-    assert_eq!(postings[1].location, Some(String::new()));
+    assert_eq!(
+        postings[0].location, None,
+        "matches fleet peers (e.g. Arbeitnow): missing location is None, not Some(\"\")"
+    );
+    assert_eq!(postings[1].location, None);
 }
 
 #[test]

@@ -96,14 +96,14 @@ pub(crate) fn parse_themuse_response(jobs: Vec<TmJob>, now: i64) -> Vec<JobPosti
             .and_then(|locs| locs.into_iter().next())
             .and_then(|l| l.name)
             .map(|n| n.trim().to_string())
-            .unwrap_or_default();
+            .filter(|n| !n.is_empty());
 
         out.push(JobPosting {
             id: format!("{BOARD_ID}:{url}"),
             external_id: Some(url.clone()),
             title,
             company,
-            location: Some(location),
+            location,
             url,
             source: BOARD_ID.to_string(),
             description: None,
@@ -200,10 +200,21 @@ impl Scraper for TheMuseScraper {
 
             // A non-2xx response or a body that doesn't match the expected
             // shape comes back as `None` from `fetch_json` — treat that page
-            // as empty/stop rather than erroring out the whole scrape.
+            // as empty/stop rather than erroring out the whole scrape. Page 0
+            // going `None` already surfaces as an empty `out` to the caller;
+            // a later page going `None` is silent truncation otherwise, so
+            // log it.
             let resp = match data {
                 Some(r) => r,
-                None => break,
+                None => {
+                    if page > 0 {
+                        log::warn!(
+                            "[themuse] page {page} returned None (non-2xx or shape mismatch); stopping with {} collected",
+                            out.len()
+                        );
+                    }
+                    break;
+                }
             };
 
             // Fail closed (1 page) on a missing/zero `page_count`, but make
