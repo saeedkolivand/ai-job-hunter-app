@@ -1,14 +1,14 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-06-24
+Last updated: 2026-07-01
 
-Describes the job-scraping subsystem: board registry (16 active scrapers), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
+Describes the job-scraping subsystem: board registry (20 active scrapers), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
 ## Board registry & catalog
 
 - **`Scraper` trait** — `apps/desktop/src-tauri/src/scraping/boards/mod.rs`. Every board implements `Scraper: Clone + Send + Sync + Debug`.
 - **`SCRAPERS`** — registry of all enabled scrapers (built at compile time, no runtime plugin system).
-- **`BOARD_IDS`** — const array in `packages/shared/src/schemas/index.ts`; lists all scrapeable boards (16 active scrapers + aggregator). `AGGREGATOR_BOARD_ID = 'aggregator'` is the stable catalog id for the Adzuna/JSearch provider.
+- **`BOARD_IDS`** — const array in `packages/shared/src/schemas/index.ts`; lists all scrapeable boards (20 active scrapers + aggregator). `AGGREGATOR_BOARD_ID = 'aggregator'` is the stable catalog id for the Adzuna/JSearch provider.
 - **Catalog** — `ScraperEngine::catalog()` (Rust) → `boards.catalog()` IPC → `useBoardsCatalog()` hook. Exposes per-board metadata:
   - `id` (slug)
   - `name`, `icon` (UI)
@@ -37,6 +37,15 @@ When a company-scoped board is selected with an empty `companies` list:
 - **SSRF guard:** Personio & Recruitee validate company slug as a DNS label (alphanumeric + hyphen, max 63 chars)
 - **Per-company dedup:** SmartRecruiters + Personio deduplicate results within each company (partial failure isolation: one company's error doesn't block others)
 - **Consistent IDs:** `personio::make_job_id(company, position_id)` ensures job IDs match across ingestion paths (scrape + URL resolve)
+
+### PR 1 of the ATS-boards program (2026-07-01): pinpoint, rippling, breezy, bamboohr
+
+Four more company-scoped boards, endpoint-reconnaissance-ported from `santifer/career-ops` (MIT) — **not yet re-verified live**; see `docs/SCRAPING_ENDPOINTS.md` for the unverified-endpoint caveat and per-board detail.
+
+- **Pinpoint** (`{slug}.pinpointhq.com/postings.json`) and **Breezy HR** (`{slug}.breezy.hr/json`) — subdomain-scoped, DNS-label SSRF guard (same shape as Personio). Neither response has a stable job id, so the (per-company deduped) posting URL doubles as the id.
+- **Rippling** (`api.rippling.com/platform/api/ats/v1/board/{slug}/jobs`) — fixed API host, slug is a percent-encoded **path segment**, not a hostname. The response `url` field is host-locked to `ats.rippling.com` before use (an untrusted response could otherwise inject arbitrary URLs into `JobPosting.url`).
+- **BambooHR** (`{slug}.bamboohr.com/careers/list`) — subdomain-scoped, DNS-label SSRF guard; has a real `id` field (accepted as either JSON number or string), so the job URL is _constructed_ by the scraper (`.../careers/{id}`), not taken from the response.
+- Each board's response→`JobPosting` mapping is a standalone `pub fn parse_<board>_response(...)`, unit-testable against a JSON fixture without a network round-trip (mirrors Personio's `parse_xml_feed`).
 
 ## Retired boards (Glassdoor, Indeed, Xing, StepStone, Workday)
 
@@ -97,6 +106,10 @@ Results now persist across navigation thanks to React Query + backend cache:
   - Personio: `apps/desktop/src-tauri/src/scraping/boards/personio/mod.rs`
   - Recruitee: `apps/desktop/src-tauri/src/scraping/boards/recruitee/mod.rs`
   - SmartRecruiters: `apps/desktop/src-tauri/src/scraping/boards/smartrecruiters/`
+  - Pinpoint: `apps/desktop/src-tauri/src/scraping/boards/pinpoint/mod.rs`
+  - Rippling: `apps/desktop/src-tauri/src/scraping/boards/rippling/mod.rs`
+  - Breezy HR: `apps/desktop/src-tauri/src/scraping/boards/breezy/mod.rs`
+  - BambooHR: `apps/desktop/src-tauri/src/scraping/boards/bamboohr/mod.rs`
 - **Aggregator:**
   - Registry: `apps/desktop/src-tauri/src/scraping/boards/aggregator/`
   - Adzuna provider: `apps/desktop/src-tauri/src/scraping/boards/aggregator/adzuna.rs`
@@ -112,6 +125,6 @@ Results now persist across navigation thanks to React Query + backend cache:
 
 ## See also
 
-- `docs/SCRAPING_ENDPOINTS.md` — verified external endpoint reconnaissance (16 active boards + aggregator; retired boards noted)
+- `docs/SCRAPING_ENDPOINTS.md` — verified external endpoint reconnaissance (20 active boards + aggregator; retired boards noted)
 - `docs/knowledge/domain-model.md` — brief mention of `Scraper` trait + catalog
 - `docs/ARCHITECTURE.md` — high-level diagram of scraping + IPC boundary
