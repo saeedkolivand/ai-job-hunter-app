@@ -67,7 +67,7 @@ former `packages/ai` and `packages/data` Node packages were removed.
 
 ## Scraping (`apps/desktop/src-tauri/src/scraping/`)
 
-Active scrapers: 20 boards. Five boards (Indeed, StepStone, Xing, Workday, Glassdoor) were retired as direct scrapers in 2026-06-21 and are now covered by the Aggregator (Adzuna/JSearch). See ADR-026.
+Active scrapers: 21 boards. Five boards (Indeed, StepStone, Xing, Workday, Glassdoor) were retired as direct scrapers in 2026-06-21 and are now covered by the Aggregator (Adzuna/JSearch). See ADR-026.
 
 | Board                           | Status  | Notes                                                              |
 | ------------------------------- | ------- | ------------------------------------------------------------------ |
@@ -89,6 +89,7 @@ Active scrapers: 20 boards. Five boards (Indeed, StepStone, Xing, Workday, Glass
 | BerlinStartupJobs               | ✅      |                                                                    |
 | GermanTechJobs                  | ✅      |                                                                    |
 | ArbeitNow                       | ✅      |                                                                    |
+| The Muse                        | ✅      | Keyword aggregator; no server-side search, client-side filter      |
 | YCombinator (Work at a Startup) | ✅      |                                                                    |
 | We Work Remotely                | ✅      | RSS feed                                                           |
 | Indeed                          | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                   |

@@ -67,7 +67,7 @@ SQLite · Ollama/Cloud AI · Chromium · OS Keychain
 | `net/`                  | Pooled HTTP client, SSRF guards, timeout handling                                                       |
 | `error/`                | Unified `AppError` + `AppResult` — all fallible operations use this                                     |
 | `observability/`        | Timed trace `Span`s for AI, scraping, autopilot (logged to console in dev)                              |
-| `scraping/`             | Board scrapers (20 boards) — chromiumoxide for browser boards, HTTP for APIs; registry-driven discovery |
+| `scraping/`             | Board scrapers (21 boards) — chromiumoxide for browser boards, HTTP for APIs; registry-driven discovery |
 | `documents/`            | Document import, OCR dispatch, SQLite storage, full-text indexing                                       |
 | `jobs/`                 | Job tracker state machine (queued → running → done/failed)                                              |
 | `credentials/`          | OS keychain integration — AI keys + board session auth                                                  |
