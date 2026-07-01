@@ -1,6 +1,6 @@
 ---
 description: Renderer UI rules — applies to all React components and route files
-globs: ["apps/tauri/src/renderer/**/*.tsx", "apps/tauri/src/renderer/**/*.ts"]
+globs: ["apps/desktop/src/renderer/**/*.tsx", "apps/desktop/src/renderer/**/*.ts"]
 alwaysApply: true
 ---
 
@@ -8,7 +8,7 @@ alwaysApply: true
 
 > Canonical rules: see `CLAUDE.md` + `.claude/skills/*` — this file is a pointer + the load-bearing subset; CLAUDE.md wins on any conflict.
 
-The renderer lives in `apps/tauri/src/renderer/` and talks to the Rust core only through IPC service hooks.
+The renderer lives in `apps/desktop/src/renderer/` and talks to the Rust core only through IPC service hooks.
 
 ## Path Privacy
 
@@ -16,7 +16,7 @@ The renderer lives in `apps/tauri/src/renderer/` and talks to the Rust core only
 - Always use repository-relative paths. Sanitize absolute paths in logs, PRs, commits, and markdown.
 
 ## Data fetching — React Query only
-Never use `useState + useEffect` for IPC data. Always use service hooks from `apps/tauri/src/renderer/services/`:
+Never use `useState + useEffect` for IPC data. Always use service hooks from `apps/desktop/src/renderer/services/`:
 ```ts
 import { useDocuments, usePostings, useJobQueue } from '@/services';
 const { data, isLoading } = useDocuments();

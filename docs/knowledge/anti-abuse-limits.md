@@ -1,6 +1,6 @@
 # Anti-Abuse Rate & Concurrency Limits
 
-Canonical source: `apps/tauri/src-tauri/src/limits/mod.rs`
+Canonical source: `apps/desktop/src-tauri/src/limits/mod.rs`
 
 ## Overview
 

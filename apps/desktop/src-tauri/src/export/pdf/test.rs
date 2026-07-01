@@ -500,7 +500,7 @@ fn cover_letter_long_contact_line_wraps_within_page() {
 /// ```
 ///
 /// Output files: `<template>_legacy.pdf` / `<template>_engine.pdf` (+ an ATS pair
-/// for the two-column template) under `apps/tauri/src-tauri/target/sample_pdfs/`.
+/// for the two-column template) under `apps/desktop/src-tauri/target/sample_pdfs/`.
 #[test]
 #[ignore = "dev tool: writes sample PDFs to target/sample_pdfs for visual review"]
 fn dump_sample_resume_pdfs() {
@@ -569,7 +569,7 @@ LANGUAGES
         fs::write(out.join(format!("{slug}_typst.pdf")), &bytes).expect("write pdf");
     }
 
-    eprintln!("wrote sample PDFs to apps/tauri/src-tauri/target/sample_pdfs/");
+    eprintln!("wrote sample PDFs to apps/desktop/src-tauri/target/sample_pdfs/");
 }
 
 /// Size guardrail: the Typst-rendered Classic resume must produce a valid,

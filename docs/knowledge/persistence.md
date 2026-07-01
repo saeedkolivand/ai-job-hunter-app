@@ -2,8 +2,8 @@
 
 Canonical sources:
 
-- `apps/tauri/src-tauri/src/db.rs` — centralized connection + WAL setup
-- `apps/tauri/src-tauri/src/data_store.rs` — trait definition
+- `apps/desktop/src-tauri/src/db.rs` — centralized connection + WAL setup
+- `apps/desktop/src-tauri/src/data_store.rs` — trait definition
 - Individual stores: `ai_generations/mod.rs`, `applications/mod.rs`, `documents/mod.rs`, etc.
 
 ## Central Connection Setup

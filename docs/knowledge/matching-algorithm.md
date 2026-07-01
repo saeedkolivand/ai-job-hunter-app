@@ -1,6 +1,6 @@
 # Matching Algorithm — Single-Source Keyword Coverage Kernel
 
-Canonical source: `apps/tauri/src-tauri/src/documents/keywords.rs` → `coverage_score()`
+Canonical source: `apps/desktop/src-tauri/src/documents/keywords.rs` → `coverage_score()`
 
 ## Overview
 
@@ -19,7 +19,7 @@ The `coverage_score()` function (in `documents::keywords`) is the **single sourc
 
 ### Algorithm
 
-For the exact algorithm steps, parameters, and implementation, see `apps/tauri/src-tauri/src/documents/keywords.rs` → `coverage_score()`. The implementation includes:
+For the exact algorithm steps, parameters, and implementation, see `apps/desktop/src-tauri/src/documents/keywords.rs` → `coverage_score()`. The implementation includes:
 
 - Language detection via `whatlang`.
 - Snowball stemming for the detected language (English, German, French, etc.).
@@ -41,7 +41,7 @@ Autopilot's ranking pipeline (in `autopilot::ranking` + `recommend::batch_match`
 
 ## Jobs Page Combined Score
 
-The Jobs page shows a **combined score** when analyzing a resume against a job. This hybrid approach weights semantic embedding similarity and keyword-based ATS scoring. See `apps/tauri/src-tauri/src/commands/match_resume.rs` → `score_one()` for the exact formula and weights.
+The Jobs page shows a **combined score** when analyzing a resume against a job. This hybrid approach weights semantic embedding similarity and keyword-based ATS scoring. See `apps/desktop/src-tauri/src/commands/match_resume.rs` → `score_one()` for the exact formula and weights.
 
 This hybrid approach is slower (requires embedding lookup) but more semantically aware than keyword coverage alone.
 
@@ -66,7 +66,7 @@ If knockout gating is added in future, the entry point is `documents/keywords.rs
 
 ## UI Rendering
 
-Both metrics are rendered using the `MatchBand` component (`apps/tauri/src/renderer/lib/match-band.tsx`), which provides formula-aware visualization with variant-specific score thresholds. See the component's `scoreTier()` function for the current cut points; thresholds are tuned to the underlying formula (keyword-only vs. hybrid semantic+ATS).
+Both metrics are rendered using the `MatchBand` component (`apps/desktop/src/renderer/lib/match-band.tsx`), which provides formula-aware visualization with variant-specific score thresholds. See the component's `scoreTier()` function for the current cut points; thresholds are tuned to the underlying formula (keyword-only vs. hybrid semantic+ATS).
 
 ## Related Decisions
 

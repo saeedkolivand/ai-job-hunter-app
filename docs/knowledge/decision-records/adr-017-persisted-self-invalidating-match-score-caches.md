@@ -15,7 +15,7 @@ This meant cold-start on a list of 200 postings → 200+ Ollama embed calls, eac
 
 ## Decision
 
-Add two new, self-invalidating SQLite tables to `DocumentStore` (`apps/tauri/src-tauri/src/documents/mod.rs`):
+Add two new, self-invalidating SQLite tables to `DocumentStore` (`apps/desktop/src-tauri/src/documents/mod.rs`):
 
 ### `posting_vectors` table
 
@@ -108,7 +108,7 @@ The default scoring path is now **keyword-only** (`semanticScoring` defaults fal
 
 - **New command:** `match_resume_batch(resumeId, jobIds[], semanticScoringEnabled)` — scores all postings in **one Rust pass**; the per-job kernel (`score_one`) is shared with the legacy `match_resume` single-job path, ensuring identical logic.
 - **Frontend:** `MatchScoresProvider` context distributes results per-row via `useRowMatchScore(jobId)` on-demand; `RowMatchScore` is now purely presentational (no scheduling logic).
-- **Deleted:** `apps/tauri/src/renderer/providers/ScoringScheduler/` (dead) and `useJobMatchScores` batch hook (replaced by on-demand per-job `useRowMatchScore`).
+- **Deleted:** `apps/desktop/src/renderer/providers/ScoringScheduler/` (dead) and `useJobMatchScores` batch hook (replaced by on-demand per-job `useRowMatchScore`).
 - **Batch cap:** `MATCH_BATCH_MAX=1000` enforced in Rust (`commands/match_resume.rs`) — DoS guard against unbounded batch IPC.
 - **Cache alignment:** The batch command shares the ADR-017 `match_scores` cache (keyword keys use `semantic_enabled=0` to keep keyword and semantic paths isolated in the composite PK).
 - **Embedding-batch (Phase E):** Deferred — Ollama `/api/embed` batch + payload trim + warm-on-scrape are opt-in future work; do **not** ship or document as active.
@@ -129,6 +129,6 @@ The default scoring path is now **keyword-only** (`semanticScoring` defaults fal
 
 ## References
 
-- Implemented in: `apps/tauri/src-tauri/src/documents/mod.rs` (tables, helpers, store methods), `apps/tauri/src-tauri/src/commands/match_resume.rs` (MATCH_FORMULA_VERSION, cache wrap).
+- Implemented in: `apps/desktop/src-tauri/src/documents/mod.rs` (tables, helpers, store methods), `apps/desktop/src-tauri/src/commands/match_resume.rs` (MATCH_FORMULA_VERSION, cache wrap).
 - Precursor work: ADR-009 (Resettable registry); ADR-003 (centralized net error layers); embedding storage schema in `documents/mod.rs`.
 - Follow-up phases: ADR for Phase 3 (pre-embed-on-scrape) when it ships.

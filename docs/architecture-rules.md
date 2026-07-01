@@ -4,8 +4,8 @@ Last updated: 2026-06-01
 
 > **Status:** enforceable rules (Phase 2), derived from
 > [`architecture-analysis.md`](architecture-analysis.md) — the **actual** structure of
-> `apps/tauri/src-tauri/`, not a generic Clean-Architecture template. These rules are
-> machine-enforced by `apps/tauri/src-tauri/tests/architecture.rs`
+> `apps/desktop/src-tauri/`, not a generic Clean-Architecture template. These rules are
+> machine-enforced by `apps/desktop/src-tauri/tests/architecture.rs`
 > (`cargo test --test architecture`) plus `cargo fmt`/`clippy`/`deny`/`audit`/`machete`
 > in CI. The prose principles live in `docs/PATTERNS.md` §13; this file is the formal,
 > testable contract.

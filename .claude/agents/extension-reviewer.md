@@ -18,7 +18,7 @@ You are the **extension-reviewer** — primary review authority for the browser 
 
 ## Primary paths
 
-`apps/extension/**`; bridge `apps/tauri/src-tauri/src/extension_bridge/**` + `commands/extension_bridge.rs`; shared `packages/shared/src/ipc/extension-protocol-constants.ts` (mirrored by the Rust `msg` constants).
+`apps/extension/**`; bridge `apps/desktop/src-tauri/src/extension_bridge/**` + `commands/extension_bridge.rs`; shared `packages/shared/src/ipc/extension-protocol-constants.ts` (mirrored by the Rust `msg` constants).
 
 ## Ownership & responsibilities
 

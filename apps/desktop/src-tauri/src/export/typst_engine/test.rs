@@ -2553,7 +2553,7 @@ fn stray_typst_code_guard_letter() {
 // result to docs/assets/templates-showcase.png.
 //
 // As a side output it also writes one per-template preview SVG to
-// apps/tauri/src/renderer/features/ai-generate/assets/template-previews/<id>.svg,
+// apps/desktop/src/renderer/features/ai-generate/assets/template-previews/<id>.svg,
 // which the AI-Generate option previews show in the result panel. SVG (vector)
 // replaces the old PNGs — crisp at any zoom and a fraction of the bundle size.
 //

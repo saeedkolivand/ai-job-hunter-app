@@ -1,6 +1,6 @@
 ---
 name: frontend-standards
-description: React renderer standards — ports & adapters (service hooks), design tokens, motion tokens, @ajh/ui primitives, i18n, feature isolation, React Query, a11y. Load for changes under apps/tauri/src/renderer/**.
+description: React renderer standards — ports & adapters (service hooks), design tokens, motion tokens, @ajh/ui primitives, i18n, feature isolation, React Query, a11y. Load for changes under apps/desktop/src/renderer/**.
 ---
 
 # Frontend standards (mostly ESLint-enforced)

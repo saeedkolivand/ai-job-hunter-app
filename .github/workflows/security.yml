@@ -210,7 +210,7 @@ jobs:
       - name: 🔍 Run Cargo Audit
         id: cargo-audit
         continue-on-error: true
-        working-directory: apps/tauri/src-tauri
+        working-directory: apps/desktop/src-tauri
         run: cargo audit
 
       - name: ❌ Check for Audit Failures

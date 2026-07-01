@@ -29,10 +29,10 @@ Don't re-derive what a tool can decide. Run and read:
 
 - `rtk pnpm typecheck` (tsc `--noEmit`, all packages) — TS errors are 🔴.
 - `rtk pnpm lint:strict` (`eslint --max-warnings 0`) — esp. `react-hooks/exhaustive-deps`. A lint error the diff introduced is at least 🟠.
-- If `apps/tauri/src-tauri/**` changed: in that dir, `rtk cargo fmt --all -- --check`, `rtk cargo clippy --all-targets -- -D warnings`, `rtk cargo test` (+ `--test architecture` if layering/modules changed).
+- If `apps/desktop/src-tauri/**` changed: in that dir, `rtk cargo fmt --all -- --check`, `rtk cargo clippy --all-targets -- -D warnings`, `rtk cargo test` (+ `--test architecture` if layering/modules changed).
 - **Cross-OS / `#[cfg]` blind spot (the review host runs one OS; CI builds the other target OSes):** a same-host `cargo build/clippy/test` **silently excludes** `#[cfg(target_os = …)]` modules + tests for any target OS that isn't the review host's — a green local run does **NOT** verify them. This is how cfg-gated code ships broken, each costing a CI round-trip: a Linux-only unused-import (clippy `-D warnings`), a `#[serial]` attribute unresolved inside `mod linux`, a `pub(super)` visibility error, and a test that re-`exec()`'d the nextest binary and **cancelled the Tests job**. So: if the diff adds/touches OS-gated code or tests for any OS ≠ this host, treat it as **UNVERIFIED** — require a cross-target check (`cargo check --target x86_64-unknown-linux-gnu --tests`, or a dep-light standalone-crate cross-check of just the gated module) and review the gated bodies by hand (imports/`use` are **not** inherited into `mod`-submodules; sibling-`mod` access needs `pub(super)`). Never report 🟢/PASS on cfg-gated code a same-host build can't compile.
 - If `packages/shared/**` IPC contracts/schemas changed: `rtk pnpm gen:ipc:check` (must be clean) and confirm `mock-client.ts` mirrors any new method.
-- **Targeted tests**: run the test files covering the touched code (not the full suite) — `rtk pnpm --filter @ajh/tauri test <paths>` / the owning package filter.
+- **Targeted tests**: run the test files covering the touched code (not the full suite) — `rtk pnpm --filter @ajh/desktop test <paths>` / the owning package filter.
 - **Secret scan**: grep the diff for hardcoded secrets/keys/tokens (API keys, `adzuna` app_id/app_key literals, private keys, `Authorization:` bearer literals). Any committed secret is 🔴.
 
 A tool failure the diff caused is a finding. Quote the tool's own output.

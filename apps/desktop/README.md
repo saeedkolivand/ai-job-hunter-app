@@ -29,7 +29,7 @@ This starts the full Tauri dev server (Vite HMR on the renderer, Rust core with 
 For a production build:
 
 ```bash
-pnpm --filter @ajh/tauri tauri build
+pnpm --filter @ajh/desktop tauri build
 ```
 
 Installers are generated per platform (macOS, Windows, Linux AppImage).
@@ -168,8 +168,8 @@ Lint guards enforce this; violations block commits.
 ```bash
 # From repo root
 pnpm dev                                    # Tauri app with hot reload
-pnpm --filter @ajh/tauri tauri build        # Production build
-pnpm --filter @ajh/tauri tauri build --help # Build options (target, split debug)
+pnpm --filter @ajh/desktop tauri build        # Production build
+pnpm --filter @ajh/desktop tauri build --help # Build options (target, split debug)
 pnpm typecheck                              # TS check across monorepo
 pnpm test                                   # Vitest suite
 pnpm lint:strict                            # ESLint with --max-warnings 0

@@ -44,7 +44,7 @@ packages/ui        ← component library (no IPC, no state management)
 packages/prompts   ← AI prompt templates, provider-aware + locale-driven (pure TypeScript)
 ```
 
-The heavy work — scraping, AI, documents, embeddings — lives in the Rust core under `apps/tauri/src-tauri/`. (An earlier design ran some of this in a separate Node.js sidecar; it was folded into Rust to drop a process and a language from the runtime.)
+The heavy work — scraping, AI, documents, embeddings — lives in the Rust core under `apps/desktop/src-tauri/`. (An earlier design ran some of this in a separate Node.js sidecar; it was folded into Rust to drop a process and a language from the runtime.)
 
 Each package has its own `tsconfig`, build step, and test suite. [Turborepo][turborepo]'s dependency graph keeps builds incremental — if `packages/shared` hasn't changed, nothing that depends on it rebuilds. The key discipline is that **ESLint hard-blocks cross-boundary imports** (e.g. `packages/shared` may not import React or Node APIs); it is enforced at lint time and blocks commits, not just a convention.
 

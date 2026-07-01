@@ -75,7 +75,7 @@ graph TB
 
 ## Component Breakdown
 
-### `apps/tauri` — Desktop Shell
+### `apps/desktop` — Desktop Shell
 
 The Tauri app is split into two processes:
 
@@ -181,7 +181,7 @@ It is **provider-aware** and **locale-driven**:
 
 Centralized, feature-namespaced `TEST_IDS` constant map mirroring translation-key structure: `TEST_IDS.<feature>.<name>` ↔ `t('<feature>.<name>')`. Consumed as a production dependency by both components (for `data-testid` attributes) and tests (for queries), ensuring test IDs cannot drift between a component's implementation and its test suite. See `packages/test-ids/src/test-ids.ts`.
 
-> The heavy work (scraping, document extraction, AI generation, embeddings) runs natively in the Rust core under `apps/tauri/src-tauri/` — see the Component Breakdown above. Earlier Node packages (`@ajh/core`, `@ajh/ai`, `@ajh/data`, `@ajh/workers`) implemented this for a now-removed sidecar and have been deleted.
+> The heavy work (scraping, document extraction, AI generation, embeddings) runs natively in the Rust core under `apps/desktop/src-tauri/` — see the Component Breakdown above. Earlier Node packages (`@ajh/core`, `@ajh/ai`, `@ajh/data`, `@ajh/workers`) implemented this for a now-removed sidecar and have been deleted.
 
 ---
 
@@ -293,7 +293,7 @@ export interface AiContract {
 The renderer accesses contracts exclusively through `AppClient`:
 
 ```typescript
-// apps/tauri/src/renderer/lib/app-client.ts
+// apps/desktop/src/renderer/lib/app-client.ts
 const client = useAppClient();
 const result = await client.ai.generate(req);
 ```
@@ -421,7 +421,7 @@ Every persistent store (documents, AI generations, job preferences, autopilots, 
 
 ### 9. Shared Platform Infrastructure
 
-The Rust core composes a small set of **single-owner** infrastructure modules instead of re-rolling cross-cutting logic per feature: `platform::config` (env + paths), `net::http` (one pooled rustls client; per-request timeouts), `error::AppError` / `AppResult` (typed errors that serialize to their message string), and `observability::Span` (timed `→`/`←` trace logging). Expandable subsystems use registries that derive dispatch + catalogs from one list via traits — `commands::ai_provider` (`ProviderId` → `resolve`), `scraping::boards` (`SCRAPERS`). A versioned architecture test (`apps/tauri/src-tauri/tests/architecture.rs`, run by CI) keeps ownership intact — e.g. `#[tauri::command]` only in the shell layer, `std::env::var` only in `platform/**`, `reqwest::Client::new/builder` only in `net/http.rs`, no `Result<_, String>` outside `error.rs`, and no upward cross-layer imports. Paginated scrapers isolate per-page failures (partial results instead of aborting the board). See [PATTERNS.md](PATTERNS.md) §13 for the principles and module-ownership table, [architecture-analysis.md](architecture-analysis.md) for the layered structure (L0–L3) + discovered weaknesses, and [architecture-rules.md](architecture-rules.md) for the enforced rules.
+The Rust core composes a small set of **single-owner** infrastructure modules instead of re-rolling cross-cutting logic per feature: `platform::config` (env + paths), `net::http` (one pooled rustls client; per-request timeouts), `error::AppError` / `AppResult` (typed errors that serialize to their message string), and `observability::Span` (timed `→`/`←` trace logging). Expandable subsystems use registries that derive dispatch + catalogs from one list via traits — `commands::ai_provider` (`ProviderId` → `resolve`), `scraping::boards` (`SCRAPERS`). A versioned architecture test (`apps/desktop/src-tauri/tests/architecture.rs`, run by CI) keeps ownership intact — e.g. `#[tauri::command]` only in the shell layer, `std::env::var` only in `platform/**`, `reqwest::Client::new/builder` only in `net/http.rs`, no `Result<_, String>` outside `error.rs`, and no upward cross-layer imports. Paginated scrapers isolate per-page failures (partial results instead of aborting the board). See [PATTERNS.md](PATTERNS.md) §13 for the principles and module-ownership table, [architecture-analysis.md](architecture-analysis.md) for the layered structure (L0–L3) + discovered weaknesses, and [architecture-rules.md](architecture-rules.md) for the enforced rules.
 
 ---
 
@@ -445,7 +445,7 @@ All HTTP goes through the shared `net::http` client (rustls).
 
 ```mermaid
 graph TD
-    Renderer["apps/tauri renderer"]
+    Renderer["apps/desktop renderer"]
     Shared["packages/shared"]
     UI["packages/ui"]
     Prompts["packages/prompts"]

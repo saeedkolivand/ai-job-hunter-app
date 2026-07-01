@@ -13,10 +13,10 @@
  * docs/DEPLOYMENT.md (Updater signing keys).
  *
  * Files updated:
- *   apps/tauri/src-tauri/tauri.conf.json  — version
- *   apps/tauri/src-tauri/Cargo.toml       — [package] version
- *   apps/tauri/src-tauri/Cargo.lock       — ajh-tauri package entry (kept in lockstep)
- *   apps/tauri/package.json               — version
+ *   apps/desktop/src-tauri/tauri.conf.json  — version
+ *   apps/desktop/src-tauri/Cargo.toml       — [package] version
+ *   apps/desktop/src-tauri/Cargo.lock       — ajh-tauri package entry (kept in lockstep)
+ *   apps/desktop/package.json               — version
  *   apps/extension/package.json           — version
  *   package.json                          — version
  *   README.md                             — static release badge version
@@ -37,7 +37,7 @@ const root = path.resolve(__dirname, '..');
 
 // ── tauri.conf.json ────────────────────────────────────────────────────────
 
-const confPath = path.join(root, 'apps/tauri/src-tauri/tauri.conf.json');
+const confPath = path.join(root, 'apps/desktop/src-tauri/tauri.conf.json');
 const conf = JSON.parse(fs.readFileSync(confPath, 'utf8'));
 conf.version = version;
 fs.writeFileSync(confPath, JSON.stringify(conf, null, 2) + '\n');
@@ -45,7 +45,7 @@ console.log(`tauri.conf.json  → version=${version}`);
 
 // ── Cargo.toml ─────────────────────────────────────────────────────────────
 
-const cargoPath = path.join(root, 'apps/tauri/src-tauri/Cargo.toml');
+const cargoPath = path.join(root, 'apps/desktop/src-tauri/Cargo.toml');
 let cargo = fs.readFileSync(cargoPath, 'utf8');
 cargo = cargo.replace(/^version = ".*"$/m, `version = "${version}"`);
 fs.writeFileSync(cargoPath, cargo);
@@ -60,7 +60,7 @@ console.log(`Cargo.toml       → version=${version}`);
 // touch our own workspace member's version (a path member with no checksum),
 // which is exactly what cargo would write — so no resolution/build change.
 
-const lockPath = path.join(root, 'apps/tauri/src-tauri/Cargo.lock');
+const lockPath = path.join(root, 'apps/desktop/src-tauri/Cargo.lock');
 let lock = fs.readFileSync(lockPath, 'utf8');
 const lockRe = /(name = "ajh-tauri"\r?\nversion = ")[^"]*(")/;
 if (lockRe.test(lock)) {
@@ -71,13 +71,13 @@ if (lockRe.test(lock)) {
   console.warn('Cargo.lock       → ajh-tauri package entry not found (skipped)');
 }
 
-// ── apps/tauri/package.json ────────────────────────────────────────────────
+// ── apps/desktop/package.json ────────────────────────────────────────────────
 
-const pkgPath = path.join(root, 'apps/tauri/package.json');
+const pkgPath = path.join(root, 'apps/desktop/package.json');
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
 pkg.version = version;
 fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
-console.log(`apps/tauri/package.json → version=${version}`);
+console.log(`apps/desktop/package.json → version=${version}`);
 
 // ── apps/extension/package.json ──────────────────────────────────────────────
 //

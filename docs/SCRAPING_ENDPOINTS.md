@@ -51,7 +51,7 @@ Active scrapers: **16 boards** (registry as of 2026-06-21). Five boards were ret
 
 ### Aggregator (Adzuna + JSearch)
 
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/aggregator/` (provider registry pattern)
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/aggregator/` (provider registry pattern)
 
 #### Current scraper
 
@@ -116,7 +116,7 @@ These five boards were retired as direct scrapers in 2026-06-21 (ADR-026). Their
 
 ### LinkedIn
 
-**Source:** `apps/tauri/src-tauri/src/scraping/linkedin/api_client/mod.rs`
+**Source:** `apps/desktop/src-tauri/src/scraping/linkedin/api_client/mod.rs`
 
 #### Current scraper
 
@@ -150,7 +150,7 @@ Confirmed solid. Monitor HTML class name drift every 2–3 months. Cache geoId l
 
 ### YCombinator / Hacker News
 
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/ycombinator/`
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/ycombinator/`
 
 #### Current scraper
 
@@ -177,7 +177,7 @@ No changes needed. Stable and fully functional.
 
 ### Remotive
 
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/remotive/mod.rs`
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/remotive/mod.rs`
 
 #### Current scraper
 
@@ -213,7 +213,7 @@ No endpoint changes. Consider parsing `job.salary` string if salary filtering is
 
 ### RemoteOK
 
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/remoteok/mod.rs`
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/remoteok/mod.rs`
 
 #### Current scraper
 
@@ -247,7 +247,7 @@ Add `salary_min`/`salary_max` parsing if salary is needed (fields exist in API, 
 
 ### We Work Remotely (WWR)
 
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/wwr/`
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/wwr/`
 
 #### Current scraper
 
@@ -282,7 +282,7 @@ Confirmed solid. Consider subscribing to category-specific RSS feeds for better 
 
 ### Arbeitnow
 
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/arbeitnow/mod.rs`
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/arbeitnow/mod.rs`
 
 #### Current scraper
 
@@ -318,7 +318,7 @@ Implementation is production-ready. `visa_sponsorship` filter not used but avail
 
 ### Berlin Startup Jobs
 
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/berlinstartupjobs/`
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/berlinstartupjobs/`
 
 #### Current scraper
 
@@ -351,7 +351,7 @@ Title-split regex in repo (`' at (.+)$'`) handles `"Title at Company"` but not `
 
 ### German Tech Jobs
 
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/germantechjobs/`
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/germantechjobs/`
 
 #### Current scraper
 
@@ -386,7 +386,7 @@ Parser is now correct and handles the custom XML schema. Monitor the endpoint fo
 
 ### Greenhouse
 
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/greenhouse/mod.rs`
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/greenhouse/mod.rs`
 
 #### Current scraper
 
@@ -422,7 +422,7 @@ Add `?pay_transparency=true` and parse `job.pay_input_ranges` for salary. Use `j
 
 ### Lever
 
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/lever/mod.rs`
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/lever/mod.rs`
 
 #### Current scraper
 
@@ -460,7 +460,7 @@ Confirmed solid. No changes to search endpoint. Salary unavailable from API.
 
 ### SmartRecruiters
 
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/smartrecruiters/`
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/smartrecruiters/`
 
 #### Current scraper
 
@@ -495,7 +495,7 @@ Add `DetailResp.compensation` parsing for salary. For exhaustive scrapes add `of
 
 ### Personio
 
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/personio/mod.rs`
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/personio/mod.rs`
 
 #### Current scraper
 
@@ -533,7 +533,7 @@ Implementation is production-ready. Scraper correctly handles both `<jobDescript
 
 ### Recruitee
 
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/recruitee/`
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/recruitee/`
 
 #### Current scraper
 
@@ -572,7 +572,7 @@ Implementation correct and working. Add `salary` object parsing if needed. Consi
 
 ### Ashby
 
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/ashby/mod.rs`
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/ashby/mod.rs`
 
 #### Current scraper
 
@@ -609,7 +609,7 @@ Implementation confirmed working. `includeCompensation=true` is already in the U
 
 ### Bundesagentur für Arbeit (Arbeitsagentur)
 
-**Source:** `apps/tauri/src-tauri/src/scraping/boards/arbeitsagentur/`
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/arbeitsagentur/`
 
 #### Current scraper
 
@@ -671,7 +671,7 @@ Aggregator (Adzuna/JSearch, bring-your-own-key), LinkedIn (guest HTML), YCombina
 
 ### Skip States
 
-The Rust scraping engine (`apps/tauri/src-tauri/src/scraping/engine/mod.rs`) reports scrape outcomes via `BoardScrapeSummary.skipped: 'needs-login' | 'needs-company'` (a closed union, not `Option<String>`):
+The Rust scraping engine (`apps/desktop/src-tauri/src/scraping/engine/mod.rs`) reports scrape outcomes via `BoardScrapeSummary.skipped: 'needs-login' | 'needs-company'` (a closed union, not `Option<String>`):
 
 - **`needs-login`** — board marked `AuthRequirement::Required` with no usable session (empty cookie jar or stale session via `board_login::{load_cookies, session_is_stale}`). Required boards are gated both at the UI (Start button disabled until boards are connected) and at the backend (redundant skip if the gate is somehow bypassed). Surfaced with a sign-in prompt.
 - **`needs-company`** — company-scoped board (Greenhouse, Lever, Ashby, Personio, Recruitee, SmartRecruiters) with an empty or whitespace-only `companies` list in `BoardSearchInput`. The scrape form shows a "Companies" field only for boards that declare `requires_company()` (surfaced in the catalog metadata; no hardcoded list). Surfaced with a config hint (e.g., "Enter company slugs to scrape this board").

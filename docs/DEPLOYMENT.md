@@ -18,7 +18,7 @@ AI Job Hunter is distributed as a native desktop installer built by [Tauri][taur
 
 ## Windows Installer Configuration
 
-`bundle.windows` in `apps/tauri/src-tauri/tauri.conf.json` pins the Windows install behavior:
+`bundle.windows` in `apps/desktop/src-tauri/tauri.conf.json` pins the Windows install behavior:
 
 ```json
 {
@@ -76,7 +76,7 @@ sudo apt-get install libwebkit2gtk-4.1-dev libssl-dev libayatana-appindicator3-d
 
 ### Linux AppImage — Wayland + Mesa safeguard
 
-On Wayland + Mesa (common on Steam Deck and modern Linux), the bundled `libwayland-client` in the AppImage can shadow the host's WebGL/EGL stack and crash at startup. Mitigations (environment-aware, idempotent, applied at boot) are implemented in `apps/tauri/src-tauri/src/platform/linux_appimage.rs`; the app detects the AppImage/Wayland environment automatically and requires no user configuration.
+On Wayland + Mesa (common on Steam Deck and modern Linux), the bundled `libwayland-client` in the AppImage can shadow the host's WebGL/EGL stack and crash at startup. Mitigations (environment-aware, idempotent, applied at boot) are implemented in `apps/desktop/src-tauri/src/platform/linux_appimage.rs`; the app detects the AppImage/Wayland environment automatically and requires no user configuration.
 
 ### Build all packages then package
 
@@ -94,13 +94,13 @@ Or combined:
 pnpm build && pnpm package
 ```
 
-Outputs land in `apps/tauri/src-tauri/target/release/bundle/`.
+Outputs land in `apps/desktop/src-tauri/target/release/bundle/`.
 
 ### Debug vs Release
 
 ```bash
 # Debug build (faster, larger, unoptimized — for testing only)
-cd apps/tauri
+cd apps/desktop
 pnpm tauri build --debug
 
 # Release build (optimized, signed if certificates configured)
@@ -142,11 +142,11 @@ Version files are synced atomically as part of the release commit, executed by s
 **Synced files** (7 total):
 
 - `package.json` (root)
-- `apps/tauri/package.json`
+- `apps/desktop/package.json`
 - `apps/extension/package.json`
-- `apps/tauri/src-tauri/Cargo.toml`
-- `apps/tauri/src-tauri/Cargo.lock` (the `ajh-tauri` package entry — kept in lockstep so local builds don't drift)
-- `apps/tauri/src-tauri/tauri.conf.json`
+- `apps/desktop/src-tauri/Cargo.toml`
+- `apps/desktop/src-tauri/Cargo.lock` (the `ajh-tauri` package entry — kept in lockstep so local builds don't drift)
+- `apps/desktop/src-tauri/tauri.conf.json`
 - `README.md` (release badge version)
 
 Plus `CHANGELOG.md` is generated in the same commit. The release commit (tagged at `v*`) contains all synced versions consistently.
@@ -221,7 +221,7 @@ The app checks for updates on launch via Tauri's updater plugin. The update mani
 
 ### Disabling auto-update check
 
-In `apps/tauri/src-tauri/tauri.conf.json`:
+In `apps/desktop/src-tauri/tauri.conf.json`:
 
 ```json
 {
@@ -290,7 +290,7 @@ No signing required for AppImage/DEB.
 
 ## App Identifier
 
-The app identifier is set in `apps/tauri/src-tauri/tauri.conf.json`:
+The app identifier is set in `apps/desktop/src-tauri/tauri.conf.json`:
 
 ```json
 {

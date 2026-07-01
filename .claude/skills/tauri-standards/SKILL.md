@@ -8,9 +8,9 @@ description: Tauri shell standards — the IPC 5-step capability flow, command i
 ## New IPC capability — 5 files, in order
 
 1. `packages/shared/src/ipc/contracts.ts` — add the typed signature (Zod schema).
-2. `apps/tauri/src-tauri/src/commands.rs` — implement the Tauri command (typed `AppResult`, no `Result<_,String>`).
-3. `apps/tauri/src/tauri-client.ts` — wire the `invoke` call.
-4. `apps/tauri/src/renderer/services/` — add the React Query service hook (no `window.api` in UI).
+2. `apps/desktop/src-tauri/src/commands.rs` — implement the Tauri command (typed `AppResult`, no `Result<_,String>`).
+3. `apps/desktop/src/tauri-client.ts` — wire the `invoke` call.
+4. `apps/desktop/src/renderer/services/` — add the React Query service hook (no `window.api` in UI).
 5. `services/query-client.ts` — add the query key.
 
 Missing any step = an incomplete capability (HIGH). The contract in `packages/shared` is the single source of truth.
@@ -22,7 +22,7 @@ Missing any step = an incomplete capability (HIGH). The contract in `packages/sh
 
 ## Renderer ↔ shell
 
-Renderer talks to the shell only via the `AppClient` context (`createTauriInvokeClient()` in `apps/tauri/src/tauri-client.ts`). No direct invoke in features/routes/components.
+Renderer talks to the shell only via the `AppClient` context (`createTauriInvokeClient()` in `apps/desktop/src/tauri-client.ts`). No direct invoke in features/routes/components.
 
 ## Boundaries
 

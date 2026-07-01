@@ -21,7 +21,7 @@ because after whitespace-token splitting and brace/quote trimming, the JSON iden
 ## Decision
 
 **1. Strict allowlist — never a denylist.**
-`build_diagnostics_zip` in `apps/tauri/src-tauri/src/commands/support.rs` builds a fresh zip from
+`build_diagnostics_zip` in `apps/desktop/src-tauri/src/commands/support.rs` builds a fresh zip from
 exactly three named entries via explicit `zip.start_file` calls:
 
 - `system-info.txt` — generated at runtime (OS name, OS version, arch, app version, total RAM);
@@ -34,7 +34,7 @@ No directory walk of the data dir occurs. Any future bundle entry requires an ex
 
 **2. Redaction pass on all text before zipping.**
 Every line of `crashes.log` and the `logs/` files is tokenised on whitespace and each token is
-passed through `redact_token` in `apps/tauri/src-tauri/src/autopilot_helpers/mod.rs`. That
+passed through `redact_token` in `apps/desktop/src-tauri/src/autopilot_helpers/mod.rs`. That
 function replaces sensitive tokens with neutral placeholders across five shape classes:
 
 | Shape                                                        | Placeholder             |

@@ -10,7 +10,7 @@ alwaysApply: true
 
 There are exactly five workspace packages: `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`,
 `@ajh/test-ids`. There are no separate backend TS packages — backend logic lives in the Rust core under
-`apps/tauri/src-tauri/`, reached only via the IPC contract.
+`apps/desktop/src-tauri/`, reached only via the IPC contract.
 
 ## Path Privacy
 
@@ -44,6 +44,6 @@ There are exactly five workspace packages: `@ajh/shared`, `@ajh/ui`, `@ajh/promp
 ## Dependency direction
 ```
 renderer → @ajh/ui, @ajh/shared, @ajh/prompts, @ajh/translations, @ajh/test-ids
-Rust core (apps/tauri/src-tauri) ← reached only via IPC (packages/shared contract)
+Rust core (apps/desktop/src-tauri) ← reached only via IPC (packages/shared contract)
 ```
 Lower packages never import from upper packages.

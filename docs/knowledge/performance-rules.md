@@ -16,7 +16,7 @@ For `performance-profiler` (Secondary). Bias findings toward MEDIUM unless there
 - **Pipeline** (`pipeline/`, `autopilot/`) — bounded queues; backpressure; cancellation honored.
 - **Data** — no N+1 queries, no full-table scans on warm paths.
 
-## Renderer (`apps/tauri/src/renderer/`)
+## Renderer (`apps/desktop/src/renderer/`)
 
 - [TanStack Query][tanstack-query] tuned for desktop (longer `staleTime`/`gcTime`, no refetch-on-focus — see `services/query-client/`).
 - Large lists virtualized; avoid needless re-renders (stable deps, memo where measured).

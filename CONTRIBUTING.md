@@ -108,9 +108,9 @@ PR checklist:
 Follow the 5-step checklist in [docs/PATTERNS.md](docs/PATTERNS.md#1-ipc-pattern-renderer--rust):
 
 1. Contract in `packages/shared/src/ipc/contracts/`
-2. Rust command in `apps/tauri/src-tauri/src/commands/`
-3. Tauri client wiring in `apps/tauri/src/tauri-client.ts`
-4. Service hook in `apps/tauri/src/renderer/services/`
+2. Rust command in `apps/desktop/src-tauri/src/commands/`
+3. Tauri client wiring in `apps/desktop/src/tauri-client.ts`
+4. Service hook in `apps/desktop/src/renderer/services/`
 5. Query keys in `services/query-client.ts`
 
 Then document the new namespace in [docs/API.md](docs/API.md).
@@ -235,7 +235,7 @@ ai-job-hunter/
 ### Package dependency graph
 
 ```
-@ajh/tauri (renderer)
+@ajh/desktop (renderer)
   └── @ajh/shared
   └── @ajh/ui
   └── @ajh/prompts

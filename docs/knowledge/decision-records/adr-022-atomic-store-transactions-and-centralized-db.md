@@ -15,7 +15,7 @@ SQLite operations were scattered:
 
 ## Decision
 
-**Centralize all SQLite connection setup via `db::open()`** (defined in `apps/tauri/src-tauri/src/db.rs`):
+**Centralize all SQLite connection setup via `db::open()`** (defined in `apps/desktop/src-tauri/src/db.rs`):
 
 ```rust
 pub fn open(path: &Path) -> Result<Connection, rusqlite::Error> {

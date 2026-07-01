@@ -10,7 +10,7 @@ Feature 2 adds a browser extension ("Save this job" button on job boards) that m
 
 ## Decision
 
-The extension imports jobs into the app via a **local WebSocket server** running inside the Tauri Rust process (`apps/tauri/src-tauri/src/extension_bridge/`). The browser extension connects to `ws://127.0.0.1:<port>` and sends a frame matching the shared protocol defined once in `packages/shared/src/ipc/extension-protocol.ts`. The protocol uses Rust parity tests to keep the Rust message-type constants (`extension_bridge/mod.rs`) synchronized with the TS enum.
+The extension imports jobs into the app via a **local WebSocket server** running inside the Tauri Rust process (`apps/desktop/src-tauri/src/extension_bridge/`). The browser extension connects to `ws://127.0.0.1:<port>` and sends a frame matching the shared protocol defined once in `packages/shared/src/ipc/extension-protocol.ts`. The protocol uses Rust parity tests to keep the Rust message-type constants (`extension_bridge/mod.rs`) synchronized with the TS enum.
 
 The app treats the browser as a **Save** Application origin (`ApplicationOrigin::Saved` → `saved` status, or `applied` if the request flags it). Import reuses `ApplicationStore::upsert_for_origin` to deduplicate by normalized URL, mirroring the save path — the first save creates the Application; a later save from the extension merges onto the existing row.
 

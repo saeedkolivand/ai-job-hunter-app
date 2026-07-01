@@ -9,7 +9,7 @@ exclude = [
 ]
 
 # Skip generated / vendored trees.
-exclude_path = ["node_modules", "graphify-out", "apps/tauri/src-tauri/target", "dist", "out"]
+exclude_path = ["node_modules", "graphify-out", "apps/desktop/src-tauri/target", "dist", "out"]
 
 # Treat 429 (rate-limited) as OK so flaky external hosts don't add noise.
 accept = ["200..=299", "429"]

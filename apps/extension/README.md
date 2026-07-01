@@ -15,7 +15,7 @@ This is the browser half of the **AI Job Hunter** job-import feature. An MV3 ext
 
 **What it does:** while browsing a job board, click the extension button → click **Import this job** → the job appears in your **AI Job Hunter** saved applications, tagged **New**. The extension automatically captures the rendered DOM when possible (for login-walled boards like LinkedIn/Indeed that block headless fetching); on restricted pages it falls back to URL-only. Tick **"I already applied"** to mark it applied instead.
 
-The desktop half (bridge server, parser, Applications store) lives in `apps/tauri/src-tauri/src/extension_bridge/`. The wire protocol is shared: `packages/shared/src/ipc/extension-protocol.ts`.
+The desktop half (bridge server, parser, Applications store) lives in `apps/desktop/src-tauri/src/extension_bridge/`. The wire protocol is shared: `packages/shared/src/ipc/extension-protocol.ts`.
 
 ---
 
@@ -33,7 +33,7 @@ The desktop half (bridge server, parser, Applications store) lives in `apps/taur
 5. Desktop receives frame → fetches/parses job → creates saved Application
 ```
 
-**Rate budget:** extension imports share the desktop's scrape rate budget (30 requests/min, 2 concurrent). This is the same budget as the in-app scrape commands; a rate-limited import returns an error in the popup rather than silently queuing. See `apps/tauri/src-tauri/src/limits/mod.rs` (`SCRAPE_RATE_MAX` / `SCRAPE_CONCURRENCY_MAX`) and the `handle_import` function in `apps/tauri/src-tauri/src/extension_bridge/mod.rs`.
+**Rate budget:** extension imports share the desktop's scrape rate budget (30 requests/min, 2 concurrent). This is the same budget as the in-app scrape commands; a rate-limited import returns an error in the popup rather than silently queuing. See `apps/desktop/src-tauri/src/limits/mod.rs` (`SCRAPE_RATE_MAX` / `SCRAPE_CONCURRENCY_MAX`) and the `handle_import` function in `apps/desktop/src-tauri/src/extension_bridge/mod.rs`.
 
 ---
 
@@ -103,7 +103,7 @@ The one non-obvious step is **dev pairing**: a locally-loaded (unpacked) extensi
 
 **Notes:** the app must be running first (the popup shows an "AI Job Hunter isn't running" state with a Retry button otherwise). **Firefox:** `about:debugging` → **Load Temporary Add-on** → `dist/firefox/manifest.json`; its origin is a per-profile `moz-extension://<uuid>` (find it in `about:debugging`), so set `AJH_EXTENSION_DEV_ORIGINS="moz-extension://<uuid>"`. **Multiple browsers at once:** comma-separate, e.g. `chrome-extension://<id>,moz-extension://<uuid>`.
 
-The loopback WebSocket (`ws://127.0.0.1:47615..47620`) discovers the desktop app — see `apps/tauri/src-tauri/src/extension_bridge/` for the bridge server and `src/lib/bridge.ts::probeRange` for how the extension finds the port.
+The loopback WebSocket (`ws://127.0.0.1:47615..47620`) discovers the desktop app — see `apps/desktop/src-tauri/src/extension_bridge/` for the bridge server and `src/lib/bridge.ts::probeRange` for how the extension finds the port.
 
 ---
 
@@ -267,10 +267,10 @@ emitted JS stays readable for review.
 
 ## Extension origin validation (bridge side)
 
-The desktop bridge validates extension origins in the handshake (`apps/tauri/src-tauri/src/extension_bridge/auth.rs::is_allowed_origin`). **The origin is not the auth boundary** — the per-frame 256-bit pairing token is; the origin is defense-in-depth.
+The desktop bridge validates extension origins in the handshake (`apps/desktop/src-tauri/src/extension_bridge/auth.rs::is_allowed_origin`). **The origin is not the auth boundary** — the per-frame 256-bit pairing token is; the origin is defense-in-depth.
 
 - **Firefox:** a background-script WebSocket sends `Origin: null` (Firefox deliberately strips the per-install UUID to prevent fingerprinting per Bugzilla 1607936/1257989). The bridge accepts `null`. The gecko id (`job-importer@aijobhunter.app`) never appears as an origin and is intentionally absent from the allowlist.
-- **Chrome:** the bridge pins the published Chrome Web Store id `oaoekkgkhmgdfnpmfkpphgiikliaicll` in `ALLOWED_EXTENSION_IDS` (in `apps/tauri/src-tauri/src/extension_bridge/auth.rs`). A locally-loaded Chrome build is still admitted only via the dev-origin override (`AJH_EXTENSION_DEV_ORIGINS`).
+- **Chrome:** the bridge pins the published Chrome Web Store id `oaoekkgkhmgdfnpmfkpphgiikliaicll` in `ALLOWED_EXTENSION_IDS` (in `apps/desktop/src-tauri/src/extension_bridge/auth.rs`). A locally-loaded Chrome build is still admitted only via the dev-origin override (`AJH_EXTENSION_DEV_ORIGINS`).
 - **Native-messaging host:** sends the sentinel `Origin: ajh-native-host` (see `NATIVE_HOST_ORIGIN` in `auth.rs`). Defense-in-depth only; the per-frame token + loopback binding remain the real boundary.
 
 ---
@@ -279,8 +279,8 @@ The desktop bridge validates extension origins in the handshake (`apps/tauri/src
 
 The extension uses **native-messaging as the primary transport**, with **loopback WebSocket as a fallback**:
 
-1. **Native messaging (preferred):** The browser spawns the desktop app's own exe in `--native-host` mode, which runs a stdio ↔ `ws://127.0.0.1` relay (`apps/tauri/src-tauri/src/extension_bridge/native_host.rs`). This is the by-default fix for Firefox's HTTPS-Only Mode: Firefox silently upgrades the extension's `ws://127.0.0.1` to `wss://` in strict-mode profiles, breaking the plain loopback path. A native process spawned by the browser is immune to that upgrade.
-   - **Native host name:** `app.aijobhunter.bridge` (configured in `apps/extension/src/lib/bridge.ts` and registered on every app launch via `apps/tauri/src-tauri/src/extension_bridge/register.rs`).
+1. **Native messaging (preferred):** The browser spawns the desktop app's own exe in `--native-host` mode, which runs a stdio ↔ `ws://127.0.0.1` relay (`apps/desktop/src-tauri/src/extension_bridge/native_host.rs`). This is the by-default fix for Firefox's HTTPS-Only Mode: Firefox silently upgrades the extension's `ws://127.0.0.1` to `wss://` in strict-mode profiles, breaking the plain loopback path. A native process spawned by the browser is immune to that upgrade.
+   - **Native host name:** `app.aijobhunter.bridge` (configured in `apps/extension/src/lib/bridge.ts` and registered on every app launch via `apps/desktop/src-tauri/src/extension_bridge/register.rs`).
    - **Readiness frame:** the native host sends a transport-local `{"type":"bridge.ready","ok":true|false}` control frame (not part of the wire protocol) so the extension can distinguish "app reachable" from "app down".
    - **Same wire envelope:** the bridge protocol (`@ajh/shared` extension-protocol) is unchanged; only the transport swaps from `WebSocket` to `browser.runtime.connectNative` (`@wxt-dev/browser`).
 

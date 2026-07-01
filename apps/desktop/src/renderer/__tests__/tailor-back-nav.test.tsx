@@ -11,10 +11,10 @@
  *       AppClientProvider + QueryClient (via withProviders(createMockClient())),
  *       which is the heaviest sub-tree the detail page can render.
  *   (b) They built the router with ad-hoc options. This test uses the SAME
- *       options as apps/tauri/src/main.tsx — defaultPreload: 'intent',
+ *       options as apps/desktop/src/main.tsx — defaultPreload: 'intent',
  *       defaultPreloadStaleTime: 0 — so preload-on-intent timing matches prod.
  *   (c) Their root routes had NO notFoundComponent. The real
- *       apps/tauri/src/renderer/routes/__root.tsx DOES define one, so this root
+ *       apps/desktop/src/renderer/routes/__root.tsx DOES define one, so this root
  *       route defines a notFoundComponent too — the key structural gap, since a
  *       root-level not-found match is exactly what could trip the guard.
  *

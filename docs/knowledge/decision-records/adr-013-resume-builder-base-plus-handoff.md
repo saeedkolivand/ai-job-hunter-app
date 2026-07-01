@@ -51,4 +51,4 @@ See:
 
 - `@ajh/prompts/builder` — prompt templates
 - `features/resume-builder` — UI wizard
-- `apps/tauri/src/renderer/lib/generate/generation.ts::synthesizeResume()` — generation orchestration
+- `apps/desktop/src/renderer/lib/generate/generation.ts::synthesizeResume()` — generation orchestration

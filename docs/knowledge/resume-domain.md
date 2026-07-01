@@ -36,7 +36,7 @@ Nine templates. `TemplateId` in `export/types.rs`; registry/styling data in `exp
 
 ## Candidate photo
 
-`ContactProfile.photo` — **`data:` URI only** (file paths rejected at `typst_engine/photo.rs: resolve_photo`). Client pipeline: `apps/tauri/src/renderer/lib/photo.ts` (crop/scale/EXIF-strip → JPEG data URL). Used by `Portrait` + `Lebenslauf` templates.
+`ContactProfile.photo` — **`data:` URI only** (file paths rejected at `typst_engine/photo.rs: resolve_photo`). Client pipeline: `apps/desktop/src/renderer/lib/photo.ts` (crop/scale/EXIF-strip → JPEG data URL). Used by `Portrait` + `Lebenslauf` templates.
 
 ## CJK deferred
 

@@ -74,4 +74,4 @@ be present in this directory.
 `playfair_display_bold.ttf` — present in this directory but not referenced by `include_bytes!`
 in `world.rs` and therefore not bundled into the app binary.
 
-Run `apps/tauri/src-tauri/fonts/download-fonts.ps1` to download all font files.
+Run `apps/desktop/src-tauri/fonts/download-fonts.ps1` to download all font files.
