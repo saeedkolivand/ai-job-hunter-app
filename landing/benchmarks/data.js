@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782865914088,
+  "lastUpdate": 1782924785483,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1967,6 +1967,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 308460,
             "range": "± 6425",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "29fe2e5770ed74fbe21ae1e7dee00738e74dbded",
+          "message": "feat: add pinpoint, rippling, breezy, bamboohr ats board scrapers (#513)\n\n* feat: add pinpoint, rippling, breezy, bamboohr ats board scrapers\n\nAdd four new company-scoped ATS job-board scrapers, taking the registry\nfrom 16 to 20 active boards. Each is a zero-auth public JSON endpoint keyed\nby company slug, cloning the existing greenhouse/personio company-scoped\npattern: DNS-label slug SSRF guard, per-company fanout with partial-failure\nisolation, and per-company URL-based dedup.\n\nEndpoints (re-verify live before relying on shape):\n- pinpoint:  https://{slug}.pinpointhq.com/postings.json\n- rippling:  https://api.rippling.com/platform/api/ats/v1/board/{slug}/jobs\n- breezy:    https://{slug}.breezy.hr/json\n- bamboohr:  https://{slug}.bamboohr.com/careers/list\n\nBambooHR job ids are tenant-local integers, so JobPosting.id is namespaced\nas bamboohr:{company}:{id} (mirrors personio::make_job_id) to prevent\ncross-tenant collisions overwriting results in PostingsCache. Pinpoint/breezy\nposting URLs (the dedup key) reject non-https and userinfo-bearing links.\n\nRegistered in SCRAPERS + BOARD_IDS + en/de board-name i18n; 95+ fixture\ntests per board (happy path, empty, malformed-row drop, slug guard, the\nworkLocation/id shape variants, and the cross-tenant id-collision regression).\nEndpoint reconnaissance ported from santifer/career-ops (MIT), attributed in\neach module header.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs: list new ats boards in companies schema comment\n\nAdd pinpoint, rippling, breezy, bamboohr to the ScrapeBoardsRequestSchema\ncompanies comment (stale after 16→20). Comment-only; no logic change.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-01T18:31:04+02:00",
+          "tree_id": "2120d421c4c7c7c6e7a0c33fb060371dd946a49b",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/29fe2e5770ed74fbe21ae1e7dee00738e74dbded"
+        },
+        "date": 1782924784792,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1886075,
+            "range": "± 104375",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2531590,
+            "range": "± 34478",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 288375,
+            "range": "± 6140",
             "unit": "ns/iter"
           }
         ]
