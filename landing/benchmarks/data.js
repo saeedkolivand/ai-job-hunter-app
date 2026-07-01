@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782924785483,
+  "lastUpdate": 1782931009657,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2009,6 +2009,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 288375,
             "range": "± 6140",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "32e1dd316215b4f44410df5de77e260922c4820a",
+          "message": "feat: add the muse aggregator job board scraper (#529)\n\n* feat: add the muse aggregator job board scraper\n\nAdd The Muse (themuse) as a keyword aggregator scraper, taking the registry\nfrom 20 to 21 active boards. Zero-auth public JSON feed at\nwww.themuse.com/api/public/jobs (host-locked, fixed URL — no user input in\nthe request path). The Muse has no server-side keyword search, so query and\nlocation are applied client-side after a bounded page fetch.\n\nModeled on the arbeitnow board: 0-indexed pagination bounded by\ninput.pages.clamp(1, 5) and the response page_count, per-page cancellation,\nand partial-result degradation (page-0 error propagates, later-page errors\nlog and break keeping earlier results). A warn fires when page_count is\nabsent on a full first page, so an unverified-endpoint shape drift surfaces\nin logs instead of silently truncating.\n\nThe client-side filter is extracted to matches_filters() so search() and the\ntests exercise the same code path. 21 fixture tests cover parse mapping,\ncompany/location fallbacks, malformed-row drop, url-as-id, and the query and\nlocation filters. Endpoint reconnaissance ported from santifer/career-ops\n(MIT), attributed in the module header; marked unverified pending a live\nsmoke test.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: warn on themuse none-page break and emit none for empty location\n\nLog a warn when a later page returns None (non-2xx or shape mismatch)\ninstead of breaking silently, so endpoint drift surfaces in logs. Map an\nabsent/blank The Muse location to None rather than Some(\"\") to match the\nfleet convention (arbeitnow); the client-side location filter is unaffected.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: treat themuse page-0 cancellation as a clean stop, fix doc drift\n\nAddresses CodeRabbit review on PR #529: fetch_json returns\nAppError::Cancelled on an in-flight cancel, which previously bubbled\nas a page-0 board error instead of Ok(vec![]). Also corrects doc\ndrift introduced by the earlier board-count bump: docs/API.md listed\nthe non-canonical `weworkremotely` instead of BOARD_IDS' `wwr`, the\nscraping-domain doc double-counted `aggregator` in its board totals,\nunderstated the pagination bound (missing `input.pages`), and\nmisclassified The Muse's source pointer under company-scoped boards\ninstead of its own keyword-aggregator section.\n\nThe max_pages-vs-total_pages progress-denominator finding is\ndeliberately deferred (pre-existing behavior shared with Arbeitnow;\ntracked as a fleet-wide follow-up, not a one-board local fix).\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-01T20:27:42+02:00",
+          "tree_id": "431e6de2e86d4a820c459c2491c62d20fb9927dd",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/32e1dd316215b4f44410df5de77e260922c4820a"
+        },
+        "date": 1782931009357,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1898801,
+            "range": "± 51627",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2498243,
+            "range": "± 13557",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 286082,
+            "range": "± 9401",
             "unit": "ns/iter"
           }
         ]
