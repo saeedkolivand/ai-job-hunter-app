@@ -510,6 +510,7 @@ fn found_job(url: &str, found_at: u64) -> FoundJob {
         found_at,
         is_new: false,
         applied: false,
+        trust: None,
     }
 }
 
@@ -645,6 +646,39 @@ fn merge_preserves_and_refreshes_board_across_resurface() {
         a2.board,
         Some("aggregator".to_string()),
         "appended new row keeps its board (via ..inc spread)"
+    );
+}
+
+#[test]
+fn merge_preserves_and_refreshes_trust_across_resurface() {
+    // Same legacy-migration case as the board test above: an existing row
+    // persisted before `trust` existed (None) must pick up the incoming trust
+    // when the same URL re-surfaces, and a never-seen URL keeps its trust.
+    let mut existing = found_job("https://a.com/1", 100);
+    existing.trust = None; // legacy row, no trust assessment yet
+
+    let resurfaced_trust =
+        crate::scraping::trust::assess_trust("https://linkedin.com/jobs/view/1", "Acme");
+    let mut resurfaced = found_job("https://a.com/1", 999);
+    resurfaced.trust = Some(resurfaced_trust.clone());
+    let fresh_trust =
+        crate::scraping::trust::assess_trust("https://boards.greenhouse.io/acme/jobs/2", "Acme");
+    let mut fresh = found_job("https://a.com/2", 200);
+    fresh.trust = Some(fresh_trust.clone());
+
+    let merged = merge_found_jobs(&[existing], vec![resurfaced, fresh]);
+
+    let a1 = merged.iter().find(|j| j.url == "https://a.com/1").unwrap();
+    assert_eq!(
+        a1.trust,
+        Some(resurfaced_trust),
+        "re-surfaced existing row picks up the incoming trust"
+    );
+    let a2 = merged.iter().find(|j| j.url == "https://a.com/2").unwrap();
+    assert_eq!(
+        a2.trust,
+        Some(fresh_trust),
+        "appended new row keeps its trust (via ..inc spread)"
     );
 }
 

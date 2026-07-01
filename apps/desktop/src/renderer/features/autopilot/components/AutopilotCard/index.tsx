@@ -30,6 +30,7 @@ import {
 import { type AutopilotRunState, RUN_STATE_LABEL } from '@/lib/machines/autopilot-run.machine';
 import { MatchBand } from '@/lib/match-band';
 import { timeAgo } from '@/lib/time';
+import { TrustBadge } from '@/lib/trust-badge';
 import { useInteractions, useOpenExternal, usePersistJob } from '@/services';
 
 interface StepLog {
@@ -362,6 +363,13 @@ export function AutopilotCard({
                               {t('jobs.viewed')}
                             </Tag>
                           )}
+                          {/* interactive=false: this whole row is already a <Button> (handleJobClick) —
+                              a nested focusable popover trigger would be invalid HTML (button-in-button). */}
+                          <TrustBadge
+                            trust={job.trust}
+                            className={STATUS_TAG}
+                            interactive={false}
+                          />
                         </div>
                         <div className="flex items-center gap-1.5 text-[10px] text-foreground/40">
                           <span className="truncate">{job.company}</span>

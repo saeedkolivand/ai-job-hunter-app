@@ -1719,6 +1719,18 @@
       "High": "High",
       "Medium": "Medium",
       "Low": "Low"
+    },
+    "trust": {
+      "level": {
+        "medium": "Medium trust",
+        "low": "Low trust"
+      },
+      "flags": {
+        "missingApplyUrl": "Missing apply link",
+        "invalidUrl": "Broken apply link",
+        "suspiciousDomain": "Suspicious domain",
+        "companyDomainMismatch": "Domain doesn't match company"
+      }
     }
   },
   "resumes": {

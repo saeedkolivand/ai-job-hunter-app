@@ -32,6 +32,7 @@ import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
 import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
 import { useMatchScores } from '@/features/jobs/providers';
 import type { Posting } from '@/features/jobs/types';
+import { TrustBadge } from '@/lib/trust-badge';
 import { useResolveJobUrl, useUpdatePostingDescription } from '@/services';
 
 // ponytail: heuristic threshold — Adzuna search snippets are ~200–500 chars;
@@ -236,6 +237,7 @@ function DetailContent({
                   {t('jobs.saved')}
                 </Tag>
               )}
+              <TrustBadge trust={posting.trust} className={statusTagCls} />
             </div>
           </div>
 
