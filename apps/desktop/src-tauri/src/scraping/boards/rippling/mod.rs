@@ -75,6 +75,23 @@ pub(crate) struct RpJob {
     work_location: Option<RpWorkLocation>,
 }
 
+/// Deserialize each row independently, dropping (with a debug log) any row
+/// that fails — e.g. a missing `uuid` or a non-object/non-string
+/// `workLocation`. Without this, `Vec<RpJob>`'s atomic deserialize would fail
+/// the whole company on a single malformed row (silent zero-jobs).
+pub(crate) fn rows_to_jobs(values: Vec<serde_json::Value>) -> Vec<RpJob> {
+    values
+        .into_iter()
+        .filter_map(|v| match serde_json::from_value::<RpJob>(v) {
+            Ok(job) => Some(job),
+            Err(e) => {
+                log::debug!("[rippling] skipping malformed row: {e}");
+                None
+            }
+        })
+        .collect()
+}
+
 /// Map a parsed Rippling response into postings for one company. Standalone
 /// (no `&self`) so it is unit-testable against a JSON fixture.
 pub(crate) fn parse_rippling_response(
@@ -187,8 +204,12 @@ impl Scraper for RipplingScraper {
                 urlencoding::encode(company)
             );
 
-            let data = match fetch_json::<Vec<RpJob>>(&url, Default::default(), ctx.signal.clone())
-                .await
+            let data = match fetch_json::<Vec<serde_json::Value>>(
+                &url,
+                Default::default(),
+                ctx.signal.clone(),
+            )
+            .await
             {
                 Ok(d) => d,
                 Err(e) => {
@@ -209,7 +230,7 @@ impl Scraper for RipplingScraper {
             let jobs = match data {
                 Some(d) => {
                     successful_fetches += 1;
-                    d
+                    rows_to_jobs(d)
                 }
                 None => {
                     if let Some(ref on_progress) = ctx.on_progress {

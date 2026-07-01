@@ -255,6 +255,63 @@ async fn cancelled_before_fetch_returns_ok_not_err() {
 }
 
 // ---------------------------------------------------------------------------
+// rows_to_jobs — per-row resilience (regression guard for silent-batch-loss)
+// ---------------------------------------------------------------------------
+
+/// Core regression guard: one malformed row (missing required `uuid`) must
+/// not fail the whole batch — the other, well-formed rows must still come
+/// through. Before this fix, `fetch_json::<Vec<RpJob>>` deserialized the
+/// array atomically, so a single bad row silently yielded zero jobs.
+#[test]
+fn rows_to_jobs_skips_row_missing_uuid_keeps_good_rows() {
+    let values: Vec<serde_json::Value> = serde_json::from_str(
+        r#"[
+            {"uuid": "good-1", "name": "Engineer One", "url": "https://ats.rippling.com/acme/jobs/good-1", "workLocation": null},
+            {"name": "No UUID Row", "url": "https://ats.rippling.com/acme/jobs/x", "workLocation": null},
+            {"uuid": "good-2", "name": "Engineer Two", "url": "https://ats.rippling.com/acme/jobs/good-2", "workLocation": null}
+        ]"#,
+    )
+    .unwrap();
+
+    let jobs = rows_to_jobs(values);
+    let uuids: Vec<&str> = jobs.iter().map(|j| j.uuid.as_str()).collect();
+    assert_eq!(
+        uuids,
+        vec!["good-1", "good-2"],
+        "the missing-uuid row must be dropped, both good rows kept: {uuids:?}"
+    );
+}
+
+/// A non-object `workLocation` (e.g. a bare number, which the untagged enum
+/// can't match as either `Object` or `Text`) fails per-row deserialize and
+/// must be skipped without taking down sibling rows.
+#[test]
+fn rows_to_jobs_skips_row_with_non_object_work_location() {
+    let values: Vec<serde_json::Value> = serde_json::from_str(
+        r#"[
+            {"uuid": "good-1", "name": "Engineer One", "url": "https://ats.rippling.com/acme/jobs/good-1", "workLocation": null},
+            {"uuid": "bad-location", "name": "Bad Location", "url": "https://ats.rippling.com/acme/jobs/bad-location", "workLocation": 42},
+            {"uuid": "good-2", "name": "Engineer Two", "url": "https://ats.rippling.com/acme/jobs/good-2", "workLocation": null}
+        ]"#,
+    )
+    .unwrap();
+
+    let jobs = rows_to_jobs(values);
+    let uuids: Vec<&str> = jobs.iter().map(|j| j.uuid.as_str()).collect();
+    assert_eq!(
+        uuids,
+        vec!["good-1", "good-2"],
+        "the non-object workLocation row must be dropped, both good rows kept: {uuids:?}"
+    );
+}
+
+#[test]
+fn rows_to_jobs_empty_array_returns_empty_vec() {
+    let values: Vec<serde_json::Value> = serde_json::from_str("[]").unwrap();
+    assert!(rows_to_jobs(values).is_empty());
+}
+
+// ---------------------------------------------------------------------------
 // parse_rippling_response — fixture-based parsing
 // ---------------------------------------------------------------------------
 
