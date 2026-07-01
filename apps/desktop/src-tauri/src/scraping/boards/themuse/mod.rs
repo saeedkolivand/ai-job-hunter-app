@@ -8,6 +8,7 @@
 /// Endpoint reconnaissance ported from santifer/career-ops (MIT), `providers/themuse.mjs`.
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use crate::error::AppError;
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -188,6 +189,10 @@ impl Scraper for TheMuseScraper {
             .await
             {
                 Ok(d) => d,
+                // A cancel firing mid-fetch is a clean stop, not a failure —
+                // even on page 0 with nothing collected yet, this must return
+                // `Ok(out)` (empty), not bubble as an error.
+                Err(AppError::Cancelled) => break,
                 Err(e) if out.is_empty() => return Err(e.into()),
                 Err(e) => {
                     log::warn!(
