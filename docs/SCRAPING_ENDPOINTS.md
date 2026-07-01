@@ -12,30 +12,31 @@
 
 ## Summary table
 
-Active scrapers: **20 boards** (registry as of 2026-07-01). Five boards were retired as direct scrapers and are now covered via the Adzuna/JSearch aggregator (see "Retired — now via aggregator" section below).
+Active scrapers: **21 boards** (registry as of 2026-07-01). Five boards were retired as direct scrapers and are now covered via the Adzuna/JSearch aggregator (see "Retired — now via aggregator" section below).
 
-| Board               | Mode                                | Status            | Confidence | Verified endpoint                                                        | Notes                                   |
-| ------------------- | ----------------------------------- | ----------------- | ---------- | ------------------------------------------------------------------------ | --------------------------------------- |
-| **Aggregator**      | **HTTP (provider registry)**        | **✅ works**      | **high**   | **Adzuna (primary) / JSearch (paid fallback)**                           | **Bring-your-own-key; keyless = empty** |
-| LinkedIn            | HTTP (guest)                        | ✅ works          | high       | `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search` |                                         |
-| YCombinator (HN)    | HTTP (JSON API)                     | ✅ works          | high       | `https://hacker-news.firebaseio.com/v0/jobstories.json`                  |                                         |
-| Remotive            | HTTP (JSON API)                     | ✅ works          | high       | `https://remotive.com/api/remote-jobs`                                   |                                         |
-| RemoteOK            | HTTP (JSON API)                     | ✅ works          | high       | `https://remoteok.com/api`                                               |                                         |
-| WWR                 | HTTP (RSS)                          | ✅ works          | high       | `https://weworkremotely.com/remote-jobs.rss`                             |                                         |
-| Arbeitnow           | HTTP (JSON API)                     | ✅ works          | high       | `https://www.arbeitnow.com/api/job-board-api`                            |                                         |
-| Berlin Startup Jobs | HTTP (RSS)                          | ✅ works          | high       | `https://berlinstartupjobs.com/feed/`                                    |                                         |
-| German Tech Jobs    | HTTP (XML)                          | ✅ works          | high       | `https://germantechjobs.de/job_feed.xml` (working)                       |                                         |
-| **Greenhouse**      | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://boards-api.greenhouse.io/v1/boards/{slug}/jobs`**             | **Requires company slug**               |
-| **Lever**           | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://api.lever.co/v0/postings/{company}?mode=json`**               | **Requires company slug**               |
-| **SmartRecruiters** | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://api.smartrecruiters.com/v1/companies/{id}/postings`**         | **Requires company + supports keyword** |
-| **Personio**        | **HTTP (XML feed, company-scoped)** | **✅ works**      | **high**   | **`https://{company}.jobs.personio.de/xml`**                             | **Requires company slug**               |
-| **Recruitee**       | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://{company}.recruitee.com/api/offers/`**                        | **Requires company slug**               |
-| **Ashby**           | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://api.ashbyhq.com/posting-api/job-board/{clientname}`**         | **Requires company slug**               |
-| Arbeitsagentur      | HTTP (JSON API)                     | ✅ works          | high       | `https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs`   |                                         |
-| **Pinpoint**        | **HTTP (JSON API, company-scoped)** | **⚠️ unverified** | **medium** | **`https://{slug}.pinpointhq.com/postings.json`**                        | **Requires company slug**               |
-| **Rippling**        | **HTTP (JSON API, company-scoped)** | **⚠️ unverified** | **medium** | **`https://api.rippling.com/platform/api/ats/v1/board/{slug}/jobs`**     | **Requires company slug**               |
-| **Breezy HR**       | **HTTP (JSON API, company-scoped)** | **⚠️ unverified** | **medium** | **`https://{slug}.breezy.hr/json`**                                      | **Requires company slug**               |
-| **BambooHR**        | **HTTP (JSON API, company-scoped)** | **⚠️ unverified** | **medium** | **`https://{slug}.bamboohr.com/careers/list`**                           | **Requires company slug**               |
+| Board               | Mode                                | Status            | Confidence | Verified endpoint                                                        | Notes                                    |
+| ------------------- | ----------------------------------- | ----------------- | ---------- | ------------------------------------------------------------------------ | ---------------------------------------- |
+| **Aggregator**      | **HTTP (provider registry)**        | **✅ works**      | **high**   | **Adzuna (primary) / JSearch (paid fallback)**                           | **Bring-your-own-key; keyless = empty**  |
+| LinkedIn            | HTTP (guest)                        | ✅ works          | high       | `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search` |                                          |
+| YCombinator (HN)    | HTTP (JSON API)                     | ✅ works          | high       | `https://hacker-news.firebaseio.com/v0/jobstories.json`                  |                                          |
+| Remotive            | HTTP (JSON API)                     | ✅ works          | high       | `https://remotive.com/api/remote-jobs`                                   |                                          |
+| RemoteOK            | HTTP (JSON API)                     | ✅ works          | high       | `https://remoteok.com/api`                                               |                                          |
+| WWR                 | HTTP (RSS)                          | ✅ works          | high       | `https://weworkremotely.com/remote-jobs.rss`                             |                                          |
+| Arbeitnow           | HTTP (JSON API)                     | ✅ works          | high       | `https://www.arbeitnow.com/api/job-board-api`                            |                                          |
+| Berlin Startup Jobs | HTTP (RSS)                          | ✅ works          | high       | `https://berlinstartupjobs.com/feed/`                                    |                                          |
+| German Tech Jobs    | HTTP (XML)                          | ✅ works          | high       | `https://germantechjobs.de/job_feed.xml` (working)                       |                                          |
+| **Greenhouse**      | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://boards-api.greenhouse.io/v1/boards/{slug}/jobs`**             | **Requires company slug**                |
+| **Lever**           | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://api.lever.co/v0/postings/{company}?mode=json`**               | **Requires company slug**                |
+| **SmartRecruiters** | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://api.smartrecruiters.com/v1/companies/{id}/postings`**         | **Requires company + supports keyword**  |
+| **Personio**        | **HTTP (XML feed, company-scoped)** | **✅ works**      | **high**   | **`https://{company}.jobs.personio.de/xml`**                             | **Requires company slug**                |
+| **Recruitee**       | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://{company}.recruitee.com/api/offers/`**                        | **Requires company slug**                |
+| **Ashby**           | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://api.ashbyhq.com/posting-api/job-board/{clientname}`**         | **Requires company slug**                |
+| Arbeitsagentur      | HTTP (JSON API)                     | ✅ works          | high       | `https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs`   |                                          |
+| **Pinpoint**        | **HTTP (JSON API, company-scoped)** | **⚠️ unverified** | **medium** | **`https://{slug}.pinpointhq.com/postings.json`**                        | **Requires company slug**                |
+| **Rippling**        | **HTTP (JSON API, company-scoped)** | **⚠️ unverified** | **medium** | **`https://api.rippling.com/platform/api/ats/v1/board/{slug}/jobs`**     | **Requires company slug**                |
+| **Breezy HR**       | **HTTP (JSON API, company-scoped)** | **⚠️ unverified** | **medium** | **`https://{slug}.breezy.hr/json`**                                      | **Requires company slug**                |
+| **BambooHR**        | **HTTP (JSON API, company-scoped)** | **⚠️ unverified** | **medium** | **`https://{slug}.bamboohr.com/careers/list`**                           | **Requires company slug**                |
+| **The Muse**        | **HTTP (JSON API, browse feed)**    | **⚠️ unverified** | **medium** | **`https://www.themuse.com/api/public/jobs`**                            | **No keyword param; client-side filter** |
 
 **Retired — now via aggregator** (removed from `SCRAPERS` registry; results available via Adzuna/JSearch):
 
@@ -742,6 +743,30 @@ Re-verify the response shape against a live BambooHR-hosted tenant before shippi
 
 ---
 
+### The Muse
+
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/themuse/mod.rs`
+
+#### Current scraper
+
+- **URL:** `https://www.themuse.com/api/public/jobs?page={n}` (0-indexed)
+- **Mode:** HTTP (reqwest)
+- **Scope:** Keyword aggregator — **no server-side keyword param** (only `category`/`level`/`location`/`company`/`page`); filtered client-side over title+company, same pattern as Remotive/RemoteOK/Arbeitnow; bounded to 5 pages (`BoardSearchInput.pages`, clamped)
+- **Fields:** `results[].{name, refs.landing_page, company.name, locations[0].name}`
+
+#### Unverified endpoint (ported 2026-07-01)
+
+- **Search URL:** `https://www.themuse.com/api/public/jobs?page={n}` — reconnaissance-ported from `santifer/career-ops` (MIT), `providers/themuse.mjs`; **not re-verified live** in this environment (no outbound network access)
+- **Response format (per career-ops):** JSON `{ results: [...], page: n, page_count: N }`
+- **Key data fields:** Title: `name`; Company: `company.name` else `"The Muse"`; Location: `locations[0].name` else `""`; URL: `refs.landing_page` (required `^https?://`, no host allowlist — it points at each posting's own employer/ATS site, not a themuse.com page); no stable id field, so the URL doubles as the dedup id
+- **Anti-bot:** Unknown — not observed live
+
+#### Recommendation
+
+Re-verify the response shape against the live API before shipping, in particular whether `page_count` is always present and whether `locations` can be empty vs. absent.
+
+---
+
 ## Top priorities
 
 ### Needs monitoring
@@ -767,7 +792,7 @@ Aggregator (Adzuna/JSearch, bring-your-own-key), LinkedIn (guest HTML), YCombina
 
 ### Newly added — unverified (2026-07-01)
 
-Pinpoint, Rippling, Breezy HR, BambooHR were added from `santifer/career-ops` (MIT) reconnaissance without a live re-verification pass (no outbound network access in the authoring environment). Re-verify each endpoint's response shape against a real tenant before relying on it in production; see the per-board sections above.
+Pinpoint, Rippling, Breezy HR, BambooHR, The Muse were added from `santifer/career-ops` (MIT) reconnaissance without a live re-verification pass (no outbound network access in the authoring environment). Re-verify each endpoint's response shape against a real tenant/the live API before relying on it in production; see the per-board sections above.
 
 ---
 
