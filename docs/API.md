@@ -322,7 +322,7 @@ interface BoardConfig {
 }
 ```
 
-**Supported board IDs** (16 active scrapers): `aggregator`, `linkedin`, `greenhouse`, `lever`, `ashby`, `smartrecruiters`, `recruitee`, `personio`, `remoteok`, `remotive`, `arbeitsagentur`, `berlinstartupjobs`, `germantechjobs`, `arbeitnow`, `ycombinator`, `weworkremotely`
+**Supported board IDs** (20 active scrapers): `aggregator`, `ashby`, `bamboohr`, `breezy`, `berlinstartupjobs`, `germantechjobs`, `greenhouse`, `lever`, `linkedin`, `personio`, `pinpoint`, `recruitee`, `remoteok`, `remotive`, `rippling`, `smartrecruiters`, `arbeitsagentur`, `arbeitnow`, `ycombinator`, `weworkremotely`
 
 Note: `indeed`, `stepstone`, `xing`, `workday`, and `glassdoor` were retired as direct scrapers (ADR-026). Their job results are now routed through the `aggregator` board (Adzuna/JSearch).
 
