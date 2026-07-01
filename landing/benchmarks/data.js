@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782800688775,
+  "lastUpdate": 1782865914088,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -1925,6 +1925,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 290524,
             "range": "± 5608",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "04e6e78aed29a22b3f1d370a91823bd89cdf1ef9",
+          "message": "refactor: rename apps/tauri to apps/desktop and @ajh/tauri to @ajh/desktop (#512)\n\n* refactor: rename apps/tauri to apps/desktop and @ajh/tauri to @ajh/desktop\n\nRename the desktop app directory and its private @ajh package identity. All path and pnpm --filter references updated across configs, CI workflows, docs, renderer, and Rust source.\n\nAlso drop apps/desktop from the check:agent-system stale-architecture denylist (it was the Electron-era dir name, now the current Tauri app dir). Lockfile regenerated; no behavior change.\n\nVerified: turbo typecheck, eslint config resolution, check:agent-system, check:landing-drift, and a clean cargo build.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* refactor: fix over-replaced tauri-apps url and rename app label to app/desktop\n\nAddresses PR #512 review. The literal apps/tauri rename also hit the substring\ninside tauri-apps/tauri, corrupting the Tauri security-advisory URL in\ntauri-standards (HIGH). Reverted that URL back to tauri-apps/tauri.\n\nAlso renames the labeler.yml key app/tauri to app/desktop (matching the\napp/extension convention). The GitHub label plus stale rust and frontend label\ndescriptions were updated to apps/desktop out of band.\n\nRust crate name ajh-tauri is left as-is. It is internal only and the\nversion-sync script still matches it.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-01T02:12:18+02:00",
+          "tree_id": "98f9b44e9da3c4ae85dbf3e0a9416df6162add38",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/04e6e78aed29a22b3f1d370a91823bd89cdf1ef9"
+        },
+        "date": 1782865913456,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1966911,
+            "range": "± 66249",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2618202,
+            "range": "± 59787",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 308460,
+            "range": "± 6425",
             "unit": "ns/iter"
           }
         ]
