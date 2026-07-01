@@ -21,11 +21,11 @@ Active automatically every session; invoke via the Skill tool without waiting fo
 - Never output absolute Windows, macOS, or Linux paths
 - Always use repository-relative paths
 
-❌ `C:\Users\username\project\apps\tauri\src\main.rs`
+❌ `C:\Users\username\project\apps\desktop\src\main.rs`
 ❌ `/home/username/project/apps/api/src/server.ts`
 ❌ `~/Projects/app/src/index.ts`
 
-✅ `apps/tauri/src/main.rs`
+✅ `apps/desktop/src/main.rs`
 ✅ `apps/api/src/server.ts`
 
 - Never expose usernames, home directories, drive letters, workspace roots, temp paths, or IDE-specific paths
@@ -52,7 +52,7 @@ Local-first Tauri desktop app in a pnpm monorepo.
 packages/shared    ← IPC contracts, Zod schemas, shared types (no UI, no Node)
 packages/ui        ← React component library (@ajh/ui — no app logic)
 packages/prompts   ← AI prompt templates (pure TS, zero deps)
-apps/tauri         ← Tauri app (Rust core + React renderer)
+apps/desktop         ← Tauri app (Rust core + React renderer)
 ```
 
 Renderer → Tauri: `AppClient` context → service hooks → `invoke/listen`.
@@ -99,9 +99,9 @@ If branch is gone: `rtk git checkout main && rtk git pull origin main`.
 ## New IPC capability (5 steps)
 
 1. `packages/shared/src/ipc/contracts.ts` — add signature
-2. `apps/tauri/src-tauri/src/commands.rs` — implement Tauri command
-3. `apps/tauri/src/tauri-client.ts` — wire invoke call
-4. `apps/tauri/src/renderer/services/` — create hook
+2. `apps/desktop/src-tauri/src/commands.rs` — implement Tauri command
+3. `apps/desktop/src/tauri-client.ts` — wire invoke call
+4. `apps/desktop/src/renderer/services/` — create hook
 5. `services/query-client.ts` — add query key
 
 ## Release

@@ -12,19 +12,19 @@ Centralized, one-way event channels — the complement to IPC request/response (
 
 ## Codegen
 
-**Rust event-channel constants:** `packages/shared/scripts/gen-ipc-rust.ts` → `apps/tauri/src-tauri/src/ipc_contracts/events.rs`
+**Rust event-channel constants:** `packages/shared/scripts/gen-ipc-rust.ts` → `apps/desktop/src-tauri/src/ipc_contracts/events.rs`
 
 - Emits screaming-snake const names (e.g. `pub const MENU_NAVIGATE: &str = "menu:navigate"`)
 - Wire namespace derived from colon prefix; key from registry key
 - Regenerate: `pnpm gen:ipc` (enforced in CI: `pnpm gen:ipc --check`)
 
-**Rust credential-slot constants:** same codegen script → `apps/tauri/src-tauri/src/ipc_contracts/provider_slots.rs` (source: `packages/shared/src/provider-slots.ts`)
+**Rust credential-slot constants:** same codegen script → `apps/desktop/src-tauri/src/ipc_contracts/provider_slots.rs` (source: `packages/shared/src/provider-slots.ts`)
 
 - Emits screaming-snake const names (e.g. `ADZUNA_APP_ID`) for the AI-provider keyring slots defined in `PROVIDER_SLOTS`
 - Single cross-language source: `PROVIDER_SLOTS` object in the shared package
 - Regenerate alongside events: `pnpm gen:ipc`
 
-**Rust date-filter constants:** same codegen script → `apps/tauri/src-tauri/src/ipc_contracts/date_filters.rs` (source: `packages/shared/src/schemas/index.ts`)
+**Rust date-filter constants:** same codegen script → `apps/desktop/src-tauri/src/ipc_contracts/date_filters.rs` (source: `packages/shared/src/schemas/index.ts`)
 
 - Emits a const array `pub const DATE_FILTER_OPTIONS: &[&str]` for the scraper's date-range tokens defined in `DATE_FILTER_OPTIONS`
 - The aggregator Rust match arms for `adzuna_max_days_old` and `jsearch_date_posted` map each token to a provider-specific value; an exhaustiveness test fails if a new TS token isn't handled
@@ -32,7 +32,7 @@ Centralized, one-way event channels — the complement to IPC request/response (
 
 ## Emission layer
 
-**L3 emit helper:** `apps/tauri/src-tauri/src/events/mod.rs`
+**L3 emit helper:** `apps/desktop/src-tauri/src/events/mod.rs`
 
 - `emit_event(app: &AppHandle, channel: &str, payload: impl Serialize + Clone)` — the one place app events are emitted
 - Generalizes old per-domain helpers (`emit_stream_error`, `emit_changed`, `dispatch_*`)
@@ -54,7 +54,7 @@ Examples: `menu.takePending()` (menu + action intents), `autopilot.takePendingFo
 
 ## Renderer consumption
 
-**Tauri-client namespaces:** `apps/tauri/src/tauri-client/namespaces/**`
+**Tauri-client namespaces:** `apps/desktop/src/tauri-client/namespaces/**`
 
 - Each namespace wraps `Tauri.listen()` for its event channels
 - Types imported from `@ajh/shared` (via barrel `@ajh/shared/src/index.ts` → `EVENT_CHANNELS`, `AppEvents`)

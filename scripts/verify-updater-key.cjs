@@ -26,8 +26,8 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const CONF_PATH = path.join(root, 'apps/tauri/src-tauri/tauri.conf.json');
-const DEFAULT_SCAN_DIR = path.join(root, 'apps/tauri/src-tauri/target');
+const CONF_PATH = path.join(root, 'apps/desktop/src-tauri/tauri.conf.json');
+const DEFAULT_SCAN_DIR = path.join(root, 'apps/desktop/src-tauri/target');
 
 // Directories under target/ that are large and never hold updater bundles.
 const SKIP_DIRS = new Set([

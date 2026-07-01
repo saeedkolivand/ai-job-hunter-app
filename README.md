@@ -351,7 +351,7 @@ The app uses the OS keychain for secrets — no `.env` files. Keys and credentia
 
 ```
 React renderer  →  service hook (React Query)  →  tauri-client  →  Rust #[tauri::command]  →  core (scrape · AI · export · DB)
-                         apps/tauri/src/renderer/services            apps/tauri/src-tauri/src
+                         apps/desktop/src/renderer/services            apps/desktop/src-tauri/src
 ```
 
 IPC request shapes have a single source of truth: **[Zod][zod] schemas in `packages/shared`**, from which `pnpm gen:ipc` generates the matching [Rust][rust] structs — so the [TypeScript][typescript] and [Rust][rust] sides can't drift.
@@ -360,9 +360,9 @@ IPC request shapes have a single source of truth: **[Zod][zod] schemas in `packa
 <summary><strong>Add a new IPC capability (5 hand-synced touchpoints)</strong></summary>
 
 1. `packages/shared/src/ipc/contracts/*.ts` — add the method signature.
-2. `apps/tauri/src-tauri/src/commands/*.rs` — implement the `#[tauri::command]` and register it in `main.rs`.
-3. `apps/tauri/src/tauri-client/namespaces/*` — wire the `invoke(...)` call.
-4. `apps/tauri/src/renderer/services/*` — add the React Query service hook.
+2. `apps/desktop/src-tauri/src/commands/*.rs` — implement the `#[tauri::command]` and register it in `main.rs`.
+3. `apps/desktop/src/tauri-client/namespaces/*` — wire the `invoke(...)` call.
+4. `apps/desktop/src/renderer/services/*` — add the React Query service hook.
 5. If the request has a new shape: add a Zod schema and run `pnpm gen:ipc`.
 
 </details>
@@ -500,7 +500,7 @@ See <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBU
 
 | Document                                                                                                          | Description                                                                                                        |
 | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| <a href="apps/tauri/README.md" target="_blank" rel="noopener noreferrer">apps/tauri/README.md</a>                 | Desktop app architecture, directory map, Rust/React setup                                                          |
+| <a href="apps/desktop/README.md" target="_blank" rel="noopener noreferrer">apps/desktop/README.md</a>             | Desktop app architecture, directory map, Rust/React setup                                                          |
 | <a href="apps/extension/README.md" target="_blank" rel="noopener noreferrer">apps/extension/README.md</a>         | Browser extension (MV3) — job import, local dev pairing, permissions                                               |
 | <a href="docs/ARCHITECTURE.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE.md</a>                 | System design, data flow, diagrams                                                                                 |
 | <a href="docs/PATTERNS.md" target="_blank" rel="noopener noreferrer">docs/PATTERNS.md</a>                         | IPC, state machines, AI streaming, search patterns                                                                 |

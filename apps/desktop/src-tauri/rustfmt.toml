@@ -1,0 +1,4 @@
+# Canonical formatting for the Rust core. Stable-rustfmt only (no nightly-gated
+# options) so `cargo fmt` works on the same stable toolchain CI uses, and
+# `cargo fmt --all -- --check` is a meaningful gate (docs/architecture-rules.md R9).
+edition = "2021"

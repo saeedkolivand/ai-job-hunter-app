@@ -1,0 +1,78 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AI Job Hunter",
+  "identifier": "com.ajh.desktop",
+  "version": "0.119.0",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5174",
+    "beforeDevCommand": "pnpm dev:frontend",
+    "beforeBuildCommand": "pnpm build:frontend"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "AI Job Hunter",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "center": true,
+        "decorations": true,
+        "resizable": true,
+        "visible": true,
+        "backgroundColor": "#0a0a14",
+        "titleBarStyle": "Overlay"
+      }
+    ],
+    "macOSPrivateApi": false,
+    "security": {
+      "csp": "default-src 'self' tauri: asset: https://asset.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: https://asset.localhost https://logo.clearbit.com; font-src 'self' data: asset: https://asset.localhost; connect-src 'self' http://127.0.0.1:11434 ws://127.0.0.1:47615 ws://127.0.0.1:47616 ws://127.0.0.1:47617 ws://127.0.0.1:47618 ws://127.0.0.1:47619 ws://127.0.0.1:47620 tauri: ipc: http://ipc.localhost https://autocomplete.clearbit.com"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": [
+      "nsis",
+      "msi",
+      "dmg",
+      "app",
+      "deb",
+      "rpm",
+      "appimage"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      },
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
+  },
+  "plugins": {
+    "dialog": null,
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "ajh"
+        ]
+      }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQxQzk4NkM0NEJGQkQ0RjkKUldUNTFQdEx4SWJKUWJNU29HRk9JU3RRL0luZ3pmK1hzVmljajFvWjJicEJ2MEJ3Zzg4Q3hwSmsK",
+      "endpoints": [
+        "https://github.com/saeedkolivand/ai-job-hunter-app/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

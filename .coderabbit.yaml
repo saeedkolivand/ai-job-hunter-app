@@ -39,14 +39,14 @@ reviews:
     - '!landing/**'
     - '!graphify-out/**'
     - '!**/*.gen.ts'
-    - '!apps/tauri/src/renderer/routeTree.gen.ts'
+    - '!apps/desktop/src/renderer/routeTree.gen.ts'
     - '!**/__snapshots__/**'
     - '!**/*.snap'
 
   # Per-area guidance — mirrors the Primary-owner map in .claude/review-routes.json.
   # `path` is a single minimatch glob (brace alternatives group an area's dirs).
   path_instructions:
-    - path: 'apps/tauri/src/renderer/**'
+    - path: 'apps/desktop/src/renderer/**'
       instructions: >
         React renderer. Enforce ports & adapters: no window.api in features/routes/
         components — use service hooks from @/services (React Query). Use @ajh/ui
@@ -61,7 +61,7 @@ reviews:
         Design-system library. No Zustand, no IPC, no routing imports. Keep
         components presentational; tokens from css/tokens.css; accessibility
         (labels/roles/keyboard) matters.
-    - path: 'apps/tauri/src-tauri/src/**'
+    - path: 'apps/desktop/src-tauri/src/**'
       instructions: >
         Rust/Tauri backend. Respect L0–L3 layering (architecture rules R1–R8 in
         docs/architecture-rules.md — enforced by tests/architecture.rs). Use the
@@ -73,7 +73,7 @@ reviews:
       instructions: >
         IPC contracts / Zod schemas / shared types. No React, no Node APIs. Keep the
         Rust mirror + the TS contract in sync (the 5-step IPC capability flow).
-    - path: 'apps/tauri/src-tauri/src/{commands/ai.rs,commands/ai_provider/**,documents/**}'
+    - path: 'apps/desktop/src-tauri/src/{commands/ai.rs,commands/ai_provider/**,documents/**}'
       instructions: >
         AI providers / embeddings. Adding a provider must be config + adapter only —
         never business-logic coupling. Watch prompt-injection and secret leakage;
@@ -82,17 +82,17 @@ reviews:
       instructions: >
         Prompt templates: pure TS, zero deps, no UI, no window. Provider-aware +
         locale-driven. Watch for injection-prone interpolation.
-    - path: 'apps/tauri/src-tauri/src/{export,model,theme,locale,layout,measure,contact_profile}/**'
+    - path: 'apps/desktop/src-tauri/src/{export,model,theme,locale,layout,measure,contact_profile}/**'
       instructions: >
         Resume/export domain. Preserve the DocumentModel contract, ATS-safe
         formatting/layout, and locale/country standards. Flag golden-snapshot
         impact for PDF/DOCX rendering changes.
-    - path: 'apps/tauri/src-tauri/src/{commands/match_resume.rs,commands/cover_letter.rs,cover_letter/**,recommend/**,validate/**}'
+    - path: 'apps/desktop/src-tauri/src/{commands/match_resume.rs,commands/cover_letter.rs,cover_letter/**,recommend/**,validate/**}'
       instructions: >
         ATS scoring / job-match / cover-letter relevance. Keep scoring rules and
         keyword/skill/requirement extraction consistent; validators stay relaxed/
         future-proof (no hard enum gates that reject new variants).
-    - path: 'apps/tauri/src-tauri/src/{scraping,browser}/**'
+    - path: 'apps/desktop/src-tauri/src/{scraping,browser}/**'
       instructions: >
         Scraping / browser automation. Resilient selectors, rate-limiting,
         cancellation, and registry-driven boards (SCRAPERS). No brittle hardcoded
@@ -103,7 +103,7 @@ reviews:
         worker (Vite __vitePreload touches window/document → "window is not
         defined"); use static imports. The pairing token only travels to the
         loopback desktop bridge, never a remote host.
-    - path: 'apps/tauri/src-tauri/{capabilities/**,tauri.conf.json,src/net/**,src/credentials/**,src/commands/credentials.rs,src/commands/privacy.rs,src/updater/**}'
+    - path: 'apps/desktop/src-tauri/{capabilities/**,tauri.conf.json,src/net/**,src/credentials/**,src/commands/credentials.rs,src/commands/privacy.rs,src/updater/**}'
       instructions: >
         SECURITY-SENSITIVE surface (tauri-security-reviewer checklist): capabilities,
         IPC attack surface, secrets/credentials, updater, rate-limit/cost/export
@@ -113,7 +113,7 @@ reviews:
       instructions: >
         Dependency/policy manifests — supply-chain surface. Justify each added
         dependency; flag risky/unmaintained packages and license/policy issues.
-    - path: '{**/*.test.*,**/*.spec.*,apps/tauri/src-tauri/tests/**,**/e2e/**}'
+    - path: '{**/*.test.*,**/*.spec.*,apps/desktop/src-tauri/tests/**,**/e2e/**}'
       instructions: >
         Tests. Check for weak assertions, over-mocking, flakiness, and untested
         edge/error/security paths on the changed code. Flag source changes that
@@ -129,7 +129,7 @@ reviews:
     - label: 'app/extension'
       instructions: 'Apply when files under apps/extension/** change.'
     - label: 'app/tauri'
-      instructions: 'Apply when files under apps/tauri/** change.'
+      instructions: 'Apply when files under apps/desktop/** change.'
     - label: 'pkg/shared'
       instructions: 'Apply when files under packages/shared/** change.'
     - label: 'pkg/ui'
@@ -139,9 +139,9 @@ reviews:
     - label: 'pkg/translations'
       instructions: 'Apply when files under packages/translations/** change.'
     - label: 'rust'
-      instructions: 'Apply when files under apps/tauri/src-tauri/** change.'
+      instructions: 'Apply when files under apps/desktop/src-tauri/** change.'
     - label: 'frontend'
-      instructions: 'Apply when files under apps/tauri/src/renderer/** change.'
+      instructions: 'Apply when files under apps/desktop/src/renderer/** change.'
     - label: 'dependencies'
       instructions: 'Apply when package.json, pnpm-lock.yaml, Cargo.toml, or Cargo.lock change.'
     - label: 'github_actions'

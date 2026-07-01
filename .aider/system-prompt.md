@@ -4,18 +4,18 @@
 
 You are working on a local-first **Tauri** desktop app in a pnpm monorepo.
 React 19, TypeScript strict, Tailwind CSS v4, TanStack Router + React Query.
-The Rust core lives in `apps/tauri/src-tauri/`; the React renderer in `apps/tauri/src/renderer/`.
+The Rust core lives in `apps/desktop/src-tauri/`; the React renderer in `apps/desktop/src/renderer/`.
 
 ## Architecture summary
 
-- The renderer never calls `window.api.*` directly — use service hooks in `apps/tauri/src/renderer/services/`.
+- The renderer never calls `window.api.*` directly — use service hooks in `apps/desktop/src/renderer/services/`.
 - IPC contract is the single source of truth: `packages/shared/src/ipc/contracts.ts`.
 - The four workspace packages are exactly `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`.
-  Backend business logic lives in the Rust core (`apps/tauri/src-tauri/`), not in a TS package.
+  Backend business logic lives in the Rust core (`apps/desktop/src-tauri/`), not in a TS package.
 
 ## Before editing any file, check:
 
-1. Does a service hook already exist in `apps/tauri/src/renderer/services/`?
+1. Does a service hook already exist in `apps/desktop/src/renderer/services/`?
 2. Is there a shared UI primitive in `@ajh/ui`?
 3. Does the IPC contract need updating in `packages/shared/src/ipc/contracts.ts`?
 
@@ -56,8 +56,8 @@ import { useMachine } from '@/hooks/use-machine';
 
 **New IPC capability (5 steps):**
 
-1. `packages/shared/src/ipc/contracts.ts` → 2. `apps/tauri/src-tauri/src/commands.rs`
-   → 3. `apps/tauri/src/tauri-client.ts` → 4. `apps/tauri/src/renderer/services/` hook
+1. `packages/shared/src/ipc/contracts.ts` → 2. `apps/desktop/src-tauri/src/commands.rs`
+   → 3. `apps/desktop/src/tauri-client.ts` → 4. `apps/desktop/src/renderer/services/` hook
    → 5. `services/query-client.ts` query key
 
 ## Reference documentation

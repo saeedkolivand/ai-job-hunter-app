@@ -252,7 +252,7 @@ jobs:
       - name: 💾 Restore Rust Cache
         uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          workspaces: apps/tauri/src-tauri
+          workspaces: apps/desktop/src-tauri
           cache-on-failure: true
           # Separate cache per macOS arch so the two legs don't clobber each
           # other (empty on Windows/Linux — single cache as before).
@@ -294,10 +294,10 @@ jobs:
           echo "::group::Building Tauri application"
           if [ "${{ runner.os }}" == "macOS" ]; then
             # One arch per leg — the matrix runs Intel + Apple Silicon in parallel.
-            pnpm --filter @ajh/tauri tauri build --target ${{ matrix.target }}
+            pnpm --filter @ajh/desktop tauri build --target ${{ matrix.target }}
           else
             # Build for current platform (Linux or Windows)
-            pnpm --filter @ajh/tauri tauri build
+            pnpm --filter @ajh/desktop tauri build
           fi
           echo "::endgroup::"
 
@@ -324,8 +324,8 @@ jobs:
           # Tauri keeps spaces from productName in artifact filenames. Replace spaces
           # with dashes so URLs in latest.json don't need encoding and the manifest
           # generator can match deterministic names across all platforms.
-          if [ -d apps/tauri/src-tauri/target ]; then
-            find apps/tauri/src-tauri/target -type f -name '* *' -print0 | \
+          if [ -d apps/desktop/src-tauri/target ]; then
+            find apps/desktop/src-tauri/target -type f -name '* *' -print0 | \
               while IFS= read -r -d '' f; do
                 dir="$(dirname "$f")"
                 base="$(basename "$f")"
@@ -350,7 +350,7 @@ jobs:
           # unique and latest.json can serve the correct binary per arch.
           tag_macos_artifacts() {
             local triple="$1" suffix="$2" base
-            base="apps/tauri/src-tauri/target/${triple}/release/bundle"
+            base="apps/desktop/src-tauri/target/${triple}/release/bundle"
             for f in "${base}"/dmg/*.dmg; do
               mv "$f" "${f%.dmg}-${suffix}.dmg"
               echo "Renamed (${suffix}): $(basename "$f")"
@@ -381,7 +381,7 @@ jobs:
             *)       p=linux ;;
           esac
           shopt -s nullglob
-          base=apps/tauri/src-tauri/target
+          base=apps/desktop/src-tauri/target
           for f in \
             "$base"/release/bundle/nsis/*.exe "$base"/release/bundle/nsis/*.sig \
             "$base"/release/bundle/msi/*.msi \
@@ -405,19 +405,19 @@ jobs:
           # bundles (the targets the auto-updater consumes). MSI/DEB/RPM never
           # produce .sig artifacts so they're not listed.
           files: |
-            apps/tauri/src-tauri/target/release/bundle/nsis/*.exe
-            apps/tauri/src-tauri/target/release/bundle/nsis/*.sig
-            apps/tauri/src-tauri/target/release/bundle/msi/*.msi
-            apps/tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
-            apps/tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.tar.gz
-            apps/tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.tar.gz.sig
-            apps/tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-            apps/tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.tar.gz
-            apps/tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.tar.gz.sig
-            apps/tauri/src-tauri/target/release/bundle/deb/*.deb
-            apps/tauri/src-tauri/target/release/bundle/rpm/*.rpm
-            apps/tauri/src-tauri/target/release/bundle/appimage/*.AppImage
-            apps/tauri/src-tauri/target/release/bundle/appimage/*.AppImage.sig
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.sig
+            apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+            apps/desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+            apps/desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.tar.gz
+            apps/desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.tar.gz.sig
+            apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.tar.gz
+            apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.tar.gz.sig
+            apps/desktop/src-tauri/target/release/bundle/deb/*.deb
+            apps/desktop/src-tauri/target/release/bundle/rpm/*.rpm
+            apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+            apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -429,9 +429,9 @@ jobs:
           # Restrict to logs and bundler output to avoid uploading multi-GB
           # compiled artifacts. The full target/ tree is too large for CI.
           path: |
-            apps/tauri/src-tauri/target/release/bundle/**
-            apps/tauri/src-tauri/target/**/*.log
-            apps/tauri/src-tauri/target/**/output
+            apps/desktop/src-tauri/target/release/bundle/**
+            apps/desktop/src-tauri/target/**/*.log
+            apps/desktop/src-tauri/target/**/output
           retention-days: 7
           compression-level: 9
           if-no-files-found: ignore

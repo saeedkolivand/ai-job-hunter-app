@@ -4,7 +4,7 @@ Last updated: 2026-06-20
 
 All renderer ↔ Rust communication is defined as typed contracts in `packages/shared/src/ipc/contracts/`. The renderer accesses them exclusively through `AppClient` service hooks.
 
-> **Never call `window.__TAURI_INVOKE__` directly.** Use the service hooks in `apps/tauri/src/renderer/services/`.
+> **Never call `window.__TAURI_INVOKE__` directly.** Use the service hooks in `apps/desktop/src/renderer/services/`.
 
 ---
 
@@ -281,7 +281,7 @@ interface BoardLoginConfig {
 
 #### `boards.catalog(): Promise<BoardCatalogEntry[]>`
 
-Returns the catalog of all available job boards, including authentication requirements and visibility status. Each entry describes the board's scraping mode, login requirements, and whether it is listed in the board picker. The catalog derives from the `Scraper` trait in `apps/tauri/src-tauri/src/scraping/types/mod.rs`; see individual scraper implementations for auth-tier and listing overrides.
+Returns the catalog of all available job boards, including authentication requirements and visibility status. Each entry describes the board's scraping mode, login requirements, and whether it is listed in the board picker. The catalog derives from the `Scraper` trait in `apps/desktop/src-tauri/src/scraping/types/mod.rs`; see individual scraper implementations for auth-tier and listing overrides.
 
 ```typescript
 type BoardAuthRequirement = 'guest' | 'optional' | 'required';
@@ -295,11 +295,11 @@ interface BoardCatalogEntry {
 }
 ```
 
-See `boards.catalog` channel (`BOARDS_CHANNELS.catalog = 'boards:catalog'`); frontend hook `useBoardsCatalog()` in `apps/tauri/src/renderer/services/use-boards/use-boards.ts`.
+See `boards.catalog` channel (`BOARDS_CHANNELS.catalog = 'boards:catalog'`); frontend hook `useBoardsCatalog()` in `apps/desktop/src/renderer/services/use-boards/use-boards.ts`.
 
 #### `boards.importCookies(boardId: string): Promise<CookieImportResult>`
 
-Attempts to import an existing job-board session from the user's installed Chromium browsers (Chrome, Edge, Brave). Reads the browser's encrypted cookie store, decrypts v10/v11 AES-256-GCM cookies (DPAPI on Windows, Keychain/libsecret on Unix), filters for the board's domain, and writes the same artifacts (`cookies.json` + `auth-status.json`) that the in-app login flow produces. Best-effort: never a regression — missing browser, locked profile, or decrypt failure all map to non-error outcomes. v20 App-Bound Encryption (Chrome 127+) is out of scope. See `apps/tauri/src-tauri/src/scraping/board_login/import.rs` (implementation + design doc) and `apps/tauri/src-tauri/src/platform/chrome/mod.rs` (Chromium detection).
+Attempts to import an existing job-board session from the user's installed Chromium browsers (Chrome, Edge, Brave). Reads the browser's encrypted cookie store, decrypts v10/v11 AES-256-GCM cookies (DPAPI on Windows, Keychain/libsecret on Unix), filters for the board's domain, and writes the same artifacts (`cookies.json` + `auth-status.json`) that the in-app login flow produces. Best-effort: never a regression — missing browser, locked profile, or decrypt failure all map to non-error outcomes. v20 App-Bound Encryption (Chrome 127+) is out of scope. See `apps/desktop/src-tauri/src/scraping/board_login/import.rs` (implementation + design doc) and `apps/desktop/src-tauri/src/platform/chrome/mod.rs` (Chromium detection).
 
 ```typescript
 type CookieImportOutcome = 'Imported' | 'NoSession' | 'Undecryptable' | 'BrowserNotFound';
@@ -342,7 +342,7 @@ Clears the detection cache and re-probes all agents (call after an install).
 
 #### `cliAgents.install(opts: { commandName: string; args: string[]; onOutput?: (line: string) => void; signal?: AbortSignal }): Promise<CliAgentInstallResult>`
 
-One-click install: spawns a shell capability-allowlisted command (fixed npm args). Implemented over the `@tauri-apps/plugin-shell` adapter; the caller cannot tell it isn't a plain IPC command. The capability allowlist is static and matches exactly 3 fixed-arg commands (see `apps/tauri/src-tauri/capabilities/default.json`).
+One-click install: spawns a shell capability-allowlisted command (fixed npm args). Implemented over the `@tauri-apps/plugin-shell` adapter; the caller cannot tell it isn't a plain IPC command. The capability allowlist is static and matches exactly 3 fixed-arg commands (see `apps/desktop/src-tauri/capabilities/default.json`).
 
 ```typescript
 interface CliAgentStatus {
@@ -367,7 +367,7 @@ interface CliAgentInstallResult {
 }
 ```
 
-See: `packages/shared/src/ipc/contracts/cliAgents.ts` (contract), `apps/tauri/src-tauri/src/commands/cli_agents.rs` (read-only Rust commands).
+See: `packages/shared/src/ipc/contracts/cliAgents.ts` (contract), `apps/desktop/src-tauri/src/commands/cli_agents.rs` (read-only Rust commands).
 
 ---
 
@@ -519,7 +519,7 @@ interface GitHubRepo {
 }
 ```
 
-**Contract & IPC:** `packages/shared/src/ipc/contracts/github.ts` (`GitHubContract.importRepos`). **Client:** `apps/tauri/src/tauri-client/namespaces/github/github.ts` (unwraps `{ repos }` response, throws on `{ error }`). **Service hook:** `useGitHubImport()` mutation in `apps/tauri/src/renderer/services/use-github-import/use-github-import.ts`.
+**Contract & IPC:** `packages/shared/src/ipc/contracts/github.ts` (`GitHubContract.importRepos`). **Client:** `apps/desktop/src/tauri-client/namespaces/github/github.ts` (unwraps `{ repos }` response, throws on `{ error }`). **Service hook:** `useGitHubImport()` mutation in `apps/desktop/src/renderer/services/use-github-import/use-github-import.ts`.
 
 **SSRF hardening:** Input is validated as either a bare username (regex) or a github.com URL (hostname extracted via `github_url_first_segment`, non-GitHub hosts rejected). API URL is constructed server-side in Rust (`api_url()` helper), never forwarded from the client.
 
@@ -635,7 +635,7 @@ Single-job scoring (legacy path; retained for one-off callers).
 
 #### `match.batch(resumeId: string, jobIds: string[]): Promise<MatchScore[]>`
 
-Scores all postings in one Rust pass via `match_resume_batch` command. Caller supplies `semanticScoringEnabled` flag (defaults false). Frontend: `MatchScoresProvider` (see `apps/tauri/src/renderer/providers/match-scores-provider.tsx`) distributes results per-job via `useJobMatchScore(jobId)` on-demand. Batch cap: 1000 jobs (enforced server-side; prevents DoS).
+Scores all postings in one Rust pass via `match_resume_batch` command. Caller supplies `semanticScoringEnabled` flag (defaults false). Frontend: `MatchScoresProvider` (see `apps/desktop/src/renderer/providers/match-scores-provider.tsx`) distributes results per-job via `useJobMatchScore(jobId)` on-demand. Batch cap: 1000 jobs (enforced server-side; prevents DoS).
 
 ```typescript
 interface MatchScore {

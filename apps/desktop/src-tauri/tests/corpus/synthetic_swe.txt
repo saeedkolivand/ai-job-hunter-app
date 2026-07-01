@@ -1,0 +1,24 @@
+Alex Carter
+Senior Backend Engineer
+Berlin, Germany | alex.carter@example.test | +49 30 0000000 | LinkedIn | GitHub
+
+PROFESSIONAL SUMMARY
+Backend engineer with 8 years building distributed services for high-traffic
+platforms. Focused on reliability, observability, and pragmatic delivery.
+
+WORK EXPERIENCE
+Senior Backend Engineer, Globex (Jan 2020 – Present)
+• Led migration of the order service to microservices, cutting p99 latency 40%
+• Built an event pipeline processing 5M events/day with Kafka and Go
+• Mentored four engineers and introduced trunk-based development
+
+Backend Engineer, Initrode (Jun 2016 – Dec 2019)
+• Designed REST APIs serving 200k daily requests with Redis caching
+• Cut cloud spend 25% by right-sizing services and adding autoscaling
+
+SKILLS
+Languages: Go, Python, Rust
+Platforms: AWS, Kubernetes, PostgreSQL
+
+EDUCATION
+B.Sc. Computer Science, Technical University (2012 – 2016)

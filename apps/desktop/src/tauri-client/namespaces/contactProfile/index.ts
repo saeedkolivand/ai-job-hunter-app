@@ -1,0 +1,1 @@
+export { contactProfile } from './contactProfile';

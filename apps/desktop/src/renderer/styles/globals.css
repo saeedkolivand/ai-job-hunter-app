@@ -1,0 +1,198 @@
+@import 'tailwindcss';
+@import '@ajh/ui/css';
+
+/*
+ * Desktop-app-specific overrides.
+ * Common tokens and utilities come from @ajh/ui.
+ */
+
+/* ── App body ────────────────────────────────────────────────────────────── */
+html,
+body,
+#root {
+  height: 100%;
+  color-scheme: dark;
+}
+
+body {
+  position: relative;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  background: radial-gradient(ellipse at 50% 0%, #1d1d24 0%, #17171c 55%, #121216 100%);
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+/* ── Light scheme: flip the canvas + native color-scheme ─────────────────── */
+/* The body gradient above is the app canvas (it overrides --color-background),
+   so it must be overridden per-scheme or light mode shows a dark canvas behind
+   the glass. */
+html[data-color-scheme='light'],
+html[data-color-scheme='light'] body,
+html[data-color-scheme='light'] #root {
+  color-scheme: light;
+}
+/* Cool light-gray canvas (macOS System Settings), NOT near-white — white cards
+   must lift off it. Top is a touch lighter for a soft overhead-light feel. */
+html[data-color-scheme='light'] body {
+  background: radial-gradient(ellipse at 50% 0%, #eceef5 0%, #e4e7ef 55%, #dce0ea 100%);
+}
+html[data-color-scheme='light'][data-perf-blur='reduced'] body,
+html[data-color-scheme='light'][data-perf-blur='off'] body {
+  background: #e4e7ef;
+}
+
+/* Opt an element out of inherited backdrop-filter. Used on long virtualized
+   lists (Jobs) where compositing a backdrop blur per row is the dominant paint
+   cost; the glass surface is opaque enough to read fine without it. */
+.no-backdrop-filter {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ── Modal background blur ───────────────────────────────────────────────── */
+/* The frosted glass behind a modal. GlassOverlay supplies the dim scrim, but
+   WebView2 does not reliably composite its `backdrop-filter` because the overlay
+   is portaled to <body> (outside #root) — in-flow glass surfaces frost fine, the
+   portaled overlay does not. So the blur is an in-flow `filter` on the app shell
+   (#root), the same mechanism that frosts the sidebar. The portal (overlay +
+   panel) lives outside #root and stays sharp. `ModalShell` ref-counts the class.
+   The filter is toggled, never animated, so it costs a single raster while open
+   rather than a per-frame re-rasterization. Skipped in low-memory and
+   reduce-transparency modes, consistent with the rest of the glass system. */
+body.modal-blur-active #root {
+  filter: blur(8px);
+}
+html[data-perf-blur='reduced'] body.modal-blur-active #root,
+html[data-perf-blur='off'] body.modal-blur-active #root,
+[data-reduce-transparency] body.modal-blur-active #root {
+  filter: none;
+}
+
+/* ── Onboarding glass modal ─────────────────────────────────────────────────── */
+.onboarding-glass-modal {
+  background: linear-gradient(145deg, rgba(32, 32, 40, 0.97) 0%, rgba(24, 24, 30, 0.97) 100%);
+  box-shadow:
+    0 32px 80px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(168, 85, 247, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+html[data-color-scheme='light'] .onboarding-glass-modal {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.98) 0%, rgba(247, 248, 252, 0.98) 100%);
+  box-shadow:
+    0 32px 80px oklch(45% 8% 270 / 0.18),
+    0 0 0 1px rgba(124, 58, 237, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* ── Reduced-blur tier (data-perf-blur='reduced') ────────────────────────────── */
+/* Reduces GPU-heavy effects. The low-memory preset resolves to blur:'reduced',
+   so these rules reproduce the historical low-memory look. The 'off' tier below
+   inherits these and pushes the blur scale to zero. */
+html[data-perf-blur='reduced'],
+html[data-perf-blur='off'] {
+  /* Collapse blur scale — halved from defaults, matching reduced-glass theme. */
+  --blur-xs: 4px;
+  --blur-sm: 6px;
+  --blur-md: 8px;
+  --blur-lg: 10px;
+  --blur-xl: 12px;
+  --blur-2xl: 16px;
+  --blur-3xl: 24px;
+}
+html[data-perf-blur='reduced'] body,
+html[data-perf-blur='off'] body {
+  /* Remove expensive radial gradient — flat colour is composited cheaply. */
+  background: #15151a;
+}
+
+/* ── Off tier (data-perf-blur='off') ─────────────────────────────────────────── */
+/* Strongest reduction: zero the blur scale and disable backdrop-filters so no
+   surface composites a backdrop blur at all. */
+html[data-perf-blur='off'] {
+  --blur-xs: 0px;
+  --blur-sm: 0px;
+  --blur-md: 0px;
+  --blur-lg: 0px;
+  --blur-xl: 0px;
+  --blur-2xl: 0px;
+  --blur-3xl: 0px;
+}
+html[data-perf-blur='off'] .glass,
+html[data-perf-blur='off'] .glass-card,
+html[data-perf-blur='off'] .glass-surface,
+html[data-perf-blur='off'] .glass-elevated,
+html[data-perf-blur='off'] .glass-dropdown,
+html[data-perf-blur='off'] .glass-modal,
+html[data-perf-blur='off'] [role='listbox'] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ── Dropdown reduced-blur ──────────────────────────────────────────────────── */
+/* Reduce backdrop-blur on dropdowns at the reduced tier (the 'off' rule above
+   removes it entirely). */
+html[data-perf-blur='reduced'] [role='listbox'] {
+  backdrop-filter: blur(8px) !important;
+}
+
+/* ── Animations off (data-perf-animations='off') ─────────────────────────────── */
+/* Neutralize the aurora/nebula keyframe loops — mirrors the reduced-motion
+   media query, but driven by the resolved performance profile. */
+html[data-perf-animations='off'] .animate-aurora-1,
+html[data-perf-animations='off'] .animate-aurora-2,
+html[data-perf-animations='off'] .animate-aurora-3,
+html[data-perf-animations='off'] .animate-nebula-1,
+html[data-perf-animations='off'] .animate-nebula-2 {
+  animation: none !important;
+}
+
+/* ── Window drag regions (Electron + Tauri) ──────────────────────────────── */
+/* Electron: -webkit-app-region on the element is sufficient.               */
+/* Tauri:    also requires data-tauri-drag-region on the element (Windows).  */
+.app-drag {
+  -webkit-app-region: drag;
+}
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* ── Native text-selection lock ──────────────────────────────────────────── */
+/* Make the shell behave like a native desktop app: nothing is selectable by  */
+/* default (no browser-style drag-to-select on chrome), with a default cursor. */
+/* Real content opts back in via inputs, [contenteditable], `.select-text`, or */
+/* `[data-selectable]` — keep this allow-list in sync with                    */
+/* `desktop-native.ts` (SELECTABLE_SELECTOR).                                  */
+body {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+input,
+textarea,
+[contenteditable],
+[contenteditable] *,
+.select-text,
+.select-text *,
+[data-selectable],
+[data-selectable] * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Text cursor only for text-entry fields — range/checkbox/radio/file keep
+   their native cursor. */
+input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']),
+textarea {
+  cursor: text;
+}
+
+/* Icons/images shouldn't be ghost-draggable out of the window. */
+img,
+svg {
+  -webkit-user-drag: none;
+}

@@ -158,16 +158,16 @@ The renderer imports `@ajh/ui` via the workspace symlink. After rebuilding, Vite
 1. Edit `packages/shared/src/ipc/contracts/<namespace>.ts`
 2. Run `pnpm --filter @ajh/shared gen:ipc` to regenerate `ipc_contracts/*.rs` (CI runs `gen:ipc:check` to enforce this)
 3. Run `pnpm typecheck` to verify no breakage
-4. Update the Rust command handler in `apps/tauri/src-tauri/src/commands/`
-5. Update `apps/tauri/src/tauri-client.ts`
-6. Update the service hook in `apps/tauri/src/renderer/services/`
+4. Update the Rust command handler in `apps/desktop/src-tauri/src/commands/`
+5. Update `apps/desktop/src/tauri-client.ts`
+6. Update the service hook in `apps/desktop/src/renderer/services/`
 
-### Modifying Rust code (`apps/tauri/src-tauri`)
+### Modifying Rust code (`apps/desktop/src-tauri`)
 
 Tauri compiles Rust automatically during `pnpm dev`. For manual compilation:
 
 ```bash
-cd apps/tauri/src-tauri
+cd apps/desktop/src-tauri
 cargo build         # debug build
 cargo check         # fast type check only
 cargo clippy        # lint
@@ -177,7 +177,7 @@ cargo clippy        # lint
 
 ## Adding a New Route
 
-[TanStack Router][tanstack-router] uses file-based routing in `apps/tauri/src/renderer/routes/`:
+[TanStack Router][tanstack-router] uses file-based routing in `apps/desktop/src/renderer/routes/`:
 
 1. Create the route file: `routes/my-page.tsx`
 2. Export a default component
@@ -222,7 +222,7 @@ No `.env` files are needed. The app uses:
 
 - **OS keychain** for secrets (API keys, board credentials)
 - **SQLite** (local file) for all application data
-- **Tauri conf** (`apps/tauri/src-tauri/tauri.conf.json`) for app metadata
+- **Tauri conf** (`apps/desktop/src-tauri/tauri.conf.json`) for app metadata
 
 If you need to override the Ollama host (e.g. remote Ollama):
 
@@ -320,7 +320,7 @@ pnpm clean && pnpm install && pnpm build
 
 ### Tauri build fails (Windows)
 
-Ensure WebView2 is installed and run from a terminal with admin privileges if needed. Check `apps/tauri/src-tauri/` for any Rust-specific issues with `cargo check`.
+Ensure WebView2 is installed and run from a terminal with admin privileges if needed. Check `apps/desktop/src-tauri/` for any Rust-specific issues with `cargo check`.
 
 ---
 

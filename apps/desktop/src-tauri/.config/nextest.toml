@@ -1,0 +1,16 @@
+# cargo-nextest configuration — https://nexte.st/book/configuration.html
+
+# CI profile (selected via NEXTEST_PROFILE=ci in ci-pipeline.yml).
+[profile.ci]
+# Retry flaky tests a couple of times before marking them failed.
+retries = 2
+# Report every failure instead of stopping at the first.
+fail-fast = false
+
+# Emit a JUnit XML report so dorny/test-reporter can surface Rust test
+# failures as a GitHub check + inline PR annotations. Path is relative to
+# nextest's target dir → apps/desktop/src-tauri/target/nextest/ci/junit.xml.
+# Honored when the suite runs under `cargo llvm-cov nextest` with
+# NEXTEST_PROFILE=ci (llvm-cov invokes nextest under the hood).
+[profile.ci.junit]
+path = "junit.xml"

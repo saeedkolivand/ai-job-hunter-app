@@ -1,0 +1,227 @@
+[package]
+name = "ajh-tauri"
+version = "0.119.0"
+edition = "2021"
+description = "AI Job Hunter — Tauri desktop shell"
+authors = ["Saeed Kolivand"]
+# Application crate — never published to a registry. Marks it private so
+# cargo-deny does not require a license field (see deny.toml [licenses].private).
+publish = false
+
+[features]
+default = ["layout_pdf", "model_docx"]
+
+# Render resumes through the canonical layout engine (model → LaidOutDoc → PDF)
+# instead of the legacy renderer. On by default now that gap-by-gap snapshot
+# parity with the legacy renderer is locked (see `layout::tests`). The legacy
+# path stays compiled — it is the parity reference and still renders cover
+# letters — so `--no-default-features` falls back to it.
+layout_pdf = []
+
+# Render resume DOCX from the canonical document model (real two-column table,
+# native ats_mode) instead of the legacy line-based renderer. On by default;
+# locked by golden invariants in `export::model_docx::test`. The legacy DOCX
+# path stays compiled (it still renders cover letters), so `--no-default-features`
+# falls back to it.
+model_docx = []
+
+# Application library — the whole app lives in `src/lib.rs` so it is reachable as
+# `ajh_tauri::…` from integration tests and `benches/`. `src/main.rs` is a thin
+# launcher. This is the canonical Tauri 2 lib + bin split.
+[lib]
+name = "ajh_tauri"
+
+[[bin]]
+name = "ajh-tauri"
+path = "src/main.rs"
+
+[profile.dev]
+incremental = true
+
+# Maximally optimized release binary (smallest + fastest): fat LTO + a single
+# codegen unit + opt-level "s" + strip. The slow compile is acceptable — installer
+# builds are manual and infrequent (see release.yml), so we trade build time for
+# the best shipped artifact / smallest auto-update download.
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-ico", "image-png", "devtools"] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-log = "2"
+tauri-plugin-window-state = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-notification = "2"
+# `ajh://` deep links → focus a specific autopilot. Every incoming URL/argv is
+# validated against a strict route allowlist before navigation (see `deeplink`).
+tauri-plugin-deep-link = "2"
+# Opt-in launch-at-login (default OFF) so autopilot can run as a background
+# discovery agent. Toggled only via our own `system_*` commands (Rust API), so
+# no JS plugin capability is exposed; no extra launch args are registered.
+tauri-plugin-autostart = "2"
+# Least-privilege: `os:default`, `positioner:default`, and `store:default` are
+# granted in capabilities/default.json AND now have renderer callers — `os`
+# (platform()/isMacos via useWindowControls), `positioner` (resetPosition /
+# "Reset window position" Settings action), and `store` (onboarding-mirror.ts).
+# The `websocket`/`process`/`global-shortcut` JS ACL grants remain deferred until
+# a caller exists (crates stay compiled, but no capability is exposed yet). OS
+# info (platform/arch/version), process exit/restart, window positioning, global
+# hotkeys (desktop-only init), a JSON key-value store, and a client WebSocket —
+# all first-party Tauri v2 plugins, pinned to "2" like the block above.
+tauri-plugin-os = "2"
+tauri-plugin-process = "2"
+tauri-plugin-positioner = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-store = "2"
+tauri-plugin-websocket = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# HTTP client used by all in-process scrapers and the AI/cover-letter pipeline.
+# rustls-tls is added for the cover_letter pipeline (API calls use rustls client).
+reqwest = { version = "0.13", features = ["json", "native-tls", "rustls", "rustls-native-certs", "cookies", "query", "http2"], default-features = false }
+
+log = "0.4"
+tracing = { version = "0.1", features = ["log"] }
+
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+# Loopback-only WebSocket server for the browser-extension bridge (Feature 2).
+# `default-features = false` drops the TLS feature set: the bridge binds 127.0.0.1
+# and speaks plain `ws://` (no certs on loopback), so no rustls/native-tls is
+# pulled in. Auth is layered in our handshake (Origin allowlist + per-frame token
+# + size cap + SSRF guard), not TLS. See extension_bridge::auth.
+#
+# Pinned to 0.28 so its `tungstenite 0.28` matches the one chromiumoxide already
+# pulls transitively (via async-tungstenite 0.32) — no duplicate tungstenite major
+# is added to the tree.
+tokio-tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
+
+chromiumoxide = { version = "0.9", features = ["fetcher", "zip8"] }
+
+futures = "0.3"
+# Charset decoding for the streamed fetch_text body (mirrors reqwest's internal .text() path).
+# Already a transitive dep via reqwest; declared explicitly so we can name it in scraping/http.
+encoding_rs = "0.8"
+regex = "1"
+anyhow = "1"
+thiserror = "2"
+chrono = "0.4"
+feed-rs = "2"
+urlencoding = "2"
+rand = "0.10"
+async-trait = "0.1"
+arc-swap = "1.7"
+parking_lot = "0.12"
+
+uuid = { version = "1", features = ["v4"] }
+
+base64 = "0.22"
+scraper = "0.27"
+flate2 = "1.0"
+
+# OS-native secret storage: DPAPI (Windows), Keychain (macOS), libsecret (Linux).
+# keyring v4 split into keyring-core (Entry API) + platform store crates.
+keyring-core = "1"
+
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+
+# Cross-platform dependencies
+rusqlite = { version = "0.40", features = ["bundled"] }
+pdf-extract = "0.12"
+zip = "8"
+docx-rs = "0.4.20"
+lopdf = "0.42"
+typst = "=0.14.2"
+typst-pdf = "=0.14.2"
+# SVG emitter for the live-preview render path (render_*_svg_pages). Runtime dep:
+# the preview command returns per-page SVG strings shown via <img> in the UI.
+# Exact pin matches typst/typst-pdf. typst is already a runtime dep, so this is a
+# small surface add over the existing Typst stack.
+typst-svg = "=0.14.2"
+image = "=0.25.10"
+
+# ATS keyword matching: language-aware stemming + language detection (match_resume).
+rust-stemmers = "1.2"
+whatlang = "0.16"
+
+# Browser-cookie import (scraping::board_login::import): decrypt Chromium
+# `v10`/`v11` `encrypted_value` blobs (AES-256-GCM) after the OS-specific key is
+# recovered (DPAPI on Windows, Keychain/libsecret on Unix). `rookie` was the
+# preferred off-the-shelf option but is unusable here — it pins `rusqlite ^0.31`
+# (libsqlite3-sys 0.28) which collides with our `rusqlite 0.40` (libsqlite3-sys
+# 0.38) on the `links = "sqlite3"` native lib. So we hand-roll the v10 path and
+# reuse our existing `rusqlite` to read the (copied, unlocked) Cookies DB.
+aes-gcm = "0.10"
+
+# SHA-256 over the (post-translation) job text, backing the match-cache text-hash
+# guard: posting_vectors.text_hash and match_scores.job_text_hash use a
+# deterministic, restart-stable hash so a stale or wrong-language cache row is a
+# natural miss. Resolves to 0.10.9 already in the tree (lopdf/tauri-codegen).
+sha2 = "0.10"
+htmd = "0.5.4"
+
+[target.'cfg(windows)'.dependencies]
+wmi = "0.18"
+windows-native-keyring-store = "1"
+# DPAPI (CryptUnprotectData) to unwrap the Chromium os_crypt AES key on Windows;
+# UI_ViewManagement reads the system accent color via UISettings (Appearance).
+windows = { version = "0.62.2", features = ["Win32_Security_Cryptography", "Win32_Foundation", "UI_ViewManagement", "Win32_System_Registry"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
+# CFNotificationCenter (distributed) → observe AppleColorPreferencesChangedNotification
+# so the live OS accent-color watcher fires on macOS (mirrors the Windows WinRT watcher).
+# Already in the tree transitively (core-graphics→tao→Tauri); pinned to the locked 0.8.7
+# so no duplicate version / lockfile churn.
+core-foundation-sys = "0.8.7"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust", "vendored"] }
+# Bounded subprocess wait for Flatpak probes: spawn + wait_timeout(2s) + kill so a
+# hung `flatpak --version` / `flatpak info` never blocks browser detection.
+wait-timeout = "0.2"
+
+# Unix Chromium key derivation: PBKDF2-HMAC-SHA1 over the OS-stored "Safe
+# Storage" password → AES-128-CBC decrypt of v10/v11 blobs (best-effort; the
+# password comes from macOS Keychain / Linux libsecret). The `hmac` feature
+# gates the bare `pbkdf2_hmac` fn; default features (password-hash) stay off.
+[target."cfg(unix)".dependencies]
+aes = "0.8"
+# `alloc` exposes `cipher`'s Vec-returning `decrypt_padded_vec_mut` (used by the
+# Chromium cookie CBC decrypt in scraping/board_login/import.rs). Without it the
+# method is gated out and the macOS/Linux release build fails to compile (the
+# path is `cfg(not(windows))`, so it never surfaces in a Windows dev build).
+cbc = { version = "0.1", features = ["alloc"] }
+hmac = "0.12"
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+sha1 = "0.10"
+
+[dev-dependencies]
+mockall = "0.14"
+tempfile = "3.27"
+proptest = "1.5"
+serial_test = "3"
+wiremock = "0.6.5"
+# Rasteriser for the generate_templates_showcase_banner test — dev-only, NOT in the shipped binary.
+typst-render = "=0.14.2"
+# (typst-svg moved to [dependencies] — it now backs the live-preview render path.)
+criterion = "0.8.2"
+
+# Export hot-path benchmarks (request → PDF/DOCX bytes). Tracked over time by the
+# advisory `.github/workflows/benchmark.yml`. `harness = false` → criterion owns main.
+[[bench]]
+name = "export_render"
+harness = false

@@ -1,7 +1,7 @@
 {
   "ci": {
     "collect": {
-      "startServerCommand": "pnpm --filter @ajh/tauri dev:frontend",
+      "startServerCommand": "pnpm --filter @ajh/desktop dev:frontend",
       "url": ["http://localhost:5174/e2e.html"],
       "startServerReadyPattern": "Local:",
       "numberOfRuns": 1,

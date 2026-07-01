@@ -1,0 +1,89 @@
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+
+import { TEST_IDS } from '@ajh/test-ids';
+
+import { OutputPanelDone } from './index';
+
+// Stub the real-PDF preview (#24) — it renders the export via IPC, out of scope
+// for this panel's preview/edit wiring test (covered in PdfPreview's own suite).
+vi.mock('@/components/generation/PdfPreview', () => ({
+  PdfPreview: () => <div data-testid={TEST_IDS.documents.pdfPreview}>PDF</div>,
+}));
+
+// EditableOutput (rendered inside OutputPanelDone) calls useContactProfile() which
+// reaches for AppClientProvider.  Return a stub so no provider tree is needed.
+vi.mock('@/services/use-contact-profile', () => ({
+  useContactProfile: () => ({ data: undefined }),
+}));
+
+// Stub useDebouncedCommit so tests don't depend on fake timers.
+// scheduleCommit immediately calls onCommit with the (out, value) pair —
+// simulates instant commit in tests. flush() with no argument is also a no-op
+// (the pair was just committed by scheduleCommit already).
+vi.mock('@/hooks/use-debounced-commit', () => ({
+  useDebouncedCommit: (onCommit: (out: string, v: string) => void) => ({
+    scheduleCommit: (out: string, v: string) => onCommit(out, v),
+    flush: () => undefined,
+    cancel: () => undefined,
+  }),
+}));
+
+const RAW = 'Led **payments** migration at scale.';
+
+function renderPanel(overrides: Partial<React.ComponentProps<typeof OutputPanelDone>> = {}) {
+  const onOutputChange = vi.fn();
+  const onExport = vi.fn();
+  const onCopy = vi.fn();
+  render(
+    <OutputPanelDone
+      resumeOut={RAW}
+      coverOut=""
+      activeOut="resume"
+      meta={null}
+      mode="ats"
+      templateId="classic"
+      atsMode={false}
+      onActiveOutChange={vi.fn()}
+      onCopy={onCopy}
+      onExport={onExport}
+      onOutputChange={onOutputChange}
+      onRegenerate={vi.fn()}
+      copied={false}
+      {...overrides}
+    />
+  );
+  return { onOutputChange, onExport, onCopy };
+}
+
+describe('OutputPanelDone — preview/edit', () => {
+  it('shows the real-PDF preview by default (#24), not markdown or a textarea', () => {
+    renderPanel();
+    // The default Preview tab renders the real-PDF view, not the markdown fallback.
+    expect(screen.getByTestId(TEST_IDS.documents.pdfPreview)).toBeInTheDocument();
+    expect(screen.queryByText(/\*\*payments\*\*/)).toBeNull();
+    // No editable textarea while previewing.
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('switches to a raw textarea with markers intact (export source untouched)', () => {
+    const { onOutputChange } = renderPanel();
+    // The Preview/Edit/Source switch is a SegmentedControl radio group. The raw
+    // markdown textarea lives in the **Source** tab (Edit is now the WYSIWYG surface).
+    // t('aiGenerate.source') resolves to "Source" via the real en locale.
+    fireEvent.click(screen.getByRole('radio', { name: /source/i }));
+
+    const textarea = screen.getByRole<HTMLTextAreaElement>('textbox');
+    // Raw text — including the **payments** markers the export pipeline reads.
+    expect(textarea.value).toBe(RAW);
+    // Switching views must not mutate the canonical output.
+    expect(onOutputChange).not.toHaveBeenCalled();
+  });
+
+  it('no Save button is rendered (auto-debounce replaced manual save)', () => {
+    renderPanel();
+    // Switch to Source so the full edit toolbar is visible.
+    fireEvent.click(screen.getByRole('radio', { name: /source/i }));
+    expect(screen.queryByRole('button', { name: /save/i })).toBeNull();
+  });
+});

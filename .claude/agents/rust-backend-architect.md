@@ -1,6 +1,6 @@
 ---
 name: rust-backend-architect
-description: Primary reviewer for the Rust/Tauri backend — domain modeling, error handling, module boundaries (L0–L3 layers), the centralized platform/net/error layers, data/SQLite/migrations/GDPR, and Rust-first business-logic ownership. Use for changes under apps/tauri/src-tauri/src/** that aren't owned by a more specific domain agent.
+description: Primary reviewer for the Rust/Tauri backend — domain modeling, error handling, module boundaries (L0–L3 layers), the centralized platform/net/error layers, data/SQLite/migrations/GDPR, and Rust-first business-logic ownership. Use for changes under apps/desktop/src-tauri/src/** that aren't owned by a more specific domain agent.
 tools: Read, Grep, Glob, Bash, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: opus
 ---
@@ -18,7 +18,7 @@ You are the **rust-backend-architect** — primary review authority for the Rust
 
 ## Primary paths
 
-`apps/tauri/src-tauri/src/**` (incl. `db.rs`/`*Store`/`privacy/`: migrations, GDPR, data integrity), excluding regions owned by `resume-export-expert`, `job-match-expert`, `scraping-applier-expert`, `ai-provider-expert`. Repo anchors: `platform/config.rs` (`data_dir()`), `net/http.rs` (`shared()`), `error.rs` (`AppError`/`AppResult`), `observability.rs` (`Span`).
+`apps/desktop/src-tauri/src/**` (incl. `db.rs`/`*Store`/`privacy/`: migrations, GDPR, data integrity), excluding regions owned by `resume-export-expert`, `job-match-expert`, `scraping-applier-expert`, `ai-provider-expert`. Repo anchors: `platform/config.rs` (`data_dir()`), `net/http.rs` (`shared()`), `error.rs` (`AppError`/`AppResult`), `observability.rs` (`Span`).
 
 ## Enforced rules (the load-bearing ones)
 

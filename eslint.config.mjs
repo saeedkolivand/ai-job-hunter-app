@@ -41,7 +41,7 @@ const RAW_INPUT =
 
 // ── Forbidden deep UI import paths (all resolve to @ajh/ui exports) ──────────
 // UpdateBanner is intentionally omitted — it is app-specific and lives only
-// in apps/tauri/src/renderer/components/ui/UpdateBanner.tsx.
+// in apps/desktop/src/renderer/components/ui/UpdateBanner.tsx.
 const DEEP_UI_IMPORTS = [
   '@/components/ui/ActionTile',
   '@/components/ui/Button',
@@ -222,7 +222,7 @@ export default tseslint.config(
 
   // ── All renderer source — i18n adapter + package boundary ──────────────────
   {
-    files: ['apps/tauri/src/renderer/**/*.ts', 'apps/tauri/src/renderer/**/*.tsx'],
+    files: ['apps/desktop/src/renderer/**/*.ts', 'apps/desktop/src/renderer/**/*.tsx'],
     rules: {
       'no-restricted-imports': ['error', { ...I18N_IMPORT_RESTRICTION }],
     },
@@ -232,9 +232,9 @@ export default tseslint.config(
   // These files have the full set of design system + architecture restrictions.
   {
     files: [
-      'apps/tauri/src/renderer/features/**/*.tsx',
-      'apps/tauri/src/renderer/routes/**/*.tsx',
-      'apps/tauri/src/renderer/components/**/*.tsx',
+      'apps/desktop/src/renderer/features/**/*.tsx',
+      'apps/desktop/src/renderer/routes/**/*.tsx',
+      'apps/desktop/src/renderer/components/**/*.tsx',
     ],
     rules: {
       // Extends the renderer-level restriction with deep UI import ban
@@ -310,7 +310,7 @@ export default tseslint.config(
   // To disable: comment out this entire block. Rules here catch async misuse
   // that plain type checking won't surface until runtime.
   {
-    files: ['apps/tauri/src/renderer/**/*.ts', 'apps/tauri/src/renderer/**/*.tsx'],
+    files: ['apps/desktop/src/renderer/**/*.ts', 'apps/desktop/src/renderer/**/*.tsx'],
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -329,7 +329,7 @@ export default tseslint.config(
 
   // ── Service layer — allowed to call window.api directly ───────────────────
   {
-    files: ['apps/tauri/src/renderer/services/**/*.ts'],
+    files: ['apps/desktop/src/renderer/services/**/*.ts'],
     rules: {
       'no-restricted-syntax': 'off',
     },
@@ -338,9 +338,9 @@ export default tseslint.config(
   // ── React Query boundary — only services can use React Query directly ───────
   {
     files: [
-      'apps/tauri/src/renderer/features/**/*.tsx',
-      'apps/tauri/src/renderer/routes/**/*.tsx',
-      'apps/tauri/src/renderer/components/**/*.tsx',
+      'apps/desktop/src/renderer/features/**/*.tsx',
+      'apps/desktop/src/renderer/routes/**/*.tsx',
+      'apps/desktop/src/renderer/components/**/*.tsx',
     ],
     rules: {
       'no-restricted-imports': [

@@ -1,0 +1,38 @@
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+
+import {
+  type ApplicationChangedEvent,
+  type ApplicationTrackRequest,
+  type ApplicationUpdateRequest,
+  EVENT_CHANNELS,
+} from '@ajh/shared';
+
+import { asyncUnsub } from '../../utils.js';
+
+/** Rust's `applications_update` returns `Ok(())` on success or an error-keyed object. */
+type ApplicationMutationResult = { error?: string };
+
+export const applications = {
+  list: () => invoke('applications_list'),
+  get: (id: string) => invoke('applications_get', { id }),
+  setStatus: ({ id, status, note }: { id: string; status: string; note?: string }) =>
+    invoke('applications_set_status', { id, status, note }),
+  update: (req: ApplicationUpdateRequest) =>
+    invoke<ApplicationMutationResult>('applications_update', { req }),
+  // `keepDocuments` reaches the Rust command as the snake_case `keep_documents` arg.
+  remove: ({ id, keepDocuments }: { id: string; keepDocuments: boolean }) =>
+    invoke('applications_delete', { id, keepDocuments }),
+  track: (req: ApplicationTrackRequest) => invoke('applications_track', { req }),
+  saveFromPosting: (req: ApplicationTrackRequest) =>
+    invoke('applications_save_from_posting', { req }),
+  // The bridge (and any out-of-band creator) emits `applications:changed` with
+  // `{ applicationId, title?, company?, status? }` — see
+  // `extension_bridge::APPLICATIONS_CHANGED_EVENT`.
+  onChanged: (handler: (event: ApplicationChangedEvent) => void) =>
+    asyncUnsub(() =>
+      listen<ApplicationChangedEvent>(EVENT_CHANNELS.applications.changed, (e) =>
+        handler(e.payload)
+      )
+    ),
+};

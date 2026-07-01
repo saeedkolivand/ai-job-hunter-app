@@ -1,0 +1,31 @@
+// Tauri command implementations organized by domain
+
+pub mod ai;
+pub mod ai_generations;
+pub mod ai_provider;
+pub mod applications;
+pub mod autopilot;
+pub mod boards;
+pub mod cli_agents;
+pub mod contact_profile;
+pub mod credentials;
+pub mod data;
+pub mod dialog;
+pub mod documents;
+pub mod extension_bridge;
+pub mod geocoding;
+pub mod github;
+pub mod job_preferences;
+pub mod jobs;
+pub mod match_resume;
+pub mod menu;
+pub mod notifications;
+pub mod pipeline;
+pub mod privacy;
+pub mod profile_import;
+pub mod referrals;
+pub mod resume;
+pub mod scrape;
+pub mod support;
+pub mod system;
+pub mod translation;

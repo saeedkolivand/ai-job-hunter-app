@@ -59,7 +59,7 @@ jobs:
         with:
           filters: |
             rust:
-              - 'apps/tauri/src-tauri/**'
+              - 'apps/desktop/src-tauri/**'
               - '.github/workflows/quality.yml'
 
   # ── JS / docs quality (PR + manual; never on push-to-main) ───────────────────
@@ -220,7 +220,7 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          pnpm exec eslint --config eslint.a11y.config.mjs 'apps/tauri/src/renderer/**/*.tsx' -f stylish > "$RUNNER_TEMP/a11y.txt" 2>&1
+          pnpm exec eslint --config eslint.a11y.config.mjs 'apps/desktop/src/renderer/**/*.tsx' -f stylish > "$RUNNER_TEMP/a11y.txt" 2>&1
           code=$?
           {
             echo "## ♿ a11y Lint (jsx-a11y)"
@@ -259,7 +259,7 @@ jobs:
           tool: cargo-hack
       - name: 🦀 Check each feature (advisory)
         continue-on-error: true
-        working-directory: apps/tauri/src-tauri
+        working-directory: apps/desktop/src-tauri
         run: cargo hack --each-feature check --all-targets
 
   cargo-mutants:
@@ -291,19 +291,19 @@ jobs:
             echo "Manual run — full-crate mutation testing is slow; this job only runs --in-diff on PRs."
             exit 0
           fi
-          git -C "$GITHUB_WORKSPACE/apps/tauri/src-tauri" diff --relative "$BASE_SHA...HEAD" > "$RUNNER_TEMP/mutants.diff" || true
+          git -C "$GITHUB_WORKSPACE/apps/desktop/src-tauri" diff --relative "$BASE_SHA...HEAD" > "$RUNNER_TEMP/mutants.diff" || true
           if [ ! -s "$RUNNER_TEMP/mutants.diff" ]; then
-            echo "No Rust changes under apps/tauri/src-tauri in this PR — skipping mutation testing."
+            echo "No Rust changes under apps/desktop/src-tauri in this PR — skipping mutation testing."
             exit 0
           fi
-          cd apps/tauri/src-tauri
+          cd apps/desktop/src-tauri
           cargo mutants --in-diff "$RUNNER_TEMP/mutants.diff" --timeout 180 || true
       - name: 📊 Upload mutants report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: mutants-${{ github.run_id }}
-          path: apps/tauri/src-tauri/mutants.out/
+          path: apps/desktop/src-tauri/mutants.out/
           retention-days: 7
           if-no-files-found: ignore
 
@@ -338,7 +338,7 @@ jobs:
         uses: ./.github/actions/setup-rust
 
       - name: 📈 Run export benchmarks
-        working-directory: apps/tauri/src-tauri
+        working-directory: apps/desktop/src-tauri
         run: cargo bench --bench export_render --locked -- --output-format bencher | tee output.txt
 
       - name: 📊 Store result & alert on regression (advisory)
@@ -347,7 +347,7 @@ jobs:
         with:
           name: Export render
           tool: cargo
-          output-file-path: apps/tauri/src-tauri/output.txt
+          output-file-path: apps/desktop/src-tauri/output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-pages-branch: main
           benchmark-data-dir-path: landing/benchmarks

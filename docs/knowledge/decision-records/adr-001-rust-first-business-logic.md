@@ -10,7 +10,7 @@ Local-first desktop app ([Tauri][tauri]). Business logic could live in the [Type
 
 ## Decision
 
-Business logic, processing pipelines, ATS analysis, and document generation live in **[Rust][rust]** (`apps/tauri/src-tauri/src/`). The [React][react] renderer is **presentation-only** and reaches the shell exclusively via the `AppClient` IPC contract.
+Business logic, processing pipelines, ATS analysis, and document generation live in **[Rust][rust]** (`apps/desktop/src-tauri/src/`). The [React][react] renderer is **presentation-only** and reaches the shell exclusively via the `AppClient` IPC contract.
 
 ## Consequences
 

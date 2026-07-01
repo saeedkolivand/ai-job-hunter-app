@@ -29,7 +29,7 @@ import {
 
 /**
  * REAL FIXTURE — verbatim content of
- * `apps/tauri/src-tauri/tests/fixtures/resume.txt`.
+ * `apps/desktop/src-tauri/tests/fixtures/resume.txt`.
  *
  * This is the canonical Rust-test fixture; using it here proves the TS
  * serializer agrees with what the Rust parser already accepts. Known-section

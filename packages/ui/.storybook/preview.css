@@ -1,7 +1,7 @@
 /*
  * Storybook global stylesheet.
  *
- * Mirrors the renderer's entry (apps/tauri/src/renderer/styles/globals.css):
+ * Mirrors the renderer's entry (apps/desktop/src/renderer/styles/globals.css):
  * Tailwind must be imported FIRST so the @tailwindcss/vite plugin (wired in
  * main.ts via viteFinal) generates base + utility classes, then the design
  * system tokens/utilities layer on top.
