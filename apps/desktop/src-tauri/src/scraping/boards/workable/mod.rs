@@ -47,13 +47,21 @@ fn normalize_workable_companies(input: &[String]) -> Vec<String> {
     normalize_companies(&lowercased, MAX_COMPANIES)
 }
 
-/// Validate that a job URL from the response is `https://apply.workable.com/…`.
-/// A drifting or hostile response could inject arbitrary URLs into
-/// `JobPosting.url`; constrain it to the one host the widget API actually
-/// serves job pages from.
+/// Validate that a job URL from the response is `https://apply.workable.com/…`
+/// with no embedded userinfo. A drifting or hostile response could inject
+/// arbitrary URLs into `JobPosting.url`; constrain it to the one host the
+/// widget API actually serves job pages from. `https://spoof@apply.workable.com/…`
+/// would otherwise pass the host check (`host_str()` ignores userinfo), so
+/// username/password are rejected outright too — same guard the shared
+/// `common::is_https_url` applies for the same reason.
 fn is_valid_workable_job_url(url: &str) -> bool {
     reqwest::Url::parse(url)
-        .map(|u| u.scheme() == "https" && u.host_str() == Some("apply.workable.com"))
+        .map(|u| {
+            u.scheme() == "https"
+                && u.host_str() == Some("apply.workable.com")
+                && u.username().is_empty()
+                && u.password().is_none()
+        })
         .unwrap_or(false)
 }
 

@@ -16,6 +16,10 @@ fn test_catalog() {
     assert!(catalog.iter().any(|s| s.id == "ycombinator"));
     assert!(catalog.iter().any(|s| s.id == "aggregator"));
     assert!(catalog.iter().any(|s| s.id == "greenhouse"));
+    // The 23-count alone doesn't prove which ids make it up — assert the two
+    // newest boards are actually present, not just that *some* 23 ids are.
+    assert!(catalog.iter().any(|s| s.id == "workable"));
+    assert!(catalog.iter().any(|s| s.id == "comeet"));
 
     // Retired anti-bot boards must not appear in the catalog.
     assert!(!catalog.iter().any(|s| s.id == "indeed"));

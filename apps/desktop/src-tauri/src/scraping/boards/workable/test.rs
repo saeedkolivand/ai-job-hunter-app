@@ -147,6 +147,21 @@ fn url_guard_accepts_apply_workable_host_only() {
     );
 }
 
+/// Embedded userinfo must be rejected even on the correct host — `host_str()`
+/// ignores userinfo, so `is_valid_workable_job_url` needs its own explicit
+/// username/password check (CodeRabbit finding on PR #535).
+#[test]
+fn url_guard_rejects_embedded_userinfo() {
+    assert!(
+        !is_valid_workable_job_url("https://spoof@apply.workable.com/j/ABC"),
+        "userinfo on the correct host must still be rejected"
+    );
+    assert!(
+        !is_valid_workable_job_url("https://spoof:pw@apply.workable.com/j/ABC"),
+        "userinfo with a password must still be rejected"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // parse_workable_date — RFC3339 and bare-date formats
 // ---------------------------------------------------------------------------

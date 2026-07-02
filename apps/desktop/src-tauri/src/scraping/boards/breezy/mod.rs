@@ -7,7 +7,7 @@
 //! Endpoint reconnaissance ported from santifer/career-ops (MIT), `providers/breezy.mjs`.
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
-use super::common::{is_https_url, normalize_companies};
+use super::common::{is_https_url, is_valid_dns_label_slug, normalize_companies};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -16,18 +16,6 @@ const BOARD_ID: &str = "breezy";
 /// Maximum number of company slugs processed per scrape call.
 /// Prevents an unbounded number of outbound requests from a large IPC payload.
 const MAX_COMPANIES: usize = 50;
-
-/// Validate that a company slug is a single valid DNS hostname label.
-/// Breezy uses the slug as a subdomain — a slug with dots, slashes, or colons
-/// could change the URL authority and redirect the fetch away from Breezy
-/// (SSRF).
-fn is_valid_breezy_slug(slug: &str) -> bool {
-    !slug.is_empty()
-        && slug.len() <= 63
-        && slug.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-        && !slug.starts_with('-')
-        && !slug.ends_with('-')
-}
 
 /// Parse a `published_date` value that may be a full RFC3339 timestamp or a
 /// bare `YYYY-MM-DD` date. Returns `None` on any unparseable value.
@@ -188,7 +176,7 @@ impl Scraper for BreezyScraper {
             // Guard: reject slugs that are not valid single DNS hostname labels.
             // A slug like `127.0.0.1:8443/foo` would change the URL authority
             // and redirect the fetch away from Breezy (SSRF).
-            if !is_valid_breezy_slug(&company) {
+            if !is_valid_dns_label_slug(&company) {
                 log::warn!("[breezy] skipping invalid company slug '{}'", company);
                 if let Some(ref on_progress) = ctx.on_progress {
                     on_progress((i + 1) as f32 / total as f32);

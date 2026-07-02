@@ -21,13 +21,17 @@ ignore = [
     # Add `"RUSTSEC-YYYY-NNNN", # reason + tracking link` here only for advisories
     # with no available fix, so the gate stays meaningful.
     # quick-xml <0.41 DoS-class advisories (quadratic attribute-duplicate
-    # check; unbounded NsReader namespace allocation). All three locked
-    # versions are transitive pins (docx-rs 0.36, feed-rs +
-    # tauri-winrt-notification 0.37, citationberg/typst 0.38) and the fix is a
-    # semver-major (>=0.41.0) none of them accept yet, so there is no
-    # cargo-update path. Exposure is bounded: docx/typst/notifications parse
-    # our own generated content; feed-rs parses board RSS already capped at
-    # 8 MB by the shared fetch layer. Remove when upstreams bump to >=0.41.
+    # check; unbounded NsReader namespace allocation) — actually patched in
+    # 0.39.4 per the GHSA data (cargo-deny's own "fixed in" field reports
+    # >=0.41.0, which is misleading here). All three locked versions
+    # (0.36.2/0.37.5/0.38.4, via docx-rs, feed-rs + tauri-winrt-notification,
+    # and citationberg/typst respectively) are transitive pins whose
+    # dependents accept no semver-compatible upgrade path — a 0.x minor bump
+    # is a breaking change under cargo's semver rules, so there is no
+    # cargo-update path even to 0.39.4, let alone 0.41. Exposure is bounded:
+    # docx/typst/notifications parse our own generated content; feed-rs
+    # parses board RSS already capped at 8 MB by the shared fetch layer.
+    # Remove when the upstream dependents bump their quick-xml requirement.
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
 ]

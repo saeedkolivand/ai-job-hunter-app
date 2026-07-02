@@ -7,7 +7,7 @@
 //! Endpoint reconnaissance ported from santifer/career-ops (MIT), `providers/pinpoint.mjs`.
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
-use super::common::{is_https_url, normalize_companies};
+use super::common::{is_https_url, is_valid_dns_label_slug, normalize_companies};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -16,18 +16,6 @@ const BOARD_ID: &str = "pinpoint";
 /// Maximum number of company slugs processed per scrape call.
 /// Prevents an unbounded number of outbound requests from a large IPC payload.
 const MAX_COMPANIES: usize = 50;
-
-/// Validate that a company slug is a single valid DNS hostname label.
-/// Pinpoint uses the slug as a subdomain — a slug with dots, slashes, or
-/// colons could change the URL authority and redirect the fetch away from
-/// Pinpoint (SSRF).
-fn is_valid_pinpoint_slug(slug: &str) -> bool {
-    !slug.is_empty()
-        && slug.len() <= 63
-        && slug.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-        && !slug.starts_with('-')
-        && !slug.ends_with('-')
-}
 
 #[derive(Debug, Deserialize)]
 struct PpLocation {
@@ -159,7 +147,7 @@ impl Scraper for PinpointScraper {
             // Guard: reject slugs that are not valid single DNS hostname labels.
             // A slug like `127.0.0.1:8443/foo` would change the URL authority
             // and redirect the fetch away from Pinpoint (SSRF).
-            if !is_valid_pinpoint_slug(&company) {
+            if !is_valid_dns_label_slug(&company) {
                 log::warn!("[pinpoint] skipping invalid company slug '{}'", company);
                 if let Some(ref on_progress) = ctx.on_progress {
                     on_progress((i + 1) as f32 / total as f32);

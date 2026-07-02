@@ -19,7 +19,7 @@ use super::super::http::fetch_json;
 use super::super::types::{
     AuthRequirement, BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode,
 };
-use super::themuse::matches_filters;
+use super::common::matches_filters;
 use async_trait::async_trait;
 use serde::Deserialize;
 
