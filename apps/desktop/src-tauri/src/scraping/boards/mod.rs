@@ -5,6 +5,7 @@ pub mod ashby;
 pub mod bamboohr;
 pub mod berlinstartupjobs;
 pub mod breezy;
+pub mod comeet;
 /// Shared helpers reused across several ATS boards — not itself a `Scraper`.
 pub(crate) mod common;
 pub mod germantechjobs;
@@ -19,6 +20,7 @@ pub mod remotive;
 pub mod rippling;
 pub mod smartrecruiters;
 pub mod themuse;
+pub mod workable;
 pub mod wwr;
 pub mod ycombinator;
 
@@ -29,6 +31,7 @@ pub use ashby::AshbyScraper;
 pub use bamboohr::BambooHrScraper;
 pub use berlinstartupjobs::BerlinStartupJobsScraper;
 pub use breezy::BreezyScraper;
+pub use comeet::ComeetScraper;
 pub use germantechjobs::GermanTechJobsScraper;
 pub use greenhouse::GreenhouseScraper;
 pub use lever::LeverScraper;
@@ -41,6 +44,7 @@ pub use remotive::RemotiveScraper;
 pub use rippling::RipplingScraper;
 pub use smartrecruiters::SmartRecruitersScraper;
 pub use themuse::TheMuseScraper;
+pub use workable::WorkableScraper;
 pub use wwr::WeWorkRemotelyScraper;
 pub use ycombinator::YCombinatorScraper;
 
@@ -72,6 +76,8 @@ static SCRAPERS: &[&dyn Scraper] = &[
     &BreezyScraper,
     &BambooHrScraper,
     &TheMuseScraper,
+    &WorkableScraper,
+    &ComeetScraper,
 ];
 
 /// All registered scrapers, in catalog display order.

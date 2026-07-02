@@ -463,4 +463,64 @@ mod tests {
         // cannot resolve DNS. See the `redirect_policy` doc comment.
         assert!(is_allowed_redirect_target(&url("https://example.com/x")));
     }
+
+    // ── redirect_policy: actually wired onto the pooled client ─────────────────
+    // The tests above only prove `is_allowed_redirect_target` is correct in
+    // isolation (it has to be extracted — `reqwest::redirect::Attempt` has no
+    // public constructor). This test closes the gap: a real round-trip through
+    // `shared()` proves `redirect_policy()` is the policy the pooled client
+    // actually uses, not merely a well-tested function nobody wired up.
+    // NOTE: the redirect target must be REACHABLE (the same MockServer's own
+    // `/landed` route) rather than a refusing port like 127.0.0.1:9. A
+    // refusing port makes this test tautological — the default (unwired)
+    // reqwest redirect policy would ALSO follow the hop, fail to connect, and
+    // return `Err`, so the test would pass even if `redirect_policy()` were
+    // never wired onto `shared()`. By pointing at a route that genuinely
+    // returns 200, an `Err` here can only mean the SSRF guard blocked the
+    // hop (loopback is unsafe regardless of reachability) — an unwired
+    // client would instead SUCCEED (200, body "landed").
+    #[tokio::test]
+    async fn shared_client_blocks_redirect_to_loopback_target() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/landed"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("landed"))
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/start"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("location", format!("{}/landed", mock_server.uri())),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let result = shared()
+            .get(format!("{}/start", mock_server.uri()))
+            .send()
+            .await;
+
+        let err = result.expect_err(
+            "shared() must error on a redirect to a loopback target — the target IS \
+             reachable (same MockServer's /landed route), so a follow would have \
+             succeeded (200) if redirect_policy() were never wired onto the real \
+             pooled client",
+        );
+        // reqwest::Error's Display only prints "error following redirect for url
+        // (...)" — the custom message passed to `attempt.error(...)` lives on the
+        // wrapped `source`, which Debug (not Display) surfaces. Assert on Debug so
+        // this actually proves *why* it failed (our guard) rather than merely that
+        // it failed (which a connect error would also satisfy).
+        let debug_msg = format!("{err:?}");
+        assert!(
+            debug_msg.contains("blocked redirect"),
+            "error must reflect the redirect-policy block specifically, got: {debug_msg}"
+        );
+    }
 }

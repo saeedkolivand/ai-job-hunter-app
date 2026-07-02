@@ -54,7 +54,7 @@ const SUSPICIOUS_DOMAINS: &[&str] = &[
 ];
 
 /// Hosts a `CompanyDomainMismatch` is never raised against: real ATS
-/// platforms (career-ops's original list) plus the hosts our own 21
+/// platforms (career-ops's original list) plus the hosts our own 23
 /// `SCRAPERS` boards legitimately return as `JobPosting.url` where that host
 /// is the BOARD's own domain rather than the employer's — LinkedIn
 /// (`linkedin.com`, always `/jobs/view/<id>`), Berlin Startup Jobs
@@ -94,6 +94,7 @@ const ATS_ALLOWLIST: &[&str] = &[
     "linkedin.com",
     "berlinstartupjobs.com",
     "api.adzuna.com",
+    "comeet.co",
 ];
 
 /// Score/flag a posting from its apply `url` and `company` name. Pure, no I/O;
@@ -174,7 +175,7 @@ pub(crate) fn matches_domain_list(host: &str, list: &[&str]) -> bool {
 /// doesn't false-match almost any host that happens to contain "the" or
 /// "corp" as a substring. Advisory-only check (see the doc comment on
 /// [`company_matches_host`]), so a short denylist is enough.
-const COMPANY_NAME_STOP_WORDS: &[&str] = &["the", "inc", "llc", "ltd", "corp", "gmbh", "co"];
+const COMPANY_NAME_STOP_WORDS: &[&str] = &["the", "inc", "llc", "ltd", "corp", "gmbh"];
 
 /// Best-effort "is this posting's host plausibly the company's own domain (or
 /// an ATS subdomain naming it)?" check. An unjudgeable (empty-after-normalize)

@@ -220,7 +220,12 @@ pub async fn fetch_text(
                 let mut stream = response.bytes_stream();
                 let mut buf: Vec<u8> = Vec::new();
                 while let Some(chunk) = stream.next().await {
-                    let chunk = chunk.map_err(|e| AppError::Network(e.to_string()))?;
+                    // .without_url() — reqwest::Error's Display embeds the full
+                    // request URL (incl. query string), which can carry secrets
+                    // like an API token/key; strip it before it reaches
+                    // BoardScrapeSummary.error → IPC → renderer + logs.
+                    let chunk =
+                        chunk.map_err(|e| AppError::Network(e.without_url().to_string()))?;
                     if buf.len().saturating_add(chunk.len()) > cap {
                         return Err(AppError::Validation("Response too large".to_string()));
                     }
@@ -238,7 +243,13 @@ pub async fn fetch_text(
                 });
             }
             Err(e) => {
-                last_err = Some(AppError::Network(e.to_string()));
+                // .without_url() — see the identical comment above; a
+                // connection-level failure (e.g. connection refused, TLS
+                // error, DNS failure) is the transport-failure branch where
+                // reqwest's Display appends " for url (<full-url>)", which
+                // can carry a secret query string (Adzuna app_key, Comeet
+                // token, ...). Strip it before it becomes AppError::Network.
+                last_err = Some(AppError::Network(e.without_url().to_string()));
                 if signal.is_cancelled() {
                     return Err(AppError::Cancelled);
                 }
