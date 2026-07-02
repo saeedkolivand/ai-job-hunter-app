@@ -78,9 +78,12 @@ pub(crate) struct RpJob {
 /// Deserialize each row independently, dropping (with a debug log) any row
 /// that fails — e.g. a missing `uuid` or a non-object/non-string
 /// `workLocation`. Without this, `Vec<RpJob>`'s atomic deserialize would fail
-/// the whole company on a single malformed row (silent zero-jobs).
+/// the whole company on a single malformed row (silent zero-jobs). If every
+/// row in the batch fails (schema drift), a `warn!` still fires so a
+/// whole-batch zero-jobs isn't silently counted as a successful fetch.
 pub(crate) fn rows_to_jobs(values: Vec<serde_json::Value>) -> Vec<RpJob> {
-    values
+    let total = values.len();
+    let jobs: Vec<RpJob> = values
         .into_iter()
         .filter_map(|v| match serde_json::from_value::<RpJob>(v) {
             Ok(job) => Some(job),
@@ -89,7 +92,12 @@ pub(crate) fn rows_to_jobs(values: Vec<serde_json::Value>) -> Vec<RpJob> {
                 None
             }
         })
-        .collect()
+        .collect();
+    let skipped = total - jobs.len();
+    if skipped > 0 {
+        log::warn!("[rippling] skipped {skipped}/{total} malformed rows");
+    }
+    jobs
 }
 
 /// Map a parsed Rippling response into postings for one company. Standalone
