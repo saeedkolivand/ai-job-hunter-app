@@ -143,7 +143,7 @@ jobs:
         run: echo "value=${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}" >> $GITHUB_OUTPUT
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: .turbo
           key: ${{ steps.cache-key.outputs.value }}
@@ -163,7 +163,7 @@ jobs:
           echo "::endgroup::"
 
       - name: 📦 Cache node_modules
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: |
             node_modules
@@ -195,7 +195,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: |
             node_modules
@@ -210,7 +210,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -323,7 +323,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: |
             node_modules
@@ -338,7 +338,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -419,7 +419,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: |
             node_modules
@@ -434,7 +434,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -451,7 +451,7 @@ jobs:
       # when the playwright version bumps) to skip the ~120 MB download.
       - name: 💾 Restore Playwright Browser Cache
         id: playwright-cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/pnpm-lock.yaml') }}
@@ -524,7 +524,7 @@ jobs:
       # nothing. Both must be installed before the test step below.
       - name: 🦀 Install cargo-llvm-cov + nextest
         if: always()
-        uses: taiki-e/install-action@15449e3094499af05d8d964a1c884208e4b8b595 # v2
+        uses: taiki-e/install-action@16b05812d776ae1dfaabc8277e421fb6d2506419 # v2
         with:
           tool: cargo-llvm-cov,nextest
 
@@ -733,7 +733,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: |
             node_modules
@@ -748,7 +748,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -880,7 +880,7 @@ jobs:
           echo "::endgroup::"
 
       - name: 🧰 Install cargo-deny + cargo-machete
-        uses: taiki-e/install-action@15449e3094499af05d8d964a1c884208e4b8b595 # v2
+        uses: taiki-e/install-action@16b05812d776ae1dfaabc8277e421fb6d2506419 # v2
         with:
           tool: cargo-deny,cargo-machete
 
@@ -961,7 +961,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: |
             node_modules
@@ -976,7 +976,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
