@@ -36,6 +36,17 @@ fn is_valid_workable_slug(slug: &str) -> bool {
         && !slug.ends_with('-')
 }
 
+/// Lowercase every company entry BEFORE deduping. `search()` lowercases the
+/// slug for the outbound request regardless (Workable slugs are
+/// case-insensitive), so deduping on the raw casing first would let
+/// case-only variants (e.g. `"Acme"` vs `"acme"`) survive `normalize_companies`
+/// as two distinct entries and fire two identical fetches for the same
+/// tenant. Lowercasing first collapses them to one before dedup runs.
+fn normalize_workable_companies(input: &[String]) -> Vec<String> {
+    let lowercased: Vec<String> = input.iter().map(|s| s.to_lowercase()).collect();
+    normalize_companies(&lowercased, MAX_COMPANIES)
+}
+
 /// Validate that a job URL from the response is `https://apply.workable.com/…`.
 /// A drifting or hostile response could inject arbitrary URLs into
 /// `JobPosting.url`; constrain it to the one host the widget API actually
@@ -231,24 +242,23 @@ impl Scraper for WorkableScraper {
         let now = chrono::Utc::now().timestamp_millis();
         let mut out = vec![];
 
-        // Dedupe (first-seen order), drop blanks, and cap to MAX_COMPANIES so a
-        // large IPC payload cannot fan out unbounded requests to Workable.
-        let companies = normalize_companies(&input.companies, MAX_COMPANIES);
+        // Lowercase-then-dedupe (first-seen order), drop blanks, and cap to
+        // MAX_COMPANIES so a large IPC payload cannot fan out unbounded
+        // requests to Workable (and so case-only variants collapse to one).
+        let companies = normalize_workable_companies(&input.companies);
         let total = companies.len();
 
         let mut successful_fetches = 0usize;
         let mut first_fetch_error: Option<String> = None;
 
-        for (i, raw_company) in companies.iter().enumerate() {
+        for (i, slug) in companies.iter().enumerate() {
             if ctx.signal.is_cancelled() {
                 break;
             }
 
-            let slug = raw_company.to_lowercase();
-
             // Guard: reject slugs that could redirect the request via path
             // traversal or an injected query string.
-            if !is_valid_workable_slug(&slug) {
+            if !is_valid_workable_slug(slug) {
                 log::warn!("[workable] skipping invalid company slug '{}'", slug);
                 if let Some(ref on_progress) = ctx.on_progress {
                     on_progress((i + 1) as f32 / total as f32);
@@ -301,7 +311,7 @@ impl Scraper for WorkableScraper {
                 .to_string();
             let jobs = rows_to_jobs(resp.jobs);
 
-            for posting in parse_workable_response(jobs, &company, &slug, now) {
+            for posting in parse_workable_response(jobs, &company, slug, now) {
                 if let Some(ref on_item) = ctx.on_item {
                     on_item(posting.clone());
                 }

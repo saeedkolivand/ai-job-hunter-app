@@ -22,7 +22,7 @@
  * (only useNotification is overridden to avoid a Notification provider).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { PROVIDER_SLOTS } from '@ajh/shared';
@@ -447,17 +447,22 @@ describe('AggregatorKeysSettings — Comeet section', () => {
   it('calls setProviderKey with the Comeet company-UID slot on Save', async () => {
     mockSetMutateAsync.mockClear();
     const user = userEvent.setup();
-    const { container } = render(<AggregatorKeysSettings />);
+    render(<AggregatorKeysSettings />);
 
-    // Comeet fields are the last two password inputs (rendered after Apify).
-    const inputs = getPasswordInputs(container);
-    const companyUidInput = inputs[inputs.length - 2];
-    if (!companyUidInput) throw new Error('No Comeet company-UID input found');
+    // Scope to the field's own row via its rendered label — not a positional
+    // index, which silently breaks if a field is ever appended after Comeet.
+    const label = screen.getByText('settings.aggregatorKeys.comeetCompanyUid.label');
+    const row = label.parentElement;
+    if (!row) throw new Error('Comeet company-UID field row not found');
+
+    const companyUidInput = within(row).getByPlaceholderText(
+      'settings.aggregatorKeys.comeetCompanyUid.placeholder'
+    );
     await user.type(companyUidInput, 'my-company-uid');
 
-    const saveButtons = screen.getAllByRole('button', { name: /settings\.aggregatorKeys\.save/i });
-    const companyUidSave = saveButtons[saveButtons.length - 2];
-    if (!companyUidSave) throw new Error('No Comeet company-UID Save button found');
+    const companyUidSave = within(row).getByRole('button', {
+      name: /settings\.aggregatorKeys\.save/i,
+    });
     await user.click(companyUidSave);
 
     await waitFor(() =>

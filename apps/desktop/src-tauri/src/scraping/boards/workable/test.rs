@@ -93,6 +93,34 @@ fn slug_validation_rejects_invalid_slugs() {
 }
 
 // ---------------------------------------------------------------------------
+// normalize_workable_companies — lowercase-before-dedup ordering
+// ---------------------------------------------------------------------------
+
+/// Case-only variants must collapse to ONE entry — dedup has to run on the
+/// same casing the slug is lowercased to for the outbound request, not on
+/// the raw input casing (which would let "Acme" and "acme" both survive and
+/// fire two identical fetches for the same tenant).
+#[test]
+fn normalize_workable_companies_collapses_case_variants() {
+    let input = vec!["Acme".to_string(), "acme".to_string(), "ACME".to_string()];
+    let result = normalize_workable_companies(&input);
+    assert_eq!(
+        result,
+        vec!["acme"],
+        "case-only variants of the same slug must dedupe to one lowercase entry"
+    );
+}
+
+/// Distinct slugs (differing by more than casing) are both kept, still
+/// lowercased and in first-seen order.
+#[test]
+fn normalize_workable_companies_keeps_distinct_slugs_lowercased() {
+    let input = vec!["Acme".to_string(), "Beta".to_string(), "acme".to_string()];
+    let result = normalize_workable_companies(&input);
+    assert_eq!(result, vec!["acme", "beta"]);
+}
+
+// ---------------------------------------------------------------------------
 // URL guard — is_valid_workable_job_url (host-lock)
 // ---------------------------------------------------------------------------
 
