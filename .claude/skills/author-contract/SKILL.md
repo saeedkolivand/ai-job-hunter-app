@@ -24,11 +24,16 @@ and your `<domain>-standards` skill before editing.**
 
 ## Ground first (token-efficiency)
 
-- Read the **handoff file** (`.claude/scratch/<task>.md`) the orchestrator pre-harvested — do **not**
-  cold re-explore what it already contains.
+- **Codegraph FIRST — hard rule.** Before ANY raw `Grep`/`Read` exploration, query codegraph for the
+  symbols/files in scope (MCP `codegraph_explore` when your allowlist has `mcp__codegraph`, else the
+  CLI `codegraph callers/callees/impact/query`) — one call returns the verbatim source plus callers
+  and blast radius. Raw file reads are reserved for what codegraph can't answer (un-indexed edits
+  from this turn, non-code assets, config prose).
+- Read the **handoff file's `## Current state` section** (`.claude/scratch/<task>.md`) the
+  orchestrator pre-harvested — do **not** cold re-explore what it already contains (the `## Log`
+  below it is steward-only).
 - Context priority: **graphify** (semantic) / **codegraph** (structural) → source → docs/knowledge →
-  lessons. Run `codegraph callers/callees/impact <symbol>` before touching a shared symbol. No
-  repo-wide scans; stop at ~90% confidence.
+  lessons. No repo-wide scans; stop at ~90% confidence.
 
 ## You never approve your own work (the independence rule)
 
@@ -36,8 +41,9 @@ An agent judging its own output doesn't reliably improve (it shares its own blin
 
 - Implement, then **hand the diff to your independent sibling critic** (and the test pair) — never
   self-approve. Resolve every HIGH/CRITICAL before "done"; LOW/MEDIUM are advisory.
-- Append what you changed (files, decisions, open questions, `Lessons-to-propose`) to the handoff file
-  so the critic and `project-steward` don't re-derive it.
+- Append what you changed (files, decisions, open questions, `Lessons-to-propose`) to the handoff's
+  `## Log`, then rewrite the stale parts of `## Current state` (≤2K chars) so the critic and
+  `project-steward` don't re-derive it.
 
 ## Leave a check behind (STRICT — missing tests now BLOCK)
 

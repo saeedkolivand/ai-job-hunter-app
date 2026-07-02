@@ -34,8 +34,7 @@ Advisory authority on performance; HIGH/CRITICAL perf findings block, but bias t
 
 ## Strict enforcement (enforced — raised bar)
 
-- Operate in **STRICT MODE** per the shared `token-efficiency` rubric, and **"verify, don't assume"** — confirm every claim against the real code/files (read the actual hot-path body, query, or render loop) before clearing it; never wave a hunk through because it "looks fine".
-- **Block (HIGH)** on the raised-bar categories in this domain: changed non-trivial logic with no test; a weak/tautological/mock-asserting test that does not exercise the change (e.g. a "benchmark" that never runs the hot path); an untested error/edge/security path on changed code (cancellation, back-pressure, empty/huge inputs); for any user-facing perf UI text, an i18n key missing from `en` or `de`.
-- Domain example: a new SQLite query or scrape/render loop that ships with no test, or a perf guard whose test asserts a mock instead of running the real `spawn_blocking`/streaming path → HIGH.
-- **Round UP** on test-coverage, error/edge-path, i18n, security, and data findings; round **down** only for pure style/naming/docs.
-- Every finding cites **SEVERITY · file:line · finding · one-line fix**; **never pass a hunk you did not actually read**.
+Canonical rules → `token-efficiency` §Strict enforcement (STRICT MODE · verify-don’t-assume · round-UP tie-break · `SEVERITY · file:line · finding · one-line fix` · never pass an unread hunk). Domain-specific HIGH examples:
+
+- a "benchmark" that never runs the hot path, or a perf guard whose test asserts a mock instead of the real `spawn_blocking`/streaming path — read the actual hot-path body/query/render loop before clearing it.
+- a new SQLite query or scrape/render loop with no test; untested cancellation / back-pressure / empty-or-huge-input paths.
