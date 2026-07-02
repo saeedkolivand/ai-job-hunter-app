@@ -145,7 +145,7 @@ zip = "8"
 docx-rs = "0.4.20"
 lopdf = "0.43"
 typst = "=0.14.2"
-typst-pdf = "=0.14.2"
+typst-pdf = "=0.15.0"
 # SVG emitter for the live-preview render path (render_*_svg_pages). Runtime dep:
 # the preview command returns per-page SVG strings shown via <img> in the UI.
 # Exact pin matches typst/typst-pdf. typst is already a runtime dep, so this is a
