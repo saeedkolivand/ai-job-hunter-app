@@ -195,7 +195,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: |
             node_modules
@@ -323,7 +323,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: |
             node_modules
@@ -419,7 +419,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: |
             node_modules
@@ -733,7 +733,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: |
             node_modules
@@ -961,7 +961,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: |
             node_modules
