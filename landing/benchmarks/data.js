@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782938226274,
+  "lastUpdate": 1782973030415,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2093,6 +2093,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 285378,
             "range": "± 4030",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "75f633e5848c1921386748375e299b0e56052ba0",
+          "message": "fix: harden rippling scraper against a single malformed row (#531)\n\n* fix: harden rippling scraper against a single malformed row\n\nRippling deserialized its jobs response as an atomic Vec<RpJob> where uuid\nis a required String, so one row missing uuid (or with an oddly typed\nworkLocation) failed the whole deserialize and silently returned zero jobs\nfor that company. Fetch the array as Vec<serde_json::Value> and deserialize\nper row via a new rows_to_jobs(), skipping bad rows instead of dropping the\nwhole batch. The uuid requirement and ats.rippling.com URL host-lock are\nunchanged, so a surviving row still passes the same guards.\n\nRippling-only: pinpoint/breezy/bamboohr rows are all-Option and already\ntolerate missing fields. All 5 new boards were live-verified today against\nreal tenants with zero endpoint/shape drift.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: warn when rippling drops malformed rows\n\nPer-row skipping silenced whole-batch schema drift: if every row failed\nto deserialize the array still parsed and search counted a successful\nfetch, so a total drift returned empty with only per-row debug logs.\nEmit a warn-level summary when any rows are skipped, restoring detection\nof the silent zero-jobs condition at batch scope. Addresses CodeRabbit.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-02T08:08:43+02:00",
+          "tree_id": "5af1afb353068341a17012e11a373255a1808720",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/75f633e5848c1921386748375e299b0e56052ba0"
+        },
+        "date": 1782973029728,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1866480,
+            "range": "± 70179",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2498426,
+            "range": "± 21637",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 285178,
+            "range": "± 2733",
             "unit": "ns/iter"
           }
         ]
