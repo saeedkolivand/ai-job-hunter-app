@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782987001656,
+  "lastUpdate": 1782991910851,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2219,6 +2219,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 283252,
             "range": "± 2349",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "75a6be748d71e918fc8d88f572c923c36ed71e3d",
+          "message": "chore: bump lopdf from 0.42.0 to 0.43.0 in /apps/desktop/src-tauri (#536)\n\nBumps [lopdf](https://github.com/J-F-Liu/lopdf) from 0.42.0 to 0.43.0.\n- [Release notes](https://github.com/J-F-Liu/lopdf/releases)\n- [Changelog](https://github.com/J-F-Liu/lopdf/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/J-F-Liu/lopdf/compare/v0.42.0...v0.43.0)\n\n---\nupdated-dependencies:\n- dependency-name: lopdf\n  dependency-version: 0.43.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
+          "timestamp": "2026-07-02T13:11:56+02:00",
+          "tree_id": "841e37a40c3e50d11e141a54e83713ded6201d0a",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/75a6be748d71e918fc8d88f572c923c36ed71e3d"
+        },
+        "date": 1782991910330,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1894495,
+            "range": "± 58273",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2609903,
+            "range": "± 42893",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 287803,
+            "range": "± 13359",
             "unit": "ns/iter"
           }
         ]
