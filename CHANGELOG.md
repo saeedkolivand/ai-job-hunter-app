@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.120.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.119.0...v0.120.0) (2026-07-02)
+
+### ✨ Features
+
+* add job trust / ghost-job validator with badge ([#530](https://github.com/saeedkolivand/ai-job-hunter-app/issues/530)) ([65bf530](https://github.com/saeedkolivand/ai-job-hunter-app/commit/65bf53014ccffcef7611d56444d3496f413c23f7))
+* add pinpoint, rippling, breezy, bamboohr ats board scrapers ([#513](https://github.com/saeedkolivand/ai-job-hunter-app/issues/513)) ([29fe2e5](https://github.com/saeedkolivand/ai-job-hunter-app/commit/29fe2e5770ed74fbe21ae1e7dee00738e74dbded))
+* add the muse aggregator job board scraper ([#529](https://github.com/saeedkolivand/ai-job-hunter-app/issues/529)) ([32e1dd3](https://github.com/saeedkolivand/ai-job-hunter-app/commit/32e1dd316215b4f44410df5de77e260922c4820a))
+* scraping hardening + workable and comeet boards (21 to 23) ([#535](https://github.com/saeedkolivand/ai-job-hunter-app/issues/535)) ([47111d9](https://github.com/saeedkolivand/ai-job-hunter-app/commit/47111d9a085da96c74c64ce1366f0bbd2dc812ac))
+
+### 🐛 Bug Fixes
+
+* harden rippling scraper against a single malformed row ([#531](https://github.com/saeedkolivand/ai-job-hunter-app/issues/531)) ([75f633e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/75f633e5848c1921386748375e299b0e56052ba0))
+
+### ♻️ Refactors
+
+* rename apps/tauri to apps/desktop and @ajh/tauri to @ajh/desktop ([#512](https://github.com/saeedkolivand/ai-job-hunter-app/issues/512)) ([04e6e78](https://github.com/saeedkolivand/ai-job-hunter-app/commit/04e6e78aed29a22b3f1d370a91823bd89cdf1ef9))
+
 ## [0.119.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.118.2...v0.119.0) (2026-06-30)
 
 ### ✨ Features
