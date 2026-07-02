@@ -257,16 +257,36 @@ fn clear_comeet_slots() {
     }
 }
 
+/// Build a current-thread runtime for the credential-gated tests below. Each
+/// test needs to hold `COMEET_KEYRING_LOCK` (a std `Mutex`, since the mock
+/// keyring install is process-global state, not async state) across an
+/// `await` — `#[tokio::test]` would make the whole test body async and trip
+/// `clippy::await_holding_lock` on the strict pre-push lint
+/// (`--all-targets --all-features -D warnings`). Using a plain `#[test]` +
+/// `block_on` instead keeps the test function itself sync (the lock guard is
+/// released before any `.await` point crosses a suspend boundary observable
+/// to clippy's lint), while `block_on` still drives the real async
+/// `search()` — correctness is unchanged, only the harness shape. Same
+/// resolution the aggregator's own lock-holding tests use (theirs just never
+/// needed to await while holding the lock in the first place).
+fn block_on<F: std::future::Future>(fut: F) -> F::Output {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(fut)
+}
+
 /// No credentials configured → keyless-empty, same contract as the
 /// aggregator's Adzuna/JSearch/Apify providers: never an error just because
 /// the user hasn't added keys yet, and no real network call is attempted.
-#[tokio::test]
-async fn search_returns_empty_without_error_when_credentials_absent() {
+#[test]
+fn search_returns_empty_without_error_when_credentials_absent() {
     let _guard = COMEET_KEYRING_LOCK.lock().unwrap();
     crate::credentials::install_mock_keyring();
     clear_comeet_slots();
 
-    let result = ComeetScraper.search(make_input(), make_ctx()).await;
+    let result = block_on(ComeetScraper.search(make_input(), make_ctx()));
     assert!(result.is_ok(), "missing credentials must be Ok, not Err");
     assert!(
         result.unwrap().is_empty(),
@@ -277,8 +297,8 @@ async fn search_returns_empty_without_error_when_credentials_absent() {
 /// Only one of the two credentials present (company uid but no token) must
 /// still be treated as "not configured" — BOTH are mandatory, mirroring the
 /// Apify provider's `token.is_some() && enabled` two-gate contract.
-#[tokio::test]
-async fn search_returns_empty_when_only_one_credential_present() {
+#[test]
+fn search_returns_empty_when_only_one_credential_present() {
     let _guard = COMEET_KEYRING_LOCK.lock().unwrap();
     crate::credentials::install_mock_keyring();
     clear_comeet_slots();
@@ -286,7 +306,7 @@ async fn search_returns_empty_when_only_one_credential_present() {
     let entry = keyring_core::Entry::new(crate::credentials::SERVICE, &comeet_slots()[0]).unwrap();
     entry.set_password("acme-uid").unwrap();
 
-    let result = ComeetScraper.search(make_input(), make_ctx()).await;
+    let result = block_on(ComeetScraper.search(make_input(), make_ctx()));
     assert!(result.is_ok());
     assert!(
         result.unwrap().is_empty(),
@@ -299,8 +319,8 @@ async fn search_returns_empty_when_only_one_credential_present() {
 /// A pre-cancelled signal, even with both credentials present, must not fire
 /// the network fetch and must return Ok(empty) — cancellation is checked
 /// after the credential gate but before the request is built.
-#[tokio::test]
-async fn search_cancelled_after_credentials_present_returns_ok_empty() {
+#[test]
+fn search_cancelled_after_credentials_present_returns_ok_empty() {
     let _guard = COMEET_KEYRING_LOCK.lock().unwrap();
     crate::credentials::install_mock_keyring();
     clear_comeet_slots();
@@ -314,7 +334,7 @@ async fn search_cancelled_after_credentials_present_returns_ok_empty() {
 
     let ctx = make_ctx();
     ctx.signal.cancel();
-    let result = ComeetScraper.search(make_input(), ctx).await;
+    let result = block_on(ComeetScraper.search(make_input(), ctx));
     assert!(
         result.is_ok(),
         "cancelled run must return Ok, not Err, and must not attempt network"
