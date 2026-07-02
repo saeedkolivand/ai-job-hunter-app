@@ -16,6 +16,9 @@
 //   5. Author/critic pairs — each declared author + its independent critic both exist.
 //   6. Explainer complete — landing/agent-system.html exists and has a card per agent.
 //   7. AI configs → CLAUDE.md — each parallel rule file points at CLAUDE.md (single source).
+//   8. Route globs → tree — every glob's static prefix exists on disk (dead prefix = dead route).
+//   9. Referenced agents → files — every agent named in the CLAUDE.md agent table or the
+//      explainer roster has a matching .claude/agents/<name>.md (reverse of 4 & 6).
 //
 // Deferred (local-only / future, kept out of CI to stay dependency-free): codegraph
 // symbol-resolution for dead doc pointers, and `Last updated:` vs git-mtime staleness.
@@ -224,6 +227,60 @@ function checkAiConfigs() {
   }
 }
 
+// ── Check 8: route globs → tree ──────────────────────────────────────────────
+// Every glob's static prefix (the part before the first wildcard) must exist on
+// disk — a dead prefix means the route can never match anything.
+function checkRouteGlobs() {
+  if (!exists(ROUTES)) return;
+  let routes;
+  try {
+    routes = JSON.parse(read(ROUTES));
+  } catch {
+    return; // invalid JSON already reported by checkRoutes
+  }
+  const globs = new Set();
+  for (const r of routes.primary || []) globs.add(r.glob);
+  for (const s of routes.secondary || []) (s.globs || []).forEach((g) => globs.add(g));
+  for (const arr of Object.values(routes.advisory || {})) arr.forEach((g) => globs.add(g));
+  for (const arr of Object.values(routes.lessons_domains || {})) arr.forEach((g) => globs.add(g));
+  for (const g of globs) {
+    const wild = g.search(/[*?[]/);
+    // literal path → must exist as-is; wildcard → the dir part before the first wildcard must exist
+    const prefix = (wild === -1 ? g : g.slice(0, wild).replace(/[^/]*$/, '')).replace(/\/+$/, '');
+    if (prefix && !exists(prefix)) {
+      fail('Route glob → tree', ROUTES, `glob '${g}' — static prefix '${prefix}' does not exist`);
+    }
+  }
+}
+
+// ── Check 9: referenced agents → files (reverse of 4 & 6) ────────────────────
+function checkReferencedAgents() {
+  const names = new Set(agentNames());
+  const record = (name, where) => {
+    if (!names.has(name)) {
+      fail('Referenced agent missing', where, `references '${name}' — no ${AGENTS_DIR}/${name}.md`);
+    }
+  };
+  if (exists(CLAUDE_MD)) {
+    // the routing table: rows following the "| Touched area | Author | Critic(s) |" header
+    const lines = read(CLAUDE_MD).split('\n');
+    const start = lines.findIndex((l) => /^\|\s*Touched area/i.test(l));
+    for (let i = start + 1; start !== -1 && i < lines.length && lines[i].startsWith('|'); i++) {
+      for (const [, name] of lines[i].matchAll(/`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`/g)) {
+        record(name, CLAUDE_MD);
+      }
+    }
+  }
+  if (exists(EXPLAINER)) {
+    // the AGENTS roster entries: ['name','author'|'critic'|'cross', ...]
+    for (const [, name] of read(EXPLAINER).matchAll(
+      /\['([a-z][a-z0-9-]+)','(?:author|critic|cross)'/g
+    )) {
+      record(name, EXPLAINER);
+    }
+  }
+}
+
 // ── Run ──────────────────────────────────────────────────────────────────────
 checkStaleTokens();
 checkAdrIndex();
@@ -232,10 +289,12 @@ checkClaudeMd();
 checkPairs();
 checkExplainer();
 checkAiConfigs();
+checkRouteGlobs();
+checkReferencedAgents();
 
 if (failures.length === 0) {
   console.log(
-    '✓ agent system in sync (tokens, ADR index, routes, CLAUDE.md, pairs, explainer, AI configs)'
+    '✓ agent system in sync (tokens, ADR index, routes, CLAUDE.md, pairs, explainer, AI configs, route globs, referenced agents)'
   );
   process.exit(0);
 }

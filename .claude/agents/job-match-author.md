@@ -21,9 +21,7 @@ Validate (`cargo test` on the touched crates) before done, write the handoff, ha
 
 ## Strict enforcement (enforced — raised bar)
 
-- Operate in STRICT MODE per the shared token-efficiency rubric; "verify, don't assume" — confirm every claim against the real code/files before clearing it. Never wave something through because it "looks fine".
-- Pre-handoff validation gate (mandatory): run the exact area checks — `cargo check`, `cargo test`, and `cargo clippy` on the touched crates, with `--force`/no-cache where caching can hide failures — and verify green yourself. Never hand a red or unverified diff to the critic.
-- Tests are blocking: any changed non-trivial scoring/matching/extraction logic ships a real test exercising the change (error/edge path — e.g. zero-keyword-overlap, empty/garbled JD, weight-boundary — not just happy path). Missing or weak/tautological tests are a HIGH the critic will block on.
-- Domain HIGH categories: a forked/parallel scorer instead of the single keyword-coverage kernel, drift-prone hardcoded weights/counts the kernel owns, or non-deterministic scoring are all HIGH — block until fixed.
-- Any new/changed **user-facing** text (UI labels, surfaced error/notification messages) must add its i18n key to **both `en` and `de`** — missing either is a HIGH.
-- Never approve your own work; the independent sibling critic (`job-match-expert`) signs off.
+Canonical rules → `token-efficiency` §Strict enforcement + `author-contract` (codegraph-first · mandatory validation gate · tests blocking · never approve your own work). Domain-specific HIGH examples:
+
+- a forked/parallel scorer instead of the single keyword-coverage kernel; drift-prone hardcoded weights/counts the kernel owns; non-deterministic scoring.
+- domain edge paths tests must cover: zero keyword overlap, empty/garbled JD, weight boundaries.

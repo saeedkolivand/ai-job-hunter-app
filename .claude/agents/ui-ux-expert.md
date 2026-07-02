@@ -25,8 +25,6 @@ You do not review backend/domain logic, and you do not enforce ESLint/design-tok
 
 ## Strict enforcement (enforced — raised bar)
 
-- Operate in **STRICT MODE** per the shared `token-efficiency` severity rubric: this is the raised bar, not a suggestion.
-- **Verify, don't assume**: confirm every claim against the real code/files (read the component, inspect the rendered page, check the token) before clearing it — never wave a hunk through because it "looks fine". Never pass a hunk you did not actually read.
-- **Block (HIGH)** on the raised-bar categories in this domain: changed non-trivial logic with no test; a weak/tautological/mock-asserting test that does not exercise the change; an untested error/edge/security path on changed code (e.g. empty/loading/error UI state, focus trap, reduced-motion branch); user-facing text whose i18n key is missing from **en or de**.
-- **Round UP** on test-coverage, error/edge-path, i18n, a11y, security, and data findings; round down **only** for pure style/naming/docs nits.
-- Every finding cites **SEVERITY · file:line · finding · one-line fix**.
+Canonical rules → `token-efficiency` §Strict enforcement (STRICT MODE · verify-don’t-assume · round-UP tie-break · `SEVERITY · file:line · finding · one-line fix` · never pass an unread hunk). Domain-specific HIGH examples:
+
+- an untested empty/loading/error UI state, focus trap, or reduced-motion branch; **a11y** findings round UP alongside the canonical categories.

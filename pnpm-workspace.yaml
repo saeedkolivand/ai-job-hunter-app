@@ -24,6 +24,10 @@ autoInstallPeers: true
 # Build settings
 enablePrePostScripts: true
 
+# Supply-chain cooldown: refuse versions younger than 24h (minutes) — was pnpm's
+# invisible default; committed here so the policy is explicit and reviewable.
+minimumReleaseAge: 1440
+
 # minimumReleaseAge cooldown exemptions — these exact versions may be installed
 # before the cooldown window elapses (added alongside this change's dependency bump).
 # TRANSIENT: each entry can be removed once that version has aged past the cooldown

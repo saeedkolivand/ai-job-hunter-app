@@ -2,8 +2,8 @@ name: 🧹 Workflow Lint
 
 # ──────────────────────────────────────────────────────────────────────
 # Security-audits the GitHub Actions workflows & composite actions, and keeps
-# the workflow catalog honest. Runs only when CI config changes. zizmor is
-# advisory (prints findings to the log, never blocks). actionlint now runs
+# the workflow catalog honest. Runs only when CI config changes. zizmor blocks
+# on HIGH-severity findings (lower severities are advisory). actionlint now runs
 # in-PR via CodeRabbit (.coderabbit.yaml tools.actionlint), so the former
 # reviewdog actionlint lane was retired. The catalog job DOES fail on drift: if
 # .github/workflows/README.md or the root README badges are stale, regenerate
@@ -47,10 +47,11 @@ jobs:
       - name: 🐍 Setup uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
 
-      # Advisory: prints findings (incl. unpinned actions, injection risks) but
-      # never fails the build yet. SHA-pinning lands in a follow-up PR.
+      # Blocking at HIGH severity (actions are SHA-pinned; the pin policy and
+      # documented suppressions live in .github/zizmor.yml). Findings below
+      # high are filtered here — run zizmor locally for the full report.
       - name: 🛡️ Run zizmor
-        run: uvx zizmor .github/workflows .github/actions || true
+        run: uvx zizmor --min-severity high .github/workflows .github/actions
 
   catalog:
     name: 📚 Workflow Catalog
