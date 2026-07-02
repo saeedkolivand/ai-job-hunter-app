@@ -41,7 +41,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
     "@commitlint/cli": "^21.2.0",
-    "@commitlint/config-conventional": "^21.1.0",
+    "@commitlint/config-conventional": "^21.2.0",
     "@eslint/js": "^10.0.1",
     "@semantic-release/exec": "^7.1.0",
     "@semantic-release/github": "^12.0.9",
