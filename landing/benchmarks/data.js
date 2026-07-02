@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782984333511,
+  "lastUpdate": 1782987001656,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2177,6 +2177,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 293085,
             "range": "± 6343",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "47111d9a085da96c74c64ce1366f0bbd2dc812ac",
+          "message": "feat: scraping hardening + workable and comeet boards (21 to 23) (#535)\n\n* refactor: dedupe board helpers, harden redirect ssrf, fix muse progress + trust stop-words\n\n- DRY: extract normalize_companies + is_https_url into scraping/boards/common.rs; drop 9 copies\n- SSRF: centralize a redirect-target guard at the net/http.rs base_builder chokepoint\n  (cap 10 hops, reject non-http(s) + private/loopback/link-local IP-literal targets via\n  crate::net::ssrf::is_safe_public_host); get_guarded's Policy::none path unaffected\n- The Muse: progress denominator = total_pages.min(max_pages) so it reaches 1.0 on short feeds\n- trust: skip stop-words (the/inc/llc/ltd/corp/gmbh) in company_matches_host per-word match\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* feat: add workable and comeet job boards\n\n- workable: zero-auth company-scoped board on the live-verified widget API\n  (apply.workable.com/api/v1/widget/accounts/{slug}?details=true), per-row\n  lenient deserialize, host-locked urls, /j/{shortcode} fallback, 21 tests\n- comeet: credentialed board (company-uid + api token via os keyring, apify\n  pattern, no new ipc commands), unconfigured -> empty, response shape\n  flagged for live-cred verification, 18 tests\n- redact reqwest transport errors at the fetch chokepoint (without_url) so\n  query-string secrets (comeet token, adzuna app_key) never reach\n  BoardScrapeSummary.error / logs, with a regression test\n- make the redirect-ssrf wiremock test target a reachable route so it fails\n  if the policy is ever unwired\n- registry 21 -> 23 boards; BOARD_IDS, allowlist, en/de i18n, docs updated\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* ui: add comeet credential fields to aggregator keys settings\n\nTwo AggregatorKeyField rows (company uid + api token) after the apify\nsection, same divider pattern; no enable toggle — the board activates when\nboth creds are present. Extends the existing test suite (field labels,\nsave wiring, count asserts 4->6) and rescopes the actor-id save test off\nits fragile trailing-index button lookup.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* test: drive comeet credential-gate tests via block_on to satisfy strict clippy\n\nThe pre-push gate's clippy variant (--all-targets -D warnings) denies\nawait_holding_lock: the three credential-gate tests held the std keyring\nMutexGuard across search().await. Convert them to sync #[test] fns that\nhold the guard while a current-thread runtime block_on drives the async\nbody — same serialization, no allow attribute.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* build: ignore quick-xml rustsec advisories (no transitive fix path)\n\nrustsec-2026-0194 (quadratic duplicate-attribute check) and rustsec-2026-0195\n(unbounded nsreader namespace allocation) — both DoS-class, published as a\nbatch against quick-xml <0.41. All three locked versions are transitive pins\n(docx-rs, feed-rs + tauri-winrt-notification, citationberg/typst) and the fix\nis a semver-major none of them accept yet. Exposure bounded: own generated\ncontent everywhere except board RSS, which the shared fetch layer caps at\n8 MB. Remove when upstreams bump to >=0.41.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: collapse case-variant workable slugs and descope positional test lookups\n\n- workable: lowercase companies before normalize_companies so case-only\n  variants dedupe to one outbound request (+2 tests)\n- comeet settings test: scope the save assertion to the field's own label\n  row instead of trailing array indices (same shape as the actor-id fix)\n\nAddresses the two medium findings from the claude review on #535.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: address coderabbit review on scraping boards\n\n- reject userinfo in workable job urls (spoof@apply.workable.com passed the\n  host-lock); the /j/{shortcode} fallback flows through the same guard (+2 tests)\n- extract the byte-identical dns-label slug validator shared by bamboohr/\n  breezy/pinpoint into boards/common.rs; fix the common.rs doc claim that all\n  validators differ by design\n- engine catalog test asserts workable/comeet ids directly, not just the count\n- move matches_filters (themuse + comeet) into boards/common.rs\n- deny.toml: correct the quick-xml note (patched in 0.39.4; still no\n  semver-compatible path for the 0.36/0.37/0.38 transitive pins)\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-02T11:51:00+02:00",
+          "tree_id": "bd380ca3838d151c93907cc810fd8f02237dc5dd",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/47111d9a085da96c74c64ce1366f0bbd2dc812ac"
+        },
+        "date": 1782987001452,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1888700,
+            "range": "± 74866",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2501033,
+            "range": "± 48749",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 283252,
+            "range": "± 2349",
             "unit": "ns/iter"
           }
         ]
