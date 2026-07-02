@@ -138,17 +138,17 @@ fn normalize_all_blanks_returns_empty() {
 }
 
 // ---------------------------------------------------------------------------
-// Slug guard — is_valid_pinpoint_slug (SSRF: subdomain DNS-label guard)
+// Slug guard — is_valid_dns_label_slug (SSRF: subdomain DNS-label guard)
 // ---------------------------------------------------------------------------
 
 #[test]
 fn slug_validation_accepts_valid_slugs() {
-    assert!(is_valid_pinpoint_slug("acme"));
-    assert!(is_valid_pinpoint_slug("my-company"));
-    assert!(is_valid_pinpoint_slug("acme123"));
-    assert!(is_valid_pinpoint_slug("a1b2-c3d4"));
+    assert!(is_valid_dns_label_slug("acme"));
+    assert!(is_valid_dns_label_slug("my-company"));
+    assert!(is_valid_dns_label_slug("acme123"));
+    assert!(is_valid_dns_label_slug("a1b2-c3d4"));
     assert!(
-        is_valid_pinpoint_slug(&"a".repeat(63)),
+        is_valid_dns_label_slug(&"a".repeat(63)),
         "exactly 63 chars must be accepted"
     );
 }
@@ -156,29 +156,29 @@ fn slug_validation_accepts_valid_slugs() {
 #[test]
 fn slug_validation_rejects_invalid_slugs() {
     assert!(
-        !is_valid_pinpoint_slug("acme.corp"),
+        !is_valid_dns_label_slug("acme.corp"),
         "dot must alter URL authority — rejected"
     );
     assert!(
-        !is_valid_pinpoint_slug("acme/corp"),
+        !is_valid_dns_label_slug("acme/corp"),
         "slash must be rejected"
     );
-    assert!(!is_valid_pinpoint_slug("acme@corp"), "@ must be rejected");
+    assert!(!is_valid_dns_label_slug("acme@corp"), "@ must be rejected");
     assert!(
-        !is_valid_pinpoint_slug("acme_corp"),
+        !is_valid_dns_label_slug("acme_corp"),
         "underscore must be rejected"
     );
     assert!(
-        !is_valid_pinpoint_slug("-acme"),
+        !is_valid_dns_label_slug("-acme"),
         "leading hyphen is not a valid DNS label"
     );
     assert!(
-        !is_valid_pinpoint_slug("acme-"),
+        !is_valid_dns_label_slug("acme-"),
         "trailing hyphen is not a valid DNS label"
     );
-    assert!(!is_valid_pinpoint_slug(""), "empty slug must be rejected");
+    assert!(!is_valid_dns_label_slug(""), "empty slug must be rejected");
     assert!(
-        !is_valid_pinpoint_slug(&"a".repeat(64)),
+        !is_valid_dns_label_slug(&"a".repeat(64)),
         "exceeds 63-char DNS label limit"
     );
 }

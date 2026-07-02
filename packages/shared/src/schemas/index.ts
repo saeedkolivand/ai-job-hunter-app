@@ -116,6 +116,8 @@ export const BOARD_IDS = [
   'rippling',
   'breezy',
   'bamboohr',
+  'workable',
+  'comeet',
   // Remote-first / aggregators
   'aggregator',
   'remoteok',

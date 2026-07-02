@@ -384,6 +384,32 @@ fn requested_pages_clamps_into_one_to_max_pages_range() {
 }
 
 // ---------------------------------------------------------------------------
+// progress_denominator — on_progress must track real page work, not the
+// request budget (regression: previously used `max_pages` unconditionally,
+// so a feed with fewer real pages than the budget never reached 1.0).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn progress_denominator_uses_actual_page_count_when_smaller_than_budget() {
+    // Real feed has 2 pages but the request budget allows up to 5 — progress
+    // must be measured against the real 2, so `page=1` (the last page) yields
+    // 2/2 = 1.0, not 2/5.
+    assert_eq!(progress_denominator(2, 5), 2);
+}
+
+#[test]
+fn progress_denominator_clamps_to_the_page_budget() {
+    // A feed reporting more pages than the request is allowed to fetch must
+    // not inflate the denominator past the actual work performed.
+    assert_eq!(progress_denominator(10, 5), 5);
+}
+
+#[test]
+fn progress_denominator_matches_budget_when_equal() {
+    assert_eq!(progress_denominator(5, 5), 5);
+}
+
+// ---------------------------------------------------------------------------
 // search() — network-free edge cases
 // ---------------------------------------------------------------------------
 

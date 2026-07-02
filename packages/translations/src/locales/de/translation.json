@@ -721,6 +721,20 @@
         "actorIdHelper": "Leer lassen, um den integrierten Standard-Actor zu verwenden.",
         "saved": "Einstellungen gespeichert.",
         "saveError": "Einstellungen konnten nicht gespeichert werden."
+      },
+      "comeetCompanyUid": {
+        "label": "Comeet-Unternehmens-UID",
+        "placeholder": "Comeet-Unternehmens-UID einfügen…",
+        "connected": "Comeet-Unternehmens-UID sicher gespeichert",
+        "removeConfirmTitle": "Comeet-Unternehmens-UID entfernen?",
+        "removeConfirmDesc": "Dadurch wird die gespeicherte Comeet-Unternehmens-UID gelöscht. Die Comeet-Jobsuche liefert keine Ergebnisse mehr, bis Sie sie erneut hinzufügen."
+      },
+      "comeetApiToken": {
+        "label": "Comeet-API-Token",
+        "placeholder": "Comeet-API-Token einfügen…",
+        "connected": "Comeet-API-Token sicher gespeichert",
+        "removeConfirmTitle": "Comeet-API-Token entfernen?",
+        "removeConfirmDesc": "Dadurch wird der gespeicherte Comeet-API-Token gelöscht. Die Comeet-Jobsuche liefert keine Ergebnisse mehr, bis Sie ihn erneut hinzufügen."
       }
     },
     "accounts": {
@@ -1674,6 +1688,8 @@
       "rippling": "Rippling",
       "breezy": "Breezy HR",
       "bamboohr": "BambooHR",
+      "workable": "Workable",
+      "comeet": "Comeet",
       "remoteok": "RemoteOK",
       "remotive": "Remotive",
       "arbeitnow": "Arbeit Now",
