@@ -54,7 +54,7 @@ const SUSPICIOUS_DOMAINS: &[&str] = &[
 ];
 
 /// Hosts a `CompanyDomainMismatch` is never raised against: real ATS
-/// platforms (career-ops's original list) plus the hosts our own 21
+/// platforms (career-ops's original list) plus the hosts our own 23
 /// `SCRAPERS` boards legitimately return as `JobPosting.url` where that host
 /// is the BOARD's own domain rather than the employer's — LinkedIn
 /// (`linkedin.com`, always `/jobs/view/<id>`), Berlin Startup Jobs
@@ -94,6 +94,7 @@ const ATS_ALLOWLIST: &[&str] = &[
     "linkedin.com",
     "berlinstartupjobs.com",
     "api.adzuna.com",
+    "comeet.co",
 ];
 
 /// Score/flag a posting from its apply `url` and `company` name. Pure, no I/O;
@@ -169,6 +170,13 @@ pub(crate) fn matches_domain_list(host: &str, list: &[&str]) -> bool {
         .any(|d| host == *d || host.ends_with(&format!(".{d}")))
 }
 
+/// Generic legal-entity words that appear in countless unrelated company
+/// names — skipped in the per-word fallback below so e.g. "The Inc Corp"
+/// doesn't false-match almost any host that happens to contain "the" or
+/// "corp" as a substring. Advisory-only check (see the doc comment on
+/// [`company_matches_host`]), so a short denylist is enough.
+const COMPANY_NAME_STOP_WORDS: &[&str] = &["the", "inc", "llc", "ltd", "corp", "gmbh"];
+
 /// Best-effort "is this posting's host plausibly the company's own domain (or
 /// an ATS subdomain naming it)?" check. An unjudgeable (empty-after-normalize)
 /// company name returns `true` (no flag) rather than guessing.
@@ -178,15 +186,17 @@ pub(crate) fn matches_domain_list(host: &str, list: &[&str]) -> bool {
 /// host — `"Amazon"` vs. `amazon-careers.xyz` matches and suppresses the
 /// flag, staying `High` — and (b) a short (≤2-char, post `len >= 3` filter
 /// mostly avoids this, but a 3-char word like `"AWS"`) or generic company
-/// word can over-match an unrelated host. Label-boundary anchoring (matching
-/// `company.tld` / `company.` / `.company.` rather than a bare substring)
-/// would close (a), but was deliberately **deferred for V1**: it trades that
-/// miss for false positives on legitimate brand+suffix domains (e.g.
-/// `datadoghq.com` vs. `Datadog`, `getbamboohr.com` vs. `BambooHR`). The
-/// resulting flag is advisory/non-gating — it only lowers a badge level, it
-/// never hides or drops a posting — so the false-negative is an accepted V1
-/// trade-off. Revisit this anchoring if any future flow ever gates behavior
-/// (e.g. auto-hide, auto-skip) on `TrustAssessment::level`.
+/// word can over-match an unrelated host. [`COMPANY_NAME_STOP_WORDS`] closes
+/// the most common instance of (b) (generic legal-entity suffixes), but not
+/// every generic word. Label-boundary anchoring (matching `company.tld` /
+/// `company.` / `.company.` rather than a bare substring) would close (a),
+/// but was deliberately **deferred for V1**: it trades that miss for false
+/// positives on legitimate brand+suffix domains (e.g. `datadoghq.com` vs.
+/// `Datadog`, `getbamboohr.com` vs. `BambooHR`). The resulting flag is
+/// advisory/non-gating — it only lowers a badge level, it never hides or
+/// drops a posting — so the false-negative is an accepted V1 trade-off.
+/// Revisit this anchoring if any future flow ever gates behavior (e.g.
+/// auto-hide, auto-skip) on `TrustAssessment::level`.
 pub(crate) fn company_matches_host(company: &str, host: &str) -> bool {
     let normalized: String = company
         .to_lowercase()
@@ -205,6 +215,7 @@ pub(crate) fn company_matches_host(company: &str, host: &str) -> bool {
 
     normalized
         .split_whitespace()
+        .filter(|word| !COMPANY_NAME_STOP_WORDS.contains(word))
         .any(|word| word.len() >= 3 && host.contains(word))
 }
 

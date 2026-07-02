@@ -1,10 +1,11 @@
-/// Greenhouse — public per-company JSON board API
-///
-/// Endpoint: `https://boards-api.greenhouse.io/v1/boards/{company}/jobs?content=true`
-/// No global keyword search — requires a company slug. The engine skips this
-/// board with `"needs-company"` when `input.companies` is empty.
+//! Greenhouse — public per-company JSON board API
+//!
+//! Endpoint: `https://boards-api.greenhouse.io/v1/boards/{company}/jobs?content=true`
+//! No global keyword search — requires a company slug. The engine skips this
+//! board with `"needs-company"` when `input.companies` is empty.
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::common::normalize_companies;
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -43,18 +44,6 @@ struct GhJobsResponse {
 /// Maximum number of company slugs processed per scrape call.
 /// Prevents an unbounded number of outbound requests from a large IPC payload.
 const MAX_COMPANIES: usize = 50;
-
-/// Trim, drop blanks, dedupe (first-seen order), and cap to `max`.
-/// Extracted so the normalisation logic can be unit-tested without network.
-pub(crate) fn normalize_companies(input: &[String], max: usize) -> Vec<String> {
-    let mut seen = std::collections::HashSet::new();
-    input
-        .iter()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty() && seen.insert(s.clone()))
-        .take(max)
-        .collect()
-}
 
 pub struct GreenhouseScraper;
 

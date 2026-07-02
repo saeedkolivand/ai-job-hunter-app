@@ -721,6 +721,20 @@
         "actorIdHelper": "Leave empty to use the built-in default actor.",
         "saved": "Settings saved.",
         "saveError": "Could not save settings."
+      },
+      "comeetCompanyUid": {
+        "label": "Comeet Company UID",
+        "placeholder": "Paste your Comeet company UID…",
+        "connected": "Comeet Company UID stored securely",
+        "removeConfirmTitle": "Remove Comeet Company UID?",
+        "removeConfirmDesc": "This deletes the saved Comeet Company UID. Comeet job search will stop returning results until you add it again."
+      },
+      "comeetApiToken": {
+        "label": "Comeet API token",
+        "placeholder": "Paste your Comeet API token…",
+        "connected": "Comeet API token stored securely",
+        "removeConfirmTitle": "Remove Comeet API token?",
+        "removeConfirmDesc": "This deletes the saved Comeet API token. Comeet job search will stop returning results until you add it again."
       }
     },
     "accounts": {
@@ -1670,6 +1684,8 @@
       "rippling": "Rippling",
       "breezy": "Breezy HR",
       "bamboohr": "BambooHR",
+      "workable": "Workable",
+      "comeet": "Comeet",
       "remoteok": "RemoteOK",
       "remotive": "Remotive",
       "arbeitnow": "Arbeit Now",

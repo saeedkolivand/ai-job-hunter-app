@@ -316,6 +316,28 @@ export function AggregatorKeysSettings() {
             <ApifyLinkedinSection settings={scrapingSettings} />
           </div>
         )}
+
+        {/* Comeet board credentials — company UID + API token. No enable toggle:
+            the board activates once both credentials are present. */}
+        <div className="space-y-4 border-t border-foreground/10 pt-4">
+          <AggregatorKeyField
+            slot={PROVIDER_SLOTS.comeetCompanyUid}
+            labelKey="settings.aggregatorKeys.comeetCompanyUid.label"
+            placeholderKey="settings.aggregatorKeys.comeetCompanyUid.placeholder"
+            connectedKey="settings.aggregatorKeys.comeetCompanyUid.connected"
+            removeConfirmTitleKey="settings.aggregatorKeys.comeetCompanyUid.removeConfirmTitle"
+            removeConfirmDescKey="settings.aggregatorKeys.comeetCompanyUid.removeConfirmDesc"
+          />
+
+          <AggregatorKeyField
+            slot={PROVIDER_SLOTS.comeetApiToken}
+            labelKey="settings.aggregatorKeys.comeetApiToken.label"
+            placeholderKey="settings.aggregatorKeys.comeetApiToken.placeholder"
+            connectedKey="settings.aggregatorKeys.comeetApiToken.connected"
+            removeConfirmTitleKey="settings.aggregatorKeys.comeetApiToken.removeConfirmTitle"
+            removeConfirmDescKey="settings.aggregatorKeys.comeetApiToken.removeConfirmDesc"
+          />
+        </div>
       </div>
     </SettingsSection>
   );

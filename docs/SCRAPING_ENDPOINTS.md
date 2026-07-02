@@ -12,31 +12,33 @@
 
 ## Summary table
 
-Active scrapers: **21 boards** (registry as of 2026-07-01). Five boards were retired as direct scrapers and are now covered via the Adzuna/JSearch aggregator (see "Retired — now via aggregator" section below).
+Active scrapers: **23 boards** (registry as of 2026-07-02). Five boards were retired as direct scrapers and are now covered via the Adzuna/JSearch aggregator (see "Retired — now via aggregator" section below).
 
-| Board               | Mode                                | Status            | Confidence | Verified endpoint                                                        | Notes                                    |
-| ------------------- | ----------------------------------- | ----------------- | ---------- | ------------------------------------------------------------------------ | ---------------------------------------- |
-| **Aggregator**      | **HTTP (provider registry)**        | **✅ works**      | **high**   | **Adzuna (primary) / JSearch (paid fallback)**                           | **Bring-your-own-key; keyless = empty**  |
-| LinkedIn            | HTTP (guest)                        | ✅ works          | high       | `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search` |                                          |
-| YCombinator (HN)    | HTTP (JSON API)                     | ✅ works          | high       | `https://hacker-news.firebaseio.com/v0/jobstories.json`                  |                                          |
-| Remotive            | HTTP (JSON API)                     | ✅ works          | high       | `https://remotive.com/api/remote-jobs`                                   |                                          |
-| RemoteOK            | HTTP (JSON API)                     | ✅ works          | high       | `https://remoteok.com/api`                                               |                                          |
-| WWR                 | HTTP (RSS)                          | ✅ works          | high       | `https://weworkremotely.com/remote-jobs.rss`                             |                                          |
-| Arbeitnow           | HTTP (JSON API)                     | ✅ works          | high       | `https://www.arbeitnow.com/api/job-board-api`                            |                                          |
-| Berlin Startup Jobs | HTTP (RSS)                          | ✅ works          | high       | `https://berlinstartupjobs.com/feed/`                                    |                                          |
-| German Tech Jobs    | HTTP (XML)                          | ✅ works          | high       | `https://germantechjobs.de/job_feed.xml` (working)                       |                                          |
-| **Greenhouse**      | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://boards-api.greenhouse.io/v1/boards/{slug}/jobs`**             | **Requires company slug**                |
-| **Lever**           | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://api.lever.co/v0/postings/{company}?mode=json`**               | **Requires company slug**                |
-| **SmartRecruiters** | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://api.smartrecruiters.com/v1/companies/{id}/postings`**         | **Requires company + supports keyword**  |
-| **Personio**        | **HTTP (XML feed, company-scoped)** | **✅ works**      | **high**   | **`https://{company}.jobs.personio.de/xml`**                             | **Requires company slug**                |
-| **Recruitee**       | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://{company}.recruitee.com/api/offers/`**                        | **Requires company slug**                |
-| **Ashby**           | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://api.ashbyhq.com/posting-api/job-board/{clientname}`**         | **Requires company slug**                |
-| Arbeitsagentur      | HTTP (JSON API)                     | ✅ works          | high       | `https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs`   |                                          |
-| **Pinpoint**        | **HTTP (JSON API, company-scoped)** | **⚠️ unverified** | **medium** | **`https://{slug}.pinpointhq.com/postings.json`**                        | **Requires company slug**                |
-| **Rippling**        | **HTTP (JSON API, company-scoped)** | **⚠️ unverified** | **medium** | **`https://api.rippling.com/platform/api/ats/v1/board/{slug}/jobs`**     | **Requires company slug**                |
-| **Breezy HR**       | **HTTP (JSON API, company-scoped)** | **⚠️ unverified** | **medium** | **`https://{slug}.breezy.hr/json`**                                      | **Requires company slug**                |
-| **BambooHR**        | **HTTP (JSON API, company-scoped)** | **⚠️ unverified** | **medium** | **`https://{slug}.bamboohr.com/careers/list`**                           | **Requires company slug**                |
-| **The Muse**        | **HTTP (JSON API, browse feed)**    | **⚠️ unverified** | **medium** | **`https://www.themuse.com/api/public/jobs`**                            | **No keyword param; client-side filter** |
+| Board               | Mode                                | Status            | Confidence | Verified endpoint                                                                 | Notes                                                 |
+| ------------------- | ----------------------------------- | ----------------- | ---------- | --------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| **Aggregator**      | **HTTP (provider registry)**        | **✅ works**      | **high**   | **Adzuna (primary) / JSearch (paid fallback)**                                    | **Bring-your-own-key; keyless = empty**               |
+| LinkedIn            | HTTP (guest)                        | ✅ works          | high       | `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search`          |                                                       |
+| YCombinator (HN)    | HTTP (JSON API)                     | ✅ works          | high       | `https://hacker-news.firebaseio.com/v0/jobstories.json`                           |                                                       |
+| Remotive            | HTTP (JSON API)                     | ✅ works          | high       | `https://remotive.com/api/remote-jobs`                                            |                                                       |
+| RemoteOK            | HTTP (JSON API)                     | ✅ works          | high       | `https://remoteok.com/api`                                                        |                                                       |
+| WWR                 | HTTP (RSS)                          | ✅ works          | high       | `https://weworkremotely.com/remote-jobs.rss`                                      |                                                       |
+| Arbeitnow           | HTTP (JSON API)                     | ✅ works          | high       | `https://www.arbeitnow.com/api/job-board-api`                                     |                                                       |
+| Berlin Startup Jobs | HTTP (RSS)                          | ✅ works          | high       | `https://berlinstartupjobs.com/feed/`                                             |                                                       |
+| German Tech Jobs    | HTTP (XML)                          | ✅ works          | high       | `https://germantechjobs.de/job_feed.xml` (working)                                |                                                       |
+| **Greenhouse**      | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://boards-api.greenhouse.io/v1/boards/{slug}/jobs`**                      | **Requires company slug**                             |
+| **Lever**           | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://api.lever.co/v0/postings/{company}?mode=json`**                        | **Requires company slug**                             |
+| **SmartRecruiters** | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://api.smartrecruiters.com/v1/companies/{id}/postings`**                  | **Requires company + supports keyword**               |
+| **Personio**        | **HTTP (XML feed, company-scoped)** | **✅ works**      | **high**   | **`https://{company}.jobs.personio.de/xml`**                                      | **Requires company slug**                             |
+| **Recruitee**       | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://{company}.recruitee.com/api/offers/`**                                 | **Requires company slug**                             |
+| **Ashby**           | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://api.ashbyhq.com/posting-api/job-board/{clientname}`**                  | **Requires company slug**                             |
+| Arbeitsagentur      | HTTP (JSON API)                     | ✅ works          | high       | `https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs`            |                                                       |
+| **Pinpoint**        | **HTTP (JSON API, company-scoped)** | **⚠️ unverified** | **medium** | **`https://{slug}.pinpointhq.com/postings.json`**                                 | **Requires company slug**                             |
+| **Rippling**        | **HTTP (JSON API, company-scoped)** | **⚠️ unverified** | **medium** | **`https://api.rippling.com/platform/api/ats/v1/board/{slug}/jobs`**              | **Requires company slug**                             |
+| **Breezy HR**       | **HTTP (JSON API, company-scoped)** | **⚠️ unverified** | **medium** | **`https://{slug}.breezy.hr/json`**                                               | **Requires company slug**                             |
+| **BambooHR**        | **HTTP (JSON API, company-scoped)** | **⚠️ unverified** | **medium** | **`https://{slug}.bamboohr.com/careers/list`**                                    | **Requires company slug**                             |
+| **The Muse**        | **HTTP (JSON API, browse feed)**    | **⚠️ unverified** | **medium** | **`https://www.themuse.com/api/public/jobs`**                                     | **No keyword param; client-side filter**              |
+| **Workable**        | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://apply.workable.com/api/v1/widget/accounts/{slug}?details=true`**       | **Requires company slug**                             |
+| **Comeet**          | **HTTP (JSON API, credentialed)**   | **⚠️ unverified** | **low**    | **`https://www.comeet.co/careers-api/2.0/company/{uid}/positions?token={token}`** | **Requires company UID + API token; keyless = empty** |
 
 **Retired — now via aggregator** (removed from `SCRAPERS` registry; results available via Adzuna/JSearch):
 
@@ -767,6 +769,53 @@ Re-verify the response shape against the live API before shipping, in particular
 
 ---
 
+### Workable
+
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/workable/mod.rs`
+
+#### Current scraper
+
+- **URL:** `https://apply.workable.com/api/v1/widget/accounts/{slug}?details=true`
+- **Mode:** HTTP (reqwest)
+- **Scope:** Company-scoped — **requires a company slug** (no free-text keyword search); scraper iterates `BoardSearchInput.companies[]` with per-company fan-out capped at 50 companies per scrape run; per-company URL dedup; path-segment slug guard (DNS-label-shaped character set)
+- **Fields:** `{ name, jobs[].{title, shortcode, url, published_on, created_at, country, city, state, telecommuting, description} }`
+
+#### Verified endpoint (2026-07-02)
+
+- **Search URL:** `https://apply.workable.com/api/v1/widget/accounts/{slug}?details=true` — **live-verified** (not career-ops-ported) against slug `careers-at-sleek` (55 jobs returned)
+- **Response format:** JSON `{ name, description, jobs: [...] }`
+- **Key data fields:** Title: `title`; Company: top-level `name` (falls back to the slug if absent); Location: `[city, state, country]` joined, `"Remote"` appended when `telecommuting`; Posted: `published_on` (fallback `created_at`); URL: `url`, **host-locked to `apply.workable.com`**; Stable ID: `shortcode`, namespaced `workable:{slug}:{shortcode}` (a bare shortcode is only unique within one Workable tenant)
+- **Anti-bot:** None observed during live verification
+
+#### Recommendation
+
+Confirmed working via a real request. Each job row is deserialized independently (`rows_to_jobs`) so a single malformed row can't zero out a whole company's results.
+
+---
+
+### Comeet
+
+**Source:** `apps/desktop/src-tauri/src/scraping/boards/comeet/mod.rs`
+
+#### Current scraper
+
+- **URL:** `https://www.comeet.co/careers-api/2.0/company/{uid}/positions?token={token}`
+- **Mode:** HTTP (reqwest)
+- **Scope:** Credentialed, single-company — `requires_company()` is `false` (the "company" is a fixed per-user credential, not a per-search `companies[]` input); credentials (company UID + API token) read from the OS keyring at scrape time, same `ai:`-namespaced convention as the Apify LinkedIn provider; keyless = empty (never an error)
+- **Fields (career-ops spec):** `{ name, uid, url_comeet_hosted_page/url_active_page, location.{name,city,country}, time_updated }`
+
+#### Unverified endpoint (2026-07-02)
+
+- **Search URL:** `https://www.comeet.co/careers-api/2.0/company/{uid}/positions?token={token}` — confirmed **live** (returns HTTP 400 without real credentials) but the **response shape is unconfirmed**: built from the career-ops (MIT) field spec, not a captured live payload. Needs live-verification with a real company UID + token via the Settings UI.
+- **Key data fields:** Title: `name`; URL: `url_comeet_hosted_page` (fallback `url_active_page`), **host-locked to `comeet.co`**; Location: `location.name` else `[city, country]` joined; Stable ID: `uid`; Posted: `time_updated` (Unix seconds, tolerates RFC3339 too); Company: a speculative per-row `company_name`/`company` field if present, else the configured company UID
+- **Anti-bot:** Unknown — not observed live (endpoint requires real credentials to test past the 400)
+
+#### Recommendation
+
+Live-verify the full response shape (especially the company-name field, which is NOT in the career-ops spec handed to this implementation) once a real company UID + token is available via Settings → API Keys.
+
+---
+
 ## Top priorities
 
 ### Needs monitoring
@@ -788,11 +837,15 @@ No active scrapers are currently blocked. The aggregator (Adzuna/JSearch) covers
 
 ### Confirmed solid (public APIs, no auth, no anti-bot)
 
-Aggregator (Adzuna/JSearch, bring-your-own-key), LinkedIn (guest HTML), YCombinator (Firebase), Remotive, RemoteOK, We Work Remotely (RSS), Arbeitnow, Berlin Startup Jobs (RSS), Greenhouse, Lever, SmartRecruiters, Personio (XML), Recruitee, Ashby, Arbeitsagentur.
+Aggregator (Adzuna/JSearch, bring-your-own-key), LinkedIn (guest HTML), YCombinator (Firebase), Remotive, RemoteOK, We Work Remotely (RSS), Arbeitnow, Berlin Startup Jobs (RSS), Greenhouse, Lever, SmartRecruiters, Personio (XML), Recruitee, Ashby, Arbeitsagentur, Workable (live-verified 2026-07-02).
 
 ### Newly added — unverified (2026-07-01)
 
 Pinpoint, Rippling, Breezy HR, BambooHR, The Muse were added from `santifer/career-ops` (MIT) reconnaissance without a live re-verification pass (no outbound network access in the authoring environment). Re-verify each endpoint's response shape against a real tenant/the live API before relying on it in production; see the per-board sections above.
+
+### Newly added — unverified, credentialed (2026-07-02)
+
+Comeet was added from the career-ops (MIT) field spec; the live endpoint 400s without real credentials, so the response shape is unconfirmed (see the Comeet section above). Workable, added the same day, IS live-verified (real request against a live tenant) and is listed under "Confirmed solid" above instead.
 
 ---
 

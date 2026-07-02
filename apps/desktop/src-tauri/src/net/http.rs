@@ -30,6 +30,62 @@ fn base_builder() -> reqwest::ClientBuilder {
         .user_agent(DEFAULT_UA)
         .pool_max_idle_per_host(10)
         .pool_idle_timeout(Duration::from_secs(60))
+        .redirect(redirect_policy())
+}
+
+/// Mirrors `reqwest::redirect::Policy`'s own built-in default (`limited(10)`)
+/// so wrapping it in [`redirect_policy`]'s SSRF guard doesn't silently drop
+/// that ceiling — a custom policy does not get the default cap for free.
+const MAX_REDIRECTS: usize = 10;
+
+/// Fleet-wide redirect-target SSRF guard. Every client built from
+/// [`base_builder`] — [`shared`], [`build_client`], and therefore every
+/// subsystem that composes them (scrapers, AI providers, geocoding, profile
+/// import) — rejects a redirect hop whose target is a non-`http(s)` scheme or
+/// a private/loopback/link-local/unique-local IP literal, at this one
+/// chokepoint. [`get_guarded`]/[`get_guarded_following_redirects`] keep their
+/// own stricter `Policy::none()` + IP-pinned hop-by-hop validation for
+/// attacker-controlled URLs — this guard is the equivalent floor for the
+/// pooled client every named-board scraper uses via `fetch_json`/`fetch_text`.
+///
+/// ponytail: `redirect::Policy::custom` takes a **synchronous** closure, so
+/// it can only check the redirect target's literal scheme/host — it cannot
+/// perform an async DNS lookup the way `get_guarded`'s IP-pinned flow does.
+/// A *hostname* redirect target that itself resolves to a private IP (DNS
+/// rebinding) is therefore NOT caught here, only IP-literal targets (the
+/// common SSRF payload, e.g. `Location: http://169.254.169.254/…`) and
+/// non-http(s) schemes are. Closing the DNS-rebinding gap fully would mean
+/// routing every scraper request through the guarded IP-pinned path, which
+/// is a much larger change than this fleet-wide hardening pass; also caps
+/// the hop count so a custom policy doesn't lose reqwest's own redirect-loop
+/// protection.
+fn redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        if attempt.previous().len() >= MAX_REDIRECTS {
+            return attempt.error("too many redirects");
+        }
+        if is_allowed_redirect_target(attempt.url()) {
+            attempt.follow()
+        } else {
+            attempt.error(
+                "blocked redirect to a private/loopback/link-local host or non-http(s) scheme",
+            )
+        }
+    })
+}
+
+/// Pure predicate behind [`redirect_policy`] — extracted so the SSRF decision
+/// is unit-testable without constructing a `reqwest::redirect::Attempt`
+/// (its fields are private to `reqwest`, so the policy closure itself can't
+/// be exercised directly from this crate's tests).
+fn is_allowed_redirect_target(url: &reqwest::Url) -> bool {
+    if url.scheme() != "http" && url.scheme() != "https" {
+        return false;
+    }
+    match url.host_str() {
+        Some(host) => crate::net::ssrf::is_safe_public_host(host),
+        None => false,
+    }
 }
 
 /// The single pooled HTTP client. Built on first use, then cloned (cheap — a
@@ -347,5 +403,124 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    // ── is_allowed_redirect_target: fleet-wide redirect SSRF guard ─────────────
+    // Hermetic — pure URL parsing + the `net::ssrf` classifier, no network.
+
+    fn url(s: &str) -> reqwest::Url {
+        reqwest::Url::parse(s).unwrap()
+    }
+
+    #[test]
+    fn is_allowed_redirect_target_accepts_public_https() {
+        assert!(is_allowed_redirect_target(&url(
+            "https://boards.greenhouse.io/acme/jobs/1"
+        )));
+    }
+
+    #[test]
+    fn is_allowed_redirect_target_rejects_loopback_literal() {
+        assert!(!is_allowed_redirect_target(&url("http://127.0.0.1/steal")));
+        assert!(!is_allowed_redirect_target(&url("http://[::1]/steal")));
+    }
+
+    #[test]
+    fn is_allowed_redirect_target_rejects_cloud_metadata_link_local() {
+        assert!(!is_allowed_redirect_target(&url(
+            "http://169.254.169.254/latest/meta-data/"
+        )));
+    }
+
+    #[test]
+    fn is_allowed_redirect_target_rejects_rfc1918_private_ranges() {
+        for u in [
+            "http://10.0.0.1/",
+            "http://172.16.0.1/",
+            "http://192.168.1.1/",
+        ] {
+            assert!(!is_allowed_redirect_target(&url(u)), "{u} must be blocked");
+        }
+    }
+
+    #[test]
+    fn is_allowed_redirect_target_rejects_ipv6_unique_local() {
+        assert!(!is_allowed_redirect_target(&url("http://[fc00::1]/")));
+    }
+
+    #[test]
+    fn is_allowed_redirect_target_rejects_non_http_scheme() {
+        assert!(!is_allowed_redirect_target(&url("file:///etc/passwd")));
+        assert!(!is_allowed_redirect_target(&url(
+            "ftp://files.example.com/x"
+        )));
+    }
+
+    #[test]
+    fn is_allowed_redirect_target_allows_arbitrary_public_hostname() {
+        // A public-looking hostname is allowed here even though it could still
+        // resolve to a private IP via DNS rebinding — this synchronous policy
+        // cannot resolve DNS. See the `redirect_policy` doc comment.
+        assert!(is_allowed_redirect_target(&url("https://example.com/x")));
+    }
+
+    // ── redirect_policy: actually wired onto the pooled client ─────────────────
+    // The tests above only prove `is_allowed_redirect_target` is correct in
+    // isolation (it has to be extracted — `reqwest::redirect::Attempt` has no
+    // public constructor). This test closes the gap: a real round-trip through
+    // `shared()` proves `redirect_policy()` is the policy the pooled client
+    // actually uses, not merely a well-tested function nobody wired up.
+    // NOTE: the redirect target must be REACHABLE (the same MockServer's own
+    // `/landed` route) rather than a refusing port like 127.0.0.1:9. A
+    // refusing port makes this test tautological — the default (unwired)
+    // reqwest redirect policy would ALSO follow the hop, fail to connect, and
+    // return `Err`, so the test would pass even if `redirect_policy()` were
+    // never wired onto `shared()`. By pointing at a route that genuinely
+    // returns 200, an `Err` here can only mean the SSRF guard blocked the
+    // hop (loopback is unsafe regardless of reachability) — an unwired
+    // client would instead SUCCEED (200, body "landed").
+    #[tokio::test]
+    async fn shared_client_blocks_redirect_to_loopback_target() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/landed"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("landed"))
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/start"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("location", format!("{}/landed", mock_server.uri())),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let result = shared()
+            .get(format!("{}/start", mock_server.uri()))
+            .send()
+            .await;
+
+        let err = result.expect_err(
+            "shared() must error on a redirect to a loopback target — the target IS \
+             reachable (same MockServer's /landed route), so a follow would have \
+             succeeded (200) if redirect_policy() were never wired onto the real \
+             pooled client",
+        );
+        // reqwest::Error's Display only prints "error following redirect for url
+        // (...)" — the custom message passed to `attempt.error(...)` lives on the
+        // wrapped `source`, which Debug (not Display) surfaces. Assert on Debug so
+        // this actually proves *why* it failed (our guard) rather than merely that
+        // it failed (which a connect error would also satisfy).
+        let debug_msg = format!("{err:?}");
+        assert!(
+            debug_msg.contains("blocked redirect"),
+            "error must reflect the redirect-policy block specifically, got: {debug_msg}"
+        );
     }
 }
