@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782973030415,
+  "lastUpdate": 1782984333511,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2135,6 +2135,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 285178,
             "range": "± 2733",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a2d3e0be5838dcc45e4215005a63baafd951b54a",
+          "message": "ci: harden pipeline gates, review gate, and fleet token efficiency (#534)\n\n* ci: harden pipeline gates, deploy-key isolation, and the review gate\n\nCI: ci-ok now requires success from changes/dependencies (+ dependency-review\non prs) so an install or advisory failure can no longer false-green the only\nrequired check; the benchmark job's release deploy key is event-gated away\nfrom pr runs (pr leg checks out keyless with persist-credentials off);\nsemantic-release extra_plugins exact-pinned; two template-injection fixes\n(github.ref -> $GITHUB_REF); zizmor now blocking at high severity with a\nscoped, documented cache-poisoning suppression for the dispatch-only\nrelease workflow; dependabot gains a cargo ecosystem, minor+patch grouping,\nand a 2-day cooldown; pnpm minimumReleaseAge committed explicitly (1440).\n\nAgent system: review-gate fixes — **/ globs now match root files (root\nmanifests route to the security reviewer; root lockfile stays skiplisted),\nuntracked files are diffed into the review, empty reviewer output no longer\ncaches hunks as reviewed, the security reviewer gets a reserved critic slot\nand highRisk derives from matched globs, checklist slice 1600->5000, review\ncache capped at 2000 lines; review-routes pruned of dead globs and extended\n(translations/test-ids/tauri-client/scripts/.github owners; limits+commands\nsecurity globs); check-agent-system gains reverse drift checks (glob\nprefixes must exist; referenced agents must have files); stale dir\nreferences cleaned from four agent prompts; CLAUDE.md pre-pr gate points at\n/review-security.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* refactor: token-efficiency pass for the agent fleet\n\n- handoff template: mandatory <=2K 'current state' header every stage reads;\n  append-only log below read only by project-steward (token-efficiency +\n  author-contract updated to match)\n- author contract: hard codegraph-first rule before any raw grep/read\n- dedupe the 'strict enforcement' boilerplate from 16 agent files into one\n  canonical token-efficiency section; agents keep only a pointer + their\n  domain-specific high examples (net -11 lines; also removes a stale\n  pnpm -F validation contradiction from frontend-author)\n- claude.md: critic count scales with risk (gate-only / one critic / full\n  trio incl. security)\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* build: ignore quick-xml rustsec advisories (no transitive fix path)\n\nrustsec-2026-0194 (quadratic duplicate-attribute check) and rustsec-2026-0195\n(unbounded nsreader namespace allocation) — both DoS-class, published as a\nbatch against quick-xml <0.41. All three locked versions are transitive pins\n(docx-rs, feed-rs + tauri-winrt-notification, citationberg/typst) and the fix\nis a semver-major none of them accept yet. Exposure bounded: own generated\ncontent everywhere except board RSS, which the shared fetch layer caps at\n8 MB. Remove when upstreams bump to >=0.41.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-02T11:06:17+02:00",
+          "tree_id": "12ceba19776ab93c73b1ae5ff47e210c8e18d201",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/a2d3e0be5838dcc45e4215005a63baafd951b54a"
+        },
+        "date": 1782984332783,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1891094,
+            "range": "± 62106",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2566328,
+            "range": "± 65361",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 293085,
+            "range": "± 6343",
             "unit": "ns/iter"
           }
         ]
