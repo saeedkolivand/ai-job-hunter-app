@@ -292,7 +292,7 @@ jobs:
           echo "pnpm Version: $(pnpm --version)"
           echo "Runner OS: ${{ runner.os }}"
           echo "Event Name: ${{ github.event_name }}"
-          echo "Ref: ${{ github.ref }}"
+          echo "Ref: $GITHUB_REF"
           echo "::endgroup::"
 
   # ──────────────────────────────────────────────────────────────────────
@@ -1022,12 +1022,39 @@ jobs:
   ci-ok:
     name: ✅ CI OK
     if: always()
-    needs: [lint-format, type-check, tests, build-verification, quality-checks, extension]
+    needs:
+      [
+        changes,
+        dependencies,
+        dependency-review,
+        lint-format,
+        type-check,
+        tests,
+        build-verification,
+        quality-checks,
+        extension,
+      ]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: ✅ Verify required jobs
         run: |
+          # Always-on jobs: never path-skipped on PRs, so 'skipped' means an
+          # upstream failure or cancellation — only 'success' passes.
+          # (dependency-review only exists on pull_request events, so it is
+          # exempted on workflow_dispatch runs.)
+          strict="${{ needs.changes.result }} ${{ needs.dependencies.result }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            strict="$strict ${{ needs.dependency-review.result }}"
+          fi
+          echo "Always-on job results: $strict"
+          for r in $strict; do
+            if [ "$r" != "success" ]; then
+              echo "::error::An always-on required job did not succeed (result: $r)"
+              exit 1
+            fi
+          done
+          # Path-filtered jobs: 'skipped' is a legitimate pass (filtered out).
           results="${{ needs.lint-format.result }} ${{ needs.type-check.result }} ${{ needs.tests.result }} ${{ needs.build-verification.result }} ${{ needs.quality-checks.result }} ${{ needs.extension.result }}"
           echo "Job results: $results"
           for r in $results; do

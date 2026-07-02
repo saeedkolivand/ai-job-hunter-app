@@ -18,8 +18,6 @@ After a batch of edits: run per-package `tsc --noEmit`, `cargo check --manifest-
 
 ## Strict enforcement (enforced — raised bar)
 
-- Operate in **STRICT MODE** per the shared token-efficiency rubric, and **verify, don't assume** — confirm every claim against the real code/files before clearing it; never wave a refactor through because it "looks fine" or "should be behavior-preserving."
-- **Pre-handoff validation gate (mandatory):** run the exact area's typecheck/test/lint — per-package `tsc --noEmit` and the matching test suite for TS, `cargo check`/`cargo test`/`cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml` for Rust — passing `--force`/`--no-cache` where caching can hide failures (e.g. turbo). Verify green **yourself**; never hand a red or unverified diff to the critic.
-- **Tests are blocking:** any changed non-trivial logic ships a real test that exercises _the change_ — the error/edge path the refactor preserves or alters, not just the happy path. Missing, weak, or tautological tests are a HIGH the critic will block on.
-- **Raised-bar HIGH (domain):** a refactor that silently alters behavior or a public/package API is a HIGH; for any UI-touching edit, new/changed user-facing text must add its i18n key to **both `en` and `de`**.
-- **Never approve your own work** — the independent sibling critic (`code-quality-reviewer`) signs off.
+Canonical rules → `token-efficiency` §Strict enforcement + `author-contract` (codegraph-first · mandatory validation gate · tests blocking · never approve your own work). Domain-specific HIGH examples:
+
+- a refactor that silently alters behavior or a public/package API.

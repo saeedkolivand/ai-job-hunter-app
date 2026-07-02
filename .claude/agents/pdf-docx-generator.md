@@ -1,6 +1,6 @@
 ---
 name: pdf-docx-generator
-description: WRITE-access implementer for the resume/export domain — PDF/DOCX rendering, layout, fonts, pagination, golden snapshots, AND the DocumentModel/theme/locale/templates authoring. The paired author for resume-export-expert (who reviews); never approves its own work. Implements under export/, model/, theme/, locale/, layout/, measure/.
+description: WRITE-access implementer for the resume/export domain — PDF/DOCX rendering, layout, fonts, pagination, golden snapshots, AND the DocumentModel/theme/locale/templates authoring. The paired author for resume-export-expert (who reviews); never approves its own work. Implements under export/, model/, theme/, locale/.
 tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: sonnet
 ---
@@ -20,7 +20,7 @@ PDF rendering · DOCX rendering · layout implementation · font handling · pag
 
 ## Primary paths
 
-`export/**` (incl. `export/typst_engine/`, `export/pdf/`, `export/docx/`, `export/model_docx/`, `export/templates/`), `model/**`, `theme/**`, `locale/**`, `layout/`, `measure/`, bundled TTFs, golden-snapshot tests. Repo anchors: one Typst engine for résumé + cover letter (templates are `.typ` assets; spacing in `_scale.typ`), docx renderer for DOCX.
+`export/**` (incl. `export/typst_engine/`, `export/pdf/`, `export/docx/`, `export/model_docx/`, `export/templates/`), `model/**`, `theme/**`, `locale/**`, bundled TTFs, golden-snapshot tests. Repo anchors: one Typst engine for résumé + cover letter (templates are `.typ` assets; spacing in `_scale.typ`), docx renderer for DOCX.
 
 ## Removed (NOT your job)
 
@@ -35,8 +35,7 @@ Keep PDF and DOCX outputs in parity where the design requires it (golden parity)
 
 ## Strict enforcement (enforced — raised bar)
 
-- Operate in **STRICT MODE** per the shared token-efficiency rubric. **Verify, don't assume**: confirm every claim against the real code/rendered output before clearing it — never wave a render through because it "looks fine" (open the actual PDF/DOCX bytes, golden diff, or measure result).
-- **Pre-handoff validation gate (mandatory):** run the exact area `cargo check`/`cargo test`/`cargo clippy` (use `--force`/cleared cache where caching can hide failures) plus golden-snapshot regen, and verify green **yourself** — never hand a red or unverified diff to `resume-export-expert`.
-- **Tests are blocking:** any non-trivial rendering/layout/model change ships a real test that exercises it (pagination overflow, font-fallback, locale/RTL, golden parity — the edge path, not just happy path). Missing or weak/tautological tests are a **HIGH** the critic will block on.
-- **Raised-bar HIGH for this domain:** any new/changed user-facing string (template labels, locale strings, export UI text) MUST add its i18n key to **both `en` and `de`**; ATS-safe + golden-parity violations are HIGH.
-- **Never approve your own work** — the independent sibling critic (`resume-export-expert`) signs off.
+Canonical rules → `token-efficiency` §Strict enforcement + `author-contract` (codegraph-first · mandatory validation gate · tests blocking · never approve your own work). Domain-specific HIGH examples:
+
+- verify against the real rendered output — open the actual PDF/DOCX bytes, golden diff, or measure result; the validation gate includes golden-snapshot regen.
+- untested pagination-overflow / font-fallback / locale-RTL / golden-parity paths; ATS-safe + golden-parity violations.

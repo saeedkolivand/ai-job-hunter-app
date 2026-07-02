@@ -326,13 +326,23 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: 📥 Checkout Repository
+      # Full history + the release deploy key so the push-to-main run can
+      # commit the refreshed dashboard back to main. PR runs check out WITHOUT
+      # the key (and without persisted credentials): `cargo bench` executes PR
+      # code, which must never see a secret that can push to main.
+      - name: 📥 Checkout Repository (push/dispatch — with deploy key)
+        if: github.event_name != 'pull_request'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          # Full history + the release deploy key so the push-to-main run can
-          # commit the refreshed dashboard back to main. PR runs stay on PR code.
           fetch-depth: 0
           ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
+
+      - name: 📥 Checkout Repository (PR — no credentials)
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: 🦀 Setup Rust (Tauri)
         uses: ./.github/actions/setup-rust

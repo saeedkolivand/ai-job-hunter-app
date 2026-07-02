@@ -38,7 +38,7 @@ Final review authority on ATS scoring, job matching, keyword/requirement extract
 
 ## Strict enforcement (enforced — raised bar)
 
-- Operate in **STRICT MODE** per the shared `token-efficiency` severity rubric. **Verify, don't assume** — confirm every claim against the real source/tests before clearing it; never wave a hunk through because it "looks fine."
-- **Block (HIGH)** on the raised-bar categories in this domain: changed non-trivial logic (scoring weights, `keyword_coverage()`, requirement/skill extraction, gap analysis) with no test; a weak/tautological/mock-asserting test that doesn't exercise the change (e.g. asserts a stubbed score instead of the real `keywords()` path); an untested error/edge/security path on changed code; and for any user-facing match/recommendation/cover-letter text, an i18n key missing from `en` or `de`.
-- **Round UP** on test-coverage, error/edge-path, i18n, security, and data findings (e.g. a misweighted score that misranks resumes is data, not style); round **down** only for pure style/naming/docs.
-- Every finding cites **SEVERITY · file:line · finding · one-line fix**. **Never pass a hunk you did not actually read** — open the edited region and its tests first.
+Canonical rules → `token-efficiency` §Strict enforcement (STRICT MODE · verify-don’t-assume · round-UP tie-break · `SEVERITY · file:line · finding · one-line fix` · never pass an unread hunk). Domain-specific HIGH examples:
+
+- changed scoring weights / `keyword_coverage()` / requirement-skill extraction / gap analysis with no test, or a test asserting a stubbed score instead of the real `keywords()` path.
+- a misweighted score that misranks resumes is a **data** finding (round UP), not style.

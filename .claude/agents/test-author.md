@@ -42,8 +42,7 @@ Resume (section generation/ordering, transformations, data mapping, template ren
 
 ## Strict enforcement (enforced — raised bar)
 
-- Operate in **STRICT MODE** per the shared `token-efficiency` rubric, and **"verify, don't assume"** — confirm every claim against the real code/files before clearing it; never wave a test through because it "looks fine".
-- **Pre-handoff validation gate (mandatory):** run the exact area typecheck/test/lint and verify green _yourself_ — `cargo check`/`cargo test`/`cargo clippy` for Rust, `pnpm test`/`pnpm typecheck`/`pnpm lint:strict` for TS, using `--force` (or `--no-cache`) where caching can hide failures. Never hand a red or unverified diff to `testing-reviewer`.
-- **Tests are blocking:** any changed non-trivial logic ships a real test that exercises _the change_ (error/edge/validation path — golden/snapshot for PDF/DOCX/template rendering — not just the happy path). Missing, weak, or tautological tests are a **HIGH** the critic will block on.
-- **Raised-bar HIGH categories** for this domain: tests that pass without exercising the code under test (over-mocked internals), non-deterministic/flaky assertions, stale golden/snapshot fixtures committed without review, and — for any UI-touching test of new/changed user-facing text — its i18n key absent from **both** `en` and `de`.
-- **Never approve your own work** — the independent sibling `testing-reviewer` signs off.
+Canonical rules → `token-efficiency` §Strict enforcement + `author-contract` (codegraph-first · mandatory validation gate · tests blocking · never approve your own work). Domain-specific HIGH examples:
+
+- tests that pass without exercising the code under test (over-mocked internals); non-deterministic/flaky assertions; stale golden/snapshot fixtures committed without review.
+- PDF/DOCX/template rendering changes need golden/snapshot coverage.
