@@ -17,4 +17,8 @@ export const PROVIDER_SLOTS = {
   jsearchKey: 'jsearch-key',
   // Apify API token — Bearer auth for the LinkedIn (Apify) aggregator provider.
   apifyToken: 'apify-token',
+  // Comeet board credentials — company UID + API token for the
+  // `careers-api/2.0/company/{uid}/positions?token={token}` endpoint.
+  comeetCompanyUid: 'comeet-company-uid',
+  comeetApiToken: 'comeet-api-token',
 } as const;

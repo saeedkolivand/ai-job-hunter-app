@@ -2,7 +2,7 @@
  * AggregatorKeysSettings — focused behaviour tests.
  *
  * Covers:
- *  - not connected: password inputs rendered for all four key fields.
+ *  - not connected: password inputs rendered for all six key fields (incl. Comeet).
  *  - not connected: eye-toggle buttons have accessible names (a11y guard).
  *  - not connected: toggling show/hide changes input type.
  *  - not connected: Save calls setProviderKey after typing a value.
@@ -16,12 +16,13 @@
  *  - Apify LinkedIn section: toggle error uses i18n key, not raw error.
  *  - Apify LinkedIn section: actor-id Save calls updateScrapingSettings with the trimmed value.
  *  - Apify LinkedIn section: actor-id Save is re-entrancy guarded (isPending).
+ *  - Comeet section: both credential field labels render (company UID + API token).
  *
  * Service hooks are stubbed at the boundary; the real @ajh/ui tree is used
  * (only useNotification is overridden to avoid a Notification provider).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { PROVIDER_SLOTS } from '@ajh/shared';
@@ -110,9 +111,9 @@ function getPasswordInputs(container: HTMLElement) {
 // ── tests — not connected (default keyState = all false) ──────────────────
 
 describe('AggregatorKeysSettings — not connected', () => {
-  it('renders password inputs for all four key fields', () => {
+  it('renders password inputs for all six key fields (incl. Comeet)', () => {
     const { container } = render(<AggregatorKeysSettings />);
-    expect(getPasswordInputs(container).length).toBe(4);
+    expect(getPasswordInputs(container).length).toBe(6);
   });
 
   it('Save buttons are disabled when inputs are empty', () => {
@@ -121,26 +122,26 @@ describe('AggregatorKeysSettings — not connected', () => {
     saveButtons.forEach((btn) => expect(btn).toBeDisabled());
   });
 
-  it('eye-toggle buttons have accessible names for all four fields', () => {
+  it('eye-toggle buttons have accessible names for all six fields', () => {
     render(<AggregatorKeysSettings />);
     const eyeToggles = screen.getAllByRole('button', {
       name: 'settings.aiProvider.showKey',
     });
-    expect(eyeToggles.length).toBe(4);
+    expect(eyeToggles.length).toBe(6);
   });
 
   it('toggling the first eye-button switches that field from password to text', async () => {
     const user = userEvent.setup();
     const { container } = render(<AggregatorKeysSettings />);
 
-    expect(getPasswordInputs(container).length).toBe(4);
+    expect(getPasswordInputs(container).length).toBe(6);
 
     const toggles = screen.getAllByRole('button', { name: 'settings.aiProvider.showKey' });
     const firstToggle = toggles[0];
     if (!firstToggle) throw new Error('No eye-toggle found');
     await user.click(firstToggle);
 
-    expect(getPasswordInputs(container).length).toBe(3);
+    expect(getPasswordInputs(container).length).toBe(5);
     // actor-id input is always type="text"; toggled credential input adds a second.
     expect(Array.from(container.querySelectorAll('input[type="text"]')).length).toBe(2);
   });
@@ -397,10 +398,10 @@ describe('AggregatorKeysSettings — Apify LinkedIn section', () => {
     });
     await user.type(actorInput, 'my~actor');
 
-    // The actor-id Save is a separate button from the credential Save buttons —
-    // get all save buttons and pick the last one (actor-id save renders after them).
-    const saveButtons = screen.getAllByRole('button', { name: /settings\.aggregatorKeys\.save/i });
-    const actorSave = saveButtons[saveButtons.length - 1];
+    // The actor-id Save button lives in the same row as the input — scope the
+    // query to that row instead of an array position (fragile now that the
+    // Comeet fields render more Save buttons after this one).
+    const actorSave = actorInput.closest('div')?.querySelector('button');
     if (!actorSave) throw new Error('No actor-id Save button found');
     await user.click(actorSave);
 
@@ -431,5 +432,44 @@ describe('AggregatorKeysSettings — Apify LinkedIn section', () => {
     expect(
       screen.getByText('settings.aggregatorKeys.apifyLinkedin.costWarning')
     ).toBeInTheDocument();
+  });
+});
+
+// ── tests — Comeet section ─────────────────────────────────────────────────
+
+describe('AggregatorKeysSettings — Comeet section', () => {
+  it('renders both the company UID and API token field labels', () => {
+    render(<AggregatorKeysSettings />);
+    expect(screen.getByText('settings.aggregatorKeys.comeetCompanyUid.label')).toBeInTheDocument();
+    expect(screen.getByText('settings.aggregatorKeys.comeetApiToken.label')).toBeInTheDocument();
+  });
+
+  it('calls setProviderKey with the Comeet company-UID slot on Save', async () => {
+    mockSetMutateAsync.mockClear();
+    const user = userEvent.setup();
+    render(<AggregatorKeysSettings />);
+
+    // Scope to the field's own row via its rendered label — not a positional
+    // index, which silently breaks if a field is ever appended after Comeet.
+    const label = screen.getByText('settings.aggregatorKeys.comeetCompanyUid.label');
+    const row = label.parentElement;
+    if (!row) throw new Error('Comeet company-UID field row not found');
+
+    const companyUidInput = within(row).getByPlaceholderText(
+      'settings.aggregatorKeys.comeetCompanyUid.placeholder'
+    );
+    await user.type(companyUidInput, 'my-company-uid');
+
+    const companyUidSave = within(row).getByRole('button', {
+      name: /settings\.aggregatorKeys\.save/i,
+    });
+    await user.click(companyUidSave);
+
+    await waitFor(() =>
+      expect(mockSetMutateAsync).toHaveBeenCalledWith({
+        provider: PROVIDER_SLOTS.comeetCompanyUid,
+        apiKey: 'my-company-uid',
+      })
+    );
   });
 });

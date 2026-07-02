@@ -1,12 +1,13 @@
-/// Rippling ATS — public per-company board JSON
-///
-/// Endpoint: `https://api.rippling.com/platform/api/ats/v1/board/{slug}/jobs`
-/// No global keyword search — requires a company slug. The engine skips this
-/// board with `"needs-company"` when `input.companies` is empty.
-///
-/// Endpoint reconnaissance ported from santifer/career-ops (MIT), `providers/rippling.mjs`.
+//! Rippling ATS — public per-company board JSON
+//!
+//! Endpoint: `https://api.rippling.com/platform/api/ats/v1/board/{slug}/jobs`
+//! No global keyword search — requires a company slug. The engine skips this
+//! board with `"needs-company"` when `input.companies` is empty.
+//!
+//! Endpoint reconnaissance ported from santifer/career-ops (MIT), `providers/rippling.mjs`.
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::common::normalize_companies;
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -15,18 +16,6 @@ const BOARD_ID: &str = "rippling";
 /// Maximum number of company slugs processed per scrape call.
 /// Prevents an unbounded number of outbound requests from a large IPC payload.
 const MAX_COMPANIES: usize = 50;
-
-/// Trim, drop blanks, dedupe (first-seen order), and cap to `max`.
-/// Extracted so the normalisation logic can be unit-tested without network.
-pub(crate) fn normalize_companies(input: &[String], max: usize) -> Vec<String> {
-    let mut seen = std::collections::HashSet::new();
-    input
-        .iter()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty() && seen.insert(s.clone()))
-        .take(max)
-        .collect()
-}
 
 /// Validate the Rippling board slug (a URL path segment, not a hostname
 /// label — so mixed case is allowed, unlike the DNS-label boards). Rejects

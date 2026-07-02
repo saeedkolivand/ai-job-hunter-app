@@ -1,12 +1,13 @@
-/// BambooHR — public per-company careers list JSON
-///
-/// Endpoint: `https://{slug}.bamboohr.com/careers/list`
-/// No global keyword search — requires a company slug. The engine skips this
-/// board with `"needs-company"` when `input.companies` is empty.
-///
-/// Endpoint reconnaissance ported from santifer/career-ops (MIT), `providers/bamboohr.mjs`.
+//! BambooHR — public per-company careers list JSON
+//!
+//! Endpoint: `https://{slug}.bamboohr.com/careers/list`
+//! No global keyword search — requires a company slug. The engine skips this
+//! board with `"needs-company"` when `input.companies` is empty.
+//!
+//! Endpoint reconnaissance ported from santifer/career-ops (MIT), `providers/bamboohr.mjs`.
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::common::{is_valid_dns_label_slug, normalize_companies};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -15,30 +16,6 @@ const BOARD_ID: &str = "bamboohr";
 /// Maximum number of company slugs processed per scrape call.
 /// Prevents an unbounded number of outbound requests from a large IPC payload.
 const MAX_COMPANIES: usize = 50;
-
-/// Trim, drop blanks, dedupe (first-seen order), and cap to `max`.
-/// Extracted so the normalisation logic can be unit-tested without network.
-pub(crate) fn normalize_companies(input: &[String], max: usize) -> Vec<String> {
-    let mut seen = std::collections::HashSet::new();
-    input
-        .iter()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty() && seen.insert(s.clone()))
-        .take(max)
-        .collect()
-}
-
-/// Validate that a company slug is a single valid DNS hostname label.
-/// BambooHR uses the slug as a subdomain — a slug with dots, slashes, or
-/// colons could change the URL authority and redirect the fetch away from
-/// BambooHR (SSRF).
-fn is_valid_bamboohr_slug(slug: &str) -> bool {
-    !slug.is_empty()
-        && slug.len() <= 63
-        && slug.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-        && !slug.starts_with('-')
-        && !slug.ends_with('-')
-}
 
 /// BambooHR job ids have been observed as both JSON numbers and strings
 /// across tenants — accept either, trimmed, dropping empty values.
@@ -197,7 +174,7 @@ impl Scraper for BambooHrScraper {
             // Guard: reject slugs that are not valid single DNS hostname labels.
             // A slug like `127.0.0.1:8443/foo` would change the URL authority
             // and redirect the fetch away from BambooHR (SSRF).
-            if !is_valid_bamboohr_slug(&company) {
+            if !is_valid_dns_label_slug(&company) {
                 log::warn!("[bamboohr] skipping invalid company slug '{}'", company);
                 if let Some(ref on_progress) = ctx.on_progress {
                     on_progress((i + 1) as f32 / total as f32);

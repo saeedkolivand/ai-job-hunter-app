@@ -491,6 +491,41 @@ async fn test_fetch_text_429_with_retry_after_succeeds() {
     assert_eq!(result.unwrap().text, "ok");
 }
 
+/// Regression: a transport-level failure (connection refused — no wiremock
+/// server involved) must not leak the request URL's query string into the
+/// resulting `AppError`. `reqwest::Error`'s own `Display` embeds the full
+/// URL (" for url (...)") including query params, which can carry API
+/// secrets (Adzuna `app_key`, Comeet `token`, ...); `fetch_text`'s
+/// transport-failure branches must call `.without_url()` before stringifying.
+/// Port 9 (discard) on loopback deterministically refuses connections —
+/// hermetic, no real network reached.
+#[tokio::test]
+async fn fetch_text_transport_error_does_not_leak_query_secret() {
+    let signal = tokio_util::sync::CancellationToken::new();
+    let url = "http://127.0.0.1:9/jobs?token=SECRET";
+
+    let result = fetch_text(
+        url,
+        FetchOptions {
+            retries: 0,
+            ..Default::default()
+        },
+        signal,
+    )
+    .await;
+
+    let err = result.expect_err("connection to a refusing port must fail");
+    let msg = err.to_string();
+    assert!(
+        !msg.contains("SECRET"),
+        "error string must not leak the query secret: {msg}"
+    );
+    assert!(
+        !msg.contains("token="),
+        "error string must not leak the query string at all: {msg}"
+    );
+}
+
 /// Per-host limiter: `for_host` returns a shared limiter and `record_request`
 /// correctly registers a request. This verifies the registry mechanics without
 /// running a full HTTP round-trip.
