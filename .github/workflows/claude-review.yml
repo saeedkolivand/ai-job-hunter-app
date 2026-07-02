@@ -65,7 +65,7 @@ jobs:
           fetch-depth: 0
 
       - name: 🤖 Run Claude review
-        uses: anthropics/claude-code-action@74eedf1a1892082d619c3edb66b9402da6520e7f # v1.0.156
+        uses: anthropics/claude-code-action@6c0083bb7289c31716797a039b6367b3079cc46e # v1.0.162
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # NO `prompt` on purpose: a prompt forces "automation mode", where the
@@ -78,5 +78,5 @@ jobs:
           # to automation mode, so the review still uses our agent routing + the
           # token-efficiency contract while being able to post.
           claude_args: |
-            --model claude-sonnet-4-6
+            --model claude-opus-4-8
             --append-system-prompt "Review this pull request. Map the changed files to their owner in .claude/review-routes.json (first matching primary glob wins), apply that .claude/agents checklist plus the .claude/skills/token-efficiency contract, and review only the changed files. Severity: only HIGH or CRITICAL are blocking (architecture violations; untested error or security paths; credential, IPC, or updater exploits; data loss); treat the rest as advisory. Post findings as inline comments on the changed lines. Be advisory only and do not approve or block the PR."
