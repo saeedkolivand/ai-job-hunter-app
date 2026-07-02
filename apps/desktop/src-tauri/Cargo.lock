@@ -87,7 +87,7 @@ dependencies = [
 name = "ajh-tauri"
 version = "0.120.0"
 dependencies = [
- "aes 0.8.4",
+ "aes 0.9.1",
  "aes-gcm",
  "anyhow",
  "apple-native-keyring-store",

@@ -199,7 +199,7 @@ wait-timeout = "0.2"
 # password comes from macOS Keychain / Linux libsecret). The `hmac` feature
 # gates the bare `pbkdf2_hmac` fn; default features (password-hash) stay off.
 [target."cfg(unix)".dependencies]
-aes = "0.8"
+aes = "0.9"
 # `alloc` exposes `cipher`'s Vec-returning `decrypt_padded_vec_mut` (used by the
 # Chromium cookie CBC decrypt in scraping/board_login/import.rs). Without it the
 # method is gated out and the macOS/Linux release build fails to compile (the
