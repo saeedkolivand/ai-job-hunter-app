@@ -287,6 +287,24 @@ fn company_matches_host_documented_behavior() {
     assert!(company_matches_host("Stripe", "stripe.com"));
 }
 
+#[test]
+fn company_matches_host_skips_stop_words() {
+    // "The Inc Corp" is dominated by generic legal-entity words — none of
+    // them should false-match an unrelated host that merely happens to
+    // contain "the"/"corp" as a substring.
+    assert!(
+        !company_matches_host("The Inc Corp", "the-daily-corp-news.example.com"),
+        "generic legal-entity words must not false-match an unrelated host"
+    );
+
+    // A real brand word alongside a stop word still matches — the filter
+    // only removes the generic words, not the whole per-word check.
+    assert!(
+        company_matches_host("Acme Corp", "acme.com"),
+        "a real brand word must still match even when paired with a stop word"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // FoundJob wiring — exercises the REAL `build_found_job` projection (the
 // same one `autopilot_run`'s `postings.iter().map(..)` calls), not a

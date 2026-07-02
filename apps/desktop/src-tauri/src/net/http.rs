@@ -30,6 +30,62 @@ fn base_builder() -> reqwest::ClientBuilder {
         .user_agent(DEFAULT_UA)
         .pool_max_idle_per_host(10)
         .pool_idle_timeout(Duration::from_secs(60))
+        .redirect(redirect_policy())
+}
+
+/// Mirrors `reqwest::redirect::Policy`'s own built-in default (`limited(10)`)
+/// so wrapping it in [`redirect_policy`]'s SSRF guard doesn't silently drop
+/// that ceiling — a custom policy does not get the default cap for free.
+const MAX_REDIRECTS: usize = 10;
+
+/// Fleet-wide redirect-target SSRF guard. Every client built from
+/// [`base_builder`] — [`shared`], [`build_client`], and therefore every
+/// subsystem that composes them (scrapers, AI providers, geocoding, profile
+/// import) — rejects a redirect hop whose target is a non-`http(s)` scheme or
+/// a private/loopback/link-local/unique-local IP literal, at this one
+/// chokepoint. [`get_guarded`]/[`get_guarded_following_redirects`] keep their
+/// own stricter `Policy::none()` + IP-pinned hop-by-hop validation for
+/// attacker-controlled URLs — this guard is the equivalent floor for the
+/// pooled client every named-board scraper uses via `fetch_json`/`fetch_text`.
+///
+/// ponytail: `redirect::Policy::custom` takes a **synchronous** closure, so
+/// it can only check the redirect target's literal scheme/host — it cannot
+/// perform an async DNS lookup the way `get_guarded`'s IP-pinned flow does.
+/// A *hostname* redirect target that itself resolves to a private IP (DNS
+/// rebinding) is therefore NOT caught here, only IP-literal targets (the
+/// common SSRF payload, e.g. `Location: http://169.254.169.254/…`) and
+/// non-http(s) schemes are. Closing the DNS-rebinding gap fully would mean
+/// routing every scraper request through the guarded IP-pinned path, which
+/// is a much larger change than this fleet-wide hardening pass; also caps
+/// the hop count so a custom policy doesn't lose reqwest's own redirect-loop
+/// protection.
+fn redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        if attempt.previous().len() >= MAX_REDIRECTS {
+            return attempt.error("too many redirects");
+        }
+        if is_allowed_redirect_target(attempt.url()) {
+            attempt.follow()
+        } else {
+            attempt.error(
+                "blocked redirect to a private/loopback/link-local host or non-http(s) scheme",
+            )
+        }
+    })
+}
+
+/// Pure predicate behind [`redirect_policy`] — extracted so the SSRF decision
+/// is unit-testable without constructing a `reqwest::redirect::Attempt`
+/// (its fields are private to `reqwest`, so the policy closure itself can't
+/// be exercised directly from this crate's tests).
+fn is_allowed_redirect_target(url: &reqwest::Url) -> bool {
+    if url.scheme() != "http" && url.scheme() != "https" {
+        return false;
+    }
+    match url.host_str() {
+        Some(host) => crate::net::ssrf::is_safe_public_host(host),
+        None => false,
+    }
 }
 
 /// The single pooled HTTP client. Built on first use, then cloned (cheap — a
@@ -347,5 +403,64 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    // ── is_allowed_redirect_target: fleet-wide redirect SSRF guard ─────────────
+    // Hermetic — pure URL parsing + the `net::ssrf` classifier, no network.
+
+    fn url(s: &str) -> reqwest::Url {
+        reqwest::Url::parse(s).unwrap()
+    }
+
+    #[test]
+    fn is_allowed_redirect_target_accepts_public_https() {
+        assert!(is_allowed_redirect_target(&url(
+            "https://boards.greenhouse.io/acme/jobs/1"
+        )));
+    }
+
+    #[test]
+    fn is_allowed_redirect_target_rejects_loopback_literal() {
+        assert!(!is_allowed_redirect_target(&url("http://127.0.0.1/steal")));
+        assert!(!is_allowed_redirect_target(&url("http://[::1]/steal")));
+    }
+
+    #[test]
+    fn is_allowed_redirect_target_rejects_cloud_metadata_link_local() {
+        assert!(!is_allowed_redirect_target(&url(
+            "http://169.254.169.254/latest/meta-data/"
+        )));
+    }
+
+    #[test]
+    fn is_allowed_redirect_target_rejects_rfc1918_private_ranges() {
+        for u in [
+            "http://10.0.0.1/",
+            "http://172.16.0.1/",
+            "http://192.168.1.1/",
+        ] {
+            assert!(!is_allowed_redirect_target(&url(u)), "{u} must be blocked");
+        }
+    }
+
+    #[test]
+    fn is_allowed_redirect_target_rejects_ipv6_unique_local() {
+        assert!(!is_allowed_redirect_target(&url("http://[fc00::1]/")));
+    }
+
+    #[test]
+    fn is_allowed_redirect_target_rejects_non_http_scheme() {
+        assert!(!is_allowed_redirect_target(&url("file:///etc/passwd")));
+        assert!(!is_allowed_redirect_target(&url(
+            "ftp://files.example.com/x"
+        )));
+    }
+
+    #[test]
+    fn is_allowed_redirect_target_allows_arbitrary_public_hostname() {
+        // A public-looking hostname is allowed here even though it could still
+        // resolve to a private IP via DNS rebinding — this synchronous policy
+        // cannot resolve DNS. See the `redirect_policy` doc comment.
+        assert!(is_allowed_redirect_target(&url("https://example.com/x")));
     }
 }

@@ -56,6 +56,18 @@ struct TmResponse {
     page_count: u32,
 }
 
+/// Denominator for `on_progress`: the actual page work being done, not the
+/// request BUDGET (`max_pages`). A feed with fewer real pages than the budget
+/// (e.g. `page_count=2` against a `max_pages=5` cap) previously reported
+/// progress against the budget, so it stalled at `2/5` instead of reaching
+/// `1.0`. `total_pages` is only known once page 0 responds (before that
+/// callers pass the `1` initial value, matching `resp.page_count.max(1)`),
+/// and is clamped to `max_pages` in case a feed reports more pages than the
+/// request is allowed to fetch.
+fn progress_denominator(total_pages: u32, max_pages: u32) -> u32 {
+    total_pages.min(max_pages)
+}
+
 /// Require a URL beginning with `http://` or `https://`. Cheap sanity parse —
 /// `refs.landing_page` is display-only (opened by the user, never fetched by
 /// us) and varies per posting's own employer/ATS host, so unlike a
@@ -254,7 +266,8 @@ impl Scraper for TheMuseScraper {
             }
 
             if let Some(ref on_progress) = ctx.on_progress {
-                on_progress((page + 1) as f32 / max_pages as f32);
+                let denom = progress_denominator(total_pages, max_pages);
+                on_progress((page + 1) as f32 / denom as f32);
             }
         }
 

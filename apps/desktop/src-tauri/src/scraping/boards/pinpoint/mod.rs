@@ -1,12 +1,13 @@
-/// Pinpoint (PinpointHQ) — public per-company postings JSON
-///
-/// Endpoint: `https://{slug}.pinpointhq.com/postings.json`
-/// No global keyword search — requires a company slug. The engine skips this
-/// board with `"needs-company"` when `input.companies` is empty.
-///
-/// Endpoint reconnaissance ported from santifer/career-ops (MIT), `providers/pinpoint.mjs`.
+//! Pinpoint (PinpointHQ) — public per-company postings JSON
+//!
+//! Endpoint: `https://{slug}.pinpointhq.com/postings.json`
+//! No global keyword search — requires a company slug. The engine skips this
+//! board with `"needs-company"` when `input.companies` is empty.
+//!
+//! Endpoint reconnaissance ported from santifer/career-ops (MIT), `providers/pinpoint.mjs`.
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::common::{is_https_url, normalize_companies};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -15,18 +16,6 @@ const BOARD_ID: &str = "pinpoint";
 /// Maximum number of company slugs processed per scrape call.
 /// Prevents an unbounded number of outbound requests from a large IPC payload.
 const MAX_COMPANIES: usize = 50;
-
-/// Trim, drop blanks, dedupe (first-seen order), and cap to `max`.
-/// Extracted so the normalisation logic can be unit-tested without network.
-pub(crate) fn normalize_companies(input: &[String], max: usize) -> Vec<String> {
-    let mut seen = std::collections::HashSet::new();
-    input
-        .iter()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty() && seen.insert(s.clone()))
-        .take(max)
-        .collect()
-}
 
 /// Validate that a company slug is a single valid DNS hostname label.
 /// Pinpoint uses the slug as a subdomain — a slug with dots, slashes, or
@@ -38,22 +27,6 @@ fn is_valid_pinpoint_slug(slug: &str) -> bool {
         && slug.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
         && !slug.starts_with('-')
         && !slug.ends_with('-')
-}
-
-/// Require a well-formed `https:` URL with a host and no embedded userinfo.
-/// The Pinpoint `url` field is display-only (used as the dedup key below, not
-/// fetched by us), so this is a cheap sanity parse, not a host allowlist —
-/// but a `https://user:pass@evil.example/…` URL is still a mild phishing
-/// vector on a link the user opens, so userinfo is rejected outright.
-fn is_https_url(url: &str) -> bool {
-    reqwest::Url::parse(url)
-        .map(|u| {
-            u.scheme() == "https"
-                && u.host_str().is_some()
-                && u.username().is_empty()
-                && u.password().is_none()
-        })
-        .unwrap_or(false)
 }
 
 #[derive(Debug, Deserialize)]

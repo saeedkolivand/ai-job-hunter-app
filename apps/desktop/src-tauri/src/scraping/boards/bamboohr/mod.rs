@@ -1,12 +1,13 @@
-/// BambooHR — public per-company careers list JSON
-///
-/// Endpoint: `https://{slug}.bamboohr.com/careers/list`
-/// No global keyword search — requires a company slug. The engine skips this
-/// board with `"needs-company"` when `input.companies` is empty.
-///
-/// Endpoint reconnaissance ported from santifer/career-ops (MIT), `providers/bamboohr.mjs`.
+//! BambooHR — public per-company careers list JSON
+//!
+//! Endpoint: `https://{slug}.bamboohr.com/careers/list`
+//! No global keyword search — requires a company slug. The engine skips this
+//! board with `"needs-company"` when `input.companies` is empty.
+//!
+//! Endpoint reconnaissance ported from santifer/career-ops (MIT), `providers/bamboohr.mjs`.
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::common::normalize_companies;
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -15,18 +16,6 @@ const BOARD_ID: &str = "bamboohr";
 /// Maximum number of company slugs processed per scrape call.
 /// Prevents an unbounded number of outbound requests from a large IPC payload.
 const MAX_COMPANIES: usize = 50;
-
-/// Trim, drop blanks, dedupe (first-seen order), and cap to `max`.
-/// Extracted so the normalisation logic can be unit-tested without network.
-pub(crate) fn normalize_companies(input: &[String], max: usize) -> Vec<String> {
-    let mut seen = std::collections::HashSet::new();
-    input
-        .iter()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty() && seen.insert(s.clone()))
-        .take(max)
-        .collect()
-}
 
 /// Validate that a company slug is a single valid DNS hostname label.
 /// BambooHR uses the slug as a subdomain — a slug with dots, slashes, or

@@ -5,6 +5,8 @@ pub mod ashby;
 pub mod bamboohr;
 pub mod berlinstartupjobs;
 pub mod breezy;
+/// Shared helpers reused across several ATS boards — not itself a `Scraper`.
+pub(crate) mod common;
 pub mod germantechjobs;
 pub mod greenhouse;
 pub mod lever;
