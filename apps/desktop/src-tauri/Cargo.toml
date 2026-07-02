@@ -155,7 +155,7 @@ image = "=0.25.10"
 
 # ATS keyword matching: language-aware stemming + language detection (match_resume).
 rust-stemmers = "1.2"
-whatlang = "0.16"
+whatlang = "0.18"
 
 # Browser-cookie import (scraping::board_login::import): decrypt Chromium
 # `v10`/`v11` `encrypted_value` blobs (AES-256-GCM) after the OS-specific key is
