@@ -8,9 +8,36 @@ updates:
 
     open-pull-requests-limit: 10
 
+    # Wait for releases to age before opening a PR — keeps bot PRs from
+    # colliding with the pnpm minimumReleaseAge gate (pnpm-workspace.yaml).
+    cooldown:
+      default-days: 2
+
+    # One combined PR for routine minor+patch bumps; majors stay separate.
+    groups:
+      minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+
     labels:
       - dependencies
-      - security
+
+    commit-message:
+      prefix: chore
+
+  - package-ecosystem: cargo
+    directory: /apps/desktop/src-tauri
+    schedule:
+      interval: weekly
+
+    cooldown:
+      default-days: 2
+
+    labels:
+      - dependencies
 
     commit-message:
       prefix: chore

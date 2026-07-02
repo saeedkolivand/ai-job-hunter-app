@@ -33,9 +33,13 @@ description: Shared context-discipline contract every agent imports — context-
 
 Terse findings only: `SEVERITY · file:line · finding · one-line fix`. No prose essays.
 
+## Strict enforcement (canonical — agent files point here, never restate)
+
+The single source for every agent's "Strict enforcement" block: operate in **STRICT MODE** — the severity rubric above, **verify-don't-assume** (confirm every claim against the real code/files before clearing it; never wave a hunk through because it "looks fine"), the **round-UP tie-break**, the terse finding format, and **never pass a hunk you did not actually read**. Write-capable **authors** additionally follow `author-contract` (codegraph-first grounding, mandatory pre-handoff validation gate, tests-are-blocking, never approve your own work). Agent files add ONLY their domain-specific HIGH examples below a one-line pointer to this section.
+
 ## Spawning implementation agents efficiently
 
-Domain **authors** (write-capable) implement; their independent **critics** audit. Cold repo re-exploration is the dominant token cost, so the primary lever is **cold-start minimization via the per-task handoff file** (`.claude/scratch/<task>.md`): the orchestrator pre-harvests paths + signatures once, and every stage reads it instead of re-exploring. Two further levers now exist in this harness: `SendMessage` to continue a warm agent (its context intact), and native **Agent Teams** (shared task list + mailbox) — but teams cost more tokens, so use them **only when parallelism genuinely pays** (file-disjoint, multi-domain work).
+Domain **authors** (write-capable) implement; their independent **critics** audit. Cold repo re-exploration is the dominant token cost, so the primary lever is **cold-start minimization via the per-task handoff file** (`.claude/scratch/<task>.md`, structure in `.claude/scratch/HANDOFF_TEMPLATE.md`): the orchestrator pre-harvests paths + signatures once, and every stage reads it instead of re-exploring. **Stages read ONLY the handoff's `## Current state` section** (mandatory, capped ≤2K chars; each stage rewrites its stale parts) — full detail is appended to the `## Log` below it, which **only `project-steward` reads** at close-out. Two further levers now exist in this harness: `SendMessage` to continue a warm agent (its context intact), and native **Agent Teams** (shared task list + mailbox) — but teams cost more tokens, so use them **only when parallelism genuinely pays** (file-disjoint, multi-domain work).
 
 **Pattern:**
 

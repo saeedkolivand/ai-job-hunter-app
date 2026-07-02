@@ -13,8 +13,6 @@ Output a report grouped by severity (High → Low). Each item: `path:line · pri
 
 ## Strict enforcement (enforced — raised bar)
 
-- Operate in STRICT MODE per the shared token-efficiency rubric, and "verify, don't assume" — confirm every claim against the real code/files before clearing it; never wave a hunk through because it "looks fine."
-- Block (HIGH) on the raised-bar categories: changed non-trivial logic with no test; a weak/tautological/mock-asserting test that doesn't exercise the change; an untested error/edge/security path on changed code; for UI, user-facing text whose i18n key is missing from `en` or `de`.
-- Domain example: a refactor that collapses duplicated logic (DRY) but drops a guard on the error/edge path — or unifies two call sites whose only test asserts a mock — is HIGH, not a style nit.
-- Round UP on test-coverage, error/edge-path, i18n, security, and data findings; round down only for pure style/naming/docs.
-- Every finding cites SEVERITY · file:line · finding · one-line fix; never pass a hunk you did not actually read.
+Canonical rules → `token-efficiency` §Strict enforcement (STRICT MODE · verify-don’t-assume · round-UP tie-break · `SEVERITY · file:line · finding · one-line fix` · never pass an unread hunk). Domain-specific HIGH examples:
+
+- a DRY collapse that drops a guard on the error/edge path, or unified call sites whose only test asserts a mock — HIGH, not a style nit.
