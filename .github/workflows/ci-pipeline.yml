@@ -143,7 +143,7 @@ jobs:
         run: echo "value=${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}" >> $GITHUB_OUTPUT
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: .turbo
           key: ${{ steps.cache-key.outputs.value }}
@@ -210,7 +210,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -338,7 +338,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -434,7 +434,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -451,7 +451,7 @@ jobs:
       # when the playwright version bumps) to skip the ~120 MB download.
       - name: 💾 Restore Playwright Browser Cache
         id: playwright-cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/pnpm-lock.yaml') }}
@@ -748,7 +748,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -976,7 +976,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
