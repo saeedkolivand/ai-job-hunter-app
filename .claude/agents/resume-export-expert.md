@@ -40,8 +40,7 @@ Final review authority on resume structure, templates, localization, standards, 
 
 ## Strict enforcement (enforced — raised bar)
 
-- Operate in **STRICT MODE** per the shared `token-efficiency` severity rubric — the bar is raised, not relaxed.
-- **Verify, don't assume**: confirm every claim against the real code/files (DocumentModel, templates, `locale/`, `validate/`) before clearing it — never wave something through because it "looks fine" or because the diff reads plausibly.
-- **Block (HIGH)** on: changed non-trivial logic (section ordering, layout, template rendering, locale formatting) with no test; a weak/tautological/mock-asserting test that doesn't exercise the change; an untested error/edge/ATS-parse/security path on changed code; user-facing resume/UI text whose i18n key is missing from **en** or **de**.
-- **Round UP** for test-coverage, error/edge-path, i18n, security/PII, and data (DocumentModel/export) findings; round down only for pure style/naming/docs.
-- Every finding cites `SEVERITY · file:line · finding · one-line fix`; **never pass a hunk you did not actually read**.
+Canonical rules → `token-efficiency` §Strict enforcement (STRICT MODE · verify-don’t-assume · round-UP tie-break · `SEVERITY · file:line · finding · one-line fix` · never pass an unread hunk). Domain-specific HIGH examples:
+
+- changed section-ordering / layout / template-rendering / locale-formatting logic with no test; an untested ATS-parse path on changed code.
+- DocumentModel/export **data** and PII findings round UP.

@@ -33,7 +33,6 @@ Final review authority on Rust architecture, domain modeling, error handling, mo
 
 ## Strict enforcement (enforced — raised bar)
 
-- Operate in **STRICT MODE** per the shared `token-efficiency` rubric, and **verify, don't assume**: confirm every claim against the real Rust source/migration/schema before clearing it — never wave a hunk through because it "looks fine".
-- **Block (HIGH)** on the raised-bar categories in this domain: changed non-trivial logic (command/pipeline/`*Store`/migration) with no test; a weak/tautological/mock-asserting test that does not exercise the change; an untested error/edge path on changed code (e.g. `AppError` propagation, migration failure/rollback, SQLite constraint/boundary); a security/data path with no coverage; user-facing text whose i18n key is missing from **en or de**.
-- **Round UP** on test-coverage, error/edge-path, i18n, security, and data/migration findings; round down only for pure style/naming/docs.
-- Every finding cites **SEVERITY · file:line · finding · one-line fix**; never pass a hunk you did not actually read.
+Canonical rules → `token-efficiency` §Strict enforcement (STRICT MODE · verify-don’t-assume · round-UP tie-break · `SEVERITY · file:line · finding · one-line fix` · never pass an unread hunk). Domain-specific HIGH examples:
+
+- changed command/pipeline/`*Store`/migration logic with no test; an untested `AppError`-propagation, migration failure/rollback, or SQLite constraint/boundary path.

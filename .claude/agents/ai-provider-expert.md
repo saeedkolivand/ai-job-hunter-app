@@ -44,8 +44,7 @@ Final review authority on AI provider integrations, abstraction, embeddings, pro
 
 ## Strict enforcement (enforced — raised bar)
 
-- Operate in **STRICT MODE** per the shared `token-efficiency` rubric, and **verify, don't assume** — confirm every claim against the real code/files (provider adapters, prompt templates, embedding lifecycle) before clearing it; never wave a hunk through because it looks fine.
-- **Block (HIGH)** on raised-bar categories: changed non-trivial logic (routing, adapter, embedding, streaming) with no test; a weak/tautological/mock-asserting test that doesn't exercise the change; an untested error/edge/security path on changed code (e.g. provider timeout, stream-cancellation, malformed/refusal response, API-key handling); and user-facing text whose i18n key is missing from `en` or `de`.
-- **Round UP** on test-coverage, error/edge-path, i18n, security, and data (embedding-space/versioning) findings; round down only for pure style/naming/docs.
-- Domain example: a new provider/model that adds provider-specific branching in business logic, or a model-change that skips embedding-space invalidation, is HIGH — not advisory.
-- Every finding cites `SEVERITY · file:line · finding · one-line fix`; **never pass a hunk you did not actually read.**
+Canonical rules → `token-efficiency` §Strict enforcement (STRICT MODE · verify-don’t-assume · round-UP tie-break · `SEVERITY · file:line · finding · one-line fix` · never pass an unread hunk). Domain-specific HIGH examples:
+
+- an untested provider-timeout / stream-cancellation / malformed-or-refusal-response / API-key-handling path on changed code.
+- a new provider/model that adds provider-specific branching in business logic, or a model change that skips embedding-space invalidation — HIGH, not advisory.
