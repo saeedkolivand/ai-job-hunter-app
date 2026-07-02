@@ -108,9 +108,9 @@ jobs:
         uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90 # v6.0.0
         with:
           extra_plugins: |
-            @semantic-release/changelog@6
-            @semantic-release/git@10
-            @semantic-release/exec@6
+            @semantic-release/changelog@6.0.3
+            @semantic-release/git@10.0.1
+            @semantic-release/exec@6.0.3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -141,7 +141,7 @@ jobs:
           echo "pnpm Version: $(pnpm --version)"
           echo "Runner OS: ${{ runner.os }}"
           echo "Event Name: ${{ github.event_name }}"
-          echo "Ref: ${{ github.ref }}"
+          echo "Ref: $GITHUB_REF"
           echo "::endgroup::"
 
   build:

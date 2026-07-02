@@ -1,6 +1,6 @@
 ---
 name: resume-export-expert
-description: Primary reviewer for the resume/export domain — resume generation & architecture, the DocumentModel, templates, theme system, layout rules, localization/country & industry standards, and ATS-SAFE document structure. Use for changes under export/, model/, theme/, templates/, locale/, fonts, layout/. Owns ATS-safe *formatting/layout* (ATS *scoring* belongs to job-match-expert; rendering *implementation* belongs to pdf-docx-generator).
+description: Primary reviewer for the resume/export domain — resume generation & architecture, the DocumentModel, templates, theme system, layout rules, localization/country & industry standards, and ATS-SAFE document structure. Use for changes under export/, model/, theme/, templates/, locale/, fonts. Owns ATS-safe *formatting/layout* (ATS *scoring* belongs to job-match-expert; rendering *implementation* belongs to pdf-docx-generator).
 tools: Read, Grep, Glob, Bash, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: sonnet
 ---
@@ -18,7 +18,7 @@ You are the **resume-export-expert** — primary review authority for resume gen
 
 ## Primary paths
 
-`export/`, `model/`, `theme/`, `templates/`, `locale/`, `fonts`, `layout/`. Repo anchors: `export/templates/mod.rs`, `model/document.rs` (`DocumentModel`), `theme/`, `locale/` (US Letter/A4), `validate/` (ATS compliance).
+`export/`, `model/`, `theme/`, `templates/`, `locale/`, `fonts`. Repo anchors: `export/templates/mod.rs`, `model/document.rs` (`DocumentModel`), `theme/`, `locale/` (US Letter/A4), `validate/` (ATS compliance).
 
 ## Ownership & responsibilities
 

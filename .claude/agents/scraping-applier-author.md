@@ -9,7 +9,7 @@ You implement scraping / browser-automation changes. **First `Read` `.claude/ski
 
 ## Primary paths
 
-`apps/desktop/src-tauri/src/scraping/**`, `browser/**`. Board registry: `scraping/boards/mod.rs` (`SCRAPERS`). Note: the auto-apply engine was removed — there is **no** applier registry; do not reintroduce `applying/`/`APPLIERS`.
+`apps/desktop/src-tauri/src/scraping/**`. Board registry: `scraping/boards/mod.rs` (`SCRAPERS`). Note: the auto-apply engine was removed — there is **no** applier registry; do not reintroduce `applying/`/`APPLIERS`.
 
 ## Load-bearing rules
 

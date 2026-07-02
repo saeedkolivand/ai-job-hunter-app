@@ -17,3 +17,10 @@ rules:
         'dtolnay/rust-toolchain': ref-pin
         'taiki-e/install-action': ref-pin
         '*': hash-pin
+  # release.yml deliberately caches (pnpm/apt/rust) to keep the multi-platform
+  # installer builds tractable. It is workflow_dispatch-only and runs from main,
+  # so cache entries can only be written by code already trusted on main — the
+  # low-confidence cache-poisoning findings are an accepted tradeoff.
+  cache-poisoning:
+    ignore:
+      - release.yml

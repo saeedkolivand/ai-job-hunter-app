@@ -18,7 +18,7 @@ You are the **rust-backend-architect** — primary review authority for the Rust
 
 ## Primary paths
 
-`apps/desktop/src-tauri/src/**` (incl. `db.rs`/`*Store`/`privacy/`: migrations, GDPR, data integrity), excluding regions owned by `resume-export-expert`, `job-match-expert`, `scraping-applier-expert`, `ai-provider-expert`. Repo anchors: `platform/config.rs` (`data_dir()`), `net/http.rs` (`shared()`), `error.rs` (`AppError`/`AppResult`), `observability.rs` (`Span`).
+`apps/desktop/src-tauri/src/**` (incl. `db.rs`/`*Store`/`commands/privacy.rs`: migrations, GDPR, data integrity), excluding regions owned by `resume-export-expert`, `job-match-expert`, `scraping-applier-expert`, `ai-provider-expert`. Repo anchors: `platform/config.rs` (`data_dir()`), `net/http.rs` (`shared()`), `error.rs` (`AppError`/`AppResult`), `observability.rs` (`Span`).
 
 ## Enforced rules (the load-bearing ones)
 

@@ -122,7 +122,7 @@ Full pipeline, model tiering, and rationale → **`.claude/`** (agents/skills/co
 
 Cross-cutting critics (no author — fixes route to the owning domain author): `tauri-security-reviewer` (default Secondary on any risk-bearing change), `performance-profiler` (perf-sensitive only), `cleanup` (dead-code, always just before steward), `pr-reviewer` (strict pre-PR gate).
 
-**Per-change sequence** (skip what doesn't apply): author implements → sibling critic audits (resolve HIGH/CRITICAL; LOW/MEDIUM advisory) → if testable logic, `test-author` → `testing-reviewer` → `cleanup` → `project-steward` closes (docs/lessons sync + `graphify update .` + `codegraph sync`). Context flows via the per-task handoff file `.claude/scratch/<task>.md`. **≤3 critics/task.** Orchestrate all sub-agents from the main session (agents can't call agents). **Before a PR:** `/security-review` (`tauri-security-reviewer`) — HIGH/CRITICAL block — then `/review` (`pr-reviewer`) as the final gate (🔴+🟠 block); both complement CodeRabbit.
+**Per-change sequence** (skip what doesn't apply): author implements → sibling critic audits (resolve HIGH/CRITICAL; LOW/MEDIUM advisory) → if testable logic, `test-author` → `testing-reviewer` → `cleanup` → `project-steward` closes (docs/lessons sync + `graphify update .` + `codegraph sync`). Context flows via the per-task handoff file `.claude/scratch/<task>.md`. **≤3 critics/task.** Orchestrate all sub-agents from the main session (agents can't call agents). **Before a PR:** `/review-security` (`tauri-security-reviewer`) — HIGH/CRITICAL block — then `/review` (`pr-reviewer`) as the final gate (🔴+🟠 block); both complement CodeRabbit.
 
 **Hard rules:**
 

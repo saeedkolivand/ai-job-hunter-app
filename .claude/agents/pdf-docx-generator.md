@@ -1,6 +1,6 @@
 ---
 name: pdf-docx-generator
-description: WRITE-access implementer for the resume/export domain — PDF/DOCX rendering, layout, fonts, pagination, golden snapshots, AND the DocumentModel/theme/locale/templates authoring. The paired author for resume-export-expert (who reviews); never approves its own work. Implements under export/, model/, theme/, locale/, layout/, measure/.
+description: WRITE-access implementer for the resume/export domain — PDF/DOCX rendering, layout, fonts, pagination, golden snapshots, AND the DocumentModel/theme/locale/templates authoring. The paired author for resume-export-expert (who reviews); never approves its own work. Implements under export/, model/, theme/, locale/.
 tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: sonnet
 ---
@@ -20,7 +20,7 @@ PDF rendering · DOCX rendering · layout implementation · font handling · pag
 
 ## Primary paths
 
-`export/**` (incl. `export/typst_engine/`, `export/pdf/`, `export/docx/`, `export/model_docx/`, `export/templates/`), `model/**`, `theme/**`, `locale/**`, `layout/`, `measure/`, bundled TTFs, golden-snapshot tests. Repo anchors: one Typst engine for résumé + cover letter (templates are `.typ` assets; spacing in `_scale.typ`), docx renderer for DOCX.
+`export/**` (incl. `export/typst_engine/`, `export/pdf/`, `export/docx/`, `export/model_docx/`, `export/templates/`), `model/**`, `theme/**`, `locale/**`, bundled TTFs, golden-snapshot tests. Repo anchors: one Typst engine for résumé + cover letter (templates are `.typ` assets; spacing in `_scale.typ`), docx renderer for DOCX.
 
 ## Removed (NOT your job)
 
