@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.121.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.120.0...v0.121.0) (2026-07-04)
+
+### ✨ Features
+
+* give a paste-ready number for salary-expectation answers ([#548](https://github.com/saeedkolivand/ai-job-hunter-app/issues/548)) ([c41bc22](https://github.com/saeedkolivand/ai-job-hunter-app/commit/c41bc22c864dcfd43d3e1e1612b8c2ee70222542))
+* ground salary answers in a job's scraped salary range ([#551](https://github.com/saeedkolivand/ai-job-hunter-app/issues/551)) ([b3ed856](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b3ed856690e934f2344e4ef562b47f9ad39344e7)), closes [#6](https://github.com/saeedkolivand/ai-job-hunter-app/issues/6)
+* research the market salary range for salary-expectation answers ([#549](https://github.com/saeedkolivand/ai-job-hunter-app/issues/549)) ([4bed556](https://github.com/saeedkolivand/ai-job-hunter-app/commit/4bed556c96a6d2a71b77d9ab7157732739d2e9f5))
+
+### 🐛 Bug Fixes
+
+* rate-limit the ai_research_company web-search command ([#550](https://github.com/saeedkolivand/ai-job-hunter-app/issues/550)) ([7da5c92](https://github.com/saeedkolivand/ai-job-hunter-app/commit/7da5c92f275c4dc8fe16df8ab7b4c691d54605ff))
+* restore autopilot list to the applied job on back-navigation ([#546](https://github.com/saeedkolivand/ai-job-hunter-app/issues/546)) ([f7bc03f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f7bc03f9c9e0d7f96abf1ccd144e44ba61d909d5))
+* stop project links seeding the contact profile on import ([#547](https://github.com/saeedkolivand/ai-job-hunter-app/issues/547)) ([43a78de](https://github.com/saeedkolivand/ai-job-hunter-app/commit/43a78def8fe8623626718ca5b34edc682d348e2d))
+* surface newly found autopilot jobs at the top of the list ([#545](https://github.com/saeedkolivand/ai-job-hunter-app/issues/545)) ([af02e53](https://github.com/saeedkolivand/ai-job-hunter-app/commit/af02e53167532450ba5c5260bfaed2da2056461a))
+
 ## [0.120.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.119.0...v0.120.0) (2026-07-02)
 
 ### ✨ Features
