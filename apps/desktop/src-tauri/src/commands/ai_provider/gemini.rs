@@ -13,8 +13,9 @@ use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
-    friendly_api_error, AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace,
-    TokenParam,
+    friendly_api_error, single_shot_turn, split_system, AgentTurn, AiGenerateRequest, AiProvider,
+    ChatMsg, ModelCapabilities, ProviderId, RequestTrace, Role, StopReason, TokenParam, ToolCall,
+    ToolSpec,
 };
 
 const BASE: &str = "https://generativelanguage.googleapis.com";
@@ -58,6 +59,65 @@ fn join_parts_text(data: &Value) -> String {
                 .join("")
         })
         .unwrap_or_default()
+}
+
+/// Parse a non-streaming `generateContent` response into an [`AgentTurn`]: join
+/// the first candidate's `parts[].text` for the visible text, map every
+/// `parts[].functionCall` to a [`ToolCall`] (Gemini has no call id, so synthesize
+/// `name-index` for our own bookkeeping — `functionResponse` matches by name), and
+/// set the stop reason (any functionCall ⇒ ToolUse, else `MAX_TOKENS`→Length /
+/// `STOP`→End). `finishReason: "MALFORMED_FUNCTION_CALL"` — Gemini's signal that a
+/// tool call was truncated/cut off by the output-token limit — always wins and maps
+/// to `Length` too, even if a (possibly half-serialized) functionCall part is
+/// present, so those args never reach a tool handler. Pure + unit-tested.
+fn parse_gemini_turn(data: &Value) -> AgentTurn {
+    let text = join_parts_text(data);
+    let finish_reason = data
+        .get("candidates")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("finishReason"))
+        .and_then(|f| f.as_str());
+    let tool_calls: Vec<ToolCall> = data
+        .get("candidates")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("content"))
+        .and_then(|c| c.get("parts"))
+        .and_then(|p| p.as_array())
+        .map(|parts| {
+            parts
+                .iter()
+                .enumerate()
+                .filter_map(|(i, part)| {
+                    let fc = part.get("functionCall")?;
+                    let name = fc.get("name").and_then(|n| n.as_str())?.to_string();
+                    let args = fc.get("args").cloned().unwrap_or_else(|| json!({}));
+                    Some(ToolCall {
+                        id: format!("{name}-{i}"),
+                        name,
+                        args,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let stop = if finish_reason == Some("MALFORMED_FUNCTION_CALL") {
+        StopReason::Length
+    } else if !tool_calls.is_empty() {
+        // Gemini reports `finishReason: "STOP"` even when returning a functionCall,
+        // so the presence of a call is the authoritative "wants tools back" signal.
+        StopReason::ToolUse
+    } else {
+        match finish_reason {
+            Some("MAX_TOKENS") => StopReason::Length,
+            Some("STOP") => StopReason::End,
+            _ => StopReason::Other,
+        }
+    };
+    AgentTurn {
+        text,
+        tool_calls,
+        stop,
+    }
 }
 
 /// Whether to request `thinkingConfig.includeThoughts`. Gemini 1.5 and the GA
@@ -533,14 +593,99 @@ impl AiProvider for GeminiClient {
             )))
         }
     }
+
+    async fn chat_with_tools(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        messages: &[ChatMsg],
+        tools: &[ToolSpec],
+        temperature: Option<f64>,
+    ) -> AppResult<AgentTurn> {
+        if !self.capabilities(model).supports_tools {
+            return single_shot_turn(self, app, model, messages, temperature).await;
+        }
+        let api_key = require_gemini_key(app)?;
+        let m = model.strip_prefix("models/").unwrap_or(model);
+        let endpoint_label = format!("/v1beta/models/{m}:generateContent");
+        let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
+
+        let (system, rest) = split_system(messages);
+        let contents: Vec<Value> = rest
+            .iter()
+            .map(|msg| {
+                // Gemini's assistant role is "model"; user + (folded) tool results are "user".
+                let role = if msg.role == Role::Assistant {
+                    "model"
+                } else {
+                    "user"
+                };
+                json!({ "role": role, "parts": [{ "text": msg.content }] })
+            })
+            .collect();
+        // Trusted, fixed function declarations — never built from scraped/model text.
+        let function_declarations: Vec<Value> = tools
+            .iter()
+            .map(
+                |t| json!({ "name": t.name, "description": t.description, "parameters": t.schema }),
+            )
+            .collect();
+
+        let mut body = json!({
+            "contents": contents,
+            "generationConfig": { "temperature": temperature.unwrap_or(0.7) },
+            "tools": [{ "functionDeclarations": function_declarations }],
+        });
+        if !system.is_empty() {
+            body["systemInstruction"] = json!({ "parts": [{ "text": system }] });
+        }
+
+        let url = format!("{BASE}{endpoint_label}");
+        let resp = send_with_retry(|| {
+            crate::net::http::shared()
+                .post(&url)
+                .timeout(timeouts::COMPLETION)
+                .header("x-goog-api-key", &api_key)
+                .json(&body)
+        })
+        .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                return Err(AppError::Network(format!("Gemini unreachable: {e}")));
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            return Err(friendly_api_error(ProviderId::Gemini, status, &body_text));
+        }
+        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        trace.end(Some(status.as_u16()), true);
+        let turn = parse_gemini_turn(&data);
+        // Mirror `complete()`'s empty-response guard: a missing/blocked candidate
+        // (e.g. a safety block with no `candidates`) parses to blank text and no
+        // tool calls. Exclude `Length` — a `MAX_TOKENS`/`MALFORMED_FUNCTION_CALL`
+        // turn can legitimately have no usable text or calls yet, and that is
+        // already handled by the controller's truncation path, not an error here.
+        if turn.text.is_empty() && turn.tool_calls.is_empty() && turn.stop != StopReason::Length {
+            return Err(AppError::Provider(
+                "Gemini: unexpected response shape".to_string(),
+            ));
+        }
+        Ok(turn)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
         gemini_supports_thinking, join_parts_text, parse_gemini_frames, parse_gemini_parts,
-        validate_gemini_key, GeminiScanner, StreamPiece,
+        parse_gemini_turn, validate_gemini_key, GeminiScanner, StreamPiece,
     };
+    use crate::commands::ai_provider::{StopReason, ToolCall};
     use crate::error::AppError;
     use serde_json::json;
 
@@ -685,5 +830,68 @@ mod tests {
         assert_eq!(second, vec![StreamPiece::text(" world")]);
         assert!(buf.is_empty());
         assert!(state.pending.is_empty());
+    }
+
+    #[test]
+    fn parse_turn_extracts_function_calls_alongside_text() {
+        // Gemini reports finishReason "STOP" even when it emits a functionCall — the
+        // call's presence, not the finishReason, is the "wants tools back" signal.
+        let data = json!({
+            "candidates": [{
+                "content": { "parts": [
+                    { "text": "Looking up the company." },
+                    { "functionCall": { "name": "research_company", "args": { "company": "Acme" } } }
+                ] },
+                "finishReason": "STOP"
+            }]
+        });
+        let turn = parse_gemini_turn(&data);
+        assert_eq!(turn.text, "Looking up the company.");
+        assert_eq!(turn.stop, StopReason::ToolUse);
+        assert_eq!(
+            turn.tool_calls,
+            vec![ToolCall {
+                id: "research_company-1".to_string(),
+                name: "research_company".to_string(),
+                args: json!({ "company": "Acme" }),
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_turn_plain_answer_maps_stop_reason() {
+        let data = json!({
+            "candidates": [{
+                "content": { "parts": [{ "text": "Final answer." }] },
+                "finishReason": "STOP"
+            }]
+        });
+        let turn = parse_gemini_turn(&data);
+        assert_eq!(turn.text, "Final answer.");
+        assert!(turn.tool_calls.is_empty());
+        assert_eq!(turn.stop, StopReason::End);
+
+        let truncated = json!({
+            "candidates": [{ "content": { "parts": [{ "text": "..." }] }, "finishReason": "MAX_TOKENS" }]
+        });
+        assert_eq!(parse_gemini_turn(&truncated).stop, StopReason::Length);
+    }
+
+    #[test]
+    fn parse_turn_malformed_function_call_maps_to_length_not_tool_use() {
+        // A tool call truncated by the output-token limit comes back with
+        // `finishReason: "MALFORMED_FUNCTION_CALL"` (NOT `MAX_TOKENS`) — it must
+        // route through the same non-executable/truncated path as `MAX_TOKENS`, so
+        // the (possibly half-serialized) args never reach a tool handler.
+        let data = json!({
+            "candidates": [{
+                "content": { "parts": [
+                    { "functionCall": { "name": "research_company", "args": { "company": "Ac" } } }
+                ] },
+                "finishReason": "MALFORMED_FUNCTION_CALL"
+            }]
+        });
+        let turn = parse_gemini_turn(&data);
+        assert_eq!(turn.stop, StopReason::Length);
     }
 }

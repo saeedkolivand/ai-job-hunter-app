@@ -12,7 +12,9 @@ use tauri::AppHandle;
 use crate::error::AppResult;
 
 use super::openai::OpenAiClient;
-use super::{AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId};
+use super::{
+    AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, ModelCapabilities, ProviderId, ToolSpec,
+};
 
 /// Ollama Cloud's OpenAI-compatible base URL.
 const CLOUD_BASE: &str = "https://ollama.com/v1";
@@ -105,5 +107,22 @@ impl AiProvider for OllamaCloudClient {
 
     async fn test_key(&self, app: &AppHandle) -> AppResult<()> {
         self.inner.test_key(app).await
+    }
+
+    async fn chat_with_tools(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        messages: &[ChatMsg],
+        tools: &[ToolSpec],
+        temperature: Option<f64>,
+    ) -> AppResult<AgentTurn> {
+        // `capabilities()` above already delegates to the inner OpenAI-compatible
+        // client, which reports `supports_tools: true` — Ollama Cloud's `/v1`
+        // endpoint IS OpenAI-compatible and tool-capable, so delegate the turn too
+        // rather than silently degrading to a single-shot answer.
+        self.inner
+            .chat_with_tools(app, model, messages, tools, temperature)
+            .await
     }
 }

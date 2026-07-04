@@ -17,11 +17,11 @@ lower layer; a lower layer may never use a higher one). Layer = the first path s
 a module under `src/`.
 
 ```
-L3  Shell / IPC        commands, ipc_contracts, lib, main, updater, tray, deeplink, extension_bridge, notifications
+L3  Shell / IPC        commands, ipc_contracts, lib, main, updater, tray, deeplink, extension_bridge, notifications, events, agent
 L2  Application        pipeline, cover_letter, autopilot, autopilot_scheduler,
-                       autopilot_helpers, recommend
+                       autopilot_helpers, recommend, salary_research
 L1  Domain             scraping, extraction, export, documents, jobs, postings,
-                       conversations, credentials, job_preferences, ai_generations,
+                       conversations, credentials, job_preferences, contact_profile, ai_generations,
                        applications, referrals, profile_import, model, layout, measure,
                        validate,
                        locale, theme
@@ -83,7 +83,7 @@ L0  Shared infra       error, observability, performance, db, data_store, net, p
   `crate::commands::ai_provider` for embeddings/provider routing. All allowlisted with
   `TODO(arch)` (target: inject an emitter port + relocate `ai_provider`).
 
-### L3 — Shell / IPC (`commands`, `ipc_contracts`, `lib`, `main`, `updater`, `tray`, `deeplink`, `extension_bridge`, `notifications`)
+### L3 — Shell / IPC (`commands`, `ipc_contracts`, `lib`, `main`, `updater`, `tray`, `deeplink`, `extension_bridge`, `notifications`, `events`, `agent`)
 
 - **Allowed deps:** anything below (L0/L1/L2).
 - **Forbidden deps:** none structurally — but L3 must stay **thin**: command handlers
