@@ -830,6 +830,28 @@ describe('application questions', () => {
       /if there is NO <salary_context> market range, use a number only when/i
     );
   });
+
+  it('cross-currency fix: the anti-lowball floor/midpoint reconciliation only applies within the SAME currency as the market range', () => {
+    // Regression test for the reviewer-flagged bug: <salary_context> is in the
+    // market's local currency, but <applicant_details> is free text and may be
+    // a different currency — a raw numeric floor compare across currencies
+    // would silently paste a wrong-currency number (and this may auto-submit).
+    const salaryEntry = APPLICATION_QUESTIONS.find((q) => q.id === 'salary');
+    expect(salaryEntry?.guidance).toMatch(/same currency as <salary_context>/i);
+    expect(salaryEntry?.guidance).toMatch(/different currency than <salary_context>/i);
+    expect(salaryEntry?.guidance).toMatch(/do not convert or floor/i);
+    // A mismatched/ambiguous currency falls back to the applicant's own stated
+    // figure (C1 behavior for that number), with the market range only as
+    // separate prose context — never reconciled/converted.
+    expect(salaryEntry?.guidance).toMatch(
+      /use the originally stated figure and currency for the number line as given/i
+    );
+
+    const sys = buildApplicationAnswerSystemPrompt();
+    expect(sys).toMatch(/same currency as <salary_context>/i);
+    expect(sys).toMatch(/different currency than <salary_context>/i);
+    expect(sys).toMatch(/do not convert or floor/i);
+  });
 });
 
 describe('buildSalaryRangeBlock (C2)', () => {
