@@ -198,6 +198,22 @@ export const MatchResumeBatchRequestSchema = z.object({
   semanticScoringEnabled: z.boolean().optional(),
 });
 
+/**
+ * Request for the "prep this application" agentic flow (`agent.run`). Mirrors the
+ * inputs `match_resume` / `ai_research_company` already take: the résumé + job
+ * identity plus the validated provider/model routing. `provider`/`model` are the
+ * TRUSTED routing context threaded into the agent's tools — never taken from
+ * model-supplied tool args. `baseUrl` matches `AiGenerateRequestSchema` (an
+ * openai-compatible override, not strictly a URL).
+ */
+export const AgentRunRequestSchema = z.object({
+  resumeId: z.string().min(1),
+  jobId: z.string().min(1),
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  baseUrl: z.string().optional(),
+});
+
 export const JobIdSchema = z.object({ jobId: z.string().min(1) });
 
 export const CredentialSetSchema = z.object({
@@ -443,3 +459,4 @@ export type ScrapeBoardsRequest = z.infer<typeof ScrapeBoardsRequestSchema>;
 export type ScrapeUrlRequest = z.infer<typeof ScrapeUrlRequestSchema>;
 export type MatchResumeRequest = z.infer<typeof MatchResumeRequestSchema>;
 export type MatchResumeBatchRequest = z.infer<typeof MatchResumeBatchRequestSchema>;
+export type AgentRunRequest = z.infer<typeof AgentRunRequestSchema>;

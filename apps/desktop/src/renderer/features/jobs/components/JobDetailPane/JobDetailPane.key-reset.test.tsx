@@ -108,6 +108,12 @@ vi.mock('@/features/jobs/components/RowMatchScore', () => ({
   RowMatchScore: () => null,
 }));
 
+// ── PrepApplicationPanel — irrelevant to this suite, stubbed out ─────────────
+
+vi.mock('@/features/jobs/components/PrepApplicationPanel', () => ({
+  PrepApplicationPanel: () => null,
+}));
+
 // ── session-store ─────────────────────────────────────────────────────────────
 
 vi.mock('@/store/session-store', () => ({

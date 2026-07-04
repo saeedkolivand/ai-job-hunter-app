@@ -1624,6 +1624,47 @@
     "tailorHint": "Lebenslauf & Anschreiben für diesen Job anpassen",
     "tailorError": "Anpassung konnte nicht gestartet werden. Bitte erneut versuchen.",
     "saveError": "Speichern in der Verfolgung fehlgeschlagen. Bitte erneut versuchen.",
+    "prep": {
+      "trigger": "Bewerbung vorbereiten",
+      "triggerHint": "Unternehmen recherchieren, Lebenslauf-Match bewerten und Anschreiben + Interviewfragen entwerfen",
+      "modalTitle": "Bewerbung vorbereiten",
+      "modalHint": "Der Agent recherchiert das Unternehmen, bewertet deinen Lebenslauf-Match, entwirft ein Anschreiben und Interviewfragen und schlägt anschließend eine Status-Aktualisierung zur Überprüfung vor.",
+      "readyTitle": "Bereit, sobald du es bist",
+      "needsResume": "Speichere zuerst einen Lebenslauf, um diese Bewerbung vorzubereiten.",
+      "needsProvider": "Wähle einen KI-Anbieter in Einstellungen → KI.",
+      "start": "Starten",
+      "starting": "Wird gestartet…",
+      "runAgain": "Erneut vorbereiten",
+      "stop": "Stoppen",
+      "stopHint": "Fordert einen Abbruch an — der Lauf kann noch einen Moment weiterlaufen.",
+      "stopping": "Wird gestoppt…",
+      "runFailed": "Der Vorbereitungslauf ist fehlgeschlagen. Bitte erneut versuchen.",
+      "close": "Schließen",
+      "liveRegionLabel": "Fortschritt der Vorbereitung",
+      "status": {
+        "pending": "Ausstehend",
+        "active": "In Bearbeitung",
+        "done": "Fertig",
+        "interrupted": "Unterbrochen"
+      },
+      "steps": {
+        "research": "Unternehmen wird recherchiert",
+        "match": "Lebenslauf-Match wird bewertet",
+        "draft": "Anschreiben wird entworfen",
+        "questions": "Interviewfragen werden vorgeschlagen",
+        "propose": "Nächster Schritt wird vorgeschlagen"
+      },
+      "proposalTitle": "Vorgeschlagener nächster Schritt",
+      "proposalHint": "Momentan nur zur Anzeige — es wird nichts automatisch übernommen.",
+      "stopped": {
+        "done": "Abgeschlossen",
+        "truncated": "Vorzeitig gestoppt — Ausgabe wurde gekürzt",
+        "budgeted": "Gestoppt — Budgetlimit erreicht",
+        "maxSteps": "Gestoppt — Schrittlimit erreicht",
+        "maxTokens": "Gestoppt — Token-Limit erreicht",
+        "cancelled": "Abgebrochen"
+      }
+    },
     "scrapeJobs": "Jobs scrapen",
     "scrapeFailed": "Scraping fehlgeschlagen",
     "searching": "Suche nach Jobs…",

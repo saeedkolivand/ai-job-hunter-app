@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { EVENT_CHANNELS } from '../src/events/index.js';
 import { PROVIDER_SLOTS } from '../src/provider-slots.js';
 import {
+  AgentRunRequestSchema,
   AiGenerateRequestSchema,
   AiGenerationSaveSchema,
   AiGenerationUpdateSchema,
@@ -55,6 +56,10 @@ interface ModuleSpec {
 }
 
 const MODULES: ModuleSpec[] = [
+  {
+    outFile: 'apps/desktop/src-tauri/src/ipc_contracts/agent.rs',
+    structs: [{ rustName: 'AgentRunRequest', schema: AgentRunRequestSchema }],
+  },
   {
     outFile: 'apps/desktop/src-tauri/src/ipc_contracts/scrape.rs',
     structs: [

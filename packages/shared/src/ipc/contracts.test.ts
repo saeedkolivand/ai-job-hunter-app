@@ -12,6 +12,7 @@ describe('IPC_CHANNELS', () => {
     const namespaces = Object.keys(IPC_CHANNELS).sort();
     expect(namespaces).toEqual(
       [
+        'agent',
         'ai',
         'aiGenerations',
         'applications',

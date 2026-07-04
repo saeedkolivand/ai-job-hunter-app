@@ -1620,6 +1620,47 @@
     "tailorHint": "Tailor your résumé & cover letter for this job",
     "tailorError": "Couldn't start tailoring. Please try again.",
     "saveError": "Couldn't save to tracking. Please try again.",
+    "prep": {
+      "trigger": "Prep this application",
+      "triggerHint": "Research the company, score your résumé, and draft a cover letter + interview questions",
+      "modalTitle": "Prep this application",
+      "modalHint": "The agent researches the company, scores your résumé match, drafts a cover letter and interview questions, then proposes a status update for you to review.",
+      "readyTitle": "Ready when you are",
+      "needsResume": "Save a résumé first to prep this application.",
+      "needsProvider": "Choose an AI provider in Settings → AI.",
+      "start": "Start",
+      "starting": "Starting…",
+      "runAgain": "Prep again",
+      "stop": "Stop",
+      "stopHint": "Requests cancellation — the run may take a moment to stop.",
+      "stopping": "Stopping…",
+      "runFailed": "The prep run failed. Please try again.",
+      "close": "Close",
+      "liveRegionLabel": "Prep run progress",
+      "status": {
+        "pending": "Pending",
+        "active": "In progress",
+        "done": "Done",
+        "interrupted": "Interrupted"
+      },
+      "steps": {
+        "research": "Researching the company",
+        "match": "Scoring your résumé match",
+        "draft": "Drafting your cover letter",
+        "questions": "Suggesting interview questions",
+        "propose": "Proposing next step"
+      },
+      "proposalTitle": "Proposed next step",
+      "proposalHint": "Display-only for now — nothing is applied automatically.",
+      "stopped": {
+        "done": "Completed",
+        "truncated": "Stopped early — output was truncated",
+        "budgeted": "Stopped — budget limit reached",
+        "maxSteps": "Stopped — reached the step limit",
+        "maxTokens": "Stopped — reached the token limit",
+        "cancelled": "Cancelled"
+      }
+    },
     "scrapeJobs": "Scrape Jobs",
     "scrapeFailed": "Scraping failed",
     "searching": "Searching for jobs…",
