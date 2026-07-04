@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 
+import { generateApplicationAnswer } from '@/lib/generate';
+
 import { useApplicationAnswers } from './useApplicationAnswers';
 
 // Stub the generation lib: metadata + one deterministic answer, no research.
@@ -43,7 +45,10 @@ const wrapper = ({ children }: { children: ReactNode }) =>
 const render = () => renderHook(() => useApplicationAnswers(base), { wrapper });
 
 describe('useApplicationAnswers', () => {
-  beforeEach(() => save.mockClear());
+  beforeEach(() => {
+    save.mockClear();
+    vi.mocked(generateApplicationAnswer).mockClear();
+  });
 
   it('toggles selection and gates generation on a non-empty selection', () => {
     const { result } = render();
@@ -228,6 +233,39 @@ describe('useApplicationAnswers', () => {
       expect(result.current.answers['why-company']).toBe('Old text before rewrite');
       // No save triggered — revert is local-only.
       expect(save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('guidance forwarding', () => {
+    it('forwards the registry guidance for the salary question', async () => {
+      const { result } = render();
+      act(() => result.current.toggle('salary'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(generateApplicationAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          question: 'What are your salary expectations?',
+          guidance: expect.stringContaining('Number:'),
+        })
+      );
+    });
+
+    it('omits guidance for a non-salary question', async () => {
+      const { result } = render();
+      act(() => result.current.toggle('why-company'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(generateApplicationAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({ question: 'Why do you want to work at this company?' })
+      );
+      const call = vi.mocked(generateApplicationAnswer).mock.calls[0]?.[0];
+      expect(call?.guidance).toBeUndefined();
     });
   });
 });

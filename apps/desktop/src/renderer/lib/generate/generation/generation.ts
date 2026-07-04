@@ -364,8 +364,21 @@ export async function generateApplicationAnswer(params: {
   companyBrief?: string;
   signal?: AbortSignal;
   onToken?: (tok: string) => void;
+  /** This question's registry `guidance` (see `ApplicationQuestion.guidance`),
+   *  when it has one — absent for user-typed custom questions. */
+  guidance?: string;
 }): Promise<string> {
-  const { question, resume, jobAd, meta, model, companyBrief = '', signal, onToken } = params;
+  const {
+    question,
+    resume,
+    jobAd,
+    meta,
+    model,
+    companyBrief = '',
+    signal,
+    onToken,
+    guidance,
+  } = params;
   const profile = buildProviderProfile(model);
 
   // Market drives the answer's register; applicant prefs answer logistics
@@ -386,6 +399,7 @@ export async function generateApplicationAnswer(params: {
     target: profile,
     market,
     applicant,
+    guidance,
   });
   const raw = await streamGenerate(
     model,
