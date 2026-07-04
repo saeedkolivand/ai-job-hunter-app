@@ -17,7 +17,8 @@ use super::research::{self, SearchResult};
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
-    AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace, TokenParam,
+    single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, ModelCapabilities,
+    ProviderId, RequestTrace, StopReason, TokenParam, ToolCall, ToolSpec,
 };
 
 const EMBED_MODEL: &str = "nomic-embed-text";
@@ -33,6 +34,76 @@ pub fn host() -> String {
     crate::platform::config::ollama_host()
 }
 
+/// Whether a local Ollama model advertises tool-calling. Ollama's `/api/chat`
+/// only honors a `tools` field on models trained for it; a model without support
+/// silently ignores tools (no error, but also no calls), so gate on a conservative
+/// allowlist of the known tool-calling families. Unknown names default to `false`,
+/// so an agent turn degrades to a single-shot answer instead of a call-less stall.
+fn ollama_supports_tools(model: &str) -> bool {
+    let m = model.to_ascii_lowercase();
+    m.contains("llama3.1")
+        || m.contains("llama3.2")
+        || m.contains("llama3.3")
+        || m.contains("qwen2.5")
+        || m.contains("qwen3")
+        || m.contains("mistral")
+        || m.contains("mixtral")
+        || m.contains("command-r")
+        || m.contains("firefunction")
+        || m.contains("hermes")
+        || m.contains("granite")
+}
+
+/// Parse a non-streaming `/api/chat` response into an [`AgentTurn`]:
+/// `message.content` is the text, each `message.tool_calls[]` maps to a
+/// [`ToolCall`] (Ollama returns `function.arguments` as an already-decoded JSON
+/// object, and no call id — synthesize `name-index`), and `done_reason` maps the
+/// stop (`length`→Length even with tool calls present — the arguments may be
+/// truncated JSON, so length wins over the tool-call signal; else any tool call ⇒
+/// ToolUse, else End). Pure + unit-tested.
+fn parse_ollama_turn(data: &Value) -> AgentTurn {
+    let message = data.get("message");
+    let text = message
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let tool_calls: Vec<ToolCall> = message
+        .and_then(|m| m.get("tool_calls"))
+        .and_then(|c| c.as_array())
+        .map(|calls| {
+            calls
+                .iter()
+                .enumerate()
+                .filter_map(|(i, c)| {
+                    let func = c.get("function")?;
+                    let name = func.get("name").and_then(|n| n.as_str())?.to_string();
+                    let args = func.get("arguments").cloned().unwrap_or_else(|| json!({}));
+                    Some(ToolCall {
+                        id: format!("{name}-{i}"),
+                        name,
+                        args,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let stop = if data.get("done_reason").and_then(|r| r.as_str()) == Some("length") {
+        // A length-truncated turn's tool-call arguments may be truncated /
+        // half-serialized JSON — length must win over the tool-call signal.
+        StopReason::Length
+    } else if !tool_calls.is_empty() {
+        StopReason::ToolUse
+    } else {
+        StopReason::End
+    };
+    AgentTurn {
+        text,
+        tool_calls,
+        stop,
+    }
+}
+
 // ── Provider impl ───────────────────────────────────────────────────────────────
 
 pub struct OllamaClient;
@@ -43,13 +114,15 @@ impl AiProvider for OllamaClient {
         ProviderId::Ollama
     }
 
-    fn capabilities(&self, _model: &str) -> ModelCapabilities {
+    fn capabilities(&self, model: &str) -> ModelCapabilities {
         ModelCapabilities {
             supports_temperature: true,
             supports_system_role: true,
             supports_streaming: true,
             supports_reasoning: false,
-            supports_tools: false,
+            // Per-model: only tool-calling families advertise it (see the allowlist);
+            // unknown models stay `false` so an agent turn degrades safely.
+            supports_tools: ollama_supports_tools(model),
             supports_json_mode: true,
             supports_embeddings: true,
             token_param: TokenParam::NumPredict,
@@ -173,6 +246,80 @@ impl AiProvider for OllamaClient {
             ))),
             Err(e) => Err(AppError::Network(format!("Ollama unreachable: {e}"))),
         }
+    }
+
+    async fn chat_with_tools(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        messages: &[ChatMsg],
+        tools: &[ToolSpec],
+        temperature: Option<f64>,
+    ) -> AppResult<AgentTurn> {
+        // Only tool-capable local models attempt native tool-calling; the rest
+        // degrade to a single-shot answer.
+        if !self.capabilities(model).supports_tools {
+            return single_shot_turn(self, app, model, messages, temperature).await;
+        }
+        let base = host();
+        let endpoint = format!("{base}/api/chat");
+        let trace = RequestTrace::begin(ProviderId::Ollama, model, "/api/chat tools", &base, false);
+
+        let wire_messages: Vec<Value> = messages
+            .iter()
+            .map(|m| json!({ "role": m.role.wire(), "content": m.content }))
+            .collect();
+        let tool_specs: Vec<Value> = tools
+            .iter()
+            .map(|t| {
+                json!({
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.schema,
+                    },
+                })
+            })
+            .collect();
+
+        let mut body = json!({
+            "model": model,
+            "stream": false,
+            "messages": wire_messages,
+            "tools": tool_specs,
+        });
+        if let Some(t) = temperature {
+            body["options"] = json!({ "temperature": t });
+        }
+        body["keep_alive"] = json!(crate::performance::ollama_keep_alive());
+
+        let resp = match super::retry::send_with_retry(|| {
+            crate::net::http::shared()
+                .post(&endpoint)
+                .timeout(timeouts::OLLAMA_COMPLETION)
+                .json(&body)
+        })
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                return Err(AppError::Network(format!("Ollama unreachable: {e}")));
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            return Err(AppError::Provider(format!("Ollama {status}: {body_text}")));
+        }
+        let data: Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Ollama parse: {e}"))?;
+        trace.end(Some(status.as_u16()), true);
+        Ok(parse_ollama_turn(&data))
     }
 }
 
@@ -654,7 +801,11 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_show, parse_ollama_frames, parse_web_search, StreamPiece};
+    use super::{
+        normalize_show, ollama_supports_tools, parse_ollama_frames, parse_ollama_turn,
+        parse_web_search, StreamPiece,
+    };
+    use crate::commands::ai_provider::{StopReason, ToolCall};
     use serde_json::json;
 
     #[test]
@@ -754,5 +905,82 @@ mod tests {
     fn normalize_returns_null_when_nothing_usable() {
         assert!(normalize_show(&json!({})).is_null());
         assert!(normalize_show(&json!({ "model_info": {}, "details": {} })).is_null());
+    }
+
+    #[test]
+    fn tool_support_gate_is_conservative() {
+        for m in [
+            "llama3.1:8b",
+            "llama3.3:70b",
+            "qwen2.5:7b",
+            "mistral-nemo",
+            "command-r-plus",
+        ] {
+            assert!(ollama_supports_tools(m), "{m} should advertise tools");
+        }
+        // Unknown / non-tool families default off so the turn degrades safely.
+        for m in [
+            "llama2",
+            "phi3",
+            "gemma2",
+            "nomic-embed-text",
+            "deepseek-coder",
+        ] {
+            assert!(!ollama_supports_tools(m), "{m} must default to no tools");
+        }
+    }
+
+    #[test]
+    fn parse_turn_reads_object_arguments_and_content() {
+        // Ollama returns arguments as an already-decoded object (NOT a JSON string).
+        let data = json!({
+            "message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{ "function": { "name": "match_resume", "arguments": { "resumeId": "r1", "jobId": "j1" } } }]
+            },
+            "done": true,
+            "done_reason": "stop"
+        });
+        let turn = parse_ollama_turn(&data);
+        assert_eq!(turn.stop, StopReason::ToolUse);
+        assert_eq!(
+            turn.tool_calls,
+            vec![ToolCall {
+                id: "match_resume-0".to_string(),
+                name: "match_resume".to_string(),
+                args: json!({ "resumeId": "r1", "jobId": "j1" }),
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_turn_plain_answer_has_no_tool_calls() {
+        let data = json!({
+            "message": { "role": "assistant", "content": "The answer." },
+            "done": true,
+            "done_reason": "stop"
+        });
+        let turn = parse_ollama_turn(&data);
+        assert_eq!(turn.text, "The answer.");
+        assert!(turn.tool_calls.is_empty());
+        assert_eq!(turn.stop, StopReason::End);
+    }
+
+    #[test]
+    fn parse_turn_tool_calls_with_length_done_reason_maps_to_length_not_tool_use() {
+        // `done_reason: "length"` means the arguments may be truncated JSON — this
+        // must win over the tool-call signal, never `ToolUse`.
+        let data = json!({
+            "message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{ "function": { "name": "match_resume", "arguments": { "resumeId": "r1" } } }]
+            },
+            "done": true,
+            "done_reason": "length"
+        });
+        let turn = parse_ollama_turn(&data);
+        assert_eq!(turn.stop, StopReason::Length);
     }
 }

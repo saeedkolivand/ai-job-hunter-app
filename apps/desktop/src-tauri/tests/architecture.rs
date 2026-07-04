@@ -81,6 +81,12 @@ const L3: &[&str] = &[
     // factory-reset hook, exactly like `extension_bridge`. The store body itself
     // is pure data + disk (AppHandle-free); push orchestration is Phase 4.
     "notifications",
+    // Agentic controller foundation (Phase 1, backend only). Shell-role: its
+    // `LiveAgentEnv` holds an AppHandle, emits `agent:step`, and reaches DOWN into
+    // commands/pipeline/limits to run a budgeted tool-calling loop — never the
+    // reverse. The controller's pure core (`run_agent`) is AppHandle-free. Wired
+    // to a Tauri command in Phase 2 (`agent_run`).
+    "agent",
 ];
 
 fn layer_of(module: &str) -> Option<u8> {
