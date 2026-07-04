@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783153700467,
+  "lastUpdate": 1783155188878,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2387,6 +2387,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 281337,
             "range": "± 1719",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7da5c92f275c4dc8fe16df8ab7b4c691d54605ff",
+          "message": "fix: rate-limit the ai_research_company web-search command (#550)\n\n* fix: rate-limit the ai_research_company web-search command\n\nai_research_company fired a billable provider web search with no rate,\nconcurrency, or daily-budget guard, unlike ai_lookup_salary and\nai_generate — a looping or compromised renderer could drive unbounded\npaid-API spend. Apply the same guard, sharing the \"ai_research\" limiter\nbucket (previously wired to ai_lookup_salary only) and the per-provider\ndaily ceiling; degrade to the existing empty {company,brief} shape when\nthrottled.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs: mark ai_research_company as guarded in the limiter module\n\nFollow the code: this PR guards ai_research_company, so the limits module\ndocs that listed it as an out-of-scope follow-up gap are now stale. Add it\nto the guarded-commands list and drop the \"known gap\" wording.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-04T10:44:30+02:00",
+          "tree_id": "a84794b7b348f3e062790565b8003fefce774e45",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/7da5c92f275c4dc8fe16df8ab7b4c691d54605ff"
+        },
+        "date": 1783155188241,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1913778,
+            "range": "± 73274",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2509033,
+            "range": "± 70625",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 287506,
+            "range": "± 5466",
             "unit": "ns/iter"
           }
         ]
