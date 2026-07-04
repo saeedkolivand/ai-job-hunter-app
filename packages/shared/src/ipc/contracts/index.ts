@@ -129,6 +129,7 @@ export {
   type EmbeddingConfig,
   type EmbeddingSpaceInfo,
   type EmbeddingStatus,
+  type SalaryRange,
 } from './ai.js';
 export {
   AI_GENERATIONS_CHANNELS,

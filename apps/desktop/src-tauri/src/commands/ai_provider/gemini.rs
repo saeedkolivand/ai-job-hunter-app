@@ -184,6 +184,73 @@ fn parse_gemini_frames(buf: &mut String, state: &mut GeminiScanner) -> Vec<Strea
 
 pub struct GeminiClient;
 
+impl GeminiClient {
+    /// Shared transport for every `research*` facet: `generateContent` grounded
+    /// with the native Google Search tool, `system`/`user` supplied by the
+    /// caller. Degrades to `""` (never an error) on a missing key or any
+    /// transport/response failure, so generation always proceeds.
+    async fn web_search_complete(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+    ) -> AppResult<String> {
+        let api_key = match get_provider_key(app, self.id().credential_key()) {
+            Some(k) if !k.trim().is_empty() => k,
+            _ => return Ok(String::new()),
+        };
+        let m = model.strip_prefix("models/").unwrap_or(model);
+        let endpoint_label = format!("/v1beta/models/{m}:generateContent");
+        let trace = RequestTrace::begin(
+            ProviderId::Gemini,
+            model,
+            "/generateContent google_search",
+            BASE,
+            false,
+        );
+
+        let body = json!({
+            "contents": [ { "role": "user", "parts": [{ "text": user }] } ],
+            "systemInstruction": { "parts": [{ "text": system }] },
+            "generationConfig": { "temperature": 0.2 },
+            "tools": [{ "google_search": {} }],
+        });
+        let url = format!("{BASE}{endpoint_label}");
+        let resp = crate::net::http::shared()
+            .post(&url)
+            .timeout(timeouts::WEB_SEARCH)
+            .header("x-goog-api-key", &api_key)
+            .json(&body)
+            .send()
+            .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                tracing::warn!("gemini research unreachable: {e}");
+                return Ok(String::new());
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            tracing::warn!("gemini research {status}: {body_text}");
+            return Ok(String::new());
+        }
+        let data: Value = match resp.json().await {
+            Ok(v) => v,
+            Err(_) => {
+                trace.end(Some(status.as_u16()), false);
+                return Ok(String::new());
+            }
+        };
+        trace.end(Some(status.as_u16()), true);
+        Ok(join_parts_text(&data))
+    }
+}
+
 #[async_trait]
 impl AiProvider for GeminiClient {
     fn id(&self) -> ProviderId {
@@ -346,59 +413,30 @@ impl AiProvider for GeminiClient {
         company: &str,
         role: &str,
     ) -> AppResult<String> {
-        let api_key = match get_provider_key(app, self.id().credential_key()) {
-            Some(k) if !k.trim().is_empty() => k,
-            _ => return Ok(String::new()),
-        };
-        let m = model.strip_prefix("models/").unwrap_or(model);
-        let endpoint_label = format!("/v1beta/models/{m}:generateContent");
-        let trace = RequestTrace::begin(
-            ProviderId::Gemini,
+        self.web_search_complete(
+            app,
             model,
-            "/generateContent google_search",
-            BASE,
-            false,
-        );
+            research::NATIVE_SYSTEM,
+            &research::native_user(company, role),
+        )
+        .await
+    }
 
-        // Grounding with Google Search: the model searches and writes the brief.
-        let body = json!({
-            "contents": [ { "role": "user", "parts": [{ "text": research::native_user(company, role) }] } ],
-            "systemInstruction": { "parts": [{ "text": research::NATIVE_SYSTEM }] },
-            "generationConfig": { "temperature": 0.2 },
-            "tools": [{ "google_search": {} }],
-        });
-        let url = format!("{BASE}{endpoint_label}");
-        let resp = crate::net::http::shared()
-            .post(&url)
-            .timeout(timeouts::WEB_SEARCH)
-            .header("x-goog-api-key", &api_key)
-            .json(&body)
-            .send()
-            .await;
-        let resp = match resp {
-            Ok(r) => r,
-            Err(e) => {
-                trace.end(None, false);
-                tracing::warn!("gemini research unreachable: {e}");
-                return Ok(String::new());
-            }
-        };
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
-            trace.end(Some(status.as_u16()), false);
-            tracing::warn!("gemini research {status}: {body_text}");
-            return Ok(String::new());
-        }
-        let data: Value = match resp.json().await {
-            Ok(v) => v,
-            Err(_) => {
-                trace.end(Some(status.as_u16()), false);
-                return Ok(String::new());
-            }
-        };
-        trace.end(Some(status.as_u16()), true);
-        Ok(join_parts_text(&data))
+    async fn research_salary(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        role: &str,
+        company: &str,
+        location: &str,
+    ) -> AppResult<String> {
+        self.web_search_complete(
+            app,
+            model,
+            research::SALARY_SYSTEM,
+            &research::salary_user(role, company, location),
+        )
+        .await
     }
 
     async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
