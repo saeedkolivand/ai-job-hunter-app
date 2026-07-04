@@ -63,10 +63,19 @@ vi.mock('@/services', async (importOriginal) => {
 
 // Captures the onApply callback so board-provenance tests can invoke handleApply directly.
 let capturedOnApply: ((job: AutopilotFoundJob) => void) | null = null;
+// Captures the focusedJobUrl prop so the Back-navigation flow can assert it's forwarded.
+let capturedFocusedJobUrl: string | null | undefined = null;
 
 vi.mock('@/features/autopilot/components/AutopilotCard', () => ({
-  AutopilotCard: ({ onApply }: { onApply: (job: AutopilotFoundJob) => void }) => {
+  AutopilotCard: ({
+    onApply,
+    focusedJobUrl,
+  }: {
+    onApply: (job: AutopilotFoundJob) => void;
+    focusedJobUrl?: string | null;
+  }) => {
     capturedOnApply = onApply;
+    capturedFocusedJobUrl = focusedJobUrl;
     return <div data-testid={TEST_IDS.autopilot.card} />;
   },
 }));
@@ -101,13 +110,21 @@ vi.mock('@/components/layout/PageTransition', () => ({
 
 beforeEach(() => {
   useSessionStore.setState((s) => ({
-    autopilot: { ...s.autopilot, focusedId: null, lastAppliedId: null, creating: false },
+    autopilot: {
+      ...s.autopilot,
+      focusedId: null,
+      focusedJobUrl: null,
+      lastAppliedId: null,
+      lastAppliedJobUrl: null,
+      creating: false,
+    },
   }));
   mockNavigate.mockReset();
   mockInvalidateAutopilots.mockReset();
   mockMutateAsync.mockReset();
   mockAutopilotList = [];
   capturedOnApply = null;
+  capturedFocusedJobUrl = null;
   currentSearch = {};
 });
 
@@ -178,6 +195,26 @@ describe('AutopilotPage — lastAppliedId (re-expand on Back)', () => {
     const { autopilot } = useSessionStore.getState();
     expect(autopilot.focusedId).toBe('ap-7');
     expect(autopilot.lastAppliedId).toBeNull();
+  });
+
+  it('promotes lastAppliedJobUrl to focusedJobUrl on mount and clears it', async () => {
+    // Same Back-navigation flow, but also carrying the specific job url so the
+    // card can scroll to that row instead of just the header.
+    useSessionStore.setState((s) => ({
+      autopilot: {
+        ...s.autopilot,
+        lastAppliedId: 'ap-7',
+        lastAppliedJobUrl: 'https://example.com/job/1',
+      },
+    }));
+
+    await act(async () => {
+      render(<AutopilotPage />);
+    });
+
+    const { autopilot } = useSessionStore.getState();
+    expect(autopilot.focusedJobUrl).toBe('https://example.com/job/1');
+    expect(autopilot.lastAppliedJobUrl).toBeNull();
   });
 });
 
@@ -250,5 +287,42 @@ describe('AutopilotPage — handleApply board provenance', () => {
     });
 
     expect(mockMutateAsync).toHaveBeenCalledWith(expect.objectContaining({ board: 'aggregator' }));
+  });
+});
+
+describe('AutopilotPage — focusedJobUrl plumbing', () => {
+  it('forwards focusedJobUrl to the focused AutopilotCard', async () => {
+    mockAutopilotList = [makeAutopilot(['indeed'])]; // _id: 'ap-1'
+    useSessionStore.setState((s) => ({
+      autopilot: {
+        ...s.autopilot,
+        lastAppliedId: 'ap-1',
+        lastAppliedJobUrl: 'https://example.com/job/1',
+      },
+    }));
+
+    await act(async () => {
+      render(<AutopilotPage />);
+    });
+
+    expect(capturedFocusedJobUrl).toBe('https://example.com/job/1');
+  });
+
+  it('sets lastAppliedJobUrl alongside lastAppliedId on Apply', async () => {
+    mockAutopilotList = [makeAutopilot(['indeed'])];
+    mockMutateAsync.mockResolvedValue({ id: 'app-99' });
+
+    await act(async () => {
+      render(<AutopilotPage />);
+    });
+
+    if (!capturedOnApply) throw new Error('AutopilotCard onApply was not captured');
+    await act(async () => {
+      (capturedOnApply as (job: AutopilotFoundJob) => void)(makeFoundJob('linkedin'));
+    });
+
+    const { autopilot } = useSessionStore.getState();
+    expect(autopilot.lastAppliedId).toBe('ap-1');
+    expect(autopilot.lastAppliedJobUrl).toBe('https://example.com/job/1');
   });
 });
