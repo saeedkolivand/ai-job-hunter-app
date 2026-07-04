@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783155188878,
+  "lastUpdate": 1783162544280,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2429,6 +2429,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 287506,
             "range": "± 5466",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b3ed856690e934f2344e4ef562b47f9ad39344e7",
+          "message": "feat: ground salary answers in a job's scraped salary range (#551)\n\n* feat: ground salary answers in a job's scraped salary range\n\nPrefer a posting's own scraped salary over the web lookup for the salary\napplication answer (precedence: scraped > web research > saved\nexpectation). Scraped salary is deterministic and free, so it avoids a\npaid web search when the posting already carries the numbers.\n\nBackend: persist salary end-to-end. Adzuna's salaryMin/max gain a derived\nISO-4217 currency (country -> currency map; unknown -> none -> web\nfallback). FoundJob and the Application record carry salary_min/max/\ncurrency; a new nullable, append-only migration (#6) adds the columns\n(NULL = unknown, never 0). Both apply paths (autopilot + manual Jobs)\nthread it through.\n\nRenderer: a complete, validated scraped range (positive, finite,\nmin<=max, ISO-shaped currency) builds the SalaryRange and skips the web\nlookup; anything malformed falls through to the web lookup so the answer\nnever loses its range. buildScrapedSalaryRange is a strict superset of the\nprompt-layer buildSalaryRangeBlock guard, rounded to integers to match the\nweb path. The <salary_context> block is now source-neutral.\n\nAlso add a test seam for the previously-untested provider transports:\nextract OpenAI's web-search HTTP body (wiremock-tested) behind a pure gate\npredicate, and inject a SalarySearcher trait + KvCache into\nSalaryResearch::enrich so its parse/degradation/timeout/cache paths are\nunit-tested (no AppHandle/network). Dev-only tokio test-util feature; no\nnew dependency.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* test: drop the dead salary_research architecture allowlist entry\n\nThe enrich dependency-injection refactor removed salary_research's\nAppHandle/try_state coupling, so its debt-allowlist entry is now dead and\ntrips the no-dead-entries architecture check. Remove it — the module is\nnow cleanly tauri-free at layer 2.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: round the scraped salary before validating, and uppercase currency\n\nAddress claude-review findings on buildScrapedSalaryRange: validate the\nrounded values (not the raw ones) so a sub-0.5 min that rounds to 0 falls\nback to the web lookup instead of blanking the range, keeping the guard a\nstrict superset of the prompt-layer check. Also uppercase the currency so\nit renders consistently. Tests cover the sub-0.5 fall-through and the\nmixed-case currency normalization.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-04T12:46:29+02:00",
+          "tree_id": "680ef391698cd9970fa4dfd371877497a11627c7",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/b3ed856690e934f2344e4ef562b47f9ad39344e7"
+        },
+        "date": 1783162543741,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1909986,
+            "range": "± 49628",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2547085,
+            "range": "± 16678",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 293175,
+            "range": "± 23999",
             "unit": "ns/iter"
           }
         ]
