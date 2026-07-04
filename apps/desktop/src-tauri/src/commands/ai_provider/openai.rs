@@ -148,12 +148,21 @@ impl OpenAiClient {
         }
     }
 
+    /// Whether this client's provider id exposes OpenAI's native `web_search`
+    /// tool — only native OpenAI does; every OpenAI-compatible gateway can't be
+    /// assumed to support it, and Ollama Cloud overrides `research()`/
+    /// `research_salary()` on its own client. Factored to a pure, `AppHandle`-free
+    /// predicate purely so the gate stays unit-testable (this crate has no
+    /// `tauri::test` mock-app harness to drive `web_search_complete` itself end
+    /// to end — see the same note on `salary_research::SalaryResearch::enrich`).
+    fn supports_web_search(&self) -> bool {
+        self.id == ProviderId::OpenAi
+    }
+
     /// Shared transport for every `research*` facet: the Responses API with the
-    /// native `web_search` tool, `system`/`user` supplied by the caller. Only
-    /// native OpenAI exposes this tool — generic OpenAI-compatible gateways can't
-    /// be assumed to support it (and Ollama Cloud overrides `research()`/
-    /// `research_salary()` on its own client), so every other id degrades to
-    /// `""`, exactly like a missing key or a failed call.
+    /// native `web_search` tool, `system`/`user` supplied by the caller. Every
+    /// non-OpenAI id degrades to `""`, exactly like a missing key or a failed
+    /// call.
     async fn web_search_complete(
         &self,
         app: &AppHandle,
@@ -161,13 +170,29 @@ impl OpenAiClient {
         system: &str,
         user: &str,
     ) -> AppResult<String> {
-        if self.id != ProviderId::OpenAi {
+        if !self.supports_web_search() {
             return Ok(String::new());
         }
         let api_key = match get_provider_key(app, self.id.credential_key()) {
             Some(k) if !k.trim().is_empty() => k,
             _ => return Ok(String::new()),
         };
+        self.web_search_transport(&api_key, model, system, user)
+            .await
+    }
+
+    /// The `/responses` HTTP transport itself — no `AppHandle`/keychain, so it's
+    /// directly testable against a `wiremock::MockServer` (see the tests below).
+    /// Behavior-preserving extraction from `web_search_complete`: a transport
+    /// failure, a non-2xx status, and a non-JSON body all degrade to `""` (never
+    /// an error) — the same gentle-degrade contract the caller already promises.
+    async fn web_search_transport(
+        &self,
+        api_key: &str,
+        model: &str,
+        system: &str,
+        user: &str,
+    ) -> AppResult<String> {
         let endpoint = format!("{}/responses", self.base_url);
         let trace = RequestTrace::begin(
             self.id,
@@ -186,7 +211,7 @@ impl OpenAiClient {
         let resp = crate::net::http::shared()
             .post(&endpoint)
             .timeout(timeouts::WEB_SEARCH)
-            .bearer_auth(&api_key)
+            .bearer_auth(api_key)
             .json(&body)
             .send()
             .await;
@@ -662,5 +687,96 @@ mod tests {
         // Comment/keepalive lines and malformed JSON are ignored, not errors.
         let mut buf = String::from(": keepalive\ndata: not-json\n\n");
         assert!(parse_openai_frames(&mut buf).is_empty());
+    }
+
+    // ── web_search_transport (wiremock against `crate::net::http::shared()`,
+    // mirroring the pattern in `retry.rs`'s `retry_loop_tests`) ────────────────
+
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn web_search_transport_degrades_to_empty_on_http_500() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
+        let text = client
+            .web_search_transport("dummy-key", "gpt-4o", "system", "user")
+            .await
+            .expect("never an error, only degrades to empty");
+        assert_eq!(text, "");
+    }
+
+    #[tokio::test]
+    async fn web_search_transport_degrades_to_empty_on_non_json_200() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+            .mount(&server)
+            .await;
+
+        let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
+        let text = client
+            .web_search_transport("dummy-key", "gpt-4o", "system", "user")
+            .await
+            .expect("never an error, only degrades to empty");
+        assert_eq!(text, "");
+    }
+
+    #[tokio::test]
+    async fn web_search_transport_extracts_text_from_a_realistic_responses_payload() {
+        let server = MockServer::start().await;
+        let payload = json!({
+            "output": [
+                { "type": "web_search_call", "id": "ws_1", "status": "completed" },
+                { "type": "message", "role": "assistant", "content": [
+                    { "type": "output_text", "text": "Acme is a ", "annotations": [] },
+                    { "type": "output_text", "text": "widget maker.", "annotations": [] }
+                ]}
+            ]
+        });
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(payload))
+            .mount(&server)
+            .await;
+
+        let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
+        let text = client
+            .web_search_transport("dummy-key", "gpt-4o", "system", "user")
+            .await
+            .expect("ok");
+        assert_eq!(text, "Acme is a widget maker.");
+    }
+
+    #[test]
+    fn supports_web_search_gate_only_allows_native_openai() {
+        // Regression guard against silently dropping the provider gate in a
+        // future refactor: a non-OpenAI id must never reach `/responses` (a
+        // generic OpenAI-compatible gateway can't be assumed to support the
+        // native `web_search` tool). `web_search_complete` itself can't be
+        // driven end to end here — it needs a live `AppHandle`, and this crate
+        // has no `tauri::test` mock-app harness (see its doc comment, and the
+        // same note on `salary_research::SalaryResearch::enrich`) — so this
+        // exercises the pure gate predicate it's built on before any HTTP call.
+        assert!(OpenAiClient::new(ProviderId::OpenAi, None).supports_web_search());
+        for other in [
+            ProviderId::OpenAiCompatible,
+            ProviderId::OllamaCloud,
+            ProviderId::Ollama,
+            ProviderId::Anthropic,
+            ProviderId::Gemini,
+        ] {
+            assert!(
+                !OpenAiClient::new(other, None).supports_web_search(),
+                "{other:?} must not pass the web_search gate"
+            );
+        }
     }
 }

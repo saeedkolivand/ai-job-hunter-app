@@ -16,8 +16,8 @@
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
 
+use crate::error::AppResult;
 use crate::pipeline::cache::KvCache;
 use crate::pipeline::Completer;
 
@@ -51,6 +51,38 @@ pub struct SalaryRange {
     pub currency: String,
 }
 
+/// Abstraction over "search the web for a salary range for this role" — the
+/// dependency [`SalaryResearch::enrich`] needs, injected rather than reached
+/// for via `completer.app().try_state()`. [`Completer`] is the sole production
+/// implementation (a thin forward to its own `research_salary`); tests supply
+/// a canned fake, which is the only way to exercise `enrich`'s parse/validate/
+/// cache/timeout logic without a live `AppHandle` (this crate has no
+/// `tauri::test` mock-app harness). A native (non-`async-trait`, unboxed)
+/// return-position `impl Future`, used only through the generic bound on
+/// `enrich` (never as `dyn SalarySearcher`) — `+ Send` is spelled out
+/// explicitly (rather than plain `async fn` sugar) because a tauri command's
+/// future is spawned onto the runtime and must be `Send`, and bare `async fn`
+/// in a trait leaves that unspecified (rustc's `async_fn_in_trait` lint).
+pub trait SalarySearcher {
+    fn research_salary(
+        &self,
+        role: &str,
+        company: &str,
+        location: &str,
+    ) -> impl std::future::Future<Output = AppResult<String>> + Send;
+}
+
+impl SalarySearcher for Completer {
+    async fn research_salary(
+        &self,
+        role: &str,
+        company: &str,
+        location: &str,
+    ) -> AppResult<String> {
+        Completer::research_salary(self, role, company, location).await
+    }
+}
+
 /// Web-grounded salary-range enricher. Same shape as `CompanyResearch`, but
 /// returns a validated structured range instead of prose.
 pub struct SalaryResearch;
@@ -59,20 +91,26 @@ impl SalaryResearch {
     /// Look up the market salary range for `role` (optionally at `company`, in
     /// `location`). `company`/`location` may be empty — the prompt then falls
     /// back to a broader market estimate. Returns `None` (never an error) when
-    /// `role` is empty, the provider can't search, the search/synthesis fails,
+    /// `role` is empty, the searcher can't search, the search/synthesis fails,
     /// times out, or its output doesn't parse into a plausible range.
-    pub async fn enrich(
+    ///
+    /// `cache` is injected (`None` when the caller has no `KvCache` managed
+    /// state) rather than looked up here — the sole production caller
+    /// (`commands::ai::ai_lookup_salary`) resolves it once via
+    /// `app.try_state::<KvCache>()` and passes it through, which is what keeps
+    /// this function testable without an `AppHandle`.
+    pub async fn enrich<S: SalarySearcher>(
         &self,
-        completer: &Completer,
+        searcher: &S,
+        cache: Option<&KvCache>,
         role: &str,
         company: &str,
         location: &str,
     ) -> Option<SalaryRange> {
-        // The very first thing this does — before touching `completer` at all
-        // — so a whitespace-only role never reaches the provider. Factored to
-        // a pure predicate ([`role_is_missing`]) purely so it stays
-        // unit-testable without a live `Completer`/`AppHandle` (this crate has
-        // no `tauri::test` mock-app harness).
+        // The very first thing this does — before touching `searcher` at all —
+        // so a whitespace-only role never reaches it. Factored to a pure
+        // predicate ([`role_is_missing`]) purely so it stays unit-testable in
+        // isolation.
         if role_is_missing(role) {
             tracing::debug!("salary_research: no role available, skipping lookup");
             return None;
@@ -84,10 +122,9 @@ impl SalaryResearch {
         // Case-folded so "Berlin"/"berlin" don't miss each other; the
         // case-preserved values above still go to the prompt/query/logging.
         let key = cache_key(&role, &company, &location);
-        let app = completer.app();
 
         // Fast path: cached, validated range younger than the TTL.
-        if let Some(cache) = app.try_state::<KvCache>() {
+        if let Some(cache) = cache {
             if let Some(json) = cache.get(CACHE_NS, &key, TTL_SECS) {
                 if let Some(range) = parse_and_validate(&json) {
                     tracing::info!(role = %role, company = %company, source = "cache", "salary_research: range");
@@ -100,7 +137,7 @@ impl SalaryResearch {
         // failure/timeout yields no range.
         let raw = match tokio::time::timeout(
             Duration::from_secs(RESEARCH_TIMEOUT_SECS),
-            completer.research_salary(&role, &company, &location),
+            searcher.research_salary(&role, &company, &location),
         )
         .await
         {
@@ -120,7 +157,7 @@ impl SalaryResearch {
         // the 7-day TTL.
         let range = parse_and_validate(&raw)?;
 
-        if let Some(cache) = app.try_state::<KvCache>() {
+        if let Some(cache) = cache {
             if let Ok(json) = serde_json::to_string(&range) {
                 cache.set(CACHE_NS, &key, &json);
             }
@@ -210,6 +247,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+    use crate::error::AppError;
 
     // ── cache round-trip (the same namespace/TTL constants `enrich` uses) ────
 
@@ -399,5 +437,164 @@ mod tests {
     fn missing_fields_are_none() {
         assert_eq!(parse_and_validate(r#"{"min":1,"max":2}"#), None);
         assert_eq!(parse_and_validate(r#"{"currency":"USD"}"#), None);
+    }
+
+    // ── enrich (fake SalarySearcher — reaches the parse-SUCCESS/cache paths
+    // without a live `AppHandle`/network) ────────────────────────────────────
+
+    struct FakeSearcher(&'static str);
+
+    impl SalarySearcher for FakeSearcher {
+        async fn research_salary(
+            &self,
+            _role: &str,
+            _company: &str,
+            _location: &str,
+        ) -> AppResult<String> {
+            Ok(self.0.to_string())
+        }
+    }
+
+    struct ErrSearcher;
+
+    impl SalarySearcher for ErrSearcher {
+        async fn research_salary(
+            &self,
+            _role: &str,
+            _company: &str,
+            _location: &str,
+        ) -> AppResult<String> {
+            Err(AppError::Provider("search failed".to_string()))
+        }
+    }
+
+    struct SlowSearcher;
+
+    impl SalarySearcher for SlowSearcher {
+        async fn research_salary(
+            &self,
+            _role: &str,
+            _company: &str,
+            _location: &str,
+        ) -> AppResult<String> {
+            // Sleeps past RESEARCH_TIMEOUT_SECS; under `start_paused = true` this
+            // resolves the moment `enrich`'s own timeout timer fires instead of
+            // actually blocking the test for 25+ real seconds.
+            tokio::time::sleep(Duration::from_secs(RESEARCH_TIMEOUT_SECS + 5)).await;
+            Ok(r#"{"min":1,"max":2,"currency":"USD"}"#.to_string())
+        }
+    }
+
+    #[tokio::test]
+    async fn enrich_returns_a_range_on_valid_json_and_writes_through_the_cache() {
+        let dir = TempDir::new().expect("tempdir");
+        let cache = KvCache::open(dir.path()).expect("open cache");
+        let searcher = FakeSearcher(r#"{"min":65000,"max":80000,"currency":"EUR"}"#);
+
+        let result = SalaryResearch
+            .enrich(
+                &searcher,
+                Some(&cache),
+                "Backend Engineer",
+                "Acme",
+                "Berlin",
+            )
+            .await;
+
+        assert_eq!(
+            result,
+            Some(SalaryRange {
+                min: 65000,
+                max: 80000,
+                currency: "EUR".to_string()
+            })
+        );
+        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        assert!(
+            cache.get(CACHE_NS, &key, TTL_SECS).is_some(),
+            "a successful lookup must write through the cache"
+        );
+    }
+
+    #[tokio::test]
+    async fn enrich_returns_none_and_does_not_cache_on_no_reliable_data() {
+        let dir = TempDir::new().expect("tempdir");
+        let cache = KvCache::open(dir.path()).expect("open cache");
+        let searcher = FakeSearcher("{}");
+
+        let result = SalaryResearch
+            .enrich(
+                &searcher,
+                Some(&cache),
+                "Backend Engineer",
+                "Acme",
+                "Berlin",
+            )
+            .await;
+
+        assert_eq!(result, None);
+        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        assert_eq!(cache.get(CACHE_NS, &key, TTL_SECS), None);
+    }
+
+    #[tokio::test]
+    async fn enrich_returns_none_and_does_not_cache_on_malformed_output() {
+        let dir = TempDir::new().expect("tempdir");
+        let cache = KvCache::open(dir.path()).expect("open cache");
+        let searcher = FakeSearcher("not json at all");
+
+        let result = SalaryResearch
+            .enrich(
+                &searcher,
+                Some(&cache),
+                "Backend Engineer",
+                "Acme",
+                "Berlin",
+            )
+            .await;
+
+        assert_eq!(result, None);
+        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        assert_eq!(cache.get(CACHE_NS, &key, TTL_SECS), None);
+    }
+
+    #[tokio::test]
+    async fn enrich_returns_none_and_does_not_cache_on_a_searcher_error() {
+        let dir = TempDir::new().expect("tempdir");
+        let cache = KvCache::open(dir.path()).expect("open cache");
+
+        let result = SalaryResearch
+            .enrich(
+                &ErrSearcher,
+                Some(&cache),
+                "Backend Engineer",
+                "Acme",
+                "Berlin",
+            )
+            .await;
+
+        assert_eq!(result, None);
+        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        assert_eq!(cache.get(CACHE_NS, &key, TTL_SECS), None);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn enrich_returns_none_and_does_not_cache_when_the_searcher_exceeds_the_timeout() {
+        let dir = TempDir::new().expect("tempdir");
+        let cache = KvCache::open(dir.path()).expect("open cache");
+
+        let result = SalaryResearch
+            .enrich(
+                &SlowSearcher,
+                Some(&cache),
+                "Backend Engineer",
+                "Acme",
+                "Berlin",
+            )
+            .await;
+
+        assert_eq!(result, None);
+        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        assert_eq!(cache.get(CACHE_NS, &key, TTL_SECS), None);
     }
 }

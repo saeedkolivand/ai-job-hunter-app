@@ -31,6 +31,43 @@ interface Params {
   /** Links the answers to the per-job application record (merge-upsert by url). */
   jobUrl: string;
   board: string;
+  /** Scraped salary (Phase 1 — from the job posting/application record), when
+   *  known. Takes precedence over the web lookup for the salary question: it's
+   *  the employer's own stated figure for this exact posting, not a market
+   *  estimate. See {@link CURRENCY_SHAPE_RE}. */
+  salaryMin?: number;
+  salaryMax?: number;
+  salaryCurrency?: string;
+}
+
+/** ISO-4217-ish currency code shape guard — mirrors the prompt layer's own
+ *  `buildSalaryRangeBlock` guard (`packages/prompts/.../emphasis.ts`). */
+const CURRENCY_SHAPE_RE = /^[A-Za-z]{3,4}$/;
+
+/**
+ * Builds a `SalaryRange` from a scraped min/max/currency triple, or `undefined`
+ * when any part is missing or malformed (partial data — e.g. an amount without
+ * a currency, or a currency that fails the ISO-4217-ish shape guard — must fall
+ * through to the web lookup, never render a bogus range).
+ *
+ * MUST stay a strict superset of `buildSalaryRangeBlock`'s guard
+ * (`packages/prompts/.../emphasis.ts`) — that's the prompt layer's OWN
+ * re-check on the same shape across the package boundary. If this guard were
+ * looser, a range that passes here but fails there renders an EMPTY
+ * `<salary_context>` while having already skipped the web lookup: silent
+ * degradation, worse than not scraping at all (e.g. `salaryMin: 0` from an
+ * "up to X" Adzuna posting). Rounds to integers to match the web path's
+ * `SalaryRange` (Rust `u32`, always whole).
+ */
+export function buildScrapedSalaryRange(
+  min?: number,
+  max?: number,
+  currency?: string
+): SalaryRange | undefined {
+  if (min == null || max == null || !currency) return undefined;
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max <= 0) return undefined;
+  if (!CURRENCY_SHAPE_RE.test(currency) || min > max) return undefined;
+  return { min: Math.round(min), max: Math.round(max), currency };
 }
 
 /**
@@ -50,6 +87,9 @@ export function useApplicationAnswers({
   hasDesc,
   jobUrl,
   board,
+  salaryMin,
+  salaryMax,
+  salaryCurrency,
 }: Params) {
   const api = useAppClient();
   const qc = useQueryClient();
@@ -134,21 +174,29 @@ export function useApplicationAnswers({
       const chosen = [...APPLICATION_QUESTIONS.filter((q) => selected.has(q.id)), ...custom];
       const results: ApplicationAnswer[] = [];
       for (const q of chosen) {
-        // Salary question only: a best-effort web-grounded market range feeds
-        // the "Number:" precedence. Belt-and-suspenders try/catch here on top of
-        // `lookupSalaryRange`'s own — a lookup failure must NEVER block or fail
-        // the rest of this loop, just leave `salaryRange` undefined (C1 fallback).
+        // Salary question only: precedence is scraped (this exact posting's own
+        // stated figure) → web-researched market range → none (C1 fallback).
+        // A scraped range only counts when it's COMPLETE and well-formed; a
+        // partial/malformed one falls through to the web lookup below. Belt-
+        // and-suspenders try/catch on top of `lookupSalaryRange`'s own — a
+        // lookup failure must NEVER block or fail the rest of this loop, just
+        // leave `salaryRange` undefined.
         let salaryRange: SalaryRange | undefined;
         if (q.id === 'salary') {
-          try {
-            salaryRange = await lookupSalaryRange(
-              detected.jobTitle,
-              detected.companyName,
-              detected.jobLocation || detected.jobCountry || '',
-              model
-            );
-          } catch {
-            salaryRange = undefined;
+          const scrapedRange = buildScrapedSalaryRange(salaryMin, salaryMax, salaryCurrency);
+          if (scrapedRange) {
+            salaryRange = scrapedRange;
+          } else {
+            try {
+              salaryRange = await lookupSalaryRange(
+                detected.jobTitle,
+                detected.companyName,
+                detected.jobLocation || detected.jobCountry || '',
+                model
+              );
+            } catch {
+              salaryRange = undefined;
+            }
           }
         }
         const answer = await generateApplicationAnswer({

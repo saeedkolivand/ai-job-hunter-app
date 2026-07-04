@@ -79,6 +79,9 @@ export function usePostingActions(posting: Posting) {
         company: posting.company,
         title: posting.title,
         jobDescription: posting.description,
+        salaryMin: posting.salaryMin,
+        salaryMax: posting.salaryMax,
+        salaryCurrency: posting.salaryCurrency,
       });
     } catch {
       notify.error({ message: t('jobs.tailorError') });
@@ -112,6 +115,9 @@ export function usePostingActions(posting: Posting) {
         company: posting.company,
         title: posting.title,
         jobDescription: posting.description,
+        salaryMin: posting.salaryMin,
+        salaryMax: posting.salaryMax,
+        salaryCurrency: posting.salaryCurrency,
       })
       .then(() => {
         // Only mark saved and notify AFTER the mutation resolves successfully.

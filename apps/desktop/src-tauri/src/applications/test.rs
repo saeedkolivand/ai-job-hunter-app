@@ -73,6 +73,9 @@ fn meta(company: &str, title: &str) -> ApplicationMeta {
         job_description: String::new(),
         answers: vec![],
         job_summary: String::new(),
+        salary_min: None,
+        salary_max: None,
+        salary_currency: None,
     }
 }
 
@@ -1619,4 +1622,133 @@ fn recipient_fields_persist_and_export_import_round_trip() {
     let cleared = store.get(&id).unwrap();
     assert_eq!(cleared.recipient_name, "");
     assert_eq!(cleared.recipient_email, "");
+}
+
+/// Migration round-trip: seed a DB at user_version=5 (has recipient columns, no
+/// salary columns), open the store, verify migration 6 adds them, and confirm
+/// a pre-existing row survives with `None` salary (NULL, never 0).
+#[test]
+fn salary_columns_migrate_from_pre_salary_schema() {
+    let dir = TempDir::new().unwrap();
+    let legacy_id = "app-legacy-salary-001";
+    {
+        let conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE applications (
+                id              TEXT PRIMARY KEY,
+                status          TEXT NOT NULL DEFAULT 'saved',
+                applied_at      INTEGER,
+                created_at      INTEGER NOT NULL,
+                updated_at      INTEGER NOT NULL,
+                job_url         TEXT NOT NULL DEFAULT '',
+                board           TEXT NOT NULL DEFAULT '',
+                company         TEXT NOT NULL DEFAULT '',
+                title           TEXT NOT NULL DEFAULT '',
+                candidate       TEXT NOT NULL DEFAULT '',
+                answers         TEXT NOT NULL DEFAULT '[]',
+                brief           TEXT NOT NULL DEFAULT '',
+                notes           TEXT NOT NULL DEFAULT '',
+                next_action_at  INTEGER,
+                comp            TEXT NOT NULL DEFAULT '',
+                contact_name    TEXT NOT NULL DEFAULT '',
+                contact_email   TEXT NOT NULL DEFAULT '',
+                job_description TEXT NOT NULL DEFAULT '',
+                job_summary     TEXT NOT NULL DEFAULT '',
+                recipient_name  TEXT NOT NULL DEFAULT '',
+                recipient_email TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_applications_job_url
+                ON applications(job_url);
+            CREATE TABLE status_events (
+                application_id  TEXT NOT NULL,
+                from_status     TEXT NOT NULL DEFAULT '',
+                to_status       TEXT NOT NULL,
+                at              INTEGER NOT NULL,
+                note            TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_status_events_app
+                ON status_events(application_id);
+            PRAGMA user_version = 5;",
+        )
+        .unwrap();
+        // Insert one row — no salary columns yet.
+        conn.execute(
+            "INSERT INTO applications (id, status, created_at, updated_at)
+             VALUES (?1, 'applied', 1000, 1000)",
+            rusqlite::params![legacy_id],
+        )
+        .unwrap();
+    }
+
+    // Opening the store runs migration 6 (ADD COLUMN salary_min/max/currency).
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let app = store
+        .get(legacy_id)
+        .expect("legacy row must be readable after migration");
+    assert_eq!(
+        app.salary_min, None,
+        "legacy row must get NULL (None), never 0, for salary_min after migration"
+    );
+    assert_eq!(app.salary_max, None);
+    assert_eq!(app.salary_currency, None);
+    assert_eq!(app.id, legacy_id, "row id must be unchanged");
+}
+
+/// Salary persists and round-trips through `upsert_for_origin` and
+/// export/import, and a second upsert with unknown salary (`None`) never
+/// clobbers an already-known value (COALESCE(new, old) merge).
+#[test]
+fn salary_fields_persist_merge_and_export_import_round_trip() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+
+    let with_salary = ApplicationMeta {
+        salary_min: Some(70_000.0),
+        salary_max: Some(90_000.0),
+        salary_currency: Some("EUR".into()),
+        ..meta("Acme", "Engineer")
+    };
+    let id = store
+        .upsert_for_origin(
+            "https://acme.com/job/salary/1",
+            "aggregator",
+            &with_salary,
+            ApplicationOrigin::Saved,
+            Some(false),
+        )
+        .unwrap();
+    let app = store.get(&id).unwrap();
+    assert_eq!(app.salary_min, Some(70_000.0));
+    assert_eq!(app.salary_max, Some(90_000.0));
+    assert_eq!(app.salary_currency, Some("EUR".to_string()));
+
+    // A later re-track with unknown salary must NOT clobber the known values.
+    let unknown_salary = meta("Acme", "Engineer");
+    store
+        .upsert_for_origin(
+            "https://acme.com/job/salary/1",
+            "aggregator",
+            &unknown_salary,
+            ApplicationOrigin::Saved,
+            Some(false),
+        )
+        .unwrap();
+    let unchanged = store.get(&id).unwrap();
+    assert_eq!(
+        unchanged.salary_min,
+        Some(70_000.0),
+        "an unknown incoming salary must not clobber an already-known value"
+    );
+    assert_eq!(unchanged.salary_max, Some(90_000.0));
+    assert_eq!(unchanged.salary_currency, Some("EUR".to_string()));
+
+    // Export + import round-trips the fields.
+    let bundle = store.export();
+    let dir2 = TempDir::new().unwrap();
+    let store2 = ApplicationStore::open(dir2.path()).unwrap();
+    store2.import(&bundle).unwrap();
+    let imported = store2.get(&id).unwrap();
+    assert_eq!(imported.salary_min, Some(70_000.0));
+    assert_eq!(imported.salary_max, Some(90_000.0));
+    assert_eq!(imported.salary_currency, Some("EUR".to_string()));
 }
