@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783162544280,
+  "lastUpdate": 1783199483139,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2471,6 +2471,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 293175,
             "range": "± 23999",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a6face033944df702c9aaa6cbb008630b1fea44a",
+          "message": "feat: add agentic tool-calling foundation (provider channel + budgeted loop) (#552)\n\n* feat: add agentic tool-calling foundation (provider channel + budgeted loop)\n\nBackend-only Phase 1 of the human-in-the-loop assistant. Not yet wired to a\nTauri command (Phase 2 adds agent_run), so no user-facing behavior changes.\n\nai_provider: new non-streaming chat_with_tools trait method whose default\ndelegates to complete, so CLI agents and non-tool models degrade to\nsingle-shot. Native overrides for Anthropic, OpenAI(-compatible), Gemini,\nOllama, and Ollama Cloud, each gated by capabilities(model).supports_tools,\nwith pure unit-tested per-vendor tool-call parsers.\n\nagent/: per-flow tool registry (Read/Write kinds, no global tool set) and a\nbudgeted while-loop controller (step + token caps, cancel between turns).\nWrite tools are denied and logged until the Phase 3 confirm gate.\n\nsecurity: untrusted job text and tool results are fenced as data, never the\ntrusted system prompt; tool handlers take provider/model/base_url only from\ntrusted context, never model args (lethal-trifecta exfil guard). The\ntranscript fold preserves user/assistant wire-role alternation (Anthropic and\nGemini 400 guard); truncated (Length) turns stop without executing tool calls.\n\nReviewed by ai-provider-expert, rust-backend-architect, and\ntauri-security-reviewer (2 HIGH + 3 MEDIUM resolved). build + clippy +\ntest-compile green.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: guard truncated tool calls and stop gracefully on budget limits\n\nAddress CodeRabbit review on the Phase-1 agent loop (still backend-only).\n\n- controller: a mid-run provider budget/rate-limit error now returns a graceful\n  StoppedReason::Budgeted with partial progress, instead of aborting and\n  discarding the accumulated steps and text.\n- controller: a length-truncated final answer with no tool calls now reports\n  Truncated instead of Done.\n- gemini: finishReason MALFORMED_FUNCTION_CALL maps to Length so truncated\n  tool-call JSON is never executed; an empty/blocked turn surfaces a provider\n  error instead of a blank Done.\n- ollama: done_reason \"length\" is checked before tool-calls presence, so a\n  truncated call maps to Length, not ToolUse.\n- docs: add events and agent to the L3 heading list; cargo fmt.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-04T23:02:34+02:00",
+          "tree_id": "dd70ee7fb0928e407d82365867abc9247120f462",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/a6face033944df702c9aaa6cbb008630b1fea44a"
+        },
+        "date": 1783199482479,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1874264,
+            "range": "± 37581",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2498566,
+            "range": "± 13806",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 291877,
+            "range": "± 2091",
             "unit": "ns/iter"
           }
         ]
