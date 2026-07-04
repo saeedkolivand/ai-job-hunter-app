@@ -1,6 +1,6 @@
 # IPC API Reference — AI Job Hunter
 
-Last updated: 2026-06-20
+Last updated: 2026-07-05
 
 All renderer ↔ Rust communication is defined as typed contracts in `packages/shared/src/ipc/contracts/`. The renderer accesses them exclusively through `AppClient` service hooks.
 
@@ -22,6 +22,7 @@ All renderer ↔ Rust communication is defined as typed contracts in `packages/s
 | Namespace                         | Description                                |
 | --------------------------------- | ------------------------------------------ |
 | [ai](#ai)                         | AI generation, model management, streaming |
+| [agent](#agent)                   | Agentic application prep flow              |
 | [aiGenerations](#aigenerations)   | Generated document metadata                |
 | [autopilot](#autopilot)           | Scheduled job-discovery agent              |
 | [boards](#boards)                 | Job board management                       |
@@ -142,6 +143,54 @@ interface PullProgress {
 
 ```typescript
 type AIProvider = 'ollama' | 'openai' | 'anthropic' | 'gemini' | 'openai-compatible';
+```
+
+---
+
+## `agent`
+
+Agentic application-prep flow: a user-facing orchestration that researches a company, matches a resume, drafts a cover letter, and suggests interview questions for a single job. Phase 2 implements the "prep application" flow (read-only tools, display-only proposal). See `apps/desktop/src-tauri/src/agent/` (Rust controller, flows, tools) and `apps/desktop/src/renderer/features/jobs/` (UI panel).
+
+### Methods
+
+#### `agent.run(req: AgentRunRequest): Promise<{ jobId: string }>`
+
+Starts the "prep this application" agentic loop for one job. Returns immediately with a `jobId`; progress streams via `agent.onStep()` as `agent:step` events, and the run concludes with a `jobs:event` of type `completed`/`failed`/`cancelled`. The agent is read-only and tool-whitelisted (cannot write status or modify any data); the terminal step is a display-only proposal for the user to review.
+
+```typescript
+interface AgentRunRequest {
+  /** Resume id to pass to the tools. */
+  resumeId: string;
+  /** Job id to pass to the tools. */
+  jobId: string;
+  /** AI provider ('ollama' | 'openai' | 'anthropic' | 'gemini' | 'openai-compatible'). */
+  provider: string;
+  /** Model name — must support tool calling (validated server-side). */
+  model: string;
+  /** Custom base URL for OpenAI-compatible providers (optional). */
+  baseUrl?: string;
+}
+```
+
+### Events
+
+#### `agent.onStep(handler): Unsubscribe`
+
+```typescript
+interface AgentStepEvent {
+  /** The agent_run job id this step belongs to. */
+  jobId: string;
+  /** 1-based turn index (terminal proposal is steps + 1). */
+  step: number;
+  /** The model's plan/narration text for this step. */
+  text: string;
+  /** Tool names the model asked to run this turn. */
+  tools: string[];
+  /** Tool names that were denied (empty in prep flow; all 4 tools are allowed). */
+  denied: string[];
+  /** Step kind: 'turn' (in-loop narration) or 'proposal' (terminal, display-only). */
+  kind: 'turn' | 'proposal';
+}
 ```
 
 ---

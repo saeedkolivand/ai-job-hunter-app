@@ -12,7 +12,9 @@
 //! tool description. The controller in [`controller`] enforces this; the registry
 //! in [`tools`] holds only fixed, trusted schemas (least privilege, LLM06).
 //!
-//! Nothing here is wired to a Tauri command yet — Phase 2 adds `agent_run`.
+//! Phase 2 wires this to the `agent_run` Tauri command (the "prep this
+//! application" flow); write tools remain DENIED until the Phase-3 confirm gate.
 
 pub mod controller;
+pub mod flows;
 pub mod tools;

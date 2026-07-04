@@ -1,5 +1,6 @@
 // Tauri command implementations organized by domain
 
+pub mod agent;
 pub mod ai;
 pub mod ai_generations;
 pub mod ai_provider;
