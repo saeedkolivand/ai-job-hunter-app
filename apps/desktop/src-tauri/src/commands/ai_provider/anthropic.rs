@@ -13,8 +13,9 @@ use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
-    friendly_api_error, AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace,
-    TokenParam,
+    friendly_api_error, single_shot_turn, split_system, AgentTurn, AiGenerateRequest, AiProvider,
+    ChatMsg, ModelCapabilities, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall,
+    ToolSpec,
 };
 
 const BASE: &str = "https://api.anthropic.com/v1";
@@ -55,6 +56,49 @@ fn join_text_blocks(data: &Value) -> String {
                 .join("")
         })
         .unwrap_or_default()
+}
+
+/// Parse a non-streaming Anthropic Messages response into an [`AgentTurn`]:
+/// concatenate the `type:"text"` blocks for the visible text, map every
+/// `type:"tool_use"` block to a [`ToolCall`] (`id`, `name`, `input`→`args`), and
+/// map `stop_reason` (`tool_use`→ToolUse, `end_turn`→End, `max_tokens`→Length,
+/// else Other). Pure + unit-tested — this is the error-prone per-vendor shape, so
+/// it lives here with no I/O.
+fn parse_anthropic_turn(data: &Value) -> AgentTurn {
+    let text = join_text_blocks(data);
+    let tool_calls = data
+        .get("content")
+        .and_then(|c| c.as_array())
+        .map(|blocks| {
+            blocks
+                .iter()
+                .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_use"))
+                .filter_map(|b| {
+                    let name = b.get("name").and_then(|n| n.as_str())?.to_string();
+                    Some(ToolCall {
+                        id: b
+                            .get("id")
+                            .and_then(|i| i.as_str())
+                            .unwrap_or_default()
+                            .to_string(),
+                        name,
+                        args: b.get("input").cloned().unwrap_or_else(|| json!({})),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let stop = match data.get("stop_reason").and_then(|s| s.as_str()) {
+        Some("tool_use") => StopReason::ToolUse,
+        Some("end_turn") => StopReason::End,
+        Some("max_tokens") => StopReason::Length,
+        _ => StopReason::Other,
+    };
+    AgentTurn {
+        text,
+        tool_calls,
+        stop,
+    }
 }
 
 /// Drain complete SSE lines from the accumulated stream buffer into
@@ -462,13 +506,90 @@ impl AiProvider for AnthropicClient {
             )))
         }
     }
+
+    async fn chat_with_tools(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        messages: &[ChatMsg],
+        tools: &[ToolSpec],
+        temperature: Option<f64>,
+    ) -> AppResult<AgentTurn> {
+        // Unknown / non-tool models degrade to a single-shot answer rather than
+        // 400-ing on a `tools` field they don't understand.
+        if !self.capabilities(model).supports_tools {
+            return single_shot_turn(self, app, model, messages, temperature).await;
+        }
+        let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
+        let endpoint = format!("{BASE}/messages");
+        let trace =
+            RequestTrace::begin(ProviderId::Anthropic, model, "/messages tools", BASE, false);
+
+        let (system, rest) = split_system(messages);
+        let wire_messages: Vec<Value> = rest
+            .iter()
+            .map(|m| json!({ "role": m.role.wire(), "content": m.content }))
+            .collect();
+        // Map each ToolSpec to Anthropic's tool shape (`input_schema`). The caller's
+        // schema is a trusted, fixed JSON-Schema object — never built from scraped
+        // or model-supplied text.
+        let tool_specs: Vec<Value> = tools
+            .iter()
+            .map(|t| {
+                json!({ "name": t.name, "description": t.description, "input_schema": t.schema })
+            })
+            .collect();
+
+        let mut body = json!({
+            "model": model,
+            "max_tokens": 4096,
+            "messages": wire_messages,
+            "temperature": temperature.unwrap_or(0.7),
+            "tools": tool_specs,
+        });
+        if !system.is_empty() {
+            body["system"] = json!(system);
+        }
+
+        let resp = send_with_retry(|| {
+            crate::net::http::shared()
+                .post(&endpoint)
+                .timeout(timeouts::COMPLETION)
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", VERSION)
+                .json(&body)
+        })
+        .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                return Err(AppError::Network(format!("Anthropic unreachable: {e}")));
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            return Err(friendly_api_error(
+                ProviderId::Anthropic,
+                status,
+                &body_text,
+            ));
+        }
+        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        trace.end(Some(status.as_u16()), true);
+        Ok(parse_anthropic_turn(&data))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        anthropic_supports_thinking, join_text_blocks, parse_anthropic_frames, StreamPiece,
+        anthropic_supports_thinking, join_text_blocks, parse_anthropic_frames,
+        parse_anthropic_turn, StreamPiece,
     };
+    use crate::commands::ai_provider::{StopReason, ToolCall};
     use serde_json::json;
 
     #[test]
@@ -579,5 +700,54 @@ mod tests {
     fn join_text_blocks_empty_on_missing_or_error() {
         assert_eq!(join_text_blocks(&json!({})), "");
         assert_eq!(join_text_blocks(&json!({ "content": [] })), "");
+    }
+
+    #[test]
+    fn parse_turn_extracts_text_and_tool_use_blocks() {
+        // Assistant text interleaved with a `tool_use` block; stop_reason=tool_use.
+        let data = json!({
+            "content": [
+                { "type": "text", "text": "Let me look that up." },
+                { "type": "tool_use", "id": "toolu_1", "name": "research_company",
+                  "input": { "company": "Acme", "jobAd": "..." } }
+            ],
+            "stop_reason": "tool_use"
+        });
+        let turn = parse_anthropic_turn(&data);
+        assert_eq!(turn.text, "Let me look that up.");
+        assert_eq!(turn.stop, StopReason::ToolUse);
+        assert_eq!(
+            turn.tool_calls,
+            vec![ToolCall {
+                id: "toolu_1".to_string(),
+                name: "research_company".to_string(),
+                args: json!({ "company": "Acme", "jobAd": "..." }),
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_turn_no_tool_calls_is_a_plain_end_turn() {
+        let data = json!({
+            "content": [{ "type": "text", "text": "All done." }],
+            "stop_reason": "end_turn"
+        });
+        let turn = parse_anthropic_turn(&data);
+        assert_eq!(turn.text, "All done.");
+        assert!(turn.tool_calls.is_empty());
+        assert_eq!(turn.stop, StopReason::End);
+    }
+
+    #[test]
+    fn parse_turn_maps_max_tokens_and_missing_input() {
+        // `max_tokens` → Length; a tool_use with no `input` still parses (args = {}).
+        let data = json!({
+            "content": [{ "type": "tool_use", "id": "t", "name": "match_resume" }],
+            "stop_reason": "max_tokens"
+        });
+        let turn = parse_anthropic_turn(&data);
+        assert_eq!(turn.stop, StopReason::Length);
+        assert_eq!(turn.tool_calls.len(), 1);
+        assert_eq!(turn.tool_calls[0].args, json!({}));
     }
 }

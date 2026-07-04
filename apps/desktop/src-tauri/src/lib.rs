@@ -10,6 +10,7 @@
 // `parking_lot::Mutex` inside async command handlers). See docs/architecture-rules.md R14.
 #![deny(clippy::await_holding_lock)]
 
+pub mod agent;
 pub mod ai_generations;
 pub mod applications;
 pub mod autopilot;

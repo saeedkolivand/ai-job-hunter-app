@@ -18,7 +18,7 @@ pub mod enrichment;
 use async_trait::async_trait;
 use tauri::AppHandle;
 
-use crate::commands::ai_provider::{resolve, AiProvider, ProviderId};
+use crate::commands::ai_provider::{resolve, AgentTurn, AiProvider, ChatMsg, ProviderId, ToolSpec};
 use crate::error::AppResult;
 
 // ── Completer ───────────────────────────────────────────────────────────────────
@@ -106,6 +106,23 @@ impl Completer {
     /// after resolving, without re-parsing the provider string itself.
     pub fn provider_id(&self) -> ProviderId {
         self.provider.id()
+    }
+
+    /// One agentic tool-calling turn through the active provider — the multi-turn
+    /// analogue of [`research`](Self::research). Delegates to
+    /// [`AiProvider::chat_with_tools`](crate::commands::ai_provider::AiProvider::chat_with_tools):
+    /// providers without native tool support degrade to a single-shot answer.
+    /// Consumed by the agent controller (`crate::agent`) in Phase 2.
+    #[allow(dead_code)] // ponytail: wired in Phase 2 (agent_run)
+    pub async fn chat_with_tools(
+        &self,
+        messages: &[ChatMsg],
+        tools: &[ToolSpec],
+        temperature: Option<f64>,
+    ) -> AppResult<AgentTurn> {
+        self.provider
+            .chat_with_tools(&self.app, &self.model, messages, tools, temperature)
+            .await
     }
 }
 
