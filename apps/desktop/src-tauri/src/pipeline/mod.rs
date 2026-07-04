@@ -78,10 +78,34 @@ impl Completer {
             .await
     }
 
+    /// Web-grounded market salary-range lookup through the active provider's
+    /// **own** web search. Returns raw (possibly noisy) text — `""` when the
+    /// provider can't search — see
+    /// [`AiProvider::research_salary`](crate::commands::ai_provider::AiProvider::research_salary).
+    /// The caller ([`crate::salary_research::SalaryResearch`]) parses + strictly
+    /// validates it before anything reaches a prompt.
+    pub async fn research_salary(
+        &self,
+        role: &str,
+        company: &str,
+        location: &str,
+    ) -> AppResult<String> {
+        self.provider
+            .research_salary(&self.app, &self.model, role, company, location)
+            .await
+    }
+
     /// The app handle, so stages can reach managed state (caches, credentials) and
     /// emit events without threading `AppHandle` through every signature.
     pub fn app(&self) -> &AppHandle {
         &self.app
+    }
+
+    /// The resolved provider's id — e.g. so a caller can charge the shared
+    /// per-provider daily budget ([`crate::limits::Limiter::charge_provider_daily`])
+    /// after resolving, without re-parsing the provider string itself.
+    pub fn provider_id(&self) -> ProviderId {
+        self.provider.id()
     }
 }
 

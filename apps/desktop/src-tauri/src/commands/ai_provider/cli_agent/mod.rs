@@ -247,6 +247,29 @@ impl AiProvider for CliAgentClient {
         .unwrap_or_default())
     }
 
+    async fn research_salary(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        role: &str,
+        company: &str,
+        location: &str,
+    ) -> AppResult<String> {
+        // Same best-effort contract as `research`: the agent's own web tools
+        // search, `run_complete` degrades any failure to "" so generation
+        // always proceeds.
+        let user = research::salary_user(role, company, location);
+        Ok(run_complete(
+            app,
+            self.backend.as_ref(),
+            model,
+            research::SALARY_SYSTEM,
+            &user,
+        )
+        .await
+        .unwrap_or_default())
+    }
+
     async fn embed(&self, _app: &AppHandle, _model: &str, _text: &str) -> AppResult<Vec<f64>> {
         Err(AppError::Provider(format!(
             "{} has no embeddings API. Use OpenAI, Gemini, or Ollama for embeddings.",

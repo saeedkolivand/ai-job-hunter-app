@@ -40,6 +40,24 @@ export interface AiContract {
     baseUrl?: string;
   }): Promise<{ company: string; brief: string }>;
 
+  /**
+   * Web-grounded market salary-range lookup for the salary application
+   * question. Reuses the active provider's own web search (same channel as
+   * `researchCompany`), parsed and strictly validated server-side, cached.
+   * Degrades gracefully — `null`, never an error, when the provider can't
+   * search, the search yields nothing reliable, or times out. Only validated
+   * integers + a sanitized currency code are ever returned; no raw web text
+   * crosses this boundary.
+   */
+  lookupSalary(req: {
+    role: string;
+    company?: string;
+    location?: string;
+    provider?: string;
+    model?: string;
+    baseUrl?: string;
+  }): Promise<SalaryRange | null>;
+
   pullModel(model: string): Promise<{ jobId: string }>;
 
   unloadModel(model: string): Promise<void>;
@@ -93,6 +111,15 @@ export interface EmbeddingConfig {
   provider: string;
   model: string;
   baseUrl?: string | null;
+}
+
+/** A validated web-researched market salary range (mirrors the Rust
+ *  `salary_research::SalaryRange` — min/max/currency only, already validated
+ *  server-side before it crosses the IPC boundary). */
+export interface SalaryRange {
+  min: number;
+  max: number;
+  currency: string;
 }
 
 export interface EmbeddingSpaceInfo {

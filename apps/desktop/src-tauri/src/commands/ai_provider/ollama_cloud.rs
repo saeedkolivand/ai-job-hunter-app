@@ -79,6 +79,18 @@ impl AiProvider for OllamaCloudClient {
         super::ollama::ollama_research(app, &self.inner, model, company, role).await
     }
 
+    async fn research_salary(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        role: &str,
+        company: &str,
+        location: &str,
+    ) -> AppResult<String> {
+        super::ollama::ollama_research_salary(app, &self.inner, model, role, company, location)
+            .await
+    }
+
     async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
         self.inner.embed(app, model, text).await
     }
