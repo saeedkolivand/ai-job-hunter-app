@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782991910851,
+  "lastUpdate": 1783138426735,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2261,6 +2261,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 287803,
             "range": "± 13359",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "af02e53167532450ba5c5260bfaed2da2056461a",
+          "message": "fix: surface newly found autopilot jobs at the top of the list (#545)\n\nmerge_found_jobs appended never-seen postings to the end of the\ncumulative found-jobs list, so new finds rendered last in AutopilotCard.\nBuild the merged Vec new-first: genuinely-new URLs (in the already\nscore-sorted incoming order) followed by the refreshed existing rows.\nExisting rows keep their prior order, found_at, and is_new-cleared state;\nno frontend/schema/IPC change since the renderer shows the Vec verbatim.\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-04T06:04:30+02:00",
+          "tree_id": "eafaf40654f9b54c421bbb3ebe8750cf71fcda2f",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/af02e53167532450ba5c5260bfaed2da2056461a"
+        },
+        "date": 1783138426151,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1914287,
+            "range": "± 55279",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2557420,
+            "range": "± 23509",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 297274,
+            "range": "± 3014",
             "unit": "ns/iter"
           }
         ]
