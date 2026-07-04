@@ -175,6 +175,10 @@ fn classify_excludes_deep_path_project_links_by_shape() {
         "a platform profile must still seed extras: {extra_urls:?}"
     );
     assert!(
+        !extra_urls.contains(&"https://github.com/alice"),
+        "a github profile promoted to the github field must not also appear in extras: {extra_urls:?}"
+    );
+    assert!(
         extra_urls.contains(&"https://gitlab.com/alice"),
         "a bare GitLab profile is profile-shaped and must seed extras: {extra_urls:?}"
     );
