@@ -215,6 +215,10 @@ tempfile = "3.27"
 proptest = "1.5"
 serial_test = "3"
 wiremock = "0.6.5"
+# Additive feature merge onto the [dependencies] tokio entry (test-only — never
+# ships in the binary): unlocks `#[tokio::test(start_paused = true)]` for the
+# one salary_research timeout test, which would otherwise need a real 25s wait.
+tokio = { version = "1", features = ["test-util"] }
 # Rasteriser for the generate_templates_showcase_banner test — dev-only, NOT in the shipped binary.
 typst-render = "=0.14.2"
 # (typst-svg moved to [dependencies] — it now backs the live-preview render path.)

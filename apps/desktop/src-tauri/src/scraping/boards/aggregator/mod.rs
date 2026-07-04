@@ -153,6 +153,32 @@ fn adzuna_supports_country(country: &str) -> bool {
     ADZUNA_SUPPORTED_COUNTRIES.contains(&country)
 }
 
+/// ISO-4217 currency for an Adzuna market. Adzuna's search API returns
+/// `salary_min`/`salary_max` as bare numbers with no currency field, so the
+/// currency has to be derived from the country the search targeted — one entry
+/// per code in [`ADZUNA_SUPPORTED_COUNTRIES`]. `None` for any country not in
+/// that list (the salary answer then falls back to a web lookup for currency
+/// instead of guessing).
+#[inline]
+fn adzuna_currency_for_country(country: &str) -> Option<&'static str> {
+    Some(match country {
+        "at" | "be" | "de" | "es" | "fr" | "it" | "nl" => "EUR",
+        "au" => "AUD",
+        "br" => "BRL",
+        "ca" => "CAD",
+        "ch" => "CHF",
+        "gb" => "GBP",
+        "in" => "INR",
+        "mx" => "MXN",
+        "nz" => "NZD",
+        "pl" => "PLN",
+        "sg" => "SGD",
+        "us" => "USD",
+        "za" => "ZAR",
+        _ => return None,
+    })
+}
+
 // ── Adzuna provider ───────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -281,36 +307,51 @@ impl JobProvider for AdzunaProvider {
         let postings = resp
             .results
             .into_iter()
-            .map(|j| {
-                let mut extra = std::collections::HashMap::new();
-                if let Some(min) = j.salary_min {
-                    extra.insert("salaryMin".to_string(), serde_json::json!(min));
-                }
-                if let Some(max) = j.salary_max {
-                    extra.insert("salaryMax".to_string(), serde_json::json!(max));
-                }
-                JobPosting {
-                    id: format!("aggregator:adzuna-{}", j.id),
-                    external_id: Some(format!("adzuna-{}", j.id)),
-                    title: j.title,
-                    company: j.company.and_then(|c| c.display_name).unwrap_or_default(),
-                    location: j.location.and_then(|l| l.display_name),
-                    url: j.redirect_url,
-                    source: "aggregator".to_string(),
-                    description: j.description.map(|d| html_to_markdown(&d)),
-                    requirements: None,
-                    posted_at: j
-                        .created
-                        .as_deref()
-                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                        .map(|dt| dt.timestamp_millis()),
-                    captured_at: now,
-                    extra,
-                }
-            })
+            .map(|j| adzuna_job_to_posting(j, country, now))
             .collect();
 
         Ok(postings)
+    }
+}
+
+/// Map one Adzuna result to a [`JobPosting`], deriving `extra.salaryCurrency`
+/// from `country` (Adzuna reports bare salary numbers with no currency field).
+/// Pulled out of `AdzunaProvider::search` so it's unit-testable without a
+/// network call.
+fn adzuna_job_to_posting(j: AdzunaJob, country: &str, now: i64) -> JobPosting {
+    let mut extra = std::collections::HashMap::new();
+    let has_salary = j.salary_min.is_some() || j.salary_max.is_some();
+    if let Some(min) = j.salary_min {
+        extra.insert("salaryMin".to_string(), serde_json::json!(min));
+    }
+    if let Some(max) = j.salary_max {
+        extra.insert("salaryMax".to_string(), serde_json::json!(max));
+    }
+    // Currency is only meaningful alongside an amount; an unmapped country
+    // omits it so the downstream salary answer falls back to a web lookup
+    // instead of showing a wrong/absent currency.
+    if has_salary {
+        if let Some(currency) = adzuna_currency_for_country(country) {
+            extra.insert("salaryCurrency".to_string(), serde_json::json!(currency));
+        }
+    }
+    JobPosting {
+        id: format!("aggregator:adzuna-{}", j.id),
+        external_id: Some(format!("adzuna-{}", j.id)),
+        title: j.title,
+        company: j.company.and_then(|c| c.display_name).unwrap_or_default(),
+        location: j.location.and_then(|l| l.display_name),
+        url: j.redirect_url,
+        source: "aggregator".to_string(),
+        description: j.description.map(|d| html_to_markdown(&d)),
+        requirements: None,
+        posted_at: j
+            .created
+            .as_deref()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.timestamp_millis()),
+        captured_at: now,
+        extra,
     }
 }
 

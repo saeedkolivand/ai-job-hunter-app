@@ -93,6 +93,9 @@ function AutopilotPage() {
         board: job.board ?? ap.target.boards[0] ?? AGGREGATOR_BOARD_ID,
         company: job.company,
         title: job.title,
+        salaryMin: job.salaryMin,
+        salaryMax: job.salaryMax,
+        salaryCurrency: job.salaryCurrency,
       });
       if (!res?.id) {
         setError(res?.error ?? 'Failed to create the application');

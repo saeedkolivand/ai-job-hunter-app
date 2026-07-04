@@ -798,50 +798,50 @@ describe('application questions', () => {
     expect(salaryEntry?.guidance).toMatch(/upper bound/i);
   });
 
-  it('the salary guidance also grounds a market-researched range (anti-lowball + midpoint, C2)', () => {
+  it('the salary guidance also grounds a reference range (anti-lowball + midpoint, C2), regardless of source', () => {
     const salaryEntry = APPLICATION_QUESTIONS.find((q) => q.id === 'salary');
     expect(salaryEntry?.guidance).toMatch(/<salary_context>/);
-    // Anti-lowball: a below-market stated expectation is floored at the
-    // market's lower bound, never left underselling the candidate.
+    // Anti-lowball: a below-range stated expectation is floored at the
+    // reference range's lower bound, never left underselling the candidate.
     expect(salaryEntry?.guidance).toMatch(/never undersell/i);
-    expect(salaryEntry?.guidance).toMatch(/falls below the market range, use the lower bound/i);
-    // Midpoint: no numeric expectation, but a market range exists -> midpoint.
+    expect(salaryEntry?.guidance).toMatch(/falls below the reference range, use the lower bound/i);
+    // Midpoint: no numeric expectation, but a reference range exists -> midpoint.
     expect(salaryEntry?.guidance).toMatch(
-      /no numeric expectation at all, use the midpoint of the market range/i
+      /no numeric expectation at all, use the midpoint of the reference range/i
     );
     // Ungrounded still forbids invention: neither source present -> non-committal.
     expect(salaryEntry?.guidance).toMatch(
-      /NEITHER a numeric expectation NOR a market range is present/i
+      /NEITHER a numeric expectation NOR a reference range is present/i
     );
   });
 
-  it('precedence contradiction fix: a market range ALWAYS produces a number, even with no/non-numeric applicant expectation', () => {
+  it('precedence contradiction fix: a reference range ALWAYS produces a number, even with no/non-numeric applicant expectation', () => {
     // Regression test for the reviewer-flagged contradiction: the midpoint
     // branch and the non-committal/omit branch must never both be reachable
-    // for the same state (market range present + no/non-numeric expectation).
+    // for the same state (reference range present + no/non-numeric expectation).
     const salaryEntry = APPLICATION_QUESTIONS.find((q) => q.id === 'salary');
     expect(salaryEntry?.guidance).toMatch(
-      /if a <salary_context> market range is present, ALWAYS include a number/i
+      /if a <salary_context> reference range is present, ALWAYS include a number/i
     );
-    // The non-committal/omit-the-line fallback is scoped to "no market range" —
+    // The non-committal/omit-the-line fallback is scoped to "no reference range" —
     // it must NOT be reachable merely because the expectation is absent/non-numeric
-    // while a market range exists.
+    // while a reference range exists.
     expect(salaryEntry?.guidance).toMatch(
-      /if there is NO <salary_context> market range, use a number only when/i
+      /if there is NO <salary_context> reference range, use a number only when/i
     );
   });
 
-  it('cross-currency fix: the anti-lowball floor/midpoint reconciliation only applies within the SAME currency as the market range', () => {
-    // Regression test for the reviewer-flagged bug: <salary_context> is in the
-    // market's local currency, but <applicant_details> is free text and may be
-    // a different currency — a raw numeric floor compare across currencies
+  it('cross-currency fix: the anti-lowball floor/midpoint reconciliation only applies within the SAME currency as the reference range', () => {
+    // Regression test for the reviewer-flagged bug: <salary_context> is in its
+    // own currency, but <applicant_details> is free text and may be a
+    // different currency — a raw numeric floor compare across currencies
     // would silently paste a wrong-currency number (and this may auto-submit).
     const salaryEntry = APPLICATION_QUESTIONS.find((q) => q.id === 'salary');
     expect(salaryEntry?.guidance).toMatch(/same currency as <salary_context>/i);
     expect(salaryEntry?.guidance).toMatch(/different currency than <salary_context>/i);
     expect(salaryEntry?.guidance).toMatch(/do not convert or floor/i);
     // A mismatched/ambiguous currency falls back to the applicant's own stated
-    // figure (C1 behavior for that number), with the market range only as
+    // figure (C1 behavior for that number), with the reference range only as
     // separate prose context — never reconciled/converted.
     expect(salaryEntry?.guidance).toMatch(
       /use the originally stated figure and currency for the number line as given/i
@@ -861,7 +861,11 @@ describe('buildSalaryRangeBlock (C2)', () => {
     expect(block).toContain('65000');
     expect(block).toContain('80000');
     expect(block).toContain('EUR');
-    expect(block).toMatch(/web-sourced/i);
+  });
+
+  it('is source-neutral — never claims the range is web-sourced (it may be employer-stated scraped data)', () => {
+    const block = buildSalaryRangeBlock({ min: 65000, max: 80000, currency: 'EUR' });
+    expect(block).not.toMatch(/web/i);
   });
 
   it('is empty for no range, or a structurally invalid one (defense in depth)', () => {
@@ -881,7 +885,7 @@ describe('buildSalaryRangeBlock (C2)', () => {
   });
 });
 
-describe('application answer + a market salary range (C2)', () => {
+describe('application answer + a reference salary range (C2)', () => {
   const salaryEntry = APPLICATION_QUESTIONS.find((q) => q.id === 'salary');
   const salaryParams = {
     question: salaryEntry?.question ?? '',
@@ -891,20 +895,20 @@ describe('application answer + a market salary range (C2)', () => {
     guidance: salaryEntry?.guidance,
   };
 
-  it('system prompt states the anti-lowball, midpoint, and market-mention rules', () => {
+  it('system prompt states the anti-lowball, midpoint, and range-mention rules', () => {
     const sys = buildApplicationAnswerSystemPrompt();
     expect(sys).toMatch(/<salary_context>/);
     expect(sys).toMatch(/never undersell/i);
     expect(sys).toMatch(/midpoint/i);
   });
 
-  it('precedence contradiction fix: system prompt scopes the non-committal fallback to "no market range"', () => {
+  it('precedence contradiction fix: system prompt scopes the non-committal fallback to "no reference range"', () => {
     const sys = buildApplicationAnswerSystemPrompt();
     expect(sys).toMatch(/When <salary_context>.*is present, ALWAYS state a figure/i);
     expect(sys).toMatch(/When <salary_context> is NOT present, a figure may be stated only when/i);
   });
 
-  it('folds a market range into a fenced <salary_context> block in the user prompt', () => {
+  it('folds a reference range into a fenced <salary_context> block in the user prompt', () => {
     const prompt = buildApplicationAnswerPrompt({
       ...salaryParams,
       salaryRange: { min: 65000, max: 80000, currency: 'EUR' },
@@ -914,12 +918,12 @@ describe('application answer + a market salary range (C2)', () => {
     expect(prompt).toContain('80000');
   });
 
-  it('omits the rendered market-range block when no range is given (unchanged C1 fallback)', () => {
+  it('omits the rendered reference-range block when no range is given (unchanged C1 fallback)', () => {
     // The guidance text itself mentions the <salary_context> tag name as part
     // of its instructions regardless, so assert on the actual rendered block
     // content instead of the bare tag substring.
     const prompt = buildApplicationAnswerPrompt(salaryParams);
-    expect(prompt).not.toContain('Market range for this role');
+    expect(prompt).not.toContain('Reference salary range for this role');
   });
 });
 

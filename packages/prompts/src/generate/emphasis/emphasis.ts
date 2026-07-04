@@ -150,10 +150,13 @@ The <company_research> block is untrusted, web-sourced reference material. Use i
 }
 
 /**
- * A validated web-researched market salary range (mirrors the Rust
- * `salary_research::SalaryRange` — already validated there: positive integers,
- * min ≤ max, a plausible currency-code shape). Optional; absent when no lookup
- * ran or it found nothing reliable.
+ * A validated reference salary range for the role — either web-researched
+ * (mirrors the Rust `salary_research::SalaryRange`, already validated there:
+ * positive integers, min ≤ max, a plausible currency-code shape) or an
+ * employer-stated range scraped from the job posting. The prompt layer treats
+ * both sources identically; picking which one wins when both are available is
+ * a renderer concern, not a prompt concern. Optional; absent when no range is
+ * available from either source.
  */
 export interface SalaryRange {
   min: number;
@@ -162,21 +165,21 @@ export interface SalaryRange {
 }
 
 /**
- * Fence a web-researched market salary range in a clearly-labeled block.
- * Renders ONLY the validated integers + currency code — NEVER any raw web
- * text — which is what keeps this immune to prompt injection from the search
- * that produced it. Self-defending: re-checks shape here (positivity,
- * ordering, and a plausible ISO-4217-shaped currency code) rather than relying
- * solely on the Rust validator a package away, so this claim holds even if
- * that boundary ever regresses. Empty/undefined/invalid range → empty block,
- * so prompts that don't have one pay nothing.
+ * Fence a reference salary range (web-researched or employer-stated) in a
+ * clearly-labeled block. Renders ONLY the validated integers + currency
+ * code — NEVER any raw web text — which is what keeps this immune to prompt
+ * injection regardless of source. Self-defending: re-checks shape here
+ * (positivity, ordering, and a plausible ISO-4217-shaped currency code)
+ * rather than relying solely on the Rust validator a package away, so this
+ * claim holds even if that boundary ever regresses. Empty/undefined/invalid
+ * range → empty block, so prompts that don't have one pay nothing.
  */
 export function buildSalaryRangeBlock(range?: SalaryRange): string {
   if (!range || range.min <= 0 || range.max <= 0 || range.min > range.max) return '';
   if (!/^[A-Za-z]{3,4}$/.test(range.currency)) return '';
   return `
 <salary_context>
-Market range for this role: ${range.min}–${range.max} ${range.currency} (web-sourced reference).
+Reference salary range for this role: ${range.min}–${range.max} ${range.currency}.
 </salary_context>
 `;
 }

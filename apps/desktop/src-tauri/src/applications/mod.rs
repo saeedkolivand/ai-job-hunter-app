@@ -141,6 +141,12 @@ pub struct ApplicationMeta {
     pub job_description: String,
     pub answers: Vec<ApplicationAnswer>,
     pub job_summary: String,
+    /// Scraped salary range (Adzuna only, today) — grounds the salary application
+    /// answer before it falls back to a web lookup. `None` when unknown.
+    pub salary_min: Option<f64>,
+    pub salary_max: Option<f64>,
+    /// ISO-4217 currency for `salary_min`/`salary_max`.
+    pub salary_currency: Option<String>,
 }
 
 /// Server-side cap on a stored job description, in BYTES. Mirrors the renderer
@@ -211,6 +217,16 @@ pub struct Application {
     /// Employer-side contact email for a direct "apply by email" approach.
     #[serde(default)]
     pub recipient_email: String,
+    /// Scraped salary range (Adzuna only, today) — grounds the salary application
+    /// answer before it falls back to a web lookup. `None` when unknown, or on an
+    /// Application persisted before this field existed.
+    #[serde(default)]
+    pub salary_min: Option<f64>,
+    #[serde(default)]
+    pub salary_max: Option<f64>,
+    /// ISO-4217 currency for `salary_min`/`salary_max`.
+    #[serde(default)]
+    pub salary_currency: Option<String>,
 }
 
 /// One append-only status-history row.
@@ -298,6 +314,19 @@ impl ApplicationStore {
                 conn.execute_batch(
                     "ALTER TABLE applications ADD COLUMN recipient_name TEXT NOT NULL DEFAULT '';
                      ALTER TABLE applications ADD COLUMN recipient_email TEXT NOT NULL DEFAULT '';",
+                )
+            },
+        },
+        Migration {
+            name: "add_applications_salary",
+            up: |conn| {
+                // Nullable, NOT text-default: NULL means "unknown salary" (mirrors
+                // applied_at/next_action_at), never 0 — a 0 would read as a real
+                // (wrong) salary downstream.
+                conn.execute_batch(
+                    "ALTER TABLE applications ADD COLUMN salary_min REAL;
+                     ALTER TABLE applications ADD COLUMN salary_max REAL;
+                     ALTER TABLE applications ADD COLUMN salary_currency TEXT;",
                 )
             },
         },
@@ -411,6 +440,9 @@ impl ApplicationStore {
                 job_description: String::new(), // ponytail: legacy generations carry no JD column
                 answers: g.answers,
                 job_summary: String::new(),
+                salary_min: None,
+                salary_max: None,
+                salary_currency: None,
             };
             // Empty url → a fresh per-gen Application (no shared key to merge on);
             // non-empty url → merge into that url's Application if one exists.
@@ -599,6 +631,15 @@ impl ApplicationStore {
                 job_summary: pick(&meta.job_summary, &existing.job_summary),
                 recipient_name: existing.recipient_name.clone(),
                 recipient_email: existing.recipient_email.clone(),
+                // COALESCE(new, old): a re-scrape/re-track fills salary the first
+                // time it becomes known, but never clobbers an already-known value
+                // with an unknown (`None`) one.
+                salary_min: meta.salary_min.or(existing.salary_min),
+                salary_max: meta.salary_max.or(existing.salary_max),
+                salary_currency: meta
+                    .salary_currency
+                    .clone()
+                    .or_else(|| existing.salary_currency.clone()),
             };
             // Row write + the (conditional) status event in ONE transaction so an
             // upsert that changes status can never persist the row without its
@@ -648,6 +689,9 @@ impl ApplicationStore {
             job_summary: meta.job_summary.clone(),
             recipient_name: String::new(),
             recipient_email: String::new(),
+            salary_min: meta.salary_min,
+            salary_max: meta.salary_max,
+            salary_currency: meta.salary_currency.clone(),
         };
         // New Application: the row + its seed status event in ONE transaction.
         let mut guard = self.conn.lock();
@@ -770,8 +814,8 @@ impl ApplicationStore {
                 (id, status, applied_at, created_at, updated_at, job_url, board,
                  company, title, candidate, answers, brief, notes, next_action_at,
                  comp, contact_name, contact_email, job_description, job_summary,
-                 recipient_name, recipient_email)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)
+                 recipient_name, recipient_email, salary_min, salary_max, salary_currency)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24)
              ON CONFLICT(id) DO UPDATE SET
                 status = excluded.status,
                 applied_at = excluded.applied_at,
@@ -791,7 +835,10 @@ impl ApplicationStore {
                 job_description = excluded.job_description,
                 job_summary = excluded.job_summary,
                 recipient_name = excluded.recipient_name,
-                recipient_email = excluded.recipient_email",
+                recipient_email = excluded.recipient_email,
+                salary_min = excluded.salary_min,
+                salary_max = excluded.salary_max,
+                salary_currency = excluded.salary_currency",
             params![
                 app.id,
                 app.status.as_id(),
@@ -814,6 +861,9 @@ impl ApplicationStore {
                 job_summary,
                 app.recipient_name,
                 app.recipient_email,
+                app.salary_min,
+                app.salary_max,
+                app.salary_currency,
             ],
         )?;
         Ok(())
@@ -839,7 +889,7 @@ const MAX_JOB_SUMMARY_BYTES: usize = 50_000;
 const SELECT_COLS: &str = "SELECT id, status, applied_at, created_at, updated_at, job_url, board,
             company, title, candidate, answers, brief, notes, next_action_at,
             comp, contact_name, contact_email, job_description, job_summary,
-            recipient_name, recipient_email
+            recipient_name, recipient_email, salary_min, salary_max, salary_currency
      FROM applications";
 
 fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
@@ -867,6 +917,10 @@ fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
         job_summary: row.get(18)?,
         recipient_name: row.get(19)?,
         recipient_email: row.get(20)?,
+        // NULL (unknown salary, e.g. a pre-migration row) → None, never 0.
+        salary_min: row.get(21)?,
+        salary_max: row.get(22)?,
+        salary_currency: row.get(23)?,
     })
 }
 
