@@ -125,6 +125,77 @@ fn parse_anthropic_frames(buf: &mut String, last_event: &mut String) -> Vec<Stre
 
 pub struct AnthropicClient;
 
+impl AnthropicClient {
+    /// Shared transport for every `research*` facet: a non-streaming Messages
+    /// call with the server-side web-search tool, `system`/`user` supplied by the
+    /// caller. Capped at 3 searches (a brief, not deep research); the enricher
+    /// also bounds the whole call with a timeout. Requires the org to enable web
+    /// search, and degrades to `""` (never an error) on any failure so
+    /// generation always proceeds.
+    async fn web_search_complete(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+    ) -> AppResult<String> {
+        let api_key = match get_provider_key(app, self.id().credential_key()) {
+            Some(k) if !k.trim().is_empty() => k,
+            _ => return Ok(String::new()),
+        };
+        let endpoint = format!("{BASE}/messages");
+        let trace = RequestTrace::begin(
+            ProviderId::Anthropic,
+            model,
+            "/messages web_search",
+            BASE,
+            false,
+        );
+
+        let body = json!({
+            "model": model,
+            "max_tokens": 1024,
+            "system": system,
+            "messages": [{ "role": "user", "content": user }],
+            "temperature": 0.2,
+            "tools": [{ "type": "web_search_20250305", "name": "web_search", "max_uses": 3 }],
+        });
+
+        let resp = crate::net::http::shared()
+            .post(&endpoint)
+            .timeout(timeouts::WEB_SEARCH)
+            .header("x-api-key", &api_key)
+            .header("anthropic-version", VERSION)
+            .json(&body)
+            .send()
+            .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                tracing::warn!("anthropic research unreachable: {e}");
+                return Ok(String::new());
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            tracing::warn!("anthropic research {status}: {body_text}");
+            return Ok(String::new());
+        }
+        let data: Value = match resp.json().await {
+            Ok(v) => v,
+            Err(_) => {
+                trace.end(Some(status.as_u16()), false);
+                return Ok(String::new());
+            }
+        };
+        trace.end(Some(status.as_u16()), true);
+        Ok(join_text_blocks(&data))
+    }
+}
+
 #[async_trait]
 impl AiProvider for AnthropicClient {
     fn id(&self) -> ProviderId {
@@ -301,63 +372,30 @@ impl AiProvider for AnthropicClient {
         company: &str,
         role: &str,
     ) -> AppResult<String> {
-        let api_key = match get_provider_key(app, self.id().credential_key()) {
-            Some(k) if !k.trim().is_empty() => k,
-            _ => return Ok(String::new()),
-        };
-        let endpoint = format!("{BASE}/messages");
-        let trace = RequestTrace::begin(
-            ProviderId::Anthropic,
+        self.web_search_complete(
+            app,
             model,
-            "/messages web_search",
-            BASE,
-            false,
-        );
+            research::NATIVE_SYSTEM,
+            &research::native_user(company, role),
+        )
+        .await
+    }
 
-        // Non-streaming Messages call with the server-side web-search tool. Capped
-        // at 3 searches (a brief, not deep research); the enricher also bounds the
-        // whole call with a timeout. Requires the org to enable web search.
-        let body = json!({
-            "model": model,
-            "max_tokens": 1024,
-            "system": research::NATIVE_SYSTEM,
-            "messages": [{ "role": "user", "content": research::native_user(company, role) }],
-            "temperature": 0.2,
-            "tools": [{ "type": "web_search_20250305", "name": "web_search", "max_uses": 3 }],
-        });
-
-        let resp = crate::net::http::shared()
-            .post(&endpoint)
-            .timeout(timeouts::WEB_SEARCH)
-            .header("x-api-key", &api_key)
-            .header("anthropic-version", VERSION)
-            .json(&body)
-            .send()
-            .await;
-        let resp = match resp {
-            Ok(r) => r,
-            Err(e) => {
-                trace.end(None, false);
-                tracing::warn!("anthropic research unreachable: {e}");
-                return Ok(String::new());
-            }
-        };
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
-            trace.end(Some(status.as_u16()), false);
-            tracing::warn!("anthropic research {status}: {body_text}");
-            return Ok(String::new());
-        }
-        let data: Value = match resp.json().await {
-            Ok(v) => v,
-            Err(_) => {
-                trace.end(Some(status.as_u16()), false);
-                return Ok(String::new());
-            }
-        };
-        trace.end(Some(status.as_u16()), true);
-        Ok(join_text_blocks(&data))
+    async fn research_salary(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        role: &str,
+        company: &str,
+        location: &str,
+    ) -> AppResult<String> {
+        self.web_search_complete(
+            app,
+            model,
+            research::SALARY_SYSTEM,
+            &research::salary_user(role, company, location),
+        )
+        .await
     }
 
     async fn embed(&self, _app: &AppHandle, _model: &str, _text: &str) -> AppResult<Vec<f64>> {

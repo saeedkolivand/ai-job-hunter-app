@@ -236,6 +236,26 @@ pub trait AiProvider: Send + Sync {
         Ok(String::new())
     }
 
+    /// Web-grounded market salary-range lookup for a role — at a specific
+    /// company when the search finds company-specific data, otherwise the
+    /// broader market for that role/location — using the **same** web-search
+    /// channel as [`research`](Self::research). Must return ONLY a compact
+    /// `{"min":…,"max":…,"currency":"…"}` JSON object (or `{}` when nothing
+    /// reliable is found); [`crate::salary_research::SalaryResearch`] parses and
+    /// strictly validates it before anything reaches a prompt, so raw web text
+    /// never does. Returns `""` (never an error) when the provider can't search
+    /// or isn't configured — exactly like `research`. Default: no research.
+    async fn research_salary(
+        &self,
+        _app: &AppHandle,
+        _model: &str,
+        _role: &str,
+        _company: &str,
+        _location: &str,
+    ) -> AppResult<String> {
+        Ok(String::new())
+    }
+
     /// Embed a single text, returning the raw vector. Errors when this provider
     /// has no embeddings API (callers gate on `capabilities().supports_embeddings`).
     async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>>;

@@ -81,6 +81,88 @@ fn role_or_default(role: &str) -> &str {
     }
 }
 
+// ── Salary-range research (C2) ───────────────────────────────────────────────────
+//
+// Same native/synthesize split as the company brief above, but the contract is a
+// compact JSON object instead of prose: `salary_research::SalaryResearch` parses
+// + strictly validates it, so no unvalidated web text ever reaches a prompt (the
+// model's own words never survive past that JSON boundary).
+
+/// System prompt for the salary-range **native** path: the model searches the
+/// web itself and must reply with JSON only — no prose to parse out.
+pub const SALARY_SYSTEM: &str = "You are a compensation research assistant with web search. \
+Search the web for the typical ANNUAL gross salary range for the specified role — at the \
+specified company when reliable company-specific data exists, otherwise for the broader market \
+in the specified location. Respond with ONLY a compact JSON object in the exact form \
+{\"min\":<integer>,\"max\":<integer>,\"currency\":\"<ISO-4217 code>\"}, using the local currency \
+for that location. If you cannot find reliable data, respond with {}. No prose, no markdown, no \
+code fences, no commentary — JSON only.";
+
+/// User prompt for the salary-range **native** path (the provider's model
+/// searches + writes the JSON itself).
+pub fn salary_user(role: &str, company: &str, location: &str) -> String {
+    let role = role_or_default(role);
+    let mut where_clause = String::new();
+    if !company.trim().is_empty() {
+        where_clause.push_str(&format!(" at \"{}\"", company.trim()));
+    }
+    if !location.trim().is_empty() {
+        where_clause.push_str(&format!(" in {}", location.trim()));
+    }
+    format!(
+        "Search the web for the typical annual gross salary range for a {role}{where_clause}. \
+         Respond with ONLY the JSON object described in your instructions — no prose."
+    )
+}
+
+/// The web-search query for the salary explicit-query path (Ollama).
+pub fn salary_search_query(role: &str, company: &str, location: &str) -> String {
+    let role = role_or_default(role);
+    let mut q = format!("{role} salary range annual");
+    if !company.trim().is_empty() {
+        q.push_str(&format!(" {}", company.trim()));
+    }
+    if !location.trim().is_empty() {
+        q.push_str(&format!(" {}", location.trim()));
+    }
+    q
+}
+
+/// User prompt for the salary-range **synthesize** path (Ollama): turn search
+/// snippets into the same compact JSON contract as [`salary_user`].
+pub fn salary_synth_user(
+    role: &str,
+    company: &str,
+    location: &str,
+    results: &[SearchResult],
+) -> String {
+    let role = role_or_default(role);
+    let company = if company.trim().is_empty() {
+        "unspecified"
+    } else {
+        company.trim()
+    };
+    let location = if location.trim().is_empty() {
+        "unspecified"
+    } else {
+        location.trim()
+    };
+    let snippets = results
+        .iter()
+        .enumerate()
+        .map(|(i, r)| format!("[{}] {} — {}", i + 1, r.title, r.snippet))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "Role: {role}\nCompany: {company}\nLocation: {location}\n\n\
+         Search result snippets:\n{snippets}\n\n\
+         From these snippets, estimate the typical ANNUAL gross salary range in the local \
+         currency for that location. Respond with ONLY a compact JSON object in the exact form \
+         {{\"min\":<integer>,\"max\":<integer>,\"currency\":\"<ISO-4217 code>\"}}. If the \
+         snippets don't support a reliable estimate, respond with {{}}. No prose."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,5 +201,48 @@ mod tests {
         assert!(p.contains("[1] Acme — Wikipedia — Acme makes widgets."));
         assert!(p.contains("[2] Acme careers — Series B, 200 employees."));
         assert!(p.contains("Role being filled: candidate"));
+    }
+
+    #[test]
+    fn salary_user_names_role_company_and_location_and_demands_json() {
+        let p = salary_user("Backend Engineer", "Acme", "Berlin, Germany");
+        assert!(p.contains("Backend Engineer"));
+        assert!(p.contains("Acme"));
+        assert!(p.contains("Berlin, Germany"));
+        assert!(p.to_lowercase().contains("json"));
+    }
+
+    #[test]
+    fn salary_user_omits_company_and_location_clauses_when_blank() {
+        let p = salary_user("Backend Engineer", "  ", "  ");
+        assert!(!p.contains(" at \""));
+        // No where-clause inserted: the role is followed directly by the
+        // instruction sentence, not by an " in <location>" clause.
+        assert!(p.starts_with(
+            "Search the web for the typical annual gross salary range for a Backend Engineer. "
+        ));
+    }
+
+    #[test]
+    fn salary_search_query_includes_role_company_and_location() {
+        let q = salary_search_query("Backend Engineer", "Acme", "Berlin");
+        assert!(q.contains("Backend Engineer"));
+        assert!(q.contains("Acme"));
+        assert!(q.contains("Berlin"));
+        assert!(q.to_lowercase().contains("salary"));
+    }
+
+    #[test]
+    fn salary_synth_user_lists_snippets_and_requests_json_with_fallback_labels() {
+        let results = vec![SearchResult {
+            title: "Levels.fyi".into(),
+            snippet: "Backend Engineer $120k-$150k".into(),
+            url: "https://example.com".into(),
+        }];
+        let p = salary_synth_user("Backend Engineer", "  ", "  ", &results);
+        assert!(p.contains("[1] Levels.fyi — Backend Engineer $120k-$150k"));
+        assert!(p.contains("Company: unspecified"));
+        assert!(p.contains("Location: unspecified"));
+        assert!(p.to_lowercase().contains("json"));
     }
 }
