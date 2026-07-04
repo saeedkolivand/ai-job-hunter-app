@@ -2,6 +2,7 @@
 // Source of truth: packages/shared/src/events/index.ts
 #![allow(dead_code)]
 
+pub const AGENT_STEP: &str = "agent:step";
 pub const AI_STREAM: &str = "ai:stream";
 pub const JOBS_EVENT: &str = "jobs:event";
 pub const APPLICATIONS_CHANGED: &str = "applications:changed";

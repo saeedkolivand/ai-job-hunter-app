@@ -16,6 +16,7 @@
 
  */
 
+import { AGENT_CHANNELS, type AgentContract } from './agent.js';
 import { AI_CHANNELS, type AiContract } from './ai.js';
 import { AI_GENERATIONS_CHANNELS, type AiGenerationsContract } from './aiGenerations.js';
 import { APPLICATIONS_CHANNELS, type ApplicationsContract } from './applications.js';
@@ -48,6 +49,7 @@ import { UPDATER_CHANNELS, type UpdaterContract } from './updater.js';
 // Combine all namespace contracts into the original IpcContract interface
 
 export interface IpcContract {
+  agent: AgentContract;
   aiGenerations: AiGenerationsContract;
   applications: ApplicationsContract;
   system: SystemContract;
@@ -81,6 +83,7 @@ export interface IpcContract {
 // Combine all channel constants into the original IPC_CHANNELS object
 
 export const IPC_CHANNELS = {
+  agent: AGENT_CHANNELS,
   aiGenerations: AI_GENERATIONS_CHANNELS,
   applications: APPLICATIONS_CHANNELS,
   system: SYSTEM_CHANNELS,
@@ -123,6 +126,12 @@ export const PROTOCOL_VERSION = '1.1.0';
 
 // Re-export individual namespace contracts for direct imports if needed
 
+export {
+  AGENT_CHANNELS,
+  type AgentContract,
+  type AgentStepEvent,
+  type AgentStepKind,
+} from './agent.js';
 export {
   AI_CHANNELS,
   type AiContract,

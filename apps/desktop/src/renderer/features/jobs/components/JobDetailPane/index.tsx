@@ -28,6 +28,7 @@ import {
   variants,
 } from '@ajh/ui';
 
+import { PrepApplicationPanel } from '@/features/jobs/components/PrepApplicationPanel';
 import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
 import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
 import { useMatchScores } from '@/features/jobs/providers';
@@ -262,6 +263,7 @@ function DetailContent({
             >
               <Wand2 size={11} /> {t('jobs.tailor')}
             </Button>
+            <PrepApplicationPanel posting={posting} />
             <ActionMenu
               label={t('jobs.actions')}
               items={[

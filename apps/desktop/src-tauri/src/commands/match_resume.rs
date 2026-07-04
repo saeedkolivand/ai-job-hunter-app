@@ -386,7 +386,10 @@ fn posting_to_text(posting: &Value) -> Option<String> {
 /// Build a searchable text blob for a cached job posting (title + description +
 /// requirements). Returns None if the posting isn't in the live cache. Single-job
 /// path; the batch path uses [`job_texts_for`] to avoid a per-job lock + scan.
-fn job_text_for(app: &AppHandle, job_id: &str) -> Option<String> {
+///
+/// `pub(crate)` so the agent tools reuse the same posting → text resolution instead
+/// of re-deriving it.
+pub(crate) fn job_text_for(app: &AppHandle, job_id: &str) -> Option<String> {
     let cache = app.state::<Mutex<PostingsCache>>();
     let guard = cache.lock();
     let posting = guard
