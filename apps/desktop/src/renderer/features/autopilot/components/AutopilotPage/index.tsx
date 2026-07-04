@@ -23,7 +23,7 @@ function AutopilotPage() {
   const { data: autopilotList = [], isLoading: loading } = useAutopilots();
   const autopilots = autopilotList;
   const { autopilot, setAutopilot, resetAutopilotWizard, setApplicationApply } = useSessionStore();
-  const { creating, focusedId } = autopilot;
+  const { creating, focusedId, focusedJobUrl } = autopilot;
   const setCreating = (v: boolean) => setAutopilot({ creating: v });
   const resetWizard = resetAutopilotWizard;
 
@@ -43,11 +43,21 @@ function AutopilotPage() {
 
   // Returning from an Apply (Back): the user deep-linked into an application from a
   // found job. Re-focus that autopilot on this mount so its found-jobs list stays
-  // expanded instead of collapsing. One-shot — promoted to `focusedId` (which the
-  // card consumes + scrolls to) and cleared, so it only fires the first mount back.
+  // expanded instead of collapsing, and carry the specific job url along so the
+  // card scrolls to that row instead of just the header. One-shot — promoted to
+  // `focusedId`/`focusedJobUrl` (which the card consumes) and cleared, so it only
+  // fires the first mount back.
   useEffect(() => {
-    const appliedId = useSessionStore.getState().autopilot.lastAppliedId;
-    if (appliedId) setAutopilot({ focusedId: appliedId, lastAppliedId: null });
+    const { lastAppliedId: appliedId, lastAppliedJobUrl: appliedJobUrl } =
+      useSessionStore.getState().autopilot;
+    if (appliedId) {
+      setAutopilot({
+        focusedId: appliedId,
+        focusedJobUrl: appliedJobUrl,
+        lastAppliedId: null,
+        lastAppliedJobUrl: null,
+      });
+    }
   }, [setAutopilot]);
 
   const { runStates, stepLogs, error, setError, handleRun, handleTogglePause, handleDelete } =
@@ -95,9 +105,10 @@ function AutopilotPage() {
         applyWizardStep: 0,
         applyWizardForm: null,
       });
-      // Remember which autopilot we applied from so Back re-expands it (consumed
-      // on the Autopilot page's next mount).
-      setAutopilot({ lastAppliedId: ap._id });
+      // Remember which autopilot (and specific job) we applied from so Back
+      // re-expands it and scrolls to that row (consumed on the Autopilot page's
+      // next mount).
+      setAutopilot({ lastAppliedId: ap._id, lastAppliedJobUrl: job.url });
       void navigate({
         to: '/applications/$id',
         params: { id: res.id },
@@ -163,7 +174,8 @@ function AutopilotPage() {
                     runState={runState}
                     stepLogs={stepLogs[ap._id] ?? []}
                     focused={focusedId === ap._id}
-                    onFocusHandled={() => setAutopilot({ focusedId: null })}
+                    focusedJobUrl={focusedId === ap._id ? focusedJobUrl : null}
+                    onFocusHandled={() => setAutopilot({ focusedId: null, focusedJobUrl: null })}
                     onRun={() => void handleRun(ap._id)}
                     onTogglePause={() => void handleTogglePause(ap)}
                     onEdit={() => handleEdit(ap)}

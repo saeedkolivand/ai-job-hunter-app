@@ -91,12 +91,19 @@ interface AutopilotSlice {
   wizardStep: number;
   wizardForm: WizardState | null;
   focusedId: string | null;
+  /** The specific found-job url to scroll+highlight within the focused card
+   *  (promoted from `lastAppliedJobUrl`); null for tray/deep-link focus, which
+   *  only centers the card header. */
+  focusedJobUrl: string | null;
   /**
    * The autopilot the user last applied from (deep-linked into the application
    * detail). Consumed once when the Autopilot page next mounts — promoted to
    * `focusedId` so pressing Back re-expands that card instead of collapsing it.
    */
   lastAppliedId: string | null;
+  /** The found job's url the user applied from — promoted to `focusedJobUrl`
+   *  alongside `lastAppliedId` so Back scrolls to that specific row. */
+  lastAppliedJobUrl: string | null;
 }
 
 /**
@@ -250,7 +257,9 @@ export const useSessionStore = create<SessionState>((set) => ({
     wizardStep: 0,
     wizardForm: null,
     focusedId: null,
+    focusedJobUrl: null,
     lastAppliedId: null,
+    lastAppliedJobUrl: null,
   },
   applicationApply: { ...APPLICATION_APPLY_DEFAULTS },
   applications: { collapsedSections: [], filter: '' },
