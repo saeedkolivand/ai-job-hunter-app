@@ -199,6 +199,26 @@ pub async fn ai_research_company(
     use crate::cover_letter::research::CompanyResearch;
     use crate::pipeline::Completer;
 
+    // Anti-abuse: rate + concurrency cap, sharing the same "ai_research" bucket
+    // as `ai_lookup_salary` — this is a billable provider web search with no
+    // other ceiling, so a looping/compromised renderer varying job_ad/company
+    // must not drive unbounded paid-API spend.
+    let limiter = app
+        .state::<std::sync::Arc<crate::limits::Limiter>>()
+        .inner()
+        .clone();
+    let _guard = match limiter.acquire(
+        "ai_research",
+        crate::limits::AI_RESEARCH_RATE_MAX,
+        crate::limits::AI_RESEARCH_CONCURRENCY_MAX,
+    ) {
+        Ok(g) => g,
+        Err(e) => {
+            tracing::debug!("research_company: rate limited: {e}");
+            return json!({ "company": "", "brief": "" });
+        }
+    };
+
     let completer = match Completer::resolve(&app, provider.as_deref(), model.as_deref(), base_url)
     {
         Ok(c) => c,
@@ -207,6 +227,16 @@ pub async fn ai_research_company(
             return json!({ "company": "", "brief": "" });
         }
     };
+
+    // Per-provider daily request ceiling — the same coarse runaway-cost
+    // backstop `ai_generate`/`ai_lookup_salary` charge.
+    if let Err(e) = limiter.charge_provider_daily(
+        completer.provider_id().as_str(),
+        crate::limits::PROVIDER_DAILY_MAX,
+    ) {
+        tracing::debug!("research_company: daily budget exceeded: {e}");
+        return json!({ "company": "", "brief": "" });
+    }
 
     // Prefer the accurate AI-extracted company name from the generation flow; the
     // enricher falls back to heuristic job-ad extraction only when it's absent.
@@ -241,8 +271,8 @@ pub async fn ai_lookup_salary(
     // exactly. This is a billable provider web search (Ollama fires two calls:
     // search + synthesis) with no other ceiling, so a looping/compromised
     // renderer varying inputs must not drive unbounded paid-API spend. The
-    // `"ai_research"` bucket is shared with any future research-family command
-    // (`ai_research_company` is a follow-up retrofit — out of scope here).
+    // `"ai_research"` bucket is shared with `ai_research_company`, which uses
+    // the same guard.
     let limiter = app
         .state::<std::sync::Arc<crate::limits::Limiter>>()
         .inner()
