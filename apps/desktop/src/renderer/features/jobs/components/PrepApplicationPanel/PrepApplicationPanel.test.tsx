@@ -314,4 +314,37 @@ describe('PrepApplicationPanel — retry', () => {
     });
     expect(screen.getByText('jobs.prep.proposalTitle')).toBeInTheDocument();
   });
+
+  it('a successful (done) run shows a working "Prep again" control, not just error/cancelled', async () => {
+    openModal();
+    await clickStart();
+
+    act(() => {
+      stepHandler?.(turnStep({ step: 5, text: 'Proposal.', tools: [], kind: 'proposal' }));
+    });
+    act(() => {
+      jobEventHandler?.({
+        type: 'job.completed',
+        jobId: 'job-1',
+        data: { finalText: 'Proposal.', steps: 4, stoppedReason: 'done' },
+        ts: 0,
+      });
+    });
+    expect(screen.getByText('jobs.prep.proposalTitle')).toBeInTheDocument();
+
+    // The footer exposes "Prep again" (not the generic "Start" copy) once done.
+    const runAgain = screen.getByText('jobs.prep.runAgain').closest('button');
+    expect(runAgain).toBeInTheDocument();
+    expect(runAgain).not.toBeDisabled();
+
+    mockRunMutateAsync.mockResolvedValueOnce({ jobId: 'job-3' });
+    await act(async () => {
+      fireEvent.click(runAgain as HTMLButtonElement);
+    });
+
+    expect(mockRunMutateAsync).toHaveBeenCalledTimes(2);
+    // A fresh run clears the previous proposal until the new one lands.
+    expect(screen.queryByText('jobs.prep.proposalTitle')).not.toBeInTheDocument();
+    expect(screen.getByText('jobs.prep.starting')).toBeInTheDocument();
+  });
 });

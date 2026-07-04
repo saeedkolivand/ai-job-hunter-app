@@ -112,9 +112,13 @@ pub trait AgentEnv: Send + Sync {
     fn on_step(&self, step: &AgentStep);
 }
 
-/// Rough token estimate (~4 chars/token) for the budget accumulator.
+/// Rough token estimate (~4 chars/token) for the budget accumulator. Counts
+/// Unicode scalar values (`chars().count()`), NOT bytes — matches both the doc
+/// and the `.chars().take(cap)` caps used elsewhere (`agent::tools`), so
+/// multi-byte content (non-ASCII résumé/job text) doesn't trip the token budget
+/// early relative to ASCII text of the same visible length.
 fn estimate_tokens(s: &str) -> usize {
-    s.len() / 4
+    s.chars().count() / 4
 }
 
 /// Look up a tool's kind by name in the whitelist.
@@ -135,9 +139,17 @@ fn tool_result_fence(name: &str, body: &str) -> String {
 /// human-in-the-loop guard) and append the fenced result to the transcript.
 /// Terminates when the model returns no tool calls (Done), the step budget
 /// ([`MAX_AGENT_STEPS`]) or token budget ([`MAX_AGENT_TOKENS`]) is exhausted,
-/// `cancel` fires between turns, or a turn is refused for budget reasons
-/// (`AppError::RateLimited` — stops gracefully as `Budgeted`, keeping progress
-/// made so far). Any other provider error aborts with `Err`.
+/// `cancel` fires, or a turn is refused for budget reasons (`AppError::RateLimited`
+/// — stops gracefully as `Budgeted`, keeping progress made so far). Any other
+/// provider error aborts with `Err`.
+///
+/// Cancellation is checked BETWEEN iterations (top of the loop) AND raced
+/// against the in-flight provider turn and each in-flight Read-tool call (a
+/// text-drafting tool makes its own provider request) via `tokio::select!`, so
+/// Stop is snappy mid-request too, not just between turns. Either race dropping
+/// in favor of `cancel` returns immediately with whatever `steps`/`final_text`
+/// had already accumulated — no partial-state corruption, same shape as the
+/// between-turns cancellation.
 pub async fn run_agent(
     env: &dyn AgentEnv,
     tools: &[AgentTool],
@@ -177,19 +189,34 @@ pub async fn run_agent_with_system(
             });
         }
 
-        let turn = match env.turn(&messages).await {
-            Ok(t) => t,
-            // `LiveAgentEnv::turn` charges the per-provider daily ceiling before
-            // each request; hitting it on turn 3+ of an otherwise-successful run
-            // must not discard the `steps`/`final_text` accumulated so far.
-            Err(AppError::RateLimited(_)) => {
+        // Race the provider round-trip against cancellation so Stop interrupts an
+        // in-flight turn instead of waiting it out — the `is_cancelled()` check
+        // above only catches cancellation BETWEEN iterations. `biased` favors the
+        // cancel branch when both are simultaneously ready; dropping the `turn()`
+        // future on that branch aborts the in-flight provider request.
+        let turn = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => {
                 return Ok(AgentOutcome {
                     final_text,
                     steps,
-                    stopped_reason: StoppedReason::Budgeted,
-                })
+                    stopped_reason: StoppedReason::Cancelled,
+                });
             }
-            Err(e) => return Err(e),
+            result = env.turn(&messages) => match result {
+                Ok(t) => t,
+                // `LiveAgentEnv::turn` charges the per-provider daily ceiling before
+                // each request; hitting it on turn 3+ of an otherwise-successful run
+                // must not discard the `steps`/`final_text` accumulated so far.
+                Err(AppError::RateLimited(_)) => {
+                    return Ok(AgentOutcome {
+                        final_text,
+                        steps,
+                        stopped_reason: StoppedReason::Budgeted,
+                    });
+                }
+                Err(e) => return Err(e),
+            },
         };
         steps += 1;
         tokens += estimate_tokens(&turn.text);
@@ -254,9 +281,22 @@ pub async fn run_agent_with_system(
         for call in &turn.tool_calls {
             let body = match tool_kind(tools, &call.name) {
                 Some(ToolKind::Read) => {
-                    match env.run_read_tool(&call.name, call.args.clone()).await {
-                        Ok(v) => v.to_string(),
-                        Err(e) => format!("error: {e}"),
+                    // Same race as the provider turn above: a text-drafting tool
+                    // (e.g. `draft_cover_letter`) makes its OWN provider call, so
+                    // Stop must interrupt it too, not just the outer turn.
+                    tokio::select! {
+                        biased;
+                        _ = cancel.cancelled() => {
+                            return Ok(AgentOutcome {
+                                final_text,
+                                steps,
+                                stopped_reason: StoppedReason::Cancelled,
+                            });
+                        }
+                        result = env.run_read_tool(&call.name, call.args.clone()) => match result {
+                            Ok(v) => v.to_string(),
+                            Err(e) => format!("error: {e}"),
+                        },
                     }
                 }
                 Some(ToolKind::Write) => {
@@ -641,6 +681,77 @@ mod tests {
         assert_eq!(out.stopped_reason, StoppedReason::Cancelled);
         assert_eq!(out.steps, 0);
         assert!(env.reads.lock().is_empty());
+    }
+
+    /// MEDIUM fix: cancellation must interrupt an IN-FLIGHT provider turn, not
+    /// just fire between turns. `turn()` here never resolves on its own — the
+    /// only way `run_agent` can return is via the `tokio::select!` race against
+    /// `cancel.cancelled()`. Deterministic under the current-thread test runtime:
+    /// once both `select!` branches are simultaneously Pending, control yields
+    /// back to the executor, which then runs the spawned task that cancels.
+    #[tokio::test]
+    async fn cancellation_during_an_inflight_turn_stops_immediately() {
+        struct HangingEnv;
+        #[async_trait]
+        impl AgentEnv for HangingEnv {
+            async fn turn(&self, _messages: &[ChatMsg]) -> AppResult<AgentTurn> {
+                std::future::pending::<AppResult<AgentTurn>>().await
+            }
+            async fn run_read_tool(&self, _name: &str, _args: Value) -> AppResult<Value> {
+                unreachable!("no tool call is reached in this test")
+            }
+            fn on_step(&self, _step: &AgentStep) {}
+        }
+
+        let cancel = CancellationToken::new();
+        let cancel_task = cancel.clone();
+        tokio::spawn(async move {
+            cancel_task.cancel();
+        });
+
+        let out = run_agent(&HangingEnv, &whitelist(), "help".into(), &cancel)
+            .await
+            .unwrap();
+        assert_eq!(out.stopped_reason, StoppedReason::Cancelled);
+        assert_eq!(
+            out.steps, 0,
+            "cancelled before the hanging turn ever resolved"
+        );
+    }
+
+    /// MEDIUM fix: cancellation must also interrupt an IN-FLIGHT Read-tool call
+    /// (a text-drafting tool makes its own provider request) — the outer turn
+    /// resolves immediately here, so the run reaches the tool loop before the
+    /// spawned cancel task runs; the hanging `run_read_tool` future is what the
+    /// select races against.
+    #[tokio::test]
+    async fn cancellation_during_an_inflight_tool_call_stops_immediately() {
+        struct HangingToolEnv;
+        #[async_trait]
+        impl AgentEnv for HangingToolEnv {
+            async fn turn(&self, _messages: &[ChatMsg]) -> AppResult<AgentTurn> {
+                Ok(read_call("reader"))
+            }
+            async fn run_read_tool(&self, _name: &str, _args: Value) -> AppResult<Value> {
+                std::future::pending::<AppResult<Value>>().await
+            }
+            fn on_step(&self, _step: &AgentStep) {}
+        }
+
+        let cancel = CancellationToken::new();
+        let cancel_task = cancel.clone();
+        tokio::spawn(async move {
+            cancel_task.cancel();
+        });
+
+        let out = run_agent(&HangingToolEnv, &whitelist(), "help".into(), &cancel)
+            .await
+            .unwrap();
+        assert_eq!(out.stopped_reason, StoppedReason::Cancelled);
+        assert_eq!(
+            out.steps, 1,
+            "the turn that requested the hanging tool call already counted"
+        );
     }
 
     #[tokio::test]

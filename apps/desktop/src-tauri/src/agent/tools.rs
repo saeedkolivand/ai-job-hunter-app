@@ -8,10 +8,12 @@
 //! duplicated here.
 //!
 //! SECURITY (lethal-trifecta exfil leg): a handler's ROUTING/EGRESS parameters
-//! (provider / model / base_url) come from the trusted [`ToolContext`] threaded in
-//! by `agent_run`, NEVER from the model-supplied `args`. A prompt-injected job
-//! posting can steer the CONTENT the model asks about, but can never redirect a
-//! credentialed provider request to an attacker host (SSRF / API-key exfil).
+//! (provider / model / base_url) AND the run's job identity (`job_id`) come from
+//! the trusted [`ToolContext`] threaded in by `agent_run`, NEVER from the
+//! model-supplied `args`. A prompt-injected job posting can steer the CONTENT the
+//! model asks about, but can never redirect a credentialed provider request to an
+//! attacker host (SSRF / API-key exfil), nor substitute an arbitrary
+//! company/job-ad blob for the run's own posting.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -37,12 +39,16 @@ pub enum ToolKind {
 /// Trusted routing/egress context, threaded from `agent_run` into every tool
 /// handler. The provider/model/base_url here are the VALIDATED request values —
 /// tools that make their own provider call resolve a [`Completer`] from these,
-/// never from the untrusted `args` (see the module-level SECURITY note).
+/// never from the untrusted `args` (see the module-level SECURITY note). `job_id`
+/// is the run's OWN job (also validated request input) — a tool that only ever
+/// concerns itself with this run's single posting (e.g. `research_company`) loads
+/// it by this id instead of trusting a model-supplied job/company blob.
 #[derive(Debug, Clone)]
 pub struct ToolContext {
     pub provider: String,
     pub model: String,
     pub base_url: Option<String>,
+    pub job_id: String,
 }
 
 /// A tool's async handler: takes the app handle, the trusted [`ToolContext`], and
@@ -168,32 +174,29 @@ async fn complete_trusted(
 fn research_company_handler(
     app: &AppHandle,
     ctx: &ToolContext,
-    args: Value,
+    _args: Value,
 ) -> Pin<Box<dyn Future<Output = AppResult<Value>> + Send>> {
     let app = app.clone();
     let ctx = ctx.clone();
     Box::pin(async move {
-        // Read ONLY the schema-declared CONTENT fields (`jobAd`, `company`). The
-        // provider/model/base_url are the trusted [`ToolContext`], NEVER `args` —
-        // see the module SECURITY note. `ai_research_company` degrades gracefully
-        // (empty brief) on any resolution/budget failure. Cap both to the same
-        // 8k/2k bounds used elsewhere (defense-in-depth vs. a bloated
-        // prompt-injected blob riding in a model-supplied argument).
-        let job_ad: String = args
-            .get("jobAd")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
+        // LOW-1: load THIS run's own job posting server-side by the trusted
+        // `ctx.job_id` — never the model-supplied `jobAd`/`company` args. The prep
+        // flow only ever researches the ONE posting for this run, so there is no
+        // legitimate case where the model should supply a different company/job-ad
+        // blob (unlike `research_company`'s general-purpose Phase-1 use). This is
+        // the last model-supplied-TEXT path in this file; every other tool already
+        // loads its text server-side by id (see `load_resume_and_job`). Company is
+        // left `None` — `CompanyResearch`'s own heuristic extracts it from the job
+        // text, exactly as it already does when no explicit override is known.
+        let job_ad: String = crate::commands::match_resume::job_text_for(&app, &ctx.job_id)
+            .ok_or_else(|| AppError::Validation(format!("job not found in cache: {}", ctx.job_id)))?
             .chars()
             .take(JOB_CAP)
             .collect();
-        let company: Option<String> = args
-            .get("company")
-            .and_then(|v| v.as_str())
-            .map(|s| s.chars().take(BRIEF_CAP).collect());
         Ok(crate::commands::ai::ai_research_company(
             app,
             job_ad,
-            company,
+            None,
             Some(ctx.provider),
             Some(ctx.model),
             ctx.base_url,
@@ -316,21 +319,13 @@ pub fn read_tools() -> Vec<AgentTool> {
         AgentTool {
             name: "research_company",
             description:
-                "Research a company from a job posting and return a short factual brief. Read-only."
+                "Research the company behind this run's job posting and return a short factual \
+                 brief. Read-only. Takes no arguments — it always targets this run's own \
+                 posting."
                     .to_string(),
             schema: json!({
                 "type": "object",
-                "properties": {
-                    "jobAd": {
-                        "type": "string",
-                        "description": "The job posting text to extract the company from."
-                    },
-                    "company": {
-                        "type": "string",
-                        "description": "Optional explicit company name."
-                    }
-                },
-                "required": ["jobAd"]
+                "properties": {}
             }),
             kind: ToolKind::Read,
             handler: research_company_handler,
@@ -402,6 +397,24 @@ mod tests {
         assert_eq!(specs[0].name, tools[0].name);
         assert!(specs.iter().any(|s| s.name == "research_company"));
         assert!(specs.iter().any(|s| s.name == "match_resume"));
+    }
+
+    /// LOW-1 fix: `research_company`'s schema must accept NO model-supplied
+    /// arguments — the tool always targets THIS run's own posting via the
+    /// trusted `ToolContext::job_id`, never a model-supplied `jobAd`/`company`.
+    #[test]
+    fn research_company_schema_takes_no_model_supplied_arguments() {
+        let tools = read_tools();
+        let rc = tools
+            .iter()
+            .find(|t| t.name == "research_company")
+            .expect("research_company must be registered");
+        let props = rc.schema.get("properties").and_then(|p| p.as_object());
+        assert!(
+            props.is_some_and(|p| p.is_empty()),
+            "research_company must declare zero arguments, got schema: {:?}",
+            rc.schema
+        );
     }
 
     /// SECURITY: the prep flow must expose exactly the four expected tools, in

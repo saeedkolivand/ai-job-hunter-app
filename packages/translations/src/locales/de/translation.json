@@ -1634,6 +1634,7 @@
       "needsProvider": "Wähle einen KI-Anbieter in Einstellungen → KI.",
       "start": "Starten",
       "starting": "Wird gestartet…",
+      "runAgain": "Erneut vorbereiten",
       "stop": "Stoppen",
       "stopHint": "Fordert einen Abbruch an — der Lauf kann noch einen Moment weiterlaufen.",
       "stopping": "Wird gestoppt…",

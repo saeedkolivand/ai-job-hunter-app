@@ -107,12 +107,15 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
         );
     };
 
-    // Trusted routing context threaded into the tools — provider/model/base_url come
-    // from the VALIDATED request, NEVER from model-supplied tool args.
+    // Trusted routing context threaded into the tools — provider/model/base_url/
+    // job_id all come from the VALIDATED request, NEVER from model-supplied tool
+    // args (job_id lets `research_company` load THIS run's own posting server-side
+    // — see the LOW-1 fix in `agent::tools`).
     let ctx = ToolContext {
         provider: req.provider.clone(),
         model: req.model.clone(),
         base_url: req.base_url.clone(),
+        job_id: req.job_id.clone(),
     };
     let user = build_user_message(&req.resume_id, &req.job_id, &resume.text, &job_text);
 

@@ -123,6 +123,12 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
     machineState !== 'error' &&
     machineState !== 'cancelled';
   const isTerminalRun = machineState === 'error' || machineState === 'cancelled';
+  // The machine accepts START from every terminal state (including `done`),
+  // so a successful run also gets a re-run affordance in the footer — not
+  // just error/cancelled. Kept distinct from `isTerminalRun` because the
+  // "interrupted" checklist-row treatment below must NOT apply to `done`
+  // (a successful run's rows really did finish).
+  const canRunAgain = isTerminalRun || machineState === 'done';
 
   const handleStep = useCallback(
     (event: AgentStepEvent) => {
@@ -231,7 +237,7 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
   const showEmpty = machineState === 'idle' && steps.length === 0;
   const showStarting = isBusy && steps.length === 0;
   const showLog = steps.length > 0;
-  const showFooter = (isBusy && !!runJobId) || isTerminalRun;
+  const showFooter = (isBusy && !!runJobId) || canRunAgain;
 
   return (
     <>
@@ -289,13 +295,14 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
                   {stopRequested ? t('jobs.prep.stopping') : t('jobs.prep.stop')}
                 </Button>
               )}
-              {isTerminalRun && (
+              {canRunAgain && (
                 <Button
                   variant="primary"
                   onClick={() => void start()}
                   className="w-full justify-center gap-1.5"
                 >
-                  <Sparkles size={12} /> {t('jobs.prep.start')}
+                  <Sparkles size={12} />{' '}
+                  {machineState === 'done' ? t('jobs.prep.runAgain') : t('jobs.prep.start')}
                 </Button>
               )}
             </div>

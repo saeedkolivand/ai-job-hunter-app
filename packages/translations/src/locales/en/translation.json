@@ -1630,6 +1630,7 @@
       "needsProvider": "Choose an AI provider in Settings → AI.",
       "start": "Start",
       "starting": "Starting…",
+      "runAgain": "Prep again",
       "stop": "Stop",
       "stopHint": "Requests cancellation — the run may take a moment to stop.",
       "stopping": "Stopping…",
