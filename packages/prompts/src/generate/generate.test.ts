@@ -744,6 +744,9 @@ describe('application questions', () => {
     // so a small local model can't over-weight "don't hedge" before checking
     // whether a salary expectation is even present.
     expect(sys).toMatch(/only when <applicant_details> lists a salary expectation/i);
+    // The gate also requires an actual number, not just any stated expectation
+    // (a free-text "competitive"/"negotiable" must not trigger a fabricated figure).
+    expect(sys).toMatch(/contains an actual number/i);
     expect(sys).toMatch(/without hedging/i);
     expect(sys).toMatch(/never state a number/i);
     expect(sys).toMatch(/never fabricate a number/i);
@@ -786,6 +789,12 @@ describe('application questions', () => {
     // omit the "Number:" line, in one instruction (not just two separate
     // claims that could drift apart under a future edit).
     expect(salaryEntry?.guidance).toMatch(/stay non-committal and omit that final line/i);
+    // A present-but-non-numeric expectation ("competitive", "negotiable", "DOE")
+    // must fall into the SAME omit-the-line path as no expectation at all.
+    expect(salaryEntry?.guidance).toMatch(/contains no number/i);
+    // Range -> single Number line is pinned deterministically to the upper
+    // bound of the applicant's own stated range (grounded, not fabricated).
+    expect(salaryEntry?.guidance).toMatch(/upper bound/i);
   });
 });
 

@@ -52,7 +52,10 @@ export function useApplicationAnswers({
   const api = useAppClient();
   const qc = useQueryClient();
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [custom, setCustom] = useState<{ id: string; question: string }[]>([]);
+  // `guidance` is always undefined for a user-typed custom question — declared
+  // here (not cast later) so `chosen` below is a uniform shape and reading
+  // `q.guidance` needs no narrowing/assertion for either branch.
+  const [custom, setCustom] = useState<{ id: string; question: string; guidance?: string }[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -129,8 +132,6 @@ export function useApplicationAnswers({
       const chosen = [...APPLICATION_QUESTIONS.filter((q) => selected.has(q.id)), ...custom];
       const results: ApplicationAnswer[] = [];
       for (const q of chosen) {
-        // Only registry entries carry `guidance` (custom questions don't).
-        const guidance = (q as { guidance?: string }).guidance;
         const answer = await generateApplicationAnswer({
           question: q.question,
           resume,
@@ -138,7 +139,9 @@ export function useApplicationAnswers({
           meta: detected,
           model,
           companyBrief: brief,
-          guidance,
+          // Only registry entries carry `guidance`; custom questions are
+          // always `undefined` (see the `custom` state shape above).
+          guidance: q.guidance,
         });
         results.push({ id: q.id, question: q.question, answer });
         setAnswers((prev) => ({ ...prev, [q.id]: answer }));
