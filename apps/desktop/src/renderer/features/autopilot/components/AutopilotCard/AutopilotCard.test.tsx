@@ -13,7 +13,7 @@
  */
 
 import React from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -27,18 +27,36 @@ vi.mock('@ajh/translations', () => ({
 
 // ── motion/react — render children synchronously, no animation ───────────────
 
+// jsdom has no real animation engine — fire `onAnimationComplete` once on
+// MOUNT (matching a real single enter-animation completing), not on every
+// prop-identity change (the real `onAnimationComplete`/`resolvePendingScroll`
+// callback is recreated every render). A "latest ref" holds the current
+// callback so the effect itself can stay mount-only ([] deps) without going
+// stale — this is what lets tests distinguish "enter animation ran" from
+// "already mounted, no animation" (the rAF-fallback path).
 vi.mock('motion/react', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   motion: {
     div: React.forwardRef(
       (
-        { children, ...rest }: React.HTMLAttributes<HTMLDivElement>,
+        {
+          children,
+          onAnimationComplete,
+          ...rest
+        }: React.HTMLAttributes<HTMLDivElement> & { onAnimationComplete?: () => void },
         ref: React.Ref<HTMLDivElement>
-      ) => (
-        <div ref={ref} {...rest}>
-          {children}
-        </div>
-      )
+      ) => {
+        const onAnimationCompleteRef = React.useRef(onAnimationComplete);
+        onAnimationCompleteRef.current = onAnimationComplete;
+        React.useEffect(() => {
+          onAnimationCompleteRef.current?.();
+        }, []);
+        return (
+          <div ref={ref} {...rest}>
+            {children}
+          </div>
+        );
+      }
     ),
   },
 }));
@@ -459,5 +477,132 @@ describe('AutopilotCard — handleJobClick persistJob rejection', () => {
     // openExternal fires before the try/catch around persistJob.
     expect(mockOpenExternal).toHaveBeenCalledWith('https://example.com/job/persist-fail');
     // No unhandled rejection — test runner would fail if one escaped.
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// focusedJobUrl — scroll-to-row + transient highlight (Back-navigation fix)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('AutopilotCard — focusedJobUrl scroll + highlight', () => {
+  let scrollSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    scrollSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('scrolls the row matching focusedJobUrl into view, not the header', () => {
+    const jobUrl = 'https://example.com/job/42';
+    renderCard(makeAutopilot([makeJob(jobUrl)]), { focused: true, focusedJobUrl: jobUrl });
+
+    const row = document.querySelector(`[data-job-url="${jobUrl}"]`);
+    expect(row).not.toBeNull();
+    expect(scrollSpy).toHaveBeenCalledTimes(1);
+    const instance = scrollSpy.mock.instances[0];
+    if (!instance) throw new Error('scrollIntoView was not called');
+    expect(instance).toBe(row);
+    expect(scrollSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ behavior: 'smooth', block: 'center' })
+    );
+  });
+
+  it('applies the transient highlight ring to the targeted row', () => {
+    const jobUrl = 'https://example.com/job/highlight';
+    renderCard(makeAutopilot([makeJob(jobUrl)]), { focused: true, focusedJobUrl: jobUrl });
+
+    const row = document.querySelector(`[data-job-url="${jobUrl}"]`);
+    expect(row).toHaveClass('ring-brand/60');
+  });
+
+  it('fades the highlight after ~1.5s', () => {
+    vi.useFakeTimers();
+    const jobUrl = 'https://example.com/job/fade';
+    renderCard(makeAutopilot([makeJob(jobUrl)]), { focused: true, focusedJobUrl: jobUrl });
+
+    const row = document.querySelector(`[data-job-url="${jobUrl}"]`);
+    expect(row).toHaveClass('ring-brand/60');
+
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+
+    expect(row).not.toHaveClass('ring-brand/60');
+  });
+
+  it('calls onFocusHandled once the row has been scrolled to', () => {
+    const jobUrl = 'https://example.com/job/handled';
+    const onFocusHandled = vi.fn();
+    renderCard(makeAutopilot([makeJob(jobUrl)]), {
+      focused: true,
+      focusedJobUrl: jobUrl,
+      onFocusHandled,
+    });
+
+    expect(onFocusHandled).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to centering the header when focusedJobUrl is absent', () => {
+    const jobUrl = 'https://example.com/job/no-focus-url';
+    renderCard(makeAutopilot([makeJob(jobUrl)]), { focused: true, focusedJobUrl: null });
+
+    const header = document.querySelector('[aria-expanded]');
+    expect(scrollSpy).toHaveBeenCalledTimes(1);
+    const instance = scrollSpy.mock.instances[0];
+    if (!instance) throw new Error('scrollIntoView was not called');
+    expect(instance).toBe(header);
+  });
+
+  it('scrolls via the rAF fallback when the panel is already expanded (no enter animation fires)', async () => {
+    // Sync rAF stub — jsdom's real rAF is timer-based; this makes the fallback
+    // resolve synchronously within the test's act() calls.
+    const rafSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+    const onFocusHandled = vi.fn();
+    const jobUrl = 'https://example.com/job/already-expanded';
+    const autopilot = makeAutopilot([makeJob(jobUrl)]);
+    const { rerender } = renderCard(autopilot, { focused: false });
+
+    // Manually expand via the header — NOT via `focused` — so the found-jobs
+    // panel's enter animation (and its onAnimationComplete) has already fired
+    // and settled before focus arrives.
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await act(async () => {
+      header.click();
+    });
+    expect(header).toHaveAttribute('aria-expanded', 'true');
+    expect(scrollSpy).not.toHaveBeenCalled();
+
+    // Focus now arrives while already expanded: `setShowFound(true)` is a
+    // no-op, so onAnimationComplete never re-fires — only the rAF fallback
+    // can resolve the pending scroll.
+    await act(async () => {
+      rerender(
+        <AutopilotCard
+          autopilot={autopilot}
+          {...defaultProps}
+          focused
+          focusedJobUrl={jobUrl}
+          onFocusHandled={onFocusHandled}
+        />
+      );
+    });
+
+    const row = document.querySelector(`[data-job-url="${jobUrl}"]`);
+    expect(scrollSpy).toHaveBeenCalledTimes(1);
+    const instance = scrollSpy.mock.instances[0];
+    if (!instance) throw new Error('scrollIntoView was not called');
+    expect(instance).toBe(row);
+    expect(onFocusHandled).toHaveBeenCalledTimes(1);
+
+    rafSpy.mockRestore();
   });
 });

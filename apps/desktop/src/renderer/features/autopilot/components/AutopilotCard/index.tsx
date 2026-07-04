@@ -12,7 +12,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Autopilot, AutopilotFoundJob } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
@@ -45,6 +45,10 @@ interface AutopilotCardProps {
   stepLogs: StepLog[];
   /** When true (tray/deep-link focus), auto-expand found-jobs + scroll into view. */
   focused?: boolean;
+  /** A specific found-job url to scroll+highlight once expanded (e.g. returning
+   *  from an Apply via Back). Only meaningful when `focused` is true — falls
+   *  back to centering the header when null. */
+  focusedJobUrl?: string | null;
   /** Called once the focus has been consumed, so the page can clear it. */
   onFocusHandled?: () => void;
   onRun(): void;
@@ -71,6 +75,7 @@ export function AutopilotCard({
   runState,
   stepLogs,
   focused,
+  focusedJobUrl,
   onFocusHandled,
   onRun,
   onTogglePause,
@@ -86,7 +91,23 @@ export function AutopilotCard({
   const [showFound, setShowFound] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
+  const listContainerRef = useRef<HTMLDivElement>(null);
   const foundJobs = ap.foundJobs ?? [];
+
+  // Scroll-to-row + transient highlight target for `focusedJobUrl` (returning
+  // from an Apply via Back). Kept in a ref (not state) since it isn't rendered;
+  // `resolvePendingScroll` below clears it first so it can never double-fire
+  // between the enter-animation and already-expanded-rAF paths.
+  const pendingScrollUrlRef = useRef<string | null>(null);
+  const pendingScrollRafRef = useRef<number | null>(null);
+  const [highlightedUrl, setHighlightedUrl] = useState<string | null>(null);
+  const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
+      if (pendingScrollRafRef.current !== null) cancelAnimationFrame(pendingScrollRafRef.current);
+    };
+  }, []);
 
   // Build viewed-url sets from persisted interactions (viewed + opened).
   const { data: viewedData } = useInteractions('viewed');
@@ -100,14 +121,45 @@ export function AutopilotCard({
     [viewedData, openedData]
   );
 
+  // Idempotent: reads + clears `pendingScrollUrlRef` FIRST, so it's safe to
+  // call from both the enter-animation completion and the already-expanded
+  // rAF fallback below without double-scrolling or double-firing onFocusHandled.
+  const resolvePendingScroll = useCallback(() => {
+    const url = pendingScrollUrlRef.current;
+    if (!url) return;
+    pendingScrollUrlRef.current = null;
+    const el = listContainerRef.current?.querySelector(`[data-job-url="${CSS.escape(url)}"]`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightedUrl(url);
+    if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
+    highlightTimeoutRef.current = setTimeout(() => setHighlightedUrl(null), 1500);
+    onFocusHandled?.();
+  }, [onFocusHandled]);
+
   // Tray "New jobs" / deep-link focus: open this card's found-jobs and scroll to
   // it, then tell the page to clear the focus so a later click re-triggers.
+  // When `focusedJobUrl` is set (returning from an Apply via Back), defer the
+  // scroll+highlight to that specific row: normally via the found-jobs panel's
+  // `onAnimationComplete` (below) once its expand animation finishes, or — if
+  // the panel was ALREADY expanded, so no enter animation fires — via a rAF
+  // fallback here so the focus can never wedge.
   useEffect(() => {
     if (!focused) return;
-    setShowFound(true);
-    headerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    onFocusHandled?.();
-  }, [focused, onFocusHandled]);
+    if (focusedJobUrl) {
+      pendingScrollUrlRef.current = focusedJobUrl;
+      // Functional update: reads the PRE-focus `showFound` without adding it as
+      // a dependency (adding it would re-run this effect — and re-force the
+      // panel open — on every manual toggle while still focused).
+      setShowFound((wasExpanded) => {
+        if (wasExpanded) pendingScrollRafRef.current = requestAnimationFrame(resolvePendingScroll);
+        return true;
+      });
+    } else {
+      setShowFound(true);
+      headerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      onFocusHandled?.();
+    }
+  }, [focused, focusedJobUrl, onFocusHandled, resolvePendingScroll]);
 
   // #45 — relative last-run ("3 min ago") instead of an absolute timestamp.
   const lastRun = ap.lastRunAt
@@ -313,6 +365,7 @@ export function AutopilotCard({
             exit={{ opacity: 0, height: 0 }}
             transition={transition.fast}
             className="overflow-hidden"
+            onAnimationComplete={resolvePendingScroll}
           >
             <div className="overflow-hidden rounded-lg border border-[var(--border-clear)] bg-card">
               <div className="flex items-center justify-between border-b border-[var(--border-clear)] px-3 py-2">
@@ -330,11 +383,18 @@ export function AutopilotCard({
                   <ChevronUp size={12} />
                 </Button>
               </div>
-              <div className="max-h-64 divide-y divide-[var(--border-clear)] overflow-y-auto">
+              <div
+                ref={listContainerRef}
+                className="max-h-64 divide-y divide-[var(--border-clear)] overflow-y-auto"
+              >
                 {foundJobs.map((job, i) => (
                   <div
                     key={`${job.url}-${i}`}
-                    className="flex items-center gap-2 px-3 py-2 transition-colors hover:bg-muted"
+                    data-job-url={job.url}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-2 transition-colors hover:bg-muted',
+                      highlightedUrl === job.url && 'ring-2 ring-inset ring-brand/60'
+                    )}
                   >
                     <Button
                       variant="unstyled"
