@@ -353,6 +353,9 @@ describe('useApplicationAnswers', () => {
         { salaryMin: 70000, salaryMax: -1, salaryCurrency: 'EUR' },
       ],
       ['min is non-finite', { salaryMin: Infinity, salaryMax: 90000, salaryCurrency: 'EUR' }],
+      // Rounds BEFORE validating: a raw min in (0, 0.5) is > 0 but rounds to
+      // 0, so it must still be rejected here (not just at the prompt layer).
+      ['min rounds down to zero', { salaryMin: 0.4, salaryMax: 90000, salaryCurrency: 'EUR' }],
     ])(
       'falls back to the web lookup on a partial/invalid scraped range (%s)',
       async (_label, overrides) => {
@@ -382,6 +385,20 @@ describe('useApplicationAnswers', () => {
       expect(lookupSalaryRange).not.toHaveBeenCalled();
       expect(generateApplicationAnswer).toHaveBeenCalledWith(
         expect.objectContaining({ salaryRange: { min: 70000, max: 90000, currency: 'EUR' } })
+      );
+    });
+
+    it('normalizes a lowercase/mixed-case scraped currency to uppercase', async () => {
+      const { result } = render({ salaryMin: 70000, salaryMax: 90000, salaryCurrency: 'Usd' });
+      act(() => result.current.toggle('salary'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(lookupSalaryRange).not.toHaveBeenCalled();
+      expect(generateApplicationAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({ salaryRange: { min: 70000, max: 90000, currency: 'USD' } })
       );
     });
 

@@ -57,7 +57,11 @@ const CURRENCY_SHAPE_RE = /^[A-Za-z]{3,4}$/;
  * `<salary_context>` while having already skipped the web lookup: silent
  * degradation, worse than not scraping at all (e.g. `salaryMin: 0` from an
  * "up to X" Adzuna posting). Rounds to integers to match the web path's
- * `SalaryRange` (Rust `u32`, always whole).
+ * `SalaryRange` (Rust `u32`, always whole) — validated AFTER rounding, so a
+ * raw `min` in (0, 0.5) (which would round to 0) is rejected here too,
+ * instead of passing this guard and then blanking at the prompt layer.
+ * Currency is upper-cased to match the prompt block's rendered case even
+ * when a source ever supplies lowercase.
  */
 export function buildScrapedSalaryRange(
   min?: number,
@@ -65,9 +69,12 @@ export function buildScrapedSalaryRange(
   currency?: string
 ): SalaryRange | undefined {
   if (min == null || max == null || !currency) return undefined;
-  if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max <= 0) return undefined;
-  if (!CURRENCY_SHAPE_RE.test(currency) || min > max) return undefined;
-  return { min: Math.round(min), max: Math.round(max), currency };
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return undefined;
+  if (!CURRENCY_SHAPE_RE.test(currency)) return undefined;
+  const lo = Math.round(min);
+  const hi = Math.round(max);
+  if (lo <= 0 || hi <= 0 || lo > hi) return undefined;
+  return { min: lo, max: hi, currency: currency.toUpperCase() };
 }
 
 /**
