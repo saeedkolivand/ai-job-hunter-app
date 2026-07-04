@@ -59,6 +59,16 @@ pub const SCRAPE_RATE_MAX: usize = 30;
 /// `scrape_board` / `scrape_url`: at most this many in-flight at once.
 pub const SCRAPE_CONCURRENCY_MAX: usize = 2;
 
+/// `agent_run` (the Phase-2 agentic loop command): at most this many starts per
+/// [`RATE_WINDOW`]. One run fans out into several provider requests (each turn is
+/// separately charged against the per-provider daily ceiling), so admit fewer
+/// runs than a single-shot `ai_generate`.
+#[allow(dead_code)] // ponytail: wired in Phase 2 (agent_run)
+pub const AGENT_RUN_RATE_MAX: usize = 10;
+/// `agent_run`: at most this many in-flight at once.
+#[allow(dead_code)] // ponytail: wired in Phase 2 (agent_run)
+pub const AGENT_RUN_CONCURRENCY_MAX: usize = 2;
+
 /// Rolling rate-limit window (all commands share the window length; only the
 /// per-command count differs).
 pub const RATE_WINDOW: Duration = Duration::from_secs(60);

@@ -15,8 +15,8 @@ use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
-    friendly_api_error, AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace,
-    TokenParam,
+    friendly_api_error, single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg,
+    ModelCapabilities, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall, ToolSpec,
 };
 
 const DEFAULT_BASE: &str = "https://api.openai.com/v1";
@@ -38,6 +38,63 @@ fn join_responses_text(data: &Value) -> String {
                 .join("")
         })
         .unwrap_or_default()
+}
+
+/// Parse a non-streaming Chat Completions response into an [`AgentTurn`]:
+/// `choices[0].message.content` is the text (may be null when tool calls are
+/// present), each `choices[0].message.tool_calls[]` maps to a [`ToolCall`] (its
+/// `function.arguments` is a JSON *string* — decoded here; malformed → `{}`), and
+/// `finish_reason` maps to the stop reason (`tool_calls`→ToolUse, `stop`→End,
+/// `length`→Length, else Other). Pure + unit-tested.
+fn parse_openai_turn(data: &Value) -> AgentTurn {
+    let choice = data.get("choices").and_then(|c| c.get(0));
+    let message = choice.and_then(|c| c.get("message"));
+    let text = message
+        .and_then(|m| m.get("content"))
+        .and_then(|t| t.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let tool_calls = message
+        .and_then(|m| m.get("tool_calls"))
+        .and_then(|c| c.as_array())
+        .map(|calls| {
+            calls
+                .iter()
+                .filter_map(|c| {
+                    let func = c.get("function")?;
+                    let name = func.get("name").and_then(|n| n.as_str())?.to_string();
+                    let args = func
+                        .get("arguments")
+                        .and_then(|a| a.as_str())
+                        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                        .unwrap_or_else(|| json!({}));
+                    Some(ToolCall {
+                        id: c
+                            .get("id")
+                            .and_then(|i| i.as_str())
+                            .unwrap_or_default()
+                            .to_string(),
+                        name,
+                        args,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let stop = match choice
+        .and_then(|c| c.get("finish_reason"))
+        .and_then(|f| f.as_str())
+    {
+        Some("tool_calls") => StopReason::ToolUse,
+        Some("stop") => StopReason::End,
+        Some("length") => StopReason::Length,
+        _ => StopReason::Other,
+    };
+    AgentTurn {
+        text,
+        tool_calls,
+        stop,
+    }
 }
 
 /// Whether a model id returned by `/v1/models` should be offered in the picker.
@@ -535,15 +592,97 @@ impl AiProvider for OpenAiClient {
             )))
         }
     }
+
+    async fn chat_with_tools(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        messages: &[ChatMsg],
+        tools: &[ToolSpec],
+        temperature: Option<f64>,
+    ) -> AppResult<AgentTurn> {
+        let caps = self.capabilities(model);
+        if !caps.supports_tools {
+            return single_shot_turn(self, app, model, messages, temperature).await;
+        }
+        let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
+        let endpoint = format!("{}/chat/completions", self.base_url);
+        let trace = RequestTrace::begin(
+            self.id,
+            model,
+            "/chat/completions tools",
+            &self.base_url,
+            false,
+        );
+
+        let wire_messages: Vec<Value> = messages
+            .iter()
+            .map(|m| json!({ "role": m.role.wire(), "content": m.content }))
+            .collect();
+        // OpenAI function-tool shape. The schema is trusted, fixed input — never
+        // built from scraped/model text.
+        let tool_specs: Vec<Value> = tools
+            .iter()
+            .map(|t| {
+                json!({
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.schema,
+                    },
+                })
+            })
+            .collect();
+
+        let mut body = json!({
+            "model": model,
+            "messages": wire_messages,
+            "stream": false,
+            "tools": tool_specs,
+            "tool_choice": "auto",
+        });
+        if caps.supports_temperature {
+            body["temperature"] = json!(temperature.unwrap_or(0.7));
+        }
+
+        let resp = send_with_retry(|| {
+            crate::net::http::shared()
+                .post(&endpoint)
+                .timeout(timeouts::COMPLETION)
+                .bearer_auth(&api_key)
+                .json(&body)
+        })
+        .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                return Err(AppError::Network(format!(
+                    "{} unreachable: {e}",
+                    self.id.as_str()
+                )));
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            return Err(friendly_api_error(self.id, status, &body_text));
+        }
+        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        trace.end(Some(status.as_u16()), true);
+        Ok(parse_openai_turn(&data))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
         is_reasoning_model, join_responses_text, parse_openai_delta, parse_openai_frames,
-        should_list_model, OpenAiClient,
+        parse_openai_turn, should_list_model, OpenAiClient,
     };
-    use crate::commands::ai_provider::{AiProvider, ProviderId};
+    use crate::commands::ai_provider::{AiProvider, ProviderId, StopReason, ToolCall};
     use serde_json::json;
 
     #[test]
@@ -687,6 +826,60 @@ mod tests {
         // Comment/keepalive lines and malformed JSON are ignored, not errors.
         let mut buf = String::from(": keepalive\ndata: not-json\n\n");
         assert!(parse_openai_frames(&mut buf).is_empty());
+    }
+
+    #[test]
+    fn parse_turn_decodes_tool_calls_with_stringified_arguments() {
+        // Chat Completions puts function args in a JSON *string* — it must be decoded.
+        let data = json!({
+            "choices": [{
+                "message": {
+                    "content": null,
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": { "name": "match_resume", "arguments": "{\"resumeId\":\"r1\",\"jobId\":\"j1\"}" }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        });
+        let turn = parse_openai_turn(&data);
+        assert_eq!(turn.text, "");
+        assert_eq!(turn.stop, StopReason::ToolUse);
+        assert_eq!(
+            turn.tool_calls,
+            vec![ToolCall {
+                id: "call_1".to_string(),
+                name: "match_resume".to_string(),
+                args: json!({ "resumeId": "r1", "jobId": "j1" }),
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_turn_plain_answer_has_no_tool_calls() {
+        let data = json!({
+            "choices": [{ "message": { "content": "Here is the answer." }, "finish_reason": "stop" }]
+        });
+        let turn = parse_openai_turn(&data);
+        assert_eq!(turn.text, "Here is the answer.");
+        assert!(turn.tool_calls.is_empty());
+        assert_eq!(turn.stop, StopReason::End);
+    }
+
+    #[test]
+    fn parse_turn_malformed_arguments_degrade_to_empty_object() {
+        // A truncated/invalid arguments string must not error the whole turn.
+        let data = json!({
+            "choices": [{
+                "message": { "tool_calls": [{ "id": "c", "function": { "name": "f", "arguments": "{not json" } }] },
+                "finish_reason": "tool_calls"
+            }]
+        });
+        let turn = parse_openai_turn(&data);
+        assert_eq!(turn.tool_calls.len(), 1);
+        assert_eq!(turn.tool_calls[0].args, json!({}));
     }
 
     // ── web_search_transport (wiremock against `crate::net::http::shared()`,

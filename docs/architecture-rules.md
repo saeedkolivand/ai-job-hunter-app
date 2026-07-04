@@ -17,11 +17,11 @@ lower layer; a lower layer may never use a higher one). Layer = the first path s
 a module under `src/`.
 
 ```
-L3  Shell / IPC        commands, ipc_contracts, lib, main, updater, tray, deeplink, extension_bridge, notifications
+L3  Shell / IPC        commands, ipc_contracts, lib, main, updater, tray, deeplink, extension_bridge, notifications, events, agent
 L2  Application        pipeline, cover_letter, autopilot, autopilot_scheduler,
-                       autopilot_helpers, recommend
+                       autopilot_helpers, recommend, salary_research
 L1  Domain             scraping, extraction, export, documents, jobs, postings,
-                       conversations, credentials, job_preferences, ai_generations,
+                       conversations, credentials, job_preferences, contact_profile, ai_generations,
                        applications, referrals, profile_import, model, layout, measure,
                        validate,
                        locale, theme
