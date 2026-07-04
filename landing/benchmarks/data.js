@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783143544539,
+  "lastUpdate": 1783153700467,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2345,6 +2345,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 307597,
             "range": "± 26811",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4bed556c96a6d2a71b77d9ab7157732739d2e9f5",
+          "message": "feat: research the market salary range for salary-expectation answers (#549)\n\n* feat: research the market salary range for salary-expectation answers\n\nGround the salary application answer in a web-researched market range,\nnot just the candidate's saved expectation, so the paste-ready number is\nmarket-aware.\n\nAdd AiProvider::research_salary (reusing each provider's native web search\nvia an extracted web_search_complete transport, so the company-brief path\nis unchanged and new providers stay zero-change), a SalaryResearch\nenricher that parses+validates the provider output into {min,max,currency}\nand caches it (7-day TTL, case-folded key), and an ai_lookup_salary IPC\ncommand guarded by the same rate-limit + daily-cost budget as ai_generate.\n\nOnly the validated integers + a shape-checked currency ever reach the\nprompt (no raw web text) — the injection boundary. A fenced <salary_context>\nblock feeds the answer; the paste-ready Number is the applicant's own\nexpectation floored at the market minimum (never underselling), the range\nmidpoint when no expectation is set, and omitted (non-committal, never\ninvented) when no source is grounded. Degrades to the C1 saved-expectation\nbehavior whenever the lookup is unavailable, fails, or times out.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: don't floor the salary number across currencies\n\nAddress a claude-review finding: the market range from <salary_context>\nis in the location's local currency, but the applicant's stated\nexpectation is free text and may be another currency. Only apply the\nanti-lowball floor/midpoint when the expectation is in the same currency\nas the market range; otherwise use the applicant's own figure and\ncurrency (C1 behavior) and mention the market range as context only,\nnever reconciled across currencies.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-04T10:19:30+02:00",
+          "tree_id": "16100eb4af025af7789fd0637072ccbabbd5a711",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/4bed556c96a6d2a71b77d9ab7157732739d2e9f5"
+        },
+        "date": 1783153700138,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1885986,
+            "range": "± 45297",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2502087,
+            "range": "± 26513",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 281337,
+            "range": "± 1719",
             "unit": "ns/iter"
           }
         ]
