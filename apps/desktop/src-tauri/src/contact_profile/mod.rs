@@ -453,10 +453,90 @@ fn is_personal_linkedin(url: &str) -> bool {
     host_is(url, "linkedin.com") && url.to_lowercase().contains("/in/")
 }
 
-/// A personal GitHub profile/repo (any github.com URL that isn't an org settings
-/// page is acceptable as the candidate's GitHub).
+/// A github.com URL. Combined with `is_profile_shaped` at the call site so only
+/// `github.com/<user>` (not `/<user>/<repo>`) is promoted to the candidate's
+/// GitHub — a repo link is a project reference, not an identity.
 fn is_github(url: &str) -> bool {
     host_is(url, "github.com")
+}
+
+/// Known social/portfolio platform hosts whose profile page belongs on the
+/// contact line. Mirrors `PROFILE_DOMAINS` in
+/// `packages/prompts/src/generate/links/links.ts` — keep the two lists in sync.
+const PROFILE_HOSTS: &[&str] = &[
+    "linkedin.com",
+    "github.com",
+    "gitlab.com",
+    "twitter.com",
+    "x.com",
+    "behance.net",
+    "dribbble.com",
+    "medium.com",
+    "stackoverflow.com",
+    "dev.to",
+    "codepen.io",
+    "youtube.com",
+    "youtu.be",
+    "notion.so",
+    "figma.com",
+    "npmjs.com",
+    "crates.io",
+    "solo.to",
+    "bio.link",
+    "linktr.ee",
+    "bento.me",
+];
+
+fn is_profile_host(url: &str) -> bool {
+    PROFILE_HOSTS.iter().any(|d| host_is(url, d))
+}
+
+/// Non-empty path segments of `url` (host, query and fragment stripped).
+/// Mirrors `pathSegments()` in links.ts (only the *count* matters here, so
+/// unlike the TS version this does not percent-decode).
+fn path_segments(url: &str) -> Vec<&str> {
+    let trimmed = url.trim();
+    let no_scheme = trimmed
+        .strip_prefix("https://")
+        .or_else(|| trimmed.strip_prefix("http://"))
+        .unwrap_or(trimmed);
+    let path = match no_scheme.find('/') {
+        Some(idx) => no_scheme[idx..].split(['?', '#']).next().unwrap_or(""),
+        None => "",
+    };
+    path.split('/').filter(|s| !s.is_empty()).collect()
+}
+
+/// A bare-root URL — host only, no meaningful path. The shape of a homepage.
+/// Mirrors `isBareRoot()` in links.ts.
+fn is_bare_root(url: &str) -> bool {
+    path_segments(url).is_empty()
+}
+
+/// Is this platform URL a *profile* (belongs on the contact line) rather than a
+/// deep link to a specific repo/article (a project reference, which belongs in
+/// the résumé body, not the header)? `github.com/<user>` is a profile;
+/// `github.com/<user>/<repo>` is a project. Mirrors `isProfileShaped()` in
+/// links.ts.
+fn is_profile_shaped(url: &str) -> bool {
+    if host_is(url, "github.com") || host_is(url, "gitlab.com") {
+        return path_segments(url).len() <= 1;
+    }
+    true
+}
+
+/// A link shaped like a contact-line entry: a profile-shaped platform profile,
+/// or a bare-root personal domain. LinkedIn keeps the stricter
+/// `is_personal_linkedin` (`/in/`) gate instead of the generic
+/// `is_profile_shaped` rule — a company/school page is otherwise
+/// indistinguishable by shape but must never seed the header. Canonical rule
+/// (keep in sync): `isProfileShaped`/`classifyLinks` in
+/// `packages/prompts/src/generate/links/links.ts`.
+fn is_contact_link(url: &str) -> bool {
+    if host_is(url, "linkedin.com") {
+        return is_personal_linkedin(url);
+    }
+    (is_profile_host(url) && is_profile_shaped(url)) || (!is_profile_host(url) && is_bare_root(url))
 }
 
 /// Personal-site / link-in-bio hosts that belong under "Website".
@@ -473,14 +553,17 @@ fn is_job_board(url: &str) -> bool {
     JOB_BOARD_HOSTS.iter().any(|d| host_is(url, d))
 }
 
-/// Classify extracted résumé links into a [`ContactProfile`] by NAME, not by
-/// position. Picks the first personal LinkedIn (`/in/`), the first GitHub, and a
-/// personal website (a known link-in-bio host, else the first non-job-board,
-/// non-platform `http(s)` link). Every remaining personal `http(s)` link (e.g.
-/// Dribbble, Behance, a portfolio) is kept as a labelled [`ContactLink`] in
-/// `extra_links`, so the header is seeded with the candidate's full link set —
-/// never a job-board / employer page. This is a suggestion to seed the editable
-/// profile, never the final header on its own.
+/// Classify extracted résumé links into a [`ContactProfile`] by NAME and SHAPE,
+/// not by position. Picks the first personal LinkedIn (`/in/`), the first
+/// profile-shaped GitHub (`github.com/<user>`, never `/<user>/<repo>`), and a
+/// personal website (a known link-in-bio host, else the first bare-root,
+/// non-platform `http(s)` link). Every remaining *contact-shaped* link — a
+/// profile-shaped platform profile (Dribbble, Behance, a second GitHub user) or
+/// a bare-root personal domain — is kept as a labelled [`ContactLink`] in
+/// `extra_links`; a deep-path project/demo/article/repo link never seeds the
+/// header. Canonical rule (keep in sync): `isProfileShaped`/`classifyLinks` in
+/// `packages/prompts/src/generate/links/links.ts`. This is a suggestion to seed
+/// the editable profile, never the final header on its own.
 pub fn classify_contact_links(links: &[Link]) -> ContactProfile {
     let mut profile = ContactProfile::default();
     for link in links {
@@ -499,7 +582,7 @@ pub fn classify_contact_links(links: &[Link]) -> ContactProfile {
             profile.linkedin = Some(url.to_string());
             continue;
         }
-        if profile.github.is_none() && is_github(url) {
+        if profile.github.is_none() && is_github(url) && is_profile_shaped(url) {
             profile.github = Some(url.to_string());
             continue;
         }
@@ -508,16 +591,17 @@ pub fn classify_contact_links(links: &[Link]) -> ContactProfile {
             continue;
         }
     }
-    // Website fallback: the first non-job-board, non-platform http(s) link, so a
-    // personal portfolio on an arbitrary domain is still surfaced — but an
-    // employer / company URL never is.
+    // Website fallback: the first non-job-board, non-platform, bare-root http(s)
+    // link, so a personal portfolio homepage is still surfaced — but an
+    // employer/company URL or a deep link (e.g. a project demo path) never is.
+    // `!is_profile_host` subsumes the old explicit linkedin/github checks.
     if profile.website.is_none() {
         for link in links {
             let url = link.url.trim();
             if (url.starts_with("http://") || url.starts_with("https://"))
                 && !is_job_board(url)
-                && !host_is(url, "linkedin.com")
-                && !is_github(url)
+                && !is_profile_host(url)
+                && is_bare_root(url)
             {
                 profile.website = Some(url.to_string());
                 break;
@@ -539,6 +623,7 @@ pub fn classify_contact_links(links: &[Link]) -> ContactProfile {
         let url = link.url.trim();
         if !(url.starts_with("http://") || url.starts_with("https://"))
             || is_job_board(url)
+            || !is_contact_link(url)
             || named.contains(url)
             || profile.extra_links.iter().any(|e| e.url == url)
         {

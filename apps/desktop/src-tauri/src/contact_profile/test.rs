@@ -146,6 +146,60 @@ fn classify_keeps_other_personal_links_as_labelled_extras() {
     );
 }
 
+/// Project/repo/demo links must never leak into the contact profile, even
+/// though they share a host with a genuine platform profile — only the
+/// profile-shaped form (bare user page) qualifies. Mirrors `isProfileShaped`/
+/// `classifyLinks` in `packages/prompts/src/generate/links/links.ts`.
+#[test]
+fn classify_excludes_deep_path_project_links_by_shape() {
+    let links = vec![
+        link("https://github.com/alice"),
+        link("https://github.com/alice/my-project"),
+        link("https://gitlab.com/alice"),
+        link("https://gitlab.com/alice/my-project"),
+        link("https://linkedin.com/in/alice"),
+        link("https://linkedin.com/company/acme"),
+        link("https://myapp.com/demo"),
+        link("https://alice.dev"),
+        link("https://dribbble.com/alice"),
+    ];
+    let p = classify_contact_links(&links);
+
+    assert_eq!(p.github.as_deref(), Some("https://github.com/alice"));
+    assert_eq!(p.linkedin.as_deref(), Some("https://linkedin.com/in/alice"));
+    assert_eq!(p.website.as_deref(), Some("https://alice.dev"));
+
+    let extra_urls: Vec<&str> = p.extra_links.iter().map(|e| e.url.as_str()).collect();
+    assert!(
+        extra_urls.contains(&"https://dribbble.com/alice"),
+        "a platform profile must still seed extras: {extra_urls:?}"
+    );
+    assert!(
+        !extra_urls.contains(&"https://github.com/alice"),
+        "a github profile promoted to the github field must not also appear in extras: {extra_urls:?}"
+    );
+    assert!(
+        extra_urls.contains(&"https://gitlab.com/alice"),
+        "a bare GitLab profile is profile-shaped and must seed extras: {extra_urls:?}"
+    );
+    assert!(
+        !extra_urls.contains(&"https://github.com/alice/my-project"),
+        "a repo URL is a project reference, not an identity — must not leak: {extra_urls:?}"
+    );
+    assert!(
+        !extra_urls.contains(&"https://gitlab.com/alice/my-project"),
+        "a GitLab repo URL is a project reference, not an identity — must not leak: {extra_urls:?}"
+    );
+    assert!(
+        !extra_urls.contains(&"https://linkedin.com/company/acme"),
+        "a company page must never seed the header: {extra_urls:?}"
+    );
+    assert!(
+        !extra_urls.contains(&"https://myapp.com/demo"),
+        "a deep-path demo link must never seed the header: {extra_urls:?}"
+    );
+}
+
 #[test]
 fn fill_empty_from_completes_sparse_profile_without_clobbering() {
     // The user edited only the website (their portfolio); an import suggests a full set.
