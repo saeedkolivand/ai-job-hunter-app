@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783199483139,
+  "lastUpdate": 1783209293192,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2513,6 +2513,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 291877,
             "range": "± 2091",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0fbd7c82946ad7cc7547d2b061c26f9755a874a4",
+          "message": "feat: add prep-application agentic assistant flow with streaming panel (#555)\n\n* feat: add prep-application agentic assistant flow with streaming panel\n\nPhase 2 of the human-in-the-loop assistant. A new `agent_run` Tauri command\n(the repo's 5-step IPC flow) runs the Phase-1 agent loop over a job + résumé\nwith a READ-ONLY tool whitelist (research company, match résumé, draft cover\nletter, suggest interview questions) and streams `agent:step` events to a\nPrepApplicationPanel in the Job Detail pane. The terminal step is a display-only\nPROPOSED status update — no write executes; Phase 3 adds the confirm gate.\n\nBackend:\n- commands/agent.rs — `agent_run`: limiter + job tracker, cancel wired via the\n  scraper token registry (Stop actually interrupts; Cancelled maps to job_cancel,\n  not job_complete), and it requires a tool-capable model (fails early otherwise).\n- agent/flows.rs — the fixed, trusted PREP_APPLICATION_SYSTEM prompt.\n- agent/tools.rs — a trusted ToolContext carries provider/model/base_url (only\n  from the validated request, never model/tool args — severs the exfil leg);\n  two new draft tools; prep_application_tools() whitelist (zero Write tools).\n- agent/controller.rs — AgentStepKind{Turn,Proposal} and a jobId on every step.\n- Untrusted job/résumé/company-brief text is fenced as data.\n\nFrontend:\n- PrepApplicationPanel + agent-run.machine (distinct cancelled state, working\n  retry, interrupted-row status) + use-agent service hook. Stop pinned in the\n  ModalShell footer; step-milestone aria-live (not token-by-token); en/de i18n.\n\nShared: AgentRunRequest + AgentContract + AgentStepEvent (carries jobId).\nAlso: use-focus-trap re-queries focusable elements at keydown so the trap\nsurvives dynamic modal content (fixes a latent a11y escape this panel exposed).\n\nReviewed by ai-provider-expert, rust-backend-architect, tauri-security-reviewer,\nfrontend-reviewer, ui-ux-expert; all HIGH/MEDIUM resolved. cargo build + clippy\n(-D warnings) + fmt clean; typecheck 12/12 and 3052 TS tests pass. Rust tests\nrun in CI (this host can't launch the test binaries).\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: address prep-application review findings (cancel, research, re-run)\n\nAdvisory findings from the @claude PR review on #555 (no blocking issues).\n\n- mid-request cancellation: race env.turn() and each read-tool call against\n  cancel.cancelled() via tokio::select! (biased), so Stop interrupts an\n  in-flight provider round-trip immediately instead of only between turns.\n- research_company: load the run's own posting server-side by ctx.job_id\n  (threaded into ToolContext from the validated request), taking no\n  model-supplied text — consistent with the other id-loaded tools.\n- estimate_tokens: count chars, not bytes, so multi-byte résumé/job text\n  doesn't trip the token budget earlier than ASCII of the same length.\n- panel: show a \"Prep again\" re-run affordance from the done state too\n  (previously only error/cancelled offered a retry).\n- docs: correct the agentic-feature PR numbers in ARCHITECTURE_STATUS.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-05T01:45:45+02:00",
+          "tree_id": "f36ed7e70bf32af96317da79c72befb90c2f88b5",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/0fbd7c82946ad7cc7547d2b061c26f9755a874a4"
+        },
+        "date": 1783209292579,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1896806,
+            "range": "± 47993",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2519002,
+            "range": "± 25635",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 291710,
+            "range": "± 2524",
             "unit": "ns/iter"
           }
         ]
