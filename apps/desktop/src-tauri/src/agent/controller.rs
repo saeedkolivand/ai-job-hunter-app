@@ -13,7 +13,7 @@ use tauri::{AppHandle, Manager};
 use tokio_util::sync::CancellationToken;
 
 use crate::commands::ai_provider::{AgentTurn, ChatMsg, StopReason, ToolSpec};
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::events::emit_event;
 use crate::pipeline::Completer;
 
@@ -53,6 +53,10 @@ pub enum StoppedReason {
     /// JSON, so the calls are never executed; the loop stops here instead of
     /// guessing at malformed args.
     Truncated,
+    /// A turn was refused by [`crate::limits::Limiter::charge_provider_daily`]
+    /// (`AppError::RateLimited`) mid-run — stop gracefully and keep whatever
+    /// `steps`/`final_text` were already accumulated instead of discarding them.
+    Budgeted,
 }
 
 /// The result of an agent run.
@@ -113,8 +117,10 @@ fn tool_result_fence(name: &str, body: &str) -> String {
 /// tool call run the matching READ tool (Write tools are DENIED — Phase-1
 /// human-in-the-loop guard) and append the fenced result to the transcript.
 /// Terminates when the model returns no tool calls (Done), the step budget
-/// ([`MAX_AGENT_STEPS`]) or token budget ([`MAX_AGENT_TOKENS`]) is exhausted, or
-/// `cancel` fires between turns. A provider error aborts with `Err`.
+/// ([`MAX_AGENT_STEPS`]) or token budget ([`MAX_AGENT_TOKENS`]) is exhausted,
+/// `cancel` fires between turns, or a turn is refused for budget reasons
+/// (`AppError::RateLimited` — stops gracefully as `Budgeted`, keeping progress
+/// made so far). Any other provider error aborts with `Err`.
 pub async fn run_agent(
     env: &dyn AgentEnv,
     tools: &[AgentTool],
@@ -135,7 +141,20 @@ pub async fn run_agent(
             });
         }
 
-        let turn = env.turn(&messages).await?;
+        let turn = match env.turn(&messages).await {
+            Ok(t) => t,
+            // `LiveAgentEnv::turn` charges the per-provider daily ceiling before
+            // each request; hitting it on turn 3+ of an otherwise-successful run
+            // must not discard the `steps`/`final_text` accumulated so far.
+            Err(AppError::RateLimited(_)) => {
+                return Ok(AgentOutcome {
+                    final_text,
+                    steps,
+                    stopped_reason: StoppedReason::Budgeted,
+                })
+            }
+            Err(e) => return Err(e),
+        };
         steps += 1;
         tokens += estimate_tokens(&turn.text);
         final_text = turn.text.clone();
@@ -156,10 +175,17 @@ pub async fn run_agent(
         });
 
         if turn.tool_calls.is_empty() {
+            // `StopReason::Length` here means the model's final answer TEXT itself
+            // was truncated by the output-token limit, not just tool-call args.
+            let stopped_reason = if turn.stop == StopReason::Length {
+                StoppedReason::Truncated
+            } else {
+                StoppedReason::Done
+            };
             return Ok(AgentOutcome {
                 final_text,
                 steps,
-                stopped_reason: StoppedReason::Done,
+                stopped_reason,
             });
         }
 
@@ -510,7 +536,9 @@ mod tests {
         // …and the deny was recorded in the step narration.
         let steps = env.steps.lock();
         assert!(
-            steps.iter().any(|s| s.denied.contains(&"writer".to_string())),
+            steps
+                .iter()
+                .any(|s| s.denied.contains(&"writer".to_string())),
             "the deny must be narrated in an agent:step"
         );
         assert_eq!(out.final_text, "stopped");
@@ -554,7 +582,10 @@ mod tests {
             .await
             .unwrap();
         // Both tools ran…
-        assert_eq!(*env.reads.lock(), vec!["reader".to_string(), "reader2".to_string()]);
+        assert_eq!(
+            *env.reads.lock(),
+            vec!["reader".to_string(), "reader2".to_string()]
+        );
         // …and the transcript handed to the FINAL turn (the fullest one) alternates.
         let transcripts = env.transcripts.lock();
         let last = transcripts.last().expect("at least one turn call");
@@ -605,5 +636,56 @@ mod tests {
             env.reads.lock().is_empty(),
             "a length-truncated tool call must never execute"
         );
+    }
+
+    #[tokio::test]
+    async fn truncated_final_answer_with_no_tool_calls_reports_truncated() {
+        // A no-tool-calls turn whose `stop == Length` means the answer TEXT
+        // itself was cut off — this must not be reported as a clean `Done`.
+        let env = FakeEnv::new(vec![AgentTurn {
+            text: "the answer was cut off mid-sen".into(),
+            tool_calls: vec![],
+            stop: StopReason::Length,
+        }]);
+        let out = run_agent(&env, &whitelist(), "help".into(), &CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(out.stopped_reason, StoppedReason::Truncated);
+        assert_eq!(out.steps, 1);
+    }
+
+    #[tokio::test]
+    async fn rate_limited_turn_stops_gracefully_keeping_partial_progress() {
+        // `LiveAgentEnv::turn` charges the per-provider daily ceiling before every
+        // request; hitting it on turn 2+ must not discard turn 1's progress.
+        struct BudgetEnv {
+            calls: Mutex<usize>,
+        }
+        #[async_trait]
+        impl AgentEnv for BudgetEnv {
+            async fn turn(&self, _messages: &[ChatMsg]) -> AppResult<AgentTurn> {
+                let mut n = self.calls.lock();
+                *n += 1;
+                if *n == 1 {
+                    Ok(read_call("reader"))
+                } else {
+                    Err(AppError::RateLimited("daily cap reached".into()))
+                }
+            }
+            async fn run_read_tool(&self, name: &str, _args: Value) -> AppResult<Value> {
+                Ok(json!({ "ran": name }))
+            }
+            fn on_step(&self, _step: &AgentStep) {}
+        }
+
+        let env = BudgetEnv {
+            calls: Mutex::new(0),
+        };
+        let out = run_agent(&env, &whitelist(), "help".into(), &CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(out.stopped_reason, StoppedReason::Budgeted);
+        assert_eq!(out.steps, 1);
+        assert_eq!(out.final_text, "calling reader");
     }
 }

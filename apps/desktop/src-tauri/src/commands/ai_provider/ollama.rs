@@ -58,7 +58,9 @@ fn ollama_supports_tools(model: &str) -> bool {
 /// `message.content` is the text, each `message.tool_calls[]` maps to a
 /// [`ToolCall`] (Ollama returns `function.arguments` as an already-decoded JSON
 /// object, and no call id — synthesize `name-index`), and `done_reason` maps the
-/// stop (`length`→Length, else End; any tool call ⇒ ToolUse). Pure + unit-tested.
+/// stop (`length`→Length even with tool calls present — the arguments may be
+/// truncated JSON, so length wins over the tool-call signal; else any tool call ⇒
+/// ToolUse, else End). Pure + unit-tested.
 fn parse_ollama_turn(data: &Value) -> AgentTurn {
     let message = data.get("message");
     let text = message
@@ -86,13 +88,14 @@ fn parse_ollama_turn(data: &Value) -> AgentTurn {
                 .collect()
         })
         .unwrap_or_default();
-    let stop = if !tool_calls.is_empty() {
+    let stop = if data.get("done_reason").and_then(|r| r.as_str()) == Some("length") {
+        // A length-truncated turn's tool-call arguments may be truncated /
+        // half-serialized JSON — length must win over the tool-call signal.
+        StopReason::Length
+    } else if !tool_calls.is_empty() {
         StopReason::ToolUse
     } else {
-        match data.get("done_reason").and_then(|r| r.as_str()) {
-            Some("length") => StopReason::Length,
-            _ => StopReason::End,
-        }
+        StopReason::End
     };
     AgentTurn {
         text,
@@ -916,7 +919,13 @@ mod tests {
             assert!(ollama_supports_tools(m), "{m} should advertise tools");
         }
         // Unknown / non-tool families default off so the turn degrades safely.
-        for m in ["llama2", "phi3", "gemma2", "nomic-embed-text", "deepseek-coder"] {
+        for m in [
+            "llama2",
+            "phi3",
+            "gemma2",
+            "nomic-embed-text",
+            "deepseek-coder",
+        ] {
             assert!(!ollama_supports_tools(m), "{m} must default to no tools");
         }
     }
@@ -956,5 +965,22 @@ mod tests {
         assert_eq!(turn.text, "The answer.");
         assert!(turn.tool_calls.is_empty());
         assert_eq!(turn.stop, StopReason::End);
+    }
+
+    #[test]
+    fn parse_turn_tool_calls_with_length_done_reason_maps_to_length_not_tool_use() {
+        // `done_reason: "length"` means the arguments may be truncated JSON — this
+        // must win over the tool-call signal, never `ToolUse`.
+        let data = json!({
+            "message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{ "function": { "name": "match_resume", "arguments": { "resumeId": "r1" } } }]
+            },
+            "done": true,
+            "done_reason": "length"
+        });
+        let turn = parse_ollama_turn(&data);
+        assert_eq!(turn.stop, StopReason::Length);
     }
 }

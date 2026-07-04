@@ -571,7 +571,11 @@ impl AiProvider for AnthropicClient {
         if !status.is_success() {
             let body_text = resp.text().await.unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
-            return Err(friendly_api_error(ProviderId::Anthropic, status, &body_text));
+            return Err(friendly_api_error(
+                ProviderId::Anthropic,
+                status,
+                &body_text,
+            ));
         }
         let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
         trace.end(Some(status.as_u16()), true);

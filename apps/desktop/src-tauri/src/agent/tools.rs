@@ -75,7 +75,10 @@ fn research_company_handler(
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_string();
-        let company = args.get("company").and_then(|v| v.as_str()).map(str::to_string);
+        let company = args
+            .get("company")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
         Ok(crate::commands::ai::ai_research_company(app, job_ad, company, None, None, None).await)
     })
 }

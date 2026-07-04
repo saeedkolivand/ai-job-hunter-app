@@ -83,7 +83,7 @@ L0  Shared infra       error, observability, performance, db, data_store, net, p
   `crate::commands::ai_provider` for embeddings/provider routing. All allowlisted with
   `TODO(arch)` (target: inject an emitter port + relocate `ai_provider`).
 
-### L3 — Shell / IPC (`commands`, `ipc_contracts`, `lib`, `main`, `updater`, `tray`, `deeplink`, `extension_bridge`, `notifications`)
+### L3 — Shell / IPC (`commands`, `ipc_contracts`, `lib`, `main`, `updater`, `tray`, `deeplink`, `extension_bridge`, `notifications`, `events`, `agent`)
 
 - **Allowed deps:** anything below (L0/L1/L2).
 - **Forbidden deps:** none structurally — but L3 must stay **thin**: command handlers

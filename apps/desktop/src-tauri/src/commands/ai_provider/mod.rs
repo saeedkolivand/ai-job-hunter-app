@@ -462,7 +462,9 @@ pub(crate) async fn single_shot_turn<P: AiProvider + ?Sized>(
     temperature: Option<f64>,
 ) -> AppResult<AgentTurn> {
     let (system, user) = flatten_messages(messages);
-    let text = provider.complete(app, model, &system, &user, temperature).await?;
+    let text = provider
+        .complete(app, model, &system, &user, temperature)
+        .await?;
     Ok(AgentTurn {
         text,
         tool_calls: Vec::new(),

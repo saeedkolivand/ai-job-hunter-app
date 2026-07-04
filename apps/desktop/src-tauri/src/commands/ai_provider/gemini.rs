@@ -66,9 +66,17 @@ fn join_parts_text(data: &Value) -> String {
 /// `parts[].functionCall` to a [`ToolCall`] (Gemini has no call id, so synthesize
 /// `name-index` for our own bookkeeping — `functionResponse` matches by name), and
 /// set the stop reason (any functionCall ⇒ ToolUse, else `MAX_TOKENS`→Length /
-/// `STOP`→End). Pure + unit-tested.
+/// `STOP`→End). `finishReason: "MALFORMED_FUNCTION_CALL"` — Gemini's signal that a
+/// tool call was truncated/cut off by the output-token limit — always wins and maps
+/// to `Length` too, even if a (possibly half-serialized) functionCall part is
+/// present, so those args never reach a tool handler. Pure + unit-tested.
 fn parse_gemini_turn(data: &Value) -> AgentTurn {
     let text = join_parts_text(data);
+    let finish_reason = data
+        .get("candidates")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("finishReason"))
+        .and_then(|f| f.as_str());
     let tool_calls: Vec<ToolCall> = data
         .get("candidates")
         .and_then(|c| c.get(0))
@@ -92,17 +100,14 @@ fn parse_gemini_turn(data: &Value) -> AgentTurn {
                 .collect()
         })
         .unwrap_or_default();
-    let stop = if !tool_calls.is_empty() {
+    let stop = if finish_reason == Some("MALFORMED_FUNCTION_CALL") {
+        StopReason::Length
+    } else if !tool_calls.is_empty() {
         // Gemini reports `finishReason: "STOP"` even when returning a functionCall,
         // so the presence of a call is the authoritative "wants tools back" signal.
         StopReason::ToolUse
     } else {
-        match data
-            .get("candidates")
-            .and_then(|c| c.get(0))
-            .and_then(|c| c.get("finishReason"))
-            .and_then(|f| f.as_str())
-        {
+        match finish_reason {
             Some("MAX_TOKENS") => StopReason::Length,
             Some("STOP") => StopReason::End,
             _ => StopReason::Other,
@@ -621,7 +626,9 @@ impl AiProvider for GeminiClient {
         // Trusted, fixed function declarations — never built from scraped/model text.
         let function_declarations: Vec<Value> = tools
             .iter()
-            .map(|t| json!({ "name": t.name, "description": t.description, "parameters": t.schema }))
+            .map(
+                |t| json!({ "name": t.name, "description": t.description, "parameters": t.schema }),
+            )
             .collect();
 
         let mut body = json!({
@@ -657,7 +664,18 @@ impl AiProvider for GeminiClient {
         }
         let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
         trace.end(Some(status.as_u16()), true);
-        Ok(parse_gemini_turn(&data))
+        let turn = parse_gemini_turn(&data);
+        // Mirror `complete()`'s empty-response guard: a missing/blocked candidate
+        // (e.g. a safety block with no `candidates`) parses to blank text and no
+        // tool calls. Exclude `Length` — a `MAX_TOKENS`/`MALFORMED_FUNCTION_CALL`
+        // turn can legitimately have no usable text or calls yet, and that is
+        // already handled by the controller's truncation path, not an error here.
+        if turn.text.is_empty() && turn.tool_calls.is_empty() && turn.stop != StopReason::Length {
+            return Err(AppError::Provider(
+                "Gemini: unexpected response shape".to_string(),
+            ));
+        }
+        Ok(turn)
     }
 }
 
@@ -857,5 +875,23 @@ mod tests {
             "candidates": [{ "content": { "parts": [{ "text": "..." }] }, "finishReason": "MAX_TOKENS" }]
         });
         assert_eq!(parse_gemini_turn(&truncated).stop, StopReason::Length);
+    }
+
+    #[test]
+    fn parse_turn_malformed_function_call_maps_to_length_not_tool_use() {
+        // A tool call truncated by the output-token limit comes back with
+        // `finishReason: "MALFORMED_FUNCTION_CALL"` (NOT `MAX_TOKENS`) — it must
+        // route through the same non-executable/truncated path as `MAX_TOKENS`, so
+        // the (possibly half-serialized) args never reach a tool handler.
+        let data = json!({
+            "candidates": [{
+                "content": { "parts": [
+                    { "functionCall": { "name": "research_company", "args": { "company": "Ac" } } }
+                ] },
+                "finishReason": "MALFORMED_FUNCTION_CALL"
+            }]
+        });
+        let turn = parse_gemini_turn(&data);
+        assert_eq!(turn.stop, StopReason::Length);
     }
 }

@@ -18,9 +18,7 @@ pub mod enrichment;
 use async_trait::async_trait;
 use tauri::AppHandle;
 
-use crate::commands::ai_provider::{
-    resolve, AgentTurn, AiProvider, ChatMsg, ProviderId, ToolSpec,
-};
+use crate::commands::ai_provider::{resolve, AgentTurn, AiProvider, ChatMsg, ProviderId, ToolSpec};
 use crate::error::AppResult;
 
 // ── Completer ───────────────────────────────────────────────────────────────────
