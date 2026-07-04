@@ -897,6 +897,9 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
     location: undefined,
     description: application.jobDescription || undefined,
     foundAt: application.createdAt,
+    salaryMin: application.salaryMin,
+    salaryMax: application.salaryMax,
+    salaryCurrency: application.salaryCurrency,
   };
 
   const persistence: TailorFlowPersistence = {

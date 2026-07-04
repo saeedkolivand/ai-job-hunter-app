@@ -222,6 +222,9 @@ pub async fn applications_track(app: AppHandle, req: ApplicationTrackRequest) ->
         job_description: req.job_description.unwrap_or_default(),
         answers: vec![],
         job_summary: String::new(),
+        salary_min: req.salary_min,
+        salary_max: req.salary_max,
+        salary_currency: req.salary_currency,
     };
     let job_url = req.job_url.unwrap_or_default();
     let board = req.board.unwrap_or_default();
@@ -256,6 +259,9 @@ pub async fn applications_save_from_posting(app: AppHandle, req: ApplicationTrac
         job_description: req.job_description.unwrap_or_default(),
         answers: vec![],
         job_summary: String::new(),
+        salary_min: req.salary_min,
+        salary_max: req.salary_max,
+        salary_currency: req.salary_currency,
     };
     let job_url = req.job_url.unwrap_or_default();
     let board = req.board.unwrap_or_default();

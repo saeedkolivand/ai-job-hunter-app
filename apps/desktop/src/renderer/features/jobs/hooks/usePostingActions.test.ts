@@ -233,6 +233,17 @@ describe('usePostingActions — handleSave', () => {
     );
   });
 
+  it('forwards scraped salary fields to saveFromPosting when present', async () => {
+    const posting = makePosting({ salaryMin: 70000, salaryMax: 90000, salaryCurrency: 'EUR' });
+    const { result } = renderHook(() => usePostingActions(posting));
+    await act(async () => {
+      result.current.handleSave();
+    });
+    expect(mockSaveFromPostingAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ salaryMin: 70000, salaryMax: 90000, salaryCurrency: 'EUR' })
+    );
+  });
+
   it('tracks bookmarked interaction so saved becomes true', async () => {
     const { result } = renderHook(() => usePostingActions(makePosting()));
     await act(async () => {
@@ -324,6 +335,17 @@ describe('usePostingActions — handleTailor', () => {
     // trackInteraction('applied') must have been called (it updates local state + calls persistJob).
     expect(mockPersistJobAsync).toHaveBeenCalledWith(
       expect.objectContaining({ interactionType: 'applied' })
+    );
+  });
+
+  it('forwards scraped salary fields to saveFromPosting when present', async () => {
+    const posting = makePosting({ salaryMin: 70000, salaryMax: 90000, salaryCurrency: 'EUR' });
+    const { result } = renderHook(() => usePostingActions(posting));
+    await act(async () => {
+      await result.current.handleTailor();
+    });
+    expect(mockSaveFromPostingAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ salaryMin: 70000, salaryMax: 90000, salaryCurrency: 'EUR' })
     );
   });
 

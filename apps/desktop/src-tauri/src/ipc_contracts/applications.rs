@@ -19,6 +19,12 @@ pub struct ApplicationTrackRequest {
     pub candidate: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub job_description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub salary_min: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub salary_max: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub salary_currency: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

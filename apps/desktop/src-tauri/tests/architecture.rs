@@ -259,7 +259,6 @@ const R2_ALLOW: &[&str] = &[
     "autopilot_helpers/mod.rs",
     "autopilot_scheduler.rs",
     "cover_letter/research/mod.rs",
-    "salary_research/mod.rs",
     "documents/mod.rs",
     "pipeline/mod.rs",
     "platform/config.rs", // sole owner: resolves the data dir from the AppHandle at bootstrap

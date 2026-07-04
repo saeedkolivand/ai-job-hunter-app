@@ -136,6 +136,17 @@ pub struct FoundJob {
     /// Full job description — used to pre-fill a tailored resume/cover letter generation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Scraped salary range from the board (Adzuna only, today) — grounds the salary
+    /// application answer before it falls back to a web lookup. `None` when the
+    /// board doesn't expose salary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub salary_min: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub salary_max: Option<f64>,
+    /// ISO-4217 currency for `salary_min`/`salary_max`. `None` when the board didn't
+    /// report one (e.g. an Adzuna market not in the country→currency map).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub salary_currency: Option<String>,
     /// Match score (0–100) when the posting passed ranking; absent otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub score: Option<f64>,
@@ -686,6 +697,18 @@ fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<Found
                 }
                 if inc.score.is_some() {
                     row.score = inc.score;
+                }
+                // Same fill-without-clobbering pattern as `board`/`description`: a
+                // re-scrape that newly learns the salary updates the row, but never
+                // overwrites an already-known value with an unknown one.
+                if inc.salary_min.is_some() {
+                    row.salary_min = inc.salary_min;
+                }
+                if inc.salary_max.is_some() {
+                    row.salary_max = inc.salary_max;
+                }
+                if inc.salary_currency.is_some() {
+                    row.salary_currency = inc.salary_currency.clone();
                 }
                 // Same legacy-migration case as `board` above: an existing row
                 // persisted before `trust` existed (`None`) picks it up when the

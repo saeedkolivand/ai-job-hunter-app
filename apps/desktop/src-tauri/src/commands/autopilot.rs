@@ -332,6 +332,13 @@ pub(crate) fn build_found_job(p: &JobPosting, resume: &str, found_at: u64) -> Fo
             }
         },
         description: p.description.clone(),
+        salary_min: p.extra.get("salaryMin").and_then(|v| v.as_f64()),
+        salary_max: p.extra.get("salaryMax").and_then(|v| v.as_f64()),
+        salary_currency: p
+            .extra
+            .get("salaryCurrency")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
         score,
         found_at,
         // Set by the dedup merge in `record_run`; `applied` is derived on read.
@@ -496,6 +503,9 @@ mod tests {
             location: None,
             board: None,
             description: None,
+            salary_min: None,
+            salary_max: None,
+            salary_currency: None,
             score,
             found_at: 0,
             is_new: false,

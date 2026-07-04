@@ -932,6 +932,85 @@ fn adzuna_unsupported_countries_rejected() {
     }
 }
 
+/// Every code in ADZUNA_SUPPORTED_COUNTRIES must resolve to a currency — an
+/// unmapped supported country would silently drop the salary's currency.
+#[test]
+fn adzuna_currency_map_covers_every_supported_country() {
+    for &cc in ADZUNA_SUPPORTED_COUNTRIES {
+        assert!(
+            adzuna_currency_for_country(cc).is_some(),
+            "country '{cc}' is Adzuna-supported but has no currency mapping"
+        );
+    }
+}
+
+/// A handful of country → ISO-4217 currency cases, plus an unsupported country
+/// mapping to `None` (the salary answer then falls back to a web lookup).
+#[test]
+fn adzuna_currency_for_country_maps_known_codes() {
+    assert_eq!(adzuna_currency_for_country("us"), Some("USD"));
+    assert_eq!(adzuna_currency_for_country("gb"), Some("GBP"));
+    assert_eq!(adzuna_currency_for_country("de"), Some("EUR"));
+    assert_eq!(adzuna_currency_for_country("pl"), Some("PLN"));
+    assert_eq!(adzuna_currency_for_country("ca"), Some("CAD"));
+    assert_eq!(adzuna_currency_for_country("xx"), None);
+}
+
+fn adzuna_job(salary_min: Option<f64>, salary_max: Option<f64>) -> AdzunaJob {
+    AdzunaJob {
+        id: "1".to_string(),
+        title: "Engineer".to_string(),
+        company: None,
+        location: None,
+        redirect_url: "https://example.com/job/1".to_string(),
+        description: None,
+        created: None,
+        salary_min,
+        salary_max,
+    }
+}
+
+/// A known salary + a supported country writes both the amount and the derived
+/// ISO-4217 currency into `extra`.
+#[test]
+fn adzuna_job_to_posting_writes_salary_and_currency() {
+    let posting = adzuna_job_to_posting(adzuna_job(Some(70_000.0), Some(90_000.0)), "de", 0);
+    assert_eq!(
+        posting.extra.get("salaryMin").and_then(|v| v.as_f64()),
+        Some(70_000.0)
+    );
+    assert_eq!(
+        posting.extra.get("salaryMax").and_then(|v| v.as_f64()),
+        Some(90_000.0)
+    );
+    assert_eq!(
+        posting.extra.get("salaryCurrency").and_then(|v| v.as_str()),
+        Some("EUR")
+    );
+}
+
+/// No salary at all → no salary/currency keys (an orphan currency with no
+/// amount would be meaningless).
+#[test]
+fn adzuna_job_to_posting_omits_currency_when_no_salary() {
+    let posting = adzuna_job_to_posting(adzuna_job(None, None), "de", 0);
+    assert!(!posting.extra.contains_key("salaryMin"));
+    assert!(!posting.extra.contains_key("salaryMax"));
+    assert!(!posting.extra.contains_key("salaryCurrency"));
+}
+
+/// A known salary from a country with no currency mapping still keeps the
+/// amount but omits the currency — graceful degradation, not a dropped salary.
+#[test]
+fn adzuna_job_to_posting_keeps_salary_without_currency_for_unmapped_country() {
+    let posting = adzuna_job_to_posting(adzuna_job(Some(50_000.0), None), "xx", 0);
+    assert_eq!(
+        posting.extra.get("salaryMin").and_then(|v| v.as_f64()),
+        Some(50_000.0)
+    );
+    assert!(!posting.extra.contains_key("salaryCurrency"));
+}
+
 /// Empty country string resolves to "de" (the Adzuna default) and must pass
 /// the allowlist check. Calls the real `AdzunaProvider::search` with an empty
 /// country string to prove the production `if country.is_empty() { "de" }` guard

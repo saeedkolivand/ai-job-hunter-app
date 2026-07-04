@@ -260,6 +260,13 @@ export interface AutopilotFoundJob {
   board?: string;
   /** Full job description — used to pre-fill a tailored generation. */
   description?: string;
+  /** Scraped salary range (Adzuna only, today) — grounds the salary application
+   *  answer before it falls back to a web lookup. Absent when the board didn't
+   *  report salary. */
+  salaryMin?: number;
+  salaryMax?: number;
+  /** ISO-4217 currency for `salaryMin`/`salaryMax`. */
+  salaryCurrency?: string;
   /** Match score (0–100) when the posting passed ranking. */
   score?: number;
   foundAt: number;
@@ -368,6 +375,12 @@ export interface Application {
   recipientName?: string;
   /** Employer-side contact email for a direct "apply by email" approach. */
   recipientEmail?: string;
+  /** Scraped salary range (Adzuna only, today) — grounds the salary application
+   *  answer before it falls back to a web lookup. Absent when unknown. */
+  salaryMin?: number;
+  salaryMax?: number;
+  /** ISO-4217 currency for `salaryMin`/`salaryMax`. */
+  salaryCurrency?: string;
 }
 
 /** One append-only status-history row. */

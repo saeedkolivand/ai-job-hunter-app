@@ -43,7 +43,8 @@ const base = {
 
 const wrapper = ({ children }: { children: ReactNode }) =>
   createElement(QueryClientProvider, { client: new QueryClient() }, children);
-const render = () => renderHook(() => useApplicationAnswers(base), { wrapper });
+const render = (overrides: Partial<Parameters<typeof useApplicationAnswers>[0]> = {}) =>
+  renderHook(() => useApplicationAnswers({ ...base, ...overrides }), { wrapper });
 
 describe('useApplicationAnswers', () => {
   beforeEach(() => {
@@ -315,6 +316,101 @@ describe('useApplicationAnswers', () => {
       });
 
       expect(result.current.error).toBeNull();
+      const call = vi.mocked(generateApplicationAnswer).mock.calls[0]?.[0];
+      expect(call?.salaryRange).toBeUndefined();
+    });
+  });
+
+  describe('scraped salary precedence (Phase 3)', () => {
+    it('a complete scraped range wins: skips lookupSalaryRange and grounds the answer in it', async () => {
+      const { result } = render({ salaryMin: 70000, salaryMax: 90000, salaryCurrency: 'EUR' });
+      act(() => result.current.toggle('salary'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(lookupSalaryRange).not.toHaveBeenCalled();
+      expect(generateApplicationAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          question: 'What are your salary expectations?',
+          salaryRange: { min: 70000, max: 90000, currency: 'EUR' },
+        })
+      );
+    });
+
+    it.each([
+      ['missing currency', { salaryMin: 70000, salaryMax: 90000, salaryCurrency: undefined }],
+      ['min greater than max', { salaryMin: 90000, salaryMax: 70000, salaryCurrency: 'EUR' }],
+      ['malformed currency shape', { salaryMin: 70000, salaryMax: 90000, salaryCurrency: 'E1' }],
+      // A real Adzuna shape ("up to X" postings report min: 0) — the prompt
+      // layer's buildSalaryRangeBlock treats a non-positive bound as invalid
+      // and renders an EMPTY block, so this MUST fall through to the web
+      // lookup rather than being accepted here and silently losing the range.
+      ['min is zero (non-positive)', { salaryMin: 0, salaryMax: 90000, salaryCurrency: 'EUR' }],
+      [
+        'max is negative (non-positive)',
+        { salaryMin: 70000, salaryMax: -1, salaryCurrency: 'EUR' },
+      ],
+      ['min is non-finite', { salaryMin: Infinity, salaryMax: 90000, salaryCurrency: 'EUR' }],
+      // Rounds BEFORE validating: a raw min in (0, 0.5) is > 0 but rounds to
+      // 0, so it must still be rejected here (not just at the prompt layer).
+      ['min rounds down to zero', { salaryMin: 0.4, salaryMax: 90000, salaryCurrency: 'EUR' }],
+    ])(
+      'falls back to the web lookup on a partial/invalid scraped range (%s)',
+      async (_label, overrides) => {
+        vi.mocked(lookupSalaryRange).mockResolvedValue({ min: 65000, max: 80000, currency: 'EUR' });
+        const { result } = render(overrides);
+        act(() => result.current.toggle('salary'));
+
+        await act(async () => {
+          await result.current.generate();
+        });
+
+        expect(lookupSalaryRange).toHaveBeenCalledTimes(1);
+        expect(generateApplicationAnswer).toHaveBeenCalledWith(
+          expect.objectContaining({ salaryRange: { min: 65000, max: 80000, currency: 'EUR' } })
+        );
+      }
+    );
+
+    it('rounds a decimal scraped range to integers (parity with the web path)', async () => {
+      const { result } = render({ salaryMin: 70000.4, salaryMax: 89999.6, salaryCurrency: 'EUR' });
+      act(() => result.current.toggle('salary'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(lookupSalaryRange).not.toHaveBeenCalled();
+      expect(generateApplicationAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({ salaryRange: { min: 70000, max: 90000, currency: 'EUR' } })
+      );
+    });
+
+    it('normalizes a lowercase/mixed-case scraped currency to uppercase', async () => {
+      const { result } = render({ salaryMin: 70000, salaryMax: 90000, salaryCurrency: 'Usd' });
+      act(() => result.current.toggle('salary'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(lookupSalaryRange).not.toHaveBeenCalled();
+      expect(generateApplicationAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({ salaryRange: { min: 70000, max: 90000, currency: 'USD' } })
+      );
+    });
+
+    it('a scraped range never leaks into a non-salary question', async () => {
+      const { result } = render({ salaryMin: 70000, salaryMax: 90000, salaryCurrency: 'EUR' });
+      act(() => result.current.toggle('why-company'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(lookupSalaryRange).not.toHaveBeenCalled();
       const call = vi.mocked(generateApplicationAnswer).mock.calls[0]?.[0];
       expect(call?.salaryRange).toBeUndefined();
     });
