@@ -336,3 +336,32 @@ fn found_job_carries_trust_from_real_build_found_job() {
     assert_eq!(trust.level, TrustLevel::Medium);
     assert_eq!(trust.flags, vec![TrustFlag::CompanyDomainMismatch]);
 }
+
+/// `build_found_job` pulls scraped salary out of `JobPosting.extra` (Adzuna's
+/// shape) so it survives into the persisted `FoundJob`.
+#[test]
+fn build_found_job_extracts_salary_from_extra() {
+    let mut p = posting("https://example.com/j", "Acme");
+    p.extra
+        .insert("salaryMin".to_string(), serde_json::json!(70_000.0));
+    p.extra
+        .insert("salaryMax".to_string(), serde_json::json!(90_000.0));
+    p.extra
+        .insert("salaryCurrency".to_string(), serde_json::json!("EUR"));
+
+    let found = build_found_job(&p, "", 0);
+    assert_eq!(found.salary_min, Some(70_000.0));
+    assert_eq!(found.salary_max, Some(90_000.0));
+    assert_eq!(found.salary_currency, Some("EUR".to_string()));
+}
+
+/// A posting with no salary keys in `extra` (every non-Adzuna board today) must
+/// carry `None`, not panic or default to 0.
+#[test]
+fn build_found_job_missing_salary_keys_yield_none() {
+    let p = posting("https://example.com/j", "Acme");
+    let found = build_found_job(&p, "", 0);
+    assert_eq!(found.salary_min, None);
+    assert_eq!(found.salary_max, None);
+    assert_eq!(found.salary_currency, None);
+}

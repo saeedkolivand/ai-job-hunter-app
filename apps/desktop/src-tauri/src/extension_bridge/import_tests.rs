@@ -265,6 +265,9 @@ fn app_meta(company: &str, title: &str) -> crate::applications::ApplicationMeta 
         job_description: String::new(),
         answers: vec![],
         job_summary: String::new(),
+        salary_min: None,
+        salary_max: None,
+        salary_currency: None,
     }
 }
 

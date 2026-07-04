@@ -322,6 +322,11 @@ export const ApplicationTrackSchema = z.object({
       message: 'jobDescription must be at most 200000 bytes',
     })
     .optional(),
+  // Scraped salary (Adzuna only, today) — grounds the salary application answer.
+  // Absent/unknown when the board didn't report one.
+  salaryMin: z.number().optional(),
+  salaryMax: z.number().optional(),
+  salaryCurrency: z.string().optional(),
 });
 export type ApplicationTrackRequest = z.infer<typeof ApplicationTrackSchema>;
 

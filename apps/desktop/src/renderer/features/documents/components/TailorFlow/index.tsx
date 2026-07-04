@@ -233,6 +233,9 @@ export function TailorFlow({
     hasDesc,
     jobUrl,
     board,
+    salaryMin: job.salaryMin,
+    salaryMax: job.salaryMax,
+    salaryCurrency: job.salaryCurrency,
   });
 
   // "Questions to ask the interviewer" — the second assistant. Same inputs; it

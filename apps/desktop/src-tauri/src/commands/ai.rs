@@ -264,6 +264,7 @@ pub async fn ai_lookup_salary(
     model: Option<String>,
     base_url: Option<String>,
 ) -> Option<crate::salary_research::SalaryRange> {
+    use crate::pipeline::cache::KvCache;
     use crate::pipeline::Completer;
     use crate::salary_research::SalaryResearch;
 
@@ -309,9 +310,13 @@ pub async fn ai_lookup_salary(
         return None;
     }
 
+    // Resolved once here (the sole production caller) and passed through, so
+    // `SalaryResearch::enrich` stays `AppHandle`-free and unit-testable.
+    let cache_state = app.try_state::<KvCache>();
     SalaryResearch
         .enrich(
             &completer,
+            cache_state.as_deref(),
             &role,
             company.as_deref().unwrap_or(""),
             location.as_deref().unwrap_or(""),
