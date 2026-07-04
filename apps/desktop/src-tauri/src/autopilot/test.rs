@@ -547,12 +547,19 @@ fn merge_is_idempotent_on_a_repeated_run() {
 fn merge_keeps_prior_jobs_not_in_the_new_run() {
     let existing = vec![found_job("old", 1)];
     let merged = merge_found_jobs(&existing, vec![found_job("fresh", 2)]);
-    assert_eq!(
-        merged.len(),
-        2,
-        "prior finds are retained, new ones appended"
-    );
+    assert_eq!(merged.len(), 2, "prior finds retained below the new one");
     assert!(merged.iter().any(|j| j.url == "old"));
+}
+
+#[test]
+fn merge_puts_newly_found_jobs_on_top() {
+    let merged = merge_found_jobs(&[found_job("old", 1)], vec![found_job("fresh", 2)]);
+    assert_eq!(
+        merged[0].url, "fresh",
+        "newly found job is first (top of list)"
+    );
+    assert!(merged[0].is_new);
+    assert_eq!(merged[1].url, "old", "prior finds fall below the new one");
 }
 
 #[test]

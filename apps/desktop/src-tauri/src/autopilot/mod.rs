@@ -653,7 +653,8 @@ fn u32_field_in_range(v: &serde_json::Value, key: &str, max: u32) -> Option<u32>
 /// - existing rows are kept (preserving `found_at`/first-seen) and have `is_new`
 ///   cleared; if the run re-surfaced them, volatile fields (title/company/
 ///   description/score/location) are refreshed,
-/// - postings whose URL was never seen are appended and flagged `is_new`.
+/// - postings whose URL was never seen are placed first (on top) and flagged
+///   `is_new`, in the incoming (already score-sorted) order.
 ///
 /// Re-running with the same postings yields the same set — only `is_new` moves.
 /// `applied` is derived on read, so it is left at its default here.
@@ -663,7 +664,7 @@ fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<Found
     let incoming_by_url: HashMap<&str, &FoundJob> =
         incoming.iter().map(|j| (j.url.as_str(), j)).collect();
 
-    let mut merged: Vec<FoundJob> = existing
+    let refreshed_existing: Vec<FoundJob> = existing
         .iter()
         .map(|e| {
             let mut row = e.clone();
@@ -699,15 +700,18 @@ fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<Found
 
     let existing_urls: std::collections::HashSet<&str> =
         existing.iter().map(|j| j.url.as_str()).collect();
-    for inc in incoming {
-        if !existing_urls.contains(inc.url.as_str()) {
-            merged.push(FoundJob {
-                is_new: true,
-                applied: false,
-                ..inc
-            });
-        }
-    }
+    // New jobs go on top: the batch is already score-sorted desc upstream
+    // (commands/autopilot.rs), so preserving incoming order here keeps that.
+    let mut merged: Vec<FoundJob> = incoming
+        .into_iter()
+        .filter(|inc| !existing_urls.contains(inc.url.as_str()))
+        .map(|inc| FoundJob {
+            is_new: true,
+            applied: false,
+            ..inc
+        })
+        .collect();
+    merged.extend(refreshed_existing);
 
     merged
 }
