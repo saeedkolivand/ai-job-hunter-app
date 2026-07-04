@@ -736,6 +736,57 @@ describe('application questions', () => {
     expect(sys).toMatch(/never invent a number or date/i);
     expect(sys).toMatch(/company_research/i);
   });
+
+  it('no longer blanket-forbids a salary number, but still forbids fabricating one', () => {
+    const sys = buildApplicationAnswerSystemPrompt();
+    expect(sys).toMatch(/<applicant_details>/);
+    // Condition-first wording (safety hardening): the "only when" gate leads,
+    // so a small local model can't over-weight "don't hedge" before checking
+    // whether a salary expectation is even present.
+    expect(sys).toMatch(/only when <applicant_details> lists a salary expectation/i);
+    expect(sys).toMatch(/without hedging/i);
+    expect(sys).toMatch(/never state a number/i);
+    expect(sys).toMatch(/never fabricate a number/i);
+    // Other logistics (dates/notice) keep the blanket no-invention rule.
+    expect(sys).toMatch(/never invent a number or date/i);
+  });
+
+  it('appends the salary question guidance when passed, but not for other questions', () => {
+    const salaryEntry = APPLICATION_QUESTIONS.find((q) => q.id === 'salary');
+    const guidance = salaryEntry?.guidance;
+    expect(guidance).toBeTruthy();
+
+    const withGuidance = buildApplicationAnswerPrompt({
+      question: salaryEntry?.question ?? '',
+      resume: RESUME_FOR_GROUNDING,
+      jobAd: 'A role',
+      meta: META,
+      guidance,
+    });
+    expect(withGuidance).toContain(guidance ?? '');
+
+    // A non-salary registry entry has no guidance at all, and a caller that
+    // omits the param renders no guidance line.
+    const other = APPLICATION_QUESTIONS.find((q) => q.id === 'why-company');
+    expect(other?.guidance).toBeUndefined();
+    const withoutGuidance = buildApplicationAnswerPrompt({
+      question: other?.question ?? '',
+      resume: RESUME_FOR_GROUNDING,
+      jobAd: 'A role',
+      meta: META,
+    });
+    expect(withoutGuidance).not.toContain('Number:');
+  });
+
+  it('the salary guidance itself never invents a number and omits the line when ungrounded', () => {
+    const salaryEntry = APPLICATION_QUESTIONS.find((q) => q.id === 'salary');
+    expect(salaryEntry?.guidance).toMatch(/never invent a figure/i);
+    expect(salaryEntry?.guidance).toMatch(/omit that final line/i);
+    // Non-committal path: no stated expectation -> stay non-committal AND
+    // omit the "Number:" line, in one instruction (not just two separate
+    // claims that could drift apart under a future edit).
+    expect(salaryEntry?.guidance).toMatch(/stay non-committal and omit that final line/i);
+  });
 });
 
 describe('applicant preferences block', () => {

@@ -129,6 +129,8 @@ export function useApplicationAnswers({
       const chosen = [...APPLICATION_QUESTIONS.filter((q) => selected.has(q.id)), ...custom];
       const results: ApplicationAnswer[] = [];
       for (const q of chosen) {
+        // Only registry entries carry `guidance` (custom questions don't).
+        const guidance = (q as { guidance?: string }).guidance;
         const answer = await generateApplicationAnswer({
           question: q.question,
           resume,
@@ -136,6 +138,7 @@ export function useApplicationAnswers({
           meta: detected,
           model,
           companyBrief: brief,
+          guidance,
         });
         results.push({ id: q.id, question: q.question, answer });
         setAnswers((prev) => ({ ...prev, [q.id]: answer }));
