@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783138426735,
+  "lastUpdate": 1783143544539,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2303,6 +2303,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 297274,
             "range": "± 3014",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "43a78def8fe8623626718ca5b34edc682d348e2d",
+          "message": "fix: stop project links seeding the contact profile on import (#547)\n\n* fix: stop project links seeding the contact profile on import\n\nclassify_contact_links seeded the header from the resume's flat link\npool with host-only rules, so a GitHub repo URL became the candidate's\ngithub, a live-demo URL became website, and every remaining http(s) link\nwas dumped into extra_links — forcing users to delete project links from\nContact Profile settings after every import.\n\nGate seeding by URL shape, mirroring links.ts (isProfileShaped/\nclassifyLinks): only a profile-shaped platform profile (github.com/<user>,\nnot /<user>/<repo>) or a bare-root personal domain seeds the profile;\ndeep-path repo/demo/article/project links are dropped. LinkedIn keeps its\nstricter /in/ gate. Pure string parsing (no regex), doc-comments point to\nlinks.ts as the canonical rule so the two can't drift.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* test: assert promoted github profile is not duplicated in extras\n\nMakes the no-double-count invariant explicit in the classifier test\n(addresses a claude-review nit on #547).\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-04T07:19:58+02:00",
+          "tree_id": "c5342a74ccd6c6208f28aa568645bd59aecbe497",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/43a78def8fe8623626718ca5b34edc682d348e2d"
+        },
+        "date": 1783143543980,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1950304,
+            "range": "± 51591",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2572365,
+            "range": "± 94183",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 307597,
+            "range": "± 26811",
             "unit": "ns/iter"
           }
         ]
