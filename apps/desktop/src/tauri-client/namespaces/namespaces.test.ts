@@ -26,6 +26,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 import { EVENT_CHANNELS } from '@ajh/shared';
 
 import { createTauriInvokeClient } from '../index';
+import { agent } from './agent';
 import { ai } from './ai';
 import { applications } from './applications';
 import { boards } from './boards';
@@ -70,6 +71,10 @@ describe('tauri-client namespaces', () => {
     boards.connect({ boardId: 'indeed' });
     expect(invoke).toHaveBeenCalledWith('boards_login_with_browser', { boardId: 'indeed' });
 
+    const agentReq = { resumeId: 'res-1', jobId: 'job-1', provider: 'openai', model: 'gpt-4o' };
+    agent.run(agentReq);
+    expect(invoke).toHaveBeenCalledWith('agent_run', { req: agentReq });
+
     boards.disconnect({ boardId: 'indeed' });
     expect(invoke).toHaveBeenCalledWith('boards_logout', { boardId: 'indeed' });
   });
@@ -82,6 +87,17 @@ describe('tauri-client namespaces', () => {
     // Simulate the backend emitting an event.
     lastListenHandler?.({ payload: { token: 'hi' } });
     expect(handler).toHaveBeenCalledWith({ token: 'hi' });
+    expect(typeof unsub).toBe('function');
+  });
+
+  it('wires agent:step through listen and forwards the payload', () => {
+    const handler = vi.fn();
+    const unsub = agent.onStep(handler);
+    expect(listen).toHaveBeenCalledWith(EVENT_CHANNELS.agent.step, expect.any(Function));
+
+    const step = { jobId: 'job-1', step: 1, text: 'planning', tools: [], denied: [], kind: 'turn' };
+    lastListenHandler?.({ payload: step });
+    expect(handler).toHaveBeenCalledWith(step);
     expect(typeof unsub).toBe('function');
   });
 

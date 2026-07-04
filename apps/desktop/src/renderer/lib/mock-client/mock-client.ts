@@ -35,6 +35,11 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
   const referralRows: ReferralContact[] = [];
 
   const base: AppClient = {
+    agent: {
+      run: async () => ({ jobId: 'mock-agent' }),
+      onStep: unsub,
+    },
+
     system: {
       health: noop,
       getVersion: noop,

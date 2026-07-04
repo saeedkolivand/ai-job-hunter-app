@@ -2,7 +2,7 @@
 
 Implementation status tracker. Updated as features ship.
 
-Last updated: 2026-06-24
+Last updated: 2026-07-05
 
 ---
 
@@ -157,6 +157,23 @@ Active scrapers: 21 boards. Five boards (Indeed, StepStone, Xing, Workday, Glass
 | Cancellation token reuse     | ✅     | Tray/UI cancel reaches the running token across the whole run                                                                                                                    |
 | Launch-at-login              | ✅     | Opt-in (default OFF); `system_get/set_launch_at_login` via `tauri-plugin-autostart`                                                                                              |
 | Ranking via keyword-coverage | ✅     | Unified on `documents::keywords::coverage_score` (embedding-free, pure keyword stemming + matching); relabeled "Keyword Coverage %" to distinguish from Jobs "Match %" (ADR-020) |
+
+---
+
+## Agentic Features (`apps/desktop/src-tauri/src/agent/`)
+
+Five-step IPC agentic loop: `agent_run` command → validated request → spawned task → `agent:step` event stream → job lifecycle event.
+
+| Feature                            | Status | Notes                                                                                                                                                                                          |
+| ---------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 1: Agent loop controller     | ✅     | Core loop, turn-by-turn control flow, streaming, tool routing. `run_agent_live`, `AgentStepKind`, `StoppedReason` (PR #552)                                                                    |
+| Phase 2: "Prep application" flow   | ✅     | 4 read-only tools (research_company, match_resume, draft_cover_letter, suggest_interview_questions); fixed system prompt; trusted ToolContext; no Write tools; display-only proposal (PR #555) |
+| Phase 3: Proposal confirm gate     | ⬜     | User confirms agent's proposed status update before it writes to the application; closes Phase 2's terminal step                                                                               |
+| Phase 4: Autonomy & tool expansion | ⬜     | Write tools (status update, notes); multi-job batching; user-set tool allowlist per job/flow                                                                                                   |
+| Tool-calling model requirement     | ✅     | Validated server-side; non-tool models rejected with clear message (HIGH-2 defense-in-depth)                                                                                                   |
+| Cancellation-token registry        | ✅     | Jobs spawned via `agent_run` register CancellationToken in `ScraperEngine`; `jobs_cancel` reaches them                                                                                         |
+| Streaming `agent:step` events      | ✅     | Per-turn narration (plan + tool calls) and terminal proposal, streamed to the Job Detail pane (`PrepApplicationPanel`)                                                                         |
+| Prompt normalization (Rust)        | ✅     | System + user prompts in Rust; per-flow in `flows.rs`. See `draft_cover_letter` / `suggest_interview_questions` compact Rust implementations vs TS `@ajh/prompts` builders (drift risk)        |
 
 ---
 

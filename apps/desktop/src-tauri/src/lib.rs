@@ -787,6 +787,8 @@ pub fn run() {
             commands::ai::ai_set_embedding_config,
             commands::ai::ai_reembed_all,
             commands::pipeline::generate_pipeline,
+            // agent (Phase 2 — "prep this application" agentic flow)
+            commands::agent::agent_run,
             // resume extraction
             commands::resume::extract_resume,
             // documents

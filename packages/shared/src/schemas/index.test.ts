@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AgentRunRequestSchema,
   AiGenerateRequestSchema,
   AutopilotCreateSchema,
   LocaleSchema,
@@ -19,6 +20,30 @@ describe('LocaleSchema', () => {
     expect(() => LocaleSchema.parse('xx')).toThrow();
     expect(() => LocaleSchema.parse('')).toThrow();
     expect(() => LocaleSchema.parse(null)).toThrow();
+  });
+});
+
+describe('AgentRunRequestSchema', () => {
+  const valid = {
+    resumeId: 'res-1',
+    jobId: 'job-1',
+    provider: 'openai',
+    model: 'gpt-4o',
+  };
+
+  it('accepts a valid request (baseUrl optional)', () => {
+    expect(() => AgentRunRequestSchema.parse(valid)).not.toThrow();
+    expect(() =>
+      AgentRunRequestSchema.parse({ ...valid, baseUrl: 'http://localhost:11434' })
+    ).not.toThrow();
+  });
+
+  it('requires resumeId, jobId, provider, and model (each non-empty)', () => {
+    for (const key of ['resumeId', 'jobId', 'provider', 'model'] as const) {
+      const { [key]: _omitted, ...without } = valid;
+      expect(() => AgentRunRequestSchema.parse(without)).toThrow();
+      expect(() => AgentRunRequestSchema.parse({ ...valid, [key]: '' })).toThrow();
+    }
   });
 });
 

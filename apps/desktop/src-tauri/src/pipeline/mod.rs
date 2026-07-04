@@ -18,7 +18,9 @@ pub mod enrichment;
 use async_trait::async_trait;
 use tauri::AppHandle;
 
-use crate::commands::ai_provider::{resolve, AgentTurn, AiProvider, ChatMsg, ProviderId, ToolSpec};
+use crate::commands::ai_provider::{
+    resolve, AgentTurn, AiProvider, ChatMsg, ModelCapabilities, ProviderId, ToolSpec,
+};
 use crate::error::AppResult;
 
 // ── Completer ───────────────────────────────────────────────────────────────────
@@ -108,12 +110,34 @@ impl Completer {
         self.provider.id()
     }
 
+    /// The active model's capability matrix (e.g. `supports_tools`) — used by
+    /// callers that must gate behavior before making a request. The agent
+    /// controller requires native tool-calling; see
+    /// [`crate::commands::agent::agent_run`].
+    pub fn capabilities(&self) -> ModelCapabilities {
+        self.provider.capabilities(&self.model)
+    }
+
+    /// Non-streaming completion through the active provider — the single-shot text
+    /// analogue used by agentic text-generating tools (cover letter, interview
+    /// questions) that need the whole response before returning. Reuses the same
+    /// resolved provider + keychain auth + tracing as chat.
+    pub async fn complete(
+        &self,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+    ) -> AppResult<String> {
+        self.provider
+            .complete(&self.app, &self.model, system, user, temperature)
+            .await
+    }
+
     /// One agentic tool-calling turn through the active provider — the multi-turn
     /// analogue of [`research`](Self::research). Delegates to
     /// [`AiProvider::chat_with_tools`](crate::commands::ai_provider::AiProvider::chat_with_tools):
     /// providers without native tool support degrade to a single-shot answer.
-    /// Consumed by the agent controller (`crate::agent`) in Phase 2.
-    #[allow(dead_code)] // ponytail: wired in Phase 2 (agent_run)
+    /// Consumed by the agent controller (`crate::agent`).
     pub async fn chat_with_tools(
         &self,
         messages: &[ChatMsg],
