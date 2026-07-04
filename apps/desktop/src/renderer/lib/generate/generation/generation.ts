@@ -42,6 +42,7 @@ import {
   type ReferralFormat,
   resolveMarket,
   type RewriteDocType,
+  type SalaryRange,
   validateMetadata,
 } from '@ajh/prompts/generate';
 import type { GitHubRepo } from '@ajh/shared';
@@ -276,6 +277,36 @@ export async function researchCompany(
 }
 
 /**
+ * Best-effort web-grounded market salary-range lookup for the salary
+ * application question (C2). Routes through the backend enricher — the active
+ * provider's own web search, validated and cached. Any failure, timeout, or a
+ * provider that can't search yields `undefined` so the salary answer always
+ * falls back to the C1 applicant-preference-only grounding — this call must
+ * never block or fail the answer.
+ */
+export async function lookupSalaryRange(
+  role: string,
+  company: string,
+  location: string,
+  model: string
+): Promise<SalaryRange | undefined> {
+  try {
+    const { activeProvider, providerSettings } = resolveActiveProvider(model);
+    const res = await getClient().ai.lookupSalary({
+      role,
+      company: company.trim() || undefined,
+      location: location.trim() || undefined,
+      provider: activeProvider,
+      model: providerSettings?.model || model,
+      baseUrl: providerSettings?.baseUrl,
+    });
+    return res ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Generate the cover letter and surface the company-research brief that informed
  * it. When `opts.researchCompany` is on, a best-effort brief is fetched and folded
  * into the prompt; it is also returned so the caller can persist it on the
@@ -367,6 +398,10 @@ export async function generateApplicationAnswer(params: {
   /** This question's registry `guidance` (see `ApplicationQuestion.guidance`),
    *  when it has one — absent for user-typed custom questions. */
   guidance?: string;
+  /** Web-researched market salary range (salary question only, see
+   *  {@link lookupSalaryRange}); undefined when no lookup ran or it found
+   *  nothing reliable. */
+  salaryRange?: SalaryRange;
 }): Promise<string> {
   const {
     question,
@@ -378,6 +413,7 @@ export async function generateApplicationAnswer(params: {
     signal,
     onToken,
     guidance,
+    salaryRange,
   } = params;
   const profile = buildProviderProfile(model);
 
@@ -400,6 +436,7 @@ export async function generateApplicationAnswer(params: {
     market,
     applicant,
     guidance,
+    salaryRange,
   });
   const raw = await streamGenerate(
     model,

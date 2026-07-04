@@ -14,6 +14,7 @@ import {
   buildMetadataPrompt,
   buildResumePrompt,
   buildResumeSystemPrompt,
+  buildSalaryRangeBlock,
   EMPHASIS_OPTIONS,
   type EmphasisId,
   extractPlainText,
@@ -795,6 +796,130 @@ describe('application questions', () => {
     // Range -> single Number line is pinned deterministically to the upper
     // bound of the applicant's own stated range (grounded, not fabricated).
     expect(salaryEntry?.guidance).toMatch(/upper bound/i);
+  });
+
+  it('the salary guidance also grounds a market-researched range (anti-lowball + midpoint, C2)', () => {
+    const salaryEntry = APPLICATION_QUESTIONS.find((q) => q.id === 'salary');
+    expect(salaryEntry?.guidance).toMatch(/<salary_context>/);
+    // Anti-lowball: a below-market stated expectation is floored at the
+    // market's lower bound, never left underselling the candidate.
+    expect(salaryEntry?.guidance).toMatch(/never undersell/i);
+    expect(salaryEntry?.guidance).toMatch(/falls below the market range, use the lower bound/i);
+    // Midpoint: no numeric expectation, but a market range exists -> midpoint.
+    expect(salaryEntry?.guidance).toMatch(
+      /no numeric expectation at all, use the midpoint of the market range/i
+    );
+    // Ungrounded still forbids invention: neither source present -> non-committal.
+    expect(salaryEntry?.guidance).toMatch(
+      /NEITHER a numeric expectation NOR a market range is present/i
+    );
+  });
+
+  it('precedence contradiction fix: a market range ALWAYS produces a number, even with no/non-numeric applicant expectation', () => {
+    // Regression test for the reviewer-flagged contradiction: the midpoint
+    // branch and the non-committal/omit branch must never both be reachable
+    // for the same state (market range present + no/non-numeric expectation).
+    const salaryEntry = APPLICATION_QUESTIONS.find((q) => q.id === 'salary');
+    expect(salaryEntry?.guidance).toMatch(
+      /if a <salary_context> market range is present, ALWAYS include a number/i
+    );
+    // The non-committal/omit-the-line fallback is scoped to "no market range" —
+    // it must NOT be reachable merely because the expectation is absent/non-numeric
+    // while a market range exists.
+    expect(salaryEntry?.guidance).toMatch(
+      /if there is NO <salary_context> market range, use a number only when/i
+    );
+  });
+
+  it('cross-currency fix: the anti-lowball floor/midpoint reconciliation only applies within the SAME currency as the market range', () => {
+    // Regression test for the reviewer-flagged bug: <salary_context> is in the
+    // market's local currency, but <applicant_details> is free text and may be
+    // a different currency — a raw numeric floor compare across currencies
+    // would silently paste a wrong-currency number (and this may auto-submit).
+    const salaryEntry = APPLICATION_QUESTIONS.find((q) => q.id === 'salary');
+    expect(salaryEntry?.guidance).toMatch(/same currency as <salary_context>/i);
+    expect(salaryEntry?.guidance).toMatch(/different currency than <salary_context>/i);
+    expect(salaryEntry?.guidance).toMatch(/do not convert or floor/i);
+    // A mismatched/ambiguous currency falls back to the applicant's own stated
+    // figure (C1 behavior for that number), with the market range only as
+    // separate prose context — never reconciled/converted.
+    expect(salaryEntry?.guidance).toMatch(
+      /use the originally stated figure and currency for the number line as given/i
+    );
+
+    const sys = buildApplicationAnswerSystemPrompt();
+    expect(sys).toMatch(/same currency as <salary_context>/i);
+    expect(sys).toMatch(/different currency than <salary_context>/i);
+    expect(sys).toMatch(/do not convert or floor/i);
+  });
+});
+
+describe('buildSalaryRangeBlock (C2)', () => {
+  it('renders only the validated integers and currency code as a fenced, labeled block', () => {
+    const block = buildSalaryRangeBlock({ min: 65000, max: 80000, currency: 'EUR' });
+    expect(block).toContain('<salary_context>');
+    expect(block).toContain('65000');
+    expect(block).toContain('80000');
+    expect(block).toContain('EUR');
+    expect(block).toMatch(/web-sourced/i);
+  });
+
+  it('is empty for no range, or a structurally invalid one (defense in depth)', () => {
+    expect(buildSalaryRangeBlock(undefined)).toBe('');
+    expect(buildSalaryRangeBlock({ min: 0, max: 80000, currency: 'EUR' })).toBe('');
+    expect(buildSalaryRangeBlock({ min: 90000, max: 80000, currency: 'EUR' })).toBe('');
+  });
+
+  it('is empty for a structurally invalid currency code (self-defending, not just trusting Rust)', () => {
+    for (const currency of ['', 'U', 'US', 'TOOLONG', '12A', 'eu-r']) {
+      expect(buildSalaryRangeBlock({ min: 65000, max: 80000, currency })).toBe('');
+    }
+  });
+
+  it('accepts a 4-letter currency code', () => {
+    expect(buildSalaryRangeBlock({ min: 1, max: 2, currency: 'USDX' })).toContain('USDX');
+  });
+});
+
+describe('application answer + a market salary range (C2)', () => {
+  const salaryEntry = APPLICATION_QUESTIONS.find((q) => q.id === 'salary');
+  const salaryParams = {
+    question: salaryEntry?.question ?? '',
+    resume: RESUME_FOR_GROUNDING,
+    jobAd: 'A role',
+    meta: META,
+    guidance: salaryEntry?.guidance,
+  };
+
+  it('system prompt states the anti-lowball, midpoint, and market-mention rules', () => {
+    const sys = buildApplicationAnswerSystemPrompt();
+    expect(sys).toMatch(/<salary_context>/);
+    expect(sys).toMatch(/never undersell/i);
+    expect(sys).toMatch(/midpoint/i);
+  });
+
+  it('precedence contradiction fix: system prompt scopes the non-committal fallback to "no market range"', () => {
+    const sys = buildApplicationAnswerSystemPrompt();
+    expect(sys).toMatch(/When <salary_context>.*is present, ALWAYS state a figure/i);
+    expect(sys).toMatch(/When <salary_context> is NOT present, a figure may be stated only when/i);
+  });
+
+  it('folds a market range into a fenced <salary_context> block in the user prompt', () => {
+    const prompt = buildApplicationAnswerPrompt({
+      ...salaryParams,
+      salaryRange: { min: 65000, max: 80000, currency: 'EUR' },
+    });
+    expect(prompt).toContain('<salary_context>');
+    expect(prompt).toContain('65000');
+    expect(prompt).toContain('80000');
+  });
+
+  it('omits the rendered market-range block when no range is given (unchanged C1 fallback)', () => {
+    // The guidance text itself mentions the <salary_context> tag name as part
+    // of its instructions regardless, so assert on the actual rendered block
+    // content instead of the bare tag substring.
+    const prompt = buildApplicationAnswerPrompt(salaryParams);
+    expect(prompt).not.toContain('Market range for this role');
   });
 });
 

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 
-import { generateApplicationAnswer } from '@/lib/generate';
+import { generateApplicationAnswer, lookupSalaryRange } from '@/lib/generate';
 
 import { useApplicationAnswers } from './useApplicationAnswers';
 
@@ -21,6 +21,7 @@ vi.mock('@/lib/generate', () => ({
   }),
   generateApplicationAnswer: vi.fn().mockResolvedValue('Because I led a payments migration.'),
   researchCompany: vi.fn().mockResolvedValue(''),
+  lookupSalaryRange: vi.fn().mockResolvedValue(undefined),
 }));
 
 const save = vi.fn().mockResolvedValue({ id: 'gen-1', success: true });
@@ -48,6 +49,8 @@ describe('useApplicationAnswers', () => {
   beforeEach(() => {
     save.mockClear();
     vi.mocked(generateApplicationAnswer).mockClear();
+    vi.mocked(lookupSalaryRange).mockClear();
+    vi.mocked(lookupSalaryRange).mockResolvedValue(undefined);
   });
 
   it('toggles selection and gates generation on a non-empty selection', () => {
@@ -266,6 +269,54 @@ describe('useApplicationAnswers', () => {
       );
       const call = vi.mocked(generateApplicationAnswer).mock.calls[0]?.[0];
       expect(call?.guidance).toBeUndefined();
+    });
+  });
+
+  describe('salary market-range lookup (C2)', () => {
+    it('triggers lookupSalaryRange for the salary question and forwards the result', async () => {
+      vi.mocked(lookupSalaryRange).mockResolvedValue({ min: 65000, max: 80000, currency: 'EUR' });
+      const { result } = render();
+      act(() => result.current.toggle('salary'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(lookupSalaryRange).toHaveBeenCalledWith('Engineer', 'Acme', '', 'llama3');
+      expect(generateApplicationAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          question: 'What are your salary expectations?',
+          salaryRange: { min: 65000, max: 80000, currency: 'EUR' },
+        })
+      );
+    });
+
+    it('does not trigger lookupSalaryRange for a non-salary question', async () => {
+      const { result } = render();
+      act(() => result.current.toggle('why-company'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(lookupSalaryRange).not.toHaveBeenCalled();
+      const call = vi.mocked(generateApplicationAnswer).mock.calls[0]?.[0];
+      expect(call?.salaryRange).toBeUndefined();
+    });
+
+    it('degrades to the C1 fallback (undefined salaryRange, no throw) when the lookup fails', async () => {
+      vi.mocked(lookupSalaryRange).mockRejectedValue(new Error('provider unavailable'));
+      const { result } = render();
+      act(() => result.current.toggle('salary'));
+
+      // `generate()` must not throw even though the lookup rejects.
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(result.current.error).toBeNull();
+      const call = vi.mocked(generateApplicationAnswer).mock.calls[0]?.[0];
+      expect(call?.salaryRange).toBeUndefined();
     });
   });
 });

@@ -8,7 +8,9 @@ import {
   extractMetadata,
   generateApplicationAnswer,
   type GenerationMeta,
+  lookupSalaryRange,
   researchCompany as fetchCompanyBrief,
+  type SalaryRange,
 } from '@/lib/generate';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { keys } from '@/services/query-client';
@@ -132,6 +134,23 @@ export function useApplicationAnswers({
       const chosen = [...APPLICATION_QUESTIONS.filter((q) => selected.has(q.id)), ...custom];
       const results: ApplicationAnswer[] = [];
       for (const q of chosen) {
+        // Salary question only: a best-effort web-grounded market range feeds
+        // the "Number:" precedence. Belt-and-suspenders try/catch here on top of
+        // `lookupSalaryRange`'s own — a lookup failure must NEVER block or fail
+        // the rest of this loop, just leave `salaryRange` undefined (C1 fallback).
+        let salaryRange: SalaryRange | undefined;
+        if (q.id === 'salary') {
+          try {
+            salaryRange = await lookupSalaryRange(
+              detected.jobTitle,
+              detected.companyName,
+              detected.jobLocation || detected.jobCountry || '',
+              model
+            );
+          } catch {
+            salaryRange = undefined;
+          }
+        }
         const answer = await generateApplicationAnswer({
           question: q.question,
           resume,
@@ -142,6 +161,7 @@ export function useApplicationAnswers({
           // Only registry entries carry `guidance`; custom questions are
           // always `undefined` (see the `custom` state shape above).
           guidance: q.guidance,
+          salaryRange,
         });
         results.push({ id: q.id, question: q.question, answer });
         setAnswers((prev) => ({ ...prev, [q.id]: answer }));

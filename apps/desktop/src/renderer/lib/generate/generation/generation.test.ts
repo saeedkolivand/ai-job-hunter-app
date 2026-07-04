@@ -12,6 +12,7 @@ import {
   generateCoverLetter,
   generateGitHubProjects,
   generateResume,
+  lookupSalaryRange,
   researchCompany,
 } from './generation';
 
@@ -238,6 +239,53 @@ describe('generateCoverLetter', () => {
   });
 });
 
+describe('lookupSalaryRange (C2)', () => {
+  const registerWithLookup = (lookupSalary: ReturnType<typeof vi.fn>) => {
+    const client = createMockClient({
+      ai: {
+        generatePipeline: vi.fn().mockResolvedValue({ jobId: 'gen-1' }),
+        onStream: vi.fn((h: (chunk: unknown) => void) => {
+          streamHandler = h;
+          return () => {};
+        }),
+        lookupSalary,
+      },
+      jobs: { get: vi.fn().mockResolvedValue(null), cancel: vi.fn() },
+    });
+    _registerClient(client);
+    return client;
+  };
+
+  it('resolves the validated range and forwards role/company/location', async () => {
+    const lookupSalary = vi.fn().mockResolvedValue({ min: 65000, max: 80000, currency: 'EUR' });
+    const client = registerWithLookup(lookupSalary);
+
+    const range = await lookupSalaryRange('Backend Engineer', 'Acme', 'Berlin, Germany', 'llama3');
+
+    expect(range).toEqual({ min: 65000, max: 80000, currency: 'EUR' });
+    expect(client.ai.lookupSalary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: 'Backend Engineer',
+        company: 'Acme',
+        location: 'Berlin, Germany',
+      })
+    );
+  });
+
+  it('degrades to undefined when the backend finds nothing reliable', async () => {
+    registerWithLookup(vi.fn().mockResolvedValue(null));
+    const range = await lookupSalaryRange('Backend Engineer', 'Acme', 'Berlin', 'llama3');
+    expect(range).toBeUndefined();
+  });
+
+  it('degrades to undefined (never throws) when the backend fails', async () => {
+    registerWithLookup(vi.fn().mockRejectedValue(new Error('provider unavailable')));
+    await expect(
+      lookupSalaryRange('Backend Engineer', 'Acme', 'Berlin', 'llama3')
+    ).resolves.toBeUndefined();
+  });
+});
+
 describe('generateApplicationAnswer', () => {
   it('grounds an answer prompt with the question + brief and returns clean text', async () => {
     const client = register();
@@ -283,6 +331,43 @@ describe('generateApplicationAnswer', () => {
           expect.objectContaining({
             role: 'user',
             content: expect.stringContaining('<company_research>'),
+          }),
+        ]),
+      })
+    );
+  });
+
+  it('folds a market salary range into the prompt as a fenced <salary_context> block (C2)', async () => {
+    const client = register();
+
+    const p = generateApplicationAnswer({
+      question: 'What are your salary expectations?',
+      resume: 'My resume: led a payments migration.',
+      jobAd: 'Backend role at Acme',
+      meta: {
+        resumeLanguage: 'en',
+        jobAdLanguage: 'en',
+        mismatch: false,
+        candidateName: 'X',
+        jobTitle: 'Backend Engineer',
+        companyName: 'Acme',
+        targetLanguage: 'en',
+        topRequirements: [],
+      },
+      model: 'llama3',
+      salaryRange: { min: 65000, max: 80000, currency: 'EUR' },
+    });
+    await flushUntilStreaming();
+    emit('Open to discussing, given the market range. Number: 72500');
+    done();
+    await p;
+
+    expect(client.ai.generatePipeline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: 'user',
+            content: expect.stringContaining('<salary_context>'),
           }),
         ]),
       })

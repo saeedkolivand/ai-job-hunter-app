@@ -134,6 +134,17 @@ impl AiProvider for OllamaClient {
         ollama_research(app, self, model, company, role).await
     }
 
+    async fn research_salary(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        role: &str,
+        company: &str,
+        location: &str,
+    ) -> AppResult<String> {
+        ollama_research_salary(app, self, model, role, company, location).await
+    }
+
     async fn embed(&self, _app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
         embed_with(model, text).await
     }
@@ -312,6 +323,35 @@ fn parse_web_search(body: &Value, limit: usize) -> Vec<SearchResult> {
         .unwrap_or_default()
 }
 
+/// Shared search step for every Ollama-family research facet: resolve the
+/// account key and run the Ollama Web Search API. Returns an empty `Vec` when
+/// the key is missing or the search fails, so callers degrade to `""` without
+/// each re-implementing the key-check + trace boilerplate.
+async fn ollama_search(app: &AppHandle, model: &str, query: &str) -> Vec<SearchResult> {
+    let key = get_provider_key(app, ACCOUNT_KEY).unwrap_or_default();
+    if key.trim().is_empty() {
+        return Vec::new();
+    }
+    let trace = RequestTrace::begin(
+        ProviderId::OllamaCloud,
+        model,
+        "/api/web_search",
+        "https://ollama.com",
+        false,
+    );
+    match ollama_web_search(&key, query, 5).await {
+        Ok(r) => {
+            trace.end(Some(200), true);
+            r
+        }
+        Err(e) => {
+            trace.end(None, false);
+            tracing::warn!("ollama web_search failed: {e}");
+            Vec::new()
+        }
+    }
+}
+
 /// Shared Ollama-family research: search via the Ollama Web Search API (account
 /// key), then synthesize the brief with `provider` — the local daemon for
 /// [`OllamaClient`], `ollama.com/v1` for Ollama Cloud. Returns `""` when the key
@@ -323,34 +363,36 @@ pub async fn ollama_research(
     company: &str,
     role: &str,
 ) -> AppResult<String> {
-    let key = get_provider_key(app, ACCOUNT_KEY).unwrap_or_default();
-    if key.trim().is_empty() {
-        return Ok(String::new());
-    }
-    let trace = RequestTrace::begin(
-        ProviderId::OllamaCloud,
-        model,
-        "/api/web_search",
-        "https://ollama.com",
-        false,
-    );
-    let results = match ollama_web_search(&key, &research::search_query(company), 5).await {
-        Ok(r) => {
-            trace.end(Some(200), true);
-            r
-        }
-        Err(e) => {
-            trace.end(None, false);
-            tracing::warn!("ollama web_search failed: {e}");
-            return Ok(String::new());
-        }
-    };
+    let results = ollama_search(app, model, &research::search_query(company)).await;
     if results.is_empty() {
         return Ok(String::new());
     }
     let user = research::synth_user(company, role, &results);
     provider
         .complete(app, model, research::SYNTH_SYSTEM, &user, Some(0.2))
+        .await
+}
+
+/// Salary-range sibling of [`ollama_research`]: same search-then-synthesize
+/// shape, but the salary query/prompts (compact JSON contract, see
+/// `research::SALARY_SYSTEM`). Returns `""` when the key is missing or the
+/// search yields nothing, so the lookup degrades gracefully.
+pub async fn ollama_research_salary(
+    app: &AppHandle,
+    provider: &dyn AiProvider,
+    model: &str,
+    role: &str,
+    company: &str,
+    location: &str,
+) -> AppResult<String> {
+    let query = research::salary_search_query(role, company, location);
+    let results = ollama_search(app, model, &query).await;
+    if results.is_empty() {
+        return Ok(String::new());
+    }
+    let user = research::salary_synth_user(role, company, location, &results);
+    provider
+        .complete(app, model, research::SALARY_SYSTEM, &user, Some(0.2))
         .await
 }
 

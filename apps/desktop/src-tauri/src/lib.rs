@@ -44,6 +44,7 @@ pub mod postings;
 pub mod profile_import;
 pub mod recommend;
 pub mod referrals;
+pub mod salary_research;
 pub mod scraping;
 pub mod theme;
 pub mod tray;
@@ -772,6 +773,7 @@ pub fn run() {
             commands::ai::ai_list_models,
             commands::ai::ai_inspect_model,
             commands::ai::ai_research_company,
+            commands::ai::ai_lookup_salary,
             commands::ai::ai_pull_model,
             commands::ai::ai_unload_model,
             commands::ai::ai_embed,

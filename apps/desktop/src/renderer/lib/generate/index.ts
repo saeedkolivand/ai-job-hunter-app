@@ -13,6 +13,7 @@ export {
   generateResume,
   type GenerationMeta,
   type GenerationMode,
+  lookupSalaryRange,
   MODES,
   parseInterviewQuestions,
   researchCompany,
@@ -43,7 +44,12 @@ export type {
  * useTailorGeneration) stay in lockstep.
  */
 export const PERSIST_DEBOUNCE_MS = 800;
-export type { EmphasisId, InterviewAudience, RewriteDocType } from '@ajh/prompts/generate';
+export type {
+  EmphasisId,
+  InterviewAudience,
+  RewriteDocType,
+  SalaryRange,
+} from '@ajh/prompts/generate';
 export {
   CONNECTION_NOTE_LIMIT,
   EMPHASIS_OPTIONS,

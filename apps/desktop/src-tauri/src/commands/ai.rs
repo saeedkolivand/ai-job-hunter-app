@@ -216,6 +216,79 @@ pub async fn ai_research_company(
     json!({ "company": result.key, "brief": result.content })
 }
 
+/// Web-grounded market salary-range lookup for the salary application question
+/// (C2). Reuses the shared `SalaryResearch` enricher — the active provider's own
+/// web search, parsed and strictly validated, cached for a week. Degrades
+/// gracefully: returns `None` (never an error) whenever the provider can't
+/// search, the search yields nothing reliable, or times out — so the salary
+/// answer always falls back to grounding in the applicant's own stated
+/// expectation alone. Only validated integers + a sanitized currency code are
+/// ever returned; raw web text never crosses this boundary.
+#[tauri::command]
+pub async fn ai_lookup_salary(
+    app: AppHandle,
+    role: String,
+    company: Option<String>,
+    location: Option<String>,
+    provider: Option<String>,
+    model: Option<String>,
+    base_url: Option<String>,
+) -> Option<crate::salary_research::SalaryRange> {
+    use crate::pipeline::Completer;
+    use crate::salary_research::SalaryResearch;
+
+    // Anti-abuse: rate + concurrency cap, mirroring `ai_generate`'s guard
+    // exactly. This is a billable provider web search (Ollama fires two calls:
+    // search + synthesis) with no other ceiling, so a looping/compromised
+    // renderer varying inputs must not drive unbounded paid-API spend. The
+    // `"ai_research"` bucket is shared with any future research-family command
+    // (`ai_research_company` is a follow-up retrofit — out of scope here).
+    let limiter = app
+        .state::<std::sync::Arc<crate::limits::Limiter>>()
+        .inner()
+        .clone();
+    let _guard = match limiter.acquire(
+        "ai_research",
+        crate::limits::AI_RESEARCH_RATE_MAX,
+        crate::limits::AI_RESEARCH_CONCURRENCY_MAX,
+    ) {
+        Ok(g) => g,
+        Err(e) => {
+            tracing::debug!("lookup_salary: rate limited: {e}");
+            return None;
+        }
+    };
+
+    let completer = match Completer::resolve(&app, provider.as_deref(), model.as_deref(), base_url)
+    {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::debug!("lookup_salary: provider resolution failed: {e}");
+            return None;
+        }
+    };
+
+    // Per-provider daily request ceiling — the same coarse runaway-cost
+    // backstop `ai_generate` charges; the `(day, provider)` bucket is already
+    // shared across every AI command against that provider.
+    if let Err(e) = limiter.charge_provider_daily(
+        completer.provider_id().as_str(),
+        crate::limits::PROVIDER_DAILY_MAX,
+    ) {
+        tracing::debug!("lookup_salary: daily budget exceeded: {e}");
+        return None;
+    }
+
+    SalaryResearch
+        .enrich(
+            &completer,
+            &role,
+            company.as_deref().unwrap_or(""),
+            location.as_deref().unwrap_or(""),
+        )
+        .await
+}
+
 #[tauri::command]
 pub async fn ai_pull_model(app: AppHandle, model: String) -> Value {
     let job_id = new_job_id();
