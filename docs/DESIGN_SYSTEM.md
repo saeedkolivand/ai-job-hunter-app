@@ -258,8 +258,10 @@ import { Button, Input, GlassCard, Modal } from '@ajh/ui';
 #### `TextArea`
 
 ```typescript
-<TextArea label="Cover Letter" rows={8} autoResize />
+<TextArea label="Cover Letter" rows={8} />
 ```
+
+Props: `label`, `placeholder`, `error`, `hint`, `rows`, `disabled`, `readOnly`, `className` — standard HTML semantics. **Note:** `autoResize` is not yet implemented.
 
 #### `RichTextEditor`
 

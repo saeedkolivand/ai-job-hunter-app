@@ -1659,6 +1659,29 @@
         "maxSteps": "Stopped — reached the step limit",
         "maxTokens": "Stopped — reached the token limit",
         "cancelled": "Cancelled"
+      },
+      "confirm": {
+        "heading": "Action needs your approval",
+        "announcement": "The agent is waiting for your approval before it continues.",
+        "hint": "Approving performs this action right away. Deny skips it — the agent continues without it.",
+        "approve": "Approve",
+        "approveEdited": "Save changes & approve",
+        "approveHint": "Performs the action immediately.",
+        "deny": "Deny",
+        "denyHint": "Skips this action safely.",
+        "edit": "Edit",
+        "revert": "Revert to original",
+        "submitting": "Submitting your decision…",
+        "error": "Something went wrong sending your decision. You can try again.",
+        "unavailable": "This action is no longer available. It may have already been resolved, or the run has ended.",
+        "rawArgsLabel": "Action details",
+        "genericSummary": "The agent wants to run \"{{tool}}\". Review the details below before approving.",
+        "tools": {
+          "saveCoverLetter": {
+            "summary": "Save this cover letter to your saved documents?",
+            "contentLabel": "Cover letter text"
+          }
+        }
       }
     },
     "scrapeJobs": "Scrape Jobs",
