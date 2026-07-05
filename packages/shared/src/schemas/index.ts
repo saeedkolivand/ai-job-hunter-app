@@ -214,6 +214,23 @@ export const AgentRunRequestSchema = z.object({
   baseUrl: z.string().optional(),
 });
 
+/**
+ * Request for `agent.confirm` — the human-in-the-loop decision on ONE suspended
+ * Write action of a running agent. `jobId` + `callId` identify the pending call
+ * (echoed from the `confirm_request` step). `decision` is the user's verdict;
+ * `editedArgs` carries the (content-only) edited arguments and is required by, and
+ * only meaningful for, `approveEdited`. The Rust controller re-validates
+ * `editedArgs` against the tool schema and rejects any routing/egress field — the
+ * trusted provider/model/base_url/job identity always come from the run's context,
+ * never from here.
+ */
+export const AgentConfirmRequestSchema = z.object({
+  jobId: z.string().min(1),
+  callId: z.string().min(1),
+  decision: z.enum(['approve', 'approveEdited', 'deny']),
+  editedArgs: z.unknown().optional(),
+});
+
 export const JobIdSchema = z.object({ jobId: z.string().min(1) });
 
 export const CredentialSetSchema = z.object({
@@ -460,3 +477,4 @@ export type ScrapeUrlRequest = z.infer<typeof ScrapeUrlRequestSchema>;
 export type MatchResumeRequest = z.infer<typeof MatchResumeRequestSchema>;
 export type MatchResumeBatchRequest = z.infer<typeof MatchResumeBatchRequestSchema>;
 export type AgentRunRequest = z.infer<typeof AgentRunRequestSchema>;
+export type AgentConfirmRequest = z.infer<typeof AgentConfirmRequestSchema>;

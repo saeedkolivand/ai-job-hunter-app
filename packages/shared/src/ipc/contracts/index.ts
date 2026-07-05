@@ -128,6 +128,7 @@ export const PROTOCOL_VERSION = '1.1.0';
 
 export {
   AGENT_CHANNELS,
+  type AgentConfirmPayload,
   type AgentContract,
   type AgentStepEvent,
   type AgentStepKind,

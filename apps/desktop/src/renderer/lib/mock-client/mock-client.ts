@@ -37,6 +37,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
   const base: AppClient = {
     agent: {
       run: async () => ({ jobId: 'mock-agent' }),
+      confirm: async () => ({ ok: true }),
       onStep: unsub,
     },
 

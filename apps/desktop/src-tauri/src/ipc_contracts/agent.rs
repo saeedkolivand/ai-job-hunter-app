@@ -14,3 +14,14 @@ pub struct AgentRunRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
 }
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+pub struct AgentConfirmRequest {
+    pub job_id: String,
+    pub call_id: String,
+    pub decision: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edited_args: Option<serde_json::Value>,
+}
