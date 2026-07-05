@@ -36,8 +36,9 @@ export type AgentStepKind = 'turn' | 'confirm_request' | 'proposal';
 
 /** The pending Write call a `confirm_request` step asks the user to approve. */
 export interface AgentConfirmPayload {
-  /** Stable id of this pending call within the run (`"{step}-{tool}"`); echo it
-   *  back in {@link AgentContract.confirm}. */
+  /** Stable id of this pending call within the run (`"{step}-{idx}-{tool}"`,
+   *  where `idx` is the call's position within its turn — guards two same-turn
+   *  calls to the same tool); echo it back in {@link AgentContract.confirm}. */
   callId: string;
   /** The Write tool the agent wants to run (a fixed, trusted registry name). */
   tool: string;

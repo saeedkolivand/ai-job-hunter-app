@@ -152,6 +152,14 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
         // Piggyback on the existing milestone live region rather than adding a
         // second aria-live source — one announcement per suspend, not per token.
         setAnnouncement(t('jobs.prep.confirm.announcement'));
+      } else {
+        // Any other step for THIS run supersedes a prior pending confirm: the
+        // backend's 300s CONFIRM_TIMEOUT denies-and-resumes server-side, so a
+        // `turn`/`proposal` step can legitimately follow without the renderer
+        // ever hearing a resolve. Clear the stale card rather than let it
+        // linger next to fresh narration — fail-closed, since a late
+        // Approve/Deny on that callId would return `{ ok: false }` anyway.
+        setPendingConfirm(null);
       }
       const ev = stepToEvent(event);
       if (ev) send(ev);

@@ -489,4 +489,58 @@ describe('PrepApplicationPanel — confirm gate (Phase 3)', () => {
     expect(screen.getByText('jobs.prep.stop')).toBeInTheDocument();
     expect(screen.queryByText('jobs.prep.start')).not.toBeInTheDocument();
   });
+
+  it('a server-side CONFIRM_TIMEOUT (turn/proposal step resumes without a resolve) clears the stale confirm card', async () => {
+    openModal();
+    await clickStart();
+
+    act(() => {
+      stepHandler?.(confirmRequestStep());
+    });
+    expect(screen.getByText('jobs.prep.confirm.heading')).toBeInTheDocument();
+
+    // The backend denied-and-resumed server-side (300s CONFIRM_TIMEOUT) — the
+    // renderer never heard a resolve, but a fresh turn for this run arrives.
+    act(() => {
+      stepHandler?.(turnStep({ tools: ['research_company'], text: 'Researching Acme…' }));
+    });
+
+    expect(screen.queryByText('jobs.prep.confirm.heading')).not.toBeInTheDocument();
+    expect(screen.getByText('Researching Acme…')).toBeInTheDocument();
+  });
+
+  it('a new confirm_request (different callId) replaces the prior pending confirm', async () => {
+    openModal();
+    await clickStart();
+
+    act(() => {
+      stepHandler?.(confirmRequestStep());
+    });
+    expect(screen.getByText('jobs.prep.confirm.heading')).toBeInTheDocument();
+
+    act(() => {
+      stepHandler?.(
+        confirmRequestStep({
+          step: 6,
+          confirm: {
+            callId: '6-save_cover_letter',
+            tool: 'save_cover_letter',
+            args: { coverLetterText: 'Second draft.' },
+          },
+        })
+      );
+    });
+
+    expect(screen.getByText('jobs.prep.confirm.heading')).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByText('jobs.prep.confirm.approve'));
+    });
+
+    expect(mockConfirmMutateAsync).toHaveBeenCalledWith({
+      jobId: 'job-1',
+      callId: '6-save_cover_letter',
+      decision: 'approve',
+      editedArgs: undefined,
+    });
+  });
 });
