@@ -399,6 +399,44 @@ pub(crate) fn job_text_for(app: &AppHandle, job_id: &str) -> Option<String> {
     posting_to_text(posting)
 }
 
+/// Identity fields of a cached posting: the company/title/url/board an
+/// application aggregate needs when a document is saved for it. All loaded
+/// server-side by id (mirrors [`job_text_for`]'s single-lock lookup) — the model
+/// never supplies these, so a prompt-injected posting can't spoof the target of a
+/// save. Returns `None` when the posting isn't in the live cache.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct JobPostingMeta {
+    pub company: String,
+    pub title: String,
+    pub url: String,
+    pub board: String,
+}
+
+/// `pub(crate)` so the agent's `save_cover_letter` Write tool resolves the same
+/// posting identity the rest of the app uses, instead of re-deriving it.
+pub(crate) fn job_meta_for(app: &AppHandle, job_id: &str) -> Option<JobPostingMeta> {
+    let cache = app.state::<Mutex<PostingsCache>>();
+    let guard = cache.lock();
+    let posting = guard
+        .get_all()
+        .iter()
+        .find(|p| p.get("id").and_then(|v| v.as_str()) == Some(job_id))?;
+    let field = |k: &str| {
+        posting
+            .get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    Some(JobPostingMeta {
+        company: field("company"),
+        title: field("title"),
+        url: field("url"),
+        // `JobPosting` serializes the originating board under `source`.
+        board: field("source"),
+    })
+}
+
 /// Resolve the text blob for many job ids under a SINGLE `PostingsCache` lock.
 /// One pass over the cache builds an `id → text` map (entries with no usable text
 /// are omitted), turning the batch scorer's per-job lookup into O(1) instead of

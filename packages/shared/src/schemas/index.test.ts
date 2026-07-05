@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AgentConfirmRequestSchema,
   AgentRunRequestSchema,
   AiGenerateRequestSchema,
   AutopilotCreateSchema,
@@ -44,6 +45,31 @@ describe('AgentRunRequestSchema', () => {
       expect(() => AgentRunRequestSchema.parse(without)).toThrow();
       expect(() => AgentRunRequestSchema.parse({ ...valid, [key]: '' })).toThrow();
     }
+  });
+});
+
+describe('AgentConfirmRequestSchema', () => {
+  const valid = { jobId: 'job-1', callId: '3-save_cover_letter', decision: 'approve' as const };
+
+  it('accepts each valid decision, with optional editedArgs', () => {
+    for (const decision of ['approve', 'approveEdited', 'deny'] as const) {
+      expect(() => AgentConfirmRequestSchema.parse({ ...valid, decision })).not.toThrow();
+    }
+    expect(() =>
+      AgentConfirmRequestSchema.parse({
+        ...valid,
+        decision: 'approveEdited',
+        editedArgs: { coverLetterText: 'edited' },
+      })
+    ).not.toThrow();
+  });
+
+  it('requires non-empty jobId + callId and a known decision', () => {
+    expect(() => AgentConfirmRequestSchema.parse({ ...valid, jobId: '' })).toThrow();
+    expect(() => AgentConfirmRequestSchema.parse({ ...valid, callId: '' })).toThrow();
+    expect(() => AgentConfirmRequestSchema.parse({ ...valid, decision: 'nuke' })).toThrow();
+    const { jobId: _j, ...noJob } = valid;
+    expect(() => AgentConfirmRequestSchema.parse(noJob)).toThrow();
   });
 });
 

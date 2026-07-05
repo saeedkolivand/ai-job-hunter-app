@@ -644,6 +644,11 @@ pub fn run() {
             // `scrape_url`. Process-local; resets on restart. Not in the reset
             // registry — it holds no user data, only transient counters.
             app.manage(std::sync::Arc::new(limits::Limiter::new()));
+            // Agent confirm gate: pending human-in-the-loop Write confirmations,
+            // keyed by (jobId, callId). `agent_run` registers an entry when it
+            // suspends on a Write tool; `agent_confirm` resolves it. Process-local,
+            // holds no user data — not in the reset registry.
+            app.manage(agent::gate::AgentGate::default());
             // Live performance config (balanced default). Updated by system_set_performance_mode.
             crate::performance::set(crate::performance::PerformanceConfig::default());
             app.manage(commands::translation::TranslationCache::new());
@@ -787,8 +792,9 @@ pub fn run() {
             commands::ai::ai_set_embedding_config,
             commands::ai::ai_reembed_all,
             commands::pipeline::generate_pipeline,
-            // agent (Phase 2 — "prep this application" agentic flow)
+            // agent ("prep this application" flow + human-in-the-loop confirm gate)
             commands::agent::agent_run,
+            commands::agent::agent_confirm,
             // resume extraction
             commands::resume::extract_resume,
             // documents

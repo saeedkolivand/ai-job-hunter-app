@@ -149,13 +149,13 @@ type AIProvider = 'ollama' | 'openai' | 'anthropic' | 'gemini' | 'openai-compati
 
 ## `agent`
 
-Agentic application-prep flow: a user-facing orchestration that researches a company, matches a resume, drafts a cover letter, and suggests interview questions for a single job. Phase 2 implements the "prep application" flow (read-only tools, display-only proposal). See `apps/desktop/src-tauri/src/agent/` (Rust controller, flows, tools) and `apps/desktop/src/renderer/features/jobs/` (UI panel).
+Agentic application-prep flow: a user-facing orchestration that researches a company, matches a resume, drafts a cover letter, and suggests interview questions for a single job. Phase 2 implements the "prep application" flow (read-only tools, display-only proposal). Phase 3 adds the human-in-the-loop confirm gate: when the agent proposes a Write action, it suspends and emits a `confirm_request` step; the renderer collects the user's approval/edits/denial via `agent.confirm()`. See `apps/desktop/src-tauri/src/agent/` (Rust controller, flows, tools, gate) and `apps/desktop/src/renderer/features/jobs/` (UI panel).
 
 ### Methods
 
 #### `agent.run(req: AgentRunRequest): Promise<{ jobId: string }>`
 
-Starts the "prep this application" agentic loop for one job. Returns immediately with a `jobId`; progress streams via `agent.onStep()` as `agent:step` events, and the run concludes with a `jobs:event` of type `completed`/`failed`/`cancelled`. The agent is read-only and tool-whitelisted (cannot write status or modify any data); the terminal step is a display-only proposal for the user to review.
+Starts the "prep this application" agentic loop for one job. Returns immediately with a `jobId`; progress streams via `agent.onStep()` as `agent:step` events, and the run concludes with a `jobs:event` of type `completed`/`failed`/`cancelled`. When a Write tool is invoked, the run suspends and emits a `confirm_request` step; the agent does not proceed until the renderer calls `agent.confirm()`.
 
 ```typescript
 interface AgentRunRequest {
@@ -169,6 +169,23 @@ interface AgentRunRequest {
   model: string;
   /** Custom base URL for OpenAI-compatible providers (optional). */
   baseUrl?: string;
+}
+```
+
+#### `agent.confirm(req: AgentConfirmRequest): Promise<{ ok: boolean }>`
+
+Resolves a suspended Write confirmation for a running agent. `ok` is `false` when there is no such pending call (already resolved, timed out, cancelled, or unknown id) — never throws for that case. Edited args may change CONTENT only; the Rust backend re-validates them and rejects any routing/egress fields (all identity stays in the trusted `ToolContext`).
+
+```typescript
+interface AgentConfirmRequest {
+  /** The agent_run job id this step belongs to. */
+  jobId: string;
+  /** The pending call id (echoed from the confirm_request step). */
+  callId: string;
+  /** User's decision: 'approve', 'approveEdited', or 'deny'. */
+  decision: 'approve' | 'approveEdited' | 'deny';
+  /** Edited tool arguments (content only, required only for 'approveEdited'). */
+  editedArgs?: unknown;
 }
 ```
 
@@ -186,10 +203,21 @@ interface AgentStepEvent {
   text: string;
   /** Tool names the model asked to run this turn. */
   tools: string[];
-  /** Tool names that were denied (empty in prep flow; all 4 tools are allowed). */
+  /** Tool names that were denied (empty in prep flow; Write tools suspend instead). */
   denied: string[];
-  /** Step kind: 'turn' (in-loop narration) or 'proposal' (terminal, display-only). */
-  kind: 'turn' | 'proposal';
+  /** Step kind: 'turn' (in-loop narration), 'confirm_request' (suspended Write), or 'proposal' (terminal). */
+  kind: 'turn' | 'confirm_request' | 'proposal';
+  /** Present only on a 'confirm_request' step — the pending Write call to approve. */
+  confirm?: AgentConfirmPayload;
+}
+
+interface AgentConfirmPayload {
+  /** Stable id of this pending call ('{step}-{tool}'); echo in agent.confirm(). */
+  callId: string;
+  /** The Write tool the agent wants to run (trusted registry name). */
+  tool: string;
+  /** Args that WILL execute on approval (untrusted model output — render as data). */
+  args: unknown;
 }
 ```
 

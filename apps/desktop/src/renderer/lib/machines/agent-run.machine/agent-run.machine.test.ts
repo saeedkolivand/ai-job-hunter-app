@@ -24,6 +24,16 @@ const proposal = (text = 'final'): AgentStepEvent => ({
   kind: 'proposal',
 });
 
+const confirmRequest = (): AgentStepEvent => ({
+  jobId: 'job-1',
+  step: 3,
+  text: '',
+  tools: ['save_cover_letter'],
+  denied: [],
+  kind: 'confirm_request',
+  confirm: { callId: '3-save_cover_letter', tool: 'save_cover_letter', args: {} },
+});
+
 describe('agentRunMachine', () => {
   it('progresses through the prep lifecycle', () => {
     let s = transition(agentRunMachine, 'idle', 'START');
@@ -91,5 +101,39 @@ describe('agentRunMachine', () => {
   it('returns null for a plan-only turn with no recognized tool', () => {
     expect(stepToEvent(turn([]))).toBeNull();
     expect(stepToEvent(turn(['unknown_tool']))).toBeNull();
+  });
+
+  it('maps a confirm_request step to CONFIRM_REQUEST', () => {
+    expect(stepToEvent(confirmRequest())).toBe('CONFIRM_REQUEST');
+  });
+});
+
+describe('agentRunMachine — confirm gate (Phase 3)', () => {
+  it('suspends into `confirming` from any busy state on CONFIRM_REQUEST, and is itself busy', () => {
+    for (const busy of ['planning', 'researching', 'matching', 'drafting', 'proposing'] as const) {
+      expect(transition(agentRunMachine, busy, 'CONFIRM_REQUEST')).toBe('confirming');
+    }
+    expect(isBusy(agentRunMachine, 'confirming')).toBe(true);
+  });
+
+  it('resolving with APPROVE or DENY resumes the loop at `planning`', () => {
+    expect(transition(agentRunMachine, 'confirming', 'APPROVE')).toBe('planning');
+    expect(transition(agentRunMachine, 'confirming', 'DENY')).toBe('planning');
+  });
+
+  it('a full run that suspends once still reaches `done`', () => {
+    let s = transition(agentRunMachine, 'idle', 'START');
+    s = transition(agentRunMachine, s, 'DRAFT');
+    s = transition(agentRunMachine, s, 'CONFIRM_REQUEST');
+    expect(s).toBe('confirming');
+    s = transition(agentRunMachine, s, 'APPROVE');
+    expect(s).toBe('planning');
+    s = transition(agentRunMachine, s, 'PROPOSE');
+    s = transition(agentRunMachine, s, 'COMPLETE');
+    expect(s).toBe('done');
+  });
+
+  it('Stop (CANCEL) still works while suspended', () => {
+    expect(transition(agentRunMachine, 'confirming', 'CANCEL')).toBe('cancelled');
   });
 });

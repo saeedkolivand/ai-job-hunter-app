@@ -1,10 +1,11 @@
 import { CheckCircle2, Circle, CircleMinus, Loader2, Sparkles, Square, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { AgentStepEvent, JobEvent } from '@ajh/shared';
+import type { AgentConfirmPayload, AgentStepEvent, JobEvent } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, EmptyState, ErrorState, GlassCard, ModalShell, StreamingText, Tag } from '@ajh/ui';
 
+import { AgentConfirm } from '@/features/jobs/components/AgentConfirm';
 import type { Posting } from '@/features/jobs/types';
 import { useMachine } from '@/hooks/use-machine';
 import { useDefaultResumeId } from '@/hooks/useDefaultResumeId';
@@ -107,12 +108,21 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
   const [stopRequested, setStopRequested] = useState(false);
   const [runJobId, setRunJobId] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
+  // The one Write action currently suspended awaiting the user's decision
+  // (Phase 3's confirm gate). Cleared on resolve, on a fresh run, or once the
+  // run itself terminates (nothing left to confirm).
+  const [pendingConfirm, setPendingConfirm] = useState<AgentConfirmPayload | null>(null);
   // Belt-and-suspenders alongside the `event.jobId === runJobId` check: guards
   // the brief window before `runJobId` is set (see `handleStep`) and gives
   // `start()` an instant (pre-render) "is a run already active" read so a
   // fast double-click can't spawn two concurrent runs.
   const activeRef = useRef(false);
   const prevStatusRef = useRef<Partial<Record<ChecklistKey, string>>>({});
+  // A stable in-modal focus target: `AgentConfirm` (and its own heading) fully
+  // unmounts once a confirm resolves, so focus needs somewhere durable to land
+  // on — the modal title, which is always rendered — rather than falling
+  // through to <body> when the just-clicked Approve/Deny button disappears.
+  const modalTitleRef = useRef<HTMLSpanElement>(null);
 
   const runAgent = useAgentRun();
   const cancelJob = useCancelJob();
@@ -137,10 +147,24 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
       // that round-trip, so this is not a real race in practice.
       if (!activeRef.current || event.jobId !== runJobId) return;
       setSteps((prev) => [...prev, event]);
+      if (event.kind === 'confirm_request' && event.confirm) {
+        setPendingConfirm(event.confirm);
+        // Piggyback on the existing milestone live region rather than adding a
+        // second aria-live source — one announcement per suspend, not per token.
+        setAnnouncement(t('jobs.prep.confirm.announcement'));
+      } else {
+        // Any other step for THIS run supersedes a prior pending confirm: the
+        // backend's 300s CONFIRM_TIMEOUT denies-and-resumes server-side, so a
+        // `turn`/`proposal` step can legitimately follow without the renderer
+        // ever hearing a resolve. Clear the stale card rather than let it
+        // linger next to fresh narration — fail-closed, since a late
+        // Approve/Deny on that callId would return `{ ok: false }` anyway.
+        setPendingConfirm(null);
+      }
       const ev = stepToEvent(event);
       if (ev) send(ev);
     },
-    [runJobId, send]
+    [runJobId, send, t]
   );
   useAgentStepEvents(handleStep);
 
@@ -149,21 +173,41 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
       if (!activeRef.current || event.jobId !== runJobId) return;
       if (event.type === 'job.completed') {
         activeRef.current = false;
+        setPendingConfirm(null);
         setResult(event.data as AgentRunResult);
         send('COMPLETE');
       } else if (event.type === 'job.failed') {
         activeRef.current = false;
+        setPendingConfirm(null);
         setError(typeof event.data === 'string' ? event.data : t('jobs.prep.runFailed'));
         send('ERROR');
       } else if (event.type === 'job.cancelled') {
         // A deliberate Stop is not a failure — its own state/copy, not ERROR.
+        // Cancelling a suspended run resolves its pending confirm server-side
+        // too (see `AgentGate::remove`) — nothing left here to act on.
         activeRef.current = false;
+        setPendingConfirm(null);
         send('CANCEL');
       }
     },
     [runJobId, send, t]
   );
   useJobEvents(handleJobEvent);
+
+  /** `<AgentConfirm>` only calls this once the resolve actually took effect
+   *  (`{ ok: true }`) — an `{ ok: false }` stays on-screen showing its own
+   *  "no longer available" copy instead of silently vanishing. */
+  const handleConfirmResolved = useCallback(
+    (event: 'APPROVE' | 'DENY') => {
+      setPendingConfirm(null);
+      // `AgentConfirm` (and the button that was just clicked) is about to
+      // unmount — re-park focus on the modal title, which is unaffected by
+      // that removal and always present while the modal is open.
+      modalTitleRef.current?.focus();
+      send(event);
+    },
+    [send]
+  );
 
   const start = useCallback(async () => {
     // isBusy/activeRef re-entrancy guard: a terminal state (error/cancelled/
@@ -176,6 +220,7 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
     setStopRequested(false);
     setRunJobId(null);
     setAnnouncement('');
+    setPendingConfirm(null);
     prevStatusRef.current = {};
     activeRef.current = true;
     send('START');
@@ -261,8 +306,10 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
               <div className="flex items-center gap-2">
                 <Sparkles size={14} className="shrink-0 text-brand-soft" />
                 <span
+                  ref={modalTitleRef}
                   id="prep-application-modal-title"
-                  className="truncate text-sm font-semibold text-foreground/85"
+                  tabIndex={-1}
+                  className="truncate text-sm font-semibold text-foreground/85 outline-none"
                 >
                   {t('jobs.prep.modalTitle')}
                 </span>
@@ -347,10 +394,22 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
           )}
 
           {/* Visually-hidden milestone announcer — one utterance per status
-              change, not per streamed token (see the effect above). */}
+              change, not per streamed token (see the effect above); also
+              carries the confirm-suspended announcement (see `handleStep`). */}
           <span role="status" aria-live="polite" className="sr-only">
             {announcement}
           </span>
+
+          {/* The run is genuinely SUSPENDED while this is pending — shown above
+              the checklist so it's the first thing visible (no scrolling
+              needed) and `AgentConfirm` moves focus to itself on mount. */}
+          {pendingConfirm && runJobId && (
+            <AgentConfirm
+              jobId={runJobId}
+              confirm={pendingConfirm}
+              onResolved={handleConfirmResolved}
+            />
+          )}
 
           {showLog && (
             <div role="group" aria-label={t('jobs.prep.liveRegionLabel')} className="space-y-3">

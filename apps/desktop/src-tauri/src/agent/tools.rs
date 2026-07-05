@@ -28,8 +28,9 @@ use crate::error::{AppError, AppResult};
 use crate::limits::{Limiter, PROVIDER_DAILY_MAX};
 use crate::pipeline::Completer;
 
-/// Whether a tool only reads (safe to auto-run) or writes/spends (DENIED in Phase
-/// 1 until user-confirmation lands in Phase 3).
+/// Whether a tool only reads (safe to auto-run) or writes/spends. A `Write` tool
+/// never auto-runs: the controller SUSPENDS the run for explicit user confirmation
+/// (the confirm gate, `crate::agent::gate`) and executes only on approval.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolKind {
     Read,
@@ -311,6 +312,82 @@ fn resume_job_brief_schema() -> Value {
     })
 }
 
+// ── Write tools (gated — SUSPEND for user confirmation before executing) ──────
+
+/// The one gated WRITE tool in the prep flow: persist the drafted cover letter to
+/// the generations store (which is also the per-job Application aggregate). The
+/// controller SUSPENDS the run for explicit user confirmation before this runs
+/// (`crate::agent::gate`); it is app-INTERNAL (local store) with NO external
+/// egress. Reuses [`crate::commands::ai_generations::ai_generations_save`]
+/// verbatim — no business logic is duplicated.
+///
+/// SECURITY: the ONLY model-supplied input is the letter's CONTENT
+/// (`coverLetterText`). The job it belongs to — and thus the company/title/url/
+/// board that route the save onto the right aggregate — is loaded server-side from
+/// the TRUSTED `ctx.job_id`, never from `args`. So an edited-args confirmation (or a
+/// prompt-injected posting) can change the letter text but can never redirect the
+/// save to a different application.
+fn save_cover_letter_handler(
+    app: &AppHandle,
+    ctx: &ToolContext,
+    args: Value,
+) -> Pin<Box<dyn Future<Output = AppResult<Value>> + Send>> {
+    let app = app.clone();
+    let ctx = ctx.clone();
+    Box::pin(async move {
+        let cover_letter: String = args
+            .get("coverLetterText")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| AppError::Validation("coverLetterText is required".into()))?
+            .chars()
+            .take(COVER_LETTER_CAP)
+            .collect();
+        // Load THIS run's own posting identity server-side (trusted job_id) so the
+        // save lands on the correct per-job aggregate — the model supplies no ids.
+        let meta =
+            crate::commands::match_resume::job_meta_for(&app, &ctx.job_id).ok_or_else(|| {
+                AppError::Validation(format!("job not found in cache: {}", ctx.job_id))
+            })?;
+        // Build the save request from trusted, server-derived fields plus the
+        // content; every other field takes its schema default via serde. Reuse the
+        // existing command (it also upserts the Application aggregate).
+        let req = serde_json::from_value(json!({
+            "coverLetterText": cover_letter,
+            "companyName": meta.company,
+            "jobTitle": meta.title,
+            "jobUrl": meta.url,
+            "board": meta.board,
+        }))?;
+        Ok(crate::commands::ai_generations::ai_generations_save(app, req).await)
+    })
+}
+
+/// Char cap on the saved cover letter — a coarse guard so an over-long generated
+/// blob can't bloat the store (the DB clamps too; this is the up-front bound).
+/// `pub(crate)` so the controller's confirm-request display clamp
+/// ([`crate::agent::controller`]) can be defined AS this same cap — the user must
+/// see/edit exactly the content that will be persisted, never a shorter preview.
+pub(crate) const COVER_LETTER_CAP: usize = 20_000;
+
+/// Argument schema for `save_cover_letter`: CONTENT only. Because the job identity
+/// is derived server-side (never from args), an `ApproveEdited` confirmation can
+/// only change the letter text — the confirm gate's re-validation whitelists these
+/// keys and rejects any routing/egress field.
+fn save_cover_letter_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "coverLetterText": {
+                "type": "string",
+                "description": "The finished cover letter text to save for this application."
+            }
+        },
+        "required": ["coverLetterText"]
+    })
+}
+
 /// The default read-only whitelist: company research + résumé/job matching, both
 /// thin adapters over the existing Tauri commands (reused, not re-implemented).
 /// A per-flow caller picks the slice of tools it wants to expose.
@@ -350,10 +427,12 @@ pub fn read_tools() -> Vec<AgentTool> {
     ]
 }
 
-/// The "prep this application" whitelist (Phase 2): the read tools plus the two
-/// text-drafting tools. Every tool is [`ToolKind::Read`] — there is NO write tool,
-/// so the flow's "propose a status update" step is display-only and can never call
-/// `applications_set_status` (the Phase-3 confirm gate will make writes real).
+/// The "prep this application" whitelist: the read tools, the two text-drafting
+/// tools, and ONE gated Write tool (`save_cover_letter`). The Write tool never
+/// auto-runs — the controller SUSPENDS the run for explicit user confirmation
+/// before it persists anything (`crate::agent::gate`). There is deliberately no
+/// external-egress write (no send-email/fetch/shell); the only side effect is an
+/// app-internal save the user must approve.
 pub fn prep_application_tools() -> Vec<AgentTool> {
     let mut tools = read_tools();
     tools.push(AgentTool {
@@ -375,6 +454,17 @@ pub fn prep_application_tools() -> Vec<AgentTool> {
         schema: resume_job_brief_schema(),
         kind: ToolKind::Read,
         handler: suggest_interview_questions_handler,
+    });
+    tools.push(AgentTool {
+        name: "save_cover_letter",
+        description:
+            "Save the finished cover letter to this application's documents. WRITE ACTION — the \
+             user is asked to confirm (and may edit the text) before anything is saved. Pass only \
+             the finished coverLetterText; the job it belongs to is fixed by this run."
+                .to_string(),
+        schema: save_cover_letter_schema(),
+        kind: ToolKind::Write,
+        handler: save_cover_letter_handler,
     });
     tools
 }
@@ -417,11 +507,12 @@ mod tests {
         );
     }
 
-    /// SECURITY: the prep flow must expose exactly the four expected tools, in
-    /// order, and — critically — ZERO Write tools, so the flow's "propose a status
-    /// update" step can never execute a write (no confirm gate exists until Phase 3).
+    /// SECURITY: the prep flow must expose exactly the five expected tools, in
+    /// order, and — critically — EXACTLY ONE Write tool (`save_cover_letter`, the
+    /// gated internal save). No other write is reachable, and every write suspends
+    /// for confirmation (enforced by the controller, not here).
     #[test]
-    fn prep_application_tools_are_read_only_with_no_write_tool() {
+    fn prep_application_tools_have_exactly_one_gated_write_tool() {
         let tools = prep_application_tools();
         let names: Vec<&str> = tools.iter().map(|t| t.name).collect();
         assert_eq!(
@@ -431,20 +522,53 @@ mod tests {
                 "match_resume",
                 "draft_cover_letter",
                 "suggest_interview_questions",
+                "save_cover_letter",
             ],
-            "prep whitelist must be exactly these four tools in order"
+            "prep whitelist must be exactly these five tools in order"
         );
-        assert!(
-            tools.iter().all(|t| t.kind == ToolKind::Read),
-            "the prep whitelist must contain ZERO write tools"
-        );
+        let writes: Vec<&str> = tools
+            .iter()
+            .filter(|t| t.kind == ToolKind::Write)
+            .map(|t| t.name)
+            .collect();
         assert_eq!(
-            tools.iter().filter(|t| t.kind == ToolKind::Write).count(),
-            0,
-            "no write tool may be reachable in Phase 2"
+            writes,
+            vec!["save_cover_letter"],
+            "exactly one Write tool — the gated internal cover-letter save — may be reachable"
         );
         // The specs handed to the model carry every tool through unchanged.
-        assert_eq!(to_specs(&tools).len(), 4);
+        assert_eq!(to_specs(&tools).len(), 5);
+    }
+
+    /// The one Write tool accepts CONTENT only: its schema declares exactly
+    /// `coverLetterText` and no routing/egress or id field, so an edited-args
+    /// confirmation can never redirect the save.
+    #[test]
+    fn save_cover_letter_schema_is_content_only() {
+        let tools = prep_application_tools();
+        let save = tools
+            .iter()
+            .find(|t| t.name == "save_cover_letter")
+            .expect("save_cover_letter must be registered");
+        let props = save
+            .schema
+            .get("properties")
+            .and_then(|p| p.as_object())
+            .expect("schema has properties");
+        let keys: Vec<&String> = props.keys().collect();
+        assert_eq!(
+            keys,
+            vec!["coverLetterText"],
+            "the only model-supplied arg is the letter content"
+        );
+        for forbidden in [
+            "provider", "model", "baseUrl", "jobId", "jobUrl", "resumeId",
+        ] {
+            assert!(
+                !props.contains_key(forbidden),
+                "schema must not expose the routing/id field '{forbidden}'"
+            );
+        }
     }
 
     /// The grounded message fences both the résumé and the job posting as data, and
