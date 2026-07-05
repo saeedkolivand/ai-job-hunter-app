@@ -76,9 +76,11 @@ let stepHandler: ((event: AgentStepEvent) => void) | undefined;
 let jobEventHandler: ((event: JobEvent) => void) | undefined;
 const mockRunMutateAsync = vi.fn().mockResolvedValue({ jobId: 'job-1' });
 const mockCancelMutateAsync = vi.fn().mockResolvedValue(undefined);
+const mockConfirmMutateAsync = vi.fn().mockResolvedValue({ ok: true });
 
 vi.mock('@/services', () => ({
   useAgentRun: () => ({ mutateAsync: mockRunMutateAsync, isPending: false }),
+  useAgentConfirm: () => ({ mutateAsync: mockConfirmMutateAsync, isPending: false }),
   useAgentStepEvents: (cb: (event: AgentStepEvent) => void) => {
     stepHandler = cb;
   },
@@ -115,11 +117,29 @@ const turnStep = (overrides: Partial<AgentStepEvent> = {}): AgentStepEvent => ({
   ...overrides,
 });
 
+/** A `confirm_request`-kind AgentStepEvent for the run's own jobId. */
+const confirmRequestStep = (overrides: Partial<AgentStepEvent> = {}): AgentStepEvent => ({
+  jobId: 'job-1',
+  step: 3,
+  text: '',
+  tools: ['save_cover_letter'],
+  denied: [],
+  kind: 'confirm_request',
+  confirm: {
+    callId: '3-save_cover_letter',
+    tool: 'save_cover_letter',
+    args: { coverLetterText: 'Draft.' },
+  },
+  ...overrides,
+});
+
 beforeEach(() => {
   stubbedResumeId = 'resume-1';
   mockRunMutateAsync.mockClear();
   mockRunMutateAsync.mockResolvedValue({ jobId: 'job-1' });
   mockCancelMutateAsync.mockClear();
+  mockConfirmMutateAsync.mockClear();
+  mockConfirmMutateAsync.mockResolvedValue({ ok: true });
   stepHandler = undefined;
   jobEventHandler = undefined;
 });
@@ -346,5 +366,181 @@ describe('PrepApplicationPanel — retry', () => {
     // A fresh run clears the previous proposal until the new one lands.
     expect(screen.queryByText('jobs.prep.proposalTitle')).not.toBeInTheDocument();
     expect(screen.getByText('jobs.prep.starting')).toBeInTheDocument();
+  });
+});
+
+describe('PrepApplicationPanel — confirm gate (Phase 3)', () => {
+  it('a confirm_request suspends the run: shows AgentConfirm, keeps Stop, hides Start', async () => {
+    openModal();
+    await clickStart();
+
+    act(() => {
+      stepHandler?.(confirmRequestStep());
+    });
+
+    expect(screen.getByText('jobs.prep.confirm.heading')).toBeInTheDocument();
+    expect(screen.getByText('jobs.prep.confirm.tools.saveCoverLetter.summary')).toBeInTheDocument();
+    // The run is suspended, not terminal — Stop still works, Start does not show.
+    expect(screen.getByText('jobs.prep.stop')).toBeInTheDocument();
+    expect(screen.queryByText('jobs.prep.start')).not.toBeInTheDocument();
+  });
+
+  it('Approve calls agent.confirm with decision approve, clears the prompt, and the run resumes', async () => {
+    openModal();
+    await clickStart();
+
+    act(() => {
+      stepHandler?.(confirmRequestStep());
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('jobs.prep.confirm.approve'));
+    });
+
+    expect(mockConfirmMutateAsync).toHaveBeenCalledWith({
+      jobId: 'job-1',
+      callId: '3-save_cover_letter',
+      decision: 'approve',
+      editedArgs: undefined,
+    });
+    expect(screen.queryByText('jobs.prep.confirm.heading')).not.toBeInTheDocument();
+    // AgentConfirm (and the button just clicked) unmounted — focus is re-parked
+    // on the modal title rather than dangling/falling through to <body>.
+    expect(document.activeElement).toBe(screen.getByText('jobs.prep.modalTitle'));
+
+    // The loop resumes: a subsequent proposal + job.completed still reaches done.
+    act(() => {
+      stepHandler?.(
+        confirmRequestStep({ step: 5, kind: 'proposal', text: 'Proposal.', confirm: undefined })
+      );
+    });
+    act(() => {
+      jobEventHandler?.({
+        type: 'job.completed',
+        jobId: 'job-1',
+        data: { finalText: 'Proposal.', steps: 4, stoppedReason: 'done' },
+        ts: 0,
+      });
+    });
+    expect(screen.getByText('jobs.prep.proposalTitle')).toBeInTheDocument();
+  });
+
+  it('Deny calls agent.confirm with decision deny and clears the prompt', async () => {
+    openModal();
+    await clickStart();
+
+    act(() => {
+      stepHandler?.(confirmRequestStep());
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('jobs.prep.confirm.deny'));
+    });
+
+    expect(mockConfirmMutateAsync).toHaveBeenCalledWith({
+      jobId: 'job-1',
+      callId: '3-save_cover_letter',
+      decision: 'deny',
+      editedArgs: undefined,
+    });
+    expect(screen.queryByText('jobs.prep.confirm.heading')).not.toBeInTheDocument();
+  });
+
+  it('Edit then Approve sends approveEdited with the edited cover-letter text', async () => {
+    openModal();
+    await clickStart();
+
+    act(() => {
+      stepHandler?.(confirmRequestStep());
+    });
+
+    fireEvent.click(screen.getByText('jobs.prep.confirm.edit'));
+    const textarea = screen.getByLabelText('jobs.prep.confirm.tools.saveCoverLetter.contentLabel');
+    fireEvent.change(textarea, { target: { value: 'Edited draft.' } });
+
+    // Approve is relabeled to `approveEdited` while editing.
+    await act(async () => {
+      fireEvent.click(screen.getByText('jobs.prep.confirm.approveEdited'));
+    });
+
+    expect(mockConfirmMutateAsync).toHaveBeenCalledWith({
+      jobId: 'job-1',
+      callId: '3-save_cover_letter',
+      decision: 'approveEdited',
+      editedArgs: { coverLetterText: 'Edited draft.' },
+    });
+  });
+
+  it('{ ok: false } shows the unavailable message and leaves the run suspended', async () => {
+    mockConfirmMutateAsync.mockResolvedValueOnce({ ok: false });
+    openModal();
+    await clickStart();
+
+    act(() => {
+      stepHandler?.(confirmRequestStep());
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('jobs.prep.confirm.approve'));
+    });
+
+    expect(screen.getByText('jobs.prep.confirm.unavailable')).toBeInTheDocument();
+    // Nothing actually resolved — Stop is still the affordance shown, not Start.
+    expect(screen.getByText('jobs.prep.stop')).toBeInTheDocument();
+    expect(screen.queryByText('jobs.prep.start')).not.toBeInTheDocument();
+  });
+
+  it('a server-side CONFIRM_TIMEOUT (turn/proposal step resumes without a resolve) clears the stale confirm card', async () => {
+    openModal();
+    await clickStart();
+
+    act(() => {
+      stepHandler?.(confirmRequestStep());
+    });
+    expect(screen.getByText('jobs.prep.confirm.heading')).toBeInTheDocument();
+
+    // The backend denied-and-resumed server-side (300s CONFIRM_TIMEOUT) — the
+    // renderer never heard a resolve, but a fresh turn for this run arrives.
+    act(() => {
+      stepHandler?.(turnStep({ tools: ['research_company'], text: 'Researching Acme…' }));
+    });
+
+    expect(screen.queryByText('jobs.prep.confirm.heading')).not.toBeInTheDocument();
+    expect(screen.getByText('Researching Acme…')).toBeInTheDocument();
+  });
+
+  it('a new confirm_request (different callId) replaces the prior pending confirm', async () => {
+    openModal();
+    await clickStart();
+
+    act(() => {
+      stepHandler?.(confirmRequestStep());
+    });
+    expect(screen.getByText('jobs.prep.confirm.heading')).toBeInTheDocument();
+
+    act(() => {
+      stepHandler?.(
+        confirmRequestStep({
+          step: 6,
+          confirm: {
+            callId: '6-save_cover_letter',
+            tool: 'save_cover_letter',
+            args: { coverLetterText: 'Second draft.' },
+          },
+        })
+      );
+    });
+
+    expect(screen.getByText('jobs.prep.confirm.heading')).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByText('jobs.prep.confirm.approve'));
+    });
+
+    expect(mockConfirmMutateAsync).toHaveBeenCalledWith({
+      jobId: 'job-1',
+      callId: '6-save_cover_letter',
+      decision: 'approve',
+      editedArgs: undefined,
+    });
   });
 });

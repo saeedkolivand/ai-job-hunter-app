@@ -1663,6 +1663,29 @@
         "maxSteps": "Gestoppt — Schrittlimit erreicht",
         "maxTokens": "Gestoppt — Token-Limit erreicht",
         "cancelled": "Abgebrochen"
+      },
+      "confirm": {
+        "heading": "Aktion benötigt deine Zustimmung",
+        "announcement": "Der Agent wartet auf deine Zustimmung, bevor er fortfährt.",
+        "hint": "Genehmigen führt diese Aktion sofort aus. Ablehnen überspringt sie — der Agent macht ohne sie weiter.",
+        "approve": "Genehmigen",
+        "approveEdited": "Änderungen speichern & genehmigen",
+        "approveHint": "Führt die Aktion sofort aus.",
+        "deny": "Ablehnen",
+        "denyHint": "Überspringt diese Aktion sicher.",
+        "edit": "Bearbeiten",
+        "revert": "Original wiederherstellen",
+        "submitting": "Deine Entscheidung wird gesendet…",
+        "error": "Beim Senden deiner Entscheidung ist ein Fehler aufgetreten. Du kannst es erneut versuchen.",
+        "unavailable": "Diese Aktion ist nicht mehr verfügbar. Sie wurde möglicherweise bereits abgeschlossen, oder der Lauf ist beendet.",
+        "rawArgsLabel": "Aktionsdetails",
+        "genericSummary": "Der Agent möchte „{{tool}}“ ausführen. Prüfe die Details unten, bevor du zustimmst.",
+        "tools": {
+          "saveCoverLetter": {
+            "summary": "Dieses Anschreiben in deinen gespeicherten Dokumenten speichern?",
+            "contentLabel": "Anschreiben-Text"
+          }
+        }
       }
     },
     "scrapeJobs": "Jobs scrapen",

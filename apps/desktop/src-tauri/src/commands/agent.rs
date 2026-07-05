@@ -1,11 +1,12 @@
-//! The "prep this application" agentic flow command (Phase 2).
+//! The "prep this application" agentic flow command.
 //!
-//! Wires the Phase-1 agent controller (`crate::agent`) to a real Tauri command.
-//! For ONE job + résumé the agent plans, researches the company, scores the résumé
-//! match, drafts a cover letter, suggests interview questions, and ends by
-//! PROPOSING a status update — display-only in Phase 2 (the prep whitelist has NO
-//! write tool; the Phase-3 confirm gate will make writes real). Steps stream to the
-//! renderer as `agent:step` events; the run completes as a `jobs:event`.
+//! Wires the agent controller (`crate::agent`) to real Tauri commands. For one job
+//! and résumé the agent plans, researches the company, scores the résumé match,
+//! drafts a cover letter, suggests interview questions, and offers to SAVE the
+//! drafted cover letter — a Write tool that SUSPENDS the run for explicit user
+//! confirmation (`agent_confirm`) before it persists anything. Steps stream to the
+//! renderer as `agent:step` events (including `confirm_request` steps); the run
+//! completes as a `jobs:event`.
 //!
 //! Requires a tool-capable model ([`require_tool_capable`]) and is user-cancellable
 //! via `jobs_cancel` (the run's token is registered with the shared
@@ -19,13 +20,14 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agent::controller::{run_agent_live, AgentStep, AgentStepKind, StoppedReason};
 use crate::agent::flows::PREP_APPLICATION_SYSTEM;
+use crate::agent::gate::{AgentGate, Decision};
 use crate::agent::tools::{fenced, prep_application_tools, ToolContext, JOB_CAP, RESUME_CAP};
 use crate::commands::ai_provider::{ModelCapabilities, ProviderId};
 use crate::db::new_job_id;
 use crate::documents::DocumentStore;
 use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, AGENT_STEP};
-use crate::ipc_contracts::agent::AgentRunRequest;
+use crate::ipc_contracts::agent::{AgentConfirmRequest, AgentRunRequest};
 use crate::pipeline::Completer;
 use crate::scraping::ScraperEngine;
 
@@ -157,8 +159,10 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
                 crate::commands::jobs::job_cancel(&app_task, &job_id_task);
             }
             Ok(o) => {
-                // Terminal, display-only PROPOSAL step: the agent's final answer,
-                // which ends by proposing a status update. NO write executes.
+                // Terminal PROPOSAL step: the agent's final summary of what it
+                // prepared. Any actual write already happened INSIDE the loop, gated
+                // behind an explicit user confirmation (a `ConfirmRequest` step);
+                // this terminal step narrates only.
                 emit_event(
                     &app_task,
                     AGENT_STEP,
@@ -169,6 +173,7 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
                         tools: Vec::new(),
                         denied: Vec::new(),
                         kind: AgentStepKind::Proposal,
+                        confirm: None,
                     },
                 );
                 crate::commands::jobs::job_complete(
@@ -188,6 +193,43 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
     });
 
     json!({ "jobId": job_id })
+}
+
+/// Resolve a suspended Write confirmation for a running agent (the human-in-the-loop
+/// confirm gate). Maps the wire request to a [`Decision`] and delivers it to the
+/// blocked run via the shared [`AgentGate`]; the controller is the trust boundary
+/// that re-validates any edited args before executing (content only — never
+/// routing/egress; see [`crate::agent::gate`]).
+///
+/// Returns `{ ok: false }` — never an error, never a panic — when there is no such
+/// pending call: it was already resolved, timed out, cancelled, or the id is
+/// unknown. `approveEdited` with no `editedArgs` is likewise a benign `{ ok: false }`.
+#[tauri::command]
+pub async fn agent_confirm(app: AppHandle, req: AgentConfirmRequest) -> Value {
+    let Some(decision) = map_decision(&req.decision, req.edited_args) else {
+        // Malformed request (unknown token, or `approveEdited` with no args) — a
+        // benign no-op, never a panic.
+        return json!({ "ok": false });
+    };
+    let gate = app.state::<AgentGate>();
+    let ok = gate.resolve(&req.job_id, &req.call_id, decision);
+    json!({ "ok": ok })
+}
+
+/// Map the wire `decision` token (+ optional edited args) to a [`Decision`], or
+/// `None` for a malformed request. Pure (no `AppHandle`) so the mapping rules are
+/// unit-testable without the Tauri harness this crate lacks:
+/// - `approveEdited` REQUIRES `editedArgs` — a missing payload is `None`, never a
+///   silent plain-approve (which would execute the model's ORIGINAL args the user
+///   was trying to change).
+/// - an unknown token is `None` — reject without acting.
+fn map_decision(decision: &str, edited_args: Option<Value>) -> Option<Decision> {
+    match decision {
+        "approve" => Some(Decision::Approve),
+        "approveEdited" => edited_args.map(Decision::ApproveEdited),
+        "deny" => Some(Decision::Deny),
+        _ => None,
+    }
 }
 
 /// Build the untrusted user message seeding the transcript: the résumé + job ids
@@ -246,6 +288,32 @@ mod tests {
         let msg = build_user_message("r", "j", &huge, "short");
         assert!(msg.contains(&"y".repeat(8_000)));
         assert!(!msg.contains(&"y".repeat(8_001)));
+    }
+
+    /// `agent_confirm`'s decision mapping: the three valid tokens map to the right
+    /// `Decision`, `approveEdited` carries the edited args through.
+    #[test]
+    fn map_decision_maps_the_valid_tokens() {
+        assert!(matches!(
+            map_decision("approve", None),
+            Some(Decision::Approve)
+        ));
+        assert!(matches!(map_decision("deny", None), Some(Decision::Deny)));
+        let edited = serde_json::json!({ "coverLetterText": "edited" });
+        match map_decision("approveEdited", Some(edited.clone())) {
+            Some(Decision::ApproveEdited(v)) => assert_eq!(v, edited),
+            other => panic!("expected ApproveEdited, got {other:?}"),
+        }
+    }
+
+    /// A malformed request maps to `None` (the command surfaces `{ ok: false }`):
+    /// an unknown token, or `approveEdited` with NO edited args — the latter must
+    /// NOT silently fall back to a plain approve of the original args.
+    #[test]
+    fn map_decision_rejects_malformed_requests() {
+        assert!(map_decision("nuke", None).is_none());
+        assert!(map_decision("approveEdited", None).is_none());
+        assert!(map_decision("", None).is_none());
     }
 
     /// Minimal `ModelCapabilities` literal — every field but `supports_tools` is

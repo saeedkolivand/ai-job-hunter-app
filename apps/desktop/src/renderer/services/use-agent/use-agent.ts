@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
 
-import type { AgentRunRequest, AgentStepEvent } from '@ajh/shared';
+import type { AgentConfirmRequest, AgentRunRequest, AgentStepEvent } from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
@@ -15,6 +15,21 @@ export const useAgentRun = () => {
   const api = useAppClient();
   return useMutation({
     mutationFn: (req: AgentRunRequest) => api.agent.run(req),
+  });
+};
+
+/**
+ * Resolve a suspended Write confirmation (the Phase-3 human-in-the-loop
+ * confirm gate) — approve, edit-then-approve, or deny the pending call named
+ * by a `confirm_request` step. `{ ok: false }` means the call is no longer
+ * actionable (already resolved, timed out, cancelled, or unknown) — the
+ * caller (`AgentConfirm`) surfaces that and stops treating it as pending; it
+ * never throws for that case.
+ */
+export const useAgentConfirm = () => {
+  const api = useAppClient();
+  return useMutation({
+    mutationFn: (req: AgentConfirmRequest) => api.agent.confirm(req),
   });
 };
 
