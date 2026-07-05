@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.122.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.121.0...v0.122.0) (2026-07-05)
+
+### ✨ Features
+
+* add agentic tool-calling foundation (provider channel + budgeted loop) ([#552](https://github.com/saeedkolivand/ai-job-hunter-app/issues/552)) ([a6face0](https://github.com/saeedkolivand/ai-job-hunter-app/commit/a6face033944df702c9aaa6cbb008630b1fea44a))
+* add prep-application agentic assistant flow with streaming panel ([#555](https://github.com/saeedkolivand/ai-job-hunter-app/issues/555)) ([0fbd7c8](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0fbd7c82946ad7cc7547d2b061c26f9755a874a4))
+* gate agent write actions behind human-in-the-loop confirmation ([#556](https://github.com/saeedkolivand/ai-job-hunter-app/issues/556)) ([ce0558f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ce0558f31c5ce39d20f2bdafed4f8a98092b08d1))
+
 ## [0.121.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.120.0...v0.121.0) (2026-07-04)
 
 ### ✨ Features
