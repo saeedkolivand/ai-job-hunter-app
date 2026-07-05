@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783209293192,
+  "lastUpdate": 1783218091156,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2555,6 +2555,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 291710,
             "range": "± 2524",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ce0558f31c5ce39d20f2bdafed4f8a98092b08d1",
+          "message": "feat: gate agent write actions behind human-in-the-loop confirmation (#556)\n\n* feat: gate agent write actions behind human-in-the-loop confirmation\n\nPhase 3 of the agentic assistant — the safety core. Agent Write actions now\nSUSPEND the run for explicit user approval; nothing is persisted or applied\nwithout an approve/edit click.\n\nBackend:\n- agent/gate.rs — AgentGate: Mutex<HashMap<(jobId,callId), oneshot::Sender>>;\n  register/resolve/remove, no lock held across an await.\n- agent/controller.rs — a Write tool call now emits an agent:step\n  kind=confirm_request and awaits the user's Decision, raced (tokio::select!,\n  biased) against cancel / a 300s timeout / the decision — cancel, timeout,\n  deny, and a dropped channel all default to NOT acting, with gate.remove on\n  every branch. Edited args are re-validated by two fail-closed layers (a\n  routing/egress key denylist + a tool-schema whitelist); routing and identity\n  stay in the trusted ToolContext. callId is keyed {step}-{idx}-{tool}.\n- commands/agent.rs — agent_confirm (renderer-only IPC, never a model-callable\n  tool; map_decision fail-closed). agent/tools.rs — save_cover_letter, the\n  first gated Write tool (wraps ai_generations_save; target from ctx.job_id).\n\nFrontend:\n- AgentConfirm — approve / deny / edit UI; args rendered as untrusted data,\n  editable content-only; brand accent; focus-managed (no focus-trap escape);\n  loading, error, and no-longer-available states. agent-run.machine gains a\n  confirming state (Stop still works while suspended).\n\nReviewed by tauri-security-reviewer (gating authority — PASS), rust-backend-\narchitect, frontend-reviewer, and ui-ux-expert; all HIGH/MEDIUM resolved.\ncargo build + clippy (-D warnings) + fmt clean; typecheck 12/12; 3076 TS tests\npass. Rust tests run in CI.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: split confirm-gate module under the loc cap and address review nits\n\nFixes the CI R8 (oversized-module) failure plus @claude review advisories.\n\n- split agent/controller.rs (was 1676 LOC, over the 1400 R8 hard cap): moved\n  the confirm-gate execution + validation (resolve_write, run_write_raced,\n  validate_edited_args, is_routing_egress_key, clamp_json_strings,\n  WriteResolution, CONFIRM_TIMEOUT/ARGS_DISPLAY_CAP) and their tests into\n  agent/gate.rs. Behavior-preserving; controller.rs now 985, gate.rs 1080,\n  both under the cap.\n- panel: clear a stale confirm card when a non-confirm step resumes the run,\n  which happens on the 300s server-side confirm timeout (deny-and-resume).\n- validate_edited_args: reject routing/egress keys at ANY nesting depth\n  (recursive scan), so a future object-typed gated-tool arg can't smuggle a\n  nested provider/base_url/job_id.\n- docs: correct the callId format to {step}-{idx}-{tool} in the three doc\n  comments that still said {step}-{tool}.\n\ncargo build + clippy (-D warnings) + fmt clean; typecheck 12/12; 3078 TS tests\npass. Rust tests run in CI.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-05T04:12:18+02:00",
+          "tree_id": "bcc94bbd3a8f6a4df9948c2352a0817e8e4b8808",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/ce0558f31c5ce39d20f2bdafed4f8a98092b08d1"
+        },
+        "date": 1783218090527,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1907110,
+            "range": "± 64384",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2617163,
+            "range": "± 46531",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 293620,
+            "range": "± 7195",
             "unit": "ns/iter"
           }
         ]
