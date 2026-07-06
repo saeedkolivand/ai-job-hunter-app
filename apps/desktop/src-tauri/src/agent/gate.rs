@@ -26,10 +26,10 @@
 //! - **Prompt injection can REQUEST but never EXECUTE.** Hostile job/résumé text can
 //!   make the model *ask* for a write; it can never satisfy the gate on the user's
 //!   behalf — only a real `agent_confirm` IPC call (or a `resolve` in a test) can.
-//! - **Display/edit fidelity.** Confirm-request args are clamped to
-//!   [`COVER_LETTER_CAP`] (a gated Write tool's own content cap), not an
-//!   arbitrarily smaller number — the renderer shows/edits exactly what will be
-//!   persisted, never a truncated preview.
+//! - **Display/edit fidelity.** Confirm-request args are clamped to the LARGER of
+//!   [`COVER_LETTER_CAP`] and [`SAVED_RESUME_CAP`] (each gated Write tool's own
+//!   content cap), not an arbitrarily smaller number — the renderer shows/edits
+//!   exactly what will be persisted, never a truncated preview.
 //!
 //! [`ToolKind::Write`]: super::tools::ToolKind
 //! [`ToolContext`]: super::tools::ToolContext
@@ -45,7 +45,7 @@ use tokio_util::sync::CancellationToken;
 use crate::error::{AppError, AppResult};
 
 use super::controller::{AgentEnv, AgentStep, AgentStepKind, ConfirmRequest};
-use super::tools::{AgentTool, COVER_LETTER_CAP};
+use super::tools::{AgentTool, COVER_LETTER_CAP, SAVED_RESUME_CAP};
 
 /// The user's verdict on one pending Write action, delivered from `agent_confirm`
 /// back to the suspended controller loop over a [`oneshot`] channel. `Clone` is a
@@ -127,13 +127,18 @@ pub(super) const CONFIRM_TIMEOUT: Duration = Duration::from_secs(300);
 ///
 /// CORRECTNESS: the renderer shows these args as an EDITABLE field and sends the
 /// edit back verbatim as `editedArgs` on `approveEdited` — so this clamp must be AT
-/// LEAST as large as the largest content a gated Write tool will actually persist,
-/// or editing a longer piece of content would silently save a truncated version.
-/// Pinned to [`COVER_LETTER_CAP`] (the only gated Write tool's own content cap
-/// today) rather than an independent, smaller number, so display/edit fidelity
-/// can never drift below what gets saved. Still a bounded ceiling — a 20k-char
-/// string in an event payload is fine — for a truly pathological model output.
-const ARGS_DISPLAY_CAP: usize = COVER_LETTER_CAP;
+/// LEAST as large as the largest content ANY gated Write tool will actually
+/// persist, or editing a longer piece of content would silently save a truncated
+/// version. Sized to the LARGER of [`COVER_LETTER_CAP`] and [`SAVED_RESUME_CAP`]
+/// (today's two gated Write tools' own content caps) rather than an independent,
+/// smaller number, so display/edit fidelity can never drift below what gets saved
+/// for either tool. Still a bounded ceiling — a 40k-char string in an event
+/// payload is fine — for a truly pathological model output.
+const ARGS_DISPLAY_CAP: usize = if COVER_LETTER_CAP > SAVED_RESUME_CAP {
+    COVER_LETTER_CAP
+} else {
+    SAVED_RESUME_CAP
+};
 
 /// The trusted routing/egress + job-identity fields that live ONLY in
 /// [`ToolContext`] and may NEVER be supplied (or overridden) through tool args —
@@ -149,12 +154,13 @@ fn is_routing_egress_key(key: &str) -> bool {
 }
 
 /// Recursively hunt `v` (objects AND array items, at every depth) for a routing/
-/// egress key, returning the first one found. The only gated Write tool today
-/// (`save_cover_letter`) has a single flat `string` property, so a top-level-only
-/// scan happens to be sufficient for it — but a FUTURE gated tool could declare an
-/// object- or array-typed property, and a top-level-only scan would miss a
-/// routing/egress key nested inside it. Walking the whole tree keeps the boundary
-/// safe for whatever gets added next, not just what exists today.
+/// egress key, returning the first one found. Both gated Write tools today
+/// (`save_cover_letter`, `save_resume`) have a single flat `string` property, so a
+/// top-level-only scan happens to be sufficient for either — but a FUTURE gated
+/// tool could declare an object- or array-typed property, and a top-level-only
+/// scan would miss a routing/egress key nested inside it. Walking the whole tree
+/// keeps the boundary safe for whatever gets added next, not just what exists
+/// today.
 fn find_nested_routing_egress_key(v: &Value) -> Option<String> {
     match v {
         Value::Object(map) => {

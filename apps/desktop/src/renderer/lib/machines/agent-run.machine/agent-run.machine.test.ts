@@ -91,6 +91,7 @@ describe('agentRunMachine', () => {
     expect(stepToEvent(turn(['research_company']))).toBe('RESEARCH');
     expect(stepToEvent(turn(['match_resume']))).toBe('MATCH');
     expect(stepToEvent(turn(['draft_cover_letter']))).toBe('DRAFT');
+    expect(stepToEvent(turn(['draft_resume']))).toBe('DRAFT');
     expect(stepToEvent(turn(['suggest_interview_questions']))).toBe('DRAFT');
   });
 

@@ -1627,9 +1627,9 @@
     "saveError": "Couldn't save to tracking. Please try again.",
     "prep": {
       "trigger": "Prep this application",
-      "triggerHint": "Research the company, score your résumé, and draft a cover letter + interview questions",
+      "triggerHint": "Research the company, score your résumé, and draft a tailored cover letter + résumé + interview questions",
       "modalTitle": "Prep this application",
-      "modalHint": "The agent researches the company, scores your résumé match, drafts a cover letter and interview questions, then proposes a status update for you to review.",
+      "modalHint": "The agent researches the company, scores your résumé match, drafts a tailored cover letter and résumé plus interview questions, then proposes a status update for you to review.",
       "readyTitle": "Ready when you are",
       "needsResume": "Save a résumé first to prep this application.",
       "needsProvider": "Choose an AI provider in Settings → AI.",
@@ -1652,6 +1652,7 @@
         "research": "Researching the company",
         "match": "Scoring your résumé match",
         "draft": "Drafting your cover letter",
+        "resume": "Drafting your tailored résumé",
         "questions": "Suggesting interview questions",
         "propose": "Proposing next step"
       },

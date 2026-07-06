@@ -99,13 +99,13 @@ export const agentRunMachine = createMachine<AgentRunState, AgentRunEvent>({
  * `confirm_request` step always maps to `CONFIRM_REQUEST` (the run is
  * suspended, awaiting `APPROVE`/`DENY` from the confirm UI). The terminal
  * `proposal` step always maps to `PROPOSE`. A `turn` step is keyed by its
- * `tools[]` (research → match → draft, where BOTH `draft_cover_letter` and
- * `suggest_interview_questions` fall under the single `drafting` machine
- * state — the panel's checklist tracks those two separately from the raw step
- * log). A plan-only turn (no tool calls yet) maps to `null` — the caller stays
- * in whatever busy state it's already in. `CANCEL` is never produced here —
- * it's driven by the `jobs:event` `job.cancelled` type, which carries no
- * `tools`/`kind` shape to key off of.
+ * `tools[]` (research → match → draft, where `draft_cover_letter`,
+ * `draft_resume`, and `suggest_interview_questions` all fall under the single
+ * `drafting` machine state — the panel's checklist tracks those separately
+ * from the raw step log). A plan-only turn (no tool calls yet) maps to `null`
+ * — the caller stays in whatever busy state it's already in. `CANCEL` is
+ * never produced here — it's driven by the `jobs:event` `job.cancelled` type,
+ * which carries no `tools`/`kind` shape to key off of.
  */
 export function stepToEvent(step: AgentStepEvent): AgentRunEvent | null {
   if (step.kind === 'confirm_request') return 'CONFIRM_REQUEST';
@@ -114,6 +114,7 @@ export function stepToEvent(step: AgentStepEvent): AgentRunEvent | null {
   if (step.tools.includes('match_resume')) return 'MATCH';
   if (
     step.tools.includes('draft_cover_letter') ||
+    step.tools.includes('draft_resume') ||
     step.tools.includes('suggest_interview_questions')
   ) {
     return 'DRAFT';
