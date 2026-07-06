@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783351049042,
+  "lastUpdate": 1783355596008,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2639,6 +2639,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 280864,
             "range": "± 2543",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5cf2534655bd11f609b1da9c7944180160708796",
+          "message": "fix: prevent prep-this-application runs from getting stuck at pending (#558)\n\n* fix: prevent prep-this-application runs from getting stuck at pending\n\nThe agentic \"Prep this application\" flow could hang on a permanent spinner\nand never complete. Two independent causes, both fixed.\n\n1. Renderer race (the permanent hang). agent_run minted the job id, started\n   the job, then ran provider/model/resume/job validation synchronously — each\n   failure emitted the terminal job.failed jobs:event BEFORE the {jobId} return.\n   The panel only learns the job id (and starts filtering events on it) from\n   that return, so a fast validation failure's terminal event was dropped and\n   the state machine sat in `planning` forever.\n   - backend: move every fail-able validation into the spawned task so all\n     terminal events (success or failure) fire asynchronously, exactly like the\n     happy path. job_start + cancel-token registration stay synchronous before\n     the spawn (a fast jobs_cancel must not be a no-op); the limiter-rejection\n     is the sole synchronous fail (before the token exists) and the renderer\n     reconciles it. New fail_run helper (job_fail + unregister) at each site.\n   - renderer: PrepApplicationPanel now reconciles against the job's actual\n     status via useJob(runJobId) once the id is known — if the job is already\n     terminal while the machine is still busy, it drives COMPLETE/ERROR/CANCEL\n     (shared finishRun helper, fires at most once, never overrides a terminated\n     machine). Belt-and-suspenders for any residual event-before-subscribe gap.\n\n2. No per-step wall-clock timeout (long stalls). The controller raced each\n   provider turn / read-tool call only against cancel — a hung or misconfigured\n   OpenAI-compatible base_url could block for minutes with no terminal event.\n   - add AGENT_STEP_TIMEOUT (360s, above the 300s Ollama HTTP timeout) wrapping\n     both step selects, plus StoppedReason::Timeout mapped to job_fail (never a\n     silent success), so the loop always terminates and always emits a terminal\n     jobs:event. The confirm-gate suspension keeps its own CONFIRM_TIMEOUT.\n\nReviewed by rust-backend-architect (token lifecycle + timeout/cancel\ncomposition correct) and frontend-reviewer (exact payload parity + idempotency).\ncargo fmt + clippy (-D warnings) + build clean; cargo test --test architecture\n11 passed; two new FakeEnv step-timeout tests; typecheck + PrepApplicationPanel\nsuite (19) green. Rust tests run in CI.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* test: cover completed and cancelled reconciliation branches\n\nAddresses the @claude review LOW on PR #558: the useJob reconciliation\nfallback was only tested for status 'failed'. The completed branch reads\njob.result (vs the live path's event.data), so add completed + cancelled\ncases asserting the proposal renders / cancelled state shows and the busy\nspinner clears. 21 PrepApplicationPanel tests pass.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-06T18:23:53+02:00",
+          "tree_id": "3391e6a23e05778dbc2a68434a47be4659608ae7",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/5cf2534655bd11f609b1da9c7944180160708796"
+        },
+        "date": 1783355595530,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1932562,
+            "range": "± 68327",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2572055,
+            "range": "± 21803",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 291357,
+            "range": "± 986",
             "unit": "ns/iter"
           }
         ]
