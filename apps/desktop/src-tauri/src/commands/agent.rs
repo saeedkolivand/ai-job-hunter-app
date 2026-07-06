@@ -31,27 +31,40 @@ use crate::ipc_contracts::agent::{AgentConfirmRequest, AgentRunRequest};
 use crate::pipeline::Completer;
 use crate::scraping::ScraperEngine;
 
+/// Fail the run: mark the job Failed and release its cancel-token registration.
+/// Shared by every validation step that now runs INSIDE the spawned task (see
+/// `agent_run`'s fix note) so each one doesn't hand-roll the same two calls.
+async fn fail_run(app: &AppHandle, engine: &ScraperEngine, job_id: &str, msg: String) {
+    crate::commands::jobs::job_fail(app, job_id, msg);
+    engine.unregister_token(job_id).await;
+}
+
 /// Prepare one job application via the agentic loop. Returns `{ jobId }`
 /// immediately; the run streams `agent:step` events and finishes the job async.
 ///
-/// Modeled on [`crate::commands::ai::ai_generate`]: acquire the anti-abuse limiter
-/// (held for the whole run), validate the provider/model, start a `JobTracker`
-/// entry, then spawn the loop. All validation failures fail the job with a clear
-/// message and still return `{ jobId }` so the renderer can surface it.
+/// Modeled on [`crate::commands::ai::ai_generate`]: acquire the anti-abuse limiter,
+/// register the cancel token, then spawn the loop. EVERY fail-able step — provider/
+/// model validation, `Completer::resolve`, the tool-capability check, and loading
+/// the résumé + cached job posting — now runs INSIDE the spawned task, alongside
+/// the loop itself, so no terminal `jobs:event` can ever fire before this function
+/// returns `{ jobId }`. That return is the renderer's ONLY source of the job id; it
+/// starts filtering `jobs:event`/`agent:step` by that id only afterwards, so a
+/// terminal event emitted synchronously (as validation failures used to, via a
+/// `fail` closure called before the `json!` return) was silently dropped and the
+/// run looked stuck at pending forever. The one exception is the limiter's
+/// rate/concurrency rejection: it still fails synchronously (before the cancel
+/// token even exists to register), which the renderer separately reconciles.
 #[tauri::command]
 pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
     let job_id = new_job_id();
     crate::commands::jobs::job_start(&app, &job_id, "agent.run");
 
-    let fail = |app: &AppHandle, job_id: &str, msg: String| -> Value {
-        crate::commands::jobs::job_fail(app, job_id, msg);
-        json!({ "jobId": job_id })
-    };
-
     // 0. Anti-abuse: rate + concurrency cap. Held for the run's lifetime (moved into
     // the spawned task), so the in-flight slot frees exactly when the run ends. One
     // run fans out into several provider calls (each turn/tool is separately charged
     // against the per-provider daily ceiling), so admit fewer than an `ai_generate`.
+    // This is the one remaining SYNCHRONOUS fail path (see the fn doc above): it
+    // runs before the cancel token exists, so there is nothing to unregister.
     let limiter = app.state::<Arc<crate::limits::Limiter>>().inner().clone();
     let guard = match limiter.acquire(
         "agent_run",
@@ -59,67 +72,11 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
         crate::limits::AGENT_RUN_CONCURRENCY_MAX,
     ) {
         Ok(g) => g,
-        Err(e) => return fail(&app, &job_id, e.to_string()),
+        Err(e) => {
+            crate::commands::jobs::job_fail(&app, &job_id, e.to_string());
+            return json!({ "jobId": job_id });
+        }
     };
-
-    // 1-2. Provider must be present, known, and own the model — the same
-    // required-and-validated rule as `ai_generate` (no silent fallback).
-    let provider_id = match ProviderId::parse(req.provider.trim()) {
-        Ok(id) => id,
-        Err(e) => return fail(&app, &job_id, e.to_string()),
-    };
-    if let Err(e) = provider_id.validate_model(&req.model) {
-        return fail(&app, &job_id, e.to_string());
-    }
-
-    // Resolve the active provider into a Completer for the agent's own turns.
-    let completer = match Completer::resolve(
-        &app,
-        Some(&req.provider),
-        Some(&req.model),
-        req.base_url.clone(),
-    ) {
-        Ok(c) => c,
-        Err(e) => return fail(&app, &job_id, e.to_string()),
-    };
-
-    // HIGH-2 defense-in-depth: a non-tool model degrades `chat_with_tools` to a
-    // single-shot answer (see the trait default), which could present a fabricated
-    // match score or invented company research as if the tools actually ran. Reject
-    // early with a clear message — the renderer separately disables the entry point
-    // for non-tool models; this is the server-side guard.
-    if let Err(e) = require_tool_capable(completer.capabilities(), &req.model) {
-        return fail(&app, &job_id, e.to_string());
-    }
-
-    // Load the résumé + cached job posting to build the (untrusted, fenced) user
-    // message. Both must exist — fail early with a clear message otherwise.
-    let Some(resume) = app.state::<DocumentStore>().get(&req.resume_id) else {
-        return fail(
-            &app,
-            &job_id,
-            format!("resume not found: {}", req.resume_id),
-        );
-    };
-    let Some(job_text) = crate::commands::match_resume::job_text_for(&app, &req.job_id) else {
-        return fail(
-            &app,
-            &job_id,
-            format!("job not found in cache: {}", req.job_id),
-        );
-    };
-
-    // Trusted routing context threaded into the tools — provider/model/base_url/
-    // job_id all come from the VALIDATED request, NEVER from model-supplied tool
-    // args (job_id lets `research_company` load THIS run's own posting server-side
-    // — see the LOW-1 fix in `agent::tools`).
-    let ctx = ToolContext {
-        provider: req.provider.clone(),
-        model: req.model.clone(),
-        base_url: req.base_url.clone(),
-        job_id: req.job_id.clone(),
-    };
-    let user = build_user_message(&req.resume_id, &req.job_id, &resume.text, &job_text);
 
     // HIGH-1(a): register the cancel token BEFORE spawning (mirrors
     // `commands::scrape::scrape_boards`) so a fast `jobs_cancel` call arriving
@@ -137,6 +94,82 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
     let engine_task = engine.clone();
     tauri::async_runtime::spawn(async move {
         let _guard = guard; // release the concurrency slot when the run ends
+
+        // 1-2. Provider must be present, known, and own the model — the same
+        // required-and-validated rule as `ai_generate` (no silent fallback).
+        let provider_id = match ProviderId::parse(req.provider.trim()) {
+            Ok(id) => id,
+            Err(e) => {
+                fail_run(&app_task, &engine_task, &job_id_task, e.to_string()).await;
+                return;
+            }
+        };
+        if let Err(e) = provider_id.validate_model(&req.model) {
+            fail_run(&app_task, &engine_task, &job_id_task, e.to_string()).await;
+            return;
+        }
+
+        // Resolve the active provider into a Completer for the agent's own turns.
+        let completer = match Completer::resolve(
+            &app_task,
+            Some(&req.provider),
+            Some(&req.model),
+            req.base_url.clone(),
+        ) {
+            Ok(c) => c,
+            Err(e) => {
+                fail_run(&app_task, &engine_task, &job_id_task, e.to_string()).await;
+                return;
+            }
+        };
+
+        // HIGH-2 defense-in-depth: a non-tool model degrades `chat_with_tools` to a
+        // single-shot answer (see the trait default), which could present a
+        // fabricated match score or invented company research as if the tools
+        // actually ran. Reject early with a clear message — the renderer separately
+        // disables the entry point for non-tool models; this is the server-side
+        // guard.
+        if let Err(e) = require_tool_capable(completer.capabilities(), &req.model) {
+            fail_run(&app_task, &engine_task, &job_id_task, e.to_string()).await;
+            return;
+        }
+
+        // Load the résumé + cached job posting to build the (untrusted, fenced)
+        // user message. Both must exist — fail early with a clear message otherwise.
+        let Some(resume) = app_task.state::<DocumentStore>().get(&req.resume_id) else {
+            fail_run(
+                &app_task,
+                &engine_task,
+                &job_id_task,
+                format!("resume not found: {}", req.resume_id),
+            )
+            .await;
+            return;
+        };
+        let Some(job_text) = crate::commands::match_resume::job_text_for(&app_task, &req.job_id)
+        else {
+            fail_run(
+                &app_task,
+                &engine_task,
+                &job_id_task,
+                format!("job not found in cache: {}", req.job_id),
+            )
+            .await;
+            return;
+        };
+
+        // Trusted routing context threaded into the tools — provider/model/base_url/
+        // job_id all come from the VALIDATED request, NEVER from model-supplied
+        // tool args (job_id lets `research_company` load THIS run's own posting
+        // server-side — see the LOW-1 fix in `agent::tools`).
+        let ctx = ToolContext {
+            provider: req.provider.clone(),
+            model: req.model.clone(),
+            base_url: req.base_url.clone(),
+            job_id: req.job_id.clone(),
+        };
+        let user = build_user_message(&req.resume_id, &req.job_id, &resume.text, &job_text);
+
         let tools = prep_application_tools();
         let outcome = run_agent_live(
             &app_task,
@@ -157,6 +190,14 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
             // deliberately-aborted run is misleading, not a finished suggestion.
             Ok(o) if o.stopped_reason == StoppedReason::Cancelled => {
                 crate::commands::jobs::job_cancel(&app_task, &job_id_task);
+            }
+            // A hung/misconfigured provider or tool call: the controller's own
+            // step timeout stopped the loop (see `agent::controller::
+            // AGENT_STEP_TIMEOUT`). This is a FAILURE, never a silent success —
+            // the renderer must show an error, not a completed proposal built on
+            // a run that never actually finished.
+            Ok(o) if o.stopped_reason == StoppedReason::Timeout => {
+                crate::commands::jobs::job_fail(&app_task, &job_id_task, o.final_text);
             }
             Ok(o) => {
                 // Terminal PROPOSAL step: the agent's final summary of what it

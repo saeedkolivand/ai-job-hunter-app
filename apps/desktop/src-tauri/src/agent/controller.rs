@@ -33,6 +33,19 @@ pub const MAX_AGENT_STEPS: usize = 8;
 /// completions per run — stops a loop that keeps calling tools without converging.
 pub const MAX_AGENT_TOKENS: usize = 60_000;
 
+/// Wall-clock ceiling on ONE provider turn or ONE read-tool call (a text-drafting
+/// tool makes its own provider request). Before this fix, the `tokio::select!`
+/// races below raced ONLY against `cancel` — a hung or misconfigured
+/// OpenAI-compatible `base_url` blocked the whole run for minutes with no
+/// terminal event, so `agent_run`'s spawn never emitted a terminal `jobs:event`
+/// and the run looked stuck at pending forever.
+// ponytail: set comfortably above the longest single-call HTTP timeout we ship
+// (`commands::ai_provider::timeouts::OLLAMA_COMPLETION` = 300s), so that
+// timeout's own specific network error surfaces first in the common case; this
+// is the backstop for whatever slips past it (e.g. a custom base_url whose
+// connect/read hangs outside the per-request client timeout).
+pub(super) const AGENT_STEP_TIMEOUT: Duration = Duration::from_secs(360);
+
 /// The fixed, trusted system prompt. NEVER interpolate scraped/user/tool text here.
 /// `pub(super)` so `agent::gate`'s test harness can reuse the exact same prompt
 /// instead of duplicating the literal.
@@ -63,6 +76,11 @@ pub enum StoppedReason {
     /// (`AppError::RateLimited`) mid-run — stop gracefully and keep whatever
     /// `steps`/`final_text` were already accumulated instead of discarding them.
     Budgeted,
+    /// A single provider turn or read-tool call exceeded [`AGENT_STEP_TIMEOUT`] —
+    /// a hung/misconfigured endpoint must not block the run forever with no
+    /// terminal event. Maps to a job FAILURE in `agent_run` (never a silent
+    /// success — see its spawn's match arm).
+    Timeout,
 }
 
 /// The result of an agent run.
@@ -186,6 +204,16 @@ fn tool_result_fence(name: &str, body: &str) -> String {
     format!("[tool_result:{name}]\n{body}")
 }
 
+/// The `final_text` stamped on a [`StoppedReason::Timeout`] outcome — surfaced
+/// verbatim as the job's failure message by `agent_run`'s spawn.
+fn step_timeout_message() -> String {
+    format!(
+        "The AI provider did not respond within {}s, so the run was stopped instead \
+         of hanging indefinitely. Check the model/endpoint in Settings → AI and try again.",
+        AGENT_STEP_TIMEOUT.as_secs()
+    )
+}
+
 /// The budgeted, cancellable tool-calling loop. Pure control flow over
 /// [`AgentEnv`] — no `AppHandle`, so it is unit-testable with a scripted fake.
 ///
@@ -274,19 +302,29 @@ pub async fn run_agent_with_system(
                     stopped_reason: StoppedReason::Cancelled,
                 });
             }
-            result = env.turn(&messages) => match result {
-                Ok(t) => t,
+            result = tokio::time::timeout(AGENT_STEP_TIMEOUT, env.turn(&messages)) => match result {
+                Ok(Ok(t)) => t,
                 // `LiveAgentEnv::turn` charges the per-provider daily ceiling before
                 // each request; hitting it on turn 3+ of an otherwise-successful run
                 // must not discard the `steps`/`final_text` accumulated so far.
-                Err(AppError::RateLimited(_)) => {
+                Ok(Err(AppError::RateLimited(_))) => {
                     return Ok(AgentOutcome {
                         final_text,
                         steps,
                         stopped_reason: StoppedReason::Budgeted,
                     });
                 }
-                Err(e) => return Err(e),
+                Ok(Err(e)) => return Err(e),
+                // Wall-clock backstop: the provider never responded within
+                // `AGENT_STEP_TIMEOUT` — stop instead of hanging forever with no
+                // terminal event.
+                Err(_elapsed) => {
+                    return Ok(AgentOutcome {
+                        final_text: step_timeout_message(),
+                        steps,
+                        stopped_reason: StoppedReason::Timeout,
+                    });
+                }
             },
         };
         steps += 1;
@@ -361,9 +399,22 @@ pub async fn run_agent_with_system(
                                 stopped_reason: StoppedReason::Cancelled,
                             });
                         }
-                        result = env.run_read_tool(&call.name, call.args.clone()) => match result {
-                            Ok(v) => v.to_string(),
-                            Err(e) => format!("error: {e}"),
+                        result = tokio::time::timeout(
+                            AGENT_STEP_TIMEOUT,
+                            env.run_read_tool(&call.name, call.args.clone()),
+                        ) => match result {
+                            Ok(Ok(v)) => v.to_string(),
+                            Ok(Err(e)) => format!("error: {e}"),
+                            // Wall-clock backstop: this read tool (which may itself
+                            // make a provider call, e.g. a drafting tool) never
+                            // returned within `AGENT_STEP_TIMEOUT`.
+                            Err(_elapsed) => {
+                                return Ok(AgentOutcome {
+                                    final_text: step_timeout_message(),
+                                    steps,
+                                    stopped_reason: StoppedReason::Timeout,
+                                });
+                            }
                         },
                     }
                 }
@@ -846,6 +897,77 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(out.stopped_reason, StoppedReason::Cancelled);
+        assert_eq!(
+            out.steps, 1,
+            "the turn that requested the hanging tool call already counted"
+        );
+    }
+
+    /// The controller's wall-clock backstop: a provider turn that never resolves
+    /// (no cancellation involved) must still stop the run, not hang forever with
+    /// no terminal event. `start_paused` lets the sleep past `AGENT_STEP_TIMEOUT`
+    /// resolve the instant the loop's own timeout timer fires, instead of
+    /// blocking the test for 360 real seconds (mirrors
+    /// `salary_research`'s `enrich_returns_none_...timeout` test).
+    #[tokio::test(start_paused = true)]
+    async fn provider_turn_exceeding_the_step_timeout_stops_the_loop() {
+        struct SlowTurnEnv;
+        #[async_trait]
+        impl AgentEnv for SlowTurnEnv {
+            async fn turn(&self, _messages: &[ChatMsg]) -> AppResult<AgentTurn> {
+                tokio::time::sleep(AGENT_STEP_TIMEOUT + Duration::from_secs(5)).await;
+                Ok(final_turn("too slow to matter"))
+            }
+            async fn run_read_tool(&self, _name: &str, _args: Value) -> AppResult<Value> {
+                unreachable!("no tool call is reached in this test")
+            }
+            fn on_step(&self, _step: &AgentStep) {}
+        }
+
+        let out = run_agent(
+            &SlowTurnEnv,
+            &whitelist(),
+            "help".into(),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(out.stopped_reason, StoppedReason::Timeout);
+        assert_eq!(out.steps, 0, "the hung turn never actually resolved");
+        assert!(
+            out.final_text.contains("did not respond"),
+            "the timeout must leave a clear final message, got: {:?}",
+            out.final_text
+        );
+    }
+
+    /// Same backstop for an in-flight READ tool call (e.g. a text-drafting tool
+    /// making its own provider request) — the turn that requested it resolves
+    /// immediately, so this exercises the second `tokio::time::timeout` site.
+    #[tokio::test(start_paused = true)]
+    async fn read_tool_call_exceeding_the_step_timeout_stops_the_loop() {
+        struct SlowToolEnv;
+        #[async_trait]
+        impl AgentEnv for SlowToolEnv {
+            async fn turn(&self, _messages: &[ChatMsg]) -> AppResult<AgentTurn> {
+                Ok(read_call("reader"))
+            }
+            async fn run_read_tool(&self, _name: &str, _args: Value) -> AppResult<Value> {
+                tokio::time::sleep(AGENT_STEP_TIMEOUT + Duration::from_secs(5)).await;
+                Ok(json!({ "ran": "too late" }))
+            }
+            fn on_step(&self, _step: &AgentStep) {}
+        }
+
+        let out = run_agent(
+            &SlowToolEnv,
+            &whitelist(),
+            "help".into(),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(out.stopped_reason, StoppedReason::Timeout);
         assert_eq!(
             out.steps, 1,
             "the turn that requested the hanging tool call already counted"

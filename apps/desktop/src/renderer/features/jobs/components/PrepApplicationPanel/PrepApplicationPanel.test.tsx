@@ -25,7 +25,7 @@ import type React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
-import type { AgentStepEvent, JobEvent } from '@ajh/shared';
+import type { AgentStepEvent, JobEvent, JobRecord } from '@ajh/shared';
 import type * as AjhUi from '@ajh/ui';
 
 import type { Posting } from '@/features/jobs/types';
@@ -74,6 +74,9 @@ vi.mock('@/hooks/useDefaultResumeId', () => ({
 
 let stepHandler: ((event: AgentStepEvent) => void) | undefined;
 let jobEventHandler: ((event: JobEvent) => void) | undefined;
+// Drives the `useJob` reconciliation fallback — undefined unless a test
+// stubs it to simulate a fast-fail job the event path never delivered.
+let stubbedJobRecord: JobRecord | undefined;
 const mockRunMutateAsync = vi.fn().mockResolvedValue({ jobId: 'job-1' });
 const mockCancelMutateAsync = vi.fn().mockResolvedValue(undefined);
 const mockConfirmMutateAsync = vi.fn().mockResolvedValue({ ok: true });
@@ -86,6 +89,7 @@ vi.mock('@/services', () => ({
   },
   useCancelJob: () => ({ mutateAsync: mockCancelMutateAsync }),
   useGenerateConfig: () => ({ provider: 'ollama', model: 'llama3', baseUrl: undefined }),
+  useJob: () => ({ data: stubbedJobRecord }),
   useJobEvents: (cb: (event: JobEvent) => void) => {
     jobEventHandler = cb;
   },
@@ -142,6 +146,7 @@ beforeEach(() => {
   mockConfirmMutateAsync.mockResolvedValue({ ok: true });
   stepHandler = undefined;
   jobEventHandler = undefined;
+  stubbedJobRecord = undefined;
 });
 
 function openModal() {
@@ -267,6 +272,86 @@ describe('PrepApplicationPanel — run failure', () => {
     });
 
     expect(screen.queryByText('jobs.prep.runFailed')).not.toBeInTheDocument();
+  });
+});
+
+describe('PrepApplicationPanel — useJob reconciliation fallback (no stuck spinner)', () => {
+  it('reaches `error` via useJob reconciliation when the job already failed before any jobs:event arrived', async () => {
+    // Simulates the race: a fast backend validation failure emits its
+    // terminal `jobs:event` before `agent.run`'s IPC round-trip resolves, so
+    // `handleJobEvent`'s `runJobId` guard never sees it. `jobEventHandler` is
+    // intentionally never invoked here — the fallback must reconcile solely
+    // from the job's already-failed status once `runJobId` is known.
+    stubbedJobRecord = {
+      id: 'job-1',
+      kind: 'ai.generate',
+      status: 'failed',
+      progress: 0,
+      payload: {},
+      error: 'Provider does not support tool calls.',
+      retries: 0,
+      maxRetries: 0,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    openModal();
+    await clickStart();
+
+    expect(screen.getByText('jobs.prep.runFailed')).toBeInTheDocument();
+    expect(screen.getByText('Provider does not support tool calls.')).toBeInTheDocument();
+    // Would still show the busy spinner if the machine were stuck in `planning`.
+    expect(screen.queryByText('jobs.prep.starting')).not.toBeInTheDocument();
+  });
+
+  it('reaches `done` via useJob reconciliation and renders the proposal when job.completed never arrived (agent:step already streamed it)', async () => {
+    openModal();
+    await clickStart();
+
+    // The `agent:step` channel is unaffected by the `jobs:event` race — the
+    // proposal narration already streamed in. `job.result` (read here) is a
+    // DIFFERENT field than the live event path's `event.data` — this is the
+    // regression check for that mapping.
+    stubbedJobRecord = {
+      id: 'job-1',
+      kind: 'ai.generate',
+      status: 'completed',
+      progress: 100,
+      payload: {},
+      result: { finalText: 'Proposal draft text.', steps: 5, stoppedReason: 'done' },
+      retries: 0,
+      maxRetries: 0,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    act(() => {
+      stepHandler?.(
+        turnStep({ step: 5, text: 'Proposal draft text.', tools: [], kind: 'proposal' })
+      );
+    });
+
+    expect(screen.getByText('jobs.prep.proposalTitle')).toBeInTheDocument();
+    expect(screen.getByText('Proposal draft text.')).toBeInTheDocument();
+    expect(screen.getByText('jobs.prep.stopped.done')).toBeInTheDocument();
+    expect(screen.queryByText('jobs.prep.starting')).not.toBeInTheDocument();
+  });
+
+  it('reaches `cancelled` via useJob reconciliation when the job was already cancelled before any jobs:event arrived', async () => {
+    stubbedJobRecord = {
+      id: 'job-1',
+      kind: 'ai.generate',
+      status: 'cancelled',
+      progress: 0,
+      payload: {},
+      retries: 0,
+      maxRetries: 0,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    openModal();
+    await clickStart();
+
+    expect(screen.getByText('jobs.prep.stopped.cancelled')).toBeInTheDocument();
+    expect(screen.queryByText('jobs.prep.starting')).not.toBeInTheDocument();
   });
 });
 

@@ -15,6 +15,7 @@ import {
   useAgentStepEvents,
   useCancelJob,
   useGenerateConfig,
+  useJob,
   useJobEvents,
 } from '@/services';
 
@@ -117,6 +118,9 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
   // `start()` an instant (pre-render) "is a run already active" read so a
   // fast double-click can't spawn two concurrent runs.
   const activeRef = useRef(false);
+  // Guards the `useJob` reconciliation fallback below so it fires at most
+  // once per run — reset alongside the rest of the run state in `start()`.
+  const reconciledRef = useRef(false);
   const prevStatusRef = useRef<Partial<Record<ChecklistKey, string>>>({});
   // A stable in-modal focus target: `AgentConfirm` (and its own heading) fully
   // unmounts once a confirm resolves, so focus needs somewhere durable to land
@@ -168,31 +172,65 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
   );
   useAgentStepEvents(handleStep);
 
-  const handleJobEvent = useCallback(
-    (event: JobEvent) => {
-      if (!activeRef.current || event.jobId !== runJobId) return;
-      if (event.type === 'job.completed') {
-        activeRef.current = false;
-        setPendingConfirm(null);
-        setResult(event.data as AgentRunResult);
+  /**
+   * Shared terminal handling for both the live `jobs:event` path
+   * (`handleJobEvent`) and the `useJob` reconciliation fallback below — same
+   * side effects regardless of which one observes the terminal status first.
+   */
+  const finishRun = useCallback(
+    (outcome: 'completed' | 'failed' | 'cancelled', data?: unknown) => {
+      activeRef.current = false;
+      setPendingConfirm(null);
+      if (outcome === 'completed') {
+        setResult(data as AgentRunResult);
         send('COMPLETE');
-      } else if (event.type === 'job.failed') {
-        activeRef.current = false;
-        setPendingConfirm(null);
-        setError(typeof event.data === 'string' ? event.data : t('jobs.prep.runFailed'));
+      } else if (outcome === 'failed') {
+        setError(typeof data === 'string' ? data : t('jobs.prep.runFailed'));
         send('ERROR');
-      } else if (event.type === 'job.cancelled') {
+      } else {
         // A deliberate Stop is not a failure — its own state/copy, not ERROR.
         // Cancelling a suspended run resolves its pending confirm server-side
         // too (see `AgentGate::remove`) — nothing left here to act on.
-        activeRef.current = false;
-        setPendingConfirm(null);
         send('CANCEL');
       }
     },
-    [runJobId, send, t]
+    [send, t]
+  );
+
+  const handleJobEvent = useCallback(
+    (event: JobEvent) => {
+      if (!activeRef.current || event.jobId !== runJobId) return;
+      if (event.type === 'job.completed') finishRun('completed', event.data);
+      else if (event.type === 'job.failed') finishRun('failed', event.data);
+      else if (event.type === 'job.cancelled') finishRun('cancelled');
+    },
+    [runJobId, finishRun]
   );
   useJobEvents(handleJobEvent);
+
+  // Fallback for a fast fail: the backend can emit a terminal `jobs:event`
+  // BEFORE `agent.run`'s IPC round-trip resolves (before `runJobId`/the
+  // `activeRef`/`event.jobId` guard above is even listening), so that event
+  // is silently dropped and the machine would otherwise sit in its busy state
+  // forever. Once `runJobId` is known, reconcile against the job's actual
+  // status — idempotent (fires at most once via `reconciledRef`, and only
+  // while the machine is still busy, so it never overrides a run that already
+  // terminated through the normal event path).
+  const jobQuery = useJob(runJobId ?? '');
+  useEffect(() => {
+    if (!runJobId || reconciledRef.current || !isBusy) return;
+    const job = jobQuery.data;
+    if (
+      !job ||
+      (job.status !== 'completed' && job.status !== 'failed' && job.status !== 'cancelled')
+    ) {
+      return;
+    }
+    reconciledRef.current = true;
+    if (job.status === 'completed') finishRun('completed', job.result);
+    else if (job.status === 'failed') finishRun('failed', job.error);
+    else finishRun('cancelled');
+  }, [runJobId, jobQuery.data, isBusy, finishRun]);
 
   /** `<AgentConfirm>` only calls this once the resolve actually took effect
    *  (`{ ok: true }`) — an `{ ok: false }` stays on-screen showing its own
@@ -223,6 +261,7 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
     setPendingConfirm(null);
     prevStatusRef.current = {};
     activeRef.current = true;
+    reconciledRef.current = false;
     send('START');
     try {
       const { jobId } = await runAgent.mutateAsync({
