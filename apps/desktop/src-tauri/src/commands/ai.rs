@@ -11,7 +11,8 @@ use crate::jobs::{JobStatus, JobTracker};
 use crate::postings::PostingsCache;
 
 use super::ai_provider::{
-    emit_stream_error, ollama, resolve, resolve_by_name, AiGenerateRequest, ProviderId,
+    emit_stream_error, ollama, resolve, resolve_by_name, AiGenerateRequest, ModelCapabilities,
+    ProviderId,
 };
 
 /// Stream an AI generation from the explicitly-selected provider.
@@ -246,6 +247,109 @@ pub async fn ai_research_company(
     json!({ "company": result.key, "brief": result.content })
 }
 
+/// Abstraction over "search the web for reference notes on this application
+/// question" — mirrors
+/// [`salary_research::SalarySearcher`](crate::salary_research::SalarySearcher)
+/// exactly, and for the identical reason: this crate has no `tauri::test`
+/// mock-app harness, so a fake `AnswerSearcher` is the only way to unit-test
+/// [`research_answer_core`]'s capability-check-BEFORE-daily-charge ordering
+/// without a live `AppHandle`. [`Completer`](crate::pipeline::Completer) is
+/// the sole production implementation (both methods are thin forwards to its
+/// own).
+trait AnswerSearcher {
+    fn capabilities(&self) -> ModelCapabilities;
+    fn research_answer(
+        &self,
+        question: &str,
+        role: &str,
+        company: &str,
+    ) -> impl std::future::Future<Output = crate::error::AppResult<String>> + Send;
+}
+
+impl AnswerSearcher for crate::pipeline::Completer {
+    fn capabilities(&self) -> ModelCapabilities {
+        crate::pipeline::Completer::capabilities(self)
+    }
+
+    async fn research_answer(
+        &self,
+        question: &str,
+        role: &str,
+        company: &str,
+    ) -> crate::error::AppResult<String> {
+        crate::pipeline::Completer::research_answer(self, question, role, company).await
+    }
+}
+
+/// Cap on the QUESTION forwarded to the web-search query — deliberately larger
+/// than `salary_research::MAX_INPUT_CHARS` (200, still used below for
+/// `role`/`company`): a full/custom application question is prose, and a
+/// 200-char cut lands mid-sentence and hurts search relevance. Not folded into
+/// `salary_research::truncate_input` — that would churn its many existing call
+/// sites/tests for one extra caller; revisit if a third caller needs
+/// char-capping.
+const ANSWER_QUESTION_MAX_CHARS: usize = 700;
+
+/// Char-boundary-safe cap, mirroring `salary_research::truncate_input`'s
+/// implementation (`.chars().take(n)` never splits a multi-byte character).
+/// Pure + unit-tested.
+fn truncate_question(s: &str) -> String {
+    s.chars().take(ANSWER_QUESTION_MAX_CHARS).collect()
+}
+
+/// Core of [`ai_research_answer`]: capability pre-check (BEFORE charging) →
+/// the per-provider daily charge → truncate → search. Factored out of the
+/// `#[tauri::command]` so this ordering is unit-tested against a fake
+/// [`AnswerSearcher`] + a real (`AppHandle`-free)
+/// [`Limiter`](crate::limits::Limiter), without a live `AppHandle`/`Completer`.
+///
+/// Degrades gracefully at every step — an empty string, never an error, when
+/// the provider can't search (e.g. Ollama with no account key), the daily
+/// budget is exhausted, or the search fails, so answer generation always
+/// proceeds exactly as without web search.
+async fn research_answer_core<S: AnswerSearcher>(
+    searcher: &S,
+    limiter: &crate::limits::Limiter,
+    provider: &str,
+    question: &str,
+    role: &str,
+    company: &str,
+) -> String {
+    // Capability pre-check BEFORE charging: unlike `ai_research_company`
+    // (charged once per generation), this fires once PER SELECTED QUESTION —
+    // a provider that can never search (e.g. a generic OpenAI-compatible
+    // gateway) would otherwise burn one daily-budget charge per question for
+    // a guaranteed-empty result. Justified divergence from the company-research
+    // charge order given that N× fan-out.
+    if !searcher.capabilities().supports_web_search {
+        tracing::debug!("research_answer: provider cannot web-search, skipping charge");
+        return String::new();
+    }
+
+    // Per-provider daily request ceiling — the same coarse runaway-cost
+    // backstop `ai_generate`/`ai_research_company` charge. The renderer also
+    // caps how many questions per generation run request a search at all
+    // (`WEB_SEARCH_MAX_PER_RUN` in `useApplicationAnswers.ts`), so this fan-out
+    // can't dominate the shared `(day, provider)` budget on its own.
+    if let Err(e) = limiter.charge_provider_daily(provider, crate::limits::PROVIDER_DAILY_MAX) {
+        tracing::debug!("research_answer: daily budget exceeded: {e}");
+        return String::new();
+    }
+
+    // Cap forwarded strings (token-cost hygiene, not a security boundary).
+    let question = truncate_question(question.trim());
+    let role = crate::salary_research::truncate_input(role.trim());
+    let company = crate::salary_research::truncate_input(company.trim());
+
+    searcher
+        .research_answer(&question, &role, &company)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::debug!("research_answer: web search failed: {e}");
+            String::new()
+        })
+}
+
 /// Web-search reference notes for a single application-question answer,
 /// combining the question with the role + company for relevance. Reuses the
 /// **same** web-search channel as [`ai_research_company`] — the active
@@ -300,37 +404,16 @@ pub async fn ai_research_answer(
         }
     };
 
-    // Capability pre-check BEFORE charging: unlike `ai_research_company`
-    // (charged once per generation), this fires once PER SELECTED QUESTION —
-    // a provider that can never search (e.g. a generic OpenAI-compatible
-    // gateway) would otherwise burn one daily-budget charge per question for
-    // a guaranteed-empty result. Justified divergence from the company-research
-    // charge order given that N× fan-out.
-    if !completer.capabilities().supports_web_search {
-        tracing::debug!("research_answer: provider cannot web-search, skipping charge");
-        return String::new();
-    }
-
-    // Per-provider daily request ceiling — the same coarse runaway-cost
-    // backstop `ai_generate`/`ai_research_company` charge.
-    if let Err(e) = limiter.charge_provider_daily(
-        completer.provider_id().as_str(),
-        crate::limits::PROVIDER_DAILY_MAX,
-    ) {
-        tracing::debug!("research_answer: daily budget exceeded: {e}");
-        return String::new();
-    }
-
-    // Cap forwarded strings (token-cost hygiene, not a security boundary —
-    // reuses the same 200-char cap `SalaryResearch` applies to role/company).
-    let question = crate::salary_research::truncate_input(question.trim());
-    let role = crate::salary_research::truncate_input(role.as_deref().unwrap_or("").trim());
-    let company = crate::salary_research::truncate_input(company.as_deref().unwrap_or("").trim());
-
-    completer
-        .research_answer(&question, &role, &company)
-        .await
-        .unwrap_or_default()
+    let provider_id = completer.provider_id().as_str();
+    research_answer_core(
+        &completer,
+        &limiter,
+        provider_id,
+        &question,
+        role.as_deref().unwrap_or(""),
+        company.as_deref().unwrap_or(""),
+    )
+    .await
 }
 
 /// Web-grounded market salary-range lookup for the salary application question
@@ -667,4 +750,172 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
     });
 
     json!({ "jobId": job_id })
+}
+
+#[cfg(test)]
+mod research_answer_tests {
+    //! Unit tests for `research_answer_core` — the `AppHandle`-free heart of
+    //! `ai_research_answer`. A fake `AnswerSearcher` + a real (but
+    //! `AppHandle`-free) `Limiter` exercise the branching/call order that
+    //! matters: capability check strictly BEFORE the daily charge, and the
+    //! charge happening exactly once on the successful path. The rate-limit /
+    //! provider-resolution branches in the `#[tauri::command]` wrapper itself
+    //! are NOT covered here — they need a live `AppHandle`, which this crate
+    //! has no mock harness for (see `AnswerSearcher`'s doc comment); the
+    //! `Limiter`/`ProviderId` logic they delegate to is already covered by
+    //! `limits::test` and `ai_provider::mod`'s own unit tests.
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+    use crate::commands::ai_provider::TokenParam;
+    use crate::error::AppResult;
+    use crate::limits::Limiter;
+
+    struct FakeAnswerSearcher {
+        supports_web_search: bool,
+        response: &'static str,
+        calls: AtomicUsize,
+    }
+
+    fn capabilities_with(supports_web_search: bool) -> ModelCapabilities {
+        ModelCapabilities {
+            supports_temperature: true,
+            supports_system_role: true,
+            supports_streaming: true,
+            supports_reasoning: false,
+            supports_tools: false,
+            supports_json_mode: false,
+            supports_embeddings: false,
+            supports_web_search,
+            token_param: TokenParam::MaxTokens,
+        }
+    }
+
+    impl AnswerSearcher for FakeAnswerSearcher {
+        fn capabilities(&self) -> ModelCapabilities {
+            capabilities_with(self.supports_web_search)
+        }
+
+        async fn research_answer(
+            &self,
+            question: &str,
+            _role: &str,
+            _company: &str,
+        ) -> AppResult<String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(format!("{}:{question}", self.response))
+        }
+    }
+
+    #[tokio::test]
+    async fn a_non_searchable_provider_returns_empty_without_charging_the_daily_budget() {
+        let limiter = Limiter::new();
+        let searcher = FakeAnswerSearcher {
+            supports_web_search: false,
+            response: "notes",
+            calls: AtomicUsize::new(0),
+        };
+
+        let result =
+            research_answer_core(&searcher, &limiter, "openai", "question?", "role", "co").await;
+
+        assert_eq!(result, "");
+        assert_eq!(
+            searcher.calls.load(Ordering::SeqCst),
+            0,
+            "the search itself must never run for a non-searchable provider"
+        );
+        // The daily budget must be untouched: a fresh max=1 charge still succeeds.
+        assert!(
+            limiter.charge_provider_daily("openai", 1).is_ok(),
+            "skipping a non-searchable provider must not consume the daily budget"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_searchable_provider_charges_the_daily_budget_then_returns_the_search_result() {
+        let limiter = Limiter::new();
+        let searcher = FakeAnswerSearcher {
+            supports_web_search: true,
+            response: "notes",
+            calls: AtomicUsize::new(0),
+        };
+
+        let result =
+            research_answer_core(&searcher, &limiter, "openai", "question?", "role", "co").await;
+
+        assert_eq!(result, "notes:question?");
+        assert_eq!(searcher.calls.load(Ordering::SeqCst), 1);
+        // The daily budget WAS charged: a max=1 charge for the same provider
+        // now trips (this call already consumed the one slot).
+        assert!(
+            limiter.charge_provider_daily("openai", 1).is_err(),
+            "a successful search must charge the daily budget exactly once"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_search_failure_degrades_to_empty_after_already_charging() {
+        struct ErrSearcher;
+        impl AnswerSearcher for ErrSearcher {
+            fn capabilities(&self) -> ModelCapabilities {
+                capabilities_with(true)
+            }
+            async fn research_answer(
+                &self,
+                _question: &str,
+                _role: &str,
+                _company: &str,
+            ) -> AppResult<String> {
+                Err(crate::error::AppError::Provider(
+                    "search failed".to_string(),
+                ))
+            }
+        }
+
+        let limiter = Limiter::new();
+        let result =
+            research_answer_core(&ErrSearcher, &limiter, "openai", "question?", "role", "co").await;
+
+        assert_eq!(result, "");
+    }
+
+    // ── truncate_question ────────────────────────────────────────────────────
+
+    #[test]
+    fn truncate_question_caps_at_the_question_specific_max() {
+        let long = "a".repeat(ANSWER_QUESTION_MAX_CHARS + 500);
+        assert_eq!(
+            truncate_question(&long).chars().count(),
+            ANSWER_QUESTION_MAX_CHARS
+        );
+    }
+
+    #[test]
+    fn truncate_question_is_a_no_op_under_the_cap() {
+        assert_eq!(
+            truncate_question("Why do you want this role?"),
+            "Why do you want this role?"
+        );
+    }
+
+    #[test]
+    fn truncate_question_preserves_a_full_question_past_the_smaller_role_company_cap() {
+        // The whole point of this fix: a real custom question longer than
+        // `salary_research::MAX_INPUT_CHARS` (200) — but still under this
+        // question-specific cap — must survive intact, unlike the old shared
+        // 200-char cap which would have cut it mid-sentence.
+        let question: String = "word ".repeat(60); // 300 chars, > 200 and < 700.
+        assert_eq!(truncate_question(&question), question);
+        assert!(question.chars().count() > crate::salary_research::MAX_INPUT_CHARS);
+    }
+
+    #[test]
+    fn truncate_question_never_splits_a_multi_byte_character() {
+        let long: String = "日".repeat(ANSWER_QUESTION_MAX_CHARS + 200);
+        let truncated = truncate_question(&long);
+        assert_eq!(truncated.chars().count(), ANSWER_QUESTION_MAX_CHARS);
+        assert!(truncated.chars().all(|c| c == '日'));
+    }
 }

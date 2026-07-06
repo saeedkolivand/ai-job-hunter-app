@@ -19,6 +19,21 @@ import { keys } from '@/services/query-client';
 /** Max length for a user-typed custom application question (chars, post-trim). */
 export const MAX_CUSTOM_QUESTION_LEN = 500;
 
+/**
+ * Cap on how many selected questions can trigger a web search in a single
+ * `generate()` run. `ai_research_answer` shares its per-provider daily budget
+ * counter (`PROVIDER_DAILY_MAX`) with `ai_research_company`/`ai_lookup_salary`
+ * — an uncapped fan-out over a 10-20 question form could dominate that shared
+ * budget for the rest of the day. Anything past the cap still generates an
+ * answer, just without web grounding (graceful — `webSearchNotes: ''`,
+ * identical to the toggle being off for that question).
+ *
+ * Fuller alternative (deferred): a dedicated daily budget bucket just for
+ * answer web-search, so it can never compete with salary/company research at
+ * all.
+ */
+export const WEB_SEARCH_MAX_PER_RUN = 8;
+
 interface Params {
   resume: string;
   jobDesc: string;
@@ -106,7 +121,9 @@ export function useApplicationAnswers({
   // flow's shared "researchCompany" form field). Off by default; when on,
   // each selected question's answer generation first fetches web-search
   // reference notes for that question (degrading to '' on failure/an
-  // unsupported provider, so the answer still generates exactly as with it off).
+  // unsupported provider, so the answer still generates exactly as with it
+  // off), up to `WEB_SEARCH_MAX_PER_RUN` questions per run — see its doc
+  // comment for why the fan-out is capped.
   const [searchWeb, setSearchWeb] = useState(false);
   // `guidance` is always undefined for a user-typed custom question — declared
   // here (not cast later) so `chosen` below is a uniform shape and reading
@@ -186,7 +203,15 @@ export function useApplicationAnswers({
         ? await fetchCompanyBrief(jobDesc, model, detected.companyName)
         : '';
       const chosen = [...APPLICATION_QUESTIONS.filter((q) => selected.has(q.id)), ...custom];
+      if (searchWeb && chosen.length > WEB_SEARCH_MAX_PER_RUN) {
+        // `console.warn` (not `.info`) — this repo's `no-console` lint rule
+        // only allows `warn`/`error`.
+        console.warn(
+          `[useApplicationAnswers] web search capped at ${WEB_SEARCH_MAX_PER_RUN} of ${chosen.length} selected questions this run (shared daily provider budget guard); the rest still generate without web grounding.`
+        );
+      }
       const results: ApplicationAnswer[] = [];
+      let webSearchesRun = 0;
       for (const q of chosen) {
         // Salary question only: precedence is scraped (this exact posting's own
         // stated figure) → web-researched market range → none (C1 fallback).
@@ -220,9 +245,12 @@ export function useApplicationAnswers({
         // to '' on any failure or an unsupported provider; belt-and-suspenders
         // try/catch on top (mirrors the salary lookup above) so a search
         // failure can NEVER block or fail the rest of this loop — the answer
-        // still generates exactly as with the toggle off.
+        // still generates exactly as with the toggle off. Capped at
+        // `WEB_SEARCH_MAX_PER_RUN` per run (see its doc comment) — past the
+        // cap, this question generates without web grounding.
         let webSearchNotes = '';
-        if (searchWeb) {
+        if (searchWeb && webSearchesRun < WEB_SEARCH_MAX_PER_RUN) {
+          webSearchesRun += 1;
           try {
             webSearchNotes = await fetchAnswerWebNotes(
               q.question,

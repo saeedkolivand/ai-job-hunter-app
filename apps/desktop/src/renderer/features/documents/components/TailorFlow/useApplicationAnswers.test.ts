@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 
+import { APPLICATION_QUESTIONS } from '@ajh/prompts/generate';
+
 import {
   extractMetadata,
   generateApplicationAnswer,
@@ -10,7 +12,7 @@ import {
   researchAnswer,
 } from '@/lib/generate';
 
-import { useApplicationAnswers } from './useApplicationAnswers';
+import { useApplicationAnswers, WEB_SEARCH_MAX_PER_RUN } from './useApplicationAnswers';
 
 // Stub the generation lib: metadata + one deterministic answer, no research.
 vi.mock('@/lib/generate', () => ({
@@ -513,6 +515,43 @@ describe('useApplicationAnswers', () => {
       ).resolves.not.toThrow();
 
       expect(result.current.error).toBeNull();
+      // The loop must CONTINUE past the caught rejection and still produce an
+      // answer with no web grounding — a regression that short-circuits the
+      // loop after a search failure would leave this answer missing/empty
+      // instead of the mocked deterministic text.
+      expect(result.current.answers['why-company']).toContain('payments migration');
+      expect(generateApplicationAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({ webSearchNotes: '' })
+      );
+    });
+  });
+
+  describe('web-search fan-out cap', () => {
+    it('caps per-question searches at WEB_SEARCH_MAX_PER_RUN; the rest still answer without web grounding', async () => {
+      // The registry alone must exceed the cap for this test to be meaningful.
+      expect(APPLICATION_QUESTIONS.length).toBeGreaterThan(WEB_SEARCH_MAX_PER_RUN);
+      vi.mocked(researchAnswer).mockResolvedValue('Acme raised a Series B in 2026.');
+      const { result } = render();
+      act(() => result.current.setSearchWeb(true));
+      act(() => {
+        for (const q of APPLICATION_QUESTIONS) result.current.toggle(q.id);
+      });
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(researchAnswer).toHaveBeenCalledTimes(WEB_SEARCH_MAX_PER_RUN);
+      // The loop never short-circuits — every selected question still got an answer.
+      expect(Object.keys(result.current.answers)).toHaveLength(APPLICATION_QUESTIONS.length);
+      // Everything past the cap generated WITHOUT web grounding.
+      const uncappedCalls = vi
+        .mocked(generateApplicationAnswer)
+        .mock.calls.slice(WEB_SEARCH_MAX_PER_RUN);
+      expect(uncappedCalls.length).toBeGreaterThan(0);
+      for (const [args] of uncappedCalls) {
+        expect(args.webSearchNotes).toBe('');
+      }
     });
   });
 });
