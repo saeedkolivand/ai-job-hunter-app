@@ -1333,6 +1333,10 @@
         "rewrite": "Rewrite with AI",
         "rewriteAriaLabel": "Rewrite this answer with AI",
         "rewriteSaveError": "Failed to save the rewritten answer",
+        "searchWeb": {
+          "label": "Search the web for better answers",
+          "hint": "Looks up current facts for each question using your AI provider's own web search. Best-effort."
+        },
         "customLabel": "Your own question",
         "customPlaceholder": "Type or paste a question…",
         "add": "Add",
