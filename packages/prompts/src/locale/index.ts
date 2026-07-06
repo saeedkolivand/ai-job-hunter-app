@@ -889,6 +889,11 @@ const COUNTRY_TO_CURRENCY: Record<string, string> = {
   NL: 'EUR',
   HR: 'EUR',
   BG: 'EUR',
+  HU: 'HUF',
+  RO: 'RON',
+  SM: 'EUR',
+  VA: 'EUR',
+  AD: 'EUR',
 };
 
 /** Map an ISO-3166 alpha-2 country code to its ISO-4217 currency (undefined when unknown). */

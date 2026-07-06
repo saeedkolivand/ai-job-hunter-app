@@ -156,6 +156,9 @@ describe('countryToCurrency', () => {
     // Croatia joined the Eurozone 2023-01-01; Bulgaria joined 2026-01-01.
     expect(countryToCurrency('HR')).toBe('EUR');
     expect(countryToCurrency('BG')).toBe('EUR');
+    // EU members outside the Eurozone.
+    expect(countryToCurrency('HU')).toBe('HUF');
+    expect(countryToCurrency('RO')).toBe('RON');
     expect(countryToCurrency('ZZ')).toBeUndefined();
     expect(countryToCurrency(undefined)).toBeUndefined();
   });

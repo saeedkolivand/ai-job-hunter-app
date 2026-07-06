@@ -143,11 +143,16 @@ impl SalaryResearch {
 
         // Case-folded so "Berlin"/"berlin" don't miss each other; the
         // case-preserved values above still go to the prompt/query/logging.
-        // Deliberately NOT keyed on country/currency — the reconciliation
-        // below re-checks every read regardless of what was cached, so an
-        // older (possibly wrong-currency) entry self-heals via a fresh fetch
-        // rather than fragmenting the cache.
-        let key = cache_key(&role, &company, &location);
+        // Keyed on `currency` (not the raw `country` string) — two jobs
+        // sharing role/company/location but resolving to different expected
+        // currencies (e.g. a DE and a US "Remote" posting) must never share a
+        // cache row, or an unknown-currency read could surface whatever
+        // currency a different, known-currency job last wrote there. The
+        // `reconcile_expected_currency` self-heal below still re-checks every
+        // read regardless, so a legacy (pre-fix) or otherwise wrong-currency
+        // cached entry self-heals via a fresh fetch rather than fragmenting
+        // the cache further.
+        let key = cache_key(&role, &company, &location, &currency);
 
         // Fast path: cached, validated range younger than the TTL.
         if let Some(cache) = cache {
@@ -239,16 +244,21 @@ fn role_is_missing(role: &str) -> bool {
     role.trim().is_empty()
 }
 
-/// Build the cache key for a (role, company, location) lookup — case-folded so
-/// "Berlin"/"berlin" (or "Acme"/"ACME") land on the same cache entry, cutting
-/// avoidable cache misses (and duplicate paid provider calls) on the only
-/// difference being capitalization. Pure + unit-tested.
-fn cache_key(role: &str, company: &str, location: &str) -> String {
+/// Build the cache key for a (role, company, location, expected currency)
+/// lookup — case-folded so "Berlin"/"berlin" (or "Acme"/"ACME") land on the
+/// same cache entry, cutting avoidable cache misses (and duplicate paid
+/// provider calls) on the only difference being capitalization. `currency` is
+/// part of the key (not just baked into `location`/`country`) so two postings
+/// that share role/company/location but resolve to different expected
+/// currencies — including an unknown-currency ("") job vs. a known-currency
+/// one — never collide on the same cache row. Pure + unit-tested.
+fn cache_key(role: &str, company: &str, location: &str, currency: &str) -> String {
     format!(
-        "{}|{}|{}",
+        "{}|{}|{}|{}",
         role.to_lowercase(),
         company.to_lowercase(),
-        location.to_lowercase()
+        location.to_lowercase(),
+        currency.to_lowercase()
     )
 }
 
@@ -374,17 +384,32 @@ mod tests {
     #[test]
     fn cache_key_case_folds_so_differently_cased_inputs_collide() {
         assert_eq!(
-            cache_key("Backend Engineer", "Acme", "Berlin"),
-            cache_key("backend engineer", "ACME", "berlin")
+            cache_key("Backend Engineer", "Acme", "Berlin", "EUR"),
+            cache_key("backend engineer", "ACME", "berlin", "eur")
         );
     }
 
     #[test]
     fn cache_key_preserves_the_pipe_delimited_shape() {
         assert_eq!(
-            cache_key("Backend Engineer", "Acme", "Berlin"),
-            "backend engineer|acme|berlin"
+            cache_key("Backend Engineer", "Acme", "Berlin", "EUR"),
+            "backend engineer|acme|berlin|eur"
         );
+    }
+
+    #[test]
+    fn cache_key_differs_by_currency_so_cross_country_postings_never_collide() {
+        // The bug this fixes: a DE (EUR) and a US (USD) "Remote" posting share
+        // role/company/location, so without currency in the key they'd land
+        // on the same cache row — and an unknown-currency ("") read could then
+        // surface whatever currency a different, known-currency job last
+        // wrote there.
+        let de = cache_key("Backend Engineer", "Acme", "Remote", "EUR");
+        let us = cache_key("Backend Engineer", "Acme", "Remote", "USD");
+        let unknown = cache_key("Backend Engineer", "Acme", "Remote", "");
+        assert_ne!(de, us);
+        assert_ne!(de, unknown);
+        assert_ne!(us, unknown);
     }
 
     #[test]
@@ -576,7 +601,7 @@ mod tests {
                 currency: "EUR".to_string()
             })
         );
-        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        let key = cache_key("Backend Engineer", "Acme", "Berlin", "");
         assert!(
             cache.get(CACHE_NS, &key, TTL_SECS).is_some(),
             "a successful lookup must write through the cache"
@@ -602,7 +627,7 @@ mod tests {
             .await;
 
         assert_eq!(result, None);
-        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        let key = cache_key("Backend Engineer", "Acme", "Berlin", "");
         assert_eq!(cache.get(CACHE_NS, &key, TTL_SECS), None);
     }
 
@@ -625,7 +650,7 @@ mod tests {
             .await;
 
         assert_eq!(result, None);
-        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        let key = cache_key("Backend Engineer", "Acme", "Berlin", "");
         assert_eq!(cache.get(CACHE_NS, &key, TTL_SECS), None);
     }
 
@@ -647,7 +672,7 @@ mod tests {
             .await;
 
         assert_eq!(result, None);
-        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        let key = cache_key("Backend Engineer", "Acme", "Berlin", "");
         assert_eq!(cache.get(CACHE_NS, &key, TTL_SECS), None);
     }
 
@@ -669,7 +694,7 @@ mod tests {
             .await;
 
         assert_eq!(result, None);
-        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        let key = cache_key("Backend Engineer", "Acme", "Berlin", "");
         assert_eq!(cache.get(CACHE_NS, &key, TTL_SECS), None);
     }
 
@@ -739,7 +764,7 @@ mod tests {
 
         assert_eq!(result, None);
         // A dropped (mismatched) range must never be cached.
-        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        let key = cache_key("Backend Engineer", "Acme", "Berlin", "EUR");
         assert_eq!(cache.get(CACHE_NS, &key, TTL_SECS), None);
     }
 
@@ -751,7 +776,7 @@ mod tests {
         // currency) overwrites the stale row.
         let dir = TempDir::new().expect("tempdir");
         let cache = KvCache::open(dir.path()).expect("open cache");
-        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        let key = cache_key("Backend Engineer", "Acme", "Berlin", "EUR");
         cache.set(
             CACHE_NS,
             &key,
@@ -789,7 +814,7 @@ mod tests {
         // returned, even when the fallback fresh fetch also comes up empty.
         let dir = TempDir::new().expect("tempdir");
         let cache = KvCache::open(dir.path()).expect("open cache");
-        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        let key = cache_key("Backend Engineer", "Acme", "Berlin", "EUR");
         cache.set(
             CACHE_NS,
             &key,

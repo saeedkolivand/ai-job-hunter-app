@@ -135,10 +135,19 @@ pub fn salary_user(
 }
 
 /// The web-search query for the salary explicit-query path (Ollama). Includes
-/// `country` (when known) alongside `location` — a geo-targeting hint, since
-/// `location` can be vague ("Remote") while the job's country is still
-/// resolved.
-pub fn salary_search_query(role: &str, company: &str, location: &str, country: &str) -> String {
+/// `country` alongside `location` — a geo-targeting hint, since `location` can
+/// be vague ("Remote") while the job's country is still resolved — but only
+/// once `currency` is resolved too, mirroring [`currency_pin_clause`]'s
+/// gating on the native path: an unresolved currency means the country
+/// couldn't be trusted enough to pin a currency, so it shouldn't leak into
+/// the query ungated either.
+pub fn salary_search_query(
+    role: &str,
+    company: &str,
+    location: &str,
+    country: &str,
+    currency: &str,
+) -> String {
     let role = role_or_default(role);
     let mut q = format!("{role} salary range annual");
     if !company.trim().is_empty() {
@@ -147,7 +156,7 @@ pub fn salary_search_query(role: &str, company: &str, location: &str, country: &
     if !location.trim().is_empty() {
         q.push_str(&format!(" {}", location.trim()));
     }
-    if !country.trim().is_empty() {
+    if !currency.trim().is_empty() && !country.trim().is_empty() {
         q.push_str(&format!(" {}", country.trim()));
     }
     q
@@ -175,7 +184,11 @@ pub fn salary_synth_user(
     } else {
         location.trim()
     };
-    let country_line = if country.trim().is_empty() {
+    // Gated on a *resolved* currency (mirrors [`currency_pin_clause`]'s native-
+    // path condition), not merely a non-empty `country` — a country the
+    // caller couldn't resolve a currency for shouldn't be interpolated
+    // ungated into the prompt either.
+    let country_line = if currency.trim().is_empty() || country.trim().is_empty() {
         String::new()
     } else {
         format!("\nCountry: {}", country.trim())
@@ -310,7 +323,7 @@ mod tests {
 
     #[test]
     fn salary_search_query_includes_role_company_and_location() {
-        let q = salary_search_query("Backend Engineer", "Acme", "Berlin", "");
+        let q = salary_search_query("Backend Engineer", "Acme", "Berlin", "", "");
         assert!(q.contains("Backend Engineer"));
         assert!(q.contains("Acme"));
         assert!(q.contains("Berlin"));
@@ -318,9 +331,18 @@ mod tests {
     }
 
     #[test]
-    fn salary_search_query_includes_country_when_known() {
-        let q = salary_search_query("Backend Engineer", "", "Remote", "DE");
+    fn salary_search_query_includes_country_when_currency_is_resolved() {
+        let q = salary_search_query("Backend Engineer", "", "Remote", "DE", "EUR");
         assert!(q.contains("DE"));
+    }
+
+    #[test]
+    fn salary_search_query_omits_country_when_currency_is_unresolved() {
+        // Gated on a *resolved* currency (mirrors `currency_pin_clause` on the
+        // native path) — a known country with no resolved currency must not
+        // leak into the search query ungated.
+        let q = salary_search_query("Backend Engineer", "", "Remote", "DE", "");
+        assert!(!q.contains("DE"));
     }
 
     #[test]
@@ -351,6 +373,20 @@ mod tests {
         assert!(p.contains("in EUR"));
         assert!(p.contains("do not report any other currency"));
         assert!(!p.contains("in the local currency for that location"));
+    }
+
+    #[test]
+    fn salary_synth_user_omits_the_country_line_when_the_currency_is_unresolved() {
+        // Gated on a *resolved* currency (mirrors the native path) — a known
+        // country with no resolved currency must not leak into the prompt.
+        let results = vec![SearchResult {
+            title: "Levels.fyi".into(),
+            snippet: "Backend Engineer $120k-$150k".into(),
+            url: "https://example.com".into(),
+        }];
+        let p = salary_synth_user("Backend Engineer", "Acme", "Berlin", "DE", "", &results);
+        assert!(!p.contains("Country: DE"));
+        assert!(p.contains("in the local currency for that location"));
     }
 
     #[test]

@@ -540,7 +540,7 @@ pub async fn ollama_research_salary(
     country: &str,
     currency: &str,
 ) -> AppResult<String> {
-    let query = research::salary_search_query(role, company, location, country);
+    let query = research::salary_search_query(role, company, location, country, currency);
     let results = ollama_search(app, model, &query).await;
     if results.is_empty() {
         return Ok(String::new());
