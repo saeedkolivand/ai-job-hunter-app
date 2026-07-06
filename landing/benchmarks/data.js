@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783218091156,
+  "lastUpdate": 1783351049042,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2597,6 +2597,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 293620,
             "range": "± 7195",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7d2d759968d44e3ff1773a6f570607e918fc0d3d",
+          "message": "feat: add opt-in autopilot ai notes for top matches (headless, notify-only) (#557)\n\n* feat: add opt-in autopilot ai notes for top matches (headless, notify-only)\n\nPhase 4 (final) of the agentic assistant — optional autonomy. When an autopilot\nopts into \"AI notes\", each scheduled run attaches a short LLM-reasoned note (why\na top match fits + a tailoring tip) to its top few NEW matches. Headless,\nread-only, notify-only — nothing is applied or submitted.\n\nBackend:\n- the autopilot record gains an opt-in `assistant` flag + a provider snapshot\n  (assistant_provider/model/base_url, captured by the renderer at opt-in — no\n  keys, which stay in the keychain); FoundJob gains assistant_notes.\n- autopilot_helpers::generate_assistant_notes: a plain Completer::complete()\n  per top-N NEW match behind a NoteEnv trait (unit-tested via a fake env).\n  Read-only by construction (no tools / no Write / no confirm — there is no\n  live user headless). Triple-bounded: ASSISTANT_NOTES_MAX=3, a\n  charge_provider_daily short-circuit, cancellable (tokio::select! around the\n  in-flight call), a 45s step timeout, and a prior-URL skip so steady-state\n  re-runs make zero calls. Resume/job text is fenced as untrusted data.\n- the new-jobs notification body reflects \"(N with AI notes)\".\n\nFrontend:\n- an \"AI notes\" Switch in the autopilot wizard that snapshots the active\n  provider; a provider hint + a legible (>=/70) disclosure caption; the note\n  surfaces on found-job rows as a labeled, line-clamped, plain-text block.\n\nReviewed by tauri-security-reviewer (PASS), performance-profiler,\nscraping-applier-expert, frontend-reviewer, and ui-ux-expert; all HIGH/MEDIUM\nresolved. cargo build + clippy (-D warnings) + fmt clean; typecheck 12/12;\nautopilot suite green. Rust tests run in CI.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: resolve r7 layering and address review findings for autopilot ai notes\n\nFixes the RED CI Architecture Boundary Test (R7) plus the @claude and\nCodeRabbit review findings on the Phase 4 autopilot AI notes PR.\n\nR7 layering + CodeRabbit (AppHandle coupling in L2):\n- move provider/limiter resolution UP to the L3 caller (commands/autopilot.rs,\n  which already holds the AppHandle) and pass a resolved Option<&Completer> +\n  Arc<Limiter> down into generate_assistant_notes. autopilot_helpers (L2) is now\n  AppHandle-free for the notes path and no longer reaches up into crate::commands\n  (dissolves the L2->L3 commands/ProviderId edge). The gate on autopilot.assistant\n  also skips a resolve+log for the common notes-off run.\n- allowlist the remaining L2->L3 agent edge in tests/architecture.rs: headless\n  notes reuse the agent layer's pure prompt-safety primitives (fenced/JOB_CAP/\n  RESUME_CAP) + the AUTOPILOT_NOTE_SYSTEM literal; read-only string construction,\n  invokes no controller. TODO(arch): relocate those primitives to an L0/L1\n  prompt-utils to clear the edge. Documented in docs/architecture-rules.md.\n\nCodeRabbit (correctness):\n- clear the assistant_provider/model/base_url snapshot when AI notes are toggled\n  off on update, so a disabled record can't linger with a stale, reusable egress\n  target (also shrinks the MEDIUM-4 renderer-provenance window).\n\n@claude review (UX + diagnostics):\n- guard the AI-notes Switch when no provider is configured: disable it with an\n  explanatory caption, never snapshot an empty model, and drop the dangling\n  \"Notes will use <provider> - \" hint separator.\n- restore the resolve-error reason in the \"no usable provider\" skip log so\n  \"notes never run\" is debuggable again.\n- note_user_msg no longer emits a bare \" at \" for an empty title+company.\n\ncargo fmt + clippy (-D warnings) + build clean; cargo test --test architecture\n11 passed (R7 + no-dead-entries green); gen:ipc:check clean; TS typecheck +\n1926 renderer tests pass. Reviewed by rust-backend-architect, tauri-security-\nreviewer (PASS), and frontend-reviewer.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-06T17:08:47+02:00",
+          "tree_id": "72a4239bec5f09955e7c02686120c66aa4b1e589",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/7d2d759968d44e3ff1773a6f570607e918fc0d3d"
+        },
+        "date": 1783351048454,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1887511,
+            "range": "± 53085",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2468803,
+            "range": "± 62535",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 280864,
+            "range": "± 2543",
             "unit": "ns/iter"
           }
         ]
