@@ -1,7 +1,8 @@
 //! In-memory anti-abuse limiter for paid / expensive commands.
 //!
-//! Guards `ai_generate`, `ai_lookup_salary`, `ai_research_company`, `scrape_board`,
-//! and `scrape_url` against a looping (or XSS'd) renderer driving unbounded paid-API spend or
+//! Guards `ai_generate`, `ai_lookup_salary`, `ai_research_company`,
+//! `ai_research_answer`, `scrape_board`, and `scrape_url` against a looping (or
+//! XSS'd) renderer driving unbounded paid-API spend or
 //! scrape abuse — today only autopilot is wall-clock bounded, so a direct IPC
 //! loop has no ceiling.
 //!
@@ -47,9 +48,9 @@ pub const AI_GENERATE_RATE_MAX: usize = 20;
 pub const AI_GENERATE_CONCURRENCY_MAX: usize = 3;
 
 /// The `"ai_research"` command bucket: shared by every web-research lookup
-/// (`ai_lookup_salary` and `ai_research_company`) so they share one rate +
-/// concurrency ceiling instead of each needing its own tuning. At most this
-/// many starts per [`RATE_WINDOW`].
+/// (`ai_lookup_salary`, `ai_research_company`, and `ai_research_answer`) so
+/// they share one rate + concurrency ceiling instead of each needing its own
+/// tuning. At most this many starts per [`RATE_WINDOW`].
 pub const AI_RESEARCH_RATE_MAX: usize = 20;
 /// `"ai_research"` bucket: at most this many in-flight at once.
 pub const AI_RESEARCH_CONCURRENCY_MAX: usize = 3;

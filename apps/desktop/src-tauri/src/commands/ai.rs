@@ -246,6 +246,93 @@ pub async fn ai_research_company(
     json!({ "company": result.key, "brief": result.content })
 }
 
+/// Web-search reference notes for a single application-question answer,
+/// combining the question with the role + company for relevance. Reuses the
+/// **same** web-search channel as [`ai_research_company`] — the active
+/// provider's own web search, or the Ollama Web Search API for the Ollama
+/// family — via [`Completer::research_answer`](crate::pipeline::Completer::research_answer).
+/// Not cached (unlike company research): every question is different, so
+/// there is nothing to key a cache on.
+///
+/// Degrades gracefully — an empty string, never an error, when the provider
+/// can't search (e.g. Ollama with no account key) or the search fails, so
+/// answer generation always proceeds exactly as without web search. The
+/// returned notes are reference context only; the prompt layer fences them as
+/// untrusted and never lets them write the answer.
+#[tauri::command]
+pub async fn ai_research_answer(
+    app: AppHandle,
+    question: String,
+    role: Option<String>,
+    company: Option<String>,
+    provider: Option<String>,
+    model: Option<String>,
+    base_url: Option<String>,
+) -> String {
+    use crate::pipeline::Completer;
+
+    // Anti-abuse: rate + concurrency cap, sharing the same "ai_research" bucket
+    // as `ai_research_company`/`ai_lookup_salary` — this is a billable provider
+    // web search fanned out per selected question, so a looping/compromised
+    // renderer must not drive unbounded paid-API spend.
+    let limiter = app
+        .state::<std::sync::Arc<crate::limits::Limiter>>()
+        .inner()
+        .clone();
+    let _guard = match limiter.acquire(
+        "ai_research",
+        crate::limits::AI_RESEARCH_RATE_MAX,
+        crate::limits::AI_RESEARCH_CONCURRENCY_MAX,
+    ) {
+        Ok(g) => g,
+        Err(e) => {
+            tracing::debug!("research_answer: rate limited: {e}");
+            return String::new();
+        }
+    };
+
+    let completer = match Completer::resolve(&app, provider.as_deref(), model.as_deref(), base_url)
+    {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::debug!("research_answer: provider resolution failed: {e}");
+            return String::new();
+        }
+    };
+
+    // Capability pre-check BEFORE charging: unlike `ai_research_company`
+    // (charged once per generation), this fires once PER SELECTED QUESTION —
+    // a provider that can never search (e.g. a generic OpenAI-compatible
+    // gateway) would otherwise burn one daily-budget charge per question for
+    // a guaranteed-empty result. Justified divergence from the company-research
+    // charge order given that N× fan-out.
+    if !completer.capabilities().supports_web_search {
+        tracing::debug!("research_answer: provider cannot web-search, skipping charge");
+        return String::new();
+    }
+
+    // Per-provider daily request ceiling — the same coarse runaway-cost
+    // backstop `ai_generate`/`ai_research_company` charge.
+    if let Err(e) = limiter.charge_provider_daily(
+        completer.provider_id().as_str(),
+        crate::limits::PROVIDER_DAILY_MAX,
+    ) {
+        tracing::debug!("research_answer: daily budget exceeded: {e}");
+        return String::new();
+    }
+
+    // Cap forwarded strings (token-cost hygiene, not a security boundary —
+    // reuses the same 200-char cap `SalaryResearch` applies to role/company).
+    let question = crate::salary_research::truncate_input(question.trim());
+    let role = crate::salary_research::truncate_input(role.as_deref().unwrap_or("").trim());
+    let company = crate::salary_research::truncate_input(company.as_deref().unwrap_or("").trim());
+
+    completer
+        .research_answer(&question, &role, &company)
+        .await
+        .unwrap_or_default()
+}
+
 /// Web-grounded market salary-range lookup for the salary application question
 /// (C2). Reuses the shared `SalaryResearch` enricher — the active provider's own
 /// web search, parsed and strictly validated, cached for a week. Degrades

@@ -9,6 +9,7 @@ import {
   generateApplicationAnswer,
   type GenerationMeta,
   lookupSalaryRange,
+  researchAnswer as fetchAnswerWebNotes,
   researchCompany as fetchCompanyBrief,
   type SalaryRange,
 } from '@/lib/generate';
@@ -101,6 +102,12 @@ export function useApplicationAnswers({
   const api = useAppClient();
   const qc = useQueryClient();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Opt-in, per-question web search — local to this modal (not the tailor
+  // flow's shared "researchCompany" form field). Off by default; when on,
+  // each selected question's answer generation first fetches web-search
+  // reference notes for that question (degrading to '' on failure/an
+  // unsupported provider, so the answer still generates exactly as with it off).
+  const [searchWeb, setSearchWeb] = useState(false);
   // `guidance` is always undefined for a user-typed custom question — declared
   // here (not cast later) so `chosen` below is a uniform shape and reading
   // `q.guidance` needs no narrowing/assertion for either branch.
@@ -208,6 +215,25 @@ export function useApplicationAnswers({
             }
           }
         }
+        // Opt-in per-question web search: fetch reference notes for THIS
+        // question before answering it. `fetchAnswerWebNotes` already degrades
+        // to '' on any failure or an unsupported provider; belt-and-suspenders
+        // try/catch on top (mirrors the salary lookup above) so a search
+        // failure can NEVER block or fail the rest of this loop — the answer
+        // still generates exactly as with the toggle off.
+        let webSearchNotes = '';
+        if (searchWeb) {
+          try {
+            webSearchNotes = await fetchAnswerWebNotes(
+              q.question,
+              detected.jobTitle,
+              detected.companyName,
+              model
+            );
+          } catch {
+            webSearchNotes = '';
+          }
+        }
         const answer = await generateApplicationAnswer({
           question: q.question,
           resume,
@@ -215,6 +241,7 @@ export function useApplicationAnswers({
           meta: detected,
           model,
           companyBrief: brief,
+          webSearchNotes,
           // Only registry entries carry `guidance`; custom questions are
           // always `undefined` (see the `custom` state shape above).
           guidance: q.guidance,
@@ -267,6 +294,8 @@ export function useApplicationAnswers({
   return {
     selected,
     toggle,
+    searchWeb,
+    setSearchWeb,
     custom,
     addCustom,
     removeCustom,

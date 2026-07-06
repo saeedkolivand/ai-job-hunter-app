@@ -256,6 +256,8 @@ impl AiProvider for AnthropicClient {
             supports_tools: true,
             supports_json_mode: false,
             supports_embeddings: false,
+            // Native server-side web_search tool (account-key gated at call time).
+            supports_web_search: true,
             token_param: TokenParam::MaxTokens,
         }
     }
@@ -441,6 +443,23 @@ impl AiProvider for AnthropicClient {
             model,
             &research::salary_system(currency),
             &research::salary_user(role, company, location, country, currency),
+        )
+        .await
+    }
+
+    async fn research_answer(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        question: &str,
+        role: &str,
+        company: &str,
+    ) -> AppResult<String> {
+        self.web_search_complete(
+            app,
+            model,
+            research::ANSWER_SYSTEM,
+            &research::answer_user(question, role, company),
         )
         .await
     }

@@ -16,6 +16,7 @@ export {
   lookupSalaryRange,
   MODES,
   parseInterviewQuestions,
+  researchAnswer,
   researchCompany,
   rewriteSelection,
   synthesizeResume,

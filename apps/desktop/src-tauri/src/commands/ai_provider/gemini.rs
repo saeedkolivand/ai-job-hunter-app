@@ -326,6 +326,8 @@ impl AiProvider for GeminiClient {
             supports_tools: true,
             supports_json_mode: true,
             supports_embeddings: true,
+            // Native Google Search grounding tool (account-key gated at call time).
+            supports_web_search: true,
             token_param: TokenParam::MaxOutputTokens,
         }
     }
@@ -498,6 +500,23 @@ impl AiProvider for GeminiClient {
             model,
             &research::salary_system(currency),
             &research::salary_user(role, company, location, country, currency),
+        )
+        .await
+    }
+
+    async fn research_answer(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        question: &str,
+        role: &str,
+        company: &str,
+    ) -> AppResult<String> {
+        self.web_search_complete(
+            app,
+            model,
+            research::ANSWER_SYSTEM,
+            &research::answer_user(question, role, company),
         )
         .await
     }

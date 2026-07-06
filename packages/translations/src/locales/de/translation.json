@@ -1337,6 +1337,10 @@
         "rewrite": "Mit KI umschreiben",
         "rewriteAriaLabel": "Diese Antwort mit KI umschreiben",
         "rewriteSaveError": "Umgeschriebene Antwort konnte nicht gespeichert werden",
+        "searchWeb": {
+          "label": "Web für bessere Antworten durchsuchen",
+          "hint": "Sucht für jede Frage aktuelle Fakten über die eigene Websuche Ihres KI-Anbieters. Nach bestem Bemühen."
+        },
         "customLabel": "Eigene Frage",
         "customPlaceholder": "Frage eingeben oder einfügen…",
         "add": "Hinzufügen",

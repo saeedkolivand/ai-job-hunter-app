@@ -54,6 +54,21 @@ export const ai = {
       model,
       baseUrl,
     }),
+  researchAnswer: ({
+    question,
+    role,
+    company,
+    provider,
+    model,
+    baseUrl,
+  }: {
+    question: string;
+    role?: string;
+    company?: string;
+    provider?: string;
+    model?: string;
+    baseUrl?: string;
+  }) => invoke('ai_research_answer', { question, role, company, provider, model, baseUrl }),
   pullModel: (model: string) => invoke('ai_pull_model', { model }),
   unloadModel: (model: string) => invoke('ai_unload_model', { model }),
   embed: (req: EmbedRequest) => invoke('ai_embed', { req }),

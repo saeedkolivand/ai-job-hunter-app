@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 
-import { extractMetadata, generateApplicationAnswer, lookupSalaryRange } from '@/lib/generate';
+import {
+  extractMetadata,
+  generateApplicationAnswer,
+  lookupSalaryRange,
+  researchAnswer,
+} from '@/lib/generate';
 
 import { useApplicationAnswers } from './useApplicationAnswers';
 
@@ -21,6 +26,7 @@ vi.mock('@/lib/generate', () => ({
   }),
   generateApplicationAnswer: vi.fn().mockResolvedValue('Because I led a payments migration.'),
   researchCompany: vi.fn().mockResolvedValue(''),
+  researchAnswer: vi.fn().mockResolvedValue(''),
   lookupSalaryRange: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -52,6 +58,8 @@ describe('useApplicationAnswers', () => {
     vi.mocked(generateApplicationAnswer).mockClear();
     vi.mocked(lookupSalaryRange).mockClear();
     vi.mocked(lookupSalaryRange).mockResolvedValue(undefined);
+    vi.mocked(researchAnswer).mockClear();
+    vi.mocked(researchAnswer).mockResolvedValue('');
   });
 
   it('toggles selection and gates generation on a non-empty selection', () => {
@@ -453,6 +461,58 @@ describe('useApplicationAnswers', () => {
       expect(lookupSalaryRange).not.toHaveBeenCalled();
       const call = vi.mocked(generateApplicationAnswer).mock.calls[0]?.[0];
       expect(call?.salaryRange).toBeUndefined();
+    });
+  });
+
+  describe('opt-in per-question web search', () => {
+    it('defaults to off — no search call, and generation proceeds unchanged', async () => {
+      const { result } = render();
+      expect(result.current.searchWeb).toBe(false);
+      act(() => result.current.toggle('why-company'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(researchAnswer).not.toHaveBeenCalled();
+      const call = vi.mocked(generateApplicationAnswer).mock.calls[0]?.[0];
+      expect(call?.webSearchNotes).toBe('');
+    });
+
+    it('when on, fetches notes per question and forwards them to the answer generator', async () => {
+      vi.mocked(researchAnswer).mockResolvedValue('Acme raised a Series B in 2026.');
+      const { result } = render();
+      act(() => result.current.setSearchWeb(true));
+      act(() => result.current.toggle('why-company'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(researchAnswer).toHaveBeenCalledWith(
+        'Why do you want to work at this company?',
+        'Engineer',
+        'Acme',
+        'llama3'
+      );
+      expect(generateApplicationAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({ webSearchNotes: 'Acme raised a Series B in 2026.' })
+      );
+    });
+
+    it('degrades to an empty string (answer still generates) when the search fails', async () => {
+      vi.mocked(researchAnswer).mockRejectedValue(new Error('provider cannot search'));
+      const { result } = render();
+      act(() => result.current.setSearchWeb(true));
+      act(() => result.current.toggle('why-company'));
+
+      await expect(
+        act(async () => {
+          await result.current.generate();
+        })
+      ).resolves.not.toThrow();
+
+      expect(result.current.error).toBeNull();
     });
   });
 });

@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 
 import { APPLICATION_QUESTIONS } from '@ajh/prompts/generate';
 import { useTranslation } from '@ajh/translations';
-import { Button, Input, ModalShell, useNotification } from '@ajh/ui';
+import { Button, Input, ModalShell, Switch, useNotification } from '@ajh/ui';
 
 import {
   RewritePopover,
@@ -47,6 +47,9 @@ interface FrozenAnswer {
 interface Props {
   selected: Set<string>;
   toggle: (id: string) => void;
+  /** Opt-in per-question web search (off by default) — see `useApplicationAnswers`. */
+  searchWeb: boolean;
+  setSearchWeb: (next: boolean) => void;
   custom: { id: string; question: string }[];
   addCustom: (text: string) => void;
   removeCustom: (id: string) => void;
@@ -76,6 +79,8 @@ interface Props {
 export function ApplicationQuestionsModal({
   selected,
   toggle,
+  searchWeb,
+  setSearchWeb,
   custom,
   addCustom,
   removeCustom,
@@ -274,6 +279,17 @@ export function ApplicationQuestionsModal({
     >
       {/* Body */}
       <div className="space-y-2 px-5 py-4">
+        <div className="rounded-md bg-card px-2.5 py-2">
+          <Switch
+            checked={searchWeb}
+            onCheckedChange={setSearchWeb}
+            disabled={generating}
+            size="sm"
+            label={t('autopilot.apply.questions.searchWeb.label')}
+            description={t('autopilot.apply.questions.searchWeb.hint')}
+          />
+        </div>
+
         <div className="space-y-1.5">
           {APPLICATION_QUESTIONS.map((q) => {
             const answer = answers[q.id];

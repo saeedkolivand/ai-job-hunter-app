@@ -108,6 +108,8 @@ function buildProps(
   return {
     selected: new Set<string>([QUESTION_ID]),
     toggle: vi.fn(),
+    searchWeb: false,
+    setSearchWeb: vi.fn(),
     custom: [],
     addCustom: vi.fn(),
     removeCustom: vi.fn(),
@@ -321,6 +323,41 @@ describe('ApplicationQuestionsModal — Rewrite with AI', () => {
           message: 'autopilot.apply.questions.rewriteSaveError',
         })
       );
+    });
+  });
+
+  describe('opt-in web-search toggle', () => {
+    it('renders off by default and toggles on click', () => {
+      const setSearchWeb = vi.fn();
+      render(<ApplicationQuestionsModal {...buildProps({ setSearchWeb })} />);
+
+      const toggle = screen.getByRole('switch', {
+        name: 'autopilot.apply.questions.searchWeb.label',
+      });
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
+
+      fireEvent.click(toggle);
+      expect(setSearchWeb).toHaveBeenCalledWith(true);
+    });
+
+    it('reflects an already-on state', () => {
+      render(<ApplicationQuestionsModal {...buildProps({ searchWeb: true })} />);
+      const toggle = screen.getByRole('switch', {
+        name: 'autopilot.apply.questions.searchWeb.label',
+      });
+      expect(toggle.getAttribute('aria-checked')).toBe('true');
+    });
+
+    it('is disabled while generating, so it cannot be toggled mid-generation', () => {
+      const setSearchWeb = vi.fn();
+      render(<ApplicationQuestionsModal {...buildProps({ generating: true, setSearchWeb })} />);
+      const toggle = screen.getByRole('switch', {
+        name: 'autopilot.apply.questions.searchWeb.label',
+      });
+      expect(toggle).toBeDisabled();
+
+      fireEvent.click(toggle);
+      expect(setSearchWeb).not.toHaveBeenCalled();
     });
   });
 
