@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { APPLICATION_QUESTIONS } from '@ajh/prompts/generate';
+import { APPLICATION_QUESTIONS, countryToCurrency } from '@ajh/prompts/generate';
 import type { ApplicationAnswer } from '@ajh/shared';
 
 import {
@@ -199,7 +199,9 @@ export function useApplicationAnswers({
                 detected.jobTitle,
                 detected.companyName,
                 detected.jobLocation || detected.jobCountry || '',
-                model
+                model,
+                detected.jobCountry,
+                countryToCurrency(detected.jobCountry)
               );
             } catch {
               salaryRange = undefined;
