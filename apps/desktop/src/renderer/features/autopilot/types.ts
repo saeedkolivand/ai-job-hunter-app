@@ -17,6 +17,14 @@ export interface WizardState {
   keywords: string;
   excludeKeywords: string;
   resumeText: string;
+  // Step 3 — Action
+  /** Opt-in (Phase 4): ask for a short AI-reasoned note on the top matches of
+   *  each scheduled run. The scheduler runs headless (no renderer), so the
+   *  active provider is snapshotted into the fields below when this is on. */
+  assistant: boolean;
+  assistantProvider?: string;
+  assistantModel?: string;
+  assistantBaseUrl?: string;
   // Step 4 — Schedule
   schedule: AutopilotSchedule;
   /** Local clock hour (0–23) recurring schedules fire at. Used by daily/twice_daily. */
