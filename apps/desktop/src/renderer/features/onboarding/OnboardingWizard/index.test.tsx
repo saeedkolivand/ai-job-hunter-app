@@ -408,6 +408,99 @@ describe('OnboardingWizard — navigation', () => {
   });
 });
 
+describe('OnboardingWizard — sidebar force-open on tour start', () => {
+  it('sets sidebarCollapsed to false only once the last step submits into the tour', async () => {
+    usePreferencesStore.setState({
+      aiProviderConfig: { activeProvider: 'openai', providers: {} },
+      sidebarCollapsed: true,
+    });
+    const user = userEvent.setup();
+    renderWizard();
+
+    // 7-step sequence (openai): welcome(0) → resume(1) → ai(2) → browser(3) → adzunaKey(4) → extension(5) → appearance(6)
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepWelcome));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepResume));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAi));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepBrowser));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAdzunaKey));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepExtension));
+
+    // Still on a regular step — sidebar must be untouched.
+    expect(usePreferencesStore.getState().sidebarCollapsed).toBe(true);
+
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAppearance));
+
+    // Tour now visible and the sidebar has been forced open so its
+    // [data-tour-id] anchors exist for SpotlightTour to measure.
+    expect(screen.getByTestId(TEST_IDS.onboarding.tour)).toBeInTheDocument();
+    expect(usePreferencesStore.getState().sidebarCollapsed).toBe(false);
+  });
+
+  it('leaves sidebarCollapsed untouched while navigating earlier steps', async () => {
+    usePreferencesStore.setState({ sidebarCollapsed: true });
+    const user = userEvent.setup();
+    renderWizard();
+
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepWelcome));
+
+    expect(usePreferencesStore.getState().sidebarCollapsed).toBe(true);
+  });
+
+  it('restores sidebarCollapsed to true once the tour finishes (was collapsed before onboarding)', async () => {
+    usePreferencesStore.setState({
+      aiProviderConfig: { activeProvider: 'openai', providers: {} },
+      sidebarCollapsed: true,
+    });
+    const user = userEvent.setup();
+    renderWizard();
+
+    // 7-step sequence (openai): welcome(0) → resume(1) → ai(2) → browser(3) → adzunaKey(4) → extension(5) → appearance(6)
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepWelcome));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepResume));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAi));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepBrowser));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAdzunaKey));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepExtension));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAppearance));
+
+    // Tour forced the sidebar open (see the test above).
+    expect(screen.getByTestId(TEST_IDS.onboarding.tour)).toBeInTheDocument();
+    expect(usePreferencesStore.getState().sidebarCollapsed).toBe(false);
+
+    // Finishing (or skipping) the tour must restore the user's original
+    // collapsed preference instead of leaving it silently forced open.
+    await user.click(screen.getByRole('button', { name: 'finish-tour' }));
+
+    expect(usePreferencesStore.getState().sidebarCollapsed).toBe(true);
+  });
+
+  it('leaves sidebarCollapsed false after the tour finishes for a first-run user (no-op restore)', async () => {
+    usePreferencesStore.setState({
+      aiProviderConfig: { activeProvider: 'openai', providers: {} },
+      sidebarCollapsed: false,
+    });
+    const user = userEvent.setup();
+    renderWizard();
+
+    // 7-step sequence (openai): welcome(0) → resume(1) → ai(2) → browser(3) → adzunaKey(4) → extension(5) → appearance(6)
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepWelcome));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepResume));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAi));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepBrowser));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAdzunaKey));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepExtension));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAppearance));
+
+    expect(screen.getByTestId(TEST_IDS.onboarding.tour)).toBeInTheDocument();
+    expect(usePreferencesStore.getState().sidebarCollapsed).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: 'finish-tour' }));
+
+    // Default (never collapsed) — restoring is a no-op, stays false.
+    expect(usePreferencesStore.getState().sidebarCollapsed).toBe(false);
+  });
+});
+
 describe('OnboardingWizard — goBack floor', () => {
   it('does not crash when goBack is called at stepIndex 0', async () => {
     const user = userEvent.setup();

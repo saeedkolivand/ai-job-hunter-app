@@ -86,6 +86,10 @@ interface Props {
   onFinish: () => void;
 }
 
+// Cap the rAF measure-retry below so a renamed/removed `data-tour-id` anchor
+// fails loud+cheap instead of busy-looping for the tour's lifetime.
+const MAX_MEASURE_ATTEMPTS = 60; // ~1s at 60fps — the anchor mounts well before this
+
 export function SpotlightTour({ onFinish }: Props) {
   const { t } = useTranslation();
   const [stepIdx, setStepIdx] = useState(0);
@@ -94,17 +98,44 @@ export function SpotlightTour({ onFinish }: Props) {
   const current = TOUR_ITEMS[stepIdx] as TourItem;
   const isLast = stepIdx === TOUR_ITEMS.length - 1;
 
-  const measureTarget = useCallback((id: string) => {
-    const el = document.querySelector(`[data-tour-id="${id}"]`);
-    if (el) {
+  // The sidebar is forced open right before the tour starts, so its anchors
+  // mount and animate width 0 -> auto in the same commit. A single measure
+  // can land mid-animation (zero/partial rect that's never re-checked), so
+  // retry until the anchor has a real size, then keep tracking it via
+  // ResizeObserver until the expand animation settles.
+  useLayoutEffect(() => {
+    let rafId: number | undefined;
+    let observer: ResizeObserver | undefined;
+    let attempts = 0;
+
+    const update = (el: Element) => {
       const r = el.getBoundingClientRect();
       setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
-    }
-  }, []);
+    };
 
-  useLayoutEffect(() => {
-    measureTarget(current.tourId);
-  }, [current.tourId, measureTarget]);
+    const tryMeasure = () => {
+      const el = document.querySelector(`[data-tour-id="${current.tourId}"]`);
+      if (el && el.getBoundingClientRect().width > 0) {
+        update(el);
+        observer = new ResizeObserver(() => update(el));
+        observer.observe(el);
+      } else if (attempts < MAX_MEASURE_ATTEMPTS) {
+        attempts += 1;
+        rafId = requestAnimationFrame(tryMeasure);
+      } else {
+        console.warn(
+          `SpotlightTour: anchor [data-tour-id="${current.tourId}"] never measured a real size — stopping retries`
+        );
+        if (el) update(el); // best-effort — likely zero-size, still better than the last step's rect
+      }
+    };
+    tryMeasure();
+
+    return () => {
+      if (rafId !== undefined) cancelAnimationFrame(rafId);
+      observer?.disconnect();
+    };
+  }, [current.tourId]);
 
   const next = useCallback(() => {
     if (isLast) {

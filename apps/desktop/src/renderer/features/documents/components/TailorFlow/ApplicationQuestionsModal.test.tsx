@@ -132,7 +132,22 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  // Selections persist on the jsdom `window` across tests in the same file.
+  window.getSelection()?.removeAllRanges();
 });
+
+/** Selects `substring` (must occur exactly once in `text`) inside `el`'s text
+ *  node, mirroring a user drag-selecting part of the rendered answer. */
+function selectSubstring(el: HTMLElement, text: string, substring: string) {
+  const textNode = el.firstChild as Text;
+  const start = text.indexOf(substring);
+  const range = document.createRange();
+  range.setStart(textNode, start);
+  range.setEnd(textNode, start + substring.length);
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+}
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
@@ -164,6 +179,36 @@ describe('ApplicationQuestionsModal — Rewrite with AI', () => {
     expect(popover).toBeTruthy();
     expect(popover.getAttribute('data-doc-type')).toBe('application-answer');
     expect(popover.getAttribute('data-selection')).toBe(ANSWER_TEXT);
+  });
+
+  it('selecting part of the answer targets only that substring for rewrite', () => {
+    render(<ApplicationQuestionsModal {...buildProps()} />);
+    selectSubstring(screen.getByText(ANSWER_TEXT), ANSWER_TEXT, 'led a payments migration');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'autopilot.apply.questions.rewriteAriaLabel' })
+    );
+
+    expect(screen.getByTestId('rewrite-popover').getAttribute('data-selection')).toBe(
+      'led a payments migration'
+    );
+  });
+
+  it('accepting a rewrite of a selected substring splices it back into the full answer', async () => {
+    const updateAnswer = vi
+      .fn<(id: string, text: string) => Promise<void>>()
+      .mockResolvedValue(undefined);
+    render(<ApplicationQuestionsModal {...buildProps({ updateAnswer })} />);
+    selectSubstring(screen.getByText(ANSWER_TEXT), ANSWER_TEXT, 'led a payments migration');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'autopilot.apply.questions.rewriteAriaLabel' })
+    );
+    fireEvent.click(screen.getByTestId('popover-accept')); // stub emits 'Rewritten answer text'
+
+    await waitFor(() => {
+      expect(updateAnswer).toHaveBeenCalledWith(QUESTION_ID, 'Because I Rewritten answer text.');
+    });
   });
 
   it('passes model and locale to the popover', () => {
@@ -317,7 +362,7 @@ describe('ApplicationQuestionsModal — Rewrite with AI', () => {
     expect(popover.getAttribute('data-selection')).toBe(secondAnswer);
   });
 
-  it('stale revert guard: if a second acceptRewrite supersedes A before A save fails, revertAnswer is NOT called for A', async () => {
+  it('stale revert guard: if a second acceptRewrite supersedes A before A save fails, revertAnswer and the error toast are NOT triggered for A', async () => {
     // The shared stub always emits the SAME text, so A and B would be
     // indistinguishable. Override the stub for this test to emit different
     // text on successive accepts — this is the only way to prove the sentinel
@@ -389,11 +434,47 @@ describe('ApplicationQuestionsModal — Rewrite with AI', () => {
 
     // revertAnswer must NOT have been called — B superseded A.
     expect(revertAnswer).not.toHaveBeenCalled();
-    // Error toast is still shown for A's failure.
+    // Nor should the error toast fire — B is the current, already-saved
+    // answer; surfacing "save failed" for A's superseded rejection would be a
+    // stale, misleading toast for text the user no longer sees.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0)); // flush the reject→catch microtask chain
+    });
+    expect(mockNotifyError).not.toHaveBeenCalled();
+  });
+
+  it('still-current save failure DOES toast even with a stale pendingRewriteRef entry from an earlier accept', async () => {
+    // First accept succeeds and is cleared from pendingRewriteRef (fix 2); a
+    // second, still-current accept then fails and must still surface a toast.
+    const updateAnswer = vi
+      .fn<(id: string, text: string) => Promise<void>>()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('IPC save failed'));
+    const revertAnswer = vi.fn<(id: string, prev: string) => void>();
+    render(<ApplicationQuestionsModal {...buildProps({ updateAnswer, revertAnswer })} />);
+
+    // First accept — succeeds, clearing the sentinel.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'autopilot.apply.questions.rewriteAriaLabel' })
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('popover-accept'));
+    });
+    expect(mockNotifyError).not.toHaveBeenCalled();
+
+    // Second accept — this save fails and is still the current one.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'autopilot.apply.questions.rewriteAriaLabel' })
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('popover-accept'));
+    });
+
     await waitFor(() => {
       expect(mockNotifyError).toHaveBeenCalledWith(
         expect.objectContaining({ message: 'autopilot.apply.questions.rewriteSaveError' })
       );
     });
+    expect(revertAnswer).toHaveBeenCalledWith(QUESTION_ID, ANSWER_TEXT);
   });
 });
