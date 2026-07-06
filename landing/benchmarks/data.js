@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783371346177,
+  "lastUpdate": 1783379347275,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2765,6 +2765,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 306619,
             "range": "± 6725",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4ceeb66b221a34d6803c975bf2637cc28a92733f",
+          "message": "feat: add optional per-question web search to application answers (#562)\n\n* feat: add optional per-question web search to application answers\n\nApplication-question answers were generated with no live web grounding\n(user-reported: \"Application questions now can search internet to provide\nbetter answers\"). Adds an opt-in per-question web search that reuses the\nexisting provider-native web-search infrastructure.\n\n- new AiProvider::research_answer facet mirroring research/research_salary\n  (default Ok(\"\"); native providers delegate to their existing\n  web_search_complete transport, Ollama family to the Ollama Web Search API) —\n  zero new per-provider HTTP. Completer::research_answer wrapper.\n- new ai_research_answer command mirroring ai_research_company: shared\n  \"ai_research\" limiter bucket, Completer::resolve, capability pre-check that\n  returns \"\" WITHOUT charging when the provider can't web-search (avoids\n  wasting the daily budget per question on the fan-out), otherwise\n  charge_provider_daily; forwarded question/role/company are length-capped;\n  returns \"\" on any failure. Full 5-step IPC flow (+ mock-client parity).\n- the untrusted result is fenced as <web_search_notes> in\n  buildApplicationAnswerPrompt (reference-only, ignore embedded instructions,\n  never writes the answer), never reaching the system prompt; a literal\n  closing tag in the note is neutralized to prevent fence-breakout (applied to\n  the company-research block too). The research prompts forbid the model from\n  writing the answer itself.\n- renderer: a \"Search the web for better answers\" @ajh/ui Switch in the\n  Application Questions modal (disabled while generating), wired through\n  useApplicationAnswers so each selected question searches first; on\n  \"\"/unsupported/failure the answer still generates unchanged. en/de copy added.\n\nReviewed by ai-provider-expert (provider abstraction + transport reuse +\nlimiter parity intact), tauri-security-reviewer (PASS — untrusted result fenced\nas data, no arbitrary egress, capability-gated, cost-bounded), and\nfrontend-reviewer (graceful degradation, toggle gating). gen:ipc:check clean;\ntypecheck 12/12; @ajh/prompts (371) + desktop suite (1951); cargo fmt + clippy\n(-D warnings) + build + architecture (11) green. Rust tests run in CI.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: bound web-search fan-out and harden ai_research_answer\n\nAddresses the review of PR #562 (CodeRabbit MAJOR + advisories):\n- bound the per-question web-search fan-out (WEB_SEARCH_MAX_PER_RUN=8) so a\n  many-question form can't exhaust the shared (day, provider) daily budget and\n  starve company/salary research; questions past the cap still generate with an\n  empty webSearchNotes. A dedicated budget bucket is noted as the fuller fix.\n- use a question-specific truncation cap (700) for the search query instead of\n  the 200-char salary cap that cut long questions mid-sentence (role/company\n  keep 200); the final answer prompt still uses the full question.\n- log the web-search failure (tracing::debug) before degrading to empty, so a\n  silently-non-searching provider is diagnosable.\n- extract research_answer_core behind an AnswerSearcher trait (mirroring\n  SalarySearcher) to unit-test the branching: non-searchable provider returns\n  empty WITHOUT charging the daily budget; success charges once; failure\n  degrades; question truncation is char-boundary-safe.\n- strengthen the renderer failure-path test (loop continues + empty notes after\n  a search rejection) + a fan-out-cap test.\n\ngen:ipc:check clean; typecheck 12/12; desktop (1952) + @ajh/prompts (371);\ncargo fmt + clippy (-D warnings) + build + architecture (11) green. Rust tests\nrun in CI.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* chore: bump crossbeam-epoch to 0.9.20 for rustsec-2026-0204\n\nAn advisory published 2026-07-07 flags an invalid pointer dereference in\ncrossbeam-epoch below 0.9.20 (transitive via rayon-core -> exr -> image).\nLockfile-only bump per the advisory (cargo update -p crossbeam-epoch);\nunblocks the Cargo Deny CI gate. Unrelated to this PR's feature changes.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-07T00:49:13+02:00",
+          "tree_id": "65fd54284e87ad50c7431df212657a12e703cb3a",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/4ceeb66b221a34d6803c975bf2637cc28a92733f"
+        },
+        "date": 1783379346756,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1904180,
+            "range": "± 75672",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2549880,
+            "range": "± 47722",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 294972,
+            "range": "± 7906",
             "unit": "ns/iter"
           }
         ]
