@@ -108,6 +108,22 @@ impl Completer {
             .await
     }
 
+    /// Web-search reference notes for a single application-question answer
+    /// through the active provider's **own** web search — the per-question
+    /// sibling of [`research`](Self::research). Returns `""` (never an error)
+    /// when the provider can't search — see
+    /// [`AiProvider::research_answer`](crate::commands::ai_provider::AiProvider::research_answer).
+    pub async fn research_answer(
+        &self,
+        question: &str,
+        role: &str,
+        company: &str,
+    ) -> AppResult<String> {
+        self.provider
+            .research_answer(&self.app, &self.model, question, role, company)
+            .await
+    }
+
     /// The app handle, so stages can reach managed state (caches, credentials) and
     /// emit events without threading `AppHandle` through every signature.
     pub fn app(&self) -> &AppHandle {

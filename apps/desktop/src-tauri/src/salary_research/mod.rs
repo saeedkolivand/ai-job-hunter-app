@@ -33,8 +33,9 @@ const MAX_PLAUSIBLE_SALARY: u64 = 100_000_000;
 /// Cap on each of `role`/`company`/`location` (chars, so always a valid UTF-8
 /// boundary) before it reaches the cache key or a provider query — a caller
 /// passing something absurdly long can't inflate the key or the outbound
-/// search query.
-const MAX_INPUT_CHARS: usize = 200;
+/// search query. `pub(crate)` — reused by `commands::ai::ai_research_answer`
+/// for the same shape of forwarded strings (question/role/company).
+pub(crate) const MAX_INPUT_CHARS: usize = 200;
 
 /// A validated market salary range for a role (optionally scoped to a company
 /// and/or location), in a single currency. Every field is validated by
@@ -233,8 +234,9 @@ fn reconcile_expected_currency(range: SalaryRange, expected_currency: &str) -> O
 }
 
 /// Cap `s` to [`MAX_INPUT_CHARS`] (char-boundary safe — never splits a
-/// multi-byte character). Pure + unit-tested.
-fn truncate_input(s: &str) -> String {
+/// multi-byte character). Pure + unit-tested. `pub(crate)` — see
+/// [`MAX_INPUT_CHARS`].
+pub(crate) fn truncate_input(s: &str) -> String {
     s.chars().take(MAX_INPUT_CHARS).collect()
 }
 

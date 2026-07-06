@@ -368,6 +368,7 @@ mod tests {
             supports_tools,
             supports_json_mode: false,
             supports_embeddings: false,
+            supports_web_search: false,
             token_param: TokenParam::MaxTokens,
         }
     }

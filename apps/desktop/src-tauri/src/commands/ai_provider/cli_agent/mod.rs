@@ -190,6 +190,8 @@ impl AiProvider for CliAgentClient {
             supports_tools: false,
             supports_json_mode: false,
             supports_embeddings: false,
+            // The CLI agent carries its own web tools in headless mode.
+            supports_web_search: true,
             token_param: TokenParam::MaxTokens,
         }
     }
@@ -267,6 +269,29 @@ impl AiProvider for CliAgentClient {
             self.backend.as_ref(),
             model,
             &research::salary_system(currency),
+            &user,
+        )
+        .await
+        .unwrap_or_default())
+    }
+
+    async fn research_answer(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        question: &str,
+        role: &str,
+        company: &str,
+    ) -> AppResult<String> {
+        // Same best-effort contract as `research`/`research_salary`: the
+        // agent's own web tools search, `run_complete` degrades any failure to
+        // "" so generation always proceeds.
+        let user = research::answer_user(question, role, company);
+        Ok(run_complete(
+            app,
+            self.backend.as_ref(),
+            model,
+            research::ANSWER_SYSTEM,
             &user,
         )
         .await

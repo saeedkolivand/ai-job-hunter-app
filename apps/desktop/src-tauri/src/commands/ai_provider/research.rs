@@ -244,6 +244,85 @@ fn currency_pin_clause(country: &str, currency: &str) -> String {
     }
 }
 
+// ── Application-answer web-search notes ──────────────────────────────────────
+//
+// Per-question sibling of the company brief above: same native/synthesize
+// split, but scoped to a single application question (combines it with the
+// role + company) rather than a general company overview. The contract is
+// FACTUAL NOTES ONLY — the model must never write the answer itself, so the
+// résumé-grounded answer prompt (which fences this output as untrusted) stays
+// the sole author of the actual answer.
+
+/// System prompt for the **native** path: the model searches the web itself
+/// for facts relevant to answering the question, but must not answer it.
+pub const ANSWER_SYSTEM: &str = "You are a research assistant with web search, supporting a job \
+applicant who is answering an application question. Search the web for current, factual, \
+publicly available information relevant to the question's topic (e.g. the company, role, or \
+industry) that could help ground a strong answer. Return ONLY concise factual notes — no \
+headers, no markdown, no citations. Do NOT write an answer to the question yourself, do NOT \
+invent personal experience, and do NOT address the reader directly.";
+
+/// System prompt for the **synthesize** path (Ollama): turn snippets into
+/// notes, with the same "never write the answer" guardrail as [`ANSWER_SYSTEM`].
+pub const ANSWER_SYNTH_SYSTEM: &str = "You are a research assistant. Given search result \
+snippets relevant to a job applicant's application question, produce concise factual notes. \
+Return ONLY the notes — no headers, no markdown, no citations. Do NOT write an answer to the \
+question yourself, do NOT invent personal experience, and do NOT address the reader directly.";
+
+/// User prompt for the **native** path (the provider's model searches + writes notes).
+pub fn answer_user(question: &str, role: &str, company: &str) -> String {
+    let role = role_or_default(role);
+    let mut where_clause = String::new();
+    if !company.trim().is_empty() {
+        where_clause.push_str(&format!(" at \"{}\"", company.trim()));
+    }
+    format!(
+        "An applicant for a {role}{where_clause} is answering this application question: \
+         \"{question}\". Search the web for current, factual information relevant to this \
+         question — about the company, role, or industry as applicable — that could help ground \
+         a strong answer. Return only the factual findings, never the answer itself."
+    )
+}
+
+/// The web-search query for the explicit-query path (Ollama) — combines the
+/// question with the role + company for relevance.
+pub fn answer_search_query(question: &str, role: &str, company: &str) -> String {
+    let role = role_or_default(role);
+    let mut q = format!("{question} {role}");
+    if !company.trim().is_empty() {
+        q.push_str(&format!(" {}", company.trim()));
+    }
+    q
+}
+
+/// User prompt for the **synthesize** path (Ollama): turn snippets into notes.
+pub fn answer_synth_user(
+    question: &str,
+    role: &str,
+    company: &str,
+    results: &[SearchResult],
+) -> String {
+    let role = role_or_default(role);
+    let company = if company.trim().is_empty() {
+        "unspecified"
+    } else {
+        company.trim()
+    };
+    let snippets = results
+        .iter()
+        .enumerate()
+        .map(|(i, r)| format!("[{}] {} — {}", i + 1, r.title, r.snippet))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "Application question: \"{question}\"\nRole: {role}\nCompany: {company}\n\n\
+         Search result snippets:\n{snippets}\n\n\
+         From these snippets, write concise factual notes relevant to answering the question. \
+         Do not write the answer itself, do not invent facts not present in the snippets, and do \
+         not address the reader directly."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -373,6 +452,56 @@ mod tests {
         assert!(p.contains("in EUR"));
         assert!(p.contains("do not report any other currency"));
         assert!(!p.contains("in the local currency for that location"));
+    }
+
+    #[test]
+    fn answer_user_names_question_role_and_company() {
+        let p = answer_user("Why do you want to work here?", "Backend Engineer", "Acme");
+        assert!(p.contains("Why do you want to work here?"));
+        assert!(p.contains("Backend Engineer"));
+        assert!(p.contains(" at \"Acme\""));
+        assert!(p.to_lowercase().contains("never the answer itself"));
+    }
+
+    #[test]
+    fn answer_user_omits_the_where_clause_and_falls_back_on_blank_role_and_company() {
+        let p = answer_user("Why this role?", "  ", "  ");
+        assert!(!p.contains(" at \""));
+        assert!(p.contains("An applicant for a candidate is answering"));
+    }
+
+    #[test]
+    fn answer_search_query_includes_question_role_and_company() {
+        let q = answer_search_query("Why this company?", "Backend Engineer", "Acme");
+        assert!(q.contains("Why this company?"));
+        assert!(q.contains("Backend Engineer"));
+        assert!(q.contains("Acme"));
+    }
+
+    #[test]
+    fn answer_search_query_omits_company_when_blank() {
+        let q = answer_search_query("Why this role?", "Engineer", "  ");
+        assert_eq!(q, "Why this role? Engineer");
+    }
+
+    #[test]
+    fn answer_synth_user_lists_snippets_and_forbids_writing_the_answer() {
+        let results = vec![SearchResult {
+            title: "Acme news".into(),
+            snippet: "Acme raised a Series B in 2026.".into(),
+            url: "https://example.com".into(),
+        }];
+        let p = answer_synth_user("Why this company?", "  ", "Acme", &results);
+        assert!(p.contains("[1] Acme news — Acme raised a Series B in 2026."));
+        assert!(p.contains("Role: candidate"));
+        assert!(p.contains("Company: Acme"));
+        assert!(p.to_lowercase().contains("do not write the answer itself"));
+    }
+
+    #[test]
+    fn answer_synth_user_falls_back_to_unspecified_company_when_blank() {
+        let p = answer_synth_user("Why this role?", "Engineer", "  ", &[]);
+        assert!(p.contains("Company: unspecified"));
     }
 
     #[test]

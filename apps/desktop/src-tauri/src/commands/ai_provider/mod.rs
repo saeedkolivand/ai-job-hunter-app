@@ -183,6 +183,14 @@ pub struct ModelCapabilities {
     pub supports_tools: bool,
     pub supports_json_mode: bool,
     pub supports_embeddings: bool,
+    /// Whether this provider/model can attempt a `research*` web search at
+    /// all — a static, network-free check distinct from whether a search
+    /// actually succeeds (which also depends on a configured account key,
+    /// checked at call time). Lets callers that fan out a research call per
+    /// item (e.g. `ai_research_answer`, one call per selected question) skip
+    /// the daily-budget charge entirely for a provider that can never search,
+    /// instead of charging N times for N guaranteed-empty results.
+    pub supports_web_search: bool,
     pub token_param: TokenParam,
 }
 
@@ -366,6 +374,25 @@ pub trait AiProvider: Send + Sync {
         _location: &str,
         _country: &str,
         _currency: &str,
+    ) -> AppResult<String> {
+        Ok(String::new())
+    }
+
+    /// Web-search reference notes to help ground a single application-question
+    /// answer — the per-question sibling of [`research`](Self::research), using
+    /// the **same** web-search channel. Returns factual notes only, never a
+    /// written answer, so the candidate's own résumé-grounded answer is never
+    /// shortcut by a fabricated persona; [`crate::commands::ai::ai_research_answer`]
+    /// fences the result as untrusted downstream. Returns `""` (never an error)
+    /// when the provider can't search or isn't configured — exactly like
+    /// `research`. Default: no research.
+    async fn research_answer(
+        &self,
+        _app: &AppHandle,
+        _model: &str,
+        _question: &str,
+        _role: &str,
+        _company: &str,
     ) -> AppResult<String> {
         Ok(String::new())
     }

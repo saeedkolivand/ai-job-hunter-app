@@ -13,6 +13,7 @@ import {
   generateGitHubProjects,
   generateResume,
   lookupSalaryRange,
+  researchAnswer,
   researchCompany,
 } from './generation';
 
@@ -286,6 +287,56 @@ describe('lookupSalaryRange (C2)', () => {
   });
 });
 
+describe('researchAnswer', () => {
+  const registerWithAnswerSearch = (answerSearch: ReturnType<typeof vi.fn>) => {
+    const client = createMockClient({
+      ai: {
+        generatePipeline: vi.fn().mockResolvedValue({ jobId: 'gen-1' }),
+        onStream: vi.fn((h: (chunk: unknown) => void) => {
+          streamHandler = h;
+          return () => {};
+        }),
+        researchAnswer: answerSearch,
+      },
+      jobs: { get: vi.fn().mockResolvedValue(null), cancel: vi.fn() },
+    });
+    _registerClient(client);
+    return client;
+  };
+
+  it('resolves the notes and forwards the question/role/company', async () => {
+    const answerSearch = vi.fn().mockResolvedValue('Acme raised a Series B in 2026.');
+    const client = registerWithAnswerSearch(answerSearch);
+
+    const notes = await researchAnswer(
+      'Why do you want to work here?',
+      'Backend Engineer',
+      'Acme',
+      'llama3'
+    );
+
+    expect(notes).toBe('Acme raised a Series B in 2026.');
+    expect(client.ai.researchAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        question: 'Why do you want to work here?',
+        role: 'Backend Engineer',
+        company: 'Acme',
+      })
+    );
+  });
+
+  it('degrades to an empty string when the backend finds nothing', async () => {
+    registerWithAnswerSearch(vi.fn().mockResolvedValue(''));
+    const notes = await researchAnswer('Why this role?', 'Engineer', 'Acme', 'llama3');
+    expect(notes).toBe('');
+  });
+
+  it('degrades to an empty string (never throws) when the backend fails', async () => {
+    registerWithAnswerSearch(vi.fn().mockRejectedValue(new Error('provider unavailable')));
+    await expect(researchAnswer('Why this role?', 'Engineer', 'Acme', 'llama3')).resolves.toBe('');
+  });
+});
+
 describe('generateApplicationAnswer', () => {
   it('grounds an answer prompt with the question + brief and returns clean text', async () => {
     const client = register();
@@ -331,6 +382,43 @@ describe('generateApplicationAnswer', () => {
           expect.objectContaining({
             role: 'user',
             content: expect.stringContaining('<company_research>'),
+          }),
+        ]),
+      })
+    );
+  });
+
+  it('folds opt-in web-search notes into a fenced <web_search_notes> block', async () => {
+    const client = register();
+
+    const p = generateApplicationAnswer({
+      question: 'Why do you want to work here?',
+      resume: 'My resume: led a payments migration.',
+      jobAd: 'Backend role at Acme',
+      meta: {
+        resumeLanguage: 'en',
+        jobAdLanguage: 'en',
+        mismatch: false,
+        candidateName: 'X',
+        jobTitle: 'Backend Engineer',
+        companyName: 'Acme',
+        targetLanguage: 'en',
+        topRequirements: [],
+      },
+      model: 'llama3',
+      webSearchNotes: 'Acme recently announced a new product line.',
+    });
+    await flushUntilStreaming();
+    emit('I led a payments migration relevant to your new product line.');
+    done();
+    await p;
+
+    expect(client.ai.generatePipeline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: 'user',
+            content: expect.stringContaining('<web_search_notes>'),
           }),
         ]),
       })
