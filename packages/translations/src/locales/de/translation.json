@@ -1530,6 +1530,7 @@
         "flowTailor": "Öffnen Sie einen Treffer und der Assistent passt Lebenslauf und Anschreiben dafür an — Sie senden die Bewerbung selbst. Autopilot bewirbt sich nie für Sie.",
         "assistantLabel": "KI-Notizen",
         "assistantCaption": "Nutzt Ihren aktuellen KI-Anbieter, um Ihren besten Treffern eine kurze Notiz hinzuzufügen — nur eine Benachrichtigung, Autopilot bewirbt sich nie für Sie.",
+        "assistantNoProvider": "Richten Sie in den Einstellungen einen KI-Anbieter ein, um KI-Notizen zu aktivieren.",
         "assistantProviderHint": "Notizen verwenden {{provider}} · {{model}}"
       },
       "schedule": {

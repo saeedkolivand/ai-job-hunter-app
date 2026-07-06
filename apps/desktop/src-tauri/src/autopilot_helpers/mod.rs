@@ -9,7 +9,6 @@ use tokio_util::sync::CancellationToken;
 use crate::agent::flows::AUTOPILOT_NOTE_SYSTEM;
 use crate::agent::tools::{fenced, JOB_CAP, RESUME_CAP};
 use crate::autopilot::{Autopilot, AutopilotTarget, FoundJob};
-use crate::commands::ai_provider::ProviderId;
 use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, SCRAPE_ITEM, SCRAPE_PROGRESS};
 use crate::limits::{Limiter, PROVIDER_DAILY_MAX};
@@ -318,12 +317,17 @@ fn note_user_msg(
     company: &str,
     description: Option<&str>,
 ) -> String {
-    let job_blob = format!(
-        "{} at {}\n\n{}",
-        title.trim(),
-        company.trim(),
-        description.unwrap_or("").trim(),
-    );
+    let (title, company) = (title.trim(), company.trim());
+    // Only join with " at " when BOTH sides are present — otherwise a missing
+    // title/company would render a bare " at " (or " at Acme"/"Acme at ") instead
+    // of just the one part that exists, or nothing at all if neither does.
+    let header = match (title.is_empty(), company.is_empty()) {
+        (false, false) => format!("{title} at {company}"),
+        (false, true) => title.to_string(),
+        (true, false) => company.to_string(),
+        (true, true) => String::new(),
+    };
+    let job_blob = format!("{header}\n\n{}", description.unwrap_or("").trim());
     format!(
         "{resume_fence}\n\n{}",
         fenced("job_posting", &job_blob, JOB_CAP)
@@ -349,11 +353,13 @@ trait NoteEnv: Send + Sync {
     fn charge_daily(&self) -> AppResult<()>;
 }
 
-/// Production [`NoteEnv`]: the resolved [`Completer`] + the shared [`Limiter`].
+/// Production [`NoteEnv`]: the resolved [`Completer`] + the shared [`Limiter`]. Reads
+/// the provider id straight off `completer.provider_id()` (same pattern as
+/// `agent::tools`'s tool-call charge) so this module never needs to name the
+/// `ProviderId` type itself.
 struct LiveNoteEnv<'a> {
     completer: &'a Completer,
     limiter: Arc<Limiter>,
-    provider: ProviderId,
 }
 
 #[async_trait]
@@ -365,7 +371,7 @@ impl NoteEnv for LiveNoteEnv<'_> {
     }
     fn charge_daily(&self) -> AppResult<()> {
         self.limiter
-            .charge_provider_daily(self.provider.as_str(), PROVIDER_DAILY_MAX)
+            .charge_provider_daily(self.completer.provider_id().as_str(), PROVIDER_DAILY_MAX)
     }
 }
 
@@ -452,63 +458,34 @@ async fn run_notes_loop(
 /// `prior_urls`) are annotated: a re-surfaced job keeps its earlier note for free
 /// via the store merge, so re-generating would just burn a call whose result the
 /// merge discards — in steady state (nothing new) this makes ZERO provider calls.
-/// Any resolve/provider error is swallowed (logged): the discovery run always
-/// succeeds; notes are best-effort enrichment.
+/// `completer` is `None` when the caller's [`Completer::resolve`] found no usable
+/// provider — swallowed here: the discovery run always succeeds; notes are
+/// best-effort enrichment. Provider/limiter resolution (and the "no usable
+/// provider (reason)" log, so a user can debug why notes never run) lives in the
+/// L3 caller (`commands::autopilot::autopilot_run`, which already holds the
+/// `AppHandle`) — this L2 module takes them already-resolved, never reaches up
+/// into `crate::commands`, and does not re-log here (the caller already did,
+/// whenever `assistant` is on).
 pub(crate) async fn generate_assistant_notes(
-    app: &AppHandle,
+    completer: Option<&Completer>,
+    limiter: Arc<Limiter>,
     autopilot: &Autopilot,
     found_jobs: &mut [FoundJob],
     prior_urls: &HashSet<&str>,
     cancel: &CancellationToken,
 ) -> usize {
-    use tauri::Manager;
-
     if !notes_enabled(autopilot.assistant, autopilot.resume_text.as_deref()) {
         return 0;
     }
     let resume = autopilot.resume_text.as_deref().unwrap_or("");
 
-    // Resolve the provider SNAPSHOT persisted on the record through the SAME
-    // centralized provider layer `ai_generate` uses. Missing/unknown/invalid →
-    // skip gracefully (the discovery run still completes normally).
-    //
-    // SECURITY (MEDIUM-4): `assistant_base_url` is renderer-provenance — there is
-    // NO backend-side store to re-derive a custom OpenAI-compatible endpoint from
-    // at run time. The only persisted provider+base_url on the backend today is
-    // the UNRELATED embeddings config (`documents::mod.rs`'s `embedding_config`
-    // table) — a different provider slot (a user can embed on one provider and
-    // chat on another), so reusing it here would silently target the wrong
-    // endpoint, not fix the trust boundary. Trusting this snapshot every scheduled
-    // tick does mean a one-time renderer compromise / bad IPC write becomes a
-    // DURABLE, unattended egress target, wider than the interactive `ai_generate`
-    // path (there, a compromised renderer has the same capability, but only for as
-    // long as it stays compromised AND the app is running that request).
-    // `Completer::resolve`/`ProviderId::parse` still validate provider+model are
-    // known/well-formed; neither can validate a custom base_url is genuinely the
-    // user's endpoint. Accepted for now — never breaks a custom OpenAI-compatible
-    // endpoint, and the blast radius (an already-configured provider call) is the
-    // same class the user already trusts interactively. The durable fix is a
-    // backend-owned active-provider store the renderer syncs into (deferred —
-    // would also retire the embeddings config above as the only backend-side slot).
-    let completer = match Completer::resolve(
-        app,
-        autopilot.assistant_provider.as_deref(),
-        autopilot.assistant_model.as_deref(),
-        autopilot.assistant_base_url.clone(),
-    ) {
-        Ok(c) => c,
-        Err(e) => {
-            log::info!("[autopilot] AI notes skipped: no usable provider ({e})");
-            return 0;
-        }
+    // No log here — the L3 caller already logged the resolve failure (with the
+    // reason) before passing `None` down; logging again here would just duplicate
+    // that line for every assistant-enabled run with a bad/missing provider.
+    let Some(completer) = completer else {
+        return 0;
     };
-    let limiter = app.state::<Arc<Limiter>>().inner().clone();
-    let provider = completer.provider_id();
-    let env = LiveNoteEnv {
-        completer: &completer,
-        limiter,
-        provider,
-    };
+    let env = LiveNoteEnv { completer, limiter };
 
     // LOW-6: fence the résumé ONCE — it's identical for every job in this run,
     // unlike the per-job title/company/description `note_user_msg` re-fences.
@@ -947,6 +924,34 @@ mod tests {
         let no_desc = note_user_msg(&resume_fence, "Dev", "Beta", None);
         assert!(no_desc.contains("<job_posting>"));
         assert!(no_desc.contains("Dev at Beta"));
+    }
+
+    #[test]
+    fn note_user_msg_never_renders_a_bare_at_separator() {
+        // A blank title and/or company must not leave a dangling " at " (or
+        // " at Acme" / "Acme at ") in the header — only join the two with " at "
+        // when BOTH are present.
+        let resume_fence = fenced("candidate_resume", "r", RESUME_CAP);
+
+        let both_blank = note_user_msg(&resume_fence, "", "", Some("desc"));
+        assert!(
+            !both_blank.contains(" at "),
+            "both blank must not render a bare separator; got: {both_blank}"
+        );
+
+        let title_only = note_user_msg(&resume_fence, "Dev", "", Some("desc"));
+        assert!(title_only.contains("Dev"));
+        assert!(
+            !title_only.contains(" at "),
+            "missing company must not render a trailing separator; got: {title_only}"
+        );
+
+        let company_only = note_user_msg(&resume_fence, "", "Acme", Some("desc"));
+        assert!(company_only.contains("Acme"));
+        assert!(
+            !company_only.contains(" at "),
+            "missing title must not render a leading separator; got: {company_only}"
+        );
     }
 
     #[test]

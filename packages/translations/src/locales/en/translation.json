@@ -1526,6 +1526,7 @@
         "flowTailor": "Open a match and the assistant tailors your résumé and cover letter for it — you submit it yourself. Autopilot never applies for you.",
         "assistantLabel": "AI notes",
         "assistantCaption": "Uses your current AI provider to add a short note to your top matches — notify-only, nothing is applied.",
+        "assistantNoProvider": "Configure an AI provider in Settings to enable AI notes.",
         "assistantProviderHint": "Notes will use {{provider}} · {{model}}"
       },
       "schedule": {

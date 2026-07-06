@@ -244,6 +244,68 @@ fn update_rejects_out_of_range_time_while_keeping_null_clear() {
 }
 
 #[test]
+fn update_toggling_assistant_off_clears_the_provider_snapshot() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let ap = store.create(serde_json::json!({
+        "name": "AP",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 50.0 },
+        "schedule": "daily",
+        "assistant": true,
+        "assistantProvider": "openai",
+        "assistantModel": "gpt-4o",
+        "assistantBaseUrl": "https://api.openai.com",
+    }));
+    assert!(ap.assistant);
+    assert_eq!(ap.assistant_provider.as_deref(), Some("openai"));
+    assert_eq!(ap.assistant_model.as_deref(), Some("gpt-4o"));
+    assert_eq!(
+        ap.assistant_base_url.as_deref(),
+        Some("https://api.openai.com")
+    );
+
+    // The renderer omits assistantProvider/Model/BaseUrl when toggling off, so a
+    // patch with only `assistant: false` must clear all three itself.
+    let updated = store
+        .update(&ap.id, serde_json::json!({ "assistant": false }))
+        .unwrap();
+    assert!(!updated.assistant);
+    assert!(
+        updated.assistant_provider.is_none(),
+        "stale provider snapshot must be cleared on toggle-off"
+    );
+    assert!(
+        updated.assistant_model.is_none(),
+        "stale model snapshot must be cleared on toggle-off"
+    );
+    assert!(
+        updated.assistant_base_url.is_none(),
+        "stale base-url snapshot must be cleared on toggle-off"
+    );
+
+    // Re-enabling with a fresh snapshot still sets it (the enable path is intact).
+    let reenabled = store
+        .update(
+            &ap.id,
+            serde_json::json!({
+                "assistant": true,
+                "assistantProvider": "anthropic",
+                "assistantModel": "claude-3-5-sonnet",
+            }),
+        )
+        .unwrap();
+    assert!(reenabled.assistant);
+    assert_eq!(reenabled.assistant_provider.as_deref(), Some("anthropic"));
+    assert_eq!(
+        reenabled.assistant_model.as_deref(),
+        Some("claude-3-5-sonnet")
+    );
+}
+
+#[test]
 fn test_clear_all_removes_every_autopilot() {
     use tempfile::TempDir;
 

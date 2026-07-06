@@ -432,6 +432,11 @@ const R7_ALLOW: &[(&str, &str)] = &[
     // the L3 `events` helper (crate::events::emit_event + channel consts), the same
     // shell-reach it already has for `commands`. R2 likewise allowlists this file.
     ("autopilot_helpers", "events"),
+    // Headless AI notes (L2) reuse the agent layer's pure prompt-safety primitives
+    // (fenced/JOB_CAP/RESUME_CAP) + the shared AUTOPILOT_NOTE_SYSTEM prompt — read-only
+    // string construction, invokes no controller. TODO(arch): relocate these pure prompt
+    // primitives out of the L3 `agent` module (e.g. an L0/L1 prompt-utils) to clear this edge.
+    ("autopilot_helpers", "agent"),
     // accent_watcher (L0 platform) emits via the L3 events helper; same shell-reach as
     // autopilot_helpers->events. TODO(arch): emitter port.
     ("platform", "events"),

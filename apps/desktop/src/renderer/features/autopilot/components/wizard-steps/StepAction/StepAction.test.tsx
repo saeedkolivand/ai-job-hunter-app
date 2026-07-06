@@ -178,3 +178,38 @@ describe('StepAction — disclosure copy + provider hint (a11y/UX fix)', () => {
     expect(screen.getByText('autopilot.wizard.action.assistantProviderHint')).toBeInTheDocument();
   });
 });
+
+describe('StepAction — no usable provider configured', () => {
+  it('disables the switch and shows the no-provider caption when model is empty', () => {
+    stubbedActiveProvider = { provider: 'ollama', model: '', baseUrl: undefined };
+    renderStep();
+
+    expect(screen.getByRole('switch')).toBeDisabled();
+    expect(screen.getByText('autopilot.wizard.action.assistantNoProvider')).toBeInTheDocument();
+    expect(screen.queryByText('autopilot.wizard.action.assistantCaption')).not.toBeInTheDocument();
+  });
+
+  it('never writes a snapshot while disabled, even if toggled on programmatically', async () => {
+    stubbedActiveProvider = { provider: 'ollama', model: '', baseUrl: undefined };
+    const user = userEvent.setup();
+    renderStep({ assistant: true });
+
+    // The switch is disabled, so a real click is a no-op — but the guard we're
+    // testing is the effect itself, which must refuse to snapshot an empty
+    // model even though `assistant` is already true.
+    await user.click(screen.getByRole('switch'));
+
+    const probe = readProbe();
+    expect(probe.assistantProvider).toBeUndefined();
+    expect(probe.assistantModel).toBeUndefined();
+  });
+
+  it('does NOT render the dangling provider hint when model is empty', () => {
+    stubbedActiveProvider = { provider: 'ollama', model: '', baseUrl: undefined };
+    renderStep({ assistant: true });
+
+    expect(
+      screen.queryByText('autopilot.wizard.action.assistantProviderHint')
+    ).not.toBeInTheDocument();
+  });
+});

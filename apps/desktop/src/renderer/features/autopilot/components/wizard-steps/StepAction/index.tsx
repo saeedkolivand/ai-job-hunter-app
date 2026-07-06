@@ -26,7 +26,9 @@ export function StepAction() {
   // this a no-op once in sync, so it never loops or dirties the form for no
   // reason.
   useEffect(() => {
-    if (!assistant) return;
+    // No usable model (no AI provider configured) — never snapshot an empty
+    // model, or the scheduled run silently produces zero notes forever.
+    if (!assistant || !model) return;
     if (
       provider === assistantProvider &&
       model === assistantModel &&
@@ -84,6 +86,7 @@ export function StepAction() {
           label={t('autopilot.wizard.action.assistantLabel')}
           checked={assistant}
           onCheckedChange={(next) => setValue('assistant', next, { shouldDirty: true })}
+          disabled={!model}
         />
         {/* TODO(a11y): the shared `Switch` `description` slot renders at
             text-foreground/45 (~2.85:1 light) — a real AA fail (Switch.tsx:109).
@@ -92,9 +95,11 @@ export function StepAction() {
             instead of passing it through `description`, so the honesty copy
             this feature depends on stays legible. */}
         <p className="text-caption text-foreground/70">
-          {t('autopilot.wizard.action.assistantCaption')}
+          {model
+            ? t('autopilot.wizard.action.assistantCaption')
+            : t('autopilot.wizard.action.assistantNoProvider')}
         </p>
-        {assistant && (
+        {assistant && provider && model && (
           <p className="text-caption text-foreground/70">
             {t('autopilot.wizard.action.assistantProviderHint', { provider, model })}
           </p>

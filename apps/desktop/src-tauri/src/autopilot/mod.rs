@@ -377,6 +377,16 @@ impl AutopilotStore {
         }
         if let Some(v) = patch.get("assistant").and_then(|v| v.as_bool()) {
             ap.assistant = v;
+            if !v {
+                // Toggling AI notes off: clear the stale provider/model/base-url
+                // snapshot too. The renderer omits `assistantProvider`/`Model`/
+                // `BaseUrl` from the patch when disabling, so without this the old
+                // snapshot would linger invisibly and could be reused verbatim if
+                // AI notes are re-enabled later without a fresh provider pick.
+                ap.assistant_provider = None;
+                ap.assistant_model = None;
+                ap.assistant_base_url = None;
+            }
         }
         // The provider snapshot travels together with the toggle: the renderer
         // writes all three when the user enables AI notes (from the active
