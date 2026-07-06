@@ -169,6 +169,14 @@ pub struct FoundJob {
     /// `Some(..)`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trust: Option<crate::scraping::trust::TrustAssessment>,
+    /// Optional AI-reasoned note (2–4 sentences: why the job fits the résumé +
+    /// one tailoring tip) generated for the top matches of a run when the
+    /// autopilot has AI notes enabled (`assistant`). `None` for jobs not
+    /// annotated (below the top-N ceiling, notes disabled, no provider, or the
+    /// daily ceiling was hit mid-run). Read-only — never applied or submitted.
+    /// `#[serde(default)]` so a job recorded before this field existed loads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assistant_notes: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -221,6 +229,22 @@ pub struct Autopilot {
     /// found job in the apply assistant.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cover_letter: Option<String>,
+    /// Opt-in (Phase 4): after the keyword rank, attach a short AI-reasoned note
+    /// to the top matches of each run. Read-only enrichment — never applies or
+    /// submits anything. `#[serde(default)]` so existing records load as `false`.
+    #[serde(default)]
+    pub assistant: bool,
+    /// Provider/model/base-URL snapshot the headless AI-notes run resolves through
+    /// the centralized [`crate::pipeline::Completer`] (the same layer `ai_generate`
+    /// uses). The scheduler has no renderer to read the active provider from, so the
+    /// one chosen at opt-in time is persisted here. `None`/empty → notes skip
+    /// gracefully for that run. Defaulted so older records load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assistant_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assistant_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assistant_base_url: Option<String>,
     pub total_found: u32,
     pub total_applied: u32,
     /// Jobs surfaced by the most recent run. Defaulted so older records load.
@@ -298,6 +322,10 @@ impl AutopilotStore {
             schedule_minute: u32_field_in_range(&input, "scheduleMinute", 59),
             resume_text: input["resumeText"].as_str().map(String::from),
             cover_letter: input["coverLetter"].as_str().map(String::from),
+            assistant: input["assistant"].as_bool().unwrap_or(false),
+            assistant_provider: input["assistantProvider"].as_str().map(String::from),
+            assistant_model: input["assistantModel"].as_str().map(String::from),
+            assistant_base_url: input["assistantBaseUrl"].as_str().map(String::from),
             total_found: 0,
             total_applied: 0,
             found_jobs: Vec::new(),
@@ -346,6 +374,31 @@ impl AutopilotStore {
         }
         if let Some(v) = patch.get("coverLetter").and_then(|v| v.as_str()) {
             ap.cover_letter = Some(v.to_string());
+        }
+        if let Some(v) = patch.get("assistant").and_then(|v| v.as_bool()) {
+            ap.assistant = v;
+            if !v {
+                // Toggling AI notes off: clear the stale provider/model/base-url
+                // snapshot too. The renderer omits `assistantProvider`/`Model`/
+                // `BaseUrl` from the patch when disabling, so without this the old
+                // snapshot would linger invisibly and could be reused verbatim if
+                // AI notes are re-enabled later without a fresh provider pick.
+                ap.assistant_provider = None;
+                ap.assistant_model = None;
+                ap.assistant_base_url = None;
+            }
+        }
+        // The provider snapshot travels together with the toggle: the renderer
+        // writes all three when the user enables AI notes (from the active
+        // provider), so a re-selected provider re-snapshots on the next update.
+        if let Some(v) = patch.get("assistantProvider").and_then(|v| v.as_str()) {
+            ap.assistant_provider = Some(v.to_string());
+        }
+        if let Some(v) = patch.get("assistantModel").and_then(|v| v.as_str()) {
+            ap.assistant_model = Some(v.to_string());
+        }
+        if let Some(v) = patch.get("assistantBaseUrl").and_then(|v| v.as_str()) {
+            ap.assistant_base_url = Some(v.to_string());
         }
         let result = ap.clone();
         self.save(map);

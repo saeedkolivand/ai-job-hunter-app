@@ -236,6 +236,15 @@ export interface Autopilot {
   /** Optional base cover letter — the reusable starting point the apply
    *  assistant tailors per found job. */
   coverLetter?: string;
+  /** Opt-in (Phase 4): attach a short AI-reasoned note to the top matches of each
+   *  scheduled run. Read-only enrichment; defaults false. */
+  assistant?: boolean;
+  /** Provider/model/base-URL snapshot for the headless AI-notes call — the
+   *  scheduler has no renderer to resolve the active provider from, so the one
+   *  chosen at opt-in time is persisted. Absent → notes are skipped. */
+  assistantProvider?: string;
+  assistantModel?: string;
+  assistantBaseUrl?: string;
   totalFound: number;
   /** Found jobs the user has applied to (derived from saved generations). */
   totalApplied: number;
@@ -278,6 +287,10 @@ export interface AutopilotFoundJob {
   /** Ghost-job trust signal, computed at find-time. Absent only on a run
    *  recorded before this field existed. */
   trust?: JobTrustAssessment;
+  /** Short AI-reasoned note (why it fits the résumé + one tailoring tip),
+   *  generated for the top matches when the autopilot has AI notes enabled.
+   *  Absent for jobs not annotated. Read-only — never applied or submitted. */
+  assistantNotes?: string;
 }
 
 /** Result record for a single autopilot run. */

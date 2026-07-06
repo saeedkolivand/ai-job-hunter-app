@@ -73,6 +73,7 @@ vi.mock('lucide-react', () => ({
   Pencil: () => null,
   Play: () => null,
   RotateCcw: () => null,
+  Sparkles: () => null,
   Trash2: () => null,
   Wand2: () => null,
 }));
@@ -452,6 +453,40 @@ describe('AutopilotCard — found-jobs MatchBand variant', () => {
     });
 
     expect(screen.queryByTestId('match-band')).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// assistantNotes — Phase 4 AI note (read-only, plain text)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('AutopilotCard — assistantNotes', () => {
+  it('renders the AI note when job.assistantNotes is present', async () => {
+    const job = {
+      ...makeJob('https://example.com/job/noted'),
+      assistantNotes: 'Great fit — highlight your Rust experience.',
+    };
+    renderCard(makeAutopilot([job]));
+
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await act(async () => {
+      header.click();
+    });
+
+    expect(screen.getByText('Great fit — highlight your Rust experience.')).toBeInTheDocument();
+    expect(screen.getByRole('note', { name: 'autopilot.aiNote' })).toBeInTheDocument();
+  });
+
+  it('does NOT render an AI note block when job.assistantNotes is absent', async () => {
+    const job = makeJob('https://example.com/job/no-note');
+    renderCard(makeAutopilot([job]));
+
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await act(async () => {
+      header.click();
+    });
+
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
   });
 });
 

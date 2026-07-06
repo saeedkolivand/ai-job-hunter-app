@@ -19,6 +19,14 @@ pub struct AutopilotCreateRequest {
     pub resume_text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cover_letter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assistant: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assistant_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assistant_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assistant_base_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -71,6 +79,14 @@ pub struct AutopilotUpdateRequest {
     pub resume_text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cover_letter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assistant: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assistant_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assistant_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assistant_base_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
 }

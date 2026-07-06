@@ -303,6 +303,10 @@ interface WorkflowDefinition {
   coverLetterTemplate?: string;
   customMessage?: string;
   maxApplicationsPerRun?: number;
+  assistant?: boolean; // opt-in: generate short AI notes for top matches
+  assistantProvider?: string; // provider snapshot at opt-in time
+  assistantModel?: string; // model snapshot at opt-in time
+  assistantBaseUrl?: string; // base URL snapshot for OpenAI-compatible providers
 }
 
 interface WorkflowSchedule {

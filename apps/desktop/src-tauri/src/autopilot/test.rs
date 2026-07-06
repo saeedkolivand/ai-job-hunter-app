@@ -39,6 +39,58 @@ fn test_autopilot_filter_serialization() {
 }
 
 #[test]
+fn legacy_record_without_assistant_fields_defaults_to_disabled() {
+    // An autopilots.json written before Phase 4 has no `assistant*` keys — it must
+    // load with AI notes OFF and no provider snapshot (opt-in, zero surprise).
+    let json = serde_json::json!({
+        "_id": "ap1",
+        "name": "Legacy",
+        "status": "active",
+        "target": { "boards": ["linkedin"], "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "daily",
+        "totalFound": 0,
+        "totalApplied": 0,
+        "createdAt": 1,
+        "updatedAt": 1
+    });
+    let ap: Autopilot = serde_json::from_value(json).expect("legacy record must deserialize");
+    assert!(
+        !ap.assistant,
+        "AI notes must default OFF for a legacy record"
+    );
+    assert!(ap.assistant_provider.is_none());
+    assert!(ap.assistant_model.is_none());
+    assert!(ap.assistant_base_url.is_none());
+}
+
+#[test]
+fn legacy_found_job_without_assistant_notes_deserializes_to_none() {
+    // A found job persisted before Phase 4 has no `assistantNotes` key.
+    let json = serde_json::json!({
+        "title": "Engineer",
+        "company": "Acme",
+        "url": "https://acme.example/1",
+        "foundAt": 1u64
+    });
+    let job: FoundJob = serde_json::from_value(json).expect("legacy found job must deserialize");
+    assert!(job.assistant_notes.is_none());
+}
+
+#[test]
+fn assistant_note_round_trips_on_a_found_job() {
+    // A note set by the AI-notes step survives serialize→deserialize (persisted on
+    // the record, surfaced to the renderer under `assistantNotes`).
+    let mut job = found_job("https://acme.example/2", 5);
+    job.assistant_notes = Some("Strong Rust fit; tailor the systems-design bullet.".into());
+    let round: FoundJob = serde_json::from_str(&serde_json::to_string(&job).unwrap()).unwrap();
+    assert_eq!(
+        round.assistant_notes.as_deref(),
+        Some("Strong Rust fit; tailor the systems-design bullet.")
+    );
+}
+
+#[test]
 fn test_str_field() {
     let value = serde_json::json!({ "name": "Test", "other": "Value" });
     assert_eq!(str_field(&value, "name"), "Test");
@@ -189,6 +241,68 @@ fn update_rejects_out_of_range_time_while_keeping_null_clear() {
         .update(&ap.id, serde_json::json!({ "scheduleMinute": null }))
         .unwrap();
     assert_eq!(cleared.schedule_minute, None, "explicit null clears");
+}
+
+#[test]
+fn update_toggling_assistant_off_clears_the_provider_snapshot() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let ap = store.create(serde_json::json!({
+        "name": "AP",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 50.0 },
+        "schedule": "daily",
+        "assistant": true,
+        "assistantProvider": "openai",
+        "assistantModel": "gpt-4o",
+        "assistantBaseUrl": "https://api.openai.com",
+    }));
+    assert!(ap.assistant);
+    assert_eq!(ap.assistant_provider.as_deref(), Some("openai"));
+    assert_eq!(ap.assistant_model.as_deref(), Some("gpt-4o"));
+    assert_eq!(
+        ap.assistant_base_url.as_deref(),
+        Some("https://api.openai.com")
+    );
+
+    // The renderer omits assistantProvider/Model/BaseUrl when toggling off, so a
+    // patch with only `assistant: false` must clear all three itself.
+    let updated = store
+        .update(&ap.id, serde_json::json!({ "assistant": false }))
+        .unwrap();
+    assert!(!updated.assistant);
+    assert!(
+        updated.assistant_provider.is_none(),
+        "stale provider snapshot must be cleared on toggle-off"
+    );
+    assert!(
+        updated.assistant_model.is_none(),
+        "stale model snapshot must be cleared on toggle-off"
+    );
+    assert!(
+        updated.assistant_base_url.is_none(),
+        "stale base-url snapshot must be cleared on toggle-off"
+    );
+
+    // Re-enabling with a fresh snapshot still sets it (the enable path is intact).
+    let reenabled = store
+        .update(
+            &ap.id,
+            serde_json::json!({
+                "assistant": true,
+                "assistantProvider": "anthropic",
+                "assistantModel": "claude-3-5-sonnet",
+            }),
+        )
+        .unwrap();
+    assert!(reenabled.assistant);
+    assert_eq!(reenabled.assistant_provider.as_deref(), Some("anthropic"));
+    assert_eq!(
+        reenabled.assistant_model.as_deref(),
+        Some("claude-3-5-sonnet")
+    );
 }
 
 #[test]
@@ -514,6 +628,7 @@ fn found_job(url: &str, found_at: u64) -> FoundJob {
         is_new: false,
         applied: false,
         trust: None,
+        assistant_notes: None,
     }
 }
 
@@ -768,6 +883,10 @@ fn base_autopilot() -> Autopilot {
         schedule_minute: None,
         resume_text: None,
         cover_letter: None,
+        assistant: false,
+        assistant_provider: None,
+        assistant_model: None,
+        assistant_base_url: None,
         total_found: 0,
         total_applied: 0,
         found_jobs: Vec::new(),
