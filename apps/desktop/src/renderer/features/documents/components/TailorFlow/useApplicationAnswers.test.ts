@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 
-import { generateApplicationAnswer, lookupSalaryRange } from '@/lib/generate';
+import { extractMetadata, generateApplicationAnswer, lookupSalaryRange } from '@/lib/generate';
 
 import { useApplicationAnswers } from './useApplicationAnswers';
 
@@ -283,12 +283,52 @@ describe('useApplicationAnswers', () => {
         await result.current.generate();
       });
 
-      expect(lookupSalaryRange).toHaveBeenCalledWith('Engineer', 'Acme', '', 'llama3');
+      // No jobCountry in the base mock → country/currency both undefined (today's
+      // unconstrained behavior — the unknown-country fallback).
+      expect(lookupSalaryRange).toHaveBeenCalledWith(
+        'Engineer',
+        'Acme',
+        '',
+        'llama3',
+        undefined,
+        undefined
+      );
       expect(generateApplicationAnswer).toHaveBeenCalledWith(
         expect.objectContaining({
           question: 'What are your salary expectations?',
           salaryRange: { min: 65000, max: 80000, currency: 'EUR' },
         })
+      );
+    });
+
+    it('grounds the lookup in the detected job country + its currency (currency-grounding fix)', async () => {
+      vi.mocked(extractMetadata).mockResolvedValueOnce({
+        candidateName: 'Jane',
+        jobTitle: 'Engineer',
+        companyName: 'Acme',
+        resumeLanguage: 'en',
+        jobAdLanguage: 'en',
+        mismatch: false,
+        targetLanguage: 'en',
+        topRequirements: [],
+        jobLocation: 'Berlin, Germany',
+        jobCountry: 'DE',
+      });
+      vi.mocked(lookupSalaryRange).mockResolvedValue({ min: 65000, max: 80000, currency: 'EUR' });
+      const { result } = render();
+      act(() => result.current.toggle('salary'));
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(lookupSalaryRange).toHaveBeenCalledWith(
+        'Engineer',
+        'Acme',
+        'Berlin, Germany',
+        'llama3',
+        'DE',
+        'EUR'
       );
     });
 

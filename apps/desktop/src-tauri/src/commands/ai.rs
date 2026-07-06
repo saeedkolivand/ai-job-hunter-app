@@ -253,13 +253,25 @@ pub async fn ai_research_company(
 /// search, the search yields nothing reliable, or times out — so the salary
 /// answer always falls back to grounding in the applicant's own stated
 /// expectation alone. Only validated integers + a sanitized currency code are
-/// ever returned; raw web text never crosses this boundary.
+/// ever returned; raw web text never crosses this boundary. `country`/
+/// `currency` (resolved client-side from the job's validated ISO country)
+/// ground the reported currency so a blank/weak `location` can't let the
+/// model default to USD or hallucinate a currency — see
+/// `crate::salary_research::SalaryResearch::enrich`.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn ai_lookup_salary(
     app: AppHandle,
     role: String,
     company: Option<String>,
     location: Option<String>,
+    // ISO-3166 alpha-2 job country, when known — grounds `currency` below.
+    country: Option<String>,
+    // Authoritative ISO-4217 currency for `country` (resolved client-side via
+    // `countryToCurrency`); `None` when the country is unknown, which
+    // preserves the unconstrained "local currency for that location"
+    // behavior.
+    currency: Option<String>,
     provider: Option<String>,
     model: Option<String>,
     base_url: Option<String>,
@@ -320,6 +332,8 @@ pub async fn ai_lookup_salary(
             &role,
             company.as_deref().unwrap_or(""),
             location.as_deref().unwrap_or(""),
+            country.as_deref().unwrap_or(""),
+            currency.as_deref().unwrap_or(""),
         )
         .await
 }

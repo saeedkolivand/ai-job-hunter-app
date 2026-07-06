@@ -85,15 +85,26 @@ impl Completer {
     /// provider can't search — see
     /// [`AiProvider::research_salary`](crate::commands::ai_provider::AiProvider::research_salary).
     /// The caller ([`crate::salary_research::SalaryResearch`]) parses + strictly
-    /// validates it before anything reaches a prompt.
+    /// validates it before anything reaches a prompt. `country`/`currency`
+    /// ground the report in the job's actual currency; both empty when unknown.
     pub async fn research_salary(
         &self,
         role: &str,
         company: &str,
         location: &str,
+        country: &str,
+        currency: &str,
     ) -> AppResult<String> {
         self.provider
-            .research_salary(&self.app, &self.model, role, company, location)
+            .research_salary(
+                &self.app,
+                &self.model,
+                role,
+                company,
+                location,
+                country,
+                currency,
+            )
             .await
     }
 

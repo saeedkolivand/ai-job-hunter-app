@@ -826,6 +826,77 @@ export function countryToMarket(country?: string): string | undefined {
   return COUNTRY_TO_MARKET[country.trim().toUpperCase()];
 }
 
+/**
+ * ISO-3166 alpha-2 country → ISO-4217 currency code. Wider than
+ * {@link COUNTRY_TO_MARKET} (also covers Nordics/CEE/Eurozone countries with
+ * no distinct letter-conventions entry) — grounds the web-researched salary
+ * range (see `salary_research` on the Rust side) in the job's actual currency
+ * so a blank/weak location can't let the model default to USD or hallucinate
+ * one.
+ *
+ * ponytail: kept as its own map, not derived from {@link COUNTRY_TO_MARKET} —
+ * the two group countries differently (e.g. all Eurozone members share one
+ * currency but split across `de`/`fr`/`es`/`it` letter-convention markets), so
+ * a derived map would need an inverse lookup with no real gain.
+ */
+const COUNTRY_TO_CURRENCY: Record<string, string> = {
+  US: 'USD',
+  GB: 'GBP',
+  UK: 'GBP',
+  IE: 'EUR',
+  AU: 'AUD',
+  NZ: 'NZD',
+  CA: 'CAD',
+  IN: 'INR',
+  SG: 'SGD',
+  DE: 'EUR',
+  AT: 'EUR',
+  CH: 'CHF',
+  FR: 'EUR',
+  BE: 'EUR',
+  LU: 'EUR',
+  MC: 'EUR',
+  ES: 'EUR',
+  MX: 'MXN',
+  AR: 'ARS',
+  CL: 'CLP',
+  CO: 'COP',
+  PE: 'PEN',
+  IT: 'EUR',
+  PT: 'EUR',
+  BR: 'BRL',
+  TR: 'TRY',
+  RU: 'RUB',
+  CN: 'CNY',
+  TW: 'TWD',
+  HK: 'HKD',
+  JP: 'JPY',
+  KR: 'KRW',
+  SE: 'SEK',
+  NO: 'NOK',
+  DK: 'DKK',
+  PL: 'PLN',
+  CZ: 'CZK',
+  SK: 'EUR',
+  SI: 'EUR',
+  EE: 'EUR',
+  LV: 'EUR',
+  LT: 'EUR',
+  CY: 'EUR',
+  MT: 'EUR',
+  GR: 'EUR',
+  FI: 'EUR',
+  NL: 'EUR',
+  HR: 'EUR',
+  BG: 'EUR',
+};
+
+/** Map an ISO-3166 alpha-2 country code to its ISO-4217 currency (undefined when unknown). */
+export function countryToCurrency(country?: string): string | undefined {
+  if (!country) return undefined;
+  return COUNTRY_TO_CURRENCY[country.trim().toUpperCase()];
+}
+
 export interface ResolveMarketInput {
   /** ISO-3166 alpha-2 country extracted from the job ad. */
   jobCountry?: string;

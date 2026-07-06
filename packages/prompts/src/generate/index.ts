@@ -24,6 +24,7 @@ export * from './text/index.js';
 // generation builders (cover letter + application answers), so it's re-exported
 // here for a single import source.
 export {
+  countryToCurrency,
   countryToMarket,
   hasLetterConventions,
   LETTER_MARKET_IDS,

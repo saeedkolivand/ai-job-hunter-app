@@ -4,6 +4,7 @@ import { detectSections, estimateTokens } from '../context-manager';
 import letterConventionsFixture from '../fixtures/letter-conventions.json';
 import {
   charsPerToken,
+  countryToCurrency,
   countryToMarket,
   hasLetterConventions,
   LETTER_MARKET_CONVENTIONS,
@@ -143,5 +144,19 @@ describe('countryToMarket + resolveMarket', () => {
     expect(resolveMarket({})).toBe('intl');
     // An invalid override is ignored (falls through to the chain).
     expect(resolveMarket({ override: 'zz', jobCountry: 'US' })).toBe('us');
+  });
+});
+
+describe('countryToCurrency', () => {
+  it('grounds the salary-lookup currency in the job country, case-insensitively', () => {
+    expect(countryToCurrency('DE')).toBe('EUR');
+    expect(countryToCurrency('gb')).toBe('GBP');
+    expect(countryToCurrency('US')).toBe('USD');
+    expect(countryToCurrency('CA')).toBe('CAD');
+    // Croatia joined the Eurozone 2023-01-01; Bulgaria joined 2026-01-01.
+    expect(countryToCurrency('HR')).toBe('EUR');
+    expect(countryToCurrency('BG')).toBe('EUR');
+    expect(countryToCurrency('ZZ')).toBeUndefined();
+    expect(countryToCurrency(undefined)).toBeUndefined();
   });
 });

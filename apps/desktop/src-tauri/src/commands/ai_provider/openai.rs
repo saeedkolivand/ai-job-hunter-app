@@ -475,6 +475,7 @@ impl AiProvider for OpenAiClient {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn research_salary(
         &self,
         app: &AppHandle,
@@ -482,12 +483,14 @@ impl AiProvider for OpenAiClient {
         role: &str,
         company: &str,
         location: &str,
+        country: &str,
+        currency: &str,
     ) -> AppResult<String> {
         self.web_search_complete(
             app,
             model,
-            research::SALARY_SYSTEM,
-            &research::salary_user(role, company, location),
+            &research::salary_system(currency),
+            &research::salary_user(role, company, location, country, currency),
         )
         .await
     }
