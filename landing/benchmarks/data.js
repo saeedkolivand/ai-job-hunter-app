@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783366076872,
+  "lastUpdate": 1783371346177,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2723,6 +2723,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 292485,
             "range": "± 8814",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "125afd46a3d63296b416aae343bb3f1a71228e94",
+          "message": "feat: draft a tailored resume in the prep-this-application flow (#561)\n\n* feat: draft a tailored resume in the prep-this-application flow\n\nThe agentic \"Prep this application\" flow only drafted a cover letter, never a\nresume (user-reported). It now also drafts a tailored resume and offers to save\nit, mirroring the existing cover-letter tool pair exactly.\n\n- draft_resume (Read): generates an ATS-tailored resume from the fenced resume\n  + job posting, driven by a new trusted RESUME_SYSTEM literal (a compact\n  backend port of @ajh/prompts buildResumeSystemPrompt keeping the honesty /\n  keep-every-role / keyword-weaving spine). Draft-only — no persistence, no\n  confirm gate (same class as draft_cover_letter).\n- save_resume (Write, GATED): persists the drafted resume via the existing\n  ai_generations_save(resume_text). Like save_cover_letter it SUSPENDS the run\n  for explicit user confirmation and never auto-persists; its schema is\n  content-only (resumeText), with company/title/url/board resolved server-side\n  from the trusted ToolContext, never from model args.\n- PREP_APPLICATION_SYSTEM sequences the new step; ARGS_DISPLAY_CAP widened to\n  max(COVER_LETTER_CAP, SAVED_RESUME_CAP=40k) so the confirm UI shows the full\n  resume for review/edit; MAX_AGENT_STEPS raised 8 -> 12 to fit the flow's seven\n  tool turns plus planning/summary with headroom.\n- renderer: a resume checklist row in PrepApplicationPanel + a draft_resume ->\n  DRAFT mapping in the agent-run machine; en/de copy updated so the promised\n  behavior (resume + cover letter + questions) matches reality.\n\nReviewed by tauri-security-reviewer (PASS — gated Write verified end-to-end,\nfenced untrusted data, trusted routing, display cap >= persist cap),\nresume-export-expert (honesty spine intact), and ai-provider-expert (tool wiring\ncorrect; the step-budget MEDIUM is fixed here). cargo fmt + clippy (-D warnings)\n+ build + architecture (11, R8 ok) clean; typecheck 12/12; desktop suite (1941)\n+ agent-run machine/panel (35) green; gen:ipc:check unchanged. Rust tests run in CI.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: raise the agent token budget for the resume-augmented prep flow\n\nThe @claude review of #561 noted that after raising MAX_AGENT_STEPS, the token\nbudget became the tighter backstop: the prep flow now echoes a full drafted\nresume twice through the accumulator (the draft_resume tool result + the\nsave_resume args turn) on top of the cover letter, match, and research. A large\nresume (SAVED_RESUME_CAP=40k chars ~= 10k tokens, twice) could trip MAX_AGENT_TOKENS\nand stop the run before the final save/summary. Raise MAX_AGENT_TOKENS 60k -> 120k\n(clear headroom over the two-resume-echo worst case) and document the driver;\nstill the cost backstop.\n\ncargo fmt + clippy (-D warnings) + build + architecture (11) green.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-06T22:46:08+02:00",
+          "tree_id": "b99ff90875fcb5eaf08d20c600a1f4684ba66ed1",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/125afd46a3d63296b416aae343bb3f1a71228e94"
+        },
+        "date": 1783371345474,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1926228,
+            "range": "± 84462",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2633083,
+            "range": "± 41667",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 306619,
+            "range": "± 6725",
             "unit": "ns/iter"
           }
         ]
