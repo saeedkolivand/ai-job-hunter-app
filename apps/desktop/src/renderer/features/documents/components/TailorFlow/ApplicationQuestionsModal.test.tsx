@@ -132,7 +132,22 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  // Selections persist on the jsdom `window` across tests in the same file.
+  window.getSelection()?.removeAllRanges();
 });
+
+/** Selects `substring` (must occur exactly once in `text`) inside `el`'s text
+ *  node, mirroring a user drag-selecting part of the rendered answer. */
+function selectSubstring(el: HTMLElement, text: string, substring: string) {
+  const textNode = el.firstChild as Text;
+  const start = text.indexOf(substring);
+  const range = document.createRange();
+  range.setStart(textNode, start);
+  range.setEnd(textNode, start + substring.length);
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+}
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
@@ -164,6 +179,36 @@ describe('ApplicationQuestionsModal — Rewrite with AI', () => {
     expect(popover).toBeTruthy();
     expect(popover.getAttribute('data-doc-type')).toBe('application-answer');
     expect(popover.getAttribute('data-selection')).toBe(ANSWER_TEXT);
+  });
+
+  it('selecting part of the answer targets only that substring for rewrite', () => {
+    render(<ApplicationQuestionsModal {...buildProps()} />);
+    selectSubstring(screen.getByText(ANSWER_TEXT), ANSWER_TEXT, 'led a payments migration');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'autopilot.apply.questions.rewriteAriaLabel' })
+    );
+
+    expect(screen.getByTestId('rewrite-popover').getAttribute('data-selection')).toBe(
+      'led a payments migration'
+    );
+  });
+
+  it('accepting a rewrite of a selected substring splices it back into the full answer', async () => {
+    const updateAnswer = vi
+      .fn<(id: string, text: string) => Promise<void>>()
+      .mockResolvedValue(undefined);
+    render(<ApplicationQuestionsModal {...buildProps({ updateAnswer })} />);
+    selectSubstring(screen.getByText(ANSWER_TEXT), ANSWER_TEXT, 'led a payments migration');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'autopilot.apply.questions.rewriteAriaLabel' })
+    );
+    fireEvent.click(screen.getByTestId('popover-accept')); // stub emits 'Rewritten answer text'
+
+    await waitFor(() => {
+      expect(updateAnswer).toHaveBeenCalledWith(QUESTION_ID, 'Because I Rewritten answer text.');
+    });
   });
 
   it('passes model and locale to the popover', () => {

@@ -94,17 +94,37 @@ export function SpotlightTour({ onFinish }: Props) {
   const current = TOUR_ITEMS[stepIdx] as TourItem;
   const isLast = stepIdx === TOUR_ITEMS.length - 1;
 
-  const measureTarget = useCallback((id: string) => {
-    const el = document.querySelector(`[data-tour-id="${id}"]`);
-    if (el) {
+  // The sidebar is forced open right before the tour starts, so its anchors
+  // mount and animate width 0 -> auto in the same commit. A single measure
+  // can land mid-animation (zero/partial rect that's never re-checked), so
+  // retry until the anchor has a real size, then keep tracking it via
+  // ResizeObserver until the expand animation settles.
+  useLayoutEffect(() => {
+    let rafId: number | undefined;
+    let observer: ResizeObserver | undefined;
+
+    const update = (el: Element) => {
       const r = el.getBoundingClientRect();
       setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
-    }
-  }, []);
+    };
 
-  useLayoutEffect(() => {
-    measureTarget(current.tourId);
-  }, [current.tourId, measureTarget]);
+    const tryMeasure = () => {
+      const el = document.querySelector(`[data-tour-id="${current.tourId}"]`);
+      if (el && el.getBoundingClientRect().width > 0) {
+        update(el);
+        observer = new ResizeObserver(() => update(el));
+        observer.observe(el);
+      } else {
+        rafId = requestAnimationFrame(tryMeasure);
+      }
+    };
+    tryMeasure();
+
+    return () => {
+      if (rafId !== undefined) cancelAnimationFrame(rafId);
+      observer?.disconnect();
+    };
+  }, [current.tourId]);
 
   const next = useCallback(() => {
     if (isLast) {

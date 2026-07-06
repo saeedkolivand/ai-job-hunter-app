@@ -6,10 +6,43 @@ import { APPLICATION_QUESTIONS } from '@ajh/prompts/generate';
 import { useTranslation } from '@ajh/translations';
 import { Button, Input, ModalShell, useNotification } from '@ajh/ui';
 
-import { RewritePopover } from '@/components/generation/EditableOutput/RewritePopover';
+import {
+  RewritePopover,
+  type RewriteTarget,
+} from '@/components/generation/EditableOutput/RewritePopover';
 import { COPY_FEEDBACK_MS } from '@/lib/timings';
 
 import { MAX_CUSTOM_QUESTION_LEN } from './useApplicationAnswers';
+
+/** Selection offsets relative to `container`'s text, or null when nothing inside
+ *  it is selected. Mirrors the textarea-offset capture in EditableOutput's
+ *  `openSourceRewrite`, but for a plain (non-input) selectable element. */
+function getSelectionOffsets(container: HTMLElement): { start: number; end: number } | null {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null;
+  const range = sel.getRangeAt(0);
+  if (!container.contains(range.commonAncestorContainer)) return null;
+  const pre = document.createRange();
+  pre.selectNodeContents(container);
+  pre.setEnd(range.startContainer, range.startOffset);
+  const start = pre.toString().length;
+  return { start, end: start + range.toString().length };
+}
+
+/** A rewrite frozen at trigger time — the splice range + snapshot answer it
+ *  should be spliced back into on Accept (mirrors EditableOutput's FrozenRange). */
+interface FrozenAnswer {
+  id: string;
+  start: number;
+  end: number;
+  /** The answer string at freeze time — accept splices against this, not the
+   *  live `answers[id]`, so a stray write in-between can't shift the offsets. */
+  snapshot: string;
+  target: RewriteTarget;
+  /** The Rewrite button that opened this popover — anchors the portaled popover
+   *  and reclaims focus when it closes. */
+  anchorEl: HTMLElement;
+}
 
 interface Props {
   selected: Set<string>;
@@ -61,8 +94,10 @@ export function ApplicationQuestionsModal({
   const notify = useNotification();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
-  // Which answer id currently has the rewrite popover open (one at a time).
-  const [rewritingId, setRewritingId] = useState<string | null>(null);
+  // The frozen rewrite (one at a time) — null when no popover is open.
+  const [frozen, setFrozen] = useState<FrozenAnswer | null>(null);
+  // Answer <p> elements keyed by question id — read to compute selection offsets.
+  const answerRefs = useRef<Record<string, HTMLParagraphElement | null>>({});
   // Tracks the latest optimistically-written value per answer id. Set
   // SYNCHRONOUSLY in acceptRewrite (before the async save) so the .catch
   // guard never races against a React render cycle.
@@ -80,19 +115,47 @@ export function ApplicationQuestionsModal({
     setDraft('');
   };
 
-  const openRewrite = (id: string) => setRewritingId(id);
-  const closeRewrite = () => setRewritingId(null);
+  // Capture the live selection inside the answer's <p> (if any) and freeze it —
+  // splice range + surrounding context — so the rewrite targets just the
+  // selected span. Falls back to the whole answer when nothing is selected.
+  const openRewrite = (id: string, trigger: HTMLElement) => {
+    const answer = answers[id] ?? '';
+    const container = answerRefs.current[id];
+    const offsets = container ? getSelectionOffsets(container) : null;
+    const start = offsets?.start ?? 0;
+    const end = offsets?.end ?? answer.length;
+    setFrozen({
+      id,
+      start,
+      end,
+      snapshot: answer,
+      anchorEl: trigger,
+      target: {
+        selection: answer.slice(start, end),
+        before: answer.slice(0, start),
+        after: answer.slice(end),
+      },
+    });
+  };
+  const closeRewrite = () => {
+    const trigger = frozen?.anchorEl;
+    setFrozen(null);
+    trigger?.focus();
+  };
   // Close the popover immediately (never leave the user stuck), then fire the
   // persist. On failure: only revert if the answer hasn't been superseded by
   // a second rewrite that was accepted while this save was in-flight.
   // pendingRewriteRef is set SYNCHRONOUSLY here, so the guard is safe even if
   // the rejection arrives before React flushes the optimistic re-render.
-  const acceptRewrite = (id: string, text: string) => {
+  const acceptRewrite = (replacement: string) => {
+    if (!frozen) return;
+    const { id, start, end, snapshot } = frozen;
     const prev = answers[id] ?? '';
-    setRewritingId(null);
-    pendingRewriteRef.current[id] = text; // synchronous — latest-wins sentinel
-    updateAnswer(id, text).catch(() => {
-      if (pendingRewriteRef.current[id] === text) revertAnswer(id, prev);
+    const next = snapshot.slice(0, start) + replacement + snapshot.slice(end);
+    setFrozen(null);
+    pendingRewriteRef.current[id] = next; // synchronous — latest-wins sentinel
+    updateAnswer(id, next).catch(() => {
+      if (pendingRewriteRef.current[id] === next) revertAnswer(id, prev);
       notify.error({ message: t('autopilot.apply.questions.rewriteSaveError') });
     });
   };
@@ -101,7 +164,12 @@ export function ApplicationQuestionsModal({
   const answerBlock = (id: string, answer: string) => (
     <div className="px-2 pb-2 pl-7">
       <div className="relative rounded-md border border-[var(--border-clear)] bg-card px-2.5 py-2">
-        <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-foreground/70">
+        <p
+          ref={(el) => {
+            answerRefs.current[id] = el;
+          }}
+          className="select-text whitespace-pre-wrap text-[11px] leading-relaxed text-foreground/70"
+        >
           {answer}
         </p>
         {/* Action row — Rewrite (primary affordance with label) + Copy */}
@@ -109,7 +177,10 @@ export function ApplicationQuestionsModal({
           <Button
             variant="ghost"
             type="button"
-            onClick={() => openRewrite(id)}
+            // Keep the live text selection alive through the click — a bare click
+            // would let the browser collapse it before onClick reads it.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => openRewrite(id, e.currentTarget)}
             title={t('autopilot.apply.questions.rewrite')}
             aria-label={t('autopilot.apply.questions.rewriteAriaLabel')}
             className="h-auto gap-1 px-1.5 py-0.5 text-[11px] text-brand-soft"
@@ -129,19 +200,21 @@ export function ApplicationQuestionsModal({
           </Button>
         </div>
 
-        {/* Rewrite popover — rendered inline, anchored below the answer card */}
+        {/* Rewrite popover — portals to document.body and fixed-anchors off the
+            trigger (see RewritePopover's `anchorEl`), so it escapes this card's
+            clipping ancestors (ModalShell's overflow-hidden panel / overflow-y-auto
+            body) instead of rendering — and clipping — inline. */}
         <AnimatePresence>
-          {rewritingId === id && (
-            <div className="absolute right-0 top-full z-[700] mt-1">
-              <RewritePopover
-                target={{ selection: answer, before: '', after: '' }}
-                docType="application-answer"
-                model={model}
-                locale={locale}
-                onAccept={(text) => void acceptRewrite(id, text)}
-                onClose={closeRewrite}
-              />
-            </div>
+          {frozen?.id === id && (
+            <RewritePopover
+              target={frozen.target}
+              docType="application-answer"
+              model={model}
+              locale={locale}
+              anchorEl={frozen.anchorEl}
+              onAccept={acceptRewrite}
+              onClose={closeRewrite}
+            />
           )}
         </AnimatePresence>
       </div>

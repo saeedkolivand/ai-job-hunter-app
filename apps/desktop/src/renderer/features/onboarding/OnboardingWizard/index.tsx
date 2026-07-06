@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { transition } from '@ajh/ui';
 
@@ -11,10 +11,14 @@ import { ONBOARDING_STEPS } from '../steps-config';
 export function OnboardingWizard() {
   const onboardingCompleted = useOnboardingCompleted();
   const setOnboardingComplete = usePreferencesStore((s) => s.setOnboardingComplete);
+  const setSidebarCollapsed = usePreferencesStore((s) => s.setSidebarCollapsed);
   const activeProvider = usePreferencesStore((s) => s.aiProviderConfig?.activeProvider);
   const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState(1);
   const [showTour, setShowTour] = useState(false);
+  // Snapshot the user's sidebar preference from right before the tour forces
+  // it open, so it can be restored on finish instead of silently overwritten.
+  const sidebarWasCollapsedRef = useRef(false);
 
   // Research is only relevant for local Ollama (other providers search with
   // their own key). `extension`/`appearance` are unconditional.
@@ -41,8 +45,21 @@ export function OnboardingWizard() {
       setStepIndex((prev) => prev + 1);
     } else {
       setDirection(1);
+      // The tour spotlights sidebar nav items — a collapsed sidebar unmounts
+      // them, so force it open before the tour measures its anchors. Snapshot
+      // the prior value first so it can be restored once the tour ends.
+      sidebarWasCollapsedRef.current = usePreferencesStore.getState().sidebarCollapsed ?? false;
+      setSidebarCollapsed(false);
       setShowTour(true);
     }
+  };
+
+  // Restore the user's original sidebar preference (if it was collapsed) once
+  // the tour ends, then mark onboarding complete — runs on both "finish" and
+  // "skip" since SpotlightTour's onFinish covers both.
+  const finishTour = () => {
+    if (sidebarWasCollapsedRef.current) setSidebarCollapsed(true);
+    setOnboardingComplete();
   };
 
   const goBack = () => {
@@ -85,7 +102,7 @@ export function OnboardingWizard() {
             onBack={goBack}
           />
         )}
-        {showTour && <SpotlightTour key="tour" onFinish={setOnboardingComplete} />}
+        {showTour && <SpotlightTour key="tour" onFinish={finishTour} />}
       </AnimatePresence>
     </div>
   );

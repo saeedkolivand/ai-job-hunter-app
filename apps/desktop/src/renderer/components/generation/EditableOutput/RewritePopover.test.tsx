@@ -85,6 +85,7 @@ vi.mock('@ajh/ui', () => ({
   transition: { fast: {} },
   // useFocusTrap returns a ref object — the mock div accepts it as a plain prop.
   useFocusTrap: () => ({ current: null }),
+  cn: (...classes: unknown[]) => classes.filter(Boolean).join(' '),
 }));
 
 // ── component under test (import AFTER mocks so hoisting picks up the stubs) ──
@@ -173,5 +174,113 @@ describe('RewritePopover — timeout', () => {
     expect(screen.queryByText('aiGenerate.rewrite.failed')).toBeNull();
     // The rewrite result is displayed.
     expect(screen.getByText('rewritten text')).toBeTruthy();
+  });
+});
+
+describe('RewritePopover — anchored portal (anchorEl)', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders inline (inside its own container) when anchorEl is not set', () => {
+    const { container } = renderPopover();
+    expect(container.contains(screen.getByRole('dialog'))).toBe(true);
+  });
+
+  it('portals to document.body, fixed-positions off the trigger rect, and lifts z-toast', () => {
+    const anchorEl = document.createElement('button');
+    anchorEl.getBoundingClientRect = () =>
+      ({ top: 100, bottom: 120, left: 200, right: 300, width: 100, height: 20 }) as DOMRect;
+    document.body.appendChild(anchorEl);
+
+    const { container } = render(
+      <RewritePopover
+        target={{ selection: 'some selected text', before: '', after: '' }}
+        docType="resume"
+        model="test-model"
+        onAccept={vi.fn()}
+        onClose={vi.fn()}
+        anchorEl={anchorEl}
+      />
+    );
+
+    const dialog = screen.getByRole('dialog');
+    // Portaled OUT of the render container (a document.body sibling), not inline.
+    expect(container.contains(dialog)).toBe(false);
+    expect(dialog.className).toContain('z-toast');
+    expect(dialog.style.position).toBe('fixed');
+    expect(dialog.style.top).toBe('124px'); // rect.bottom (120) + 4px gap
+    expect(dialog.style.left).toBe('8px'); // clamped — rect.right (300) - panel width would go negative
+
+    document.body.removeChild(anchorEl);
+  });
+
+  it('flips the popover upward when it would not fit below the trigger', () => {
+    // jsdom performs no layout, so every element's real getBoundingClientRect()
+    // reads as zeros. Stub it globally to a realistic popover panel height
+    // (~380px, matching header + selection echo + presets + input + footer);
+    // the trigger below overrides its own instance method (takes precedence
+    // over this prototype stub) to report its own, separately-controlled rect.
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 352, bottom: 380, width: 352, height: 380 }) as DOMRect;
+
+    const anchorEl = document.createElement('button');
+    // Trigger sits near the bottom of jsdom's default 768px-tall viewport —
+    // opening below (720 + 380 + 4 = 1104) would push the footer far offscreen.
+    anchorEl.getBoundingClientRect = () =>
+      ({ top: 700, bottom: 720, left: 200, right: 300, width: 100, height: 20 }) as DOMRect;
+    document.body.appendChild(anchorEl);
+
+    render(
+      <RewritePopover
+        target={{ selection: 'some selected text', before: '', after: '' }}
+        docType="resume"
+        model="test-model"
+        onAccept={vi.fn()}
+        onClose={vi.fn()}
+        anchorEl={anchorEl}
+      />
+    );
+
+    const dialog = screen.getByRole('dialog');
+    // Flipped above: anchorRect.top (700) - panelHeight (380) - 4px gap = 316.
+    expect(dialog.style.top).toBe('316px');
+    expect(Number(dialog.style.top.replace('px', ''))).toBeGreaterThanOrEqual(8);
+
+    document.body.removeChild(anchorEl);
+    Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+  });
+
+  it('clamps the flipped-upward position to never go above the 8px viewport margin', () => {
+    // A trigger near the very TOP of the viewport with a panel taller than the
+    // whole viewport: it doesn't fit below (forcing a flip), and flipping
+    // naively (anchorRect.top - panelHeight - 4) would go negative — must
+    // clamp to 8px instead of running off the top edge.
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 352, bottom: 750, width: 352, height: 750 }) as DOMRect;
+
+    const anchorEl = document.createElement('button');
+    anchorEl.getBoundingClientRect = () =>
+      ({ top: 20, bottom: 40, left: 200, right: 300, width: 100, height: 20 }) as DOMRect;
+    document.body.appendChild(anchorEl);
+
+    render(
+      <RewritePopover
+        target={{ selection: 'some selected text', before: '', after: '' }}
+        docType="resume"
+        model="test-model"
+        onAccept={vi.fn()}
+        onClose={vi.fn()}
+        anchorEl={anchorEl}
+      />
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.style.top).toBe('8px');
+
+    document.body.removeChild(anchorEl);
+    Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
   });
 });
