@@ -81,6 +81,7 @@ impl AiProvider for OllamaCloudClient {
         super::ollama::ollama_research(app, &self.inner, model, company, role).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn research_salary(
         &self,
         app: &AppHandle,
@@ -88,9 +89,20 @@ impl AiProvider for OllamaCloudClient {
         role: &str,
         company: &str,
         location: &str,
+        country: &str,
+        currency: &str,
     ) -> AppResult<String> {
-        super::ollama::ollama_research_salary(app, &self.inner, model, role, company, location)
-            .await
+        super::ollama::ollama_research_salary(
+            app,
+            &self.inner,
+            model,
+            role,
+            company,
+            location,
+            country,
+            currency,
+        )
+        .await
     }
 
     async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {

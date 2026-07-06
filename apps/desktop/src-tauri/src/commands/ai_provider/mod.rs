@@ -351,6 +351,12 @@ pub trait AiProvider: Send + Sync {
     /// strictly validates it before anything reaches a prompt, so raw web text
     /// never does. Returns `""` (never an error) when the provider can't search
     /// or isn't configured — exactly like `research`. Default: no research.
+    ///
+    /// `country`/`currency` ground the report in the job's actual currency
+    /// (resolved client-side from its validated ISO country) — both empty when
+    /// the country is unknown, which preserves the unconstrained "local
+    /// currency for that location" behavior.
+    #[allow(clippy::too_many_arguments)]
     async fn research_salary(
         &self,
         _app: &AppHandle,
@@ -358,6 +364,8 @@ pub trait AiProvider: Send + Sync {
         _role: &str,
         _company: &str,
         _location: &str,
+        _country: &str,
+        _currency: &str,
     ) -> AppResult<String> {
         Ok(String::new())
     }

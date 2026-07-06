@@ -247,6 +247,7 @@ impl AiProvider for CliAgentClient {
         .unwrap_or_default())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn research_salary(
         &self,
         app: &AppHandle,
@@ -254,16 +255,18 @@ impl AiProvider for CliAgentClient {
         role: &str,
         company: &str,
         location: &str,
+        country: &str,
+        currency: &str,
     ) -> AppResult<String> {
         // Same best-effort contract as `research`: the agent's own web tools
         // search, `run_complete` degrades any failure to "" so generation
         // always proceeds.
-        let user = research::salary_user(role, company, location);
+        let user = research::salary_user(role, company, location, country, currency);
         Ok(run_complete(
             app,
             self.backend.as_ref(),
             model,
-            research::SALARY_SYSTEM,
+            &research::salary_system(currency),
             &user,
         )
         .await

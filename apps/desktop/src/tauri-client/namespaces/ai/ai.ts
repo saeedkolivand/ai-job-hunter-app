@@ -29,6 +29,8 @@ export const ai = {
     role,
     company,
     location,
+    country,
+    currency,
     provider,
     model,
     baseUrl,
@@ -36,10 +38,22 @@ export const ai = {
     role: string;
     company?: string;
     location?: string;
+    country?: string;
+    currency?: string;
     provider?: string;
     model?: string;
     baseUrl?: string;
-  }) => invoke('ai_lookup_salary', { role, company, location, provider, model, baseUrl }),
+  }) =>
+    invoke('ai_lookup_salary', {
+      role,
+      company,
+      location,
+      country,
+      currency,
+      provider,
+      model,
+      baseUrl,
+    }),
   pullModel: (model: string) => invoke('ai_pull_model', { model }),
   unloadModel: (model: string) => invoke('ai_unload_model', { model }),
   embed: (req: EmbedRequest) => invoke('ai_embed', { req }),
