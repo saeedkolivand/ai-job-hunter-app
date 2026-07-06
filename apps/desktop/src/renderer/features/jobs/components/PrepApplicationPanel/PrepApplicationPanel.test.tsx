@@ -275,7 +275,7 @@ describe('PrepApplicationPanel — run failure', () => {
   });
 });
 
-describe('PrepApplicationPanel — fast-fail reconciliation (no stuck spinner)', () => {
+describe('PrepApplicationPanel — useJob reconciliation fallback (no stuck spinner)', () => {
   it('reaches `error` via useJob reconciliation when the job already failed before any jobs:event arrived', async () => {
     // Simulates the race: a fast backend validation failure emits its
     // terminal `jobs:event` before `agent.run`'s IPC round-trip resolves, so
@@ -300,6 +300,57 @@ describe('PrepApplicationPanel — fast-fail reconciliation (no stuck spinner)',
     expect(screen.getByText('jobs.prep.runFailed')).toBeInTheDocument();
     expect(screen.getByText('Provider does not support tool calls.')).toBeInTheDocument();
     // Would still show the busy spinner if the machine were stuck in `planning`.
+    expect(screen.queryByText('jobs.prep.starting')).not.toBeInTheDocument();
+  });
+
+  it('reaches `done` via useJob reconciliation and renders the proposal when job.completed never arrived (agent:step already streamed it)', async () => {
+    openModal();
+    await clickStart();
+
+    // The `agent:step` channel is unaffected by the `jobs:event` race — the
+    // proposal narration already streamed in. `job.result` (read here) is a
+    // DIFFERENT field than the live event path's `event.data` — this is the
+    // regression check for that mapping.
+    stubbedJobRecord = {
+      id: 'job-1',
+      kind: 'ai.generate',
+      status: 'completed',
+      progress: 100,
+      payload: {},
+      result: { finalText: 'Proposal draft text.', steps: 5, stoppedReason: 'done' },
+      retries: 0,
+      maxRetries: 0,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    act(() => {
+      stepHandler?.(
+        turnStep({ step: 5, text: 'Proposal draft text.', tools: [], kind: 'proposal' })
+      );
+    });
+
+    expect(screen.getByText('jobs.prep.proposalTitle')).toBeInTheDocument();
+    expect(screen.getByText('Proposal draft text.')).toBeInTheDocument();
+    expect(screen.getByText('jobs.prep.stopped.done')).toBeInTheDocument();
+    expect(screen.queryByText('jobs.prep.starting')).not.toBeInTheDocument();
+  });
+
+  it('reaches `cancelled` via useJob reconciliation when the job was already cancelled before any jobs:event arrived', async () => {
+    stubbedJobRecord = {
+      id: 'job-1',
+      kind: 'ai.generate',
+      status: 'cancelled',
+      progress: 0,
+      payload: {},
+      retries: 0,
+      maxRetries: 0,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    openModal();
+    await clickStart();
+
+    expect(screen.getByText('jobs.prep.stopped.cancelled')).toBeInTheDocument();
     expect(screen.queryByText('jobs.prep.starting')).not.toBeInTheDocument();
   });
 });
