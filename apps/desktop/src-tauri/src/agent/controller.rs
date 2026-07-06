@@ -40,7 +40,17 @@ use super::tools::{to_specs, AgentTool, ToolContext, ToolKind};
 pub const MAX_AGENT_STEPS: usize = 12;
 /// Hard cap on the accumulated token estimate (~chars/4) across prompts +
 /// completions per run — stops a loop that keeps calling tools without converging.
-pub const MAX_AGENT_TOKENS: usize = 60_000;
+///
+/// Sized for the same "prep this application" flow as [`MAX_AGENT_STEPS`]: the
+/// drafted résumé is echoed through this accumulator TWICE — once as the
+/// `draft_resume` tool result, once again as the `save_resume` args turn — on top
+/// of the cover letter, match-résumé result, company research, and every fenced
+/// input. At [`super::tools::SAVED_RESUME_CAP`] (40k chars, ~10k tokens), that's
+/// ~20k tokens from the résumé echoes alone; 120k leaves clear headroom for that
+/// worst case plus the rest of the transcript, so a large résumé can't trip this
+/// budget and truncate the run before the final save/summary (the very failure
+/// mode raising [`MAX_AGENT_STEPS`] was meant to fix).
+pub const MAX_AGENT_TOKENS: usize = 120_000;
 
 /// Wall-clock ceiling on ONE provider turn or ONE read-tool call (a text-drafting
 /// tool makes its own provider request). Before this fix, the `tokio::select!`
