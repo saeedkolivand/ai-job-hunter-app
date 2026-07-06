@@ -86,6 +86,10 @@ interface Props {
   onFinish: () => void;
 }
 
+// Cap the rAF measure-retry below so a renamed/removed `data-tour-id` anchor
+// fails loud+cheap instead of busy-looping for the tour's lifetime.
+const MAX_MEASURE_ATTEMPTS = 60; // ~1s at 60fps — the anchor mounts well before this
+
 export function SpotlightTour({ onFinish }: Props) {
   const { t } = useTranslation();
   const [stepIdx, setStepIdx] = useState(0);
@@ -102,6 +106,7 @@ export function SpotlightTour({ onFinish }: Props) {
   useLayoutEffect(() => {
     let rafId: number | undefined;
     let observer: ResizeObserver | undefined;
+    let attempts = 0;
 
     const update = (el: Element) => {
       const r = el.getBoundingClientRect();
@@ -114,8 +119,14 @@ export function SpotlightTour({ onFinish }: Props) {
         update(el);
         observer = new ResizeObserver(() => update(el));
         observer.observe(el);
-      } else {
+      } else if (attempts < MAX_MEASURE_ATTEMPTS) {
+        attempts += 1;
         rafId = requestAnimationFrame(tryMeasure);
+      } else {
+        console.warn(
+          `SpotlightTour: anchor [data-tour-id="${current.tourId}"] never measured a real size — stopping retries`
+        );
+        if (el) update(el); // best-effort — likely zero-size, still better than the last step's rect
       }
     };
     tryMeasure();

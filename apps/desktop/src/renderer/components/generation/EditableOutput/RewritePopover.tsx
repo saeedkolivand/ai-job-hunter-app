@@ -36,7 +36,8 @@ interface RewritePopoverProps {
   locale?: string;
   /** Called with the accepted replacement text for the frozen range. */
   onAccept: (replacement: string) => void;
-  /** Called to dismiss the popover (Cancel / Escape / backdrop). */
+  /** Called to dismiss the popover (Cancel / Escape) — there is no backdrop in
+   *  either anchored-portal or inline mode, so outside-click doesn't dismiss. */
   onClose: () => void;
   /**
    * When set, the popover portals to `document.body` and fixed-positions itself

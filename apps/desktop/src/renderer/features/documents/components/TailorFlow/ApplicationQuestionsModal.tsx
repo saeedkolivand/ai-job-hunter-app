@@ -154,10 +154,21 @@ export function ApplicationQuestionsModal({
     const next = snapshot.slice(0, start) + replacement + snapshot.slice(end);
     setFrozen(null);
     pendingRewriteRef.current[id] = next; // synchronous — latest-wins sentinel
-    updateAnswer(id, next).catch(() => {
-      if (pendingRewriteRef.current[id] === next) revertAnswer(id, prev);
-      notify.error({ message: t('autopilot.apply.questions.rewriteSaveError') });
-    });
+    updateAnswer(id, next)
+      .then(() => {
+        // Still current — clear the sentinel so it doesn't linger forever.
+        if (pendingRewriteRef.current[id] === next) delete pendingRewriteRef.current[id];
+      })
+      .catch(() => {
+        // Only revert/toast if this save is still the current one — a
+        // superseded rewrite (a later accept already overwrote the sentinel)
+        // failing shouldn't surface a stale "save failed" toast or clobber
+        // the newer, already-displayed answer.
+        if (pendingRewriteRef.current[id] === next) {
+          revertAnswer(id, prev);
+          notify.error({ message: t('autopilot.apply.questions.rewriteSaveError') });
+        }
+      });
   };
 
   // Shared answer + Copy + Rewrite block — reused by predefined and custom rows.
