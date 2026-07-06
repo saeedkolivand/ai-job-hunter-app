@@ -25,7 +25,7 @@ interface AgentRunResult {
   stoppedReason: string;
 }
 
-type ChecklistKey = 'research' | 'match' | 'draft' | 'questions' | 'propose';
+type ChecklistKey = 'research' | 'match' | 'draft' | 'resume' | 'questions' | 'propose';
 
 interface ChecklistItem {
   key: ChecklistKey;
@@ -44,6 +44,7 @@ const CHECKLIST: ChecklistItem[] = [
   { key: 'research', tool: 'research_company' },
   { key: 'match', tool: 'match_resume' },
   { key: 'draft', tool: 'draft_cover_letter' },
+  { key: 'resume', tool: 'draft_resume' },
   { key: 'questions', tool: 'suggest_interview_questions' },
   { key: 'propose', tool: null },
 ];
@@ -83,9 +84,9 @@ function findLastMatch(steps: AgentStepEvent[], item: ChecklistItem): AgentStepE
 /**
  * "Prep this application" trigger + modal for a single job {@link Posting}.
  * Runs the agentic `agent.run` flow (Phase 2 — display-only, no write executes)
- * and streams its steps as a live checklist: research → match → draft →
- * questions → propose. Provider/model/résumé mirror the same selection
- * `ai_generate`/company-research already use.
+ * and streams its steps as a live checklist: research → match → draft cover
+ * letter → draft résumé → questions → propose. Provider/model/résumé mirror the
+ * same selection `ai_generate`/company-research already use.
  *
  * Capability gate: today there's no renderer-visible "does this provider
  * support tool calls" signal, so a non-tool-capable provider/model is only
