@@ -1,9 +1,10 @@
 import { Check, Loader2, Sparkles, X } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, Input, Tag, transition, useFocusTrap } from '@ajh/ui';
+import { Button, cn, Input, Tag, transition, useFocusTrap } from '@ajh/ui';
 
 import { type RewriteDocType, rewriteSelection } from '@/lib/generate';
 
@@ -12,6 +13,9 @@ const PRESETS = ['shorten', 'expand', 'rephrase', 'impact', 'grammar'] as const;
 
 /** Abort a stalled rewrite after this many ms so the popover never wedges. */
 const REWRITE_TIMEOUT_MS = 60_000;
+/** Matches the panel's `w-[22rem]` — clamps left-edge overflow when the trigger
+ *  sits near a viewport edge (anchored-portal mode only). */
+const POPOVER_WIDTH_PX = 352;
 type Preset = (typeof PRESETS)[number];
 
 export interface RewriteTarget {
@@ -32,8 +36,16 @@ interface RewritePopoverProps {
   locale?: string;
   /** Called with the accepted replacement text for the frozen range. */
   onAccept: (replacement: string) => void;
-  /** Called to dismiss the popover (Cancel / Escape / backdrop). */
+  /** Called to dismiss the popover (Cancel / Escape) — there is no backdrop in
+   *  either anchored-portal or inline mode, so outside-click doesn't dismiss. */
   onClose: () => void;
+  /**
+   * When set, the popover portals to `document.body` and fixed-positions itself
+   * below-right of this trigger element instead of rendering inline. Use when the
+   * inline placement would be clipped by an `overflow-hidden`/`overflow-y-auto`
+   * ancestor (e.g. inside a `ModalShell`) or needs to sit above a modal's z-index.
+   */
+  anchorEl?: HTMLElement | null;
 }
 
 /**
@@ -54,6 +66,7 @@ export function RewritePopover({
   locale = 'en',
   onAccept,
   onClose,
+  anchorEl,
 }: RewritePopoverProps) {
   const { t } = useTranslation();
   const [instruction, setInstruction] = useState('');
@@ -66,6 +79,42 @@ export function RewritePopover({
   // into the page behind it. `useFocusTrap` also auto-focuses the first focusable
   // element; we still explicitly focus the instruction field below.
   const trapRef = useFocusTrap(true);
+  // A dedicated, locally-owned ref to the panel element (separate from
+  // `trapRef`) so measuring its height doesn't depend on `useFocusTrap`'s
+  // returned ref identity — merged onto the same node via the callback ref below.
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  // The popover's own rendered height — it varies with content (streaming
+  // result, error text, …), so it can't be assumed static. Used to decide
+  // whether the panel fits below the trigger or must flip above it.
+  const [panelHeight, setPanelHeight] = useState<number | null>(null);
+
+  // Anchored-portal mode only: measure the trigger on open, and re-measure on
+  // scroll/resize — the caller's scrollable ancestor (e.g. a modal body) can move
+  // the trigger while this fixed-positioned popover stays put otherwise. Also
+  // track the panel's own height via ResizeObserver so a later content change
+  // (e.g. the streaming result appearing) can re-trigger the fit check below.
+  useLayoutEffect(() => {
+    if (!anchorEl) return;
+    const measureAnchor = () => setAnchorRect(anchorEl.getBoundingClientRect());
+    measureAnchor();
+    window.addEventListener('scroll', measureAnchor, true);
+    window.addEventListener('resize', measureAnchor);
+
+    const panel = panelRef.current;
+    let observer: ResizeObserver | undefined;
+    if (panel) {
+      setPanelHeight(panel.getBoundingClientRect().height);
+      observer = new ResizeObserver(() => setPanelHeight(panel.getBoundingClientRect().height));
+      observer.observe(panel);
+    }
+
+    return () => {
+      window.removeEventListener('scroll', measureAnchor, true);
+      window.removeEventListener('resize', measureAnchor);
+      observer?.disconnect();
+    };
+  }, [anchorEl]);
 
   // The instruction that produced the current result — lets Regenerate re-run the
   // same instruction without the user retyping it.
@@ -154,9 +203,36 @@ export function RewritePopover({
 
   const canAccept = !streaming && !!result.trim() && !error;
 
-  return (
+  // Anchored-portal mode: fixed-position below-right of the trigger, clamped so
+  // the (fixed-width) panel never runs off the left edge, and flipped ABOVE the
+  // trigger when it wouldn't fit below (e.g. Rewrite opened on a question near
+  // the bottom of a scrollable, height-capped modal) — clamped so it also never
+  // runs off the top edge. `visibility: hidden` (not `display: none`) until the
+  // first measurement lands keeps the panel laid out (so its real height can be
+  // read) without a visible flash — it's gone by paint since `useLayoutEffect`
+  // flushes `setAnchorRect`/`setPanelHeight` before the browser paints.
+  const anchoredStyle: React.CSSProperties | undefined = anchorEl
+    ? anchorRect
+      ? {
+          position: 'fixed',
+          top:
+            panelHeight !== null && anchorRect.bottom + panelHeight + 4 > window.innerHeight - 8
+              ? Math.max(8, anchorRect.top - panelHeight - 4)
+              : anchorRect.bottom + 4,
+          left: Math.min(
+            Math.max(8, anchorRect.right - POPOVER_WIDTH_PX),
+            window.innerWidth - POPOVER_WIDTH_PX - 8
+          ),
+        }
+      : { position: 'fixed', top: 0, left: 0, visibility: 'hidden' }
+    : undefined;
+
+  const popover = (
     <motion.div
-      ref={trapRef as React.RefObject<HTMLDivElement>}
+      ref={(node: HTMLDivElement | null) => {
+        trapRef.current = node;
+        panelRef.current = node;
+      }}
       role="dialog"
       aria-modal="true"
       aria-label={t('aiGenerate.rewrite.title')}
@@ -164,7 +240,11 @@ export function RewritePopover({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 6, scale: 0.98 }}
       transition={transition.fast}
-      className="w-[22rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-[var(--border-clear)] bg-secondary shadow-2xl"
+      style={anchoredStyle}
+      className={cn(
+        'w-[22rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-[var(--border-clear)] bg-secondary shadow-2xl',
+        anchorEl && 'z-toast'
+      )}
     >
       <div className="flex items-center justify-between border-b border-[var(--border-clear)] px-3 py-2">
         <span className="flex items-center gap-1.5 text-[11px] font-medium text-foreground/70">
@@ -286,4 +366,6 @@ export function RewritePopover({
       </div>
     </motion.div>
   );
+
+  return anchorEl ? createPortal(popover, document.body) : popover;
 }
