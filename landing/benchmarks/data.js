@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783355596008,
+  "lastUpdate": 1783366076872,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2681,6 +2681,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 291357,
             "range": "± 986",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f7765e0fee720fbb78f16f77d7f157ce911bea2d",
+          "message": "fix: ground salary-lookup currency in the job's country (#560)\n\n* fix: ground salary-lookup currency in the job's country\n\nThe web-lookup salary path let the model freely choose the currency\n(SALARY_SYSTEM said \"use the local currency for that location\" and the user\nprompt dropped the location clause entirely when it was blank), so a job in\nGermany with a weak/empty location string rendered USD or a hallucinated CAD\nrange instead of EUR.\n\nGround the currency in the job's validated ISO country end-to-end:\n- add countryToCurrency(iso2) in @ajh/prompts (ISO-3166 alpha-2 -> ISO-4217,\n  covering the Eurozone incl. HR/BG plus the common markets), beside\n  countryToMarket.\n- thread the job country + resolved expected currency from the answer call\n  site through lookupSalaryRange -> the lookupSalary IPC contract ->\n  ai_lookup_salary -> SalaryResearch::enrich -> the shared research.rs prompt\n  builders, which now pin the currency authoritatively (\"the role is based in\n  {country}; report the range in {currency}\") across all provider fan-out\n  builders + the Ollama synth path. When the country is unknown the builders\n  fall back byte-for-byte to the prior unconstrained wording.\n- defense-in-depth: reconcile_expected_currency DROPS a result whose currency\n  still doesn't match the expected one (returns None -> graceful no-range),\n  rather than relabeling numbers it can't convert. A stale wrong-currency cache\n  entry falls through to a fresh grounded fetch. The scraped-salary range\n  (PR #551) still takes precedence.\n\nReviewed by ai-provider-expert (provider abstraction + contract parity intact)\nand job-match-expert (all currency mappings correct; the relabel->drop backstop\nwas its MEDIUM, now fixed). gen:ipc:check clean; typecheck 12/12; 365 @ajh/prompts\ntests + 3111 renderer tests; cargo fmt + clippy (-D warnings) + build +\narchitecture (11) green. Rust unit tests run in CI.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: address review findings on salary currency grounding\n\nFollow-ups from the @claude review of PR #560:\n- include the expected currency in the salary cache key, so two postings that\n  share role/company/location but differ in country (e.g. two Remote listings)\n  no longer collide, and an unknown-currency read can't return a currency a\n  different known-country job cached. reconcile_expected_currency stays as the\n  self-heal for a stale wrong value under the same key.\n- gate the Ollama synth/search-query country interpolation on a resolved\n  currency (mirroring the native path), so the two paths agree on how much they\n  trust the raw country string.\n- extend COUNTRY_TO_CURRENCY with HU->HUF, RO->RON and the euro microstates\n  SM/VA/AD->EUR (previously fell back to unconstrained, never wrong).\n\n@ajh/prompts 365 tests + new cache-key/Ollama-gating unit tests; typecheck +\neslint clean; cargo fmt + clippy (-D warnings) + build + architecture (11)\ngreen. Rust unit tests run in CI.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-06T21:19:17+02:00",
+          "tree_id": "bc389bc6eef5ec8aed2b546cde811640e0770efa",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/f7765e0fee720fbb78f16f77d7f157ce911bea2d"
+        },
+        "date": 1783366076331,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1880890,
+            "range": "± 136048",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2503696,
+            "range": "± 19557",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 292485,
+            "range": "± 8814",
             "unit": "ns/iter"
           }
         ]
