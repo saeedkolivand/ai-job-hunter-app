@@ -44,7 +44,14 @@ impl AiProvider for OllamaCloudClient {
     }
 
     fn capabilities(&self, model: &str) -> ModelCapabilities {
-        self.inner.capabilities(model)
+        // The inner client's `id` is `OllamaCloud`, so its own
+        // `supports_web_search` reads `false` (only native OpenAI passes that
+        // check) — but Ollama Cloud DOES search, via the Ollama Web Search API
+        // (overridden below), so force it back to `true` here.
+        ModelCapabilities {
+            supports_web_search: true,
+            ..self.inner.capabilities(model)
+        }
     }
 
     async fn chat_stream(
@@ -105,6 +112,18 @@ impl AiProvider for OllamaCloudClient {
         .await
     }
 
+    async fn research_answer(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        question: &str,
+        role: &str,
+        company: &str,
+    ) -> AppResult<String> {
+        super::ollama::ollama_research_answer(app, &self.inner, model, question, role, company)
+            .await
+    }
+
     async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
         self.inner.embed(app, model, text).await
     }
@@ -136,5 +155,21 @@ impl AiProvider for OllamaCloudClient {
         self.inner
             .chat_with_tools(app, model, messages, tools, temperature)
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression guard: the inner `OpenAiClient`'s own `supports_web_search`
+    /// only passes for `ProviderId::OpenAi`, so a naive delegation would
+    /// wrongly report `false` for Ollama Cloud — which DOES search via the
+    /// Ollama Web Search API (see `research_answer` above). The override in
+    /// `capabilities()` must force it back to `true`.
+    #[test]
+    fn capabilities_reports_web_search_support_despite_the_inner_openai_compatible_id() {
+        let caps = OllamaCloudClient::new().capabilities("gpt-oss:120b");
+        assert!(caps.supports_web_search);
     }
 }

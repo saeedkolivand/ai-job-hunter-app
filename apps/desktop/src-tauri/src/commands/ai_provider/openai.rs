@@ -315,6 +315,10 @@ impl AiProvider for OpenAiClient {
             supports_tools: true,
             supports_json_mode: true,
             supports_embeddings: true,
+            // Only native OpenAI exposes the `web_search` tool; any
+            // OpenAI-compatible gateway (LM Studio, OpenRouter, …) can't be
+            // assumed to — see `supports_web_search()`.
+            supports_web_search: self.supports_web_search(),
             token_param: if reasoning {
                 TokenParam::MaxCompletionTokens
             } else {
@@ -491,6 +495,23 @@ impl AiProvider for OpenAiClient {
             model,
             &research::salary_system(currency),
             &research::salary_user(role, company, location, country, currency),
+        )
+        .await
+    }
+
+    async fn research_answer(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        question: &str,
+        role: &str,
+        company: &str,
+    ) -> AppResult<String> {
+        self.web_search_complete(
+            app,
+            model,
+            research::ANSWER_SYSTEM,
+            &research::answer_user(question, role, company),
         )
         .await
     }
@@ -974,5 +995,22 @@ mod tests {
                 "{other:?} must not pass the web_search gate"
             );
         }
+    }
+
+    /// `ModelCapabilities::supports_web_search` (what `ai_research_answer` gates
+    /// the daily-budget charge on) must mirror the private gate predicate above —
+    /// this is the field a caller actually reads.
+    #[test]
+    fn capabilities_supports_web_search_mirrors_the_gate() {
+        assert!(
+            OpenAiClient::new(ProviderId::OpenAi, None)
+                .capabilities("gpt-4o")
+                .supports_web_search
+        );
+        assert!(
+            !OpenAiClient::new(ProviderId::OpenAiCompatible, None)
+                .capabilities("some-model")
+                .supports_web_search
+        );
     }
 }

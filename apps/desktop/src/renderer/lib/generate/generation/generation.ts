@@ -277,6 +277,36 @@ export async function researchCompany(
 }
 
 /**
+ * Best-effort, per-question web-search reference notes for an application
+ * answer — opt-in sibling of {@link researchCompany}, scoped to a single
+ * question's topic (combines it with the role + company for relevance)
+ * rather than a general company overview. Any failure or a provider that
+ * can't search degrades to `''` so the answer still generates exactly as
+ * without web search — this call must never block or fail generation.
+ */
+export async function researchAnswer(
+  question: string,
+  role: string,
+  company: string,
+  model: string
+): Promise<string> {
+  try {
+    const { activeProvider, providerSettings } = resolveActiveProvider(model);
+    const res = await getClient().ai.researchAnswer({
+      question,
+      role: role.trim() || undefined,
+      company: company.trim() || undefined,
+      provider: activeProvider,
+      model: providerSettings?.model || model,
+      baseUrl: providerSettings?.baseUrl,
+    });
+    return res ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Best-effort web-grounded market salary-range lookup for the salary
  * application question (C2). Routes through the backend enricher — the active
  * provider's own web search, validated and cached. Any failure, timeout, or a
@@ -401,6 +431,9 @@ export async function generateApplicationAnswer(params: {
   meta: GenerationMeta;
   model: string;
   companyBrief?: string;
+  /** Opt-in per-question web-search notes (see {@link researchAnswer}); fenced
+   *  separately from `companyBrief` and never a source of candidate facts. */
+  webSearchNotes?: string;
   signal?: AbortSignal;
   onToken?: (tok: string) => void;
   /** This question's registry `guidance` (see `ApplicationQuestion.guidance`),
@@ -418,6 +451,7 @@ export async function generateApplicationAnswer(params: {
     meta,
     model,
     companyBrief = '',
+    webSearchNotes = '',
     signal,
     onToken,
     guidance,
@@ -440,6 +474,7 @@ export async function generateApplicationAnswer(params: {
     jobAd,
     meta,
     companyBrief,
+    webSearchNotes,
     target: profile,
     market,
     applicant,

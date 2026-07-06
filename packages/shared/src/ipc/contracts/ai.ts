@@ -66,6 +66,27 @@ export interface AiContract {
     baseUrl?: string;
   }): Promise<SalaryRange | null>;
 
+  /**
+   * Best-effort, per-question web-search reference notes for an application
+   * answer — opt-in sibling of `researchCompany`, scoped to a single
+   * question's topic (combines it with the role + company for relevance)
+   * rather than a general company brief. Reuses the same backend enricher
+   * channel: the active provider's own web search (native tool, or the Ollama
+   * Web Search API), gated on the provider's actual search support. Degrades
+   * gracefully — an empty string, never an error, when the provider can't
+   * search or the search fails, so answer generation always proceeds exactly
+   * as without web search. The notes are reference context only; the prompt
+   * layer fences them as untrusted and never lets them write the answer.
+   */
+  researchAnswer(req: {
+    question: string;
+    role?: string;
+    company?: string;
+    provider?: string;
+    model?: string;
+    baseUrl?: string;
+  }): Promise<string>;
+
   pullModel(model: string): Promise<{ jobId: string }>;
 
   unloadModel(model: string): Promise<void>;

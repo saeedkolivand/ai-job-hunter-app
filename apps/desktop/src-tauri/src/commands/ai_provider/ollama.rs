@@ -125,6 +125,9 @@ impl AiProvider for OllamaClient {
             supports_tools: ollama_supports_tools(model),
             supports_json_mode: true,
             supports_embeddings: true,
+            // Attempts research via the Ollama Web Search API (account-key
+            // gated at call time, not statically known here).
+            supports_web_search: true,
             token_param: TokenParam::NumPredict,
         }
     }
@@ -219,6 +222,17 @@ impl AiProvider for OllamaClient {
         currency: &str,
     ) -> AppResult<String> {
         ollama_research_salary(app, self, model, role, company, location, country, currency).await
+    }
+
+    async fn research_answer(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        question: &str,
+        role: &str,
+        company: &str,
+    ) -> AppResult<String> {
+        ollama_research_answer(app, self, model, question, role, company).await
     }
 
     async fn embed(&self, _app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
@@ -554,6 +568,30 @@ pub async fn ollama_research_salary(
             &user,
             Some(0.2),
         )
+        .await
+}
+
+/// Application-answer sibling of [`ollama_research`]: same search-then-
+/// synthesize shape, scoped to a single application question (see
+/// `research::answer_search_query`) instead of a general company brief.
+/// Returns `""` when the key is missing or the search yields nothing, so the
+/// lookup degrades gracefully.
+pub async fn ollama_research_answer(
+    app: &AppHandle,
+    provider: &dyn AiProvider,
+    model: &str,
+    question: &str,
+    role: &str,
+    company: &str,
+) -> AppResult<String> {
+    let query = research::answer_search_query(question, role, company);
+    let results = ollama_search(app, model, &query).await;
+    if results.is_empty() {
+        return Ok(String::new());
+    }
+    let user = research::answer_synth_user(question, role, company, &results);
+    provider
+        .complete(app, model, research::ANSWER_SYNTH_SYSTEM, &user, Some(0.2))
         .await
 }
 
