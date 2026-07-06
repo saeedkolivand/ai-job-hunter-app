@@ -103,6 +103,14 @@ describe('buildDefaults()', () => {
     // every scraped posting is eligible unless the user raises the threshold.
     expect(buildDefaults().minMatchScore).toBe(0);
   });
+
+  it('defaults assistant (Phase 4 AI notes) to false with no provider snapshot', () => {
+    const state = buildDefaults();
+    expect(state.assistant).toBe(false);
+    expect(state.assistantProvider).toBeUndefined();
+    expect(state.assistantModel).toBeUndefined();
+    expect(state.assistantBaseUrl).toBeUndefined();
+  });
 });
 
 // ── autopilotToWizardState ────────────────────────────────────────────────────
@@ -189,6 +197,26 @@ describe('autopilotToWizardState()', () => {
     const state = autopilotToWizardState(ap);
     expect(state.keywords).toBe('');
   });
+
+  it('round-trips the assistant flag + provider snapshot (Phase 4 AI notes)', () => {
+    const ap: Autopilot = {
+      ...BASE_AUTOPILOT,
+      assistant: true,
+      assistantProvider: 'anthropic',
+      assistantModel: 'claude',
+      assistantBaseUrl: undefined,
+    };
+    const state = autopilotToWizardState(ap);
+    expect(state.assistant).toBe(true);
+    expect(state.assistantProvider).toBe('anthropic');
+    expect(state.assistantModel).toBe('claude');
+    expect(state.assistantBaseUrl).toBeUndefined();
+  });
+
+  it('falls back to assistant: false when absent on the Autopilot (legacy record)', () => {
+    const state = autopilotToWizardState(BASE_AUTOPILOT);
+    expect(state.assistant).toBe(false);
+  });
 });
 
 // ── wizardStateToPayload ──────────────────────────────────────────────────────
@@ -206,6 +234,7 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     keywords: 'rust, tokio',
     excludeKeywords: 'php',
     resumeText: 'my resume',
+    assistant: false,
     schedule: 'daily',
     scheduleHour: 9,
     scheduleMinute: 30,
@@ -231,6 +260,7 @@ describe('wizardStateToPayload()', () => {
         excludeKeywords: ['php'],
       },
       resumeText: 'my resume',
+      assistant: false,
       schedule: 'daily',
       scheduleHour: 9,
       scheduleMinute: 30,
@@ -347,6 +377,38 @@ describe('wizardStateToPayload()', () => {
       // The || undefined guard collapses '' to undefined so it is not forwarded.
       const payload = wizardStateToPayload(makeForm({ countryCode: '' }));
       expect(payload.target.countryCode).toBeUndefined();
+    });
+  });
+
+  describe('assistant (Phase 4 AI notes) snapshot forwarding', () => {
+    it('forwards the provider snapshot when assistant is enabled', () => {
+      const payload = wizardStateToPayload(
+        makeForm({
+          assistant: true,
+          assistantProvider: 'openai',
+          assistantModel: 'gpt-4o',
+          assistantBaseUrl: 'https://api.example.com',
+        })
+      );
+      expect(payload.assistant).toBe(true);
+      expect(payload.assistantProvider).toBe('openai');
+      expect(payload.assistantModel).toBe('gpt-4o');
+      expect(payload.assistantBaseUrl).toBe('https://api.example.com');
+    });
+
+    it('clears the provider snapshot when assistant is disabled, even if the form still carries stale values', () => {
+      const payload = wizardStateToPayload(
+        makeForm({
+          assistant: false,
+          assistantProvider: 'openai',
+          assistantModel: 'gpt-4o',
+          assistantBaseUrl: 'https://api.example.com',
+        })
+      );
+      expect(payload.assistant).toBe(false);
+      expect(payload.assistantProvider).toBeUndefined();
+      expect(payload.assistantModel).toBeUndefined();
+      expect(payload.assistantBaseUrl).toBeUndefined();
     });
   });
 });

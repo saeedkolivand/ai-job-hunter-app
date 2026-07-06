@@ -219,6 +219,75 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         ),
     );
 
+    // Phase 4 (opt-in, headless, READ-ONLY): after the keyword rank, attach a
+    // short AI-reasoned note to the top NEW matches. Bounded (≤ ASSISTANT_NOTES_MAX
+    // provider calls, per-provider daily ceiling, cancellable mid-call, AND an
+    // overall wall-clock timeout — see `generate_assistant_notes`) and best-effort —
+    // a provider/config error just means no notes, never a failed run. `prior_urls`
+    // (this record's pre-run found jobs) lets the step skip re-surfaced jobs, whose
+    // notes the store merge preserves for free, so a steady-state run makes zero
+    // provider calls. No-op unless `autopilot.assistant` is set. Runs BEFORE
+    // `record_run`/`on_new_jobs` below, so the wall-clock timeout is what keeps a
+    // hung provider from delaying the user-facing "new jobs" notification.
+    let prior_urls: std::collections::HashSet<&str> = autopilot
+        .found_jobs
+        .iter()
+        .map(|j| j.url.as_str())
+        .collect();
+
+    // Resolve the provider SNAPSHOT persisted on the record through the SAME
+    // centralized provider layer `ai_generate` uses. Missing/unknown/invalid →
+    // `generate_assistant_notes` skips gracefully (the discovery run still
+    // completes normally). Resolved HERE (the L3 command, which already holds
+    // the `AppHandle`) and passed down already-resolved so `autopilot_helpers`
+    // (L2) never reaches up into `crate::commands`.
+    //
+    // SECURITY (MEDIUM-4): `assistant_base_url` is renderer-provenance — there is
+    // NO backend-side store to re-derive a custom OpenAI-compatible endpoint from
+    // at run time. The only persisted provider+base_url on the backend today is
+    // the UNRELATED embeddings config (`documents::mod.rs`'s `embedding_config`
+    // table) — a different provider slot (a user can embed on one provider and
+    // chat on another), so reusing it here would silently target the wrong
+    // endpoint, not fix the trust boundary. Trusting this snapshot every scheduled
+    // tick does mean a one-time renderer compromise / bad IPC write becomes a
+    // DURABLE, unattended egress target, wider than the interactive `ai_generate`
+    // path (there, a compromised renderer has the same capability, but only for as
+    // long as it stays compromised AND the app is running that request).
+    // `Completer::resolve`/`ProviderId::parse` still validate provider+model are
+    // known/well-formed; neither can validate a custom base_url is genuinely the
+    // user's endpoint. Accepted for now — never breaks a custom OpenAI-compatible
+    // endpoint, and the blast radius (an already-configured provider call) is the
+    // same class the user already trusts interactively. The durable fix is a
+    // backend-owned active-provider store the renderer syncs into (deferred —
+    // would also retire the embeddings config above as the only backend-side slot).
+    // Gated on the opt-in flag itself (not the fuller `notes_enabled`, which also
+    // needs a résumé) so the vast majority of autopilots — AI notes OFF — never pay
+    // for a resolve attempt or its log line; only an assistant-enabled autopilot with
+    // a bad/missing provider logs the reason a user needs to debug "notes never run".
+    let completer = if autopilot.assistant {
+        crate::pipeline::Completer::resolve(
+            &app,
+            autopilot.assistant_provider.as_deref(),
+            autopilot.assistant_model.as_deref(),
+            autopilot.assistant_base_url.clone(),
+        )
+        .inspect_err(|e| log::info!("[autopilot] AI notes skipped: no usable provider ({e})"))
+        .ok()
+    } else {
+        None
+    };
+    let limiter = app.state::<Arc<crate::limits::Limiter>>().inner().clone();
+
+    let notes_generated = crate::autopilot_helpers::generate_assistant_notes(
+        completer.as_ref(),
+        limiter,
+        &autopilot,
+        &mut found_jobs,
+        &prior_urls,
+        &cancel_token,
+    )
+    .await;
+
     // Bail cleanly if the run was cancelled (tray/UI) any time before we commit
     // — don't record results or fire a "new jobs" notification for an aborted
     // run. `cancel(job_id)` flips the token this run registered (engine reuses,
@@ -241,7 +310,15 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
 
     // Surface genuinely-new finds while the user is away: a permission-gated
     // notification + a "New jobs: N" tray counter that jumps back to this run.
-    crate::tray::on_new_jobs(&app, &autopilot_id, &autopilot.name, new_count);
+    // `notes_generated` (≤ new_count, since only new matches are annotated) lets
+    // the banner mention how many carry an AI note.
+    crate::tray::on_new_jobs(
+        &app,
+        &autopilot_id,
+        &autopilot.name,
+        new_count,
+        notes_generated,
+    );
 
     engine.unregister_token(&job_id).await;
 
@@ -349,6 +426,9 @@ pub(crate) fn build_found_job(p: &JobPosting, resume: &str, found_at: u64) -> Fo
         // on_item-streamed one `ScraperEngine::run_one` attaches trust to) —
         // compute it directly here, same pure call.
         trust: Some(crate::scraping::trust::assess_trust(&p.url, &p.company)),
+        // Set later by the AI-notes step (`generate_assistant_notes`) for the top
+        // matches when the autopilot opted in; `None` on every fresh build.
+        assistant_notes: None,
     }
 }
 
@@ -511,6 +591,7 @@ mod tests {
             is_new: false,
             applied: false,
             trust: None,
+            assistant_notes: None,
         }
     }
 

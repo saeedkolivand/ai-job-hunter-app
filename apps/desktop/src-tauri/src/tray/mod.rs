@@ -200,7 +200,13 @@ pub fn dispatch_menu(app: &AppHandle, event: &str, payload: serde_json::Value) {
 /// which autopilot to focus when the user clicks it. The banner policy is
 /// [`OsBanner::Always`]: a background run finishing warrants the OS nudge even
 /// while the window is focused.
-pub fn on_new_jobs(app: &AppHandle, autopilot_id: &str, autopilot_name: &str, new_count: u32) {
+pub fn on_new_jobs(
+    app: &AppHandle,
+    autopilot_id: &str,
+    autopilot_name: &str,
+    new_count: u32,
+    notes_count: usize,
+) {
     if new_count == 0 {
         return;
     }
@@ -214,7 +220,7 @@ pub fn on_new_jobs(app: &AppHandle, autopilot_id: &str, autopilot_name: &str, ne
         NewNotification {
             kind: "autopilot.new_jobs".to_string(),
             title: autopilot_name.to_string(),
-            body: new_jobs_body(autopilot_name, new_count),
+            body: new_jobs_body(autopilot_name, new_count, notes_count),
             route: Some(NotificationRoute {
                 to: "/autopilot".to_string(),
                 search: Some(search),
@@ -302,11 +308,17 @@ pub fn emit_focus(app: &AppHandle, autopilot_id: &str) {
 
 /// The human "N new job(s) for …" notification body. Extracted from the old
 /// `notify` so the wording is unchanged after the move to `push_and_notify`.
-fn new_jobs_body(name: &str, count: u32) -> String {
-    if count == 1 {
+fn new_jobs_body(name: &str, count: u32, notes: usize) -> String {
+    let base = if count == 1 {
         format!("1 new job for “{name}”")
     } else {
         format!("{count} new jobs for “{name}”")
+    };
+    // When the autopilot's AI notes ran, tell the user how many finds carry one.
+    if notes > 0 {
+        format!("{base} ({notes} with AI notes)")
+    } else {
+        base
     }
 }
 

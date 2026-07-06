@@ -8,6 +8,7 @@ import {
   Pencil,
   Play,
   RotateCcw,
+  Sparkles,
   Trash2,
   Wand2,
 } from 'lucide-react';
@@ -392,62 +393,89 @@ export function AutopilotCard({
                     key={`${job.url}-${i}`}
                     data-job-url={job.url}
                     className={cn(
-                      'flex items-center gap-2 px-3 py-2 transition-colors hover:bg-muted',
+                      'flex flex-col gap-1 px-3 py-2 transition-colors hover:bg-muted',
                       highlightedUrl === job.url && 'ring-2 ring-inset ring-brand/60'
                     )}
                   >
-                    <Button
-                      variant="unstyled"
-                      type="button"
-                      onClick={() => void handleJobClick(job)}
-                      title={t('autopilot.viewJob')}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="truncate text-[11px] text-foreground/80">
-                            {job.title}
-                          </span>
-                          {job.isNew && (
-                            <span className="shrink-0 rounded-full bg-brand/15 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-brand-soft">
-                              {t('autopilot.badge.new')}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="unstyled"
+                        type="button"
+                        onClick={() => void handleJobClick(job)}
+                        title={t('autopilot.viewJob')}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate text-[11px] text-foreground/80">
+                              {job.title}
                             </span>
-                          )}
-                          {job.applied && (
-                            <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-emerald-400/15 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-emerald-300">
-                              <Check size={8} /> {t('autopilot.badge.applied')}
-                            </span>
-                          )}
-                          {viewedUrls.has(job.url) && (
-                            <Tag color="blue" icon={<Eye size={7} />} className={STATUS_TAG}>
-                              {t('jobs.viewed')}
-                            </Tag>
-                          )}
-                          {/* interactive=false: this whole row is already a <Button> (handleJobClick) —
-                              a nested focusable popover trigger would be invalid HTML (button-in-button). */}
-                          <TrustBadge
-                            trust={job.trust}
-                            className={STATUS_TAG}
-                            interactive={false}
-                          />
+                            {job.isNew && (
+                              <span className="shrink-0 rounded-full bg-brand/15 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-brand-soft">
+                                {t('autopilot.badge.new')}
+                              </span>
+                            )}
+                            {job.applied && (
+                              <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-emerald-400/15 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-emerald-300">
+                                <Check size={8} /> {t('autopilot.badge.applied')}
+                              </span>
+                            )}
+                            {viewedUrls.has(job.url) && (
+                              <Tag color="blue" icon={<Eye size={7} />} className={STATUS_TAG}>
+                                {t('jobs.viewed')}
+                              </Tag>
+                            )}
+                            {/* interactive=false: this whole row is already a <Button> (handleJobClick) —
+                                a nested focusable popover trigger would be invalid HTML (button-in-button). */}
+                            <TrustBadge
+                              trust={job.trust}
+                              className={STATUS_TAG}
+                              interactive={false}
+                            />
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[10px] text-foreground/40">
+                            <span className="truncate">{job.company}</span>
+                            {job.location && <span className="truncate">· {job.location}</span>}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1.5 text-[10px] text-foreground/40">
-                          <span className="truncate">{job.company}</span>
-                          {job.location && <span className="truncate">· {job.location}</span>}
+                        {typeof job.score === 'number' && (
+                          <MatchBand value={job.score} variant="coverage" />
+                        )}
+                        <ExternalLink size={11} className="shrink-0 text-foreground/25" />
+                      </Button>
+                      <Button
+                        onClick={() => onApply(job)}
+                        title={t('autopilot.applyJob')}
+                        className="flex shrink-0 items-center gap-1 rounded-lg border-transparent bg-brand/10 px-2 py-1 text-[10px] font-medium text-brand-soft transition-colors hover:bg-brand/20 h-auto"
+                      >
+                        <Wand2 size={10} /> {t('autopilot.applyJob')}
+                      </Button>
+                    </div>
+                    {/* LLM-generated — always rendered as plain text, never markdown/HTML.
+                        Visible "AI note" label (not just the aria-label) so sighted users get
+                        the same "AI-generated, not fact" cue as the icon-only Sparkles gives
+                        screen readers. Clamped to 2 lines — a verbose note gets a `title`
+                        tooltip for the full text instead of dominating the compact row. */}
+                    {job.assistantNotes && (
+                      <div
+                        role="note"
+                        aria-label={t('autopilot.aiNote')}
+                        className="ml-0.5 flex items-start gap-1.5 rounded-lg border border-brand/15 bg-brand/5 px-2.5 py-1.5"
+                      >
+                        <Sparkles size={10} className="mt-0.5 shrink-0 text-brand-soft" />
+                        <div className="min-w-0 flex-1">
+                          <span className="block text-fine-print font-semibold uppercase tracking-wide text-brand-soft">
+                            {t('autopilot.aiNote')}
+                          </span>
+                          <p
+                            title={job.assistantNotes}
+                            className="line-clamp-2 text-[10px] leading-relaxed text-foreground/70"
+                          >
+                            {job.assistantNotes}
+                          </p>
                         </div>
                       </div>
-                      {typeof job.score === 'number' && (
-                        <MatchBand value={job.score} variant="coverage" />
-                      )}
-                      <ExternalLink size={11} className="shrink-0 text-foreground/25" />
-                    </Button>
-                    <Button
-                      onClick={() => onApply(job)}
-                      title={t('autopilot.applyJob')}
-                      className="flex shrink-0 items-center gap-1 rounded-lg border-transparent bg-brand/10 px-2 py-1 text-[10px] font-medium text-brand-soft transition-colors hover:bg-brand/20 h-auto"
-                    >
-                      <Wand2 size={10} /> {t('autopilot.applyJob')}
-                    </Button>
+                    )}
                   </div>
                 ))}
               </div>
