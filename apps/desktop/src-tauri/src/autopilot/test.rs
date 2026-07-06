@@ -39,6 +39,58 @@ fn test_autopilot_filter_serialization() {
 }
 
 #[test]
+fn legacy_record_without_assistant_fields_defaults_to_disabled() {
+    // An autopilots.json written before Phase 4 has no `assistant*` keys — it must
+    // load with AI notes OFF and no provider snapshot (opt-in, zero surprise).
+    let json = serde_json::json!({
+        "_id": "ap1",
+        "name": "Legacy",
+        "status": "active",
+        "target": { "boards": ["linkedin"], "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "daily",
+        "totalFound": 0,
+        "totalApplied": 0,
+        "createdAt": 1,
+        "updatedAt": 1
+    });
+    let ap: Autopilot = serde_json::from_value(json).expect("legacy record must deserialize");
+    assert!(
+        !ap.assistant,
+        "AI notes must default OFF for a legacy record"
+    );
+    assert!(ap.assistant_provider.is_none());
+    assert!(ap.assistant_model.is_none());
+    assert!(ap.assistant_base_url.is_none());
+}
+
+#[test]
+fn legacy_found_job_without_assistant_notes_deserializes_to_none() {
+    // A found job persisted before Phase 4 has no `assistantNotes` key.
+    let json = serde_json::json!({
+        "title": "Engineer",
+        "company": "Acme",
+        "url": "https://acme.example/1",
+        "foundAt": 1u64
+    });
+    let job: FoundJob = serde_json::from_value(json).expect("legacy found job must deserialize");
+    assert!(job.assistant_notes.is_none());
+}
+
+#[test]
+fn assistant_note_round_trips_on_a_found_job() {
+    // A note set by the AI-notes step survives serialize→deserialize (persisted on
+    // the record, surfaced to the renderer under `assistantNotes`).
+    let mut job = found_job("https://acme.example/2", 5);
+    job.assistant_notes = Some("Strong Rust fit; tailor the systems-design bullet.".into());
+    let round: FoundJob = serde_json::from_str(&serde_json::to_string(&job).unwrap()).unwrap();
+    assert_eq!(
+        round.assistant_notes.as_deref(),
+        Some("Strong Rust fit; tailor the systems-design bullet.")
+    );
+}
+
+#[test]
 fn test_str_field() {
     let value = serde_json::json!({ "name": "Test", "other": "Value" });
     assert_eq!(str_field(&value, "name"), "Test");
@@ -514,6 +566,7 @@ fn found_job(url: &str, found_at: u64) -> FoundJob {
         is_new: false,
         applied: false,
         trust: None,
+        assistant_notes: None,
     }
 }
 
@@ -768,6 +821,10 @@ fn base_autopilot() -> Autopilot {
         schedule_minute: None,
         resume_text: None,
         cover_letter: None,
+        assistant: false,
+        assistant_provider: None,
+        assistant_model: None,
+        assistant_base_url: None,
         total_found: 0,
         total_applied: 0,
         found_jobs: Vec::new(),

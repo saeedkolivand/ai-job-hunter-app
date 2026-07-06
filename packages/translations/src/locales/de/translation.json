@@ -1293,6 +1293,7 @@
     "collapse": "Einklappen",
     "viewJob": "Anzeige öffnen",
     "applyJob": "Bewerben",
+    "aiNote": "KI-Notiz",
     "delete": "Löschen",
     "deleteTitle": "Diesen Autopilot löschen?",
     "deleteDescription": "Dies stoppt den Zeitplan und entfernt den Autopilot und seinen Verlauf gefundener Jobs dauerhaft.",
@@ -1526,7 +1527,10 @@
         "subtitle": "Autopilot findet und bewertet passende Jobs und benachrichtigt Sie — Sie bewerben sich mit dem Anschreib-Assistenten.",
         "flowFind": "Findet und bewertet Jobs, die zu Ihrer Suche passen, im von Ihnen gewählten Zeitplan.",
         "flowNotify": "Zeigt neue Treffer in der Gefundene-Jobs-Liste an (und benachrichtigt Sie).",
-        "flowTailor": "Öffnen Sie einen Treffer und der Assistent passt Lebenslauf und Anschreiben dafür an — Sie senden die Bewerbung selbst. Autopilot bewirbt sich nie für Sie."
+        "flowTailor": "Öffnen Sie einen Treffer und der Assistent passt Lebenslauf und Anschreiben dafür an — Sie senden die Bewerbung selbst. Autopilot bewirbt sich nie für Sie.",
+        "assistantLabel": "KI-Notizen",
+        "assistantCaption": "Nutzt Ihren aktuellen KI-Anbieter, um Ihren besten Treffern eine kurze Notiz hinzuzufügen — nur eine Benachrichtigung, Autopilot bewirbt sich nie für Sie.",
+        "assistantProviderHint": "Notizen verwenden {{provider}} · {{model}}"
       },
       "schedule": {
         "title": "Wie oft soll dies laufen?",

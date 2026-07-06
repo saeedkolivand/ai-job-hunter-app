@@ -1289,6 +1289,7 @@
     "collapse": "Collapse",
     "viewJob": "Open posting",
     "applyJob": "Apply",
+    "aiNote": "AI note",
     "delete": "Delete",
     "deleteTitle": "Delete this autopilot?",
     "deleteDescription": "This stops its schedule and permanently removes the autopilot and its found-jobs history.",
@@ -1522,7 +1523,10 @@
         "subtitle": "Autopilot finds and ranks matching jobs, then notifies you — you apply with the tailoring assistant.",
         "flowFind": "Finds and ranks jobs matching your search on the schedule you choose.",
         "flowNotify": "Surfaces new matches in the found-jobs list (and notifies you).",
-        "flowTailor": "Open a match and the assistant tailors your résumé and cover letter for it — you submit it yourself. Autopilot never applies for you."
+        "flowTailor": "Open a match and the assistant tailors your résumé and cover letter for it — you submit it yourself. Autopilot never applies for you.",
+        "assistantLabel": "AI notes",
+        "assistantCaption": "Uses your current AI provider to add a short note to your top matches — notify-only, nothing is applied.",
+        "assistantProviderHint": "Notes will use {{provider}} · {{model}}"
       },
       "schedule": {
         "title": "How often should this run?",

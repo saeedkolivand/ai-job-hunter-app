@@ -54,6 +54,12 @@ export function wizardStateToPayload(form: WizardState): AutopilotCreate {
       excludeKeywords: splitKeywords(form.excludeKeywords),
     },
     resumeText: form.resumeText || undefined,
+    assistant: form.assistant,
+    // Only forward the snapshot while notes are on — an off toggle carries no
+    // meaning for a stale provider/model/baseUrl.
+    assistantProvider: form.assistant ? form.assistantProvider : undefined,
+    assistantModel: form.assistant ? form.assistantModel : undefined,
+    assistantBaseUrl: form.assistant ? form.assistantBaseUrl : undefined,
     schedule: form.schedule,
     // Time-of-day only applies to recurring schedules; manual runs have no time.
     scheduleHour: form.schedule === 'manual' ? undefined : form.scheduleHour,
@@ -76,6 +82,7 @@ export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
     keywords: '',
     excludeKeywords: '',
     resumeText: '',
+    assistant: false,
     schedule: 'daily',
     scheduleHour: 9,
     scheduleMinute: 0,
@@ -100,6 +107,10 @@ export function autopilotToWizardState(ap: Autopilot): WizardState {
     keywords: ap.filter.keywords?.join(', ') ?? '',
     excludeKeywords: ap.filter.excludeKeywords?.join(', ') ?? '',
     resumeText: ap.resumeText ?? '',
+    assistant: ap.assistant ?? false,
+    assistantProvider: ap.assistantProvider,
+    assistantModel: ap.assistantModel,
+    assistantBaseUrl: ap.assistantBaseUrl,
     schedule: ap.schedule,
     scheduleHour: ap.scheduleHour ?? 9,
     scheduleMinute: ap.scheduleMinute ?? 0,

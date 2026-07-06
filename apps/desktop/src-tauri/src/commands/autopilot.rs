@@ -219,6 +219,30 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         ),
     );
 
+    // Phase 4 (opt-in, headless, READ-ONLY): after the keyword rank, attach a
+    // short AI-reasoned note to the top NEW matches. Bounded (≤ ASSISTANT_NOTES_MAX
+    // provider calls, per-provider daily ceiling, cancellable mid-call, AND an
+    // overall wall-clock timeout — see `generate_assistant_notes`) and best-effort —
+    // a provider/config error just means no notes, never a failed run. `prior_urls`
+    // (this record's pre-run found jobs) lets the step skip re-surfaced jobs, whose
+    // notes the store merge preserves for free, so a steady-state run makes zero
+    // provider calls. No-op unless `autopilot.assistant` is set. Runs BEFORE
+    // `record_run`/`on_new_jobs` below, so the wall-clock timeout is what keeps a
+    // hung provider from delaying the user-facing "new jobs" notification.
+    let prior_urls: std::collections::HashSet<&str> = autopilot
+        .found_jobs
+        .iter()
+        .map(|j| j.url.as_str())
+        .collect();
+    let notes_generated = crate::autopilot_helpers::generate_assistant_notes(
+        &app,
+        &autopilot,
+        &mut found_jobs,
+        &prior_urls,
+        &cancel_token,
+    )
+    .await;
+
     // Bail cleanly if the run was cancelled (tray/UI) any time before we commit
     // — don't record results or fire a "new jobs" notification for an aborted
     // run. `cancel(job_id)` flips the token this run registered (engine reuses,
@@ -241,7 +265,15 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
 
     // Surface genuinely-new finds while the user is away: a permission-gated
     // notification + a "New jobs: N" tray counter that jumps back to this run.
-    crate::tray::on_new_jobs(&app, &autopilot_id, &autopilot.name, new_count);
+    // `notes_generated` (≤ new_count, since only new matches are annotated) lets
+    // the banner mention how many carry an AI note.
+    crate::tray::on_new_jobs(
+        &app,
+        &autopilot_id,
+        &autopilot.name,
+        new_count,
+        notes_generated,
+    );
 
     engine.unregister_token(&job_id).await;
 
@@ -349,6 +381,9 @@ pub(crate) fn build_found_job(p: &JobPosting, resume: &str, found_at: u64) -> Fo
         // on_item-streamed one `ScraperEngine::run_one` attaches trust to) —
         // compute it directly here, same pure call.
         trust: Some(crate::scraping::trust::assess_trust(&p.url, &p.company)),
+        // Set later by the AI-notes step (`generate_assistant_notes`) for the top
+        // matches when the autopilot opted in; `None` on every fresh build.
+        assistant_notes: None,
     }
 }
 
@@ -511,6 +546,7 @@ mod tests {
             is_new: false,
             applied: false,
             trust: None,
+            assistant_notes: None,
         }
     }
 

@@ -447,6 +447,18 @@ export const AutopilotCreateSchema = z.object({
   // found job in the apply assistant. (Auto-apply was removed; this field is a
   // reusable template, not an instruction to submit anything.)
   coverLetter: z.string().optional(),
+  // Phase 4 (opt-in): attach a short AI-reasoned note to the top matches of each
+  // scheduled run. Read-only enrichment — never applies or submits anything.
+  // Optional (like the other autopilot fields); the Rust store owns the `false`
+  // default, so absent → notes off and existing autopilots stay note-free.
+  assistant: z.boolean().optional(),
+  // Provider snapshot for the headless AI-notes call. The scheduler runs with no
+  // renderer, so the active provider/model/base URL resolved at opt-in time is
+  // persisted here; the run then resolves the SAME centralized provider layer
+  // (`Completer`) that `ai_generate` uses. Absent/empty → notes skip gracefully.
+  assistantProvider: z.string().optional(),
+  assistantModel: z.string().optional(),
+  assistantBaseUrl: z.string().optional(),
 });
 
 export const AutopilotUpdateSchema = AutopilotCreateSchema.partial().extend({

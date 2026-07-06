@@ -1,8 +1,20 @@
-use crate::autopilot::AutopilotTarget;
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::time::Duration;
+
+use async_trait::async_trait;
+use tauri::AppHandle;
+use tokio_util::sync::CancellationToken;
+
+use crate::agent::flows::AUTOPILOT_NOTE_SYSTEM;
+use crate::agent::tools::{fenced, JOB_CAP, RESUME_CAP};
+use crate::autopilot::{Autopilot, AutopilotTarget, FoundJob};
+use crate::commands::ai_provider::ProviderId;
 use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, SCRAPE_ITEM, SCRAPE_PROGRESS};
+use crate::limits::{Limiter, PROVIDER_DAILY_MAX};
+use crate::pipeline::Completer;
 use crate::scraping::{BoardScrapeSummary, BoardSearchInput, JobPosting, ScraperEngine};
-use tauri::AppHandle;
 
 /// Scrape job postings from one or more boards for an autopilot run. Returns the
 /// postings **and** the per-board diagnostics, so the run can explain a zero
@@ -254,8 +266,280 @@ pub(crate) fn scrape_diagnostics(summaries: &[BoardScrapeSummary]) -> String {
         .join("; ")
 }
 
+// ── AI notes (Phase 4, opt-in, headless, read-only) ───────────────────────────
+//
+// SECURITY / SAFETY (co-reviewed by tauri-security-reviewer + performance-profiler):
+// A scheduled run has no live user, so this path is READ-ONLY by construction — a
+// plain single-shot `Completer::complete` per top match, NO tools / NO Write / NO
+// agent loop / NO confirm gate. It can never mutate or apply, and its ONLY spend is
+// bounded `complete()` calls. The résumé + job text are fenced as untrusted DATA in
+// the user turn; `AUTOPILOT_NOTE_SYSTEM` is the sole trusted instruction (OWASP
+// LLM01). Cost is triple-bounded — the top-N call ceiling, the shared per-provider
+// daily charge, and the run's cancellation token — so the per-tick fan-out cannot
+// blow up.
+
+/// Hard ceiling on provider calls per AI-notes run. Bounds the scheduled per-tick
+/// fan-out (cost + latency): even a run that finds hundreds of jobs makes at most
+/// this many [`Completer::complete`] calls, each charged against the shared
+/// per-provider daily ceiling. Intentionally small — this runs unattended.
+pub(crate) const ASSISTANT_NOTES_MAX: usize = 3;
+
+/// Char cap on a stored note — defense-in-depth on output size. The system prompt
+/// already asks for 2–4 sentences and the provider layer exposes no max-tokens
+/// knob, so this bounds a pathological over-long completion before it is persisted.
+const NOTE_CAP: usize = 800;
+
+/// Temperature for the note completion — low, for concise, grounded prose.
+const NOTE_TEMPERATURE: f64 = 0.3;
+
+/// MEDIUM-3: hard wall-clock ceiling on the WHOLE AI-notes step, independent of
+/// `cancel` — the notes step runs BEFORE `record_run`/`on_new_jobs`, so a slow or
+/// hung provider must never delay the user-facing "new jobs" notification by more
+/// than this. Generous for ≤ [`ASSISTANT_NOTES_MAX`] sequential completions under
+/// normal latency; a hard backstop against a hanging request, not a tuning knob.
+const NOTES_STEP_TIMEOUT: Duration = Duration::from_secs(45);
+
+/// Pure gate: should AI notes run for this record at all? Opt-in must be on AND a
+/// résumé must exist to ground the "why it fits" reasoning. Provider availability is
+/// resolved separately (it needs the app handle). Unit-tested.
+fn notes_enabled(assistant: bool, resume: Option<&str>) -> bool {
+    assistant && resume.map(str::trim).is_some_and(|r| !r.is_empty())
+}
+
+/// Build the grounded, fenced user turn for one note: the résumé — ALREADY fenced
+/// by the caller (LOW-6: identical across every job in a run, so it is fenced ONCE
+/// before the loop, not re-fenced per job) — plus the job (title + company +
+/// description) as untrusted DATA, capped with the SAME fence helper + cap the
+/// agent tools use (declared once in `agent::tools`). The system prompt is the only
+/// trusted instruction source (OWASP LLM01). Pure + unit-tested.
+fn note_user_msg(
+    resume_fence: &str,
+    title: &str,
+    company: &str,
+    description: Option<&str>,
+) -> String {
+    let job_blob = format!(
+        "{} at {}\n\n{}",
+        title.trim(),
+        company.trim(),
+        description.unwrap_or("").trim(),
+    );
+    format!(
+        "{resume_fence}\n\n{}",
+        fenced("job_posting", &job_blob, JOB_CAP)
+    )
+}
+
+/// The notes loop's provider seam — mirrors `agent::controller::AgentEnv`: the ONE
+/// external call (a provider completion + the shared daily-budget charge) sits
+/// behind a trait so the loop's pure control flow (top-N cap / cancellation /
+/// daily-ceiling short-circuit / prior-url skip) is unit-testable with a fake —
+/// this crate has no way to fake a live `Box<dyn AiProvider>`. Prod wiring is
+/// [`LiveNoteEnv`].
+#[async_trait]
+trait NoteEnv: Send + Sync {
+    /// Run one note completion. Mirrors [`Completer::complete`]'s signature (a
+    /// fixed system + a fenced user turn + temperature).
+    async fn complete(&self, system: &str, user: &str, temperature: f64) -> AppResult<String>;
+    /// Charge one call against the shared per-provider daily ceiling. MEDIUM-5:
+    /// background notes intentionally draw from the SAME `PROVIDER_DAILY_MAX`
+    /// counter as interactive AI — no parallel budget architecture — which is
+    /// acceptable because a run charges at most [`ASSISTANT_NOTES_MAX`] (generous
+    /// cap) against it.
+    fn charge_daily(&self) -> AppResult<()>;
+}
+
+/// Production [`NoteEnv`]: the resolved [`Completer`] + the shared [`Limiter`].
+struct LiveNoteEnv<'a> {
+    completer: &'a Completer,
+    limiter: Arc<Limiter>,
+    provider: ProviderId,
+}
+
+#[async_trait]
+impl NoteEnv for LiveNoteEnv<'_> {
+    async fn complete(&self, system: &str, user: &str, temperature: f64) -> AppResult<String> {
+        self.completer
+            .complete(system, user, Some(temperature))
+            .await
+    }
+    fn charge_daily(&self) -> AppResult<()> {
+        self.limiter
+            .charge_provider_daily(self.provider.as_str(), PROVIDER_DAILY_MAX)
+    }
+}
+
+/// The pure(ish) notes loop: for each job whose `url` is genuinely new (∉
+/// `prior_urls`), request one note through `env`, honoring — every iteration — the
+/// top-N call ceiling, the run's cancellation token, and the shared daily-ceiling
+/// charge. Split from [`generate_assistant_notes`] (mirroring
+/// `agent::controller::run_agent`'s split from its `AgentEnv`) so a fake `env`
+/// unit-tests the control flow directly, without a live provider.
+///
+/// HIGH-1: cancellation is raced against the in-flight completion itself via
+/// `tokio::select!`, not just checked between iterations — Stop/cancel interrupts a
+/// slow call immediately instead of waiting out the provider's own timeout
+/// (120s cloud / 300s Ollama).
+async fn run_notes_loop(
+    env: &dyn NoteEnv,
+    resume_fence: &str,
+    found_jobs: &mut [FoundJob],
+    prior_urls: &HashSet<&str>,
+    cancel: &CancellationToken,
+) -> usize {
+    // `calls` bounds *provider calls* (the real cost) to ≤ ASSISTANT_NOTES_MAX,
+    // independent of how many succeed; `generated` counts notes actually stored.
+    let mut calls = 0usize;
+    let mut generated = 0usize;
+    for job in found_jobs.iter_mut() {
+        if calls >= ASSISTANT_NOTES_MAX {
+            break; // top-N call ceiling reached — hard cost bound
+        }
+        if prior_urls.contains(job.url.as_str()) {
+            continue; // re-surfaced: keeps its prior note via merge, don't re-pay
+        }
+        if cancel.is_cancelled() {
+            break; // run cancelled (tray/UI) between iterations — stop spending
+        }
+        // Charge the shared per-provider daily ceiling BEFORE the call; once it is
+        // hit, stop generating notes (the discovery run still completes normally).
+        if let Err(e) = env.charge_daily() {
+            log::info!("[autopilot] AI notes stopped at daily ceiling: {e}");
+            break;
+        }
+        calls += 1;
+        let user = note_user_msg(
+            resume_fence,
+            &job.title,
+            &job.company,
+            job.description.as_deref(),
+        );
+        // HIGH-1: race the completion against cancellation so Stop interrupts an
+        // IN-FLIGHT call too — the `is_cancelled()` check above only catches
+        // cancellation BETWEEN iterations.
+        let result = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => break,
+            res = env.complete(AUTOPILOT_NOTE_SYSTEM, &user, NOTE_TEMPERATURE) => res,
+        };
+        match result {
+            Ok(text) => {
+                let note: String = text.trim().chars().take(NOTE_CAP).collect();
+                if !note.is_empty() {
+                    job.assistant_notes = Some(note);
+                    generated += 1;
+                }
+            }
+            // Best-effort: one job's failure never aborts the rest or the run.
+            Err(e) => log::warn!("[autopilot] AI note generation failed: {e}"),
+        }
+    }
+    log::info!(
+        "[autopilot] AI notes: generated {generated} in {calls} call(s) (max {ASSISTANT_NOTES_MAX})"
+    );
+    generated
+}
+
+/// Generate a short AI-reasoned note for up to [`ASSISTANT_NOTES_MAX`] of the top
+/// NEW matches, storing each on `FoundJob.assistant_notes`. Returns how many notes
+/// were generated (drives the notification summary).
+///
+/// READ-ONLY: a plain single-shot [`Completer::complete`] per job — no tools, no
+/// Write, no agent loop, no confirm gate. Cost is triple-bounded — the top-N *call*
+/// ceiling, the shared per-provider daily charge (stop on exceed; the discovery run
+/// still completes), and the run's cancellation token (stop immediately, even
+/// mid-call — see [`run_notes_loop`]). Only genuinely-new matches (`url` ∉
+/// `prior_urls`) are annotated: a re-surfaced job keeps its earlier note for free
+/// via the store merge, so re-generating would just burn a call whose result the
+/// merge discards — in steady state (nothing new) this makes ZERO provider calls.
+/// Any resolve/provider error is swallowed (logged): the discovery run always
+/// succeeds; notes are best-effort enrichment.
+pub(crate) async fn generate_assistant_notes(
+    app: &AppHandle,
+    autopilot: &Autopilot,
+    found_jobs: &mut [FoundJob],
+    prior_urls: &HashSet<&str>,
+    cancel: &CancellationToken,
+) -> usize {
+    use tauri::Manager;
+
+    if !notes_enabled(autopilot.assistant, autopilot.resume_text.as_deref()) {
+        return 0;
+    }
+    let resume = autopilot.resume_text.as_deref().unwrap_or("");
+
+    // Resolve the provider SNAPSHOT persisted on the record through the SAME
+    // centralized provider layer `ai_generate` uses. Missing/unknown/invalid →
+    // skip gracefully (the discovery run still completes normally).
+    //
+    // SECURITY (MEDIUM-4): `assistant_base_url` is renderer-provenance — there is
+    // NO backend-side store to re-derive a custom OpenAI-compatible endpoint from
+    // at run time. The only persisted provider+base_url on the backend today is
+    // the UNRELATED embeddings config (`documents::mod.rs`'s `embedding_config`
+    // table) — a different provider slot (a user can embed on one provider and
+    // chat on another), so reusing it here would silently target the wrong
+    // endpoint, not fix the trust boundary. Trusting this snapshot every scheduled
+    // tick does mean a one-time renderer compromise / bad IPC write becomes a
+    // DURABLE, unattended egress target, wider than the interactive `ai_generate`
+    // path (there, a compromised renderer has the same capability, but only for as
+    // long as it stays compromised AND the app is running that request).
+    // `Completer::resolve`/`ProviderId::parse` still validate provider+model are
+    // known/well-formed; neither can validate a custom base_url is genuinely the
+    // user's endpoint. Accepted for now — never breaks a custom OpenAI-compatible
+    // endpoint, and the blast radius (an already-configured provider call) is the
+    // same class the user already trusts interactively. The durable fix is a
+    // backend-owned active-provider store the renderer syncs into (deferred —
+    // would also retire the embeddings config above as the only backend-side slot).
+    let completer = match Completer::resolve(
+        app,
+        autopilot.assistant_provider.as_deref(),
+        autopilot.assistant_model.as_deref(),
+        autopilot.assistant_base_url.clone(),
+    ) {
+        Ok(c) => c,
+        Err(e) => {
+            log::info!("[autopilot] AI notes skipped: no usable provider ({e})");
+            return 0;
+        }
+    };
+    let limiter = app.state::<Arc<Limiter>>().inner().clone();
+    let provider = completer.provider_id();
+    let env = LiveNoteEnv {
+        completer: &completer,
+        limiter,
+        provider,
+    };
+
+    // LOW-6: fence the résumé ONCE — it's identical for every job in this run,
+    // unlike the per-job title/company/description `note_user_msg` re-fences.
+    let resume_fence = fenced("candidate_resume", resume, RESUME_CAP);
+
+    // MEDIUM-3: bound the WHOLE step by wall clock, independent of `cancel` — a
+    // slow/hung provider must never delay the "new jobs" notification (fired right
+    // after this returns in `autopilot_run`) unboundedly. Any notes already stored
+    // on `found_jobs` before the timeout fires are KEPT (the loop mutates in place
+    // synchronously before each next await, so a dropped future loses no already-
+    // applied mutation); only this call's returned count may undercount in that
+    // rare case, which under-reports "N with AI notes" in the notification — a
+    // cosmetic tradeoff for a notification that is never blocked unboundedly.
+    match tokio::time::timeout(
+        NOTES_STEP_TIMEOUT,
+        run_notes_loop(&env, &resume_fence, found_jobs, prior_urls, cancel),
+    )
+    .await
+    {
+        Ok(generated) => generated,
+        Err(_) => {
+            log::warn!("[autopilot] AI notes step exceeded {NOTES_STEP_TIMEOUT:?}; stopping");
+            0
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use parking_lot::Mutex;
+
     use super::*;
     use crate::scraping::BoardScrapeSummary;
 
@@ -623,5 +907,271 @@ mod tests {
             !out.contains("secret"),
             "secret must not leak through URL token; got: {out}"
         );
+    }
+
+    // ── AI notes (Phase 4) ────────────────────────────────────────────────────
+
+    #[test]
+    fn notes_gate_requires_optin_and_a_resume() {
+        // Opt-in OFF → never runs, regardless of résumé.
+        assert!(!notes_enabled(false, Some("full résumé text")));
+        assert!(!notes_enabled(false, None));
+        // Opt-in ON but no usable résumé (absent / empty / whitespace) → skip: the
+        // note is grounded in the résumé, so there is nothing to reason about.
+        assert!(!notes_enabled(true, None));
+        assert!(!notes_enabled(true, Some("")));
+        assert!(!notes_enabled(true, Some("   \n\t ")));
+        // Opt-in ON with a real résumé → runs.
+        assert!(notes_enabled(true, Some("Senior Rust engineer, 8y")));
+    }
+
+    #[test]
+    fn note_user_msg_fences_resume_and_job_as_data() {
+        // SECURITY (OWASP LLM01): the résumé and job posting must ride as fenced
+        // DATA in the user turn — the system prompt is the only instruction source.
+        // LOW-6: the caller fences the résumé ONCE, before the loop; `note_user_msg`
+        // takes it already-fenced.
+        let resume_fence = fenced("candidate_resume", "my résumé", RESUME_CAP);
+        let msg = note_user_msg(
+            &resume_fence,
+            "Staff Engineer",
+            "Acme",
+            Some("Build distributed systems in Rust."),
+        );
+        assert!(msg.contains("<candidate_resume>\nmy résumé\n</candidate_resume>"));
+        assert!(msg.contains("<job_posting>"));
+        assert!(msg.contains("Staff Engineer at Acme"));
+        assert!(msg.contains("Build distributed systems in Rust."));
+        assert!(msg.contains("</job_posting>"));
+        // A missing description still produces a valid, fenced job block.
+        let no_desc = note_user_msg(&resume_fence, "Dev", "Beta", None);
+        assert!(no_desc.contains("<job_posting>"));
+        assert!(no_desc.contains("Dev at Beta"));
+    }
+
+    #[test]
+    fn note_user_msg_caps_oversized_resume_and_job_as_data() {
+        // A pathological résumé/description can't blow the context/cost budget of the
+        // note call — each blob is capped at the shared agent-tools char cap. The
+        // résumé cap is applied once, by the caller, when it builds the fence.
+        let huge = "z".repeat(RESUME_CAP + 5_000);
+        let resume_fence = fenced("candidate_resume", &huge, RESUME_CAP);
+        let msg = note_user_msg(&resume_fence, "T", "C", Some(&huge));
+        // The résumé fence carries at most RESUME_CAP chars of `z`.
+        let resume_zs = msg
+            .split("<candidate_resume>\n")
+            .nth(1)
+            .and_then(|s| s.split("\n</candidate_resume>").next())
+            .unwrap_or("");
+        assert_eq!(resume_zs.chars().filter(|&c| c == 'z').count(), RESUME_CAP);
+        assert!(msg.chars().filter(|&c| c == 'z').count() <= RESUME_CAP + JOB_CAP);
+    }
+
+    // ── run_notes_loop (HIGH-2: the async loop's guarantees, fake-driven) ──────
+
+    /// A scripted [`NoteEnv`] fake: records every `complete()` call, returns a
+    /// canned response (or errors), and can fail `charge_daily` from a chosen call
+    /// onward. Mirrors `agent::controller::tests::FakeEnv` — no `AppHandle` or live
+    /// provider, which is the whole point of the seam.
+    struct FakeNoteEnv {
+        calls: Mutex<usize>,
+        response: AppResult<String>,
+        /// `charge_daily` fails starting from this 1-based call number (`None` =
+        /// never fails).
+        charge_fails_from: Option<usize>,
+    }
+
+    impl FakeNoteEnv {
+        fn ok(response: &str) -> Self {
+            Self {
+                calls: Mutex::new(0),
+                response: Ok(response.to_string()),
+                charge_fails_from: None,
+            }
+        }
+        fn charge_fails_from(call: usize) -> Self {
+            Self {
+                calls: Mutex::new(0),
+                response: Ok("a note".to_string()),
+                charge_fails_from: Some(call),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl NoteEnv for FakeNoteEnv {
+        async fn complete(
+            &self,
+            _system: &str,
+            _user: &str,
+            _temperature: f64,
+        ) -> AppResult<String> {
+            *self.calls.lock() += 1;
+            match &self.response {
+                Ok(s) => Ok(s.clone()),
+                Err(e) => Err(AppError::Provider(e.to_string())),
+            }
+        }
+        fn charge_daily(&self) -> AppResult<()> {
+            let attempted = *self.calls.lock() + 1; // the call this charge is guarding
+            match self.charge_fails_from {
+                Some(from) if attempted >= from => {
+                    Err(AppError::RateLimited("daily cap reached".into()))
+                }
+                _ => Ok(()),
+            }
+        }
+    }
+
+    fn stub_job(url: &str) -> FoundJob {
+        FoundJob {
+            title: "Engineer".into(),
+            company: "Acme".into(),
+            url: url.into(),
+            location: None,
+            board: None,
+            description: None,
+            salary_min: None,
+            salary_max: None,
+            salary_currency: None,
+            score: None,
+            found_at: 0,
+            is_new: true,
+            applied: false,
+            trust: None,
+            assistant_notes: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn more_than_max_new_jobs_makes_exactly_max_calls() {
+        // >3 genuinely-new matches must stop at exactly ASSISTANT_NOTES_MAX calls,
+        // not process every job — the hard cost bound.
+        let env = FakeNoteEnv::ok("Strong fit; tailor the systems-design bullet.");
+        let mut jobs: Vec<FoundJob> = (0..5)
+            .map(|i| stub_job(&format!("https://acme.example/{i}")))
+            .collect();
+        let prior: HashSet<&str> = HashSet::new();
+        let generated = run_notes_loop(
+            &env,
+            "<candidate_resume>\nr\n</candidate_resume>",
+            &mut jobs,
+            &prior,
+            &CancellationToken::new(),
+        )
+        .await;
+        assert_eq!(*env.calls.lock(), ASSISTANT_NOTES_MAX);
+        assert_eq!(generated, ASSISTANT_NOTES_MAX);
+        assert_eq!(
+            jobs.iter().filter(|j| j.assistant_notes.is_some()).count(),
+            ASSISTANT_NOTES_MAX
+        );
+        // Only the FIRST ASSISTANT_NOTES_MAX jobs (in order) were annotated.
+        assert!(jobs[ASSISTANT_NOTES_MAX].assistant_notes.is_none());
+    }
+
+    #[tokio::test]
+    async fn jobs_all_in_prior_urls_make_zero_calls() {
+        // Every match already surfaced in a prior run → the merge preserves its
+        // earlier note for free; re-generating would just burn a call for nothing.
+        let env = FakeNoteEnv::ok("note");
+        let mut jobs = vec![
+            stub_job("https://acme.example/1"),
+            stub_job("https://acme.example/2"),
+        ];
+        let prior: HashSet<&str> = ["https://acme.example/1", "https://acme.example/2"]
+            .into_iter()
+            .collect();
+        let generated = run_notes_loop(
+            &env,
+            "<candidate_resume>\nr\n</candidate_resume>",
+            &mut jobs,
+            &prior,
+            &CancellationToken::new(),
+        )
+        .await;
+        assert_eq!(generated, 0);
+        assert_eq!(
+            *env.calls.lock(),
+            0,
+            "no provider call for a re-surfaced job"
+        );
+    }
+
+    #[tokio::test]
+    async fn daily_ceiling_error_stops_the_loop_early() {
+        // MEDIUM-5: shared per-provider daily ceiling. Once `charge_daily` refuses
+        // (2nd call onward here), the loop stops WITHOUT calling `complete()` for
+        // that job or any after it — the run still completes, just with fewer notes.
+        let env = FakeNoteEnv::charge_fails_from(2);
+        let mut jobs = vec![
+            stub_job("https://acme.example/1"),
+            stub_job("https://acme.example/2"),
+            stub_job("https://acme.example/3"),
+        ];
+        let prior: HashSet<&str> = HashSet::new();
+        let generated = run_notes_loop(
+            &env,
+            "<candidate_resume>\nr\n</candidate_resume>",
+            &mut jobs,
+            &prior,
+            &CancellationToken::new(),
+        )
+        .await;
+        assert_eq!(
+            generated, 1,
+            "only the job admitted before the ceiling got a note"
+        );
+        assert_eq!(
+            *env.calls.lock(),
+            1,
+            "the loop must stop before calling complete() again"
+        );
+        assert!(jobs[0].assistant_notes.is_some());
+        assert!(jobs[1].assistant_notes.is_none());
+        assert!(jobs[2].assistant_notes.is_none());
+    }
+
+    /// HIGH-1: cancellation must interrupt an IN-FLIGHT completion, not just fire
+    /// between iterations. `complete()` here never resolves on its own — the only
+    /// way `run_notes_loop` can return is via the `tokio::select!` race against
+    /// `cancel.cancelled()`. Deterministic under the current-thread test runtime,
+    /// mirroring `agent::controller::tests::cancellation_during_an_inflight_turn_stops_immediately`.
+    #[tokio::test]
+    async fn cancellation_during_an_inflight_call_stops_immediately() {
+        struct HangingNoteEnv;
+        #[async_trait]
+        impl NoteEnv for HangingNoteEnv {
+            async fn complete(
+                &self,
+                _system: &str,
+                _user: &str,
+                _temperature: f64,
+            ) -> AppResult<String> {
+                std::future::pending::<AppResult<String>>().await
+            }
+            fn charge_daily(&self) -> AppResult<()> {
+                Ok(())
+            }
+        }
+
+        let mut jobs = vec![stub_job("https://acme.example/1")];
+        let prior: HashSet<&str> = HashSet::new();
+        let cancel = CancellationToken::new();
+        let cancel_task = cancel.clone();
+        tokio::spawn(async move {
+            cancel_task.cancel();
+        });
+
+        let generated = run_notes_loop(
+            &HangingNoteEnv,
+            "<candidate_resume>\nr\n</candidate_resume>",
+            &mut jobs,
+            &prior,
+            &cancel,
+        )
+        .await;
+        assert_eq!(generated, 0);
+        assert!(jobs[0].assistant_notes.is_none());
     }
 }
