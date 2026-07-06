@@ -28,7 +28,16 @@ use super::gate::{resolve_write, AgentGate, WriteResolution, CONFIRM_TIMEOUT};
 use super::tools::{to_specs, AgentTool, ToolContext, ToolKind};
 
 /// Hard cap on provider round-trips per agent run (agent-safety budget).
-pub const MAX_AGENT_STEPS: usize = 8;
+///
+/// Sized for the "prep this application" flow ([`super::flows::PREP_APPLICATION_SYSTEM`]),
+/// today's longest fixed sequence: 7 tool turns (`research_company`, `match_resume`,
+/// `draft_cover_letter`, `draft_resume`, `suggest_interview_questions`,
+/// `save_cover_letter`, `save_resume`) plus a planning turn and a closing-summary
+/// turn — 9 turns minimum with zero room for a model splitting a step across two
+/// turns or a retried confirm. 12 leaves comfortable headroom above that without
+/// opening the door to a runaway loop (see [`MAX_AGENT_TOKENS`] for the cost
+/// backstop on top).
+pub const MAX_AGENT_STEPS: usize = 12;
 /// Hard cap on the accumulated token estimate (~chars/4) across prompts +
 /// completions per run — stops a loop that keeps calling tools without converging.
 pub const MAX_AGENT_TOKENS: usize = 60_000;
