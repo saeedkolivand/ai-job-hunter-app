@@ -53,6 +53,14 @@ export interface AiContract {
     role: string;
     company?: string;
     location?: string;
+    /** ISO-3166 alpha-2 job country, when known — grounds `currency` below. */
+    country?: string;
+    /** Authoritative ISO-4217 currency for `country` (resolve client-side via
+     *  `countryToCurrency`). Pins the researched/reported currency server-side
+     *  so a blank/weak `location` can't let the model default to USD or
+     *  hallucinate one; omitted when the country is unknown, which preserves
+     *  today's unconstrained "local currency for that location" behavior. */
+    currency?: string;
     provider?: string;
     model?: string;
     baseUrl?: string;

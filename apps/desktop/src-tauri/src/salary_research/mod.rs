@@ -69,6 +69,8 @@ pub trait SalarySearcher {
         role: &str,
         company: &str,
         location: &str,
+        country: &str,
+        currency: &str,
     ) -> impl std::future::Future<Output = AppResult<String>> + Send;
 }
 
@@ -78,8 +80,10 @@ impl SalarySearcher for Completer {
         role: &str,
         company: &str,
         location: &str,
+        country: &str,
+        currency: &str,
     ) -> AppResult<String> {
-        Completer::research_salary(self, role, company, location).await
+        Completer::research_salary(self, role, company, location, country, currency).await
     }
 }
 
@@ -94,11 +98,25 @@ impl SalaryResearch {
     /// `role` is empty, the searcher can't search, the search/synthesis fails,
     /// times out, or its output doesn't parse into a plausible range.
     ///
+    /// `country`/`currency` ground the report in the job's actual currency
+    /// (resolved client-side from its validated ISO country) — both empty when
+    /// unknown, which preserves the unconstrained "local currency for that
+    /// location" behavior. When known, `currency` is also the safety net
+    /// against a stray hallucinated currency slipping past the model's own
+    /// JSON: [`reconcile_expected_currency`] fails safe — a parsed currency
+    /// that doesn't match the expected one is untrustworthy and is **dropped**
+    /// (never relabeled, which would put the wrong numbers under the right
+    /// symbol) — applied on both the cache-hit and fresh-fetch paths below.
+    /// The model is still asked to *research* in that currency (see
+    /// `commands::ai_provider::research::salary_system`), this is only the
+    /// defense-in-depth backstop.
+    ///
     /// `cache` is injected (`None` when the caller has no `KvCache` managed
     /// state) rather than looked up here — the sole production caller
     /// (`commands::ai::ai_lookup_salary`) resolves it once via
     /// `app.try_state::<KvCache>()` and passes it through, which is what keeps
     /// this function testable without an `AppHandle`.
+    #[allow(clippy::too_many_arguments)]
     pub async fn enrich<S: SalarySearcher>(
         &self,
         searcher: &S,
@@ -106,6 +124,8 @@ impl SalaryResearch {
         role: &str,
         company: &str,
         location: &str,
+        country: &str,
+        currency: &str,
     ) -> Option<SalaryRange> {
         // The very first thing this does — before touching `searcher` at all —
         // so a whitespace-only role never reaches it. Factored to a pure
@@ -118,17 +138,41 @@ impl SalaryResearch {
         let role = truncate_input(role.trim());
         let company = truncate_input(company.trim());
         let location = truncate_input(location.trim());
+        let country = truncate_input(country.trim());
+        let currency = truncate_input(currency.trim());
 
         // Case-folded so "Berlin"/"berlin" don't miss each other; the
         // case-preserved values above still go to the prompt/query/logging.
-        let key = cache_key(&role, &company, &location);
+        // Keyed on `currency` (not the raw `country` string) — two jobs
+        // sharing role/company/location but resolving to different expected
+        // currencies (e.g. a DE and a US "Remote" posting) must never share a
+        // cache row, or an unknown-currency read could surface whatever
+        // currency a different, known-currency job last wrote there. The
+        // `reconcile_expected_currency` self-heal below still re-checks every
+        // read regardless, so a legacy (pre-fix) or otherwise wrong-currency
+        // cached entry self-heals via a fresh fetch rather than fragmenting
+        // the cache further.
+        let key = cache_key(&role, &company, &location, &currency);
 
         // Fast path: cached, validated range younger than the TTL.
         if let Some(cache) = cache {
             if let Some(json) = cache.get(CACHE_NS, &key, TTL_SECS) {
                 if let Some(range) = parse_and_validate(&json) {
-                    tracing::info!(role = %role, company = %company, source = "cache", "salary_research: range");
-                    return Some(range);
+                    match reconcile_expected_currency(range, &currency) {
+                        Some(range) => {
+                            tracing::info!(role = %role, company = %company, source = "cache", "salary_research: range");
+                            return Some(range);
+                        }
+                        None => {
+                            // A pre-fix (or otherwise stale) cache entry in the
+                            // wrong currency — untrustworthy, don't relabel it.
+                            // Fall through to a fresh fetch instead of a cache
+                            // miss's usual `None`; a successful fetch below
+                            // overwrites this row (`cache.set` is upsert), so
+                            // the entry self-heals without waiting out the TTL.
+                            tracing::debug!(role = %role, company = %company, "salary_research: cached range is in the wrong currency, dropping and re-fetching");
+                        }
+                    }
                 }
             }
         }
@@ -137,7 +181,7 @@ impl SalaryResearch {
         // failure/timeout yields no range.
         let raw = match tokio::time::timeout(
             Duration::from_secs(RESEARCH_TIMEOUT_SECS),
-            searcher.research_salary(&role, &company, &location),
+            searcher.research_salary(&role, &company, &location, &country, &currency),
         )
         .await
         {
@@ -156,6 +200,9 @@ impl SalaryResearch {
         // all fall through here — never cached, so a bad miss doesn't stick for
         // the 7-day TTL.
         let range = parse_and_validate(&raw)?;
+        // Fail-safe, not relabel: a fresh result in the wrong currency is
+        // dropped (`None`) rather than shown under the wrong symbol.
+        let range = reconcile_expected_currency(range, &currency)?;
 
         if let Some(cache) = cache {
             if let Ok(json) = serde_json::to_string(&range) {
@@ -166,6 +213,23 @@ impl SalaryResearch {
         tracing::info!(role = %role, company = %company, source = "provider", "salary_research: range");
         Some(range)
     }
+}
+
+/// Fail-safe backstop behind [`commands::ai_provider::research::salary_system`]'s
+/// prompt-level pin: even if the model's own JSON slips a stray/wrong currency
+/// code past [`parse_and_validate`]'s shape check, this catches it — but it
+/// **drops** the range rather than relabeling it, since relabeling would put
+/// the wrong-currency numbers under the right symbol (more misleading than an
+/// obviously-wrong one). Returns `Some(range)` unchanged when
+/// `expected_currency` is empty (unknown country — preserves today's
+/// unconstrained behavior) or already matches; returns `None` when a known
+/// expected currency doesn't match the parsed one. Pure + unit-tested.
+fn reconcile_expected_currency(range: SalaryRange, expected_currency: &str) -> Option<SalaryRange> {
+    let expected = expected_currency.trim();
+    if expected.is_empty() || expected.eq_ignore_ascii_case(&range.currency) {
+        return Some(range);
+    }
+    None
 }
 
 /// Cap `s` to [`MAX_INPUT_CHARS`] (char-boundary safe — never splits a
@@ -180,16 +244,21 @@ fn role_is_missing(role: &str) -> bool {
     role.trim().is_empty()
 }
 
-/// Build the cache key for a (role, company, location) lookup — case-folded so
-/// "Berlin"/"berlin" (or "Acme"/"ACME") land on the same cache entry, cutting
-/// avoidable cache misses (and duplicate paid provider calls) on the only
-/// difference being capitalization. Pure + unit-tested.
-fn cache_key(role: &str, company: &str, location: &str) -> String {
+/// Build the cache key for a (role, company, location, expected currency)
+/// lookup — case-folded so "Berlin"/"berlin" (or "Acme"/"ACME") land on the
+/// same cache entry, cutting avoidable cache misses (and duplicate paid
+/// provider calls) on the only difference being capitalization. `currency` is
+/// part of the key (not just baked into `location`/`country`) so two postings
+/// that share role/company/location but resolve to different expected
+/// currencies — including an unknown-currency ("") job vs. a known-currency
+/// one — never collide on the same cache row. Pure + unit-tested.
+fn cache_key(role: &str, company: &str, location: &str, currency: &str) -> String {
     format!(
-        "{}|{}|{}",
+        "{}|{}|{}|{}",
         role.to_lowercase(),
         company.to_lowercase(),
-        location.to_lowercase()
+        location.to_lowercase(),
+        currency.to_lowercase()
     )
 }
 
@@ -315,17 +384,32 @@ mod tests {
     #[test]
     fn cache_key_case_folds_so_differently_cased_inputs_collide() {
         assert_eq!(
-            cache_key("Backend Engineer", "Acme", "Berlin"),
-            cache_key("backend engineer", "ACME", "berlin")
+            cache_key("Backend Engineer", "Acme", "Berlin", "EUR"),
+            cache_key("backend engineer", "ACME", "berlin", "eur")
         );
     }
 
     #[test]
     fn cache_key_preserves_the_pipe_delimited_shape() {
         assert_eq!(
-            cache_key("Backend Engineer", "Acme", "Berlin"),
-            "backend engineer|acme|berlin"
+            cache_key("Backend Engineer", "Acme", "Berlin", "EUR"),
+            "backend engineer|acme|berlin|eur"
         );
+    }
+
+    #[test]
+    fn cache_key_differs_by_currency_so_cross_country_postings_never_collide() {
+        // The bug this fixes: a DE (EUR) and a US (USD) "Remote" posting share
+        // role/company/location, so without currency in the key they'd land
+        // on the same cache row — and an unknown-currency ("") read could then
+        // surface whatever currency a different, known-currency job last
+        // wrote there.
+        let de = cache_key("Backend Engineer", "Acme", "Remote", "EUR");
+        let us = cache_key("Backend Engineer", "Acme", "Remote", "USD");
+        let unknown = cache_key("Backend Engineer", "Acme", "Remote", "");
+        assert_ne!(de, us);
+        assert_ne!(de, unknown);
+        assert_ne!(us, unknown);
     }
 
     #[test]
@@ -450,6 +534,8 @@ mod tests {
             _role: &str,
             _company: &str,
             _location: &str,
+            _country: &str,
+            _currency: &str,
         ) -> AppResult<String> {
             Ok(self.0.to_string())
         }
@@ -463,6 +549,8 @@ mod tests {
             _role: &str,
             _company: &str,
             _location: &str,
+            _country: &str,
+            _currency: &str,
         ) -> AppResult<String> {
             Err(AppError::Provider("search failed".to_string()))
         }
@@ -476,6 +564,8 @@ mod tests {
             _role: &str,
             _company: &str,
             _location: &str,
+            _country: &str,
+            _currency: &str,
         ) -> AppResult<String> {
             // Sleeps past RESEARCH_TIMEOUT_SECS; under `start_paused = true` this
             // resolves the moment `enrich`'s own timeout timer fires instead of
@@ -498,6 +588,8 @@ mod tests {
                 "Backend Engineer",
                 "Acme",
                 "Berlin",
+                "",
+                "",
             )
             .await;
 
@@ -509,7 +601,7 @@ mod tests {
                 currency: "EUR".to_string()
             })
         );
-        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        let key = cache_key("Backend Engineer", "Acme", "Berlin", "");
         assert!(
             cache.get(CACHE_NS, &key, TTL_SECS).is_some(),
             "a successful lookup must write through the cache"
@@ -529,11 +621,13 @@ mod tests {
                 "Backend Engineer",
                 "Acme",
                 "Berlin",
+                "",
+                "",
             )
             .await;
 
         assert_eq!(result, None);
-        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        let key = cache_key("Backend Engineer", "Acme", "Berlin", "");
         assert_eq!(cache.get(CACHE_NS, &key, TTL_SECS), None);
     }
 
@@ -550,11 +644,13 @@ mod tests {
                 "Backend Engineer",
                 "Acme",
                 "Berlin",
+                "",
+                "",
             )
             .await;
 
         assert_eq!(result, None);
-        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        let key = cache_key("Backend Engineer", "Acme", "Berlin", "");
         assert_eq!(cache.get(CACHE_NS, &key, TTL_SECS), None);
     }
 
@@ -570,11 +666,13 @@ mod tests {
                 "Backend Engineer",
                 "Acme",
                 "Berlin",
+                "",
+                "",
             )
             .await;
 
         assert_eq!(result, None);
-        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        let key = cache_key("Backend Engineer", "Acme", "Berlin", "");
         assert_eq!(cache.get(CACHE_NS, &key, TTL_SECS), None);
     }
 
@@ -590,11 +688,181 @@ mod tests {
                 "Backend Engineer",
                 "Acme",
                 "Berlin",
+                "",
+                "",
             )
             .await;
 
         assert_eq!(result, None);
-        let key = cache_key("Backend Engineer", "Acme", "Berlin");
+        let key = cache_key("Backend Engineer", "Acme", "Berlin", "");
         assert_eq!(cache.get(CACHE_NS, &key, TTL_SECS), None);
+    }
+
+    // ── currency grounding (the bug fix): reconcile_expected_currency + enrich ─
+    //
+    // Fail-safe, not relabel: a mismatched currency is dropped (`None`), never
+    // overridden onto the (wrong-currency) numbers.
+
+    #[test]
+    fn reconcile_expected_currency_drops_a_mismatched_range() {
+        let range = SalaryRange {
+            min: 1,
+            max: 2,
+            currency: "USD".to_string(),
+        };
+        assert_eq!(reconcile_expected_currency(range, "EUR"), None);
+    }
+
+    #[test]
+    fn reconcile_expected_currency_is_a_no_op_when_the_expected_currency_is_unknown() {
+        // Unknown-country guard: an empty expected currency must never drop or
+        // mutate the parsed range — today's unconstrained behavior.
+        let range = SalaryRange {
+            min: 1,
+            max: 2,
+            currency: "USD".to_string(),
+        };
+        assert_eq!(reconcile_expected_currency(range.clone(), ""), Some(range));
+    }
+
+    #[test]
+    fn reconcile_expected_currency_is_a_no_op_when_it_already_matches_case_insensitively() {
+        let range = SalaryRange {
+            min: 1,
+            max: 2,
+            currency: "eur".to_string(),
+        };
+        // Already-matching (modulo case) is kept exactly as parsed.
+        assert_eq!(
+            reconcile_expected_currency(range.clone(), "eur"),
+            Some(range)
+        );
+    }
+
+    #[tokio::test]
+    async fn enrich_drops_a_hallucinated_currency_when_the_expected_currency_is_known() {
+        // The bug this fixes: a German role with a weak location previously let
+        // the model report USD. A stray USD slipping past the prompt-level pin
+        // must never be relabeled EUR (wrong numbers under the right symbol) —
+        // it's dropped instead, degrading to the C1 fallback like any other
+        // failed lookup.
+        let dir = TempDir::new().expect("tempdir");
+        let cache = KvCache::open(dir.path()).expect("open cache");
+        let searcher = FakeSearcher(r#"{"min":65000,"max":80000,"currency":"USD"}"#);
+
+        let result = SalaryResearch
+            .enrich(
+                &searcher,
+                Some(&cache),
+                "Backend Engineer",
+                "Acme",
+                "Berlin",
+                "DE",
+                "EUR",
+            )
+            .await;
+
+        assert_eq!(result, None);
+        // A dropped (mismatched) range must never be cached.
+        let key = cache_key("Backend Engineer", "Acme", "Berlin", "EUR");
+        assert_eq!(cache.get(CACHE_NS, &key, TTL_SECS), None);
+    }
+
+    #[tokio::test]
+    async fn enrich_self_heals_a_stale_mismatched_cache_entry_via_a_fresh_fetch() {
+        // Simulates a stale cache entry written before this fix shipped (wrong
+        // currency baked in). It must not be returned as-is — `enrich` falls
+        // through to a fresh fetch, which (once it succeeds in the right
+        // currency) overwrites the stale row.
+        let dir = TempDir::new().expect("tempdir");
+        let cache = KvCache::open(dir.path()).expect("open cache");
+        let key = cache_key("Backend Engineer", "Acme", "Berlin", "EUR");
+        cache.set(
+            CACHE_NS,
+            &key,
+            r#"{"min":65000,"max":80000,"currency":"USD"}"#,
+        );
+        let searcher = FakeSearcher(r#"{"min":70000,"max":90000,"currency":"EUR"}"#);
+
+        let result = SalaryResearch
+            .enrich(
+                &searcher,
+                Some(&cache),
+                "Backend Engineer",
+                "Acme",
+                "Berlin",
+                "DE",
+                "EUR",
+            )
+            .await;
+
+        assert_eq!(
+            result,
+            Some(SalaryRange {
+                min: 70000,
+                max: 90000,
+                currency: "EUR".to_string()
+            })
+        );
+        let cached = cache.get(CACHE_NS, &key, TTL_SECS).expect("cached");
+        assert_eq!(parse_and_validate(&cached).unwrap().currency, "EUR");
+    }
+
+    #[tokio::test]
+    async fn enrich_returns_none_when_a_stale_cache_entry_mismatches_and_the_fresh_fetch_fails() {
+        // Fail-safe end-to-end: a stale mismatched cache entry is never
+        // returned, even when the fallback fresh fetch also comes up empty.
+        let dir = TempDir::new().expect("tempdir");
+        let cache = KvCache::open(dir.path()).expect("open cache");
+        let key = cache_key("Backend Engineer", "Acme", "Berlin", "EUR");
+        cache.set(
+            CACHE_NS,
+            &key,
+            r#"{"min":65000,"max":80000,"currency":"USD"}"#,
+        );
+
+        let result = SalaryResearch
+            .enrich(
+                &ErrSearcher,
+                Some(&cache),
+                "Backend Engineer",
+                "Acme",
+                "Berlin",
+                "DE",
+                "EUR",
+            )
+            .await;
+
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn enrich_leaves_the_currency_untouched_when_the_country_is_unknown() {
+        // Unknown-country guard end-to-end: empty country/currency must not
+        // change today's behavior at all.
+        let dir = TempDir::new().expect("tempdir");
+        let cache = KvCache::open(dir.path()).expect("open cache");
+        let searcher = FakeSearcher(r#"{"min":65000,"max":80000,"currency":"USD"}"#);
+
+        let result = SalaryResearch
+            .enrich(
+                &searcher,
+                Some(&cache),
+                "Backend Engineer",
+                "Acme",
+                "",
+                "",
+                "",
+            )
+            .await;
+
+        assert_eq!(
+            result,
+            Some(SalaryRange {
+                min: 65000,
+                max: 80000,
+                currency: "USD".to_string()
+            })
+        );
     }
 }

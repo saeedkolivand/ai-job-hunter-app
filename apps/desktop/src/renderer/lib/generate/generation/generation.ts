@@ -288,7 +288,13 @@ export async function lookupSalaryRange(
   role: string,
   company: string,
   location: string,
-  model: string
+  model: string,
+  /** ISO-3166 alpha-2 job country, when known — grounds the researched currency. */
+  country?: string,
+  /** Authoritative ISO-4217 currency for `country` (resolve via `countryToCurrency`
+   *  from `@ajh/prompts/generate`); omitted falls back to today's unconstrained
+   *  "local currency for that location" behavior. */
+  currency?: string
 ): Promise<SalaryRange | undefined> {
   try {
     const { activeProvider, providerSettings } = resolveActiveProvider(model);
@@ -296,6 +302,8 @@ export async function lookupSalaryRange(
       role,
       company: company.trim() || undefined,
       location: location.trim() || undefined,
+      country: country?.trim() || undefined,
+      currency: currency?.trim() || undefined,
       provider: activeProvider,
       model: providerSettings?.model || model,
       baseUrl: providerSettings?.baseUrl,

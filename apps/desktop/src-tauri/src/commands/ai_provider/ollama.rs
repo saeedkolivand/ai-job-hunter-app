@@ -207,6 +207,7 @@ impl AiProvider for OllamaClient {
         ollama_research(app, self, model, company, role).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn research_salary(
         &self,
         app: &AppHandle,
@@ -214,8 +215,10 @@ impl AiProvider for OllamaClient {
         role: &str,
         company: &str,
         location: &str,
+        country: &str,
+        currency: &str,
     ) -> AppResult<String> {
-        ollama_research_salary(app, self, model, role, company, location).await
+        ollama_research_salary(app, self, model, role, company, location, country, currency).await
     }
 
     async fn embed(&self, _app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
@@ -522,8 +525,11 @@ pub async fn ollama_research(
 
 /// Salary-range sibling of [`ollama_research`]: same search-then-synthesize
 /// shape, but the salary query/prompts (compact JSON contract, see
-/// `research::SALARY_SYSTEM`). Returns `""` when the key is missing or the
-/// search yields nothing, so the lookup degrades gracefully.
+/// `research::salary_system`). Returns `""` when the key is missing or the
+/// search yields nothing, so the lookup degrades gracefully. `country`/
+/// `currency` ground the report in the job's actual currency — see
+/// `AiProvider::research_salary`.
+#[allow(clippy::too_many_arguments)]
 pub async fn ollama_research_salary(
     app: &AppHandle,
     provider: &dyn AiProvider,
@@ -531,15 +537,23 @@ pub async fn ollama_research_salary(
     role: &str,
     company: &str,
     location: &str,
+    country: &str,
+    currency: &str,
 ) -> AppResult<String> {
-    let query = research::salary_search_query(role, company, location);
+    let query = research::salary_search_query(role, company, location, country, currency);
     let results = ollama_search(app, model, &query).await;
     if results.is_empty() {
         return Ok(String::new());
     }
-    let user = research::salary_synth_user(role, company, location, &results);
+    let user = research::salary_synth_user(role, company, location, country, currency, &results);
     provider
-        .complete(app, model, research::SALARY_SYSTEM, &user, Some(0.2))
+        .complete(
+            app,
+            model,
+            &research::salary_system(currency),
+            &user,
+            Some(0.2),
+        )
         .await
 }
 
