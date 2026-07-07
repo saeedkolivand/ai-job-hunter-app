@@ -18,7 +18,7 @@ import { type PromptTarget, resolveProfile } from '../../provider/index.js';
 import { buildCompanyResearchBlock, buildGroundingBlock } from '../emphasis/index.js';
 import { parseLinksFromResume, stripLinkBlock } from '../links/index.js';
 import type { GenerationMeta } from '../modes/index.js';
-import { ANTI_AI_TELL_PROSE } from '../natural-voice/index.js';
+import { ANTI_AI_TELL_PROSE, HUMANIZE_PROSE } from '../natural-voice/index.js';
 
 export interface ApplicationEmailParams {
   /** Candidate's résumé text — the sole source of factual claims. */
@@ -178,6 +178,7 @@ ${EMAIL_HONESTY}
 
 VOICE:
 ${ANTI_AI_TELL_PROSE}
+${HUMANIZE_PROSE}
 - Conversational-professional: the candidate talking to a person, not reciting a spec. Email-length (2 to 3 paragraphs, ~120 to 200 words) — NOT a cover letter.
 - Lead with a genuine, résumé-backed fit reason. Never "I am excited to apply" or "I am writing to express my interest".
 - Reference attaching the résumé/CV naturally in the closing paragraph.

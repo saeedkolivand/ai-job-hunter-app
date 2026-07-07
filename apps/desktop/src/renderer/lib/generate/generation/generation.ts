@@ -190,8 +190,9 @@ export async function generateResume(
   onThinking?: (tok: string) => void
 ): Promise<string> {
   const profile = buildProviderProfile(model);
+  const tone = usePreferencesStore.getState().outputTone;
 
-  const system = buildResumeSystemPrompt(mode, profile);
+  const system = buildResumeSystemPrompt(mode, profile, tone);
   const user = buildResumePrompt(resume, jobAd, meta, mode, profile);
   const raw = await streamGenerate(
     model,
@@ -384,8 +385,9 @@ export async function generateCoverLetter(
   // User-supplied preferences (salary/start date) — stated only where the market
   // expects them (e.g. DACH); never fabricated. From the global settings store.
   const applicant = usePreferencesStore.getState().applicant;
+  const tone = usePreferencesStore.getState().outputTone;
 
-  const system = buildCoverLetterSystemPrompt(mode, profile);
+  const system = buildCoverLetterSystemPrompt(mode, profile, tone);
   const user = buildCoverLetterPrompt(
     resume,
     jobAd,
@@ -466,8 +468,9 @@ export async function generateApplicationAnswer(params: {
     targetLanguage: meta.targetLanguage,
   });
   const applicant = usePreferencesStore.getState().applicant;
+  const tone = usePreferencesStore.getState().outputTone;
 
-  const system = buildApplicationAnswerSystemPrompt();
+  const system = buildApplicationAnswerSystemPrompt(tone);
   const user = buildApplicationAnswerPrompt({
     question,
     resume,

@@ -38,6 +38,10 @@ describe('buildInterviewQuestionsSystemPrompt', () => {
     expect(sys).toMatch(/work-life/i);
     expect(sys).toMatch(/anchored to a concrete hook/i);
   });
+
+  it('carries the positive HUMANIZE_PROSE cadence anchor (candidate voice, not just bans)', () => {
+    expect(buildInterviewQuestionsSystemPrompt()).toContain('CADENCE');
+  });
 });
 
 describe('buildInterviewQuestionsPrompt', () => {
