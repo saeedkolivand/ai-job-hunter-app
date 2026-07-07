@@ -348,6 +348,21 @@ describe('buildResumeSystemPrompt', () => {
     expect(buildResumeSystemPrompt('ats')).toMatch(/NEVER drop, merge, or omit a work role/i);
     expect(buildResumeSystemPrompt('ats', 'small')).toMatch(/NEVER omit a work role/i);
   });
+
+  it('composes the requested output tone directive on top of the mode instruction', () => {
+    const casual = buildResumeSystemPrompt('ats', 'large', 'casual');
+    const formal = buildResumeSystemPrompt('ats', 'large', 'formal');
+    expect(casual).toMatch(/TONE: conversational and casual/);
+    expect(formal).toMatch(/TONE: formal and precise/);
+    // Tone never relaxes the résumé's ATS bullet/CAR-format precedence.
+    expect(casual).toMatch(/TONE PRECEDENCE/);
+    // MEDIUM-1: résumé tone never licenses contractions, even for casual/creative
+    // (HUMANIZE_LEXICAL's own "no contractions" ban is expected and stays).
+    expect(casual).not.toMatch(/contractions? .* are natural here/i);
+    expect(buildResumeSystemPrompt('ats', 'large', 'creative')).not.toMatch(
+      /told through the candidate's real story/i
+    );
+  });
 });
 
 describe('buildEmphasisDirectivesBlock (#15)', () => {
@@ -601,6 +616,13 @@ describe('buildCoverLetterSystemPrompt', () => {
     const prompt = buildCoverLetterSystemPrompt('recruiter', 'small');
     expect(prompt).toContain('cover letter writer');
   });
+
+  it('composes the requested output tone directive alongside the mode register', () => {
+    const creative = buildCoverLetterSystemPrompt('recruiter', 'large', 'creative');
+    expect(creative).toMatch(/TONE: a more narrative, distinctive voice/);
+    // Default (no tone passed) falls back to the professional directive.
+    expect(buildCoverLetterSystemPrompt('recruiter', 'large')).toMatch(/TONE: polished, warm/);
+  });
 });
 
 describe('buildCoverLetterPrompt', () => {
@@ -685,6 +707,11 @@ describe('application questions', () => {
     const sys = buildApplicationAnswerSystemPrompt();
     expect(sys).toMatch(/traceable to <candidate_resume>/i);
     expect(sys).toMatch(/never invent/i);
+  });
+
+  it('system prompt composes the requested output tone directive', () => {
+    expect(buildApplicationAnswerSystemPrompt('casual')).toMatch(/TONE: conversational and casual/);
+    expect(buildApplicationAnswerSystemPrompt()).toMatch(/TONE: polished, warm/);
   });
 
   it('grounds the answer prompt in the résumé and includes the question', () => {

@@ -13,7 +13,12 @@
  */
 
 import { type PromptTarget, resolveProfile } from '../../provider/index.js';
-import { ANTI_AI_TELL_LEXICAL, ANTI_AI_TELL_PROSE } from '../natural-voice/index.js';
+import {
+  ANTI_AI_TELL_LEXICAL,
+  ANTI_AI_TELL_PROSE,
+  HUMANIZE_LEXICAL,
+  HUMANIZE_PROSE,
+} from '../natural-voice/index.js';
 
 export type RewriteDocType = 'resume' | 'cover-letter' | 'application-answer';
 
@@ -56,9 +61,9 @@ const DOC_LABELS: Record<RewriteDocType, string> = {
  * is a compile-time error until a voice is provided (exhaustiveness).
  */
 const DOC_VOICE: Record<RewriteDocType, string> = {
-  resume: ANTI_AI_TELL_LEXICAL,
-  'cover-letter': ANTI_AI_TELL_PROSE,
-  'application-answer': ANTI_AI_TELL_PROSE,
+  resume: `${ANTI_AI_TELL_LEXICAL}\n${HUMANIZE_LEXICAL}`,
+  'cover-letter': `${ANTI_AI_TELL_PROSE}\n${HUMANIZE_PROSE}`,
+  'application-answer': `${ANTI_AI_TELL_PROSE}\n${HUMANIZE_PROSE}`,
 };
 
 // Hard cap on the selected span itself so a huge selection can't blow a small

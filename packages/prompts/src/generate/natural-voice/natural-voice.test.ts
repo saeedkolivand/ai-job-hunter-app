@@ -1,21 +1,28 @@
 /**
  * Regression tests for the centralized anti-AI-tell ruleset (natural-voice.ts)
- * and its wiring into five generation-prompt surfaces.
+ * and its wiring into every generation-prompt surface.
  *
  * Invariants under test:
- *  1. DASH-FREE CONSTANTS  — neither exported constant contains an em- or en-dash.
+ *  1. DASH-FREE CONSTANTS  — neither exported constant contains an em- or en-dash
+ *                            (bans AND the positive HUMANIZE_* blocks).
  *  2. COMPOSITION          — PROSE is a strict superset of LEXICAL; the em-dash ban
  *                            is the distinguishing PROSE-only addition.
  *  3. PROSE SURFACES       — cover-letter, referral, and application-questions system
- *                            prompts carry the ruleset and are dash-free, at every
- *                            depth they support (brief / task / full).
+ *                            prompts carry the ruleset (bans + HUMANIZE_PROSE) and
+ *                            are dash-free, at every depth they support (brief /
+ *                            task / full).
  *  4. COVER-LETTER EXEMPLAR— the COVER_LETTER_TONE_EXEMPLAR embedded in the full
  *                            system prompt is itself dash-free.
- *  5. RESUME CONTRAST      — resume system prompt carries LEXICAL but not the prose
- *                            em-dash-ban line; its date-range en-dash convention is
- *                            preserved.
- *  6. REWRITE ROUTING      — docType=cover_letter gets PROSE rules; docType=resume
- *                            gets LEXICAL only (prose em-dash-ban absent).
+ *  5. RESUME CONTRAST      — resume system prompt carries LEXICAL + HUMANIZE_LEXICAL
+ *                            but not the prose em-dash-ban line or any
+ *                            prose-imperfection marker; its date-range en-dash
+ *                            convention is preserved.
+ *  6. REWRITE ROUTING      — docType=cover_letter/application-answer gets PROSE +
+ *                            HUMANIZE_PROSE; docType=resume gets LEXICAL +
+ *                            HUMANIZE_LEXICAL only (prose em-dash-ban absent).
+ *  7. TONE DIRECTIVE       — each output tone maps to its own directive; creative
+ *                            stays bounded; the tone param reaches the resume,
+ *                            cover-letter, and application-answer system prompts.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -25,7 +32,13 @@ import { buildCoverLetterSystemPrompt } from '../cover-letter/index.js';
 import { buildReferralPrompt } from '../referral/index.js';
 import { buildResumeSystemPrompt } from '../resume/index.js';
 import { buildRewritePrompt } from '../rewrite/index.js';
-import { ANTI_AI_TELL_LEXICAL, ANTI_AI_TELL_PROSE } from './natural-voice.js';
+import {
+  ANTI_AI_TELL_LEXICAL,
+  ANTI_AI_TELL_PROSE,
+  HUMANIZE_LEXICAL,
+  HUMANIZE_PROSE,
+  toneDirective,
+} from './natural-voice.js';
 
 // ─── stable phrase anchors ────────────────────────────────────────────────────
 // These are phrases in the current source that uniquely identify a block.
@@ -36,6 +49,10 @@ import { ANTI_AI_TELL_LEXICAL, ANTI_AI_TELL_PROSE } from './natural-voice.js';
 const LEXICAL_ANCHOR = 'Drop AI-vocabulary';
 /** The em-dash hard-ban line — present in PROSE only, never in LEXICAL alone. */
 const PROSE_EMDASH_BAN = 'EM-DASH HARD BAN';
+/** A phrase stable enough to identify the positive HUMANIZE_LEXICAL block. */
+const HUMANIZE_LEXICAL_ANCHOR = 'BULLET VARIETY';
+/** A phrase stable enough to identify the positive HUMANIZE_PROSE block. */
+const HUMANIZE_PROSE_ANCHOR = 'CADENCE';
 
 // ─── DepthTargets: one PromptTarget value per resolved depth ─────────────────
 // cover-letter supports brief / task / full (see cover-letter.ts + provider/index.ts).
@@ -76,6 +93,38 @@ describe('ANTI_AI_TELL_PROSE — dash-free constant', () => {
 
   it('combined regex: no em-dash or en-dash', () => {
     expect(ANTI_AI_TELL_PROSE).not.toMatch(/[—–]/);
+  });
+});
+
+describe('HUMANIZE_LEXICAL — dash-free constant', () => {
+  it('contains no em-dash or en-dash', () => {
+    expect(HUMANIZE_LEXICAL).not.toMatch(/[—–]/);
+  });
+
+  it('carries the bullet-variety anchor and stays honesty-subordinate', () => {
+    expect(HUMANIZE_LEXICAL).toContain(HUMANIZE_LEXICAL_ANCHOR);
+    expect(HUMANIZE_LEXICAL).toMatch(/never licenses a new fact|already.*in the resume/i);
+  });
+
+  it('never introduces prose-imperfection (no CADENCE/CONTROLLED IMPERFECTION language)', () => {
+    expect(HUMANIZE_LEXICAL).not.toContain(HUMANIZE_PROSE_ANCHOR);
+    expect(HUMANIZE_LEXICAL).not.toContain('CONTROLLED IMPERFECTION');
+  });
+});
+
+describe('HUMANIZE_PROSE — dash-free constant', () => {
+  it('contains no em-dash or en-dash', () => {
+    expect(HUMANIZE_PROSE).not.toMatch(/[—–]/);
+  });
+
+  it('carries the cadence anchor and stays honesty-subordinate', () => {
+    expect(HUMANIZE_PROSE).toContain(HUMANIZE_PROSE_ANCHOR);
+    expect(HUMANIZE_PROSE).toMatch(/honesty rules above require/i);
+  });
+
+  it('gates controlled imperfection to the requested register (never a typo/grammar error)', () => {
+    expect(HUMANIZE_PROSE).toMatch(/CONTROLLED IMPERFECTION/);
+    expect(HUMANIZE_PROSE).toMatch(/never a typo or a grammar mistake/i);
   });
 });
 
@@ -121,6 +170,11 @@ describe('buildCoverLetterSystemPrompt — carries PROSE ruleset, dash-free, all
         expect(prompt).toContain(PROSE_EMDASH_BAN);
       });
 
+      it('system prompt carries the positive HUMANIZE_PROSE anchor', () => {
+        const prompt = buildCoverLetterSystemPrompt('recruiter', target);
+        expect(prompt).toContain(HUMANIZE_PROSE_ANCHOR);
+      });
+
       it('assembled system prompt has no em-dash (—)', () => {
         const prompt = buildCoverLetterSystemPrompt('recruiter', target);
         expect(prompt).not.toMatch(/—/);
@@ -163,6 +217,11 @@ describe('buildReferralPrompt — carries PROSE ruleset, dash-free, all tier tar
         expect(system).toContain(PROSE_EMDASH_BAN);
       });
 
+      it('system prompt carries the positive HUMANIZE_PROSE anchor', () => {
+        const { system } = buildReferralPrompt(BASE_PARAMS, target);
+        expect(system).toContain(HUMANIZE_PROSE_ANCHOR);
+      });
+
       it('assembled system prompt has no em-dash (—)', () => {
         const { system } = buildReferralPrompt(BASE_PARAMS, target);
         expect(system).not.toMatch(/—/);
@@ -187,6 +246,10 @@ describe('buildApplicationAnswerSystemPrompt — carries PROSE ruleset, dash-fre
   it('system prompt carries the PROSE em-dash-ban line', () => {
     const prompt = buildApplicationAnswerSystemPrompt();
     expect(prompt).toContain(PROSE_EMDASH_BAN);
+  });
+
+  it('system prompt carries the positive HUMANIZE_PROSE anchor', () => {
+    expect(buildApplicationAnswerSystemPrompt()).toContain(HUMANIZE_PROSE_ANCHOR);
   });
 
   it('assembled system prompt has no em-dash (—)', () => {
@@ -251,6 +314,26 @@ describe('buildResumeSystemPrompt — LEXICAL only, deliberate en-dash date conv
         expect(buildResumeSystemPrompt('ats', target)).not.toContain('No negative parallelisms');
       });
 
+      it('carries the positive HUMANIZE_LEXICAL anchor (specificity + bullet variety)', () => {
+        expect(buildResumeSystemPrompt('ats', target)).toContain(HUMANIZE_LEXICAL_ANCHOR);
+      });
+
+      it('does NOT carry HUMANIZE_PROSE or its prose-imperfection markers — LEXICAL-tier only', () => {
+        const prompt = buildResumeSystemPrompt('ats', target);
+        expect(prompt).not.toContain(HUMANIZE_PROSE_ANCHOR);
+        expect(prompt).not.toContain('CONTROLLED IMPERFECTION');
+        expect(prompt).not.toMatch(/may use a contraction/i);
+      });
+
+      it('composes the résumé-safe (lexical) tone directive, never the prose contraction-license clause', () => {
+        const casual = buildResumeSystemPrompt('ats', target, 'casual');
+        expect(casual).toContain(toneDirective('casual', { lexical: true }));
+        expect(casual).not.toContain(toneDirective('casual'));
+        const creative = buildResumeSystemPrompt('ats', target, 'creative');
+        expect(creative).toContain(toneDirective('creative', { lexical: true }));
+        expect(creative).not.toContain(toneDirective('creative'));
+      });
+
       it('preserves a deliberate en-dash (numeric range or date-format instruction)', () => {
         // Every resume depth intentionally embeds at least one literal en-dash:
         //   brief → date example "January 2021 – March 2023"
@@ -288,6 +371,18 @@ describe('buildRewritePrompt — docType routes to correct voice ruleset', () =>
       const { system } = buildRewritePrompt({ ...BASE, docType: 'cover-letter' });
       expect(system).toContain('PROSE FLOW');
     });
+
+    it('system prompt carries the positive HUMANIZE_PROSE anchor', () => {
+      const { system } = buildRewritePrompt({ ...BASE, docType: 'cover-letter' });
+      expect(system).toContain(HUMANIZE_PROSE_ANCHOR);
+    });
+  });
+
+  describe('docType=application-answer → PROSE rules (same as cover-letter)', () => {
+    it('system prompt carries the positive HUMANIZE_PROSE anchor', () => {
+      const { system } = buildRewritePrompt({ ...BASE, docType: 'application-answer' });
+      expect(system).toContain(HUMANIZE_PROSE_ANCHOR);
+    });
   });
 
   describe('docType=resume → LEXICAL rules only', () => {
@@ -305,5 +400,92 @@ describe('buildRewritePrompt — docType routes to correct voice ruleset', () =>
       const { system } = buildRewritePrompt({ ...BASE, docType: 'resume' });
       expect(system).not.toContain('PROSE FLOW');
     });
+
+    it('system prompt carries the positive HUMANIZE_LEXICAL anchor, not HUMANIZE_PROSE', () => {
+      const { system } = buildRewritePrompt({ ...BASE, docType: 'resume' });
+      expect(system).toContain(HUMANIZE_LEXICAL_ANCHOR);
+      expect(system).not.toContain(HUMANIZE_PROSE_ANCHOR);
+    });
+  });
+});
+
+// ─── 7. TONE DIRECTIVE ────────────────────────────────────────────────────────
+
+describe('toneDirective', () => {
+  it('defaults to the professional directive when no tone is given', () => {
+    expect(toneDirective()).toMatch(/professional/i);
+    expect(toneDirective(undefined)).toBe(toneDirective('professional'));
+  });
+
+  it('maps casual to a conversational, contraction-friendly directive', () => {
+    expect(toneDirective('casual')).toMatch(/conversational/i);
+    expect(toneDirective('casual')).toMatch(/contraction/i);
+  });
+
+  it('maps formal to a restrained, minimal-imperfection directive', () => {
+    expect(toneDirective('formal')).toMatch(/formal/i);
+    expect(toneDirective('formal')).toMatch(/no contractions or fragments/i);
+  });
+
+  it('maps creative to a narrative directive that stays explicitly bounded', () => {
+    const directive = toneDirective('creative');
+    expect(directive).toMatch(/narrative/i);
+    expect(directive).toMatch(/never gimmicky|bounded/i);
+  });
+
+  it('each of the 4 tones maps to a distinct directive', () => {
+    const tones = ['professional', 'casual', 'formal', 'creative'] as const;
+    const directives = new Set(tones.map((t) => toneDirective(t)));
+    expect(directives.size).toBe(tones.length);
+  });
+
+  it('produces no em-dash or en-dash for any tone', () => {
+    for (const t of ['professional', 'casual', 'formal', 'creative'] as const) {
+      expect(toneDirective(t)).not.toMatch(/[—–]/);
+    }
+  });
+
+  describe('{ lexical: true } (résumé/ATS-safe variant)', () => {
+    it('never mentions contractions for casual or creative, unlike the prose directive', () => {
+      expect(toneDirective('casual')).toMatch(/contraction/i);
+      expect(toneDirective('casual', { lexical: true })).not.toMatch(/contraction/i);
+      expect(toneDirective('creative', { lexical: true })).not.toMatch(/contraction/i);
+    });
+
+    it('professional and formal are unchanged (already ATS-safe as written)', () => {
+      expect(toneDirective('professional', { lexical: true })).toBe(toneDirective('professional'));
+      expect(toneDirective('formal', { lexical: true })).toBe(toneDirective('formal'));
+    });
+
+    it('produces no em-dash or en-dash for any tone', () => {
+      for (const t of ['professional', 'casual', 'formal', 'creative'] as const) {
+        expect(toneDirective(t, { lexical: true })).not.toMatch(/[—–]/);
+      }
+    });
+  });
+});
+
+// ─── 7. TONE WIRING — reaches the resume / cover-letter / answer builders ────
+
+describe('tone param reaches the system-prompt builders', () => {
+  it('buildResumeSystemPrompt composes the résumé-safe (lexical) casual tone directive, not the prose one', () => {
+    const prompt = buildResumeSystemPrompt('ats', 'large', 'casual');
+    expect(prompt).toContain(toneDirective('casual', { lexical: true }));
+    expect(prompt).not.toContain(toneDirective('casual'));
+    expect(prompt).toMatch(/TONE PRECEDENCE/);
+  });
+
+  it('buildResumeSystemPrompt defaults to the professional directive when tone is omitted', () => {
+    expect(buildResumeSystemPrompt('ats', 'large')).toContain(toneDirective('professional'));
+  });
+
+  it('buildCoverLetterSystemPrompt composes the requested tone directive', () => {
+    const prompt = buildCoverLetterSystemPrompt('recruiter', 'large', 'formal');
+    expect(prompt).toContain(toneDirective('formal'));
+  });
+
+  it('buildApplicationAnswerSystemPrompt composes the requested tone directive', () => {
+    const prompt = buildApplicationAnswerSystemPrompt('creative');
+    expect(prompt).toContain(toneDirective('creative'));
   });
 });

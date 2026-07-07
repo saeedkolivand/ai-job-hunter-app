@@ -20,7 +20,7 @@ import { type PromptTarget, resolveProfile } from '../../provider/index.js';
 import { buildCompanyResearchBlock } from '../emphasis/index.js';
 import { stripLinkBlock } from '../links/index.js';
 import type { GenerationMeta } from '../modes/index.js';
-import { ANTI_AI_TELL_PROSE } from '../natural-voice/index.js';
+import { ANTI_AI_TELL_PROSE, HUMANIZE_PROSE } from '../natural-voice/index.js';
 
 /** Default number of suggested questions when no audiences are targeted (legacy path). */
 export const INTERVIEW_QUESTIONS_COUNT = 6;
@@ -79,7 +79,8 @@ Q: <the question, a single sentence>
 WHY: <one short line: what asking it signals / why it lands>
 AUDIENCE: <recruiter | hiringManager | team | leadership | general>
 
-${ANTI_AI_TELL_PROSE}`;
+${ANTI_AI_TELL_PROSE}
+${HUMANIZE_PROSE}`;
 }
 
 /**
