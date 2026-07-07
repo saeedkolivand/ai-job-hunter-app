@@ -235,3 +235,23 @@ describe('buildRewritePrompt — docType label in system prompt', () => {
     expect(resumeSystem).not.toMatch(/em-dash hard ban/i);
   });
 });
+
+// ─── Humanization (positive HUMANIZE_LEXICAL / HUMANIZE_PROSE blocks) ────────
+
+describe('buildRewritePrompt — DOC_VOICE carries the positive humanize blocks', () => {
+  it('docType "resume" carries HUMANIZE_LEXICAL (bullet variety), not HUMANIZE_PROSE', () => {
+    const { system } = buildRewritePrompt({ ...BASE_PARAMS, docType: 'resume' });
+    expect(system).toContain('BULLET VARIETY');
+    expect(system).not.toContain('CADENCE');
+  });
+
+  it('docType "cover-letter" carries HUMANIZE_PROSE (cadence)', () => {
+    const { system } = buildRewritePrompt({ ...BASE_PARAMS, docType: 'cover-letter' });
+    expect(system).toContain('CADENCE');
+  });
+
+  it('docType "application-answer" carries HUMANIZE_PROSE (cadence) too', () => {
+    const { system } = buildRewritePrompt({ ...BASE_PARAMS, docType: 'application-answer' });
+    expect(system).toContain('CADENCE');
+  });
+});

@@ -13,7 +13,12 @@ import {
 } from '../emphasis/index.js';
 import { parseLinksFromResume, stripLinkBlock } from '../links/index.js';
 import { type GenerationMeta, type GenerationMode, MODES } from '../modes/index.js';
-import { ANTI_AI_TELL_PROSE } from '../natural-voice/index.js';
+import {
+  ANTI_AI_TELL_PROSE,
+  HUMANIZE_PROSE,
+  type OutputTone,
+  toneDirective,
+} from '../natural-voice/index.js';
 
 /**
  * Build the `<market_conventions>` block for the resolved job market. The letter
@@ -63,6 +68,7 @@ Write the letter in ${targetLanguage}, but follow ${c.country} cover-letter etiq
  */
 const LETTER_VOICE = `VOICE: write like a real person, not a keyword optimizer.
 ${ANTI_AI_TELL_PROSE}
+${HUMANIZE_PROSE}
 - First person, warm but professional: the candidate talking, not a brochure or a requirements list.
 - Connection over coverage: 2 to 3 things said well beat ten requirements name-dropped. If a sentence reads like a spec sheet, rewrite it.`;
 
@@ -135,10 +141,11 @@ const COVER_LETTER_TONE_EXEMPLAR = `TONE REFERENCE (fictional: a different candi
 
 export function buildCoverLetterSystemPrompt(
   mode: GenerationMode,
-  target: PromptTarget = 'large'
+  target: PromptTarget = 'large',
+  tone?: OutputTone
 ): string {
   const { depth } = resolveProfile(target);
-  const register = letterRegister(mode);
+  const register = `${letterRegister(mode)}\n${toneDirective(tone)}`;
   if (depth === 'task') return buildCoverLetterSystemTaskBrief(mode, register);
   if (depth !== 'brief') return buildCoverLetterSystemFull(mode, register);
 

@@ -393,3 +393,22 @@ describe('buildReferralImprovePrompt — channel + length cap', () => {
     expect(extract(large).length).toBeGreaterThan(extract(small).length);
   });
 });
+
+// ─── Humanization (positive HUMANIZE_PROSE block) ─────────────────────────────
+
+describe('buildReferralPrompt / buildReferralImprovePrompt — humanization', () => {
+  it('the generate builder carries the positive HUMANIZE_PROSE cadence anchor', () => {
+    const { system } = buildReferralPrompt(BASE);
+    expect(system).toContain('CADENCE');
+  });
+
+  it('the improve builder carries the positive HUMANIZE_PROSE cadence anchor too', () => {
+    const { system } = buildReferralImprovePrompt(IMPROVE_BASE);
+    expect(system).toContain('CADENCE');
+  });
+
+  it('humanization is present even for the char-capped connection_note format', () => {
+    const { system } = buildReferralPrompt({ ...BASE, format: 'connection_note' });
+    expect(system).toContain('CADENCE');
+  });
+});

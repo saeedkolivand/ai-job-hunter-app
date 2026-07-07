@@ -52,7 +52,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
-  usePreferencesStore.setState({ aiProviderConfig: undefined });
+  usePreferencesStore.setState({ aiProviderConfig: undefined, outputTone: 'professional' });
 });
 
 describe('extractMetadata', () => {
@@ -842,5 +842,74 @@ describe('per-step temperature override', () => {
     await p;
     // large tier default for cloud = 0.55; the ollama override does not apply.
     expect(tempOf(client)).toBeCloseTo(0.55);
+  });
+});
+
+describe('output tone wiring (Settings → Output Tone)', () => {
+  // The system prompt is always messages[0] (see streamGenerate in generation.ts).
+  const systemOf = (client: ReturnType<typeof register>) => {
+    const call = (client.ai.generatePipeline as ReturnType<typeof vi.fn>).mock.calls[0];
+    const messages = (call?.[0] as { messages: { role: string; content: string }[] }).messages;
+    return messages[0]?.content ?? '';
+  };
+
+  const META = {
+    resumeLanguage: 'en',
+    jobAdLanguage: 'en',
+    mismatch: false,
+    candidateName: 'X',
+    jobTitle: 'Y',
+    companyName: 'Z',
+    targetLanguage: 'en',
+    topRequirements: [],
+  };
+
+  it('threads the store outputTone into the resume system prompt', async () => {
+    usePreferencesStore.setState({ outputTone: 'casual' });
+    const client = register();
+    const p = generateResume('My resume', 'Job ad', META, 'ats', 'llama3', vi.fn());
+    await flushUntilStreaming();
+    emit('RESUME CONTENT');
+    done();
+    await p;
+    expect(systemOf(client)).toMatch(/TONE: conversational and casual/);
+  });
+
+  it('threads the store outputTone into the cover-letter system prompt', async () => {
+    usePreferencesStore.setState({ outputTone: 'formal' });
+    const client = register();
+    const p = generateCoverLetter('My resume', 'Job ad', META, 'recruiter', 'llama3', vi.fn());
+    await flushUntilStreaming();
+    emit('Dear Hiring Team.');
+    done();
+    await p;
+    expect(systemOf(client)).toMatch(/TONE: formal and precise/);
+  });
+
+  it('threads the store outputTone into the application-answer system prompt', async () => {
+    usePreferencesStore.setState({ outputTone: 'creative' });
+    const client = register();
+    const p = generateApplicationAnswer({
+      question: 'Why do you want to work here?',
+      resume: 'My resume',
+      jobAd: 'Backend role at Acme',
+      meta: META,
+      model: 'llama3',
+    });
+    await flushUntilStreaming();
+    emit('Because I love building things.');
+    done();
+    await p;
+    expect(systemOf(client)).toMatch(/TONE: a more narrative, distinctive voice/);
+  });
+
+  it('resolves to the professional tone directive by default (outputTone: professional)', async () => {
+    const client = register();
+    const p = generateResume('My resume', 'Job ad', META, 'ats', 'llama3', vi.fn());
+    await flushUntilStreaming();
+    emit('RESUME CONTENT');
+    done();
+    await p;
+    expect(systemOf(client)).toMatch(/TONE: polished, warm, and professional/);
   });
 });
