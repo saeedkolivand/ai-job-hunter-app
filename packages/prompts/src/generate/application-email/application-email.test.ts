@@ -285,3 +285,21 @@ describe('buildApplicationEmailPrompt — provider tier / résumé truncation', 
     expect(small.length).toBeLessThan(large.length);
   });
 });
+
+// ─── Humanization (positive HUMANIZE_PROSE block) ─────────────────────────────
+// The VOICE block (and ANTI_AI_TELL_PROSE with it) is only rendered at the
+// 'full' depth (see application-email.ts) — mirrors that scope exactly.
+
+describe('buildApplicationEmailPrompt — humanization (full depth only)', () => {
+  it('the full-depth system prompt carries the positive HUMANIZE_PROSE cadence anchor', () => {
+    const { system } = buildApplicationEmailPrompt(BASE, 'large');
+    expect(system).toContain('CADENCE');
+  });
+
+  it('the brief/task depths do not carry the VOICE/HUMANIZE_PROSE block (unchanged scope)', () => {
+    const { system: small } = buildApplicationEmailPrompt(BASE, 'small');
+    const { system: task } = buildApplicationEmailPrompt(BASE, { kind: 'cli' });
+    expect(small).not.toContain('CADENCE');
+    expect(task).not.toContain('CADENCE');
+  });
+});

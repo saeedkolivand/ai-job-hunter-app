@@ -10,7 +10,12 @@ import {
 } from '../emphasis/index.js';
 import { buildBodyLinksBlock, parseLinksFromResume, stripLinkBlock } from '../links/index.js';
 import { type GenerationMeta, type GenerationMode, MODES } from '../modes/index.js';
-import { ANTI_AI_TELL_LEXICAL } from '../natural-voice/index.js';
+import {
+  ANTI_AI_TELL_LEXICAL,
+  HUMANIZE_LEXICAL,
+  type OutputTone,
+  toneDirective,
+} from '../natural-voice/index.js';
 
 /**
  * ATS keyword match outranks the anti-AI-tell word bans: an exact <job_ad> term
@@ -19,14 +24,26 @@ import { ANTI_AI_TELL_LEXICAL } from '../natural-voice/index.js';
  */
 const ATS_PRECEDENCE = `ATS PRECEDENCE: If a word the anti-AI-tell rules discourage is an EXACT term from the <job_ad> and is truthfully grounded in the candidate's résumé, keep it (ATS keyword match wins). The anti-AI-tell bans govern only words the model introduces on its own.`;
 
+/**
+ * The résumé-tier counterpart to `HUMANIZE_PROSE`'s tone gate: tone shapes word
+ * choice and the summary's register only. A résumé stays ATS-safe (bullet
+ * structure, CAR format, no contractions/fragments) no matter which tone is
+ * selected; the humanize/tone directives never override that.
+ */
+const TONE_PRECEDENCE = `TONE PRECEDENCE: the requested tone shapes word choice and the summary's register only. Bullet structure, the CAR format, and every rule above always win over tone.`;
+
 export function buildResumeSystemPrompt(
   mode: GenerationMode,
-  target: PromptTarget = 'large'
+  target: PromptTarget = 'large',
+  tone?: OutputTone
 ): string {
   const { depth } = resolveProfile(target);
   const modeInstr = MODES[mode].toneInstruction;
-  if (depth === 'task') return buildResumeSystemTaskBrief(mode, modeInstr);
-  if (depth !== 'brief') return buildResumeSystemFull(mode, modeInstr);
+  // Résumé-tier tone: never license contractions/prose imperfection (that
+  // stays ATS-safe regardless of tone; see HUMANIZE_LEXICAL/TONE_PRECEDENCE).
+  const toneBlock = `${toneDirective(tone, { lexical: true })}\n${TONE_PRECEDENCE}`;
+  if (depth === 'task') return buildResumeSystemTaskBrief(mode, modeInstr, toneBlock);
+  if (depth !== 'brief') return buildResumeSystemFull(mode, modeInstr, toneBlock);
 
   const emphasisNote = `Wrap important job-ad keywords in **double asterisks** when they appear naturally (e.g. **React**, **TypeScript**). Max 2–3 bolded terms per bullet.`;
   return `You are an expert resume writer. Rewrite the candidate's resume for the target job.
@@ -48,10 +65,12 @@ DATE FORMAT: "January 2021 – March 2023" or "Jan 2021 – Mar 2023" — consis
 ${emphasisNote}
 
 ${ANTI_AI_TELL_LEXICAL}
+${HUMANIZE_LEXICAL}
 ${ATS_PRECEDENCE}
 
 MODE: ${MODES[mode].label}
 ${modeInstr}
+${toneBlock}
 
 OUTPUT: Plain text. Standard section headers. Bullets start with •. No markdown except **bold**. Output ONLY the resume.
 
@@ -60,7 +79,11 @@ FINAL CHECK — read your output and confirm:
 ✓ No phrase was copied from the job ad verbatim`;
 }
 
-function buildResumeSystemTaskBrief(mode: GenerationMode, modeInstr: string): string {
+function buildResumeSystemTaskBrief(
+  mode: GenerationMode,
+  modeInstr: string,
+  toneBlock: string
+): string {
   return `You are a resume-rewriting agent working a TASK. You may plan, draft, self-review, and revise before finalizing.
 
 GOAL: rewrite the candidate's resume tailored to the target job, in the target language, ready to pass ATS and impress a recruiter.
@@ -77,15 +100,17 @@ ACCEPTANCE CHECKS — verify and revise until all pass:
 - Keyword emphasis uses **double asterisks**, max 2–3 per bullet.
 
 ${ANTI_AI_TELL_LEXICAL}
+${HUMANIZE_LEXICAL}
 ${ATS_PRECEDENCE}
 
 MODE: ${MODES[mode].label}
 ${modeInstr}
+${toneBlock}
 
 OUTPUT: the finished resume (may be written to a file or returned).`;
 }
 
-function buildResumeSystemFull(mode: GenerationMode, modeInstr: string): string {
+function buildResumeSystemFull(mode: GenerationMode, modeInstr: string, toneBlock: string): string {
   return `You are an expert Resume Writer with deep knowledge of ATS systems, recruiter behavior, and modern hiring practices.
 
 Your resume rewrites achieve 90%+ ATS pass rates and 3x higher callback rates.
@@ -212,7 +237,9 @@ ATS KEYWORD STRATEGY (CRITICAL):
 Your goal: Achieve 85%+ keyword match while maintaining natural, readable prose.
 
 ${ANTI_AI_TELL_LEXICAL}
+${HUMANIZE_LEXICAL}
 ${ATS_PRECEDENCE}
+${toneBlock}
 
 OUTPUT FORMAT:
 Plain text with **double asterisks** for keyword emphasis (renderer converts to real bold).

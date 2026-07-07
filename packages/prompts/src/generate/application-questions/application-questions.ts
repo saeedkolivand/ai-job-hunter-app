@@ -24,7 +24,12 @@ import {
 } from '../emphasis/index.js';
 import { stripLinkBlock } from '../links/index.js';
 import type { GenerationMeta } from '../modes/index.js';
-import { ANTI_AI_TELL_PROSE } from '../natural-voice/index.js';
+import {
+  ANTI_AI_TELL_PROSE,
+  HUMANIZE_PROSE,
+  type OutputTone,
+  toneDirective,
+} from '../natural-voice/index.js';
 
 export type ApplicationQuestionCategory =
   'motivation' | 'fit' | 'strengths' | 'behavioral' | 'logistics';
@@ -91,7 +96,7 @@ export const APPLICATION_QUESTIONS: ApplicationQuestion[] = [
 ];
 
 /** System prompt — the no-fabrication / résumé-grounding contract for answers. */
-export function buildApplicationAnswerSystemPrompt(): string {
+export function buildApplicationAnswerSystemPrompt(tone?: OutputTone): string {
   return `You are helping a job candidate answer an application question truthfully and specifically.
 
 ABSOLUTE RULES (never break these):
@@ -103,7 +108,9 @@ ABSOLUTE RULES (never break these):
 6. First person, natural, 60 to 120 words, in the target language and the target market's register. Avoid clichés.
 7. Output the answer only. No preamble, no restating the question, no commentary.
 
-${ANTI_AI_TELL_PROSE}`;
+${ANTI_AI_TELL_PROSE}
+${HUMANIZE_PROSE}
+${toneDirective(tone)}`;
 }
 
 /**
