@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.123.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.122.0...v0.123.0) (2026-07-07)
+
+### ✨ Features
+
+* add opt-in autopilot ai notes for top matches (headless, notify-only) ([#557](https://github.com/saeedkolivand/ai-job-hunter-app/issues/557)) ([7d2d759](https://github.com/saeedkolivand/ai-job-hunter-app/commit/7d2d759968d44e3ff1773a6f570607e918fc0d3d))
+* add optional per-question web search to application answers ([#562](https://github.com/saeedkolivand/ai-job-hunter-app/issues/562)) ([4ceeb66](https://github.com/saeedkolivand/ai-job-hunter-app/commit/4ceeb66b221a34d6803c975bf2637cc28a92733f))
+* draft a tailored resume in the prep-this-application flow ([#561](https://github.com/saeedkolivand/ai-job-hunter-app/issues/561)) ([125afd4](https://github.com/saeedkolivand/ai-job-hunter-app/commit/125afd46a3d63296b416aae343bb3f1a71228e94))
+* humanize generated application text so it reads as authentic human writing ([#563](https://github.com/saeedkolivand/ai-job-hunter-app/issues/563)) ([169f7ae](https://github.com/saeedkolivand/ai-job-hunter-app/commit/169f7ae8e386b47c58b9546f5cf0986f1d063424))
+
+### 🐛 Bug Fixes
+
+* ground salary-lookup currency in the job's country ([#560](https://github.com/saeedkolivand/ai-job-hunter-app/issues/560)) ([f7765e0](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f7765e0fee720fbb78f16f77d7f157ce911bea2d)), closes [#551](https://github.com/saeedkolivand/ai-job-hunter-app/issues/551)
+* prevent prep-this-application runs from getting stuck at pending ([#558](https://github.com/saeedkolivand/ai-job-hunter-app/issues/558)) ([5cf2534](https://github.com/saeedkolivand/ai-job-hunter-app/commit/5cf2534655bd11f609b1da9c7944180160708796))
+* repair feature tour on collapsed sidebar, answer text selection, and rewrite popover stacking ([#559](https://github.com/saeedkolivand/ai-job-hunter-app/issues/559)) ([e949bcf](https://github.com/saeedkolivand/ai-job-hunter-app/commit/e949bcfc015bdc78279ef4fa4700795f155cdd7b))
+
 ## [0.122.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.121.0...v0.122.0) (2026-07-05)
 
 ### ✨ Features
