@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783379347275,
+  "lastUpdate": 1783384943580,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2807,6 +2807,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 294972,
             "range": "± 7906",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "169f7ae8e386b47c58b9546f5cf0986f1d063424",
+          "message": "feat: humanize generated application text so it reads as authentic human writing (#563)\n\nText from the résumé / cover-letter / application-answer generators read as\nobviously AI-written (an AI detector confidently flagged it). The shared\nnatural-voice module was almost entirely a negative ban list; this adds the\npositive \"write like a specific human\" guidance the 2026 humanization research\nconverges on, grounded in the existing honesty spine (humanize only real\ncontent, never invent).\n\n- natural-voice: new HUMANIZE_PROSE (cadence/burstiness — mix short and long\n  sentences; concrete specifics from the candidate's real résumé; cut clichés,\n  hedging preambles and stock transitions; tone-gated controlled imperfection;\n  authentic first-person voice) and HUMANIZE_LEXICAL (résumé/ATS-safe tier:\n  real metrics/tools + bullet-shape variety while every bullet still opens with\n  a strong action verb — no contractions/fragments/em-dashes). Composed\n  alongside the untouched ANTI_AI_TELL_* bans across all 7 generation surfaces\n  at every provider depth.\n- wire the previously-dead Output Tone setting (professional/casual/formal/\n  creative) into the résumé/cover-letter/answer generators via a toneDirective\n  helper (renderer reads outputTone from the store and threads it into the\n  builders — no IPC/contract change). A lexical tone variant keeps the résumé\n  ATS-safe (never injects contractions), and TONE_PRECEDENCE + ATS_PRECEDENCE\n  keep keyword/CAR rules above tone. creative is explicitly bounded.\n- backend: the agent \"Prep this application\" RESUME_SYSTEM/COVER_LETTER_SYSTEM\n  literals get the compact always-on humanization to match the renderer path.\n\nExcludes deceptive artifacts (unicode/homoglyph/watermark tricks) — those\ncorrupt ATS parsing and misrepresent the candidate; authenticity is the goal.\n\nReviewed by ai-provider-expert (composition complete, honesty spine intact —\nno new fabrication surface), resume-export-expert (ATS keyword-matching + CAR\npreserved; LEXICAL/PROSE split correct), and frontend-reviewer (tone wiring,\nno IPC change). gen:ipc:check unchanged; typecheck 12/12; @ajh/prompts (421) +\ndesktop suite (1956); cargo fmt + clippy (-D warnings) + build + architecture\n(11) green. Rust tests run in CI.\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-07T02:33:26+02:00",
+          "tree_id": "5b2b25a1c9bddce6d77b0039f3261d34f1c9ee73",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/169f7ae8e386b47c58b9546f5cf0986f1d063424"
+        },
+        "date": 1783384943448,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1880642,
+            "range": "± 181719",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2527177,
+            "range": "± 51763",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 289283,
+            "range": "± 3685",
             "unit": "ns/iter"
           }
         ]
