@@ -210,7 +210,7 @@ pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 sha1 = "0.10"
 
 [dev-dependencies]
-mockall = "0.14"
+mockall = "0.15"
 tempfile = "3.27"
 proptest = "1.5"
 serial_test = "3"
