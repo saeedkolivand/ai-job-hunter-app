@@ -6,6 +6,12 @@
 //! ([`CliAgentBackend::inline_system`]). Authenticates with the user's ChatGPT
 //! login (or `OPENAI_API_KEY`). Output is surfaced at message granularity — robust
 //! across Codex versions whether or not token deltas are emitted.
+//!
+//! The (untrusted, JD-bearing) prompt is delivered on **stdin**
+//! ([`PromptDelivery::Stdin`]): `codex exec` reads the prompt from stdin when no
+//! positional prompt argument is given, so nothing prompt-derived ever reaches
+//! argv (and, on Windows, `cmd.exe` — see the CVE-2024-24576 note on
+//! [`PromptDelivery`]). argv holds only the fixed exec flags below.
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -52,7 +58,9 @@ impl CliAgentBackend for CodexAgent {
     fn stream_invocation(&self, model: &str, _system: &str, effort: Option<&str>) -> CliInvocation {
         CliInvocation {
             args: exec_args(model, effort),
-            prompt: PromptDelivery::Arg,
+            // Prompt on stdin, not argv — `codex exec` reads stdin when given no
+            // positional prompt. Keeps untrusted JD text off the command line.
+            prompt: PromptDelivery::Stdin,
         }
     }
 
@@ -64,7 +72,7 @@ impl CliAgentBackend for CodexAgent {
     ) -> CliInvocation {
         CliInvocation {
             args: exec_args(model, effort),
-            prompt: PromptDelivery::Arg,
+            prompt: PromptDelivery::Stdin,
         }
     }
 
@@ -129,13 +137,20 @@ fn exec_args(model: &str, effort: Option<&str>) -> Vec<String> {
         "--json".to_string(),
         "--sandbox".to_string(),
         "read-only".to_string(),
+        // The harness runs in a neutral temp cwd, which is not a git repo; without
+        // this, `codex exec` refuses to run ("Not inside a trusted directory…") or
+        // blocks on an approval prompt. Read-only sandbox already bars side effects.
+        "--skip-git-repo-check".to_string(),
     ];
-    if !model.trim().is_empty() {
+    // `arg_token` upholds the CVE-2024-24576 argv invariant defensively: model/effort
+    // are user settings (not scraped), but still ride argv through `cmd.exe` on
+    // Windows, so reject anything that isn't a plain identifier (drops the flag).
+    if let Some(model) = super::arg_token(model) {
         args.push("--model".to_string());
         args.push(model.to_string());
     }
     // Reasoning effort via a config override (low/medium/high). Omitted → Codex default.
-    if let Some(effort) = effort.map(str::trim).filter(|e| !e.is_empty()) {
+    if let Some(effort) = effort.and_then(super::arg_token) {
         args.push("-c".to_string());
         args.push(format!("model_reasoning_effort={effort}"));
     }
@@ -211,7 +226,9 @@ mod tests {
     #[test]
     fn exec_args_include_sandbox_and_model() {
         let inv = CodexAgent.stream_invocation("o4-mini", "", None);
-        assert_eq!(inv.prompt, PromptDelivery::Arg);
+        // Prompt is delivered on stdin, never as a positional argv element — so no
+        // untrusted JD text can reach `cmd.exe` on Windows (CVE-2024-24576).
+        assert_eq!(inv.prompt, PromptDelivery::Stdin);
         assert!(inv
             .args
             .windows(2)
@@ -225,6 +242,30 @@ mod tests {
             .args
             .iter()
             .any(|a| a.starts_with("model_reasoning_effort=")));
+        // Runs outside a git repo (temp cwd) — the check must be skipped.
+        assert!(inv.args.iter().any(|a| a == "--skip-git-repo-check"));
+    }
+
+    #[test]
+    fn argv_is_only_static_flags_never_the_prompt() {
+        // The full argv is a fixed, trusted set of exec flags (+ resolved model) —
+        // it never contains prompt/JD-derived text. That is the property that clears
+        // the command-injection CRITICAL: with `Stdin` delivery the harness pipes the
+        // prompt to the child, so nothing untrusted ever reaches argv / `cmd.exe`.
+        let inv = CodexAgent.stream_invocation("o4-mini", "system text here", None);
+        assert_eq!(
+            inv.args,
+            vec![
+                "exec",
+                "--json",
+                "--sandbox",
+                "read-only",
+                "--skip-git-repo-check",
+                "--model",
+                "o4-mini",
+            ]
+        );
+        assert_eq!(inv.prompt, PromptDelivery::Stdin);
     }
 
     #[test]
