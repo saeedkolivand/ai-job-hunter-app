@@ -626,6 +626,35 @@ describe('TailorFlow — capability-driven research default', () => {
       'false'
     );
   });
+
+  it('re-seeds the toggle when the model changes mid-session (fresh form, untouched)', () => {
+    modelCapsState.data = { supportsWebSearch: false };
+    const persistence = makePersistence({ wizardForm: null });
+    // A fresh element per render so React reconciles (identical element refs bail).
+    const el = () => (
+      <TailorFlow
+        job={JOB}
+        resumeText="My resume"
+        board="linkedin"
+        contextId="autopilot:https://acme.com/jobs/1"
+        jobUrl="https://acme.com/jobs/1"
+        persistence={persistence}
+      />
+    );
+    const { rerender } = render(el());
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
+      'data-research',
+      'false'
+    );
+
+    // User switches to a web-search-capable model without touching the toggle.
+    modelCapsState.data = { supportsWebSearch: true };
+    rerender(el());
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
+      'data-research',
+      'true'
+    );
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
