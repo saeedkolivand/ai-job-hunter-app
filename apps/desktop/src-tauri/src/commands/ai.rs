@@ -163,6 +163,30 @@ pub async fn ai_list_provider_models(
     json!(provider_client.list_models(&app).await)
 }
 
+/// Static, network-free capability probe for a provider/model — currently only
+/// whether it can attempt a web-grounded `research*` search. Reads the resolved
+/// [`ModelCapabilities`] matrix (the SAME value consumed server-side by
+/// `ai_research_*`), so the renderer never mirrors the per-provider booleans: a
+/// NEW provider is exposed with zero TypeScript change. Drives the
+/// capability-driven default of the tailoring "search company" toggle. An
+/// unknown/unresolvable provider degrades to `supportsWebSearch: false`,
+/// matching the caller's safe default-off fallback.
+#[tauri::command]
+pub fn ai_model_capabilities(
+    provider: String,
+    model: Option<String>,
+    base_url: Option<String>,
+) -> Value {
+    let supports_web_search = resolve_by_name(&provider, base_url)
+        .map(|client| {
+            client
+                .capabilities(&model.unwrap_or_default())
+                .supports_web_search
+        })
+        .unwrap_or(false);
+    json!({ "supportsWebSearch": supports_web_search })
+}
+
 /// Local (Ollama) model list — powers the model picker's "Ollama (Local)"
 /// section. Cloud models come from `ai_list_provider_models`.
 #[tauri::command]

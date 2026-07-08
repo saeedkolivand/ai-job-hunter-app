@@ -16,6 +16,7 @@ import { OutputPanelIdle } from '@/features/ai-generate/components/OutputPanelId
 import { useFileUpload } from '@/features/ai-generate/hooks/useFileUpload';
 import { useGeneration } from '@/features/ai-generate/hooks/useGeneration';
 import { useStageRotation } from '@/features/ai-generate/hooks/useStageRotation';
+import { useResearchCompanyDefault } from '@/hooks/use-research-company-default';
 import {
   buildFilename,
   type EmphasisId,
@@ -82,8 +83,10 @@ export function AIGeneratePage() {
   const [genStep, setGenStep] = useState<{ current: number; total: number; label: string } | null>(
     null
   );
-  // Opt-in company research for the cover letter — default off (no extra web/LLM call).
-  const [researchCompany, setResearchCompany] = useState(false);
+  // Company research for the cover letter — the initial default is capability-
+  // driven (ON when the active model can web-search, OFF otherwise); a user
+  // toggle always wins from then on.
+  const [researchCompany, setResearchCompany] = useResearchCompanyDefault();
   // In-flight flag, decoupled from `stage`: with progressive reveal (#23) the
   // stage is already `done` (résumé shown) while the cover letter still streams.
   const [isGenerating, setIsGenerating] = useState(false);
