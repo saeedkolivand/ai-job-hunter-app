@@ -138,7 +138,7 @@ mod tests {
     async fn status_lists_every_registered_agent_with_install_metadata() {
         let status = build_status().await;
         let ids: Vec<&str> = status.agents.iter().map(|a| a.id.as_str()).collect();
-        for expected in ["claude-code", "codex", "gemini-cli"] {
+        for expected in ["claude-code", "codex", "gemini-cli", "antigravity"] {
             assert!(ids.contains(&expected), "{expected} missing from status");
         }
         for agent in &status.agents {

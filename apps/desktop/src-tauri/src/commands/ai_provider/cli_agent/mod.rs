@@ -35,10 +35,12 @@ use super::{
     AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace, TokenParam,
 };
 
+mod antigravity;
 mod claude_code;
 mod codex;
 mod gemini_cli;
 
+use antigravity::AntigravityAgent;
 use claude_code::ClaudeCodeAgent;
 use codex::CodexAgent;
 use gemini_cli::GeminiCliAgent;
@@ -69,13 +71,28 @@ pub enum CliEvent {
 }
 
 /// How the prompt reaches the child process.
+///
+/// **Security — CVE-2024-24576 (Windows `.cmd`/"BatBadBut"):** the prompt inlines
+/// untrusted, scraped job-description text. On Windows an npm-global CLI
+/// (`codex`/`gemini`/`agy`) installs as a `.cmd` shim that must be launched through
+/// `cmd.exe /C` ([`cli_command`]). Rust's batch-argument escaping (the CVE fix) only
+/// engages when the spawned program is the `.cmd` itself — here the program is
+/// `cmd.exe`, not the `.cmd`, so it does NOT engage. A prompt containing `" & <cmd>`
+/// would then break out of `cmd.exe`'s parser and execute. The structural fix:
+/// **untrusted text must never transit argv.** Every backend uses
+/// [`Stdin`](Self::Stdin), so the command line carries only fixed, trusted flags and
+/// the harness pipes the prompt to `child.stdin`. Fail-closed — a CLI that ignores
+/// stdin yields empty output, never RCE.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PromptDelivery {
-    /// Pipe the prompt to stdin (avoids arg-length / escaping limits). Preferred.
+    /// Pipe the prompt to stdin (avoids arg-length / escaping limits, and keeps
+    /// untrusted prompt bytes off the command line — see the type-level security
+    /// note). The only variant any backend uses.
     Stdin,
-    /// Append the prompt as the **final** argument (place a value-flag like `-p`
-    /// last if the agent expects the prompt as that flag's value). Constructed by
-    /// the Codex / Gemini CLI backends (follow-up).
+    /// Append the prompt as the **final** argv element. **Unused** — retained only
+    /// as harness plumbing. Do NOT adopt it for any backend whose binary can be a
+    /// Windows `.cmd` shim: it would route untrusted prompt text through `cmd.exe`
+    /// (CVE-2024-24576, see above). Prefer [`Stdin`](Self::Stdin).
     #[allow(dead_code)]
     Arg,
 }
@@ -153,6 +170,7 @@ pub fn all() -> Vec<Box<dyn CliAgentBackend>> {
         Box::new(ClaudeCodeAgent),
         Box::new(CodexAgent),
         Box::new(GeminiCliAgent),
+        Box::new(AntigravityAgent),
     ]
 }
 
@@ -349,11 +367,44 @@ fn detect_cache() -> &'static Mutex<HashMap<String, Detected>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Base command for a CLI agent: console window hidden on Windows, and an augmented
-/// `PATH` so a GUI-launched macOS/Linux app can find the binary (Finder/Dock apps
-/// inherit only a minimal `PATH`, missing npm/nvm/Homebrew/native installs).
-fn cli_command(binary: &str) -> Command {
+/// Base command for a CLI agent, with `args` applied: console window hidden on
+/// Windows, and an augmented `PATH` so a GUI-launched macOS/Linux app can find the
+/// binary (Finder/Dock apps inherit only a minimal `PATH`, missing
+/// npm/nvm/Homebrew/native installs).
+///
+/// On **Windows** it first resolves the binary on `PATH` × `PATHEXT`
+/// ([`crate::platform::resolve_cli_binary`]): a `.cmd`/`.bat` shim (how npm-global
+/// CLIs like `gemini`/`codex`/`agy` install — there is no `.exe`) is launched
+/// through `cmd.exe /C`, since `CreateProcess` cannot execute a batch file
+/// directly. Each element of `args` is passed as a **separate argv entry** — never
+/// concatenated into a shell string — so `cmd.exe` performs no word-splitting. If
+/// resolution fails we fall through to a bare spawn so the OS still surfaces
+/// `NotFound`.
+///
+/// **CVE-2024-24576 invariant:** because the program spawned is `cmd.exe` (not the
+/// `.cmd`), Rust's batch-argument escaping does NOT engage — so `args` here MUST
+/// carry only fixed, trusted flags (model/sandbox flags, `--version`), never
+/// untrusted prompt/JD text. That text goes on stdin via [`PromptDelivery::Stdin`];
+/// [`spawn`] only appends to argv for the unused [`PromptDelivery::Arg`], which no
+/// backend constructs. See the [`PromptDelivery`] type docs.
+fn cli_command(binary: &str, args: &[String]) -> Command {
+    #[cfg(windows)]
+    if let Some(resolved) = crate::platform::resolve_cli_binary(binary) {
+        let mut cmd = if resolved.needs_cmd_wrapper {
+            let mut c = Command::new("cmd");
+            c.arg("/C").arg(&resolved.path).args(args);
+            c
+        } else {
+            let mut c = Command::new(&resolved.path);
+            c.args(args);
+            c
+        };
+        cmd.no_window();
+        return cmd;
+    }
+
     let mut cmd = Command::new(binary);
+    cmd.args(args);
     cmd.no_window();
     if let Some(path) = crate::platform::cli_path() {
         cmd.env("PATH", path);
@@ -364,7 +415,7 @@ fn cli_command(binary: &str) -> Command {
 /// Whether the binary is installed (`<binary> --version` succeeds), plus its
 /// reported version. Mirrors `ollama::reachable_model()` as the health signal.
 pub async fn detect(binary: &str) -> (bool, Option<String>) {
-    let fut = cli_command(binary).arg("--version").output();
+    let fut = cli_command(binary, &["--version".to_string()]).output();
     match tokio::time::timeout(Duration::from_secs(5), fut).await {
         Ok(Ok(out)) if out.status.success() => {
             let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
@@ -656,11 +707,14 @@ fn spawn(
     prompt: &str,
 ) -> std::io::Result<tokio::process::Child> {
     let mut args = inv.args.clone();
+    // Untrusted prompt text enters argv ONLY for `PromptDelivery::Arg`, which no
+    // backend constructs — every agent uses `Stdin` (see `PromptDelivery` docs for
+    // the CVE-2024-24576 rationale). So in practice `args` is fixed trusted flags,
+    // and the prompt reaches the child via `child.stdin` in the callers below.
     if matches!(inv.prompt, PromptDelivery::Arg) {
         args.push(prompt.to_string());
     }
-    cli_command(binary)
-        .args(&args)
+    cli_command(binary, &args)
         // Neutral cwd: we only want text generation, never side effects in the
         // user's project (backends also disable tools where the CLI supports it).
         .current_dir(std::env::temp_dir())
@@ -757,6 +811,28 @@ fn user_prompt(req: &AiGenerateRequest) -> String {
         .join("\n\n")
 }
 
+/// Plain-text CLI agents (Gemini CLI, Antigravity) interleave the model's answer
+/// on stdout with a few operational lines — cached-credential notices, telemetry
+/// banners, dotenv/deprecation logs. Left in, they get folded into the generated
+/// letter. This recognizes those specific, exact-ish markers so a backend can drop
+/// them. Deliberately conservative — it matches only known operational lines (full
+/// exact matches or unmistakable log prefixes), never anything that could be real
+/// answer text, and treats blank lines as paragraph breaks (kept).
+fn is_cli_stdout_noise(line: &str) -> bool {
+    let t = line.trim();
+    if t.is_empty() {
+        return false; // paragraph break — never noise
+    }
+    // Full-line operational notices these CLIs print before/around the answer.
+    const EXACT: &[&str] = &["Loaded cached credentials.", "Data collection is disabled."];
+    if EXACT.contains(&t) {
+        return true;
+    }
+    // Unmistakable log/tooling prefixes (dotenv injector banner, Node warnings that
+    // some builds route to stdout). Prefix-anchored so ordinary prose can't match.
+    t.starts_with("[dotenv@") || t.starts_with("DeprecationWarning:") || t.starts_with("(node:")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -767,6 +843,7 @@ mod tests {
             ProviderId::ClaudeCode,
             ProviderId::Codex,
             ProviderId::GeminiCli,
+            ProviderId::Antigravity,
         ] {
             assert!(
                 backend_for(id).is_some(),
@@ -780,6 +857,24 @@ mod tests {
     #[test]
     fn non_cli_provider_has_no_backend() {
         assert!(backend_for(ProviderId::Anthropic).is_none());
+    }
+
+    #[test]
+    fn stdout_noise_filter_drops_only_operational_lines() {
+        // Known operational noise is dropped…
+        assert!(is_cli_stdout_noise("Loaded cached credentials."));
+        assert!(is_cli_stdout_noise("  Data collection is disabled.  "));
+        assert!(is_cli_stdout_noise(
+            "[dotenv@17.0.0] injecting env (2) from .env"
+        ));
+        assert!(is_cli_stdout_noise("(node:12345) Warning: something"));
+        // …while real answer text (even mentioning credentials) is kept, and blank
+        // lines survive as paragraph breaks.
+        assert!(!is_cli_stdout_noise("Dear Hiring Manager,"));
+        assert!(!is_cli_stdout_noise(
+            "I loaded cached credentials into the pipeline as described."
+        ));
+        assert!(!is_cli_stdout_noise(""));
     }
 
     #[tokio::test]

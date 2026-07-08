@@ -52,6 +52,12 @@
           "cmd": "npm",
           "args": ["install", "-g", "@google/gemini-cli"],
           "sidecar": false
+        },
+        {
+          "name": "install-antigravity",
+          "cmd": "npm",
+          "args": ["install", "-g", "@google/antigravity"],
+          "sidecar": false
         }
       ]
     }

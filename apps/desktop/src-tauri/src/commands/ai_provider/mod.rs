@@ -62,6 +62,10 @@ pub enum ProviderId {
     /// Google Gemini CLI run headless (a [`cli_agent`] backend) — distinct from the
     /// cloud [`Gemini`](Self::Gemini) API. Keyless: uses the user's Google login.
     GeminiCli,
+    /// Google Antigravity CLI (`agy`) run headless (a [`cli_agent`] backend).
+    /// Keyless: uses `agy`'s own Google sign-in. **UNVERIFIED** — implemented to
+    /// the documented CLI contract but not runtime-tested (see `cli_agent::antigravity`).
+    Antigravity,
 }
 
 impl ProviderId {
@@ -77,6 +81,7 @@ impl ProviderId {
             "claude-code" => Ok(Self::ClaudeCode),
             "codex" => Ok(Self::Codex),
             "gemini-cli" => Ok(Self::GeminiCli),
+            "antigravity" => Ok(Self::Antigravity),
             other => Err(AppError::Config(format!(
                 "Unknown AI provider '{other}'. Select a configured provider in Settings → AI."
             ))),
@@ -94,6 +99,7 @@ impl ProviderId {
             Self::ClaudeCode => "claude-code",
             Self::Codex => "codex",
             Self::GeminiCli => "gemini-cli",
+            Self::Antigravity => "antigravity",
         }
     }
 
@@ -525,7 +531,10 @@ pub fn resolve(id: ProviderId, base_url: Option<String>) -> Box<dyn AiProvider> 
         ProviderId::Gemini => Box::new(GeminiClient),
         // Routed by the registry above; listed only to keep this match exhaustive
         // (so a new *non*-CLI provider still fails to compile until handled here).
-        ProviderId::ClaudeCode | ProviderId::Codex | ProviderId::GeminiCli => {
+        ProviderId::ClaudeCode
+        | ProviderId::Codex
+        | ProviderId::GeminiCli
+        | ProviderId::Antigravity => {
             unreachable!("CLI agents are resolved via cli_agent::backend_for")
         }
     }
@@ -842,6 +851,7 @@ mod tests {
             ProviderId::ClaudeCode,
             ProviderId::Codex,
             ProviderId::GeminiCli,
+            ProviderId::Antigravity,
         ] {
             assert_eq!(ProviderId::parse(id.as_str()).unwrap(), id);
         }
