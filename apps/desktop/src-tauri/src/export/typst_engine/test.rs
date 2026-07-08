@@ -19,22 +19,33 @@ use crate::model::adapter::model_from_resume_text;
 /// Uses a byte-level scan rather than lopdf's `get_pages()` because lopdf's
 /// page-tree walker does not handle all page-tree structures that Typst emits
 /// (it misses pages under certain indirect-reference trees and returns 1 even
-/// for multi-page documents). The scan finds all occurrences of the `/Type /Page`
-/// dictionary entry that marks an individual page object (not `/Type /Pages`
-/// which marks a page-tree node).
+/// for multi-page documents). The scan finds all occurrences of the `/Type`
+/// `/Page` dictionary entry that marks an individual page object (not `/Type`
+/// `/Pages` which marks a page-tree node).
+///
+/// Tolerates zero-or-more spaces between `/Type` and `/Page`: typst-pdf 0.15's
+/// krilla/pdf-writer backend serialises dict entries as `/Type/Page` (no
+/// space), where the pinned 0.14.2 backend wrote `/Type /Page` (one space).
+/// Matching both keeps this scan from silently reporting zero pages again on
+/// the next writer-formatting tweak.
 fn count_pdf_pages(bytes: &[u8]) -> usize {
-    // Match `/Type /Page` followed by a non-`s` byte (to exclude `/Pages`).
+    let key = b"/Type";
+    let val = b"/Page";
     let mut count = 0usize;
     let mut i = 0usize;
-    let needle = b"/Type /Page";
-    while i + needle.len() < bytes.len() {
-        if bytes[i..i + needle.len()] == *needle {
-            // The character after `/Page` must not be `s` (which would make it `/Pages`).
-            let next = bytes[i + needle.len()];
-            if next != b's' {
-                count += 1;
+    while i + key.len() < bytes.len() {
+        if bytes[i..i + key.len()] == *key {
+            let mut j = i + key.len();
+            while j < bytes.len() && bytes[j] == b' ' {
+                j += 1;
             }
-            i += needle.len();
+            if bytes[j..].starts_with(val) {
+                // The character after `/Page` must not be `s` (which would make it `/Pages`).
+                if bytes.get(j + val.len()) != Some(&b's') {
+                    count += 1;
+                }
+            }
+            i += key.len();
         } else {
             i += 1;
         }
