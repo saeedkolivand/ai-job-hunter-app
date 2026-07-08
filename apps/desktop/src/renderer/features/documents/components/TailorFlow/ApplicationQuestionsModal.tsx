@@ -10,24 +10,10 @@ import {
   RewritePopover,
   type RewriteTarget,
 } from '@/components/generation/EditableOutput/RewritePopover';
+import { getSelectionOffsets } from '@/lib/selection-offsets';
 import { COPY_FEEDBACK_MS } from '@/lib/timings';
 
 import { MAX_CUSTOM_QUESTION_LEN } from './useApplicationAnswers';
-
-/** Selection offsets relative to `container`'s text, or null when nothing inside
- *  it is selected. Mirrors the textarea-offset capture in EditableOutput's
- *  `openSourceRewrite`, but for a plain (non-input) selectable element. */
-function getSelectionOffsets(container: HTMLElement): { start: number; end: number } | null {
-  const sel = window.getSelection();
-  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null;
-  const range = sel.getRangeAt(0);
-  if (!container.contains(range.commonAncestorContainer)) return null;
-  const pre = document.createRange();
-  pre.selectNodeContents(container);
-  pre.setEnd(range.startContainer, range.startOffset);
-  const start = pre.toString().length;
-  return { start, end: start + range.toString().length };
-}
 
 /** A rewrite frozen at trigger time — the splice range + snapshot answer it
  *  should be spliced back into on Accept (mirrors EditableOutput's FrozenRange). */
