@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783536470757,
+  "lastUpdate": 1783540716634,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3059,6 +3059,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 285344,
             "range": "± 23151",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "abc24e1a2789818d025dcbdcbc60875c80a8ca21",
+          "message": "fix(deps): migrate rustcrypto stack to cipher 0.5 and digest 0.11 (#585)\n\nUnblocks held Dependabot bumps #579 (cbc 0.1.2->0.2.1) and #577\n(sha1 0.10.6->0.11.0) by moving the whole Chromium cookie-decrypt crypto\nstack forward together in one branch (they share Cargo.toml + import.rs).\n\ncipher 0.5 family (Unix v10/v11 CBC path): aes 0.8->0.9, cbc 0.1->0.2 (add\nblock-padding feature). API: BlockDecryptMut -> BlockModeDecrypt and\ndecrypt_padded_vec_mut -> decrypt_padded_vec per the cipher 0.5 rework.\n\ndigest 0.11 family (Unix key derivation): sha1 0.10->0.11, hmac 0.12->0.13,\npbkdf2 0.12->0.13. The pbkdf2_hmac::<Sha1> call is unchanged; all three\nalready resolved to digest-0.11 versions in the tree via zip/lopdf.\n\nBehaviour is byte-identical: same algorithms and parameters (PBKDF2-HMAC-SHA1\nsalt saltysalt, 1003/1 iterations, AES-128-CBC, 16-space IV, PKCS7). Verified\nagainst RFC 6070 PBKDF2 vectors plus a CBC round-trip in a standalone crate,\nsince the cfg(not(windows)) path cannot compile on the Windows dev host.\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-08T21:38:54+02:00",
+          "tree_id": "0d581c404cd20221f80aeefe1e67cfb93d2d60aa",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/abc24e1a2789818d025dcbdcbc60875c80a8ca21"
+        },
+        "date": 1783540716035,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1906807,
+            "range": "± 68377",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2510493,
+            "range": "± 44032",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 283304,
+            "range": "± 12258",
             "unit": "ns/iter"
           }
         ]
