@@ -226,6 +226,24 @@ pub fn privacy_reset_app(app: AppHandle) -> Value {
         cleared.len()
     );
 
+    // Delete the persisted Chromium board-login profiles wholesale: the
+    // `browser-state/<board_id>/{profile,cookies.json,auth-status.json}` tree
+    // (see `scraping::board_login`). The `disconnect` loop above only flips the
+    // status flag (it deliberately leaves the profile in place while Chromium may
+    // hold file locks mid-session), so a factory reset would otherwise leave
+    // authenticated board sessions on disk — a privacy gap (ADR 0005). Best-effort:
+    // remove_dir_all can fail if a browser still holds a lock (common on Windows);
+    // log and continue rather than failing the reset. Skip when absent so a fresh
+    // install (no logins yet) doesn't log a spurious warning.
+    let browser_state = data_dir.join("browser-state");
+    if browser_state.exists() {
+        if let Err(e) = std::fs::remove_dir_all(&browser_state) {
+            log::warn!(
+                "[privacy] factory reset could not remove browser-state (may be locked): {e}"
+            );
+        }
+    }
+
     json!({ "success": true })
 }
 
