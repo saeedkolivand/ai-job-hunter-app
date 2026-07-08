@@ -142,6 +142,48 @@ fn scheme_less_input_with_colon_in_path_is_not_misclassified() {
 }
 
 #[test]
+fn retains_per_host_identifying_query_params_for_dedup() {
+    // Indeed carries the job id in the query (`?jk=<id>`). Two DISTINCT ids must
+    // yield two DISTINCT keys — the collision bug was that every Indeed job
+    // normalized to a single `/viewjob` key and merged onto one Application.
+    assert_ne!(
+        normalize_job_url("https://indeed.com/viewjob?jk=aaa"),
+        normalize_job_url("https://indeed.com/viewjob?jk=bbb")
+    );
+    // The identifying param survives verbatim (lowercased with the rest of the url).
+    assert_eq!(
+        normalize_job_url("https://www.indeed.com/viewjob?jk=abc123"),
+        "https://indeed.com/viewjob?jk=abc123"
+    );
+    // Country TLD (de.indeed.com) is covered by the `.indeed.com` suffix match.
+    assert_eq!(
+        normalize_job_url("https://de.indeed.com/viewjob?jk=xyz"),
+        "https://de.indeed.com/viewjob?jk=xyz"
+    );
+    // Same job, tracking-only query differences → SAME key (jk retained, the rest
+    // dropped). Param ORDER must not matter — allowlist order is authoritative.
+    assert_eq!(
+        normalize_job_url("https://indeed.com/viewjob?jk=abc&from=serp&utm_source=x"),
+        normalize_job_url("https://indeed.com/viewjob?utm_campaign=y&jk=abc")
+    );
+    assert_eq!(
+        normalize_job_url("https://indeed.com/viewjob?jk=abc&from=serp&utm_source=x"),
+        "https://indeed.com/viewjob?jk=abc"
+    );
+    // Path-based URL on a non-allowlisted host is UNCHANGED: the whole query is still
+    // dropped (LinkedIn puts the id in the path, so it is unaffected by this fix).
+    assert_eq!(
+        normalize_job_url("https://www.linkedin.com/jobs/view/12345?trk=abc&refId=z"),
+        "https://linkedin.com/jobs/view/12345"
+    );
+    // A non-Indeed host never retains a query param, even a `jk` lookalike.
+    assert_eq!(
+        normalize_job_url("https://acme.example/viewjob?jk=abc"),
+        "https://acme.example/viewjob"
+    );
+}
+
+#[test]
 fn status_from_id_is_relaxed_and_round_trips() {
     for &s in ApplicationStatus::ALL {
         assert_eq!(ApplicationStatus::from_id(s.as_id()), s);
