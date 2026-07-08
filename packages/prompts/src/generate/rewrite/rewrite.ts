@@ -20,7 +20,7 @@ import {
   HUMANIZE_PROSE,
 } from '../natural-voice/index.js';
 
-export type RewriteDocType = 'resume' | 'cover-letter' | 'application-answer';
+export type RewriteDocType = 'resume' | 'cover-letter' | 'application-answer' | 'email';
 
 export interface RewriteParams {
   /** The exact selected span the user wants rewritten. */
@@ -50,6 +50,7 @@ const DOC_LABELS: Record<RewriteDocType, string> = {
   resume: 'résumé',
   'cover-letter': 'cover letter',
   'application-answer': 'application answer',
+  email: 'application email',
 };
 
 /**
@@ -57,13 +58,16 @@ const DOC_LABELS: Record<RewriteDocType, string> = {
  * so only the lexical word bans apply; a cover-letter span is prose, so the full
  * prose-flow ruleset applies. An application-answer span is short, first-person,
  * honest prose (connected sentences, not ATS bullets), so it takes the same
- * prose ruleset as a cover letter. Mirrors {@link DOC_LABELS} so a new doc type
- * is a compile-time error until a voice is provided (exhaustiveness).
+ * prose ruleset as a cover letter. An application email is short, first-person
+ * prose sent to an employer contact, so it takes the same prose ruleset too.
+ * Mirrors {@link DOC_LABELS} so a new doc type is a compile-time error until a
+ * voice is provided (exhaustiveness).
  */
 const DOC_VOICE: Record<RewriteDocType, string> = {
   resume: `${ANTI_AI_TELL_LEXICAL}\n${HUMANIZE_LEXICAL}`,
   'cover-letter': `${ANTI_AI_TELL_PROSE}\n${HUMANIZE_PROSE}`,
   'application-answer': `${ANTI_AI_TELL_PROSE}\n${HUMANIZE_PROSE}`,
+  email: `${ANTI_AI_TELL_PROSE}\n${HUMANIZE_PROSE}`,
 };
 
 // Hard cap on the selected span itself so a huge selection can't blow a small
