@@ -39,7 +39,6 @@ import { privacy } from './namespaces/privacy/index.js';
 import { referrals } from './namespaces/referrals/index.js';
 import { resume } from './namespaces/resume/index.js';
 import { scrape } from './namespaces/scrape/index.js';
-import { shortcuts } from './namespaces/shortcuts/index.js';
 import { support } from './namespaces/support/index.js';
 import { system } from './namespaces/system/index.js';
 import { updater } from './namespaces/updater/index.js';
@@ -69,7 +68,6 @@ export function createTauriInvokeClient(): AppClient {
     privacy: privacy as AppClient['privacy'],
     referrals: referrals as AppClient['referrals'],
     updater: updater as AppClient['updater'],
-    shortcuts: shortcuts as AppClient['shortcuts'],
     resume: resume as AppClient['resume'],
     support: support as AppClient['support'],
     autopilot: autopilot as AppClient['autopilot'],

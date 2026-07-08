@@ -26,7 +26,6 @@ import { JOBS_EVENTS } from './jobs.js';
 import { MENU_EVENTS } from './menu.js';
 import { NOTIFICATIONS_EVENTS } from './notifications.js';
 import { SCRAPE_EVENTS, type ScrapeItemEvent, type ScrapeProgressEvent } from './scrape.js';
-import { SHORTCUTS_EVENTS } from './shortcuts.js';
 import { SYSTEM_EVENTS } from './system.js';
 import { UPDATER_EVENTS } from './updater.js';
 
@@ -42,7 +41,6 @@ export const EVENT_CHANNELS = {
   autopilot: AUTOPILOT_EVENTS,
   scrape: SCRAPE_EVENTS,
   boards: BOARDS_EVENTS,
-  shortcuts: SHORTCUTS_EVENTS,
   system: SYSTEM_EVENTS,
 } as const;
 
@@ -70,7 +68,6 @@ export interface AppEvents {
   'scrape:progress': ScrapeProgressEvent;
   'scrape:item': ScrapeItemEvent;
   'boards:login-status': BoardsLoginStatusEvent;
-  'shortcut:command-palette': void;
   'system:accentChanged': void;
 }
 
@@ -87,7 +84,6 @@ export {
   SCRAPE_EVENTS,
   type ScrapeItemEvent,
   type ScrapeProgressEvent,
-  SHORTCUTS_EVENTS,
   SYSTEM_EVENTS,
   UPDATER_EVENTS,
 };

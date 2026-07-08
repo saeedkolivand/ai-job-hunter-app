@@ -192,12 +192,6 @@ export const MatchResumeRequestSchema = z.object({
   semanticScoringEnabled: z.boolean().optional(),
 });
 
-export const MatchResumeBatchRequestSchema = z.object({
-  resumeId: z.string().min(1),
-  jobIds: z.array(z.string().min(1)).max(1000),
-  semanticScoringEnabled: z.boolean().optional(),
-});
-
 /**
  * Request for the "prep this application" agentic flow (`agent.run`). Mirrors the
  * inputs `match_resume` / `ai_research_company` already take: the résumé + job
@@ -487,6 +481,5 @@ export type DocumentImportRequest = z.infer<typeof DocumentImportRequestSchema>;
 export type ScrapeBoardsRequest = z.infer<typeof ScrapeBoardsRequestSchema>;
 export type ScrapeUrlRequest = z.infer<typeof ScrapeUrlRequestSchema>;
 export type MatchResumeRequest = z.infer<typeof MatchResumeRequestSchema>;
-export type MatchResumeBatchRequest = z.infer<typeof MatchResumeBatchRequestSchema>;
 export type AgentRunRequest = z.infer<typeof AgentRunRequestSchema>;
 export type AgentConfirmRequest = z.infer<typeof AgentConfirmRequestSchema>;

@@ -167,7 +167,6 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
 
     match: {
       resume: noop,
-      resumeBatch: noop,
     },
 
     geocode: {
@@ -247,10 +246,6 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       install: noop,
       changelog: () => Promise.resolve({ releases: [] }),
       onStatus: unsub,
-    },
-
-    shortcuts: {
-      onCommandPalette: unsub,
     },
 
     resume: {
