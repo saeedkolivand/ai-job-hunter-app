@@ -23,11 +23,11 @@ interface ProviderProfile {
 prompt **depth**, **schema** variant, **truncation** strategy, and whether the
 caller can request **native structured output**:
 
-| kind     | depth    | prompt                                          | truncation               | structured output           |
-| -------- | -------- | ----------------------------------------------- | ------------------------ | --------------------------- |
-| `ollama` | `brief`¹ | shortest, imperative, compact schema + one-shot | aggressive (by size)     | no                          |
-| `cloud`  | `full`   | full multi-perspective + rich schema            | minimal (context window) | yes (`structuredOutputFor`) |
-| `cli`    | `task`   | self-verifying task brief + acceptance checks   | moderate                 | no                          |
+| kind     | depth    | prompt                                          | truncation               | structured output |
+| -------- | -------- | ----------------------------------------------- | ------------------------ | ----------------- |
+| `ollama` | `brief`¹ | shortest, imperative, compact schema + one-shot | aggressive (by size)     | no                |
+| `cloud`  | `full`   | full multi-perspective + rich schema            | minimal (context window) | yes               |
+| `cli`    | `task`   | self-verifying task brief + acceptance checks   | moderate                 | no                |
 
 ¹ ollama uses `full` only for a large local model. `detectModelSize` parses the
 parameter size from the tag (`:1b`, `-3.2-1b`, `:7b`, `70b`, quant/instruct
