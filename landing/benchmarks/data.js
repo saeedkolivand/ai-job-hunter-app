@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783532209575,
+  "lastUpdate": 1783536470757,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3017,6 +3017,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 287300,
             "range": "± 7384",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f2ec062620fa186a0060372412c7aad6b1b61c70",
+          "message": "chore: batch safe dep + tooling bumps (pnpm, harden-runner, upload-sarif, setup-uv) (#583)\n\n* chore: bump pnpm to 11.10.0\n\n* chore: bump harden-runner 2.20.0, codeql upload-sarif 4.37.0, setup-uv 8.3.2\n\n* ci: sync pnpm/action-setup pins to 11.10.0 to match packageManager",
+          "timestamp": "2026-07-08T20:26:37+02:00",
+          "tree_id": "e52328b267023757c0d76e391ffc9c90a7a3c71d",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/f2ec062620fa186a0060372412c7aad6b1b61c70"
+        },
+        "date": 1783536470387,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1943505,
+            "range": "± 63130",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2704591,
+            "range": "± 68048",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 285344,
+            "range": "± 23151",
             "unit": "ns/iter"
           }
         ]
