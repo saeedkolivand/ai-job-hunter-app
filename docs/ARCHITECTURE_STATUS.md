@@ -102,22 +102,22 @@ Active scrapers: 21 boards. Five boards (Indeed, StepStone, Xing, Workday, Glass
 
 ## AI Generation (`apps/desktop/src/renderer/features/ai-generate/`)
 
-| Feature                    | Status | Notes                                                                                                                     |
-| -------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------- |
-| Cover letter generation    | ✅     | Streaming                                                                                                                 |
-| Resume generation          | ✅     | Streaming                                                                                                                 |
-| Email generation           | ✅     |                                                                                                                           |
-| Summary generation         | ✅     |                                                                                                                           |
-| Bold keyword extraction    | ✅     | Post-processes output                                                                                                     |
-| DOCX export                | ✅     | `export/docx/` + `model_docx.rs` (docx-rs): real two-column table + native ATS; A4 + font fallback                        |
-| PDF export                 | ✅     | Typst engine (`export/typst_engine/`); Carlito + Noto Sans vendored via `include_bytes!`; CJK deferred (tofu + UI notice) |
-| ATS-safe linearization     | ✅     | Two-column → single for ATS                                                                                               |
-| Universal thinking display | ✅     | All providers normalized via `think-split.ts`; `ThinkingBubble` UI (`ai-generate/components/`)                            |
-| Local model limits         | ✅     | `ai_inspect_model` IPC; `modelLimits` in preferences-store; `num_ctx`/`num_predict` on [Ollama][ollama] path only         |
-| Company research           | ✅     | `ai_research_company` IPC; opt-in; active provider's own web search (native tool / Ollama Web Search); untrusted-fenced   |
-| Application questions      | ✅     | `APPLICATION_QUESTIONS` registry + grounded answer prompt; answers persist on per-job record                              |
-| Locale-aware prompts       | ✅     | 11 languages                                                                                                              |
-| Template preview           | ✅     | OptionTile with live preview                                                                                              |
+| Feature                    | Status | Notes                                                                                                                                                                                 |
+| -------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cover letter generation    | ✅     | Streaming                                                                                                                                                                             |
+| Resume generation          | ✅     | Streaming                                                                                                                                                                             |
+| Email generation           | ✅     |                                                                                                                                                                                       |
+| Summary generation         | ✅     |                                                                                                                                                                                       |
+| Bold keyword extraction    | ✅     | Post-processes output                                                                                                                                                                 |
+| DOCX export                | ✅     | `export/docx/` + `model_docx.rs` (docx-rs): real two-column table + native ATS; A4 + font fallback                                                                                    |
+| PDF export                 | ✅     | Typst engine (`export/typst_engine/`); Carlito + Inter + Source Serif 4 + Manrope vendored via `include_bytes!`; sets PDF Title/author/lang metadata; CJK deferred (tofu + UI notice) |
+| ATS-safe linearization     | ✅     | Two-column → single for ATS                                                                                                                                                           |
+| Universal thinking display | ✅     | All providers normalized via `think-split.ts`; `ThinkingBubble` UI (`ai-generate/components/`)                                                                                        |
+| Local model limits         | ✅     | `ai_inspect_model` IPC; `modelLimits` in preferences-store; `num_ctx`/`num_predict` on [Ollama][ollama] path only                                                                     |
+| Company research           | ✅     | `ai_research_company` IPC; opt-in; active provider's own web search (native tool / Ollama Web Search); untrusted-fenced                                                               |
+| Application questions      | ✅     | `APPLICATION_QUESTIONS` registry + grounded answer prompt; answers persist on per-job record                                                                                          |
+| Locale-aware prompts       | ✅     | 11 languages                                                                                                                                                                          |
+| Template preview           | ✅     | OptionTile with live preview                                                                                                                                                          |
 
 ---
 
@@ -188,7 +188,7 @@ Five-step IPC agentic loop: `agent_run` command → validated request → spawne
 | AI Generate route         | ✅     | Full generation UI                                                                                                                                                                              |
 | Analyze route             | ✅     | Resume analysis panels                                                                                                                                                                          |
 | Autopilot route           | ✅     | Workflow builder + runner                                                                                                                                                                       |
-| Documents route           | ✅     | Three-tab view — Résumés / Cover Letters / Activity (lenses over `ai_generations`); route stays `/resumes`                                                                                      |
+| Documents route           | ✅     | Three-tab view — Résumés / Cover Letters / Activity (lenses over `ai_generations`); canonical route is `/documents` (`createFileRoute('/documents')`); no `/resumes` route exists               |
 | Settings route            | ✅     | All settings tabs; keyboard-reachable sidebar (`@ajh/ui Button` + `aria-current`); `SettingsSection` throughout                                                                                 |
 | Support route             | ✅     | Diagnostics, FAQ, logs                                                                                                                                                                          |
 | Onboarding wizard         | ✅     | First-run experience                                                                                                                                                                            |

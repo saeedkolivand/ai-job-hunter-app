@@ -47,7 +47,7 @@ Please include:
 
 AI Job Hunter is built local-first to minimize attack surface:
 
-- **Local-first** — jobs, résumés, generations, and applications stay in a local database on your machine; there is **no telemetry** and no app-operated backend. The only outbound calls are to the AI provider you configure and an optional, opt-in web search.
+- **Local-first** — your jobs, résumés, generations, applications, tracked job data, and credentials stay on your machine; there is **no telemetry** and no app-operated backend. Outbound network calls are limited to disclosed classes — the AI provider you configure, job-board scraping, an optional opt-in web search, an on-launch updater check (GitHub), user-typed location autocomplete (OpenStreetMap), and opt-in company-logo enrichment (Clearbit, default **off**). None of them receive your personal data (see [ADR 0005](docs/adr/0005-network-egress-privacy-boundary.md)).
 - **Credentials in the OS keychain** — API keys and board credentials are stored encrypted via the OS keychain, never in plain text or config files.
 - **Untrusted external content is fenced** — web-sourced company research is wrapped in an untrusted block before reaching any prompt (reference-only; the model is told to ignore embedded instructions), and AI output is treated as untrusted by the renderer.
 - **Strict IPC boundary** — the renderer talks to the Rust core only through a typed, validated contract; request shapes are generated from shared schemas.

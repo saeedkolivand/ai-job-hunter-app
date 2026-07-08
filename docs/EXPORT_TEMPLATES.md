@@ -263,7 +263,7 @@ Upload UI lives in `ContactProfileForm`.
 Supported locales: en, de, fr, es, it, tr, pt, ru, zh, ja, ko.
 
 Generation and DOCX export work for all 11. **CJK limitation:** The bundled Typst
-fonts (Carlito + Noto Sans) support Latin + Cyrillic only; Chinese, Japanese, and
+fonts (Carlito, Inter, Source Serif 4, Manrope) support Latin + Cyrillic only; Chinese, Japanese, and
 Korean resumes render with character tofu in PDF and live preview. The Resume
 Builder flags CJK languages with an amber warning and a font icon. Follow-up: bundle
 `Noto Sans CJK` to unblock zh/ja/ko PDF/preview rendering.
@@ -285,16 +285,19 @@ the relationships part). The visible label is shown, never the raw URL.
 
 ## Fonts
 
-Two font families are vendored and embedded via `include_bytes!` in the Typst
-world (`typst_engine/world.rs`):
+Four font families (11 faces total) are vendored and embedded via `include_bytes!`
+in the Typst world (`typst_engine/world.rs`):
 
-| Bundled family                       | Used by                               | License |
-| ------------------------------------ | ------------------------------------- | ------- |
-| Carlito (Calibri-metric-compatible)  | `classic`, `modern` (body + headings) | OFL     |
-| Noto Sans (Latin + Cyrillic subsets) | all templates (body fallback)         | OFL     |
+| Bundled family                      | Used by                                                 | License |
+| ----------------------------------- | ------------------------------------------------------- | ------- |
+| Carlito (Calibri-metric-compatible) | `classic`, `modern`, letter + `lebenslauf` (body)       | OFL     |
+| Inter                               | `portrait`, `meridian`, `atelier`; broad Latin/Cyrillic | OFL     |
+| Source Serif 4                      | `atelier` (editorial / academic serif)                  | OFL     |
+| Manrope                             | Swiss Minimal template                                  | OFL     |
 
-Carlito provides Calibri-metric compatibility so exported PDFs measure identically
-to the DOCX Calibri fallback. Noto Sans covers Latin/Cyrillic scripts.
+Carlito provides Calibri-metric compatibility so exported PDFs measure identically to
+the DOCX Calibri fallback. Cyrillic coverage comes from **Inter** (no Noto face is
+bundled). The active family per template is selected by the theme's `font_body`.
 
 **CJK (zh/ja/ko) limitation:** the bundled fonts do not include CJK glyphs; see
 [Output languages](#output-languages-11-supported) above.

@@ -234,15 +234,22 @@ Settings → AI → Ollama Host → http://your-host:11434
 
 ## Database
 
-The [SQLite][sqlite] database is stored in the OS app data directory:
+Storage is a set of **per-domain [SQLite][sqlite] files** (rusqlite, bundled) in the OS
+app data directory — there is no single `app.db` and no separate vector store. The main
+files include `documents.db` (imported documents **plus** embedding vectors — the
+`vectors`, `posting_vectors`, `match_scores` tables), `jobs.db`, `applications.db`,
+`ai_generations.db`, `job_preferences.db`, `contact_profile.db`, `referrals.db`, and
+`pipeline_cache.db`.
 
-- **Windows**: `%APPDATA%\ai-job-hunter\app.db`
-- **macOS**: `~/Library/Application Support/ai-job-hunter/app.db`
-- **Linux**: `~/.local/share/ai-job-hunter/app.db`
+App-data directory per OS:
 
-LanceDB vector store is in the same directory under `vectors/`.
+- **Windows**: `%APPDATA%\ai-job-hunter\`
+- **macOS**: `~/Library/Application Support/ai-job-hunter/`
+- **Linux**: `~/.local/share/ai-job-hunter/`
 
-To reset the database during development, delete `app.db` and `vectors/` and restart the app.
+Embedding vectors live in the `vectors` table of `documents.db` and cosine similarity
+runs in-process in Rust — **no LanceDB, no `vectors/` directory**. To reset dev state,
+delete the `*.db` files in that directory and restart the app.
 
 ---
 
