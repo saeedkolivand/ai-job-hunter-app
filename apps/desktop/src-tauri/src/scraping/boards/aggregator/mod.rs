@@ -70,22 +70,28 @@ where
 
 /// Map a UI date-filter token to Adzuna's `max_days_old` integer (whole days).
 ///
-// ponytail: Adzuna's recency granularity is whole days, so all sub-day options
-// collapse to 1 day (API ceiling). No filter / unrecognized token caps at 30 days
-// so the aggregator never surfaces postings older than a month.
+// ponytail: Adzuna's recency granularity is whole days — it can't do sub-day. A
+// 1-day ceiling zeroed out autopilot "recent" filters on quiet days (a normal
+// query returns near-nothing in a single day), so sub-day windows FLOOR at 3 days
+// and rely on the query's `sort_by=date` for freshness instead of a hard clamp.
+// No filter / unrecognized token caps at 30 days so the aggregator never surfaces
+// postings older than a month. (Coarse mapping; 3-day floor / 30-day ceiling.)
 fn adzuna_max_days_old(date_filter: Option<&str>) -> u32 {
     match date_filter {
-        Some("15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "24h") => 1,
+        Some("15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "24h") => 3,
         Some("week") => 7,
         _ => 30,
     }
 }
 
-/// Map a UI date-filter token to JSearch's `date_posted` query token. No filter /
-/// unrecognized token caps at `month` (results no older than the past month).
+/// Map a UI date-filter token to JSearch's `date_posted` query token
+/// (`all|today|3days|week|month`). Sub-day windows floor at `3days` — like Adzuna,
+/// JSearch has no sub-day granularity, and a `today` ceiling zeroed out autopilot
+/// "recent" filters on quiet days (results are date-sorted, so the freshest still
+/// surface first). No filter / unrecognized token caps at `month`.
 fn jsearch_date_posted(date_filter: Option<&str>) -> &'static str {
     match date_filter {
-        Some("15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "24h") => "today",
+        Some("15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "24h") => "3days",
         Some("week") => "week",
         _ => "month",
     }
