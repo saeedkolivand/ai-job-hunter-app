@@ -1722,6 +1722,7 @@
     "locationPlaceholder": "e.g. Berlin, Germany",
     "posted": "Posted",
     "anyTime": "Any time",
+    "past15m": "Past 15 minutes",
     "past30m": "Past 30 minutes",
     "past1h": "Past 1 hour",
     "past2h": "Past 2 hours",

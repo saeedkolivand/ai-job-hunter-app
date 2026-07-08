@@ -132,7 +132,17 @@ export type BoardId = (typeof BOARD_IDS)[number];
 /** Stable catalog id for the Adzuna-powered aggregator board. */
 export const AGGREGATOR_BOARD_ID = 'aggregator' satisfies BoardId;
 
-export const DATE_FILTER_OPTIONS = ['30m', '1h', '2h', '4h', '8h', '24h', 'week', 'month'] as const;
+export const DATE_FILTER_OPTIONS = [
+  '15m',
+  '30m',
+  '1h',
+  '2h',
+  '4h',
+  '8h',
+  '24h',
+  'week',
+  'month',
+] as const;
 export type DateFilterOption = (typeof DATE_FILTER_OPTIONS)[number];
 
 export const ScrapeBoardsRequestSchema = z.object({
