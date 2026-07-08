@@ -118,6 +118,22 @@ export interface AiContract {
    */
   listProviderModels(req: { provider: string; baseUrl?: string }): Promise<Array<{ name: string }>>;
 
+  /**
+   * Static, network-free capability probe for a provider/model — currently just
+   * whether it can attempt a web-grounded company/role search. Reads the Rust
+   * `ModelCapabilities` matrix (the same value the backend gates `research*` on),
+   * so the renderer never mirrors the per-provider booleans and a new provider
+   * needs zero TS change. Drives the capability-driven default of the tailoring
+   * "search company" toggle. Unknown/unresolvable providers degrade to
+   * `{ supportsWebSearch: false }`. `baseUrl` is forwarded for OpenAI-compatible
+   * servers.
+   */
+  modelCapabilities(req: {
+    provider: string;
+    model?: string;
+    baseUrl?: string;
+  }): Promise<{ supportsWebSearch: boolean }>;
+
   /** Active embedding space, per-space vector counts, and document index coverage. */
   embeddingStatus(): Promise<EmbeddingStatus>;
 

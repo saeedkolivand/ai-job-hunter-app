@@ -84,6 +84,15 @@ export const ai = {
     invoke('ai_test_provider_key', { provider, baseUrl }),
   listProviderModels: ({ provider, baseUrl }: { provider: string; baseUrl?: string }) =>
     invoke('ai_list_provider_models', { provider, baseUrl }),
+  modelCapabilities: ({
+    provider,
+    model,
+    baseUrl,
+  }: {
+    provider: string;
+    model?: string;
+    baseUrl?: string;
+  }) => invoke('ai_model_capabilities', { provider, model, baseUrl }),
   embeddingStatus: () => invoke('ai_embedding_status'),
   setEmbeddingConfig: ({
     provider,

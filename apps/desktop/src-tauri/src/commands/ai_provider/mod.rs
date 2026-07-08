@@ -802,6 +802,35 @@ mod tests {
     }
 
     #[test]
+    fn web_search_support_is_capability_driven_per_provider() {
+        // Exercises the exact path `ai_model_capabilities` takes
+        // (`resolve_by_name(..).capabilities(..).supports_web_search`) so the
+        // renderer's capability-driven "search company" default stays a read of
+        // the Rust matrix, never a TS mirror. Native OpenAI can web-search; a
+        // generic OpenAI-compatible gateway cannot — every other provider can.
+        let cases = [
+            ("anthropic", true),
+            ("gemini", true),
+            ("ollama", true),
+            ("ollama-cloud", true),
+            ("openai", true),
+            ("openai-compatible", false),
+            ("claude-code", true),
+            ("codex", true),
+            ("gemini-cli", true),
+        ];
+        for (name, expected) in cases {
+            let client = resolve_by_name(name, None).unwrap();
+            assert_eq!(
+                client.capabilities("").supports_web_search,
+                expected,
+                "{name} web-search support"
+            );
+        }
+        assert!(resolve_by_name("nope", None).is_err());
+    }
+
+    #[test]
     fn provider_id_round_trips() {
         for id in [
             ProviderId::Ollama,

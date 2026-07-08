@@ -9,9 +9,17 @@ describe('buildTailorDefaults', () => {
     expect(buildTailorDefaults(undefined).outputType).toBe('both');
   });
 
-  it('returns researchCompany false by default', () => {
+  it('returns researchCompany false by default (safe fallback)', () => {
     expect(buildTailorDefaults('text').researchCompany).toBe(false);
     expect(buildTailorDefaults().researchCompany).toBe(false);
+  });
+
+  it('honors the capability-driven researchCompany argument', () => {
+    // The caller passes the active model's `supportsWebSearch` so the toggle
+    // defaults ON for a web-search-capable model and OFF otherwise.
+    expect(buildTailorDefaults('text', true).researchCompany).toBe(true);
+    expect(buildTailorDefaults('text', false).researchCompany).toBe(false);
+    expect(buildTailorDefaults(undefined, true).researchCompany).toBe(true);
   });
 
   it('seeds resume from resumeText when provided', () => {
