@@ -10,7 +10,17 @@ export interface TailorWizardState {
   researchCompany: boolean;
 }
 
-/** Seed defaults for a fresh job — resume pre-filled from the autopilot's base. */
-export function buildTailorDefaults(resumeText?: string): TailorWizardState {
-  return { resume: resumeText ?? '', outputType: 'both', researchCompany: false };
+/**
+ * Seed defaults for a fresh job — resume pre-filled from the autopilot's base.
+ *
+ * `researchCompany` is capability-driven: the caller passes the active model's
+ * `supportsWebSearch` so the "search company" toggle defaults ON for a model
+ * that can web-search and OFF otherwise. Defaults to `false` (the safe fallback
+ * used while the capability is still resolving, or when it can't).
+ */
+export function buildTailorDefaults(
+  resumeText?: string,
+  researchCompany = false
+): TailorWizardState {
+  return { resume: resumeText ?? '', outputType: 'both', researchCompany };
 }

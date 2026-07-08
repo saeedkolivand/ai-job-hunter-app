@@ -9,7 +9,8 @@ import { transition } from '@ajh/ui';
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { useInterviewQuestions } from '@/hooks/use-interview-questions';
 import type { TemplateId } from '@/lib/generate';
-import { useResolveJobUrl } from '@/services';
+import { shouldSeedResearchDefault } from '@/lib/research-company-default';
+import { useActiveModelCapabilities, useResolveJobUrl } from '@/services';
 
 import { ApplicationQuestionsModal } from './ApplicationQuestionsModal';
 import { GeneratingPanel } from './GeneratingPanel';
@@ -129,19 +130,54 @@ export function TailorFlow({
   const setTemplateId = persistence.setTemplateId;
   const setAtsMode = persistence.setAtsMode;
 
+  // Capability-driven default for the "search company" toggle: default ON when
+  // the active model can web-search. Read from the Rust capability matrix (never
+  // a TS mirror), so a new provider needs no change here.
+  const caps = useActiveModelCapabilities();
+  const supportsWebSearch = caps.data?.supportsWebSearch ?? false;
+
   // RHF owns the live editing layer; `persistence.wizardForm` is a one-shot seed.
   // Seed `defaultValues` ONCE — written back on step-advance and on generate.
-  const initialForm = useRef<TailorWizardState>(
-    persistence.wizardForm ?? buildTailorDefaults(resumeText)
+  // Only a FRESH (unpersisted) form takes the capability-driven research default;
+  // a restored form keeps the user's saved choice. Lazy `useState` initializer so
+  // `buildTailorDefaults` runs once, not on every render.
+  const startedFresh = useRef(persistence.wizardForm == null);
+  const [initialForm] = useState<TailorWizardState>(
+    () => persistence.wizardForm ?? buildTailorDefaults(resumeText, supportsWebSearch)
   );
   const methods = useForm<TailorWizardState>({
-    defaultValues: initialForm.current,
+    defaultValues: initialForm,
     resolver: zodResolver(tailorWizardSchema),
     mode: 'onChange',
   });
 
   // The research toggle is an RHF field; the hook needs its live value.
   const researchCompany = useWatch({ control: methods.control, name: 'researchCompany' });
+
+  // Keep the "search company" default in sync with the active model's capability:
+  // seed it when the capability resolves after a cold-cache seed, and RE-seed it
+  // on a mid-session model switch that flips the capability — but only for a fresh
+  // form and only until the user touches the toggle (RHF's dirty flag guards the
+  // override, so an explicit choice is never clobbered). The DECISION is the shared
+  // `shouldSeedResearchDefault` helper; RHF owns the state. `lastSeededResearch`
+  // tracks the last-seeded capability (seeded from the fresh form's construction
+  // value) so a no-change resolve is a no-op.
+  const researchDirty = !!methods.formState.dirtyFields.researchCompany;
+  const lastSeededResearch = useRef<boolean | null>(
+    startedFresh.current ? (caps.isSuccess ? supportsWebSearch : null) : null
+  );
+  useEffect(() => {
+    if (!startedFresh.current) return;
+    const { seed, value } = shouldSeedResearchDefault({
+      capabilityResolved: caps.isSuccess,
+      supportsWebSearch,
+      userTouched: researchDirty,
+      lastSeededValue: lastSeededResearch.current,
+    });
+    if (!seed) return;
+    lastSeededResearch.current = value;
+    methods.setValue('researchCompany', value, { shouldDirty: false });
+  }, [caps.isSuccess, supportsWebSearch, researchDirty, methods]);
 
   const [referralOpen, setReferralOpen] = useState(false);
   const [questionsOpen, setQuestionsOpen] = useState(false);

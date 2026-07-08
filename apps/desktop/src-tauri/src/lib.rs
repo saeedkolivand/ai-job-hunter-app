@@ -777,6 +777,7 @@ pub fn run() {
             // ai
             commands::ai::ai_generate,
             commands::ai::ai_list_models,
+            commands::ai::ai_model_capabilities,
             commands::ai::ai_inspect_model,
             commands::ai::ai_research_company,
             commands::ai::ai_research_answer,

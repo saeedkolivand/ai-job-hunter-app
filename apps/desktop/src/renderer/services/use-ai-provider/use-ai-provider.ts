@@ -126,3 +126,28 @@ export const useGenerateConfig = () => {
     effort: settings?.effort,
   };
 };
+
+/**
+ * Static capabilities of a provider/model (currently just web-search support),
+ * read straight from the Rust `ModelCapabilities` matrix — never a TS mirror, so
+ * a new provider is picked up with zero renderer change. Cheap + rarely-changing,
+ * so cached for a long while.
+ */
+export const useModelCapabilities = (provider: string, model: string, baseUrl?: string) => {
+  const api = useAppClient();
+  return useQuery({
+    queryKey: [...keys.ai.capabilities, provider, model, baseUrl ?? ''],
+    queryFn: () => api.ai.modelCapabilities({ provider, model, baseUrl }),
+    staleTime: QUERY_TIMES.VERY_LONG,
+  });
+};
+
+/**
+ * Capabilities for the ACTIVE provider/model — the single source both tailoring
+ * wizards read to default the "search company" toggle ON when the selected model
+ * can web-search, OFF otherwise.
+ */
+export const useActiveModelCapabilities = () => {
+  const { provider, model, baseUrl } = useGenerateConfig();
+  return useModelCapabilities(provider, model, baseUrl);
+};
