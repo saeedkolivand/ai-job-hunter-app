@@ -172,7 +172,7 @@ Pure-TypeScript AI prompt templates (zero dependencies). Builds prompt strings a
 
 It is **provider-aware** and **locale-driven**:
 
-- **`provider.ts`** — `ProviderProfile` (`{ kind: 'ollama' | 'cloud' | 'cli', model?, contextWindow?, supportsStructuredOutput?, sizeHint? }`) and `resolveProfile()`. Every builder accepts this **additively** (a legacy `'large' | 'medium' | 'small'` tier string still works). It picks prompt **depth** (`brief` / `full` / `task` brief), schema variant, truncation budget, and structured-output metadata per provider class: ollama → shortest imperative prompts + compact schema + aggressive truncation; cloud → full multi-perspective prompt + rich schema + native JSON-schema metadata (`structuredOutputFor`) + minimal truncation; cli agents → a self-verifying **task brief** with explicit acceptance checks.
+- **`provider.ts`** — `ProviderProfile` (`{ kind: 'ollama' | 'cloud' | 'cli', model?, contextWindow?, supportsStructuredOutput?, sizeHint? }`) and `resolveProfile()`. Every builder accepts this **additively** (a legacy `'large' | 'medium' | 'small'` tier string still works). It picks prompt **depth** (`brief` / `full` / `task` brief), schema variant, truncation budget, and structured-output metadata per provider class: ollama → shortest imperative prompts + compact schema + aggressive truncation; cloud → full multi-perspective prompt + rich schema + native JSON-schema structured-output metadata + minimal truncation; cli agents → a self-verifying **task brief** with explicit acceptance checks.
 - **`locale.ts`** — section-header lexicons, resume conventions (headers + date format), and per-locale token factors. All market behaviour follows the **job-ad's detected locale**, not a fixed US/German style.
 - **Modular folders** — every concern (`analyze/`, `generate/`, `context-manager/`, `provider/`, `locale/`, `workspace/`) is a folder with an `index.ts` barrel (the `@ajh/prompts/<name>` subpath entry) plus focused submodules and a colocated test. `context-manager/model-size.ts` parses a model's parameter size generically from its tag and defaults unknown local models to the smaller/safer prompt; CLI-agent / hosted model names (sonnet/opus/haiku/codex/gpt/claude/gemini) are treated as capable.
 - **Validators** (`validateAndRepair`, `validateMetadata`) remain the universal fallback for every provider.
@@ -221,7 +221,7 @@ sequenceDiagram
     participant OCR as OCR Worker
     participant Chunk as Chunk Worker
     participant Embed as Embed Worker
-    participant DB as SQLite + LanceDB
+    participant DB as SQLite (documents.db)
 
     UI->>IPC: documents.import(filePath)
     IPC->>Doc: detect format (PDF/DOCX/TXT/image)
@@ -232,7 +232,7 @@ sequenceDiagram
     Chunk-->>Doc: chunk array
     Doc->>Embed: vectorize chunks (Ollama)
     Embed-->>Doc: float32[] vectors
-    Doc->>DB: upsert vectors (LanceDB)
+    Doc->>DB: upsert vectors (SQLite documents.db)
     Doc-->>IPC: DocumentRecord
     IPC-->>UI: success + document metadata
 ```
@@ -244,12 +244,12 @@ sequenceDiagram
     participant UI as Search Page
     participant IPC as Tauri IPC
     participant Search as Search Handler
-    participant Lance as LanceDB
+    participant Lance as SQLite (vectors)
     participant SQL as SQLite
 
     UI->>IPC: search.hybrid({query, collection, topK, semanticWeight})
     IPC->>Search: route request
-    Search->>Lance: ANN vector search (semantic)
+    Search->>Lance: vector search (semantic, in-process cosine)
     Lance-->>Search: scored document IDs
     Search->>SQL: keyword filter on matched IDs
     SQL-->>Search: refined result set
@@ -375,13 +375,16 @@ erDiagram
     documents ||--o{ ai_generations : "uses"
 ```
 
-### LanceDB Collections
+### Embedding vectors (SQLite)
 
-| Collection | Schema                                              | Purpose               |
-| ---------- | --------------------------------------------------- | --------------------- |
-| `jobs`     | `{id, vector[1024], text, boardId, title, company}` | Semantic job search   |
-| `resumes`  | `{id, vector[1024], text, documentId, chunkIndex}`  | Resume similarity     |
-| `skills`   | `{id, vector[1024], text, category}`                | Skill taxonomy lookup |
+Vectors live in `documents.db` — there is **no LanceDB and no `vectors/` directory**;
+cosine similarity runs in-process in Rust:
+
+| Table             | Holds                                                   |
+| ----------------- | ------------------------------------------------------- |
+| `vectors`         | résumé / document embeddings (keyed by embedding space) |
+| `posting_vectors` | cached job-posting embeddings (ADR-017)                 |
+| `match_scores`    | cached match-score results (ADR-017)                    |
 
 ---
 
@@ -389,7 +392,7 @@ erDiagram
 
 ### 1. Local-First Architecture
 
-All data lives on the user's machine — [SQLite][sqlite], LanceDB, credential keychain. No account signup, no cloud sync. This is a deliberate product decision: the target user is privacy-conscious and may be searching confidentially.
+All data lives on the user's machine — per-domain [SQLite][sqlite] files (vectors included) and the OS credential keychain. No account signup, no cloud sync. This is a deliberate product decision: the target user is privacy-conscious and may be searching confidentially.
 
 ### 2. IPC Contract as Single Source of Truth
 

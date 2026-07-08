@@ -68,9 +68,9 @@ impl PostingsCache {
     /// pane resolves the full description we write it back here so the match
     /// scorer (which reads title+description+requirements from this cache) sees
     /// the full text. We mutate the EXISTING entry rather than pushing a new one:
-    /// [`Self::add`] upserts by id (it would replace, not duplicate, the row) and
-    /// the scorer's `job_texts_for` is first-wins by id, so routing the patch
-    /// through `add` would needlessly rebuild the whole value. Each item is stored
+    /// [`Self::add`] upserts by id (it would replace, not duplicate, the row), so
+    /// routing the patch through `add` would needlessly rebuild the whole value.
+    /// Each item is stored
     /// as a JSON object, so we patch the `description` field on the matching object
     /// directly.
     ///

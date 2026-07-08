@@ -68,6 +68,7 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
                 { value: '', label: t('jobs.anyTime') },
                 ...(form.boards.some((b) => AUTH_BENEFITS.has(b)) && boardConnected
                   ? [
+                      { value: '15m', label: t('jobs.past15m') },
                       { value: '30m', label: t('jobs.past30m') },
                       { value: '1h', label: t('jobs.past1h') },
                       { value: '2h', label: t('jobs.past2h') },

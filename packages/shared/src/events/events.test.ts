@@ -34,7 +34,6 @@ describe('EVENT_CHANNELS', () => {
       'menu',
       'notifications',
       'scrape',
-      'shortcuts',
       'system',
       'updater',
     ]);
@@ -84,8 +83,6 @@ describe('EVENT_CHANNELS', () => {
       'scrape:progress',
       'scrape:item',
       'boards:login-status',
-      // no Rust emit — frontend/global-shortcut only.
-      'shortcut:command-palette',
       // Windows accent-change push (WinRT UISettings::ColorValuesChanged).
       'system:accentChanged',
     ];

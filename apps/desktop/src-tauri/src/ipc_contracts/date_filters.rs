@@ -2,4 +2,5 @@
 // Source of truth: packages/shared/src/schemas/index.ts
 #![allow(dead_code)]
 
-pub const DATE_FILTER_OPTIONS: &[&str] = &["30m", "1h", "2h", "4h", "8h", "24h", "week", "month"];
+pub const DATE_FILTER_OPTIONS: &[&str] =
+    &["15m", "30m", "1h", "2h", "4h", "8h", "24h", "week", "month"];

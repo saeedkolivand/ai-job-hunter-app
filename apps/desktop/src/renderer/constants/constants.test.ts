@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { AUTH_BOARD_IDS, AUTH_BOARDS } from './auth';
 import { LOCALE_CODES, LOCALES } from './locales';
 import { ROUTES } from './routes';
-import { SUPPORT_TABS } from './support';
 import { TAB_GROUPS, TAB_IDS, TABS } from './tabs';
 
 describe('settings tabs constants', () => {
@@ -49,9 +48,5 @@ describe('auth + locale + route constants', () => {
     for (const path of Object.values(ROUTES)) {
       expect(typeof path).toBe('string');
     }
-  });
-
-  it('exposes support tabs', () => {
-    expect(SUPPORT_TABS.length).toBeGreaterThan(0);
   });
 });

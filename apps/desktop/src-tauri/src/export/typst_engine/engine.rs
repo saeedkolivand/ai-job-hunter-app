@@ -29,7 +29,9 @@ use crate::export::types::TemplateId;
 use crate::model::document::DocumentModel;
 
 use super::letter::{parse_cover_letter, style_from_template as letter_style_from_template};
-use super::render::{prepare, prepare_with_photo, PreparedRender, RenderOpts};
+use super::render::{
+    document_meta_preamble, prepare, prepare_with_photo, PreparedRender, RenderOpts,
+};
 use super::world::ResumeWorld;
 
 // ── Shared spacing scale (embedded at compile time) ───────────────────────────
@@ -401,11 +403,13 @@ fn build_letter_world(
         ))
     })?;
 
-    // Prepend the shared spacing scale then the letter template source.
+    // Prepend the document-meta preamble (PDF title + author + language) and the
+    // shared spacing scale, then the letter template source.
+    let meta = document_meta_preamble("data.letterhead.name", "Cover Letter");
     let source = format!(
         "// Auto-generated cover-letter entry — do not edit.\n\
          #let data = json(\"data.json\")\n\
-         {SCALE_TYP}\n\
+         {meta}{SCALE_TYP}\n\
          {LETTER_TYP}"
     );
 

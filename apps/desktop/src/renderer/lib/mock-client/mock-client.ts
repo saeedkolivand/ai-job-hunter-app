@@ -17,7 +17,7 @@
  * Every method is a jest/vitest spy-friendly async stub. Provide overrides as a
  * deep-partial — only the methods you care about need to be specified.
  */
-import type { ReferralContact, ReferralUpsertRequest } from '@ajh/shared';
+import type { ReferralContact, ReferralUpsertRequest, ScrapeProgressEvent } from '@ajh/shared';
 
 import type { AppClient } from '../app-client';
 
@@ -29,10 +29,24 @@ const noop = () => Promise.resolve() as Promise<never>;
 const emptyList = () => Promise.resolve([]) as Promise<never>;
 const unsub = () => () => {};
 
+// Where the mock scrape namespace stashes its progress emitter. Off-contract
+// (ScrapeContract has no emit surface), so a symbol keeps it out of enumeration
+// and object-spread merges — tests reach it via `emitScrapeProgress`.
+const SCRAPE_PROGRESS_EMITTER = Symbol('scrapeProgressEmitter');
+
+type ScrapeProgressEmitting = {
+  [SCRAPE_PROGRESS_EMITTER]?: (event: ScrapeProgressEvent) => void;
+};
+
 export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppClient {
   // In-memory referral store so the renderer/tests can exercise list/upsert/remove
   // offline without a backend. Scoped per client so each mock starts empty.
   const referralRows: ReferralContact[] = [];
+
+  // In-memory scrape-progress fan-out so tests can drive the onProgress path
+  // (register a handler, then push events via `emitScrapeProgress`). Scoped per
+  // client so each mock starts with no subscribers.
+  const scrapeProgressHandlers = new Set<(event: ScrapeProgressEvent) => void>();
 
   const base: AppClient = {
     agent: {
@@ -159,6 +173,12 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       listPostings: emptyList,
       clearPostings: noop,
       listInteractions: emptyList,
+      onProgress: (handler) => {
+        scrapeProgressHandlers.add(handler);
+        return () => {
+          scrapeProgressHandlers.delete(handler);
+        };
+      },
     },
     data: {
       export: async () => ({ success: false }),
@@ -167,7 +187,6 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
 
     match: {
       resume: noop,
-      resumeBatch: noop,
     },
 
     geocode: {
@@ -203,7 +222,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     privacy: {
       signOutAll: noop,
       clearInteractions: noop,
-      resetApp: noop,
+      resetApp: async () => ({ success: true }),
     },
 
     referrals: {
@@ -249,29 +268,12 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       onStatus: unsub,
     },
 
-    shortcuts: {
-      onCommandPalette: unsub,
-    },
-
     resume: {
       extractText: noop,
     },
 
     support: {
       exportDiagnostics: noop,
-      reloadAiRuntime: noop,
-      unloadAllModels: noop,
-      resetModelConfiguration: noop,
-      rebuildVectorIndexes: noop,
-      clearEmbeddingsCache: noop,
-      resetVectorDatabase: noop,
-      clearOcrCache: noop,
-      reindexAllDocuments: noop,
-      resetAllSessions: noop,
-      clearScrapingQueue: noop,
-      copyEnvironmentDetails: noop,
-      copyAppVersion: noop,
-      copySystemInfo: noop,
     },
 
     autopilot: {
@@ -322,5 +324,22 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     }
   }
 
+  // Attach the progress emitter after merging so it survives a `scrape` override
+  // (which replaces the namespace object). Fans an event out to every handler
+  // currently registered via `scrape.onProgress`.
+  (base.scrape as unknown as ScrapeProgressEmitting)[SCRAPE_PROGRESS_EMITTER] = (event) => {
+    for (const handler of scrapeProgressHandlers) handler(event);
+  };
+
   return base;
+}
+
+/**
+ * Push a scrape-progress event to every handler registered via
+ * `client.scrape.onProgress` on a mock client (see {@link createMockClient}).
+ * Lets renderer tests exercise the scrape-progress path without a backend.
+ * No-op on any client that isn't a mock.
+ */
+export function emitScrapeProgress(client: AppClient, event: ScrapeProgressEvent): void {
+  (client.scrape as unknown as ScrapeProgressEmitting)[SCRAPE_PROGRESS_EMITTER]?.(event);
 }

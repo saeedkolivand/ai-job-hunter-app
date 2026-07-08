@@ -20,9 +20,10 @@ limit) enforced the subsetting contract.
 
 - `export/pdf_renderer/` and `export/layout_pdf.rs` deleted.
 - `printpdf` and `ttf-parser` removed from `Cargo.toml`.
-- Fonts are now vendored as `Carlito` (Calibri-metric-compatible, OFL) and
-  `Noto Sans` (Latin + Cyrillic, OFL), loaded into the Typst world via
-  `include_bytes!` in `export/typst_engine/world.rs`.
+- Fonts are now vendored as `Carlito` (Calibri-metric-compatible, OFL) plus
+  `Inter`, `Source Serif 4`, and `Manrope` (OFL) — Latin/Cyrillic + serif/Swiss
+  variants; Cyrillic comes from Inter (no Noto face is bundled). Loaded into the
+  Typst world via `include_bytes!` in `export/typst_engine/world.rs`.
 - Typst's PDF serialiser performs its own subsetting — no application-level
   `subset_font` call is required.
 - The size-budget guardrail test was re-added in `export/typst_engine/test.rs`

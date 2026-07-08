@@ -9,7 +9,6 @@ import {
   DocumentImportRequestSchema,
   EmbedRequestSchema,
   JobPreferencesSchema,
-  MatchResumeBatchRequestSchema,
   MatchResumeRequestSchema,
   ResumeExtractTextSchema,
   ScrapeUrlRequestSchema,
@@ -248,21 +247,5 @@ describe('ApplicationTrackSchema — jobDescription carried from a posting', () 
     const justUnder = '€'.repeat(66_666);
     expect(new TextEncoder().encode(justUnder).length).toBeLessThanOrEqual(200_000);
     expect(() => ApplicationTrackSchema.parse({ jobDescription: justUnder })).not.toThrow();
-  });
-});
-
-describe('MatchResumeBatchRequestSchema — jobIds boundary', () => {
-  it('accepts exactly 1 000 job IDs (the max)', () => {
-    const jobIds = Array.from({ length: 1000 }, (_, i) => `job-${String(i)}`);
-    expect(() => MatchResumeBatchRequestSchema.parse({ resumeId: 'r1', jobIds })).not.toThrow();
-  });
-
-  it('rejects 1 001 job IDs (one over the max)', () => {
-    const jobIds = Array.from({ length: 1001 }, (_, i) => `job-${String(i)}`);
-    expect(() => MatchResumeBatchRequestSchema.parse({ resumeId: 'r1', jobIds })).toThrow();
-  });
-
-  it('accepts an empty jobIds array (no min constraint)', () => {
-    expect(() => MatchResumeBatchRequestSchema.parse({ resumeId: 'r1', jobIds: [] })).not.toThrow();
   });
 });

@@ -2426,17 +2426,17 @@
           notes: [],
           tag: ['settings', 'all'],
         }),
-        N('db-lance-jobs', 'data', 'LanceDB · jobs', 'vector[1024]', 2509, 672, 232, 46, 'data', {
-          role: 'LanceDB collection of job vectors for semantic search.',
+        N('db-lance-jobs', 'data', 'SQLite · job vectors', 'vector[1024]', 2509, 672, 232, 46, 'data', {
+          role: 'SQLite vectors table (documents.db) for job semantic search — in-process cosine, no LanceDB.',
           plain: 'A math index of jobs so the app can search by meaning.',
           path: 'apps/desktop/src-tauri/src/documents',
-          notes: ['ANN search'],
+          notes: ['cosine'],
           tag: ['scrape', 'all'],
         }),
         N(
           'db-lance-resumes',
           'data',
-          'LanceDB · resumes',
+          'SQLite · résumé vectors',
           'vector[1024]',
           2509,
           736,
@@ -2444,7 +2444,7 @@
           46,
           'data',
           {
-            role: 'LanceDB collection of resume chunk vectors.',
+            role: 'SQLite vectors table (documents.db) for résumé/document vectors — in-process cosine, no LanceDB.',
             plain: 'A math index of resume pieces for similarity.',
             path: 'apps/desktop/src-tauri/src/documents',
             notes: [],

@@ -281,7 +281,7 @@ graph LR
     D & E & F & G --> H[Store in SQLite]
     H --> I[Chunk text]
     I --> J[Embed chunks via Ollama]
-    J --> K[Upsert to LanceDB]
+    J --> K[Upsert vectors to SQLite]
     K --> L[DocumentRecord]
 ```
 
@@ -305,7 +305,7 @@ interface HybridSearchRequest {
 **Implementation order:**
 
 1. Embed the query via [Ollama][ollama]
-2. Run ANN search in LanceDB (returns top-K × 2 candidates)
+2. Run vector search in SQLite (in-process cosine; returns top-K × 2 candidates)
 3. Apply SQL filters to narrow candidates
 4. Re-rank using `semanticWeight × semanticScore + (1 - semanticWeight) × keywordScore`
 5. Return top-K results

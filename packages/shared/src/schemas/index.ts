@@ -132,7 +132,17 @@ export type BoardId = (typeof BOARD_IDS)[number];
 /** Stable catalog id for the Adzuna-powered aggregator board. */
 export const AGGREGATOR_BOARD_ID = 'aggregator' satisfies BoardId;
 
-export const DATE_FILTER_OPTIONS = ['30m', '1h', '2h', '4h', '8h', '24h', 'week', 'month'] as const;
+export const DATE_FILTER_OPTIONS = [
+  '15m',
+  '30m',
+  '1h',
+  '2h',
+  '4h',
+  '8h',
+  '24h',
+  'week',
+  'month',
+] as const;
 export type DateFilterOption = (typeof DATE_FILTER_OPTIONS)[number];
 
 export const ScrapeBoardsRequestSchema = z.object({
@@ -189,12 +199,6 @@ export const ScrapeUrlRequestSchema = z.object({
 export const MatchResumeRequestSchema = z.object({
   resumeId: z.string().min(1),
   jobId: z.string().min(1),
-  semanticScoringEnabled: z.boolean().optional(),
-});
-
-export const MatchResumeBatchRequestSchema = z.object({
-  resumeId: z.string().min(1),
-  jobIds: z.array(z.string().min(1)).max(1000),
   semanticScoringEnabled: z.boolean().optional(),
 });
 
@@ -487,6 +491,5 @@ export type DocumentImportRequest = z.infer<typeof DocumentImportRequestSchema>;
 export type ScrapeBoardsRequest = z.infer<typeof ScrapeBoardsRequestSchema>;
 export type ScrapeUrlRequest = z.infer<typeof ScrapeUrlRequestSchema>;
 export type MatchResumeRequest = z.infer<typeof MatchResumeRequestSchema>;
-export type MatchResumeBatchRequest = z.infer<typeof MatchResumeBatchRequestSchema>;
 export type AgentRunRequest = z.infer<typeof AgentRunRequestSchema>;
 export type AgentConfirmRequest = z.infer<typeof AgentConfirmRequestSchema>;

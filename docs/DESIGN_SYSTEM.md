@@ -6,7 +6,7 @@ The design system lives in `packages/ui` and is published as the `@ajh/ui` inter
 
 > **Design language: Apple (hybrid).** The system follows the Apple design language (`DESIGN-apple.md`) — typography-led, restrained chrome, flat surfaces with hairline elevation, the single product shadow, and the Apple type/radius grammar. **Two deliberate divergences from the Apple spec:**
 >
-> 1. **Accent stays violet** (`--color-brand`), not Apple's Action Blue.
+> 1. **Accent is the brand teal** (`--color-brand`, shipped default `#5bb8b7` dark / `#2b7a78` light — **user-customizable** per [ADR 0004](adr/0004-single-source-user-customizable-accent-color.md)), not Apple's Action Blue.
 > 2. **Colorful action buttons** are allowed (Apple mandates a single accent). They are _semantic_ (run/edit/delete), token-driven (`--color-action-*`), and never decorative.
 >
 > "Hybrid" depth: content surfaces are flat (`.surface-card`); frosted **glass is reserved for hero surfaces only** — modals, the dashboard hero, and chrome (sidebar/titlebar/sticky bars). Decorative gradients and glows live in content. A **slim, accent-tinted aurora** (ribbons, nebulae, and cursor glow, gated by performance mode) sits as the ambient backdrop behind all surfaces; it is always present when performance allows.
@@ -21,7 +21,7 @@ All tokens are CSS custom properties defined in `packages/ui/src/css/tokens.css`
 
 ```css
 /* Brand palette */
---color-brand          /* Primary interactive color (violet — the accent) */
+--color-brand          /* Primary interactive color (teal — the shipped default accent; user-customizable) */
 --color-brand-soft     /* Muted/secondary brand variant */
 --color-brand-2        /* Gradient-end hue (hand-tuned per preset, rotateHueHex(-30°) for system/custom) */
 --color-brand-2-soft   /* Lighter step of brand-2 (for secondary text/icons) */
@@ -29,7 +29,7 @@ All tokens are CSS custom properties defined in `packages/ui/src/css/tokens.css`
 
 /* Colorful action tokens (semantic; the deliberate divergence — tokens only,
    never a raw [#hex]). Used by Button variants primary/run/edit/delete. */
---color-action-primary    /* create / generate (violet, = brand) */
+--color-action-primary    /* create / generate (brand teal, = brand) */
 --color-action-run        /* run / start (green) */
 --color-action-edit       /* edit (blue) */
 --color-action-delete     /* delete (red, = destructive) */
@@ -129,7 +129,7 @@ The Apple `{rounded.*}` grammar is namespaced `--rounded-*` so it does **not** c
 
 ## Theming
 
-Both schemes follow the **Apple design language** with the brand violet kept as the accent:
+Both schemes follow the **Apple design language** with the brand teal kept as the accent:
 light is a **cool-gray `#f1f1f4` canvas with white `#ffffff` cards** (and a white sidebar) and near-black ink
 `#1d1d1f` — separation comes from **hairlines**, not shadows; dark is **near-black
 `#1d1d1f` canvas with `#272729` tiles** that read _lighter_ than the canvas (Apple
@@ -179,7 +179,7 @@ A **single-source, user-customizable accent** system colllapses brand-color frag
 
 **Accent source enum** — `ThemePrefs.accentSource` in `packages/ui/src/lib/theme.ts`:
 
-- **`'default'`** — uses the shipped per-scheme violet; no runtime override.
+- **`'default'`** — uses the shipped per-scheme teal; no runtime override.
 - **`'system'`** — reads the OS accent color (Windows via `UISettings::GetColorValue(UIColorType::Accent)`; macOS via the fixed accent palette; unsupported on Linux).
 - **`'custom'`** — uses a user-picked hex (`ThemePrefs.accentColor`).
 
@@ -233,7 +233,7 @@ import { Button, Input, GlassCard, Modal } from '@ajh/ui';
 | `loading`  | boolean | Shows spinner, disables click                                                                                  |
 | `disabled` | boolean | Greyed out, no interaction                                                                                     |
 
-- **`primary`** — the signature solid **violet** CTA (`--color-action-primary`), on the **utility radius** so it matches neutral buttons like `default`. **`run` / `edit` / `delete`** — solid colorful action **pills** (semantic colour; the deliberate divergence) — these are the only filled actions that take the pill radius.
+- **`primary`** — the signature solid **brand-teal** CTA (`--color-action-primary`), on the **utility radius** so it matches neutral buttons like `default`. **`run` / `edit` / `delete`** — solid colorful action **pills** (semantic colour; the deliberate divergence) — these are the only filled actions that take the pill radius.
 - **`default` / `glass` / `ghost`** — neutral utility buttons (rounded `sm`, not pill). **`danger` / `warning` / `info` / `success`** — translucent inline state chips.
 - Apple micro-interaction baked in: weight **400** (no 500), `active:scale-[0.95]` press, 2px brand focus ring.
 
