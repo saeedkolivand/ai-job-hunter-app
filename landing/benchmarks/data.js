@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783517496632,
+  "lastUpdate": 1783520495535,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2891,6 +2891,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 299490,
             "range": "± 3642",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "eec1b72ada2b1274ed080f0f6e0e73e13f64f455",
+          "message": "chore(limits): raise the per-provider daily request ceiling to 4000 (#566)\n\nDouble the runaway-cost backstop from 2,000 to 4,000 accepted AI requests per\nprovider per UTC day, for headroom on heavy autopilot/generation days. Still a\ngenerous safety cap that only a pathological loop trips — not a token/cost budget.\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-08T16:12:24+02:00",
+          "tree_id": "ee152afd72af0d2b7d056888fa2b5434072d259c",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/eec1b72ada2b1274ed080f0f6e0e73e13f64f455"
+        },
+        "date": 1783520494970,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1889110,
+            "range": "± 56405",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2535750,
+            "range": "± 40411",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 297643,
+            "range": "± 6548",
             "unit": "ns/iter"
           }
         ]
