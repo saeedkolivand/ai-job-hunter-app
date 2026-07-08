@@ -65,7 +65,7 @@ export function PrivacySettingsTab() {
   const handleResetApp = async () => {
     setConfirm((c) => ({ ...c, open: false }));
     try {
-      const res = (await resetApp.mutateAsync()) as { success: boolean };
+      const res = await resetApp.mutateAsync();
       // resetPreferences() is called inside useResetApp onSuccess,
       // which sets onboardingCompleted: false — the wizard re-mounts at welcome step.
       // A partial reset (success:false) still wiped the stores but left board login

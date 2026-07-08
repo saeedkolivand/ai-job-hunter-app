@@ -223,7 +223,7 @@ export {
   type PendingMenuIntent,
 } from './menu.js';
 export { NOTIFICATIONS_CHANNELS, type NotificationsContract } from './notifications.js';
-export { PRIVACY_CHANNELS, type PrivacyContract } from './privacy.js';
+export { PRIVACY_CHANNELS, type PrivacyContract, type PrivacyResetResult } from './privacy.js';
 export {
   type ReferralChannel,
   type ReferralContact,

@@ -222,7 +222,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     privacy: {
       signOutAll: noop,
       clearInteractions: noop,
-      resetApp: noop,
+      resetApp: async () => ({ success: true }),
     },
 
     referrals: {
