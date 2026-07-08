@@ -223,6 +223,11 @@ describe('buildRewritePrompt — docType label in system prompt', () => {
     expect(system).toContain('application answer');
   });
 
+  it('embeds "application email" in the system prompt for docType "email"', () => {
+    const { system } = buildRewritePrompt({ ...BASE_PARAMS, docType: 'email' });
+    expect(system).toContain('application email');
+  });
+
   it('applies the prose voice ruleset (em-dash ban) for docType "application-answer"', () => {
     // application-answer is first-person prose like a cover letter, so it must
     // carry the PROSE FLOW rules (em-dash hard ban), not just the résumé lexical
@@ -233,6 +238,13 @@ describe('buildRewritePrompt — docType label in system prompt', () => {
     // And it must NOT match the résumé arm, which omits PROSE FLOW.
     const { system: resumeSystem } = buildRewritePrompt({ ...BASE_PARAMS, docType: 'resume' });
     expect(resumeSystem).not.toMatch(/em-dash hard ban/i);
+  });
+
+  it('applies the prose voice ruleset (em-dash ban) for docType "email"', () => {
+    // An application email is short first-person prose too, so it carries the
+    // PROSE FLOW rules, not the résumé lexical-only bans.
+    const { system } = buildRewritePrompt({ ...BASE_PARAMS, docType: 'email' });
+    expect(system).toMatch(/em-dash hard ban/i);
   });
 });
 
@@ -252,6 +264,11 @@ describe('buildRewritePrompt — DOC_VOICE carries the positive humanize blocks'
 
   it('docType "application-answer" carries HUMANIZE_PROSE (cadence) too', () => {
     const { system } = buildRewritePrompt({ ...BASE_PARAMS, docType: 'application-answer' });
+    expect(system).toContain('CADENCE');
+  });
+
+  it('docType "email" carries HUMANIZE_PROSE (cadence) too', () => {
+    const { system } = buildRewritePrompt({ ...BASE_PARAMS, docType: 'email' });
     expect(system).toContain('CADENCE');
   });
 });

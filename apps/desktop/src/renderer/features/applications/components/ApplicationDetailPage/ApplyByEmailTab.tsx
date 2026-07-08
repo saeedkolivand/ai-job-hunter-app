@@ -1,13 +1,20 @@
-import { Briefcase, ClipboardCopy, FileText, Mail, Sparkles } from 'lucide-react';
+import { Briefcase, Check, ClipboardCopy, FileText, Mail, Sparkles } from 'lucide-react';
+import { AnimatePresence } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { AiGenerationRecord, Application } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, CardSkeleton, EmptyState, Input, RowSkeleton, StreamingText } from '@ajh/ui';
 
+import {
+  RewritePopover,
+  type RewriteTarget,
+} from '@/components/generation/EditableOutput/RewritePopover';
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { useDefaultResumeId } from '@/hooks/useDefaultResumeId';
 import { generateApplicationEmail, type GenerationMeta } from '@/lib/generate';
+import { getSelectionOffsets } from '@/lib/selection-offsets';
+import { COPY_FEEDBACK_MS } from '@/lib/timings';
 import { useDocuments, useDocumentText, useUpdateApplication } from '@/services';
 
 import { extractRecipient } from '../../lib/extract-recipient';
@@ -15,6 +22,20 @@ import { extractRecipient } from '../../lib/extract-recipient';
 interface Props {
   application: Application;
   matchingGenerations: AiGenerationRecord[];
+}
+
+/** The two independently-rewritable fields of the draft. */
+type EmailField = 'subject' | 'body';
+
+/** A rewrite frozen at trigger time — which field, the splice range, the snapshot
+ *  it splices back into on Accept, the rewrite target, and the anchor button. */
+interface FrozenRewrite {
+  field: EmailField;
+  start: number;
+  end: number;
+  snapshot: string;
+  target: RewriteTarget;
+  anchorEl: HTMLElement;
 }
 
 /** Split raw model output per the OUTPUT CONTRACT: line 1 is "Subject: …". */
@@ -92,18 +113,30 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Mutable draft populated once generation completes, so a select-to-rewrite
+  // result can be spliced back in. `null` while streaming / before the first
+  // generation — the live split from `streamText` is used then.
+  const [email, setEmail] = useState<{ subject: string; body: string } | null>(null);
 
-  // Abort any in-flight stream on unmount to prevent quota burn on tab change.
+  // Abort any in-flight stream on unmount to prevent quota burn on tab change,
+  // and clear the copy-feedback timers so they can't setState after unmount.
   useEffect(
     () => () => {
       abortRef.current?.abort();
+      clearTimeout(copyTimerRef.current ?? undefined);
+      clearTimeout(subjectCopyTimerRef.current ?? undefined);
     },
     []
   );
 
-  const { subject, body } = splitEmail(streamText);
+  // While streaming (or before the first generation) split the live stream; once
+  // generation settles, the editable `email` draft wins so rewrites persist.
+  const live = splitEmail(streamText);
+  const subject = email?.subject ?? live.subject;
+  const body = email?.body ?? live.body;
   const hasDraft = streamText.trim().length > 0;
   const canGenerate = canUse && !!model && !!resume && !!jobDesc && !isGenerating;
+  const canRewrite = canUse && !!model;
 
   const handleGenerate = async () => {
     if (!canGenerate) return;
@@ -111,9 +144,10 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
     abortRef.current = new AbortController();
     setIsGenerating(true);
     setStreamText('');
+    setEmail(null);
     setGenError(null);
     try {
-      await generateApplicationEmail({
+      const full = await generateApplicationEmail({
         resume,
         jobAd: jobDesc,
         meta,
@@ -124,6 +158,8 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
         signal: abortRef.current.signal,
         onToken: (tok) => setStreamText((prev) => prev + tok),
       });
+      // Freeze the final draft into editable state so rewrites can splice into it.
+      setEmail(splitEmail(full));
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return;
       setGenError(t('applications.detail.email.genError'));
@@ -146,6 +182,67 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
         copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
       })
       .catch(() => {});
+  };
+
+  // Subject-only copy — writes JUST the subject (no "Subject:" prefix, no body)
+  // so it drops straight into a mail client's Subject field. Its own flag so it
+  // never collides with the whole-email Copy button above.
+  const [subjectCopied, setSubjectCopied] = useState(false);
+  const subjectCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleCopySubject = () => {
+    void navigator.clipboard
+      .writeText(subject)
+      .then(() => {
+        setSubjectCopied(true);
+        if (subjectCopyTimerRef.current) clearTimeout(subjectCopyTimerRef.current);
+        subjectCopyTimerRef.current = setTimeout(() => setSubjectCopied(false), COPY_FEEDBACK_MS);
+      })
+      .catch(() => {});
+  };
+
+  // Select-to-rewrite (mirrors ApplicationQuestionsModal): one frozen rewrite at
+  // a time. The selected span inside the field's <p> — or the whole field when
+  // nothing is selected — is captured at trigger time and spliced back on Accept.
+  const subjectRef = useRef<HTMLParagraphElement | null>(null);
+  const bodyRef = useRef<HTMLParagraphElement | null>(null);
+  const [frozen, setFrozen] = useState<FrozenRewrite | null>(null);
+
+  const openRewrite = (field: EmailField, trigger: HTMLElement) => {
+    const text = field === 'subject' ? subject : body;
+    const container = field === 'subject' ? subjectRef.current : bodyRef.current;
+    const offsets = container ? getSelectionOffsets(container) : null;
+    const start = offsets?.start ?? 0;
+    const end = offsets?.end ?? text.length;
+    setFrozen({
+      field,
+      start,
+      end,
+      snapshot: text,
+      anchorEl: trigger,
+      target: {
+        selection: text.slice(start, end),
+        before: text.slice(0, start),
+        after: text.slice(end),
+      },
+    });
+  };
+
+  const closeRewrite = () => {
+    const trigger = frozen?.anchorEl;
+    setFrozen(null);
+    trigger?.focus();
+  };
+
+  // Splice the accepted replacement back into the frozen snapshot and commit it to
+  // the editable draft. Local-only (the draft isn't persisted to the Application),
+  // so there's no save/rollback to coordinate — unlike the answers surface.
+  const acceptRewrite = (replacement: string) => {
+    if (!frozen) return;
+    const { field, start, end, snapshot } = frozen;
+    const next = snapshot.slice(0, start) + replacement + snapshot.slice(end);
+    setFrozen(null);
+    setEmail((prev) => ({ ...(prev ?? live), [field]: next }));
   };
 
   const mailtoHref =
@@ -301,19 +398,105 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
           <div className="space-y-4">
             {(subject || isGenerating) && (
               <div className="rounded-md border border-[var(--border-soft)] bg-foreground/[0.02] px-4 py-2.5">
-                <span className="block text-xs font-semibold uppercase tracking-[0.14em] text-foreground/70">
-                  {t('applications.detail.email.subjectLabel')}
-                </span>
-                <p className="mt-1 text-caption font-medium text-foreground/85">{subject}</p>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="block text-xs font-semibold uppercase tracking-[0.14em] text-foreground/70">
+                    {t('applications.detail.email.subjectLabel')}
+                  </span>
+                  {!isGenerating && subject && (
+                    <div className="flex items-center gap-0.5">
+                      {canRewrite && (
+                        <Button
+                          variant="ghost"
+                          type="button"
+                          // Keep the live selection alive through the click — a bare
+                          // click would collapse it before onClick reads it.
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={(e) => openRewrite('subject', e.currentTarget)}
+                          title={t('applications.detail.email.rewrite')}
+                          aria-label={t('applications.detail.email.rewriteSubjectAriaLabel')}
+                          className="h-auto gap-1 px-1.5 py-0.5 text-[11px] text-brand-soft"
+                        >
+                          <Sparkles size={11} />
+                          {t('applications.detail.email.rewrite')}
+                        </Button>
+                      )}
+                      <Button
+                        variant="unstyled"
+                        type="button"
+                        onClick={handleCopySubject}
+                        title={
+                          subjectCopied
+                            ? t('applications.detail.email.copied')
+                            : t('applications.detail.email.copySubject')
+                        }
+                        aria-label={t('applications.detail.email.copySubject')}
+                        className="rounded p-0.5 text-foreground/30 transition-colors hover:text-foreground/70"
+                      >
+                        {subjectCopied ? <Check size={13} /> : <ClipboardCopy size={13} />}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                {isGenerating ? (
+                  <p className="mt-1 text-caption font-medium text-foreground/85">{subject}</p>
+                ) : (
+                  <p
+                    ref={subjectRef}
+                    className="mt-1 select-text whitespace-pre-wrap text-caption font-medium text-foreground/85"
+                  >
+                    {subject}
+                  </p>
+                )}
               </div>
             )}
 
             <div className="space-y-1.5">
-              <span className="block text-xs font-semibold uppercase tracking-[0.14em] text-foreground/70">
-                {t('applications.detail.email.bodyLabel')}
-              </span>
-              <StreamingText text={body} isStreaming={isGenerating} />
+              <div className="flex items-center justify-between gap-2">
+                <span className="block text-xs font-semibold uppercase tracking-[0.14em] text-foreground/70">
+                  {t('applications.detail.email.bodyLabel')}
+                </span>
+                {canRewrite && !isGenerating && body && (
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={(e) => openRewrite('body', e.currentTarget)}
+                    title={t('applications.detail.email.rewrite')}
+                    aria-label={t('applications.detail.email.rewriteBodyAriaLabel')}
+                    className="h-auto gap-1 px-1.5 py-0.5 text-[11px] text-brand-soft"
+                  >
+                    <Sparkles size={11} />
+                    {t('applications.detail.email.rewrite')}
+                  </Button>
+                )}
+              </div>
+              {isGenerating ? (
+                <StreamingText text={body} isStreaming />
+              ) : (
+                <p
+                  ref={bodyRef}
+                  className="select-text whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/85"
+                >
+                  {body}
+                </p>
+              )}
             </div>
+
+            {/* One rewrite popover for whichever field is frozen — it portals to
+                document.body off `anchorEl`, so a single instance serves both. */}
+            <AnimatePresence>
+              {frozen && (
+                <RewritePopover
+                  target={frozen.target}
+                  docType="email"
+                  model={model}
+                  locale={meta.targetLanguage}
+                  anchorEl={frozen.anchorEl}
+                  onAccept={acceptRewrite}
+                  onClose={closeRewrite}
+                />
+              )}
+            </AnimatePresence>
 
             {!isGenerating && hasDraft && (
               <div className="flex flex-wrap items-center gap-2 pt-1">
