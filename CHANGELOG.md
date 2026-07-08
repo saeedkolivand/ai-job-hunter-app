@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.124.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.123.0...v0.124.0) (2026-07-08)
+
+### ✨ Features
+
+* copyable email subject and ai select-to-rewrite in apply-by-email ([#565](https://github.com/saeedkolivand/ai-job-hunter-app/issues/565)) ([9395bf4](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9395bf45de95c0e991d718c8318f810300a77c79))
+* default the company-search toggle on when the model supports web search ([#567](https://github.com/saeedkolivand/ai-job-hunter-app/issues/567)) ([5544c53](https://github.com/saeedkolivand/ai-job-hunter-app/commit/5544c53349c95e8e173732973750ed82cdc6ceb8))
+* fix gemini/codex cli providers on windows and add antigravity ([#582](https://github.com/saeedkolivand/ai-job-hunter-app/issues/582)) ([676f71c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/676f71c6c8100e7e438d0f82b14829720796da27))
+* resolve full-history audit findings (fixes, cleanups, docs) ([#564](https://github.com/saeedkolivand/ai-job-hunter-app/issues/564)) ([eb70230](https://github.com/saeedkolivand/ai-job-hunter-app/commit/eb7023079ff0c344ec292c676427eb3496e13b83))
+
+### 🐛 Bug Fixes
+
+* **applications:** dedup indeed imports by job id and link docs via fk ([#568](https://github.com/saeedkolivand/ai-job-hunter-app/issues/568)) ([73fb663](https://github.com/saeedkolivand/ai-job-hunter-app/commit/73fb6631294a9293888183a75ef42a14e3ca3d27))
+* floor aggregator sub-day date filters to 3 days ([#569](https://github.com/saeedkolivand/ai-job-hunter-app/issues/569)) ([46f7825](https://github.com/saeedkolivand/ai-job-hunter-app/commit/46f7825c9f1eae6f96892ba91d22ead315c40864))
+
 ## [0.123.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.122.0...v0.123.0) (2026-07-07)
 
 ### ✨ Features
