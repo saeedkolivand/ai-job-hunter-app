@@ -2410,6 +2410,10 @@
         "bodyLabel": "Body",
         "copy": "Copy",
         "copied": "Copied!",
+        "copySubject": "Copy subject",
+        "rewrite": "Rewrite with AI",
+        "rewriteSubjectAriaLabel": "Rewrite the subject with AI",
+        "rewriteBodyAriaLabel": "Rewrite the email body with AI",
         "openMailto": "Send via mail client",
         "needsResume": "Add your résumé to generate an application email."
       },
