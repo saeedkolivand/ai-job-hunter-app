@@ -372,10 +372,10 @@ The repo uses [semantic-release][semantic-release] driven by [Conventional Commi
 | ------------------------------ | ------------ |
 | `feat:`                        | minor        |
 | `fix:`, `perf:`                | patch        |
-| `BREAKING CHANGE` footer       | major        |
+| `BREAKING CHANGE` footer       | minor (0.x)  |
 | `chore:`, `docs:`, `refactor:` | no release   |
 
-On merge to `main`, semantic-release bumps the version, publishes release notes to the GitHub release, and triggers the Tauri build pipeline.
+Releases are **manually triggered** (Actions → "🚀 Release" → `action: release`); semantic-release then bumps the version, publishes release notes to the GitHub release, and (via a separate dispatch) triggers the Tauri build pipeline. Nothing auto-runs on push/merge to `main`. While the project is on `0.x`, a `BREAKING CHANGE` bumps the minor, not the major (`.releaserc.json` pre-1.0 guard).
 
 ### Pre-commit hooks ([Husky][husky] + [lint-staged][lint-staged])
 

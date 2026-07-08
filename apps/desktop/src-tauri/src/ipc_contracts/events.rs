@@ -17,5 +17,4 @@ pub const AUTOPILOT_STEP: &str = "autopilot:step";
 pub const SCRAPE_PROGRESS: &str = "scrape:progress";
 pub const SCRAPE_ITEM: &str = "scrape:item";
 pub const BOARDS_LOGIN_STATUS: &str = "boards:login-status";
-pub const SHORTCUT_COMMAND_PALETTE: &str = "shortcut:command-palette";
 pub const SYSTEM_ACCENT_CHANGED: &str = "system:accentChanged";

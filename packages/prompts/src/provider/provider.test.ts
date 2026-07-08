@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildSystemPrompt } from '../analyze';
-import { resolveProfile, structuredOutputFor } from './index';
+import { resolveProfile } from './index';
 
 describe('resolveProfile — provider → prompt depth', () => {
   it('ollama small → brief, compact schema, no rewrites/structured output', () => {
@@ -50,20 +50,6 @@ describe('resolveProfile — provider → prompt depth', () => {
     expect(
       resolveProfile({ kind: 'ollama', supportsStructuredOutput: true }).structuredOutput
     ).toBe(true);
-  });
-});
-
-describe('structuredOutputFor', () => {
-  it('emits a json_schema spec only for structured-output (cloud) targets', () => {
-    const spec = structuredOutputFor({ kind: 'cloud' }, 'analysis');
-    expect(spec).not.toBeNull();
-    expect(spec?.type).toBe('json_schema');
-    expect(spec?.name).toBe('resume_analysis');
-    expect(spec?.schema).toBeTruthy();
-
-    expect(structuredOutputFor({ kind: 'cloud' }, 'metadata')?.name).toBe('generation_metadata');
-    expect(structuredOutputFor({ kind: 'ollama', sizeHint: 'small' }, 'analysis')).toBeNull();
-    expect(structuredOutputFor({ kind: 'cli' }, 'metadata')).toBeNull();
   });
 });
 

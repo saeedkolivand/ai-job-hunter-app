@@ -75,7 +75,7 @@ where
 // so the aggregator never surfaces postings older than a month.
 fn adzuna_max_days_old(date_filter: Option<&str>) -> u32 {
     match date_filter {
-        Some("30m" | "1h" | "2h" | "4h" | "8h" | "24h") => 1,
+        Some("15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "24h") => 1,
         Some("week") => 7,
         _ => 30,
     }
@@ -85,7 +85,7 @@ fn adzuna_max_days_old(date_filter: Option<&str>) -> u32 {
 /// unrecognized token caps at `month` (results no older than the past month).
 fn jsearch_date_posted(date_filter: Option<&str>) -> &'static str {
     match date_filter {
-        Some("30m" | "1h" | "2h" | "4h" | "8h" | "24h") => "today",
+        Some("15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "24h") => "today",
         Some("week") => "week",
         _ => "month",
     }
@@ -628,7 +628,7 @@ fn build_apify_endpoint(actor_id: &str, max_items: u32) -> String {
 /// mirroring the 30-day ceiling the other providers enforce.
 fn apify_f_tpr(date_filter: Option<&str>) -> &'static str {
     match date_filter {
-        Some("30m" | "1h" | "2h" | "4h" | "8h" | "24h") => "r86400",
+        Some("15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "24h") => "r86400",
         Some("week") => "r604800",
         _ => "r2592000",
     }

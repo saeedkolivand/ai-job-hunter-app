@@ -5,11 +5,11 @@ description: Release/deployment standards — semantic-release, commitlint, vers
 
 # Deployment / release rules
 
-Automated via **semantic-release** on push to `main`. **Never manually tag or bump versions.**
+Releases run **only on manual dispatch** (Actions → "🚀 Release" → `action: release`); **semantic-release** then derives the bump + notes + tag. **Nothing auto-runs on push to `main`; never manually tag or bump versions.**
 
 ## Release triggers (commit type → bump)
 
-- `feat:` → minor · `fix:` / `perf:` → patch · `BREAKING CHANGE` footer → major.
+- `feat:` → minor · `fix:` / `perf:` → patch · `BREAKING CHANGE` footer → **minor** (0.x guard — `.releaserc.json` maps breaking→minor while pre-1.0).
 - `refactor:` / `docs:` / `chore:` / `ci:` / `test:` → no release.
 
 ## Commit messages (commitlint, blocks the commit)
@@ -32,7 +32,7 @@ Trust the pre-push hook; investigate failures rather than `--no-verify`.
 
 ## External standards & best-practices (verified 2026-06-19)
 
-- **Conventional Commits 1.0.0** — `type(scope)!: description`; `feat`→MINOR, `fix`/`perf`→PATCH, `!`/`BREAKING CHANGE:`→MAJOR. https://www.conventionalcommits.org/en/v1.0.0/
+- **Conventional Commits 1.0.0** — `type(scope)!: description`; `feat`→MINOR, `fix`/`perf`→PATCH, `!`/`BREAKING CHANGE:`→MAJOR _in the generic spec_ (this repo overrides breaking→MINOR while on `0.x` — see Release triggers above). https://www.conventionalcommits.org/en/v1.0.0/
 - **SemVer 2.0.0** — `MAJOR.MINOR.PATCH`; pre-release `-rc.1` / build `+meta`. https://semver.org/spec/v2.0.0.html
 - **semantic-release (v24+)** — derives bump + notes + tag from commit types; never hand-tag/hand-bump; sync version files via the tool, not by hand. https://github.com/semantic-release/semantic-release
 - **Keep a Changelog 2.0.0** (released 2026-06-07 — format unchanged from 1.1.0: newest-first, `YYYY-MM-DD`, `Unreleased`+`[YANKED]`, six types Added/Changed/Deprecated/Removed/Fixed/Security; only guidance restructured). https://keepachangelog.com/

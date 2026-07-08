@@ -298,6 +298,33 @@ pub(super) struct PreparedRender {
     pub data_json: Vec<u8>,
 }
 
+/// Build the accessibility document-meta preamble prepended to every rendered
+/// Typst source: the PDF **title** (candidate name + document kind), the
+/// **author** (candidate name), and the natural-language tag screen readers use
+/// to pronounce the content. These come from the document source (not
+/// `PdfOptions`); this is a cheap accessibility win short of full PDF/UA.
+///
+/// Only the constant `doc_kind` label is baked into the markup — the name and
+/// language are read from `data.json` at Typst runtime (`name_expr` is the Typst
+/// field expression: `data.header.name` for résumés, `data.letterhead.name` for
+/// cover letters), so no user content is concatenated into the source
+/// (injection-safe, matching the `data.json` boundary this module enforces).
+///
+/// # `doc_kind` invariant
+///
+/// `doc_kind` is interpolated verbatim — WITHOUT escaping — into a Typst string
+/// literal (`title: <name_expr> + " — {doc_kind}"`). It MUST therefore be a
+/// static, quote- and backslash-free label (`"Résumé"`, `"Cover Letter"`) and
+/// MUST NEVER carry user data: a `"` or `\` in it would break out of the string
+/// literal and corrupt — or inject — Typst source. All current callers pass
+/// compile-time constants; keep it that way.
+pub(super) fn document_meta_preamble(name_expr: &str, doc_kind: &str) -> String {
+    format!(
+        "#set document(title: {name_expr} + \" — {doc_kind}\", author: {name_expr})\n\
+         #set text(lang: data.opts.lang)\n"
+    )
+}
+
 /// Build the [`PreparedRender`] for a model + template name + opts.
 ///
 /// `template_source` is the full Typst source for the template (already has the
@@ -369,11 +396,14 @@ pub(super) fn prepare_with_photo(
 
     // The entry source loads data.json then delegates to the template source.
     // The template source is embedded inline via a virtual include so the world
-    // only needs to serve /main.typ and /data.json.
+    // only needs to serve /main.typ and /data.json. The document-meta preamble
+    // (PDF title + author + language) is injected before the template so it is in
+    // effect before any page content is laid out.
+    let meta = document_meta_preamble("data.header.name", "Résumé");
     let source = format!(
         "// Auto-generated entry — do not edit.\n\
          #let data = json(\"data.json\")\n\
-         {template_source}"
+         {meta}{template_source}"
     );
 
     Ok(PreparedRender { source, data_json })
@@ -409,5 +439,20 @@ mod tests {
     #[test]
     fn normalise_accent_none_is_none() {
         assert_eq!(normalise_accent(None), None);
+    }
+
+    #[test]
+    fn document_meta_preamble_sets_title_author_and_lang() {
+        let meta = document_meta_preamble("data.header.name", "Résumé");
+        assert!(
+            meta.contains(
+                "#set document(title: data.header.name + \" — Résumé\", author: data.header.name)"
+            ),
+            "preamble must set the PDF title + author from the candidate name; got {meta:?}"
+        );
+        assert!(
+            meta.contains("#set text(lang: data.opts.lang)"),
+            "preamble must set the document language for screen readers; got {meta:?}"
+        );
     }
 }

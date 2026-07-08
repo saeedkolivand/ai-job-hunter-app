@@ -70,5 +70,5 @@ Read these files for full details before making structural changes:
 - `docs/DEVELOPMENT.md` — commands, debugging, env config, CI
 
 **Release:** Never manually tag releases or edit CHANGELOG.md/versions.
-Releases run via semantic-release. feat → minor, fix/perf → patch, BREAKING CHANGE → major.
+Releases run via semantic-release, manual dispatch only (nothing auto-runs on push to main). feat → minor, fix/perf → patch, BREAKING CHANGE → minor (0.x guard; major only after 1.0).
 Commit subject must be lowercase (commitlint subject-case) — lowercase acronyms too (url, api, docx). Subject ≤ 100 chars; body lines ≤ 200.

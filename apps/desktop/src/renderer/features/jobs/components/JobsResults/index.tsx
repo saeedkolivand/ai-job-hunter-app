@@ -5,7 +5,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 
 import { PROVIDER_SLOTS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, EmptyState, GlassCard, RowSkeleton } from '@ajh/ui';
+import { Button, EmptyState, GlassCard, ProgressBar, RowSkeleton } from '@ajh/ui';
 
 import { ROUTES } from '@/constants/routes/routes';
 import { JobsSplitView } from '@/features/jobs/components/JobsSplitView';
@@ -18,6 +18,9 @@ interface JobsResultsProps {
   filtered: Posting[];
   formatRelativeTime: (timestamp?: number) => string;
   scraping: boolean;
+  /** Live boards-done/total fraction (0..1) for the active scrape; null until the
+   *  first board completes and after the scrape ends. */
+  scrapeProgress?: number | null;
   onShowMore: () => void;
   onScrape: () => void;
 }
@@ -36,6 +39,7 @@ export function JobsResults({
   filtered,
   formatRelativeTime,
   scraping,
+  scrapeProgress,
   onShowMore,
   onScrape,
 }: JobsResultsProps) {
@@ -113,6 +117,17 @@ export function JobsResults({
               {t('jobs.searching')}
             </div>
             <div className="w-full max-w-2xl space-y-2">
+              {/* Transient live scrape progress — a thin fill that advances as
+                  each board finishes; shown only while a fresh scrape has no
+                  results yet. */}
+              <div className="space-y-1">
+                <ProgressBar value={(scrapeProgress ?? 0) * 100} showLabel={false} />
+                <div className="text-[10px] text-foreground/45">
+                  {scrapeProgress == null
+                    ? t('jobs.scanning')
+                    : t('jobs.scanningPercent', { percent: Math.round(scrapeProgress * 100) })}
+                </div>
+              </div>
               <RowSkeleton />
               <RowSkeleton />
               <RowSkeleton />

@@ -1,3 +1,4 @@
+import type { ScrapeProgressEvent } from '../../events/scrape.js';
 import type { ScrapeBoardsRequest, ScrapeUrlRequest } from '../../schemas/index.js';
 import type { JobPosting } from '../../types/index.js';
 
@@ -5,6 +6,14 @@ export interface ScrapeContract {
   boards(req: ScrapeBoardsRequest): Promise<{ jobId: string }>;
 
   url(req: ScrapeUrlRequest): Promise<{ jobId: string }>;
+
+  /**
+   * Subscribe to live scrape progress (`scrape:progress`), a coarse
+   * boards-done/total fraction (0..1) emitted after each board finishes.
+   * Returns a sync unsubscribe. Event-only surface, so it has no request
+   * channel in `SCRAPE_CHANNELS` (same shape as `autopilot.onStep`).
+   */
+  onProgress(handler: (event: ScrapeProgressEvent) => void): () => void;
 
   /** Resolve a single posting (incl. full description) from its URL. */
   resolveUrl(req: { url: string }): Promise<JobPosting | null>;

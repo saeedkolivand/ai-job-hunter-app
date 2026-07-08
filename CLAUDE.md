@@ -84,7 +84,7 @@ Renderer → shell only via `AppClient` (`createTauriInvokeClient()` in `apps/de
 
 | Commit prefix | Release                |
 | ------------- | ---------------------- |
-| `feat:`       | minor · `fix:`/`perf:` | patch · `BREAKING CHANGE` footer | major · `refactor/ui/style/test/docs/build/ci/chore/revert` | none |
+| `feat:`       | minor · `fix:`/`perf:` | patch · `BREAKING CHANGE` footer | minor (while 0.x — `.releaserc.json` maps breaking→minor pre-1.0) · `refactor/ui/style/test/docs/build/ci/chore/revert` | none |
 
 **Commit format** (commitlint, `commit-msg` hook — fails the commit): lowercase subject (acronyms too: `URL`→`url`), ≤100 chars, imperative, no trailing period; body lines ≤200 chars, blank line after subject; type ∈ `feat fix perf refactor ui style test docs build ci chore revert`.
 

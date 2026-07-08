@@ -16,6 +16,7 @@ use parking_lot::Mutex;
 /// looked up by scrapers/appliers via `get_decrypted(board_id)`.
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use keyring_core::Entry;
 use serde::{Deserialize, Serialize};
@@ -85,10 +86,19 @@ impl CredentialStore {
 
     // ── Public API ────────────────────────────────────────────────────────────
 
-    /// True on all supported platforms. Mirrors Electron's
-    /// `safeStorage.isEncryptionAvailable()`.
+    /// Whether the OS secret store is actually reachable — mirrors Electron's
+    /// `safeStorage.isEncryptionAvailable()`. Real, READ-ONLY probe (see
+    /// [`probe_keyring_available`]): true on Windows/macOS and any Linux with a
+    /// working Secret Service; false on a headless box with no secure storage, so
+    /// the renderer's "no OS encryption" warning finally fires.
+    ///
+    /// The outcome is memoized in a process-lifetime `OnceLock`: the backend is
+    /// probed exactly once and the result is cached for the life of the process —
+    /// it will NOT re-probe if the OS secret backend goes up or down mid-session
+    /// (process-sticky by design).
     pub fn is_available(&self) -> bool {
-        true
+        static AVAILABLE: OnceLock<bool> = OnceLock::new();
+        *AVAILABLE.get_or_init(probe_keyring_available)
     }
 
     pub fn list(&self) -> Vec<CredentialMeta> {
@@ -168,6 +178,38 @@ impl CredentialStore {
             .map_err(|e| AppError::Storage(format!("write credential metadata: {e}")))?;
         self.cache.lock().0 = Some(meta);
         Ok(())
+    }
+}
+
+/// Well-known slot read (never written) by [`probe_keyring_available`]. Because
+/// the probe is read-only, on a working backend this always reads back as
+/// `NoEntry`.
+const AVAILABILITY_PROBE_SLOT: &str = "__ajh_keyring_availability_probe__";
+
+/// Read-only probe of the OS keyring backend, backing
+/// [`CredentialStore::is_available`]. READS a well-known sentinel slot and
+/// interprets the `keyring-core` v1 outcome:
+/// - `Ok(_)` or `Err(Error::NoEntry)` → the backend is reachable (the entry is
+///   simply absent) → available.
+/// - any other `Err` (`NoDefaultStore` from `Entry::new`, `NoStorageAccess` /
+///   `PlatformFailure` from a locked store, `NotSupportedByStore` on a headless
+///   Linux box with no Secret Service, …) → the backend can't be reached →
+///   unavailable.
+///
+/// Never writes a value, so it cannot trigger a macOS keychain-access prompt or
+/// leave a stray entry behind. Only `Error::NoEntry` counts as "backend works
+/// but empty"; every other variant is treated as unavailable.
+fn probe_keyring_available() -> bool {
+    // `Entry::new` returns `Err(Error::NoDefaultStore)` when the keyring was
+    // never initialized (e.g. `init_keyring` failed) → backend unavailable.
+    let Ok(entry) = Entry::new(SERVICE, AVAILABILITY_PROBE_SLOT) else {
+        return false;
+    };
+    match entry.get_password() {
+        // Present, or absent (`NoEntry`) — either way the backend is reachable.
+        Ok(_) | Err(keyring_core::Error::NoEntry) => true,
+        // Any other error means the backend/platform can't be reached.
+        Err(_) => false,
     }
 }
 

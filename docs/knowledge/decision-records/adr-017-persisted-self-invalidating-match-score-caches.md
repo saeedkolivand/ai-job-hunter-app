@@ -100,17 +100,19 @@ Add two new, self-invalidating SQLite tables to `DocumentStore` (`apps/desktop/s
 - **Storage grow unbounded:** Each unique (resume_id, job_id, provider, model, semantic_enabled, formula_version, job_text_hash) tuple adds a row. For typical usage (10–20 résumés, 100–500 scraped postings, 1 embedding space), this is negligible (~50–100 KB). A power user with 100 postings and 50 résumés in 2 spaces could accumulate 10 K rows (~5 MB). Phase 3 (pre-embed) will add more persistent data; full eviction / TTL strategy deferred to then.
 - **Deferred:** Phase 3 will pre-embed postings on scrape (no job_text_hash key needed if every posting is unique); Phase 4 will add provider-aware scheduler concurrency; Phase 5 will batch-embed via a provider trait (avoid round-tripping single embeds). Current implementation is a stable foundation for all three.
 
-## Phase K: Batch Scoring & Default Keyword-Only Path
+## Phase K: Default Keyword-Only Path & On-Demand Scoring
 
-**Status:** Shipped in Phase K (v0.100+).
+**Status:** Superseded (batch removed). Scoring is **on-demand per-job** via the single
+`match_resume` command; the one-pass `match_resume_batch` command and its `MATCH_BATCH_MAX`
+cap were **removed** (dead IPC capability, zero consumers). The keyword-only default and the
+ADR-017 caches below still hold. Historical Phase-K notes retained for context:
 
-The default scoring path is now **keyword-only** (`semanticScoring` defaults false → no embedding). The old per-row `ScoringScheduler` (CONCURRENCY=1) serialised N IPC calls and caused visible crawl even for cheap keyword-only work:
+The default scoring path is **keyword-only** (`semanticScoring` defaults false → no embedding). The old per-row `ScoringScheduler` (CONCURRENCY=1) serialised N IPC calls and caused visible crawl even for cheap keyword-only work:
 
-- **New command:** `match_resume_batch(resumeId, jobIds[], semanticScoringEnabled)` — scores all postings in **one Rust pass**; the per-job kernel (`score_one`) is shared with the legacy `match_resume` single-job path, ensuring identical logic.
-- **Frontend:** `MatchScoresProvider` context distributes results per-row via `useRowMatchScore(jobId)` on-demand; `RowMatchScore` is now purely presentational (no scheduling logic).
-- **Deleted:** `apps/desktop/src/renderer/providers/ScoringScheduler/` (dead) and `useJobMatchScores` batch hook (replaced by on-demand per-job `useRowMatchScore`).
-- **Batch cap:** `MATCH_BATCH_MAX=1000` enforced in Rust (`commands/match_resume.rs`) — DoS guard against unbounded batch IPC.
-- **Cache alignment:** The batch command shares the ADR-017 `match_scores` cache (keyword keys use `semantic_enabled=0` to keep keyword and semantic paths isolated in the composite PK).
+- **On-demand per-job scoring:** the per-job kernel (`score_one`) runs via the single `match_resume` path; `MatchScoresProvider` requests a score per job as rows render (the former one-pass `match_resume_batch` command and its `MATCH_BATCH_MAX=1000` cap were removed).
+- **Frontend:** `MatchScoresProvider` context distributes results per-row on-demand; `RowMatchScore` is purely presentational (no scheduling logic).
+- **Deleted:** `apps/desktop/src/renderer/providers/ScoringScheduler/` (dead) and the batch hook (replaced by on-demand per-job scoring).
+- **Cache alignment:** on-demand scoring shares the ADR-017 `match_scores` cache (keyword keys use `semantic_enabled=0` to keep keyword and semantic paths isolated in the composite PK).
 - **Embedding-batch (Phase E):** Deferred — Ollama `/api/embed` batch + payload trim + warm-on-scrape are opt-in future work; do **not** ship or document as active.
 
 ## Testing

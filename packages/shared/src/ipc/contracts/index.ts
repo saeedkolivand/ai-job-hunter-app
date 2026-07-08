@@ -41,7 +41,6 @@ import { PRIVACY_CHANNELS, type PrivacyContract } from './privacy.js';
 import { REFERRALS_CHANNELS, type ReferralsContract } from './referrals.js';
 import { RESUME_CHANNELS, type ResumeContract } from './resume.js';
 import { SCRAPE_CHANNELS, type ScrapeContract } from './scrape.js';
-import type { ShortcutsContract } from './shortcuts.js';
 import { SUPPORT_CHANNELS, type SupportContract } from './support.js';
 import { SYSTEM_CHANNELS, type SystemContract } from './system.js';
 import { UPDATER_CHANNELS, type UpdaterContract } from './updater.js';
@@ -75,7 +74,6 @@ export interface IpcContract {
   menu: MenuContract;
   notifications: NotificationsContract;
   updater: UpdaterContract;
-  shortcuts: ShortcutsContract;
   dialog: DialogContract;
   data: DataContract;
 }
@@ -225,7 +223,7 @@ export {
   type PendingMenuIntent,
 } from './menu.js';
 export { NOTIFICATIONS_CHANNELS, type NotificationsContract } from './notifications.js';
-export { PRIVACY_CHANNELS, type PrivacyContract } from './privacy.js';
+export { PRIVACY_CHANNELS, type PrivacyContract, type PrivacyResetResult } from './privacy.js';
 export {
   type ReferralChannel,
   type ReferralContact,
@@ -236,7 +234,6 @@ export {
 } from './referrals.js';
 export { RESUME_CHANNELS, type ResumeContract } from './resume.js';
 export { SCRAPE_CHANNELS, type ScrapeContract } from './scrape.js';
-export { type ShortcutsContract } from './shortcuts.js';
 export { SUPPORT_CHANNELS, type SupportContract } from './support.js';
 export { SYSTEM_CHANNELS, type SystemContract } from './system.js';
 export {

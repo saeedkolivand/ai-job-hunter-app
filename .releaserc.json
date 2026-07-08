@@ -46,6 +46,7 @@
         }
       }
     ],
+    "./scripts/guard-empty-release-notes.cjs",
     [
       "@semantic-release/exec",
       {

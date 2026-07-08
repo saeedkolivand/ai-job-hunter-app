@@ -206,10 +206,17 @@ pub fn privacy_sign_out_all(app: AppHandle) -> Value {
 /// The frontend is responsible for resetting persisted preferences (localStorage).
 #[tauri::command]
 pub fn privacy_reset_app(app: AppHandle) -> Value {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    // Bail rather than fall back to the CWD (".") here: `data_dir` backs the
+    // destructive `remove_dir_all(data_dir.join("browser-state"))` below, so a
+    // CWD-relative fallback would wipe the wrong target. Refuse the reset if the
+    // OS can't resolve the app data dir.
+    let data_dir = match app.path().app_data_dir() {
+        Ok(dir) => dir,
+        Err(e) => {
+            log::error!("[privacy] factory reset aborted: could not resolve app data dir: {e}");
+            return json!({ "success": false, "error": "could not resolve app data directory" });
+        }
+    };
 
     // Sign out all board sessions
     for board_id in &["linkedin", "indeed", "xing", "glassdoor"] {
@@ -226,7 +233,42 @@ pub fn privacy_reset_app(app: AppHandle) -> Value {
         cleared.len()
     );
 
-    json!({ "success": true })
+    // Delete the persisted Chromium board-login profiles wholesale: the
+    // `browser-state/<board_id>/{profile,cookies.json,auth-status.json}` tree
+    // (see `scraping::board_login`). The `disconnect` loop above only flips the
+    // status flag (it deliberately leaves the profile in place while Chromium may
+    // hold file locks mid-session), so a factory reset would otherwise leave
+    // authenticated board sessions on disk — a privacy gap (ADR 0005). Best-effort:
+    // remove_dir_all can fail if a browser still holds a lock (common on Windows);
+    // log and continue rather than failing the reset. Skip when absent so a fresh
+    // install (no logins yet) doesn't log a spurious warning.
+    let browser_state = data_dir.join("browser-state");
+    let mut browser_state_cleared = true;
+    if browser_state.exists() {
+        if let Err(e) = std::fs::remove_dir_all(&browser_state) {
+            log::warn!(
+                "[privacy] factory reset could not remove browser-state (may be locked): {e}"
+            );
+            browser_state_cleared = false;
+        }
+    }
+
+    if browser_state_cleared {
+        json!({ "success": true })
+    } else {
+        // Partial reset: the persistent stores above WERE wiped, but the on-disk
+        // Chromium board-login profiles could not be removed (commonly a Windows
+        // file lock while a browser still holds the profile). Report this honestly
+        // — returning `success: true` here would tell the user their sessions were
+        // cleared while authenticated board logins remain on disk (a privacy gap).
+        // The renderer surfaces this as a warning so the reset isn't silently
+        // over-reported as complete.
+        json!({
+            "success": false,
+            "error": "board login sessions could not be fully cleared",
+            "browserStateRetained": true,
+        })
+    }
 }
 
 #[cfg(test)]
