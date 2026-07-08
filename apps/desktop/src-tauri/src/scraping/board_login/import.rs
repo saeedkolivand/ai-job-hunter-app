@@ -524,7 +524,7 @@ fn legacy_dpapi_decrypt(_enc: &[u8]) -> Option<Vec<u8>> {
 /// store is unavailable.
 #[cfg(not(target_os = "windows"))]
 fn decrypt_v10_unix_cbc(enc: &[u8], _key: &[u8]) -> Option<Vec<u8>> {
-    use aes::cipher::{BlockDecryptMut, KeyIvInit};
+    use aes::cipher::{BlockModeDecrypt, KeyIvInit};
 
     type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 
@@ -543,7 +543,7 @@ fn decrypt_v10_unix_cbc(enc: &[u8], _key: &[u8]) -> Option<Vec<u8>> {
 
     let cipher = Aes128CbcDec::new_from_slices(&derived, &IV).ok()?;
     cipher
-        .decrypt_padded_vec_mut::<aes::cipher::block_padding::Pkcs7>(&enc[3..])
+        .decrypt_padded_vec::<aes::cipher::block_padding::Pkcs7>(&enc[3..])
         .ok()
 }
 
