@@ -71,12 +71,23 @@ const resolveJobUrlState = {
 // Tracks the last `shouldFetch` arg received by useResolveJobUrl.
 let lastResolveJobUrlShouldFetch: boolean | undefined = undefined;
 
+// Mutable container so tests can flip the active model's web-search capability,
+// which drives the capability-driven default of the "search company" toggle.
+const modelCapsState = {
+  data: { supportsWebSearch: false } as { supportsWebSearch: boolean } | undefined,
+  isSuccess: true,
+};
+
 vi.mock('@/services', () => ({
   useResolveJobUrl: (_url: string, shouldFetch: boolean) => {
     lastResolveJobUrlShouldFetch = shouldFetch;
     return { data: resolveJobUrlState.data, isLoading: resolveJobUrlState.isLoading };
   },
   useExtractText: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useActiveModelCapabilities: () => ({
+    data: modelCapsState.data,
+    isSuccess: modelCapsState.isSuccess,
+  }),
 }));
 
 // ── useTailorGeneration — controlled mock ─────────────────────────────────────
@@ -179,14 +190,23 @@ vi.mock('./TailorWizard', () => ({
     onGenerate,
     jobDesc,
     onJobDescChange,
+    methods,
   }: {
     step: number;
     setStep: (n: number) => void;
     onGenerate: (v: { resume: string; outputType: 'resume'; researchCompany: boolean }) => void;
     jobDesc?: string;
     onJobDescChange?: (v: string) => void;
+    // The RHF form — the stub reads the research toggle so the capability-driven
+    // default is observable via a data attribute.
+    methods: { watch: (name: 'researchCompany') => boolean };
   }) => (
-    <div data-testid={TEST_IDS.documents.tailorWizard} data-step={step} data-jobdesc={jobDesc}>
+    <div
+      data-testid={TEST_IDS.documents.tailorWizard}
+      data-step={step}
+      data-jobdesc={jobDesc}
+      data-research={String(methods.watch('researchCompany'))}
+    >
       <div
         role="button"
         tabIndex={0}
@@ -397,6 +417,9 @@ beforeEach(() => {
   resolveJobUrlState.data = undefined;
   resolveJobUrlState.isLoading = false;
   lastResolveJobUrlShouldFetch = undefined;
+  // Reset model-capability state (default: cannot web-search → toggle off).
+  modelCapsState.data = { supportsWebSearch: false };
+  modelCapsState.isSuccess = true;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -565,6 +588,43 @@ describe('TailorFlow — persistence injection', () => {
 
     expect(persistence.setAtsMode).toHaveBeenCalledTimes(1);
     expect(persistence.setAtsMode).toHaveBeenCalledWith(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2b. Capability-driven "search company" default
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('TailorFlow — capability-driven research default', () => {
+  it('defaults the research toggle ON for a web-search-capable model (fresh form)', () => {
+    modelCapsState.data = { supportsWebSearch: true };
+    renderFlow({ persistence: makePersistence({ wizardForm: null }) });
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
+      'data-research',
+      'true'
+    );
+  });
+
+  it('defaults the research toggle OFF for a model without web search (fresh form)', () => {
+    modelCapsState.data = { supportsWebSearch: false };
+    renderFlow({ persistence: makePersistence({ wizardForm: null }) });
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
+      'data-research',
+      'false'
+    );
+  });
+
+  it('does NOT override a restored form — the saved choice wins over the capability default', () => {
+    // Capability says ON, but the persisted form saved OFF → the restore wins.
+    modelCapsState.data = { supportsWebSearch: true };
+    const persistence = makePersistence({
+      wizardForm: { resume: 'Seeded', outputType: 'both', researchCompany: false },
+    });
+    renderFlow({ persistence });
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
+      'data-research',
+      'false'
+    );
   });
 });
 

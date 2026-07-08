@@ -9,7 +9,7 @@ import { transition } from '@ajh/ui';
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { useInterviewQuestions } from '@/hooks/use-interview-questions';
 import type { TemplateId } from '@/lib/generate';
-import { useResolveJobUrl } from '@/services';
+import { useActiveModelCapabilities, useResolveJobUrl } from '@/services';
 
 import { ApplicationQuestionsModal } from './ApplicationQuestionsModal';
 import { GeneratingPanel } from './GeneratingPanel';
@@ -129,10 +129,18 @@ export function TailorFlow({
   const setTemplateId = persistence.setTemplateId;
   const setAtsMode = persistence.setAtsMode;
 
+  // Capability-driven default for the "search company" toggle: default ON when
+  // the active model can web-search. Read from the Rust capability matrix (never
+  // a TS mirror), so a new provider needs no change here.
+  const caps = useActiveModelCapabilities();
+
   // RHF owns the live editing layer; `persistence.wizardForm` is a one-shot seed.
   // Seed `defaultValues` ONCE — written back on step-advance and on generate.
+  // Only a FRESH (unpersisted) form takes the capability-driven research default;
+  // a restored form keeps the user's saved choice.
+  const startedFresh = useRef(persistence.wizardForm == null);
   const initialForm = useRef<TailorWizardState>(
-    persistence.wizardForm ?? buildTailorDefaults(resumeText)
+    persistence.wizardForm ?? buildTailorDefaults(resumeText, caps.data?.supportsWebSearch ?? false)
   );
   const methods = useForm<TailorWizardState>({
     defaultValues: initialForm.current,
@@ -142,6 +150,22 @@ export function TailorFlow({
 
   // The research toggle is an RHF field; the hook needs its live value.
   const researchCompany = useWatch({ control: methods.control, name: 'researchCompany' });
+
+  // When the capability resolves AFTER the form was seeded (cold cache), apply
+  // the ON/OFF default once — only for a fresh form and only until the user
+  // touches the toggle (RHF's dirty flag guards the override, so it's never
+  // clobbered on a late resolve).
+  const seededResearch = useRef(false);
+  const researchDirty = !!methods.formState.dirtyFields.researchCompany;
+  useEffect(() => {
+    if (seededResearch.current || !startedFresh.current || !caps.isSuccess) return;
+    seededResearch.current = true;
+    if (!researchDirty) {
+      methods.setValue('researchCompany', caps.data?.supportsWebSearch ?? false, {
+        shouldDirty: false,
+      });
+    }
+  }, [caps.isSuccess, caps.data, researchDirty, methods]);
 
   const [referralOpen, setReferralOpen] = useState(false);
   const [questionsOpen, setQuestionsOpen] = useState(false);

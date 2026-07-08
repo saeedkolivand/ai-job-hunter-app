@@ -100,6 +100,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       hasProviderKey: async () => ({ has: false }),
       testProviderKey: async () => ({ success: true }),
       listProviderModels: emptyList,
+      modelCapabilities: async () => ({ supportsWebSearch: false }),
       embeddingStatus: async () => ({
         active: { provider: 'ollama', model: 'nomic-embed-text' },
         spaces: [],

@@ -70,6 +70,7 @@ export const keys = {
   jobs: { all: ['jobs'] as const, detail: (id: string) => ['jobs', id] as const },
   ai: {
     models: ['ai', 'models'] as const,
+    capabilities: ['ai', 'capabilities'] as const,
     embeddingStatus: ['ai', 'embeddingStatus'] as const,
   },
   documents: {
