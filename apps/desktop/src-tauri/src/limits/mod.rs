@@ -74,7 +74,7 @@ pub const RATE_WINDOW: Duration = Duration::from_secs(60);
 
 /// Generous per-provider per-UTC-day ceiling on accepted AI requests — a coarse
 /// runaway-cost backstop, not a billing-accurate budget.
-pub const PROVIDER_DAILY_MAX: u32 = 2_000;
+pub const PROVIDER_DAILY_MAX: u32 = 4_000;
 
 // ── Limiter state ─────────────────────────────────────────────────────────────
 
