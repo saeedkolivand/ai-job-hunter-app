@@ -26,7 +26,7 @@
   },
   "devDependencies": {
     "@types/react": "^19.2.17",
-    "i18next-cli": "^1.64.2",
+    "i18next-cli": "^1.65.0",
     "react": "^19.2.7",
     "typescript": "^6.0.3"
   }
