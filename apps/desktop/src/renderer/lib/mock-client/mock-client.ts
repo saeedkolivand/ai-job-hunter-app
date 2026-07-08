@@ -259,19 +259,6 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
 
     support: {
       exportDiagnostics: noop,
-      reloadAiRuntime: noop,
-      unloadAllModels: noop,
-      resetModelConfiguration: noop,
-      rebuildVectorIndexes: noop,
-      clearEmbeddingsCache: noop,
-      resetVectorDatabase: noop,
-      clearOcrCache: noop,
-      reindexAllDocuments: noop,
-      resetAllSessions: noop,
-      clearScrapingQueue: noop,
-      copyEnvironmentDetails: noop,
-      copyAppVersion: noop,
-      copySystemInfo: noop,
     },
 
     autopilot: {
