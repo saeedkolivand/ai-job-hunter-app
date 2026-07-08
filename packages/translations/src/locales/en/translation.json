@@ -808,6 +808,7 @@
       "resetAppConfirmTitle": "Reset App to Factory Defaults",
       "resetAppConfirmDescription": "This will sign you out of all accounts, delete all cached data and job history, and reset all preferences. You will be taken back to the welcome screen. This cannot be undone.",
       "resetAppConfirm": "Reset Everything",
+      "resetAppPartial": "App reset, but some board login sessions couldn't be fully cleared.",
       "somethingWentWrong": "Something went wrong.",
       "signedOutSuccess": "Signed out of all accounts. Reconnect via Settings → Accounts.",
       "historyClearedSuccess": "Interaction history cleared.",

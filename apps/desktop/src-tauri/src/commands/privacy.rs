@@ -243,15 +243,32 @@ pub fn privacy_reset_app(app: AppHandle) -> Value {
     // log and continue rather than failing the reset. Skip when absent so a fresh
     // install (no logins yet) doesn't log a spurious warning.
     let browser_state = data_dir.join("browser-state");
+    let mut browser_state_cleared = true;
     if browser_state.exists() {
         if let Err(e) = std::fs::remove_dir_all(&browser_state) {
             log::warn!(
                 "[privacy] factory reset could not remove browser-state (may be locked): {e}"
             );
+            browser_state_cleared = false;
         }
     }
 
-    json!({ "success": true })
+    if browser_state_cleared {
+        json!({ "success": true })
+    } else {
+        // Partial reset: the persistent stores above WERE wiped, but the on-disk
+        // Chromium board-login profiles could not be removed (commonly a Windows
+        // file lock while a browser still holds the profile). Report this honestly
+        // — returning `success: true` here would tell the user their sessions were
+        // cleared while authenticated board logins remain on disk (a privacy gap).
+        // The renderer surfaces this as a warning so the reset isn't silently
+        // over-reported as complete.
+        json!({
+            "success": false,
+            "error": "board login sessions could not be fully cleared",
+            "browserStateRetained": true,
+        })
+    }
 }
 
 #[cfg(test)]

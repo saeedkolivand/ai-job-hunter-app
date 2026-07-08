@@ -65,9 +65,12 @@ export function PrivacySettingsTab() {
   const handleResetApp = async () => {
     setConfirm((c) => ({ ...c, open: false }));
     try {
-      await resetApp.mutateAsync();
+      const res = (await resetApp.mutateAsync()) as { success: boolean };
       // resetPreferences() is called inside useResetApp onSuccess,
-      // which sets onboardingCompleted: false — the wizard re-mounts at welcome step
+      // which sets onboardingCompleted: false — the wizard re-mounts at welcome step.
+      // A partial reset (success:false) still wiped the stores but left board login
+      // sessions on disk — warn instead of silently reporting a clean reset.
+      if (!res.success) notify.error({ message: t('settings.privacy.resetAppPartial') });
     } catch {
       notify.error({ message: t('settings.privacy.somethingWentWrong') });
     }

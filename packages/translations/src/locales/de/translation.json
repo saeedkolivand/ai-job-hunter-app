@@ -808,6 +808,7 @@
       "resetAppConfirmTitle": "App auf Werkseinstellungen zurücksetzen",
       "resetAppConfirmDescription": "Dadurch werden Sie von allen Konten abgemeldet, alle gespeicherten Daten und der Job-Verlauf gelöscht sowie alle Einstellungen zurückgesetzt. Sie werden zum Willkommensbildschirm weitergeleitet. Dies kann nicht rückgängig gemacht werden.",
       "resetAppConfirm": "Alles zurücksetzen",
+      "resetAppPartial": "App zurückgesetzt, aber einige Board-Anmeldesitzungen konnten nicht vollständig gelöscht werden.",
       "somethingWentWrong": "Etwas ist schiefgelaufen.",
       "signedOutSuccess": "Von allen Konten abgemeldet. Neuverbindung über Einstellungen → Konten.",
       "historyClearedSuccess": "Interaktionsverlauf gelöscht.",
