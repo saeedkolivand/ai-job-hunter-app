@@ -287,11 +287,13 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
     void setStatus.mutateAsync({ id: application.id, status });
   };
 
-  // Documents are display-joined to this application by `jobUrl`. v1 uses a
-  // trim-only comparison; normalization parity (case/scheme/query) is a follow-up.
-  const appUrl = application.jobUrl.trim();
+  // Documents are display-joined to this application by the `applicationId` FK
+  // (set on the generation at save time; legacy rows are backfilled at boot). A
+  // raw-vs-normalized `jobUrl` string compare never matches for query-id boards
+  // like Indeed — the Application stores the normalized url, the generation the raw
+  // one — so the FK is the robust link.
   const matchingGenerations = (aiGenerations.data ?? []).filter(
-    (g) => appUrl !== '' && g.jobUrl.trim() === appUrl
+    (g) => g.applicationId === application.id
   );
 
   const orderedEvents = [...events].sort((a, b) => b.at - a.at);

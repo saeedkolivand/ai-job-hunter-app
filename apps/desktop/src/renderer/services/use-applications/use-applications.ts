@@ -106,6 +106,14 @@ export const useApplicationEvents = (onChanged?: (event: ApplicationChangedEvent
   useEffect(() => {
     const off = api.applications.onChanged((event) => {
       void qc.invalidateQueries({ queryKey: keys.applications.all });
+      // An open detail page for the imported application must refresh too — its
+      // status/docs can change on import (e.g. an Indeed import that now lands on the
+      // right row). Invalidate the exact detail key explicitly so it refetches.
+      if (event.applicationId) {
+        void qc.invalidateQueries({
+          queryKey: keys.applications.detail(event.applicationId),
+        });
+      }
       // A new application created from a posting flips that posting's "applied" badge,
       // so the postings list must refresh too.
       void qc.invalidateQueries({ queryKey: keys.postings.all });
