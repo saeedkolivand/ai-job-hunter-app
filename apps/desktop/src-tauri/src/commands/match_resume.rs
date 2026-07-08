@@ -34,14 +34,17 @@ const MATCH_FORMULA_VERSION: i64 = 1;
 const MATCH_BATCH_MAX: usize = 1000;
 
 /// Map the `semantic_scoring_enabled` request flag to the `semantic_enabled`
-/// cache-key column: `Some(false)` disables semantic scoring (`0`); every other
-/// value (`None` / `Some(true)`) keeps it on (`1`). Single source of this bit so
-/// the cache key and the skip-branch can't drift; unit-tested directly.
+/// cache-key column: only an explicit `Some(true)` enables semantic scoring
+/// (`1`); `Some(false)` AND an omitted flag (`None`) default to keyword-only
+/// (`0`), matching the app-wide default (`semanticScoring: false`) and the
+/// renderer — so a caller that omits the flag (e.g. the agent match tool) never
+/// silently runs embeddings. Single source of this bit so the cache key and the
+/// skip-branch can't drift; unit-tested directly.
 fn semantic_enabled_bit(flag: Option<bool>) -> i64 {
-    if flag == Some(false) {
-        0
-    } else {
+    if flag == Some(true) {
         1
+    } else {
+        0
     }
 }
 
@@ -563,13 +566,18 @@ mod test {
     }
 
     // Pins the production `semantic_enabled_bit` helper (used by both the cache
-    // key and the skip-branch): `Some(false)` → 0 (disabled); `Some(true)` and
-    // `None` → 1 (enabled). Tests the real fn, not an inline re-implementation.
+    // key and the skip-branch): only `Some(true)` → 1 (enabled); `Some(false)`
+    // AND `None` → 0 (keyword-only) so an omitted flag defaults OFF, matching the
+    // app-wide default. Tests the real fn, not an inline re-implementation.
     #[test]
     fn semantic_enabled_bit_maps_flag_to_key_column() {
         assert_eq!(semantic_enabled_bit(Some(false)), 0, "explicit disable → 0");
         assert_eq!(semantic_enabled_bit(Some(true)), 1, "explicit enable → 1");
-        assert_eq!(semantic_enabled_bit(None), 1, "default (unset) → enabled");
+        assert_eq!(
+            semantic_enabled_bit(None),
+            0,
+            "default (unset) → keyword-only (semantic OFF)"
+        );
     }
 
     // The batch request must deserialize from the camelCase wire shape the
