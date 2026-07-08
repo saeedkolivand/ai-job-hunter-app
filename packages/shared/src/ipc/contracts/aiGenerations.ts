@@ -25,6 +25,13 @@ export interface AiGenerationRecord {
   companyBrief: string;
   /** AI-suggested questions the candidate can ASK the interviewer, if any. */
   interviewQuestions: InterviewQuestion[];
+  /**
+   * Parent Application FK — set at save time (and backfilled at boot for legacy
+   * rows). The Application detail page joins this generation's docs by this id, not
+   * by url, because the Application stores the NORMALIZED url and the generation the
+   * RAW one (they never match for query-id boards like Indeed). Absent when unlinked.
+   */
+  applicationId?: string;
 }
 
 export interface AiGenerationSaveRequest {
