@@ -90,8 +90,12 @@ impl CredentialStore {
     /// `safeStorage.isEncryptionAvailable()`. Real, READ-ONLY probe (see
     /// [`probe_keyring_available`]): true on Windows/macOS and any Linux with a
     /// working Secret Service; false on a headless box with no secure storage, so
-    /// the renderer's "no OS encryption" warning finally fires. Probed once per
-    /// process and memoized.
+    /// the renderer's "no OS encryption" warning finally fires.
+    ///
+    /// The outcome is memoized in a process-lifetime `OnceLock`: the backend is
+    /// probed exactly once and the result is cached for the life of the process —
+    /// it will NOT re-probe if the OS secret backend goes up or down mid-session
+    /// (process-sticky by design).
     pub fn is_available(&self) -> bool {
         static AVAILABLE: OnceLock<bool> = OnceLock::new();
         *AVAILABLE.get_or_init(probe_keyring_available)

@@ -309,6 +309,15 @@ pub(super) struct PreparedRender {
 /// field expression: `data.header.name` for résumés, `data.letterhead.name` for
 /// cover letters), so no user content is concatenated into the source
 /// (injection-safe, matching the `data.json` boundary this module enforces).
+///
+/// # `doc_kind` invariant
+///
+/// `doc_kind` is interpolated verbatim — WITHOUT escaping — into a Typst string
+/// literal (`title: <name_expr> + " — {doc_kind}"`). It MUST therefore be a
+/// static, quote- and backslash-free label (`"Résumé"`, `"Cover Letter"`) and
+/// MUST NEVER carry user data: a `"` or `\` in it would break out of the string
+/// literal and corrupt — or inject — Typst source. All current callers pass
+/// compile-time constants; keep it that way.
 pub(super) fn document_meta_preamble(name_expr: &str, doc_kind: &str) -> String {
     format!(
         "#set document(title: {name_expr} + \" — {doc_kind}\", author: {name_expr})\n\
