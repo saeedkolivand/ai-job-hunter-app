@@ -827,6 +827,7 @@ mod tests {
             ("claude-code", true),
             ("codex", true),
             ("gemini-cli", true),
+            ("antigravity", true),
         ];
         for (name, expected) in cases {
             let client = resolve_by_name(name, None).unwrap();

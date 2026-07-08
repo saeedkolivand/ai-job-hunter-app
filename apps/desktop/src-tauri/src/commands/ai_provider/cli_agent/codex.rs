@@ -142,12 +142,15 @@ fn exec_args(model: &str, effort: Option<&str>) -> Vec<String> {
         // blocks on an approval prompt. Read-only sandbox already bars side effects.
         "--skip-git-repo-check".to_string(),
     ];
-    if !model.trim().is_empty() {
+    // `arg_token` upholds the CVE-2024-24576 argv invariant defensively: model/effort
+    // are user settings (not scraped), but still ride argv through `cmd.exe` on
+    // Windows, so reject anything that isn't a plain identifier (drops the flag).
+    if let Some(model) = super::arg_token(model) {
         args.push("--model".to_string());
         args.push(model.to_string());
     }
     // Reasoning effort via a config override (low/medium/high). Omitted → Codex default.
-    if let Some(effort) = effort.map(str::trim).filter(|e| !e.is_empty()) {
+    if let Some(effort) = effort.and_then(super::arg_token) {
         args.push("-c".to_string());
         args.push(format!("model_reasoning_effort={effort}"));
     }

@@ -496,14 +496,12 @@ async fn run_stream(
         }
     };
 
-    if matches!(inv.prompt, PromptDelivery::Stdin) {
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(prompt.as_bytes()).await;
-            // `stdin` drops here → EOF, so the agent stops waiting for input.
-        }
-    } else {
-        drop(child.stdin.take());
-    }
+    // Feed stdin on a detached task so the stdout loop below drains concurrently.
+    // Awaiting the whole write first can DEADLOCK on a prompt larger than the OS
+    // pipe buffer (~64 KB) if the child interleaves stdout while still reading stdin
+    // (see `write_prompt_stdin`) — realistic for cover-letter prompts that inline
+    // the full JD + résumé + research brief.
+    let stdin_writer = write_prompt_stdin(inv.prompt, child.stdin.take(), prompt, label);
 
     // Drain stderr concurrently so a chatty agent can't deadlock on a full pipe.
     let stderr = child.stderr.take();
@@ -524,6 +522,9 @@ async fn run_stream(
     let deadline = tokio::time::Instant::now() + TIMEOUT;
     let mut emitted_done = false;
     let mut any_delta = false;
+    // Whether a non-blank content delta has streamed yet — gates leading-blank
+    // suppression so plain-text agents don't emit a stray newline before the answer.
+    let mut seen_content = false;
 
     loop {
         // Race the next line read against a cancel poll so a cancellation mid-line
@@ -581,6 +582,18 @@ async fn run_stream(
         match backend.parse_stream_line(&line) {
             Some(CliEvent::Delta(text)) if !text.is_empty() => {
                 any_delta = true;
+                // Suppress leading blank/whitespace-only lines so streamed output
+                // starts at the first real content line — matching the trimmed
+                // one-shot (`parse_complete`) output. A blank line left after a
+                // stripped credential notice (Gemini/Antigravity) would otherwise
+                // stream a stray leading newline. `any_delta` is set above regardless,
+                // so the success heuristic is unchanged.
+                if !seen_content {
+                    if text.trim().is_empty() {
+                        continue;
+                    }
+                    seen_content = true;
+                }
                 emit_event(
                     app,
                     AI_STREAM,
@@ -622,6 +635,9 @@ async fn run_stream(
     let status = child.wait().await.ok();
     let success = status.map(|s| s.success()).unwrap_or(false);
     let stderr_text = stderr_handle.await.unwrap_or_default();
+    // Reap the stdin writer — the child has exited, so it has completed; any write
+    // error was already logged inside the task and is never fatal.
+    let _ = stdin_writer.await;
 
     // No explicit terminal event (e.g. plain-text agents): a clean exit or any
     // streamed text means success; otherwise surface the failure.
@@ -665,13 +681,10 @@ async fn run_complete(
         }
     };
 
-    if matches!(inv.prompt, PromptDelivery::Stdin) {
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(prompt.as_bytes()).await;
-        }
-    } else {
-        drop(child.stdin.take());
-    }
+    // Feed stdin on a detached task so `wait_with_output` (which drains stdout/stderr)
+    // runs concurrently — awaiting the full write first can DEADLOCK on a prompt
+    // larger than the OS pipe buffer (~64 KB); see `write_prompt_stdin`.
+    let stdin_writer = write_prompt_stdin(inv.prompt, child.stdin.take(), prompt, label);
 
     let output = match tokio::time::timeout(TIMEOUT, child.wait_with_output()).await {
         Ok(Ok(o)) => o,
@@ -686,6 +699,8 @@ async fn run_complete(
             )));
         }
     };
+    // Reap the stdin writer — the child has exited, so it has completed.
+    let _ = stdin_writer.await;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -723,6 +738,64 @@ fn spawn(
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
+}
+
+/// Feed the prompt to the child's stdin on a **detached task** so the caller can
+/// drain stdout concurrently. Awaiting the full write *before* reading stdout can
+/// DEADLOCK when the prompt exceeds the OS pipe buffer (~64 KB) and the child
+/// interleaves stdout while still reading stdin: both pipes fill and neither side
+/// progresses — surfacing only as the 5-minute timeout. This is realistic for
+/// cover-letter prompts that inline the full scraped JD + résumé + research brief.
+///
+/// The task drops `stdin` when done so the child sees EOF (unchanged from before);
+/// a write error (e.g. a CLI that closed stdin early) is logged at `debug`, never
+/// fatal — success is still decided by the stdout/exit path. Only
+/// [`PromptDelivery::Stdin`] pipes the prompt; for the unused
+/// [`PromptDelivery::Arg`] the prompt already rode argv, so stdin is just closed.
+fn write_prompt_stdin(
+    delivery: PromptDelivery,
+    stdin: Option<tokio::process::ChildStdin>,
+    prompt: String,
+    label: &str,
+) -> tokio::task::JoinHandle<()> {
+    let label = label.to_string();
+    tokio::spawn(async move {
+        // No piped stdin (already taken) → nothing to do.
+        let Some(mut stdin) = stdin else { return };
+        // `Arg` (unused) already carried the prompt on argv; drop `stdin` to close it
+        // (EOF) without writing — matches the old `drop(child.stdin.take())`.
+        if delivery != PromptDelivery::Stdin {
+            return;
+        }
+        if let Err(e) = stdin.write_all(prompt.as_bytes()).await {
+            tracing::debug!("[cli_agent] {label}: stdin write ended early: {e}");
+        }
+        // `stdin` drops here → EOF, so the agent stops waiting for input.
+    })
+}
+
+/// Defense-in-depth for the CVE-2024-24576 invariant (argv carries only fixed,
+/// trusted flags). `model`/`effort` come from the user's OWN settings — never
+/// scraped/untrusted content — but on Windows they still ride argv through the
+/// `cmd.exe /C` wrapper, where Rust's batch-escaping does not engage. So before a
+/// backend turns one into an arg, require it to be a plain identifier
+/// (`[A-Za-z0-9._:-]+`, trimmed): anything with a shell metacharacter, whitespace,
+/// or control char is dropped (the flag is simply omitted, so the CLI falls back to
+/// its default) and a warning is logged. Every real model id / effort level passes
+/// unchanged.
+fn arg_token(value: &str) -> Option<&str> {
+    let v = value.trim();
+    if v.is_empty() {
+        return None;
+    }
+    if v.bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-'))
+    {
+        Some(v)
+    } else {
+        tracing::warn!("[cli_agent] dropping non-identifier CLI arg value: {v:?}");
+        None
+    }
 }
 
 fn spawn_error(agent: &str, binary: &str, e: std::io::Error) -> AppError {
@@ -875,6 +948,25 @@ mod tests {
             "I loaded cached credentials into the pipeline as described."
         ));
         assert!(!is_cli_stdout_noise(""));
+    }
+
+    #[test]
+    fn arg_token_accepts_ids_and_rejects_shell_metacharacters() {
+        // Real model ids / effort levels pass unchanged (trimmed).
+        assert_eq!(arg_token("gpt-5-codex"), Some("gpt-5-codex"));
+        assert_eq!(arg_token("gemini-2.5-pro"), Some("gemini-2.5-pro"));
+        assert_eq!(arg_token("o4-mini"), Some("o4-mini"));
+        assert_eq!(arg_token("high"), Some("high"));
+        assert_eq!(arg_token("  gemini-2.5-flash  "), Some("gemini-2.5-flash"));
+        // Shell metacharacters / whitespace-splitting / empties are rejected, so the
+        // flag is omitted rather than smuggling text through `cmd.exe` on Windows
+        // (the CVE-2024-24576 argv invariant, defended in depth).
+        for bad in [
+            "", "   ", "a b", "m&calc", "a|b", "a>b", "a<b", "a^b", "%PATH%", "a\"b", "a(b)",
+            "a\r\nb", "$(x)", "`x`", "a;b", "a/b",
+        ] {
+            assert_eq!(arg_token(bad), None, "{bad:?} must be rejected");
+        }
     }
 
     #[tokio::test]

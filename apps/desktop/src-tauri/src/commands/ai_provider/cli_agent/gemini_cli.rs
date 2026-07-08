@@ -112,7 +112,10 @@ impl CliAgentBackend for GeminiCliAgent {
 /// there is no `-p` value flag: argv is only the optional, trusted model selector.
 fn model_args(model: &str) -> Vec<String> {
     let mut args = Vec::new();
-    if !model.trim().is_empty() {
+    // `arg_token` upholds the CVE-2024-24576 argv invariant defensively: `model` is a
+    // user setting (not scraped), but still rides argv through `cmd.exe` on Windows,
+    // so reject anything that isn't a plain identifier (drops the flag → CLI default).
+    if let Some(model) = super::arg_token(model) {
         args.push("-m".to_string());
         args.push(model.to_string());
     }
