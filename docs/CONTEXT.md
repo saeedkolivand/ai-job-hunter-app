@@ -22,12 +22,15 @@ _Avoid_: Tab bar, radio group (when the segmented control is meant)
 
 **Local-first privacy boundary**:
 The guarantee that the user's **personal data** — résumés, generations, applications,
-tracked job data, and credentials — never leaves the device (no telemetry, no
-app-operated backend). It is **not** a claim that the app makes no network calls: permitted
-egress is enumerated by class (AI provider, job-board scraping, opt-in web search, updater
-check, user-typed location autocomplete, and opt-in enrichment). See [ADR 0005](adr/0005-network-egress-privacy-boundary.md).
+tracked job data, and credentials — lives in a local database on the device and is never
+collected by telemetry or an app-operated backend. It is **not** a claim that this data
+never leaves the machine: the app sends data out to services the user configures or invokes —
+notably the **AI provider**, which receives the résumé and job text it is asked to generate
+from — plus job-board scraping, opt-in web search, the updater check, user-typed location
+autocomplete, and opt-in enrichment. See [ADR 0005](adr/0005-network-egress-privacy-boundary.md).
 _Avoid_: "the only outbound calls are…" (an over-absolute phrasing — the boundary is about
-personal data, not call count), "no network" / "fully offline" (untrue; scraping is core)
+storage/telemetry, not call count), "no network" / "fully offline" (untrue; scraping is core),
+"personal data never leaves the device" (untrue — the AI provider receives the résumé + job text)
 
 **Enrichment egress**:
 An outbound call that trades a **public identifier or a user-typed query** for optional

@@ -8,13 +8,13 @@ status: accepted
 
 The README and SECURITY.md both state: "The only outbound calls are to the AI provider you configure and an optional web search you enable." A full-history audit (2026-07) found this literally false: the app also makes network calls for job-board scraping (the aggregator plus per-board and ATS fetches), an on-launch updater check to GitHub, user-initiated location autocomplete (OpenStreetMap/Nominatim), and optional company-logo enrichment (Clearbit).
 
-Investigating each call showed none of them exfiltrate the data the guarantee is actually about — résumés, generations, applications, tracked job data, and credentials. Scraping is the app's core function and is disclosed two sentences earlier in the same README. Geocoding is a typeahead that sends only what the user types into a location field. The updater sends only a version check. Clearbit is opt-in, off by default, CSP-scoped to two hosts, and sends only a company name. The claim conflated two distinct promises — "your personal data never leaves the device" (true) and "the app makes almost no network calls" (false) — into one over-absolute sentence.
+Investigating each call showed none of them exfiltrate the data the guarantee is actually about — résumés, generations, applications, tracked job data, and credentials. Scraping is the app's core function and is disclosed two sentences earlier in the same README. Geocoding is a typeahead that sends only what the user types into a location field. The updater sends only a version check. Clearbit is opt-in, off by default, CSP-scoped to two hosts, and sends only a company name. The claim conflated two distinct promises — "your personal data is never collected by telemetry or an app-operated backend" (true) and "the app makes almost no network calls" (false) — into one over-absolute sentence.
 
 ## Decision
 
-The local-first privacy boundary is defined in terms of **user personal data**, not total network silence. The guarantee is:
+The local-first privacy boundary is defined in terms of **storage and telemetry**, not total network silence. The guarantee is:
 
-> Your résumés, generations, applications, tracked job data, and credentials never leave your device. There is no telemetry and no app-operated backend.
+> Your résumés, generations, applications, tracked job data, and credentials live in a local database on your device — there is no telemetry and no app-operated backend collecting them. Data leaves the device only for services you configure or invoke (enumerated below) — notably the AI provider, which receives the résumé and job text you ask it to generate from — never for a first-party analytics or collection backend.
 
 Network egress is **permitted** and enumerated by class, each with a gating rule:
 

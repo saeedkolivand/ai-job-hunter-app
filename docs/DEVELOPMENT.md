@@ -241,11 +241,11 @@ files include `documents.db` (imported documents **plus** embedding vectors — 
 `ai_generations.db`, `job_preferences.db`, `contact_profile.db`, `referrals.db`, and
 `pipeline_cache.db`.
 
-App-data directory per OS:
+App-data directory per OS (rooted at your home directory, `<HOME>`):
 
-- **Windows**: `%APPDATA%\ai-job-hunter\`
-- **macOS**: `~/Library/Application Support/ai-job-hunter/`
-- **Linux**: `~/.local/share/ai-job-hunter/`
+- **Windows**: `<HOME>\AppData\Roaming\ai-job-hunter\`
+- **macOS**: `<HOME>/Library/Application Support/ai-job-hunter/`
+- **Linux**: `<HOME>/.local/share/ai-job-hunter/`
 
 Embedding vectors live in the `vectors` table of `documents.db` and cosine similarity
 runs in-process in Rust — **no LanceDB, no `vectors/` directory**. To reset dev state,
