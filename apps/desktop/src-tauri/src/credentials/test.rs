@@ -24,6 +24,11 @@ fn unique_slot(prefix: &str) -> String {
 
 #[test]
 fn test_is_available() {
+    // `is_available` now really probes the keyring backend (read-only) instead of
+    // hardcoding `true`. Install the in-memory mock store first so the probe sees a
+    // working backend — the sentinel read returns `NoEntry`, which the probe maps to
+    // available. (On CI/dev the real OS store would also return true.)
+    install_mock_keyring();
     let temp_dir = TempDir::new().unwrap();
     let store = CredentialStore::new(&temp_dir.path().to_path_buf());
     assert!(store.is_available());

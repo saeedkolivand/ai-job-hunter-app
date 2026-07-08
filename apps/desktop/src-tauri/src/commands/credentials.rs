@@ -12,5 +12,8 @@ use tauri::{AppHandle, Manager};
 pub fn credentials_available(app: AppHandle) -> Value {
     let store = app.state::<Mutex<CredentialStore>>();
     let guard = store.lock();
-    json!({ "available": guard.is_available() })
+    // Return a BARE boolean to match the TS contract (`available(): Promise<boolean>`)
+    // and its mock — the consumer gates on `=== false`, which never fires against an
+    // object. Wrapping in `{ available: … }` here silently broke that seam.
+    json!(guard.is_available())
 }
