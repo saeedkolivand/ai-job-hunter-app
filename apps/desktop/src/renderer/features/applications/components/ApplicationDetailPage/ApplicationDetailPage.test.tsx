@@ -210,14 +210,19 @@ function makeApp(overrides: Partial<Application> = {}): Application {
 }
 
 /**
- * Minimal generation fixture. Only `id` and `jobUrl` are read by the
- * component's filter; `GenerationCard` itself is stubbed, so the rest
- * of the AiGenerationRecord fields are cast placeholders.
+ * Minimal generation fixture. The component now joins docs by the `applicationId`
+ * FK (not `jobUrl`); `GenerationCard` itself is stubbed, so the rest of the
+ * AiGenerationRecord fields are cast placeholders.
  */
-function makeGen(overrides: { id: string; jobUrl: string }): AiGenerationRecord {
+function makeGen(overrides: {
+  id: string;
+  jobUrl: string;
+  applicationId?: string;
+}): AiGenerationRecord {
   return {
     id: overrides.id,
     jobUrl: overrides.jobUrl,
+    applicationId: overrides.applicationId,
     createdAt: 0,
     candidateName: '',
     jobTitle: '',
@@ -272,8 +277,8 @@ describe('ApplicationDetailPage — generation matching (Documents tab)', () => 
     });
     mockUseAiGenerations.mockReturnValue({
       data: [
-        makeGen({ id: 'gen-1', jobUrl: 'https://acme.com/job/1' }),
-        makeGen({ id: 'gen-2', jobUrl: 'https://other.com/x' }),
+        makeGen({ id: 'gen-1', jobUrl: 'https://acme.com/job/1', applicationId: 'app-1' }),
+        makeGen({ id: 'gen-2', jobUrl: 'https://other.com/x', applicationId: 'app-2' }),
       ],
     });
 
@@ -295,7 +300,13 @@ describe('ApplicationDetailPage — generation matching (Documents tab)', () => 
       isError: false,
     });
     mockUseAiGenerations.mockReturnValue({
-      data: [makeGen({ id: 'gen-x', jobUrl: 'https://different.com/job/99' })],
+      data: [
+        makeGen({
+          id: 'gen-x',
+          jobUrl: 'https://different.com/job/99',
+          applicationId: 'app-other',
+        }),
+      ],
     });
 
     render(<ApplicationDetailPage />);
@@ -316,14 +327,14 @@ describe('ApplicationDetailPage — generation matching (Documents tab)', () => 
     });
     mockUseAiGenerations.mockReturnValue({
       data: [
-        makeGen({ id: 'gen-1', jobUrl: 'https://acme.com/job/1' }),
-        makeGen({ id: 'gen-2', jobUrl: 'https://other.com/x' }),
+        makeGen({ id: 'gen-1', jobUrl: 'https://acme.com/job/1', applicationId: 'app-1' }),
+        makeGen({ id: 'gen-2', jobUrl: 'https://other.com/x', applicationId: 'app-2' }),
       ],
     });
 
     render(<ApplicationDetailPage />);
 
-    // Only gen-1 matches the application's jobUrl → it seeds the flow.
+    // Only gen-1 carries this application's FK → it seeds the flow.
     expect(screen.getByTestId(TEST_IDS.documents.tailorFlow)).toHaveAttribute(
       'data-seedgenid',
       'gen-1'
@@ -340,7 +351,13 @@ describe('ApplicationDetailPage — generation matching (Documents tab)', () => 
       isError: false,
     });
     mockUseAiGenerations.mockReturnValue({
-      data: [makeGen({ id: 'gen-x', jobUrl: 'https://different.com/job/99' })],
+      data: [
+        makeGen({
+          id: 'gen-x',
+          jobUrl: 'https://different.com/job/99',
+          applicationId: 'app-other',
+        }),
+      ],
     });
 
     render(<ApplicationDetailPage />);
@@ -348,10 +365,12 @@ describe('ApplicationDetailPage — generation matching (Documents tab)', () => 
     expect(screen.getByTestId(TEST_IDS.documents.tailorFlow)).toHaveAttribute('data-seedgenid', '');
   });
 
-  it('does NOT match generations when the application jobUrl is empty', () => {
-    // The component's guard: `appUrl !== '' && g.jobUrl.trim() === appUrl`
+  it('does NOT match a generation whose applicationId differs from this application', () => {
+    // Docs join by the `applicationId` FK, not by url — a generation linked to a
+    // DIFFERENT Application (or unlinked) must not surface here, even if its url
+    // happens to match.
     mockTab = 'documents';
-    const app = makeApp({ jobUrl: '' });
+    const app = makeApp({ id: 'app-1' });
 
     mockUseApplication.mockReturnValue({
       data: { application: app, events: [] },
@@ -359,7 +378,9 @@ describe('ApplicationDetailPage — generation matching (Documents tab)', () => 
       isError: false,
     });
     mockUseAiGenerations.mockReturnValue({
-      data: [makeGen({ id: 'gen-z', jobUrl: '' })],
+      data: [
+        makeGen({ id: 'gen-z', jobUrl: 'https://acme.com/job/1', applicationId: 'app-other' }),
+      ],
     });
 
     render(<ApplicationDetailPage />);

@@ -950,8 +950,10 @@ fn explicit_scheme(input: &str) -> Option<String> {
 }
 
 /// Normalize a job URL into a stable dedup key: lowercase host, strip a leading
-/// `www.`, drop the query (`?…`) and fragment (`#…`), and trim a trailing `/`.
-/// The scheme is preserved (lowercased). Empty input returns empty.
+/// `www.`, drop the fragment (`#…`), retain only per-host *identifying* query
+/// params (e.g. Indeed `jk`) while dropping every other query param (utm_*, ref,
+/// tracking), and trim a trailing `/`. The scheme is preserved (lowercased). Empty
+/// input returns empty.
 ///
 /// Security chokepoint: an input carrying an explicit scheme other than
 /// `http`/`https` (e.g. `javascript:`, `data:`, `file:`, `vbscript:`, `blob:`) is
@@ -979,12 +981,21 @@ pub fn normalize_job_url(url: &str) -> String {
         Some((s, r)) => (Some(s.to_string()), r.to_string()),
         None => (None, lower.clone()),
     };
-    let no_qf = rest.split(['?', '#']).next().unwrap_or(&rest).to_string();
-    let (host, path) = match no_qf.split_once('/') {
+    // Drop the fragment (`#…`) unconditionally, then split the query off the path so
+    // per-host identifying params can be selectively retained below.
+    let no_frag = rest.split('#').next().unwrap_or(&rest);
+    let (path_part, query) = match no_frag.split_once('?') {
+        Some((p, q)) => (p, q),
+        None => (no_frag, ""),
+    };
+    let (host, path) = match path_part.split_once('/') {
         Some((h, p)) => (h.to_string(), Some(p.to_string())),
-        None => (no_qf.clone(), None),
+        None => (path_part.to_string(), None),
     };
     let host = host.strip_prefix("www.").unwrap_or(&host).to_string();
+    // Keep ONLY the host's identifying query params (utm_*, ref, … are dropped);
+    // hosts with no allowlist entry drop the whole query, exactly as before.
+    let retained_query = retain_identifying_params(&host, query);
     let mut out = String::new();
     if let Some(s) = scheme {
         out.push_str(&s);
@@ -998,7 +1009,46 @@ pub fn normalize_job_url(url: &str) -> String {
             out.push_str(p);
         }
     }
+    if !retained_query.is_empty() {
+        out.push('?');
+        out.push_str(&retained_query);
+    }
     out
+}
+
+/// Per-host allowlist of *identifying* query params that must survive normalization
+/// (every other query param — utm_*, ref, tracking — is dropped, and hosts absent
+/// here drop the entire query). Keep in sync with the canonical URL builders in
+/// `scraping::scrape_url` that place a job id in the query string: currently only
+/// Indeed (`/viewjob?jk=<id>`). LinkedIn et al. put the id in the PATH, so they need
+/// no entry here and normalize exactly as before.
+fn identifying_query_params(host: &str) -> &'static [&'static str] {
+    if host == "indeed.com" || host.ends_with(".indeed.com") {
+        &["jk"]
+    } else {
+        &[]
+    }
+}
+
+/// Rebuild the query string keeping only `identifying_query_params(host)`, emitted
+/// in the allowlist's own fixed order so the input param ordering can never change
+/// the dedup key. A param with an empty value is skipped. Returns "" when nothing is
+/// retained (the common, path-based case).
+fn retain_identifying_params(host: &str, query: &str) -> String {
+    let allow = identifying_query_params(host);
+    if allow.is_empty() || query.is_empty() {
+        return String::new();
+    }
+    allow
+        .iter()
+        .filter_map(|key| {
+            query.split('&').find_map(|pair| {
+                let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+                (k == *key && !v.is_empty()).then(|| format!("{key}={v}"))
+            })
+        })
+        .collect::<Vec<_>>()
+        .join("&")
 }
 
 /// Truncate `s` to at most `max_bytes`, never splitting a UTF-8 char.

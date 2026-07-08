@@ -13,7 +13,7 @@ pub async fn ai_generations_list(app: AppHandle) -> Value {
 pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -> Value {
     let store = app.state::<crate::ai_generations::AiGenerationStore>();
 
-    let rec = crate::ai_generations::AiGenerationRecord {
+    let mut rec = crate::ai_generations::AiGenerationRecord {
         id: crate::ai_generations::make_generation_id(),
         created_at: crate::db::now_ms(),
         candidate_name: req.candidate_name,
@@ -73,17 +73,22 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
         salary_currency: None,
     };
     if let Some(apps) = app.try_state::<crate::applications::ApplicationStore>() {
-        if let Err(e) = apps.upsert_for_origin(
+        match apps.upsert_for_origin(
             &job_url,
             &board,
             &meta,
             crate::applications::ApplicationOrigin::Generate,
             None,
         ) {
-            // Non-fatal: a failed Application upsert must not lose the generation
-            // the user just produced. The generation save below is the user-visible
-            // action; the aggregate can be re-derived.
-            log::warn!("[ai_generations] application upsert failed (non-fatal): {e}");
+            // Link the generation to its parent Application via the FK so the detail
+            // page can join docs by `application_id` instead of a raw-vs-normalized
+            // url string compare (which never matches for query-id boards like Indeed:
+            // the Application stores the normalized url, the generation the raw one).
+            Ok(app_id) => rec.application_id = Some(app_id),
+            // Non-fatal: a failed Application upsert must not lose the generation the
+            // user just produced. The generation save below is the user-visible action;
+            // the aggregate (and the FK, via boot-time backfill) can be re-derived.
+            Err(e) => log::warn!("[ai_generations] application upsert failed (non-fatal): {e}"),
         }
     }
 
