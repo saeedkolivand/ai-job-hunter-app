@@ -70,22 +70,38 @@ where
 
 /// Map a UI date-filter token to Adzuna's `max_days_old` integer (whole days).
 ///
-// ponytail: Adzuna's recency granularity is whole days, so all sub-day options
-// collapse to 1 day (API ceiling). No filter / unrecognized token caps at 30 days
-// so the aggregator never surfaces postings older than a month.
+// ponytail: Adzuna's recency granularity is whole days — it can't do sub-day. A
+// 1-day ceiling zeroed out autopilot "recent" filters on quiet days (a normal
+// query returns near-nothing in a single day), so sub-day windows FLOOR at 3 days
+// and rely on the query's `sort_by=date` for freshness instead of a hard clamp.
+// No filter / unrecognized token caps at 30 days so the aggregator never surfaces
+// postings older than a month. (Coarse mapping; 3-day floor / 30-day ceiling.)
 fn adzuna_max_days_old(date_filter: Option<&str>) -> u32 {
     match date_filter {
-        Some("15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "24h") => 1,
+        Some("15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "24h") => 3,
         Some("week") => 7,
         _ => 30,
     }
 }
 
-/// Map a UI date-filter token to JSearch's `date_posted` query token. No filter /
-/// unrecognized token caps at `month` (results no older than the past month).
+/// Map a UI date-filter token to JSearch's `date_posted` query token
+/// (`all|today|3days|week|month`). Sub-day windows floor at `3days` — like Adzuna,
+/// JSearch has no sub-day granularity, and a `today` ceiling zeroed out autopilot
+/// "recent" filters on quiet days. The freshest still surface first because the
+/// JSearch request pairs this window with `&sort_by=date` (JSearch defaults to
+/// relevance, not recency — the sort param is what makes the guarantee true).
+/// No filter / unrecognized token caps at `month`.
+///
+// ponytail: intentional cross-provider recency skew for sub-day tokens (e.g.
+// `"24h"`). The free/cheap providers can't do sub-day granularity, so Adzuna
+// (`adzuna_max_days_old` → 3) and JSearch (here → `3days`) both widen to 3 days,
+// while the paid Apify/LinkedIn path (`apify_f_tpr` → `r86400`) keeps a strict
+// ≤24h window. Merged results therefore mix recency windows for sub-day filters —
+// the deliberate tradeoff (surface *something* over nothing on quiet days); a
+// future reader shouldn't "fix" the skew back into a hard clamp.
 fn jsearch_date_posted(date_filter: Option<&str>) -> &'static str {
     match date_filter {
-        Some("15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "24h") => "today",
+        Some("15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "24h") => "3days",
         Some("week") => "week",
         _ => "month",
     }
@@ -429,8 +445,12 @@ impl JobProvider for JSearchProvider {
             q_enc
         );
 
+        // Sort newest-first (JSearch defaults to relevance, which does NOT put the
+        // freshest posting on top) so the widened `date_posted` window still surfaces
+        // the most-recent jobs first — matching Adzuna's `sort_by=date` and honouring
+        // the freshness guarantee documented on `jsearch_date_posted`.
         url.push_str(&format!(
-            "&date_posted={}",
+            "&date_posted={}&sort_by=date",
             jsearch_date_posted(date_filter)
         ));
 
