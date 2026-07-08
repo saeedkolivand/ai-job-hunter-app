@@ -206,10 +206,17 @@ pub fn privacy_sign_out_all(app: AppHandle) -> Value {
 /// The frontend is responsible for resetting persisted preferences (localStorage).
 #[tauri::command]
 pub fn privacy_reset_app(app: AppHandle) -> Value {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    // Bail rather than fall back to the CWD (".") here: `data_dir` backs the
+    // destructive `remove_dir_all(data_dir.join("browser-state"))` below, so a
+    // CWD-relative fallback would wipe the wrong target. Refuse the reset if the
+    // OS can't resolve the app data dir.
+    let data_dir = match app.path().app_data_dir() {
+        Ok(dir) => dir,
+        Err(e) => {
+            log::error!("[privacy] factory reset aborted: could not resolve app data dir: {e}");
+            return json!({ "success": false, "error": "could not resolve app data directory" });
+        }
+    };
 
     // Sign out all board sessions
     for board_id in &["linkedin", "indeed", "xing", "glassdoor"] {
