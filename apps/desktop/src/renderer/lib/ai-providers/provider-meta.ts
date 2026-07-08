@@ -96,6 +96,18 @@ export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
     color: 'text-blue-400',
     models: ['gemini-2.5-pro', 'gemini-2.5-flash'],
   },
+  // UNVERIFIED backend (documented `agy` contract, not runtime-tested) — see
+  // src-tauri cli_agent/antigravity.rs. Models are informational (the CLI runs its
+  // own default model until a model-selection flag is confirmed).
+  antigravity: {
+    kind: 'cli-agent',
+    label: 'Antigravity',
+    description:
+      'Use your installed Antigravity CLI (agy) — your existing Google login, no API key.',
+    docsUrl: 'https://antigravity.google/docs',
+    color: 'text-blue-400',
+    models: ['gemini-3-pro', 'gemini-2.5-pro'],
+  },
 };
 
 export const PROVIDER_ORDER: AiProvider[] = [
@@ -108,6 +120,7 @@ export const PROVIDER_ORDER: AiProvider[] = [
   'claude-code',
   'codex',
   'gemini-cli',
+  'antigravity',
 ];
 
 /**
