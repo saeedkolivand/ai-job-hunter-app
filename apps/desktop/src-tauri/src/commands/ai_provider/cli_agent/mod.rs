@@ -35,10 +35,12 @@ use super::{
     AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace, TokenParam,
 };
 
+mod antigravity;
 mod claude_code;
 mod codex;
 mod gemini_cli;
 
+use antigravity::AntigravityAgent;
 use claude_code::ClaudeCodeAgent;
 use codex::CodexAgent;
 use gemini_cli::GeminiCliAgent;
@@ -69,13 +71,28 @@ pub enum CliEvent {
 }
 
 /// How the prompt reaches the child process.
+///
+/// **Security — CVE-2024-24576 (Windows `.cmd`/"BatBadBut"):** the prompt inlines
+/// untrusted, scraped job-description text. On Windows an npm-global CLI
+/// (`codex`/`gemini`/`agy`) installs as a `.cmd` shim that must be launched through
+/// `cmd.exe /C` ([`cli_command`]). Rust's batch-argument escaping (the CVE fix) only
+/// engages when the spawned program is the `.cmd` itself — here the program is
+/// `cmd.exe`, not the `.cmd`, so it does NOT engage. A prompt containing `" & <cmd>`
+/// would then break out of `cmd.exe`'s parser and execute. The structural fix:
+/// **untrusted text must never transit argv.** Every backend uses
+/// [`Stdin`](Self::Stdin), so the command line carries only fixed, trusted flags and
+/// the harness pipes the prompt to `child.stdin`. Fail-closed — a CLI that ignores
+/// stdin yields empty output, never RCE.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PromptDelivery {
-    /// Pipe the prompt to stdin (avoids arg-length / escaping limits). Preferred.
+    /// Pipe the prompt to stdin (avoids arg-length / escaping limits, and keeps
+    /// untrusted prompt bytes off the command line — see the type-level security
+    /// note). The only variant any backend uses.
     Stdin,
-    /// Append the prompt as the **final** argument (place a value-flag like `-p`
-    /// last if the agent expects the prompt as that flag's value). Constructed by
-    /// the Codex / Gemini CLI backends (follow-up).
+    /// Append the prompt as the **final** argv element. **Unused** — retained only
+    /// as harness plumbing. Do NOT adopt it for any backend whose binary can be a
+    /// Windows `.cmd` shim: it would route untrusted prompt text through `cmd.exe`
+    /// (CVE-2024-24576, see above). Prefer [`Stdin`](Self::Stdin).
     #[allow(dead_code)]
     Arg,
 }
@@ -153,6 +170,7 @@ pub fn all() -> Vec<Box<dyn CliAgentBackend>> {
         Box::new(ClaudeCodeAgent),
         Box::new(CodexAgent),
         Box::new(GeminiCliAgent),
+        Box::new(AntigravityAgent),
     ]
 }
 
@@ -349,11 +367,44 @@ fn detect_cache() -> &'static Mutex<HashMap<String, Detected>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Base command for a CLI agent: console window hidden on Windows, and an augmented
-/// `PATH` so a GUI-launched macOS/Linux app can find the binary (Finder/Dock apps
-/// inherit only a minimal `PATH`, missing npm/nvm/Homebrew/native installs).
-fn cli_command(binary: &str) -> Command {
+/// Base command for a CLI agent, with `args` applied: console window hidden on
+/// Windows, and an augmented `PATH` so a GUI-launched macOS/Linux app can find the
+/// binary (Finder/Dock apps inherit only a minimal `PATH`, missing
+/// npm/nvm/Homebrew/native installs).
+///
+/// On **Windows** it first resolves the binary on `PATH` × `PATHEXT`
+/// ([`crate::platform::resolve_cli_binary`]): a `.cmd`/`.bat` shim (how npm-global
+/// CLIs like `gemini`/`codex`/`agy` install — there is no `.exe`) is launched
+/// through `cmd.exe /C`, since `CreateProcess` cannot execute a batch file
+/// directly. Each element of `args` is passed as a **separate argv entry** — never
+/// concatenated into a shell string — so `cmd.exe` performs no word-splitting. If
+/// resolution fails we fall through to a bare spawn so the OS still surfaces
+/// `NotFound`.
+///
+/// **CVE-2024-24576 invariant:** because the program spawned is `cmd.exe` (not the
+/// `.cmd`), Rust's batch-argument escaping does NOT engage — so `args` here MUST
+/// carry only fixed, trusted flags (model/sandbox flags, `--version`), never
+/// untrusted prompt/JD text. That text goes on stdin via [`PromptDelivery::Stdin`];
+/// [`spawn`] only appends to argv for the unused [`PromptDelivery::Arg`], which no
+/// backend constructs. See the [`PromptDelivery`] type docs.
+fn cli_command(binary: &str, args: &[String]) -> Command {
+    #[cfg(windows)]
+    if let Some(resolved) = crate::platform::resolve_cli_binary(binary) {
+        let mut cmd = if resolved.needs_cmd_wrapper {
+            let mut c = Command::new("cmd");
+            c.arg("/C").arg(&resolved.path).args(args);
+            c
+        } else {
+            let mut c = Command::new(&resolved.path);
+            c.args(args);
+            c
+        };
+        cmd.no_window();
+        return cmd;
+    }
+
     let mut cmd = Command::new(binary);
+    cmd.args(args);
     cmd.no_window();
     if let Some(path) = crate::platform::cli_path() {
         cmd.env("PATH", path);
@@ -364,7 +415,7 @@ fn cli_command(binary: &str) -> Command {
 /// Whether the binary is installed (`<binary> --version` succeeds), plus its
 /// reported version. Mirrors `ollama::reachable_model()` as the health signal.
 pub async fn detect(binary: &str) -> (bool, Option<String>) {
-    let fut = cli_command(binary).arg("--version").output();
+    let fut = cli_command(binary, &["--version".to_string()]).output();
     match tokio::time::timeout(Duration::from_secs(5), fut).await {
         Ok(Ok(out)) if out.status.success() => {
             let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
@@ -445,14 +496,12 @@ async fn run_stream(
         }
     };
 
-    if matches!(inv.prompt, PromptDelivery::Stdin) {
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(prompt.as_bytes()).await;
-            // `stdin` drops here → EOF, so the agent stops waiting for input.
-        }
-    } else {
-        drop(child.stdin.take());
-    }
+    // Feed stdin on a detached task so the stdout loop below drains concurrently.
+    // Awaiting the whole write first can DEADLOCK on a prompt larger than the OS
+    // pipe buffer (~64 KB) if the child interleaves stdout while still reading stdin
+    // (see `write_prompt_stdin`) — realistic for cover-letter prompts that inline
+    // the full JD + résumé + research brief.
+    let stdin_writer = write_prompt_stdin(inv.prompt, child.stdin.take(), prompt, label);
 
     // Drain stderr concurrently so a chatty agent can't deadlock on a full pipe.
     let stderr = child.stderr.take();
@@ -473,6 +522,9 @@ async fn run_stream(
     let deadline = tokio::time::Instant::now() + TIMEOUT;
     let mut emitted_done = false;
     let mut any_delta = false;
+    // Whether a non-blank content delta has streamed yet — gates leading-blank
+    // suppression so plain-text agents don't emit a stray newline before the answer.
+    let mut seen_content = false;
 
     loop {
         // Race the next line read against a cancel poll so a cancellation mid-line
@@ -530,6 +582,18 @@ async fn run_stream(
         match backend.parse_stream_line(&line) {
             Some(CliEvent::Delta(text)) if !text.is_empty() => {
                 any_delta = true;
+                // Suppress leading blank/whitespace-only lines so streamed output
+                // starts at the first real content line — matching the trimmed
+                // one-shot (`parse_complete`) output. A blank line left after a
+                // stripped credential notice (Gemini/Antigravity) would otherwise
+                // stream a stray leading newline. `any_delta` is set above regardless,
+                // so the success heuristic is unchanged.
+                if !seen_content {
+                    if text.trim().is_empty() {
+                        continue;
+                    }
+                    seen_content = true;
+                }
                 emit_event(
                     app,
                     AI_STREAM,
@@ -571,6 +635,9 @@ async fn run_stream(
     let status = child.wait().await.ok();
     let success = status.map(|s| s.success()).unwrap_or(false);
     let stderr_text = stderr_handle.await.unwrap_or_default();
+    // Reap the stdin writer — the child has exited, so it has completed; any write
+    // error was already logged inside the task and is never fatal.
+    let _ = stdin_writer.await;
 
     // No explicit terminal event (e.g. plain-text agents): a clean exit or any
     // streamed text means success; otherwise surface the failure.
@@ -614,13 +681,10 @@ async fn run_complete(
         }
     };
 
-    if matches!(inv.prompt, PromptDelivery::Stdin) {
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(prompt.as_bytes()).await;
-        }
-    } else {
-        drop(child.stdin.take());
-    }
+    // Feed stdin on a detached task so `wait_with_output` (which drains stdout/stderr)
+    // runs concurrently — awaiting the full write first can DEADLOCK on a prompt
+    // larger than the OS pipe buffer (~64 KB); see `write_prompt_stdin`.
+    let stdin_writer = write_prompt_stdin(inv.prompt, child.stdin.take(), prompt, label);
 
     let output = match tokio::time::timeout(TIMEOUT, child.wait_with_output()).await {
         Ok(Ok(o)) => o,
@@ -635,6 +699,8 @@ async fn run_complete(
             )));
         }
     };
+    // Reap the stdin writer — the child has exited, so it has completed.
+    let _ = stdin_writer.await;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -656,11 +722,14 @@ fn spawn(
     prompt: &str,
 ) -> std::io::Result<tokio::process::Child> {
     let mut args = inv.args.clone();
+    // Untrusted prompt text enters argv ONLY for `PromptDelivery::Arg`, which no
+    // backend constructs — every agent uses `Stdin` (see `PromptDelivery` docs for
+    // the CVE-2024-24576 rationale). So in practice `args` is fixed trusted flags,
+    // and the prompt reaches the child via `child.stdin` in the callers below.
     if matches!(inv.prompt, PromptDelivery::Arg) {
         args.push(prompt.to_string());
     }
-    cli_command(binary)
-        .args(&args)
+    cli_command(binary, &args)
         // Neutral cwd: we only want text generation, never side effects in the
         // user's project (backends also disable tools where the CLI supports it).
         .current_dir(std::env::temp_dir())
@@ -669,6 +738,64 @@ fn spawn(
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
+}
+
+/// Feed the prompt to the child's stdin on a **detached task** so the caller can
+/// drain stdout concurrently. Awaiting the full write *before* reading stdout can
+/// DEADLOCK when the prompt exceeds the OS pipe buffer (~64 KB) and the child
+/// interleaves stdout while still reading stdin: both pipes fill and neither side
+/// progresses — surfacing only as the 5-minute timeout. This is realistic for
+/// cover-letter prompts that inline the full scraped JD + résumé + research brief.
+///
+/// The task drops `stdin` when done so the child sees EOF (unchanged from before);
+/// a write error (e.g. a CLI that closed stdin early) is logged at `debug`, never
+/// fatal — success is still decided by the stdout/exit path. Only
+/// [`PromptDelivery::Stdin`] pipes the prompt; for the unused
+/// [`PromptDelivery::Arg`] the prompt already rode argv, so stdin is just closed.
+fn write_prompt_stdin(
+    delivery: PromptDelivery,
+    stdin: Option<tokio::process::ChildStdin>,
+    prompt: String,
+    label: &str,
+) -> tokio::task::JoinHandle<()> {
+    let label = label.to_string();
+    tokio::spawn(async move {
+        // No piped stdin (already taken) → nothing to do.
+        let Some(mut stdin) = stdin else { return };
+        // `Arg` (unused) already carried the prompt on argv; drop `stdin` to close it
+        // (EOF) without writing — matches the old `drop(child.stdin.take())`.
+        if delivery != PromptDelivery::Stdin {
+            return;
+        }
+        if let Err(e) = stdin.write_all(prompt.as_bytes()).await {
+            tracing::debug!("[cli_agent] {label}: stdin write ended early: {e}");
+        }
+        // `stdin` drops here → EOF, so the agent stops waiting for input.
+    })
+}
+
+/// Defense-in-depth for the CVE-2024-24576 invariant (argv carries only fixed,
+/// trusted flags). `model`/`effort` come from the user's OWN settings — never
+/// scraped/untrusted content — but on Windows they still ride argv through the
+/// `cmd.exe /C` wrapper, where Rust's batch-escaping does not engage. So before a
+/// backend turns one into an arg, require it to be a plain identifier
+/// (`[A-Za-z0-9._:-]+`, trimmed): anything with a shell metacharacter, whitespace,
+/// or control char is dropped (the flag is simply omitted, so the CLI falls back to
+/// its default) and a warning is logged. Every real model id / effort level passes
+/// unchanged.
+fn arg_token(value: &str) -> Option<&str> {
+    let v = value.trim();
+    if v.is_empty() {
+        return None;
+    }
+    if v.bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-'))
+    {
+        Some(v)
+    } else {
+        tracing::warn!("[cli_agent] dropping non-identifier CLI arg value: {v:?}");
+        None
+    }
 }
 
 fn spawn_error(agent: &str, binary: &str, e: std::io::Error) -> AppError {
@@ -757,6 +884,28 @@ fn user_prompt(req: &AiGenerateRequest) -> String {
         .join("\n\n")
 }
 
+/// Plain-text CLI agents (Gemini CLI, Antigravity) interleave the model's answer
+/// on stdout with a few operational lines — cached-credential notices, telemetry
+/// banners, dotenv/deprecation logs. Left in, they get folded into the generated
+/// letter. This recognizes those specific, exact-ish markers so a backend can drop
+/// them. Deliberately conservative — it matches only known operational lines (full
+/// exact matches or unmistakable log prefixes), never anything that could be real
+/// answer text, and treats blank lines as paragraph breaks (kept).
+fn is_cli_stdout_noise(line: &str) -> bool {
+    let t = line.trim();
+    if t.is_empty() {
+        return false; // paragraph break — never noise
+    }
+    // Full-line operational notices these CLIs print before/around the answer.
+    const EXACT: &[&str] = &["Loaded cached credentials.", "Data collection is disabled."];
+    if EXACT.contains(&t) {
+        return true;
+    }
+    // Unmistakable log/tooling prefixes (dotenv injector banner, Node warnings that
+    // some builds route to stdout). Prefix-anchored so ordinary prose can't match.
+    t.starts_with("[dotenv@") || t.starts_with("DeprecationWarning:") || t.starts_with("(node:")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -767,6 +916,7 @@ mod tests {
             ProviderId::ClaudeCode,
             ProviderId::Codex,
             ProviderId::GeminiCli,
+            ProviderId::Antigravity,
         ] {
             assert!(
                 backend_for(id).is_some(),
@@ -780,6 +930,43 @@ mod tests {
     #[test]
     fn non_cli_provider_has_no_backend() {
         assert!(backend_for(ProviderId::Anthropic).is_none());
+    }
+
+    #[test]
+    fn stdout_noise_filter_drops_only_operational_lines() {
+        // Known operational noise is dropped…
+        assert!(is_cli_stdout_noise("Loaded cached credentials."));
+        assert!(is_cli_stdout_noise("  Data collection is disabled.  "));
+        assert!(is_cli_stdout_noise(
+            "[dotenv@17.0.0] injecting env (2) from .env"
+        ));
+        assert!(is_cli_stdout_noise("(node:12345) Warning: something"));
+        // …while real answer text (even mentioning credentials) is kept, and blank
+        // lines survive as paragraph breaks.
+        assert!(!is_cli_stdout_noise("Dear Hiring Manager,"));
+        assert!(!is_cli_stdout_noise(
+            "I loaded cached credentials into the pipeline as described."
+        ));
+        assert!(!is_cli_stdout_noise(""));
+    }
+
+    #[test]
+    fn arg_token_accepts_ids_and_rejects_shell_metacharacters() {
+        // Real model ids / effort levels pass unchanged (trimmed).
+        assert_eq!(arg_token("gpt-5-codex"), Some("gpt-5-codex"));
+        assert_eq!(arg_token("gemini-2.5-pro"), Some("gemini-2.5-pro"));
+        assert_eq!(arg_token("o4-mini"), Some("o4-mini"));
+        assert_eq!(arg_token("high"), Some("high"));
+        assert_eq!(arg_token("  gemini-2.5-flash  "), Some("gemini-2.5-flash"));
+        // Shell metacharacters / whitespace-splitting / empties are rejected, so the
+        // flag is omitted rather than smuggling text through `cmd.exe` on Windows
+        // (the CVE-2024-24576 argv invariant, defended in depth).
+        for bad in [
+            "", "   ", "a b", "m&calc", "a|b", "a>b", "a<b", "a^b", "%PATH%", "a\"b", "a(b)",
+            "a\r\nb", "$(x)", "`x`", "a;b", "a/b",
+        ] {
+            assert_eq!(arg_token(bad), None, "{bad:?} must be rejected");
+        }
     }
 
     #[tokio::test]
