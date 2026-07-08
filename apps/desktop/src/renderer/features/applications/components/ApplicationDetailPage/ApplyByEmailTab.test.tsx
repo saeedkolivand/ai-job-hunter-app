@@ -278,4 +278,46 @@ describe('ApplyByEmailTab — select-to-rewrite', () => {
       expect.objectContaining({ model: 'test-model', docType: 'email', locale: 'en' })
     );
   });
+
+  // Both outputs read the mutable post-rewrite draft — not the frozen generation.
+  it('the whole-email Copy and mailto reflect a rewrite of the draft', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+    render(
+      <ApplyByEmailTab
+        application={makeApp({ recipientEmail: 'hr@acme.com' })}
+        matchingGenerations={NO_GENERATIONS}
+      />
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'applications.detail.email.generate' }));
+    });
+    await screen.findByText(BODY);
+
+    // Rewrite 'interested' → 'REWRITTEN', mutating the draft body.
+    selectSubstring(screen.getByText(BODY), BODY, 'interested');
+    fireEvent.click(
+      screen.getByRole('button', { name: 'applications.detail.email.rewriteBodyAriaLabel' })
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('popover-accept'));
+    });
+
+    const rewrittenBody = 'Hello, I am REWRITTEN in the role.';
+
+    // Whole-email Copy writes the post-rewrite blob (not the original BODY).
+    fireEvent.click(screen.getByRole('button', { name: 'applications.detail.email.copy' }));
+    await waitFor(() => {
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        `Subject: ${SUBJECT}\n\n${rewrittenBody}`
+      );
+    });
+
+    // mailto encodes the post-rewrite body too.
+    fireEvent.click(screen.getByRole('button', { name: 'applications.detail.email.openMailto' }));
+    expect(openSpy).toHaveBeenCalledWith(
+      expect.stringContaining(encodeURIComponent(rewrittenBody)),
+      '_blank'
+    );
+    openSpy.mockRestore();
+  });
 });

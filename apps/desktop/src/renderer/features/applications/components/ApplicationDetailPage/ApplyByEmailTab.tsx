@@ -118,10 +118,13 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
   // generation — the live split from `streamText` is used then.
   const [email, setEmail] = useState<{ subject: string; body: string } | null>(null);
 
-  // Abort any in-flight stream on unmount to prevent quota burn on tab change.
+  // Abort any in-flight stream on unmount to prevent quota burn on tab change,
+  // and clear the copy-feedback timers so they can't setState after unmount.
   useEffect(
     () => () => {
       abortRef.current?.abort();
+      clearTimeout(copyTimerRef.current ?? undefined);
+      clearTimeout(subjectCopyTimerRef.current ?? undefined);
     },
     []
   );
