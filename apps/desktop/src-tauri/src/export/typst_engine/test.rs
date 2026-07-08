@@ -2619,8 +2619,8 @@ fn generate_templates_showcase_banner() {
     use image::{DynamicImage, GenericImage, ImageBuffer, ImageFormat, Rgba, RgbaImage};
     use std::io::Cursor;
     use std::path::Path;
-    use typst::layout::PagedDocument;
-    use typst_render::render as typst_rasterise;
+    use typst_layout::PagedDocument;
+    use typst_render::{render as typst_rasterise, RenderOptions};
 
     use super::engine::TypstTemplate;
     use super::render::{prepare, prepare_with_photo, PreparedRender};
@@ -2766,11 +2766,17 @@ fn generate_templates_showcase_banner() {
         let document = compile_world(&world);
 
         assert!(
-            !document.pages.is_empty(),
+            !document.pages().is_empty(),
             "showcase: {label} produced zero pages"
         );
 
-        let pixmap = typst_rasterise(&document.pages[0], PIXEL_PER_PT);
+        // `render` gained an options parameter in typst 0.15; `pixel_per_pt`
+        // moved onto `RenderOptions` (its default is already 2.0 = this scale).
+        let render_opts = RenderOptions {
+            pixel_per_pt: typst::utils::Scalar::new(f64::from(PIXEL_PER_PT)),
+            render_bleed: false,
+        };
+        let pixmap = typst_rasterise(&document.pages()[0], &render_opts);
         let (pxw, pxh) = (pixmap.width(), pixmap.height());
         let raw = pixmap.data().to_vec();
         let rgba = pixmap_to_rgba(pxw, pxh, raw);
@@ -2778,7 +2784,7 @@ fn generate_templates_showcase_banner() {
         // Per-template preview SVG (vector page-1 export) for the UI picker —
         // crisp at any zoom, a fraction of the old PNG's size, and self-contained
         // (Typst exports glyphs as paths, so there is no font dependency at display time).
-        let svg: String = typst_svg::svg(&document.pages[0]);
+        let svg: String = typst_svg::svg(&document.pages()[0], &typst_svg::SvgOptions::default());
         assert!(
             svg.contains("<svg"),
             "showcase: {label} preview SVG missing <svg root element"
@@ -2940,7 +2946,7 @@ fn generate_templates_showcase_banner() {
 #[ignore]
 fn generate_cover_template_previews() {
     use std::path::Path;
-    use typst::layout::PagedDocument;
+    use typst_layout::PagedDocument;
 
     use super::engine::letter_template_sources;
     use super::letter::{parse_cover_letter, style_from_template as letter_style_from_template};
@@ -3016,12 +3022,12 @@ fn generate_cover_template_previews() {
         });
 
         assert!(
-            !document.pages.is_empty(),
+            !document.pages().is_empty(),
             "cover previews: {label} produced zero pages"
         );
 
         // Export page 1 to SVG (vector — no rasterisation, no thumbnail).
-        let svg: String = typst_svg::svg(&document.pages[0]);
+        let svg: String = typst_svg::svg(&document.pages()[0], &typst_svg::SvgOptions::default());
         assert!(
             !svg.is_empty(),
             "cover previews: {label} produced an empty SVG"
