@@ -14,6 +14,9 @@ export default defineConfig({
       // every story as a test; selectable on its own with `--project storybook`.
       'packages/ui/vitest.storybook.config.ts',
       'apps/desktop',
+      // Node-env project for build/release scripts (e.g. the empty-release-notes
+      // guard plugin). Config: scripts/vitest.config.ts.
+      'scripts',
     ],
     coverage: {
       provider: 'v8',

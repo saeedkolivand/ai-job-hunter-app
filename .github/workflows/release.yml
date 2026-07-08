@@ -116,24 +116,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           HUSKY: 0
 
-      - name: 🛡️ Guard Against Empty Release Notes
-        # conventional-changelog-conventionalcommits v10 silently emptied the
-        # semantic-release notes body (no error), shipping a blank changelog in
-        # v0.119.0. Fail loudly if a PUBLISHED release has an empty/whitespace
-        # notes body so a broken changelog can never ship unnoticed again. Mirrors
-        # the `if [ -z … ]` guard style used by the build job's version resolver.
-        if: steps.semantic.outputs.new_release_published == 'true'
-        env:
-          # Via env (not inline) to avoid script injection from the notes body.
-          RELEASE_NOTES: ${{ steps.semantic.outputs.new_release_notes }}
-        run: |
-          set -euo pipefail
-          if [ -z "$(printf '%s' "${RELEASE_NOTES:-}" | tr -d '[:space:]')" ]; then
-            echo "::error::Release notes are empty for the published release — likely the conventional-changelog-conventionalcommits v10 regression (empty notes, no error). Pin it to v9 and re-run. See docs reference: conventionalcommits v10 empties release notes."
-            exit 1
-          fi
-          echo "Release notes present ($(printf '%s' "$RELEASE_NOTES" | wc -c) bytes)."
-
       - name: 📝 Release Summary
         if: always()
         run: |
