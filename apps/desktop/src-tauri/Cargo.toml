@@ -204,7 +204,7 @@ aes = "0.8"
 # Chromium cookie CBC decrypt in scraping/board_login/import.rs). Without it the
 # method is gated out and the macOS/Linux release build fails to compile (the
 # path is `cfg(not(windows))`, so it never surfaces in a Windows dev build).
-cbc = { version = "0.1", features = ["alloc"] }
+cbc = { version = "0.2", features = ["alloc"] }
 hmac = "0.12"
 pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 sha1 = "0.10"

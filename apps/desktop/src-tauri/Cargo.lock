@@ -94,7 +94,7 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "base64 0.22.1",
- "cbc 0.1.2",
+ "cbc 0.2.1",
  "chromiumoxide",
  "chrono",
  "core-foundation-sys",
