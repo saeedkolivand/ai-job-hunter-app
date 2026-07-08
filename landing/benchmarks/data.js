@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783525815503,
+  "lastUpdate": 1783532209575,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2975,6 +2975,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 261951,
             "range": "± 3739",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "676f71c6c8100e7e438d0f82b14829720796da27",
+          "message": "feat: fix gemini/codex cli providers on windows and add antigravity (#582)\n\n* feat: fix gemini/codex cli providers on windows and add antigravity\n\ngemini/codex install as npm .cmd shims (no .exe), which Windows CreateProcess\nwon't launch, so they were detected \"not installed\" and failed to spawn. Add a\nPATH x PATHEXT resolver in platform/process.rs; run resolved .cmd/.bat shims via\ncmd.exe /C with separate argv. Also: pass codex --skip-git-repo-check (it runs\nin a temp cwd) and filter gemini's credential/telemetry stdout noise out of the\ngenerated text.\n\nAdd a new antigravity CLI backend (agy), mirroring the plain-text gemini path.\nIt is flagged UNVERIFIED — agy isn't installed here, so its flags/stdin behavior\nneed confirming against a real install.\n\nSecurity (reviewed): deliver the prompt over stdin for codex/gemini/antigravity\n(like claude), never as argv. Passing the untrusted prompt (which inlines scraped\njob-description text) as an argv element through cmd.exe was a CVE-2024-24576\ncommand-injection/RCE vector — Rust's batch-arg escaping doesn't engage when the\nprogram is cmd.exe. With stdin delivery, argv carries only static trusted flags.\nAntigravity ships without --yes (no auto-approving tool actions on an untrusted\nprompt).\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(ai-provider): prevent cli-agent pipe deadlock and harden model/effort argv\n\nWrite the prompt to the CLI child's stdin on a detached task so stdout is\ndrained concurrently, instead of awaiting the full stdin write first — a prompt\nlarger than the OS pipe buffer (~64KB; realistic for a cover letter) otherwise\ndeadlocks both pipes and hangs until the 5-minute timeout. Also validate\nmodel/effort against an allowlist before they enter argv (defense-in-depth for\nthe cmd.exe wrapper), add antigravity to the web-search capability test, and\nsuppress a stray leading blank line in the streamed output.\n\nAddresses @claude review on #582.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-08T19:09:41+02:00",
+          "tree_id": "f0b0bf8132264a3917c7539fc462600778ae6342",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/676f71c6c8100e7e438d0f82b14829720796da27"
+        },
+        "date": 1783532208927,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1972600,
+            "range": "± 56502",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2660602,
+            "range": "± 80772",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 287300,
+            "range": "± 7384",
             "unit": "ns/iter"
           }
         ]
