@@ -68,15 +68,18 @@ fn to_city_country(item: &Value) -> Option<Value> {
     }))
 }
 
-#[tauri::command]
-pub async fn geocode_suggest(query: String) -> Value {
+/// Core suggestion lookup shared by the `geocode_suggest` IPC command AND any
+/// server-side caller (e.g. autopilot's save-time `country_code` derivation —
+/// the autopilot aggregator zero-jobs fix). Empty query → empty result, no
+/// network call. Never errors: a network/parse failure degrades to `vec![]`.
+pub(crate) async fn suggest(query: &str) -> Vec<Value> {
     if query.trim().is_empty() {
-        return json!([]);
+        return vec![];
     }
 
     let url = format!(
         "https://nominatim.openstreetmap.org/search?format=json&q={}&limit=10&addressdetails=1",
-        urlencoding::encode(&query)
+        urlencoding::encode(query)
     );
 
     let response = match crate::net::http::shared()
@@ -87,12 +90,12 @@ pub async fn geocode_suggest(query: String) -> Value {
         .await
     {
         Ok(r) => r,
-        Err(_) => return json!([]),
+        Err(_) => return vec![],
     };
 
     let results = match response.json::<Vec<Value>>().await {
         Ok(r) => r,
-        Err(_) => return json!([]),
+        Err(_) => return vec![],
     };
 
     // Reduce every Nominatim hit to a city- or country-level suggestion
@@ -100,7 +103,7 @@ pub async fn geocode_suggest(query: String) -> Value {
     // label, preserve order, and cap at 5. `countryCode`/`lat`/`lon` survive so
     // ScrapeForm keeps its country + radius filtering (#49/#40).
     let mut seen: HashSet<String> = HashSet::new();
-    let suggestions: Vec<Value> = results
+    results
         .iter()
         .filter_map(to_city_country)
         .filter(|s| {
@@ -110,7 +113,10 @@ pub async fn geocode_suggest(query: String) -> Value {
                 .unwrap_or(false)
         })
         .take(5)
-        .collect();
+        .collect()
+}
 
-    json!(suggestions)
+#[tauri::command]
+pub async fn geocode_suggest(query: String) -> Value {
+    json!(suggest(&query).await)
 }

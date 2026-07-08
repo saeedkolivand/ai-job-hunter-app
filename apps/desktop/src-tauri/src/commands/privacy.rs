@@ -398,6 +398,7 @@ mod tests {
         store
             .set(&crate::job_preferences::JobPreferences {
                 location: Some("Berlin".into()),
+                country_code: Some("de".into()),
                 tech_stack: Some(vec![crate::job_preferences::TechStackItem {
                     name: "Rust".into(),
                     category: "backend".into(),
@@ -419,6 +420,10 @@ mod tests {
         assert!(
             after.tech_stack.is_none(),
             "tech_stack must be None after reset"
+        );
+        assert!(
+            after.country_code.is_none(),
+            "country_code must also be None after reset"
         );
     }
 

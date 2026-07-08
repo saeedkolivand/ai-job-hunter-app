@@ -478,6 +478,14 @@ export const TechStackItemSchema = z.object({
 
 export const JobPreferencesSchema = z.object({
   location: z.string().optional(),
+  // ISO 3166-1 alpha-2, captured alongside `location` from a picked geocode
+  // suggestion (mirrors AutopilotTargetSchema.countryCode) — lets a seeded
+  // location carry its real country instead of a scraper having to guess one.
+  countryCode: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z]{2}$/)
+    .optional(),
   techStack: z.array(TechStackItemSchema).optional(),
 });
 

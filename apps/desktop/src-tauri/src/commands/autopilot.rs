@@ -61,8 +61,47 @@ pub fn autopilot_get(app: AppHandle, autopilot_id: String) -> Value {
     json!(ap)
 }
 
+/// Whether `location` is non-empty after trimming — the only precondition for
+/// attempting a geocode lookup. Pure (no network) so it's unit-tested directly.
+fn should_derive_country_code(location: Option<&str>) -> bool {
+    location.map(str::trim).is_some_and(|s| !s.is_empty())
+}
+
+/// Pick a country code out of the geocode service's ranked suggestions (first
+/// hit wins, lower-cased to match `BoardSearchInput::country_code`'s
+/// convention). Pure — no network — so this is unit-tested directly; the HTTP
+/// round trip inside `commands::geocoding::suggest` is not (no fixture for it).
+fn country_code_from_suggestions(suggestions: &[Value]) -> Option<String> {
+    suggestions
+        .first()
+        .and_then(|s| s.get("countryCode"))
+        .and_then(|v| v.as_str())
+        .map(str::to_lowercase)
+}
+
+/// Best-effort: when a target has a real `location` but no `country_code` (the
+/// autopilot aggregator zero-jobs bug — a prefilled/typed location saved without
+/// a geocode pick), look one up via the SAME geocode service the manual picker
+/// uses (`commands::geocoding::suggest`) and backfill it before persisting.
+/// Never blocks or fails the save: a network error / no match just leaves
+/// `country_code` absent, exactly as it would without this fix — the
+/// aggregator's own guessed-market guard (`scraping::boards::aggregator`)
+/// covers that residual case too.
+async fn derive_country_code(location: Option<&str>) -> Option<String> {
+    if !should_derive_country_code(location) {
+        return None;
+    }
+    // Safe: `should_derive_country_code` just proved this is `Some`.
+    let location = location.unwrap_or_default().trim();
+    let suggestions = crate::commands::geocoding::suggest(location).await;
+    country_code_from_suggestions(&suggestions)
+}
+
 #[tauri::command]
-pub fn autopilot_create(app: AppHandle, req: AutopilotCreateRequest) -> Value {
+pub async fn autopilot_create(app: AppHandle, mut req: AutopilotCreateRequest) -> Value {
+    if req.target.country_code.is_none() {
+        req.target.country_code = derive_country_code(req.target.location.as_deref()).await;
+    }
     let ap = store(&app)
         .lock()
         .create(serde_json::to_value(&req).unwrap_or_default());
@@ -70,11 +109,16 @@ pub fn autopilot_create(app: AppHandle, req: AutopilotCreateRequest) -> Value {
 }
 
 #[tauri::command]
-pub fn autopilot_update(
+pub async fn autopilot_update(
     app: AppHandle,
     autopilot_id: String,
-    req: AutopilotUpdateRequest,
+    mut req: AutopilotUpdateRequest,
 ) -> Value {
+    if let Some(target) = req.target.as_mut() {
+        if target.country_code.is_none() {
+            target.country_code = derive_country_code(target.location.as_deref()).await;
+        }
+    }
     let ap = store(&app).lock().update(
         &autopilot_id,
         serde_json::to_value(&req).unwrap_or_default(),
@@ -507,6 +551,48 @@ mod tests {
             keywords: keywords.map(|v| v.iter().map(|s| s.to_string()).collect()),
             exclude_keywords: exclude.map(|v| v.iter().map(|s| s.to_string()).collect()),
         }
+    }
+
+    // ── country_code save-time derivation (autopilot aggregator zero-jobs fix) ──
+
+    #[test]
+    fn should_derive_country_code_requires_a_real_location() {
+        assert!(should_derive_country_code(Some("London")));
+        // Whitespace-only or absent location → nothing to geocode.
+        assert!(!should_derive_country_code(Some("   ")));
+        assert!(!should_derive_country_code(Some("")));
+        assert!(!should_derive_country_code(None));
+    }
+
+    #[test]
+    fn country_code_from_suggestions_takes_first_hit_lowercased() {
+        let suggestions = vec![
+            json!({ "display": "London, United Kingdom", "countryCode": "GB" }),
+            json!({ "display": "London, Canada", "countryCode": "CA" }),
+        ];
+        assert_eq!(
+            country_code_from_suggestions(&suggestions),
+            Some("gb".to_string()),
+            "must take the first (best-ranked) suggestion and lower-case it to \
+             match BoardSearchInput::country_code's convention"
+        );
+    }
+
+    #[test]
+    fn country_code_from_suggestions_empty_or_missing_field_yields_none() {
+        assert_eq!(country_code_from_suggestions(&[]), None);
+        // A suggestion missing `countryCode` entirely (e.g. an ambiguous hit).
+        let no_country = vec![json!({ "display": "Atlantis" })];
+        assert_eq!(country_code_from_suggestions(&no_country), None);
+    }
+
+    #[tokio::test]
+    async fn derive_country_code_skips_geocode_when_location_absent() {
+        // No location at all → must resolve to None WITHOUT attempting a
+        // network call (a real HTTP hit here would make this test flaky/slow).
+        assert_eq!(derive_country_code(None).await, None);
+        assert_eq!(derive_country_code(Some("")).await, None);
+        assert_eq!(derive_country_code(Some("   ")).await, None);
     }
 
     #[test]
