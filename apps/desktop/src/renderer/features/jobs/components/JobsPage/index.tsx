@@ -72,6 +72,7 @@ export function JobsPage() {
 
   const {
     scraping,
+    scrapeProgress,
     scrapeOutcome,
     livePostings,
     setLivePostings,
@@ -347,6 +348,7 @@ export function JobsPage() {
             filtered={filtered}
             formatRelativeTime={formatRelativeTime}
             scraping={scraping}
+            scrapeProgress={scrapeProgress}
             onShowMore={handleShowMore}
             onScrape={() => setShowScrapeForm(true)}
           />

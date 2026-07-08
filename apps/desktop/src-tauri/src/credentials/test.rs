@@ -23,10 +23,17 @@ fn unique_slot(prefix: &str) -> String {
 }
 
 #[test]
-fn test_is_available() {
-    let temp_dir = TempDir::new().unwrap();
-    let store = CredentialStore::new(&temp_dir.path().to_path_buf());
-    assert!(store.is_available());
+fn test_probe_keyring_available() {
+    // Assert the underlying READ-ONLY probe directly, NOT the memoized
+    // `is_available()` wrapper. The wrapper caches its result in a
+    // process-lifetime `OnceLock`, so exercising it here would make the test
+    // depend on whether some other (concurrent) test initialized that cache
+    // first — fragile under Cargo's multi-threaded runner. The probe fn has no
+    // such state. Install the in-memory mock store first so the sentinel read
+    // returns `NoEntry`, which the probe maps to "backend reachable" → true.
+    // (On CI/dev the real OS store would also return true.)
+    install_mock_keyring();
+    assert!(probe_keyring_available());
 }
 
 #[test]

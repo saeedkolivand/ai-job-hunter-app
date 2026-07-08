@@ -19,6 +19,18 @@ A WebSocket (or native-messaging) connection is **not** authorized on handshake.
 
 The auth boundary lives in `extension_bridge/mod.rs` (`classify_frame` / the socket loop). The extension side: sends `auth` on open, enters `bad_token` phase on `error==='unauthorized'`, and calls `resetForNewToken()` for recovery.
 
+## Connection phases
+
+The popup renders one of five link states (glossary: CONTEXT.md "Connection phase"):
+
+- `app_not_running` — desktop app unreachable.
+- `searching` — probing / reconnecting; **also where a transient auth-handshake timeout folds in** (transient → retry).
+- `not_paired` — no pairing token stored.
+- `bad_token` — a **wrong** token, surfaced **only** via the server's explicit `error==='unauthorized'` reply before it closes the socket — never inferred from a timeout.
+- `connected` — the auth handshake succeeded.
+
+**A handshake _timeout_ is a transport failure (→ `searching`/reconnect), never `bad_token`** — treating a timeout as a bad token would falsely accuse a good token, and the reconnect is self-correcting. There is deliberately **no `auth_timeout` phase**: a timeout is transient, not a distinct terminal state.
+
 ## Transport
 
 Primary: **native messaging** (browser spawns desktop `--native-host` as a stdio relay; immune to Firefox HTTPS-Only Mode `ws://→wss://` upgrade). Fallback: loopback WebSocket. Both transports share the same wire envelope defined in the shared protocol constants.

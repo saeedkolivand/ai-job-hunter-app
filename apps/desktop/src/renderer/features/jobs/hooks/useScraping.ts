@@ -4,7 +4,7 @@ import type { useNotification } from '@ajh/ui';
 
 import type { ScrapeFormState } from '@/features/jobs/components/ScrapeForm/constants';
 import type { Posting } from '@/features/jobs/types';
-import { fetchJob, useCancelJob, useScrapeBoards } from '@/services';
+import { fetchJob, useCancelJob, useScrapeBoards, useScrapeProgress } from '@/services';
 
 type ScrapeOutcome = { ok: boolean; note?: string };
 
@@ -29,6 +29,9 @@ export function useScraping(
 
   const scrapeBoards = useScrapeBoards();
   const cancelJob = useCancelJob();
+  // Live boards-done/total fraction (0..1) for the in-flight scrape; null until
+  // the first board completes and after the scrape ends (scrapeJobId → null).
+  const scrapeProgress = useScrapeProgress(scrapeJobId);
 
   const doScrape = async (amount: number, replace: boolean) => {
     const res = (await scrapeBoards.mutateAsync({
@@ -178,6 +181,7 @@ export function useScraping(
     noteScrapeFinished,
     scraping,
     scrapeJobId,
+    scrapeProgress,
     scrapeOutcome,
     livePostings,
     setLivePostings,

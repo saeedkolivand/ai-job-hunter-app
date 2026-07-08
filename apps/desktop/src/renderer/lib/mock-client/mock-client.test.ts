@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { createMockClient } from './mock-client';
+import type { ScrapeProgressEvent } from '@ajh/shared';
+
+import { createMockClient, emitScrapeProgress } from './mock-client';
 
 describe('createMockClient', () => {
   it('returns a fully-populated client with every namespace', () => {
@@ -26,6 +28,19 @@ describe('createMockClient', () => {
     expect(typeof client.ai.onStream(() => {})).toBe('function');
     expect(typeof client.jobs.onEvent(() => {})).toBe('function');
     expect(typeof client.updater.onStatus(() => {})).toBe('function');
+  });
+
+  it('fans scrape progress out to registered handlers and stops after unsubscribe', () => {
+    const client = createMockClient();
+    const seen: ScrapeProgressEvent[] = [];
+    const off = client.scrape.onProgress((e) => seen.push(e));
+
+    emitScrapeProgress(client, { jobId: 'job-1', progress: 0.5 });
+    expect(seen).toEqual([{ jobId: 'job-1', progress: 0.5 }]);
+
+    off();
+    emitScrapeProgress(client, { jobId: 'job-1', progress: 1 });
+    expect(seen).toHaveLength(1);
   });
 
   it('shallow-merges namespace overrides', async () => {

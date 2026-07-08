@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use parking_lot::Mutex;
 use serde_json::{json, Value};
@@ -12,7 +12,7 @@ use crate::documents::{
     embed, posting_vector_or_embed, sha256_hex, DocumentRecord, DocumentStore, EmbeddingConfig,
     MatchScoreKey,
 };
-use crate::ipc_contracts::matching::{MatchResumeBatchRequest, MatchResumeRequest};
+use crate::ipc_contracts::matching::MatchResumeRequest;
 use crate::ipc_contracts::resume::ResumeExtractTextRequest;
 use crate::postings::PostingsCache;
 
@@ -27,39 +27,32 @@ use crate::postings::PostingsCache;
 /// changes — any of which would make a previously-cached score stale.
 const MATCH_FORMULA_VERSION: i64 = 1;
 
-/// Server-side cap on `match_resume_batch` job ids. Generous vs. realistic
-/// boards — `livePostings` caps at 500 — but bounds a malicious direct IPC
-/// invoke (Zod validation at the wire boundary is type-only, not enforced
-/// server-side) from fanning out an unbounded CPU/embed-spend batch.
-const MATCH_BATCH_MAX: usize = 1000;
-
 /// Map the `semantic_scoring_enabled` request flag to the `semantic_enabled`
-/// cache-key column: `Some(false)` disables semantic scoring (`0`); every other
-/// value (`None` / `Some(true)`) keeps it on (`1`). Single source of this bit so
-/// the cache key and the skip-branch can't drift; unit-tested directly.
+/// cache-key column: only an explicit `Some(true)` enables semantic scoring
+/// (`1`); `Some(false)` AND an omitted flag (`None`) default to keyword-only
+/// (`0`), matching the app-wide default (`semanticScoring: false`) and the
+/// renderer — so a caller that omits the flag (e.g. the agent match tool) never
+/// silently runs embeddings. Single source of this bit so the cache key and the
+/// skip-branch can't drift; unit-tested directly.
 fn semantic_enabled_bit(flag: Option<bool>) -> i64 {
-    if flag == Some(false) {
-        0
-    } else {
+    if flag == Some(true) {
         1
+    } else {
+        0
     }
 }
 
 /// Score a single resume against one job posting, returning a `MatchScore`
 /// JSON value (or a `{ "error": … }` object when the job isn't cached).
 ///
-/// This is the per-job kernel shared by [`match_resume`] (one job) and
-/// [`match_resume_batch`] (N jobs in one IPC call). `resume_raw_keywords` is the
+/// The per-job kernel behind [`match_resume`]. `resume_raw_keywords` is the
 /// parsed `keywords_json` (parsed ONCE by the caller); `None` — absent or corrupt
 /// JSON — falls back to live extraction from `resume.text`, preserving the legacy
 /// behaviour. `active` is the embedding config and `semantic_enabled` the
-/// already-derived cache-key bit, both hoisted by the caller so a batch resolves
-/// them once.
+/// already-derived cache-key bit, both hoisted by the caller.
 ///
-/// `job_text` is the posting blob resolved by the caller (`None` → the posting
-/// wasn't in the live cache → job-not-found error). The batch path resolves all
-/// texts under ONE `PostingsCache` lock before the loop so each job is an O(1)
-/// map lookup; the single-call path resolves one via [`job_text_for`].
+/// `job_text` is the posting blob resolved by the caller via [`job_text_for`]
+/// (`None` → the posting wasn't in the live cache → job-not-found error).
 ///
 /// Errors-never-cached invariant: the only error return (job-not-found) happens
 /// before any `get_match_score`/`upsert_match_score`, so an error path can never
@@ -306,64 +299,6 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
     .await
 }
 
-/// Score one resume against MANY job postings in a single IPC call.
-///
-/// Default keyword-only scoring is CPU-cheap, but the per-row renderer scheduler
-/// otherwise serialises N `match_resume` IPC round-trips. This scores every
-/// posting in one pass: the résumé record, its parsed keywords, the embedding
-/// config, and the semantic-enabled bit are resolved ONCE, then each job is
-/// scored sequentially via [`score_one`]. Sequential (not `join_all`) so the
-/// opt-in semantic branch can't fan out a burst of concurrent embeds.
-///
-/// Returns a JSON array of `MatchScore` values, one per requested job in order.
-/// A missing job yields a `{ "error": … }` element and does NOT abort the loop.
-/// Résumé-not-found returns a single `{ "error": … }` object (not an array).
-#[tauri::command]
-pub async fn match_resume_batch(app: AppHandle, req: MatchResumeBatchRequest) -> Value {
-    let store = app.state::<DocumentStore>();
-    let Some(resume) = store.get(&req.resume_id) else {
-        return json!({ "error": format!("resume not found: {}", req.resume_id) });
-    };
-
-    let resume_raw_keywords = parse_resume_keywords(&resume);
-    let active = store.embedding_config();
-    let semantic_enabled = semantic_enabled_bit(req.semantic_scoring_enabled);
-
-    let job_ids: &[String] = if req.job_ids.len() > MATCH_BATCH_MAX {
-        tracing::warn!(
-            requested = req.job_ids.len(),
-            cap = MATCH_BATCH_MAX,
-            "match_resume_batch job_ids exceeds cap; truncating to first {MATCH_BATCH_MAX}"
-        );
-        &req.job_ids[..MATCH_BATCH_MAX]
-    } else {
-        &req.job_ids
-    };
-
-    // Resolve every posting blob under ONE PostingsCache lock before the loop:
-    // the cache is an O(n) linear scan per id, so the old per-job `job_text_for`
-    // was O(n×batch) with a lock acquired each iteration. One pass builds an
-    // id→text map and turns each per-job lookup into O(1) (and one lock total).
-    let job_texts = job_texts_for(&app, job_ids);
-
-    let mut results: Vec<Value> = Vec::with_capacity(job_ids.len());
-    for job_id in job_ids {
-        let score = score_one(
-            &app,
-            &store,
-            &resume,
-            resume_raw_keywords.as_deref(),
-            &active,
-            job_id,
-            job_texts.get(job_id).cloned(),
-            semantic_enabled,
-        )
-        .await;
-        results.push(score);
-    }
-    Value::Array(results)
-}
-
 /// Build a searchable text blob for a single cached posting JSON value (title +
 /// description + requirements). Pure — no lock — so it can be reused for both the
 /// single-job and batch lookups. Returns None if the posting has no usable text.
@@ -384,8 +319,7 @@ fn posting_to_text(posting: &Value) -> Option<String> {
 }
 
 /// Build a searchable text blob for a cached job posting (title + description +
-/// requirements). Returns None if the posting isn't in the live cache. Single-job
-/// path; the batch path uses [`job_texts_for`] to avoid a per-job lock + scan.
+/// requirements). Returns None if the posting isn't in the live cache.
 ///
 /// `pub(crate)` so the agent tools reuse the same posting → text resolution instead
 /// of re-deriving it.
@@ -435,30 +369,6 @@ pub(crate) fn job_meta_for(app: &AppHandle, job_id: &str) -> Option<JobPostingMe
         // `JobPosting` serializes the originating board under `source`.
         board: field("source"),
     })
-}
-
-/// Resolve the text blob for many job ids under a SINGLE `PostingsCache` lock.
-/// One pass over the cache builds an `id → text` map (entries with no usable text
-/// are omitted), turning the batch scorer's per-job lookup into O(1) instead of
-/// re-locking and re-scanning the cache O(n) times. Postings absent from the
-/// cache simply have no map entry — the caller surfaces job-not-found per id.
-fn job_texts_for(app: &AppHandle, job_ids: &[String]) -> HashMap<String, String> {
-    let wanted: HashSet<&str> = job_ids.iter().map(String::as_str).collect();
-    let cache = app.state::<Mutex<PostingsCache>>();
-    let guard = cache.lock();
-    let mut map: HashMap<String, String> = HashMap::with_capacity(wanted.len());
-    for posting in guard.get_all() {
-        let Some(id) = posting.get("id").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        if !wanted.contains(id) || map.contains_key(id) {
-            continue;
-        }
-        if let Some(text) = posting_to_text(posting) {
-            map.insert(id.to_string(), text);
-        }
-    }
-    map
 }
 
 fn recommendations(gaps: &[String]) -> Vec<String> {
@@ -563,25 +473,18 @@ mod test {
     }
 
     // Pins the production `semantic_enabled_bit` helper (used by both the cache
-    // key and the skip-branch): `Some(false)` → 0 (disabled); `Some(true)` and
-    // `None` → 1 (enabled). Tests the real fn, not an inline re-implementation.
+    // key and the skip-branch): only `Some(true)` → 1 (enabled); `Some(false)`
+    // AND `None` → 0 (keyword-only) so an omitted flag defaults OFF, matching the
+    // app-wide default. Tests the real fn, not an inline re-implementation.
     #[test]
     fn semantic_enabled_bit_maps_flag_to_key_column() {
         assert_eq!(semantic_enabled_bit(Some(false)), 0, "explicit disable → 0");
         assert_eq!(semantic_enabled_bit(Some(true)), 1, "explicit enable → 1");
-        assert_eq!(semantic_enabled_bit(None), 1, "default (unset) → enabled");
-    }
-
-    // The batch request must deserialize from the camelCase wire shape the
-    // renderer sends (`resumeId`/`jobIds`/`semanticScoringEnabled`). Pins the
-    // generated serde contract without needing an AppHandle.
-    #[test]
-    fn match_resume_batch_request_deserializes_camel_case() {
-        let json = r#"{"resumeId":"r","jobIds":["a","b"],"semanticScoringEnabled":false}"#;
-        let req: MatchResumeBatchRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(req.resume_id, "r");
-        assert_eq!(req.job_ids, vec!["a".to_string(), "b".to_string()]);
-        assert_eq!(req.semantic_scoring_enabled, Some(false));
+        assert_eq!(
+            semantic_enabled_bit(None),
+            0,
+            "default (unset) → keyword-only (semantic OFF)"
+        );
     }
 
     // A bump to MATCH_FORMULA_VERSION must change the cache key, so a score
@@ -977,25 +880,6 @@ mod test {
             en_cov > 0.0,
             "matching-language path (both English, both stemmed) must still yield > 0% coverage; \
              got {en_cov}%"
-        );
-    }
-
-    // Pins the server-side DoS cap and the slice-truncation logic used by
-    // `match_resume_batch` (pure slice math — no AppHandle needed). The cap
-    // bounds a malicious direct IPC invoke; truncation must keep input order.
-    #[test]
-    fn match_batch_cap_truncates_preserving_order() {
-        assert_eq!(MATCH_BATCH_MAX, 1000, "cap value is pinned");
-
-        let v: Vec<String> = (0..MATCH_BATCH_MAX + 5).map(|i| i.to_string()).collect();
-        let capped = &v[..MATCH_BATCH_MAX];
-
-        assert_eq!(capped.len(), MATCH_BATCH_MAX, "truncated to the cap");
-        assert_eq!(capped.first(), Some(&"0".to_string()), "first preserved");
-        assert_eq!(
-            capped.last(),
-            Some(&(MATCH_BATCH_MAX - 1).to_string()),
-            "last of the capped slice preserved in order"
         );
     }
 }

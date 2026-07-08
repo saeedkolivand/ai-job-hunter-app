@@ -825,7 +825,6 @@ pub fn run() {
             commands::data::data_import,
             // match
             commands::match_resume::match_resume,
-            commands::match_resume::match_resume_batch,
             commands::match_resume::resume_extract_text,
             // credentials (board-login CRUD removed — sessions auth via boards.*)
             commands::credentials::credentials_available,

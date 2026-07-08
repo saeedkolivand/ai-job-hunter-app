@@ -809,6 +809,7 @@ fn adzuna_max_days_old_maps_correctly() {
     assert_eq!(adzuna_max_days_old(Some("2h")), 1);
     assert_eq!(adzuna_max_days_old(Some("1h")), 1);
     assert_eq!(adzuna_max_days_old(Some("30m")), 1);
+    assert_eq!(adzuna_max_days_old(Some("15m")), 1);
     assert_eq!(adzuna_max_days_old(Some("week")), 7);
     assert_eq!(adzuna_max_days_old(Some("month")), 30);
     // No filter or an unknown token caps at the past month (30 days).
@@ -825,6 +826,7 @@ fn jsearch_date_posted_maps_correctly() {
     assert_eq!(jsearch_date_posted(Some("2h")), "today");
     assert_eq!(jsearch_date_posted(Some("1h")), "today");
     assert_eq!(jsearch_date_posted(Some("30m")), "today");
+    assert_eq!(jsearch_date_posted(Some("15m")), "today");
     assert_eq!(jsearch_date_posted(Some("week")), "week");
     assert_eq!(jsearch_date_posted(Some("month")), "month");
     // No filter or an unknown token caps at the past month.
@@ -850,7 +852,7 @@ fn jsearch_date_posted_maps_correctly() {
 /// is required to have a real, non-default mapping).
 fn expected_mapping(token: &str) -> Option<(u32, &'static str)> {
     match token {
-        "30m" | "1h" | "2h" | "4h" | "8h" | "24h" => Some((1, "today")),
+        "15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "24h" => Some((1, "today")),
         "week" => Some((7, "week")),
         "month" => Some((30, "month")),
         _ => None,
@@ -1271,6 +1273,7 @@ async fn apify_unconfigured_returns_err_without_network() {
 /// unknown) → r2592000.
 #[test]
 fn apify_f_tpr_maps_recency() {
+    assert_eq!(apify_f_tpr(Some("15m")), "r86400");
     assert_eq!(apify_f_tpr(Some("30m")), "r86400");
     assert_eq!(apify_f_tpr(Some("1h")), "r86400");
     assert_eq!(apify_f_tpr(Some("24h")), "r86400");

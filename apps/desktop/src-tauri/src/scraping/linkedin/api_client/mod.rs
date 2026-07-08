@@ -128,6 +128,7 @@ impl LinkedInJobsApiClient {
         signal: Option<&tokio_util::sync::CancellationToken>,
     ) -> Result<Vec<JobPosting>> {
         let f_tpr = match params.date_filter.as_deref() {
+            Some("15m") => "r900",
             Some("30m") => "r1800",
             Some("1h") => "r3600",
             Some("2h") => "r7200",

@@ -119,8 +119,10 @@ Releases are **manually triggered** via [semantic-release][semantic-release]: go
 | ---------------------------------------------- | --------------- | ------------- |
 | `feat:`                                        | minor (`1.x.0`) | Yes           |
 | `fix:`, `perf:`                                | patch (`1.0.x`) | Yes           |
-| `BREAKING CHANGE` footer                       | major (`x.0.0`) | Yes           |
+| `BREAKING CHANGE` footer                       | minor (`0.x.0`) | Yes           |
 | `refactor:`, `docs:`, `chore:`, `ci:`, `test:` | none            | No            |
+
+While the project stays on `0.x`, a `BREAKING CHANGE` bumps the **minor** (not major) — `.releaserc.json` maps `{ "breaking": true, "release": "minor" }` to keep the pre-1.0 line. Revisit when declaring a stable `1.0` API.
 
 ### Release configuration
 
@@ -323,10 +325,14 @@ Contents:
 
 ```
 ai-job-hunter/
-├── app.db          ← SQLite database
-├── vectors/        ← LanceDB vector store
-└── logs/           ← Pino log files
+├── documents.db    ← imported docs + embedding vectors (vectors/posting_vectors/match_scores tables)
+├── jobs.db         ← scraped/tracked jobs  (+ applications.db, ai_generations.db, job_preferences.db,
+│                     contact_profile.db, referrals.db, pipeline_cache.db — one SQLite file per domain)
+└── logs/           ← log files
 ```
+
+There is **no** single `app.db` and **no** LanceDB `vectors/` store — vectors live in the
+`vectors` table of `documents.db` (in-process cosine in Rust).
 
 ---
 

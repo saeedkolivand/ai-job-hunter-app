@@ -54,6 +54,7 @@ vi.mock('@/services', () => ({
   useSetCloseToTray: () => ({ mutate: vi.fn(), isPending: false }),
   useAppVersion: () => ({ data: '1.0.0' }),
   useOpenExternal: () => ({ mutate: vi.fn(), isPending: false }),
+  useExportDiagnostics: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdater: () => ({
     status: { state: 'idle' },
     check: vi.fn(),

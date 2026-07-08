@@ -45,7 +45,7 @@ refactor(jobs): extract job-tracker state machine
 | ---------------------------------------------- | ---------------- |
 | `feat:`                                        | minor bump       |
 | `fix:`, `perf:`                                | patch bump       |
-| `BREAKING CHANGE` footer                       | major bump       |
+| `BREAKING CHANGE` footer                       | minor bump (0.x) |
 | `refactor:`, `docs:`, `chore:`, `ci:`, `test:` | no release       |
 
 Commits must pass `commitlint` (enforced by Husky). Invalid messages are rejected at commit time.
@@ -277,7 +277,7 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org). C
 | `chore`    | Maintenance                    | No               |
 | `revert`   | Revert a commit                | Patch            |
 
-Breaking changes: add `!` after the type or `BREAKING CHANGE:` in the footer → triggers a **major** release.
+Breaking changes: add `!` after the type or `BREAKING CHANGE:` in the footer → triggers a **minor** release while the project is on `0.x` (the `.releaserc.json` pre-1.0 guard; it becomes a major bump only after `1.0`).
 
 ### Examples
 
