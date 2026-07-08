@@ -802,14 +802,17 @@ fn providers_degrade_to_unconfigured_on_keyring_error() {
 
 #[test]
 fn adzuna_max_days_old_maps_correctly() {
-    // All sub-day windows collapse to 1 day (Adzuna's day granularity).
-    assert_eq!(adzuna_max_days_old(Some("24h")), 1);
-    assert_eq!(adzuna_max_days_old(Some("8h")), 1);
-    assert_eq!(adzuna_max_days_old(Some("4h")), 1);
-    assert_eq!(adzuna_max_days_old(Some("2h")), 1);
-    assert_eq!(adzuna_max_days_old(Some("1h")), 1);
-    assert_eq!(adzuna_max_days_old(Some("30m")), 1);
-    assert_eq!(adzuna_max_days_old(Some("15m")), 1);
+    // All sub-day windows FLOOR at 3 days: Adzuna has no sub-day granularity, and a
+    // 1-day ceiling zeroed out autopilot "recent" filters on quiet days (regression
+    // guard). Date-sort still surfaces the freshest jobs first within the window.
+    assert_eq!(adzuna_max_days_old(Some("24h")), 3);
+    assert_eq!(adzuna_max_days_old(Some("8h")), 3);
+    assert_eq!(adzuna_max_days_old(Some("4h")), 3);
+    assert_eq!(adzuna_max_days_old(Some("2h")), 3);
+    assert_eq!(adzuna_max_days_old(Some("1h")), 3);
+    assert_eq!(adzuna_max_days_old(Some("30m")), 3);
+    assert_eq!(adzuna_max_days_old(Some("15m")), 3);
+    // Coarser tiers are unchanged.
     assert_eq!(adzuna_max_days_old(Some("week")), 7);
     assert_eq!(adzuna_max_days_old(Some("month")), 30);
     // No filter or an unknown token caps at the past month (30 days).
@@ -819,14 +822,16 @@ fn adzuna_max_days_old_maps_correctly() {
 
 #[test]
 fn jsearch_date_posted_maps_correctly() {
-    // All sub-day windows collapse to "today" (JSearch's finest token).
-    assert_eq!(jsearch_date_posted(Some("24h")), "today");
-    assert_eq!(jsearch_date_posted(Some("8h")), "today");
-    assert_eq!(jsearch_date_posted(Some("4h")), "today");
-    assert_eq!(jsearch_date_posted(Some("2h")), "today");
-    assert_eq!(jsearch_date_posted(Some("1h")), "today");
-    assert_eq!(jsearch_date_posted(Some("30m")), "today");
-    assert_eq!(jsearch_date_posted(Some("15m")), "today");
+    // All sub-day windows floor at "3days" (JSearch has no sub-day token, and
+    // "today" zeroed out autopilot "recent" filters on quiet days — regression guard).
+    assert_eq!(jsearch_date_posted(Some("24h")), "3days");
+    assert_eq!(jsearch_date_posted(Some("8h")), "3days");
+    assert_eq!(jsearch_date_posted(Some("4h")), "3days");
+    assert_eq!(jsearch_date_posted(Some("2h")), "3days");
+    assert_eq!(jsearch_date_posted(Some("1h")), "3days");
+    assert_eq!(jsearch_date_posted(Some("30m")), "3days");
+    assert_eq!(jsearch_date_posted(Some("15m")), "3days");
+    // Coarser tiers are unchanged.
     assert_eq!(jsearch_date_posted(Some("week")), "week");
     assert_eq!(jsearch_date_posted(Some("month")), "month");
     // No filter or an unknown token caps at the past month.
@@ -852,7 +857,10 @@ fn jsearch_date_posted_maps_correctly() {
 /// is required to have a real, non-default mapping).
 fn expected_mapping(token: &str) -> Option<(u32, &'static str)> {
     match token {
-        "15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "24h" => Some((1, "today")),
+        // Sub-day windows floor at 3 days ("3days" for JSearch) — see the doc-comments
+        // on `adzuna_max_days_old` / `jsearch_date_posted`. A tighter clamp zeroed out
+        // autopilot "recent" filters; date-sort keeps the freshest jobs on top.
+        "15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "24h" => Some((3, "3days")),
         "week" => Some((7, "week")),
         "month" => Some((30, "month")),
         _ => None,
