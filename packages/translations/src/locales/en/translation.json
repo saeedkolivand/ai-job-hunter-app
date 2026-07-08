@@ -885,7 +885,9 @@
       "setDefault": "Set as default",
       "download": "Download resume",
       "downloaded": "Resume downloaded",
-      "downloadFailed": "Failed to download resume"
+      "downloadFailed": "Failed to download resume",
+      "defaultSet": "Default resume set",
+      "defaultSetFailed": "Failed to set default resume"
     },
     "update": {
       "title": "Updates",
@@ -1046,7 +1048,8 @@
       "reindexIncomplete": "Re-indexing did not finish.",
       "semanticScoring": "Semantic scoring",
       "semanticScoringDesc": "Uses embeddings for deeper match quality. Disable for faster keyword-only scoring."
-    }
+    },
+    "cancel": "Cancel"
   },
   "contactPrompt": {
     "title": "Confirm your contact details",
@@ -2483,7 +2486,9 @@
       "next": "Continue",
       "ready": "Browser Ready",
       "willUse": "We'll use your browser for secure LinkedIn sign-in",
-      "readyLabel": "Detected and ready"
+      "readyLabel": "Detected and ready",
+      "checkFailed": "Browser check failed",
+      "checkFailedDesc": "We couldn't check whether Chrome or Edge is installed. You can continue — the app will download a Chromium browser if it's needed."
     },
     "extension": {
       "title": "Install the browser extension",

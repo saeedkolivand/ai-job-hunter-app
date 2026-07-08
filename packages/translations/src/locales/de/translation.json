@@ -885,7 +885,9 @@
       "setDefault": "Als Standard setzen",
       "download": "Lebenslauf herunterladen",
       "downloaded": "Lebenslauf heruntergeladen",
-      "downloadFailed": "Lebenslauf konnte nicht heruntergeladen werden"
+      "downloadFailed": "Lebenslauf konnte nicht heruntergeladen werden",
+      "defaultSet": "Standard-Lebenslauf festgelegt",
+      "defaultSetFailed": "Standard-Lebenslauf konnte nicht festgelegt werden"
     },
     "update": {
       "title": "Updates",
@@ -1050,7 +1052,8 @@
       "reindexIncomplete": "Neuindizierung nicht abgeschlossen.",
       "semanticScoring": "Semantische Bewertung",
       "semanticScoringDesc": "Nutzt Embeddings für höhere Abgleichqualität. Deaktivieren für schnellere reine Stichwortbewertung."
-    }
+    },
+    "cancel": "Abbrechen"
   },
   "contactPrompt": {
     "title": "Kontaktdaten bestätigen",
@@ -2487,7 +2490,9 @@
       "next": "Weiter",
       "ready": "Browser bereit",
       "willUse": "Wir verwenden Ihren Browser für die sichere LinkedIn-Anmeldung",
-      "readyLabel": "Erkannt und bereit"
+      "readyLabel": "Erkannt und bereit",
+      "checkFailed": "Browser-Prüfung fehlgeschlagen",
+      "checkFailedDesc": "Wir konnten nicht prüfen, ob Chrome oder Edge installiert ist. Sie können fortfahren — die App lädt bei Bedarf einen Chromium-Browser herunter."
     },
     "extension": {
       "title": "Browser-Erweiterung installieren",
