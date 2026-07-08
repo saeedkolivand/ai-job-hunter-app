@@ -1704,6 +1704,8 @@
     "scrapeJobs": "Scrape Jobs",
     "scrapeFailed": "Scraping failed",
     "searching": "Searching for jobs…",
+    "scanning": "Scanning boards…",
+    "scanningPercent": "Scanning {{percent}}%",
     "cancel": "Cancel",
     "clear": "Clear",
     "clearScrapedJobs": "Clear scraped jobs",

@@ -1708,6 +1708,8 @@
     "scrapeJobs": "Jobs scrapen",
     "scrapeFailed": "Scraping fehlgeschlagen",
     "searching": "Suche nach Jobs…",
+    "scanning": "Boards werden durchsucht…",
+    "scanningPercent": "Wird durchsucht: {{percent}} %",
     "cancel": "Abbrechen",
     "clear": "Löschen",
     "clearScrapedJobs": "Gescrapte Jobs löschen",
