@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783520495535,
+  "lastUpdate": 1783525815503,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -2933,6 +2933,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 297643,
             "range": "± 6548",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "46f7825c9f1eae6f96892ba91d22ead315c40864",
+          "message": "fix: floor aggregator sub-day date filters to 3 days (#569)\n\n* fix(scraping): floor aggregator sub-day date filters to 3 days\n\nAn autopilot on the Aggregator board with a \"Last 24h\" (or any sub-day) date\nfilter returned zero results while the same interactive search worked: Adzuna and\nJSearch have only whole-day recency granularity, and mapping every sub-day token\nto max_days_old=1 / \"today\" zeroed out on a quiet day. Floor the sub-day tier to\n3 days (Adzuna max_days_old=3, JSearch \"3days\") and rely on the existing\nfreshest-first date sort. The paid LinkedIn (Apify f_TPR r-values) path keeps its\nexact sub-day window — it has real seconds granularity.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(scraping): sort jsearch aggregator results newest-first\n\nThe 3-day sub-day floor relies on freshest-first ordering, true for Adzuna\n(&sort_by=date) but not JSearch, which defaults to relevance — so a \"Last 24h\"\nfilter could surface a 3-day-old JSearch job above today's. Append &sort_by=date\nto the JSearch request so the freshness guarantee holds, and document the\nintentional cross-provider recency skew (Apify/LinkedIn keeps a strict <=24h).\n\nAddresses @claude review on #569.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-08T17:30:36+02:00",
+          "tree_id": "b829f59d9666e329c30d27c221960d952334b7b1",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/46f7825c9f1eae6f96892ba91d22ead315c40864"
+        },
+        "date": 1783525814931,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1855461,
+            "range": "± 26126",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2418296,
+            "range": "± 54802",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 261951,
+            "range": "± 3739",
             "unit": "ns/iter"
           }
         ]
