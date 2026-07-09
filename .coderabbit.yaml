@@ -133,7 +133,7 @@ reviews:
   labeling_instructions:
     - label: 'app/extension'
       instructions: 'Apply when files under apps/extension/** change.'
-    - label: 'app/tauri'
+    - label: 'app/desktop'
       instructions: 'Apply when files under apps/desktop/** change.'
     - label: 'pkg/shared'
       instructions: 'Apply when files under packages/shared/** change.'
