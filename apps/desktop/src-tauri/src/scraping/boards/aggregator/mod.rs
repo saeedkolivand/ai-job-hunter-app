@@ -340,9 +340,9 @@ impl JobProvider for AdzunaProvider {
         // an empty Adzuna result to fall through to JSearch (global, free-text
         // location) when the guess is probably wrong (e.g. "London" defaulting
         // to "de"). Only broaden for an explicitly-supplied country.
-        if !country_guessed && !where_hygienic.is_empty() && postings.len() < ADZUNA_BROADEN_FLOOR
-        {
-            match fetch_adzuna_page(country, app_id, app_key, query, "", date_filter, signal).await {
+        if !country_guessed && !where_hygienic.is_empty() && postings.len() < ADZUNA_BROADEN_FLOOR {
+            match fetch_adzuna_page(country, app_id, app_key, query, "", date_filter, signal).await
+            {
                 Ok(broadened) if broadened.len() > postings.len() => {
                     // PRIVACY: never log the raw `where`/location — free-text PII.
                     log::info!(
@@ -354,7 +354,9 @@ impl JobProvider for AdzunaProvider {
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    log::warn!("[aggregator] adzuna broaden retry failed, keeping narrow result: {e}")
+                    log::warn!(
+                        "[aggregator] adzuna broaden retry failed, keeping narrow result: {e}"
+                    )
                 }
             }
         }
@@ -435,7 +437,11 @@ async fn fetch_adzuna_page(
 
     let resp = match fetch_json::<AdzunaResp>(&url, FetchOptions::default(), signal).await? {
         Some(r) => r,
-        None => return Err(anyhow::anyhow!("adzuna: non-2xx response or unparseable body")),
+        None => {
+            return Err(anyhow::anyhow!(
+                "adzuna: non-2xx response or unparseable body"
+            ))
+        }
     };
 
     let now = chrono::Utc::now().timestamp_millis();
