@@ -72,6 +72,7 @@ impl JobProvider for FakeProvider {
         _query: &str,
         _location: &str,
         _country: &str,
+        _country_guessed: bool,
         _date_filter: Option<&str>,
         _amount: Option<u32>,
         _signal: tokio_util::sync::CancellationToken,
@@ -585,7 +586,7 @@ async fn adzuna_unconfigured_returns_err_without_network() {
         app_key: None,
     };
     let result = p
-        .search("engineer", "berlin", "de", None, None, make_token())
+        .search("engineer", "berlin", "de", false, None, None, make_token())
         .await;
     assert!(result.is_err(), "unconfigured Adzuna must return Err");
     assert!(
@@ -598,7 +599,7 @@ async fn adzuna_unconfigured_returns_err_without_network() {
 async fn jsearch_unconfigured_returns_err_without_network() {
     let p = JSearchProvider { api_key: None };
     let result = p
-        .search("engineer", "berlin", "de", None, None, make_token())
+        .search("engineer", "berlin", "de", false, None, None, make_token())
         .await;
     assert!(result.is_err(), "unconfigured JSearch must return Err");
     assert!(
@@ -658,6 +659,7 @@ impl JobProvider for CancelOnSearchProvider {
         _query: &str,
         _location: &str,
         _country: &str,
+        _country_guessed: bool,
         _date_filter: Option<&str>,
         _amount: Option<u32>,
         _signal: tokio_util::sync::CancellationToken,
@@ -828,6 +830,20 @@ fn adzuna_max_days_old_maps_correctly() {
     // No filter or an unknown token caps at the past month (30 days).
     assert_eq!(adzuna_max_days_old(None), 30);
     assert_eq!(adzuna_max_days_old(Some("99y")), 30);
+}
+
+#[test]
+fn adzuna_where_keeps_first_segment_and_drops_country_suffix() {
+    // Redundant country suffix (either language) is dropped — the country is
+    // already the URL path segment, so keeping it over-narrows the geocode.
+    assert_eq!(adzuna_where("Köln, Deutschland"), "Köln");
+    assert_eq!(adzuna_where("Cologne, Germany"), "Cologne");
+    // A country-name-only location already returns Adzuna's full page: pass through.
+    assert_eq!(adzuna_where("germany"), "germany");
+    // Empty stays empty (caller treats "" as country-wide).
+    assert_eq!(adzuna_where(""), "");
+    // Surrounding + inner whitespace is trimmed off the kept segment.
+    assert_eq!(adzuna_where("  Berlin , Germany "), "Berlin");
 }
 
 #[test]
@@ -1044,7 +1060,7 @@ async fn adzuna_empty_country_resolves_to_supported_de() {
     // Empty country → production code resolves to "de" → passes allowlist → fails
     // downstream at the network/auth layer (no real keys), NOT at country validation.
     let result = p
-        .search("engineer", "Berlin", "", None, None, make_token())
+        .search("engineer", "Berlin", "", false, None, None, make_token())
         .await;
     let e = result.unwrap_err();
     let msg = e.to_string();
@@ -1313,7 +1329,7 @@ async fn adzuna_provider_rejects_unsupported_country_before_network() {
     };
     // "xx" is not in the allowlist.
     let result = p
-        .search("engineer", "Seoul", "xx", None, None, make_token())
+        .search("engineer", "Seoul", "xx", false, None, None, make_token())
         .await;
     assert!(
         result.is_err(),
@@ -1341,7 +1357,7 @@ async fn adzuna_provider_accepts_supported_country_passes_allowlist() {
     // "de" is in the allowlist; the error that comes back must NOT mention the
     // allowlist — it should be a network/auth error (or similar), not a country error.
     let result = p
-        .search("engineer", "Berlin", "de", None, None, make_token())
+        .search("engineer", "Berlin", "de", false, None, None, make_token())
         .await;
     // We expect an error (no real API key) — an unexpected Ok would mean the test
     // environment somehow hit the real API, which must not silently pass unnoticed.
@@ -1405,7 +1421,7 @@ fn apify_is_configured_requires_token_and_toggle() {
 async fn apify_unconfigured_returns_err_without_network() {
     let p = apify(Some("t"), false);
     let result = p
-        .search("engineer", "berlin", "de", None, None, make_token())
+        .search("engineer", "berlin", "de", false, None, None, make_token())
         .await;
     assert!(result.is_err(), "unconfigured Apify must return Err");
     assert!(
@@ -1708,7 +1724,9 @@ async fn apify_search_pre_cancelled_signal_returns_err() {
     let signal = make_token();
     signal.cancel(); // pre-cancel before calling search
 
-    let result = p.search("dev", "Berlin", "de", None, None, signal).await;
+    let result = p
+        .search("dev", "Berlin", "de", false, None, None, signal)
+        .await;
     assert!(
         result.is_err(),
         "a pre-cancelled signal must make ApifyLinkedInProvider::search return Err"
@@ -2021,6 +2039,7 @@ async fn apify_skipped_when_primary_fills_amount() {
             _: &str,
             _: &str,
             _: &str,
+            _: bool,
             _: Option<&str>,
             _: Option<u32>,
             _: tokio_util::sync::CancellationToken,

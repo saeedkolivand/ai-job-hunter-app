@@ -84,6 +84,20 @@ fn adzuna_max_days_old(date_filter: Option<&str>) -> u32 {
     }
 }
 
+/// Below this many results from a supported market, a non-empty `where` retries
+/// once country-wide (see `AdzunaProvider::search`). A city geocode can be sparse
+/// even when the country has plenty; broadening recovers the full market page.
+const ADZUNA_BROADEN_FLOOR: usize = 3;
+
+/// Adzuna's `where` wants a place *inside* the market (the country is already the
+/// URL path segment), so a trailing ", Germany"/", Deutschland" just over-narrows the
+/// geocode. Keep the first comma-segment (the city/region), trimmed.
+// ponytail: first-segment heuristic. A country-name-only location (e.g. "germany")
+// already returns Adzuna's full page, so no country-name table is needed.
+fn adzuna_where(location: &str) -> &str {
+    location.split(',').next().map(str::trim).unwrap_or("")
+}
+
 /// Map a UI date-filter token to JSearch's `date_posted` query token
 /// (`all|today|3days|week|month`). Sub-day windows floor at `3days` — like Adzuna,
 /// JSearch has no sub-day granularity, and a `today` ceiling zeroed out autopilot
@@ -121,11 +135,19 @@ pub(crate) trait JobProvider: Send + Sync {
     /// `amount` is a provider-specific result cap that callers may pass to
     /// cost-bounded providers (currently Apify only).  Providers that have no
     /// concept of a cap ignore it (`_amount`).
+    ///
+    /// `country_guessed` is true when the caller supplied no explicit
+    /// `country_code` (see `AggregatorScraper::search`). Providers that don't
+    /// need to distinguish a real target from a guessed default ignore it
+    /// (`_country_guessed`) — currently only `AdzunaProvider` reads it, to keep
+    /// its near-empty broaden retry from ever firing on a guessed market (that
+    /// would defeat the guessed-market → JSearch fallback in `primary_chain`).
     async fn search(
         &self,
         query: &str,
         location: &str,
         country: &str,
+        country_guessed: bool,
         date_filter: Option<&str>,
         amount: Option<u32>,
         signal: tokio_util::sync::CancellationToken,
@@ -264,6 +286,7 @@ impl JobProvider for AdzunaProvider {
         query: &str,
         location: &str,
         country: &str,
+        country_guessed: bool,
         date_filter: Option<&str>,
         _amount: Option<u32>,
         signal: tokio_util::sync::CancellationToken,
@@ -289,42 +312,52 @@ impl JobProvider for AdzunaProvider {
 
         let app_id = self.app_id.as_deref().unwrap_or("");
         let app_key = self.app_key.as_deref().unwrap_or("");
-        let country_enc = urlencoding::encode(country);
-        let app_id_enc = urlencoding::encode(app_id);
-        let app_key_enc = urlencoding::encode(app_key);
-        let q_enc = urlencoding::encode(query);
-        let loc_enc = urlencoding::encode(location);
 
-        let mut url = format!(
-            "https://api.adzuna.com/v1/api/jobs/{}/search/1\
-             ?app_id={}&app_key={}&what={}&where={}&results_per_page=50&content-type=application/json",
-            country_enc, app_id_enc, app_key_enc, q_enc, loc_enc
-        );
+        // Drop redundant country suffixes so a ", Germany"/", Deutschland" tail
+        // doesn't over-narrow the geocode (the country is already the URL path).
+        let where_hygienic = adzuna_where(location);
 
-        // Sort newest-first (Adzuna defaults to relevance, which floats stale
-        // postings up) and always bound the window with max_days_old so nothing
-        // older than the cap (30 days, or the user's tighter pick) is returned.
-        url.push_str(&format!(
-            "&sort_by=date&sort_direction=down&max_days_old={}",
-            adzuna_max_days_old(date_filter)
-        ));
+        let postings = fetch_adzuna_page(
+            country,
+            app_id,
+            app_key,
+            query,
+            where_hygienic,
+            date_filter,
+            signal.clone(),
+        )
+        .await?;
 
-        let result = fetch_json::<AdzunaResp>(&url, FetchOptions::default(), signal).await?;
-        let resp = match result {
-            Some(r) => r,
-            None => {
-                return Err(anyhow::anyhow!(
-                    "adzuna: non-2xx response or unparseable body"
-                ))
+        // Broaden on near-empty: even a hygienic `where` can over-narrow a sparse
+        // market, so if a real Adzuna market returned under the floor, retry ONCE
+        // country-wide (`where=""`) — same `what`, sort, and `max_days_old` — and
+        // keep whichever set is larger. A transient error on the retry keeps the
+        // narrow result rather than discarding it.
+        //
+        // GUARD: never broaden a GUESSED market (`country_guessed`). Turning a
+        // guessed-market empty/near-empty into a non-empty country-wide result
+        // would defeat `primary_chain`'s guessed-market guard, which relies on
+        // an empty Adzuna result to fall through to JSearch (global, free-text
+        // location) when the guess is probably wrong (e.g. "London" defaulting
+        // to "de"). Only broaden for an explicitly-supplied country.
+        if !country_guessed && !where_hygienic.is_empty() && postings.len() < ADZUNA_BROADEN_FLOOR
+        {
+            match fetch_adzuna_page(country, app_id, app_key, query, "", date_filter, signal).await {
+                Ok(broadened) if broadened.len() > postings.len() => {
+                    // PRIVACY: never log the raw `where`/location — free-text PII.
+                    log::info!(
+                        "[aggregator] adzuna sparse result ({}), broadened country-wide ({})",
+                        postings.len(),
+                        broadened.len()
+                    );
+                    return Ok(broadened);
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    log::warn!("[aggregator] adzuna broaden retry failed, keeping narrow result: {e}")
+                }
             }
-        };
-
-        let now = chrono::Utc::now().timestamp_millis();
-        let postings = resp
-            .results
-            .into_iter()
-            .map(|j| adzuna_job_to_posting(j, country, now))
-            .collect();
+        }
 
         Ok(postings)
     }
@@ -369,6 +402,48 @@ fn adzuna_job_to_posting(j: AdzunaJob, country: &str, now: i64) -> JobPosting {
         captured_at: now,
         extra,
     }
+}
+
+/// Build + fetch + parse ONE Adzuna page for a given `where` value.
+///
+/// Factored out of `AdzunaProvider::search` so the near-empty broaden retry can
+/// reissue the exact same request (same `what`, `sort_by=date`, `results_per_page`,
+/// and `max_days_old`) with only `where` changed. Called at most twice per search.
+async fn fetch_adzuna_page(
+    country: &str,
+    app_id: &str,
+    app_key: &str,
+    query: &str,
+    where_val: &str,
+    date_filter: Option<&str>,
+    signal: tokio_util::sync::CancellationToken,
+) -> anyhow::Result<Vec<JobPosting>> {
+    // Sort newest-first (Adzuna defaults to relevance, which floats stale postings
+    // up) and always bound the window with max_days_old so nothing older than the
+    // cap (30 days, or the user's tighter pick) is returned.
+    let url = format!(
+        "https://api.adzuna.com/v1/api/jobs/{}/search/1\
+         ?app_id={}&app_key={}&what={}&where={}&results_per_page=50&content-type=application/json\
+         &sort_by=date&sort_direction=down&max_days_old={}",
+        urlencoding::encode(country),
+        urlencoding::encode(app_id),
+        urlencoding::encode(app_key),
+        urlencoding::encode(query),
+        urlencoding::encode(where_val),
+        adzuna_max_days_old(date_filter),
+    );
+
+    let resp = match fetch_json::<AdzunaResp>(&url, FetchOptions::default(), signal).await? {
+        Some(r) => r,
+        None => return Err(anyhow::anyhow!("adzuna: non-2xx response or unparseable body")),
+    };
+
+    let now = chrono::Utc::now().timestamp_millis();
+    Ok(resp
+        .results
+        .into_iter()
+        .map(|j| adzuna_job_to_posting(j, country, now))
+        .collect())
 }
 
 // ── JSearch provider ──────────────────────────────────────────────────────────
@@ -423,6 +498,7 @@ impl JobProvider for JSearchProvider {
         query: &str,
         location: &str,
         _country: &str,
+        _country_guessed: bool,
         date_filter: Option<&str>,
         _amount: Option<u32>,
         signal: tokio_util::sync::CancellationToken,
@@ -874,6 +950,7 @@ impl JobProvider for ApifyLinkedInProvider {
         query: &str,
         location: &str,
         _country: &str,
+        _country_guessed: bool,
         date_filter: Option<&str>,
         amount: Option<u32>,
         signal: tokio_util::sync::CancellationToken,
@@ -981,7 +1058,15 @@ async fn primary_chain(
     if let Some(p) = primary {
         if p.is_configured() {
             match p
-                .search(query, location, country, date_filter, None, signal.clone())
+                .search(
+                    query,
+                    location,
+                    country,
+                    country_guessed,
+                    date_filter,
+                    None,
+                    signal.clone(),
+                )
                 .await
             {
                 Ok(items) if items.is_empty() && country_guessed && !location.is_empty() => {
@@ -1027,7 +1112,15 @@ async fn primary_chain(
     if let Some(f) = fallback {
         if f.is_configured() {
             return f
-                .search(query, location, country, date_filter, None, signal)
+                .search(
+                    query,
+                    location,
+                    country,
+                    country_guessed,
+                    date_filter,
+                    None,
+                    signal,
+                )
                 .await
                 .map(dedupe);
         }
@@ -1173,6 +1266,7 @@ async fn search_with_providers(
                 query,
                 location,
                 country,
+                country_guessed,
                 date_filter,
                 Some(apify_cap),
                 signal,
