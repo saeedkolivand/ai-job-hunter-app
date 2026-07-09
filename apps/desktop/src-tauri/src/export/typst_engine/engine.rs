@@ -19,7 +19,7 @@
 //!   for the smoke test and low-level debugging; not wired into the live export
 //!   flow).
 
-use typst::layout::PagedDocument;
+use typst_layout::PagedDocument;
 use typst_pdf::{pdf, PdfOptions};
 
 use crate::contact_profile::ContactProfile;
@@ -203,13 +203,20 @@ fn compile_and_export(world: &ResumeWorld) -> AppResult<Vec<u8>> {
 fn compile_and_svg(world: &ResumeWorld) -> AppResult<Vec<String>> {
     let document = compile_world(world)?;
 
-    if document.pages.is_empty() {
+    if document.pages().is_empty() {
         return Err(AppError::Parse(
             "Typst SVG export error: document produced zero pages".to_string(),
         ));
     }
 
-    let pages: Vec<String> = document.pages.iter().map(typst_svg::svg).collect();
+    // Default SvgOptions (no bleed, no pretty-printing) preserves the prior
+    // single-arg `svg` behaviour; `svg` gained an options parameter in 0.15.
+    let svg_opts = typst_svg::SvgOptions::default();
+    let pages: Vec<String> = document
+        .pages()
+        .iter()
+        .map(|page| typst_svg::svg(page, &svg_opts))
+        .collect();
     Ok(pages)
 }
 
