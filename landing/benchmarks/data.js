@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783584465149,
+  "lastUpdate": 1783595980939,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3185,6 +3185,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 305679,
             "range": "± 7183",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "360dc7ebd734aab72e3b0286649f2f1956c0c663",
+          "message": "fix: aggregator low-count filtering + resume experience translation (#588)\n\n* fix(scraping): clean adzuna location filter and broaden sparse results\n\nAggregator (Adzuna) autopilots returned almost no jobs for German\nsearches (Köln -> 4, germany -> 1) while LinkedIn returned 49.\n\n- adzuna_where(): send only the first comma-segment as Adzuna's `where`\n  (e.g. \"Köln, Deutschland\" -> \"Köln\"). The country is already the market\n  path segment, so a trailing \", Country\" only over-narrows the geocode.\n- broaden-on-near-empty: when an explicit country is set and a non-empty\n  `where` returns fewer than ADZUNA_BROADEN_FLOOR (3) hits, retry once\n  country-wide (where=\"\"), same query/date window. Gated on\n  !country_guessed so the guessed-market -> JSearch fallback (which keys\n  off Adzuna returning empty) is preserved for foreign locations.\n- broaden log emits counts only (no raw location; PII).\n\nDate-filter buckets, sort_by=date, and the 50-result page are unchanged\nso \"24h\"/\"week\" labels stay honest; Adzuna's thin fresh-DE feed still\nreturns modest date-filtered counts by design.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(prompts): translate resume experience bullets into target language\n\nA target-language resume translated the professional summary but left\nthe work-experience bullets in the source language. The target-language\ndirective existed only once globally, while the experience-section\ninstructions said \"reorder/condense EXISTING bullets\" with no language\ndirective, so the model preserved source-language bullets.\n\n- Add a per-section directive to the Work Experience block to write every\n  bullet in the target language, translating source-language text.\n- Add a system-prompt CORE RULE covering summary + every experience/skills\n  bullet. Employer/company names, titles, and dates stay factual.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* style: apply rustfmt to aggregator broaden retry\n\nThe broaden-retry block was committed without running `cargo fmt`, so CI's\n`cargo fmt --all -- --check` gate failed (mod.rs:340/354/435 line-wrapping).\nNo logic change — rustfmt output only.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* test(scraping): unit-test the adzuna broaden decision via should_broaden\n\nAddresses the claude[bot] review test-gap finding on #588: the broaden\ngate (!country_guessed && where non-empty && count < floor) had no test —\nno HTTP-mock infra reaches AdzunaProvider::search, so the country_guessed\nsuppression that protects the guessed-market -> JSearch fallback was\nunverified. Extract it into a pure `should_broaden` predicate and unit-test\nall four cases (incl. the guessed-market regression guard). Behavior\nunchanged — same boolean expression, now named and callable from tests.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-09T13:09:28+02:00",
+          "tree_id": "a1483e819caebc93b7aa79b59020d216be6a76de",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/360dc7ebd734aab72e3b0286649f2f1956c0c663"
+        },
+        "date": 1783595980297,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1912734,
+            "range": "± 68543",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2667895,
+            "range": "± 26291",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 314191,
+            "range": "± 6472",
             "unit": "ns/iter"
           }
         ]
