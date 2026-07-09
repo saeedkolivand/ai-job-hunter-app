@@ -358,6 +358,7 @@ export const SEARCH_INDEX: SearchEntry[] = [
       'console',
       'logs',
       'diagnostics',
+      'export diagnostics',
       'verbose',
       'inspect',
     ],
