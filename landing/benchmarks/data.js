@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783577855609,
+  "lastUpdate": 1783584465149,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3143,6 +3143,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 290264,
             "range": "± 5017",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8fb0522a57d6ea3ed6b56653f3122c96d7566269",
+          "message": "fix: autopilot aggregator zero-jobs + move export diagnostics to developer settings (#587)\n\n* fix: stop autopilot aggregator silently zeroing on a guessed market\n\nAutopilot targets are commonly saved with a location but no geocode-picked\ncountry_code (buildDefaults/JobsPage only ever seeded location). The\naggregator board then defaulted the missing country to \"de\" (a GUESS) and,\nwhen Adzuna returned Ok(empty) for that wrong market, treated it as a\ngenuine zero and never consulted JSearch - the autopilot aggregator\nzero-jobs bug.\n\n- scraping/boards/aggregator: primary_chain now treats an empty result from\n  a GUESSED country + a real location as untrustworthy and falls through to\n  JSearch or the existing diagnostic, exactly like the unsupported-country\n  guard. A guessed country with no location (the keyless German default)\n  is unaffected.\n- job_preferences: add an optional countryCode column/field so a saved\n  preferred location can carry its real country.\n- commands/autopilot: derive country_code at save time from the location\n  via the existing geocode service when the user didn't pick one.\n- autopilot wizard defaults + JobsPage prefill now seed countryCode\n  alongside location.\n\nNo migration needed for already-saved autopilots: the aggregator guard\nabove covers a legacy country_code=None record on its very next run without\nany stored-data change.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* chore: restore typst 0.15 + benchmark data reverted by a criss-cross merge\n\nThe two local syncs with origin/fix/autopilot-aggregator-zero-jobs (after\nGitHub's \"Update branch\") produced a criss-cross merge whose auto-selected\nbase predated PR #586 (typst family 0.14.2 -> 0.15.0), silently reverting\nCargo.toml/Cargo.lock/typst_engine and the benchmark data snapshot back to\npre-#586 state. None of these files are part of this PR's fix; restore them\nbyte-for-byte from origin's tip.\n\n* fix: address code review findings on the aggregator zero-jobs fix\n\n- privacy: the guessed-market-empty fallback no longer interpolates the raw\n  user-entered location into the log warning or the persisted diagnostic\n  Error (both in scraping/boards/aggregator/mod.rs's primary_chain) - only\n  the guessed country code and the JSearch remedy remain. Test updated to\n  assert the generic \"supplied location\" phrasing + assert the raw location\n  string is absent, instead of asserting it's present.\n- correctness: country_code_from_suggestions (commands/autopilot.rs) now\n  scans for the first suggestion that actually carries a countryCode\n  instead of only inspecting the first entry, so a leading hit with an\n  absent/null countryCode no longer blocks a usable later one. New test\n  covers both the missing-key and explicit-null cases.\n\n* fix: move export diagnostics from about card to developer settings\n\nThe export-diagnostics control was misplaced under the \"Fund the hunt\"\ndonations card. Move the caption, button, and handler into\nDeveloperPreferences, re-namespace its 4 i18n keys from\nsettings.about.exportDiagnostics* to settings.developer.exportDiagnostics*,\nand update the settings search index + related tests to match.\n\n* fix(autopilot): validate derived country code and cap save-time geocode\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* chore: change app/tauri to app/desktop in coderabbit\n\n* test(settings): cover export-diagnostics error paths in developer settings\n\nAdd tests for the two handleExportDiagnostics error branches (mutation\nresolves success: false, and mutateAsync rejects) and strengthen the\nexisting success test to assert the destination path passed to\nexportDiagnostics and revealItemInDir. Also fixes the beforeEach not\nclearing revealItemInDir's call history between tests, which was\nmasking the new assertions.\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-09T09:53:24+02:00",
+          "tree_id": "c33a214ae885c93c2c059956f0fddb83bb26a616",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/8fb0522a57d6ea3ed6b56653f3122c96d7566269"
+        },
+        "date": 1783584464739,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1931985,
+            "range": "± 81169",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2625582,
+            "range": "± 35154",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 305679,
+            "range": "± 7183",
             "unit": "ns/iter"
           }
         ]
