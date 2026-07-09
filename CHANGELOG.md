@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.124.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.124.0...v0.124.1) (2026-07-09)
+
+### 🐛 Bug Fixes
+
+* autopilot aggregator zero-jobs + move export diagnostics to developer settings ([#587](https://github.com/saeedkolivand/ai-job-hunter-app/issues/587)) ([8fb0522](https://github.com/saeedkolivand/ai-job-hunter-app/commit/8fb0522a57d6ea3ed6b56653f3122c96d7566269)), closes [#586](https://github.com/saeedkolivand/ai-job-hunter-app/issues/586) [pre-#586](https://github.com/saeedkolivand/pre-/issues/586)
+* **deps:** migrate rustcrypto stack to cipher 0.5 and digest 0.11 ([#585](https://github.com/saeedkolivand/ai-job-hunter-app/issues/585)) ([abc24e1](https://github.com/saeedkolivand/ai-job-hunter-app/commit/abc24e1a2789818d025dcbdcbc60875c80a8ca21)), closes [#579](https://github.com/saeedkolivand/ai-job-hunter-app/issues/579) [#577](https://github.com/saeedkolivand/ai-job-hunter-app/issues/577)
+* **deps:** migrate typst family to 0.15 ([#586](https://github.com/saeedkolivand/ai-job-hunter-app/issues/586)) ([794f38e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/794f38e712729fd1ba1c5379db844babb1a34c55))
+
 ## [0.124.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.123.0...v0.124.0) (2026-07-08)
 
 ### ✨ Features
