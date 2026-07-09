@@ -58,17 +58,22 @@ export function JobsPage() {
     companies: [],
   });
 
-  // One-way prefill: seed the scrape location from the saved preferred location
-  // once it first arrives, and only if the user hasn't typed one. The ref guard
-  // keeps this from re-seeding or clobbering a later user edit. Picking a location
-  // here never writes back to settings.
+  // One-way prefill: seed the scrape location (+ its countryCode, when the saved
+  // preference carries one — autopilot aggregator zero-jobs fix) from the saved
+  // preferred location once it first arrives, and only if the user hasn't typed
+  // one. The ref guard keeps this from re-seeding or clobbering a later user
+  // edit. Picking a location here never writes back to settings.
   const { data: jobPrefs } = useJobPreferences();
   const seededLocation = useRef(false);
   useEffect(() => {
     if (seededLocation.current || !jobPrefs?.location) return;
     seededLocation.current = true;
-    setScrapeForm((f) => (f.location ? f : { ...f, location: jobPrefs.location ?? '' }));
-  }, [jobPrefs?.location]);
+    setScrapeForm((f) =>
+      f.location
+        ? f
+        : { ...f, location: jobPrefs.location ?? '', countryCode: jobPrefs.countryCode }
+    );
+  }, [jobPrefs?.location, jobPrefs?.countryCode]);
 
   const {
     scraping,

@@ -1,11 +1,9 @@
-import { Bug, Gift, Heart, Wallet } from 'lucide-react';
-import { save } from '@tauri-apps/plugin-dialog';
-import { revealItemInDir } from '@tauri-apps/plugin-opener';
+import { Gift, Heart, Wallet } from 'lucide-react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, GlassCard, SectionLabel, useNotification } from '@ajh/ui';
+import { Button, GlassCard, SectionLabel } from '@ajh/ui';
 
-import { useAppVersion, useExportDiagnostics, useOpenExternal } from '@/services';
+import { useAppVersion, useOpenExternal } from '@/services';
 
 const DONATE_LINKS = [
   {
@@ -37,32 +35,6 @@ export function AboutTab() {
       : `v${versionRaw}`
     : '';
   const openExternal = useOpenExternal();
-  const notify = useNotification();
-  const exportDiagnostics = useExportDiagnostics();
-
-  const handleExportDiagnostics = async () => {
-    const now = new Date();
-    const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
-      now.getDate()
-    ).padStart(2, '0')}`;
-    try {
-      const dest = await save({
-        defaultPath: `ajh-diagnostics-${stamp}.zip`,
-        filters: [{ name: 'Zip archive', extensions: ['zip'] }],
-      });
-      if (!dest) return;
-      const res = await exportDiagnostics.mutateAsync(dest);
-      if (res.success) {
-        notify.success({ message: t('settings.about.exportDiagnosticsSaved') });
-        revealItemInDir(dest).catch(() => {});
-      } else {
-        notify.error({ message: t('settings.about.exportDiagnosticsError') });
-      }
-    } catch (err) {
-      console.error('diagnostics export failed:', err instanceof Error ? err.name : 'unknown');
-      notify.error({ message: t('settings.about.exportDiagnosticsError') });
-    }
-  };
 
   return (
     <GlassCard>
@@ -88,19 +60,6 @@ export function AboutTab() {
               {t(labelKey)}
             </Button>
           ))}
-        </div>
-
-        <div className="space-y-2 pt-1">
-          <p className="text-xs text-foreground/40">{t('settings.about.exportDiagnosticsDesc')}</p>
-          <Button
-            variant="glass"
-            className="w-full justify-start gap-2 text-xs"
-            loading={exportDiagnostics.isPending}
-            onClick={handleExportDiagnostics}
-          >
-            <Bug size={13} />
-            {t('settings.about.exportDiagnostics')}
-          </Button>
         </div>
       </div>
     </GlassCard>

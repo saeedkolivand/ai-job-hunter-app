@@ -27,6 +27,7 @@ fn test_clear_resets_to_empty() {
     store
         .set(&JobPreferences {
             location: Some("Berlin".to_string()),
+            country_code: None,
             tech_stack: Some(vec![TechStackItem {
                 name: "Rust".to_string(),
                 category: "language".to_string(),
@@ -48,6 +49,7 @@ fn test_set_and_get() {
 
     let prefs = JobPreferences {
         location: Some("Berlin".to_string()),
+        country_code: Some("de".to_string()),
         tech_stack: Some(vec![
             TechStackItem {
                 name: "Rust".to_string(),
@@ -64,6 +66,7 @@ fn test_set_and_get() {
     let retrieved = store.get();
 
     assert_eq!(retrieved.location, Some("Berlin".to_string()));
+    assert_eq!(retrieved.country_code, Some("de".to_string()));
     assert_eq!(retrieved.tech_stack.as_ref().unwrap().len(), 2);
 }
 
@@ -74,6 +77,7 @@ fn test_tech_stack_serialization() {
 
     let prefs = JobPreferences {
         location: None,
+        country_code: None,
         tech_stack: Some(vec![TechStackItem {
             name: "TypeScript".to_string(),
             category: "language".to_string(),
@@ -94,6 +98,7 @@ fn test_partial_update() {
     // Set initial preferences.
     let prefs1 = JobPreferences {
         location: Some("Berlin".to_string()),
+        country_code: Some("de".to_string()),
         tech_stack: Some(vec![TechStackItem {
             name: "Rust".to_string(),
             category: "language".to_string(),
@@ -104,6 +109,7 @@ fn test_partial_update() {
     // Overwrite with a sparser shape.
     let prefs2 = JobPreferences {
         location: Some("Munich".to_string()),
+        country_code: None,
         tech_stack: None,
     };
     store.set(&prefs2).unwrap();
@@ -112,6 +118,10 @@ fn test_partial_update() {
     assert_eq!(retrieved.location, Some("Munich".to_string()));
     // A field set to None overwrites the prior value (full-row UPDATE semantics).
     assert_eq!(retrieved.tech_stack, None);
+    assert_eq!(
+        retrieved.country_code, None,
+        "country_code must also be overwritten to None (full-row UPDATE semantics)"
+    );
 }
 
 // ── Migration: drop_unused_job_preferences_columns ────────────────────────────
@@ -149,7 +159,7 @@ fn test_migration_drops_unused_columns_and_preserves_kept_fields() {
         .unwrap();
     }
 
-    // Re-open through the store, which runs the pending v2 migration.
+    // Re-open through the store, which runs the pending v2 + v3 migrations.
     let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
 
     // Kept fields round-trip.
@@ -160,6 +170,12 @@ fn test_migration_drops_unused_columns_and_preserves_kept_fields() {
         .expect("tech_stack must survive the migration");
     assert_eq!(ts.len(), 1);
     assert_eq!(ts[0].name, "Rust");
+    // v3 (`add_job_preferences_country_code`) adds a brand-new column to a v1 DB
+    // that never had one — must default to None, not error on the missing column.
+    assert_eq!(
+        prefs.country_code, None,
+        "country_code must default to None on a legacy DB with no such column"
+    );
 
     // Dropped columns are gone from the schema.
     let conn = store.conn.lock();
@@ -189,5 +205,11 @@ fn test_migration_drops_unused_columns_and_preserves_kept_fields() {
         &conn,
         "job_preferences",
         "tech_stack"
+    ));
+    // v3 column added on top of the legacy v1 → v2 chain.
+    assert!(crate::db::column_exists(
+        &conn,
+        "job_preferences",
+        "country_code"
     ));
 }

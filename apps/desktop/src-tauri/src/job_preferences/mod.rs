@@ -16,6 +16,14 @@ use crate::error::AppResult;
 pub struct JobPreferences {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
+    /// ISO 3166-1 alpha-2, captured alongside `location` from a picked geocode
+    /// suggestion (mirrors `AutopilotTarget::country_code`) — lets a location
+    /// seeded from here carry its real country instead of a scraper (the
+    /// aggregator board) having to guess one. `#[serde(rename)]` on just this
+    /// field (not `rename_all` on the whole struct) so the pre-existing
+    /// `tech_stack` wire name is left untouched.
+    #[serde(skip_serializing_if = "Option::is_none", rename = "countryCode")]
+    pub country_code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tech_stack: Option<Vec<TechStackItem>>,
 }
@@ -76,6 +84,16 @@ impl JobPreferencesStore {
                 Ok(())
             },
         },
+        // Add the country code captured alongside `location` from a geocode pick
+        // (autopilot aggregator zero-jobs fix) — a plain `ADD COLUMN` is safe here
+        // (unlike the DROP COLUMN above, every bundled SQLite supports it).
+        Migration {
+            name: "add_job_preferences_country_code",
+            up: |conn| {
+                conn.execute_batch("ALTER TABLE job_preferences ADD COLUMN country_code TEXT;")?;
+                Ok(())
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -91,7 +109,7 @@ impl JobPreferencesStore {
     pub fn get(&self) -> JobPreferences {
         let conn = self.conn.lock();
         conn.query_row(
-            "SELECT location, tech_stack
+            "SELECT location, tech_stack, country_code
              FROM job_preferences WHERE id = 1",
             [],
             |row| {
@@ -99,12 +117,14 @@ impl JobPreferencesStore {
                 let tech_stack = tech_stack_json.and_then(|s| serde_json::from_str(&s).ok());
                 Ok(JobPreferences {
                     location: row.get(0)?,
+                    country_code: row.get(2)?,
                     tech_stack,
                 })
             },
         )
         .unwrap_or(JobPreferences {
             location: None,
+            country_code: None,
             tech_stack: None,
         })
     }
@@ -113,7 +133,7 @@ impl JobPreferencesStore {
     pub fn clear(&self) -> AppResult<()> {
         let conn = self.conn.lock();
         conn.execute(
-            "UPDATE job_preferences SET location = NULL, tech_stack = NULL WHERE id = 1",
+            "UPDATE job_preferences SET location = NULL, tech_stack = NULL, country_code = NULL WHERE id = 1",
             [],
         )
         .map_err(|e| e.to_string())?;
@@ -129,9 +149,9 @@ impl JobPreferencesStore {
 
         conn.execute(
             "UPDATE job_preferences
-             SET location = ?1, tech_stack = ?2
+             SET location = ?1, tech_stack = ?2, country_code = ?3
              WHERE id = 1",
-            params![prefs.location, tech_stack_json],
+            params![prefs.location, tech_stack_json, prefs.country_code],
         )
         .map_err(|e| e.to_string())?;
         Ok(())

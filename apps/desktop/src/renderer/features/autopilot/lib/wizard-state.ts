@@ -74,6 +74,10 @@ export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
     boards: [AGGREGATOR_BOARD_ID],
     query: '',
     location: jobPrefs?.location ?? '',
+    // Seeded alongside `location` (autopilot aggregator zero-jobs fix) so a
+    // saved preferred location keeps its real country instead of the
+    // aggregator having to guess one at scrape time.
+    countryCode: jobPrefs?.countryCode,
     // No job-preference field seeds work type; default to the 'any' sentinel.
     workType: 'any',
     amount: 50,
