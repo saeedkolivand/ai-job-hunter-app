@@ -18,8 +18,8 @@
 use std::sync::LazyLock;
 
 use typst::diag::{FileError, FileResult};
-use typst::foundations::{Bytes, Datetime};
-use typst::syntax::{FileId, Source, VirtualPath};
+use typst::foundations::{Bytes, Datetime, Duration};
+use typst::syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
 use typst::{Library, LibraryExt, World};
@@ -40,6 +40,16 @@ const DATA_PATH: &str = "/data.json";
 /// Virtual photo path served to templates.  Templates reference this as
 /// `image("photo.png", …)`.  Only served when the caller supplies photo bytes.
 pub(super) const PHOTO_PATH: &str = "/photo.png";
+
+/// Intern a [`FileId`] for a project-root virtual path.
+///
+/// The three paths this world serves (`/main.typ`, `/data.json`, `/photo.png`)
+/// are compile-time constants containing only forward slashes, so the
+/// `VirtualPath` parse (fallible since typst 0.15) is infallible here.
+fn project_file_id(path: &str) -> FileId {
+    let vpath = VirtualPath::new(path).expect("virtual path constant is valid");
+    FileId::new(RootedPath::new(VirtualRoot::Project, vpath))
+}
 
 /// Collected font data parsed once at first use from the bundled TTF bytes.
 ///
@@ -144,11 +154,11 @@ impl ResumeWorld {
         data_json: Option<Vec<u8>>,
         photo_png: Option<Vec<u8>>,
     ) -> Self {
-        let main_id = FileId::new(None, VirtualPath::new(MAIN_PATH));
+        let main_id = project_file_id(MAIN_PATH);
         let main_source = Source::new(main_id, source_text.to_owned());
-        let data_id = FileId::new(None, VirtualPath::new(DATA_PATH));
+        let data_id = project_file_id(DATA_PATH);
         let data_bytes = data_json.map(Bytes::new);
-        let photo_id = FileId::new(None, VirtualPath::new(PHOTO_PATH));
+        let photo_id = project_file_id(PHOTO_PATH);
         let photo_bytes = photo_png.map(Bytes::new);
         // Force the font set to load (parsed once per process; subsequent ResumeWorld constructions reuse it).
         let _ = &*LOADED_FONTS;
@@ -183,7 +193,7 @@ impl World for ResumeWorld {
         if id == self.main_id {
             Ok(self.main_source.clone())
         } else {
-            Err(FileError::NotFound(id.vpath().as_rootless_path().into()))
+            Err(FileError::NotFound(id.vpath().get_without_slash().into()))
         }
     }
 
@@ -191,15 +201,15 @@ impl World for ResumeWorld {
         if id == self.data_id {
             match &self.data_bytes {
                 Some(b) => Ok(b.clone()),
-                None => Err(FileError::NotFound(id.vpath().as_rootless_path().into())),
+                None => Err(FileError::NotFound(id.vpath().get_without_slash().into())),
             }
         } else if id == self.photo_id {
             match &self.photo_bytes {
                 Some(b) => Ok(b.clone()),
-                None => Err(FileError::NotFound(id.vpath().as_rootless_path().into())),
+                None => Err(FileError::NotFound(id.vpath().get_without_slash().into())),
             }
         } else {
-            Err(FileError::NotFound(id.vpath().as_rootless_path().into()))
+            Err(FileError::NotFound(id.vpath().get_without_slash().into()))
         }
     }
 
@@ -207,7 +217,7 @@ impl World for ResumeWorld {
         LOADED_FONTS.fonts.get(index).cloned()
     }
 
-    fn today(&self, _offset: Option<i64>) -> Option<Datetime> {
+    fn today(&self, _offset: Option<Duration>) -> Option<Datetime> {
         Datetime::from_ymd(FIXED_YEAR, FIXED_MONTH, FIXED_DAY)
     }
 }
