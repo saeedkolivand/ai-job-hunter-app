@@ -587,14 +587,8 @@ Found a vulnerability? Please report it privately — see **<a href="SECURITY.md
 ---
 
 <h2 align="center">Star History</h2>
-
-<p align="center">
-  <a href="https://star-history.com/#saeedkolivand/ai-job-hunter-app&Date">
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=saeedkolivand/ai-job-hunter-app&type=Date" width="600">
-  </a>
-  ## Star History
-
-<a href="https://www.star-history.com/?repos=saeedkolivand%2Fai-job-hunter-app&type=date&legend=top-left">
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=saeedkolivand/ai-job-hunter-app&type=date&legend=top-left&sealed_token=BvlEx3sgtGKQYdgEFgO0q7skVO0JVaZw7myCd6nqU0QRYPMWEolRDGnP84qLWCIw5sOLAj5tgu8Nb4PCenKo3rGaNq_DxuWe1KA7LvDv0tPfcOeRJW8_Y1FW1TL0U-ids3n2UdrBQ_xwCp_2TxL1zpFRV6ze0KFuzQC3JEi0FBSQWhreF2KUgT1YwTN6" />
-  </a>
+  <p align="center">
+    <a href="https://www.star-history.com/?repos=saeedkolivand%2Fai-job-hunter-app&type=date&legend=top-left">
+       <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=saeedkolivand/ai-job-hunter-app&type=date&legend=top-left&sealed_token=BvlEx3sgtGKQYdgEFgO0q7skVO0JVaZw7myCd6nqU0QRYPMWEolRDGnP84qLWCIw5sOLAj5tgu8Nb4PCenKo3rGaNq_DxuWe1KA7LvDv0tPfcOeRJW8_Y1FW1TL0U-ids3n2UdrBQ_xwCp_2TxL1zpFRV6ze0KFuzQC3JEi0FBSQWhreF2KUgT1YwTN6" />
+    </a>
 </p>
