@@ -161,6 +161,17 @@ describe('JobPreferencesSchema', () => {
   it('rejects a tech stack item missing a category', () => {
     expect(() => JobPreferencesSchema.parse({ techStack: [{ name: 'React' }] })).toThrow();
   });
+
+  it('accepts a 2-letter countryCode', () => {
+    expect(() =>
+      JobPreferencesSchema.parse({ location: 'Berlin', countryCode: 'de' })
+    ).not.toThrow();
+  });
+
+  it('rejects a malformed countryCode', () => {
+    expect(() => JobPreferencesSchema.parse({ countryCode: 'deu' })).toThrow();
+    expect(() => JobPreferencesSchema.parse({ countryCode: '1a' })).toThrow();
+  });
 });
 
 describe('ApplicationUpdateSchema — jobDescription byte-level refine', () => {

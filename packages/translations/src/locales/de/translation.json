@@ -557,18 +557,18 @@
       "title": "Entwickler-Werkzeuge",
       "debugMode": "Debug-Modus",
       "debugModeHint": "Ausführliche Protokollierung und Diagnose-Overlays aktivieren",
-      "openDevtools": "DevTools-Konsole öffnen"
+      "openDevtools": "DevTools-Konsole öffnen",
+      "exportDiagnostics": "Diagnose exportieren",
+      "exportDiagnosticsDesc": "Ein geschwärztes Diagnosepaket (Systeminfo, Absturzprotokoll, App-Protokolle) speichern, um es einem Fehlerbericht anzuhängen.",
+      "exportDiagnosticsSaved": "Diagnosepaket gespeichert.",
+      "exportDiagnosticsError": "Diagnose-Export fehlgeschlagen."
     },
     "about": {
       "title": "Die Suche unterstützen",
       "pitch": "Wenn diese App dir einige Nächte erspart hat, kannst du etwas zurückgeben — jeder Beitrag hilft.",
       "githubSponsors": "Auf GitHub sponsern",
       "kofi": "Einen Kaffee auf Ko-fi spendieren",
-      "paypal": "Trinkgeld via PayPal senden",
-      "exportDiagnostics": "Diagnose exportieren",
-      "exportDiagnosticsDesc": "Ein geschwärztes Diagnosepaket (Systeminfo, Absturzprotokoll, App-Protokolle) speichern, um es einem Fehlerbericht anzuhängen.",
-      "exportDiagnosticsSaved": "Diagnosepaket gespeichert.",
-      "exportDiagnosticsError": "Diagnose-Export fehlgeschlagen."
+      "paypal": "Trinkgeld via PayPal senden"
     },
     "profile": {
       "title": "Profil",

@@ -54,7 +54,6 @@ vi.mock('@/services', () => ({
   useSetCloseToTray: () => ({ mutate: vi.fn(), isPending: false }),
   useAppVersion: () => ({ data: '1.0.0' }),
   useOpenExternal: () => ({ mutate: vi.fn(), isPending: false }),
-  useExportDiagnostics: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdater: () => ({
     status: { state: 'idle' },
     check: vi.fn(),
@@ -104,6 +103,7 @@ vi.mock('@/services', () => ({
   useSetCompanyResearchConfig: () => ({ mutate: vi.fn(), isPending: false }),
   // DeveloperPreferences
   useOpenDevtools: () => ({ mutate: vi.fn(), isPending: false }),
+  useExportDiagnostics: () => ({ mutateAsync: vi.fn(), isPending: false }),
   // ResumePreferences — covered via SettingsContent wrappers
   useDocuments: () => ({ data: [], isLoading: false }),
   useRemoveDocument: () => ({ mutateAsync: vi.fn(), isPending: false }),
