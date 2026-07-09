@@ -54,7 +54,7 @@ function renderDeveloperPreferences(exportDiagnostics = vi.fn().mockResolvedValu
 
 beforeEach(() => {
   mockSave.mockReset();
-  mockRevealItemInDir.mockResolvedValue(undefined);
+  mockRevealItemInDir.mockReset().mockResolvedValue(undefined);
 });
 
 describe('DeveloperPreferences — export diagnostics', () => {
@@ -70,7 +70,8 @@ describe('DeveloperPreferences — export diagnostics', () => {
   });
 
   it('shows the success notification after a chosen destination exports successfully', async () => {
-    mockSave.mockResolvedValue('C:/diagnostics/ajh-diagnostics-2026-01-01.zip');
+    const dest = 'C:/diagnostics/ajh-diagnostics-2026-01-01.zip';
+    mockSave.mockResolvedValue(dest);
     const exportDiagnostics = vi.fn().mockResolvedValue({ success: true, path: 'ok' });
     renderDeveloperPreferences(exportDiagnostics);
 
@@ -78,9 +79,11 @@ describe('DeveloperPreferences — export diagnostics', () => {
     await user.click(screen.getByRole('button', { name: /export diagnostics/i }));
 
     await waitFor(() => expect(exportDiagnostics).toHaveBeenCalledTimes(1));
+    expect(exportDiagnostics).toHaveBeenCalledWith(dest);
     await waitFor(() => {
       expect(screen.getByText('Diagnostics bundle saved.')).toBeInTheDocument();
     });
+    expect(mockRevealItemInDir).toHaveBeenCalledWith(dest);
   });
 
   it('does not export when the save dialog is dismissed (no destination chosen)', async () => {
@@ -93,5 +96,33 @@ describe('DeveloperPreferences — export diagnostics', () => {
 
     await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(1));
     expect(exportDiagnostics).not.toHaveBeenCalled();
+  });
+
+  it('shows the error notification when the export resolves with success: false', async () => {
+    mockSave.mockResolvedValue('C:/diagnostics/ajh-diagnostics-2026-01-01.zip');
+    const exportDiagnostics = vi.fn().mockResolvedValue({ success: false, error: 'boom' });
+    renderDeveloperPreferences(exportDiagnostics);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /export diagnostics/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Diagnostics export failed.')).toBeInTheDocument();
+    });
+    expect(mockRevealItemInDir).not.toHaveBeenCalled();
+  });
+
+  it('shows the error notification when exportDiagnostics.mutateAsync rejects', async () => {
+    mockSave.mockResolvedValue('C:/diagnostics/ajh-diagnostics-2026-01-01.zip');
+    const exportDiagnostics = vi.fn().mockRejectedValue(new Error('network down'));
+    renderDeveloperPreferences(exportDiagnostics);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /export diagnostics/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Diagnostics export failed.')).toBeInTheDocument();
+    });
+    expect(mockRevealItemInDir).not.toHaveBeenCalled();
   });
 });
