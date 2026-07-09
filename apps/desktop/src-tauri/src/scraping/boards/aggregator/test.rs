@@ -847,6 +847,23 @@ fn adzuna_where_keeps_first_segment_and_drops_country_suffix() {
 }
 
 #[test]
+fn should_broaden_only_for_explicit_sparse_market() {
+    // Explicit country + non-empty where + count under the floor (3) → broaden.
+    assert!(should_broaden(false, "Köln", 2));
+
+    // Regression guard: a GUESSED market must never broaden — it would defeat
+    // primary_chain's guessed-market → JSearch fallback, which relies on Adzuna
+    // returning empty for a probably-wrong guess.
+    assert!(!should_broaden(true, "Köln", 0));
+
+    // Empty `where` means "already country-wide" — nothing left to broaden to.
+    assert!(!should_broaden(false, "", 0));
+
+    // At/above the floor, the result isn't sparse — don't retry.
+    assert!(!should_broaden(false, "Köln", 3));
+}
+
+#[test]
 fn jsearch_date_posted_maps_correctly() {
     // All sub-day windows floor at "3days" (JSearch has no sub-day token, and
     // "today" zeroed out autopilot "recent" filters on quiet days — regression guard).

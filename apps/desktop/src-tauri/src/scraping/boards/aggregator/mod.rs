@@ -89,6 +89,14 @@ fn adzuna_max_days_old(date_filter: Option<&str>) -> u32 {
 /// even when the country has plenty; broadening recovers the full market page.
 const ADZUNA_BROADEN_FLOOR: usize = 3;
 
+/// Whether to broaden a sparse Adzuna result to a country-wide (`where=""`) retry.
+/// Only for an explicitly-supplied country (`!country_guessed`) — broadening a
+/// GUESSED market would defeat primary_chain's guessed-market → JSearch fallback,
+/// which keys off Adzuna returning empty.
+fn should_broaden(country_guessed: bool, where_val: &str, count: usize) -> bool {
+    !country_guessed && !where_val.is_empty() && count < ADZUNA_BROADEN_FLOOR
+}
+
 /// Adzuna's `where` wants a place *inside* the market (the country is already the
 /// URL path segment), so a trailing ", Germany"/", Deutschland" just over-narrows the
 /// geocode. Keep the first comma-segment (the city/region), trimmed.
@@ -340,7 +348,7 @@ impl JobProvider for AdzunaProvider {
         // an empty Adzuna result to fall through to JSearch (global, free-text
         // location) when the guess is probably wrong (e.g. "London" defaulting
         // to "de"). Only broaden for an explicitly-supplied country.
-        if !country_guessed && !where_hygienic.is_empty() && postings.len() < ADZUNA_BROADEN_FLOOR {
+        if should_broaden(country_guessed, where_hygienic, postings.len()) {
             match fetch_adzuna_page(country, app_id, app_key, query, "", date_filter, signal).await
             {
                 Ok(broadened) if broadened.len() > postings.len() => {
