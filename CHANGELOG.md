@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.124.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.124.1...v0.124.2) (2026-07-09)
+
+### 🐛 Bug Fixes
+
+* aggregator low-count filtering + resume experience translation ([#588](https://github.com/saeedkolivand/ai-job-hunter-app/issues/588)) ([360dc7e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/360dc7ebd734aab72e3b0286649f2f1956c0c663))
+
 ## [0.124.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.124.0...v0.124.1) (2026-07-09)
 
 ### 🐛 Bug Fixes
