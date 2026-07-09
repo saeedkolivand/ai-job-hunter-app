@@ -19,22 +19,33 @@ use crate::model::adapter::model_from_resume_text;
 /// Uses a byte-level scan rather than lopdf's `get_pages()` because lopdf's
 /// page-tree walker does not handle all page-tree structures that Typst emits
 /// (it misses pages under certain indirect-reference trees and returns 1 even
-/// for multi-page documents). The scan finds all occurrences of the `/Type /Page`
-/// dictionary entry that marks an individual page object (not `/Type /Pages`
-/// which marks a page-tree node).
+/// for multi-page documents). The scan finds all occurrences of the `/Type`
+/// `/Page` dictionary entry that marks an individual page object (not `/Type`
+/// `/Pages` which marks a page-tree node).
+///
+/// Tolerates zero-or-more spaces between `/Type` and `/Page`: typst-pdf 0.15's
+/// krilla/pdf-writer backend serialises dict entries as `/Type/Page` (no
+/// space), where the pinned 0.14.2 backend wrote `/Type /Page` (one space).
+/// Matching both keeps this scan from silently reporting zero pages again on
+/// the next writer-formatting tweak.
 fn count_pdf_pages(bytes: &[u8]) -> usize {
-    // Match `/Type /Page` followed by a non-`s` byte (to exclude `/Pages`).
+    let key = b"/Type";
+    let val = b"/Page";
     let mut count = 0usize;
     let mut i = 0usize;
-    let needle = b"/Type /Page";
-    while i + needle.len() < bytes.len() {
-        if bytes[i..i + needle.len()] == *needle {
-            // The character after `/Page` must not be `s` (which would make it `/Pages`).
-            let next = bytes[i + needle.len()];
-            if next != b's' {
-                count += 1;
+    while i + key.len() < bytes.len() {
+        if bytes[i..i + key.len()] == *key {
+            let mut j = i + key.len();
+            while j < bytes.len() && bytes[j] == b' ' {
+                j += 1;
             }
-            i += needle.len();
+            if bytes[j..].starts_with(val) {
+                // The character after `/Page` must not be `s` (which would make it `/Pages`).
+                if bytes.get(j + val.len()) != Some(&b's') {
+                    count += 1;
+                }
+            }
+            i += key.len();
         } else {
             i += 1;
         }
@@ -2619,8 +2630,8 @@ fn generate_templates_showcase_banner() {
     use image::{DynamicImage, GenericImage, ImageBuffer, ImageFormat, Rgba, RgbaImage};
     use std::io::Cursor;
     use std::path::Path;
-    use typst::layout::PagedDocument;
-    use typst_render::render as typst_rasterise;
+    use typst_layout::PagedDocument;
+    use typst_render::{render as typst_rasterise, RenderOptions};
 
     use super::engine::TypstTemplate;
     use super::render::{prepare, prepare_with_photo, PreparedRender};
@@ -2766,11 +2777,17 @@ fn generate_templates_showcase_banner() {
         let document = compile_world(&world);
 
         assert!(
-            !document.pages.is_empty(),
+            !document.pages().is_empty(),
             "showcase: {label} produced zero pages"
         );
 
-        let pixmap = typst_rasterise(&document.pages[0], PIXEL_PER_PT);
+        // `render` gained an options parameter in typst 0.15; `pixel_per_pt`
+        // moved onto `RenderOptions` (its default is already 2.0 = this scale).
+        let render_opts = RenderOptions {
+            pixel_per_pt: typst::utils::Scalar::new(f64::from(PIXEL_PER_PT)),
+            render_bleed: false,
+        };
+        let pixmap = typst_rasterise(&document.pages()[0], &render_opts);
         let (pxw, pxh) = (pixmap.width(), pixmap.height());
         let raw = pixmap.data().to_vec();
         let rgba = pixmap_to_rgba(pxw, pxh, raw);
@@ -2778,7 +2795,7 @@ fn generate_templates_showcase_banner() {
         // Per-template preview SVG (vector page-1 export) for the UI picker —
         // crisp at any zoom, a fraction of the old PNG's size, and self-contained
         // (Typst exports glyphs as paths, so there is no font dependency at display time).
-        let svg: String = typst_svg::svg(&document.pages[0]);
+        let svg: String = typst_svg::svg(&document.pages()[0], &typst_svg::SvgOptions::default());
         assert!(
             svg.contains("<svg"),
             "showcase: {label} preview SVG missing <svg root element"
@@ -2940,7 +2957,7 @@ fn generate_templates_showcase_banner() {
 #[ignore]
 fn generate_cover_template_previews() {
     use std::path::Path;
-    use typst::layout::PagedDocument;
+    use typst_layout::PagedDocument;
 
     use super::engine::letter_template_sources;
     use super::letter::{parse_cover_letter, style_from_template as letter_style_from_template};
@@ -3016,12 +3033,12 @@ fn generate_cover_template_previews() {
         });
 
         assert!(
-            !document.pages.is_empty(),
+            !document.pages().is_empty(),
             "cover previews: {label} produced zero pages"
         );
 
         // Export page 1 to SVG (vector — no rasterisation, no thumbnail).
-        let svg: String = typst_svg::svg(&document.pages[0]);
+        let svg: String = typst_svg::svg(&document.pages()[0], &typst_svg::SvgOptions::default());
         assert!(
             !svg.is_empty(),
             "cover previews: {label} produced an empty SVG"
