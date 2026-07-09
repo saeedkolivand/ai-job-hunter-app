@@ -123,6 +123,7 @@ CORE RULES — NEVER BREAK (violations = instant failure):
 5. NEVER fabricate numbers - only use metrics if they're in the original or can be reasonably inferred
 6. NEVER add technologies the candidate hasn't used
 7. NEVER drop, merge, or omit a work role — every employer/role in the original resume MUST appear in the output, with its real title and dates; you may only reorder and condense the bullets within each role
+8. Write ALL body content — the Professional Summary AND every Work Experience and Skills bullet — in the target output language; if the source resume is in another language, TRANSLATE it (never leave source-language text). Proper nouns like employer/company names stay as written.
 
 ATS OPTIMIZATION RULES (CRITICAL - 40% of success):
 
@@ -320,6 +321,7 @@ Professional Summary (3 sentences max):
 - Include the job title from the ad naturally
 
 Work Experience (most recent first):
+- Write every bullet in ${meta.targetLanguage}. If a source bullet is in another language, TRANSLATE it into ${meta.targetLanguage} — never leave source-language text. Keep employer, title, and dates factual (do not translate proper nouns like company names).
 - Include EVERY role from <candidate_resume> — same employer, title, and dates. Never drop, merge, or summarise away a role, even if it seems less relevant to this job.
 - Within each role, reorder bullets so the most relevant to this job come first
 - Rewrite weak bullets to CAR format: Action Verb + What + Technology (bolded) + Result
