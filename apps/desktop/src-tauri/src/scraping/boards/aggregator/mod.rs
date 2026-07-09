@@ -944,12 +944,24 @@ impl JobProvider for ApifyLinkedInProvider {
 /// - Adzuna configured + `Err(_)`, JSearch absent → `Err(diagnostic)` so the
 ///   engine surfaces it as a board error rather than a silent zero-result run.
 ///
+/// **Guessed-market exception**: when the caller supplied no `country_code`
+/// (`country_guessed`), `AggregatorScraper::search` defaulted `country` to `"de"`
+/// as a GUESS, not a real target — a common autopilot shape (a prefilled/typed
+/// location with no geocode pick). If that guess comes back `Ok(empty)` for a
+/// real (non-empty) `location`, the location is very likely NOT in Germany, so
+/// trusting the empty guess would silently zero out an otherwise-findable
+/// search (the autopilot aggregator zero-jobs bug). Treat it like an Adzuna
+/// error instead: fall through to JSearch (global, free-text location) or
+/// surface the diagnostic. A guessed country with NO location (the keyless/
+/// no-location default) is unaffected — `Ok(empty)` there returns as before.
+///
 /// Items from each provider are keyed by their `external_id` to deduplicate.
 async fn primary_chain(
     providers: &[Box<dyn JobProvider>],
     query: &str,
     location: &str,
     country: &str,
+    country_guessed: bool,
     date_filter: Option<&str>,
     signal: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<Vec<JobPosting>> {
@@ -972,8 +984,29 @@ async fn primary_chain(
                 .search(query, location, country, date_filter, None, signal.clone())
                 .await
             {
+                Ok(items) if items.is_empty() && country_guessed && !location.is_empty() => {
+                    // Guessed-market guard (see doc comment above): an empty result
+                    // from a GUESSED country with a real location is untrustworthy.
+                    // Treat it like an Adzuna error and fall through below instead
+                    // of returning early.
+                    //
+                    // PRIVACY: never log/persist the raw user-entered `location` —
+                    // it's free-text PII, not something this repo puts in logs or
+                    // diagnostics. `country` (the guessed market code) is fine.
+                    log::warn!(
+                        "[aggregator] adzuna guessed market '{country}' returned no results \
+                         for the supplied location (no country_code supplied); \
+                         attempting jsearch fallback"
+                    );
+                    adzuna_configured_failed = Some(anyhow::anyhow!(
+                        "adzuna: guessed market '{country}' returned no results for the \
+                         supplied location (no country was supplied)"
+                    ));
+                    // Fall through to JSearch/diagnostic below.
+                }
                 Ok(items) => {
-                    // Even empty → use result as-is; do NOT fall through to JSearch.
+                    // Real country (or no location to doubt the guess with), even
+                    // empty → use result as-is; do NOT fall through to JSearch.
                     return Ok(dedupe(items));
                 }
                 Err(e) => {
@@ -1000,10 +1033,11 @@ async fn primary_chain(
         }
     }
 
-    // Adzuna had keys but failed (e.g. unsupported country) AND JSearch is not
-    // configured → surface a diagnostic error instead of a silent empty result.
-    // The engine records this in BoardScrapeSummary.error, which the Jobs page
-    // renders as a partial-failure warning and autopilot logs as a skipped board.
+    // Adzuna had keys but failed (e.g. unsupported country, or an empty guessed
+    // market) AND JSearch is not configured → surface a diagnostic error instead
+    // of a silent empty result. The engine records this in BoardScrapeSummary.error,
+    // which the Jobs page renders as a partial-failure warning and autopilot logs
+    // as a skipped board.
     if let Some(e) = adzuna_configured_failed {
         return Err(anyhow::anyhow!(
             "{e}; add a JSearch key in Settings → API Keys for global coverage"
@@ -1089,6 +1123,7 @@ async fn search_with_providers(
     query: &str,
     location: &str,
     country: &str,
+    country_guessed: bool,
     date_filter: Option<&str>,
     amount: usize,
     signal: tokio_util::sync::CancellationToken,
@@ -1098,6 +1133,7 @@ async fn search_with_providers(
         query,
         location,
         country,
+        country_guessed,
         date_filter,
         signal.clone(),
     )
@@ -1204,6 +1240,11 @@ impl Scraper for AggregatorScraper {
     ) -> anyhow::Result<Vec<JobPosting>> {
         let query = input.query.trim();
         let location = input.location.as_deref().unwrap_or("").trim();
+        // Whether the caller supplied a real `country_code`, vs us GUESSING "de"
+        // below. `primary_chain`'s guessed-market guard uses this to distinguish
+        // a genuine German search from a scrape that never had a country to
+        // begin with (e.g. an autopilot target saved without a geocode pick).
+        let country_guessed = input.country_code.is_none();
         let country = input
             .country_code
             .as_deref()
@@ -1225,6 +1266,7 @@ impl Scraper for AggregatorScraper {
             query,
             location,
             &country,
+            country_guessed,
             input.date_filter.as_deref(),
             amount,
             ctx.signal.clone(),

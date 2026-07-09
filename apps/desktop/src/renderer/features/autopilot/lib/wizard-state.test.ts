@@ -76,6 +76,18 @@ describe('buildDefaults()', () => {
     expect(state.location).toBe('');
   });
 
+  it('pre-fills countryCode alongside location (autopilot aggregator zero-jobs fix)', () => {
+    const state = buildDefaults({ location: 'Munich', countryCode: 'de' });
+    expect(state.countryCode).toBe('de');
+  });
+
+  it('leaves countryCode undefined when prefs carry a location but no countryCode', () => {
+    // A legacy JobPreferences record (saved before this fix) or a manually
+    // typed preference has no countryCode — must not fabricate one.
+    const state = buildDefaults({ location: 'Munich' });
+    expect(state.countryCode).toBeUndefined();
+  });
+
   it('defaults to boards: ["aggregator"]', () => {
     expect(buildDefaults().boards).toEqual(['aggregator']);
   });

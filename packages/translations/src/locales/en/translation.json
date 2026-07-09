@@ -557,18 +557,18 @@
       "title": "Developer Tools",
       "debugMode": "Debug mode",
       "debugModeHint": "Enable verbose logging and diagnostic overlays",
-      "openDevtools": "Open DevTools Console"
+      "openDevtools": "Open DevTools Console",
+      "exportDiagnostics": "Export diagnostics",
+      "exportDiagnosticsDesc": "Save a redacted diagnostics bundle (system info, crash log, app logs) to attach to a bug report.",
+      "exportDiagnosticsSaved": "Diagnostics bundle saved.",
+      "exportDiagnosticsError": "Diagnostics export failed."
     },
     "about": {
       "title": "Fund the hunt",
       "pitch": "If this app saved you some 3am despair, you can chip in — any amount helps keep it going.",
       "githubSponsors": "Sponsor on GitHub",
       "kofi": "Buy a coffee on Ko-fi",
-      "paypal": "Send a tip via PayPal",
-      "exportDiagnostics": "Export diagnostics",
-      "exportDiagnosticsDesc": "Save a redacted diagnostics bundle (system info, crash log, app logs) to attach to a bug report.",
-      "exportDiagnosticsSaved": "Diagnostics bundle saved.",
-      "exportDiagnosticsError": "Diagnostics export failed."
+      "paypal": "Send a tip via PayPal"
     },
     "profile": {
       "title": "Profile",

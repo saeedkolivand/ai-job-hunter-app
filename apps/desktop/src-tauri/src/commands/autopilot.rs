@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use parking_lot::Mutex;
 
@@ -61,8 +62,73 @@ pub fn autopilot_get(app: AppHandle, autopilot_id: String) -> Value {
     json!(ap)
 }
 
+/// Whether `location` is non-empty after trimming — the only precondition for
+/// attempting a geocode lookup. Pure (no network) so it's unit-tested directly.
+fn should_derive_country_code(location: Option<&str>) -> bool {
+    location.map(str::trim).is_some_and(|s| !s.is_empty())
+}
+
+/// Pick a country code out of the geocode service's ranked suggestions: the
+/// first hit that actually CARRIES a VALID one wins (not just the first hit —
+/// an earlier suggestion with an absent/null/malformed `countryCode` must not
+/// block a usable later one), lower-cased to match
+/// `BoardSearchInput::country_code`'s convention. Each candidate is validated
+/// against the SAME 2-ASCII-letter shape `AutopilotTargetSchema.countryCode`
+/// enforces (`^[A-Za-z]{2}$`) — a geocoded value written server-side bypasses
+/// the IPC schema, so a `"USA"` / `"1a"`-style value is skipped, not accepted.
+/// Pure — no network — so this is unit-tested directly; the HTTP round trip
+/// inside `commands::geocoding::suggest` is not (no fixture for it).
+fn country_code_from_suggestions(suggestions: &[Value]) -> Option<String> {
+    suggestions
+        .iter()
+        .find_map(|s| {
+            s.get("countryCode")
+                .and_then(|v| v.as_str())
+                .filter(|cc| cc.len() == 2 && cc.bytes().all(|b| b.is_ascii_alphabetic()))
+        })
+        .map(str::to_lowercase)
+}
+
+/// Cap the save-path geocode lookup tighter than `geocoding::suggest`'s own 5s
+/// reqwest timeout: that 5s is SHARED with the interactive `geocode_suggest`
+/// picker (where the user is waiting on the result and a longer wait is
+/// acceptable), so it can't be lowered there. On the save path this lookup is a
+/// best-effort backfill — `autopilot_create`/`autopilot_update` should not block
+/// the user's save for up to 5s on a slow geocode. On timeout we fall through to
+/// no suggestion (`None`), and the aggregator's guessed-market guard still
+/// covers the residual case.
+const SAVE_GEOCODE_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Best-effort: when a target has a real `location` but no `country_code` (the
+/// autopilot aggregator zero-jobs bug — a prefilled/typed location saved without
+/// a geocode pick), look one up via the SAME geocode service the manual picker
+/// uses (`commands::geocoding::suggest`) and backfill it before persisting.
+/// Never blocks or fails the save: a network error / no match / timeout just
+/// leaves `country_code` absent, exactly as it would without this fix — the
+/// aggregator's own guessed-market guard (`scraping::boards::aggregator`)
+/// covers that residual case too.
+async fn derive_country_code(location: Option<&str>) -> Option<String> {
+    if !should_derive_country_code(location) {
+        return None;
+    }
+    // Safe: `should_derive_country_code` just proved this is `Some`.
+    let location = location.unwrap_or_default().trim();
+    // Cap the save-path lookup at SAVE_GEOCODE_TIMEOUT (see const above): a
+    // timeout yields an empty Vec -> None (best-effort), never a slow save.
+    let suggestions = tokio::time::timeout(
+        SAVE_GEOCODE_TIMEOUT,
+        crate::commands::geocoding::suggest(location),
+    )
+    .await
+    .unwrap_or_default();
+    country_code_from_suggestions(&suggestions)
+}
+
 #[tauri::command]
-pub fn autopilot_create(app: AppHandle, req: AutopilotCreateRequest) -> Value {
+pub async fn autopilot_create(app: AppHandle, mut req: AutopilotCreateRequest) -> Value {
+    if req.target.country_code.is_none() {
+        req.target.country_code = derive_country_code(req.target.location.as_deref()).await;
+    }
     let ap = store(&app)
         .lock()
         .create(serde_json::to_value(&req).unwrap_or_default());
@@ -70,11 +136,16 @@ pub fn autopilot_create(app: AppHandle, req: AutopilotCreateRequest) -> Value {
 }
 
 #[tauri::command]
-pub fn autopilot_update(
+pub async fn autopilot_update(
     app: AppHandle,
     autopilot_id: String,
-    req: AutopilotUpdateRequest,
+    mut req: AutopilotUpdateRequest,
 ) -> Value {
+    if let Some(target) = req.target.as_mut() {
+        if target.country_code.is_none() {
+            target.country_code = derive_country_code(target.location.as_deref()).await;
+        }
+    }
     let ap = store(&app).lock().update(
         &autopilot_id,
         serde_json::to_value(&req).unwrap_or_default(),
@@ -507,6 +578,106 @@ mod tests {
             keywords: keywords.map(|v| v.iter().map(|s| s.to_string()).collect()),
             exclude_keywords: exclude.map(|v| v.iter().map(|s| s.to_string()).collect()),
         }
+    }
+
+    // ── country_code save-time derivation (autopilot aggregator zero-jobs fix) ──
+
+    #[test]
+    fn should_derive_country_code_requires_a_real_location() {
+        assert!(should_derive_country_code(Some("London")));
+        // Whitespace-only or absent location → nothing to geocode.
+        assert!(!should_derive_country_code(Some("   ")));
+        assert!(!should_derive_country_code(Some("")));
+        assert!(!should_derive_country_code(None));
+    }
+
+    #[test]
+    fn country_code_from_suggestions_takes_first_hit_lowercased() {
+        let suggestions = vec![
+            json!({ "display": "London, United Kingdom", "countryCode": "GB" }),
+            json!({ "display": "London, Canada", "countryCode": "CA" }),
+        ];
+        assert_eq!(
+            country_code_from_suggestions(&suggestions),
+            Some("gb".to_string()),
+            "must take the first (best-ranked) suggestion and lower-case it to \
+             match BoardSearchInput::country_code's convention"
+        );
+    }
+
+    #[test]
+    fn country_code_from_suggestions_empty_or_missing_field_yields_none() {
+        assert_eq!(country_code_from_suggestions(&[]), None);
+        // A suggestion missing `countryCode` entirely (e.g. an ambiguous hit).
+        let no_country = vec![json!({ "display": "Atlantis" })];
+        assert_eq!(country_code_from_suggestions(&no_country), None);
+    }
+
+    #[test]
+    fn country_code_from_suggestions_skips_a_leading_hit_with_no_country_code() {
+        // The first (best-ranked) hit has no countryCode (absent AND explicit
+        // null) — must not block a usable later suggestion.
+        let absent_then_present = vec![
+            json!({ "display": "Ambiguous place" }),
+            json!({ "display": "Munich, Germany", "countryCode": "DE" }),
+        ];
+        assert_eq!(
+            country_code_from_suggestions(&absent_then_present),
+            Some("de".to_string()),
+            "an absent countryCode on the first hit must not block a later, \
+             usable suggestion"
+        );
+
+        let null_then_present = vec![
+            json!({ "display": "Ambiguous place", "countryCode": null }),
+            json!({ "display": "Munich, Germany", "countryCode": "DE" }),
+        ];
+        assert_eq!(
+            country_code_from_suggestions(&null_then_present),
+            Some("de".to_string()),
+            "an explicit null countryCode on the first hit must not block a \
+             later, usable suggestion"
+        );
+    }
+
+    #[test]
+    fn country_code_from_suggestions_skips_malformed_country_codes() {
+        // A geocoded value written server-side bypasses the IPC schema's
+        // `^[A-Za-z]{2}$` guard, so a leading 3-letter ("USA") or non-alpha
+        // ("1a") countryCode must be SKIPPED in favour of a later valid hit —
+        // not accepted (it would fail BoardSearchInput's 2-letter contract).
+        let malformed_then_present = vec![
+            json!({ "display": "United States", "countryCode": "USA" }),
+            json!({ "display": "Nowhere", "countryCode": "1a" }),
+            json!({ "display": "Munich, Germany", "countryCode": "DE" }),
+        ];
+        assert_eq!(
+            country_code_from_suggestions(&malformed_then_present),
+            Some("de".to_string()),
+            "malformed leading countryCodes (3-letter, non-alpha) must be \
+             skipped in favour of a valid 2-letter hit"
+        );
+
+        // All candidates malformed → None (nothing usable to backfill).
+        let all_malformed = vec![
+            json!({ "display": "United States", "countryCode": "USA" }),
+            json!({ "display": "Nowhere", "countryCode": "1a" }),
+            json!({ "display": "Solo", "countryCode": "G" }),
+        ];
+        assert_eq!(
+            country_code_from_suggestions(&all_malformed),
+            None,
+            "an all-malformed list yields no country code"
+        );
+    }
+
+    #[tokio::test]
+    async fn derive_country_code_skips_geocode_when_location_absent() {
+        // No location at all → must resolve to None WITHOUT attempting a
+        // network call (a real HTTP hit here would make this test flaky/slow).
+        assert_eq!(derive_country_code(None).await, None);
+        assert_eq!(derive_country_code(Some("")).await, None);
+        assert_eq!(derive_country_code(Some("   ")).await, None);
     }
 
     #[test]
