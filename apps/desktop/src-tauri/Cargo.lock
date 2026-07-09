@@ -87,14 +87,14 @@ dependencies = [
 name = "ajh-tauri"
 version = "0.124.0"
 dependencies = [
- "aes 0.8.4",
+ "aes 0.9.1",
  "aes-gcm",
  "anyhow",
  "apple-native-keyring-store",
  "arc-swap",
  "async-trait",
  "base64 0.22.1",
- "cbc 0.1.2",
+ "cbc 0.2.1",
  "chromiumoxide",
  "chrono",
  "core-foundation-sys",
@@ -105,7 +105,7 @@ dependencies = [
  "feed-rs",
  "flate2",
  "futures",
- "hmac 0.12.1",
+ "hmac 0.13.0",
  "htmd",
  "image",
  "keyring-core",
@@ -113,7 +113,7 @@ dependencies = [
  "lopdf 0.43.0",
  "mockall",
  "parking_lot",
- "pbkdf2 0.12.2",
+ "pbkdf2",
  "pdf-extract",
  "proptest",
  "rand 0.10.1",
@@ -125,7 +125,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
- "sha1 0.10.6",
+ "sha1 0.11.0",
  "sha2 0.10.9",
  "sysinfo",
  "tauri",
@@ -5373,16 +5373,6 @@ name = "pastey"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "35fb2e5f958ec131621fdd531e9fc186ed768cbe395337403ae56c17a74c68ec"
-
-[[package]]
-name = "pbkdf2"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
-dependencies = [
- "digest 0.10.7",
- "hmac 0.12.1",
-]
 
 [[package]]
 name = "pbkdf2"
@@ -10936,7 +10926,7 @@ dependencies = [
  "indexmap 2.14.0",
  "lzma-rust2",
  "memchr",
- "pbkdf2 0.13.0",
+ "pbkdf2",
  "ppmd-rust",
  "sha1 0.11.0",
  "time",

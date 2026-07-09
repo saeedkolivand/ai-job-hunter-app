@@ -203,15 +203,16 @@ wait-timeout = "0.2"
 # password comes from macOS Keychain / Linux libsecret). The `hmac` feature
 # gates the bare `pbkdf2_hmac` fn; default features (password-hash) stay off.
 [target."cfg(unix)".dependencies]
-aes = "0.8"
-# `alloc` exposes `cipher`'s Vec-returning `decrypt_padded_vec_mut` (used by the
-# Chromium cookie CBC decrypt in scraping/board_login/import.rs). Without it the
-# method is gated out and the macOS/Linux release build fails to compile (the
-# path is `cfg(not(windows))`, so it never surfaces in a Windows dev build).
-cbc = { version = "0.1", features = ["alloc"] }
-hmac = "0.12"
-pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
-sha1 = "0.10"
+aes = "0.9"
+# `alloc` + `block-padding` expose `cipher` 0.5's Vec-returning
+# `decrypt_padded_vec` (used by the Chromium cookie CBC decrypt in
+# scraping/board_login/import.rs). Without them the method is gated out and the
+# macOS/Linux release build fails to compile (the path is `cfg(not(windows))`,
+# so it never surfaces in a Windows dev build).
+cbc = { version = "0.2", features = ["alloc", "block-padding"] }
+hmac = "0.13"
+pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
+sha1 = "0.11"
 
 [dev-dependencies]
 mockall = "0.15"
