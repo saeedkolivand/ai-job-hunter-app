@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783540716634,
+  "lastUpdate": 1783577855609,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3101,6 +3101,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 283304,
             "range": "± 12258",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "794f38e712729fd1ba1c5379db844babb1a34c55",
+          "message": "fix(deps): migrate typst family to 0.15 (#586)\n\n* fix(deps): migrate typst family to 0.15\n\nBump typst, typst-pdf, typst-svg, typst-render from =0.14.2 to =0.15.0 in\nlockstep so the held Dependabot bump builds; a lone typst bump breaks against\nthe 0.14.2 siblings. Add typst-layout =0.15.0 because PagedDocument moved out of\ntypst-library into typst-layout in 0.15.\n\nMigrate the export engine to the 0.15 API:\n- FileId::new now takes a single RootedPath and VirtualPath::new is fallible;\n  build ids via RootedPath::new(VirtualRoot::Project, VirtualPath::new(..)).\n- World::today offset is Option<Duration> (was Option<i64>).\n- VirtualPath::as_rootless_path is deprecated; use get_without_slash.\n- PagedDocument::pages is now a method, not a public field.\n- typst_svg::svg takes &SvgOptions and typst_render::render takes &RenderOptions\n  (pixel_per_pt moved onto RenderOptions). Defaults preserve prior behaviour.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(deps): tolerate typst-pdf 0.15 page-dict whitespace change in test scan\n\nCI caught 3 export-render test failures on the typst 0.15 bump: every_\ntemplate_renders_a_valid_pdf, atelier_multipage_sidebar_renders_once, and\nportrait_multipage_sidebar_renders_once all failed the byte-count assertion\n(count_pdf_pages returning 0) before ever reaching the sidebar-content checks.\n\nRoot cause confirmed empirically (standalone probe against a trivial 1- and\n2-page document, then reverted): typst-pdf 0.15's krilla/pdf-writer backend\nserialises the page dict's type entry with no space (was one space in the\npinned 0.14.2 backend) — pdf-writer/krilla internals, unrelated to any typst\nlanguage layout behaviour. This is not a layout/sidebar regression: the\nAtelier/Portrait \"sidebar renders once\" guard is plain typst markup\n(context + counter(page), a stable introspection primitive) untouched by the\nRust-host crate bump, and the single-column smoke test that already exercises\npdf-extract text extraction against a 0.15-rendered pdf passed in the same\nCI run.\n\ncount_pdf_pages now tolerates zero-or-more spaces in the dict entry so it\nmatches both writer formattings and won't silently regress to zero again on\nthe next pdf-writer whitespace tweak.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-09T07:55:35+02:00",
+          "tree_id": "5722754dd178e94bc5dfc719b03daef97dad3424",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/794f38e712729fd1ba1c5379db844babb1a34c55"
+        },
+        "date": 1783577855050,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1891411,
+            "range": "± 55785",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2550152,
+            "range": "± 32634",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 290264,
+            "range": "± 5017",
             "unit": "ns/iter"
           }
         ]
