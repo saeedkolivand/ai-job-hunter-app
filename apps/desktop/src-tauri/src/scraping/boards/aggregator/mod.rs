@@ -989,14 +989,18 @@ async fn primary_chain(
                     // from a GUESSED country with a real location is untrustworthy.
                     // Treat it like an Adzuna error and fall through below instead
                     // of returning early.
+                    //
+                    // PRIVACY: never log/persist the raw user-entered `location` —
+                    // it's free-text PII, not something this repo puts in logs or
+                    // diagnostics. `country` (the guessed market code) is fine.
                     log::warn!(
                         "[aggregator] adzuna guessed market '{country}' returned no results \
-                         for location '{location}' (no country_code supplied); \
+                         for the supplied location (no country_code supplied); \
                          attempting jsearch fallback"
                     );
                     adzuna_configured_failed = Some(anyhow::anyhow!(
-                        "adzuna: guessed market '{country}' returned no results for location \
-                         '{location}' (no country was supplied)"
+                        "adzuna: guessed market '{country}' returned no results for the \
+                         supplied location (no country was supplied)"
                     ));
                     // Fall through to JSearch/diagnostic below.
                 }

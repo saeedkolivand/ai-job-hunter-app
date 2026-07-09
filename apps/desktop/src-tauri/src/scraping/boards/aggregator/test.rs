@@ -1251,8 +1251,14 @@ async fn guessed_market_empty_with_location_and_no_jsearch_returns_diagnostic_er
     );
     let msg = result.unwrap_err().to_string();
     assert!(
-        msg.contains("guessed market") && msg.contains("London"),
-        "diagnostic must name the guessed-market cause and the location; got: {msg}"
+        msg.contains("guessed market") && msg.contains("supplied location"),
+        "diagnostic must name the guessed-market cause using the generic \
+         'supplied location' phrase — the raw user-entered location must NEVER \
+         be interpolated into a persisted diagnostic; got: {msg}"
+    );
+    assert!(
+        !msg.contains("London"),
+        "diagnostic must NOT leak the raw user-entered location (PII); got: {msg}"
     );
     assert!(
         msg.contains("add a JSearch key in Settings"),

@@ -67,15 +67,16 @@ fn should_derive_country_code(location: Option<&str>) -> bool {
     location.map(str::trim).is_some_and(|s| !s.is_empty())
 }
 
-/// Pick a country code out of the geocode service's ranked suggestions (first
-/// hit wins, lower-cased to match `BoardSearchInput::country_code`'s
-/// convention). Pure — no network — so this is unit-tested directly; the HTTP
+/// Pick a country code out of the geocode service's ranked suggestions: the
+/// first hit that actually CARRIES one wins (not just the first hit — an
+/// earlier suggestion with an absent/null `countryCode` must not block a
+/// usable later one), lower-cased to match `BoardSearchInput::country_code`'s
+/// convention. Pure — no network — so this is unit-tested directly; the HTTP
 /// round trip inside `commands::geocoding::suggest` is not (no fixture for it).
 fn country_code_from_suggestions(suggestions: &[Value]) -> Option<String> {
     suggestions
-        .first()
-        .and_then(|s| s.get("countryCode"))
-        .and_then(|v| v.as_str())
+        .iter()
+        .find_map(|s| s.get("countryCode").and_then(|v| v.as_str()))
         .map(str::to_lowercase)
 }
 
@@ -584,6 +585,33 @@ mod tests {
         // A suggestion missing `countryCode` entirely (e.g. an ambiguous hit).
         let no_country = vec![json!({ "display": "Atlantis" })];
         assert_eq!(country_code_from_suggestions(&no_country), None);
+    }
+
+    #[test]
+    fn country_code_from_suggestions_skips_a_leading_hit_with_no_country_code() {
+        // The first (best-ranked) hit has no countryCode (absent AND explicit
+        // null) — must not block a usable later suggestion.
+        let absent_then_present = vec![
+            json!({ "display": "Ambiguous place" }),
+            json!({ "display": "Munich, Germany", "countryCode": "DE" }),
+        ];
+        assert_eq!(
+            country_code_from_suggestions(&absent_then_present),
+            Some("de".to_string()),
+            "an absent countryCode on the first hit must not block a later, \
+             usable suggestion"
+        );
+
+        let null_then_present = vec![
+            json!({ "display": "Ambiguous place", "countryCode": null }),
+            json!({ "display": "Munich, Germany", "countryCode": "DE" }),
+        ];
+        assert_eq!(
+            country_code_from_suggestions(&null_then_present),
+            Some("de".to_string()),
+            "an explicit null countryCode on the first hit must not block a \
+             later, usable suggestion"
+        );
     }
 
     #[tokio::test]
