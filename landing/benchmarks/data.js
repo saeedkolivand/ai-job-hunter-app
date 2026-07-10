@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783595980939,
+  "lastUpdate": 1783680339090,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3227,6 +3227,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 314191,
             "range": "± 6472",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0eda637072557b64c13e35dc5db54f828ab12785",
+          "message": "feat: merge modern into classic and add per-export document accent (templates pr 1/6) (#590)\n\n* feat(export): merge modern into classic, render classic parametrically, add document accent\n\nRemoves the modern template (color-twin of classic): saved modern ids\ndeserialize to classic permanently. Deletes the bespoke classic.typ —\nclassic now renders through the shared parametric single_column.typ\n(reviewed small spacing drift accepted). Adds a per-export document\naccent override: ExportRequest.accent flows through the documented\nrender seam for pdf, and a single-source validated color override for\ncover letters and docx, so pdf and docx accent behavior cannot drift.\nPreview svg regeneration for classic is pending ci (host cannot execute\ncargo tests); modern previews deleted.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* feat(ui): add document accent picker and update gallery for modern removal\n\nNew AccentPicker (template-default chip, seven curated swatches,\nvalidated custom hex) surfaced in the generate wizard, generation card,\nand tailor flow; accent state lives beside templateId per export and\nnever touches app theming (adr 0004 stays the app-ui accent). Roving\ntabindex keeps one tabbable element when a custom value is active and\nclearing the custom field resets to template default. Modern removed\nfrom the shared union, registry, captions, defaults, and tests; en and\nde strings added.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(export): remove redundant closure flagged by ci clippy\n\nci runs clippy 1.97 with -D warnings; the closure around generate_pdf\nin validate tests is redundant there. mechanical one-line fix.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: ignore impeccable plugin cache dir\n\nmachine-local hook cache with absolute paths; never committed (path\nprivacy).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-10T12:24:25+02:00",
+          "tree_id": "04d2c2b9b5ea3e5be343d48fb9138a5d241ef50e",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/0eda637072557b64c13e35dc5db54f828ab12785"
+        },
+        "date": 1783680338865,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2218776,
+            "range": "± 60900",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2784277,
+            "range": "± 57816",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 325370,
+            "range": "± 9146",
             "unit": "ns/iter"
           }
         ]
