@@ -7,7 +7,7 @@ import { Button, StepDots, transition } from '@ajh/ui';
 import {
   type EmphasisId,
   type GenerationMode,
-  isTwoColumnTemplate,
+  isDesignTier,
   type TemplateId,
 } from '@/lib/generate';
 import { useSessionStore } from '@/store/session-store';
@@ -67,8 +67,10 @@ export function GenerateWizard({
 
   const handleTemplateChange = (id: TemplateId) => {
     onTemplateChange(id);
+    // ATS-tier templates have no ATS toggle — clear any stale atsMode.
+    // Design-tier templates (two-column OR photo, incl. Lebenslauf) keep it.
     // Cover letters have no ATS toggle, so never touch atsMode there.
-    if (target !== 'cover' && !isTwoColumnTemplate(id)) {
+    if (target !== 'cover' && !isDesignTier(id)) {
       onAtsModeChange(false);
     }
   };

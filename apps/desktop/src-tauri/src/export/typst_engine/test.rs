@@ -2252,6 +2252,51 @@ fn lebenslauf_ats_harness() {
     }
 }
 
+// (2c-tier) ATS mode drops the Lebenslauf photo.
+//
+// Verifies `lebenslauf.typ`'s `#if not is-ats and has-photo` branch through the
+// render path: with a real photo supplied, the non-ATS render embeds it (Typst
+// emits the raster as an SVG `<image>` element) but the ATS render omits it. The
+// SVG emit shares the exact world/data as the PDF path, so this is the cheapest
+// reliable assertion — no PDF-internals parsing needed.
+#[test]
+fn lebenslauf_ats_mode_drops_photo() {
+    use crate::export::typst_engine::render_resume_svg_pages_with_photo;
+
+    let model = model_from_resume_text(LEBENSLAUF_FIXTURE);
+    let t = template_style(TemplateId::Lebenslauf);
+    let photo_png = resolve_photo(&fixture_photo_data_url());
+    assert!(photo_png.is_some(), "fixture photo must resolve");
+
+    // Non-ATS + photo → the raster photo is embedded as an SVG <image>.
+    let pages_shown = render_resume_svg_pages_with_photo(
+        &model,
+        TypstTemplate::Lebenslauf,
+        &opts_photo(false),
+        Some(&t),
+        photo_png.clone(),
+    )
+    .expect("render_resume_svg_pages_with_photo(lebenslauf, non-ats) should succeed");
+    assert!(
+        pages_shown.join("").contains("<image"),
+        "non-ATS Lebenslauf with a photo must embed it as an <image> element"
+    );
+
+    // ATS + the same photo → `#if not is-ats and has-photo` is false → no image.
+    let pages_ats = render_resume_svg_pages_with_photo(
+        &model,
+        TypstTemplate::Lebenslauf,
+        &opts_photo(true),
+        Some(&t),
+        photo_png,
+    )
+    .expect("render_resume_svg_pages_with_photo(lebenslauf, ats) should succeed");
+    assert!(
+        !pages_ats.join("").contains("<image"),
+        "ATS-mode Lebenslauf must drop the photo (no <image> element)"
+    );
+}
+
 // (2d) Write Lebenslauf sample PDFs to target/ for human review.
 #[test]
 fn lebenslauf_write_sample_pdfs_for_review() {

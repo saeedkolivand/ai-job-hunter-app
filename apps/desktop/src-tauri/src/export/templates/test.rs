@@ -117,3 +117,30 @@ fn with_accent_override_is_a_noop_for_absent_or_malformed_input() {
         );
     }
 }
+
+// ─── Template tier metadata ───────────────────────────────────────────────────
+
+/// Pin every template's ATS/Design tier. ATS-safe = single-column, parser-safe;
+/// Design = photo / two-column layouts (which surface the ATS-mode toggle and
+/// drop the photo when it's on). Update deliberately when a template is added.
+#[test]
+fn template_tiers_are_pinned() {
+    use TemplateTier::{Ats, Design};
+    let expected = [
+        (TemplateId::Classic, Ats),
+        (TemplateId::SwissMinimal, Ats),
+        (TemplateId::Academic, Ats),
+        (TemplateId::Meridian, Ats),
+        (TemplateId::Throughline, Ats),
+        (TemplateId::Atelier, Design),
+        (TemplateId::Portrait, Design),
+        (TemplateId::Lebenslauf, Design),
+    ];
+    for (id, tier) in expected {
+        assert_eq!(
+            Template::get(id).tier,
+            tier,
+            "template {id:?} has the wrong tier"
+        );
+    }
+}

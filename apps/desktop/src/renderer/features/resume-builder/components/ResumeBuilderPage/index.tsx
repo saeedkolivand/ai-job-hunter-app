@@ -15,7 +15,7 @@ import {
   exportDOCX,
   exportPDF,
   exportTXT,
-  isTwoColumnTemplate,
+  isDesignTier,
   type TemplateId,
 } from '@/lib/generate';
 import { COPY_FEEDBACK_LONG_MS } from '@/lib/timings';
@@ -54,9 +54,7 @@ export function ResumeBuilderPage() {
 
   const onLanguageChange = (lng: string) => setResumeBuilder({ language: lng, locale: lng });
   const onTemplateChange = (id: TemplateId) =>
-    setResumeBuilder(
-      isTwoColumnTemplate(id) ? { templateId: id } : { templateId: id, atsMode: false }
-    );
+    setResumeBuilder(isDesignTier(id) ? { templateId: id } : { templateId: id, atsMode: false });
   const onAtsModeChange = (enabled: boolean) => setResumeBuilder({ atsMode: enabled });
 
   const copyOutput = async () => {

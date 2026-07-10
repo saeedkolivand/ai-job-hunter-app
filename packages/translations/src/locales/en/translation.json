@@ -1215,6 +1215,14 @@
     "resumePlaceholder": "Paste your resume text here…",
     "atsMode": "ATS-safe mode",
     "atsModeHint": "Recommended for ATS submissions — linearizes the two-column layout",
+    "atsModeHintTwoColumn": "Recommended for ATS submissions — collapses the layout to a single column and removes any photo for maximum parser compatibility",
+    "atsModeHintPhoto": "Recommended for ATS submissions — removes the photo for a linear, parser-safe layout",
+    "tier": {
+      "atsSafe": "ATS-Safe",
+      "design": "Design",
+      "atsBadge": "ATS",
+      "designBadge": "Design"
+    },
     "documentAccent": "Document accent",
     "documentAccentDefault": "Template default",
     "documentAccentCustom": "Custom",
