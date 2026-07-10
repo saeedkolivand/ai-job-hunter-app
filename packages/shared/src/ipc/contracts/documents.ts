@@ -12,7 +12,9 @@ export type TemplateId =
   | 'portrait'
   | 'lebenslauf'
   | 'cadence'
-  | 'regent';
+  | 'regent'
+  | 'aria'
+  | 'saffron';
 
 interface ExportMeta {
   candidateName?: string;
