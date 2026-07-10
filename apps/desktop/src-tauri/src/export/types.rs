@@ -11,17 +11,16 @@ pub enum ExportFormat {
 
 /// Template ID for styling.
 /// Serde uses kebab-case so "swiss-minimal" etc. round-trip correctly.
-/// Single-word IDs (classic, modern, academic) are unaffected.
+/// Single-word IDs (classic, academic) are unaffected.
 ///
-/// Unknown / removed IDs (e.g. "two-column", "refined-executive", "bogus") are
-/// silently mapped to `Classic` via the custom `Deserialize` impl below —
-/// a stale frontend id degrades gracefully rather than breaking export.
+/// Unknown / removed IDs (e.g. "modern", "two-column", "refined-executive",
+/// "bogus") are silently mapped to `Classic` via the custom `Deserialize` impl
+/// below — a stale frontend id degrades gracefully rather than breaking export.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum TemplateId {
     #[default]
     Classic,
-    Modern,
     SwissMinimal,
     Academic,
     /// Premium two-column sidebar template — Atelier design (Phase 1b).
@@ -43,7 +42,9 @@ impl<'de> serde::Deserialize<'de> for TemplateId {
         let s = String::deserialize(d)?;
         Ok(match s.as_str() {
             "classic" => TemplateId::Classic,
-            "modern" => TemplateId::Modern,
+            // "modern" was removed (deduped into the parametric single-column
+            // family); a saved/stale "modern" id maps to Classic, not an error.
+            "modern" => TemplateId::Classic,
             "swiss-minimal" => TemplateId::SwissMinimal,
             "academic" => TemplateId::Academic,
             "atelier" => TemplateId::Atelier,
@@ -115,6 +116,16 @@ pub struct ExportRequest {
     /// older frontends keep the text-derived header.
     #[serde(default)]
     pub contact: Option<crate::contact_profile::ContactProfile>,
+    /// Per-export **document accent** (ADR 0004): an optional 6-digit hex
+    /// (`#RRGGBB` or bare `RRGGBB`) that recolors the chosen template's accent.
+    /// Distinct from the app-UI accent — it never reads `ThemePrefs`. `None`
+    /// (the default) leaves the template's built-in palette untouched; a
+    /// malformed value is ignored. Validated by
+    /// [`crate::export::typst_engine`]'s `normalise_accent` on the résumé-PDF
+    /// path and by [`crate::export::templates::Template::with_accent_override`]
+    /// on the letter / DOCX paths.
+    #[serde(default)]
+    pub accent: Option<String>,
 }
 
 impl ExportRequest {
@@ -213,6 +224,7 @@ mod tests {
     #[test]
     fn unknown_template_id_falls_back_to_classic() {
         for bad in &[
+            "modern",
             "two-column",
             "refined-executive",
             "executive",
@@ -239,7 +251,6 @@ mod tests {
     fn live_template_ids_round_trip() {
         let cases = [
             (TemplateId::Classic, "\"classic\""),
-            (TemplateId::Modern, "\"modern\""),
             (TemplateId::SwissMinimal, "\"swiss-minimal\""),
             (TemplateId::Academic, "\"academic\""),
             (TemplateId::Atelier, "\"atelier\""),

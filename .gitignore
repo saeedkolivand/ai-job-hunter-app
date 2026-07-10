@@ -212,6 +212,10 @@ temp/
 # Per-task handoff files are transient; the template is committed.
 .claude/scratch/*
 !.claude/scratch/HANDOFF_TEMPLATE.md
+# Local git worktrees used for parallel agent work — never committed.
+.claude/worktrees/
+# Impeccable plugin hook cache — machine-local absolute paths, never committed.
+.impeccable/
 
 # NOTE: Project-level AI instruction files ARE committed (not ignored):
 #   CLAUDE.md                              → Claude Code

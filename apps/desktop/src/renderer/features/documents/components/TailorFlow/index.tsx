@@ -60,10 +60,13 @@ export interface TailorFlowPersistence {
   wizardForm: TailorWizardState | null;
   templateId: TemplateId;
   atsMode: boolean;
+  /** Per-export document accent (6-hex); undefined = template palette. */
+  accent?: string;
   setWizardStep: (v: number) => void;
   setWizardForm: (v: TailorWizardState) => void;
   setTemplateId: (v: TemplateId) => void;
   setAtsMode: (v: boolean) => void;
+  setAccent: (v: string | undefined) => void;
 }
 
 export interface TailorFlowProps {
@@ -129,6 +132,7 @@ export function TailorFlow({
   // the preview and the export — see useTailorGeneration). Render-time only.
   const setTemplateId = persistence.setTemplateId;
   const setAtsMode = persistence.setAtsMode;
+  const setAccent = persistence.setAccent;
 
   // Capability-driven default for the "search company" toggle: default ON when
   // the active model can web-search. Read from the Rust capability matrix (never
@@ -215,6 +219,7 @@ export function TailorFlow({
     researchCompany,
     templateId: persistence.templateId,
     atsMode: persistence.atsMode,
+    accent: persistence.accent,
   });
 
   // Lazy, résumé-independent AI summary of the job ad (shared by the wizard's
@@ -370,8 +375,10 @@ export function TailorFlow({
         setActiveOut={gen.setActiveOut}
         templateId={persistence.templateId}
         atsMode={persistence.atsMode}
+        accent={persistence.accent}
         onTemplateChange={setTemplateId}
         onAtsModeChange={setAtsMode}
+        onAccentChange={setAccent}
         output={gen.output}
         onEdit={gen.editActiveOutput}
         meta={gen.meta}

@@ -4,7 +4,6 @@ import type { ContactProfile } from './contactProfile.js';
 
 export type TemplateId =
   | 'classic'
-  | 'modern'
   | 'swiss-minimal'
   | 'academic'
   | 'atelier'
@@ -36,6 +35,14 @@ export interface BaseExportRequest {
    * generated text carried, so a company link can't displace a personal profile.
    */
   contact?: ContactProfile;
+  /**
+   * Per-export **document accent** (ADR 0004): an optional 6-digit hex
+   * (`#RRGGBB` or bare `RRGGBB`) recoloring the chosen template's accent.
+   * Distinct from the app-UI accent — the backend never reads theme prefs.
+   * Omitted (the default) leaves the template palette untouched; a malformed
+   * value is ignored by the backend.
+   */
+  accent?: string;
 }
 
 export type ExportIssueSeverity = 'critical' | 'warning';

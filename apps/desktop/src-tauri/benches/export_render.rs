@@ -53,6 +53,7 @@ fn request(format: ExportFormat, template_id: TemplateId) -> ExportRequest {
         ats_mode: false,
         locale: Some("en".to_string()),
         contact: None,
+        accent: None,
     }
 }
 

@@ -78,7 +78,7 @@ const params = {
   jobUrl: 'https://acme.com/job/42',
   board: 'linkedin',
   researchCompany: false,
-  templateId: 'modern' as const,
+  templateId: 'classic' as const,
   atsMode: false,
 };
 

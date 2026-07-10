@@ -58,7 +58,11 @@ static HEX_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^#?([0-9a-fA-F]{6
 
 /// Validate and normalise a hex colour to `#RRGGBB`.
 /// Returns `None` when the input is absent or does not match the pattern.
-pub(super) fn normalise_accent(raw: Option<&str>) -> Option<String> {
+///
+/// The single source of truth for document-accent validation across every
+/// backend — the DOCX/cover-letter path in `export::templates` reuses this via
+/// the module re-export so PDF and DOCX accept exactly the same inputs.
+pub(crate) fn normalise_accent(raw: Option<&str>) -> Option<String> {
     let s = raw?;
     let caps = HEX_RE.captures(s.trim())?;
     Some(format!("#{}", &caps[1]))

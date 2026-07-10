@@ -353,24 +353,26 @@ const SAVED_GENERATION: AiGenerationRecord = {
 
 type MockedPersistence = Omit<
   TailorFlowPersistence,
-  'setWizardStep' | 'setWizardForm' | 'setTemplateId' | 'setAtsMode'
+  'setWizardStep' | 'setWizardForm' | 'setTemplateId' | 'setAtsMode' | 'setAccent'
 > & {
   setWizardStep: Mock<(v: number) => void>;
   setWizardForm: Mock<(v: TailorWizardState) => void>;
   setTemplateId: Mock<(v: TemplateId) => void>;
   setAtsMode: Mock<(v: boolean) => void>;
+  setAccent: Mock<(v: string | undefined) => void>;
 };
 
 function makePersistence(overrides: Partial<MockedPersistence> = {}): MockedPersistence {
   return {
     wizardStep: 0,
     wizardForm: null,
-    templateId: 'modern',
+    templateId: 'classic',
     atsMode: false,
     setWizardStep: vi.fn<(v: number) => void>(),
     setWizardForm: vi.fn<(v: TailorWizardState) => void>(),
     setTemplateId: vi.fn<(v: TemplateId) => void>(),
     setAtsMode: vi.fn<(v: boolean) => void>(),
+    setAccent: vi.fn<(v: string | undefined) => void>(),
     ...overrides,
   };
 }
@@ -566,7 +568,7 @@ describe('TailorFlow — persistence injection', () => {
     const user = userEvent.setup();
     genMock.resumeOut = 'Generated text';
     genMock.output = 'Generated text';
-    const persistence = makePersistence({ templateId: 'modern' });
+    const persistence = makePersistence({ templateId: 'swiss-minimal' });
     renderFlow({ persistence });
 
     await user.click(screen.getByRole('button', { name: 'change-template' }));
