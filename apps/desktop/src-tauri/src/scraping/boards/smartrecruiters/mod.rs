@@ -6,7 +6,7 @@
 //! this board with `"needs-company"` when `input.companies` is empty.
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
-use super::common::normalize_companies;
+use super::common::{ats_all_fetches_failed, normalize_companies};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -100,6 +100,9 @@ impl Scraper for SmartRecruitersScraper {
         let companies = normalize_companies(&input.companies, MAX_COMPANIES);
         let company_count = companies.len();
 
+        let mut successful_fetches = 0usize;
+        let mut first_fetch_error: Option<String> = None;
+
         for (ci, company) in companies.iter().enumerate() {
             if ctx.signal.is_cancelled() {
                 break;
@@ -128,23 +131,24 @@ impl Scraper for SmartRecruitersScraper {
                 {
                     Ok(l) => l,
                     Err(e) => {
-                        log::warn!("[smartrecruiters] list fetch failed for '{}': {e}", company);
+                        // A fetch that failed because the run was cancelled is not
+                        // a real board-level error.
                         if ctx.signal.is_cancelled() {
                             break;
+                        }
+                        // A non-2xx / schema-drift list response now records the
+                        // failure so an all-slug 403 run returns Err (not a silent
+                        // zero) via the all-fail check below.
+                        log::warn!("[smartrecruiters] list fetch failed for '{}': {e}", company);
+                        first_fetch_error.get_or_insert_with(|| e.to_string());
+                        if let Some(ref on_progress) = ctx.on_progress {
+                            on_progress((ci + 1) as f32 / company_count as f32);
                         }
                         continue;
                     }
                 };
-
-            let postings = match list {
-                Some(l) => l.content,
-                None => {
-                    if let Some(ref on_progress) = ctx.on_progress {
-                        on_progress((ci + 1) as f32 / company_count as f32);
-                    }
-                    continue;
-                }
-            };
+            successful_fetches += 1;
+            let postings = list.content;
 
             let posting_count = postings.len();
 
@@ -159,10 +163,10 @@ impl Scraper for SmartRecruitersScraper {
                     p.id
                 );
 
-                // On a detail-fetch error yield `None` (not `continue`) so the
-                // progress emission + politeness sleep below still run every
-                // iteration; otherwise repeated detail errors would stop
-                // rate-limiting requests and stall progress.
+                // Detail is best-effort: a failed detail fetch (404 / non-2xx /
+                // schema drift) skips only this posting, never the whole board — the
+                // list fetch already counted as a success. The progress emission +
+                // politeness sleep still run so pacing and rate-limiting hold.
                 let detail = match fetch_json::<DetailResp>(
                     &detail_url,
                     Default::default(),
@@ -174,19 +178,6 @@ impl Scraper for SmartRecruitersScraper {
                     Err(e) => {
                         log::warn!(
                             "[smartrecruiters] detail fetch failed for posting {} ({detail_url}): {e}; skipping",
-                            p.id
-                        );
-                        None
-                    }
-                };
-
-                let detail = match detail {
-                    Some(d) => d,
-                    None => {
-                        // Detail unavailable (404 / parse failure): skip this posting
-                        // but still run the progress + sleep so pacing holds.
-                        log::debug!(
-                            "[smartrecruiters] detail returned None for posting {} — skipping",
                             p.id
                         );
                         if let Some(ref on_progress) = ctx.on_progress {
@@ -295,6 +286,15 @@ impl Scraper for SmartRecruitersScraper {
             if let Some(ref on_progress) = ctx.on_progress {
                 on_progress((ci + 1) as f32 / company_count as f32);
             }
+        }
+
+        // Distinguishes an all-slug 403 run from a genuine zero result (detail-only
+        // failures don't count — the list fetch already counted as a success); see
+        // `ats_all_fetches_failed` for the decision.
+        if let Some(message) =
+            ats_all_fetches_failed(self.id(), successful_fetches, &first_fetch_error)
+        {
+            return Err(anyhow::anyhow!(message));
         }
 
         Ok(out)

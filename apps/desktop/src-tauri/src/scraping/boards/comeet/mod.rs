@@ -229,7 +229,7 @@ impl Scraper for ComeetScraper {
             urlencoding::encode(token.trim())
         );
 
-        let data = match fetch_json::<Vec<serde_json::Value>>(
+        let raw = match fetch_json::<Vec<serde_json::Value>>(
             &url,
             Default::default(),
             ctx.signal.clone(),
@@ -239,11 +239,9 @@ impl Scraper for ComeetScraper {
             Ok(d) => d,
             // A cancel firing mid-fetch is a clean stop, not a board error.
             Err(_) if ctx.signal.is_cancelled() => return Ok(vec![]),
+            // A non-2xx / schema-drift response now surfaces as a board error
+            // instead of a silent empty result.
             Err(e) => return Err(e.into()),
-        };
-        let raw = match data {
-            Some(d) => d,
-            None => return Ok(vec![]),
         };
 
         let now = chrono::Utc::now().timestamp_millis();

@@ -7,7 +7,7 @@
 //! Endpoint reconnaissance ported from santifer/career-ops (MIT), `providers/bamboohr.mjs`.
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
-use super::common::{is_valid_dns_label_slug, normalize_companies};
+use super::common::{ats_all_fetches_failed, is_valid_dns_label_slug, normalize_companies};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -203,18 +203,10 @@ impl Scraper for BambooHrScraper {
                 }
             };
 
-            let resp = match data {
-                Some(d) => {
-                    successful_fetches += 1;
-                    d
-                }
-                None => {
-                    if let Some(ref on_progress) = ctx.on_progress {
-                        on_progress((i + 1) as f32 / total as f32);
-                    }
-                    continue;
-                }
-            };
+            // A non-2xx / schema-drift response is now an `Err` above (which records
+            // `first_fetch_error`), so reaching here means a real success — count it.
+            successful_fetches += 1;
+            let resp = data;
 
             for posting in parse_bamboohr_response(resp, &company, now) {
                 if let Some(ref on_item) = ctx.on_item {
@@ -228,13 +220,11 @@ impl Scraper for BambooHrScraper {
             }
         }
 
-        // Return Err only when every attempt failed — partial success is kept.
-        if successful_fetches == 0 {
-            if let Some(error) = first_fetch_error {
-                return Err(anyhow::anyhow!(
-                    "all bamboohr company fetches failed: {error}"
-                ));
-            }
+        // Return Err only when every attempt failed — see `ats_all_fetches_failed`.
+        if let Some(message) =
+            ats_all_fetches_failed(self.id(), successful_fetches, &first_fetch_error)
+        {
+            return Err(anyhow::anyhow!(message));
         }
 
         Ok(out)

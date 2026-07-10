@@ -391,14 +391,14 @@ async fn fetch_adzuna_page(
         adzuna_max_days_old(date_filter),
     );
 
-    let resp = match fetch_json::<AdzunaResp>(&url, FetchOptions::default(), signal).await? {
-        Some(r) => r,
-        None => {
-            return Err(anyhow::anyhow!(
-                "adzuna: non-2xx response or unparseable body"
-            ))
-        }
-    };
+    // A non-2xx or schema-drift response propagates as `Err` from `fetch_json`
+    // (carrying the HTTP status); `?` surfaces it as a provider failure. The
+    // "adzuna:" prefix is required — the aggregator board fronts three
+    // providers, so an unattributed "HTTP 403" in BoardScrapeSummary.error
+    // wouldn't say which one failed.
+    let resp = fetch_json::<AdzunaResp>(&url, FetchOptions::default(), signal)
+        .await
+        .map_err(|e| anyhow::anyhow!("adzuna: {e}"))?;
 
     let now = chrono::Utc::now().timestamp_millis();
     Ok(resp
@@ -492,7 +492,12 @@ impl JobProvider for JSearchProvider {
             jsearch_date_posted(date_filter)
         ));
 
-        let result = fetch_json::<JSearchResp>(
+        // A non-2xx or schema-drift response propagates as `Err` from `fetch_json`
+        // (carrying the HTTP status); `?` surfaces it as a provider failure. The
+        // "jsearch:" prefix is required — the aggregator board fronts three
+        // providers, so an unattributed "HTTP 403" in BoardScrapeSummary.error
+        // wouldn't say which one failed.
+        let resp = fetch_json::<JSearchResp>(
             &url,
             FetchOptions {
                 headers: Some(vec![
@@ -506,16 +511,8 @@ impl JobProvider for JSearchProvider {
             },
             signal,
         )
-        .await?;
-
-        let resp = match result {
-            Some(r) => r,
-            None => {
-                return Err(anyhow::anyhow!(
-                    "jsearch: non-2xx response or unparseable body"
-                ))
-            }
-        };
+        .await
+        .map_err(|e| anyhow::anyhow!("jsearch: {e}"))?;
 
         let now = chrono::Utc::now().timestamp_millis();
         let postings = resp
@@ -951,7 +948,10 @@ impl JobProvider for ApifyLinkedInProvider {
         //
         // `tokio::select!` races the paid fetch against the cancellation signal so
         // a user cancel mid-flight is honoured within one poll cycle.
-        let raw = tokio::select! {
+        // A non-2xx / timeout / schema-drift response propagates as `Err` from
+        // `fetch_json` (carrying the HTTP status); `?` surfaces it as a provider
+        // failure instead of a silent empty dataset.
+        let items = tokio::select! {
             _ = signal.cancelled() => {
                 return Err(anyhow::anyhow!("apify_linkedin: cancelled"));
             }
@@ -961,11 +961,6 @@ impl JobProvider for ApifyLinkedInProvider {
                 signal.clone(),
             ) => result?
         };
-        let items = raw.ok_or_else(|| {
-            anyhow::anyhow!(
-                "apify_linkedin: non-2xx response, timeout (408), or unparseable dataset body"
-            )
-        })?;
 
         let now = chrono::Utc::now().timestamp_millis();
         Ok(items

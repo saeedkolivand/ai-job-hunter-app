@@ -81,3 +81,46 @@ pub(crate) fn matches_filters(
 
     true
 }
+
+/// Decide whether an ATS multi-company board's fetch loop should fail the
+/// whole board. Returns `Some(message)` — ready to wrap in
+/// `anyhow::anyhow!` — only when every attempted per-company fetch failed
+/// (`successful_fetches == 0` AND at least one real fetch error was
+/// recorded). Returns `None` when at least one company succeeded (partial
+/// success is kept) OR when no company ever reached a fetch (e.g. every slug
+/// was rejected by a pre-fetch validation guard, or the input list was
+/// empty) — that is a "nothing to fetch" outcome, not a board failure.
+///
+/// Pure — no I/O, no board host — so it is directly unit-testable without a
+/// mock server. Shared by every ATS board that tracks
+/// `successful_fetches`/`first_fetch_error` (Ashby, BambooHR, Breezy,
+/// Greenhouse, Lever, Pinpoint, Recruitee, Rippling, SmartRecruiters,
+/// Workable).
+pub(crate) fn ats_all_fetches_failed(
+    board_id: &str,
+    successful_fetches: usize,
+    first_fetch_error: &Option<String>,
+) -> Option<String> {
+    if successful_fetches > 0 {
+        return None;
+    }
+    first_fetch_error
+        .as_ref()
+        .map(|error| format!("all {board_id} company fetches failed: {error}"))
+}
+
+/// Decide the pagination-failure policy for a page fetch: a page reached with
+/// nothing collected yet (typically page 0) propagates the fetch failure as a
+/// board error; a later page that fails after some items were already
+/// streamed instead stops pagination and keeps the partial result.
+///
+/// Pure — takes only the already-known collected count, no I/O — so it is
+/// directly unit-testable without a mock server. Shared by every paginated
+/// board that fails closed on an empty-so-far collection (The Muse,
+/// Arbeitnow, Arbeitsagentur).
+pub(crate) fn should_propagate_page_error(collected_so_far: usize) -> bool {
+    collected_so_far == 0
+}
+
+#[cfg(test)]
+mod test;

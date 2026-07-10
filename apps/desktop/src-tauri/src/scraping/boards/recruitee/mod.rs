@@ -5,6 +5,7 @@
 /// board with `"needs-company"` when `input.companies` is empty.
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::common::ats_all_fetches_failed;
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -79,6 +80,9 @@ impl Scraper for RecruiteeScraper {
         let mut out = vec![];
         let total = input.companies.len();
 
+        let mut successful_fetches = 0usize;
+        let mut first_fetch_error: Option<String> = None;
+
         for (i, company) in input.companies.iter().enumerate() {
             if ctx.signal.is_cancelled() {
                 break;
@@ -103,18 +107,18 @@ impl Scraper for RecruiteeScraper {
             {
                 Ok(d) => d,
                 Err(e) => {
-                    log::warn!("[recruitee] fetch failed for '{}': {e}", company);
+                    // A fetch that failed because the run was cancelled is not
+                    // a real board-level error.
                     if ctx.signal.is_cancelled() {
                         break;
                     }
+                    log::warn!("[recruitee] fetch failed for '{}': {e}", company);
+                    first_fetch_error.get_or_insert_with(|| e.to_string());
                     continue;
                 }
             };
-
-            let offers = match data {
-                Some(d) => d.offers,
-                None => continue,
-            };
+            successful_fetches += 1;
+            let offers = data.offers;
 
             for o in offers {
                 let description = vec![
@@ -178,6 +182,14 @@ impl Scraper for RecruiteeScraper {
             if let Some(ref on_progress) = ctx.on_progress {
                 on_progress((i + 1) as f32 / total as f32);
             }
+        }
+
+        // Distinguishes an all-slug 403/parse-drift run from a genuine zero result;
+        // see `ats_all_fetches_failed` for the decision.
+        if let Some(message) =
+            ats_all_fetches_failed(self.id(), successful_fetches, &first_fetch_error)
+        {
+            return Err(anyhow::anyhow!(message));
         }
 
         Ok(out)

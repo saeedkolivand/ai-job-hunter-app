@@ -259,7 +259,10 @@ impl Scraper for GermanTechJobsScraper {
 
         if res.status_code != 200 {
             log::warn!("[germantechjobs] feed fetch returned {}", res.status_code);
-            return Ok(vec![]);
+            // Representable failure: a non-2xx feed response (e.g. the historic
+            // /rss 403) is a failed board, not a silent zero — surface the status
+            // so it lands in `BoardScrapeSummary.error`.
+            return Err(anyhow::anyhow!("HTTP {}", res.status_code));
         }
 
         let now = chrono::Utc::now().timestamp_millis();
