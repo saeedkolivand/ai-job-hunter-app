@@ -85,6 +85,54 @@ impl<'de> serde::Deserialize<'de> for TemplateId {
     }
 }
 
+/// Cover-letter **layout** (canonical term — NOT "letter template").
+///
+/// A *layout* owns only the **arrangement/composition** of the letter. The
+/// palette and fonts are NOT chosen here — they always inherit from the
+/// selected résumé [`TemplateId`] via
+/// `crate::export::typst_engine::letter::style_from_template`, so a letter keeps
+/// matching its résumé family. Market conventions (date position, subject line)
+/// still own the WHAT/WHERE semantics; where a convention and the layout's
+/// arrangement conflict, the convention wins (e.g. DE DIN date-top-right).
+///
+/// Serde uses kebab-case (`"classic"` / `"refined"` / `"banded"`). Unknown /
+/// removed ids fall back to `Classic` via the custom `Deserialize` impl below —
+/// mirroring [`TemplateId`] so a stale frontend id degrades gracefully rather
+/// than breaking export.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum LetterLayout {
+    /// The original single `letter.typ` arrangement. Default, so a request that
+    /// omits the field renders byte-identically to the pre-layout-picker output.
+    #[default]
+    Classic,
+    /// Olivia-Wilson minimalist: large sans name + role top-left, right-aligned
+    /// contact, horizontal rule, always-visible job-reference line, spaced
+    /// signature. Source: `letter_refined.typ`.
+    Refined,
+    /// Belinda-Davidson: angled pale accent band across the top of page 1
+    /// (decorative, behind text), serif small-caps name, stacked right contact,
+    /// short rule footer. Source: `letter_banded.typ`.
+    Banded,
+}
+
+impl<'de> serde::Deserialize<'de> for LetterLayout {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        Ok(match s.as_str() {
+            "classic" => LetterLayout::Classic,
+            "refined" => LetterLayout::Refined,
+            "banded" => LetterLayout::Banded,
+            // Any unknown / removed id falls back to Classic so a stale frontend
+            // never breaks cover-letter export.
+            _ => {
+                log::warn!("LetterLayout: unknown id {:?}, falling back to Classic", s);
+                LetterLayout::Classic
+            }
+        })
+    }
+}
+
 /// Document type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -148,6 +196,16 @@ pub struct ExportRequest {
     /// on the letter / DOCX paths.
     #[serde(default)]
     pub accent: Option<String>,
+    /// Cover-letter **layout** — the arrangement/composition of the letter,
+    /// independent of the résumé [`TemplateId`] (which still supplies the
+    /// palette + fonts via `style_from_template`). `Classic` (the default) is
+    /// the original single-`letter.typ` arrangement, so a request that omits the
+    /// field keeps the pre-layout-picker output. Ignored for résumé exports.
+    ///
+    /// Wire name is `letterLayoutId` (the shared TS contract field) rather than
+    /// the camelCase default so the frontend picker's value binds correctly.
+    #[serde(default, rename = "letterLayoutId")]
+    pub letter_layout: LetterLayout,
 }
 
 impl ExportRequest {
@@ -291,5 +349,66 @@ mod tests {
             let deserialized: TemplateId = serde_json::from_str(&serialized).expect("deserialize");
             assert_eq!(deserialized, id, "{id:?} did not round-trip");
         }
+    }
+
+    /// All three letter layouts round-trip through kebab-case serde.
+    #[test]
+    fn letter_layout_round_trips() {
+        let cases = [
+            (LetterLayout::Classic, "\"classic\""),
+            (LetterLayout::Refined, "\"refined\""),
+            (LetterLayout::Banded, "\"banded\""),
+        ];
+        for (layout, expected_json) in cases {
+            let serialized = serde_json::to_string(&layout).expect("serialize");
+            assert_eq!(serialized, expected_json, "{layout:?} serialized wrong");
+            let deserialized: LetterLayout =
+                serde_json::from_str(&serialized).expect("deserialize");
+            assert_eq!(deserialized, layout, "{layout:?} did not round-trip");
+        }
+    }
+
+    /// An unknown / removed letter-layout id must never error — it falls back to
+    /// `Classic`, mirroring `TemplateId`'s graceful degradation.
+    #[test]
+    fn unknown_letter_layout_falls_back_to_classic() {
+        for bad in &["olivia", "belinda", "two-column", "bogus", "BANDED", ""] {
+            let json = format!("\"{}\"", bad);
+            let layout: LetterLayout = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("deserialise {:?} failed: {e}", bad));
+            assert_eq!(
+                layout,
+                LetterLayout::Classic,
+                "unknown layout {:?} should fall back to Classic, got {layout:?}",
+                bad
+            );
+        }
+    }
+
+    /// The default (used by `#[serde(default)]` when the field is absent) is
+    /// `Classic` — the pre-layout-picker output.
+    #[test]
+    fn letter_layout_default_is_classic() {
+        assert_eq!(LetterLayout::default(), LetterLayout::Classic);
+    }
+
+    /// The wire field is `letterLayoutId` (shared TS contract), and an absent
+    /// field defaults to `Classic` so existing cover-letter requests are
+    /// unaffected.
+    #[test]
+    fn export_request_reads_letter_layout_id_and_defaults() {
+        let with_layout: ExportRequest = serde_json::from_str(
+            r#"{"text":"x","format":"pdf","documentType":"cover-letter",
+                "templateId":"classic","meta":null,"letterLayoutId":"banded"}"#,
+        )
+        .expect("deserialize request with letterLayoutId");
+        assert_eq!(with_layout.letter_layout, LetterLayout::Banded);
+
+        let without: ExportRequest = serde_json::from_str(
+            r#"{"text":"x","format":"pdf","documentType":"cover-letter",
+                "templateId":"classic","meta":null}"#,
+        )
+        .expect("deserialize request without letterLayoutId");
+        assert_eq!(without.letter_layout, LetterLayout::Classic);
     }
 }

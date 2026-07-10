@@ -4,7 +4,7 @@
 //! blocking of valid documents.
 
 use super::*;
-use crate::export::types::TemplateId;
+use crate::export::types::{LetterLayout, TemplateId};
 
 fn expected(headings: &[&str]) -> Expected {
     Expected {
@@ -140,6 +140,7 @@ fn req(format: ExportFormat, template_id: TemplateId, ats_mode: bool) -> ExportR
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     }
 }
 
@@ -421,6 +422,7 @@ fn typst_cover_letter_pdf_passes_validation() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let (bytes, report) =
         validate_and_fix(request, crate::export::pdf::generate_pdf).expect("cover letter export");

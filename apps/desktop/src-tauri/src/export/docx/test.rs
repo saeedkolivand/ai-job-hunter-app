@@ -1,7 +1,7 @@
 use std::io::{Cursor, Read};
 
 use super::*;
-use crate::export::types::{ExportFormat, TemplateId};
+use crate::export::types::{ExportFormat, LetterLayout, TemplateId};
 
 /// Unzip a generated DOCX and return its `word/document.xml` (where the body
 /// runs and the section's `pgSz` live).
@@ -27,6 +27,7 @@ fn resume_request(template_id: TemplateId) -> ExportRequest {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     }
 }
 
@@ -69,6 +70,7 @@ fn cover_letter_docx_declares_a4_page_size() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let bytes = generate_docx(&request).expect("docx");
     let xml = document_xml(&bytes);
@@ -138,6 +140,7 @@ fn test_generate_simple_resume() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
 
     let result = generate_docx(&request);
@@ -192,6 +195,7 @@ fn test_generate_cover_letter() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
 
     let result = generate_docx(&request);
@@ -241,6 +245,7 @@ fn test_generate_resume_with_meta() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
 
     let result = generate_docx(&request);

@@ -1,4 +1,4 @@
-use super::super::types::{DocumentType, ExportFormat, TemplateId};
+use super::super::types::{DocumentType, ExportFormat, LetterLayout, TemplateId};
 use super::*;
 
 // ── Fixtures (mirrors typst_engine/test.rs — minimal but complete) ────────────
@@ -52,6 +52,7 @@ async fn preview_resume_returns_svg_pages() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let result = documents_render_preview_images(request)
         .await
@@ -87,6 +88,7 @@ async fn preview_cover_letter_returns_svg_pages() {
         locale: Some("us".to_string()),
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let result = documents_render_preview_images(request)
         .await
@@ -120,6 +122,7 @@ async fn preview_empty_text_is_rejected() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let err = documents_render_preview_images(request)
         .await
@@ -145,6 +148,7 @@ async fn preview_whitespace_text_is_rejected() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let err = documents_render_preview_images(request)
         .await
@@ -200,6 +204,7 @@ async fn export_empty_text_error_matches_preview_error() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
 
     let export_err = documents_export_document(mk_request(""))
@@ -235,7 +240,9 @@ fn test_sanitize_filename() {
 
 #[test]
 fn test_generate_filename() {
-    use super::super::types::{DocumentType, ExportFormat, GenerationMeta, TemplateId};
+    use super::super::types::{
+        DocumentType, ExportFormat, GenerationMeta, LetterLayout, TemplateId,
+    };
 
     let request = ExportRequest {
         text: "Test".to_string(),
@@ -252,6 +259,7 @@ fn test_generate_filename() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
 
     let filename = generate_filename(&request, "docx");

@@ -180,6 +180,7 @@ pub fn generate_pdf(request: &ExportRequest) -> AppResult<Vec<u8>> {
                 meta_name,
                 market,
                 &lang,
+                request.letter_layout,
             )
             .map_err(|e| AppError::Parse(format!("Failed to generate cover letter PDF: {e}")))
         }
@@ -243,6 +244,7 @@ pub fn generate_preview_svg(request: &ExportRequest) -> AppResult<Vec<String>> {
                 meta_name,
                 market,
                 &lang,
+                request.letter_layout,
             )
             .map_err(|e| AppError::Parse(format!("Failed to render cover letter preview: {e}")))
         }
