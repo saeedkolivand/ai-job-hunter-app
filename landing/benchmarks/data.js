@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783707464174,
+  "lastUpdate": 1783715111253,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3479,6 +3479,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 306285,
             "range": "± 16490",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4245370dc79fe7d0b6f9107c7b8b109bf4bccdba",
+          "message": "fix: represent board fetch failures instead of silent zero results (#597)\n\n* fix: represent board fetch failures instead of silent zero results\n\nfetch_json returns AppResult<T> — non-2xx errs with its status code, schema drift errs as parse failure; every board propagates into BoardScrapeSummary.error.\nATS boards err when all company fetches fail (closes the wrong-slug silent zero); germantechjobs/wwr/berlinstartupjobs err on non-200; adzuna/jsearch errors carry the provider name.\nShared all-fail + pagination policy fns in boards/common.rs with unit tests. Trust program PR A (audit 2026-07-10).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: keep cancellation out of board error summaries\n\narbeitnow/arbeitsagentur gain themuse's cancelled-break guard so a user stop is not recorded as a board failure; ycombinator deleted-item skips log at debug; stale fetch_json doc refs updated.\nIncludes the scraping-domain knowledge doc sync (fetch_json error contract, aggregator provider file refs) and persisted lessons.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-10T22:15:57+02:00",
+          "tree_id": "aa1c1da4d8ed99710190e6ff0410a33767dc2434",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/4245370dc79fe7d0b6f9107c7b8b109bf4bccdba"
+        },
+        "date": 1783715110615,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2125377,
+            "range": "± 27667",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2540112,
+            "range": "± 22571",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 286368,
+            "range": "± 9205",
             "unit": "ns/iter"
           }
         ]
