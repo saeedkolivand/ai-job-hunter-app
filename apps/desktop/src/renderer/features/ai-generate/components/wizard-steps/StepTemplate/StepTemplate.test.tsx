@@ -337,15 +337,15 @@ describe('StepTemplate', () => {
     expect(screen.getByText('aiGenerate.tier.design')).toBeInTheDocument();
   });
 
-  it('shows a tier badge on every card (7 ATS + 3 design)', () => {
+  it('shows a tier badge on every card (7 ATS + 5 design)', () => {
     renderStep();
     expect(screen.getAllByText('aiGenerate.tier.atsBadge')).toHaveLength(7);
-    expect(screen.getAllByText('aiGenerate.tier.designBadge')).toHaveLength(3);
+    expect(screen.getAllByText('aiGenerate.tier.designBadge')).toHaveLength(5);
   });
 
   // ── ATS toggle gate is tier-aware (the Lebenslauf photo fix) ─────────────────
 
-  it.each(['atelier', 'portrait', 'lebenslauf'] as const)(
+  it.each(['atelier', 'portrait', 'lebenslauf', 'aria', 'saffron'] as const)(
     'shows the ATS toggle for the design-tier template %s',
     (id) => {
       renderStep({ templateId: id });

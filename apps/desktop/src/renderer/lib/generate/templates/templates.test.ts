@@ -5,8 +5,8 @@ import { isDesignTier, TEMPLATES } from './templates';
 describe('TEMPLATES', () => {
   const ids = Object.keys(TEMPLATES);
 
-  it('exposes the ten document templates keyed by id', () => {
-    expect(ids).toHaveLength(10);
+  it('exposes the twelve document templates keyed by id', () => {
+    expect(ids).toHaveLength(12);
     for (const id of ids) {
       expect(TEMPLATES[id as keyof typeof TEMPLATES].id).toBe(id);
     }
@@ -15,9 +15,10 @@ describe('TEMPLATES', () => {
   // Sync guard: this id set MUST equal the Rust `TemplateId` enum (export/types.rs,
   // kebab-case) and the shared contract union (packages/shared/.../documents.ts).
   // The Rust round-trip test pins the other side; if either drifts, a guard fails.
-  it('matches the canonical 10-template id set', () => {
+  it('matches the canonical 12-template id set', () => {
     expect([...ids].sort()).toEqual([
       'academic',
+      'aria',
       'atelier',
       'cadence',
       'classic',
@@ -25,6 +26,7 @@ describe('TEMPLATES', () => {
       'meridian',
       'portrait',
       'regent',
+      'saffron',
       'swiss-minimal',
       'throughline',
     ]);
@@ -69,7 +71,7 @@ describe('TEMPLATES', () => {
       'swiss-minimal',
       'throughline',
     ]);
-    expect(idsByTier('design')).toEqual(['atelier', 'lebenslauf', 'portrait']);
+    expect(idsByTier('design')).toEqual(['aria', 'atelier', 'lebenslauf', 'portrait', 'saffron']);
   });
 
   it('isDesignTier is true exactly for design-tier templates', () => {

@@ -25,26 +25,42 @@ pub fn template(id: TemplateId) -> Template {
 /// truth for sidebar classification (the per-template `sidebar_sections` list and
 /// its legacy printpdf renderer are gone).
 ///
-/// Sidebar-leaning sections (skills / education / languages / certifications) go
-/// to the sidebar; everything else flows in the main column. Contact details
-/// live in the document header (handled by the layout engine), so they are not a
-/// [`SectionId`] here.
-pub fn placement_for(id: &SectionId) -> Placement {
-    match id {
-        SectionId::Skills
-        | SectionId::Education
-        | SectionId::Languages
-        | SectionId::Certifications => Placement::Sidebar,
+/// Default: sidebar-leaning sections (skills / education / languages /
+/// certifications) go to the sidebar; everything else flows in the main column.
+/// Contact details live in the document header (handled by the layout engine), so
+/// they are not a [`SectionId`] here.
+///
+/// Per-template overrides pull a specific section back into the main column:
+/// **Aria** keeps Education in the main column; **Saffron** keeps Certifications
+/// in the main column. Atelier / Portrait use the default table unchanged.
+pub fn placement_for(template_id: TemplateId, id: &SectionId) -> Placement {
+    match (template_id, id) {
+        // Aria: Education reads in the main column (design choice).
+        (TemplateId::Aria, SectionId::Education) => Placement::Main,
+        // Saffron: Certifications read in the main column.
+        (TemplateId::Saffron, SectionId::Certifications) => Placement::Main,
+        // Default sidebar-leaning set for every other (template, section) pair.
+        (
+            _,
+            SectionId::Skills
+            | SectionId::Education
+            | SectionId::Languages
+            | SectionId::Certifications,
+        ) => Placement::Sidebar,
         _ => Placement::Main,
     }
 }
 
 /// Returns `true` when a template uses a two-column layout.
 ///
-/// `Atelier` (Phase 1b) and `Portrait` (Phase 3b-i) are the two live two-column
-/// templates.  In ATS mode they collapse to a single linear column.
+/// `Atelier` (Phase 1b), `Portrait` (Phase 3b-i), and `Aria` / `Saffron` (PR4)
+/// are the live two-column templates.  In ATS mode they collapse to a single
+/// linear column.
 pub fn is_two_column(id: TemplateId) -> bool {
-    matches!(id, TemplateId::Atelier | TemplateId::Portrait)
+    matches!(
+        id,
+        TemplateId::Atelier | TemplateId::Portrait | TemplateId::Aria | TemplateId::Saffron
+    )
 }
 
 /// How hyperlinks render for a template.
@@ -84,17 +100,20 @@ mod tests {
 
     #[test]
     fn sidebar_sections_go_to_the_sidebar() {
-        for id in [
-            SectionId::Skills,
-            SectionId::Education,
-            SectionId::Languages,
-            SectionId::Certifications,
-        ] {
-            assert_eq!(
-                placement_for(&id),
-                Placement::Sidebar,
-                "{id:?} should be sidebar"
-            );
+        // Default table (Atelier / Portrait keep the full sidebar set).
+        for tid in [TemplateId::Atelier, TemplateId::Portrait] {
+            for id in [
+                SectionId::Skills,
+                SectionId::Education,
+                SectionId::Languages,
+                SectionId::Certifications,
+            ] {
+                assert_eq!(
+                    placement_for(tid, &id),
+                    Placement::Sidebar,
+                    "{tid:?}/{id:?} should be sidebar"
+                );
+            }
         }
     }
 
@@ -105,21 +124,94 @@ mod tests {
             SectionId::Experience,
             SectionId::Projects,
         ] {
-            assert_eq!(placement_for(&id), Placement::Main, "{id:?} should be main");
+            assert_eq!(
+                placement_for(TemplateId::Portrait, &id),
+                Placement::Main,
+                "{id:?} should be main"
+            );
         }
         assert_eq!(
-            placement_for(&SectionId::Custom("Patents".into())),
+            placement_for(TemplateId::Portrait, &SectionId::Custom("Patents".into())),
             Placement::Main
         );
     }
 
     #[test]
-    fn two_column_only_for_two_column_templates() {
-        assert!(is_two_column(TemplateId::Atelier), "Atelier is two-column");
-        assert!(
-            is_two_column(TemplateId::Portrait),
-            "Portrait is two-column"
+    fn aria_keeps_education_in_the_main_column() {
+        // Aria pulls Education into the main column; the rest of the sidebar set
+        // is unchanged.
+        assert_eq!(
+            placement_for(TemplateId::Aria, &SectionId::Education),
+            Placement::Main,
+            "Aria: Education should read in the main column"
         );
+        for id in [
+            SectionId::Skills,
+            SectionId::Languages,
+            SectionId::Certifications,
+        ] {
+            assert_eq!(
+                placement_for(TemplateId::Aria, &id),
+                Placement::Sidebar,
+                "Aria/{id:?} should stay in the sidebar"
+            );
+        }
+    }
+
+    #[test]
+    fn saffron_keeps_certifications_in_the_main_column() {
+        // Saffron pulls Certifications into the main column; Education stays in
+        // the sidebar (unlike Aria).
+        assert_eq!(
+            placement_for(TemplateId::Saffron, &SectionId::Certifications),
+            Placement::Main,
+            "Saffron: Certifications should read in the main column"
+        );
+        for id in [
+            SectionId::Skills,
+            SectionId::Education,
+            SectionId::Languages,
+        ] {
+            assert_eq!(
+                placement_for(TemplateId::Saffron, &id),
+                Placement::Sidebar,
+                "Saffron/{id:?} should stay in the sidebar"
+            );
+        }
+    }
+
+    #[test]
+    fn default_templates_placement_is_byte_identical() {
+        // Guard: adding the id parameter must NOT shift Atelier/Portrait placement.
+        for tid in [TemplateId::Atelier, TemplateId::Portrait] {
+            assert_eq!(
+                placement_for(tid, &SectionId::Education),
+                Placement::Sidebar
+            );
+            assert_eq!(
+                placement_for(tid, &SectionId::Certifications),
+                Placement::Sidebar
+            );
+            assert_eq!(placement_for(tid, &SectionId::Skills), Placement::Sidebar);
+            assert_eq!(
+                placement_for(tid, &SectionId::Languages),
+                Placement::Sidebar
+            );
+            assert_eq!(placement_for(tid, &SectionId::Summary), Placement::Main);
+            assert_eq!(placement_for(tid, &SectionId::Experience), Placement::Main);
+        }
+    }
+
+    #[test]
+    fn two_column_only_for_two_column_templates() {
+        for id in [
+            TemplateId::Atelier,
+            TemplateId::Portrait,
+            TemplateId::Aria,
+            TemplateId::Saffron,
+        ] {
+            assert!(is_two_column(id), "{id:?} is two-column");
+        }
         assert!(!is_two_column(TemplateId::Classic));
         assert!(!is_two_column(TemplateId::SwissMinimal));
         assert!(
