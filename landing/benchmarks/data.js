@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783680339090,
+  "lastUpdate": 1783686127283,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3269,6 +3269,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 325370,
             "range": "± 9146",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "256ee72fb933ccb95a9ca05d0804094a93a25905",
+          "message": "feat: template tiers with grouped gallery and lebenslauf ats toggle fix (templates pr 2/6) (#591)\n\n* feat(export): add template tier metadata distinguishing ats and design templates\n\nTemplateTier { Ats, Design } on the template registry — render-neutral\nmetadata mirrored by the frontend. ats: classic, swiss minimal,\nacademic, meridian, throughline; design (photo or multi-column):\natelier, portrait, lebenslauf. Adds a tier pin test and a lebenslauf\nats-mode-drops-photo render test.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* feat(ui): group template gallery by tier and fix lebenslauf ats toggle\n\nGallery splits into ATS-Safe and Design sections with tier badges; the\nats-toggle gate and all four reset call sites switch from\ntwo-column-only to design-tier, so lebenslauf (single column + photo)\nfinally surfaces the toggle everywhere and keeps the user's choice.\nTier-aware hint copy (collapse vs photo removal, inclusive for\nphoto-bearing two-column templates) in en and de.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(ui): apply design-tier reset to recommendation apply and tier-aware toggle tooltip\n\nReview follow-ups: the fifth ats reset site (template recommendation\napply) now gates on design tier like the other four, so applying a\nlebenslauf recommendation keeps the user's photo-drop choice; the\ntailor-flow toggle tooltip picks the collapse or photo copy per\ntemplate instead of the generic hint.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-10T14:13:14+02:00",
+          "tree_id": "87b4b236cddaf5f85de277588331141858c6d90e",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/256ee72fb933ccb95a9ca05d0804094a93a25905"
+        },
+        "date": 1783686126756,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2103768,
+            "range": "± 31400",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2632421,
+            "range": "± 46440",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 305949,
+            "range": "± 13809",
             "unit": "ns/iter"
           }
         ]
