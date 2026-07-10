@@ -10,7 +10,7 @@ The AI-Generate wizard (`apps/desktop/src/renderer/features/ai-generate/`) initi
 generated résumés/cover letters as prettified markdown text only. UX #24 requested a real
 template preview so users could edit while seeing the actual layout.
 
-The 9 templates render in Rust: PDF via Typst engine (Typst §2), DOCX via model_docx.
+The résumé templates render in Rust: PDF via Typst engine (Typst §2), DOCX via model_docx.
 ADR-002 (dual PDF/DOCX backends, golden parity) keeps those outputs byte-for-byte aligned.
 
 During implementation we discovered that a **preview-only SVG render path** is cheaper and

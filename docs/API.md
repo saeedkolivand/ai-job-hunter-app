@@ -536,16 +536,21 @@ interface ExportRequest {
   metadata?: ExportMetadata;
 }
 
+// Canonical union: packages/shared/src/ipc/contracts/documents.ts (mirrors the
+// Rust TemplateId enum). Removed ids (e.g. 'modern') deserialize to 'classic'.
 type TemplateId =
   | 'classic'
-  | 'modern'
-  | 'executive'
   | 'swiss-minimal'
-  | 'two-column'
-  | 'editorial-serif'
-  | 'mono-technical'
-  | 'refined-executive'
-  | 'academic';
+  | 'academic'
+  | 'atelier'
+  | 'meridian'
+  | 'throughline'
+  | 'portrait'
+  | 'lebenslauf'
+  | 'cadence'
+  | 'regent'
+  | 'aria'
+  | 'saffron';
 ```
 
 ---
