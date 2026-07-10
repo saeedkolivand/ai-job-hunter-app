@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783715111253,
+  "lastUpdate": 1783722289290,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3521,6 +3521,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 286368,
             "range": "± 9205",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dcd50817f698a04d314647e85f114c699ec27d41",
+          "message": "feat: record honest autopilot run status with per-board summaries (#598)\n\n* feat: record honest autopilot run status with per-board summaries\n\nRuns persist BoardScrapeSummary per board and derive Failed / CompletedWithErrors / Completed from them instead of always recording Completed with 0 found.\nPaginated boards report partial-harvest truncation via a ScrapeContext side-channel into BoardScrapeSummary.truncated; the run payload carries status so the renderer branches honestly.\nRenderer maps failed to the error banner and completedWithErrors to an amber badge (en+de); autopilot store load is per-record tolerant so an unknown future status cannot wipe the file.\nTrust program PR B (audit 2026-07-10).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: clear stale run summaries on cancel and surface truncation in diagnostics\n\nCancel path uses set_run_status_clearing_summaries so a cancelled run never keeps a prior run's per-board data.\nscrape_diagnostics also reports truncated boards; the renderer clears the stale failure banner when a new run starts.\nIncludes docs/knowledge sync and a persisted lesson.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-11T00:15:43+02:00",
+          "tree_id": "5ab4c8a1aba67ec0e3057e6e5a2a14c257849c82",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/dcd50817f698a04d314647e85f114c699ec27d41"
+        },
+        "date": 1783722288785,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2221359,
+            "range": "± 26000",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2703967,
+            "range": "± 35902",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 283368,
+            "range": "± 11163",
             "unit": "ns/iter"
           }
         ]
