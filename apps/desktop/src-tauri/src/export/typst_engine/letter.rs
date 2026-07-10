@@ -82,7 +82,12 @@ pub(super) struct LetterOpts {
     pub date_position: String,
     /// `"top"` | `"bottom"`.
     pub sender_position: String,
-    /// `"before-date"` | `"after-date"`.
+    /// Horizontal-placement hint from the shared fixture (`"left"` | `"top-right"`),
+    /// passed through verbatim. Not currently read by any `.typ` template — every
+    /// letter layout (Classic/Refined/Banded) renders the recipient block
+    /// unconditionally, left-aligned, right after the date. (fr's true top-right
+    /// recipient layout is not implemented — a real top-right variant is a
+    /// possible follow-up; kept in the data contract for that future use.)
     pub recipient_position: String,
     pub subject_line_used: bool,
     pub subject_line_label: String,
