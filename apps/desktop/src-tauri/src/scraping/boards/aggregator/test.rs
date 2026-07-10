@@ -956,31 +956,56 @@ fn aggregator_search_surfaces_store_read_failure_as_error() {
     clear_aggregator_slots();
 }
 
-/// Consistency guard: `aggregator_has_configured_provider` counts the Apify
-/// provider, so `aggregator_store_error` must probe the Apify token slot too. A
-/// keyring READ FAILURE on the APIFY token slot ALONE (Adzuna + JSearch merely
-/// absent) must classify as a store error — `needs_keys()` false and `search`
-/// surfaces the fault as a board error — NOT a misleading `needs-keys` skip.
-#[test]
-fn aggregator_apify_slot_read_failure_is_a_store_error_not_needs_keys() {
-    let _guard = AGG_KEYRING_LOCK.lock().unwrap();
-    crate::credentials::install_mock_keyring();
-    clear_aggregator_slots();
-
-    // Arm a non-NoEntry failure on the APIFY token slot only. Adzuna + JSearch stay
-    // absent (NoEntry → Ok(None)), so without probing the Apify slot this would look
-    // like a plain "no keys" needs-keys skip.
+/// Arm a non-NoEntry failure on the APIFY token slot only (Adzuna + JSearch stay
+/// absent — `NoEntry` → `Ok(None)`). `keyring_core::mock::Cred::set_error` is a
+/// ONE-SHOT: the induced error is returned and cleared on the very next entry
+/// method call, then the mock reads cleanly again — so callers must arm it
+/// immediately before the single probe they intend to exercise, never reuse one
+/// arm across two reads (a prior version of this test armed once and then called
+/// both `needs_keys()` and `search()` against it, so the second call silently saw
+/// a clean read and the test asserted the wrong thing without failing to compile).
+fn arm_apify_slot_fault() {
     let entry = keyring_core::Entry::new(crate::credentials::SERVICE, &apify_slot()).unwrap();
     let mock: &keyring_core::mock::Cred = entry.as_any().downcast_ref().unwrap();
     mock.set_error(keyring_core::Error::Invalid(
         "induced".to_string(),
         "keyring backend unavailable".to_string(),
     ));
+}
+
+/// Consistency guard: `aggregator_has_configured_provider` counts the Apify
+/// provider, so `aggregator_store_error` must probe the Apify token slot too. A
+/// keyring READ FAILURE on the APIFY token slot ALONE (Adzuna + JSearch merely
+/// absent) must classify as a store error — `needs_keys()` false — NOT a
+/// misleading `needs-keys` skip.
+#[test]
+fn aggregator_apify_slot_read_failure_is_not_a_needs_keys_skip() {
+    let _guard = AGG_KEYRING_LOCK.lock().unwrap();
+    crate::credentials::install_mock_keyring();
+    clear_aggregator_slots();
+
+    arm_apify_slot_fault();
 
     assert!(
         !AggregatorScraper.needs_keys(),
         "an Apify-slot store fault (others absent) must NOT be a needs-keys skip"
     );
+
+    clear_aggregator_slots();
+}
+
+/// Companion to the classification test above: an APIFY-slot-only store fault
+/// (Adzuna + JSearch merely absent) makes `search` return a board error naming
+/// the store as unavailable — NOT a silent `Ok(empty)`. Arms its own fresh fault
+/// (see [`arm_apify_slot_fault`] doc — the mock error is one-shot, so this must
+/// NOT share an arm with the `needs_keys()` probe above).
+#[test]
+fn aggregator_apify_slot_read_failure_surfaces_as_search_error() {
+    let _guard = AGG_KEYRING_LOCK.lock().unwrap();
+    crate::credentials::install_mock_keyring();
+    clear_aggregator_slots();
+
+    arm_apify_slot_fault();
 
     let result = block_on(AggregatorScraper.search(make_input(), make_ctx()));
     assert!(
