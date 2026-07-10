@@ -49,7 +49,7 @@ const SCALE_TYP: &str = include_str!("templates/_scale.typ");
 const ATELIER_TYP: &str = include_str!("templates/atelier.typ");
 
 /// Parametric single-column template driven by `data.style`.
-/// Serves Classic, SwissMinimal, and Academic.
+/// Serves Classic, SwissMinimal, Academic, Cadence, and Regent.
 const SINGLE_COLUMN_TYP: &str = include_str!("templates/single_column.typ");
 
 /// Meridian — header-band premium single-column template (Phase 3a).
@@ -92,7 +92,7 @@ pub enum TypstTemplate {
     /// Phase 1b — two-column premium sidebar template.
     Atelier,
     /// Phase 2 — parametric single-column driven by `data.style`.
-    /// Serves Classic, SwissMinimal, and Academic.
+    /// Serves Classic, SwissMinimal, Academic, Cadence, and Regent.
     SingleColumn,
     /// Phase 3a — header-band premium single-column template.
     Meridian,
@@ -130,16 +130,20 @@ impl TypstTemplate {
     }
 
     /// Derive the Typst template from an existing [`Template`] configuration.
-    /// All eight live template IDs are handled exhaustively; no fallback needed.
+    /// All ten live template IDs are handled exhaustively; no fallback needed.
     pub fn from_template(t: &Template) -> Self {
         match t.id {
             TemplateId::Atelier => TypstTemplate::Atelier,
-            // Classic, SwissMinimal, Academic → parametric SingleColumn renderer.
-            // (Classic migrated off its bespoke `classic.typ` onto the shared
-            // parametric template, styled from its registry palette via data.style.)
-            TemplateId::Classic | TemplateId::SwissMinimal | TemplateId::Academic => {
-                TypstTemplate::SingleColumn
-            }
+            // Classic, SwissMinimal, Academic, Cadence, Regent → parametric
+            // SingleColumn renderer. (Classic migrated off its bespoke
+            // `classic.typ` onto the shared parametric template; Cadence and Regent
+            // are pure-config single-column variants — no bespoke `.typ`. All are
+            // styled from their registry palette via data.style.)
+            TemplateId::Classic
+            | TemplateId::SwissMinimal
+            | TemplateId::Academic
+            | TemplateId::Cadence
+            | TemplateId::Regent => TypstTemplate::SingleColumn,
             // Phase 3a: two premium single-column templates.
             TemplateId::Meridian => TypstTemplate::Meridian,
             TemplateId::Throughline => TypstTemplate::Throughline,

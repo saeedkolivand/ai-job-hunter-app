@@ -337,9 +337,9 @@ describe('StepTemplate', () => {
     expect(screen.getByText('aiGenerate.tier.design')).toBeInTheDocument();
   });
 
-  it('shows a tier badge on every card (5 ATS + 3 design)', () => {
+  it('shows a tier badge on every card (7 ATS + 3 design)', () => {
     renderStep();
-    expect(screen.getAllByText('aiGenerate.tier.atsBadge')).toHaveLength(5);
+    expect(screen.getAllByText('aiGenerate.tier.atsBadge')).toHaveLength(7);
     expect(screen.getAllByText('aiGenerate.tier.designBadge')).toHaveLength(3);
   });
 
@@ -353,13 +353,18 @@ describe('StepTemplate', () => {
     }
   );
 
-  it.each(['classic', 'swiss-minimal', 'academic', 'meridian', 'throughline'] as const)(
-    'hides the ATS toggle for the ATS-tier template %s',
-    (id) => {
-      renderStep({ templateId: id });
-      expect(screen.queryByRole('switch')).not.toBeInTheDocument();
-    }
-  );
+  it.each([
+    'classic',
+    'swiss-minimal',
+    'academic',
+    'meridian',
+    'throughline',
+    'cadence',
+    'regent',
+  ] as const)('hides the ATS toggle for the ATS-tier template %s', (id) => {
+    renderStep({ templateId: id });
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+  });
 
   it('uses the two-column hint for a two-column template but the photo hint for Lebenslauf', () => {
     const { unmount } = renderStep({ templateId: 'atelier' });

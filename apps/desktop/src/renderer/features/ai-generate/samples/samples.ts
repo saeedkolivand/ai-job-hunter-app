@@ -25,4 +25,6 @@ export const TEMPLATE_CAPTIONS: Record<TemplateId, string> = {
   throughline: 'Vertical timeline spine. Engineering & product careers with a clear arc.',
   portrait: 'Photo header, two columns. European market and personal-brand résumés.',
   lebenslauf: 'DIN-style tabular CV with photo. German-speaking (DACH) market standard.',
+  cadence: 'Letter-spaced modern headings, restrained blue-grey. Premium and parser-safe.',
+  regent: 'Executive serif with small-caps headings and a deep burgundy accent. Leadership roles.',
 };
