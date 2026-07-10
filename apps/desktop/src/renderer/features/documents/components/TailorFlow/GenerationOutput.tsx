@@ -13,6 +13,7 @@ import {
   buildFilename,
   type GenerationMeta,
   isDesignTier,
+  isTwoColumnTemplate,
   TEMPLATE_IDS,
   type TemplateId,
   TEMPLATES,
@@ -273,7 +274,11 @@ export function GenerationOutput({
                 StepTemplate's switch markup; reuses the aiGenerate.atsMode keys). */}
             {activeOut === 'resume' && isDesignTier(templateId) && (
               <div
-                title={t('aiGenerate.atsModeHint')}
+                title={t(
+                  isTwoColumnTemplate(templateId)
+                    ? 'aiGenerate.atsModeHintTwoColumn'
+                    : 'aiGenerate.atsModeHintPhoto'
+                )}
                 className={cn(
                   'flex h-auto items-center gap-1.5 rounded-lg border px-2 py-1 transition-all',
                   atsMode
