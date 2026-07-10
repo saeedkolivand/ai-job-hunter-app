@@ -130,6 +130,9 @@ pub struct Template {
     /// `single_column.typ` falls back to the house `0.5pt` when this is `0.0` or
     /// the style is absent — every pre-PR3 ruled template ships `0.5`, so this is
     /// byte-identical for them; only Cadence sets a real `0.75` override.
+    /// NOTE: `0.0` means "default thickness", NOT "no rule" — rule *presence*
+    /// is owned by `section_style` (`BoldOnly` = no rule). Don't set `0.0` on a
+    /// `RuledBottom` template expecting suppression.
     pub rule_thickness: f32,
     /// Extra letter-spacing (tracking) applied to section headings, in em units.
     /// `0.0` (the default for every pre-PR3 template) leaves headings untracked —
