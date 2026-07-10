@@ -177,6 +177,7 @@ async fn empty_companies_returns_empty_without_network() {
         signal: tokio_util::sync::CancellationToken::new(),
         on_progress: None,
         on_item: None,
+        on_truncation: None,
     };
     let result = scraper.search(input, ctx).await;
     assert!(result.is_ok(), "empty companies must return Ok, not Err");
@@ -219,6 +220,7 @@ async fn all_blank_companies_returns_ok_empty() {
         signal: tokio_util::sync::CancellationToken::new(),
         on_progress: None,
         on_item: None,
+        on_truncation: None,
     };
     let result = scraper.search(input, ctx).await;
     assert!(result.is_ok());
@@ -252,6 +254,7 @@ async fn live_search_returns_results() {
         signal: tokio_util::sync::CancellationToken::new(),
         on_progress: None,
         on_item: None,
+        on_truncation: None,
     };
     let results = tokio::time::timeout(
         std::time::Duration::from_secs(30),

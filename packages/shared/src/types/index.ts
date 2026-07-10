@@ -5,6 +5,7 @@
 
 import type { z } from 'zod';
 
+import type { BoardScrapeSummary } from '../ipc/contracts/boards.js';
 import type { AiStreamChunkSchema, JobEventSchema } from '../schemas/index.js';
 
 export type Locale = 'en' | 'de' | 'fr' | 'es' | 'it' | 'tr' | 'pt' | 'ru' | 'zh' | 'ja' | 'ko';
@@ -200,9 +201,15 @@ export type AuthCapableBoard = (typeof AUTH_CAPABLE_BOARDS)[number];
 export type AutopilotStatus = 'active' | 'paused' | 'archived';
 export type AutopilotSchedule = 'manual' | 'hourly' | 'daily' | 'twice_daily';
 
-/** Outcome of an autopilot's most recent run. `interrupted` is reconciled at
- *  startup from a run left running when the app closed/crashed mid-run. */
-export type AutopilotRunStatus = 'inProgress' | 'completed' | 'failed' | 'interrupted';
+/** Outcome of an autopilot's most recent run.
+ *  - `completedWithErrors` — the run finished and at least one board returned
+ *    results, but at least one other board errored or kept only a partial
+ *    (`truncated`) harvest. See `lastRunSummaries` for the per-board detail.
+ *  - `failed` — zero boards succeeded (all errored or were skipped).
+ *  - `interrupted` — reconciled at startup from a run left running when the app
+ *    closed/crashed mid-run. */
+export type AutopilotRunStatus =
+  'inProgress' | 'completed' | 'completedWithErrors' | 'failed' | 'interrupted';
 
 /** Autopilot job-discovery agent — persisted entity. Finds & ranks matching
  *  jobs on a schedule and notifies you; you apply with the tailoring assistant. */
@@ -253,6 +260,11 @@ export interface Autopilot {
   /** Outcome of the most recent run — drives the live/failed/interrupted
    *  badge. Absent until the first run. */
   runStatus?: AutopilotRunStatus;
+  /** Per-board outcome of the most recent run (board · count · error/skipped/
+   *  truncated). Persisted so the UI can explain a zero/partial result *after*
+   *  the run, not just live. Absent/empty for records written before this field
+   *  existed, or a run where no board reported a problem. */
+  lastRunSummaries?: BoardScrapeSummary[];
   lastRunAt?: number;
   createdAt: number;
   updatedAt: number;

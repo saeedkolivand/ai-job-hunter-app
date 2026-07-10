@@ -64,6 +64,24 @@ pub struct ScrapeContext {
     pub signal: tokio_util::sync::CancellationToken,
     pub on_progress: Option<Box<dyn Fn(f32) + Send>>,
     pub on_item: Option<Box<dyn Fn(JobPosting) + Send>>,
+    /// Reports that a paginated board stopped early after a mid-run page failure
+    /// and kept its partial harvest (e.g. `"page 3 of 5 failed: HTTP 429"`). Only
+    /// the paginated boards that fail-open on a later page (The Muse, Arbeitnow,
+    /// Arbeitsagentur) set this, via [`ScrapeContext::report_truncation`]; the
+    /// engine surfaces it as `BoardScrapeSummary.truncated` so a partial harvest
+    /// is distinguishable from a complete one. `None` for every other board and
+    /// whenever no sink is wired (e.g. a board's own unit tests).
+    pub on_truncation: Option<Box<dyn Fn(String) + Send>>,
+}
+
+impl ScrapeContext {
+    /// Report a partial-harvest truncation reason (see [`ScrapeContext::on_truncation`]).
+    /// No-op when no sink is wired, so paginated boards can report unconditionally.
+    pub fn report_truncation(&self, reason: String) {
+        if let Some(ref cb) = self.on_truncation {
+            cb(reason);
+        }
+    }
 }
 
 #[allow(dead_code)]

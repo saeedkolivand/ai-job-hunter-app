@@ -851,6 +851,7 @@ fn make_ctx() -> ScrapeContext {
         signal: make_token(),
         on_progress: None,
         on_item: None,
+        on_truncation: None,
     }
 }
 

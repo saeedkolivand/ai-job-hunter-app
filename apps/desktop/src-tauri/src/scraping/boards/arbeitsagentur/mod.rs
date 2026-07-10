@@ -159,6 +159,7 @@ impl Scraper for ArbeitsagenturScraper {
                         "[arbeitsagentur] page {page} failed: {e}; returning {} collected",
                         out.len()
                     );
+                    ctx.report_truncation(format!("page {page} of {max_pages} failed: {e}"));
                     break;
                 }
             };

@@ -61,6 +61,7 @@ async fn invalid_slug_skipped_without_network() {
         signal: tokio_util::sync::CancellationToken::new(),
         on_progress: None,
         on_item: None,
+        on_truncation: None,
     };
 
     // IP:port — the primary SSRF vector.
@@ -302,6 +303,7 @@ async fn empty_companies_returns_empty_without_network() {
         signal: tokio_util::sync::CancellationToken::new(),
         on_progress: None,
         on_item: None,
+        on_truncation: None,
     };
     let result = scraper.search(input, ctx).await;
     assert!(result.is_ok(), "empty companies must return Ok, not Err");
@@ -338,6 +340,7 @@ async fn live_search_returns_results() {
         signal: tokio_util::sync::CancellationToken::new(),
         on_progress: None,
         on_item: None,
+        on_truncation: None,
     };
     let results = tokio::time::timeout(
         std::time::Duration::from_secs(30),

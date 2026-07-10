@@ -15,7 +15,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { Autopilot, AutopilotFoundJob } from '@ajh/shared';
+import type { Autopilot, AutopilotFoundJob, AutopilotRunStatus } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import {
   ActionMenu,
@@ -71,6 +71,28 @@ const STEP_ICON: Record<string, string> = {
 
 const STATUS_TAG = 'rounded-full px-1.5 py-0.5 text-[8px] uppercase tracking-wider';
 
+/**
+ * Persisted run-outcome → badge label key + color. A `Partial` map IS the
+ * graceful fallback: a happy `completed`/`inProgress` — or any unknown/future
+ * `runStatus` — is simply absent from the map, so no badge renders and nothing
+ * ever prints a raw enum string. `failed` reads as an error (red);
+ * `completedWithErrors` (some boards failed/truncated) and `interrupted` read as
+ * warnings (amber).
+ */
+const RUN_STATUS_BADGE: Partial<
+  Record<AutopilotRunStatus, { labelKey: string; className: string }>
+> = {
+  failed: { labelKey: 'autopilot.badge.failed', className: 'bg-red-400/15 text-red-300' },
+  completedWithErrors: {
+    labelKey: 'autopilot.badge.completedWithErrors',
+    className: 'bg-amber-400/15 text-amber-300',
+  },
+  interrupted: {
+    labelKey: 'autopilot.badge.interrupted',
+    className: 'bg-amber-400/15 text-amber-300',
+  },
+};
+
 export function AutopilotCard({
   autopilot: ap,
   runState,
@@ -94,6 +116,10 @@ export function AutopilotCard({
   const headerRef = useRef<HTMLDivElement>(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
   const foundJobs = ap.foundJobs ?? [];
+  // Persisted run-outcome badge (failed / completedWithErrors / interrupted).
+  // Undefined for the happy path and for any unknown/future status — the
+  // explicit graceful fallback (renders nothing rather than a raw enum).
+  const runStatusBadge = ap.runStatus ? RUN_STATUS_BADGE[ap.runStatus] : undefined;
 
   // Scroll-to-row + transient highlight target for `focusedJobUrl` (returning
   // from an Apply via Back). Kept in a ref (not state) since it isn't rendered;
@@ -274,20 +300,14 @@ export function AutopilotCard({
             <span className="text-[10px] text-foreground/30 bg-muted px-1.5 py-0.5 rounded capitalize">
               {ap.schedule.replace('_', ' ')}
             </span>
-            {!running && (ap.runStatus === 'failed' || ap.runStatus === 'interrupted') && (
+            {!running && runStatusBadge && (
               <span
                 className={cn(
                   'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium',
-                  ap.runStatus === 'failed'
-                    ? 'bg-red-400/15 text-red-300'
-                    : 'bg-amber-400/15 text-amber-300'
+                  runStatusBadge.className
                 )}
               >
-                {t(
-                  ap.runStatus === 'failed'
-                    ? 'autopilot.badge.failed'
-                    : 'autopilot.badge.interrupted'
-                )}
+                {t(runStatusBadge.labelKey)}
               </span>
             )}
           </div>
