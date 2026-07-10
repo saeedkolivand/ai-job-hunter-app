@@ -575,11 +575,11 @@ Selectable card for option groups (AI model selection, template picker):
 
 ```typescript
 <OptionTile
-  selected={template === "modern"}
-  onClick={() => setTemplate("modern")}
-  label="Modern"
+  selected={template === "atelier"}
+  onClick={() => setTemplate("atelier")}
+  label="Atelier"
   description="Clean two-column layout with accent sidebar"
-  preview={<TemplatePreview id="modern" />}
+  preview={<TemplatePreview id="atelier" />}
 />
 ```
 

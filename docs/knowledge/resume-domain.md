@@ -1,6 +1,6 @@
 # Resume domain (resume + ATS + export)
 
-Last updated: 2026-06-09
+Last updated: 2026-07-10
 
 Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `job-match-expert` (ATS scoring). Canonical: [`docs/EXPORT_TEMPLATES.md`](../EXPORT_TEMPLATES.md). Source is authoritative for literals (template count, scoring weights).
 
@@ -10,7 +10,7 @@ Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `j
 
 ## Templates
 
-Nine templates. `TemplateId` in `export/types.rs`; registry/styling data in `export/templates/mod.rs`; `.typ` sources embedded at build time in `export/typst_engine/templates/`. Unknown IDs fall back to `Classic` via the custom `Deserialize` impl (serde-tolerant). Two-column set: `Atelier` + `Portrait` — gate via `theme::is_two_column`. Section→column routing: `theme::placement_for` (single source of truth). See [`docs/EXPORT_TEMPLATES.md`](../EXPORT_TEMPLATES.md) for the full table; do not copy counts here.
+Two **tiers** — `TemplateTier { Ats, Design }` (`export/templates/mod.rs`), metadata only: drives the gallery grouping (ATS-Safe / Design) and **which templates surface the ATS-mode toggle** (design-tier, incl. the photo single-column `Lebenslauf`, replacing the old two-column gate). Frontend mirror: `isDesignTier` in `renderer/lib/generate/templates/templates.ts`. `TemplateId` in `export/types.rs`; registry/styling in `export/templates/mod.rs`; `.typ` sources embedded via `include_str!` in `export/typst_engine/templates/` (ATS templates route through the parametric `single_column.typ`; photo/two-column ones have bespoke `.typ`). Unknown / removed IDs (including a saved `"modern"`) fall back to `Classic` via the custom `Deserialize` impl (serde-tolerant). Two-column set gated by `theme::is_two_column`. Section→column routing is `theme::placement_for(template_id, section)` — **template-aware** (per-template overrides pull a section into the main column). Per-export **Document accent** recolors the chosen template's accent role, validated by one shared `normalise_accent` (no PDF/DOCX drift); it never reads `ThemePrefs` — [ADR 0007](../adr/0007-document-color-is-a-knob-not-a-template.md). See [`docs/EXPORT_TEMPLATES.md`](../EXPORT_TEMPLATES.md) for the full roster + tiers; source is authoritative for the count/literals.
 
 ## ATS — two distinct concerns (don't conflate)
 
@@ -30,13 +30,15 @@ Nine templates. `TemplateId` in `export/types.rs`; registry/styling data in `exp
 
 ## Cover-letter PDF
 
-`render_letter_pdf` in `typst_engine/engine.rs`. Market conventions (date placement, recipient block, sign-off) come from `locale/letter.rs` (`LetterMarketConventions`). **Cover letters inherit the resume template's visual style** (accent/fonts/sizes) via `letter_style_from_template` in `typst_engine/letter.rs`. `parse_cover_letter` produces a `LetterModel` serialised to JSON — no user content concatenated into Typst markup.
+`render_letter_pdf` in `typst_engine/engine.rs`. Market conventions (date placement, recipient block, sign-off) come from `locale/letter.rs` (`LetterMarketConventions`). **Cover letters inherit the resume template's visual style** (accent/fonts/sizes) via `letter_style_from_template` (`LetterStyle`) in `typst_engine/letter.rs`. `parse_cover_letter` produces a `LetterModel` serialised to JSON — no user content concatenated into Typst markup.
 
-**Template previews** (for the AI-Generate template picker): offline test `generate_cover_template_previews` in `typst_engine/test.rs` renders each of the 9 resume templates' cover-letter style to SVG (per-template; vector, no raster). Owned by: `export/typst_engine/`. Consumed by: `samples/cover-template-previews.ts` Vite glob → `COVER_TEMPLATE_PREVIEWS` → renderer UI. See [`docs/EXPORT_TEMPLATES.md` § Cover-letter template previews](../EXPORT_TEMPLATES.md#cover-letter-template-previews-ai-generate-ui).
+**Letter layouts** (`LetterLayout { Classic, Refined, Banded }`, wire `letterLayoutId` in `export/types.rs`) select the letter **arrangement** — orthogonal to the résumé template. `letter_source` dispatches to `letter.typ` / `letter_refined.typ` / `letter_banded.typ`. Layout owns composition; palette/fonts inherit via `LetterStyle`; market conventions (`data.opts`) own semantics — **layouts gate structural elements on `data.opts`, never on the layout id**. DOCX approximates (Banded's angled band → flat accent-tinted shading; PDF small-caps → uppercase). Caveat: bundled Source Serif 4 lacks `smcp`, so PDF small-caps are visually inert pending a font swap. See [`docs/EXPORT_TEMPLATES.md` § Letter layouts](../EXPORT_TEMPLATES.md#letter-layouts-classic--refined--banded).
+
+**Template previews** (for the AI-Generate template picker): offline test `generate_cover_template_previews` in `typst_engine/test.rs` renders every résumé template's cover-letter style to SVG (per-template; vector, no raster). Owned by: `export/typst_engine/`. Consumed by: `samples/cover-template-previews.ts` Vite glob → `COVER_TEMPLATE_PREVIEWS` → renderer UI. Preview assets for the new templates + the showcase banner await regeneration (the `#[ignore]` generators can't run on the dev host). See [`docs/EXPORT_TEMPLATES.md` § Cover-letter template previews](../EXPORT_TEMPLATES.md#cover-letter-template-previews-ai-generate-ui).
 
 ## Candidate photo
 
-`ContactProfile.photo` — **`data:` URI only** (file paths rejected at `typst_engine/photo.rs: resolve_photo`). Client pipeline: `apps/desktop/src/renderer/lib/photo.ts` (crop/scale/EXIF-strip → JPEG data URL). Used by `Portrait` + `Lebenslauf` templates.
+`ContactProfile.photo` — **`data:` URI only** (file paths rejected at `typst_engine/photo.rs: resolve_photo`). Client pipeline: `apps/desktop/src/renderer/lib/photo.ts` (crop/scale/EXIF-strip → JPEG data URL). Used by the photo templates (`Portrait`, `Lebenslauf`, `Aria`, `Saffron`); design-tier templates drop the photo under ATS mode.
 
 ## CJK deferred
 

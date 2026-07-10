@@ -93,10 +93,10 @@ AI Job Hunter is a desktop application built with **[Tauri][tauri]** (a [Rust][r
 Your résumés, generations, applications, tracked job data, and credentials live in a local SQLite database on your device — there is **no telemetry** and **no app-operated backend** collecting them. The app sends data out only to services **you** configure or invoke: your AI provider (which receives the résumé and job text you ask it to generate a résumé or cover letter from), the job boards you scrape, an optional web search you explicitly enable, an on-launch updater check (GitHub), user-typed location autocomplete (OpenStreetMap), and opt-in company-logo enrichment (Clearbit, default **off**). Nothing is sent to any first-party or analytics backend — see [ADR 0005](docs/adr/0005-network-egress-privacy-boundary.md).
 
 <p align="center">
-  <img src="docs/assets/templates-showcase.png" alt="The nine résumé templates rendered side by side: Classic, Modern, Swiss Minimal, Academic, Atelier, Meridian, Throughline, Portrait, and Lebenslauf" width="100%">
+  <img src="docs/assets/templates-showcase.png" alt="The résumé templates rendered side by side, grouped ATS-Safe (Classic, Swiss Minimal, Academic, Meridian, Throughline, Cadence, Regent) and Design (Atelier, Portrait, Lebenslauf, Aria, Saffron)" width="100%">
 </p>
 <p align="center">
-  <sub>Nine ATS-safe résumé templates — Classic · Modern · Swiss Minimal · Academic · Atelier · Meridian · Throughline · Portrait · Lebenslauf</sub>
+  <sub>Twelve résumé templates in two tiers — ATS-Safe: Classic · Swiss Minimal · Academic · Meridian · Throughline · Cadence · Regent — Design: Atelier · Portrait · Lebenslauf · Aria · Saffron</sub>
 </p>
 
 ---
