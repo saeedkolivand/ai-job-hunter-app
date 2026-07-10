@@ -12,7 +12,13 @@ export interface AutopilotContract {
 
   remove(req: { autopilotId: string }): Promise<void>;
 
-  run(req: { autopilotId: string }): Promise<{ jobId: string }>;
+  /**
+   * Run an autopilot now. The backend command *resolves* (does not reject) with
+   * an `{ error }` payload on a scrape failure or unknown id, so callers MUST
+   * inspect `error` — a resolved value is not proof of success. `jobId` is
+   * present on every non-error outcome (success / cancel).
+   */
+  run(req: { autopilotId: string }): Promise<{ jobId?: string; error?: string }>;
 
   pause(req: { autopilotId: string }): Promise<void>;
 

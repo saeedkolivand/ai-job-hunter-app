@@ -66,6 +66,13 @@ export function useScraping(
       [...scrapeForm.boards].sort().join(','),
       scrapeForm.query.trim().toLowerCase(),
       scrapeForm.location.trim().toLowerCase(),
+      // Geo fields: a geo-different search (same keywords, different country /
+      // coordinates / radius) targets a different market, so it must REPLACE the
+      // stale results rather than append to them.
+      scrapeForm.countryCode ?? '',
+      scrapeForm.latitude ?? '',
+      scrapeForm.longitude ?? '',
+      scrapeForm.radiusKm ?? '',
       scrapeForm.dateFilter ?? '',
       scrapeForm.companies.slice().sort().join(','),
     ].join('|');

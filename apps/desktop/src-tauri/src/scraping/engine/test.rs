@@ -1253,6 +1253,80 @@ async fn required_board_without_session_is_skipped() {
     );
 }
 
+/// A board that declares `needs_keys() == true` (a key-backed board with no API
+/// keys configured) must be skipped with `skipped=Some("needs-keys")`, count=0,
+/// no error — its `search` must never run. A sibling guest board runs normally.
+#[tokio::test]
+async fn needs_keys_board_without_keys_is_skipped() {
+    struct NeedsKeysPanicker;
+
+    #[async_trait::async_trait]
+    impl Scraper for NeedsKeysPanicker {
+        fn id(&self) -> &'static str {
+            "needs-keys-panicker"
+        }
+        fn display_name(&self) -> &'static str {
+            "NeedsKeysPanicker"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        fn needs_keys(&self) -> bool {
+            true
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            _ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            panic!("needs_keys board must never be searched when unconfigured");
+        }
+    }
+
+    static NK: std::sync::LazyLock<NeedsKeysPanicker> =
+        std::sync::LazyLock::new(|| NeedsKeysPanicker);
+    static FAKE_GUEST: std::sync::LazyLock<FakeScraper> =
+        std::sync::LazyLock::new(|| FakeScraper::http(1));
+
+    let engine = ScraperEngine::new();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["nk-board".to_string(), "guest-board".to_string()],
+            fake_input(5),
+            "job-needs-keys".to_string(),
+            None,
+            None,
+            tmp.path(),
+            |id| match id {
+                "nk-board" => Ok(&*NK as &'static dyn Scraper),
+                "guest-board" => Ok(&*FAKE_GUEST as &'static dyn Scraper),
+                other => Err(anyhow::anyhow!("unknown: {other}")),
+            },
+        )
+        .await
+        .expect("skip run must return Ok");
+
+    let nk = summaries
+        .iter()
+        .find(|s| s.board == "nk-board")
+        .expect("nk-board summary missing");
+    assert_eq!(
+        nk.skipped.as_deref(),
+        Some("needs-keys"),
+        "an unconfigured key-backed board must be skipped with 'needs-keys'"
+    );
+    assert_eq!(nk.count, 0, "skipped board must report count=0");
+    assert!(nk.error.is_none(), "skipped board must not carry an error");
+
+    let guest = summaries
+        .iter()
+        .find(|s| s.board == "guest-board")
+        .expect("guest-board summary missing");
+    assert!(guest.skipped.is_none(), "guest board must not be skipped");
+    assert_eq!(guest.count, 1, "guest board must run and report count=1");
+}
+
 /// Input order is preserved across a mixed run/skip/run scenario:
 /// [required-no-session (skip), guest (run), required-no-session-2 (skip)]
 /// Summaries must come back in that same order, not skips-last.
