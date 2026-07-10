@@ -269,13 +269,23 @@
 
 // ── Candidate initials (no-photo fallback) ────────────────────────────────────
 
+// `.slice(0, 1)` is a BYTE offset and panics whenever the first character is
+// multi-byte in UTF-8 (Ü, É, Ł, …) — plausible in DACH/EU candidate names. Use
+// `.clusters()` (grapheme-cluster split) and take the first cluster instead, so
+// a name like "Über Ödegaard" renders safely instead of aborting the export.
+#let first-cluster(s) = {
+  let cl = s.clusters()
+  if cl.len() > 0 { cl.first() } else { "" }
+}
+
 #let name-str = if "name" in data.header { data.header.name } else { "" }
 #let initials = {
   let parts = name-str.split(" ").filter(p => p.len() > 0)
   if parts.len() >= 2 {
-    upper(parts.at(0).slice(0, 1)) + upper(parts.at(1).slice(0, 1))
+    upper(first-cluster(parts.at(0))) + upper(first-cluster(parts.at(1)))
   } else if parts.len() == 1 {
-    upper(parts.at(0).slice(0, 1))
+    let c = first-cluster(parts.at(0))
+    if c != "" { upper(c) } else { "?" }
   } else {
     "?"
   }

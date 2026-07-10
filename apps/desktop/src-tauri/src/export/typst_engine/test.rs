@@ -2014,6 +2014,28 @@ fn portrait_render_no_photo_produces_valid_pdf() {
     assert!(bytes.starts_with(b"%PDF"));
 }
 
+// (1b-multibyte) Portrait's no-photo monogram fallback slices the candidate's
+// first name to build initials. A byte-offset `.slice(0, 1)` panics Typst
+// whenever the first character is multi-byte in UTF-8 (plausible DACH/EU
+// names) — this pins the grapheme-safe fix (`.clusters().first()`).
+#[test]
+fn portrait_no_photo_monogram_is_grapheme_safe_for_multibyte_names() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+
+    let text = "Über Ödegaard\nuber@example.com\n\nSUMMARY\nEngineer.\n";
+    let model = model_from_resume_text(text);
+    let t = template_style(TemplateId::Portrait);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Portrait,
+        &opts_photo(false),
+        Some(&t),
+        None,
+    )
+    .expect("portrait no-photo render with a multi-byte first character must not panic");
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
 // (1c) Portrait ATS mode → valid PDF with linear reading order.
 #[test]
 fn portrait_ats_harness() {
@@ -2488,13 +2510,23 @@ fn aria_ats_mode_linearizes_reading_order() {
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase();
-    // Experience before Education before Skills in the linear reading order.
+    // ATS linearization (`model::transform::linearize`) reorders `data.sections`
+    // to the fixed canonical ATS reading order (Summary, Experience, Skills,
+    // Projects, Education, Certifications, Languages, Awards, Publications) — it
+    // ignores column `placement` entirely, which only shapes the two-column
+    // VISUAL layout and never applies in ATS mode. So the Aria placement override
+    // (Education → main column) has no bearing here: the expected order is the
+    // canonical ATS order, not the placement-projected one.
     let exp = lower.find("experience").expect("experience present");
-    let edu = lower.find("education").expect("education present");
     let skl = lower.find("skills").expect("skills present");
+    let edu = lower.find("education").expect("education present");
+    let cert = lower
+        .find("certifications")
+        .expect("certifications present");
     assert!(
-        exp < edu && edu < skl,
-        "aria ATS reading order wrong: {lower}"
+        exp < skl && skl < edu && edu < cert,
+        "aria ATS reading order wrong (expected canonical ATS order: \
+         experience < skills < education < certifications): {lower}"
     );
 }
 
@@ -2628,6 +2660,27 @@ fn saffron_render_no_photo_produces_valid_pdf() {
     );
 }
 
+// Saffron's no-photo monogram fallback shares Portrait's slicing logic (copied
+// pattern) — same grapheme-safety pin as
+// `portrait_no_photo_monogram_is_grapheme_safe_for_multibyte_names`.
+#[test]
+fn saffron_no_photo_monogram_is_grapheme_safe_for_multibyte_names() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+
+    let text = "Über Ödegaard\nuber@example.com\n\nSUMMARY\nEngineer.\n";
+    let model = model_from_resume_text(text);
+    let t = template_style(TemplateId::Saffron);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Saffron,
+        &opts_photo(false),
+        Some(&t),
+        None,
+    )
+    .expect("saffron no-photo render with a multi-byte first character must not panic");
+    assert!(bytes.starts_with(b"%PDF"));
+}
+
 #[test]
 fn saffron_ats_mode_drops_photo() {
     use crate::export::typst_engine::render_resume_svg_pages_with_photo;
@@ -2683,14 +2736,22 @@ fn saffron_ats_mode_linearizes_reading_order() {
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase();
+    // Same semantics as `aria_ats_mode_linearizes_reading_order`: ATS mode uses
+    // the canonical ATS order (Summary, Experience, Skills, Projects, Education,
+    // Certifications, …) regardless of Saffron's placement override
+    // (Certifications → main column), which is visual-only and never applies in
+    // ATS mode. Include `education` so the expected order isn't coincidentally
+    // satisfied by only checking two of the four sections.
     let exp = lower.find("experience").expect("experience present");
     let skl = lower.find("skills").expect("skills present");
+    let edu = lower.find("education").expect("education present");
     let cert = lower
         .find("certifications")
         .expect("certifications present");
     assert!(
-        exp < skl && skl < cert,
-        "saffron ATS reading order wrong: {lower}"
+        exp < skl && skl < edu && edu < cert,
+        "saffron ATS reading order wrong (expected canonical ATS order: \
+         experience < skills < education < certifications): {lower}"
     );
 }
 
