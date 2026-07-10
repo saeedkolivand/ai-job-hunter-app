@@ -80,8 +80,6 @@ export const transition = {
   blob2: { duration: 0.8, ease: 'easeOut', delay: 0.08 },
   /** Atmospheric background blob — third layer */
   blob3: { duration: 0.9, ease: 'easeOut', delay: 0.12 },
-  /** Fake indeterminate progress for scraping / medium AI tasks */
-  fakeProgress: { duration: 12, ease: 'easeOut' },
   /** Fake indeterminate progress for longer AI generation tasks */
   fakeProgressSlow: { duration: 20, ease: 'easeOut' },
 } as const;

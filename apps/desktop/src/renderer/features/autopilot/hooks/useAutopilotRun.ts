@@ -61,7 +61,16 @@ export function useAutopilotRun() {
     setRunStates({ [id]: 'scraping' });
     setStepLogs({ [id]: [] });
     try {
-      await runAutopilot.mutateAsync(id);
+      // `autopilot_run` RESOLVES (not rejects) with an `{ error }` payload when a
+      // scrape fails or the id is unknown, so a resolved value is not proof of
+      // success — inspect it and route to the SAME error state the reject path
+      // below uses instead of falsely reporting 'done'.
+      const result = await runAutopilot.mutateAsync(id);
+      if (result.error) {
+        setRunStates({ [id]: 'error' });
+        setError(result.error);
+        return;
+      }
       setRunStates({ [id]: 'done' });
     } catch (err) {
       setRunStates({ [id]: 'error' });

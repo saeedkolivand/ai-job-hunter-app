@@ -365,21 +365,13 @@ export function ScrapeForm({
               onGeocode={onGeocode}
             />
 
-            {/* Progress bar */}
+            {/* Scraping status — an honest indeterminate signal only (the earlier
+                fake 85% progress bar fabricated progress and was removed). The real
+                per-board progress is the streamed-results count shown in JobsResults. */}
             {scraping && (
-              <div className="mb-4">
-                <div className="h-px w-full overflow-hidden rounded-full bg-white/[0.06]">
-                  <motion.div
-                    className="h-full rounded-full bg-gradient-to-r from-brand to-brand-soft"
-                    initial={{ width: '0%' }}
-                    animate={{ width: '85%' }}
-                    transition={transition.fakeProgress}
-                  />
-                </div>
-                <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-foreground/40">
-                  <Loader2 size={10} className="animate-spin" />
-                  {t('jobs.scraping')} {scrapingLabel}…
-                </div>
+              <div className="mb-4 flex items-center gap-1.5 text-[11px] text-foreground/40">
+                <Loader2 size={10} className="animate-spin" />
+                {t('jobs.scraping')} {scrapingLabel}…
               </div>
             )}
 
