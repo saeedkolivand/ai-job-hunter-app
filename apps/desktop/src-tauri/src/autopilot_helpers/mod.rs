@@ -247,11 +247,14 @@ pub(crate) fn redact_token(token: &str) -> String {
 }
 
 /// Turn the per-board scrape summaries into a single human-readable reason string
-/// explaining why a run may have come up short — `"<board>: <error>"` for each
-/// board that errored or was skipped, joined with `"; "`. The per-board reason is
-/// run through [`sanitize_reason`] so absolute paths / URLs never leak into the
-/// user-visible step log. Returns an empty string when no board reported a
-/// problem. Pure + unit-testable.
+/// explaining why a run may have come up short — `"<board>: <reason>"` for each
+/// board that errored, was skipped, or kept only a partial (truncated) harvest,
+/// joined with `"; "`. Precedence per board: `error` > `skipped` > `truncated` —
+/// an outright error is the most actionable signal, a truncated harvest the
+/// least (it DID return rows). The per-board reason is run through
+/// [`sanitize_reason`] so absolute paths / URLs never leak into the user-visible
+/// step log. Returns an empty string when no board reported a problem. Pure +
+/// unit-testable.
 pub(crate) fn scrape_diagnostics(summaries: &[BoardScrapeSummary]) -> String {
     summaries
         .iter()
@@ -259,6 +262,7 @@ pub(crate) fn scrape_diagnostics(summaries: &[BoardScrapeSummary]) -> String {
             s.error
                 .as_deref()
                 .or(s.skipped.as_deref())
+                .or(s.truncated.as_deref())
                 .map(|reason| format!("{}: {}", s.board, sanitize_reason(reason)))
         })
         .collect::<Vec<_>>()
@@ -521,12 +525,21 @@ mod tests {
     use crate::scraping::BoardScrapeSummary;
 
     fn summary(board: &str, error: Option<&str>, skipped: Option<&str>) -> BoardScrapeSummary {
+        summary_full(board, error, skipped, None)
+    }
+
+    fn summary_full(
+        board: &str,
+        error: Option<&str>,
+        skipped: Option<&str>,
+        truncated: Option<&str>,
+    ) -> BoardScrapeSummary {
         BoardScrapeSummary {
             board: board.into(),
             count: 0,
             error: error.map(String::from),
             skipped: skipped.map(String::from),
-            truncated: None,
+            truncated: truncated.map(String::from),
         }
     }
 
@@ -566,6 +579,23 @@ mod tests {
         assert!(
             diag.contains("needs-login"),
             "skipped reason must appear; got: {diag}"
+        );
+    }
+
+    #[test]
+    fn truncated_only_board_appears_in_output() {
+        // A paginated board (stage 1) that kept only a partial harvest — no
+        // `error`, no `skipped` — must still surface its truncation reason, not
+        // be silently treated as a clean run.
+        let s = summary_full(
+            "arbeitnow",
+            None,
+            None,
+            Some("page 2 of 5 failed: HTTP 429"),
+        );
+        assert_eq!(
+            scrape_diagnostics(&[s]),
+            "arbeitnow: page 2 of 5 failed: HTTP 429"
         );
     }
 

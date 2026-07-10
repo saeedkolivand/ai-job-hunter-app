@@ -125,4 +125,22 @@ describe('useAutopilotRun — handleRun error-payload handling', () => {
     expect(result.current.runStates.ap5).toBe('done');
     expect(result.current.error).toBeNull();
   });
+
+  it('clears a stale failure banner once a subsequent run succeeds', async () => {
+    runMutateAsync.mockResolvedValueOnce({ jobId: 'j7', status: 'failed', found: 0 });
+    const { result } = renderHookWithClient(() => useAutopilotRun());
+
+    await act(async () => {
+      await result.current.handleRun('ap7');
+    });
+    expect(result.current.error).toBe('autopilot.wizard.allBoardsFailed');
+
+    runMutateAsync.mockResolvedValueOnce({ jobId: 'j8', found: 5, applied: 0 });
+    await act(async () => {
+      await result.current.handleRun('ap7');
+    });
+
+    expect(result.current.runStates.ap7).toBe('done');
+    expect(result.current.error).toBeNull();
+  });
 });

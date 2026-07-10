@@ -490,18 +490,27 @@ impl AutopilotStore {
         self.save(map);
     }
 
-    /// Mark a run `Failed` on an outright scrape error (never reached
-    /// `record_run` / has no summaries to report) — ALSO clears
-    /// `last_run_summaries` so a stale chip strip from the PRIOR successful run
-    /// doesn't render as if it belonged to this failed one.
-    pub fn fail_run_without_summaries(&self, id: &str) {
+    /// Set the run outcome for a run that has NO fresh summaries to report
+    /// (never reached `record_run`) — ALSO clears `last_run_summaries` so a
+    /// stale chip strip from the PRIOR run doesn't render as if it belonged to
+    /// this one. Two callers today: an outright scrape error (`Failed`, no
+    /// summaries were ever collected) and a user-cancelled run (`Completed`,
+    /// the in-flight summaries were never finalized/recorded either).
+    pub fn set_run_status_clearing_summaries(&self, id: &str, status: RunStatus) {
         let mut map = self.load();
         if let Some(ap) = map.get_mut(id) {
-            ap.run_status = Some(RunStatus::Failed);
+            ap.run_status = Some(status);
             ap.last_run_summaries = Vec::new();
             ap.updated_at = now_ms();
         }
         self.save(map);
+    }
+
+    /// Mark a run `Failed` on an outright scrape error. Thin wrapper over
+    /// [`Self::set_run_status_clearing_summaries`] kept as a named entry point
+    /// for the one fixed outcome that path always sets.
+    pub fn fail_run_without_summaries(&self, id: &str) {
+        self.set_run_status_clearing_summaries(id, RunStatus::Failed);
     }
 
     /// Reconcile runs left mid-flight: any autopilot still marked `InProgress`

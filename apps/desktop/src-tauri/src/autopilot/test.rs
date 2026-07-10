@@ -652,6 +652,43 @@ fn fail_run_without_summaries_unknown_id_is_a_no_op() {
 }
 
 #[test]
+fn set_run_status_clearing_summaries_completed_clears_stale_summaries() {
+    // Mirrors `fail_run_without_summaries_marks_failed_and_clears_stale_summaries`
+    // for the OTHER caller of `set_run_status_clearing_summaries`: a user-cancelled
+    // run, which sets `Completed` (not `Failed`) but likewise never reaches
+    // `record_run`, so it must clear the PRIOR run's summaries too.
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let ap = store.create(serde_json::json!({
+        "name": "ap",
+        "target": { "board": "aggregator", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+    }));
+
+    // Seed a prior successful run with real summaries — the stale state a
+    // cancelled run must not inherit.
+    let summaries = vec![board_summary("greenhouse", 2, None, None, None)];
+    store.record_run(&ap.id, 2, 0, Vec::new(), summaries);
+    let seeded = store.get(&ap.id).unwrap();
+    assert_eq!(seeded.run_status, Some(RunStatus::Completed));
+    assert_eq!(seeded.last_run_summaries.len(), 1);
+
+    // A cancelled run (never reaches `record_run`) sets Completed via the
+    // clearing variant, same as the autopilot_run command's cancel branch.
+    store.set_run_status_clearing_summaries(&ap.id, RunStatus::Completed);
+
+    let reloaded = store.get(&ap.id).unwrap();
+    assert_eq!(reloaded.run_status, Some(RunStatus::Completed));
+    assert!(
+        reloaded.last_run_summaries.is_empty(),
+        "a cancelled run must clear the PRIOR run's summaries, not leave them stale"
+    );
+}
+
+#[test]
 fn autopilot_record_without_summaries_field_deserializes_to_empty() {
     // A record persisted before `lastRunSummaries` / the new `runStatus` variant
     // existed must still load — `#[serde(default)]` fills the missing field with

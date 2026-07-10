@@ -60,6 +60,9 @@ export function useAutopilotRun() {
   const handleRun = async (id: string) => {
     setRunStates({ [id]: 'scraping' });
     setStepLogs({ [id]: [] });
+    // Clear any stale failure banner from a prior run before this one resolves
+    // — otherwise a successful run after a failed one leaves the old error up.
+    setError(null);
     try {
       // `autopilot_run` RESOLVES (not rejects) even when the run failed, so a
       // resolved value is NOT proof of success — inspect it before reporting

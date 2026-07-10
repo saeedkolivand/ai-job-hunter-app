@@ -367,10 +367,13 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     if cancel_token.is_cancelled() {
         engine.unregister_token(&job_id).await;
         // User-initiated stop, not a failure or crash — clear the live status so
-        // it isn't later reconciled to "interrupted".
+        // it isn't later reconciled to "interrupted". This run never reached
+        // `record_run`, so it has no fresh summaries either — clear the PRIOR
+        // run's `last_run_summaries` too, or a future chip strip would render
+        // stale board data as if it belonged to this cancelled run.
         store(&app)
             .lock()
-            .set_run_status(&autopilot_id, RunStatus::Completed);
+            .set_run_status_clearing_summaries(&autopilot_id, RunStatus::Completed);
         crate::commands::jobs::job_cancel(&app, &job_id);
         span.end_with("cancelled before recording results", false);
         return json!({ "jobId": job_id, "cancelled": true });
