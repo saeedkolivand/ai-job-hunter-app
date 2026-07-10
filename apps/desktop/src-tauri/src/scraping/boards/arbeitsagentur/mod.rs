@@ -8,6 +8,8 @@
 ///
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::common::should_propagate_page_error;
+use crate::error::AppError;
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -147,7 +149,11 @@ impl Scraper for ArbeitsagenturScraper {
             .await
             {
                 Ok(r) => r,
-                Err(e) if out.is_empty() => return Err(e.into()),
+                // A cancel firing mid-fetch is a clean stop, not a failure —
+                // even on page 0 with nothing collected yet, this must return
+                // `Ok(out)` (empty), not bubble as an error.
+                Err(AppError::Cancelled) => break,
+                Err(e) if should_propagate_page_error(out.len()) => return Err(e.into()),
                 Err(e) => {
                     log::warn!(
                         "[arbeitsagentur] page {page} failed: {e}; returning {} collected",
@@ -157,9 +163,7 @@ impl Scraper for ArbeitsagenturScraper {
                 }
             };
 
-            let items = list_resp
-                .and_then(|l| l.stellenangebote)
-                .unwrap_or_default();
+            let items = list_resp.stellenangebote.unwrap_or_default();
 
             if items.is_empty() {
                 break;
@@ -183,6 +187,9 @@ impl Scraper for ArbeitsagenturScraper {
                     .clone()
                     .unwrap_or_else(|| self.to_base64_url(&j.refnr));
 
+                // Detail is opportunistic — 404s are common from non-browser clients
+                // (bot filter). On any failure we still emit the job from list data,
+                // so a failed detail fetch collapses to `None`, not a board error.
                 let detail = fetch_json::<DetailResp>(
                     &format!("{}/jobdetails/{}", API_BASE, urlencoding::encode(&hash)),
                     super::super::http::FetchOptions {
@@ -192,8 +199,7 @@ impl Scraper for ArbeitsagenturScraper {
                     ctx.signal.clone(),
                 )
                 .await
-                .ok()
-                .flatten();
+                .ok();
 
                 let description = detail.as_ref().and_then(|d| {
                     let desc = vec![

@@ -185,14 +185,15 @@ async fn test_fetch_json_success() {
         .mount(&mock_server)
         .await;
 
-    let result =
-        fetch_json::<TestResponse>(&mock_server.uri(), FetchOptions::default(), signal).await;
-    let parsed = result
-        .expect("fetch_json should succeed")
-        .expect("fetch_json should deserialize the response");
+    let parsed = fetch_json::<TestResponse>(&mock_server.uri(), FetchOptions::default(), signal)
+        .await
+        .expect("fetch_json should succeed and deserialize the response");
     assert_eq!(parsed.message, "test");
 }
 
+/// (b) A 2xx body that doesn't deserialize into the target type is a
+/// representable schema-drift failure (`AppError::Parse`), not a silent empty
+/// success — so a board sees the failure and can surface it.
 #[tokio::test]
 async fn test_fetch_json_invalid() {
     use wiremock::matchers::method;
@@ -206,10 +207,56 @@ async fn test_fetch_json_invalid() {
         .mount(&mock_server)
         .await;
 
-    let result: crate::error::AppResult<Option<serde_json::Value>> =
+    let result: crate::error::AppResult<serde_json::Value> =
         fetch_json(&mock_server.uri(), FetchOptions::default(), signal).await;
-    assert!(result.is_ok());
-    assert!(result.unwrap().is_none());
+    match result {
+        Err(crate::error::AppError::Parse(msg)) => {
+            // Pin the exact static message — the serde detail (which would
+            // quote fragments of the body) is logged separately and must
+            // never reach the returned error, since that error crosses IPC
+            // into `BoardScrapeSummary.error` → renderer.
+            assert_eq!(
+                msg, "response body did not match the expected schema",
+                "Parse message must be the static no-leak string, not serde detail"
+            );
+            assert!(
+                !msg.contains("invalid json"),
+                "Parse message must not contain the mock response body: {msg:?}"
+            );
+        }
+        other => panic!("expected a Parse error on schema drift, got {other:?}"),
+    }
+}
+
+/// (a) A non-2xx response is a representable HTTP failure that carries the
+/// status code (`AppError::Provider("HTTP <status>")`), never a silent empty
+/// success — this is what makes a blocked/rotted board distinguishable from
+/// "no jobs".
+#[tokio::test]
+async fn test_fetch_json_non_2xx_carries_status() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let mock_server = MockServer::start().await;
+    let signal = tokio_util::sync::CancellationToken::new();
+
+    // 403 is not 429/503, so the retry loop returns it immediately.
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(403).set_body_string(r#"{"message":"blocked"}"#))
+        .mount(&mock_server)
+        .await;
+
+    let result: crate::error::AppResult<serde_json::Value> =
+        fetch_json(&mock_server.uri(), FetchOptions::default(), signal).await;
+    match result {
+        Err(crate::error::AppError::Provider(msg)) => {
+            assert!(
+                msg.contains("403"),
+                "status code should be carried, got {msg:?}"
+            );
+        }
+        other => panic!("expected a Provider error carrying the status, got {other:?}"),
+    }
 }
 
 /// fetch_json must forward caller-supplied headers (e.g. X-API-Key) intact.
@@ -245,9 +292,7 @@ async fn test_fetch_json_preserves_caller_headers() {
     )
     .await;
 
-    let parsed = result
-        .expect("fetch_json should succeed")
-        .expect("response should be deserialized");
+    let parsed = result.expect("fetch_json should succeed and deserialize the response");
     assert!(parsed.ok, "expected ok:true — X-API-Key header was dropped");
 }
 

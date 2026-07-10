@@ -65,14 +65,15 @@ impl Scraper for YCombinatorScraper {
     ) -> anyhow::Result<Vec<JobPosting>> {
         let q = input.query.trim().to_lowercase();
 
-        // Step 1: fetch the list of job story IDs
+        // Step 1: fetch the list of job story IDs. A non-2xx or schema-drift
+        // response propagates as `Err` (surfaced in `BoardScrapeSummary.error`)
+        // rather than a silent empty result; a genuine empty list is `Ok([])`.
         let ids = fetch_json::<Vec<i64>>(
             &format!("{}/jobstories.json", HN_BASE),
             Default::default(),
             ctx.signal.clone(),
         )
-        .await?
-        .unwrap_or_default();
+        .await?;
 
         if ids.is_empty() {
             return Ok(vec![]);
@@ -92,6 +93,8 @@ impl Scraper for YCombinatorScraper {
                 break;
             }
 
+            // Per-item fetch is best-effort: a single failed/absent item (404,
+            // deleted `null` body, or drift) skips that item, never the whole run.
             let item = match fetch_json::<HnItem>(
                 &format!("{}/item/{}.json", HN_BASE, id),
                 Default::default(),
@@ -99,10 +102,11 @@ impl Scraper for YCombinatorScraper {
             )
             .await
             {
-                Ok(Some(i)) => i,
-                Ok(None) => continue,
+                Ok(i) => i,
                 Err(e) => {
-                    log::warn!("[ycombinator] item {id} failed: {e}; skipping");
+                    // debug, not warn: a deleted HN item (null body → Parse err) is a
+                    // routine, expected condition, not a board-level problem.
+                    log::debug!("[ycombinator] item {id} failed: {e}; skipping");
                     continue;
                 }
             };
