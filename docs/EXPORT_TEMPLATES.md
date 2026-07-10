@@ -434,6 +434,20 @@ The report (`ok`, `atsMode`, `issues`, `fixed`) rides back on the export result.
 
 ---
 
+## Accessibility & tagged PDF
+
+All PDF exports carry a **baseline tag tree** — typst-pdf 0.15 (the bundled version)
+defaults `PdfOptions.tagged = true`, so structured tagging is automatic at render time.
+This enables screen-reader navigation and text extraction.
+
+A **PDF/UA-1-validated** structure (certified accessible document format, higher
+standard) is a future goal — currently blocked: four templates place link-bearing
+contact blocks in page backgrounds (a PDF/UA compliance violation), which the spike
+found requires a redesign of those templates' header layout before validation is
+possible. See the PDF/UA spike verdict for details.
+
+---
+
 ## TXT
 
 `txt` is produced client-side: the markdown is stripped of `**bold**` markers.

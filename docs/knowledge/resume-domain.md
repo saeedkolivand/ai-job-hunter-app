@@ -44,6 +44,13 @@ Two **tiers** — `TemplateTier { Ats, Design }` (`export/templates/mod.rs`), me
 
 CJK (zh/ja/ko) renders as tofu — no CJK font bundle yet. `isCjkLanguage` in `packages/shared/src/language-detection.ts` gates the `aiGenerate.cjkUnsupported` UI notice.
 
+## Accessibility
+
+PDF exports carry a **baseline tag tree** (typst-pdf 0.15 tags by default), enabling
+screen-reader navigation and text extraction. PDF/UA-1 validation (certified accessible
+format) is a future goal; currently blocked on four templates with link-bearing contact
+blocks in page backgrounds — see [`docs/EXPORT_TEMPLATES.md` § Accessibility](../EXPORT_TEMPLATES.md#accessibility--tagged-pdf).
+
 ## Review heuristics
 
 - HIGH: a template/layout change that breaks ATS parseability; a scoring change that violates the documented model without an ADR; an untested export error path; a header-link regression (links must come from `contact_profile/`); a photo path that accepts file URIs.
