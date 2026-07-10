@@ -1,40 +1,40 @@
-// Portrait — circular photo header, two-column premium template.
+// Aria — minimalist two-column premium template with an untinted RIGHT sidebar.
 //
 // Design contract:
-//   Two-column layout: a sidebar (30 % width) on the left carries the photo,
-//   contact details, skills, education, languages, and certifications.  The
-//   main column (right 70 %) carries name/title header then summary, experience,
-//   projects, and any remaining non-sidebar sections.
+//   Two-column layout: an UNTINTED sidebar (32 % width) on the RIGHT carries a
+//   rectangular top-right photo, contact details, and the placement-sidebar
+//   sections (Skills / Languages / Certifications — NOT Education, which reads in
+//   the main column per theme::placement_for's Aria override).  The main column
+//   (left) opens with a large 30pt name then Summary, Experience, Projects,
+//   Education, and any remaining non-sidebar sections.  The split is entirely
+//   data-driven via each section's `placement` field.
 //
-//   The sidebar band is drawn via page(background: ...) — same technique as
-//   Atelier — so it repeats on every page without clipping or layout gaps.
-//   Sidebar content is placed in the background too, with dy = margin_v so it
-//   aligns with the main-column top margin.
+//   No sidebar tint: the sidebar is separated by whitespace only (the registry
+//   ships a white sidebar_bg, so no band rect is drawn).  Sidebar content is
+//   placed via page(background: ...) so it can align with the main-column top
+//   margin and repeat cleanly; it is rendered ONCE (page 1 only).  The main
+//   column reserves the right margin (main-right) so its text clears the sidebar.
 //
-//   Photo zone (top of sidebar background):
-//     - When data.opts.has_photo == true: circular clip of /photo.png, centered
-//       horizontally in the sidebar.
-//     - When data.opts.has_photo == false: a monogram circle (accent fill, white
-//       initials) so the sidebar header never looks broken.
+//   Photo zone (top of the right sidebar):
+//     - has_photo == true : a rectangular /photo.png with subtle rounding.
+//     - has_photo == false: NOTHING (minimalist name-only fallback — no monogram).
+//       The candidate name always lives in the main-column header regardless.
 //
 //   ATS mode (data.opts.ats == true):
-//     - No sidebar background, no photo.
-//     - All sections rendered linearly in document order.
+//     - No sidebar, no photo. All sections linear in document order — mirrors
+//       portrait.typ's is-ats branch.
 //
-// Design: original.  Accent: deep slate-teal (#2A6478).
+// Design: original.  Accent: slate (#46505C).  Name/headings: Manrope; body: Inter.
+// Headings are letter-spaced (heading_tracking) all-caps with hairline rules.
 // ORIGINALITY: designed from generic layout conventions only.
 //
-// Data contract:
+// Data contract (mirrors portrait.typ, plus data.style.heading_tracking):
 //   data.style.c_name / c_section / c_accent / c_body / c_date / c_rule
 //   data.style.font_name / font_heading / font_body
-//   data.style.section_all_caps — bool
-//   data.style.job_title_italic — bool
+//   data.style.section_all_caps / job_title_italic — bool
+//   data.style.heading_tracking — number: heading letter-spacing in em (0 = none)
 //   data.style.name_pt / section_pt / body_pt
-//   data.opts.page_width_mm / page_height_mm
-//   data.opts.accent — optional override (#RRGGBB or "")
-//   data.opts.ats — bool
-//   data.opts.has_photo — bool (true → /photo.png is served in the World)
-//   data.opts.lang
+//   data.opts.page_width_mm / page_height_mm / accent / ats / has_photo / lang
 //   data.header.name / title / contact[]
 //   data.sections[].heading / blocks[] / placement / kind
 //
@@ -45,11 +45,11 @@
 
 #let st = if "style" in data { data.style } else { (:) }
 
-#let c-name    = rgb(if "c_name"    in st { st.c_name    } else { "#122832" })
-#let c-section = rgb(if "c_section" in st { st.c_section } else { "#2A6478" })
-#let c-body    = rgb(if "c_body"    in st { st.c_body    } else { "#1C1E20" })
-#let c-date    = rgb(if "c_date"    in st { st.c_date    } else { "#5A6E78" })
-#let c-rule    = rgb(if "c_rule"    in st { st.c_rule    } else { "#A0C3D2" })
+#let c-name    = rgb(if "c_name"    in st { st.c_name    } else { "#111111" })
+#let c-section = rgb(if "c_section" in st { st.c_section } else { "#1A1A1A" })
+#let c-body    = rgb(if "c_body"    in st { st.c_body    } else { "#2A2A2A" })
+#let c-date    = rgb(if "c_date"    in st { st.c_date    } else { "#7A7A7A" })
+#let c-rule    = rgb(if "c_rule"    in st { st.c_rule    } else { "#D6D9DD" })
 
 #let c-accent = {
   if "accent" in data.opts and data.opts.accent != "" {
@@ -57,23 +57,23 @@
   } else if "c_accent" in st {
     rgb(st.c_accent)
   } else {
-    rgb("#2A6478")
+    rgb("#46505C")
   }
 }
 
-// Sidebar background — very light teal tint.
-#let c-sidebar-bg = rgb("#EBF4F8")
-
-#let font-name    = if "font_name"    in st { st.font_name    } else { "Inter" }
-#let font-heading = if "font_heading" in st { st.font_heading } else { "Inter" }
+#let font-name    = if "font_name"    in st { st.font_name    } else { "Manrope" }
+#let font-heading = if "font_heading" in st { st.font_heading } else { "Manrope" }
 #let font-body    = if "font_body"    in st { st.font_body    } else { "Inter" }
 
 #let all-caps     = if "section_all_caps"  in st { st.section_all_caps  } else { true }
-#let title-italic = if "job_title_italic"  in st { st.job_title_italic  } else { true }
+#let title-italic = if "job_title_italic"  in st { st.job_title_italic  } else { false }
 
-#let name-pt    = if "name_pt"    in st { st.name_pt    * 1pt } else { 22pt }
+// Heading letter-spacing (tracking) in em. 0 → no tracking argument emitted.
+#let heading-tracking = if "heading_tracking" in st { st.heading_tracking } else { 0.0 }
+
+#let name-pt    = if "name_pt"    in st { st.name_pt    * 1pt } else { 30pt }
 #let section-pt = if "section_pt" in st { st.section_pt * 1pt } else { 10.5pt }
-#let body-pt    = if "body_pt"    in st { st.body_pt    * 1pt } else { 10.5pt }
+#let body-pt    = if "body_pt"    in st { st.body_pt    * 1pt } else { 10pt }
 
 #let emphasize-edu = if "emphasize_education" in st { st.emphasize_education } else { false }
 
@@ -82,25 +82,25 @@
 #let page-w = data.opts.page_width_mm  * 1mm
 #let page-h = data.opts.page_height_mm * 1mm
 
-#let sidebar-frac = 0.30
+#let sidebar-frac = 0.32
 #let sidebar-w    = sidebar-frac * page-w
-#let gutter       = 9mm            // gap between sidebar band edge and main text
-#let margin-v     = 14mm           // top/bottom margin
-#let margin-r     = 14mm           // right margin
+#let gutter       = 10mm           // gap between main text and the sidebar
+#let margin-v     = 16mm           // generous top/bottom margin
+#let margin-l     = 16mm           // left margin (main column)
 
-// Main content left margin = sidebar band width + gutter.
-#let main-left    = sidebar-w + gutter
+// Main content reserves this much on the RIGHT so it clears the sidebar zone.
+#let main-right   = sidebar-w + gutter
 
-// ATS-mode left margin — comfortable single-column.
-#let ats-left     = 20mm
+// ATS-mode side margins — comfortable single-column.
+#let ats-x        = 20mm
 
-// Photo circle diameter: fills ~72 % of the sidebar width.
-// Using a fixed 48mm so it looks intentional and scales well to portrait format.
-#let photo-d = 48mm
+// Sidebar internal padding.
+#let sb-pad-l = 6pt
+#let sb-pad-r = 8pt
 
-// Sidebar internal padding (left/right of sidebar content).
-#let sb-pad-l = 8pt
-#let sb-pad-r = 6pt
+// Rectangular photo: fills the sidebar content width; portrait-ish aspect.
+#let photo-w = sidebar-w - sb-pad-l - sb-pad-r
+#let photo-h = photo-w * 1.15
 
 // ── Flags ─────────────────────────────────────────────────────────────────────
 
@@ -117,6 +117,31 @@
 )
 
 #set par(leading: lead, spacing: sp-para)
+
+// ── Heading helpers (all-caps + optional tracking) ─────────────────────────────
+
+#let heading-display(h) = if all-caps { upper(h) } else { h }
+
+#let heading-run(content, size, fill) = {
+  if heading-tracking != 0.0 {
+    text(
+      size: size,
+      weight: "bold",
+      fill: fill,
+      font: (font-heading, "Manrope", "Inter", "Carlito"),
+      tracking: heading-tracking * 1em,
+      content,
+    )
+  } else {
+    text(
+      size: size,
+      weight: "bold",
+      fill: fill,
+      font: (font-heading, "Manrope", "Inter", "Carlito"),
+      content,
+    )
+  }
+}
 
 // ── Rich-text helpers ─────────────────────────────────────────────────────────
 
@@ -139,7 +164,7 @@
   }
 }
 
-// ── Entry renderer ────────────────────────────────────────────────────────────
+// ── Entry renderer (main column) ───────────────────────────────────────────────
 
 #let render-entry(blk, bold-title) = {
   let title-content = if "title" in blk { render-runs(blk.title) } else { "" }
@@ -156,7 +181,7 @@
 
     if "subtitle" in blk and blk.subtitle != none and blk.subtitle.len() > 0 {
       block(above: sp-subtitle-gap, below: sp-subtitle-below,
-        text(style: "italic", fill: c-body, render-runs(blk.subtitle))
+        text(style: if title-italic { "italic" } else { "normal" }, fill: c-body, render-runs(blk.subtitle))
       )
     }
 
@@ -176,8 +201,6 @@
   if kind == "education" { emphasize-edu } else { true }
 }
 
-// ── Block renderer (main column) ──────────────────────────────────────────────
-
 #let render-block(b, bold-title) = {
   if b.kind == "paragraph" {
     if "runs" in b { block(below: 4pt, render-runs(b.runs)) }
@@ -188,7 +211,7 @@
   }
 }
 
-// ── Sidebar block renderer (compact) ─────────────────────────────────────────
+// ── Sidebar block renderer (compact) ───────────────────────────────────────────
 
 #let render-block-sb(b, bold-title) = {
   if b.kind == "paragraph" {
@@ -218,20 +241,13 @@
   }
 }
 
-// ── Section renderers ─────────────────────────────────────────────────────────
+// ── Section renderers ──────────────────────────────────────────────────────────
 
 #let render-section-main(section) = {
-  let heading-text = if all-caps { upper(section.heading) } else { section.heading }
   let bold-title = entry-bold-for-section(section)
 
   block(above: sp-section-above, below: sp-rule-below, {
-    text(
-      size: section-pt,
-      weight: "bold",
-      fill: c-section,
-      font: (font-heading, "Inter", "Carlito"),
-      heading-text,
-    )
+    heading-run(heading-display(section.heading), section-pt, c-section)
   })
   line(length: 100%, stroke: 0.5pt + c-rule)
   block(above: sp-after-rule, {
@@ -240,17 +256,10 @@
 }
 
 #let render-section-sb(section) = {
-  let heading-text = if all-caps { upper(section.heading) } else { section.heading }
   let bold-title = entry-bold-for-section(section)
 
   block(above: sp-sb-section-above, below: sp-sb-rule-below, {
-    text(
-      size: section-pt - 0.5pt,
-      weight: "bold",
-      fill: c-accent,
-      font: (font-heading, "Inter", "Carlito"),
-      heading-text,
-    )
+    heading-run(heading-display(section.heading), section-pt - 0.5pt, c-accent)
   })
   line(length: 100%, stroke: 0.5pt + c-rule)
   block(above: sp-sb-after-rule, {
@@ -258,7 +267,7 @@
   })
 }
 
-// ── Section partitioning ──────────────────────────────────────────────────────
+// ── Section partitioning (data-driven) ─────────────────────────────────────────
 
 #let section-placement(s) = {
   if "placement" in s { s.placement } else { "main" }
@@ -267,65 +276,28 @@
 #let sidebar-sections = data.sections.filter(s => section-placement(s) == "sidebar")
 #let main-sections    = data.sections.filter(s => section-placement(s) == "main")
 
-// ── Candidate initials (no-photo fallback) ────────────────────────────────────
-
-// `.slice(0, 1)` is a BYTE offset and panics whenever the first character is
-// multi-byte in UTF-8 (Ü, É, Ł, …) — plausible in DACH/EU candidate names. Use
-// `.clusters()` (grapheme-cluster split) and take the first cluster instead, so
-// a name like "Über Ödegaard" renders safely instead of aborting the export.
-#let first-cluster(s) = {
-  let cl = s.clusters()
-  if cl.len() > 0 { cl.first() } else { "" }
-}
+// ── Photo zone (rectangular, subtle rounding) — omitted entirely when no photo ─
 
 #let name-str = if "name" in data.header { data.header.name } else { "" }
-#let initials = {
-  let parts = name-str.split(" ").filter(p => p.len() > 0)
-  if parts.len() >= 2 {
-    upper(first-cluster(parts.at(0))) + upper(first-cluster(parts.at(1)))
-  } else if parts.len() == 1 {
-    let c = first-cluster(parts.at(0))
-    if c != "" { upper(c) } else { "?" }
-  } else {
-    "?"
-  }
-}
 
 // ── Sidebar inner content (rendered once, placed in page background) ───────────
-// Built as a fixed-width box so it repeats cleanly on every page AND so that
-// `line(length: 100%)` resolves to the sidebar box width rather than the full
-// page width.  This is the same technique used in the Atelier template.
 
 #let sidebar-inner = box(
   width: sidebar-w - sb-pad-l - sb-pad-r,
   {
-    // Photo zone.
-    block(below: 10pt, width: 100%, {
-      align(center, {
-        if has-photo {
-          box(
-            width: photo-d,
-            height: photo-d,
-            clip: true,
-            radius: photo-d / 2,
-            image("photo.png", width: photo-d, height: photo-d, fit: "cover"),
-          )
-        } else {
-          circle(
-            radius: photo-d / 2,
-            fill: c-accent,
-            stroke: none,
-            text(
-              size: name-pt * 0.8,
-              weight: "bold",
-              fill: white,
-              font: (font-name, "Inter", "Carlito"),
-              initials,
-            ),
-          )
-        }
+    // Photo zone — rectangular with subtle rounding. No monogram fallback:
+    // when there is no photo the sidebar simply opens with the contact block.
+    if has-photo {
+      block(below: 12pt, width: 100%, {
+        box(
+          width: photo-w,
+          height: photo-h,
+          clip: true,
+          radius: 3pt,
+          image("photo.png", width: photo-w, height: photo-h, fit: "cover"),
+        )
       })
-    })
+    }
 
     // Contact line.
     if "contact" in data.header and data.header.contact.len() > 0 {
@@ -346,7 +318,7 @@
   }
 )
 
-// ── Main column header (rendered in normal content flow, page 1 only) ─────────
+// ── Main column header (page 1 only) ───────────────────────────────────────────
 
 #let main-header-content = {
   block(below: sp-name-below, {
@@ -354,7 +326,7 @@
       size: name-pt,
       weight: "bold",
       fill: c-name,
-      font: (font-name, "Inter", "Carlito"),
+      font: (font-name, "Manrope", "Inter", "Carlito"),
       name-str,
     )
   })
@@ -364,26 +336,26 @@
       text(
         size: section-pt,
         style: if title-italic { "italic" } else { "normal" },
-        fill: c-body,
+        fill: c-accent,
         data.header.title,
       )
     )
   }
 
-  // Thin accent keyline.
-  block(above: 6pt, below: 10pt,
-    line(length: 100%, stroke: 2pt + c-accent)
+  // Thin accent keyline anchoring the header.
+  block(above: 6pt, below: 12pt,
+    line(length: 100%, stroke: 1pt + c-accent)
   )
 }
 
-// ── Render ────────────────────────────────────────────────────────────────────
+// ── Render ──────────────────────────────────────────────────────────────────────
 
 #if is-ats {
-  // ATS: single-column, no sidebar, no photo.
+  // ATS: single-column, no sidebar, no photo (mirrors portrait.typ).
   set page(
     width:  page-w,
     height: page-h,
-    margin: (top: margin-v, bottom: margin-v, left: ats-left, right: margin-r),
+    margin: (top: margin-v, bottom: margin-v, left: ats-x, right: ats-x),
   )
 
   block(below: sp-name-below, {
@@ -391,7 +363,7 @@
       size: name-pt,
       weight: "bold",
       fill: c-name,
-      font: (font-name, "Inter", "Carlito"),
+      font: (font-name, "Manrope", "Inter", "Carlito"),
       name-str,
     )
   })
@@ -401,7 +373,7 @@
       text(
         size: section-pt,
         style: if title-italic { "italic" } else { "normal" },
-        fill: c-body,
+        fill: c-accent,
         data.header.title,
       )
     )
@@ -418,33 +390,28 @@
     render-section-main(section)
   }
 } else {
-  // Two-column layout using page(background: ...) to carry the sidebar band
-  // + sidebar content on every page — same technique as the Atelier template.
+  // Two-column layout with the sidebar on the RIGHT. The band carries NO tint
+  // (Aria is separated by whitespace only); sidebar content is placed on page 1.
   set page(
     width:  page-w,
     height: page-h,
-    margin: (top: margin-v, bottom: margin-v, left: 0pt, right: margin-r),
+    margin: (top: margin-v, bottom: margin-v, left: margin-l, right: 0pt),
     background: {
-      // Full-height tinted sidebar band — drawn on EVERY page for visual continuity.
-      place(left + top,
-        rect(width: sidebar-w, height: 100%, fill: c-sidebar-bg)
-      )
-      // Sidebar content — rendered ONCE, on page 1 only. Drawing it in the page
-      // background would otherwise repeat the whole sidebar on every page of a
-      // multi-page résumé. The band continues; the main column already clears it.
+      // No background rect — the sidebar is untinted by design.
+      // Sidebar content — rendered ONCE, on page 1 only, right-aligned.
       context {
         if counter(page).get().first() == 1 {
-          place(left + top, dx: sb-pad-l, dy: margin-v, sidebar-inner)
+          place(right + top, dx: -sb-pad-r, dy: margin-v, sidebar-inner)
         }
       }
     },
   )
 
-  // Main column header (inset by main-left so it clears the sidebar band).
-  pad(left: main-left, main-header-content)
+  // Main column header (reserve the right margin so it clears the sidebar).
+  pad(right: main-right, main-header-content)
 
   // Main column sections.
-  pad(left: main-left, {
+  pad(right: main-right, {
     for section in main-sections {
       render-section-main(section)
     }

@@ -137,6 +137,8 @@ fn template_tiers_are_pinned() {
         (TemplateId::Lebenslauf, Design),
         (TemplateId::Cadence, Ats),
         (TemplateId::Regent, Ats),
+        (TemplateId::Aria, Design),
+        (TemplateId::Saffron, Design),
     ];
     for (id, tier) in expected {
         assert_eq!(
@@ -226,4 +228,70 @@ fn regent_matches_spec() {
     assert!(t.two_column.is_none());
     assert_eq!(t.cover_letter.paragraph_indent, ParagraphIndent::FirstLine);
     assert_eq!(t.cover_letter.paragraph_spacing_pt, 0.0);
+}
+
+// ─── PR4: Aria / Saffron spec pins ──────────────────────────────────────────────
+
+#[test]
+fn aria_matches_spec() {
+    let t = Template::get(TemplateId::Aria);
+    assert_eq!(t.tier, TemplateTier::Design);
+    assert_eq!(t.name_pt, 30.0);
+    assert_eq!(t.section_pt, 10.5);
+    assert_eq!(t.body_pt, 10.0);
+    assert_eq!(t.margin_in, 0.6);
+    assert_eq!(t.line_spacing, 1.25);
+    assert_eq!(t.section_spacing_before, 16.0);
+    assert_eq!(t.name_color, (17, 17, 17));
+    assert_eq!(t.section_color, (26, 26, 26));
+    assert_eq!(t.accent_color, (70, 80, 92));
+    assert_eq!(t.body_color, (42, 42, 42));
+    assert_eq!(t.date_color, (122, 122, 122));
+    assert_eq!(t.emphasis_color, (70, 80, 92));
+    assert_eq!(t.rule_color, (214, 217, 221));
+    assert!(t.section_all_caps);
+    assert!(!t.section_small_caps);
+    assert!(!t.job_title_italic);
+    assert_eq!(t.heading_tracking, 0.06);
+    assert!(!t.link_underline);
+    let tc = t.two_column.as_ref().expect("Aria is two-column");
+    assert_eq!(tc.sidebar_width_ratio, 0.32);
+    assert_eq!(tc.sidebar_bg_color, (255, 255, 255));
+    assert_eq!(
+        t.cover_letter.paragraph_indent,
+        ParagraphIndent::BlockNoIndent
+    );
+    assert_eq!(t.cover_letter.paragraph_spacing_pt, 8.0);
+}
+
+#[test]
+fn saffron_matches_spec() {
+    let t = Template::get(TemplateId::Saffron);
+    assert_eq!(t.tier, TemplateTier::Design);
+    assert_eq!(t.name_pt, 24.0);
+    assert_eq!(t.section_pt, 11.0);
+    assert_eq!(t.body_pt, 10.5);
+    assert_eq!(t.margin_in, 0.55);
+    assert_eq!(t.line_spacing, 1.2);
+    assert_eq!(t.section_spacing_before, 12.0);
+    assert_eq!(t.name_color, (58, 46, 40));
+    assert_eq!(t.section_color, (168, 90, 62));
+    assert_eq!(t.accent_color, (168, 90, 62));
+    assert_eq!(t.body_color, (48, 42, 38));
+    assert_eq!(t.date_color, (138, 122, 110));
+    assert_eq!(t.emphasis_color, (168, 90, 62));
+    assert_eq!(t.rule_color, (226, 201, 180));
+    assert!(!t.section_all_caps);
+    assert!(t.section_small_caps);
+    assert!(t.job_title_italic);
+    assert_eq!(t.heading_tracking, 0.0);
+    assert!(!t.link_underline);
+    let tc = t.two_column.as_ref().expect("Saffron is two-column");
+    assert_eq!(tc.sidebar_width_ratio, 0.34);
+    assert_eq!(tc.sidebar_bg_color, (245, 231, 218));
+    assert_eq!(
+        t.cover_letter.paragraph_indent,
+        ParagraphIndent::BlockNoIndent
+    );
+    assert_eq!(t.cover_letter.paragraph_spacing_pt, 8.0);
 }
