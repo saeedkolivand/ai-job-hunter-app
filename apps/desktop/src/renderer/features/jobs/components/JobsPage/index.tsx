@@ -171,14 +171,25 @@ export function JobsPage() {
       setLastSummaries(boardSummaries);
       setLastFailureNote(null);
     } else if (ev.type === 'job.failed') {
+      // Guard: `jobs:event` is a global channel — scrape, AI, autopilot, agent,
+      // and pipeline jobs ALL emit `job.failed` on it. Capture isActiveJob
+      // BEFORE noteScrapeFinished (which clears scrapeJobRef on a match) so an
+      // unrelated background failure (e.g. an autopilot run) can't wipe the
+      // strip or paint a foreign error as "Last scrape failed" — mirrors the
+      // job.completed guard above.
+      const isActiveJob = ev.jobId === scrapeJobRef.current;
+      const raw = typeof ev.data === 'string' ? ev.data : t('jobs.scrapeFailed');
+      const sanitized = sanitizeReason(raw);
+      // noteScrapeFinished stays unconditional — it's internally buffered/
+      // guarded by job id (a foreign jobId is simply parked, never surfaced).
+      noteScrapeFinished(ev.jobId, { ok: false, note: sanitized });
+      if (!isActiveJob) return;
       // The whole scrape errored — there are no per-board summaries (nothing to
       // chip), so keep a minimal sanitized failure note instead: the dismissible
       // form-footer note alone would make the failure invisible again once the
       // form closes/is dismissed.
-      const raw = typeof ev.data === 'string' ? ev.data : t('jobs.scrapeFailed');
       setLastSummaries([]);
-      setLastFailureNote(sanitizeReason(raw));
-      noteScrapeFinished(ev.jobId, { ok: false, note: raw });
+      setLastFailureNote(sanitized);
     }
   });
 
@@ -351,14 +362,18 @@ export function JobsPage() {
             />
 
             {/* Persistent per-board outcome — survives the form auto-closing so
-                the user can always see what each board did on the last scrape. */}
-            {!scraping && lastSummaries.length > 0 && (
+                the user can always see what each board did on the last scrape.
+                Gated on results being present: when there are ZERO results the
+                empty state (JobsResults) is the SOLE owner of the explanation —
+                without this gate both would render at once. */}
+            {!scraping && filtered.length > 0 && lastSummaries.length > 0 && (
               <BoardSummaryChips summaries={lastSummaries} className="mb-4" />
             )}
             {/* An outright scrape failure has no per-board summaries to chip —
                 keep a minimal sanitized note visible instead of going silent
-                once the dismissible form-footer note is gone. */}
-            {!scraping && lastFailureNote && (
+                once the dismissible form-footer note is gone. Same
+                results-present gating as above. */}
+            {!scraping && filtered.length > 0 && lastFailureNote && (
               <p role="status" aria-live="polite" className="mb-4 text-[11px] text-red-400/80">
                 {t('jobs.lastScrapeFailed', { reason: lastFailureNote })}
               </p>

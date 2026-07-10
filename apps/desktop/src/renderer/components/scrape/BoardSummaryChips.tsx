@@ -41,7 +41,11 @@ const TRIM_PUNCT = /^["'`([\]{}<>|,;:]+|["'`()[\]{}<>|,;:]+$/g;
  */
 export function sanitizeReason(raw: string): string {
   if (typeof raw !== 'string') return '';
-  const out = raw.split(/\s+/).filter(Boolean).map(redactToken).join(' ');
+  // Pre-cap the INPUT before tokenizing (independent of the MAX_REASON_LEN
+  // truncation of the OUTPUT below) so a pathological multi-megabyte string
+  // can't force an unbounded split/map over the full length.
+  const capped = raw.length > 1000 ? raw.slice(0, 1000) : raw;
+  const out = capped.split(/\s+/).filter(Boolean).map(redactToken).join(' ');
   return out.length > MAX_REASON_LEN ? `${out.slice(0, MAX_REASON_LEN)}…` : out;
 }
 
@@ -70,6 +74,9 @@ function redactToken(token: string): string {
   const isUnixPath = trimmed.startsWith('/') && trimmed.slice(1).includes('/');
   const isHomeish =
     lower.includes('users\\') || lower.includes('users/') || lower.includes('home/');
+  // UNC network path — `\\server\share\...` — leaks the user's network layout
+  // same as a local absolute path.
+  const isUncPath = trimmed.startsWith('\\\\');
 
   const segs = trimmed.split('.').filter(Boolean);
   const dottedIpv4 = segs.length === 4 && segs.every((seg) => /^\d+$/.test(seg));
@@ -94,7 +101,7 @@ function redactToken(token: string): string {
   let placeholder: string | null = null;
   if (isUrl) placeholder = '<url-redacted>';
   else if (isCredential) placeholder = '<credential-redacted>';
-  else if (isWindowsPath || isUnixPath || isHomeish) placeholder = '<path-redacted>';
+  else if (isWindowsPath || isUnixPath || isHomeish || isUncPath) placeholder = '<path-redacted>';
   else if (isHostPort) placeholder = '<host-redacted>';
   else if (isEmail) placeholder = '<email-redacted>';
 

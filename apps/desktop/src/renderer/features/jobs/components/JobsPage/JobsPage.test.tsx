@@ -52,6 +52,26 @@ const boardChips = { summaries: null as unknown };
 // note reach the empty-state wiring, not just the header strip.
 const resultsProps = { boardSummaries: undefined as unknown, failureNote: undefined as unknown };
 
+// usePostings — mutable container so tests can simulate "results present" vs
+// "zero results" for the header-strip mutual-exclusivity gating (the header
+// strip/note only render alongside a non-empty results list; the empty state
+// owns the zero-results explanation). Defaults to empty; individual tests set
+// it explicitly so the scenario is never implicit.
+const postingsContainer: { data: Array<Record<string, unknown>> } = { data: [] };
+
+function samplePosting(id: string): Record<string, unknown> {
+  return {
+    id,
+    source: 'linkedin',
+    externalId: id,
+    url: `https://example.com/${id}`,
+    title: 'Engineer',
+    company: 'Acme',
+    description: '',
+    capturedAt: 0,
+  };
+}
+
 // SegmentedControl onChange container — set by the stub when the component mounts.
 const segmentedControlContainer = {
   onChange: null as ((v: string) => void) | null,
@@ -78,7 +98,7 @@ vi.mock('@/features/jobs/hooks/useScraping', () => ({
 }));
 
 vi.mock('@/services', () => ({
-  usePostings: () => ({ data: [] }),
+  usePostings: () => postingsContainer,
   useClearPostings: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useInvalidatePostings: () => vi.fn(),
   useJobPreferences: () => ({ data: undefined }),
@@ -211,6 +231,7 @@ describe('JobsPage — job.completed event handler', () => {
     boardChips.summaries = null;
     resultsProps.boardSummaries = undefined;
     resultsProps.failureNote = undefined;
+    postingsContainer.data = [];
   });
 
   it('registers a job events listener on mount', () => {
@@ -332,7 +353,7 @@ describe('JobsPage — job.completed event handler', () => {
     expect(outcome?.ok).toBe(true);
   });
 
-  it('job.failed event → ok:false with the error data as note', async () => {
+  it('job.failed event → ok:false with the SANITIZED error data as note', async () => {
     renderJobsPage();
 
     fireJobEvent({
@@ -344,7 +365,8 @@ describe('JobsPage — job.completed event handler', () => {
     await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
     const outcome = scrapingMock.noteScrapeFinished.mock.calls[0]?.[1];
     expect(outcome?.ok).toBe(false);
-    expect(outcome?.note).toBe('connection refused');
+    // Security advisory: the form-footer note is sanitized too, not the raw error.
+    expect(outcome?.note).toBe('sanitized:connection refused');
   });
 
   // ---------------------------------------------------------------------------
@@ -352,6 +374,10 @@ describe('JobsPage — job.completed event handler', () => {
   // ---------------------------------------------------------------------------
 
   it('retains the full per-board summaries and feeds them to the chip strip', async () => {
+    // A partial-failure completion implies results ARE present (linkedin
+    // returned 5) — set postings so the header-strip results-present gate is
+    // satisfied and the retention can be observed at the header too.
+    postingsContainer.data = [samplePosting('a')];
     renderJobsPage();
 
     const boards = [
@@ -370,6 +396,7 @@ describe('JobsPage — job.completed event handler', () => {
   });
 
   it('surfaces a skipped board via the strip, NOT a toast (toasts were folded in)', async () => {
+    postingsContainer.data = [samplePosting('a')];
     renderJobsPage();
 
     fireJobEvent({
@@ -385,6 +412,7 @@ describe('JobsPage — job.completed event handler', () => {
   });
 
   it('needs-keys and needs-company skips also route to the strip, no toast', async () => {
+    postingsContainer.data = [samplePosting('a')];
     renderJobsPage();
 
     const boards = [
@@ -399,6 +427,9 @@ describe('JobsPage — job.completed event handler', () => {
   });
 
   it('a stale (inactive-job) completion does NOT overwrite the strip', async () => {
+    // Postings present so the header WOULD render if the active-job guard were
+    // broken — isolates this test from the separate results-present gate.
+    postingsContainer.data = [samplePosting('a')];
     renderJobsPage();
 
     // scrapeJobRef.current is 'job-123' (see useScraping mock); fire a DIFFERENT id.
@@ -414,27 +445,65 @@ describe('JobsPage — job.completed event handler', () => {
     expect(boardChips.summaries).toBeNull();
   });
 
-  it('job.failed clears the strip (an outright failure has no per-board data)', async () => {
+  it('job.failed clears the retained summaries (an outright failure has no per-board data)', async () => {
     renderJobsPage();
 
-    // A completed run first populates the strip...
+    // A completed run first populates the retained summaries (asserted via the
+    // unconditional resultsProps signal — decoupled from header visibility)...
     fireJobEvent({
       type: 'job.completed',
       jobId: 'job-123',
       data: { boards: [{ board: 'linkedin', count: 3 }] },
     });
-    await waitFor(() => expect(boardChips.summaries).toEqual([{ board: 'linkedin', count: 3 }]));
+    await waitFor(() =>
+      expect(resultsProps.boardSummaries).toEqual([{ board: 'linkedin', count: 3 }])
+    );
 
     // ...then an outright failure clears it (surfaced via scrapeOutcome instead).
     fireJobEvent({ type: 'job.failed', jobId: 'job-123', data: 'connection refused' });
     await waitFor(() => expect(resultsProps.boardSummaries).toEqual([]));
   });
 
+  it('a stale (inactive-job) job.failed does NOT wipe the strip or paint a foreign error (jobs:event is a shared global channel)', async () => {
+    // Postings present so the header WOULD show a wipe/foreign-note if the
+    // active-job guard were broken.
+    postingsContainer.data = [samplePosting('a')];
+    renderJobsPage();
+
+    // First populate the strip via a real completion for the ACTIVE job.
+    const boards = [{ board: 'linkedin', count: 5 }];
+    fireJobEvent({ type: 'job.completed', jobId: 'job-123', data: { boards } });
+    await waitFor(() => expect(boardChips.summaries).toEqual(boards));
+
+    // An unrelated background job (autopilot/AI/agent/pipeline — job.failed is
+    // emitted on the SAME `jobs:event` channel) fails with a DIFFERENT jobId.
+    fireJobEvent({ type: 'job.failed', jobId: 'unrelated-ai-job', data: 'AI generation failed' });
+
+    // noteScrapeFinished still fires unconditionally (internally buffered/
+    // guarded by job id — a foreign id is simply parked, never surfaced)...
+    await waitFor(() =>
+      expect(scrapingMock.noteScrapeFinished).toHaveBeenCalledWith('unrelated-ai-job', {
+        ok: false,
+        note: 'sanitized:AI generation failed',
+      })
+    );
+    // ...but the strip and failure note are UNTOUCHED — no foreign wipe/paint.
+    expect(boardChips.summaries).toEqual(boards);
+    expect(resultsProps.boardSummaries).toEqual(boards);
+    expect(resultsProps.failureNote).toBeNull();
+    expect(screen.queryByText(/jobs\.lastScrapeFailed/)).not.toBeInTheDocument();
+  });
+
   // ---------------------------------------------------------------------------
   // Outright failure note (no per-board summaries to chip) — HIGH #3
   // ---------------------------------------------------------------------------
 
-  it('job.failed persists a SANITIZED failure note (not the raw error) into the header + empty state', async () => {
+  it('job.failed persists a SANITIZED failure note (not the raw error) for the empty state', async () => {
+    // Zero results (default) — the note routes to JobsResults' empty state
+    // (verified end-to-end in JobsResults.test.tsx); this test proves the
+    // data-layer signal is sanitized before it ever leaves JobsPage. The
+    // header's OWN rendering of this note (when results ARE present) is
+    // covered by the dedicated mutual-exclusivity block below.
     renderJobsPage();
 
     fireJobEvent({
@@ -446,14 +515,6 @@ describe('JobsPage — job.completed event handler', () => {
     await waitFor(() =>
       expect(resultsProps.failureNote).toBe('sanitized:connection refused at C:\\Users\\me\\x')
     );
-    // The header renders it via t('jobs.lastScrapeFailed', { reason }) — the t()
-    // mock renders "key[reason=<value>]" so both the key and the SANITIZED value
-    // (not the raw string) are visible in the DOM.
-    expect(
-      screen.getByText(
-        'jobs.lastScrapeFailed[reason=sanitized:connection refused at C:\\Users\\me\\x]'
-      )
-    ).toBeInTheDocument();
   });
 
   it('a subsequent job.completed clears the failure note', async () => {
@@ -508,6 +569,76 @@ describe('JobsPage — job.completed event handler', () => {
     const outcome = scrapingMock.noteScrapeFinished.mock.calls[0]?.[1];
     expect(outcome?.ok).toBe(true);
     expect(outcome?.note).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Header strip mutual exclusivity with the empty state (🟡 fix): the header
+// chip strip + failure note must render ONLY alongside a visible results
+// list — with zero results, JobsResults' empty state is the SOLE owner of
+// the explanation (both used to co-render, duplicating the same message).
+// ---------------------------------------------------------------------------
+
+describe('JobsPage — header strip mutual exclusivity with the empty state', () => {
+  beforeEach(() => {
+    boardChips.summaries = null;
+    resultsProps.boardSummaries = undefined;
+    resultsProps.failureNote = undefined;
+    postingsContainer.data = [];
+  });
+
+  it('ZERO results: the underlying data still reaches JobsResults, but the header strip does NOT render', async () => {
+    renderJobsPage(); // postingsContainer.data = [] → filtered.length === 0
+
+    fireJobEvent({
+      type: 'job.completed',
+      jobId: 'job-123',
+      data: { boards: [{ board: 'linkedin', count: 0, error: 'blocked' }] },
+    });
+
+    await waitFor(() =>
+      expect(resultsProps.boardSummaries).toEqual([
+        { board: 'linkedin', count: 0, error: 'blocked' },
+      ])
+    );
+    // Empty state owns it — the header's own strip instance never rendered.
+    expect(boardChips.summaries).toBeNull();
+    expect(screen.queryByTestId('board-summary-chips')).not.toBeInTheDocument();
+  });
+
+  it('ZERO results: the header failure note does NOT render (empty state owns it)', async () => {
+    renderJobsPage();
+
+    fireJobEvent({ type: 'job.failed', jobId: 'job-123', data: 'connection refused' });
+
+    await waitFor(() => expect(resultsProps.failureNote).toBe('sanitized:connection refused'));
+    expect(screen.queryByText(/jobs\.lastScrapeFailed/)).not.toBeInTheDocument();
+  });
+
+  it('RESULTS PRESENT: the header renders the chip strip', async () => {
+    postingsContainer.data = [samplePosting('a')];
+    renderJobsPage();
+
+    const boards = [
+      { board: 'linkedin', count: 5 },
+      { board: 'xing', count: 0, error: 'blocked' },
+    ];
+    fireJobEvent({ type: 'job.completed', jobId: 'job-123', data: { boards } });
+
+    await waitFor(() => expect(boardChips.summaries).toEqual(boards));
+    expect(screen.getByTestId('board-summary-chips')).toBeInTheDocument();
+  });
+
+  it('RESULTS PRESENT: the header renders the failure note', async () => {
+    postingsContainer.data = [samplePosting('a')];
+    renderJobsPage();
+
+    fireJobEvent({ type: 'job.failed', jobId: 'job-123', data: 'connection refused' });
+
+    await waitFor(() => expect(resultsProps.failureNote).toBe('sanitized:connection refused'));
+    expect(
+      screen.getByText('jobs.lastScrapeFailed[reason=sanitized:connection refused]')
+    ).toBeInTheDocument();
   });
 });
 

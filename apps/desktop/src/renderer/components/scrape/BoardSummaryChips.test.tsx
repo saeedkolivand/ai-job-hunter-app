@@ -123,6 +123,23 @@ describe('sanitizeReason', () => {
     expect(out).toContain('<path-redacted>');
     expect(out).not.toMatch(/alice/i);
   });
+
+  it('redacts a UNC network path (\\\\server\\share\\...)', () => {
+    const out = sanitizeReason('failed to read \\\\fileserver01\\shared\\secrets.json');
+    expect(out).toContain('failed to read');
+    expect(out).toContain('<path-redacted>');
+    expect(out).not.toMatch(/fileserver01/i);
+  });
+
+  it('pre-caps a pathological (very long) input before tokenizing, doing bounded work', () => {
+    // 50,000 chars with no whitespace — a single giant "token". Must not hang
+    // or blow the call stack; the 1000-char input pre-cap bounds the work
+    // regardless of the eventual MAX_REASON_LEN output truncation.
+    const pathological = 'a'.repeat(50_000);
+    const out = sanitizeReason(pathological);
+    expect(out.length).toBeLessThanOrEqual(201);
+    expect(out.endsWith('…')).toBe(true);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

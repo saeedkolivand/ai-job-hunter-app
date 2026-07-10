@@ -170,6 +170,18 @@ Results now persist across navigation thanks to React Query + backend cache:
 - **Frontend:** Throttled `invalidatePostings()` on `job.stream` event (~1 ms throttle; eager on first item of new search)
 - **Hydration:** React Query re-fetches cache on component remount → results reappear
 
+## Jobs-page diagnostics surface (PR C, 2026-07-10)
+
+Per-board scrape outcomes are now visible via a shared `BoardSummaryChips` component, surfacing the sanitized failure reasons, skip reasons, partial-harvest signals, and success counts:
+
+- **Header strip** (Jobs page) — persistent chip strip rendered in the pinned header when results are present, survives the auto-closing scrape form. Gated on `!scraping && filteredJobs.length > 0`. Cleared on new scrape start, `job.failed`, or clear-postings.
+- **Empty state** (Jobs page) — same strip rendered below the zero-results message to explain per-board why nothing was found. Only owner of the zero-results explanation surface; header strip is never shown alongside it (mutual exclusivity).
+- **Autopilot card** — renders persisted `lastRunSummaries` as chips when run is finished (`!running`). Needs-configuration variant (when `runStatus==='failed'` AND every summary skipped with none errored) renders a neutral `autopilot.badge.needsConfig` badge + HoverPopover hint, not a red failure state.
+- **Chip rendering** — `BoardSummaryChips.tsx` (component + pure `sanitizeReason` sanitizer). Sanitizer redacts UNC paths, IPv4/IPv6, URLs, emails, credential patterns; caps input @1000 chars, output @200 chars. Chip detail display is further capped @60 chars (wraps with `whitespace-normal break-words`). Chip order by severity: error (red) > skipped (neutral) > truncated (amber) > success (green). All-success all-green collapse when multiple boards and all succeeded. Source: `apps/desktop/src/renderer/components/scrape/BoardSummaryChips.tsx`.
+- **I18n keys** — `jobs.boardSummary.{label, count_one, count_other, partial, allOk_one, allOk_other, skip.{needsLogin, needsCompany, needsKeys, other}}` + `autopilot.badge.{needsConfig, needsConfigHint, completedWithErrorsHint}` (en + de).
+- **Whole-scrape failures** — persisted as `lastFailureNote` (sanitized, same redactor) on `JobsPage`; rendered as a small `role="status"` line in header + forwarded to `JobsResults` empty state (never triple-explained when `missingAdzunaKeys` is the root cause).
+- **Skip-toast folding** — the three sticky notification warnings (needs-login / needs-company / needs-keys) were removed; their signal is now persistent in the chip strip (still actionable via `BoardConnectChip` in the scrape form for login boards).
+
 ## Full-description resolution on detail-pane open
 
 **Aggregator short snippets → full descriptions:** Adzuna search API returns snippets (~200–500 chars). Detail pane auto-fetches on open when aggregator source + description < 700 chars, following the redirect chain and re-dispatching named-board handlers on the final URL. If the resolved text is meaningfully longer, it replaces the snippet; otherwise the snippet floor is kept. Redirect following is IP-guarded per-hop (closes DNS-rebinding TOCTOU); 429/login-wall/error returns Ok(None) and the snippet is retained.
