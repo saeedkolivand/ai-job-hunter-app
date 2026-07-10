@@ -189,6 +189,7 @@ impl Scraper for TheMuseScraper {
                         "[themuse] page {page} failed: {e}; returning {} collected",
                         out.len()
                     );
+                    ctx.report_truncation(format!("page {} of {max_pages} failed: {e}", page + 1));
                     break;
                 }
             };

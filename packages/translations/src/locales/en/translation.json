@@ -1330,6 +1330,7 @@
       "new": "New",
       "applied": "Applied",
       "failed": "Failed",
+      "completedWithErrors": "Partial results",
       "interrupted": "Interrupted"
     },
     "card": {
@@ -1590,6 +1591,7 @@
         "alsoRunsAt": "Runs at {{first}} and {{second}}"
       },
       "runFailed": "Run failed",
+      "allBoardsFailed": "No results — no job board completed this run.",
       "createFailed": "Failed to create autopilot",
       "updateFailed": "Failed to update autopilot",
       "running": "Running…",

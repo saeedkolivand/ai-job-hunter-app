@@ -234,6 +234,7 @@ mod test {
             total_applied: 0,
             found_jobs: Vec::new(),
             run_status: None,
+            last_run_summaries: Vec::new(),
             last_run_at,
             created_at: 0,
             updated_at: 0,

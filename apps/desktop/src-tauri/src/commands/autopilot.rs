@@ -208,9 +208,10 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         Ok(out) => out,
         Err(e) => {
             engine.unregister_token(&job_id).await;
-            store(&app)
-                .lock()
-                .set_run_status(&autopilot_id, RunStatus::Failed);
+            // Whole-batch failure never reached `record_run`, so there are no
+            // fresh summaries for this run — clear the PRIOR run's, or a later
+            // chip strip would render stale board data as if it were this run's.
+            store(&app).lock().fail_run_without_summaries(&autopilot_id);
             crate::commands::jobs::job_fail(&app, &job_id, e.to_string());
             span.end(false);
             return json!({ "error": e, "jobId": job_id });
@@ -375,9 +376,16 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         return json!({ "jobId": job_id, "cancelled": true });
     }
 
-    let new_count = store(&app)
-        .lock()
-        .record_run(&autopilot_id, kept as u32, 0, found_jobs);
+    // Derive the honest run outcome from the per-board summaries BEFORE they are
+    // moved into `record_run` — so the command's resolved payload can carry the
+    // same status the record persists, letting the renderer branch on an
+    // all-boards-failed run (`failed`) instead of reading the success-shaped
+    // `{ found: 0 }` as "done".
+    let run_status = crate::autopilot::derive_run_status(&summaries);
+    let new_count =
+        store(&app)
+            .lock()
+            .record_run(&autopilot_id, kept as u32, 0, found_jobs, summaries);
 
     // Surface genuinely-new finds while the user is away: a permission-gated
     // notification + a "New jobs: N" tray counter that jumps back to this run.
@@ -403,7 +411,11 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     );
 
     span.end_with(&format!("found={kept} applied=0"), true);
-    json!({ "jobId": job_id, "found": kept, "applied": 0 })
+    // `status` mirrors the outcome persisted on the record (`completed` /
+    // `completedWithErrors` / `failed`) so a caller that only inspects the
+    // resolved payload can still tell a run that found real jobs from one where
+    // every board failed — the previous success-only shape hid the difference.
+    json!({ "jobId": job_id, "found": kept, "applied": 0, "status": run_status })
 }
 
 /// Take + clear the buffered autopilot-focus id. Split from the command so it's

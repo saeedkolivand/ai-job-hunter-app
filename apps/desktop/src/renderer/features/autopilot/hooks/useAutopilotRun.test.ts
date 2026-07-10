@@ -64,4 +64,65 @@ describe('useAutopilotRun — handleRun error-payload handling', () => {
     expect(result.current.runStates.ap2).toBe('done');
     expect(result.current.error).toBeNull();
   });
+
+  it('routes a status:"failed" payload (no error key) to the error state, not done', async () => {
+    // The "success theater" case: the run reached the record but every board
+    // failed — found:0, no `error` key. Must still surface as an error.
+    runMutateAsync.mockResolvedValueOnce({ jobId: 'j3', status: 'failed', found: 0 });
+    const { result } = renderHookWithClient(() => useAutopilotRun());
+
+    await act(async () => {
+      await result.current.handleRun('ap3');
+    });
+
+    expect(result.current.runStates.ap3).toBe('error');
+    // `t` is stubbed to echo the key, so the banner carries the honest message.
+    expect(result.current.error).toBe('autopilot.wizard.allBoardsFailed');
+  });
+
+  it('keeps a status:"completedWithErrors" run in the done state (partial success)', async () => {
+    // Some boards failed but others returned jobs — the run still produced
+    // results, so it stays 'done'; the persisted card badge carries the warning.
+    runMutateAsync.mockResolvedValueOnce({ jobId: 'j4', status: 'completedWithErrors', found: 2 });
+    const { result } = renderHookWithClient(() => useAutopilotRun());
+
+    await act(async () => {
+      await result.current.handleRun('ap4');
+    });
+
+    expect(result.current.runStates.ap4).toBe('done');
+    expect(result.current.error).toBeNull();
+  });
+
+  it('prefers an { error } over a completedWithErrors status when both are present', async () => {
+    // Unreachable today by construction (the backend never emits both
+    // together), but pins the intended precedence — `error` wins over
+    // `status` — so a future refactor of either side can't silently swap
+    // this run into the 'done' state.
+    runMutateAsync.mockResolvedValueOnce({
+      jobId: 'j6',
+      error: 'x',
+      status: 'completedWithErrors',
+    });
+    const { result } = renderHookWithClient(() => useAutopilotRun());
+
+    await act(async () => {
+      await result.current.handleRun('ap6');
+    });
+
+    expect(result.current.runStates.ap6).toBe('error');
+    expect(result.current.error).toBe('x');
+  });
+
+  it('falls back to done for an unrecognized future status', async () => {
+    runMutateAsync.mockResolvedValueOnce({ jobId: 'j5', status: 'someFutureStatus', found: 1 });
+    const { result } = renderHookWithClient(() => useAutopilotRun());
+
+    await act(async () => {
+      await result.current.handleRun('ap5');
+    });
+
+    expect(result.current.runStates.ap5).toBe('done');
+    expect(result.current.error).toBeNull();
+  });
 });

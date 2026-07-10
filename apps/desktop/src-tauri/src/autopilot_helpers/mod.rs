@@ -526,6 +526,7 @@ mod tests {
             count: 0,
             error: error.map(String::from),
             skipped: skipped.map(String::from),
+            truncated: None,
         }
     }
 

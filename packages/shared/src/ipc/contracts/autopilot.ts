@@ -1,5 +1,5 @@
 import type { AutopilotCreate, AutopilotUpdate } from '../../schemas/index.js';
-import type { Autopilot } from '../../types/index.js';
+import type { Autopilot, AutopilotRunStatus } from '../../types/index.js';
 
 export interface AutopilotContract {
   list(): Promise<Autopilot[]>;
@@ -17,8 +17,16 @@ export interface AutopilotContract {
    * an `{ error }` payload on a scrape failure or unknown id, so callers MUST
    * inspect `error` — a resolved value is not proof of success. `jobId` is
    * present on every non-error outcome (success / cancel).
+   *
+   * `status` mirrors the outcome persisted on the record (`completed` /
+   * `completedWithErrors` / `failed`) on a run that reached the record site, so
+   * a caller can tell a run that found real jobs from one where every board
+   * failed WITHOUT re-fetching the record. Absent on the early `{ error }` and
+   * `{ cancelled }` outcomes.
    */
-  run(req: { autopilotId: string }): Promise<{ jobId?: string; error?: string }>;
+  run(req: {
+    autopilotId: string;
+  }): Promise<{ jobId?: string; error?: string; status?: AutopilotRunStatus }>;
 
   pause(req: { autopilotId: string }): Promise<void>;
 
