@@ -104,7 +104,9 @@ impl Scraper for YCombinatorScraper {
             {
                 Ok(i) => i,
                 Err(e) => {
-                    log::warn!("[ycombinator] item {id} failed: {e}; skipping");
+                    // debug, not warn: a deleted HN item (null body → Parse err) is a
+                    // routine, expected condition, not a board-level problem.
+                    log::debug!("[ycombinator] item {id} failed: {e}; skipping");
                     continue;
                 }
             };
