@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import { TEST_IDS } from '@ajh/test-ids';
+
 import { TEMPLATES } from '@/lib/generate';
 
 import { StepTemplate } from './index';
@@ -17,7 +19,6 @@ vi.mock('@ajh/translations', () => ({
 vi.mock('../../../samples', () => {
   const ids = [
     'classic',
-    'modern',
     'swiss-minimal',
     'academic',
     'atelier',
@@ -47,7 +48,7 @@ describe('StepTemplate', () => {
   it('renders a button for every template', () => {
     render(
       <StepTemplate
-        templateId="modern"
+        templateId="classic"
         atsMode={false}
         onTemplateChange={onTemplateChange}
         onAtsModeChange={onAtsModeChange}
@@ -62,7 +63,7 @@ describe('StepTemplate', () => {
     const user = userEvent.setup();
     render(
       <StepTemplate
-        templateId="modern"
+        templateId="classic"
         atsMode={false}
         onTemplateChange={onTemplateChange}
         onAtsModeChange={onAtsModeChange}
@@ -97,7 +98,7 @@ describe('StepTemplate', () => {
     const user = userEvent.setup();
     render(
       <StepTemplate
-        templateId="modern"
+        templateId="classic"
         atsMode={false}
         onTemplateChange={onTemplateChange}
         onAtsModeChange={onAtsModeChange}
@@ -183,7 +184,7 @@ describe('StepTemplate', () => {
     const user = userEvent.setup();
     render(
       <StepTemplate
-        templateId="modern"
+        templateId="classic"
         atsMode={false}
         onTemplateChange={onTemplateChange}
         onAtsModeChange={onAtsModeChange}
@@ -223,7 +224,7 @@ describe('StepTemplate', () => {
   it("target='both' uses résumé thumbnails (not cover)", () => {
     render(
       <StepTemplate
-        templateId="modern"
+        templateId="classic"
         atsMode={false}
         onTemplateChange={onTemplateChange}
         onAtsModeChange={onAtsModeChange}
@@ -239,7 +240,7 @@ describe('StepTemplate', () => {
   it("target='cover' uses cover thumbnails", () => {
     render(
       <StepTemplate
-        templateId="modern"
+        templateId="classic"
         atsMode={false}
         onTemplateChange={onTemplateChange}
         onAtsModeChange={onAtsModeChange}
@@ -285,5 +286,35 @@ describe('StepTemplate', () => {
     await user.click(classicButton);
     expect(onTemplateChange).toHaveBeenCalledWith('classic');
     expect(onAtsModeChange).toHaveBeenCalledWith(false);
+  });
+
+  // ── document accent picker ──────────────────────────────────────────────────
+
+  it('omits the accent picker when onAccentChange is not provided', () => {
+    render(
+      <StepTemplate
+        templateId="classic"
+        atsMode={false}
+        onTemplateChange={onTemplateChange}
+        onAtsModeChange={onAtsModeChange}
+      />
+    );
+    expect(screen.queryByTestId(TEST_IDS.generation.accentDefault)).not.toBeInTheDocument();
+  });
+
+  it('renders the accent picker and forwards a swatch pick to onAccentChange', async () => {
+    const user = userEvent.setup();
+    const onAccentChange = vi.fn();
+    render(
+      <StepTemplate
+        templateId="classic"
+        atsMode={false}
+        onTemplateChange={onTemplateChange}
+        onAtsModeChange={onAtsModeChange}
+        onAccentChange={onAccentChange}
+      />
+    );
+    await user.click(screen.getByTestId(`${TEST_IDS.generation.accentSwatch}-navy`));
+    expect(onAccentChange).toHaveBeenCalledWith('#1B3A5C');
   });
 });

@@ -1215,6 +1215,16 @@
     "resumePlaceholder": "Paste your resume text here…",
     "atsMode": "ATS-safe mode",
     "atsModeHint": "Recommended for ATS submissions — linearizes the two-column layout",
+    "documentAccent": "Document accent",
+    "documentAccentDefault": "Template default",
+    "documentAccentCustom": "Custom",
+    "documentAccentNavy": "Navy",
+    "documentAccentSlate": "Slate",
+    "documentAccentBurgundy": "Burgundy",
+    "documentAccentForest": "Forest",
+    "documentAccentTeal": "Teal",
+    "documentAccentCopper": "Copper",
+    "documentAccentSteel": "Steel blue",
     "wizard": {
       "steps": {
         "0": "What to create",

@@ -79,7 +79,7 @@ const mockSessionState: {
   applicationApply: {
     applyWizardStep: 0,
     applyWizardForm: null,
-    applyTemplateId: 'modern',
+    applyTemplateId: 'classic',
     applyAtsMode: false,
     applyForId: null,
   },

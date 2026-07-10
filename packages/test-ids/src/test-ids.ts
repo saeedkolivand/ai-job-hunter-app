@@ -103,7 +103,7 @@ export const TEST_IDS = {
     uploadZone: 'upload-zone',
   },
 
-  /** Shared generation component (EditableOutput) */
+  /** Shared generation component (EditableOutput, AccentPicker) */
   generation: {
     richTextEditor: 'rich-text-editor',
     rteSelectTrigger: 'rte-select-trigger',
@@ -111,6 +111,12 @@ export const TEST_IDS = {
     rteDeselectTrigger: 'rte-deselect-trigger',
     customPreview: 'custom-preview',
     pendingCommit: 'pending-commit',
+    /** AccentPicker: "Template default" chip (clears the accent override). */
+    accentDefault: 'accent-default',
+    /** AccentPicker: a curated swatch — suffix with the accent id (`accent-swatch-navy`). */
+    accentSwatch: 'accent-swatch',
+    /** AccentPicker: the custom 6-hex input. */
+    accentCustom: 'accent-custom',
   },
 
   /** Onboarding wizard */

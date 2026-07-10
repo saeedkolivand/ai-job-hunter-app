@@ -2,7 +2,7 @@
  * Export module — résumé and cover-letter generation (PDF + DOCX + TXT).
  *
  * Sub-modules:
- * - `typst_engine/` — sole PDF engine (Typst adapter); all nine templates rendered here.
+ * - `typst_engine/` — sole PDF engine (Typst adapter); all eight templates rendered here.
  * - `pdf/`          — `generate_pdf` / `generate_preview_svg` entry points.
  * - `docx/`         — `generate_docx` entry point; cover-letter DOCX renderer.
  * - `model_docx`    — model-based résumé DOCX renderer (canonical résumé-DOCX path).

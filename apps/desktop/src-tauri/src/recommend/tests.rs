@@ -11,11 +11,10 @@ fn signals(title: &str, seniority: &str, reqs: &[&str]) -> RecommendSignals {
     }
 }
 
-/// The nine live template IDs — the recommender must never return anything outside
+/// The eight live template IDs — the recommender must never return anything outside
 /// this set.
-const LIVE_TEMPLATES: [TemplateId; 9] = [
+const LIVE_TEMPLATES: [TemplateId; 8] = [
     TemplateId::Classic,
-    TemplateId::Modern,
     TemplateId::SwissMinimal,
     TemplateId::Academic,
     TemplateId::Atelier,
@@ -28,7 +27,7 @@ const LIVE_TEMPLATES: [TemplateId; 9] = [
 #[test]
 fn recommender_never_returns_a_deleted_id() {
     // Exhaustive sweep over representative job signals.  Every result must be a
-    // member of the nine live templates — none of the deleted five may slip through.
+    // member of the eight live templates — no deleted id (Modern et al.) may slip through.
     let cases: &[(&str, &str, &[&str])] = &[
         ("Frontend Engineer", "mid", &["React", "TypeScript"]),
         ("Embedded Software Engineer", "mid", &["C++", "firmware"]),
@@ -63,25 +62,26 @@ fn recommender_never_returns_a_deleted_id() {
 }
 
 #[test]
-fn software_role_gets_modern() {
+fn software_role_gets_classic() {
+    // Modern was deleted; software roles now map to the Classic single column.
     let r = recommend(&signals(
         "Frontend Engineer",
         "mid",
         &["React", "TypeScript"],
     ));
-    assert_eq!(r.template_id, TemplateId::Modern);
+    assert_eq!(r.template_id, TemplateId::Classic);
     assert!(!r.ats_suggested);
 }
 
 #[test]
-fn systems_role_gets_modern() {
-    // MonoTechnical was deleted; systems roles now map to Modern.
+fn systems_role_gets_classic() {
+    // MonoTechnical then Modern were deleted; systems roles now map to Classic.
     let r = recommend(&signals(
         "Embedded Software Engineer",
         "mid",
         &["C++", "firmware"],
     ));
-    assert_eq!(r.template_id, TemplateId::Modern);
+    assert_eq!(r.template_id, TemplateId::Classic);
 }
 
 #[test]
@@ -191,15 +191,16 @@ fn region_subtag_resolves_us_vs_uk() {
 fn rationale_is_always_present() {
     let r = recommend(&RecommendSignals::default());
     assert!(!r.rationale.is_empty());
-    assert_eq!(r.template_id, TemplateId::Modern); // empty → general default
+    assert_eq!(r.template_id, TemplateId::Classic); // empty → general default
 }
 
 // --- M1: score-all-fields-and-take-the-max classification ---
 
 /// The motivating case: a title with one finance keyword but two software
-/// keywords must classify as Software (Modern), not Conservative (Classic). The
-/// old first-match-wins ordering tested Conservative before Software and would
-/// have mis-routed this to Classic + ATS.
+/// keywords must classify as Software, not Conservative. Both currently resolve
+/// to Classic, so the distinguishing signal is `ats_suggested`: Conservative
+/// would auto-suggest ATS mode, Software must not. The old first-match-wins
+/// ordering tested Conservative before Software and would have mis-suggested ATS.
 #[test]
 fn finance_software_role_classifies_as_software_not_conservative() {
     let r = recommend(&signals(
@@ -209,8 +210,8 @@ fn finance_software_role_classifies_as_software_not_conservative() {
     ));
     assert_eq!(
         r.template_id,
-        TemplateId::Modern,
-        "more software signals than finance → Software/Modern"
+        TemplateId::Classic,
+        "software / conservative both map to Classic"
     );
     assert!(
         !r.ats_suggested,
@@ -228,7 +229,12 @@ fn substring_does_not_trigger_false_conservative() {
         "mid",
         &["syntax trees", "compilers"],
     ));
-    assert_eq!(r.template_id, TemplateId::Modern);
+    assert_eq!(r.template_id, TemplateId::Classic);
+    // The real discriminator: a false Conservative match would auto-suggest ATS.
+    assert!(
+        !r.ats_suggested,
+        "'syntax'/'tax' must not be read as a Conservative (finance/tax) signal"
+    );
 }
 
 /// "ats" is matched on a word boundary, including when it is the very first

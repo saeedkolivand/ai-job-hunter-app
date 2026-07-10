@@ -1219,6 +1219,16 @@
     "resumePlaceholder": "Lebenslauftext hier einfügen…",
     "atsMode": "ATS-sicherer Modus",
     "atsModeHint": "Empfohlen für ATS-Bewerbungen — linearisiert das zweispaltige Layout",
+    "documentAccent": "Dokumentakzent",
+    "documentAccentDefault": "Vorlagenstandard",
+    "documentAccentCustom": "Eigene",
+    "documentAccentNavy": "Marineblau",
+    "documentAccentSlate": "Schiefer",
+    "documentAccentBurgundy": "Bordeaux",
+    "documentAccentForest": "Waldgrün",
+    "documentAccentTeal": "Petrol",
+    "documentAccentCopper": "Kupfer",
+    "documentAccentSteel": "Stahlblau",
     "wizard": {
       "steps": {
         "0": "Was erstellen",

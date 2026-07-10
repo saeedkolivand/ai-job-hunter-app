@@ -22,6 +22,8 @@ interface AIGenerateSlice {
   target: AIGenerateTarget;
   templateId: TemplateId;
   atsMode: boolean;
+  /** Per-export document accent (6-hex `#RRGGBB`); undefined = template palette. */
+  accent?: string;
   locale: string;
   resumeOut: string;
   coverOut: string;
@@ -118,6 +120,8 @@ interface ApplicationApplySlice {
   applyWizardForm: TailorWizardState | null;
   applyTemplateId: TemplateId;
   applyAtsMode: boolean;
+  /** Per-export document accent (6-hex `#RRGGBB`); undefined = template palette. */
+  applyAccent?: string;
   applyForId: string | null;
   /** One-shot résumé seed for the Documents-tab wizard when arriving from the
    *  autopilot Apply deep-link; cleared when switching to another application. */
@@ -149,7 +153,7 @@ const AI_GENERATE_DEFAULTS: AIGenerateSlice = {
   mode: 'ats',
   emphasis: [],
   target: 'both',
-  templateId: 'modern',
+  templateId: 'classic',
   atsMode: false,
   locale: 'en',
   resumeOut: '',
@@ -161,7 +165,7 @@ const AI_GENERATE_DEFAULTS: AIGenerateSlice = {
 const APPLICATION_APPLY_DEFAULTS: ApplicationApplySlice = {
   applyWizardStep: 0,
   applyWizardForm: null,
-  applyTemplateId: 'modern',
+  applyTemplateId: 'classic',
   applyAtsMode: false,
   applyForId: null,
   applySeedResume: null,
@@ -196,7 +200,7 @@ const RESUME_BUILDER_DEFAULTS: ResumeBuilderSlice = {
   output: '',
   language: 'en',
   locale: 'en',
-  templateId: 'modern',
+  templateId: 'classic',
   atsMode: false,
 };
 

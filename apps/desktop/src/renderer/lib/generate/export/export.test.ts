@@ -57,10 +57,27 @@ describe('exportDOCX / exportPDF', () => {
     const exportAndSave = vi.fn().mockResolvedValue('/path/out.docx');
     _registerClient(createMockClient({ documents: { exportAndSave } }));
 
-    await exportDOCX('Resume body', 'out.docx', 'resume', meta, 'modern');
+    await exportDOCX('Resume body', 'out.docx', 'resume', meta, 'classic');
     expect(exportAndSave).toHaveBeenCalledWith(
-      expect.objectContaining({ format: 'docx', documentType: 'resume', templateId: 'modern' })
+      expect.objectContaining({ format: 'docx', documentType: 'resume', templateId: 'classic' })
     );
+  });
+
+  it('threads the document accent into the export request', async () => {
+    const exportAndSave = vi.fn().mockResolvedValue('/path/out.pdf');
+    _registerClient(createMockClient({ documents: { exportAndSave } }));
+
+    await exportPDF('Resume body', 'out.pdf', 'resume', meta, 'classic', false, 'en', '#1B3A5C');
+    expect(exportAndSave).toHaveBeenCalledWith(expect.objectContaining({ accent: '#1B3A5C' }));
+  });
+
+  it('omits the accent (undefined) when none is chosen', async () => {
+    const exportAndSave = vi.fn().mockResolvedValue('/path/out.pdf');
+    _registerClient(createMockClient({ documents: { exportAndSave } }));
+
+    await exportPDF('Resume body', 'out.pdf', 'resume', meta, 'classic');
+    const arg = exportAndSave.mock.calls[0]?.[0] as { accent?: string };
+    expect(arg.accent).toBeUndefined();
   });
 
   it('extracts the cover-letter section before exporting', async () => {
@@ -80,7 +97,7 @@ describe('exportDOCX / exportPDF', () => {
     _registerClient(createMockClient({ documents: { exportAndSave } }));
 
     // A wrong-template export is indistinguishable from a correct one, so the
-    // unknown id surfaces as an error rather than quietly swapping in "modern".
+    // unknown id surfaces as an error rather than quietly swapping in a default.
     await expect(
       exportDOCX('Body', 'out.docx', 'resume', meta, 'does-not-exist' as never)
     ).rejects.toThrow(/Unknown export template/);
@@ -102,11 +119,21 @@ describe('renderDocumentPreview (#24)', () => {
       .mockResolvedValue({ pages: ['<svg>p1</svg>', '<svg>p2</svg>'], mimeType: 'image/svg+xml' });
     _registerClient(createMockClient({ documents: { renderPreviewImages } }));
 
-    const pages = await renderDocumentPreview('Resume body', 'resume', meta, 'modern');
+    const pages = await renderDocumentPreview('Resume body', 'resume', meta, 'classic');
     expect(renderPreviewImages).toHaveBeenCalledWith(
-      expect.objectContaining({ documentType: 'resume', templateId: 'modern' })
+      expect.objectContaining({ documentType: 'resume', templateId: 'classic' })
     );
     expect(pages).toEqual(['<svg>p1</svg>', '<svg>p2</svg>']);
+  });
+
+  it('threads the document accent into the preview request', async () => {
+    const renderPreviewImages = vi.fn().mockResolvedValue({ pages: [], mimeType: 'image/svg+xml' });
+    _registerClient(createMockClient({ documents: { renderPreviewImages } }));
+
+    await renderDocumentPreview('Resume body', 'resume', meta, 'classic', false, 'en', '#6E1E2B');
+    expect(renderPreviewImages).toHaveBeenCalledWith(
+      expect.objectContaining({ accent: '#6E1E2B' })
+    );
   });
 
   it('extracts the cover-letter section before rendering', async () => {
@@ -121,7 +148,7 @@ describe('renderDocumentPreview (#24)', () => {
 
   it('throws on empty text and on an unknown template', async () => {
     _registerClient(createMockClient());
-    await expect(renderDocumentPreview('   ', 'resume', meta, 'modern')).rejects.toThrow(/empty/);
+    await expect(renderDocumentPreview('   ', 'resume', meta, 'classic')).rejects.toThrow(/empty/);
     await expect(renderDocumentPreview('Body', 'resume', meta, 'nope' as never)).rejects.toThrow(
       /Unknown export template/
     );
@@ -134,7 +161,7 @@ describe('renderDocumentPreview (#24)', () => {
       .mockResolvedValue({ pages: [rawSvg], mimeType: 'image/svg+xml' });
     _registerClient(createMockClient({ documents: { renderPreviewImages } }));
 
-    const pages = await renderDocumentPreview('Resume body', 'resume', meta, 'modern');
+    const pages = await renderDocumentPreview('Resume body', 'resume', meta, 'classic');
     // raw & must be escaped
     expect(pages[0]).not.toMatch(/&lipi=/);
     expect(pages[0]).not.toMatch(/&licu=/);
@@ -146,7 +173,7 @@ describe('renderDocumentPreview (#24)', () => {
       .fn()
       .mockResolvedValue({ pages: [withEntity], mimeType: 'image/svg+xml' });
     _registerClient(createMockClient({ documents: { renderPreviewImages: renderPreviewImages2 } }));
-    const pages2 = await renderDocumentPreview('Resume body', 'resume', meta, 'modern');
+    const pages2 = await renderDocumentPreview('Resume body', 'resume', meta, 'classic');
     expect(pages2[0]).not.toContain('&amp;amp;');
     expect(pages2[0]).toContain('&amp;b=c');
   });

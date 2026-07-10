@@ -121,10 +121,12 @@ function makeProps(overrides: Partial<Parameters<typeof GenerationOutput>[0]> = 
     target: 'both' as const,
     activeOut: 'resume' as const,
     setActiveOut: vi.fn(),
-    templateId: 'modern' as const,
+    templateId: 'classic' as const,
     atsMode: false,
+    accent: undefined,
     onTemplateChange: vi.fn(),
     onAtsModeChange: vi.fn(),
+    onAccentChange: vi.fn(),
     output: 'Generated resume content',
     onEdit: noop,
     editable: false,
@@ -458,7 +460,7 @@ describe('GenerationOutput', () => {
         <GenerationOutput
           {...makeProps({
             activeOut: 'resume',
-            templateId: 'modern',
+            templateId: 'classic',
             onTemplateChange,
             onAtsModeChange,
           })}
@@ -576,8 +578,8 @@ describe('GenerationOutput', () => {
       expect(onAtsModeChange).toHaveBeenCalledWith(false);
     });
 
-    it('is absent for a single-column template (e.g. "modern")', () => {
-      render(<GenerationOutput {...makeProps({ activeOut: 'resume', templateId: 'modern' })} />);
+    it('is absent for a single-column template (e.g. "classic")', () => {
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', templateId: 'classic' })} />);
       expect(screen.queryByRole('switch')).not.toBeInTheDocument();
     });
 
