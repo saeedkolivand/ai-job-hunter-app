@@ -111,8 +111,12 @@ fn map_status(code: u16) -> Option<AppError> {
 /// The GET goes through the hardened [`fetch_text`] helper, which gives the 8 MB
 /// streaming body cap, the per-host rate limiter, and cancellation for free; we
 /// add an explicit [`REQUEST_TIMEOUT`] since the shared client has no global one.
-/// We keep the status code so the 404 / 403,429 mapping survives (which
-/// `fetch_json` would collapse into a single `None`).
+/// We use `fetch_text` (not `fetch_json`) specifically to keep `res.status_code`
+/// as a plain number we can branch on in [`map_status`] for GitHub's own
+/// 404-vs-403/429-vs-other semantics — `fetch_json` now turns every non-2xx into
+/// one `Err(AppError::Provider("HTTP <status>"))`, which is the right contract
+/// for the scraping boards but loses the structured code this 404/403/429
+/// distinction needs.
 pub async fn fetch_repos(input: &str) -> AppResult<Vec<GitHubRepo>> {
     let username = parse_username(input)?;
     let url = api_url(&username);

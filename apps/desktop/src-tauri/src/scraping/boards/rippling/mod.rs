@@ -7,7 +7,7 @@
 //! Endpoint reconnaissance ported from santifer/career-ops (MIT), `providers/rippling.mjs`.
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
-use super::common::normalize_companies;
+use super::common::{ats_all_fetches_failed, normalize_companies};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -224,18 +224,10 @@ impl Scraper for RipplingScraper {
                 }
             };
 
-            let jobs = match data {
-                Some(d) => {
-                    successful_fetches += 1;
-                    rows_to_jobs(d)
-                }
-                None => {
-                    if let Some(ref on_progress) = ctx.on_progress {
-                        on_progress((i + 1) as f32 / total as f32);
-                    }
-                    continue;
-                }
-            };
+            // A non-2xx / schema-drift response is now an `Err` above (which records
+            // `first_fetch_error`), so reaching here means a real success — count it.
+            successful_fetches += 1;
+            let jobs = rows_to_jobs(data);
 
             for posting in parse_rippling_response(jobs, company, now) {
                 if let Some(ref on_item) = ctx.on_item {
@@ -249,13 +241,11 @@ impl Scraper for RipplingScraper {
             }
         }
 
-        // Return Err only when every attempt failed — partial success is kept.
-        if successful_fetches == 0 {
-            if let Some(error) = first_fetch_error {
-                return Err(anyhow::anyhow!(
-                    "all rippling company fetches failed: {error}"
-                ));
-            }
+        // Return Err only when every attempt failed — see `ats_all_fetches_failed`.
+        if let Some(message) =
+            ats_all_fetches_failed(self.id(), successful_fetches, &first_fetch_error)
+        {
+            return Err(anyhow::anyhow!(message));
         }
 
         Ok(out)

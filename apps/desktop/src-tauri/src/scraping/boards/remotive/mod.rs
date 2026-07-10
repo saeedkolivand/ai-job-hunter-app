@@ -55,12 +55,11 @@ impl Scraper for RemotiveScraper {
             )
         };
 
-        let data = fetch_json::<Resp>(&url, Default::default(), ctx.signal).await?;
-
-        let jobs = match data {
-            Some(d) => d.jobs,
-            None => return Ok(vec![]),
-        };
+        // A non-2xx or schema-drift response now propagates as `Err` (surfaced in
+        // `BoardScrapeSummary.error`) instead of a silent empty result.
+        let jobs = fetch_json::<Resp>(&url, Default::default(), ctx.signal)
+            .await?
+            .jobs;
 
         let now = chrono::Utc::now().timestamp_millis();
         let mut out = vec![];

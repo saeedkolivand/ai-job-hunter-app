@@ -33,7 +33,9 @@ impl Scraper for WeWorkRemotelyScraper {
         .await?;
 
         if res.status_code != 200 {
-            return Ok(vec![]);
+            // Representable failure: a non-2xx feed response is a failed board, not
+            // a silent zero — surface the status into `BoardScrapeSummary.error`.
+            return Err(anyhow::anyhow!("HTTP {}", res.status_code));
         }
 
         let now = chrono::Utc::now().timestamp_millis();
