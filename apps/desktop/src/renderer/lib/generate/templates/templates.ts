@@ -20,6 +20,22 @@ export type TemplateId =
   | 'aria'
   | 'saffron';
 
+/**
+ * Cover-letter **layout** (arrangement only). Mirrors the Rust `LetterLayout`
+ * enum (export/types.rs) and the shared contract union
+ * (`BaseExportRequest.letterLayoutId`). Layout = composition; the palette + fonts
+ * always inherit from the chosen résumé {@link TemplateId}. `classic` is the
+ * default — an omitted value renders the pre-layout-picker output.
+ */
+export type LetterLayoutId = 'classic' | 'refined' | 'banded';
+
+/** Ordered letter-layout ids — the picker's option order + the exhaustiveness pin. */
+export const LETTER_LAYOUT_IDS = [
+  'classic',
+  'refined',
+  'banded',
+] as const satisfies readonly LetterLayoutId[];
+
 interface DocTemplate {
   id: TemplateId;
   name: string;

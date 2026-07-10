@@ -10,6 +10,7 @@ import {
   exportTXT,
   type GenerationMeta,
   type GenerationMode,
+  type LetterLayoutId,
   PERSIST_DEBOUNCE_MS,
   type TemplateId,
 } from '@/lib/generate';
@@ -57,6 +58,9 @@ interface Params {
   /** Per-export document accent (6-hex) — must match the preview so the export is
    *  faithful; undefined leaves the template palette untouched. */
   accent?: string;
+  /** Per-export cover-letter layout — must match the preview so the export is
+   *  faithful; undefined → the backend renders classic. */
+  letterLayoutId?: LetterLayoutId;
 }
 
 /**
@@ -77,6 +81,7 @@ export function useTailorGeneration({
   templateId,
   atsMode,
   accent,
+  letterLayoutId,
 }: Params) {
   const { t } = useTranslation();
   const api = useAppClient();
@@ -235,7 +240,8 @@ export function useTailorGeneration({
         templateId,
         atsMode,
         undefined,
-        accent
+        accent,
+        letterLayoutId
       );
     else if (fmt === 'docx')
       await exportDOCX(
@@ -246,7 +252,8 @@ export function useTailorGeneration({
         templateId,
         atsMode,
         undefined,
-        accent
+        accent,
+        letterLayoutId
       );
     else exportTXT(output, name);
   };

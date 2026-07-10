@@ -8,7 +8,7 @@ import { transition } from '@ajh/ui';
 
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { useInterviewQuestions } from '@/hooks/use-interview-questions';
-import type { TemplateId } from '@/lib/generate';
+import type { LetterLayoutId, TemplateId } from '@/lib/generate';
 import { shouldSeedResearchDefault } from '@/lib/research-company-default';
 import { useActiveModelCapabilities, useResolveJobUrl } from '@/services';
 
@@ -62,11 +62,14 @@ export interface TailorFlowPersistence {
   atsMode: boolean;
   /** Per-export document accent (6-hex); undefined = template palette. */
   accent?: string;
+  /** Per-export cover-letter layout; undefined → the backend renders classic. */
+  letterLayoutId?: LetterLayoutId;
   setWizardStep: (v: number) => void;
   setWizardForm: (v: TailorWizardState) => void;
   setTemplateId: (v: TemplateId) => void;
   setAtsMode: (v: boolean) => void;
   setAccent: (v: string | undefined) => void;
+  setLetterLayoutId: (v: LetterLayoutId) => void;
 }
 
 export interface TailorFlowProps {
@@ -133,6 +136,7 @@ export function TailorFlow({
   const setTemplateId = persistence.setTemplateId;
   const setAtsMode = persistence.setAtsMode;
   const setAccent = persistence.setAccent;
+  const setLetterLayoutId = persistence.setLetterLayoutId;
 
   // Capability-driven default for the "search company" toggle: default ON when
   // the active model can web-search. Read from the Rust capability matrix (never
@@ -220,6 +224,7 @@ export function TailorFlow({
     templateId: persistence.templateId,
     atsMode: persistence.atsMode,
     accent: persistence.accent,
+    letterLayoutId: persistence.letterLayoutId,
   });
 
   // Lazy, résumé-independent AI summary of the job ad (shared by the wizard's
@@ -376,9 +381,11 @@ export function TailorFlow({
         templateId={persistence.templateId}
         atsMode={persistence.atsMode}
         accent={persistence.accent}
+        letterLayoutId={persistence.letterLayoutId}
         onTemplateChange={setTemplateId}
         onAtsModeChange={setAtsMode}
         onAccentChange={setAccent}
+        onLetterLayoutChange={setLetterLayoutId}
         output={gen.output}
         onEdit={gen.editActiveOutput}
         meta={gen.meta}
