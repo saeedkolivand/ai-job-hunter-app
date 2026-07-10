@@ -139,16 +139,17 @@ fn req(format: ExportFormat, template_id: TemplateId, ats_mode: bool) -> ExportR
         ats_mode,
         locale: None,
         contact: None,
+        accent: None,
     }
 }
 
 #[test]
 fn single_column_pdf_is_not_blocked() {
-    let (bytes, report) =
-        validate_and_fix(req(ExportFormat::Pdf, TemplateId::Modern, false), |r| {
-            crate::export::pdf::generate_pdf(r)
-        })
-        .expect("pdf export");
+    let (bytes, report) = validate_and_fix(
+        req(ExportFormat::Pdf, TemplateId::SwissMinimal, false),
+        |r| crate::export::pdf::generate_pdf(r),
+    )
+    .expect("pdf export");
     assert!(!bytes.is_empty());
     assert!(
         report.ok,
@@ -163,12 +164,14 @@ fn single_column_pdf_is_not_blocked() {
 
 #[test]
 fn resume_docx_is_not_blocked() {
-    let (bytes, report) =
-        validate_and_fix(req(ExportFormat::Docx, TemplateId::Modern, false), |r| {
+    let (bytes, report) = validate_and_fix(
+        req(ExportFormat::Docx, TemplateId::SwissMinimal, false),
+        |r| {
             // `generate_docx` is still on `anyhow::Result`; bridge to the typed error.
             crate::export::docx::generate_docx(r).map_err(crate::error::AppError::from)
-        })
-        .expect("docx export");
+        },
+    )
+    .expect("docx export");
     assert!(!bytes.is_empty());
     assert!(report.ok, "{:?}", report.issues);
 }
@@ -220,7 +223,7 @@ fn profile_with(website: &str) -> crate::contact_profile::ContactProfile {
 /// reader used to see zero links. It must now read our own renderer's output.
 #[test]
 fn reads_inline_dict_link_annotations_from_our_renderer() {
-    let mut request = req(ExportFormat::Pdf, TemplateId::Modern, false);
+    let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
     request.contact = Some(profile_with("https://example.dev/portfolio"));
     let bytes = crate::export::pdf::generate_pdf(&request).expect("pdf");
 
@@ -238,7 +241,7 @@ fn reads_inline_dict_link_annotations_from_our_renderer() {
 /// whose link the renderer actually draws must export cleanly.
 #[test]
 fn contact_profile_export_is_not_falsely_blocked() {
-    let mut request = req(ExportFormat::Pdf, TemplateId::Modern, false);
+    let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
     request.contact = Some(profile_with(
         "https://drive.google.com/file/d/abc123/view?usp=drive_link",
     ));
@@ -272,7 +275,7 @@ fn missing_header_link_is_warning_not_block() {
         label: String::new(), // empty label → header_markdown never renders it…
         url: "https://example.dev/never-rendered".to_string(), // …but header_urls lists it
     }];
-    let mut request = req(ExportFormat::Pdf, TemplateId::Modern, false);
+    let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
     request.contact = Some(profile);
     let (_bytes, report) =
         validate_and_fix(request, crate::export::pdf::generate_pdf).expect("pdf export");
@@ -289,11 +292,11 @@ fn missing_header_link_is_warning_not_block() {
 
 #[test]
 fn txt_is_returned_unvalidated() {
-    let (bytes, report) =
-        validate_and_fix(req(ExportFormat::Txt, TemplateId::Modern, false), |r| {
-            Ok(crate::export::parser::strip_md(&r.text).into_bytes())
-        })
-        .expect("txt export");
+    let (bytes, report) = validate_and_fix(
+        req(ExportFormat::Txt, TemplateId::SwissMinimal, false),
+        |r| Ok(crate::export::parser::strip_md(&r.text).into_bytes()),
+    )
+    .expect("txt export");
     assert!(!bytes.is_empty());
     assert!(report.ok);
     assert!(report.issues.is_empty());
@@ -319,7 +322,6 @@ fn typst_validate(template_id: TemplateId) -> (Vec<u8>, ExportReport) {
 #[test]
 fn typst_single_column_pdf_passes_validation() {
     for id in [
-        TemplateId::Modern,
         TemplateId::Classic,
         TemplateId::SwissMinimal,
         TemplateId::Academic,
@@ -373,11 +375,12 @@ fn typst_cover_letter_pdf_passes_validation() {
         text: "Jane Doe\njane@example.com\n\nDear Hiring Manager,\n\nI am writing to apply.\n\nSincerely,\nJane Doe".to_string(),
         format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
-        template_id: TemplateId::Modern,
+        template_id: TemplateId::SwissMinimal,
         meta: None,
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
     let (bytes, report) =
         validate_and_fix(request, crate::export::pdf::generate_pdf).expect("cover letter export");

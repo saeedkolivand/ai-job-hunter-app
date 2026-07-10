@@ -51,6 +51,7 @@ async fn preview_resume_returns_svg_pages() {
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
     let result = documents_render_preview_images(request)
         .await
@@ -80,11 +81,12 @@ async fn preview_cover_letter_returns_svg_pages() {
         text: LETTER_FIXTURE_US.to_string(),
         format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
-        template_id: TemplateId::Modern,
+        template_id: TemplateId::SwissMinimal,
         meta: None,
         ats_mode: false,
         locale: Some("us".to_string()),
         contact: None,
+        accent: None,
     };
     let result = documents_render_preview_images(request)
         .await
@@ -117,6 +119,7 @@ async fn preview_empty_text_is_rejected() {
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
     let err = documents_render_preview_images(request)
         .await
@@ -141,6 +144,7 @@ async fn preview_whitespace_text_is_rejected() {
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
     let err = documents_render_preview_images(request)
         .await
@@ -195,6 +199,7 @@ async fn export_empty_text_error_matches_preview_error() {
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
 
     let export_err = documents_export_document(mk_request(""))
@@ -236,7 +241,7 @@ fn test_generate_filename() {
         text: "Test".to_string(),
         format: ExportFormat::Docx,
         document_type: DocumentType::Resume,
-        template_id: TemplateId::Modern,
+        template_id: TemplateId::SwissMinimal,
         meta: Some(GenerationMeta {
             candidate_name: Some("John Doe".to_string()),
             job_title: Some("Software Engineer".to_string()),
@@ -246,6 +251,7 @@ fn test_generate_filename() {
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
 
     let filename = generate_filename(&request, "docx");

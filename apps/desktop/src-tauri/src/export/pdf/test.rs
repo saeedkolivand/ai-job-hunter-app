@@ -84,6 +84,7 @@ fn test_generate_pdf_resume_basic() {
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -95,11 +96,12 @@ fn test_generate_pdf_cover_letter_basic() {
         text: "Dear Hiring Manager,\n\nI am writing to apply...".to_string(),
         format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
-        template_id: TemplateId::Modern,
+        template_id: TemplateId::SwissMinimal,
         meta: None,
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -111,7 +113,7 @@ fn test_generate_pdf_resume_with_meta() {
         text: "John Doe\njohn@example.com".to_string(),
         format: ExportFormat::Pdf,
         document_type: DocumentType::Resume,
-        template_id: TemplateId::Modern,
+        template_id: TemplateId::SwissMinimal,
         meta: Some(GenerationMeta {
             candidate_name: Some("Jane Smith".to_string()),
             job_title: Some("Software Engineer".to_string()),
@@ -121,6 +123,7 @@ fn test_generate_pdf_resume_with_meta() {
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -138,6 +141,7 @@ fn test_generate_pdf_resume_with_section_markers() {
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -151,11 +155,12 @@ fn test_generate_pdf_cover_letter_with_section_markers() {
         text: text.to_string(),
         format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
-        template_id: TemplateId::Modern,
+        template_id: TemplateId::SwissMinimal,
         meta: None,
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -176,6 +181,7 @@ fn test_generate_pdf_cover_letter_german_market_with_betreff() {
         ats_mode: false,
         locale: Some("de".to_string()),
         contact: None,
+        accent: None,
     };
     let bytes = generate_pdf(&request).expect("German cover letter renders");
     assert!(!bytes.is_empty());
@@ -190,11 +196,12 @@ fn test_generate_pdf_cover_letter_french_salutation() {
         text: text.to_string(),
         format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
-        template_id: TemplateId::Modern,
+        template_id: TemplateId::SwissMinimal,
         meta: None,
         ats_mode: false,
         locale: Some("fr".to_string()),
         contact: None,
+        accent: None,
     };
     let bytes = generate_pdf(&request).expect("French cover letter renders");
     assert!(!bytes.is_empty());
@@ -238,11 +245,12 @@ fn resume_pdf_embeds_contact_link_annotations() {
         text: text.to_string(),
         format: ExportFormat::Pdf,
         document_type: DocumentType::Resume,
-        template_id: TemplateId::Modern,
+        template_id: TemplateId::SwissMinimal,
         meta: None,
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
     let bytes = generate_pdf(&request).expect("resume pdf");
     let doc = lopdf::Document::load_mem(&bytes).expect("parse generated pdf");
@@ -259,18 +267,19 @@ fn resume_pdf_embeds_contact_link_annotations() {
 }
 
 #[test]
-fn modern_template_resume_pdf_is_generated() {
-    // Modern is the default template — exercise the generate_pdf path end-to-end.
+fn single_column_template_resume_pdf_is_generated() {
+    // Exercise the parametric single-column generate_pdf path end-to-end.
     let request = ExportRequest {
         text: "Alexander Hamilton\nalex@example.com\n\nEXPERIENCE\nTreasury  2020 - Present\nSecretary"
             .to_string(),
         format: ExportFormat::Pdf,
         document_type: DocumentType::Resume,
-        template_id: TemplateId::Modern,
+        template_id: TemplateId::SwissMinimal,
         meta: None,
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
     let bytes = generate_pdf(&request).expect("modern resume pdf");
     assert!(
@@ -299,7 +308,7 @@ fn cover_letter_does_not_leak_generated_contact_line() {
         text: text.to_string(),
         format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
-        template_id: TemplateId::Modern,
+        template_id: TemplateId::SwissMinimal,
         meta: Some(GenerationMeta {
             candidate_name: Some("Lena Vos".to_string()),
             job_title: None,
@@ -312,6 +321,7 @@ fn cover_letter_does_not_leak_generated_contact_line() {
             website: Some("https://drive.google.com/file/d/abc/view".to_string()),
             ..Default::default()
         }),
+        accent: None,
     };
     let bytes = generate_pdf(&request).expect("cover letter pdf");
     let rendered = pdf_extract::extract_text_from_mem(&bytes).expect("extract text");
@@ -412,7 +422,7 @@ fn resume_long_contact_line_wraps_within_page() {
         text: "Lena Vos\n\nEXPERIENCE\nAcme  2020 - Present\nDesigner\n- Did work".to_string(),
         format: ExportFormat::Pdf,
         document_type: DocumentType::Resume,
-        template_id: TemplateId::Modern,
+        template_id: TemplateId::SwissMinimal,
         meta: Some(GenerationMeta {
             candidate_name: Some("Lena Vos".to_string()),
             job_title: None,
@@ -422,6 +432,7 @@ fn resume_long_contact_line_wraps_within_page() {
         ats_mode: false,
         locale: None,
         contact: Some(long_contact_profile()),
+        accent: None,
     };
     let bytes = generate_pdf(&request).expect("resume pdf");
     let doc = lopdf::Document::load_mem(&bytes).expect("parse pdf");
@@ -456,7 +467,7 @@ fn cover_letter_long_contact_line_wraps_within_page() {
             .to_string(),
         format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
-        template_id: TemplateId::Modern,
+        template_id: TemplateId::SwissMinimal,
         meta: Some(GenerationMeta {
             candidate_name: Some("Lena Vos".to_string()),
             job_title: None,
@@ -466,6 +477,7 @@ fn cover_letter_long_contact_line_wraps_within_page() {
         ats_mode: false,
         locale: None,
         contact: Some(long_contact_profile()),
+        accent: None,
     };
     let bytes = generate_pdf(&request).expect("cover letter pdf");
     let doc = lopdf::Document::load_mem(&bytes).expect("parse pdf");
@@ -540,7 +552,6 @@ LANGUAGES
 
     let templates = [
         TemplateId::Classic,
-        TemplateId::Modern,
         TemplateId::SwissMinimal,
         TemplateId::Academic,
         TemplateId::Atelier,
@@ -563,6 +574,7 @@ LANGUAGES
             ats_mode: false,
             locale: None,
             contact: None,
+            accent: None,
         };
         let slug = format!("{id:?}").to_lowercase();
         let bytes = generate_pdf(&request).expect("typst pdf");
@@ -606,6 +618,7 @@ BSc Computer Science
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
 
     let bytes = generate_pdf(&request).expect("classic resume pdf");
@@ -625,5 +638,54 @@ BSc Computer Science
         bytes.len() < 5_000_000,
         "PDF size budget exceeded ({} bytes > 5 MB)",
         bytes.len()
+    );
+}
+
+/// Document accent (ADR 0004) threads through the résumé path: the request's
+/// `accent` reaches `RenderOpts.accent` → `data.opts.accent`, which the
+/// parametric single-column template prefers over its built-in palette when
+/// coloring links. A custom accent must therefore change the rendered output,
+/// and a malformed accent must fall back to the template palette (no change).
+/// Uses the deterministic SVG preview (same world as export) and compares whole
+/// documents so the check is robust to Typst's exact color serialisation.
+#[test]
+fn resume_document_accent_threads_into_render() {
+    let base = ExportRequest {
+        text: "Jane Doe\njane@example.com | [LinkedIn](https://linkedin.com/in/jane)\n\nEXPERIENCE\nAcme Corp  2020 - Present\nEngineer".to_string(),
+        format: ExportFormat::Pdf,
+        document_type: DocumentType::Resume,
+        template_id: TemplateId::Classic,
+        meta: None,
+        ats_mode: false,
+        locale: None,
+        contact: None,
+        accent: None,
+    };
+    let default_svg = generate_preview_svg(&base)
+        .expect("default preview")
+        .concat();
+
+    let accented = ExportRequest {
+        accent: Some("#AA0000".to_string()),
+        ..base.clone()
+    };
+    let accented_svg = generate_preview_svg(&accented)
+        .expect("accented preview")
+        .concat();
+    assert_ne!(
+        default_svg, accented_svg,
+        "a valid document accent must change the rendered résumé (link color)"
+    );
+
+    let malformed = ExportRequest {
+        accent: Some("not-a-color".to_string()),
+        ..base.clone()
+    };
+    let malformed_svg = generate_preview_svg(&malformed)
+        .expect("malformed preview")
+        .concat();
+    assert_eq!(
+        default_svg, malformed_svg,
+        "a malformed accent must fall back to the template palette (no change)"
     );
 }

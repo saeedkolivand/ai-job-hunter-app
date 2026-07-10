@@ -106,7 +106,7 @@ fn ats_mode_emits_no_table() {
 
 #[test]
 fn single_column_template_has_no_table() {
-    let xml = part(&build(TemplateId::Modern, false), "word/document.xml");
+    let xml = part(&build(TemplateId::SwissMinimal, false), "word/document.xml");
     assert!(
         !xml.contains("<w:tbl"),
         "single-column template must not use a table"
@@ -127,7 +127,7 @@ fn single_column_template_has_no_table() {
 
 #[test]
 fn contact_links_become_hyperlinks_with_correct_targets() {
-    let bytes = build(TemplateId::Modern, false);
+    let bytes = build(TemplateId::SwissMinimal, false);
     let doc = part(&bytes, "word/document.xml");
     assert!(
         doc.contains("<w:hyperlink"),

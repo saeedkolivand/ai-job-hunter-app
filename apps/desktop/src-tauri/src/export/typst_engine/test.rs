@@ -202,8 +202,14 @@ fn opts_a4() -> RenderOpts {
 #[test]
 fn classic_render_produces_valid_pdf() {
     let model = model_from_resume_text(FIXTURE_RESUME);
-    let bytes = render_pdf(&model, TypstTemplate::Classic, &opts_a4(), None)
-        .expect("render_pdf(classic) should succeed");
+    let classic = Template::get(TemplateId::Classic);
+    let bytes = render_pdf(
+        &model,
+        TypstTemplate::SingleColumn,
+        &opts_a4(),
+        Some(&classic),
+    )
+    .expect("render_pdf(classic) should succeed");
 
     assert!(!bytes.is_empty(), "PDF bytes must not be empty");
     assert!(
@@ -221,8 +227,14 @@ fn classic_render_produces_valid_pdf() {
 #[test]
 fn render_resume_svg_pages_returns_svg_page() {
     let model = model_from_resume_text(FIXTURE_RESUME);
-    let pages = render_resume_svg_pages(&model, TypstTemplate::Classic, &opts_a4(), None)
-        .expect("render_resume_svg_pages(classic) should succeed");
+    let classic = Template::get(TemplateId::Classic);
+    let pages = render_resume_svg_pages(
+        &model,
+        TypstTemplate::SingleColumn,
+        &opts_a4(),
+        Some(&classic),
+    )
+    .expect("render_resume_svg_pages(classic) should succeed");
 
     assert!(
         !pages.is_empty(),
@@ -238,8 +250,32 @@ fn render_resume_svg_pages_returns_svg_page() {
 }
 
 #[test]
+fn document_accent_overrides_letter_accent_color() {
+    use super::letter::style_from_template as letter_style_from_template;
+
+    // Cover letters inherit the résumé template's accent. A document accent
+    // applied via `Template::with_accent_override` must surface as the letter's
+    // `c_accent`; a malformed value must leave the template's palette intact.
+    let base_accent = letter_style_from_template(&Template::get(TemplateId::Classic)).c_accent;
+
+    let overridden = Template::get(TemplateId::Classic).with_accent_override(Some("#AA0000"));
+    assert_eq!(
+        letter_style_from_template(&overridden).c_accent,
+        "#AA0000",
+        "a valid document accent must recolor the letter accent"
+    );
+
+    let malformed = Template::get(TemplateId::Classic).with_accent_override(Some("nope"));
+    assert_eq!(
+        letter_style_from_template(&malformed).c_accent,
+        base_accent,
+        "a malformed accent must leave the letter palette unchanged"
+    );
+}
+
+#[test]
 fn render_letter_svg_pages_returns_svg_page() {
-    let t = Template::get(TemplateId::Modern);
+    let t = Template::get(TemplateId::SwissMinimal);
     let pages =
         render_letter_svg_pages(LETTER_FIXTURE_US, &t, None, Some("Jane Smith"), "us", "en")
             .expect("render_letter_svg_pages(us) should succeed");
@@ -269,8 +305,14 @@ fn render_letter_svg_pages_returns_svg_page() {
 #[test]
 fn classic_resume_embeds_contact_link_annotations() {
     let model = model_from_resume_text(FIXTURE_RESUME);
-    let bytes = render_pdf(&model, TypstTemplate::Classic, &opts_a4(), None)
-        .expect("render_pdf(classic) should succeed");
+    let classic = Template::get(TemplateId::Classic);
+    let bytes = render_pdf(
+        &model,
+        TypstTemplate::SingleColumn,
+        &opts_a4(),
+        Some(&classic),
+    )
+    .expect("render_pdf(classic) should succeed");
     let uris = link_uris(&bytes);
     assert!(
         uris.iter().any(|u| u.contains("linkedin.com/in/janedoe")),
@@ -312,7 +354,6 @@ fn every_template_renders_a_valid_pdf() {
     // serde round-trip test in types.rs and the TS sync guard).
     let ids = [
         TemplateId::Classic,
-        TemplateId::Modern,
         TemplateId::SwissMinimal,
         TemplateId::Academic,
         TemplateId::Atelier,
@@ -321,7 +362,7 @@ fn every_template_renders_a_valid_pdf() {
         TemplateId::Portrait,
         TemplateId::Lebenslauf,
     ];
-    assert_eq!(ids.len(), 9, "expected the nine canonical templates");
+    assert_eq!(ids.len(), 8, "expected the eight canonical templates");
 
     let model = model_from_resume_text(FIXTURE_RESUME);
     for id in ids {
@@ -357,7 +398,8 @@ fn classic_render_letter_page_succeeds() {
         accent: None,
         ats: false,
     };
-    let bytes = render_pdf(&model, TypstTemplate::Classic, &opts, None)
+    let classic = Template::get(TemplateId::Classic);
+    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts, Some(&classic))
         .expect("render_pdf(classic, Letter) should succeed");
     assert!(bytes.starts_with(b"%PDF"));
 }
@@ -374,9 +416,11 @@ fn classic_render_with_valid_accent_succeeds() {
         lang: "en".to_string(),
         ats: false,
     };
-    // Classic ignores accent visually (no-color template) but it must not crash.
-    let bytes = render_pdf(&model, TypstTemplate::Classic, &opts, None)
-        .expect("render_pdf should succeed even with an accent that classic ignores");
+    // Classic now renders through the parametric SingleColumn template, which
+    // honors the accent override (data.opts.accent) — it must not crash.
+    let classic = Template::get(TemplateId::Classic);
+    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts, Some(&classic))
+        .expect("render_pdf should succeed with a valid accent override");
     assert!(bytes.starts_with(b"%PDF"));
 }
 
@@ -394,7 +438,8 @@ fn classic_render_with_invalid_accent_falls_back_gracefully() {
     };
     // Invalid accent must not cause an error (normalise_accent returns "" →
     // template defaults apply).
-    let bytes = render_pdf(&model, TypstTemplate::Classic, &opts, None)
+    let classic = Template::get(TemplateId::Classic);
+    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts, Some(&classic))
         .expect("render_pdf should succeed with an invalid accent color");
     assert!(bytes.starts_with(b"%PDF"));
 }
@@ -417,8 +462,14 @@ fn classic_render_with_invalid_accent_falls_back_gracefully() {
 #[test]
 fn ats_harness_classic_reading_order_word_boundaries_content() {
     let model = model_from_resume_text(FIXTURE_RESUME);
-    let bytes = render_pdf(&model, TypstTemplate::Classic, &opts_a4(), None)
-        .expect("render_pdf(classic) for ATS harness");
+    let classic = Template::get(TemplateId::Classic);
+    let bytes = render_pdf(
+        &model,
+        TypstTemplate::SingleColumn,
+        &opts_a4(),
+        Some(&classic),
+    )
+    .expect("render_pdf(classic) for ATS harness");
 
     let extracted =
         pdf_extract::extract_text_from_mem(&bytes).expect("pdf-extract must succeed on our output");
@@ -484,7 +535,7 @@ fn render_opts_default_is_a4_en() {
 //
 //   (a) section_id_to_kind: education section serializes as kind == "education".
 //   (b) style_from_template: academic → emphasize_education == true;
-//       modern and swiss_minimal → emphasize_education == false.
+//       swiss_minimal → emphasize_education == false.
 
 #[test]
 fn json_section_kind_education_serializes_correctly() {
@@ -527,12 +578,6 @@ fn style_from_template_emphasize_education_academic_true_others_false() {
     assert!(
         style_from_template(&academic).emphasize_education,
         "Academic template must have emphasize_education == true"
-    );
-
-    let modern = template_style(TemplateId::Modern);
-    assert!(
-        !style_from_template(&modern).emphasize_education,
-        "Modern template must have emphasize_education == false"
     );
 
     let swiss = template_style(TemplateId::SwissMinimal);
@@ -952,8 +997,14 @@ fn classic_write_sample_pdf_for_review() {
     use std::path::Path;
 
     let model = model_from_resume_text(FIXTURE_RESUME);
-    let bytes = render_pdf(&model, TypstTemplate::Classic, &opts_a4(), None)
-        .expect("render_pdf(classic) should succeed for sample PDF");
+    let classic = Template::get(TemplateId::Classic);
+    let bytes = render_pdf(
+        &model,
+        TypstTemplate::SingleColumn,
+        &opts_a4(),
+        Some(&classic),
+    )
+    .expect("render_pdf(classic) should succeed for sample PDF");
 
     let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
     if let Err(e) = fs::create_dir_all(&target) {
@@ -1191,7 +1242,7 @@ OpenStream | Open Source | 2022
     );
 }
 
-// ── Phase 2: Modern, SwissMinimal, Academic — SingleColumn parametric ─────────
+// ── Phase 2: Classic, SwissMinimal, Academic — SingleColumn parametric ────────
 //
 // For each new template:
 //   (a) Render produces a valid PDF.
@@ -1212,94 +1263,6 @@ fn opts_sc() -> RenderOpts {
         lang: "en".to_string(),
         ats: false,
     }
-}
-
-// ── Modern ────────────────────────────────────────────────────────────────────
-
-#[test]
-fn modern_render_produces_valid_pdf() {
-    let model = model_from_resume_text(FIXTURE_RESUME);
-    let t = template_style(TemplateId::Modern);
-    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts_sc(), Some(&t))
-        .expect("render_pdf(modern) should succeed");
-    assert!(!bytes.is_empty(), "Modern PDF must not be empty");
-    assert!(
-        bytes.starts_with(b"%PDF"),
-        "Modern output must start with %PDF"
-    );
-}
-
-#[test]
-fn modern_ats_harness() {
-    let model = model_from_resume_text(FIXTURE_RESUME);
-    let t = template_style(TemplateId::Modern);
-    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts_sc(), Some(&t))
-        .expect("render_pdf(modern) for ATS harness");
-
-    let extracted = pdf_extract::extract_text_from_mem(&bytes)
-        .expect("pdf-extract must succeed on modern output");
-    let lower = extracted.to_lowercase();
-
-    // Content present
-    assert!(
-        lower.contains("jane doe"),
-        "modern ATS: 'jane doe' missing\n---\n{extracted}"
-    );
-    for heading in &["summary", "experience", "education", "skills"] {
-        assert!(
-            lower.contains(heading),
-            "modern ATS: heading '{heading}' missing\n---\n{extracted}"
-        );
-    }
-    assert!(
-        lower.contains("distributed task scheduler"),
-        "modern ATS: bullet fragment missing\n---\n{extracted}"
-    );
-
-    // Word boundaries
-    assert!(
-        lower.contains("state university"),
-        "modern ATS: 'state university' word boundary broken\n---\n{extracted}"
-    );
-
-    // Reading order
-    let order = ["summary", "experience", "education", "skills"];
-    let mut last = 0usize;
-    for h in &order {
-        let pos = lower
-            .find(h)
-            .unwrap_or_else(|| panic!("modern ATS: '{h}' not found"));
-        assert!(
-            pos >= last,
-            "modern ATS: '{h}' ({pos}) before previous ({last})"
-        );
-        last = pos;
-    }
-}
-
-#[test]
-fn modern_write_sample_pdf_for_review() {
-    use std::fs;
-    use std::path::Path;
-
-    let model = model_from_resume_text(FIXTURE_RESUME);
-    let t = template_style(TemplateId::Modern);
-    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts_sc(), Some(&t))
-        .expect("render_pdf(modern) should succeed for sample PDF");
-
-    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
-    if let Err(e) = fs::create_dir_all(&target) {
-        eprintln!("modern_write_sample_pdf_for_review: could not create target/: {e}");
-    }
-    let out_path = target.join("modern_sample.pdf");
-    match fs::write(&out_path, &bytes) {
-        Ok(()) => eprintln!("Modern sample PDF written to: {}", out_path.display()),
-        Err(e) => eprintln!(
-            "modern_write_sample_pdf_for_review: could not write {}: {e} (informational only)",
-            out_path.display()
-        ),
-    }
-    assert!(bytes.starts_with(b"%PDF"));
 }
 
 // ── Swiss Minimal ─────────────────────────────────────────────────────────────
@@ -1544,7 +1507,7 @@ Max Müller
 // (1) US letter renders to a valid PDF and contains expected text.
 #[test]
 fn letter_us_renders_valid_pdf_with_expected_content() {
-    let t = Template::get(TemplateId::Modern);
+    let t = Template::get(TemplateId::SwissMinimal);
     let bytes = render_letter_pdf(LETTER_FIXTURE_US, &t, None, Some("Jane Smith"), "us", "en")
         .expect("render_letter_pdf(us) should succeed");
 
@@ -1597,7 +1560,7 @@ fn letter_us_renders_valid_pdf_with_expected_content() {
 // (2) DE letter renders to a valid PDF and contains DIN subject + German conventions.
 #[test]
 fn letter_de_renders_valid_pdf_with_subject_line() {
-    let t = Template::get(TemplateId::Modern);
+    let t = Template::get(TemplateId::SwissMinimal);
     let bytes = render_letter_pdf(LETTER_FIXTURE_DE, &t, None, Some("Max Müller"), "de", "de")
         .expect("render_letter_pdf(de) should succeed");
 
@@ -1649,7 +1612,7 @@ fn letter_de_renders_valid_pdf_with_subject_line() {
 // above already assert this; kept as a quick standalone guard.
 #[test]
 fn letter_us_and_de_both_start_with_pdf_header() {
-    let t = Template::get(TemplateId::Modern);
+    let t = Template::get(TemplateId::SwissMinimal);
     let us = render_letter_pdf(LETTER_FIXTURE_US, &t, None, Some("Jane Smith"), "us", "en")
         .expect("render_letter_pdf(us)");
     let de = render_letter_pdf(LETTER_FIXTURE_DE, &t, None, Some("Max Müller"), "de", "de")
@@ -1665,7 +1628,7 @@ fn letter_us_write_sample_pdf_for_review() {
     use std::fs;
     use std::path::Path;
 
-    let t = Template::get(TemplateId::Modern);
+    let t = Template::get(TemplateId::SwissMinimal);
     let bytes = render_letter_pdf(LETTER_FIXTURE_US, &t, None, Some("Jane Smith"), "us", "en")
         .expect("render_letter_pdf(us) should succeed for sample PDF");
 
@@ -1691,7 +1654,7 @@ fn letter_de_write_sample_pdf_for_review() {
     use std::fs;
     use std::path::Path;
 
-    let t = Template::get(TemplateId::Modern);
+    let t = Template::get(TemplateId::SwissMinimal);
     let bytes = render_letter_pdf(LETTER_FIXTURE_DE, &t, None, Some("Max Müller"), "de", "de")
         .expect("render_letter_pdf(de) should succeed for sample PDF");
 
@@ -2372,7 +2335,7 @@ fn resolve_photo_bogus_path_returns_none() {
 
 // ── Stray-Typst-code guard ────────────────────────────────────────────────────
 //
-// Renders a fixture through EVERY template (classic, modern, swiss-minimal,
+// Renders a fixture through EVERY template (classic, swiss-minimal,
 // academic, atelier, meridian, throughline, portrait, lebenslauf, letter) and
 // asserts that the extracted PDF text contains NONE of the following
 // case-sensitive substrings — these are Typst code tokens that would appear as
@@ -2417,18 +2380,15 @@ fn assert_no_stray_tokens(label: &str, bytes: &[u8]) {
 #[test]
 fn stray_typst_code_guard_classic() {
     let model = model_from_resume_text(FIXTURE_RESUME);
-    let bytes = render_pdf(&model, TypstTemplate::Classic, &opts_a4(), None)
-        .expect("stray-token guard: classic render failed");
+    let classic = Template::get(TemplateId::Classic);
+    let bytes = render_pdf(
+        &model,
+        TypstTemplate::SingleColumn,
+        &opts_a4(),
+        Some(&classic),
+    )
+    .expect("stray-token guard: classic render failed");
     assert_no_stray_tokens("classic", &bytes);
-}
-
-#[test]
-fn stray_typst_code_guard_modern() {
-    let model = model_from_resume_text(FIXTURE_RESUME);
-    let t = template_style(TemplateId::Modern);
-    let bytes = render_pdf(&model, TypstTemplate::SingleColumn, &opts_sc(), Some(&t))
-        .expect("stray-token guard: modern render failed");
-    assert_no_stray_tokens("modern", &bytes);
 }
 
 #[test]
@@ -2549,7 +2509,7 @@ fn stray_typst_code_guard_lebenslauf_no_photo() {
 
 #[test]
 fn stray_typst_code_guard_letter() {
-    let t = Template::get(TemplateId::Modern);
+    let t = Template::get(TemplateId::SwissMinimal);
     let bytes = render_letter_pdf(LETTER_FIXTURE_US, &t, None, Some("Jane Smith"), "us", "en")
         .expect("stray-token guard: letter render failed");
     assert_no_stray_tokens("letter", &bytes);
@@ -2557,9 +2517,9 @@ fn stray_typst_code_guard_letter() {
 
 // ── README showcase banner generator ─────────────────────────────────────────
 //
-// Renders all nine templates, rasterises the first page of each at 2× DPI
+// Renders all eight templates, rasterises the first page of each at 2× DPI
 // (144 px/pt), thumbnails each to 300 px wide, and composes a single wide
-// row (1×9) — a banner-proportioned strip like the project hero — on a
+// row (1×8) — a banner-proportioned strip like the project hero — on a
 // #F4F4F5 background with 20 px border-padding and 14 px gaps, writing the
 // result to docs/assets/templates-showcase.png.
 //
@@ -2682,13 +2642,12 @@ fn generate_templates_showcase_banner() {
         ats: false,
     };
 
-    // ── Template list (must be exactly 9, matching the canonical TemplateId set) ──
+    // ── Template list (must be exactly 8, matching the canonical TemplateId set) ──
 
     // (TemplateId, human label, kebab slug). The slug MUST match the renderer's
     // `TemplateId` wire ids so the per-template preview files line up with the UI.
     let templates: &[(TemplateId, &str, &str)] = &[
         (TemplateId::Classic, "Classic", "classic"),
-        (TemplateId::Modern, "Modern", "modern"),
         (TemplateId::SwissMinimal, "SwissMinimal", "swiss-minimal"),
         (TemplateId::Academic, "Academic", "academic"),
         (TemplateId::Atelier, "Atelier", "atelier"),
@@ -2699,8 +2658,8 @@ fn generate_templates_showcase_banner() {
     ];
     assert_eq!(
         templates.len(),
-        9,
-        "showcase must cover exactly nine templates"
+        8,
+        "showcase must cover exactly eight templates"
     );
 
     // ── Helper: compile a World to a PagedDocument ────────────────────────────
@@ -2749,7 +2708,7 @@ fn generate_templates_showcase_banner() {
     std::fs::create_dir_all(&preview_dir)
         .unwrap_or_else(|e| panic!("showcase: create_dir_all template-previews: {e}"));
 
-    let mut thumbnails: Vec<RgbaImage> = Vec::with_capacity(9);
+    let mut thumbnails: Vec<RgbaImage> = Vec::with_capacity(8);
 
     for (id, label, slug) in templates {
         eprintln!("showcase: rendering {label}...");
@@ -2814,9 +2773,9 @@ fn generate_templates_showcase_banner() {
         eprintln!("  → thumbnail {tw_cur}×{th_cur}");
     }
 
-    assert_eq!(thumbnails.len(), 9, "must have exactly 9 thumbnails");
+    assert_eq!(thumbnails.len(), 8, "must have exactly 8 thumbnails");
 
-    // ── Compose single wide row (1×9) ─────────────────────────────────────────
+    // ── Compose single wide row (1×8) ─────────────────────────────────────────
 
     // Use the actual thumbnail dimensions (thumbnail() preserves aspect, so
     // width should be CELL_W and height close to cell_h).
@@ -2913,7 +2872,7 @@ fn generate_templates_showcase_banner() {
     );
     eprintln!("  path: {}", out_path.display());
 
-    // ── Verify: all nine per-template previews exist and are non-trivial ──────
+    // ── Verify: all eight per-template previews exist and are non-trivial ─────
 
     for (_, label, slug) in templates {
         let p = preview_dir.join(format!("{slug}.svg"));
@@ -2926,7 +2885,7 @@ fn generate_templates_showcase_banner() {
         );
     }
     eprintln!(
-        "template previews written: 9 SVG → {}",
+        "template previews written: 8 SVG → {}",
         preview_dir.display()
     );
 }
@@ -2940,12 +2899,12 @@ fn generate_templates_showcase_banner() {
 /// ```
 ///
 /// This is the cover-letter analog of `generate_templates_showcase_banner`'s
-/// per-template previews. For each of the same nine résumé templates it builds
+/// per-template previews. For each of the same eight résumé templates it builds
 /// the exact cover-letter Typst world that [`super::engine::render_letter_pdf`]
 /// produces — `letter_style_from_template` derives the palette + fonts from the
 /// résumé [`Template`], so the rendered letter *inherits that template's visual
 /// style* — compiles page 1, and exports it to **SVG** (vector, no rasteriser,
-/// no `image` crate, no thumbnailing). The nine `.svg` files feed the
+/// no `image` crate, no thumbnailing). The eight `.svg` files feed the
 /// AI-Generate cover-letter template picker (fetched lazily by the UI via a Vite
 /// glob, mirroring the résumé `template-previews/` PNGs).
 ///
@@ -2963,11 +2922,10 @@ fn generate_cover_template_previews() {
     use super::letter::{parse_cover_letter, style_from_template as letter_style_from_template};
     use super::world::ResumeWorld;
 
-    // Same nine templates as the showcase generator. Slugs MUST match the
+    // Same eight templates as the showcase generator. Slugs MUST match the
     // renderer's `TemplateId` wire ids so the preview files line up with the UI.
     let templates: &[(TemplateId, &str, &str)] = &[
         (TemplateId::Classic, "Classic", "classic"),
-        (TemplateId::Modern, "Modern", "modern"),
         (TemplateId::SwissMinimal, "SwissMinimal", "swiss-minimal"),
         (TemplateId::Academic, "Academic", "academic"),
         (TemplateId::Atelier, "Atelier", "atelier"),
@@ -2978,8 +2936,8 @@ fn generate_cover_template_previews() {
     ];
     assert_eq!(
         templates.len(),
-        9,
-        "cover previews must cover exactly nine templates"
+        8,
+        "cover previews must cover exactly eight templates"
     );
 
     // Embedded letter Typst sources (scale preamble + letter template), reused
@@ -3057,11 +3015,11 @@ fn generate_cover_template_previews() {
     }
 
     assert_eq!(
-        written, 9,
-        "cover previews: expected exactly 9 SVG files written"
+        written, 8,
+        "cover previews: expected exactly 8 SVG files written"
     );
 
-    // Verify all nine exist and are non-trivial.
+    // Verify all eight exist and are non-trivial.
     for (_, label, slug) in templates {
         let p = preview_dir.join(format!("{slug}.svg"));
         let meta = std::fs::metadata(&p)
@@ -3072,7 +3030,7 @@ fn generate_cover_template_previews() {
         );
     }
     eprintln!(
-        "cover-letter template previews written: 9 → {}",
+        "cover-letter template previews written: 8 → {}",
         preview_dir.display()
     );
 }

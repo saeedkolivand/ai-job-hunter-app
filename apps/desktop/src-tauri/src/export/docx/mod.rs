@@ -226,7 +226,12 @@ fn extract_section<'a>(text: &'a str, start_marker: &str, end_marker: Option<&st
 // ─── Public entry point ───────────────────────────────────────────────────────
 
 pub fn generate_docx(request: &ExportRequest) -> Result<Vec<u8>> {
-    let template = Template::get(request.template_id);
+    // Document accent (ADR 0004): recolor the template's accent-derived fields
+    // when a valid override is present. `setup_colors` reads `emphasis_color`, so
+    // the accent surfaces on emphasized runs for both the résumé and cover-letter
+    // DOCX paths (both derive from this `template`). No-op when absent/malformed.
+    let template =
+        Template::get(request.template_id).with_accent_override(request.accent.as_deref());
 
     // The DOCX path collapses two-column templates to a single column since
     // DOCX doesn't replicate the sidebar layout.

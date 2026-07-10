@@ -251,13 +251,13 @@ fn pick_template(field: Field, senior_exec: bool, h: &str) -> (TemplateId, &'sta
                 )
             } else if is_systems_role(h) {
                 (
-                    TemplateId::Modern,
-                    "Systems / low-level role → Modern clean template.",
+                    TemplateId::Classic,
+                    "Systems / low-level role → Classic clean single-column template.",
                 )
             } else {
                 (
-                    TemplateId::Modern,
-                    "Software / engineering role → Modern template.",
+                    TemplateId::Classic,
+                    "Software / engineering role → Classic single-column template.",
                 )
             }
         }
@@ -268,7 +268,10 @@ fn pick_template(field: Field, senior_exec: bool, h: &str) -> (TemplateId, &'sta
                     "Senior leadership → Meridian header-forward template.",
                 )
             } else {
-                (TemplateId::Modern, "General role → Modern template.")
+                (
+                    TemplateId::Classic,
+                    "General role → Classic single-column template.",
+                )
             }
         }
     }

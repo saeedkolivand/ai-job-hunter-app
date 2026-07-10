@@ -45,14 +45,11 @@ const SCALE_TYP: &str = include_str!("templates/_scale.typ");
 
 // ── Template sources (embedded at compile time) ───────────────────────────────
 
-/// Classic template source embedded so no disk access is needed at runtime.
-const CLASSIC_TYP: &str = include_str!("templates/classic.typ");
-
 /// Atelier two-column premium template source embedded at compile time.
 const ATELIER_TYP: &str = include_str!("templates/atelier.typ");
 
 /// Parametric single-column template driven by `data.style`.
-/// Serves Modern, SwissMinimal, and Academic (and Classic after migration).
+/// Serves Classic, SwissMinimal, and Academic.
 const SINGLE_COLUMN_TYP: &str = include_str!("templates/single_column.typ");
 
 /// Meridian — header-band premium single-column template (Phase 3a).
@@ -84,18 +81,18 @@ pub(super) const fn letter_template_sources() -> (&'static str, &'static str) {
 
 /// Which Typst template to use for rendering.
 ///
-/// Phase 1a ships `Classic`; Phase 1b adds `Atelier` (two-column premium).
-/// Phase 2 adds `SingleColumn` — a parametric renderer driven by `data.style`.
+/// `Atelier` (Phase 1b) is the two-column premium sidebar template.
+/// `SingleColumn` (Phase 2) is the parametric renderer driven by `data.style`,
+/// serving Classic, SwissMinimal, and Academic.
 /// Phase 3a adds `Meridian`, `Throughline` — original premium single-column
 /// templates, each with its own `.typ` file.
 /// Phase 3b-i adds `Portrait` and `Lebenslauf` — two photo templates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypstTemplate {
-    Classic,
     /// Phase 1b — two-column premium sidebar template.
     Atelier,
     /// Phase 2 — parametric single-column driven by `data.style`.
-    /// Used for Modern, SwissMinimal, Academic (and Classic after migration).
+    /// Serves Classic, SwissMinimal, and Academic.
     SingleColumn,
     /// Phase 3a — header-band premium single-column template.
     Meridian,
@@ -112,7 +109,6 @@ impl TypstTemplate {
     /// The preamble is prepended in [`TypstTemplate::source_with_scale`].
     fn raw_source(self) -> &'static str {
         match self {
-            TypstTemplate::Classic => CLASSIC_TYP,
             TypstTemplate::Atelier => ATELIER_TYP,
             TypstTemplate::SingleColumn => SINGLE_COLUMN_TYP,
             TypstTemplate::Meridian => MERIDIAN_TYP,
@@ -134,13 +130,14 @@ impl TypstTemplate {
     }
 
     /// Derive the Typst template from an existing [`Template`] configuration.
-    /// All nine live template IDs are handled exhaustively; no fallback needed.
+    /// All eight live template IDs are handled exhaustively; no fallback needed.
     pub fn from_template(t: &Template) -> Self {
         match t.id {
-            TemplateId::Classic => TypstTemplate::Classic,
             TemplateId::Atelier => TypstTemplate::Atelier,
-            // Modern, SwissMinimal, Academic → parametric SingleColumn renderer.
-            TemplateId::Modern | TemplateId::SwissMinimal | TemplateId::Academic => {
+            // Classic, SwissMinimal, Academic → parametric SingleColumn renderer.
+            // (Classic migrated off its bespoke `classic.typ` onto the shared
+            // parametric template, styled from its registry palette via data.style.)
+            TemplateId::Classic | TemplateId::SwissMinimal | TemplateId::Academic => {
                 TypstTemplate::SingleColumn
             }
             // Phase 3a: two premium single-column templates.
@@ -226,10 +223,10 @@ fn compile_and_svg(world: &ResumeWorld) -> AppResult<Vec<String>> {
 ///
 /// When `template` is [`TypstTemplate::SingleColumn`] the caller must supply
 /// the matching [`Template`] registry entry so that `data.style` is populated
-/// with colors/fonts/section-style. For Classic and Atelier the template manages
-/// its own styling internally (for Classic, back-compat; for Atelier, complex
-/// two-column logic). Passing `Some(t)` for Classic/Atelier is harmless — the
-/// style object is serialized into JSON but the template source ignores it.
+/// with colors/fonts/section-style (this is the live path for Classic,
+/// SwissMinimal, and Academic). For Atelier the template manages its own styling
+/// internally (complex two-column logic); passing `Some(t)` there is harmless —
+/// the style object is serialized into JSON but the template source ignores it.
 ///
 /// Data is injected as an in-memory `data.json` (no string interpolation of
 /// user content into markup). The offline hard-wall in [`ResumeWorld`] ensures

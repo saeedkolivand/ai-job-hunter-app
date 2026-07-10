@@ -1,4 +1,4 @@
-//! Typst-based PDF rendering engine — Cutover-1: live for all nine templates.
+//! Typst-based PDF rendering engine — Cutover-1: live for all eight templates.
 //!
 //! This module is named `typst_engine` (not `typst`) to avoid shadowing the
 //! extern `typst` crate.
@@ -35,3 +35,6 @@ pub use engine::{
 pub use engine::render_pdf_from_source;
 pub use photo::resolve_photo;
 pub use render::RenderOpts;
+// Single source of truth for document-accent hex validation, reused by the
+// DOCX / cover-letter accent-override path in `export::templates`.
+pub(crate) use render::normalise_accent;
