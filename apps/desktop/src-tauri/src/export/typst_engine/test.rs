@@ -1807,6 +1807,27 @@ I would welcome the opportunity to bring the same rigour, curiosity, and sense \
 of ownership to your team, and to help you scale the platform through its next \
 phase of growth with confidence and care.
 
+Earlier in my career at Delta Systems I built the on-call tooling that our whole \
+engineering org still relies on, cutting mean time to resolution significantly \
+by surfacing the right context the moment an alert fired.
+
+I have also invested heavily in testing culture, introducing contract tests \
+between services that caught integration regressions before they ever reached \
+production, which meaningfully reduced the number of incidents quarter over \
+quarter.
+
+Outside of pure execution, I enjoy mentoring engineers earlier in their careers, \
+pairing regularly and helping them build the judgment to make good trade-offs \
+under real constraints rather than just following a checklist.
+
+I have led cross-team initiatives that required aligning stakeholders with \
+different priorities, and I take real pride in finding the solution that \
+actually satisfies everyone's constraints rather than the loudest one.
+
+Reliability work is often invisible when done well, so I have made a habit of \
+writing clear postmortems and sharing them broadly, turning painful incidents \
+into lasting organizational learning rather than one-off fire drills.
+
 Thank you for considering my application; I would be glad to discuss how my \
 background aligns with your needs at any time that is convenient for you.
 

@@ -176,8 +176,9 @@
 #if "subject" in data and data.subject != none {
   let subj-body = strip-subject-label(data.subject, subj-label)
   let subj-body-lower = lower(subj-body.trim())
-  let has-own-label = (subj-label != "" and subj-body-lower.starts-with(lower(subj-label)))
-    or subj-body-lower.starts-with("re:")
+  let label-match = subj-label != "" and subj-body-lower.starts-with(lower(subj-label))
+  let re-match = subj-body-lower.starts-with("re:")
+  let has-own-label = label-match or re-match
   block(above: 4pt, below: 12pt, {
     if not has-own-label {
       text(
