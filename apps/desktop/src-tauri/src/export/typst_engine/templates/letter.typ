@@ -9,7 +9,9 @@
 //   data.opts.lang                             — BCP-47 language tag
 //   data.opts.date_position                   — "top-right"|"below-header"|"above-salutation"
 //   data.opts.sender_position                 — "top"|"bottom"
-//   data.opts.recipient_position              — "before-date"|"after-date"
+//   data.opts.recipient_position              — horizontal-placement hint
+//                                                ("left"|"top-right"); anything but
+//                                                "before-date" reads after the date
 //   data.opts.subject_line_used               — bool
 //   data.opts.subject_line_label              — e.g. "Betreff"
 //   data.style.c_accent / c_body / c_name / c_date / c_rule — #RRGGBB colours
@@ -168,9 +170,10 @@
   emit-date-block(data.date)
 }
 
-// ── Recipient block (before-date goes here, after top-right / below-header) ──
-// "before-date" means the recipient precedes the date in non-top-right layouts.
-// "after-date" means the recipient follows the date.
+// ── Recipient block, "before-date" placement ─────────────────────────────────
+// Only an explicit "before-date" recipient renders here (it precedes the date in
+// non-top-right layouts). Every other value falls through to the default
+// after-date block below.
 
 #if recip-pos == "before-date" and date-pos != "top-right" {
   emit-recipient-block()
@@ -182,8 +185,14 @@
   // the salutation (see below).
 }
 
-// After-date recipient block (most markets).
-#if recip-pos == "after-date" or recip-pos == "" {
+// Recipient / inside-address block — the DEFAULT placement (after the date).
+// `recipient_position` carries the shared fixture's horizontal-placement
+// vocabulary ("left" | "top-right"), passed through verbatim — NOT the
+// "before-date"/"after-date" order tokens. So treat anything except an explicit
+// "before-date" as after-date placement: this renders the inside address for
+// every market (DIN 5008 makes it mandatory for DE/AT/CH). "before-date" keeps
+// its earlier branch above and is excluded here to avoid double emission.
+#if recip-pos != "before-date" {
   emit-recipient-block()
 }
 
