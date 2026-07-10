@@ -5,7 +5,7 @@ use super::{
     types::{DocumentType, ExportRequest},
 };
 
-// Typst engine — used by the live export path for all eight templates.
+// Typst engine — used by the live export path for all twelve templates.
 use super::typst_engine::{
     render_letter_pdf, render_letter_svg_pages, render_pdf, render_pdf_with_photo,
     render_resume_svg_pages, render_resume_svg_pages_with_photo, resolve_photo, RenderOpts,
@@ -101,7 +101,8 @@ fn prepare_resume_render(request: &ExportRequest) -> ResumeRenderInputs {
         ats: request.ats_mode,
     };
 
-    // Resolve photo bytes (for photo-capable templates; None for others).
+    // Resolved whenever a contact photo is present; only photo-capable templates
+    // consume it.
     let contact_has_photo = request
         .contact
         .as_ref()

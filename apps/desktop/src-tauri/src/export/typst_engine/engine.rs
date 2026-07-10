@@ -64,6 +64,13 @@ const PORTRAIT_TYP: &str = include_str!("templates/portrait.typ");
 /// Lebenslauf — DACH DIN-style tabular CV with photo top-right.
 const LEBENSLAUF_TYP: &str = include_str!("templates/lebenslauf.typ");
 
+/// Aria — minimalist design two-column, untinted RIGHT sidebar, rectangular
+/// top-right photo (PR4).
+const ARIA_TYP: &str = include_str!("templates/aria.typ");
+
+/// Saffron — warm design two-column, tinted LEFT sidebar, circular ringed photo (PR4).
+const SAFFRON_TYP: &str = include_str!("templates/saffron.typ");
+
 /// Parametric cover-letter template driven by `data.opts` + `data.style`.
 /// A4 or Letter; themed from the chosen resume template's accent + fonts.
 const LETTER_TYP: &str = include_str!("templates/letter.typ");
@@ -102,6 +109,11 @@ pub enum TypstTemplate {
     Portrait,
     /// Phase 3b-i — DACH DIN-style tabular CV, photo top-right.
     Lebenslauf,
+    /// PR4 — minimalist design two-column, untinted RIGHT sidebar, rectangular
+    /// top-right photo.
+    Aria,
+    /// PR4 — warm design two-column, tinted LEFT sidebar, circular ringed photo.
+    Saffron,
 }
 
 impl TypstTemplate {
@@ -115,6 +127,8 @@ impl TypstTemplate {
             TypstTemplate::Throughline => THROUGHLINE_TYP,
             TypstTemplate::Portrait => PORTRAIT_TYP,
             TypstTemplate::Lebenslauf => LEBENSLAUF_TYP,
+            TypstTemplate::Aria => ARIA_TYP,
+            TypstTemplate::Saffron => SAFFRON_TYP,
         }
     }
 
@@ -130,7 +144,7 @@ impl TypstTemplate {
     }
 
     /// Derive the Typst template from an existing [`Template`] configuration.
-    /// All ten live template IDs are handled exhaustively; no fallback needed.
+    /// All twelve live template IDs are handled exhaustively; no fallback needed.
     pub fn from_template(t: &Template) -> Self {
         match t.id {
             TemplateId::Atelier => TypstTemplate::Atelier,
@@ -150,6 +164,9 @@ impl TypstTemplate {
             // Phase 3b-i: two photo templates.
             TemplateId::Portrait => TypstTemplate::Portrait,
             TemplateId::Lebenslauf => TypstTemplate::Lebenslauf,
+            // PR4: two design photo / two-column templates.
+            TemplateId::Aria => TypstTemplate::Aria,
+            TemplateId::Saffron => TypstTemplate::Saffron,
         }
     }
 }

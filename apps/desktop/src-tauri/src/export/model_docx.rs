@@ -223,7 +223,7 @@ fn add_two_column_body(
         right_align_date: true,
     };
     for section in &model.sections {
-        match theme::placement_for(&section.id) {
+        match theme::placement_for(template.id, &section.id) {
             Placement::Sidebar => sidebar_paras.extend(section_paragraphs(section, &sidebar_ctx)),
             Placement::Main => main_paras.extend(section_paragraphs(section, &main_ctx)),
         }

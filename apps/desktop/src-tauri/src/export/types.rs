@@ -43,6 +43,16 @@ pub enum TemplateId {
     /// small-caps headings, rose rule, first-line-indent letter). Renders through
     /// the parametric `single_column.typ`.
     Regent,
+    /// PR4: Aria — minimalist design two-column with an untinted RIGHT sidebar and
+    /// a rectangular top-right photo (Manrope name, Inter body, slate accent,
+    /// letter-spaced caps headings). Education reads in the main column. Renders
+    /// through the bespoke `aria.typ`.
+    Aria,
+    /// PR4: Saffron — warm design two-column with a tinted LEFT sidebar and a
+    /// circular ringed photo (Source Serif 4 small-caps headings, Inter body,
+    /// terracotta accent). Certifications read in the main column. Renders through
+    /// the bespoke `saffron.typ`.
+    Saffron,
 }
 
 impl<'de> serde::Deserialize<'de> for TemplateId {
@@ -62,6 +72,8 @@ impl<'de> serde::Deserialize<'de> for TemplateId {
             "lebenslauf" => TemplateId::Lebenslauf,
             "cadence" => TemplateId::Cadence,
             "regent" => TemplateId::Regent,
+            "aria" => TemplateId::Aria,
+            "saffron" => TemplateId::Saffron,
             // Any unknown / removed id (e.g. "two-column", "refined-executive",
             // "executive", "editorial-serif", "mono-technical", "bogus") falls
             // back to Classic so a stale frontend never breaks export.
@@ -270,6 +282,8 @@ mod tests {
             (TemplateId::Lebenslauf, "\"lebenslauf\""),
             (TemplateId::Cadence, "\"cadence\""),
             (TemplateId::Regent, "\"regent\""),
+            (TemplateId::Aria, "\"aria\""),
+            (TemplateId::Saffron, "\"saffron\""),
         ];
         for (id, expected_json) in cases {
             let serialized = serde_json::to_string(&id).expect("serialize");

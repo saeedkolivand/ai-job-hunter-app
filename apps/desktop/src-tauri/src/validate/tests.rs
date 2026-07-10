@@ -319,6 +319,14 @@ fn typst_validate(template_id: TemplateId) -> (Vec<u8>, ExportReport) {
     .expect("typst pdf export")
 }
 
+fn typst_validate_ats(template_id: TemplateId) -> (Vec<u8>, ExportReport) {
+    validate_and_fix(
+        req(ExportFormat::Pdf, template_id, true),
+        crate::export::pdf::generate_pdf,
+    )
+    .expect("typst pdf export (ats)")
+}
+
 #[test]
 fn typst_single_column_pdf_passes_validation() {
     for id in [
@@ -351,7 +359,12 @@ fn typst_single_column_pdf_passes_validation() {
 
 #[test]
 fn typst_two_column_atelier_pdf_passes_validation() {
-    for id in [TemplateId::Atelier, TemplateId::Portrait] {
+    for id in [
+        TemplateId::Atelier,
+        TemplateId::Portrait,
+        TemplateId::Aria,
+        TemplateId::Saffron,
+    ] {
         let (bytes, report) = typst_validate(id);
         assert!(!bytes.is_empty(), "{id:?}: empty PDF");
         assert!(
@@ -365,6 +378,31 @@ fn typst_two_column_atelier_pdf_passes_validation() {
                 .iter()
                 .any(|i| i.severity == Severity::Critical),
             "{id:?}: no critical issues expected on a valid Typst PDF, got: {:?}",
+            report.issues
+        );
+    }
+}
+
+/// Aria/Saffron (PR4 design two-column templates) must also round-trip the
+/// validator in ATS mode — same pattern as `typst_single_column_pdf_passes_validation`,
+/// just with `ats_mode: true` so the linearized, photo-dropped render is what's
+/// checked (the non-ATS assertion above only covers the two-column render).
+#[test]
+fn typst_two_column_ats_mode_pdf_passes_validation() {
+    for id in [TemplateId::Aria, TemplateId::Saffron] {
+        let (bytes, report) = typst_validate_ats(id);
+        assert!(!bytes.is_empty(), "{id:?}: empty ATS-mode PDF");
+        assert!(
+            report.ok,
+            "{id:?}: Typst ATS-mode PDF must pass validate_and_fix — issues: {:?}",
+            report.issues
+        );
+        assert!(
+            !report
+                .issues
+                .iter()
+                .any(|i| i.severity == Severity::Critical),
+            "{id:?}: no critical issues expected on a valid ATS-mode Typst PDF, got: {:?}",
             report.issues
         );
     }

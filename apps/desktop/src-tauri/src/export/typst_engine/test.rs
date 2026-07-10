@@ -363,8 +363,10 @@ fn every_template_renders_a_valid_pdf() {
         TemplateId::Lebenslauf,
         TemplateId::Cadence,
         TemplateId::Regent,
+        TemplateId::Aria,
+        TemplateId::Saffron,
     ];
-    assert_eq!(ids.len(), 10, "expected the ten canonical templates");
+    assert_eq!(ids.len(), 12, "expected the twelve canonical templates");
 
     let model = model_from_resume_text(FIXTURE_RESUME);
     for id in ids {
@@ -2331,6 +2333,465 @@ fn lebenslauf_write_sample_pdfs_for_review() {
     assert!(bytes_with.starts_with(b"%PDF"));
 }
 
+// ── Aria / Saffron (PR4 design two-column photo templates) ────────────────────
+//
+// Both are photo-capable two-column templates rendered through bespoke `.typ`
+// sources.  Per template we assert: valid PDF with + without a photo (fallback
+// path), ATS mode drops the photo (SVG `<image>` assert like Lebenslauf), the
+// document-accent override changes the output, `is_two_column` is true, a 2-page
+// fixture keeps the sidebar band to page 1, and the per-template placement
+// override lands the moved section in the main column.
+
+/// Fixture with distinct EDUCATION + CERTIFICATIONS + SKILLS sections so the
+/// per-template placement override can be asserted at the serialized-JSON level.
+const PLACEMENT_FIXTURE: &str = "\
+Jane Doe
+jane@example.com | https://linkedin.com/in/janedoe
+
+EXPERIENCE
+Acme Corp  2020 - Present
+Senior Engineer
+- Built a distributed task scheduler
+
+EDUCATION
+State University  2013 - 2017
+BSc Computer Science
+
+SKILLS
+- Rust, Go, TypeScript
+
+CERTIFICATIONS
+- AWS Certified Solutions Architect
+";
+
+/// Serialized column placement (`"main"` / `"sidebar"`) for the section with the
+/// given canonical `kind`, as produced by `prepare` for `template_id`. This is
+/// the single substrate that both the PDF and DOCX two-column splits consume.
+fn placement_of(template_id: TemplateId, kind: &str) -> String {
+    use super::render::{prepare, PreparedRender};
+    let model = model_from_resume_text(PLACEMENT_FIXTURE);
+    let t = Template::get(template_id);
+    let source = TypstTemplate::from_template(&t).source_with_scale();
+    let PreparedRender { data_json, .. } =
+        prepare(&model, &source, &opts_a4(), Some(&t)).expect("prepare should succeed");
+    let v: serde_json::Value =
+        serde_json::from_slice(&data_json).expect("data.json must be valid JSON");
+    let sections = v["sections"].as_array().expect("sections array");
+    let sec = sections
+        .iter()
+        .find(|s| s["kind"] == kind)
+        .unwrap_or_else(|| panic!("section kind {kind:?} not found in {sections:?}"));
+    sec["placement"]
+        .as_str()
+        .expect("placement string")
+        .to_string()
+}
+
+// ── Aria ────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn aria_render_with_photo_produces_valid_pdf() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+    let photo_png = resolve_photo(&fixture_photo_data_url());
+    assert!(photo_png.is_some(), "fixture photo must resolve");
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let t = template_style(TemplateId::Aria);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Aria,
+        &opts_photo(false),
+        Some(&t),
+        photo_png,
+    )
+    .expect("render_pdf_with_photo(aria) should succeed");
+    assert!(!bytes.is_empty(), "Aria PDF must not be empty");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "Aria output must start with %PDF"
+    );
+}
+
+#[test]
+fn aria_render_no_photo_produces_valid_pdf() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let t = template_style(TemplateId::Aria);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Aria,
+        &opts_photo(false),
+        Some(&t),
+        None,
+    )
+    .expect("render_pdf_with_photo(aria, no-photo) should succeed");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "Aria no-photo must start with %PDF"
+    );
+}
+
+#[test]
+fn aria_ats_mode_drops_photo() {
+    use crate::export::typst_engine::render_resume_svg_pages_with_photo;
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let t = template_style(TemplateId::Aria);
+    let photo_png = resolve_photo(&fixture_photo_data_url());
+    assert!(photo_png.is_some(), "fixture photo must resolve");
+
+    // Non-ATS + photo → embedded as an SVG <image>.
+    let shown = render_resume_svg_pages_with_photo(
+        &model,
+        TypstTemplate::Aria,
+        &opts_photo(false),
+        Some(&t),
+        photo_png.clone(),
+    )
+    .expect("aria non-ats svg");
+    assert!(
+        shown.join("").contains("<image"),
+        "non-ATS Aria with a photo must embed it as an <image> element"
+    );
+
+    // ATS + same photo → linear, no image.
+    let ats = render_resume_svg_pages_with_photo(
+        &model,
+        TypstTemplate::Aria,
+        &opts_photo(true),
+        Some(&t),
+        photo_png,
+    )
+    .expect("aria ats svg");
+    assert!(
+        !ats.join("").contains("<image"),
+        "ATS-mode Aria must drop the photo (no <image> element)"
+    );
+}
+
+#[test]
+fn aria_ats_mode_linearizes_reading_order() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+    let mut model = model_from_resume_text(PLACEMENT_FIXTURE);
+    // Export path linearizes for ATS; replicate it here for the reading-order check.
+    crate::model::transform::linearize(&mut model);
+    let t = template_style(TemplateId::Aria);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Aria,
+        &opts_photo(true),
+        Some(&t),
+        None,
+    )
+    .expect("aria ats pdf");
+    let extracted = pdf_extract::extract_text_from_mem(&bytes).expect("pdf-extract");
+    let lower: String = extracted
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    // Experience before Education before Skills in the linear reading order.
+    let exp = lower.find("experience").expect("experience present");
+    let edu = lower.find("education").expect("education present");
+    let skl = lower.find("skills").expect("skills present");
+    assert!(
+        exp < edu && edu < skl,
+        "aria ATS reading order wrong: {lower}"
+    );
+}
+
+#[test]
+fn aria_accent_override_changes_output() {
+    use crate::export::typst_engine::render_resume_svg_pages_with_photo;
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let t = template_style(TemplateId::Aria);
+
+    let base = render_resume_svg_pages_with_photo(
+        &model,
+        TypstTemplate::Aria,
+        &opts_photo(false),
+        Some(&t),
+        None,
+    )
+    .expect("aria base svg")
+    .join("");
+
+    let mut accented_opts = opts_photo(false);
+    accented_opts.accent = Some("#FF00AA".to_string());
+    let accented = render_resume_svg_pages_with_photo(
+        &model,
+        TypstTemplate::Aria,
+        &accented_opts,
+        Some(&t),
+        None,
+    )
+    .expect("aria accent svg")
+    .join("");
+
+    assert_ne!(
+        base, accented,
+        "a document-accent override must change Aria's rendered output"
+    );
+    assert!(
+        accented.to_lowercase().contains("ff00aa"),
+        "the accent hex should appear in Aria's SVG fills"
+    );
+}
+
+#[test]
+fn aria_is_two_column() {
+    assert!(crate::theme::is_two_column(TemplateId::Aria));
+}
+
+#[test]
+fn aria_multipage_sidebar_renders_once() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+    let model = model_from_resume_text(ATELIER_MULTIPAGE);
+    let t = template_style(TemplateId::Aria);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Aria,
+        &opts_photo(false),
+        Some(&t),
+        None,
+    )
+    .expect("render_pdf_with_photo(aria, multipage) should succeed");
+    assert!(bytes.starts_with(b"%PDF"));
+    assert!(
+        count_pdf_pages(&bytes) >= 2,
+        "multi-page fixture must produce ≥2 pages"
+    );
+    let lower = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract")
+        .to_lowercase();
+    assert!(
+        lower.contains("grafana"),
+        "sidebar skill missing\n---\n{lower}"
+    );
+    assert_eq!(
+        lower.matches("grafana").count(),
+        1,
+        "Aria sidebar must render once across pages\n---\n{lower}"
+    );
+}
+
+#[test]
+fn aria_moves_education_to_main_column() {
+    assert_eq!(
+        placement_of(TemplateId::Aria, "education"),
+        "main",
+        "Aria: Education must be placed in the main column"
+    );
+    // The rest of the sidebar set is unchanged for Aria.
+    assert_eq!(placement_of(TemplateId::Aria, "skills"), "sidebar");
+    assert_eq!(placement_of(TemplateId::Aria, "certifications"), "sidebar");
+}
+
+// ── Saffron ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fn saffron_render_with_photo_produces_valid_pdf() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+    let photo_png = resolve_photo(&fixture_photo_data_url());
+    assert!(photo_png.is_some(), "fixture photo must resolve");
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let t = template_style(TemplateId::Saffron);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Saffron,
+        &opts_photo(false),
+        Some(&t),
+        photo_png,
+    )
+    .expect("render_pdf_with_photo(saffron) should succeed");
+    assert!(!bytes.is_empty(), "Saffron PDF must not be empty");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "Saffron output must start with %PDF"
+    );
+}
+
+#[test]
+fn saffron_render_no_photo_produces_valid_pdf() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let t = template_style(TemplateId::Saffron);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Saffron,
+        &opts_photo(false),
+        Some(&t),
+        None,
+    )
+    .expect("render_pdf_with_photo(saffron, no-photo) should succeed");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "Saffron no-photo must start with %PDF"
+    );
+}
+
+#[test]
+fn saffron_ats_mode_drops_photo() {
+    use crate::export::typst_engine::render_resume_svg_pages_with_photo;
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let t = template_style(TemplateId::Saffron);
+    let photo_png = resolve_photo(&fixture_photo_data_url());
+    assert!(photo_png.is_some(), "fixture photo must resolve");
+
+    let shown = render_resume_svg_pages_with_photo(
+        &model,
+        TypstTemplate::Saffron,
+        &opts_photo(false),
+        Some(&t),
+        photo_png.clone(),
+    )
+    .expect("saffron non-ats svg");
+    assert!(
+        shown.join("").contains("<image"),
+        "non-ATS Saffron with a photo must embed it as an <image> element"
+    );
+
+    let ats = render_resume_svg_pages_with_photo(
+        &model,
+        TypstTemplate::Saffron,
+        &opts_photo(true),
+        Some(&t),
+        photo_png,
+    )
+    .expect("saffron ats svg");
+    assert!(
+        !ats.join("").contains("<image"),
+        "ATS-mode Saffron must drop the photo (no <image> element)"
+    );
+}
+
+#[test]
+fn saffron_ats_mode_linearizes_reading_order() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+    let mut model = model_from_resume_text(PLACEMENT_FIXTURE);
+    crate::model::transform::linearize(&mut model);
+    let t = template_style(TemplateId::Saffron);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Saffron,
+        &opts_photo(true),
+        Some(&t),
+        None,
+    )
+    .expect("saffron ats pdf");
+    let extracted = pdf_extract::extract_text_from_mem(&bytes).expect("pdf-extract");
+    let lower: String = extracted
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    let exp = lower.find("experience").expect("experience present");
+    let skl = lower.find("skills").expect("skills present");
+    let cert = lower
+        .find("certifications")
+        .expect("certifications present");
+    assert!(
+        exp < skl && skl < cert,
+        "saffron ATS reading order wrong: {lower}"
+    );
+}
+
+#[test]
+fn saffron_accent_override_changes_output() {
+    use crate::export::typst_engine::render_resume_svg_pages_with_photo;
+    let model = model_from_resume_text(ATELIER_FIXTURE);
+    let t = template_style(TemplateId::Saffron);
+
+    let base = render_resume_svg_pages_with_photo(
+        &model,
+        TypstTemplate::Saffron,
+        &opts_photo(false),
+        Some(&t),
+        None,
+    )
+    .expect("saffron base svg")
+    .join("");
+
+    let mut accented_opts = opts_photo(false);
+    accented_opts.accent = Some("#FF00AA".to_string());
+    let accented = render_resume_svg_pages_with_photo(
+        &model,
+        TypstTemplate::Saffron,
+        &accented_opts,
+        Some(&t),
+        None,
+    )
+    .expect("saffron accent svg")
+    .join("");
+
+    assert_ne!(
+        base, accented,
+        "a document-accent override must change Saffron's rendered output"
+    );
+    assert!(
+        accented.to_lowercase().contains("ff00aa"),
+        "the accent hex should appear in Saffron's SVG fills"
+    );
+}
+
+#[test]
+fn saffron_is_two_column() {
+    assert!(crate::theme::is_two_column(TemplateId::Saffron));
+}
+
+#[test]
+fn saffron_multipage_sidebar_renders_once() {
+    use crate::export::typst_engine::render_pdf_with_photo;
+    let model = model_from_resume_text(ATELIER_MULTIPAGE);
+    let t = template_style(TemplateId::Saffron);
+    let bytes = render_pdf_with_photo(
+        &model,
+        TypstTemplate::Saffron,
+        &opts_photo(false),
+        Some(&t),
+        None,
+    )
+    .expect("render_pdf_with_photo(saffron, multipage) should succeed");
+    assert!(bytes.starts_with(b"%PDF"));
+    assert!(
+        count_pdf_pages(&bytes) >= 2,
+        "multi-page fixture must produce ≥2 pages"
+    );
+    let lower = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract")
+        .to_lowercase();
+    assert!(
+        lower.contains("grafana"),
+        "sidebar skill missing\n---\n{lower}"
+    );
+    assert_eq!(
+        lower.matches("grafana").count(),
+        1,
+        "Saffron sidebar must render once across pages\n---\n{lower}"
+    );
+}
+
+#[test]
+fn saffron_moves_certifications_to_main_column() {
+    assert_eq!(
+        placement_of(TemplateId::Saffron, "certifications"),
+        "main",
+        "Saffron: Certifications must be placed in the main column"
+    );
+    // Education stays in the sidebar for Saffron (unlike Aria).
+    assert_eq!(placement_of(TemplateId::Saffron, "education"), "sidebar");
+    assert_eq!(placement_of(TemplateId::Saffron, "skills"), "sidebar");
+}
+
+#[test]
+fn portrait_placement_is_unchanged_by_the_refactor() {
+    // Control: the default table (Portrait) keeps Education + Certifications in
+    // the sidebar — the per-template id parameter must not shift it.
+    assert_eq!(placement_of(TemplateId::Portrait, "education"), "sidebar");
+    assert_eq!(
+        placement_of(TemplateId::Portrait, "certifications"),
+        "sidebar"
+    );
+}
+
 // ── resolve_photo unit tests (already in photo.rs; re-exercised here for ──────
 //    integration-layer confidence that the export module re-exports correctly)
 
@@ -2803,9 +3264,9 @@ fn regent_maps_to_serif_small_caps_burgundy_style() {
 
 // ── README showcase banner generator ─────────────────────────────────────────
 //
-// Renders all ten templates, rasterises the first page of each at 2× DPI
+// Renders all twelve templates, rasterises the first page of each at 2× DPI
 // (144 px/pt), thumbnails each to 300 px wide, and composes a single wide
-// row (1×10) — a banner-proportioned strip like the project hero — on a
+// row (1×12) — a banner-proportioned strip like the project hero — on a
 // #F4F4F5 background with 20 px border-padding and 14 px gaps, writing the
 // result to docs/assets/templates-showcase.png.
 //
@@ -2897,11 +3358,12 @@ fn generate_templates_showcase_banner() {
     /// from the original A4 aspect ratio.
     const CELL_W: u32 = 300;
 
-    /// Layout: a single wide row — 10 columns × 1 row (banner proportions).
+    /// Layout: a single wide row — 12 columns × 1 row (banner proportions).
     /// Must be >= the template count: `ROWS` is hardcoded to 1, so any template
     /// landing at row-index >= 1 would write pixels beyond `canvas_h` (an
-    /// out-of-bounds `put_pixel` panic below).
-    const COLS: u32 = 10;
+    /// out-of-bounds `put_pixel` panic below). One row keeps the grid math trivial
+    /// (`col = idx % COLS`, `row = idx / COLS = 0`) for all twelve templates.
+    const COLS: u32 = 12;
     const ROWS: u32 = 1;
 
     /// Outer border padding (px) and gap between cells (px).
@@ -2931,7 +3393,7 @@ fn generate_templates_showcase_banner() {
         ats: false,
     };
 
-    // ── Template list (must be exactly 10, matching the canonical TemplateId set) ──
+    // ── Template list (must be exactly 12, matching the canonical TemplateId set) ──
 
     // (TemplateId, human label, kebab slug). The slug MUST match the renderer's
     // `TemplateId` wire ids so the per-template preview files line up with the UI.
@@ -2946,11 +3408,13 @@ fn generate_templates_showcase_banner() {
         (TemplateId::Lebenslauf, "Lebenslauf", "lebenslauf"),
         (TemplateId::Cadence, "Cadence", "cadence"),
         (TemplateId::Regent, "Regent", "regent"),
+        (TemplateId::Aria, "Aria", "aria"),
+        (TemplateId::Saffron, "Saffron", "saffron"),
     ];
     assert_eq!(
         templates.len(),
-        10,
-        "showcase must cover exactly ten templates"
+        12,
+        "showcase must cover exactly twelve templates"
     );
 
     // ── Helper: compile a World to a PagedDocument ────────────────────────────
@@ -2999,7 +3463,7 @@ fn generate_templates_showcase_banner() {
     std::fs::create_dir_all(&preview_dir)
         .unwrap_or_else(|e| panic!("showcase: create_dir_all template-previews: {e}"));
 
-    let mut thumbnails: Vec<RgbaImage> = Vec::with_capacity(10);
+    let mut thumbnails: Vec<RgbaImage> = Vec::with_capacity(12);
 
     for (id, label, slug) in templates {
         eprintln!("showcase: rendering {label}...");
@@ -3008,9 +3472,13 @@ fn generate_templates_showcase_banner() {
         let typst_tmpl = TypstTemplate::from_template(&t);
         let source = typst_tmpl.source_with_scale();
 
-        // Photo templates (Portrait, Lebenslauf) rendered without a photo
-        // so the showcase generator has no binary dependency.
-        let has_photo = matches!(id, TemplateId::Portrait | TemplateId::Lebenslauf);
+        // Photo templates (Portrait, Lebenslauf, Aria, Saffron) take the photo-
+        // capable prepare path but render their no-photo fallback so the showcase
+        // generator has no binary dependency.
+        let has_photo = matches!(
+            id,
+            TemplateId::Portrait | TemplateId::Lebenslauf | TemplateId::Aria | TemplateId::Saffron
+        );
 
         let PreparedRender {
             source: compiled_source,
@@ -3064,7 +3532,7 @@ fn generate_templates_showcase_banner() {
         eprintln!("  → thumbnail {tw_cur}×{th_cur}");
     }
 
-    assert_eq!(thumbnails.len(), 10, "must have exactly 10 thumbnails");
+    assert_eq!(thumbnails.len(), 12, "must have exactly 12 thumbnails");
 
     // ── Compose single wide row (1×10) ────────────────────────────────────────
 
@@ -3176,7 +3644,7 @@ fn generate_templates_showcase_banner() {
         );
     }
     eprintln!(
-        "template previews written: 10 SVG → {}",
+        "template previews written: 12 SVG → {}",
         preview_dir.display()
     );
 }
@@ -3213,7 +3681,7 @@ fn generate_cover_template_previews() {
     use super::letter::{parse_cover_letter, style_from_template as letter_style_from_template};
     use super::world::ResumeWorld;
 
-    // Same ten templates as the showcase generator. Slugs MUST match the
+    // Same twelve templates as the showcase generator. Slugs MUST match the
     // renderer's `TemplateId` wire ids so the preview files line up with the UI.
     let templates: &[(TemplateId, &str, &str)] = &[
         (TemplateId::Classic, "Classic", "classic"),
@@ -3226,11 +3694,13 @@ fn generate_cover_template_previews() {
         (TemplateId::Lebenslauf, "Lebenslauf", "lebenslauf"),
         (TemplateId::Cadence, "Cadence", "cadence"),
         (TemplateId::Regent, "Regent", "regent"),
+        (TemplateId::Aria, "Aria", "aria"),
+        (TemplateId::Saffron, "Saffron", "saffron"),
     ];
     assert_eq!(
         templates.len(),
-        10,
-        "cover previews must cover exactly ten templates"
+        12,
+        "cover previews must cover exactly twelve templates"
     );
 
     // Embedded letter Typst sources (scale preamble + letter template), reused

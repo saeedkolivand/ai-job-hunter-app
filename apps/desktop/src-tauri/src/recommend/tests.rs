@@ -11,9 +11,9 @@ fn signals(title: &str, seniority: &str, reqs: &[&str]) -> RecommendSignals {
     }
 }
 
-/// The ten live template IDs — the recommender must never return anything outside
-/// this set.
-const LIVE_TEMPLATES: [TemplateId; 10] = [
+/// The twelve live template IDs — the recommender must never return anything
+/// outside this set.
+const LIVE_TEMPLATES: [TemplateId; 12] = [
     TemplateId::Classic,
     TemplateId::SwissMinimal,
     TemplateId::Academic,
@@ -24,6 +24,8 @@ const LIVE_TEMPLATES: [TemplateId; 10] = [
     TemplateId::Lebenslauf,
     TemplateId::Cadence,
     TemplateId::Regent,
+    TemplateId::Aria,
+    TemplateId::Saffron,
 ];
 
 #[test]
