@@ -69,11 +69,27 @@ pub enum SectionStyle {
     BoldOnly,
 }
 
+/// ATS-safe vs. design tier — metadata only, no render behavior.
+///
+/// Drives the frontend gallery grouping (ATS-Safe / Design sections + badge) and
+/// which templates surface the ATS-mode toggle: design-tier layouts (photo /
+/// two-column) drop the photo and linearize when ATS mode is on. Not serialized
+/// to the renderer (`JsonStyle` is unchanged); the frontend registry mirrors it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemplateTier {
+    /// Single-column, parser-safe layouts.
+    Ats,
+    /// Photo / two-column / visually rich layouts.
+    Design,
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct Template {
     pub id: TemplateId,
     pub name: &'static str,
+    /// ATS-safe vs. design tier (metadata; see [`TemplateTier`]).
+    pub tier: TemplateTier,
 
     // Colors (RGB tuples)
     pub name_color: (u8, u8, u8),
@@ -176,6 +192,7 @@ impl Template {
         Self {
             id: TemplateId::Classic,
             name: "ATS Classic",
+            tier: TemplateTier::Ats,
             name_color: (17, 17, 17),
             section_color: (17, 17, 17),
             accent_color: (34, 34, 34),
@@ -206,6 +223,7 @@ impl Template {
         Self {
             id: TemplateId::SwissMinimal,
             name: "Swiss Minimal",
+            tier: TemplateTier::Ats,
             name_color: (20, 20, 20),
             section_color: (20, 20, 20),
             accent_color: (230, 57, 70),
@@ -243,6 +261,7 @@ impl Template {
         Self {
             id: TemplateId::Academic,
             name: "Academic",
+            tier: TemplateTier::Ats,
             name_color: (20, 40, 30),
             section_color: (27, 67, 50),
             accent_color: (27, 67, 50),
@@ -288,6 +307,7 @@ impl Template {
         Self {
             id: TemplateId::Atelier,
             name: "Atelier",
+            tier: TemplateTier::Design,
             // Slate-indigo palette: a deep, sophisticated purple-grey.
             name_color: (22, 20, 54),
             section_color: (74, 69, 128),
@@ -340,6 +360,7 @@ impl Template {
         Self {
             id: TemplateId::Meridian,
             name: "Meridian",
+            tier: TemplateTier::Ats,
             // Warm copper-sienna palette — original, professional.
             name_color: (255, 255, 255),  // white on the dark band
             section_color: (160, 82, 45), // copper-sienna for section headings
@@ -384,6 +405,7 @@ impl Template {
         Self {
             id: TemplateId::Throughline,
             name: "Throughline",
+            tier: TemplateTier::Ats,
             // Deep forest-teal palette.
             name_color: (15, 50, 45),    // very dark teal name
             section_color: (26, 92, 82), // forest teal sections
@@ -430,6 +452,7 @@ impl Template {
         Self {
             id: TemplateId::Portrait,
             name: "Portrait",
+            tier: TemplateTier::Design,
             // Deep slate-teal palette — professional, original.
             name_color: (18, 40, 50),
             section_color: (42, 100, 120),
@@ -480,6 +503,7 @@ impl Template {
         Self {
             id: TemplateId::Lebenslauf,
             name: "Lebenslauf",
+            tier: TemplateTier::Design,
             // Warm slate palette — formal, DACH-appropriate.
             name_color: (20, 25, 35),
             section_color: (61, 79, 107),

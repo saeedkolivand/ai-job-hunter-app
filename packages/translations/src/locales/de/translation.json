@@ -1219,6 +1219,14 @@
     "resumePlaceholder": "Lebenslauftext hier einfügen…",
     "atsMode": "ATS-sicherer Modus",
     "atsModeHint": "Empfohlen für ATS-Bewerbungen — linearisiert das zweispaltige Layout",
+    "atsModeHintTwoColumn": "Empfohlen für ATS-Bewerbungen — reduziert das Layout auf eine Spalte und entfernt ein etwaiges Foto für maximale Parserkompatibilität",
+    "atsModeHintPhoto": "Empfohlen für ATS-Bewerbungen — entfernt das Foto für ein lineares, parserfreundliches Layout",
+    "tier": {
+      "atsSafe": "ATS-sicher",
+      "design": "Design",
+      "atsBadge": "ATS",
+      "designBadge": "Design"
+    },
     "documentAccent": "Dokumentakzent",
     "documentAccentDefault": "Vorlagenstandard",
     "documentAccentCustom": "Eigene",

@@ -12,6 +12,7 @@ import { useDebouncedCommit } from '@/hooks/use-debounced-commit';
 import {
   buildFilename,
   type GenerationMeta,
+  isDesignTier,
   isTwoColumnTemplate,
   TEMPLATE_IDS,
   type TemplateId,
@@ -154,14 +155,15 @@ export function GenerationOutput({
   }, [flush]);
   const docType = activeOut === 'resume' ? 'resume' : 'cover-letter';
 
-  // Template picker (mirrors GenerateWizard.handleTemplateChange): selecting a
-  // single-column template forces ATS off, since ATS-safe mode only linearizes the
-  // two-column templates. One template id drives BOTH docs' preview + export.
+  // Template picker (mirrors GenerateWizard.handleTemplateChange): selecting an
+  // ATS-tier template forces ATS off, since ATS-safe mode only applies to
+  // design-tier layouts (two-column OR photo, incl. Lebenslauf). One template id
+  // drives BOTH docs' preview + export.
   const templateOptions = TEMPLATE_IDS.map((id) => ({ value: id, label: TEMPLATES[id].name }));
   const handleTemplateChange = (value: string) => {
     const id = value as TemplateId;
     onTemplateChange(id);
-    if (!isTwoColumnTemplate(id)) onAtsModeChange(false);
+    if (!isDesignTier(id)) onAtsModeChange(false);
   };
 
   // ARIA tabs contract: each tab owns a stable id and controls a panel id; the
@@ -267,12 +269,16 @@ export function GenerationOutput({
                 listClassName="max-h-48"
               />
             </div>
-            {/* ATS-safe toggle — résumé-only + only meaningful for two-column
-                templates (copies StepTemplate's switch markup; reuses the
-                aiGenerate.atsMode keys). */}
-            {activeOut === 'resume' && isTwoColumnTemplate(templateId) && (
+            {/* ATS-safe toggle — résumé-only + only meaningful for design-tier
+                templates (two-column OR photo, incl. Lebenslauf; copies
+                StepTemplate's switch markup; reuses the aiGenerate.atsMode keys). */}
+            {activeOut === 'resume' && isDesignTier(templateId) && (
               <div
-                title={t('aiGenerate.atsModeHint')}
+                title={t(
+                  isTwoColumnTemplate(templateId)
+                    ? 'aiGenerate.atsModeHintTwoColumn'
+                    : 'aiGenerate.atsModeHintPhoto'
+                )}
                 className={cn(
                   'flex h-auto items-center gap-1.5 rounded-lg border px-2 py-1 transition-all',
                   atsMode
