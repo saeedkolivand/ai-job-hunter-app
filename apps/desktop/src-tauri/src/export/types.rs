@@ -35,6 +35,14 @@ pub enum TemplateId {
     /// Phase 3b-i: DACH DIN-style tabular CV — photo top-right, formal A4,
     /// left-label / right-value rows, restrained accent.
     Lebenslauf,
+    /// PR3: Cadence — Claude-PDF-style ATS single-column (Inter, blue-grey accent,
+    /// letter-spaced all-caps ruled headings, underlined links). Renders through
+    /// the parametric `single_column.typ`.
+    Cadence,
+    /// PR3: Regent — executive serif ATS single-column (Source Serif 4, burgundy
+    /// small-caps headings, rose rule, first-line-indent letter). Renders through
+    /// the parametric `single_column.typ`.
+    Regent,
 }
 
 impl<'de> serde::Deserialize<'de> for TemplateId {
@@ -52,6 +60,8 @@ impl<'de> serde::Deserialize<'de> for TemplateId {
             "throughline" => TemplateId::Throughline,
             "portrait" => TemplateId::Portrait,
             "lebenslauf" => TemplateId::Lebenslauf,
+            "cadence" => TemplateId::Cadence,
+            "regent" => TemplateId::Regent,
             // Any unknown / removed id (e.g. "two-column", "refined-executive",
             // "executive", "editorial-serif", "mono-technical", "bogus") falls
             // back to Classic so a stale frontend never breaks export.
@@ -258,6 +268,8 @@ mod tests {
             (TemplateId::Throughline, "\"throughline\""),
             (TemplateId::Portrait, "\"portrait\""),
             (TemplateId::Lebenslauf, "\"lebenslauf\""),
+            (TemplateId::Cadence, "\"cadence\""),
+            (TemplateId::Regent, "\"regent\""),
         ];
         for (id, expected_json) in cases {
             let serialized = serde_json::to_string(&id).expect("serialize");

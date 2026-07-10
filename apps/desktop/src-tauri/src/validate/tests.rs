@@ -328,6 +328,8 @@ fn typst_single_column_pdf_passes_validation() {
         TemplateId::Meridian,
         TemplateId::Throughline,
         TemplateId::Lebenslauf,
+        TemplateId::Cadence,
+        TemplateId::Regent,
     ] {
         let (bytes, report) = typst_validate(id);
         assert!(!bytes.is_empty(), "{id:?}: empty PDF");

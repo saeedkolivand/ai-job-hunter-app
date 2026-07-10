@@ -11,9 +11,9 @@ fn signals(title: &str, seniority: &str, reqs: &[&str]) -> RecommendSignals {
     }
 }
 
-/// The eight live template IDs — the recommender must never return anything outside
+/// The ten live template IDs — the recommender must never return anything outside
 /// this set.
-const LIVE_TEMPLATES: [TemplateId; 8] = [
+const LIVE_TEMPLATES: [TemplateId; 10] = [
     TemplateId::Classic,
     TemplateId::SwissMinimal,
     TemplateId::Academic,
@@ -22,12 +22,14 @@ const LIVE_TEMPLATES: [TemplateId; 8] = [
     TemplateId::Throughline,
     TemplateId::Portrait,
     TemplateId::Lebenslauf,
+    TemplateId::Cadence,
+    TemplateId::Regent,
 ];
 
 #[test]
 fn recommender_never_returns_a_deleted_id() {
     // Exhaustive sweep over representative job signals.  Every result must be a
-    // member of the eight live templates — no deleted id (Modern et al.) may slip through.
+    // member of the ten live templates — no deleted id (Modern et al.) may slip through.
     let cases: &[(&str, &str, &[&str])] = &[
         ("Frontend Engineer", "mid", &["React", "TypeScript"]),
         ("Embedded Software Engineer", "mid", &["C++", "firmware"]),
