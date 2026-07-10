@@ -52,12 +52,16 @@ export interface BoardsContract {
  * - `skipped: "needs-company"` — ATS board bypassed because no company slug was supplied.
  * - `skipped: "needs-keys"` — key-backed board (the aggregator) bypassed because its
  *   API keys aren't configured; prompt the user to add them in Settings.
+ * - `truncated` — a paginated board kept a partial harvest after a mid-run page
+ *   failure (e.g. `"page 3 of 5 failed: HTTP 429"`); `count` is a partial tally,
+ *   not the full result set. Absent when the harvest ran to completion.
  */
 export interface BoardScrapeSummary {
   board: string;
   count: number;
   error?: string;
   skipped?: 'needs-login' | 'needs-company' | 'needs-keys';
+  truncated?: string;
 }
 
 export const BOARDS_CHANNELS = {

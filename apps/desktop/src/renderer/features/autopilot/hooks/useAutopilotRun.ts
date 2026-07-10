@@ -60,17 +60,27 @@ export function useAutopilotRun() {
   const handleRun = async (id: string) => {
     setRunStates({ [id]: 'scraping' });
     setStepLogs({ [id]: [] });
+    // Clear any stale failure banner from a prior run before this one resolves
+    // — otherwise a successful run after a failed one leaves the old error up.
+    setError(null);
     try {
-      // `autopilot_run` RESOLVES (not rejects) with an `{ error }` payload when a
-      // scrape fails or the id is unknown, so a resolved value is not proof of
-      // success — inspect it and route to the SAME error state the reject path
-      // below uses instead of falsely reporting 'done'.
+      // `autopilot_run` RESOLVES (not rejects) even when the run failed, so a
+      // resolved value is NOT proof of success — inspect it before reporting
+      // 'done'. Two failure shapes both route to the SAME error state + banner
+      // the reject path below uses:
+      //   • `{ error }`        — a scrape failure or unknown id (early Rust return).
+      //   • `status:'failed'`  — the run reached the record but zero boards
+      //     succeeded (the "success theater" case: found:0, no `error` key).
       const result = await runAutopilot.mutateAsync(id);
-      if (result.error) {
+      if (result.error || result.status === 'failed') {
         setRunStates({ [id]: 'error' });
-        setError(result.error);
+        setError(result.error ?? t('autopilot.wizard.allBoardsFailed'));
         return;
       }
+      // `completedWithErrors` (some boards failed, others returned jobs) and any
+      // unrecognized/future status stay a 'done' run — the durable partial-failure
+      // signal is the persisted per-run badge on the card (`ap.runStatus`),
+      // refreshed by this mutation's autopilot-list invalidation.
       setRunStates({ [id]: 'done' });
     } catch (err) {
       setRunStates({ [id]: 'error' });

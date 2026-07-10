@@ -1334,6 +1334,7 @@
       "new": "Neu",
       "applied": "Beworben",
       "failed": "Fehlgeschlagen",
+      "completedWithErrors": "Teilweise Ergebnisse",
       "interrupted": "Unterbrochen"
     },
     "card": {
@@ -1594,6 +1595,7 @@
         "alsoRunsAt": "Läuft um {{first}} und {{second}}"
       },
       "runFailed": "Ausführung fehlgeschlagen",
+      "allBoardsFailed": "Keine Ergebnisse — keine Jobbörse hat diesen Lauf abgeschlossen.",
       "createFailed": "Autopilot konnte nicht erstellt werden",
       "updateFailed": "Autopilot konnte nicht aktualisiert werden",
       "running": "Läuft…",

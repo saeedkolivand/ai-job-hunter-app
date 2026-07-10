@@ -143,6 +143,7 @@ fn test_scrape_context_creation() {
         signal: tokio_util::sync::CancellationToken::new(),
         on_progress: None,
         on_item: None,
+        on_truncation: None,
     };
     assert!(!ctx.signal.is_cancelled());
 }
@@ -153,6 +154,7 @@ fn test_scrape_context_with_callbacks() {
         signal: tokio_util::sync::CancellationToken::new(),
         on_progress: Some(Box::new(|_| {})),
         on_item: Some(Box::new(|_| {})),
+        on_truncation: None,
     };
     assert!(ctx.on_progress.is_some());
     assert!(ctx.on_item.is_some());

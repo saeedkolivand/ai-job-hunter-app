@@ -156,6 +156,90 @@ fn legacy_auto_apply_records_load_and_strip_dead_keys_on_save() {
 }
 
 #[test]
+fn load_drops_only_the_unparseable_record_not_the_whole_file() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
+
+    // One good record + one record whose `runStatus` is a variant this build's
+    // `RunStatus` enum doesn't know (e.g. a downgrade after a future release
+    // added one) — before the per-record tolerant load, ANY record failing
+    // `Vec<Autopilot>` deserialization failed the WHOLE file parse, producing
+    // an empty map; a later `save()` would then silently overwrite the file
+    // and lose every other (perfectly valid) record too.
+    let mixed = r#"[
+        {
+            "_id": "ap-good",
+            "name": "Good AP",
+            "status": "active",
+            "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+            "filter": { "minMatchScore": 50.0 },
+            "schedule": "daily",
+            "totalFound": 0,
+            "totalApplied": 0,
+            "createdAt": 1,
+            "updatedAt": 1
+        },
+        {
+            "_id": "ap-future",
+            "name": "Future AP",
+            "status": "active",
+            "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+            "filter": { "minMatchScore": 50.0 },
+            "schedule": "daily",
+            "runStatus": "someFutureStatus",
+            "totalFound": 0,
+            "totalApplied": 0,
+            "createdAt": 1,
+            "updatedAt": 1
+        }
+    ]"#;
+    std::fs::write(dir.join("autopilots.json"), mixed).unwrap();
+
+    let store = AutopilotStore::new(&dir);
+    let list = store.list();
+    assert_eq!(
+        list.len(),
+        1,
+        "the good record loads; only the unparseable one is dropped"
+    );
+    assert_eq!(list[0].id, "ap-good");
+
+    // A post-tolerant-load save must not lose data on disk. `create()` reads
+    // via the same `load()` (tolerant-parsed, already dropped "ap-future") and
+    // then `save()`s the FULL in-memory map back — if that save ever wrote only
+    // the newly-touched record instead of the whole map, "ap-good" would
+    // silently vanish from disk the moment anything else was created.
+    store.create(serde_json::json!({
+        "name": "New AP",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 50.0 },
+        "schedule": "manual",
+    }));
+
+    // A FRESH store over the same dir has an empty cache, so its `list()` call
+    // re-reads and re-parses what actually landed on disk — not the in-memory
+    // cache the original `store` still holds. This is the real proof that the
+    // save after a tolerant load didn't drop data.
+    let fresh_store = AutopilotStore::new(&dir);
+    let fresh_list = fresh_store.list();
+    assert_eq!(
+        fresh_list.len(),
+        2,
+        "both the surviving original record and the newly created one must be on disk"
+    );
+    assert!(
+        fresh_list.iter().any(|a| a.id == "ap-good"),
+        "the original good record must survive a post-tolerant-load save, not just the in-memory read"
+    );
+    assert!(
+        fresh_list.iter().any(|a| a.name == "New AP"),
+        "the newly created record must also be present"
+    );
+}
+
+#[test]
 fn test_u32_field_in_range_rejects_out_of_range_and_non_numeric() {
     let v = serde_json::json!({
         "good": 23,
@@ -371,10 +455,283 @@ fn record_run_marks_the_run_completed() {
     }));
     store.set_run_status(&ap.id, RunStatus::InProgress);
 
-    store.record_run(&ap.id, 3, 0, Vec::new());
+    // A run with no per-board problems (empty summaries) records a clean
+    // `Completed` — preserving the pre-summaries behavior.
+    store.record_run(&ap.id, 3, 0, Vec::new(), Vec::new());
     assert_eq!(
         store.get(&ap.id).unwrap().run_status,
         Some(RunStatus::Completed)
+    );
+}
+
+/// Build a per-board summary for the status-derivation tests. `count` is only
+/// nonzero for the "succeeded" cases so a reader can tell them apart.
+fn board_summary(
+    board: &str,
+    count: usize,
+    error: Option<&str>,
+    skipped: Option<&str>,
+    truncated: Option<&str>,
+) -> crate::scraping::BoardScrapeSummary {
+    crate::scraping::BoardScrapeSummary {
+        board: board.into(),
+        count,
+        error: error.map(String::from),
+        skipped: skipped.map(String::from),
+        truncated: truncated.map(String::from),
+    }
+}
+
+#[test]
+fn derive_run_status_maps_summaries_to_honest_outcome() {
+    // No boards reported anything → nothing failed, so a clean completion.
+    assert_eq!(derive_run_status(&[]), RunStatus::Completed);
+
+    // Every board returned results, no errors/truncation → Completed.
+    assert_eq!(
+        derive_run_status(&[
+            board_summary("greenhouse", 4, None, None, None),
+            board_summary("lever", 2, None, None, None),
+        ]),
+        RunStatus::Completed
+    );
+
+    // A board that RAN clean and genuinely found zero (no error, no skip, no
+    // truncation) is a real "no jobs today", not a failure — Completed, not
+    // Failed. This is the core case the audit called out: "no jobs matched"
+    // must stay distinguishable from "everything failed".
+    assert_eq!(
+        derive_run_status(&[board_summary("greenhouse", 0, None, None, None)]),
+        RunStatus::Completed
+    );
+
+    // At least one succeeded + at least one errored → CompletedWithErrors.
+    assert_eq!(
+        derive_run_status(&[
+            board_summary("greenhouse", 4, None, None, None),
+            board_summary("aggregator", 0, Some("429 Too Many Requests"), None, None),
+        ]),
+        RunStatus::CompletedWithErrors
+    );
+
+    // A partial (truncated) harvest is a partial success → CompletedWithErrors,
+    // even when it is the ONLY board.
+    assert_eq!(
+        derive_run_status(&[board_summary(
+            "themuse",
+            10,
+            None,
+            None,
+            Some("page 2 of 5 failed: HTTP 429"),
+        )]),
+        RunStatus::CompletedWithErrors
+    );
+
+    // Zero boards succeeded (all errored) → Failed.
+    assert_eq!(
+        derive_run_status(&[
+            board_summary(
+                "aggregator",
+                0,
+                Some("credential store unavailable"),
+                None,
+                None
+            ),
+            board_summary("linkedin", 0, Some("blocked"), None, None),
+        ]),
+        RunStatus::Failed
+    );
+
+    // Zero boards ran because all were skipped → Failed (nothing actually ran,
+    // so the run produced nothing — an honest failure, not a clean zero).
+    assert_eq!(
+        derive_run_status(&[board_summary(
+            "aggregator",
+            0,
+            None,
+            Some("needs-keys"),
+            None
+        )]),
+        RunStatus::Failed
+    );
+
+    // A skip alongside a real success does NOT downgrade — a skipped board is an
+    // expected no-op, not a failure of a board that ran.
+    assert_eq!(
+        derive_run_status(&[
+            board_summary("greenhouse", 3, None, None, None),
+            board_summary("linkedin", 0, None, Some("needs-login"), None),
+        ]),
+        RunStatus::Completed
+    );
+}
+
+#[test]
+fn record_run_persists_summaries_and_derives_status() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let ap = store.create(serde_json::json!({
+        "name": "ap",
+        "target": { "board": "aggregator", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+    }));
+
+    // One board delivered, one errored → the record must say CompletedWithErrors
+    // and keep BOTH summaries so the UI can explain the shortfall later.
+    let summaries = vec![
+        board_summary("greenhouse", 2, None, None, None),
+        board_summary("aggregator", 0, Some("429 Too Many Requests"), None, None),
+    ];
+    store.record_run(&ap.id, 2, 0, Vec::new(), summaries);
+
+    let reloaded = store.get(&ap.id).unwrap();
+    assert_eq!(reloaded.run_status, Some(RunStatus::CompletedWithErrors));
+    assert_eq!(reloaded.last_run_summaries.len(), 2);
+    assert_eq!(
+        reloaded.last_run_summaries[1].error.as_deref(),
+        Some("429 Too Many Requests")
+    );
+}
+
+#[test]
+fn fail_run_without_summaries_marks_failed_and_clears_stale_summaries() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let ap = store.create(serde_json::json!({
+        "name": "ap",
+        "target": { "board": "aggregator", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+    }));
+
+    // Seed a prior SUCCESSFUL run — non-empty summaries + a Completed status —
+    // the exact stale state `fail_run_without_summaries` must clear so a future
+    // chip strip doesn't render the PRIOR run's per-board data as if it
+    // belonged to the run that's about to fail outright.
+    let summaries = vec![board_summary("greenhouse", 2, None, None, None)];
+    store.record_run(&ap.id, 2, 0, Vec::new(), summaries);
+    let seeded = store.get(&ap.id).unwrap();
+    assert_eq!(seeded.run_status, Some(RunStatus::Completed));
+    assert_eq!(seeded.last_run_summaries.len(), 1);
+
+    // An outright scrape error never reaches `record_run` (no fresh summaries
+    // to report) — `fail_run_without_summaries` is the path taken instead.
+    store.fail_run_without_summaries(&ap.id);
+
+    let reloaded = store.get(&ap.id).unwrap();
+    assert_eq!(
+        reloaded.run_status,
+        Some(RunStatus::Failed),
+        "an outright scrape error must mark the run Failed"
+    );
+    assert!(
+        reloaded.last_run_summaries.is_empty(),
+        "the prior run's summaries must be cleared, not left stale on a Failed record"
+    );
+}
+
+#[test]
+fn fail_run_without_summaries_unknown_id_is_a_no_op() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+
+    // Unknown id — must not panic (mirrors the "missing" no-op convention used
+    // by `record_run`/`set_run_status` elsewhere in this file).
+    store.fail_run_without_summaries("missing");
+    assert!(
+        store.list().is_empty(),
+        "an unknown id must not create or otherwise mutate any record"
+    );
+}
+
+#[test]
+fn set_run_status_clearing_summaries_completed_clears_stale_summaries() {
+    // Mirrors `fail_run_without_summaries_marks_failed_and_clears_stale_summaries`
+    // for the OTHER caller of `set_run_status_clearing_summaries`: a user-cancelled
+    // run, which sets `Completed` (not `Failed`) but likewise never reaches
+    // `record_run`, so it must clear the PRIOR run's summaries too.
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let ap = store.create(serde_json::json!({
+        "name": "ap",
+        "target": { "board": "aggregator", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+    }));
+
+    // Seed a prior successful run with real summaries — the stale state a
+    // cancelled run must not inherit.
+    let summaries = vec![board_summary("greenhouse", 2, None, None, None)];
+    store.record_run(&ap.id, 2, 0, Vec::new(), summaries);
+    let seeded = store.get(&ap.id).unwrap();
+    assert_eq!(seeded.run_status, Some(RunStatus::Completed));
+    assert_eq!(seeded.last_run_summaries.len(), 1);
+
+    // A cancelled run (never reaches `record_run`) sets Completed via the
+    // clearing variant, same as the autopilot_run command's cancel branch.
+    store.set_run_status_clearing_summaries(&ap.id, RunStatus::Completed);
+
+    let reloaded = store.get(&ap.id).unwrap();
+    assert_eq!(reloaded.run_status, Some(RunStatus::Completed));
+    assert!(
+        reloaded.last_run_summaries.is_empty(),
+        "a cancelled run must clear the PRIOR run's summaries, not leave them stale"
+    );
+}
+
+#[test]
+fn autopilot_record_without_summaries_field_deserializes_to_empty() {
+    // A record persisted before `lastRunSummaries` / the new `runStatus` variant
+    // existed must still load — `#[serde(default)]` fills the missing field with
+    // an empty list rather than failing the whole store read.
+    let legacy = serde_json::json!({
+        "_id": "legacy-1",
+        "name": "Legacy",
+        "status": "active",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+        "totalFound": 0,
+        "totalApplied": 0,
+        "createdAt": 1,
+        "updatedAt": 1
+        // no runStatus, no foundJobs, no lastRunSummaries
+    });
+    let ap: Autopilot = serde_json::from_value(legacy).expect("legacy record must deserialize");
+    assert!(ap.last_run_summaries.is_empty());
+    assert_eq!(ap.run_status, None);
+}
+
+#[test]
+fn board_scrape_summary_round_trips_through_the_run_record() {
+    // The run record persists `BoardScrapeSummary` (Serialize + Deserialize), so
+    // a summary with every optional set must survive a serialize→deserialize
+    // cycle unchanged — omitted `error`/`skipped` come back as `None`.
+    let original = board_summary(
+        "themuse",
+        7,
+        None,
+        None,
+        Some("page 3 of 5 failed: HTTP 429"),
+    );
+    let json = serde_json::to_string(&original).unwrap();
+    let back: crate::scraping::BoardScrapeSummary = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.board, "themuse");
+    assert_eq!(back.count, 7);
+    assert_eq!(back.error, None);
+    assert_eq!(back.skipped, None);
+    assert_eq!(
+        back.truncated.as_deref(),
+        Some("page 3 of 5 failed: HTTP 429")
     );
 }
 
@@ -790,7 +1147,7 @@ fn record_run_new_count_reflects_deduped_batch() {
     let dup_b = found_job("https://jobs.example.com/eng-1#frag", 2);
     let other = found_job("https://jobs.example.com/eng-2", 3);
 
-    let new_count = store.record_run(&id, 3, 0, vec![dup_a, dup_b, other]);
+    let new_count = store.record_run(&id, 3, 0, vec![dup_a, dup_b, other], Vec::new());
 
     assert_eq!(
         new_count, 2,
@@ -814,7 +1171,13 @@ fn record_run_reports_only_newly_surfaced_jobs() {
 
     // First run — both URLs are brand new → drives a "2 new jobs" notification.
     assert_eq!(
-        store.record_run(&id, 2, 0, vec![found_job("u1", 1), found_job("u2", 2)]),
+        store.record_run(
+            &id,
+            2,
+            0,
+            vec![found_job("u1", 1), found_job("u2", 2)],
+            Vec::new()
+        ),
         2
     );
     // Re-run with the two seen URLs + one unseen → only the unseen counts.
@@ -823,15 +1186,19 @@ fn record_run_reports_only_newly_surfaced_jobs() {
             &id,
             3,
             0,
-            vec![found_job("u1", 9), found_job("u2", 9), found_job("u3", 9)]
+            vec![found_job("u1", 9), found_job("u2", 9), found_job("u3", 9)],
+            Vec::new()
         ),
         1
     );
     // Nothing unseen → no notification.
-    assert_eq!(store.record_run(&id, 3, 0, vec![found_job("u1", 9)]), 0);
+    assert_eq!(
+        store.record_run(&id, 3, 0, vec![found_job("u1", 9)], Vec::new()),
+        0
+    );
     // Unknown autopilot → 0 (no panic).
     assert_eq!(
-        store.record_run("missing", 5, 0, vec![found_job("x", 1)]),
+        store.record_run("missing", 5, 0, vec![found_job("x", 1)], Vec::new()),
         0
     );
 }
@@ -1009,6 +1376,7 @@ fn base_autopilot() -> Autopilot {
         total_applied: 0,
         found_jobs: Vec::new(),
         run_status: None,
+        last_run_summaries: Vec::new(),
         last_run_at: None,
         created_at: now,
         updated_at: now,
