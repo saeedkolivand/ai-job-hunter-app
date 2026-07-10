@@ -1,8 +1,8 @@
 # Export Templates — the resume/cover-letter rendering contract
 
-Last updated: 2026-06-11
+Last updated: 2026-07-10
 
-The normative reference for the document export system: the nine templates, the
+The normative reference for the document export system: the twelve templates, the
 single PDF engine, and the cross-cutting rules (page size, ATS mode, links, fonts,
 validation). This is a **contract** — behavior described here is locked by tests;
 changing it means changing the tests too.
@@ -79,32 +79,83 @@ gate in `markdown.roundtrip.test.ts`.
 
 ---
 
-## The nine templates
+## The twelve templates
 
 `TemplateId` (kebab-case on the wire) in `export/types.rs`. Unknown / removed IDs
-(e.g. stale frontend sending `"two-column"` or `"refined-executive"`) are silently
-mapped to `Classic` via the custom `Deserialize` impl — a stale frontend id
-degrades gracefully rather than breaking export.
+(e.g. a saved `"modern"`, or a stale frontend sending `"two-column"` /
+`"refined-executive"`) are silently mapped to `Classic` via the custom `Deserialize`
+impl — a stale id degrades gracefully rather than breaking export. `"modern"`
+deserializes to `Classic` **forever** (the template was removed; its palette is now
+reachable via the Document accent — see [ADR 0007](adr/0007-document-color-is-a-knob-not-a-template.md)).
 
-| Id              | Name          | Layout         | Character                                | Best for                                            |
-| --------------- | ------------- | -------------- | ---------------------------------------- | --------------------------------------------------- |
-| `classic`       | ATS Classic   | Single column  | Black, no color, underlined headings     | Maximum ATS safety; finance / legal / public sector |
-| `modern`        | Modern        | Single column  | Navy ruled headings                      | Software / engineering                              |
-| `swiss-minimal` | Swiss Minimal | Single column  | Geometric sans, minimal                  | Design-adjacent / product                           |
-| `academic`      | Academic      | Single column  | Full serif, formal                       | Academia / research                                 |
-| `atelier`       | Atelier       | **Two column** | Shaded sidebar, premium                  | Design; skills-forward                              |
-| `meridian`      | Meridian      | Single column  | Full-width tinted header band, airy body | Creative / modern professional                      |
-| `throughline`   | Throughline   | Single column  | Timeline spine for experience/projects   | Engineering / product; tenure-story emphasis        |
-| `portrait`      | Portrait      | **Two column** | Circular photo top-left, accent keyline  | European market; personal brand                     |
-| `lebenslauf`    | Lebenslauf    | Single column  | DACH DIN-style tabular, photo top-right  | German-speaking market                              |
+The `Tier` column is `TemplateTier` (`ats` | `design`) — see [Template tier](#template-tier--ats-mode-toggle).
+Character one-liners are descriptive; the authoritative palette/font/size literals
+live in each `Template::*` constructor in `export/templates/mod.rs`.
 
-`classic`, `modern`, `swiss-minimal`, `academic` are the original ported set.
-`atelier`, `meridian`, `throughline`, `portrait`, `lebenslauf` are premium additions.
+| Id              | Name          | Tier   | Layout         | Character                                                                                   | Best for                                     |
+| --------------- | ------------- | ------ | -------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `classic`       | ATS Classic   | ats    | Single column  | Black, no color, ruled headings; plain links                                                | Maximum ATS safety; finance / legal / public |
+| `swiss-minimal` | Swiss Minimal | ats    | Single column  | Manrope geometric sans, red accent, generous whitespace                                     | Design-adjacent / product                    |
+| `academic`      | Academic      | ats    | Single column  | Full Source Serif 4, forest-green ruled headings, formal                                    | Academia / research                          |
+| `meridian`      | Meridian      | ats    | Single column  | Full-width tinted header band, copper accent, airy body                                     | Creative / modern professional               |
+| `throughline`   | Throughline   | ats    | Single column  | Vertical timeline spine per experience/project entry                                        | Engineering / product; tenure-story emphasis |
+| `cadence`       | Cadence       | ats    | Single column  | Inter, 28pt name, letter-spaced all-caps ruled headings, underlined links, blue-grey accent | Modern & parser-safe; software / product     |
+| `regent`        | Regent        | ats    | Single column  | Source Serif 4, burgundy small-caps headings, rose rule, first-line-indent letter           | Executive / leadership roles                 |
+| `atelier`       | Atelier       | design | **Two column** | Shaded sidebar rail, slate-indigo accent, serif headings                                    | Design; skills-forward                       |
+| `portrait`      | Portrait      | design | **Two column** | Circular photo top-left, name/title right, slate-teal keyline                               | European market; personal brand              |
+| `lebenslauf`    | Lebenslauf    | design | Single column  | DACH DIN-style tabular, photo top-right, formal A4                                          | German-speaking market                       |
+| `aria`          | Aria          | design | **Two column** | Untinted RIGHT sidebar, rectangular top-right photo, 30pt Manrope name, slate accent        | Minimalist personal brand                    |
+| `saffron`       | Saffron       | design | **Two column** | Tinted LEFT sidebar, circular ringed photo, terracotta accent, serif small-caps headings    | Warm personal brand                          |
+
+Seven **ATS-tier** single-column templates (`classic`, `swiss-minimal`, `academic`,
+`meridian`, `throughline`, `cadence`, `regent`) and five **design-tier** templates
+(`atelier`, `portrait`, `lebenslauf`, `aria`, `saffron` — photo and/or two-column).
+`cadence` and `regent` render through the parametric `single_column.typ` (no bespoke
+`.typ`); `aria` and `saffron` each have a bespoke `.typ`.
 
 Adding a template is **localized and additive**: one `TemplateId` variant + one
-`Template::*` constructor in `export/templates/mod.rs` + one `.typ` source under
-`export/typst_engine/templates/`. The backends, validation, and locale logic
-consume it unchanged.
+`Template::*` constructor (with its `tier`) in `export/templates/mod.rs` + a `.typ`
+source (or a parametric-`single_column.typ` route). The backends, validation, and
+locale logic consume it unchanged.
+
+### Template tier & ATS-mode toggle
+
+`TemplateTier { Ats, Design }` (`export/templates/mod.rs`) is **metadata only — no
+render behavior**. It does two things:
+
+- **Groups the gallery.** The picker splits templates into ATS-Safe and Design
+  sections with a per-card badge; the frontend registry mirrors the Rust `tier`
+  and `isDesignTier()` (`renderer/lib/generate/templates/templates.ts`) is the gate.
+- **Picks the ATS-toggle set.** The ATS-mode toggle (and the recommendation
+  auto-apply) surfaces for **design-tier** templates. This replaced the old
+  `isTwoColumnTemplate` gate — the fix that makes the **photo-bearing single-column
+  `Lebenslauf`** (design tier, not two-column) correctly surface the toggle and drop
+  its photo in ATS mode (`lebenslauf.typ` already honors `is-ats`).
+
+Turning ATS mode on for a design-tier template **linearizes** it (two columns
+collapse to one, photo dropped) — the honesty the tier advertises. ATS-tier
+templates are already parser-safe and don't need the toggle.
+
+### Document accent (per-export color knob)
+
+A **Document accent** is an optional per-export hex (`#RRGGBB` or bare `RRGGBB`) that
+recolors the chosen template's accent — the seam that replaced the removed `Modern`
+"same layout, different color" template. It is passed as `accent?` on the export
+request, is **not persisted**, and **never reads `ThemePrefs`** (distinct from the
+app-UI accent of [ADR 0004](adr/0004-single-source-user-customizable-accent-color.md)).
+Omitted (the default) leaves the template palette untouched; a malformed value is
+ignored. One validator — `typst_engine::normalise_accent` — backs every render path:
+the résumé PDF threads the hex through `RenderOpts.accent`, while the cover-letter and
+DOCX paths recolor via `Template::with_accent_override` (whose `parse_accent_rgb`
+delegates to the same `normalise_accent`), so PDF and DOCX never disagree on validity.
+
+> **IMPORTANT — the accent overrides each template's accent _role_, so the recolored
+> surface legitimately differs per template family and per format.** On single-column
+> templates the accent is chiefly the **link** color; on premium templates it's
+> **headings / bands**. Across formats, DOCX applies the override to **emphasis runs**
+> (`emphasis_color`). The same hex therefore lands on different surfaces depending on
+> template and format — this is intended, not drift. (DOCX link-alignment with the
+> accent is a follow-up candidate.)
 
 ---
 
@@ -139,12 +190,16 @@ conservative fields.
 
 ## Two-column layout
 
-`Atelier` and `Portrait` are the two two-column templates. Section → column
-assignment is the canonical `theme::placement_for` decision (single source of
-truth — not a per-template string list):
+`Atelier`, `Portrait`, `Aria`, and `Saffron` are the two-column templates.
+Section → column assignment is the canonical `theme::placement_for(template_id,
+section)` decision (single source of truth — not a per-template string list). It is
+**template-aware**: the default table plus per-template overrides.
 
-- **Sidebar**: Skills, Education, Languages, Certifications.
-- **Main**: everything else (Summary, Experience, Projects, custom sections).
+- **Default sidebar**: Skills, Education, Languages, Certifications.
+- **Default main**: everything else (Summary, Experience, Projects, custom sections).
+- **Overrides** (one centralized id-aware function): **Aria** pulls Education back
+  into the main column; **Saffron** pulls Certifications into the main column.
+  `Atelier` / `Portrait` use the default table unchanged.
 
 `theme::is_two_column(id)` is the authoritative boolean gate.
 
@@ -158,14 +213,17 @@ The header (name + contact) always spans the full width above the columns.
 
 ---
 
-## Cover-letter PDF (`letter.typ`)
+## Cover-letter PDF
 
 `render_letter_pdf` in `typst_engine/engine.rs` compiles a finished cover-letter
-text through `letter.typ`. The letter is **not** template-specific; instead it
-**inherits visual styling from the chosen resume template** via
-`letter_style_from_template` (in `typst_engine/letter.rs`), deriving accent
-color, body/name fonts, and font sizes from the resume `Template` registry entry.
-It is **market-aware**: `letter::conventions` (from `locale/letter.rs`) provides
+text through the `.typ` source chosen by the request's **Letter layout**
+(`letter_source` dispatches `Classic` → `letter.typ`, `Refined` →
+`letter_refined.typ`, `Banded` → `letter_banded.typ`). The letter is **not**
+template-specific; instead it **inherits visual styling from the chosen résumé
+template** via `letter_style_from_template` / `style_from_template` (in
+`typst_engine/letter.rs`), whose `LetterStyle` carries the accent color, body/name
+fonts, and font sizes from the résumé `Template` registry entry. It is
+**market-aware**: `letter::conventions` (from `locale/letter.rs`) provides
 `LetterMarketConventions` (date placement, recipient block position, sign-off
 style) derived from the job ad's detected locale.
 
@@ -174,6 +232,39 @@ style) derived from the job ad's detected locale.
 signoff / signature). The model is serialised to JSON and injected via the Typst
 virtual `data.json` — no user content is ever concatenated into Typst markup
 (injection-safe).
+
+### Letter layouts (`classic` / `refined` / `banded`)
+
+`LetterLayout` (`export/types.rs`, wire field `letterLayoutId`) selects the letter's
+**arrangement only** — it is orthogonal to the résumé template. Three layouts:
+
+| Layout    | Source               | Arrangement                                                                                                                                                   |
+| --------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `classic` | `letter.typ`         | The original single-letter arrangement. Default — a request omitting the field is byte-identical.                                                             |
+| `refined` | `letter_refined.typ` | Olivia-Wilson minimalist: large sans name + role top-left, right-aligned contact, rule, always-visible job-reference line (from `subject`), spaced signature. |
+| `banded`  | `letter_banded.typ`  | Belinda-Davidson: angled pale accent band across page 1 (decorative, behind text), serif small-caps name, stacked right contact, short rule footer.           |
+
+**Inheritance rule.** A layout owns arrangement; the **palette and fonts always
+inherit** from the résumé template (via `LetterStyle`). A layout can never introduce
+its own color story — pick `Regent` and any layout renders in burgundy.
+
+**Conventions own semantics.** Market conventions (`data.opts` from
+`LetterMarketConventions`) own the WHAT/WHERE — date position, subject line — and win
+where they conflict with a layout's arrangement (e.g. DE DIN keeps the date top-right
+in every layout). The governing rule: **letter layouts gate structural elements on
+`data.opts` conventions, never on the layout id** — composition and semantics stay
+separated, so a new layout can't silently diverge a market convention.
+
+**DOCX approximates the PDF layouts** (`export/docx/mod.rs`). `Classic` keeps the
+original, unmodified DOCX renderer (byte-identical). `Refined` / `Banded` share a new
+DOCX path that approximates the vector design: **`Banded`'s angled polygon becomes
+flat accent-tinted paragraph shading** on the name, **PDF small-caps become
+uppercase**, and the contact block is right-aligned with a bottom-border footer rule.
+
+**Regent small-caps caveat (PDF).** `Regent` and `Saffron` wrap headings in Typst
+`smallcaps(…)`, but the bundled **Source Serif 4 lacks the `smcp` OpenType feature**,
+so PDF small-caps are currently **visually inert** (headings render in regular case,
+extraction-safe) pending a font-asset swap. DOCX renders them as uppercase.
 
 ### Cover-letter template previews (AI-Generate UI)
 
@@ -186,7 +277,7 @@ offline by the `generate_cover_template_previews` test (ignored, run via
 Each preview:
 
 - Renders a sample cover letter (US locale, English, reusing `LETTER_FIXTURE_US`)
-  through the nine resume templates via the exact same `ResumeWorld` + Typst
+  through every résumé template via the exact same `ResumeWorld` + Typst
   compilation path as `render_letter_pdf` production code.
 - Applies the template's visual style (accent, fonts, name_pt/body_pt) via
   `letter_style_from_template`.
@@ -200,6 +291,17 @@ Each preview:
 The test is a **hard-wall isolation**: `typst` and `typst_svg` crates stay
 confined to the test function; no typst types appear in production code paths.
 `typst-svg` is a dev-dependency, never shipped.
+
+**Dev note — preview-regen debt.** The two preview generators are `#[ignore]`
+libtest fns (`generate_templates_showcase_banner` and
+`generate_cover_template_previews` in `typst_engine/test.rs`) and **cannot run on
+the current dev host** (`cargo test` aborts with `STATUS_ENTRYPOINT_NOT_FOUND`). As
+a result the preview assets are **stale/incomplete**: `cadence`, `regent`, `aria`,
+and `saffron` have no `.svg` yet (résumé + cover), the migrated `classic` preview
+still reflects the pre-merge `classic.typ`, and the résumé showcase banner
+(`docs/assets/templates-showcase.png`) still shows the old nine. **Regenerate on a
+working host or in CI and commit** the refreshed `template-previews/`,
+`cover-template-previews/`, and the showcase banner.
 
 ---
 
@@ -235,9 +337,10 @@ the preview, and any future export changes are reflected immediately.
 
 ## Candidate photo
 
-The `ContactProfile.photo` field carries an optional candidate photo used by
-`Portrait` and `Lebenslauf`. **Only `data:image/<mime>;base64,<payload>` URIs are
-accepted.** File paths are rejected unconditionally by `resolve_photo` in
+The `ContactProfile.photo` field carries an optional candidate photo used by the
+photo templates — `Portrait`, `Lebenslauf`, `Aria`, and `Saffron` (all design tier;
+the photo is dropped when ATS mode linearizes them). **Only
+`data:image/<mime>;base64,<payload>` URIs are accepted.** File paths are rejected unconditionally by `resolve_photo` in
 `typst_engine/photo.rs` — there is no path-traversal surface from IPC.
 
 Additional safety measures in `photo.rs`:
@@ -288,16 +391,18 @@ the relationships part). The visible label is shown, never the raw URL.
 Four font families (11 faces total) are vendored and embedded via `include_bytes!`
 in the Typst world (`typst_engine/world.rs`):
 
-| Bundled family                      | Used by                                                 | License |
-| ----------------------------------- | ------------------------------------------------------- | ------- |
-| Carlito (Calibri-metric-compatible) | `classic`, `modern`, letter + `lebenslauf` (body)       | OFL     |
-| Inter                               | `portrait`, `meridian`, `atelier`; broad Latin/Cyrillic | OFL     |
-| Source Serif 4                      | `atelier` (editorial / academic serif)                  | OFL     |
-| Manrope                             | Swiss Minimal template                                  | OFL     |
+| Bundled family                      | Used by (representative)                                                   | License |
+| ----------------------------------- | -------------------------------------------------------------------------- | ------- |
+| Carlito (Calibri-metric-compatible) | `classic`, `lebenslauf`, `throughline` (body), letter fallback             | OFL     |
+| Inter                               | `meridian`, `portrait`, `cadence`, and design bodies; broad Latin/Cyrillic | OFL     |
+| Source Serif 4                      | `academic`, `regent`, and serif headings (`atelier` / `saffron`)           | OFL     |
+| Manrope                             | `swiss-minimal`, and `throughline` / `aria` name + headings                | OFL     |
 
-Carlito provides Calibri-metric compatibility so exported PDFs measure identically to
-the DOCX Calibri fallback. Cyrillic coverage comes from **Inter** (no Noto face is
-bundled). The active family per template is selected by the theme's `font_body`.
+The authoritative per-template mapping is each template's `fonts: TemplateFonts`
+(name / heading / body roles) in `export/templates/mod.rs` — the table above is
+representative, not exhaustive. Carlito provides Calibri-metric compatibility so
+exported PDFs measure identically to the DOCX Calibri fallback. Cyrillic coverage
+comes from **Inter** (no Noto face is bundled).
 
 **CJK (zh/ja/ko) limitation:** the bundled fonts do not include CJK glyphs; see
 [Output languages](#output-languages-11-supported) above.
@@ -326,6 +431,20 @@ printpdf-era geometric checks (`empty_anchor_link`, `text_baseline_ys`) have bee
 removed.
 
 The report (`ok`, `atsMode`, `issues`, `fixed`) rides back on the export result.
+
+---
+
+## Accessibility & tagged PDF
+
+All PDF exports carry a **baseline tag tree** — typst-pdf 0.15 (the bundled version)
+defaults `PdfOptions.tagged = true`, so structured tagging is automatic at render time.
+This enables screen-reader navigation and text extraction.
+
+A **PDF/UA-1-validated** structure (certified accessible document format, higher
+standard) is a future goal — currently blocked: four templates place link-bearing
+contact blocks in page backgrounds (a PDF/UA compliance violation), which the spike
+found requires a redesign of those templates' header layout before validation is
+possible. See the PDF/UA spike verdict for details.
 
 ---
 
