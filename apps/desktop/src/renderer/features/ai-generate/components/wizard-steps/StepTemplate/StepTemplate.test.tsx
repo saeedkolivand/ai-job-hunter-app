@@ -318,6 +318,67 @@ describe('StepTemplate', () => {
     expect(onAccentChange).toHaveBeenCalledWith('#1B3A5C');
   });
 
+  // ── letter layout picker (cover-only) ───────────────────────────────────────
+
+  const letterOption = (id: string) => `${TEST_IDS.generation.letterLayoutOption}-${id}`;
+
+  it('shows the letter layout picker in cover mode but not in résumé mode', () => {
+    const { rerender } = render(
+      <StepTemplate
+        templateId="classic"
+        atsMode={false}
+        onTemplateChange={onTemplateChange}
+        onAtsModeChange={onAtsModeChange}
+        target="cover"
+        onLetterLayoutChange={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId(letterOption('classic'))).toBeInTheDocument();
+
+    rerender(
+      <StepTemplate
+        templateId="classic"
+        atsMode={false}
+        onTemplateChange={onTemplateChange}
+        onAtsModeChange={onAtsModeChange}
+        target="resume"
+        onLetterLayoutChange={vi.fn()}
+      />
+    );
+    expect(screen.queryByTestId(letterOption('classic'))).not.toBeInTheDocument();
+  });
+
+  it("also shows the letter layout picker for target='both' — the primary flow produces a cover letter too", () => {
+    render(
+      <StepTemplate
+        templateId="classic"
+        atsMode={false}
+        onTemplateChange={onTemplateChange}
+        onAtsModeChange={onAtsModeChange}
+        target="both"
+        onLetterLayoutChange={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId(letterOption('classic'))).toBeInTheDocument();
+  });
+
+  it('forwards a layout pick to onLetterLayoutChange in cover mode', async () => {
+    const user = userEvent.setup();
+    const onLetterLayoutChange = vi.fn();
+    render(
+      <StepTemplate
+        templateId="classic"
+        atsMode={false}
+        onTemplateChange={onTemplateChange}
+        onAtsModeChange={onAtsModeChange}
+        target="cover"
+        onLetterLayoutChange={onLetterLayoutChange}
+      />
+    );
+    await user.click(screen.getByTestId(letterOption('banded')));
+    expect(onLetterLayoutChange).toHaveBeenCalledWith('banded');
+  });
+
   // ── tier grouping + badges ──────────────────────────────────────────────────
 
   const renderStep = (props: Partial<Parameters<typeof StepTemplate>[0]> = {}) =>

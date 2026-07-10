@@ -1237,6 +1237,13 @@
     "documentAccentTeal": "Petrol",
     "documentAccentCopper": "Kupfer",
     "documentAccentSteel": "Stahlblau",
+    "letterLayout": "Anschreiben-Layout",
+    "letterLayoutClassic": "Klassisch",
+    "letterLayoutClassicDesc": "Die ursprüngliche einspaltige Anordnung.",
+    "letterLayoutRefined": "Reduziert",
+    "letterLayoutRefinedDesc": "Minimalistisch — Name und Rolle oben, eine Referenzzeile, luftige Abstände.",
+    "letterLayoutBanded": "Akzentband",
+    "letterLayoutBandedDesc": "Ein dezentes Akzentband am oberen Rand der ersten Seite.",
     "wizard": {
       "steps": {
         "0": "Was erstellen",

@@ -4,7 +4,7 @@
 //! ResumeWorld hard-wall.
 
 use crate::export::templates::Template;
-use crate::export::types::TemplateId;
+use crate::export::types::{LetterLayout, TemplateId};
 use crate::export::typst_engine::{
     render_letter_pdf, render_letter_svg_pages, render_pdf, render_pdf_from_source,
     render_resume_svg_pages, RenderOpts, TypstTemplate,
@@ -276,9 +276,16 @@ fn document_accent_overrides_letter_accent_color() {
 #[test]
 fn render_letter_svg_pages_returns_svg_page() {
     let t = Template::get(TemplateId::SwissMinimal);
-    let pages =
-        render_letter_svg_pages(LETTER_FIXTURE_US, &t, None, Some("Jane Smith"), "us", "en")
-            .expect("render_letter_svg_pages(us) should succeed");
+    let pages = render_letter_svg_pages(
+        LETTER_FIXTURE_US,
+        &t,
+        None,
+        Some("Jane Smith"),
+        "us",
+        "en",
+        LetterLayout::Classic,
+    )
+    .expect("render_letter_svg_pages(us) should succeed");
 
     assert!(
         !pages.is_empty(),
@@ -1512,8 +1519,16 @@ Max Müller
 #[test]
 fn letter_us_renders_valid_pdf_with_expected_content() {
     let t = Template::get(TemplateId::SwissMinimal);
-    let bytes = render_letter_pdf(LETTER_FIXTURE_US, &t, None, Some("Jane Smith"), "us", "en")
-        .expect("render_letter_pdf(us) should succeed");
+    let bytes = render_letter_pdf(
+        LETTER_FIXTURE_US,
+        &t,
+        None,
+        Some("Jane Smith"),
+        "us",
+        "en",
+        LetterLayout::Classic,
+    )
+    .expect("render_letter_pdf(us) should succeed");
 
     assert!(!bytes.is_empty(), "US letter PDF must not be empty");
     assert!(
@@ -1565,8 +1580,16 @@ fn letter_us_renders_valid_pdf_with_expected_content() {
 #[test]
 fn letter_de_renders_valid_pdf_with_subject_line() {
     let t = Template::get(TemplateId::SwissMinimal);
-    let bytes = render_letter_pdf(LETTER_FIXTURE_DE, &t, None, Some("Max Müller"), "de", "de")
-        .expect("render_letter_pdf(de) should succeed");
+    let bytes = render_letter_pdf(
+        LETTER_FIXTURE_DE,
+        &t,
+        None,
+        Some("Max Müller"),
+        "de",
+        "de",
+        LetterLayout::Classic,
+    )
+    .expect("render_letter_pdf(de) should succeed");
 
     assert!(!bytes.is_empty(), "DE letter PDF must not be empty");
     assert!(
@@ -1617,10 +1640,26 @@ fn letter_de_renders_valid_pdf_with_subject_line() {
 #[test]
 fn letter_us_and_de_both_start_with_pdf_header() {
     let t = Template::get(TemplateId::SwissMinimal);
-    let us = render_letter_pdf(LETTER_FIXTURE_US, &t, None, Some("Jane Smith"), "us", "en")
-        .expect("render_letter_pdf(us)");
-    let de = render_letter_pdf(LETTER_FIXTURE_DE, &t, None, Some("Max Müller"), "de", "de")
-        .expect("render_letter_pdf(de)");
+    let us = render_letter_pdf(
+        LETTER_FIXTURE_US,
+        &t,
+        None,
+        Some("Jane Smith"),
+        "us",
+        "en",
+        LetterLayout::Classic,
+    )
+    .expect("render_letter_pdf(us)");
+    let de = render_letter_pdf(
+        LETTER_FIXTURE_DE,
+        &t,
+        None,
+        Some("Max Müller"),
+        "de",
+        "de",
+        LetterLayout::Classic,
+    )
+    .expect("render_letter_pdf(de)");
     assert!(us.starts_with(b"%PDF"), "US letter must start with %PDF");
     assert!(de.starts_with(b"%PDF"), "DE letter must start with %PDF");
 }
@@ -1633,8 +1672,16 @@ fn letter_us_write_sample_pdf_for_review() {
     use std::path::Path;
 
     let t = Template::get(TemplateId::SwissMinimal);
-    let bytes = render_letter_pdf(LETTER_FIXTURE_US, &t, None, Some("Jane Smith"), "us", "en")
-        .expect("render_letter_pdf(us) should succeed for sample PDF");
+    let bytes = render_letter_pdf(
+        LETTER_FIXTURE_US,
+        &t,
+        None,
+        Some("Jane Smith"),
+        "us",
+        "en",
+        LetterLayout::Classic,
+    )
+    .expect("render_letter_pdf(us) should succeed for sample PDF");
 
     let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
     if let Err(e) = fs::create_dir_all(&target) {
@@ -1659,8 +1706,16 @@ fn letter_de_write_sample_pdf_for_review() {
     use std::path::Path;
 
     let t = Template::get(TemplateId::SwissMinimal);
-    let bytes = render_letter_pdf(LETTER_FIXTURE_DE, &t, None, Some("Max Müller"), "de", "de")
-        .expect("render_letter_pdf(de) should succeed for sample PDF");
+    let bytes = render_letter_pdf(
+        LETTER_FIXTURE_DE,
+        &t,
+        None,
+        Some("Max Müller"),
+        "de",
+        "de",
+        LetterLayout::Classic,
+    )
+    .expect("render_letter_pdf(de) should succeed for sample PDF");
 
     let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
     if let Err(e) = fs::create_dir_all(&target) {
@@ -1675,6 +1730,476 @@ fn letter_de_write_sample_pdf_for_review() {
         ),
     }
     assert!(bytes.starts_with(b"%PDF"));
+}
+
+// ── PR5: Letter layouts (Classic / Refined / Banded) ──────────────────────────
+//
+// The three layouts share the identical `LetterModel` / `data.json` contract;
+// only the arrangement (`letter*.typ` source) differs. Palette + fonts still
+// inherit from the résumé template, and market conventions (DE DIN date-top-
+// right + subject line, US below-header) are still honoured per layout.
+
+/// US letter carrying an explicit "Re: …" subject line. The US market sets
+/// `subject_line_used = false`, so the Classic layout drops this subject while
+/// the Refined layout always foregrounds it — the discriminator below.
+const LETTER_FIXTURE_US_SUBJECT: &str = "\
+Jane Smith
+jane@example.com | https://linkedin.com/in/janesmith
+
+June 2, 2025
+
+Hiring Manager
+Acme Corp
+123 Main Street
+
+Re: Application for Platform Engineer (Ref PX-2291)
+
+Dear Hiring Manager,
+
+I am writing to express my strong interest in the Platform Engineer position at \
+Acme Corp, where I would bring five years of distributed-systems experience.
+
+Sincerely,
+
+Jane Smith
+Software Engineer
+";
+
+/// A long US letter that reflows onto multiple pages — used to prove the Banded
+/// layout draws its accent band on page 1 only.
+const LETTER_FIXTURE_LONG_US: &str = "\
+Jane Smith
+jane@example.com | https://linkedin.com/in/janesmith
+
+June 2, 2025
+
+Hiring Manager
+Acme Corp
+
+Dear Hiring Manager,
+
+I am writing to express my strong interest in the Software Engineer position at \
+Acme Corp. Over the past five years I have designed and operated distributed \
+systems in Rust and Go, consistently reducing latency and cost while raising the \
+reliability bar for every team I have worked with.
+
+During my time at Beta Inc I led the migration of our payments service to a \
+microservices architecture, reducing end-to-end latency by 40 percent and \
+cutting infrastructure costs by 30 percent across the platform.
+
+I introduced a service-level-objective culture, instrumented the critical paths, \
+and mentored a cohort of engineers who now own those services end to end. The \
+result was a measurable drop in incidents and a faster, calmer on-call rotation.
+
+At Gamma LLC I rebuilt the ingestion pipeline to handle a tenfold increase in \
+event volume without a proportional increase in cost, using back-pressure and \
+adaptive batching to keep tail latency predictable under bursty load.
+
+I care deeply about developer experience, and I have shipped internal tooling \
+that shortened the local feedback loop from minutes to seconds, which paid for \
+itself many times over in team velocity and morale.
+
+Beyond the technical work, I have partnered closely with product and design to \
+make sure the systems we build actually serve the people who use them, and I \
+have found that this partnership consistently produces better outcomes.
+
+I would welcome the opportunity to bring the same rigour, curiosity, and sense \
+of ownership to your team, and to help you scale the platform through its next \
+phase of growth with confidence and care.
+
+Earlier in my career at Delta Systems I built the on-call tooling that our whole \
+engineering org still relies on, cutting mean time to resolution significantly \
+by surfacing the right context the moment an alert fired.
+
+I have also invested heavily in testing culture, introducing contract tests \
+between services that caught integration regressions before they ever reached \
+production, which meaningfully reduced the number of incidents quarter over \
+quarter.
+
+Outside of pure execution, I enjoy mentoring engineers earlier in their careers, \
+pairing regularly and helping them build the judgment to make good trade-offs \
+under real constraints rather than just following a checklist.
+
+I have led cross-team initiatives that required aligning stakeholders with \
+different priorities, and I take real pride in finding the solution that \
+actually satisfies everyone's constraints rather than the loudest one.
+
+Reliability work is often invisible when done well, so I have made a habit of \
+writing clear postmortems and sharing them broadly, turning painful incidents \
+into lasting organizational learning rather than one-off fire drills.
+
+Thank you for considering my application; I would be glad to discuss how my \
+background aligns with your needs at any time that is convenient for you.
+
+Sincerely,
+
+Jane Smith
+Software Engineer
+";
+
+/// Distinct `fill="#…"` colours present in an SVG string.
+fn svg_fill_colors(svg: &str) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    let needle = "fill=\"";
+    let mut rest = svg;
+    while let Some(pos) = rest.find(needle) {
+        rest = &rest[pos + needle.len()..];
+        if let Some(end) = rest.find('"') {
+            out.insert(rest[..end].to_string());
+        }
+    }
+    out
+}
+
+// (R1) Refined layout renders a valid US PDF with correct reading order.
+#[test]
+fn letter_refined_us_renders_valid_pdf() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    let bytes = render_letter_pdf(
+        LETTER_FIXTURE_US,
+        &t,
+        None,
+        Some("Jane Smith"),
+        "us",
+        "en",
+        LetterLayout::Refined,
+    )
+    .expect("refined US render should succeed");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "refined US must start with %PDF"
+    );
+
+    let lower = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract on refined US")
+        .to_lowercase();
+    assert!(
+        lower.contains("dear hiring manager"),
+        "salutation missing:\n{lower}"
+    );
+    assert!(
+        lower.contains("distributed systems"),
+        "body phrase missing:\n{lower}"
+    );
+    assert!(lower.contains("sincerely"), "sign-off missing:\n{lower}");
+    assert!(
+        lower.contains("jane smith"),
+        "signature name missing:\n{lower}"
+    );
+
+    let pos_sal = lower.find("dear").expect("salutation present");
+    let pos_body = lower.find("distributed").expect("body present");
+    let pos_signoff = lower.find("sincerely").expect("sign-off present");
+    assert!(
+        pos_sal < pos_body && pos_body < pos_signoff,
+        "refined US reading order broken — sal={pos_sal} body={pos_body} signoff={pos_signoff}"
+    );
+}
+
+// (R2) Refined honours DE DIN conventions: A4, Betreff subject present, German
+// salutation + sign-off, and the DIN top-right date reads before the salutation.
+#[test]
+fn letter_refined_de_honors_din_conventions() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    let bytes = render_letter_pdf(
+        LETTER_FIXTURE_DE,
+        &t,
+        None,
+        Some("Max Müller"),
+        "de",
+        "de",
+        LetterLayout::Refined,
+    )
+    .expect("refined DE render should succeed");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "refined DE must start with %PDF"
+    );
+
+    let normalised: String = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract on refined DE")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let lower = normalised.to_lowercase();
+
+    // The subject text survives (rendered as the job-reference line). The
+    // "Betreff" label prefix is stripped, so assert on the subject body.
+    assert!(
+        lower.contains("bewerbung"),
+        "DE subject body missing:\n{lower}"
+    );
+    assert!(
+        lower.contains("sehr geehr"),
+        "German salutation missing:\n{lower}"
+    );
+    assert!(
+        lower.contains("freundlichen"),
+        "German sign-off missing:\n{lower}"
+    );
+
+    // DIN date-top-right → the date reads near the top, before the salutation.
+    let pos_date = lower.find("2025").expect("date present");
+    let pos_sal = lower.find("sehr geehr").expect("salutation present");
+    assert!(
+        pos_date < pos_sal,
+        "DE DIN date should precede the salutation — date={pos_date} sal={pos_sal}"
+    );
+}
+
+// (R3) Refined always shows a subject as the JOB REFERENCE line — even when the
+// market omits the subject (US `subject_line_used = false`). Classic drops it.
+#[test]
+fn letter_refined_shows_subject_when_market_omits_it() {
+    let t = Template::get(TemplateId::SwissMinimal);
+
+    let refined = render_letter_pdf(
+        LETTER_FIXTURE_US_SUBJECT,
+        &t,
+        None,
+        Some("Jane Smith"),
+        "us",
+        "en",
+        LetterLayout::Refined,
+    )
+    .expect("refined US-subject render");
+    let refined_txt = pdf_extract::extract_text_from_mem(&refined)
+        .expect("pdf-extract refined")
+        .to_lowercase();
+    assert!(
+        refined_txt.contains("px-2291"),
+        "Refined must render the subject reference (px-2291):\n{refined_txt}"
+    );
+
+    let classic = render_letter_pdf(
+        LETTER_FIXTURE_US_SUBJECT,
+        &t,
+        None,
+        Some("Jane Smith"),
+        "us",
+        "en",
+        LetterLayout::Classic,
+    )
+    .expect("classic US-subject render");
+    let classic_txt = pdf_extract::extract_text_from_mem(&classic)
+        .expect("pdf-extract classic")
+        .to_lowercase();
+    assert!(
+        !classic_txt.contains("px-2291"),
+        "Classic must NOT render the subject when the market omits it (subject_line_used=false):\n{classic_txt}"
+    );
+}
+
+// (B1) Banded layout renders a valid US PDF with correct reading order.
+#[test]
+fn letter_banded_us_renders_valid_pdf() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    let bytes = render_letter_pdf(
+        LETTER_FIXTURE_US,
+        &t,
+        None,
+        Some("Jane Smith"),
+        "us",
+        "en",
+        LetterLayout::Banded,
+    )
+    .expect("banded US render should succeed");
+    assert!(bytes.starts_with(b"%PDF"), "banded US must start with %PDF");
+
+    let lower = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract on banded US")
+        .to_lowercase();
+    assert!(
+        lower.contains("dear hiring manager"),
+        "salutation missing:\n{lower}"
+    );
+    assert!(
+        lower.contains("distributed systems"),
+        "body phrase missing:\n{lower}"
+    );
+    assert!(lower.contains("sincerely"), "sign-off missing:\n{lower}");
+
+    let pos_sal = lower.find("dear").expect("salutation present");
+    let pos_body = lower.find("distributed").expect("body present");
+    let pos_signoff = lower.find("sincerely").expect("sign-off present");
+    assert!(
+        pos_sal < pos_body && pos_body < pos_signoff,
+        "banded US reading order broken — sal={pos_sal} body={pos_body} signoff={pos_signoff}"
+    );
+}
+
+// (B2) Banded honours DE conventions: A4, Betreff subject (subject_line_used),
+// German salutation + sign-off.
+#[test]
+fn letter_banded_de_honors_din_subject() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    let bytes = render_letter_pdf(
+        LETTER_FIXTURE_DE,
+        &t,
+        None,
+        Some("Max Müller"),
+        "de",
+        "de",
+        LetterLayout::Banded,
+    )
+    .expect("banded DE render should succeed");
+    assert!(bytes.starts_with(b"%PDF"), "banded DE must start with %PDF");
+
+    let lower = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract on banded DE")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    assert!(
+        lower.contains("betreff"),
+        "DE Betreff subject missing:\n{lower}"
+    );
+    assert!(
+        lower.contains("sehr geehr"),
+        "German salutation missing:\n{lower}"
+    );
+    assert!(
+        lower.contains("freundlichen"),
+        "German sign-off missing:\n{lower}"
+    );
+}
+
+// (B3) The Banded accent band is drawn on page 1 ONLY. On a multi-page letter,
+// Banded's page-1 SVG carries a filled band colour that (a) the no-band Classic
+// layout lacks on its own page 1, and (b) is absent from Banded's later pages.
+// typst-svg rasterises the `polygon` as a filled `<path>`, so we detect the band
+// by its fill colour rather than a `<polygon>` tag.
+#[test]
+fn letter_banded_band_draws_on_page_one_only() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    let banded = render_letter_svg_pages(
+        LETTER_FIXTURE_LONG_US,
+        &t,
+        None,
+        Some("Jane Smith"),
+        "us",
+        "en",
+        LetterLayout::Banded,
+    )
+    .expect("banded long-letter SVG render");
+    let classic = render_letter_svg_pages(
+        LETTER_FIXTURE_LONG_US,
+        &t,
+        None,
+        Some("Jane Smith"),
+        "us",
+        "en",
+        LetterLayout::Classic,
+    )
+    .expect("classic long-letter SVG render");
+
+    assert!(
+        banded.len() >= 2,
+        "the long fixture must reflow onto ≥2 pages to exercise page-1-only band; got {}",
+        banded.len()
+    );
+
+    let banded_p1 = svg_fill_colors(&banded[0]);
+    let classic_p1 = svg_fill_colors(&classic[0]);
+    let banded_last = svg_fill_colors(&banded[banded.len() - 1]);
+
+    // Fills that Banded adds on page 1 relative to the no-band Classic layout —
+    // this set contains the decorative band tint.
+    let band_only: Vec<&String> = banded_p1.difference(&classic_p1).collect();
+    assert!(
+        !band_only.is_empty(),
+        "Banded page 1 must add a band fill the no-band Classic layout lacks;\n\
+         banded p1={banded_p1:?}\nclassic p1={classic_p1:?}"
+    );
+    // …and that band fill must NOT repeat on later pages (band is page-1 only).
+    assert!(
+        band_only.iter().any(|f| !banded_last.contains(*f)),
+        "the Banded band fill must be absent from later pages;\n\
+         band-only p1 fills={band_only:?}\nbanded last-page fills={banded_last:?}"
+    );
+}
+
+// (P1) Palette inheritance: a non-default résumé template (Regent, burgundy)
+// yields different letter output than SwissMinimal for the same layout — the
+// template's accent/palette reaches the letter via `style_from_template`.
+#[test]
+fn letter_layout_inherits_resume_template_accent() {
+    let regent = Template::get(TemplateId::Regent);
+    let swiss = Template::get(TemplateId::SwissMinimal);
+
+    for layout in [LetterLayout::Refined, LetterLayout::Banded] {
+        let a = render_letter_pdf(
+            LETTER_FIXTURE_US,
+            &regent,
+            None,
+            Some("Jane Smith"),
+            "us",
+            "en",
+            layout,
+        )
+        .expect("regent letter render");
+        let b = render_letter_pdf(
+            LETTER_FIXTURE_US,
+            &swiss,
+            None,
+            Some("Jane Smith"),
+            "us",
+            "en",
+            layout,
+        )
+        .expect("swiss letter render");
+        assert!(
+            a != b,
+            "{layout:?}: Regent and SwissMinimal must produce different output \
+             (accent/palette must reach the letter)"
+        );
+    }
+}
+
+// (D1) The three layouts dispatch to distinct sources: same data, different
+// bytes. Classic remains a valid PDF (default-path regression).
+#[test]
+fn letter_layouts_dispatch_to_distinct_sources() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    let classic = render_letter_pdf(
+        LETTER_FIXTURE_US,
+        &t,
+        None,
+        Some("Jane Smith"),
+        "us",
+        "en",
+        LetterLayout::Classic,
+    )
+    .expect("classic render");
+    let refined = render_letter_pdf(
+        LETTER_FIXTURE_US,
+        &t,
+        None,
+        Some("Jane Smith"),
+        "us",
+        "en",
+        LetterLayout::Refined,
+    )
+    .expect("refined render");
+    let banded = render_letter_pdf(
+        LETTER_FIXTURE_US,
+        &t,
+        None,
+        Some("Jane Smith"),
+        "us",
+        "en",
+        LetterLayout::Banded,
+    )
+    .expect("banded render");
+
+    assert!(
+        classic.starts_with(b"%PDF"),
+        "classic must remain a valid PDF"
+    );
+    assert!(classic != refined, "Classic and Refined must differ");
+    assert!(classic != banded, "Classic and Banded must differ");
+    assert!(refined != banded, "Refined and Banded must differ");
 }
 
 // ── Phase 3a: Meridian, Throughline, Quanta — premium single-column ───────────
@@ -3081,8 +3606,16 @@ fn stray_typst_code_guard_lebenslauf_no_photo() {
 #[test]
 fn stray_typst_code_guard_letter() {
     let t = Template::get(TemplateId::SwissMinimal);
-    let bytes = render_letter_pdf(LETTER_FIXTURE_US, &t, None, Some("Jane Smith"), "us", "en")
-        .expect("stray-token guard: letter render failed");
+    let bytes = render_letter_pdf(
+        LETTER_FIXTURE_US,
+        &t,
+        None,
+        Some("Jane Smith"),
+        "us",
+        "en",
+        LetterLayout::Classic,
+    )
+    .expect("stray-token guard: letter render failed");
     assert_no_stray_tokens("letter", &bytes);
 }
 
@@ -3764,9 +4297,11 @@ fn generate_cover_template_previews() {
         "cover previews must cover exactly twelve templates"
     );
 
-    // Embedded letter Typst sources (scale preamble + letter template), reused
-    // verbatim from production so the preview matches `render_letter_pdf`.
-    let (scale_typ, letter_typ) = letter_template_sources();
+    // Embedded letter Typst sources (scale preamble + all three layout sources),
+    // reused verbatim from production so the preview matches `render_letter_pdf`.
+    // The gallery preview renders the Classic layout; the Refined/Banded sources
+    // are exposed here for future per-layout previews.
+    let (scale_typ, letter_typ, _refined_typ, _banded_typ) = letter_template_sources();
 
     let preview_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../src/renderer/features/ai-generate/assets/cover-template-previews");

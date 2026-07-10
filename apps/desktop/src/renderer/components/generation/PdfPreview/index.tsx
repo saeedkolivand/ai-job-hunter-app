@@ -4,7 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from '@ajh/translations';
 import { cn, Image } from '@ajh/ui';
 
-import { type GenerationMeta, renderDocumentPreview, type TemplateId } from '@/lib/generate';
+import {
+  type GenerationMeta,
+  type LetterLayoutId,
+  renderDocumentPreview,
+  type TemplateId,
+} from '@/lib/generate';
 
 interface PdfPreviewProps {
   /** Canonical document text (the same raw string copy/export read). */
@@ -15,6 +20,8 @@ interface PdfPreviewProps {
   atsMode?: boolean;
   /** Per-export document accent (6-hex) — mirrors the real export so preview is faithful. */
   accent?: string;
+  /** Cover-letter layout — mirrors the real export so the cover preview is faithful. */
+  letterLayoutId?: LetterLayoutId;
   /** Export market/locale (resolved by the caller, mirroring the real export). */
   locale?: string;
   /** Skip rendering — e.g. while the document is still generating. */
@@ -53,6 +60,7 @@ export function PdfPreview({
   templateId,
   atsMode = false,
   accent,
+  letterLayoutId,
   locale,
   paused = false,
   className,
@@ -107,7 +115,8 @@ export function PdfPreview({
             templateId,
             atsMode,
             locale,
-            accent
+            accent,
+            letterLayoutId
           );
           if (token !== renderToken.current) return; // superseded by a newer edit
           // Revoke old batch before creating new URLs.
@@ -125,7 +134,7 @@ export function PdfPreview({
       })();
     }, delay);
     return () => clearTimeout(timer);
-  }, [text, docType, meta, templateId, atsMode, accent, locale, paused]);
+  }, [text, docType, meta, templateId, atsMode, accent, letterLayoutId, locale, paused]);
 
   const hasPages = pageUrls.length > 0;
   const title = t('aiGenerate.pdfPreview.title');

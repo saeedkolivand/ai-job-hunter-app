@@ -1,4 +1,4 @@
-use super::super::types::{ExportFormat, GenerationMeta, TemplateId};
+use super::super::types::{ExportFormat, GenerationMeta, LetterLayout, TemplateId};
 use super::*;
 
 #[test]
@@ -85,6 +85,7 @@ fn test_generate_pdf_resume_basic() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -102,6 +103,7 @@ fn test_generate_pdf_cover_letter_basic() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -124,6 +126,7 @@ fn test_generate_pdf_resume_with_meta() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -142,6 +145,7 @@ fn test_generate_pdf_resume_with_section_markers() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -161,6 +165,7 @@ fn test_generate_pdf_cover_letter_with_section_markers() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let result = generate_pdf(&request);
     assert!(result.is_ok());
@@ -182,6 +187,7 @@ fn test_generate_pdf_cover_letter_german_market_with_betreff() {
         locale: Some("de".to_string()),
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let bytes = generate_pdf(&request).expect("German cover letter renders");
     assert!(!bytes.is_empty());
@@ -202,6 +208,7 @@ fn test_generate_pdf_cover_letter_french_salutation() {
         locale: Some("fr".to_string()),
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let bytes = generate_pdf(&request).expect("French cover letter renders");
     assert!(!bytes.is_empty());
@@ -251,6 +258,7 @@ fn resume_pdf_embeds_contact_link_annotations() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let bytes = generate_pdf(&request).expect("resume pdf");
     let doc = lopdf::Document::load_mem(&bytes).expect("parse generated pdf");
@@ -280,6 +288,7 @@ fn single_column_template_resume_pdf_is_generated() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let bytes = generate_pdf(&request).expect("modern resume pdf");
     assert!(
@@ -322,6 +331,7 @@ fn cover_letter_does_not_leak_generated_contact_line() {
             ..Default::default()
         }),
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let bytes = generate_pdf(&request).expect("cover letter pdf");
     let rendered = pdf_extract::extract_text_from_mem(&bytes).expect("extract text");
@@ -433,6 +443,7 @@ fn resume_long_contact_line_wraps_within_page() {
         locale: None,
         contact: Some(long_contact_profile()),
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let bytes = generate_pdf(&request).expect("resume pdf");
     let doc = lopdf::Document::load_mem(&bytes).expect("parse pdf");
@@ -478,6 +489,7 @@ fn cover_letter_long_contact_line_wraps_within_page() {
         locale: None,
         contact: Some(long_contact_profile()),
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let bytes = generate_pdf(&request).expect("cover letter pdf");
     let doc = lopdf::Document::load_mem(&bytes).expect("parse pdf");
@@ -579,6 +591,7 @@ LANGUAGES
             locale: None,
             contact: None,
             accent: None,
+            letter_layout: LetterLayout::Classic,
         };
         let slug = format!("{id:?}").to_lowercase();
         let bytes = generate_pdf(&request).expect("typst pdf");
@@ -623,6 +636,7 @@ BSc Computer Science
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
 
     let bytes = generate_pdf(&request).expect("classic resume pdf");
@@ -664,6 +678,7 @@ fn resume_document_accent_threads_into_render() {
         locale: None,
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     };
     let default_svg = generate_preview_svg(&base)
         .expect("default preview")
