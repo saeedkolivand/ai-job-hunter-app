@@ -135,3 +135,31 @@ resolves the URL (headless browser, redirects, JavaScript rendering). Scan mode 
 preferred when the extension can supply the DOM (no auth wall); URL mode is the fallback
 for link-only saves or when the extension can't intercept the HTML.
 _Avoid_: conflating with the headless scraper (which is the impl detail of URL mode)
+
+## Domain — Export & templates
+
+**Document accent**:
+The per-export document color override — an optional hex applied to **one** exported
+résumé or cover letter that recolors the chosen template's accent role. It is **not
+persisted** and **never reads `ThemePrefs`**; `None` (the default) leaves the template's
+built-in palette untouched. Distinct from the app-UI **accent color** — the interactive-
+element tint of [ADR 0004](adr/0004-single-source-user-customizable-accent-color.md), a
+durable user preference. See [ADR 0007](adr/0007-document-color-is-a-knob-not-a-template.md).
+_Avoid_: accent color (ambiguous — that already means the app-UI tint), theme accent,
+brand color
+
+**Letter layout**:
+The arrangement/composition of a cover letter — `classic` / `refined` / `banded` —
+independent of the résumé template. The palette and fonts always **inherit** from the
+selected résumé template (via `style_from_template`); market conventions (date position,
+subject line, recipient block) own the semantics. A layout owns arrangement only.
+_Avoid_: letter template, letter style (LetterStyle is the inherited-palette carrier in
+code, not the arrangement)
+
+**Template tier**:
+The honesty label on a résumé template: `ats` (single-column, parser-safe) or `design`
+(photo / multi-column, visually rich). Metadata only, **no render behavior** — it groups
+the gallery and picks which templates surface the ATS-mode toggle. A design-tier template
+collapses to a linear single column (and drops its photo) when ATS mode is on. See
+[ADR 0007](adr/0007-document-color-is-a-knob-not-a-template.md).
+_Avoid_: premium tier, template category
