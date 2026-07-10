@@ -1335,6 +1335,9 @@
       "applied": "Beworben",
       "failed": "Fehlgeschlagen",
       "completedWithErrors": "Teilweise Ergebnisse",
+      "completedWithErrorsHint": "Einige Boards schlugen fehl oder lieferten nur einen Teil ihrer Ergebnisse. Siehe die Board-Übersicht unten.",
+      "needsConfig": "Konfiguration nötig",
+      "needsConfigHint": "Kein Board konnte laufen — melde dich bei den Boards unter Einstellungen → Konten an, oder hinterlege die API-Schlüssel in den Einstellungen → Jobs, und starte erneut.",
       "interrupted": "Unterbrochen"
     },
     "card": {
@@ -1821,16 +1824,7 @@
       "connectBoard": "Verbinden",
       "blockedHint": "Bei {{boards}} anmelden, um die Suche zu starten.",
       "loginToEnable": "Anmelden zum Aktivieren",
-      "loginToEnableHint": "{{board}} erfordert eine Anmeldung — verbinde dein Konto, damit die Suche Ergebnisse liefert.",
-      "skippedNote_one": "{{boards}} wurde übersprungen — melde dich an, um Ergebnisse von diesem Board zu erhalten.",
-      "skippedNote_other": "{{boards}} wurden übersprungen — melde dich an, um Ergebnisse von diesen Boards zu erhalten."
-    },
-    "needsCompany": {
-      "skippedNote_one": "{{boards}} wurde übersprungen — füge einen Unternehmens-Slug hinzu, um dieses Board zu durchsuchen.",
-      "skippedNote_other": "{{boards}} wurden übersprungen — füge einen Unternehmens-Slug hinzu, um diese Boards zu durchsuchen."
-    },
-    "needsKeys": {
-      "skippedNote": "Job-Aggregator übersprungen — keine API-Schlüssel konfiguriert. Schlüssel in den Einstellungen hinzufügen."
+      "loginToEnableHint": "{{board}} erfordert eine Anmeldung — verbinde dein Konto, damit die Suche Ergebnisse liefert."
     },
     "companies": {
       "label": "Unternehmen",
@@ -1838,6 +1832,21 @@
       "hint": "Kommagetrennte Unternehmens-Slugs für ATS-Boards."
     },
     "partialScrapeNote": "{{done}} von {{total}} Boards · {{failed}} fehlgeschlagen",
+    "lastScrapeFailed": "Letzter Scrape fehlgeschlagen: {{reason}}",
+    "boardSummary": {
+      "label": "Ergebnisse pro Board",
+      "count_one": "{{count}} Job",
+      "count_other": "{{count}} Jobs",
+      "partial": "teilweise Ergebnisse",
+      "allOk_one": "{{count}} Board · alles ok",
+      "allOk_other": "{{count}} Boards · alles ok",
+      "skip": {
+        "needsLogin": "Anmeldung nötig",
+        "needsCompany": "Firma nötig",
+        "needsKeys": "API-Schlüssel nötig",
+        "other": "übersprungen"
+      }
+    },
     "viewList": "Liste",
     "viewSplit": "Zweispaltig",
     "viewMode": "Ansichtsmodus",

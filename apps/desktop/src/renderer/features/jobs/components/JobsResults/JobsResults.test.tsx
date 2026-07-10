@@ -14,7 +14,7 @@ import { screen } from '@testing-library/dom';
 import { render } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { PROVIDER_SLOTS } from '@ajh/shared';
+import { type BoardScrapeSummary, PROVIDER_SLOTS } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 
 // ── i18n stub ─────────────────────────────────────────────────────────────────
@@ -132,6 +132,8 @@ function renderResults(opts: {
   filtered: Posting[];
   scraping?: boolean;
   resumeId?: string | null;
+  boardSummaries?: BoardScrapeSummary[];
+  failureNote?: string | null;
 }) {
   const resumeId = 'resumeId' in opts ? (opts.resumeId ?? null) : RESUME_ID;
   const wrapper = ({ children }: { children: ReactNode }) => (
@@ -142,6 +144,8 @@ function renderResults(opts: {
       filtered={opts.filtered}
       formatRelativeTime={formatRelativeTime}
       scraping={opts.scraping ?? false}
+      boardSummaries={opts.boardSummaries}
+      failureNote={opts.failureNote}
       onShowMore={noop}
       onScrape={noop}
     />,
@@ -290,6 +294,66 @@ describe('JobsResults — empty state', () => {
     expect(mockSetSettings).toHaveBeenCalledWith({ activeSection: 'job' });
     expect(mockNavigate).toHaveBeenCalledOnce();
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/settings' });
+  });
+});
+
+// ── board diagnostics wired into the empty state (HIGH #4) ───────────────────
+
+describe('JobsResults — board diagnostics in the empty state', () => {
+  it('renders the chip strip when filtered=[] and boardSummaries has skipped/error entries', () => {
+    const boardSummaries: BoardScrapeSummary[] = [
+      { board: 'linkedin', count: 0, error: 'blocked' },
+      { board: 'indeed', count: 0, skipped: 'needs-login' },
+    ];
+    renderResults({ filtered: [], resumeId: null, boardSummaries });
+
+    expect(screen.getByRole('group', { name: 'jobs.boardSummary.label' })).toBeInTheDocument();
+    expect(screen.getByText('jobs.boards.linkedin')).toBeInTheDocument();
+    expect(screen.getByText('jobs.boards.indeed')).toBeInTheDocument();
+  });
+
+  it('does NOT render the strip when boardSummaries is undefined', () => {
+    renderResults({ filtered: [], resumeId: null });
+    expect(
+      screen.queryByRole('group', { name: 'jobs.boardSummary.label' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('does NOT render the strip when boardSummaries is an empty array', () => {
+    renderResults({ filtered: [], resumeId: null, boardSummaries: [] });
+    expect(
+      screen.queryByRole('group', { name: 'jobs.boardSummary.label' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('renders the failure note when set', () => {
+    renderResults({ filtered: [], resumeId: null, failureNote: 'connection refused' });
+    expect(screen.getByText('jobs.lastScrapeFailed')).toBeInTheDocument();
+  });
+
+  it('does NOT render the failure note when absent', () => {
+    renderResults({ filtered: [], resumeId: null });
+    expect(screen.queryByText('jobs.lastScrapeFailed')).not.toBeInTheDocument();
+  });
+
+  it('suppresses BOTH the chip strip and the failure note when missingAdzunaKeys already explains the zero (no triple-explaining)', () => {
+    stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppId] = false;
+    stubbedHasByProvider[PROVIDER_SLOTS.adzunaAppKey] = false;
+    const boardSummaries: BoardScrapeSummary[] = [
+      { board: 'aggregator', count: 0, skipped: 'needs-keys' },
+    ];
+    renderResults({
+      filtered: [],
+      resumeId: null,
+      boardSummaries,
+      failureNote: 'boom',
+    });
+
+    expect(screen.getByText('jobs.emptyNoAdzunaKeys')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('group', { name: 'jobs.boardSummary.label' })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('jobs.lastScrapeFailed')).not.toBeInTheDocument();
   });
 });
 

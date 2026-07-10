@@ -11,6 +11,7 @@ import { Button, ConfirmModal, Dropdown, Input, SegmentedControl, useNotificatio
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
+import { BoardSummaryChips, sanitizeReason } from '@/components/scrape/BoardSummaryChips';
 import { JobsResults } from '@/features/jobs/components/JobsResults';
 import { ScrapeForm } from '@/features/jobs/components/ScrapeForm';
 import type { ScrapeFormState } from '@/features/jobs/components/ScrapeForm/constants';
@@ -48,6 +49,15 @@ export function JobsPage() {
   const setSortBy = (v: 'newest' | 'oldest' | 'company') => setJobs({ sortBy: v });
   const [showScrapeForm, setShowScrapeForm] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  // Per-board outcome of the most recent scrape. Kept in page state (not dropped
+  // after reading) so the chip strip persists in the results header once the
+  // form auto-closes, and the empty state can explain a zero result per board.
+  const [lastSummaries, setLastSummaries] = useState<BoardScrapeSummary[]>([]);
+  // An outright scrape failure (no per-board summaries exist for it) — kept
+  // separately so the header/empty-state stay explainable even after the
+  // dismissible form-footer note is gone. Sanitized before it ever reaches
+  // state (the raw error can carry paths/URLs — same rule as chip reasons).
+  const [lastFailureNote, setLastFailureNote] = useState<string | null>(null);
   const [scrapeForm, setScrapeForm] = useState<ScrapeFormState>({
     boards: [AGGREGATOR_BOARD_ID],
     query: '',
@@ -137,7 +147,6 @@ export function JobsPage() {
       const completedData = ev.data as { boards?: BoardScrapeSummary[] } | undefined;
       const boardSummaries = Array.isArray(completedData?.boards) ? completedData.boards : [];
       const failedBoards = boardSummaries.filter((b) => b.error);
-      const skippedBoards = boardSummaries.filter((b) => b.skipped === 'needs-login');
       let note: string | undefined;
       if (failedBoards.length > 0) {
         const total = boardSummaries.length;
@@ -150,54 +159,26 @@ export function JobsPage() {
         });
       }
       // Capture the active job id BEFORE noteScrapeFinished clears scrapeJobRef.
-      // Guard: only emit per-board warnings for the active scrape job — stale
-      // `job.completed` events from a previous round must not show false diagnostics.
+      // Guard: only surface diagnostics for the active scrape job — stale
+      // `job.completed` events from a previous round must not overwrite the strip.
       const isActiveJob = ev.jobId === scrapeJobRef.current;
       noteScrapeFinished(ev.jobId, { ok: true, note });
       void invalidatePostings();
       if (!isActiveJob) return;
-      // Surface skipped-due-to-login boards as a distinct warning notification
-      // so the user knows why a board returned 0 results.
-      if (skippedBoards.length > 0) {
-        const boardNames = skippedBoards.map((b) => t(`jobs.boards.${b.board}`)).join(', ');
-        notify.warning({
-          message: t('jobs.needsLogin.skippedNote', {
-            boards: boardNames,
-            count: skippedBoards.length,
-          }),
-          // Sticky: diagnostic notification requires user action (sign in to that board).
-          duration: 0,
-        });
-      }
-      // Surface skipped-due-to-missing-company boards as a distinct warning so
-      // the user knows to add a company slug in the scrape form.
-      const needsCompanyBoards = boardSummaries.filter((b) => b.skipped === 'needs-company');
-      if (needsCompanyBoards.length > 0) {
-        const boardNames = needsCompanyBoards.map((b) => t(`jobs.boards.${b.board}`)).join(', ');
-        notify.warning({
-          message: t('jobs.needsCompany.skippedNote', {
-            boards: boardNames,
-            count: needsCompanyBoards.length,
-          }),
-          // Sticky: diagnostic notification requires user action (add company slug).
-          duration: 0,
-        });
-      }
-      // Surface skipped-due-to-missing-API-keys boards (the aggregator) so the
-      // user knows to configure keys in Settings rather than see a silent zero.
-      const needsKeysBoards = boardSummaries.filter((b) => b.skipped === 'needs-keys');
-      if (needsKeysBoards.length > 0) {
-        notify.warning({
-          message: t('jobs.needsKeys.skippedNote'),
-          // Sticky: diagnostic notification requires user action (add API keys).
-          duration: 0,
-        });
-      }
+      // Persist the full per-board summaries so the chip strip surfaces WHY a
+      // board returned 0 (needs-login / needs-company / needs-keys / errored /
+      // truncated) — persistently, replacing the previous transient skip-toasts.
+      setLastSummaries(boardSummaries);
+      setLastFailureNote(null);
     } else if (ev.type === 'job.failed') {
-      noteScrapeFinished(ev.jobId, {
-        ok: false,
-        note: typeof ev.data === 'string' ? ev.data : t('jobs.scrapeFailed'),
-      });
+      // The whole scrape errored — there are no per-board summaries (nothing to
+      // chip), so keep a minimal sanitized failure note instead: the dismissible
+      // form-footer note alone would make the failure invisible again once the
+      // form closes/is dismissed.
+      const raw = typeof ev.data === 'string' ? ev.data : t('jobs.scrapeFailed');
+      setLastSummaries([]);
+      setLastFailureNote(sanitizeReason(raw));
+      noteScrapeFinished(ev.jobId, { ok: false, note: raw });
     }
   });
 
@@ -225,6 +206,17 @@ export function JobsPage() {
     setConfirmClear(false);
     await clearPostings.mutateAsync();
     setLivePostings([]);
+    setLastSummaries([]);
+    setLastFailureNote(null);
+  };
+
+  // Start a fresh scrape — drop the previous run's chip strip/failure note so
+  // neither reads as the new run's outcome (a fresh one arrives on the next
+  // job.completed / job.failed).
+  const handleStartScrape = () => {
+    setLastSummaries([]);
+    setLastFailureNote(null);
+    void startScrape();
   };
 
   // "Show more" (#36): fetch the next batch by raising the requested job count
@@ -353,10 +345,24 @@ export function JobsPage() {
               scrapeOutcome={scrapeOutcome}
               onToggle={() => setShowScrapeForm(!showScrapeForm)}
               onFormChange={(updates) => setScrapeForm({ ...scrapeForm, ...updates })}
-              onStart={startScrape}
+              onStart={handleStartScrape}
               onCancel={cancelScrape}
               onGeocode={geocodeSuggest}
             />
+
+            {/* Persistent per-board outcome — survives the form auto-closing so
+                the user can always see what each board did on the last scrape. */}
+            {!scraping && lastSummaries.length > 0 && (
+              <BoardSummaryChips summaries={lastSummaries} className="mb-4" />
+            )}
+            {/* An outright scrape failure has no per-board summaries to chip —
+                keep a minimal sanitized note visible instead of going silent
+                once the dismissible form-footer note is gone. */}
+            {!scraping && lastFailureNote && (
+              <p role="status" aria-live="polite" className="mb-4 text-[11px] text-red-400/80">
+                {t('jobs.lastScrapeFailed', { reason: lastFailureNote })}
+              </p>
+            )}
           </div>
 
           <JobsResults
@@ -364,6 +370,8 @@ export function JobsPage() {
             formatRelativeTime={formatRelativeTime}
             scraping={scraping}
             scrapeProgress={scrapeProgress}
+            boardSummaries={lastSummaries}
+            failureNote={lastFailureNote}
             onShowMore={handleShowMore}
             onScrape={() => setShowScrapeForm(true)}
           />

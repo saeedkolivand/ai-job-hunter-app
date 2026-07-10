@@ -15,7 +15,7 @@
  */
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 
 import { TEST_IDS } from '@ajh/test-ids';
 
@@ -42,6 +42,15 @@ const notifyMock = {
 
 // setJobs spy — lifted so SegmentedControl onChange tests can assert call args.
 const setJobsSpy = vi.fn();
+
+// BoardSummaryChips capture — records the `summaries` prop each time the strip
+// renders, so tests can assert the page retained + forwarded the per-board data
+// (the strip replaced the old transient skip-toasts).
+const boardChips = { summaries: null as unknown };
+
+// JobsResults prop capture — asserts the same per-board summaries + failure
+// note reach the empty-state wiring, not just the header strip.
+const resultsProps = { boardSummaries: undefined as unknown, failureNote: undefined as unknown };
 
 // SegmentedControl onChange container — set by the stub when the component mounts.
 const segmentedControlContainer = {
@@ -109,7 +118,28 @@ vi.mock('@/components/layout/PageTransition', () => ({
 }));
 
 vi.mock('@/features/jobs/components/JobsResults', () => ({
-  JobsResults: () => <div data-testid={TEST_IDS.jobs.jobsResults} />,
+  JobsResults: ({
+    boardSummaries,
+    failureNote,
+  }: {
+    boardSummaries?: unknown;
+    failureNote?: unknown;
+  }) => {
+    // Records the summaries + failure note forwarded into the empty-state wiring.
+    resultsProps.boardSummaries = boardSummaries;
+    resultsProps.failureNote = failureNote;
+    return <div data-testid={TEST_IDS.jobs.jobsResults} />;
+  },
+}));
+
+vi.mock('@/components/scrape/BoardSummaryChips', () => ({
+  BoardSummaryChips: ({ summaries }: { summaries: unknown }) => {
+    boardChips.summaries = summaries;
+    return <div data-testid="board-summary-chips" />;
+  },
+  // Readable fake so tests can assert JobsPage forwards the sanitized value
+  // (not the raw error) without depending on the real redaction internals.
+  sanitizeReason: (raw: string) => `sanitized:${raw}`,
 }));
 
 vi.mock('@/features/jobs/components/ScrapeForm', () => ({
@@ -178,6 +208,9 @@ describe('JobsPage — job.completed event handler', () => {
     notifyMock.success.mockClear();
     notifyMock.info.mockClear();
     notifyMock.warning.mockClear();
+    boardChips.summaries = null;
+    resultsProps.boardSummaries = undefined;
+    resultsProps.failureNote = undefined;
   });
 
   it('registers a job events listener on mount', () => {
@@ -315,60 +348,132 @@ describe('JobsPage — job.completed event handler', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Skipped-boards (needs-login) notification tests
+  // Per-board chip strip — retention + wiring (replaces the old skip-toasts)
   // ---------------------------------------------------------------------------
 
-  it('single skipped board → warning fired once, sticky (duration:0), correct key + params', async () => {
+  it('retains the full per-board summaries and feeds them to the chip strip', async () => {
+    renderJobsPage();
+
+    const boards = [
+      { board: 'linkedin', count: 5 },
+      { board: 'indeed', count: 0, skipped: 'needs-login' },
+      { board: 'xing', count: 0, error: 'rate limited' },
+    ];
+    fireJobEvent({ type: 'job.completed', jobId: 'job-123', data: { boards } });
+
+    await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
+    // The strip receives the untouched summaries (counts + skip + error), not a
+    // lossy names-only projection that discards the "why".
+    expect(boardChips.summaries).toEqual(boards);
+    // The same data reaches the empty-state wiring in JobsResults.
+    expect(resultsProps.boardSummaries).toEqual(boards);
+  });
+
+  it('surfaces a skipped board via the strip, NOT a toast (toasts were folded in)', async () => {
     renderJobsPage();
 
     fireJobEvent({
       type: 'job.completed',
       jobId: 'job-123',
-      data: {
-        boards: [{ board: 'indeed', count: 0, skipped: 'needs-login' }],
-      },
+      data: { boards: [{ board: 'indeed', count: 0, skipped: 'needs-login' }] },
     });
 
     await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
-    expect(notifyMock.warning).toHaveBeenCalledTimes(1);
-
-    const call = notifyMock.warning.mock.calls[0]?.[0] as { message: string; duration: number };
-    // duration:0 = sticky; user must dismiss manually.
-    expect(call.duration).toBe(0);
-    // t() mock: "jobs.needsLogin.skippedNote[boards=<boardName>,count=<n>]"
-    // boardName = t('jobs.boards.indeed') = 'jobs.boards.indeed' (identity mock)
-    expect(call.message).toContain('jobs.needsLogin.skippedNote');
-    expect(call.message).toContain('boards=jobs.boards.indeed');
-    expect(call.message).toContain('count=1');
+    expect(boardChips.summaries).toEqual([{ board: 'indeed', count: 0, skipped: 'needs-login' }]);
+    // No transient warning toast — the strip is the persistent surface now.
+    expect(notifyMock.warning).not.toHaveBeenCalled();
   });
 
-  it('two skipped boards → warning with count:2 and both board names in boards param', async () => {
+  it('needs-keys and needs-company skips also route to the strip, no toast', async () => {
     renderJobsPage();
+
+    const boards = [
+      { board: 'aggregator', count: 0, skipped: 'needs-keys' },
+      { board: 'greenhouse', count: 0, skipped: 'needs-company' },
+    ];
+    fireJobEvent({ type: 'job.completed', jobId: 'job-123', data: { boards } });
+
+    await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
+    expect(boardChips.summaries).toEqual(boards);
+    expect(notifyMock.warning).not.toHaveBeenCalled();
+  });
+
+  it('a stale (inactive-job) completion does NOT overwrite the strip', async () => {
+    renderJobsPage();
+
+    // scrapeJobRef.current is 'job-123' (see useScraping mock); fire a DIFFERENT id.
+    fireJobEvent({
+      type: 'job.completed',
+      jobId: 'other-job',
+      data: { boards: [{ board: 'indeed', count: 0, skipped: 'needs-login' }] },
+    });
+
+    await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
+    // The active-job guard returns before setLastSummaries, so the header strip
+    // never rendered — its capture stays at the reset default.
+    expect(boardChips.summaries).toBeNull();
+  });
+
+  it('job.failed clears the strip (an outright failure has no per-board data)', async () => {
+    renderJobsPage();
+
+    // A completed run first populates the strip...
+    fireJobEvent({
+      type: 'job.completed',
+      jobId: 'job-123',
+      data: { boards: [{ board: 'linkedin', count: 3 }] },
+    });
+    await waitFor(() => expect(boardChips.summaries).toEqual([{ board: 'linkedin', count: 3 }]));
+
+    // ...then an outright failure clears it (surfaced via scrapeOutcome instead).
+    fireJobEvent({ type: 'job.failed', jobId: 'job-123', data: 'connection refused' });
+    await waitFor(() => expect(resultsProps.boardSummaries).toEqual([]));
+  });
+
+  // ---------------------------------------------------------------------------
+  // Outright failure note (no per-board summaries to chip) — HIGH #3
+  // ---------------------------------------------------------------------------
+
+  it('job.failed persists a SANITIZED failure note (not the raw error) into the header + empty state', async () => {
+    renderJobsPage();
+
+    fireJobEvent({
+      type: 'job.failed',
+      jobId: 'job-123',
+      data: 'connection refused at C:\\Users\\me\\x',
+    });
+
+    await waitFor(() =>
+      expect(resultsProps.failureNote).toBe('sanitized:connection refused at C:\\Users\\me\\x')
+    );
+    // The header renders it via t('jobs.lastScrapeFailed', { reason }) — the t()
+    // mock renders "key[reason=<value>]" so both the key and the SANITIZED value
+    // (not the raw string) are visible in the DOM.
+    expect(
+      screen.getByText(
+        'jobs.lastScrapeFailed[reason=sanitized:connection refused at C:\\Users\\me\\x]'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('a subsequent job.completed clears the failure note', async () => {
+    renderJobsPage();
+
+    fireJobEvent({ type: 'job.failed', jobId: 'job-123', data: 'boom' });
+    await waitFor(() => expect(resultsProps.failureNote).toBe('sanitized:boom'));
 
     fireJobEvent({
       type: 'job.completed',
       jobId: 'job-123',
-      data: {
-        boards: [
-          { board: 'indeed', count: 0, skipped: 'needs-login' },
-          { board: 'xing', count: 0, skipped: 'needs-login' },
-        ],
-      },
+      data: { boards: [{ board: 'linkedin', count: 3 }] },
     });
-
-    await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
-    expect(notifyMock.warning).toHaveBeenCalledTimes(1);
-
-    const call = notifyMock.warning.mock.calls[0]?.[0] as { message: string; duration: number };
-    expect(call.duration).toBe(0);
-    expect(call.message).toContain('jobs.needsLogin.skippedNote');
-    // Both translated board keys must appear in the boards param value.
-    expect(call.message).toContain('jobs.boards.indeed');
-    expect(call.message).toContain('jobs.boards.xing');
-    expect(call.message).toContain('count=2');
+    await waitFor(() =>
+      expect(resultsProps.boardSummaries).toEqual([{ board: 'linkedin', count: 3 }])
+    );
+    expect(resultsProps.failureNote).toBeNull();
   });
 
-  it('skipped + failed in same payload → both warning AND partial-failure note fire', async () => {
+  it('a partial-failure completion still keeps the scrapeOutcome note for the form footer', async () => {
     renderJobsPage();
 
     fireJobEvent({
@@ -377,144 +482,17 @@ describe('JobsPage — job.completed event handler', () => {
       data: {
         boards: [
           { board: 'linkedin', count: 5 },
-          { board: 'indeed', count: 0, skipped: 'needs-login' },
           { board: 'xing', count: 0, error: 'rate limited' },
         ],
       },
     });
 
     await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
-
-    // Partial-failure note: xing had an error → note is defined.
     const outcome = scrapingMock.noteScrapeFinished.mock.calls[0]?.[1];
     expect(outcome?.ok).toBe(true);
-    expect(outcome?.note).toBeDefined();
     expect(outcome?.note).toContain('jobs.boards.xing');
-
-    // Skipped warning: indeed was skipped → warning fired.
-    expect(notifyMock.warning).toHaveBeenCalledTimes(1);
-    const warningCall = notifyMock.warning.mock.calls[0]?.[0] as {
-      message: string;
-      duration: number;
-    };
-    expect(warningCall.message).toContain('jobs.needsLogin.skippedNote');
-    expect(warningCall.message).toContain('jobs.boards.indeed');
-  });
-
-  it('no skipped boards (normal completion) → warning is NOT called', async () => {
-    renderJobsPage();
-
-    fireJobEvent({
-      type: 'job.completed',
-      jobId: 'job-123',
-      data: {
-        boards: [
-          { board: 'linkedin', count: 10 },
-          { board: 'indeed', count: 5 },
-        ],
-      },
-    });
-
-    await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
+    // The skip-toast path is gone entirely.
     expect(notifyMock.warning).not.toHaveBeenCalled();
-  });
-
-  // ---------------------------------------------------------------------------
-  // Skipped-boards (needs-company) notification tests
-  // ---------------------------------------------------------------------------
-
-  it('single needs-company board → warning fired once, sticky (duration:0), correct key + params', async () => {
-    renderJobsPage();
-
-    fireJobEvent({
-      type: 'job.completed',
-      jobId: 'job-123',
-      data: {
-        boards: [{ board: 'greenhouse', count: 0, skipped: 'needs-company' }],
-      },
-    });
-
-    await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
-    expect(notifyMock.warning).toHaveBeenCalledTimes(1);
-
-    const call = notifyMock.warning.mock.calls[0]?.[0] as { message: string; duration: number };
-    // duration:0 = sticky; user must add a company slug to dismiss the root cause.
-    expect(call.duration).toBe(0);
-    // t() mock: "jobs.needsCompany.skippedNote[boards=<boardName>,count=<n>]"
-    // boardName = t('jobs.boards.greenhouse') = 'jobs.boards.greenhouse' (identity mock)
-    expect(call.message).toContain('jobs.needsCompany.skippedNote');
-    expect(call.message).toContain('boards=jobs.boards.greenhouse');
-    expect(call.message).toContain('count=1');
-  });
-
-  it('two needs-company boards → warning with count:2 and both board names in boards param', async () => {
-    renderJobsPage();
-
-    fireJobEvent({
-      type: 'job.completed',
-      jobId: 'job-123',
-      data: {
-        boards: [
-          { board: 'greenhouse', count: 0, skipped: 'needs-company' },
-          { board: 'lever', count: 0, skipped: 'needs-company' },
-        ],
-      },
-    });
-
-    await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
-    expect(notifyMock.warning).toHaveBeenCalledTimes(1);
-
-    const call = notifyMock.warning.mock.calls[0]?.[0] as { message: string; duration: number };
-    expect(call.duration).toBe(0);
-    expect(call.message).toContain('jobs.needsCompany.skippedNote');
-    expect(call.message).toContain('jobs.boards.greenhouse');
-    expect(call.message).toContain('jobs.boards.lever');
-    expect(call.message).toContain('count=2');
-  });
-
-  it('no needs-company boards (normal completion) → needs-company warning NOT fired', async () => {
-    renderJobsPage();
-
-    fireJobEvent({
-      type: 'job.completed',
-      jobId: 'job-123',
-      data: {
-        boards: [
-          { board: 'linkedin', count: 10 },
-          { board: 'indeed', count: 5 },
-        ],
-      },
-    });
-
-    await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
-    // No warning at all (neither needs-login nor needs-company).
-    expect(notifyMock.warning).not.toHaveBeenCalled();
-  });
-
-  it('needs-company + needs-login in same payload → two warning calls, each with correct key', async () => {
-    renderJobsPage();
-
-    fireJobEvent({
-      type: 'job.completed',
-      jobId: 'job-123',
-      data: {
-        boards: [
-          { board: 'linkedin', count: 5 },
-          { board: 'indeed', count: 0, skipped: 'needs-login' },
-          { board: 'greenhouse', count: 0, skipped: 'needs-company' },
-        ],
-      },
-    });
-
-    await waitFor(() => expect(scrapingMock.noteScrapeFinished).toHaveBeenCalled());
-    // Both warnings fire (one per skip reason).
-    expect(notifyMock.warning).toHaveBeenCalledTimes(2);
-
-    const messages = (
-      notifyMock.warning.mock.calls as Array<[{ message: string; duration: number }]>
-    ).map((c) => c[0].message);
-    expect(messages.some((m) => m.includes('jobs.needsLogin.skippedNote'))).toBe(true);
-    expect(messages.some((m) => m.includes('jobs.needsCompany.skippedNote'))).toBe(true);
   });
 
   it('malformed data.boards (not an array) → does not throw, noteScrapeFinished called with ok:true and no note', async () => {
