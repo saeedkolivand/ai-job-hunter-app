@@ -37,8 +37,9 @@ interface OutputPanelDoneProps {
   /** Export market/locale — drives the cover-letter preview layout (#24). */
   locale?: string;
   onActiveOutChange: (out: 'resume' | 'cover') => void;
-  /** Forwards a picked layout — shown on the cover tab only, threaded to preview + export. */
-  onLetterLayoutChange: (id: LetterLayoutId) => void;
+  /** Forwards a picked layout — shown on the cover tab only, threaded to preview + export.
+   *  Optional: resume-only hosts (resume builder) never render a cover tab. */
+  onLetterLayoutChange?: (id: LetterLayoutId) => void;
   onCopy: () => void;
   onExport: (fmt: 'pdf' | 'docx' | 'txt') => Promise<void>;
   onOutputChange: (value: string) => void;
@@ -267,7 +268,7 @@ export function OutputPanelDone({
 
       {/* Letter-layout picker — cover tab only (the layout only affects the letter;
           mirrors GenerationOutput's cover-only strip). Threaded to preview + export. */}
-      {activeOut === 'cover' && (
+      {activeOut === 'cover' && onLetterLayoutChange && (
         <div className="shrink-0 border-b border-[var(--border-clear)] px-6 py-2">
           <LetterLayoutPicker value={letterLayoutId} onChange={onLetterLayoutChange} />
         </div>
