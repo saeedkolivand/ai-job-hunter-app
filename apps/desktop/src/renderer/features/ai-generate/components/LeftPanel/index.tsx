@@ -9,7 +9,12 @@ import { AiSetupHint } from '@/components/ui/AiSetupHint';
 import { ModelSelector } from '@/components/ui/ModelSelector';
 import { GenerationMetadata } from '@/features/ai-generate/components/GenerationMetadata';
 import { TemplateRecommendation } from '@/features/ai-generate/components/TemplateRecommendation';
-import { type GenerationMeta, isTwoColumnTemplate, type TemplateId } from '@/lib/generate';
+import {
+  type GenerationMeta,
+  isDesignTier,
+  isTwoColumnTemplate,
+  type TemplateId,
+} from '@/lib/generate';
 
 interface Props {
   resume: string;
@@ -130,7 +135,9 @@ export function LeftPanel({
           setTemplateId(id);
           setLocale(recommendedLocale);
           if (atsSuggested && isTwoColumnTemplate(id)) setAtsMode(true);
-          else if (!isTwoColumnTemplate(id)) setAtsMode(false);
+          // Reset gates on design-tier semantics like the other four surfaces;
+          // the auto-suggest guard above deliberately stays two-column-only.
+          else if (!isDesignTier(id)) setAtsMode(false);
         }}
       />
 

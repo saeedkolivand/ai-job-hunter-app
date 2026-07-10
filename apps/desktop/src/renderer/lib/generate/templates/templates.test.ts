@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { TEMPLATES } from './templates';
+import { isDesignTier, TEMPLATES } from './templates';
 
 describe('TEMPLATES', () => {
   const ids = Object.keys(TEMPLATES);
@@ -42,5 +42,38 @@ describe('TEMPLATES', () => {
       expect(t.bodyPt).toBeGreaterThan(0);
       expect(['ruled-bottom', 'underline', 'bold-only']).toContain(t.sectionStyle);
     }
+  });
+
+  // ── tier metadata (mirrors the Rust `TemplateTier`) ─────────────────────────
+
+  it('assigns every template an ats or design tier', () => {
+    for (const t of Object.values(TEMPLATES)) {
+      expect(['ats', 'design']).toContain(t.tier);
+    }
+  });
+
+  it('mirrors the Rust TemplateTier split (ats: single-column · design: photo/two-column)', () => {
+    const idsByTier = (tier: 'ats' | 'design') =>
+      Object.values(TEMPLATES)
+        .filter((t) => t.tier === tier)
+        .map((t) => t.id)
+        .sort();
+    expect(idsByTier('ats')).toEqual([
+      'academic',
+      'classic',
+      'meridian',
+      'swiss-minimal',
+      'throughline',
+    ]);
+    expect(idsByTier('design')).toEqual(['atelier', 'lebenslauf', 'portrait']);
+  });
+
+  it('isDesignTier is true exactly for design-tier templates', () => {
+    for (const t of Object.values(TEMPLATES)) {
+      expect(isDesignTier(t.id)).toBe(t.tier === 'design');
+    }
+    // Lebenslauf is design tier despite being single-column — the toggle-gate fix.
+    expect(isDesignTier('lebenslauf')).toBe(true);
+    expect(isDesignTier('classic')).toBe(false);
   });
 });

@@ -36,6 +36,7 @@ vi.mock('../wizard-steps/StepTemplate', () => ({
   }) => (
     <div>
       <Button onClick={() => onTemplateChange('classic')}>select-classic</Button>
+      <Button onClick={() => onTemplateChange('lebenslauf')}>select-lebenslauf</Button>
       <Button onClick={() => onAtsModeChange(false)}>reset-ats</Button>
     </div>
   ),
@@ -197,5 +198,15 @@ describe('GenerateWizard — template selection side-effects', () => {
     // StepTemplate stub calls onAtsModeChange(false) via the "reset-ats" button
     await user.click(screen.getByRole('button', { name: 'reset-ats' }));
     expect(onAtsModeChange).toHaveBeenCalledWith(false);
+  });
+
+  it('selecting Lebenslauf (design tier) does NOT reset ATS mode', async () => {
+    const user = userEvent.setup();
+    const onAtsModeChange = vi.fn();
+    const onTemplateChange = vi.fn();
+    render(<GenerateWizard {...makeProps({ onTemplateChange, onAtsModeChange })} />);
+    await user.click(screen.getByRole('button', { name: 'select-lebenslauf' }));
+    expect(onTemplateChange).toHaveBeenCalledWith('lebenslauf');
+    expect(onAtsModeChange).not.toHaveBeenCalled();
   });
 });

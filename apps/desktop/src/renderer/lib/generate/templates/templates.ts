@@ -19,6 +19,12 @@ export type TemplateId =
 interface DocTemplate {
   id: TemplateId;
   name: string;
+  /**
+   * ATS-safe vs. design tier — mirrors the Rust `TemplateTier`. Drives the
+   * gallery grouping (ATS-Safe / Design sections + badge) and which templates
+   * surface the ATS-mode toggle (design layouts drop the photo / linearize).
+   */
+  tier: 'ats' | 'design';
   // Colors (hex, no #)
   nameColor: string;
   sectionColor: string;
@@ -46,6 +52,7 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
   classic: {
     id: 'classic',
     name: 'ATS Classic',
+    tier: 'ats',
     nameColor: '111111',
     sectionColor: '111111',
     accentColor: '222222',
@@ -68,6 +75,7 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
   'swiss-minimal': {
     id: 'swiss-minimal',
     name: 'Swiss Minimal',
+    tier: 'ats',
     nameColor: '141414',
     sectionColor: '141414',
     accentColor: 'E63946',
@@ -90,6 +98,7 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
   academic: {
     id: 'academic',
     name: 'Academic',
+    tier: 'ats',
     nameColor: '141E1E',
     sectionColor: '1B4332',
     accentColor: '1B4332',
@@ -112,6 +121,7 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
   atelier: {
     id: 'atelier',
     name: 'Atelier',
+    tier: 'design',
     nameColor: '16143A',
     sectionColor: '4A4580',
     accentColor: '4A4580',
@@ -134,6 +144,7 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
   meridian: {
     id: 'meridian',
     name: 'Meridian',
+    tier: 'ats',
     nameColor: '2A2A2A',
     sectionColor: 'A0522D',
     accentColor: 'A0522D',
@@ -156,6 +167,7 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
   throughline: {
     id: 'throughline',
     name: 'Throughline',
+    tier: 'ats',
     nameColor: '141E1E',
     sectionColor: '1A5C52',
     accentColor: '1A5C52',
@@ -178,6 +190,7 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
   portrait: {
     id: 'portrait',
     name: 'Portrait',
+    tier: 'design',
     nameColor: '16303A',
     sectionColor: '2A6478',
     accentColor: '2A6478',
@@ -200,6 +213,7 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
   lebenslauf: {
     id: 'lebenslauf',
     name: 'Lebenslauf (DACH)',
+    tier: 'design',
     nameColor: '1E1E28',
     sectionColor: '3D4F6B',
     accentColor: '3D4F6B',
@@ -231,4 +245,15 @@ const TWO_COLUMN_TEMPLATE_IDS = new Set<TemplateId>(['atelier', 'portrait']);
 
 export function isTwoColumnTemplate(id: TemplateId): boolean {
   return TWO_COLUMN_TEMPLATE_IDS.has(id);
+}
+
+/**
+ * Design-tier templates (photo / two-column / visually rich) — mirrors the Rust
+ * `TemplateTier::Design`. Drives the gallery's Design section and the ATS-mode
+ * toggle gate: design layouts drop the photo and/or linearize under ATS mode,
+ * so the toggle is surfaced for all of them (incl. single-column-with-photo
+ * templates like Lebenslauf that `isTwoColumnTemplate` deliberately excludes).
+ */
+export function isDesignTier(id: TemplateId): boolean {
+  return TEMPLATES[id].tier === 'design';
 }

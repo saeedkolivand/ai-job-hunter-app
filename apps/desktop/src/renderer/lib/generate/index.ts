@@ -29,7 +29,13 @@ export {
   type SupportedLocale,
   VALID_LOCALES,
 } from './locales';
-export { isTwoColumnTemplate, TEMPLATE_IDS, type TemplateId, TEMPLATES } from './templates';
+export {
+  isDesignTier,
+  isTwoColumnTemplate,
+  TEMPLATE_IDS,
+  type TemplateId,
+  TEMPLATES,
+} from './templates';
 export type {
   InterviewAnswers,
   InterviewEducation,

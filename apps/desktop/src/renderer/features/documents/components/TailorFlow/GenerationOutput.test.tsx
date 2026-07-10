@@ -496,18 +496,52 @@ describe('GenerationOutput', () => {
       expect(onTemplateChange).toHaveBeenCalledWith('classic');
       expect(onAtsModeChange).toHaveBeenCalledWith(false);
     });
+
+    it('does NOT reset ATS mode when Lebenslauf (design tier) is picked', async () => {
+      const user = userEvent.setup();
+      const onTemplateChange = vi.fn();
+      const onAtsModeChange = vi.fn();
+      render(
+        <GenerationOutput
+          {...makeProps({
+            activeOut: 'resume',
+            templateId: 'atelier',
+            onTemplateChange,
+            onAtsModeChange,
+            atsMode: true,
+          })}
+        />
+      );
+
+      await pickTemplate(user, 'lebenslauf');
+
+      expect(onTemplateChange).toHaveBeenCalledWith('lebenslauf');
+      expect(onAtsModeChange).not.toHaveBeenCalled();
+    });
   });
 
   // ── 7. ATS toggle ─────────────────────────────────────────────────────────────
-  // The switch is rendered only on the résumé tab AND when
-  // isTwoColumnTemplate(templateId) is true — ATS single-column linearization is a
-  // résumé concept, so it never shows on the cover tab.
+  // The switch is rendered only on the résumé tab AND when isDesignTier(templateId)
+  // is true (two-column OR photo, incl. Lebenslauf) — ATS-safe mode is a résumé
+  // concept, so it never shows on the cover tab.
 
   describe('ATS toggle', () => {
     it('renders a switch when a two-column template is active on the resume tab', () => {
       // 'atelier' is a confirmed two-column template.
       render(<GenerationOutput {...makeProps({ activeOut: 'resume', templateId: 'atelier' })} />);
       expect(screen.getByRole('switch')).toBeInTheDocument();
+    });
+
+    it('renders a switch for Lebenslauf (design-tier, single-column-with-photo)', () => {
+      render(
+        <GenerationOutput {...makeProps({ activeOut: 'resume', templateId: 'lebenslauf' })} />
+      );
+      expect(screen.getByRole('switch')).toBeInTheDocument();
+    });
+
+    it('does NOT render a switch for an ATS-tier template (classic)', () => {
+      render(<GenerationOutput {...makeProps({ activeOut: 'resume', templateId: 'classic' })} />);
+      expect(screen.queryByRole('switch')).not.toBeInTheDocument();
     });
 
     it('is absent on the cover tab even for a two-column template', () => {
