@@ -14,7 +14,9 @@ export type TemplateId =
   | 'meridian'
   | 'throughline'
   | 'portrait'
-  | 'lebenslauf';
+  | 'lebenslauf'
+  | 'cadence'
+  | 'regent';
 
 interface DocTemplate {
   id: TemplateId;
@@ -227,6 +229,52 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
     marginIn: 0.9,
     lineSpacingDocx: 264,
     sectionSpacingBefore: 240,
+    nameCentered: false,
+    sectionAllCaps: false,
+    sectionStyle: 'ruled-bottom',
+  },
+
+  /** Cadence — Inter, large 28pt name, blue-grey accent, letter-spaced all-caps ruled headings, underlined links */
+  cadence: {
+    id: 'cadence',
+    name: 'Cadence',
+    tier: 'ats',
+    nameColor: '1A1A1A',
+    sectionColor: '1A1A1A',
+    accentColor: '4A6785',
+    bodyColor: '2B2B2B',
+    dateColor: '6B6B6B',
+    emphasisColor: '4A6785',
+    ruleColor: '4A6785',
+    namePt: 28,
+    sectionPt: 10.5,
+    bodyPt: 10,
+    marginIn: 0.8,
+    lineSpacingDocx: 264,
+    sectionSpacingBefore: 240,
+    nameCentered: false,
+    sectionAllCaps: true,
+    sectionStyle: 'ruled-bottom',
+  },
+
+  /** Regent — Source Serif 4, deep burgundy accent + rose rule, serif small-caps headings, executive */
+  regent: {
+    id: 'regent',
+    name: 'Regent',
+    tier: 'ats',
+    nameColor: '2A2A2E',
+    sectionColor: '6E1E2B',
+    accentColor: '6E1E2B',
+    bodyColor: '26262A',
+    dateColor: '7A6A6E',
+    emphasisColor: '6E1E2B',
+    ruleColor: 'C9A9AE',
+    namePt: 26,
+    sectionPt: 11,
+    bodyPt: 10.5,
+    marginIn: 0.9,
+    lineSpacingDocx: 276,
+    sectionSpacingBefore: 280,
     nameCentered: false,
     sectionAllCaps: false,
     sectionStyle: 'ruled-bottom',
