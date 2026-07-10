@@ -7,6 +7,7 @@ import { Button, cn, Dropdown, Switch, type TabItem, Tabs } from '@ajh/ui';
 import { AccentPicker } from '@/components/generation/AccentPicker';
 import { EditableOutput } from '@/components/generation/EditableOutput';
 import { type ExportFormat, ExportPicker } from '@/components/generation/ExportPicker';
+import { LetterLayoutPicker } from '@/components/generation/LetterLayoutPicker';
 import { PdfPreview } from '@/components/generation/PdfPreview';
 import { useDebouncedCommit } from '@/hooks/use-debounced-commit';
 import {
@@ -14,6 +15,7 @@ import {
   type GenerationMeta,
   isDesignTier,
   isTwoColumnTemplate,
+  type LetterLayoutId,
   TEMPLATE_IDS,
   type TemplateId,
   TEMPLATES,
@@ -32,9 +34,12 @@ interface Props {
   atsMode: boolean;
   /** Per-export document accent (6-hex); undefined = template palette. */
   accent?: string;
+  /** Per-export cover-letter layout; undefined → the backend renders classic. */
+  letterLayoutId?: LetterLayoutId;
   onTemplateChange: (id: TemplateId) => void;
   onAtsModeChange: (v: boolean) => void;
   onAccentChange: (accent: string | undefined) => void;
+  onLetterLayoutChange: (id: LetterLayoutId) => void;
   output: string;
   onEdit: (text: string) => void;
   editable: boolean;
@@ -66,9 +71,11 @@ export function GenerationOutput({
   templateId,
   atsMode,
   accent,
+  letterLayoutId,
   onTemplateChange,
   onAtsModeChange,
   onAccentChange,
+  onLetterLayoutChange,
   output,
   onEdit,
   editable,
@@ -312,6 +319,14 @@ export function GenerationOutput({
           <AccentPicker value={accent} onChange={onAccentChange} />
         </div>
       )}
+      {/* Letter-layout strip — cover-only (the layout only affects the letter; the
+          résumé is unaffected, so it's the cover-doc counterpart to the résumé-only
+          ATS toggle). Drives the cover preview + export. */}
+      {view === 'doc' && activeOut === 'cover' && (
+        <div className="shrink-0 border-b border-foreground/[0.06] px-3 py-2">
+          <LetterLayoutPicker value={letterLayoutId} onChange={onLetterLayoutChange} />
+        </div>
+      )}
       <div
         role="tabpanel"
         id={activePanelId}
@@ -352,6 +367,7 @@ export function GenerationOutput({
                 templateId={templateId}
                 atsMode={atsMode}
                 accent={accent}
+                letterLayoutId={letterLayoutId}
                 paused={!editable}
                 className="h-full w-full"
               />

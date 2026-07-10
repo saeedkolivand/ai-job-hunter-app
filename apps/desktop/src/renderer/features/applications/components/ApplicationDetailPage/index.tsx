@@ -910,11 +910,13 @@ function DocumentsTab({ application, matchingGenerations }: DocumentsTabProps) {
     templateId: applicationApply.applyTemplateId,
     atsMode: applicationApply.applyAtsMode,
     accent: applicationApply.applyAccent,
+    letterLayoutId: applicationApply.applyLetterLayoutId,
     setWizardStep: (v) => setApplicationApply({ applyWizardStep: v }),
     setWizardForm: (v) => setApplicationApply({ applyWizardForm: v }),
     setTemplateId: (v) => setApplicationApply({ applyTemplateId: v }),
     setAtsMode: (v) => setApplicationApply({ applyAtsMode: v }),
     setAccent: (v) => setApplicationApply({ applyAccent: v }),
+    setLetterLayoutId: (v) => setApplicationApply({ applyLetterLayoutId: v }),
   };
 
   return (

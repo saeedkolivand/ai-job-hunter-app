@@ -4,7 +4,13 @@ import type { InterviewAnswers } from '@ajh/prompts/builder';
 
 import type { WizardState } from '@/features/autopilot/types';
 import type { TailorWizardState } from '@/features/documents/components/TailorFlow/lib/tailor-state';
-import type { EmphasisId, GenerationMeta, GenerationMode, TemplateId } from '@/lib/generate';
+import type {
+  EmphasisId,
+  GenerationMeta,
+  GenerationMode,
+  LetterLayoutId,
+  TemplateId,
+} from '@/lib/generate';
 import type { AnalysisMode, AnalysisResult } from '@/lib/resume-ai';
 
 // Per-route state shapes
@@ -24,6 +30,8 @@ interface AIGenerateSlice {
   atsMode: boolean;
   /** Per-export document accent (6-hex `#RRGGBB`); undefined = template palette. */
   accent?: string;
+  /** Per-export cover-letter layout; undefined → backend renders classic. */
+  letterLayoutId?: LetterLayoutId;
   locale: string;
   resumeOut: string;
   coverOut: string;
@@ -122,6 +130,8 @@ interface ApplicationApplySlice {
   applyAtsMode: boolean;
   /** Per-export document accent (6-hex `#RRGGBB`); undefined = template palette. */
   applyAccent?: string;
+  /** Per-export cover-letter layout; undefined → backend renders classic. */
+  applyLetterLayoutId?: LetterLayoutId;
   applyForId: string | null;
   /** One-shot résumé seed for the Documents-tab wizard when arriving from the
    *  autopilot Apply deep-link; cleared when switching to another application. */

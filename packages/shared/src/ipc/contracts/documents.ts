@@ -16,6 +16,16 @@ export type TemplateId =
   | 'aria'
   | 'saffron';
 
+/**
+ * Cover-letter **layout** (arrangement only) — MUST match the Rust `LetterLayout`
+ * enum (export/types.rs, kebab-case serde). A layout owns the letter's
+ * composition; the palette and fonts always inherit from the chosen résumé
+ * {@link TemplateId}. `classic` (the default) is the original single-`letter.typ`
+ * arrangement, so an omitted value renders the pre-layout-picker output. Ignored
+ * for résumé exports.
+ */
+export type LetterLayoutId = 'classic' | 'refined' | 'banded';
+
 interface ExportMeta {
   candidateName?: string;
   jobTitle?: string;
@@ -47,6 +57,14 @@ export interface BaseExportRequest {
    * value is ignored by the backend.
    */
   accent?: string;
+  /**
+   * Cover-letter **layout** — the arrangement of the letter, independent of the
+   * résumé {@link TemplateId} (which still supplies the palette + fonts). Wire
+   * name is `letterLayoutId` (matches the Rust `#[serde(rename = "letterLayoutId")]`).
+   * Omitted (the default) → the backend renders `classic`. Ignored for résumé
+   * exports.
+   */
+  letterLayoutId?: LetterLayoutId;
 }
 
 export type ExportIssueSeverity = 'critical' | 'warning';

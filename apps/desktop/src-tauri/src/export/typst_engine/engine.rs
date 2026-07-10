@@ -25,7 +25,7 @@ use typst_pdf::{pdf, PdfOptions};
 use crate::contact_profile::ContactProfile;
 use crate::error::{AppError, AppResult};
 use crate::export::templates::Template;
-use crate::export::types::TemplateId;
+use crate::export::types::{LetterLayout, TemplateId};
 use crate::model::document::DocumentModel;
 
 use super::letter::{parse_cover_letter, style_from_template as letter_style_from_template};
@@ -73,15 +73,38 @@ const SAFFRON_TYP: &str = include_str!("templates/saffron.typ");
 
 /// Parametric cover-letter template driven by `data.opts` + `data.style`.
 /// A4 or Letter; themed from the chosen resume template's accent + fonts.
+/// This is the `LetterLayout::Classic` arrangement.
 const LETTER_TYP: &str = include_str!("templates/letter.typ");
 
-/// Test-only accessor for the embedded `(SCALE_TYP, LETTER_TYP)` sources so the
-/// offline `generate_cover_template_previews` test can build the exact same
-/// cover-letter Typst world as [`render_letter_pdf`] without duplicating the
-/// `include_str!` paths (the two consts stay private to production code).
+/// `LetterLayout::Refined` — Olivia-Wilson minimalist arrangement (large sans
+/// name + role top-left, right-aligned contact, always-on job-reference line).
+/// Same `data.opts` / `data.style` / `LetterModel` contract as [`LETTER_TYP`].
+const LETTER_REFINED_TYP: &str = include_str!("templates/letter_refined.typ");
+
+/// `LetterLayout::Banded` — Belinda-Davidson arrangement (angled pale accent
+/// band across the top of page 1, serif small-caps name, stacked right contact).
+/// Same contract as [`LETTER_TYP`].
+const LETTER_BANDED_TYP: &str = include_str!("templates/letter_banded.typ");
+
+/// The embedded letter Typst source for a given [`LetterLayout`]. All three
+/// layouts share the same `data.json` contract — only the arrangement differs.
+const fn letter_source(layout: LetterLayout) -> &'static str {
+    match layout {
+        LetterLayout::Classic => LETTER_TYP,
+        LetterLayout::Refined => LETTER_REFINED_TYP,
+        LetterLayout::Banded => LETTER_BANDED_TYP,
+    }
+}
+
+/// Test-only accessor for the embedded scale preamble plus all three letter
+/// layout sources so the offline `generate_cover_template_previews` test can
+/// build the exact same cover-letter Typst world as [`render_letter_pdf`]
+/// without duplicating the `include_str!` paths (the consts stay private to
+/// production code).
 #[cfg(test)]
-pub(super) const fn letter_template_sources() -> (&'static str, &'static str) {
-    (SCALE_TYP, LETTER_TYP)
+pub(super) const fn letter_template_sources(
+) -> (&'static str, &'static str, &'static str, &'static str) {
+    (SCALE_TYP, LETTER_TYP, LETTER_REFINED_TYP, LETTER_BANDED_TYP)
 }
 
 // ── Template enum (Typst-side) ────────────────────────────────────────────────
@@ -399,8 +422,9 @@ pub fn render_letter_pdf(
     meta_name: Option<&str>,
     market: &str,
     lang: &str,
+    layout: LetterLayout,
 ) -> AppResult<Vec<u8>> {
-    let world = build_letter_world(text, template, contact, meta_name, market, lang)?;
+    let world = build_letter_world(text, template, contact, meta_name, market, lang, layout)?;
     compile_and_export(&world)
 }
 
@@ -411,6 +435,10 @@ pub fn render_letter_pdf(
 /// ([`render_letter_svg_pages`]). Behaviour is preserved exactly from the prior
 /// inline body of [`render_letter_pdf`] (same `parse_cover_letter`, same source
 /// preamble, same `data.json` serialisation).
+///
+/// `layout` selects the arrangement source ([`letter_source`]); every layout
+/// consumes the identical `data.json`. `LetterLayout::Classic` reproduces the
+/// pre-layout-picker output byte-for-byte (same preamble + `letter.typ`).
 fn build_letter_world(
     text: &str,
     template: &Template,
@@ -418,6 +446,7 @@ fn build_letter_world(
     meta_name: Option<&str>,
     market: &str,
     lang: &str,
+    layout: LetterLayout,
 ) -> AppResult<ResumeWorld> {
     let style = letter_style_from_template(template);
     let model = parse_cover_letter(text, contact, meta_name, market, lang, style);
@@ -429,13 +458,14 @@ fn build_letter_world(
     })?;
 
     // Prepend the document-meta preamble (PDF title + author + language) and the
-    // shared spacing scale, then the letter template source.
+    // shared spacing scale, then the selected letter layout source.
     let meta = document_meta_preamble("data.letterhead.name", "Cover Letter");
+    let letter_typ = letter_source(layout);
     let source = format!(
         "// Auto-generated cover-letter entry — do not edit.\n\
          #let data = json(\"data.json\")\n\
          {meta}{SCALE_TYP}\n\
-         {LETTER_TYP}"
+         {letter_typ}"
     );
 
     Ok(ResumeWorld::with_data(&source, Some(data_json)))
@@ -457,7 +487,8 @@ pub fn render_letter_svg_pages(
     meta_name: Option<&str>,
     market: &str,
     lang: &str,
+    layout: LetterLayout,
 ) -> AppResult<Vec<String>> {
-    let world = build_letter_world(text, template, contact, meta_name, market, lang)?;
+    let world = build_letter_world(text, template, contact, meta_name, market, lang, layout)?;
     compile_and_svg(&world)
 }

@@ -116,6 +116,7 @@ describe('PdfPreview (#24)', () => {
       'classic',
       false,
       undefined,
+      undefined,
       undefined
     );
   });
@@ -197,6 +198,7 @@ describe('PdfPreview (#24)', () => {
       undefined,
       'classic',
       false,
+      undefined,
       undefined,
       undefined
     );

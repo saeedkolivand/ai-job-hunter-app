@@ -117,6 +117,9 @@ export const TEST_IDS = {
     accentSwatch: 'accent-swatch',
     /** AccentPicker: the custom 6-hex input. */
     accentCustom: 'accent-custom',
+    /** LetterLayoutPicker: one layout option — suffix with the layout id
+     *  (`letter-layout-option-refined`). */
+    letterLayoutOption: 'letter-layout-option',
   },
 
   /** Onboarding wizard */

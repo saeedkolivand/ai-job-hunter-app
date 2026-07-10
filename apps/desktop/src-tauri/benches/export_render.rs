@@ -14,7 +14,9 @@ use criterion::{criterion_group, criterion_main, Criterion};
 
 use ajh_tauri::export::docx::generate_docx;
 use ajh_tauri::export::pdf::generate_pdf;
-use ajh_tauri::export::types::{DocumentType, ExportFormat, ExportRequest, TemplateId};
+use ajh_tauri::export::types::{
+    DocumentType, ExportFormat, ExportRequest, LetterLayout, TemplateId,
+};
 
 /// Representative one-page résumé: header with contact links, summary, two
 /// experience entries with bullets, education, and skills — enough to exercise
@@ -54,6 +56,7 @@ fn request(format: ExportFormat, template_id: TemplateId) -> ExportRequest {
         locale: Some("en".to_string()),
         contact: None,
         accent: None,
+        letter_layout: LetterLayout::Classic,
     }
 }
 

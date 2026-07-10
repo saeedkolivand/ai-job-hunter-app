@@ -8,6 +8,7 @@ import {
   type EmphasisId,
   type GenerationMode,
   isDesignTier,
+  type LetterLayoutId,
   type TemplateId,
 } from '@/lib/generate';
 import { useSessionStore } from '@/store/session-store';
@@ -25,6 +26,7 @@ interface GenerateWizardProps {
   templateId: TemplateId;
   atsMode: boolean;
   accent?: string;
+  letterLayoutId?: LetterLayoutId;
   locale: string;
   researchCompany: boolean;
   isGenerating: boolean;
@@ -34,6 +36,7 @@ interface GenerateWizardProps {
   onTemplateChange: (id: TemplateId) => void;
   onAtsModeChange: (enabled: boolean) => void;
   onAccentChange: (accent: string | undefined) => void;
+  onLetterLayoutChange: (id: LetterLayoutId) => void;
   onLocaleChange: (locale: string) => void;
   onResearchCompanyChange: (v: boolean) => void;
   onGenerate: () => void;
@@ -46,6 +49,7 @@ export function GenerateWizard({
   templateId,
   atsMode,
   accent,
+  letterLayoutId,
   locale,
   researchCompany,
   isGenerating,
@@ -55,6 +59,7 @@ export function GenerateWizard({
   onTemplateChange,
   onAtsModeChange,
   onAccentChange,
+  onLetterLayoutChange,
   onLocaleChange,
   onResearchCompanyChange,
   onGenerate,
@@ -173,6 +178,8 @@ export function GenerateWizard({
                 target={target}
                 accent={accent}
                 onAccentChange={onAccentChange}
+                letterLayoutId={letterLayoutId}
+                onLetterLayoutChange={onLetterLayoutChange}
               />
             )}
             {step === 2 && (

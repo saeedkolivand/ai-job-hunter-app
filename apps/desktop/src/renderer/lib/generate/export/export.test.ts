@@ -80,6 +80,36 @@ describe('exportDOCX / exportPDF', () => {
     expect(arg.accent).toBeUndefined();
   });
 
+  it('threads the letter layout into the cover-letter export request', async () => {
+    const exportAndSave = vi.fn().mockResolvedValue('/path/out.pdf');
+    _registerClient(createMockClient({ documents: { exportAndSave } }));
+
+    const raw = '### COMPLETE COVER LETTER ###\nDear Team, ...';
+    await exportPDF(
+      raw,
+      'out.pdf',
+      'cover-letter',
+      meta,
+      'classic',
+      false,
+      'en',
+      undefined,
+      'refined'
+    );
+    expect(exportAndSave).toHaveBeenCalledWith(
+      expect.objectContaining({ documentType: 'cover-letter', letterLayoutId: 'refined' })
+    );
+  });
+
+  it('omits the letter layout (undefined) so the backend defaults to classic', async () => {
+    const exportAndSave = vi.fn().mockResolvedValue('/path/out.pdf');
+    _registerClient(createMockClient({ documents: { exportAndSave } }));
+
+    await exportPDF('Resume body', 'out.pdf', 'resume', meta, 'classic');
+    const arg = exportAndSave.mock.calls[0]?.[0] as { letterLayoutId?: string };
+    expect(arg.letterLayoutId).toBeUndefined();
+  });
+
   it('extracts the cover-letter section before exporting', async () => {
     const exportAndSave = vi.fn().mockResolvedValue('/path/out.pdf');
     _registerClient(createMockClient({ documents: { exportAndSave } }));
@@ -133,6 +163,26 @@ describe('renderDocumentPreview (#24)', () => {
     await renderDocumentPreview('Resume body', 'resume', meta, 'classic', false, 'en', '#6E1E2B');
     expect(renderPreviewImages).toHaveBeenCalledWith(
       expect.objectContaining({ accent: '#6E1E2B' })
+    );
+  });
+
+  it('threads the letter layout into the cover preview request so it matches the export', async () => {
+    const renderPreviewImages = vi.fn().mockResolvedValue({ pages: [], mimeType: 'image/svg+xml' });
+    _registerClient(createMockClient({ documents: { renderPreviewImages } }));
+
+    const raw = '### COMPLETE COVER LETTER ###\nDear Team, ...';
+    await renderDocumentPreview(
+      raw,
+      'cover-letter',
+      meta,
+      'classic',
+      false,
+      'en',
+      undefined,
+      'banded'
+    );
+    expect(renderPreviewImages).toHaveBeenCalledWith(
+      expect.objectContaining({ documentType: 'cover-letter', letterLayoutId: 'banded' })
     );
   });
 

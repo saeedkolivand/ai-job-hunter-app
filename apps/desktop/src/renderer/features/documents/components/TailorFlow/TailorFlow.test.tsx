@@ -309,7 +309,7 @@ vi.mock('./ReferralModal', () => ({
 
 import type { AiGenerationRecord, AutopilotFoundJob } from '@ajh/shared';
 
-import type { TemplateId } from '@/lib/generate';
+import type { LetterLayoutId, TemplateId } from '@/lib/generate';
 
 import {
   TailorFlow,
@@ -353,13 +353,19 @@ const SAVED_GENERATION: AiGenerationRecord = {
 
 type MockedPersistence = Omit<
   TailorFlowPersistence,
-  'setWizardStep' | 'setWizardForm' | 'setTemplateId' | 'setAtsMode' | 'setAccent'
+  | 'setWizardStep'
+  | 'setWizardForm'
+  | 'setTemplateId'
+  | 'setAtsMode'
+  | 'setAccent'
+  | 'setLetterLayoutId'
 > & {
   setWizardStep: Mock<(v: number) => void>;
   setWizardForm: Mock<(v: TailorWizardState) => void>;
   setTemplateId: Mock<(v: TemplateId) => void>;
   setAtsMode: Mock<(v: boolean) => void>;
   setAccent: Mock<(v: string | undefined) => void>;
+  setLetterLayoutId: Mock<(v: LetterLayoutId) => void>;
 };
 
 function makePersistence(overrides: Partial<MockedPersistence> = {}): MockedPersistence {
@@ -373,6 +379,7 @@ function makePersistence(overrides: Partial<MockedPersistence> = {}): MockedPers
     setTemplateId: vi.fn<(v: TemplateId) => void>(),
     setAtsMode: vi.fn<(v: boolean) => void>(),
     setAccent: vi.fn<(v: string | undefined) => void>(),
+    setLetterLayoutId: vi.fn<(v: LetterLayoutId) => void>(),
     ...overrides,
   };
 }
