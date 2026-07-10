@@ -1574,6 +1574,23 @@ fn letter_us_renders_valid_pdf_with_expected_content() {
         pos_sal < pos_body && pos_body < pos_signoff,
         "US letter: reading order broken — sal={pos_sal} body={pos_body} signoff={pos_signoff}"
     );
+
+    // Recipient / inside-address block — the day-one Classic bug dropped it
+    // entirely (fixture `recipientPosition: "left"` matched neither the old
+    // "after-date" nor "" gate). The street line is unique to the recipient,
+    // and the FIRST "Acme Corp" (the body also names it) must read before the
+    // salutation, proving the inside address renders in the right slot.
+    assert!(
+        lower.contains("123 main street"),
+        "US letter: recipient street '123 Main Street' missing — inside address dropped\n---\n{extracted}"
+    );
+    let pos_recipient = lower
+        .find("acme corp")
+        .expect("recipient company must be present");
+    assert!(
+        pos_recipient < pos_sal,
+        "US letter: inside address must read before the salutation — recipient={pos_recipient} sal={pos_sal}"
+    );
 }
 
 // (2) DE letter renders to a valid PDF and contains DIN subject + German conventions.
@@ -1632,6 +1649,28 @@ fn letter_de_renders_valid_pdf_with_subject_line() {
     assert!(
         lower.contains("max") && lower.contains("müller"),
         "DE letter: signature name missing\n---\n{lower}"
+    );
+
+    // Recipient / inside-address block (Anschriftfeld) — DIN 5008 makes it
+    // MANDATORY, yet the day-one Classic bug dropped it entirely. Company +
+    // recipient name are unique to the inside address (the body names "Beta
+    // GmbH", the salutation only "Weber"), and both must read before the
+    // Betreff subject line.
+    assert!(
+        lower.contains("musterfirma gmbh"),
+        "DE letter: recipient company 'Musterfirma GmbH' missing — Anschriftfeld dropped\n---\n{lower}"
+    );
+    assert!(
+        lower.contains("anna weber"),
+        "DE letter: recipient name 'Anna Weber' missing\n---\n{lower}"
+    );
+    let pos_recipient = lower
+        .find("musterfirma gmbh")
+        .expect("recipient company must be present");
+    let pos_subject = lower.find("betreff").expect("subject must be present");
+    assert!(
+        pos_recipient < pos_subject,
+        "DE letter: Anschriftfeld must read before the Betreff line — recipient={pos_recipient} subject={pos_subject}"
     );
 }
 
@@ -1894,6 +1933,17 @@ fn letter_refined_us_renders_valid_pdf() {
         pos_sal < pos_body && pos_body < pos_signoff,
         "refined US reading order broken — sal={pos_sal} body={pos_body} signoff={pos_signoff}"
     );
+
+    // Recipient inside-address renders (unconditional in Refined) — pin it so a
+    // future refactor can't regress it the way Classic silently did.
+    assert!(
+        lower.contains("123 main street"),
+        "refined US: recipient inside address missing:\n{lower}"
+    );
+    assert!(
+        lower.find("acme corp").is_some_and(|p| p < pos_sal),
+        "refined US: inside address must read before the salutation:\n{lower}"
+    );
 }
 
 // (R2) Refined honours DE DIN conventions: A4, Betreff subject present, German
@@ -2025,6 +2075,17 @@ fn letter_banded_us_renders_valid_pdf() {
     assert!(
         pos_sal < pos_body && pos_body < pos_signoff,
         "banded US reading order broken — sal={pos_sal} body={pos_body} signoff={pos_signoff}"
+    );
+
+    // Recipient inside-address renders (unconditional in Banded) — pin it so a
+    // future refactor can't regress it the way Classic silently did.
+    assert!(
+        lower.contains("123 main street"),
+        "banded US: recipient inside address missing:\n{lower}"
+    );
+    assert!(
+        lower.find("acme corp").is_some_and(|p| p < pos_sal),
+        "banded US: inside address must read before the salutation:\n{lower}"
     );
 }
 
