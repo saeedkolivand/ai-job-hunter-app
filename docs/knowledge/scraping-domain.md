@@ -1,6 +1,6 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-07-02
+Last updated: 2026-07-10
 
 Describes the job-scraping subsystem: board registry (23 active scrapers), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
@@ -202,8 +202,16 @@ Results now persist across navigation thanks to React Query + backend cache:
   - The Muse: `apps/desktop/src-tauri/src/scraping/boards/themuse/mod.rs`
 - **Aggregator:**
   - Registry: `apps/desktop/src-tauri/src/scraping/boards/aggregator/`
-  - Adzuna provider: `apps/desktop/src-tauri/src/scraping/boards/aggregator/adzuna.rs`
-  - JSearch provider: `apps/desktop/src-tauri/src/scraping/boards/aggregator/jsearch.rs`
+  - Providers (Adzuna, JSearch, Apify): `apps/desktop/src-tauri/src/scraping/boards/aggregator/providers.rs` (JobProvider trait + implementations)
+
+## Error representability (PR A, 2026-07-10)
+
+Board fetch errors are now representable end-to-end, distinguishing between "board is blocked/rotted/misconfigured" and "no jobs found".
+
+- **`fetch_json` signature** — `apps/desktop/src-tauri/src/scraping/http/mod.rs`. Returns `AppResult<T>` (was `AppResult<Option<T>>`). Non-2xx responses → `Err(AppError::Provider("HTTP <status>"))` (preserves status code). Serde drift → `Err(AppError::Parse("response body did not match the expected schema"))` (serde details logged, never returned). 2xx-valid → `Ok(T)`. Empty payloads return `Ok(empty)` not `Ok(None)`.
+- **`fetch_text` boards** — germantechjobs, wwr, berlinstartupjobs now propagate non-200 as errors instead of silent-empty.
+- **Board error outcome** — All boards propagate fetch errors via `search()` → `Err`, which surfaces in `BoardScrapeSummary.error: Option<String>` (engine records it). Boards with multi-company fanout (lever, recruitee, smartrecruiters, etc.) track `successful_fetches` and `first_fetch_error`; when `successful_fetches == 0`, the error propagates (all-fail → board error, not `Ok(empty)`). Pagination boards (themuse, arbeitnow, arbeitsagentur) distinguish page-0 failure (error) from later-page failure (keep partial harvest).
+- **Shared decision functions** — `apps/desktop/src-tauri/src/scraping/boards/common.rs` exports two pure fns: `ats_all_fetches_failed(board_id, successful_fetches, first_fetch_error) -> Option<String>` (returns error message only when all companies failed) and `should_propagate_page_error(collected_so_far: usize) -> bool` (propagate if nothing collected yet, else keep partial harvest). Wired into 10 ATS boards + 3 paginated boards; no production URL embedded (testable without wiremock).
 - **Frontend:** Service hook `apps/desktop/src/renderer/services/boards.ts` (scrape mutations)
 - **Settings UI:** `apps/desktop/src/renderer/features/settings/routes/JobsSettings.tsx`
 - **Detail pane:**

@@ -1,6 +1,8 @@
 /// Arbeitnow — public JSON API
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::common::should_propagate_page_error;
+use crate::error::AppError;
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -69,7 +71,11 @@ impl Scraper for ArbeitnowScraper {
             .await
             {
                 Ok(d) => d,
-                Err(e) if out.is_empty() => return Err(e.into()),
+                // A cancel firing mid-fetch is a clean stop, not a failure —
+                // even on page 0 with nothing collected yet, this must return
+                // `Ok(out)` (empty), not bubble as an error.
+                Err(AppError::Cancelled) => break,
+                Err(e) if should_propagate_page_error(out.len()) => return Err(e.into()),
                 Err(e) => {
                     log::warn!(
                         "[arbeitnow] page {page} failed: {e}; returning {} collected",
@@ -79,10 +85,8 @@ impl Scraper for ArbeitnowScraper {
                 }
             };
 
-            let (jobs, has_next) = match data {
-                Some(d) => (d.data, d.links.and_then(|l| l.next).is_some()),
-                None => break,
-            };
+            let jobs = data.data;
+            let has_next = data.links.and_then(|l| l.next).is_some();
 
             if jobs.is_empty() {
                 break;

@@ -8,7 +8,7 @@
 /// Endpoint reconnaissance ported from santifer/career-ops (MIT), `providers/themuse.mjs`.
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
-use super::common::matches_filters;
+use super::common::{matches_filters, should_propagate_page_error};
 use crate::error::AppError;
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -167,43 +167,28 @@ impl Scraper for TheMuseScraper {
                 break;
             }
 
-            let data = match fetch_json::<TmResponse>(
+            // A non-2xx or schema-drift response now propagates as `Err`. On page 0
+            // (nothing collected yet) that surfaces as a board error instead of a
+            // silent empty result; on a later page it stops pagination and keeps
+            // what was already streamed (partial success).
+            let resp = match fetch_json::<TmResponse>(
                 &format!("{BASE_URL}?page={page}"),
                 Default::default(),
                 ctx.signal.clone(),
             )
             .await
             {
-                Ok(d) => d,
+                Ok(r) => r,
                 // A cancel firing mid-fetch is a clean stop, not a failure —
                 // even on page 0 with nothing collected yet, this must return
                 // `Ok(out)` (empty), not bubble as an error.
                 Err(AppError::Cancelled) => break,
-                Err(e) if out.is_empty() => return Err(e.into()),
+                Err(e) if should_propagate_page_error(out.len()) => return Err(e.into()),
                 Err(e) => {
                     log::warn!(
                         "[themuse] page {page} failed: {e}; returning {} collected",
                         out.len()
                     );
-                    break;
-                }
-            };
-
-            // A non-2xx response or a body that doesn't match the expected
-            // shape comes back as `None` from `fetch_json` — treat that page
-            // as empty/stop rather than erroring out the whole scrape. Page 0
-            // going `None` already surfaces as an empty `out` to the caller;
-            // a later page going `None` is silent truncation otherwise, so
-            // log it.
-            let resp = match data {
-                Some(r) => r,
-                None => {
-                    if page > 0 {
-                        log::warn!(
-                            "[themuse] page {page} returned None (non-2xx or shape mismatch); stopping with {} collected",
-                            out.len()
-                        );
-                    }
                     break;
                 }
             };

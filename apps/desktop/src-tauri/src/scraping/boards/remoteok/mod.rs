@@ -54,17 +54,14 @@ impl Scraper for RemoteOkScraper {
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
         let q = input.query.trim().to_lowercase();
+        // A non-2xx or schema-drift response now propagates as `Err` (surfaced in
+        // `BoardScrapeSummary.error`) instead of a silent empty result.
         let items = fetch_json::<Vec<RemoteOkItem>>(
             "https://remoteok.com/api",
             Default::default(),
             ctx.signal,
         )
         .await?;
-
-        let items = match items {
-            Some(i) => i,
-            None => return Ok(vec![]),
-        };
 
         let now = chrono::Utc::now().timestamp_millis();
         let mut out = vec![];

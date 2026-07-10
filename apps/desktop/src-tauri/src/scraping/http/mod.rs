@@ -281,11 +281,23 @@ fn retry_after_ms(headers: &reqwest::header::HeaderMap) -> Option<u64> {
     Some(secs.saturating_mul(1_000).min(30_000))
 }
 
+/// Fetch a URL and deserialize a 2xx JSON body into `T`.
+///
+/// Failures are **representable** — a caller can tell these three apart:
+/// - **(a) HTTP failure** — a non-2xx response returns `Err(AppError::Provider("HTTP <status>"))`,
+///   carrying the status code.
+/// - **(b) schema drift** — a 2xx body that does not deserialize into `T` returns
+///   `Err(AppError::Parse(_))` (serde detail is logged, not returned, so no body value crosses IPC).
+/// - **(c) success (incl. empty)** — a 2xx body that deserializes returns `Ok(T)`; a genuinely empty
+///   payload (e.g. `[]`/`{}`) is `Ok(empty)`, never conflated with a failure.
+///
+/// Transport/cancellation faults from [`fetch_text`] (`AppError::Cancelled`/`Network`/`Validation`)
+/// propagate unchanged via `?`.
 pub async fn fetch_json<T: for<'de> serde::Deserialize<'de>>(
     url: &str,
     opts: FetchOptions,
     signal: tokio_util::sync::CancellationToken,
-) -> AppResult<Option<T>> {
+) -> AppResult<T> {
     // Merge `accept: application/json` into caller headers.
     // Caller-supplied headers win — if the caller already set an `accept` header we
     // leave it as-is; otherwise we prepend the JSON accept so fetch_text's broader
@@ -326,19 +338,20 @@ pub async fn fetch_json<T: for<'de> serde::Deserialize<'de>>(
             "[scraping::http] non-2xx HTTP {} for {safe_url}",
             res.status_code
         );
-        return Ok(None);
+        // (a) Upstream non-2xx — carry the status code so a blocked/rotted/mistyped
+        // board is distinguishable from a genuine empty result, not a silent `Ok`.
+        return Err(AppError::Provider(format!("HTTP {}", res.status_code)));
     }
 
-    match serde_json::from_str::<T>(&res.text) {
-        Ok(value) => Ok(Some(value)),
-        Err(e) => {
-            log::warn!(
-                "[scraping::http] fetch_json parse failure for {safe_url} ({e}); body_len={}",
-                res.text.len()
-            );
-            Ok(None)
-        }
-    }
+    serde_json::from_str::<T>(&res.text).map_err(|e| {
+        log::warn!(
+            "[scraping::http] fetch_json parse failure for {safe_url} ({e}); body_len={}",
+            res.text.len()
+        );
+        // (b) Schema drift. The serde detail is logged above but kept out of the
+        // returned message so no body value can cross IPC → renderer.
+        AppError::Parse("response body did not match the expected schema".to_string())
+    })
 }
 
 pub fn strip_html(html: &str) -> String {
