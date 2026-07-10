@@ -120,10 +120,30 @@ pub struct Template {
     // New style options
     pub fonts: TemplateFonts,
     pub job_title_italic: bool,
-    /// When true: uppercase section header text + render at 0.85 × section_pt.
+    /// When true: wrap section heading text in Typst `smallcaps(…)` (small-caps
+    /// glyph variant; the PDF text layer keeps its original case — extraction-
+    /// safe) and render at 0.85 × section_pt. Read into `JsonStyle.section_small_caps`;
+    /// see `single_column.typ`'s `render-section` for the actual wrap.
     pub section_small_caps: bool,
-    /// Section rule thickness in pt (0.0 = no rule).
+    /// Section-rule stroke thickness in pt, read by the `single_column.typ`
+    /// ruled-bottom branch as `stroke: (rule_thickness * 1pt) + c-rule`.
+    /// `single_column.typ` falls back to the house `0.5pt` when this is `0.0` or
+    /// the style is absent — every pre-PR3 ruled template ships `0.5`, so this is
+    /// byte-identical for them; only Cadence sets a real `0.75` override.
+    /// NOTE: `0.0` means "default thickness", NOT "no rule" — rule *presence*
+    /// is owned by `section_style` (`BoldOnly` = no rule). Don't set `0.0` on a
+    /// `RuledBottom` template expecting suppression.
     pub rule_thickness: f32,
+    /// Extra letter-spacing (tracking) applied to section headings, in em units.
+    /// `0.0` (the default for every pre-PR3 template) leaves headings untracked —
+    /// `single_column.typ` only emits `text(tracking: …)` when this is non-zero, so
+    /// existing output is byte-identical. Read into `JsonStyle.heading_tracking`.
+    pub heading_tracking: f32,
+    /// When true, wrap hyperlinked runs in `underline(…)` in the single-column
+    /// renderer. `false` (the default for every pre-PR3 template) leaves links
+    /// un-underlined, byte-identical to prior output. Read into
+    /// `JsonStyle.link_underline`.
+    pub link_underline: bool,
 
     // Two-column layout (None = single column)
     pub two_column: Option<TwoColumnConfig>,
@@ -159,6 +179,8 @@ impl Template {
             TemplateId::Throughline => Self::throughline(),
             TemplateId::Portrait => Self::portrait(),
             TemplateId::Lebenslauf => Self::lebenslauf(),
+            TemplateId::Cadence => Self::cadence(),
+            TemplateId::Regent => Self::regent(),
         }
     }
 
@@ -179,7 +201,7 @@ impl Template {
         self
     }
 
-    // ─── Eight live templates ─────────────────────────────────────────────────
+    // ─── Ten live templates ───────────────────────────────────────────────────
 
     /// ATS Classic — maximum compatibility, no color, safe for all ATS parsers.
     ///
@@ -213,6 +235,8 @@ impl Template {
             job_title_italic: true,
             section_small_caps: false,
             rule_thickness: 0.5,
+            heading_tracking: 0.0,
+            link_underline: false,
             two_column: None,
             cover_letter: CoverLetterLayout::default(),
         }
@@ -248,6 +272,8 @@ impl Template {
             job_title_italic: false,
             section_small_caps: false,
             rule_thickness: 0.0,
+            heading_tracking: 0.0,
+            link_underline: false,
             two_column: None,
             cover_letter: CoverLetterLayout {
                 paragraph_indent: ParagraphIndent::BlockNoIndent,
@@ -286,6 +312,8 @@ impl Template {
             job_title_italic: true,
             section_small_caps: false,
             rule_thickness: 0.5,
+            heading_tracking: 0.0,
+            link_underline: false,
             two_column: None,
             cover_letter: CoverLetterLayout {
                 paragraph_indent: ParagraphIndent::FirstLine,
@@ -334,6 +362,8 @@ impl Template {
             job_title_italic: true,
             section_small_caps: false,
             rule_thickness: 0.5,
+            heading_tracking: 0.0,
+            link_underline: false,
             two_column: Some(TwoColumnConfig {
                 sidebar_width_ratio: 0.30,
                 // Very light warm-grey tint that pairs with the slate-indigo accent.
@@ -386,6 +416,8 @@ impl Template {
             job_title_italic: true,
             section_small_caps: false,
             rule_thickness: 0.5,
+            heading_tracking: 0.0,
+            link_underline: false,
             two_column: None,
             cover_letter: CoverLetterLayout {
                 paragraph_indent: ParagraphIndent::BlockNoIndent,
@@ -431,6 +463,8 @@ impl Template {
             job_title_italic: true,
             section_small_caps: false,
             rule_thickness: 0.5,
+            heading_tracking: 0.0,
+            link_underline: false,
             two_column: None,
             cover_letter: CoverLetterLayout {
                 paragraph_indent: ParagraphIndent::BlockNoIndent,
@@ -478,6 +512,8 @@ impl Template {
             job_title_italic: true,
             section_small_caps: false,
             rule_thickness: 0.5,
+            heading_tracking: 0.0,
+            link_underline: false,
             // Two-column: sidebar holds contact, skills, education, languages,
             // certifications — same set as Atelier.
             two_column: Some(TwoColumnConfig {
@@ -529,12 +565,109 @@ impl Template {
             job_title_italic: false, // DIN style: no italic job titles
             section_small_caps: false,
             rule_thickness: 0.5,
+            heading_tracking: 0.0,
+            link_underline: false,
             // Single-column — DIN tabular layout manages its own columns.
             two_column: None,
             // Cover letter mirrors modern layout (appropriate for DIN letters).
             cover_letter: CoverLetterLayout {
                 paragraph_indent: ParagraphIndent::BlockNoIndent,
                 paragraph_spacing_pt: 8.0,
+            },
+        }
+    }
+
+    // ─── PR3 single-column ATS templates ──────────────────────────────────────
+
+    /// Cadence — Claude-PDF-style ATS single-column.
+    ///
+    /// Design: Inter throughout, large 28pt name, blue-grey accent (#4A6785),
+    /// letter-spaced (`heading_tracking 0.08`) all-caps ruled section headings,
+    /// underlined hyperlinks (`link_underline true`). Renders through the
+    /// parametric `single_column.typ` — no bespoke `.typ`. Tier: ATS.
+    pub(super) fn cadence() -> Self {
+        Self {
+            id: TemplateId::Cadence,
+            name: "Cadence",
+            tier: TemplateTier::Ats,
+            // Near-black ink with a restrained blue-grey accent.
+            name_color: (26, 26, 26),
+            section_color: (26, 26, 26),
+            accent_color: (74, 103, 133), // #4A6785 blue-grey
+            body_color: (43, 43, 43),
+            date_color: (107, 107, 107),
+            emphasis_color: (74, 103, 133),
+            rule_color: (74, 103, 133),
+            name_pt: 28.0,
+            section_pt: 10.5,
+            body_pt: 10.0,
+            margin_in: 0.8,
+            line_spacing: 1.15,
+            section_spacing_before: 12.0,
+            name_centered: false,
+            section_all_caps: true,
+            section_style: SectionStyle::RuledBottom,
+            fonts: TemplateFonts {
+                name_family: FontFamily::Inter,
+                heading_family: FontFamily::Inter,
+                body_family: FontFamily::Inter,
+            },
+            job_title_italic: false,
+            section_small_caps: false,
+            rule_thickness: 0.75,
+            heading_tracking: 0.08,
+            link_underline: true,
+            two_column: None,
+            cover_letter: CoverLetterLayout {
+                paragraph_indent: ParagraphIndent::BlockNoIndent,
+                paragraph_spacing_pt: 8.0,
+            },
+        }
+    }
+
+    /// Regent — executive serif ATS single-column.
+    ///
+    /// Design: Source Serif 4 throughout, 26pt name, burgundy (#6E1E2B) small-caps
+    /// section headings with a rose rule (#C9A9AE), lightly tracked
+    /// (`heading_tracking 0.04`), italic job titles, first-line-indent cover
+    /// letter (executive serif pairing, like Academic). Renders through the
+    /// parametric `single_column.typ` — no bespoke `.typ`. Tier: ATS.
+    pub(super) fn regent() -> Self {
+        Self {
+            id: TemplateId::Regent,
+            name: "Regent",
+            tier: TemplateTier::Ats,
+            // Charcoal ink, burgundy accent, muted rose rule.
+            name_color: (42, 42, 46),
+            section_color: (110, 30, 43), // #6E1E2B burgundy
+            accent_color: (110, 30, 43),
+            body_color: (38, 38, 42),
+            date_color: (122, 106, 110),
+            emphasis_color: (110, 30, 43),
+            rule_color: (201, 169, 174), // #C9A9AE rose
+            name_pt: 26.0,
+            section_pt: 11.0,
+            body_pt: 10.5,
+            margin_in: 0.9,
+            line_spacing: 1.2,
+            section_spacing_before: 14.0,
+            name_centered: false,
+            section_all_caps: false,
+            section_style: SectionStyle::RuledBottom,
+            fonts: TemplateFonts {
+                name_family: FontFamily::SourceSerif4,
+                heading_family: FontFamily::SourceSerif4,
+                body_family: FontFamily::SourceSerif4,
+            },
+            job_title_italic: true,
+            section_small_caps: true,
+            rule_thickness: 0.5,
+            heading_tracking: 0.04,
+            link_underline: false,
+            two_column: None,
+            cover_letter: CoverLetterLayout {
+                paragraph_indent: ParagraphIndent::FirstLine,
+                paragraph_spacing_pt: 0.0,
             },
         }
     }

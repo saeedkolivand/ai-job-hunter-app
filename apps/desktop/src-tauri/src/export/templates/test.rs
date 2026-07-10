@@ -135,6 +135,8 @@ fn template_tiers_are_pinned() {
         (TemplateId::Atelier, Design),
         (TemplateId::Portrait, Design),
         (TemplateId::Lebenslauf, Design),
+        (TemplateId::Cadence, Ats),
+        (TemplateId::Regent, Ats),
     ];
     for (id, tier) in expected {
         assert_eq!(
@@ -143,4 +145,85 @@ fn template_tiers_are_pinned() {
             "template {id:?} has the wrong tier"
         );
     }
+}
+
+// ─── PR3: heading_tracking / link_underline knobs ──────────────────────────────
+
+/// Every pre-PR3 template must keep the two new knobs at their neutral default
+/// (0.0 / false) — `single_column.typ` only emits `tracking:`/`underline(…)` when
+/// non-zero/true, so this is what keeps existing output byte-identical.
+#[test]
+fn heading_tracking_and_link_underline_default_to_neutral_for_pre_pr3_templates() {
+    for id in [
+        TemplateId::Classic,
+        TemplateId::SwissMinimal,
+        TemplateId::Academic,
+        TemplateId::Atelier,
+        TemplateId::Meridian,
+        TemplateId::Throughline,
+        TemplateId::Portrait,
+        TemplateId::Lebenslauf,
+    ] {
+        let t = Template::get(id);
+        assert_eq!(
+            t.heading_tracking, 0.0,
+            "{id:?}: heading_tracking must default to 0.0"
+        );
+        assert!(
+            !t.link_underline,
+            "{id:?}: link_underline must default to false"
+        );
+    }
+}
+
+// ─── Cadence / Regent spec pins ─────────────────────────────────────────────────
+
+#[test]
+fn cadence_matches_spec() {
+    let t = Template::get(TemplateId::Cadence);
+    assert_eq!(t.tier, TemplateTier::Ats);
+    assert_eq!(t.name_pt, 28.0);
+    assert_eq!(t.section_pt, 10.5);
+    assert_eq!(t.body_pt, 10.0);
+    assert_eq!(t.margin_in, 0.8);
+    assert_eq!(t.line_spacing, 1.15);
+    assert_eq!(t.section_spacing_before, 12.0);
+    assert_eq!(t.accent_color, (74, 103, 133));
+    assert!(t.section_all_caps);
+    assert_eq!(t.section_style, SectionStyle::RuledBottom);
+    assert_eq!(t.rule_thickness, 0.75);
+    assert!(!t.job_title_italic);
+    assert!(!t.section_small_caps);
+    assert_eq!(t.heading_tracking, 0.08);
+    assert!(t.link_underline);
+    assert!(t.two_column.is_none());
+    assert_eq!(
+        t.cover_letter.paragraph_indent,
+        ParagraphIndent::BlockNoIndent
+    );
+    assert_eq!(t.cover_letter.paragraph_spacing_pt, 8.0);
+}
+
+#[test]
+fn regent_matches_spec() {
+    let t = Template::get(TemplateId::Regent);
+    assert_eq!(t.tier, TemplateTier::Ats);
+    assert_eq!(t.name_pt, 26.0);
+    assert_eq!(t.section_pt, 11.0);
+    assert_eq!(t.body_pt, 10.5);
+    assert_eq!(t.margin_in, 0.9);
+    assert_eq!(t.line_spacing, 1.2);
+    assert_eq!(t.section_spacing_before, 14.0);
+    assert_eq!(t.accent_color, (110, 30, 43));
+    assert_eq!(t.rule_color, (201, 169, 174));
+    assert!(!t.section_all_caps);
+    assert!(t.section_small_caps);
+    assert_eq!(t.section_style, SectionStyle::RuledBottom);
+    assert_eq!(t.rule_thickness, 0.5);
+    assert!(t.job_title_italic);
+    assert_eq!(t.heading_tracking, 0.04);
+    assert!(!t.link_underline);
+    assert!(t.two_column.is_none());
+    assert_eq!(t.cover_letter.paragraph_indent, ParagraphIndent::FirstLine);
+    assert_eq!(t.cover_letter.paragraph_spacing_pt, 0.0);
 }
