@@ -119,6 +119,22 @@ pub trait Scraper: Send + Sync {
         false
     }
 
+    /// Whether this board needs API keys/credentials that are currently absent.
+    ///
+    /// Some boards (the aggregator, backed by Adzuna/JSearch/Apify) return
+    /// nothing without configured API keys. Rather than run and yield a silent
+    /// empty result, the engine skips such a board with reason `"needs-keys"`
+    /// when this returns `true`, so the UI/diagnostics can prompt the user to
+    /// configure their keys instead of showing an unexplained zero.
+    ///
+    /// This is evaluated per scrape (it may read the credential store), so a key
+    /// added in Settings clears the skip on the next run without a restart.
+    ///
+    /// Defaults to `false` so only key-backed boards override it.
+    fn needs_keys(&self) -> bool {
+        false
+    }
+
     async fn search(
         &self,
         input: BoardSearchInput,

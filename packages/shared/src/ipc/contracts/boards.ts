@@ -50,12 +50,14 @@ export interface BoardsContract {
  * Per-board outcome from a completed scrape job.
  * - `skipped: "needs-login"` — board bypassed because no session exists.
  * - `skipped: "needs-company"` — ATS board bypassed because no company slug was supplied.
+ * - `skipped: "needs-keys"` — key-backed board (the aggregator) bypassed because its
+ *   API keys aren't configured; prompt the user to add them in Settings.
  */
 export interface BoardScrapeSummary {
   board: string;
   count: number;
   error?: string;
-  skipped?: 'needs-login' | 'needs-company';
+  skipped?: 'needs-login' | 'needs-company' | 'needs-keys';
 }
 
 export const BOARDS_CHANNELS = {
