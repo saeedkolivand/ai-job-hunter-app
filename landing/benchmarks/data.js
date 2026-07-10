@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783693738448,
+  "lastUpdate": 1783701338245,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3395,6 +3395,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 289302,
             "range": "± 11844",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1adb050e7827640f636470e2efcc624bf2581b8e",
+          "message": "feat: selectable letter layouts inheriting the resume template palette (templates pr 5/6) (#594)\n\n* feat(export): add letter layouts with independent selection\n\nNew letter layout concept: layout owns arrangement only while palette\nand fonts keep inheriting from the resume template. Three layouts:\nclassic (existing letter, byte-identical default), refined (large name,\nright-aligned contact, always-on reference line from the subject,\nsignature space), and banded (angled pale accent band on page one,\nsmall-caps name, footer rule). Market conventions still own semantics —\ndin date placement, betreff handling, and salutations hold across all\nlayouts; band geometry verified against measured header extents at a4\nand us letter. Wire field letterLayoutId defaults to classic.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* feat(ui): add letter layout picker across cover flows\n\nLetterLayoutPicker (radiogroup, three text options) surfaces in the\nwizard for cover and combined targets, the done panel cover tab, and\nthe tailor flow cover tab, all sharing per-export state threaded to\npreview and export identically.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(ui): make letter layout handler optional for resume-only hosts\n\nThe resume builder renders the done panel without a cover tab; the\npicker gates on both the cover tab and a provided handler.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(export): honor the selected letter layout in docx cover exports\n\nThe docx cover path ignored letter_layout, silently exporting the\nclassic arrangement after a banded or refined pdf preview. Refined maps\nfaithfully (right-aligned contact, bottom-border rule, reference line\nwith the same caption-suppression rule); banded approximates the angled\nband with accent-tinted paragraph shading and an uppercased name per\nthe docx small-caps precedent, documented inline. Classic remains\nbyte-identical. Assertions verified against real produced document xml.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(export): parseable caption-suppression expression and longer band fixture\n\nTypst terminates a top-level let at end of line when the expression\nlooks complete, so the multi-line or-expression failed to parse and\nbroke every refined compile; split into single-line bindings with the\nsame logic. The banded page-one-only test fixture gains paragraphs so\nit genuinely reflows to two pages under the corrected band geometry.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-10T18:25:56+02:00",
+          "tree_id": "0215819c7846a30a9c6a0f40a33ea6d41c489148",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/1adb050e7827640f636470e2efcc624bf2581b8e"
+        },
+        "date": 1783701337651,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2152280,
+            "range": "± 80372",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2561107,
+            "range": "± 50441",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 287861,
+            "range": "± 5258",
             "unit": "ns/iter"
           }
         ]
