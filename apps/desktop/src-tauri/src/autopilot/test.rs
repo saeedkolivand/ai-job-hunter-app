@@ -680,6 +680,124 @@ fn merge_puts_newly_found_jobs_on_top() {
     assert_eq!(merged[1].url, "old", "prior finds fall below the new one");
 }
 
+// ── Cross-source / canonical-URL dedup ────────────────────────────────────────
+
+#[test]
+fn merge_dedups_same_job_across_two_url_variants() {
+    // Same job captured two ways: tracking query params vs. a hash fragment.
+    let a = found_job(
+        "https://boards.example.com/jobs/42?utm_source=aggregator",
+        1,
+    );
+    let b = found_job("https://boards.example.com/jobs/42#apply", 2);
+
+    let merged = merge_found_jobs(&[], vec![a, b]);
+
+    assert_eq!(
+        merged.len(),
+        1,
+        "tracking-param and hash variants of one job URL must merge to a single row"
+    );
+    assert!(merged[0].is_new, "the single merged row is newly surfaced");
+}
+
+#[test]
+fn merge_dedups_internal_batch_duplicate() {
+    // The same job surfaced by two sources (aggregator + a named board) in ONE run.
+    let from_aggregator = found_job("https://jobs.example.com/eng-42", 1);
+    let from_board = found_job("https://jobs.example.com/eng-42", 2);
+
+    let merged = merge_found_jobs(&[], vec![from_aggregator, from_board]);
+
+    assert_eq!(
+        merged.len(),
+        1,
+        "an internal batch duplicate must produce exactly one row"
+    );
+}
+
+#[test]
+fn merge_distinct_jobs_are_unaffected_by_dedup() {
+    let merged = merge_found_jobs(
+        &[],
+        vec![
+            found_job("https://a.example.com/1", 1),
+            found_job("https://b.example.com/2", 2),
+            found_job("https://c.example.com/3", 3),
+        ],
+    );
+
+    assert_eq!(
+        merged.len(),
+        3,
+        "three distinct jobs must remain three rows"
+    );
+    assert!(merged.iter().all(|j| j.is_new));
+}
+
+#[test]
+fn merge_within_batch_dup_keeps_longer_description() {
+    // First-seen carries a short description; the later duplicate a longer one.
+    let mut short = found_job("https://jobs.example.com/eng-42?ref=a", 1);
+    short.description = Some("short".into());
+    let mut long = found_job("https://jobs.example.com/eng-42?ref=b", 2);
+    long.description = Some("a much longer and more complete description".into());
+
+    let merged = merge_found_jobs(&[], vec![short, long]);
+
+    assert_eq!(merged.len(), 1, "the two variants merge to one row");
+    assert_eq!(
+        merged[0].description.as_deref(),
+        Some("a much longer and more complete description"),
+        "the longer description from the later duplicate must win"
+    );
+}
+
+#[test]
+fn merge_dedups_url_less_jobs_by_title_and_company() {
+    // No URL → fall back to a normalized title+company key. `found_job` sets
+    // title "Engineer", company "Acme".
+    let a = found_job("", 1); // url ""            → fallback key
+    let b = found_job("   ", 2); // whitespace url  → normalizes to "" → same key
+    let mut c = found_job("", 3);
+    c.company = "Globex".into(); // same title, different company → distinct key
+
+    let merged = merge_found_jobs(&[], vec![a, b, c]);
+
+    assert_eq!(
+        merged.len(),
+        2,
+        "URL-less jobs dedupe by normalized title+company: the two Acme rows merge, Globex stays"
+    );
+}
+
+#[test]
+fn record_run_new_count_reflects_deduped_batch() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let ap = store.create(serde_json::json!({
+        "name": "AP",
+        "target": { "board": "aggregator", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+    }));
+    let id = ap.id;
+
+    // One logical job surfaced by two sources + one genuinely distinct job.
+    let dup_a = found_job("https://jobs.example.com/eng-1?utm_source=x", 1);
+    let dup_b = found_job("https://jobs.example.com/eng-1#frag", 2);
+    let other = found_job("https://jobs.example.com/eng-2", 3);
+
+    let new_count = store.record_run(&id, 3, 0, vec![dup_a, dup_b, other]);
+
+    assert_eq!(
+        new_count, 2,
+        "the 'N new jobs' count must reflect the DEDUPED batch (2 unique), not the raw 3"
+    );
+}
+
 #[test]
 fn record_run_reports_only_newly_surfaced_jobs() {
     use tempfile::TempDir;
