@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783701338245,
+  "lastUpdate": 1783707464174,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3437,6 +3437,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 287861,
             "range": "± 5258",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f060c8de1f15070bd40a0a8959712ed345a526cb",
+          "message": "fix: classic cover letters render the recipient address block again (#596)\n\n* fix(export): render the recipient block in classic cover letters\n\nThe classic letter gated recipient emission on order tokens\n(after-date, empty) while the shared conventions fixture supplies\nplacement tokens (left, top-right) verbatim — the vocabularies never\noverlapped, so the inside address was silently dropped for all sixteen\nmarkets since the template's first commit, violating din 5008 for\ndach letters. The template now emits the block for anything except\nbefore-date; render-verified in us and de with position-aware\nregression assertions, and the refined and banded layouts' recipient\nrendering is pinned.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* refactor(export): remove unreachable before-date recipient branch\n\nThe classic letter's before-date recipient branch was dead from day\none (no fixture market supplies order tokens, and LetterOpts has no\npublic injection path), and its top-right-date combo dropped the\nrecipient the same way the after-date bug did. Delete the recip-pos\nbinding and both branches; emit-recipient-block() now runs\nunconditionally at a single point, matching refined and banded.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-10T20:08:32+02:00",
+          "tree_id": "2e1e8cec2ad8c4bef9bc34fac0bacc3e033a151a",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/f060c8de1f15070bd40a0a8959712ed345a526cb"
+        },
+        "date": 1783707463480,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2145113,
+            "range": "± 15718",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2552362,
+            "range": "± 73532",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 306285,
+            "range": "± 16490",
             "unit": "ns/iter"
           }
         ]
