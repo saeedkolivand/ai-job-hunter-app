@@ -375,6 +375,11 @@ pub(super) fn prepare_with_photo(
 ) -> crate::error::AppResult<PreparedRender> {
     let accent_str = normalise_accent(opts.accent.as_deref()).unwrap_or_default();
 
+    // Section placement is per-template (Aria/Saffron override the default table).
+    // Fall back to the default table (Classic) when no styling template is passed
+    // — only the two-column photo templates ever carry an override anyway.
+    let template_id = style_template.map(|t| t.id).unwrap_or_default();
+
     let json_data = JsonData {
         opts: JsonOpts {
             page_width_mm: opts.page.width_mm,
@@ -393,7 +398,7 @@ pub(super) fn prepare_with_photo(
             .sections
             .iter()
             .map(|s| {
-                let p = crate::theme::placement_for(&s.id);
+                let p = crate::theme::placement_for(template_id, &s.id);
                 JsonSection {
                     heading: s.heading.clone(),
                     blocks: s.blocks.iter().map(convert_block).collect(),

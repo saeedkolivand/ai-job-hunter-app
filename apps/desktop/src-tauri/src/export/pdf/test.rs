@@ -561,6 +561,8 @@ LANGUAGES
         TemplateId::Lebenslauf,
         TemplateId::Cadence,
         TemplateId::Regent,
+        TemplateId::Aria,
+        TemplateId::Saffron,
     ];
 
     let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/sample_pdfs");

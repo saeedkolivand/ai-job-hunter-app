@@ -16,7 +16,9 @@ export type TemplateId =
   | 'portrait'
   | 'lebenslauf'
   | 'cadence'
-  | 'regent';
+  | 'regent'
+  | 'aria'
+  | 'saffron';
 
 interface DocTemplate {
   id: TemplateId;
@@ -279,6 +281,52 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
     sectionAllCaps: false,
     sectionStyle: 'ruled-bottom',
   },
+
+  /** Aria — minimalist design two-column, untinted right sidebar, photo top-right, slate accent, 30pt Manrope name */
+  aria: {
+    id: 'aria',
+    name: 'Aria',
+    tier: 'design',
+    nameColor: '111111',
+    sectionColor: '1A1A1A',
+    accentColor: '46505C',
+    bodyColor: '2A2A2A',
+    dateColor: '7A7A7A',
+    emphasisColor: '46505C',
+    ruleColor: 'D6D9DD',
+    namePt: 30,
+    sectionPt: 10.5,
+    bodyPt: 10,
+    marginIn: 0.6,
+    lineSpacingDocx: 288,
+    sectionSpacingBefore: 320,
+    nameCentered: false,
+    sectionAllCaps: true,
+    sectionStyle: 'ruled-bottom',
+  },
+
+  /** Saffron — warm design two-column, tinted left sidebar, ringed circular photo, terracotta accent, Source Serif 4 small-caps */
+  saffron: {
+    id: 'saffron',
+    name: 'Saffron',
+    tier: 'design',
+    nameColor: '3A2E28',
+    sectionColor: 'A85A3E',
+    accentColor: 'A85A3E',
+    bodyColor: '302A26',
+    dateColor: '8A7A6E',
+    emphasisColor: 'A85A3E',
+    ruleColor: 'E2C9B4',
+    namePt: 24,
+    sectionPt: 11,
+    bodyPt: 10.5,
+    marginIn: 0.55,
+    lineSpacingDocx: 276,
+    sectionSpacingBefore: 240,
+    nameCentered: false,
+    sectionAllCaps: false,
+    sectionStyle: 'ruled-bottom',
+  },
 };
 
 /** Stable list of all template ids (kebab-case on the wire). */
@@ -289,7 +337,7 @@ export const TEMPLATE_IDS = Object.keys(TEMPLATES) as TemplateId[];
  * ATS mode — mirrors the backend `theme::is_two_column`. The ATS toggle + the
  * recommendation auto-apply key off this rather than a hardcoded id.
  */
-const TWO_COLUMN_TEMPLATE_IDS = new Set<TemplateId>(['atelier', 'portrait']);
+const TWO_COLUMN_TEMPLATE_IDS = new Set<TemplateId>(['atelier', 'portrait', 'aria', 'saffron']);
 
 export function isTwoColumnTemplate(id: TemplateId): boolean {
   return TWO_COLUMN_TEMPLATE_IDS.has(id);
