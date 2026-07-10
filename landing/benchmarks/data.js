@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783690710248,
+  "lastUpdate": 1783693738448,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3353,6 +3353,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 293654,
             "range": "± 9814",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4a5d18c955c270d0bf272fb33acfc612b0c0b6ff",
+          "message": "feat: aria and saffron photo templates with per-template placement (templates pr 4/6) (#593)\n\n* feat(export): add aria and saffron photo templates with per-template section placement\n\nTwo design-tier two-column photo templates: aria (right untinted\nsidebar, rectangular top-right photo, manrope 30pt name, slate accent,\ntracked hairline headings, name-only fallback) and saffron (left tinted\nsidebar, ringed circular photo, source serif 4 small-caps + inter,\nterracotta accent, monogram fallback). placement_for becomes\ntemplate-aware — aria keeps education in the main column and saffron\nkeeps certifications there; existing templates byte-identical, pdf and\ndocx share the same id-keyed placement. Both templates linearize and\ndrop the photo under ats mode. Count pins 10 to 12.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* feat(ui): register aria and saffron in the template gallery\n\nRegistry records, captions, shared-contract union, and two-column set\nentries mirroring the rust configs; count pins 10 to 12; missing\npreview svgs exercise the icon fallback pending ci regeneration.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(export): grapheme-safe monogram initials and correct ats reading-order test\n\nThe no-photo monogram in saffron and portrait sliced names at byte\noffsets, panicking on multi-byte leading characters (a name like\nüber odegaard aborted the export); initials now take the first grapheme\ncluster, verified against a reproduced panic. The aria ats reading-order\ntest wrongly projected the visual placement override onto ats mode —\nlinearize orders by the fixed ats order and ignores placement; both\ntwo-column ats tests now assert the full canonical chain.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-10T16:20:07+02:00",
+          "tree_id": "d4cdd803faf7a23a65479a8e35c558254d2e46b6",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/4a5d18c955c270d0bf272fb33acfc612b0c0b6ff"
+        },
+        "date": 1783693738345,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2162367,
+            "range": "± 37054",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2536008,
+            "range": "± 40576",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 289302,
+            "range": "± 11844",
             "unit": "ns/iter"
           }
         ]
