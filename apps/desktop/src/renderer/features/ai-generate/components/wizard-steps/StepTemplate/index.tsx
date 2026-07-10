@@ -4,7 +4,14 @@ import { useTranslation } from '@ajh/translations';
 import { Button, cn, Image } from '@ajh/ui';
 
 import { AccentPicker } from '@/components/generation/AccentPicker';
-import { isDesignTier, isTwoColumnTemplate, type TemplateId, TEMPLATES } from '@/lib/generate';
+import { LetterLayoutPicker } from '@/components/generation/LetterLayoutPicker';
+import {
+  isDesignTier,
+  isTwoColumnTemplate,
+  type LetterLayoutId,
+  type TemplateId,
+  TEMPLATES,
+} from '@/lib/generate';
 
 import { COVER_TEMPLATE_PREVIEWS, TEMPLATE_CAPTIONS, TEMPLATE_PREVIEWS } from '../../../samples';
 
@@ -21,6 +28,14 @@ interface StepTemplateProps {
    * out by surfaces that don't thread an accent (e.g. the résumé builder).
    */
   onAccentChange?: (accent: string | undefined) => void;
+  /** Per-export cover-letter layout — undefined = classic (the backend default). */
+  letterLayoutId?: LetterLayoutId;
+  /**
+   * When provided, the letter-layout picker is shown for any run that produces
+   * a cover letter (`target === 'cover' | 'both'`) under the accent picker. Left
+   * out by surfaces that never generate a cover letter (e.g. the résumé builder).
+   */
+  onLetterLayoutChange?: (id: LetterLayoutId) => void;
 }
 
 export function StepTemplate({
@@ -31,8 +46,13 @@ export function StepTemplate({
   target = 'resume',
   accent,
   onAccentChange,
+  letterLayoutId,
+  onLetterLayoutChange,
 }: StepTemplateProps) {
   const isCover = target === 'cover';
+  // 'both' also produces a cover letter, so it gets the picker up front too —
+  // only a résumé-only run has no letter to lay out.
+  const showLetterLayout = target !== 'resume';
   const { t } = useTranslation();
 
   const handleTemplateSelect = (id: TemplateId) => {
@@ -131,6 +151,13 @@ export function StepTemplate({
 
       {/* Document accent — per-export colour override, threaded to preview + export. */}
       {onAccentChange && <AccentPicker value={accent} onChange={onAccentChange} />}
+
+      {/* Letter layout — arrangement picker for any run that produces a cover
+          letter ('cover' or 'both'; palette/fonts still inherit the résumé
+          template), threaded to the cover preview + export. */}
+      {showLetterLayout && onLetterLayoutChange && (
+        <LetterLayoutPicker value={letterLayoutId} onChange={onLetterLayoutChange} />
+      )}
 
       {/* ATS safe mode toggle — shown for design-tier résumé templates (two-column
           OR photo, incl. Lebenslauf); ATS-tier templates are already parser-safe. */}

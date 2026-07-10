@@ -4,7 +4,7 @@
 import type { GenerationMeta } from '@ajh/prompts/generate';
 
 import { getClient } from '../../app-client';
-import { type TemplateId, TEMPLATES } from '../templates';
+import { type LetterLayoutId, type TemplateId, TEMPLATES } from '../templates';
 
 // ─── Filename ─────────────────────────────────────────────────────────────────
 
@@ -81,7 +81,8 @@ export async function exportDOCX(
   templateId: TemplateId = 'classic',
   atsMode = false,
   locale?: string,
-  accent?: string
+  accent?: string,
+  letterLayoutId?: LetterLayoutId
 ): Promise<void> {
   try {
     if (!text || text.trim().length === 0) {
@@ -115,6 +116,9 @@ export async function exportDOCX(
       // Per-export document accent (6-hex) — undefined leaves the template palette
       // untouched; the backend re-validates and ignores a malformed value.
       accent,
+      // Cover-letter layout — omitted (undefined) → the backend renders classic;
+      // ignored for résumé exports.
+      letterLayoutId,
       contact,
       meta: meta
         ? {
@@ -142,7 +146,8 @@ export async function exportPDF(
   templateId: TemplateId = 'classic',
   atsMode = false,
   locale?: string,
-  accent?: string
+  accent?: string,
+  letterLayoutId?: LetterLayoutId
 ): Promise<void> {
   try {
     if (!text || text.trim().length === 0) {
@@ -172,6 +177,8 @@ export async function exportPDF(
       locale,
       // Per-export document accent (6-hex) — see exportDOCX.
       accent,
+      // Cover-letter layout — see exportDOCX.
+      letterLayoutId,
       contact,
       meta: meta
         ? {
@@ -206,7 +213,8 @@ export async function renderDocumentPreview(
   templateId: TemplateId = 'classic',
   atsMode = false,
   locale?: string,
-  accent?: string
+  accent?: string,
+  letterLayoutId?: LetterLayoutId
 ): Promise<string[]> {
   if (!text || text.trim().length === 0) {
     throw new Error('Cannot preview an empty document.');
@@ -231,6 +239,9 @@ export async function renderDocumentPreview(
     // Per-export document accent (6-hex) — must match the export so the preview
     // is faithful (undefined leaves the template palette untouched).
     accent,
+    // Cover-letter layout — must match the export so the preview is faithful
+    // (undefined → the backend renders classic).
+    letterLayoutId,
     contact,
     meta: meta
       ? {

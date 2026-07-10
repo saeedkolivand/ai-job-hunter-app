@@ -3,7 +3,7 @@ import { RefreshCw, Settings2 } from 'lucide-react';
 import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
 
-import type { GenerationMeta, TemplateId } from '@/lib/generate';
+import type { GenerationMeta, LetterLayoutId, TemplateId } from '@/lib/generate';
 
 import { GenerationOutput } from './GenerationOutput';
 import type { TailorTarget } from './useTailorGeneration';
@@ -32,9 +32,12 @@ interface Props {
   atsMode: boolean;
   /** Per-export document accent (6-hex); undefined = template palette. */
   accent?: string;
+  /** Per-export cover-letter layout; undefined → the backend renders classic. */
+  letterLayoutId?: LetterLayoutId;
   onTemplateChange: (id: TemplateId) => void;
   onAtsModeChange: (v: boolean) => void;
   onAccentChange: (accent: string | undefined) => void;
+  onLetterLayoutChange: (id: LetterLayoutId) => void;
   output: string;
   onEdit: (text: string) => void;
   meta: GenerationMeta | null;
@@ -67,9 +70,11 @@ export function ResultsPanel({
   templateId,
   atsMode,
   accent,
+  letterLayoutId,
   onTemplateChange,
   onAtsModeChange,
   onAccentChange,
+  onLetterLayoutChange,
   output,
   onEdit,
   meta,
@@ -93,9 +98,11 @@ export function ResultsPanel({
           templateId={templateId}
           atsMode={atsMode}
           accent={accent}
+          letterLayoutId={letterLayoutId}
           onTemplateChange={onTemplateChange}
           onAtsModeChange={onAtsModeChange}
           onAccentChange={onAccentChange}
+          onLetterLayoutChange={onLetterLayoutChange}
           output={output}
           onEdit={onEdit}
           editable

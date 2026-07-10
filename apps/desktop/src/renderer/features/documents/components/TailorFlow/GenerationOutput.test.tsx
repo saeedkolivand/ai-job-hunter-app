@@ -124,9 +124,11 @@ function makeProps(overrides: Partial<Parameters<typeof GenerationOutput>[0]> = 
     templateId: 'classic' as const,
     atsMode: false,
     accent: undefined,
+    letterLayoutId: undefined,
     onTemplateChange: vi.fn(),
     onAtsModeChange: vi.fn(),
     onAccentChange: vi.fn(),
+    onLetterLayoutChange: vi.fn(),
     output: 'Generated resume content',
     onEdit: noop,
     editable: false,
@@ -620,6 +622,37 @@ describe('GenerationOutput', () => {
     it('is absent for another single-column template ("classic")', () => {
       render(<GenerationOutput {...makeProps({ activeOut: 'resume', templateId: 'classic' })} />);
       expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    });
+  });
+
+  // ── 7b. Letter layout picker (cover-only) ─────────────────────────────────────
+  // The layout picker is the cover-doc counterpart to the résumé-only ATS toggle:
+  // it only affects the cover letter, so it renders on the cover tab and never on
+  // the résumé or job-ad tabs.
+
+  describe('letter layout picker', () => {
+    const letterOption = (id: string) => `${TEST_IDS.generation.letterLayoutOption}-${id}`;
+
+    it('renders on the cover tab', () => {
+      render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'cover' })} />);
+      expect(screen.getByTestId(letterOption('classic'))).toBeInTheDocument();
+    });
+
+    it('is absent on the résumé tab', () => {
+      render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'resume' })} />);
+      expect(screen.queryByTestId(letterOption('classic'))).not.toBeInTheDocument();
+    });
+
+    it('forwards a layout pick to onLetterLayoutChange', async () => {
+      const user = userEvent.setup();
+      const onLetterLayoutChange = vi.fn();
+      render(
+        <GenerationOutput
+          {...makeProps({ target: 'both', activeOut: 'cover', onLetterLayoutChange })}
+        />
+      );
+      await user.click(screen.getByTestId(letterOption('refined')));
+      expect(onLetterLayoutChange).toHaveBeenCalledWith('refined');
     });
   });
 

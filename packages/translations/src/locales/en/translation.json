@@ -1233,6 +1233,13 @@
     "documentAccentTeal": "Teal",
     "documentAccentCopper": "Copper",
     "documentAccentSteel": "Steel blue",
+    "letterLayout": "Letter layout",
+    "letterLayoutClassic": "Classic",
+    "letterLayoutClassicDesc": "The original single-column arrangement.",
+    "letterLayoutRefined": "Refined",
+    "letterLayoutRefinedDesc": "Minimalist — name and role up top, a reference line, airy spacing.",
+    "letterLayoutBanded": "Banded",
+    "letterLayoutBandedDesc": "A soft accent band across the top of the first page.",
     "wizard": {
       "steps": {
         "0": "What to create",

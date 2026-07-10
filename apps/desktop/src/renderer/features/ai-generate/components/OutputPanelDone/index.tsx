@@ -6,11 +6,13 @@ import { useTranslation } from '@ajh/translations';
 import { Button, cn } from '@ajh/ui';
 
 import { EditableOutput } from '@/components/generation/EditableOutput';
+import { LetterLayoutPicker } from '@/components/generation/LetterLayoutPicker';
 import { PdfPreview } from '@/components/generation/PdfPreview';
 import { useDebouncedCommit } from '@/hooks/use-debounced-commit';
 import {
   buildFilename,
   type GenerationMeta,
+  type LetterLayoutId,
   MODES,
   resolveMarket,
   type TemplateId,
@@ -30,9 +32,14 @@ interface OutputPanelDoneProps {
   atsMode: boolean;
   /** Per-export document accent (6-hex) — must match the export so preview is faithful. */
   accent?: string;
+  /** Per-export cover-letter layout — must match the export so the cover preview is faithful. */
+  letterLayoutId?: LetterLayoutId;
   /** Export market/locale — drives the cover-letter preview layout (#24). */
   locale?: string;
   onActiveOutChange: (out: 'resume' | 'cover') => void;
+  /** Forwards a picked layout — shown on the cover tab only, threaded to preview + export.
+   *  Optional: resume-only hosts (resume builder) never render a cover tab. */
+  onLetterLayoutChange?: (id: LetterLayoutId) => void;
   onCopy: () => void;
   onExport: (fmt: 'pdf' | 'docx' | 'txt') => Promise<void>;
   onOutputChange: (value: string) => void;
@@ -54,8 +61,10 @@ export function OutputPanelDone({
   templateId,
   atsMode,
   accent,
+  letterLayoutId,
   locale,
   onActiveOutChange,
+  onLetterLayoutChange,
   onCopy,
   onExport,
   onOutputChange,
@@ -257,6 +266,14 @@ export function OutputPanelDone({
         </div>
       )}
 
+      {/* Letter-layout picker — cover tab only (the layout only affects the letter;
+          mirrors GenerationOutput's cover-only strip). Threaded to preview + export. */}
+      {activeOut === 'cover' && onLetterLayoutChange && (
+        <div className="shrink-0 border-b border-[var(--border-clear)] px-6 py-2">
+          <LetterLayoutPicker value={letterLayoutId} onChange={onLetterLayoutChange} />
+        </div>
+      )}
+
       {/* Editing locked while cover letter is still streaming (#23 progressive reveal). */}
       {generatingDoc === 'cover' && (
         <div className="shrink-0 flex items-center gap-2 border-b border-amber-400/20 bg-amber-400/5 px-6 py-2 text-[11px] text-amber-400/80">
@@ -286,6 +303,7 @@ export function OutputPanelDone({
               templateId={templateId}
               atsMode={atsMode}
               accent={accent}
+              letterLayoutId={letterLayoutId}
               locale={previewLocale}
               paused={generatingDoc === activeOut}
               className="h-full w-full"

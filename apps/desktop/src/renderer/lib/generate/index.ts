@@ -32,6 +32,8 @@ export {
 export {
   isDesignTier,
   isTwoColumnTemplate,
+  LETTER_LAYOUT_IDS,
+  type LetterLayoutId,
   TEMPLATE_IDS,
   type TemplateId,
   TEMPLATES,

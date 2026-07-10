@@ -24,6 +24,7 @@ import {
   exportPDF,
   exportTXT,
   type GenerationMode,
+  type LetterLayoutId,
   resolveMarket,
   type TemplateId,
 } from '@/lib/generate';
@@ -48,6 +49,7 @@ export function AIGeneratePage() {
     templateId,
     atsMode,
     accent,
+    letterLayoutId,
     locale,
     resumeOut,
     coverOut,
@@ -65,6 +67,7 @@ export function AIGeneratePage() {
   const setTemplateId = (v: TemplateId) => setAIGenerate({ templateId: v });
   const setAtsMode = (v: boolean) => setAIGenerate({ atsMode: v });
   const setAccent = (v: string | undefined) => setAIGenerate({ accent: v });
+  const setLetterLayoutId = (v: LetterLayoutId) => setAIGenerate({ letterLayoutId: v });
   const setLocale = (v: string) => setAIGenerate({ locale: v });
   const setResumeOut = (v: string | ((p: string) => string)) =>
     setAIGenerate({ resumeOut: typeof v === 'function' ? v(resumeOut) : v });
@@ -230,7 +233,8 @@ export function AIGeneratePage() {
         templateId,
         atsMode,
         exportLocale,
-        accent
+        accent,
+        letterLayoutId
       );
     }
     if (fmt === 'docx') {
@@ -242,7 +246,8 @@ export function AIGeneratePage() {
         templateId,
         atsMode,
         exportLocale,
-        accent
+        accent,
+        letterLayoutId
       );
     }
     if (fmt === 'txt') {
@@ -297,6 +302,7 @@ export function AIGeneratePage() {
                 templateId={templateId}
                 atsMode={atsMode}
                 accent={accent}
+                letterLayoutId={letterLayoutId}
                 locale={locale}
                 researchCompany={researchCompany}
                 isGenerating={isGenerating}
@@ -308,6 +314,7 @@ export function AIGeneratePage() {
                 }}
                 onAtsModeChange={setAtsMode}
                 onAccentChange={setAccent}
+                onLetterLayoutChange={setLetterLayoutId}
                 onLocaleChange={setLocale}
                 onResearchCompanyChange={setResearchCompany}
                 onGenerate={requestGenerate}
@@ -340,8 +347,10 @@ export function AIGeneratePage() {
                 templateId={templateId}
                 atsMode={atsMode}
                 accent={accent}
+                letterLayoutId={letterLayoutId}
                 locale={locale}
                 onActiveOutChange={setActiveOut}
+                onLetterLayoutChange={setLetterLayoutId}
                 onCopy={() => void copyOutput()}
                 onExport={doExport}
                 onOutputChange={(value) => {

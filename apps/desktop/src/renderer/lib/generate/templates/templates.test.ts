@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isDesignTier, TEMPLATES } from './templates';
+import { isDesignTier, LETTER_LAYOUT_IDS, TEMPLATES } from './templates';
 
 describe('TEMPLATES', () => {
   const ids = Object.keys(TEMPLATES);
@@ -81,5 +81,14 @@ describe('TEMPLATES', () => {
     // Lebenslauf is design tier despite being single-column — the toggle-gate fix.
     expect(isDesignTier('lebenslauf')).toBe(true);
     expect(isDesignTier('classic')).toBe(false);
+  });
+});
+
+describe('LETTER_LAYOUT_IDS', () => {
+  // Sync guard: MUST equal the Rust `LetterLayout` enum (export/types.rs, kebab-case)
+  // and the shared contract union (BaseExportRequest.letterLayoutId). `classic` is
+  // first (the default the backend renders for an omitted value).
+  it('is the canonical three-layout id set, classic first', () => {
+    expect([...LETTER_LAYOUT_IDS]).toEqual(['classic', 'refined', 'banded']);
   });
 });
