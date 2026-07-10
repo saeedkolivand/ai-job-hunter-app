@@ -116,12 +116,26 @@ pub struct Template {
     pub cover_letter: CoverLetterLayout,
 }
 
+/// Parse a **document accent** hex (`#RRGGBB` or bare `RRGGBB`) into an RGB
+/// tuple. Delegates validation to `typst_engine::normalise_accent` — the single
+/// source of truth the résumé-PDF `RenderOpts.accent` path uses — so every
+/// backend (PDF résumé, cover letter, DOCX) accepts exactly the same inputs.
+/// Returns `None` for an absent or malformed value.
+fn parse_accent_rgb(accent: Option<&str>) -> Option<(u8, u8, u8)> {
+    // `normalise_accent` returns a canonical `#RRGGBB` string when valid.
+    let normalized = super::typst_engine::normalise_accent(accent)?;
+    let hex = &normalized[1..]; // drop the leading '#'
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some((r, g, b))
+}
+
 impl Template {
     /// Get template by ID.
     pub fn get(id: TemplateId) -> Self {
         match id {
             TemplateId::Classic => Self::classic(),
-            TemplateId::Modern => Self::modern(),
             TemplateId::SwissMinimal => Self::swiss_minimal(),
             TemplateId::Academic => Self::academic(),
             TemplateId::Atelier => Self::atelier(),
@@ -132,14 +146,32 @@ impl Template {
         }
     }
 
-    // ─── Nine live templates ──────────────────────────────────────────────────
+    /// Apply a per-export **document accent** override (ADR 0004): when `accent`
+    /// is a valid 6-digit hex (`#RRGGBB` or bare `RRGGBB`), recolor the
+    /// accent-derived fields so the DOCX backend (`docx_renderer::setup_colors`
+    /// reads `emphasis_color`) and the cover-letter style
+    /// (`typst_engine::letter::style_from_template` reads `accent_color`) pick it
+    /// up. The résumé-PDF path instead threads the same hex through
+    /// `RenderOpts.accent` (the `.typ` prefers `data.opts.accent`). No-op when the
+    /// value is absent or malformed — the template keeps its built-in palette.
+    #[must_use]
+    pub fn with_accent_override(mut self, accent: Option<&str>) -> Self {
+        if let Some(rgb) = parse_accent_rgb(accent) {
+            self.accent_color = rgb;
+            self.emphasis_color = rgb;
+        }
+        self
+    }
+
+    // ─── Eight live templates ─────────────────────────────────────────────────
 
     /// ATS Classic — maximum compatibility, no color, safe for all ATS parsers.
     ///
-    /// `section_style` is [`SectionStyle::RuledBottom`] because `classic.typ`
-    /// renders a full-width rule below each section heading (not just an
-    /// underline on the text).  Keeping declaration and render in sync avoids
-    /// misleading callers that inspect this field.
+    /// Classic renders through the parametric `single_column.typ`; its
+    /// `section_style` is [`SectionStyle::RuledBottom`] so the template draws a
+    /// full-width rule below each section heading (not just an underline on the
+    /// text).  Keeping declaration and render in sync avoids misleading callers
+    /// that inspect this field.
     pub(super) fn classic() -> Self {
         Self {
             id: TemplateId::Classic,
@@ -164,36 +196,6 @@ impl Template {
             job_title_italic: true,
             section_small_caps: false,
             rule_thickness: 0.5,
-            two_column: None,
-            cover_letter: CoverLetterLayout::default(),
-        }
-    }
-
-    /// Modern Technical — clean navy, professional, best for tech roles.
-    pub(super) fn modern() -> Self {
-        Self {
-            id: TemplateId::Modern,
-            name: "Modern Technical",
-            name_color: (13, 31, 60),
-            section_color: (13, 31, 60),
-            accent_color: (26, 58, 107),
-            body_color: (26, 26, 46),
-            date_color: (107, 107, 138),
-            emphasis_color: (13, 61, 107),
-            rule_color: (184, 196, 220),
-            name_pt: 22.0,
-            section_pt: 11.0,
-            body_pt: 10.5,
-            margin_in: 1.0,
-            line_spacing: 1.2,
-            section_spacing_before: 13.0,
-            name_centered: false,
-            section_all_caps: true,
-            section_style: SectionStyle::RuledBottom,
-            fonts: TemplateFonts::default(),
-            job_title_italic: true,
-            section_small_caps: false,
-            rule_thickness: 1.0,
             two_column: None,
             cover_letter: CoverLetterLayout::default(),
         }

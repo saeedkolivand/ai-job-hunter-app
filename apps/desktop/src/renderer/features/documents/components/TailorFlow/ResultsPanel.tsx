@@ -30,8 +30,11 @@ interface Props {
   // and the export. Picked on the results toolbar; never regenerates.
   templateId: TemplateId;
   atsMode: boolean;
+  /** Per-export document accent (6-hex); undefined = template palette. */
+  accent?: string;
   onTemplateChange: (id: TemplateId) => void;
   onAtsModeChange: (v: boolean) => void;
+  onAccentChange: (accent: string | undefined) => void;
   output: string;
   onEdit: (text: string) => void;
   meta: GenerationMeta | null;
@@ -63,8 +66,10 @@ export function ResultsPanel({
   setActiveOut,
   templateId,
   atsMode,
+  accent,
   onTemplateChange,
   onAtsModeChange,
+  onAccentChange,
   output,
   onEdit,
   meta,
@@ -87,8 +92,10 @@ export function ResultsPanel({
           setActiveOut={setActiveOut}
           templateId={templateId}
           atsMode={atsMode}
+          accent={accent}
           onTemplateChange={onTemplateChange}
           onAtsModeChange={onAtsModeChange}
+          onAccentChange={onAccentChange}
           output={output}
           onEdit={onEdit}
           editable

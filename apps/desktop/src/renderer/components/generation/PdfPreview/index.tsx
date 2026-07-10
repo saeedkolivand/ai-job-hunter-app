@@ -13,6 +13,8 @@ interface PdfPreviewProps {
   meta?: GenerationMeta | null;
   templateId: TemplateId;
   atsMode?: boolean;
+  /** Per-export document accent (6-hex) — mirrors the real export so preview is faithful. */
+  accent?: string;
   /** Export market/locale (resolved by the caller, mirroring the real export). */
   locale?: string;
   /** Skip rendering — e.g. while the document is still generating. */
@@ -50,6 +52,7 @@ export function PdfPreview({
   meta,
   templateId,
   atsMode = false,
+  accent,
   locale,
   paused = false,
   className,
@@ -103,7 +106,8 @@ export function PdfPreview({
             meta ?? undefined,
             templateId,
             atsMode,
-            locale
+            locale,
+            accent
           );
           if (token !== renderToken.current) return; // superseded by a newer edit
           // Revoke old batch before creating new URLs.
@@ -121,7 +125,7 @@ export function PdfPreview({
       })();
     }, delay);
     return () => clearTimeout(timer);
-  }, [text, docType, meta, templateId, atsMode, locale, paused]);
+  }, [text, docType, meta, templateId, atsMode, accent, locale, paused]);
 
   const hasPages = pageUrls.length > 0;
   const title = t('aiGenerate.pdfPreview.title');

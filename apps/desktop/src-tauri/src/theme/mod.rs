@@ -121,7 +121,7 @@ mod tests {
             "Portrait is two-column"
         );
         assert!(!is_two_column(TemplateId::Classic));
-        assert!(!is_two_column(TemplateId::Modern));
+        assert!(!is_two_column(TemplateId::SwissMinimal));
         assert!(
             !is_two_column(TemplateId::Lebenslauf),
             "Lebenslauf is single-column"
@@ -137,7 +137,7 @@ mod tests {
                 underline: false
             }
         );
-        let modern = link_style(TemplateId::Modern);
-        assert!(modern.use_accent && modern.underline);
+        let accented = link_style(TemplateId::SwissMinimal);
+        assert!(accented.use_accent && accented.underline);
     }
 }

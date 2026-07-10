@@ -26,12 +26,13 @@ fn resume_request(template_id: TemplateId) -> ExportRequest {
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     }
 }
 
 #[test]
 fn resume_docx_declares_a4_page_size() {
-    let bytes = generate_docx(&resume_request(TemplateId::Modern)).expect("docx");
+    let bytes = generate_docx(&resume_request(TemplateId::SwissMinimal)).expect("docx");
     let xml = document_xml(&bytes);
     // A4 in dxa, set explicitly from LocaleProfile rather than inherited.
     assert!(
@@ -42,7 +43,7 @@ fn resume_docx_declares_a4_page_size() {
 
 #[test]
 fn us_locale_drives_letter_page_size() {
-    let mut request = resume_request(TemplateId::Modern);
+    let mut request = resume_request(TemplateId::SwissMinimal);
     request.locale = Some("us".to_string());
     let xml = document_xml(&generate_docx(&request).expect("docx"));
     // US Letter in dxa (12240 × 15840), not the A4 default.
@@ -52,7 +53,7 @@ fn us_locale_drives_letter_page_size() {
     );
 
     // No locale → international A4.
-    let a4 = document_xml(&generate_docx(&resume_request(TemplateId::Modern)).expect("docx"));
+    let a4 = document_xml(&generate_docx(&resume_request(TemplateId::SwissMinimal)).expect("docx"));
     assert!(a4.contains(r#"w:w="11906""#), "default stays A4");
 }
 
@@ -67,6 +68,7 @@ fn cover_letter_docx_declares_a4_page_size() {
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
     let bytes = generate_docx(&request).expect("docx");
     let xml = document_xml(&bytes);
@@ -78,8 +80,8 @@ fn cover_letter_docx_declares_a4_page_size() {
 
 #[test]
 fn resume_docx_uses_fallback_fonts_not_bundled_names() {
-    // Modern: name/heading/body all Inter → Calibri.
-    let bytes = generate_docx(&resume_request(TemplateId::Modern)).expect("docx");
+    // Meridian: name/heading/body all Inter → Calibri.
+    let bytes = generate_docx(&resume_request(TemplateId::Meridian)).expect("docx");
     let xml = document_xml(&bytes);
     assert!(
         xml.contains(r#"w:ascii="Calibri""#),
@@ -130,11 +132,12 @@ fn test_generate_simple_resume() {
         text: "John Doe\njohn@example.com\n\nEXPERIENCE\nSoftware Engineer  2020-2023".to_string(),
         format: super::super::types::ExportFormat::Docx,
         document_type: DocumentType::Resume,
-        template_id: TemplateId::Modern,
+        template_id: TemplateId::SwissMinimal,
         meta: None,
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
 
     let result = generate_docx(&request);
@@ -188,6 +191,7 @@ fn test_generate_cover_letter() {
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
 
     let result = generate_docx(&request);
@@ -196,12 +200,37 @@ fn test_generate_cover_letter() {
 }
 
 #[test]
+fn document_accent_overrides_docx_emphasis_color() {
+    use crate::export::docx_renderer::setup_colors;
+    use crate::export::templates::Template;
+
+    // The DOCX backend derives its emphasis color from the template's
+    // `emphasis_color`, which `with_accent_override` recolors — so a document
+    // accent surfaces on emphasized runs. Non-accent colors (e.g. section) stay put.
+    let base = setup_colors(&Template::get(TemplateId::Classic));
+    let accented =
+        setup_colors(&Template::get(TemplateId::Classic).with_accent_override(Some("#AA0000")));
+    assert_eq!(
+        accented.emphasis, "AA0000",
+        "accent must recolor DOCX emphasis"
+    );
+    assert_ne!(
+        base.emphasis, accented.emphasis,
+        "override must actually change the emphasis color"
+    );
+    assert_eq!(
+        accented.section, base.section,
+        "a non-accent color (section) must be untouched"
+    );
+}
+
+#[test]
 fn test_generate_resume_with_meta() {
     let request = ExportRequest {
         text: "John Doe\njohn@example.com".to_string(),
         format: super::super::types::ExportFormat::Docx,
         document_type: DocumentType::Resume,
-        template_id: TemplateId::Modern,
+        template_id: TemplateId::SwissMinimal,
         meta: Some(GenerationMeta {
             candidate_name: Some("Jane Smith".to_string()),
             job_title: Some("Software Engineer".to_string()),
@@ -211,6 +240,7 @@ fn test_generate_resume_with_meta() {
         ats_mode: false,
         locale: None,
         contact: None,
+        accent: None,
     };
 
     let result = generate_docx(&request);

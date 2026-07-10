@@ -78,9 +78,10 @@ export async function exportDOCX(
   filename: string,
   type: 'resume' | 'cover-letter' = 'resume',
   meta?: GenerationMeta,
-  templateId: TemplateId = 'modern',
+  templateId: TemplateId = 'classic',
   atsMode = false,
-  locale?: string
+  locale?: string,
+  accent?: string
 ): Promise<void> {
   try {
     if (!text || text.trim().length === 0) {
@@ -90,7 +91,7 @@ export async function exportDOCX(
       throw new Error('Invalid filename provided.');
     }
     if (!TEMPLATES[templateId]) {
-      // Surface the failure instead of silently swapping in "modern" — a
+      // Surface the failure instead of silently swapping in a default template — a
       // wrong-template export is indistinguishable from a correct one and hides
       // the real bug. The Rust deserializer keeps a graceful, logged Classic
       // fallback as the proper degradation layer if an unknown id ever arrives.
@@ -111,6 +112,9 @@ export async function exportDOCX(
       templateId,
       atsMode,
       locale,
+      // Per-export document accent (6-hex) — undefined leaves the template palette
+      // untouched; the backend re-validates and ignores a malformed value.
+      accent,
       contact,
       meta: meta
         ? {
@@ -135,9 +139,10 @@ export async function exportPDF(
   filename: string,
   type: 'resume' | 'cover-letter' = 'resume',
   meta?: GenerationMeta,
-  templateId: TemplateId = 'modern',
+  templateId: TemplateId = 'classic',
   atsMode = false,
-  locale?: string
+  locale?: string,
+  accent?: string
 ): Promise<void> {
   try {
     if (!text || text.trim().length === 0) {
@@ -147,7 +152,7 @@ export async function exportPDF(
       throw new Error('Invalid filename provided.');
     }
     if (!TEMPLATES[templateId]) {
-      // Surface the failure instead of silently swapping in "modern" — a
+      // Surface the failure instead of silently swapping in a default template — a
       // wrong-template export is indistinguishable from a correct one and hides
       // the real bug. The Rust deserializer keeps a graceful, logged Classic
       // fallback as the proper degradation layer if an unknown id ever arrives.
@@ -165,6 +170,8 @@ export async function exportPDF(
       templateId,
       atsMode,
       locale,
+      // Per-export document accent (6-hex) — see exportDOCX.
+      accent,
       contact,
       meta: meta
         ? {
@@ -196,9 +203,10 @@ export async function renderDocumentPreview(
   text: string,
   type: 'resume' | 'cover-letter' = 'resume',
   meta?: GenerationMeta,
-  templateId: TemplateId = 'modern',
+  templateId: TemplateId = 'classic',
   atsMode = false,
-  locale?: string
+  locale?: string,
+  accent?: string
 ): Promise<string[]> {
   if (!text || text.trim().length === 0) {
     throw new Error('Cannot preview an empty document.');
@@ -220,6 +228,9 @@ export async function renderDocumentPreview(
     templateId,
     atsMode,
     locale,
+    // Per-export document accent (6-hex) — must match the export so the preview
+    // is faithful (undefined leaves the template palette untouched).
+    accent,
     contact,
     meta: meta
       ? {

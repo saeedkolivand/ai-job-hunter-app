@@ -10,7 +10,6 @@ vi.mock('./cover-template-previews', () => {
   // Simulate the 9 committed SVG assets.
   const ids = [
     'classic',
-    'modern',
     'swiss-minimal',
     'academic',
     'atelier',

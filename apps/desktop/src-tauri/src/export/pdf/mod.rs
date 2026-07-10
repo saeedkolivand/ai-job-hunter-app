@@ -5,7 +5,7 @@ use super::{
     types::{DocumentType, ExportRequest},
 };
 
-// Typst engine — used by the live export path for all nine templates.
+// Typst engine — used by the live export path for all eight templates.
 use super::typst_engine::{
     render_letter_pdf, render_letter_svg_pages, render_pdf, render_pdf_with_photo,
     render_resume_svg_pages, render_resume_svg_pages_with_photo, resolve_photo, RenderOpts,
@@ -90,11 +90,13 @@ fn prepare_resume_render(request: &ExportRequest) -> ResumeRenderInputs {
     let page = request.page_geometry();
     let opts = RenderOpts {
         page,
-        // `accent` is intentionally `None` — each template ships its own built-in
-        // accent color and no UI currently sends a user-settable override.
-        // This field is the single wiring point: when a user-accent-color feature
-        // lands, connect `request.accent` (or equivalent) here and nowhere else.
-        accent: None,
+        // Document-accent seam for the résumé-PDF path: forward the request's
+        // optional 6-hex override here and nowhere else. `normalise_accent`
+        // (in `prepare`) validates it; the parametric `.typ` prefers a non-empty
+        // `data.opts.accent` over the template's built-in palette. `None` (the
+        // default) leaves the palette untouched. The letter + DOCX paths thread
+        // the same value through `Template::with_accent_override` instead.
+        accent: request.accent.clone(),
         lang: request.target_lang(),
         ats: request.ats_mode,
     };
@@ -159,7 +161,10 @@ pub fn generate_pdf(request: &ExportRequest) -> AppResult<Vec<u8>> {
             result.map_err(|e| AppError::Parse(format!("Failed to generate resume PDF: {e}")))
         }
         DocumentType::CoverLetter => {
-            let template = Template::get(request.template_id);
+            // Document accent threads through the resume template's style, which
+            // the cover letter inherits (`letter_style_from_template`).
+            let template =
+                Template::get(request.template_id).with_accent_override(request.accent.as_deref());
             let (text, lang) = prepare_letter_text(request);
             let meta_name = request
                 .meta
@@ -219,7 +224,10 @@ pub fn generate_preview_svg(request: &ExportRequest) -> AppResult<Vec<String>> {
             result.map_err(|e| AppError::Parse(format!("Failed to render resume preview: {e}")))
         }
         DocumentType::CoverLetter => {
-            let template = Template::get(request.template_id);
+            // Same document-accent threading as the PDF cover-letter path so the
+            // live preview matches the export.
+            let template =
+                Template::get(request.template_id).with_accent_override(request.accent.as_deref());
             let (text, lang) = prepare_letter_text(request);
             let meta_name = request
                 .meta

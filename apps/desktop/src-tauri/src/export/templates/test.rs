@@ -9,24 +9,10 @@ fn test_template_get_classic() {
 }
 
 #[test]
-fn test_template_get_modern() {
-    let template = Template::get(TemplateId::Modern);
-    assert_eq!(template.id, TemplateId::Modern);
-    assert_eq!(template.name, "Modern Technical");
-}
-
-#[test]
 fn test_template_classic_colors() {
     let template = Template::classic();
     assert_eq!(template.name_color, (17, 17, 17));
     assert_eq!(template.section_color, (17, 17, 17));
-}
-
-#[test]
-fn test_template_modern_colors() {
-    let template = Template::modern();
-    assert_eq!(template.name_color, (13, 31, 60));
-    assert_eq!(template.section_color, (13, 31, 60));
 }
 
 #[test]
@@ -93,4 +79,41 @@ fn test_calculate_spacing_text_default() {
 fn test_section_style_partial_eq() {
     assert_eq!(SectionStyle::RuledBottom, SectionStyle::RuledBottom);
     assert_ne!(SectionStyle::RuledBottom, SectionStyle::Underline);
+}
+
+// ─── Document accent override ─────────────────────────────────────────────────
+
+#[test]
+fn with_accent_override_recolors_accent_and_emphasis_for_valid_hex() {
+    // Baseline: Classic ships a near-black accent + pure-black emphasis.
+    let base = Template::get(TemplateId::Classic);
+    assert_ne!(base.accent_color, (170, 0, 0));
+
+    // A valid override recolors both accent-derived fields (bare + #-prefixed).
+    let bare = Template::get(TemplateId::Classic).with_accent_override(Some("AA0000"));
+    assert_eq!(bare.accent_color, (170, 0, 0));
+    assert_eq!(bare.emphasis_color, (170, 0, 0));
+
+    let hashed = Template::get(TemplateId::Classic).with_accent_override(Some("#1A2B3C"));
+    assert_eq!(hashed.accent_color, (26, 43, 60));
+    assert_eq!(hashed.emphasis_color, (26, 43, 60));
+}
+
+#[test]
+fn with_accent_override_is_a_noop_for_absent_or_malformed_input() {
+    let base = Template::get(TemplateId::Classic);
+    for bad in [
+        None,
+        Some(""),
+        Some("not-a-color"),
+        Some("#12345"),
+        Some("#1234567"),
+    ] {
+        let t = Template::get(TemplateId::Classic).with_accent_override(bad);
+        assert_eq!(
+            (t.accent_color, t.emphasis_color),
+            (base.accent_color, base.emphasis_color),
+            "accent {bad:?} must leave the palette untouched"
+        );
+    }
 }

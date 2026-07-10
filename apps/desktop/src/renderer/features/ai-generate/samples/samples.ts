@@ -18,7 +18,6 @@ import type { TemplateId } from '@/lib/generate';
 
 export const TEMPLATE_CAPTIONS: Record<TemplateId, string> = {
   classic: 'Maximum ATS safety — single column, no color. Safe for every parser.',
-  modern: 'Clean navy, single column. A strong default for software & engineering roles.',
   'swiss-minimal': 'Minimalist Manrope with a red accent. Design-adjacent and product roles.',
   academic: 'Serif throughout with ruled headings. Academia, research, and publications.',
   atelier: 'Premium two-column sidebar. Skills-forward; collapses to single column for ATS.',
