@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, ModalShell, SegmentedControl } from '@ajh/ui';
 
+import { AccentPicker } from '@/components/generation/AccentPicker';
 import type { TemplateId } from '@/lib/generate';
 
 const EXPORT_FORMATS = ['pdf', 'docx', 'txt'] as const;
@@ -28,6 +29,12 @@ interface BaseProps {
   templateId?: TemplateId;
   onTemplateChange?: (id: TemplateId) => void;
   templateOptions?: ExportTemplateOption[];
+  /**
+   * When provided (composed mode), a document-accent picker is shown below the
+   * format/template controls. Hidden for `txt` (plain text has no accent).
+   */
+  accent?: string;
+  onAccentChange?: (accent: string | undefined) => void;
   /** z-index for the modal — forwarded to ModalShell (default 600). */
   zIndex?: number;
 }
@@ -74,6 +81,8 @@ export function ExportPicker(props: ExportPickerProps) {
     templateId,
     onTemplateChange,
     templateOptions,
+    accent,
+    onAccentChange,
     zIndex,
   } = props;
   const { t } = useTranslation();
@@ -84,6 +93,9 @@ export function ExportPicker(props: ExportPickerProps) {
     onTemplateChange !== undefined &&
     templateOptions !== undefined &&
     templateOptions.length > 0;
+
+  // Accent only applies to a rendered document (PDF/DOCX), never plain text.
+  const showAccentPicker = format !== 'txt' && onAccentChange !== undefined;
 
   // In immediate mode a format click both selects and fires the export.
   const handleFormatSelect = (next: ExportFormat) => {
@@ -151,6 +163,7 @@ export function ExportPicker(props: ExportPickerProps) {
                 />
               )}
             </div>
+            {showAccentPicker && <AccentPicker value={accent} onChange={onAccentChange} />}
             <div className="flex flex-wrap items-center gap-2">{props.children}</div>
           </>
         )}

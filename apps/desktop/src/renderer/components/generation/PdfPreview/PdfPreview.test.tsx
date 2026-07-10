@@ -109,7 +109,15 @@ describe('PdfPreview (#24)', () => {
     });
 
     expect(mockRender).toHaveBeenCalledTimes(1);
-    expect(mockRender).toHaveBeenCalledWith('v3', 'resume', undefined, 'classic', false, undefined);
+    expect(mockRender).toHaveBeenCalledWith(
+      'v3',
+      'resume',
+      undefined,
+      'classic',
+      false,
+      undefined,
+      undefined
+    );
   });
 
   it('revokes old blob URLs when a new render batch resolves', async () => {
@@ -189,6 +197,7 @@ describe('PdfPreview (#24)', () => {
       undefined,
       'classic',
       false,
+      undefined,
       undefined
     );
   });

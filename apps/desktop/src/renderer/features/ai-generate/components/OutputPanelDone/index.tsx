@@ -28,6 +28,8 @@ interface OutputPanelDoneProps {
   templateId: TemplateId;
   /** ATS single-column override — must match the export so the preview is faithful. */
   atsMode: boolean;
+  /** Per-export document accent (6-hex) — must match the export so preview is faithful. */
+  accent?: string;
   /** Export market/locale — drives the cover-letter preview layout (#24). */
   locale?: string;
   onActiveOutChange: (out: 'resume' | 'cover') => void;
@@ -51,6 +53,7 @@ export function OutputPanelDone({
   mode,
   templateId,
   atsMode,
+  accent,
   locale,
   onActiveOutChange,
   onCopy,
@@ -282,6 +285,7 @@ export function OutputPanelDone({
               meta={meta}
               templateId={templateId}
               atsMode={atsMode}
+              accent={accent}
               locale={previewLocale}
               paused={generatingDoc === activeOut}
               className="h-full w-full"

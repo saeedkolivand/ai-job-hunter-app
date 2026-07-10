@@ -3,6 +3,7 @@ import { Check, FileText } from 'lucide-react';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, Image } from '@ajh/ui';
 
+import { AccentPicker } from '@/components/generation/AccentPicker';
 import { isTwoColumnTemplate, type TemplateId, TEMPLATES } from '@/lib/generate';
 
 import { COVER_TEMPLATE_PREVIEWS, TEMPLATE_CAPTIONS, TEMPLATE_PREVIEWS } from '../../../samples';
@@ -13,6 +14,13 @@ interface StepTemplateProps {
   onTemplateChange: (id: TemplateId) => void;
   onAtsModeChange: (enabled: boolean) => void;
   target?: 'resume' | 'cover' | 'both';
+  /** Per-export document accent (6-hex) — undefined = template palette. */
+  accent?: string;
+  /**
+   * When provided, the document-accent picker is shown under the gallery. Left
+   * out by surfaces that don't thread an accent (e.g. the résumé builder).
+   */
+  onAccentChange?: (accent: string | undefined) => void;
 }
 
 export function StepTemplate({
@@ -21,6 +29,8 @@ export function StepTemplate({
   onTemplateChange,
   onAtsModeChange,
   target = 'resume',
+  accent,
+  onAccentChange,
 }: StepTemplateProps) {
   const isCover = target === 'cover';
   const { t } = useTranslation();
@@ -96,6 +106,9 @@ export function StepTemplate({
           );
         })}
       </div>
+
+      {/* Document accent — per-export colour override, threaded to preview + export. */}
+      {onAccentChange && <AccentPicker value={accent} onChange={onAccentChange} />}
 
       {/* ATS safe mode toggle — only relevant for two-column résumé templates */}
       {!isCover && isTwoColumnTemplate(templateId) && (

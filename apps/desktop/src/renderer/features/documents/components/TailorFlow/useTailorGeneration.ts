@@ -54,6 +54,9 @@ interface Params {
   /** Live ATS single-column override (from the sticky store preference) — must match
    *  the preview so the export is faithful. */
   atsMode: boolean;
+  /** Per-export document accent (6-hex) — must match the preview so the export is
+   *  faithful; undefined leaves the template palette untouched. */
+  accent?: string;
 }
 
 /**
@@ -73,6 +76,7 @@ export function useTailorGeneration({
   researchCompany,
   templateId,
   atsMode,
+  accent,
 }: Params) {
   const { t } = useTranslation();
   const api = useAppClient();
@@ -223,9 +227,27 @@ export function useTailorGeneration({
     };
     const name = buildFilename(fileMeta, docType, fmt);
     if (fmt === 'pdf')
-      await exportPDF(output, name, docType, meta ?? undefined, templateId, atsMode);
+      await exportPDF(
+        output,
+        name,
+        docType,
+        meta ?? undefined,
+        templateId,
+        atsMode,
+        undefined,
+        accent
+      );
     else if (fmt === 'docx')
-      await exportDOCX(output, name, docType, meta ?? undefined, templateId, atsMode);
+      await exportDOCX(
+        output,
+        name,
+        docType,
+        meta ?? undefined,
+        templateId,
+        atsMode,
+        undefined,
+        accent
+      );
     else exportTXT(output, name);
   };
 

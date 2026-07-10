@@ -24,6 +24,7 @@ interface GenerateWizardProps {
   target: 'resume' | 'cover' | 'both';
   templateId: TemplateId;
   atsMode: boolean;
+  accent?: string;
   locale: string;
   researchCompany: boolean;
   isGenerating: boolean;
@@ -32,6 +33,7 @@ interface GenerateWizardProps {
   onTargetChange: (t: 'resume' | 'cover' | 'both') => void;
   onTemplateChange: (id: TemplateId) => void;
   onAtsModeChange: (enabled: boolean) => void;
+  onAccentChange: (accent: string | undefined) => void;
   onLocaleChange: (locale: string) => void;
   onResearchCompanyChange: (v: boolean) => void;
   onGenerate: () => void;
@@ -43,6 +45,7 @@ export function GenerateWizard({
   target,
   templateId,
   atsMode,
+  accent,
   locale,
   researchCompany,
   isGenerating,
@@ -51,6 +54,7 @@ export function GenerateWizard({
   onTargetChange,
   onTemplateChange,
   onAtsModeChange,
+  onAccentChange,
   onLocaleChange,
   onResearchCompanyChange,
   onGenerate,
@@ -165,6 +169,8 @@ export function GenerateWizard({
                 onTemplateChange={handleTemplateChange}
                 onAtsModeChange={onAtsModeChange}
                 target={target}
+                accent={accent}
+                onAccentChange={onAccentChange}
               />
             )}
             {step === 2 && (

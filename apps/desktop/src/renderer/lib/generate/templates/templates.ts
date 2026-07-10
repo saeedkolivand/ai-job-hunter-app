@@ -8,7 +8,6 @@
 
 export type TemplateId =
   | 'classic'
-  | 'modern'
   | 'swiss-minimal'
   | 'academic'
   | 'atelier'
@@ -60,28 +59,6 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
     marginIn: 1.0,
     lineSpacingDocx: 264,
     sectionSpacingBefore: 240,
-    nameCentered: false,
-    sectionAllCaps: true,
-    sectionStyle: 'ruled-bottom',
-  },
-
-  /** Modern Technical — clean navy, professional, best for tech roles */
-  modern: {
-    id: 'modern',
-    name: 'Modern Technical',
-    nameColor: '0D1F3C',
-    sectionColor: '0D1F3C',
-    accentColor: '1A3A6B',
-    bodyColor: '1A1A2E',
-    dateColor: '6B6B8A',
-    emphasisColor: '0D3D6B',
-    ruleColor: 'B8C4DC',
-    namePt: 22,
-    sectionPt: 11,
-    bodyPt: 10.5,
-    marginIn: 1.0,
-    lineSpacingDocx: 276,
-    sectionSpacingBefore: 260,
     nameCentered: false,
     sectionAllCaps: true,
     sectionStyle: 'ruled-bottom',

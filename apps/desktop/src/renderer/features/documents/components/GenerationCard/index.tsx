@@ -79,7 +79,9 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
   const [showExportModal, setShowExportModal] = useState(false);
   const [copiedReferral, setCopiedReferral] = useState<string | null>(null);
   const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
-  const [exportTemplate, setExportTemplate] = useState<TemplateId>('modern');
+  const [exportTemplate, setExportTemplate] = useState<TemplateId>('classic');
+  // Per-export document accent (6-hex) — undefined = the template's own palette.
+  const [exportAccent, setExportAccent] = useState<string | undefined>(undefined);
   const [exporting, setExporting] = useState<'resume' | 'cover' | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -183,9 +185,27 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
     setExporting(type);
     try {
       if (exportFormat === 'pdf') {
-        await exportPDF(text, filename.replace('.pdf', ''), docType, meta, exportTemplate);
+        await exportPDF(
+          text,
+          filename.replace('.pdf', ''),
+          docType,
+          meta,
+          exportTemplate,
+          false,
+          undefined,
+          exportAccent
+        );
       } else if (exportFormat === 'docx') {
-        await exportDOCX(text, filename.replace('.docx', ''), docType, meta, exportTemplate);
+        await exportDOCX(
+          text,
+          filename.replace('.docx', ''),
+          docType,
+          meta,
+          exportTemplate,
+          false,
+          undefined,
+          exportAccent
+        );
       } else {
         exportTXT(text, filename.replace('.txt', ''));
       }
@@ -524,6 +544,8 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
         templateId={exportTemplate}
         onTemplateChange={setExportTemplate}
         templateOptions={TEMPLATE_OPTIONS}
+        accent={exportAccent}
+        onAccentChange={setExportAccent}
       >
         {resumeDraft && (
           <Button

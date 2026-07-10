@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, Dropdown, Switch, type TabItem, Tabs } from '@ajh/ui';
 
+import { AccentPicker } from '@/components/generation/AccentPicker';
 import { EditableOutput } from '@/components/generation/EditableOutput';
 import { type ExportFormat, ExportPicker } from '@/components/generation/ExportPicker';
 import { PdfPreview } from '@/components/generation/PdfPreview';
@@ -28,8 +29,11 @@ interface Props {
   // export in useTailorGeneration. The toolbar picker mutates them; no regeneration.
   templateId: TemplateId;
   atsMode: boolean;
+  /** Per-export document accent (6-hex); undefined = template palette. */
+  accent?: string;
   onTemplateChange: (id: TemplateId) => void;
   onAtsModeChange: (v: boolean) => void;
+  onAccentChange: (accent: string | undefined) => void;
   output: string;
   onEdit: (text: string) => void;
   editable: boolean;
@@ -60,8 +64,10 @@ export function GenerationOutput({
   setActiveOut,
   templateId,
   atsMode,
+  accent,
   onTemplateChange,
   onAtsModeChange,
+  onAccentChange,
   output,
   onEdit,
   editable,
@@ -293,6 +299,13 @@ export function GenerationOutput({
           </div>
         </div>
       )}
+      {/* Document-accent strip — render-time colour override; drives BOTH docs'
+          preview + export, mirroring the template picker above. */}
+      {view === 'doc' && (
+        <div className="shrink-0 border-b border-foreground/[0.06] px-3 py-2">
+          <AccentPicker value={accent} onChange={onAccentChange} />
+        </div>
+      )}
       <div
         role="tabpanel"
         id={activePanelId}
@@ -332,6 +345,7 @@ export function GenerationOutput({
                 meta={meta}
                 templateId={templateId}
                 atsMode={atsMode}
+                accent={accent}
                 paused={!editable}
                 className="h-full w-full"
               />

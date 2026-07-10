@@ -47,6 +47,7 @@ export function AIGeneratePage() {
     target,
     templateId,
     atsMode,
+    accent,
     locale,
     resumeOut,
     coverOut,
@@ -63,6 +64,7 @@ export function AIGeneratePage() {
   const setTarget = (v: 'resume' | 'cover' | 'both') => setAIGenerate({ target: v });
   const setTemplateId = (v: TemplateId) => setAIGenerate({ templateId: v });
   const setAtsMode = (v: boolean) => setAIGenerate({ atsMode: v });
+  const setAccent = (v: string | undefined) => setAIGenerate({ accent: v });
   const setLocale = (v: string) => setAIGenerate({ locale: v });
   const setResumeOut = (v: string | ((p: string) => string)) =>
     setAIGenerate({ resumeOut: typeof v === 'function' ? v(resumeOut) : v });
@@ -220,10 +222,28 @@ export function AIGeneratePage() {
       fmt
     );
     if (fmt === 'pdf') {
-      await exportPDF(text, name, type, meta ?? undefined, templateId, atsMode, exportLocale);
+      await exportPDF(
+        text,
+        name,
+        type,
+        meta ?? undefined,
+        templateId,
+        atsMode,
+        exportLocale,
+        accent
+      );
     }
     if (fmt === 'docx') {
-      await exportDOCX(text, name, type, meta ?? undefined, templateId, atsMode, exportLocale);
+      await exportDOCX(
+        text,
+        name,
+        type,
+        meta ?? undefined,
+        templateId,
+        atsMode,
+        exportLocale,
+        accent
+      );
     }
     if (fmt === 'txt') {
       exportTXT(text, name);
@@ -276,6 +296,7 @@ export function AIGeneratePage() {
                 target={target}
                 templateId={templateId}
                 atsMode={atsMode}
+                accent={accent}
                 locale={locale}
                 researchCompany={researchCompany}
                 isGenerating={isGenerating}
@@ -286,6 +307,7 @@ export function AIGeneratePage() {
                   setTemplateId(id);
                 }}
                 onAtsModeChange={setAtsMode}
+                onAccentChange={setAccent}
                 onLocaleChange={setLocale}
                 onResearchCompanyChange={setResearchCompany}
                 onGenerate={requestGenerate}
@@ -317,6 +339,7 @@ export function AIGeneratePage() {
                 mode={mode}
                 templateId={templateId}
                 atsMode={atsMode}
+                accent={accent}
                 locale={locale}
                 onActiveOutChange={setActiveOut}
                 onCopy={() => void copyOutput()}
