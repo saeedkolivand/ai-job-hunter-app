@@ -147,7 +147,7 @@ fn req(format: ExportFormat, template_id: TemplateId, ats_mode: bool) -> ExportR
 fn single_column_pdf_is_not_blocked() {
     let (bytes, report) = validate_and_fix(
         req(ExportFormat::Pdf, TemplateId::SwissMinimal, false),
-        |r| crate::export::pdf::generate_pdf(r),
+        crate::export::pdf::generate_pdf,
     )
     .expect("pdf export");
     assert!(!bytes.is_empty());
