@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783686127283,
+  "lastUpdate": 1783690710248,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3311,6 +3311,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 305949,
             "range": "± 13809",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1172aff7a72ebea50954e612846f88cc113b9137",
+          "message": "feat: cadence and regent single-column templates (templates pr 3/6) (#592)\n\n* feat(export): add cadence and regent single-column templates with tracking and underline knobs\n\nTwo ats-tier templates on the parametric renderer: cadence (inter,\nblue-grey accent, letter-spaced all-caps ruled headings, underlined\nlinks, 28pt name) and regent (source serif 4, deep burgundy accent,\nsmall-caps serif headings, 26pt name). Adds backward-compatible\nheading_tracking and link_underline style knobs (defaults preserve\nexisting output) and threads the previously-dead rule_thickness into\nthe renderer. Regent uses real typst smallcaps (extraction-safe);\nvisually inert until a smcp-capable source serif 4 ships (follow-up).\nCount pins 8 to 10; showcase generator grid widened (latent panic fix).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* feat(ui): register cadence and regent in the template gallery\n\nRegistry records, captions, and shared-contract union entries mirroring\nthe rust configs; count pins 8 to 10; missing preview svgs exercise the\nicon fallback pending ci regeneration.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs(export): clarify rule thickness zero means default not suppression\n\nReview follow-up: rule presence is owned by section_style; 0.0 falls\nback to the house 0.5pt.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-10T15:28:44+02:00",
+          "tree_id": "0373dd0e35e19c11a3bf77dac47319812a60da2f",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/1172aff7a72ebea50954e612846f88cc113b9137"
+        },
+        "date": 1783690709582,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2149557,
+            "range": "± 70123",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2574204,
+            "range": "± 51292",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 293654,
+            "range": "± 9814",
             "unit": "ns/iter"
           }
         ]
