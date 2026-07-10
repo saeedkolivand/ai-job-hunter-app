@@ -1083,23 +1083,32 @@ async fn primary_chain(
                 )
                 .await
             {
-                Ok(items) if items.is_empty() && country_guessed && !location.is_empty() => {
-                    // Guessed-market guard (see doc comment above): an empty result
-                    // from a GUESSED country with a real location is untrustworthy.
-                    // Treat it like an Adzuna error and fall through below instead
-                    // of returning early.
+                Ok(items)
+                    if items.len() < ADZUNA_BROADEN_FLOOR
+                        && country_guessed
+                        && !location.is_empty() =>
+                {
+                    // Guessed-market guard (see doc comment above): a SPARSE result —
+                    // fewer than the broaden floor — from a GUESSED country with a real
+                    // location is untrustworthy. "London" defaulting to "de" returns
+                    // either nothing or a handful of stray German hits; neither should
+                    // be trusted as authoritative. Treat it like an Adzuna error and
+                    // fall through below (to JSearch, which is global + free-text)
+                    // instead of returning those few results as the whole answer.
                     //
                     // PRIVACY: never log/persist the raw user-entered `location` —
                     // it's free-text PII, not something this repo puts in logs or
                     // diagnostics. `country` (the guessed market code) is fine.
                     log::warn!(
-                        "[aggregator] adzuna guessed market '{country}' returned no results \
-                         for the supplied location (no country_code supplied); \
-                         attempting jsearch fallback"
+                        "[aggregator] adzuna guessed market '{country}' returned too few \
+                         results ({}) for the supplied location (no country_code supplied); \
+                         attempting jsearch fallback",
+                        items.len()
                     );
                     adzuna_configured_failed = Some(anyhow::anyhow!(
-                        "adzuna: guessed market '{country}' returned no results for the \
-                         supplied location (no country was supplied)"
+                        "adzuna: guessed market '{country}' returned too few results ({}) for \
+                         the supplied location (no country was supplied)",
+                        items.len()
                     ));
                     // Fall through to JSearch/diagnostic below.
                 }
@@ -1314,6 +1323,39 @@ async fn search_with_providers(
     }
 }
 
+// ── Credential-state helpers (needs-keys skip vs. store-error) ──────────────────
+
+/// Whether at least one aggregator provider is fully configured. Constructs the
+/// providers fresh — the same keyring read the search path does — so a key added
+/// in Settings clears any `needs-keys` skip on the next run. Apify counts only
+/// when its opt-in toggle AND token are both present (its own `is_configured`).
+///
+/// Provider construction swallows a keyring READ FAILURE to an unconfigured
+/// state; that fault is classified separately by [`aggregator_store_error`] so it
+/// surfaces as a board error rather than a misleading `needs-keys` skip.
+fn aggregator_has_configured_provider() -> bool {
+    AdzunaProvider::new().is_configured()
+        || JSearchProvider::new().is_configured()
+        || ApifyLinkedInProvider::new().is_configured()
+}
+
+/// First keyring READ error across the aggregator's primary provider slots, if
+/// any. Distinguishes a credential-store FAULT (surfaced as a board error) from
+/// mere key absence (surfaced as a `needs-keys` skip). Returns `None` when every
+/// slot reads cleanly — whether the key is present or simply absent.
+///
+/// The error string is a keyring backend message + slot name only; it never
+/// carries a credential value (see `credentials::read_credential`).
+fn aggregator_store_error() -> Option<String> {
+    use crate::ipc_contracts::provider_slots::{ADZUNA_APP_ID, ADZUNA_APP_KEY, JSEARCH_KEY};
+    for slot in [ADZUNA_APP_ID, ADZUNA_APP_KEY, JSEARCH_KEY] {
+        if let Err(e) = crate::credentials::read_credential(&format!("ai:{slot}")) {
+            return Some(e.to_string());
+        }
+    }
+    None
+}
+
 // ── Scraper impl ──────────────────────────────────────────────────────────────
 
 pub struct AggregatorScraper;
@@ -1341,11 +1383,29 @@ impl Scraper for AggregatorScraper {
         false
     }
 
+    fn needs_keys(&self) -> bool {
+        // Skip with "needs-keys" only when the store reads cleanly but has no
+        // usable provider keys. A store READ FAILURE is NOT a skip — `search`
+        // surfaces it as a board error instead — so short-circuit on that case.
+        aggregator_store_error().is_none() && !aggregator_has_configured_provider()
+    }
+
     async fn search(
         &self,
         input: BoardSearchInput,
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
+        // Surface a credential-store FAILURE (keyring unavailable) as a real board
+        // error rather than the silent keyless-empty a missing key produces. Mere
+        // key absence is handled upstream by the engine's `needs-keys` skip, so by
+        // the time `search` runs the only credential fault left to report is a
+        // store read error.
+        if let Some(msg) = aggregator_store_error() {
+            return Err(anyhow::anyhow!(
+                "aggregator: credential store unavailable ({msg})"
+            ));
+        }
+
         let query = input.query.trim();
         let location = input.location.as_deref().unwrap_or("").trim();
         // Whether the caller supplied a real `country_code`, vs us GUESSING "de"
