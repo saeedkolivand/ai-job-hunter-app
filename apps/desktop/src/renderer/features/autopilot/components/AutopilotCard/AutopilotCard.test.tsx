@@ -174,6 +174,13 @@ function makeJob(url = 'https://example.com/job/1', score?: number): AutopilotFo
   };
 }
 
+// Build an autopilot with a persisted run outcome. Takes a plain `string` so an
+// unknown/future status can be exercised (the graceful-fallback path) — narrowed
+// to the union via `as`, which is valid for string → string-literal.
+function withRunStatus(status: string): Autopilot {
+  return { ...makeAutopilot(), runStatus: status as Autopilot['runStatus'] };
+}
+
 const defaultProps = {
   runState: 'idle' as const,
   stepLogs: [],
@@ -639,5 +646,47 @@ describe('AutopilotCard — focusedJobUrl scroll + highlight', () => {
     expect(onFocusHandled).toHaveBeenCalledTimes(1);
 
     rafSpy.mockRestore();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Persisted run-outcome badge (failed / completedWithErrors / interrupted)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('AutopilotCard — run-status badge', () => {
+  it('renders the failed badge (red) when runStatus is failed', () => {
+    renderCard(withRunStatus('failed'));
+    expect(screen.getByText('autopilot.badge.failed')).toBeInTheDocument();
+  });
+
+  it('renders the partial-results badge when runStatus is completedWithErrors', () => {
+    renderCard(withRunStatus('completedWithErrors'));
+    expect(screen.getByText('autopilot.badge.completedWithErrors')).toBeInTheDocument();
+  });
+
+  it('renders the interrupted badge when runStatus is interrupted', () => {
+    renderCard(withRunStatus('interrupted'));
+    expect(screen.getByText('autopilot.badge.interrupted')).toBeInTheDocument();
+  });
+
+  it('renders NO badge for the happy completed status', () => {
+    renderCard(withRunStatus('completed'));
+    expect(
+      screen.queryByText(/autopilot\.badge\.(failed|completedWithErrors|interrupted)/)
+    ).not.toBeInTheDocument();
+  });
+
+  it('renders NO badge for an unknown/future status (graceful fallback, never a raw enum)', () => {
+    renderCard(withRunStatus('someFutureStatus'));
+    expect(
+      screen.queryByText(/autopilot\.badge\.(failed|completedWithErrors|interrupted)/)
+    ).not.toBeInTheDocument();
+    // The raw enum value must never leak into the DOM.
+    expect(screen.queryByText('someFutureStatus')).not.toBeInTheDocument();
+  });
+
+  it('hides the badge while a run is in progress', () => {
+    renderCard(withRunStatus('failed'), { runState: 'scraping' });
+    expect(screen.queryByText('autopilot.badge.failed')).not.toBeInTheDocument();
   });
 });

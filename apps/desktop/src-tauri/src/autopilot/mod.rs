@@ -194,13 +194,58 @@ pub enum AutopilotStatus {
 /// `Interrupted` is not set by a run — it's reconciled at startup from a run
 /// left `InProgress` when the app closed or crashed mid-run (see
 /// [`AutopilotStore::mark_interrupted_runs`]).
+///
+/// `Completed`/`CompletedWithErrors`/`Failed` are derived from the run's
+/// per-board summaries by [`derive_run_status`], so an all-boards-failed run no
+/// longer masquerades as a clean `Completed, 0 found`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum RunStatus {
     InProgress,
     Completed,
+    /// The run finished and at least one board returned results, but at least
+    /// one other board errored or kept only a partial (`truncated`) harvest.
+    CompletedWithErrors,
     Failed,
     Interrupted,
+}
+
+/// Derive the honest outcome of a run from its per-board summaries.
+///
+/// - `Failed` — **zero** boards succeeded (every board errored or was skipped).
+///   The run couldn't actually do its job, so it must not read as a clean
+///   completion.
+/// - `CompletedWithErrors` — at least one board succeeded, but at least one
+///   other board errored or kept only a partial (`truncated`) harvest. Results
+///   are real but incomplete.
+/// - `Completed` — at least one board succeeded and none errored or truncated.
+///   A `skipped` board alone does not downgrade the status: a skip
+///   (`needs-login`/`needs-company`/`needs-keys`) is an expected no-op, not a
+///   failure of a board that ran.
+///
+/// A board "succeeded" when it neither errored nor was skipped; a `truncated`
+/// board counts as a partial success (it did return rows). An empty slice is
+/// treated as `Completed` — nothing reported a problem — preserving the
+/// pre-summaries behavior for the degenerate no-boards case.
+pub(crate) fn derive_run_status(summaries: &[crate::scraping::BoardScrapeSummary]) -> RunStatus {
+    if summaries.is_empty() {
+        return RunStatus::Completed;
+    }
+    let succeeded = summaries
+        .iter()
+        .filter(|s| s.error.is_none() && s.skipped.is_none())
+        .count();
+    if succeeded == 0 {
+        return RunStatus::Failed;
+    }
+    let any_incomplete = summaries
+        .iter()
+        .any(|s| s.error.is_some() || s.truncated.is_some());
+    if any_incomplete {
+        RunStatus::CompletedWithErrors
+    } else {
+        RunStatus::Completed
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -254,6 +299,13 @@ pub struct Autopilot {
     /// live/failed/interrupted badge.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_status: Option<RunStatus>,
+    /// Per-board outcome of the most recent run (board, count, error, skipped,
+    /// truncated). Persisted so the UI can explain a zero/partial result *after*
+    /// the run — until now these summaries were computed at the record site and
+    /// discarded. `#[serde(default)]` so records written before this field
+    /// existed load as an empty list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub last_run_summaries: Vec<crate::scraping::BoardScrapeSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_run_at: Option<u64>,
     pub created_at: u64,
@@ -330,6 +382,7 @@ impl AutopilotStore {
             total_applied: 0,
             found_jobs: Vec::new(),
             run_status: None,
+            last_run_summaries: Vec::new(),
             last_run_at: None,
             created_at: now,
             updated_at: now,
@@ -425,8 +478,9 @@ impl AutopilotStore {
         self.save(map);
     }
 
-    /// Set the most-recent-run outcome. `InProgress` is set at run start,
-    /// `Failed` on a run error; `record_run` sets `Completed` on success.
+    /// Set the most-recent-run outcome. `InProgress` is set at run start;
+    /// `record_run` derives `Completed`/`CompletedWithErrors`/`Failed` from the
+    /// per-board summaries for a run that reaches the record site.
     pub fn set_run_status(&self, id: &str, status: RunStatus) {
         let mut map = self.load();
         if let Some(ap) = map.get_mut(id) {
@@ -434,6 +488,29 @@ impl AutopilotStore {
             ap.updated_at = now_ms();
         }
         self.save(map);
+    }
+
+    /// Set the run outcome for a run that has NO fresh summaries to report
+    /// (never reached `record_run`) — ALSO clears `last_run_summaries` so a
+    /// stale chip strip from the PRIOR run doesn't render as if it belonged to
+    /// this one. Two callers today: an outright scrape error (`Failed`, no
+    /// summaries were ever collected) and a user-cancelled run (`Completed`,
+    /// the in-flight summaries were never finalized/recorded either).
+    pub fn set_run_status_clearing_summaries(&self, id: &str, status: RunStatus) {
+        let mut map = self.load();
+        if let Some(ap) = map.get_mut(id) {
+            ap.run_status = Some(status);
+            ap.last_run_summaries = Vec::new();
+            ap.updated_at = now_ms();
+        }
+        self.save(map);
+    }
+
+    /// Mark a run `Failed` on an outright scrape error. Thin wrapper over
+    /// [`Self::set_run_status_clearing_summaries`] kept as a named entry point
+    /// for the one fixed outcome that path always sets.
+    pub fn fail_run_without_summaries(&self, id: &str) {
+        self.set_run_status_clearing_summaries(id, RunStatus::Failed);
     }
 
     /// Reconcile runs left mid-flight: any autopilot still marked `InProgress`
@@ -462,12 +539,19 @@ impl AutopilotStore {
     /// postings are flagged `is_new`.
     /// Returns the number of **newly surfaced** jobs in this run (postings whose
     /// URL was never seen before) — drives the "N new jobs" notification + tray.
+    ///
+    /// `summaries` are the per-board outcomes of the run: they are persisted on
+    /// the record (so the UI can explain a zero/partial result after the run)
+    /// and drive the derived [`RunStatus`] via [`derive_run_status`] — an
+    /// all-boards-failed run now records `Failed`, a mixed run
+    /// `CompletedWithErrors`, instead of a blanket `Completed`.
     pub fn record_run(
         &self,
         id: &str,
         total_found: u32,
         total_applied: u32,
         found_jobs: Vec<FoundJob>,
+        summaries: Vec<crate::scraping::BoardScrapeSummary>,
     ) -> u32 {
         let mut map = self.load();
         let mut new_count = 0u32;
@@ -478,7 +562,8 @@ impl AutopilotStore {
             ap.found_jobs = merge_found_jobs(&ap.found_jobs, found_jobs);
             // `merge_found_jobs` flags only never-before-seen URLs as `is_new`.
             new_count = ap.found_jobs.iter().filter(|j| j.is_new).count() as u32;
-            ap.run_status = Some(RunStatus::Completed);
+            ap.run_status = Some(derive_run_status(&summaries));
+            ap.last_run_summaries = summaries;
             ap.last_run_at = Some(now);
             ap.updated_at = now;
         }
@@ -507,13 +592,32 @@ impl AutopilotStore {
         if let Some(ref c) = *guard {
             return c.clone();
         }
-        let map: HashMap<String, Autopilot> = std::fs::read_to_string(&self.data_file)
+        // Per-record tolerant parse: deserialize the file as a `Vec<Value>` first,
+        // then each record individually, so ONE record carrying an unknown/future
+        // field value (e.g. a `runStatus` variant a downgraded build doesn't know,
+        // like `completedWithErrors`) drops only that record instead of failing
+        // the whole-`Vec<Autopilot>` parse — which previously produced an empty
+        // map, and a later `save()` would silently overwrite the file, losing
+        // every OTHER record too. Errors are counted and logged, never panicked.
+        let raw: Vec<serde_json::Value> = std::fs::read_to_string(&self.data_file)
             .ok()
-            .and_then(|s| serde_json::from_str::<Vec<Autopilot>>(&s).ok())
-            .unwrap_or_default()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        let mut dropped = 0usize;
+        let map: HashMap<String, Autopilot> = raw
             .into_iter()
-            .map(|ap| (ap.id.clone(), ap))
+            .filter_map(|v| match serde_json::from_value::<Autopilot>(v) {
+                Ok(ap) => Some((ap.id.clone(), ap)),
+                Err(e) => {
+                    dropped += 1;
+                    log::warn!("[autopilot] dropping unparseable record: {e}");
+                    None
+                }
+            })
             .collect();
+        if dropped > 0 {
+            log::warn!("[autopilot] load: dropped {dropped} unparseable record(s)");
+        }
         *guard = Some(map.clone());
         map
     }

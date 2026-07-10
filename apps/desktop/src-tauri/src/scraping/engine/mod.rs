@@ -39,7 +39,12 @@ pub struct ScraperRuntimeHealth {
 }
 
 /// Per-board outcome reported by [`ScraperEngine::scrape_boards`].
-#[derive(Debug, Clone, serde::Serialize)]
+///
+/// `Deserialize` is derived (not just `Serialize`) so the autopilot run record
+/// can persist these on disk and load them back — the missing-field cases are
+/// covered by serde's implicit `Option → None` (for `error`/`skipped`) and the
+/// explicit `#[serde(default)]` on `truncated`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardScrapeSummary {
     pub board: String,
@@ -49,6 +54,12 @@ pub struct BoardScrapeSummary {
     /// Set when the board was skipped without running (e.g. `"needs-login"`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skipped: Option<String>,
+    /// Set when a paginated board kept a partial harvest after a mid-run page
+    /// failure (e.g. `"page 3 of 5 failed: HTTP 429"`); `count` is then a partial
+    /// tally, not the full result set. `None` means the harvest ran to completion.
+    /// Serde-optional so records persisted before this field deserialize as `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<String>,
 }
 
 /// Maximum number of distinct boards processed per `scrape_boards` call.
@@ -120,6 +131,7 @@ impl ScraperEngine {
         token: CancellationToken,
         on_progress: Option<Box<dyn Fn(f32) + Send>>,
         on_item: Option<Box<dyn Fn(JobPosting) + Send>>,
+        on_truncation: Option<Box<dyn Fn(String) + Send>>,
     ) -> anyhow::Result<Vec<JobPosting>> {
         // Central item cap. The board loops stream items through `on_item` and
         // check `ctx.signal`; we count the stream here and cancel the token the
@@ -165,6 +177,7 @@ impl ScraperEngine {
             signal: token,
             on_progress,
             on_item: wrapped,
+            on_truncation,
         };
 
         let span = crate::observability::Span::begin("scrape", format!("board={board}"));
@@ -210,6 +223,7 @@ impl ScraperEngine {
         parent: CancellationToken,
         on_progress: Option<Arc<dyn Fn(f32) + Send + Sync>>,
         on_item: Option<Arc<dyn Fn(JobPosting) + Send + Sync>>,
+        on_truncation: Option<Arc<dyn Fn(String, String) + Send + Sync>>,
         browser_sem: Arc<Semaphore>,
     ) -> Vec<(String, anyhow::Result<Vec<JobPosting>>)> {
         let total = resolved.len();
@@ -226,6 +240,7 @@ impl ScraperEngine {
                 let parent = parent.clone();
                 let on_progress = on_progress.clone();
                 let on_item = on_item.clone();
+                let on_truncation = on_truncation.clone();
                 let done = done.clone();
                 let browser_sem = browser_sem.clone();
 
@@ -258,9 +273,28 @@ impl ScraperEngine {
                                 boxed
                             });
 
-                        let res =
-                            Self::run_one(&name, scraper, input, child, None, per_board_on_item)
-                                .await;
+                        // Wrap the shared truncation sink into a per-board Box that
+                        // tags the reason with this board's name, so scrape_boards can
+                        // attribute a partial harvest to the right BoardScrapeSummary.
+                        let per_board_on_truncation: Option<Box<dyn Fn(String) + Send>> =
+                            on_truncation.as_ref().map(|arc| {
+                                let arc = arc.clone();
+                                let name = name.clone();
+                                let boxed: Box<dyn Fn(String) + Send> =
+                                    Box::new(move |reason: String| arc(name.clone(), reason));
+                                boxed
+                            });
+
+                        let res = Self::run_one(
+                            &name,
+                            scraper,
+                            input,
+                            child,
+                            None,
+                            per_board_on_item,
+                            per_board_on_truncation,
+                        )
+                        .await;
 
                         // Batch progress: coarse done/total fraction after each board.
                         let finished = done.fetch_add(1, Ordering::Relaxed) + 1;
@@ -426,6 +460,7 @@ impl ScraperEngine {
                     count: 0,
                     error: None,
                     skipped: Some(reason.into()),
+                    truncated: None,
                 });
             } else {
                 name_to_idx.insert(id.clone(), idx);
@@ -433,12 +468,28 @@ impl ScraperEngine {
             }
         }
 
+        // Per-board truncation sink: a paginated board that keeps a partial harvest
+        // after a mid-run page failure reports the reason through its ScrapeContext;
+        // run_boards tags it with the board name and we attribute it to that board's
+        // summary below. Empty map for a run where every board completed its pages.
+        let truncations: Arc<std::sync::Mutex<HashMap<String, String>>> =
+            Arc::new(std::sync::Mutex::new(HashMap::new()));
+        let truncation_sink: Arc<dyn Fn(String, String) + Send + Sync> = {
+            let truncations = truncations.clone();
+            Arc::new(move |board, reason| {
+                if let Ok(mut guard) = truncations.lock() {
+                    guard.insert(board, reason);
+                }
+            })
+        };
+
         let results = Self::run_boards(
             runnable,
             input,
             parent.clone(),
             on_progress,
             on_item,
+            Some(truncation_sink),
             self.browser_sem.clone(),
         )
         .await;
@@ -461,11 +512,16 @@ impl ScraperEngine {
                     if !postings.is_empty() {
                         any_recovered_items = true;
                     }
+                    // A partial harvest (paginated board that failed on a later page)
+                    // is surfaced here so it is not indistinguishable from a complete
+                    // run; a board that completed its pages has no map entry.
+                    let truncated = truncations.lock().ok().and_then(|mut m| m.remove(&board));
                     slot_summaries[idx] = Some(BoardScrapeSummary {
                         board,
                         count: postings.len(),
                         error: None,
                         skipped: None,
+                        truncated,
                     });
                     all_postings.extend(postings);
                 }
@@ -475,6 +531,7 @@ impl ScraperEngine {
                         count: 0,
                         error: Some(e.to_string()),
                         skipped: None,
+                        truncated: None,
                     });
                 }
             }

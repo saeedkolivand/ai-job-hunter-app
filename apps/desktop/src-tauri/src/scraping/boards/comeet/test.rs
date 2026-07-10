@@ -34,6 +34,7 @@ fn make_ctx() -> ScrapeContext {
         signal: tokio_util::sync::CancellationToken::new(),
         on_progress: None,
         on_item: None,
+        on_truncation: None,
     }
 }
 

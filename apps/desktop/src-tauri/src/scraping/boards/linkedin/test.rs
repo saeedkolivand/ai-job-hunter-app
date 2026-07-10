@@ -53,6 +53,7 @@ async fn live_search_returns_results() {
         signal: tokio_util::sync::CancellationToken::new(),
         on_progress: None,
         on_item: None,
+        on_truncation: None,
     };
     let results = tokio::time::timeout(
         std::time::Duration::from_secs(30),

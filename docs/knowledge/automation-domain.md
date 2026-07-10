@@ -24,6 +24,18 @@ Merged knowledge for `scraping-applier-expert` and `ai-provider-expert`. Source 
 - **Autopilot scheduling** — **clock-anchored** (PR #266; was interval-based). `autopilot_scheduler.rs` computes the most-recent scheduled occurrence in local time (`chrono::Local`) via `last_occurrence_ms` / `is_due`; on launch it catches up to any missed run (single catch-up, no double-fire). Frequency modes: `daily` = HH:MM; `twice_daily` = HH:MM + 12 h; `hourly` = :MM; `manual` = no scheduling. Fields `scheduleHour` (0–23) and `scheduleMinute` (0–59) on the autopilot model — Zod-validated client-side, range-guarded in the store. Legacy records default to 09:00.
 - **Autopilot RUN filters** — a run applies three filters (date window, must-include keywords, min-match-score) that manual search does not; defaults realigned to manual parity via `AutopilotFilterSchema` Zod schema (packages/shared/src/schemas/index.ts) → generated Rust contract. Wizard `buildDefaults()` mirrors schema defaults. One-shot, marker-file-gated migration on first `autopilot_scheduler::start` calls `relax_legacy_filters_once` → `relax_legacy_filters` (pure logic) to loosen legacy saved autopilots per sentinel rules. Diagnostics: `scrape_diagnostics` surfaces per-board skip/error reasons into the autopilot run step log; `scrape_done` reports raw vs post-keyword-filter job counts.
 - **"Applied" tracking** — derived, never auto-set: a found job is "applied" when a saved generation's `jobUrl` matches it (`commands/autopilot.rs: enrich_applied`). Each autopilot keeps an optional **base cover letter** (`coverLetter`) the assistant tailors per job.
+
+### Run status & honesty (PR B, 2026-07-10)
+
+Autopilot runs now persist per-board summaries and derive honest status:
+
+- **`RunStatus` enum** — `Completed`, `CompletedWithErrors` (some boards failed, run finished), `Failed` (zero boards succeeded), `Interrupted` (user cancelled). Source: `apps/desktop/src-tauri/src/autopilot/mod.rs`.
+- **Per-board summaries** — `Autopilot.last_run_summaries: Vec<BoardScrapeSummary>` (persisted, defaulted empty for old records). Each summary carries `count`, `error`, `skipped`, and `truncated` signals. Source: `apps/desktop/src-tauri/src/autopilot/mod.rs`.
+- **Derivation** — `derive_run_status(&[BoardScrapeSummary]) -> RunStatus` (pure fn). Rules: empty → `Completed`; all boards errored/skipped → `Failed`; any error/truncated present → `CompletedWithErrors`; else → `Completed`.
+- **Store load tolerance** — `AutopilotStore::load()` parses as `Vec<serde_json::Value>` first, deserializes each record individually, drops+logs only the failures (e.g. an unrecognized `runStatus` from a newer build during downgrade). Prior behavior (ONE bad record wiped the entire file on next save) is fixed. Source: `apps/desktop/src-tauri/src/autopilot/mod.rs: load()`.
+- **IPC contract** — `AutopilotRunStatus` + `Autopilot.runStatus` + `Autopilot.lastRunSummaries`. Source: `packages/shared/src/ipc/contracts/autopilot.ts`, `packages/shared/src/types/index.ts`.
+- **Renderer** — `useAutopilotRun.ts` now branches on `status === 'failed'` (sets error state, reuses red banner). `AutopilotCard` badges failed/completedWithErrors runs + i18n keys. Sources: `apps/desktop/src/renderer/features/autopilot/hooks/useAutopilotRun.ts`, `apps/desktop/src/renderer/features/autopilot/components/AutopilotCard/`.
+
 - **Security** — never log credentials/cookies; board session handling for **scraping** is co-reviewed by `tauri-security-reviewer`.
 
 ## AI provider (`commands/ai_provider/`)

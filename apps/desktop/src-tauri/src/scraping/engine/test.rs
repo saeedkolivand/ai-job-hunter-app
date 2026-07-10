@@ -365,6 +365,7 @@ async fn central_amount_cap_truncates_stream_and_return() {
         token,
         None,
         Some(on_item),
+        None,
     )
     .await
     .expect("capped scrape recovers as success");
@@ -419,6 +420,7 @@ async fn run_boards_collects_all_boards_up_to_amount() {
         parent,
         None,
         Some(on_item),
+        None,
         test_browser_sem(),
     )
     .await;
@@ -452,6 +454,7 @@ async fn run_boards_one_error_does_not_kill_others() {
         resolved,
         fake_input(10),
         parent,
+        None,
         None,
         None,
         test_browser_sem(),
@@ -493,6 +496,7 @@ async fn run_boards_parent_cancel_stops_all() {
         parent,
         None,
         None,
+        None,
         test_browser_sem(),
     )
     .await;
@@ -520,6 +524,7 @@ async fn run_boards_child_cap_stops_only_its_board() {
         resolved,
         fake_input(3),
         parent.clone(),
+        None,
         None,
         None,
         test_browser_sem(),
@@ -557,6 +562,7 @@ async fn run_boards_browser_board_collects_items() {
         resolved,
         fake_input(10),
         parent,
+        None,
         None,
         None,
         test_browser_sem(),
@@ -647,6 +653,7 @@ async fn run_boards_browser_boards_serialized() {
         parent,
         None,
         None,
+        None,
         test_browser_sem(),
     )
     .await;
@@ -696,6 +703,7 @@ async fn scrape_boards_dedupes_and_caps_large_input() {
         fake_refs,
         fake_input(1),
         parent,
+        None,
         None,
         None,
         test_browser_sem(),
@@ -1073,6 +1081,136 @@ async fn scrape_boards_failed_board_surfaces_error_and_keeps_siblings() {
     );
 }
 
+/// TRUST PR B — a paginated board that keeps a partial harvest after a mid-run
+/// page failure must surface that truncation on its `BoardScrapeSummary`, so a
+/// 2-of-5-pages harvest is distinguishable from a complete one. A board that
+/// completed its pages must report `truncated: None`.
+///
+/// The board reports the reason through `ctx.report_truncation`; the engine tags
+/// it with the board name and attributes it to that board's summary. The
+/// paginated boards (themuse/arbeitnow/arbeitsagentur) hardcode their production
+/// hosts, so — like the PR A containment test above — the report path is
+/// exercised through this engine seam rather than a live network.
+#[tokio::test]
+async fn scrape_boards_partial_pagination_surfaces_truncated_and_keeps_count() {
+    // Streams `count` items, then reports a mid-run page failure and returns
+    // Ok(partial) — the exact shape of a paginated board when
+    // `should_propagate_page_error(collected) == false` breaks the loop.
+    struct TruncatingScraper {
+        count: usize,
+    }
+
+    #[async_trait::async_trait]
+    impl Scraper for TruncatingScraper {
+        fn id(&self) -> &'static str {
+            "truncating"
+        }
+        fn display_name(&self) -> &'static str {
+            "Truncating"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            let mut out = Vec::new();
+            for i in 0..self.count {
+                let job = JobPosting {
+                    id: format!("truncating:{i}"),
+                    external_id: Some(i.to_string()),
+                    title: format!("Job {i}"),
+                    company: "Trunc Co".to_string(),
+                    location: None,
+                    url: format!("https://trunc.example.com/{i}"),
+                    source: "truncating".to_string(),
+                    description: None,
+                    requirements: None,
+                    posted_at: None,
+                    captured_at: 0,
+                    extra: std::collections::HashMap::new(),
+                };
+                if let Some(ref on_item) = ctx.on_item {
+                    on_item(job.clone());
+                }
+                out.push(job);
+            }
+            // A later page failed after items were already collected → keep the
+            // partial harvest and report why it stopped short.
+            ctx.report_truncation("page 2 of 5 failed: HTTP 429".to_string());
+            Ok(out)
+        }
+    }
+
+    static TRUNC: std::sync::LazyLock<TruncatingScraper> =
+        std::sync::LazyLock::new(|| TruncatingScraper { count: 3 });
+    // A sibling that completes its pages — must report truncated: None.
+    static COMPLETE: std::sync::LazyLock<FakeScraper> =
+        std::sync::LazyLock::new(|| FakeScraper::http(4));
+
+    let engine = ScraperEngine::new();
+    let boards = vec!["trunc-board".to_string(), "complete-board".to_string()];
+
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &boards,
+            fake_input(10),
+            "job-trust-b-truncation".to_string(),
+            None,
+            None,
+            std::path::Path::new("."),
+            |id| match id {
+                "trunc-board" => Ok(&*TRUNC as &'static dyn Scraper),
+                "complete-board" => Ok(&*COMPLETE as &'static dyn Scraper),
+                other => Err(anyhow::anyhow!("Unknown board: {other}")),
+            },
+        )
+        .await
+        .expect("a kept partial harvest is a success, not a batch failure");
+
+    // Truncated board: reason surfaced (carrying the HTTP status), items still
+    // counted, and it is neither an error nor a skip.
+    let trunc = summaries
+        .iter()
+        .find(|s| s.board == "trunc-board")
+        .expect("trunc-board summary missing");
+    let reason = trunc
+        .truncated
+        .as_deref()
+        .expect("a partial-pagination harvest must carry a truncation reason");
+    assert!(
+        reason.contains("429"),
+        "the page-failure reason must survive into BoardScrapeSummary.truncated so a \
+         partial harvest is distinguishable from a complete one; got {reason:?}"
+    );
+    assert_eq!(
+        trunc.count, 3,
+        "the partial harvest's already-collected items are still counted"
+    );
+    assert!(
+        trunc.error.is_none(),
+        "a kept partial harvest is not an error"
+    );
+    assert!(
+        trunc.skipped.is_none(),
+        "a kept partial harvest is not a skip"
+    );
+
+    // Complete board: a run that finished its pages must NOT be marked truncated,
+    // otherwise a complete run is indistinguishable from a partial one.
+    let complete = summaries
+        .iter()
+        .find(|s| s.board == "complete-board")
+        .expect("complete-board summary missing");
+    assert!(
+        complete.truncated.is_none(),
+        "a board that completed its pages must not be marked truncated; got {complete:?}"
+    );
+    assert_eq!(complete.count, 4, "complete board returns all its items");
+}
+
 // ── F1: empty boards guard ────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -1256,6 +1394,7 @@ async fn run_boards_preserves_input_order() {
         resolved,
         fake_input(5),
         parent,
+        None,
         None,
         None,
         test_browser_sem(),
