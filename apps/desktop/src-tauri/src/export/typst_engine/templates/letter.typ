@@ -9,9 +9,9 @@
 //   data.opts.lang                             — BCP-47 language tag
 //   data.opts.date_position                   — "top-right"|"below-header"|"above-salutation"
 //   data.opts.sender_position                 — "top"|"bottom"
-//   data.opts.recipient_position              — horizontal-placement hint
-//                                                ("left"|"top-right"); anything but
-//                                                "before-date" reads after the date
+//   data.opts.recipient_position              — unused here (alignment hint only;
+//                                                Classic always reads left-aligned
+//                                                after the date, like refined/banded)
 //   data.opts.subject_line_used               — bool
 //   data.opts.subject_line_label              — e.g. "Betreff"
 //   data.style.c_accent / c_body / c_name / c_date / c_rule — #RRGGBB colours
@@ -50,7 +50,6 @@
 #let pg-h  = if "page_height_mm" in data.opts { data.opts.page_height_mm * 1mm } else { 297mm }
 #let lang  = if "lang"           in data.opts { data.opts.lang            } else { "en" }
 #let date-pos      = if "date_position"    in data.opts { data.opts.date_position    } else { "below-header" }
-#let recip-pos     = if "recipient_position" in data.opts { data.opts.recipient_position } else { "after-date" }
 #let subj-used     = if "subject_line_used"  in data.opts { data.opts.subject_line_used  } else { false }
 #let subj-label    = if "subject_line_label" in data.opts { data.opts.subject_line_label } else { "Subject" }
 
@@ -170,31 +169,12 @@
   emit-date-block(data.date)
 }
 
-// ── Recipient block, "before-date" placement ─────────────────────────────────
-// Only an explicit "before-date" recipient renders here (it precedes the date in
-// non-top-right layouts). Every other value falls through to the default
-// after-date block below.
+// ── Recipient / inside-address block ─────────────────────────────────────────
+// Always renders when recipient lines exist, positioned after the date block
+// (matches refined/banded's unconditional emission — DIN 5008 makes the
+// inside address mandatory for DE/AT/CH, and every other market expects it too).
 
-#if recip-pos == "before-date" and date-pos != "top-right" {
-  emit-recipient-block()
-  if date-pos == "below-header" {
-    // Date already emitted above; skip.
-  }
-} else if date-pos != "top-right" and date-pos != "below-header" {
-  // "above-salutation" or unrecognised — date will be emitted just before
-  // the salutation (see below).
-}
-
-// Recipient / inside-address block — the DEFAULT placement (after the date).
-// `recipient_position` carries the shared fixture's horizontal-placement
-// vocabulary ("left" | "top-right"), passed through verbatim — NOT the
-// "before-date"/"after-date" order tokens. So treat anything except an explicit
-// "before-date" as after-date placement: this renders the inside address for
-// every market (DIN 5008 makes it mandatory for DE/AT/CH). "before-date" keeps
-// its earlier branch above and is excluded here to avoid double emission.
-#if recip-pos != "before-date" {
-  emit-recipient-block()
-}
+#emit-recipient-block()
 
 // ── Subject line ──────────────────────────────────────────────────────────────
 // Rendered bold between the recipient block and the salutation, as formal

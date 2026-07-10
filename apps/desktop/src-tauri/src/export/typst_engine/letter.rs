@@ -83,11 +83,11 @@ pub(super) struct LetterOpts {
     /// `"top"` | `"bottom"`.
     pub sender_position: String,
     /// Horizontal-placement hint from the shared fixture (`"left"` | `"top-right"`),
-    /// passed through verbatim — NOT an order token. The Classic template treats
-    /// anything except an explicit `"before-date"` as after-date placement, so the
-    /// inside address renders for every market. (fr's true top-right recipient
-    /// layout is not implemented — it renders left-aligned like the rest; a real
-    /// top-right variant is a possible follow-up.)
+    /// passed through verbatim. Not currently read by any `.typ` template — every
+    /// letter layout (Classic/Refined/Banded) renders the recipient block
+    /// unconditionally, left-aligned, right after the date. (fr's true top-right
+    /// recipient layout is not implemented — a real top-right variant is a
+    /// possible follow-up; kept in the data contract for that future use.)
     pub recipient_position: String,
     pub subject_line_used: bool,
     pub subject_line_label: String,
