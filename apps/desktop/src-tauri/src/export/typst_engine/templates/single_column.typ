@@ -12,8 +12,14 @@
 //   data.style.section_style — "ruled-bottom" | "underline" | "bold-only"
 //   data.style.name_centered — bool: centre the name block
 //   data.style.section_all_caps — bool: uppercase section headings
-//   data.style.section_small_caps — bool (advisory; Typst renders upper+small when true)
+//   data.style.section_small_caps — bool: wrap heading text in Typst smallcaps(…)
+//             (small-caps glyph variant; the text layer keeps its original case)
+//             at 0.85 × section_pt
 //   data.style.job_title_italic — bool: italic job title under entry
+//   data.style.heading_tracking — number: extra heading letter-spacing in em (0 = none)
+//   data.style.link_underline — bool: underline hyperlinked runs when true
+//   data.style.rule_thickness — number: ruled-bottom stroke thickness in pt
+//             (0 or absent falls back to the house 0.5pt)
 //   data.style.name_pt / section_pt / body_pt — font sizes in pt
 //   data.opts.page_width_mm / page_height_mm — page geometry
 //   data.opts.accent — optional override (#RRGGBB or "")
@@ -61,6 +67,17 @@
 #let small-caps-flag = if "section_small_caps" in st { st.section_small_caps } else { false }
 #let title-italic    = if "job_title_italic" in st { st.job_title_italic } else { true }
 
+// PR3 knobs. Defaults are neutral: heading-tracking 0 emits no `tracking:` arg
+// and link-underline false emits no `underline(…)` wrapper, so pre-PR3 templates
+// render byte-identically.
+#let heading-tracking = if "heading_tracking" in st { st.heading_tracking } else { 0.0 }
+#let link-underline   = if "link_underline"   in st { st.link_underline   } else { false }
+
+// Rule-stroke thickness: fall back to the house 0.5pt when absent OR 0.0 (every
+// pre-PR3 ruled template already ships 0.5, so this is byte-identical for them;
+// only Cadence sets a real 0.75 override).
+#let rule-thickness = if "rule_thickness" in st and st.rule_thickness != 0.0 { st.rule_thickness } else { 0.5 }
+
 #let name-pt    = if "name_pt"    in st { st.name_pt    * 1pt } else { 20pt }
 #let section-pt = if "section_pt" in st { st.section_pt * 1pt } else { 11pt }
 #let body-pt    = if "body_pt"    in st { st.body_pt    * 1pt } else { 10.5pt }
@@ -101,7 +118,8 @@
       r.text
     }
     if "link" in r and r.link != none {
-      link(r.link, text(fill: c-accent, t))
+      let styled = text(fill: c-accent, t)
+      link(r.link, if link-underline { underline(styled) } else { styled })
     } else {
       t
     }
@@ -202,46 +220,57 @@
 
 // ── Section renderer ──────────────────────────────────────────────────────────
 
+// Render a section heading. `tracking:` is only passed when heading-tracking is
+// non-zero, so templates that leave it at the 0 default (every pre-PR3 template)
+// produce byte-identical markup to before the knob was added.
+#let heading-run(content, size) = {
+  if heading-tracking != 0.0 {
+    text(
+      size: size,
+      weight: "bold",
+      fill: c-section,
+      font: (font-heading, "Carlito", "Inter"),
+      tracking: heading-tracking * 1em,
+      content,
+    )
+  } else {
+    text(
+      size: size,
+      weight: "bold",
+      fill: c-section,
+      font: (font-heading, "Carlito", "Inter"),
+      content,
+    )
+  }
+}
+
 #let render-section(section) = {
-  let heading-text = if all-caps { upper(section.heading) } else { section.heading }
+  let heading-text = {
+    let base = if all-caps { upper(section.heading) } else { section.heading }
+    // smallcaps(…) applies the small-caps glyph variant while keeping the
+    // underlying text-layer characters in their original case (extraction-safe).
+    if small-caps-flag { smallcaps(base) } else { base }
+  }
   let heading-size = if small-caps-flag { section-pt * 0.85 } else { section-pt }
   let bold-title = entry-bold-for-section(section)
 
   if section-style == "ruled-bottom" {
     block(above: sp-section-above, below: sp-rule-below, {
-      text(
-        size: heading-size,
-        weight: "bold",
-        fill: c-section,
-        font: (font-heading, "Carlito", "Inter"),
-        heading-text,
-      )
+      heading-run(heading-text, heading-size)
     })
-    line(length: 100%, stroke: 0.5pt + c-rule)
+    line(length: 100%, stroke: (rule-thickness * 1pt) + c-rule)
     block(above: sp-after-rule, {
       for b in section.blocks { render-block(b, bold-title) }
     })
   } else if section-style == "underline" {
     block(above: sp-section-above, below: sp-after-rule, {
-      text(
-        size: heading-size,
-        weight: "bold",
-        fill: c-section,
-        font: (font-heading, "Carlito", "Inter"),
-        underline(heading-text),
-      )
+      heading-run(underline(heading-text), heading-size)
     })
     for b in section.blocks { render-block(b, bold-title) }
   } else {
     // bold-only
     block(above: sp-section-above, below: sp-after-rule, {
-      text(
-        size: heading-size,
-        weight: "bold",
-        fill: c-section,
-        font: (font-heading, "Carlito", "Inter"),
-        heading-text,
-      )
+      heading-run(heading-text, heading-size)
     })
     for b in section.blocks { render-block(b, bold-title) }
   }

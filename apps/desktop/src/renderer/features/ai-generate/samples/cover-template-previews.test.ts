@@ -7,7 +7,7 @@ import { TEMPLATE_IDS } from '@/lib/generate';
 // module and supply a stub that mirrors what Vite would produce: one entry per
 // SVG file, keyed by a path whose basename (minus extension) is the template id.
 vi.mock('./cover-template-previews', () => {
-  // Simulate the 9 committed SVG assets.
+  // Simulate the committed SVG assets — one per canonical TemplateId.
   const ids = [
     'classic',
     'swiss-minimal',
@@ -17,6 +17,8 @@ vi.mock('./cover-template-previews', () => {
     'throughline',
     'portrait',
     'lebenslauf',
+    'cadence',
+    'regent',
   ] as const;
 
   const COVER_TEMPLATE_PREVIEWS = Object.fromEntries(

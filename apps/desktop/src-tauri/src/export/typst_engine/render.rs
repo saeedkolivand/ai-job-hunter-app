@@ -177,6 +177,18 @@ pub(super) struct JsonStyle {
     /// When `false` (the default), education entry titles are rendered at normal weight
     /// to de-emphasize them.  Only the academic template sets this to `true`.
     pub emphasize_education: bool,
+    /// Extra section-heading letter-spacing (tracking) in em units. `0.0` (every
+    /// pre-PR3 template) means no tracking; `single_column.typ` only emits
+    /// `text(tracking: …)` when non-zero, so defaults are byte-identical.
+    pub heading_tracking: f32,
+    /// When `true`, hyperlinked runs are wrapped in `underline(…)`. `false` (every
+    /// pre-PR3 template) leaves links un-underlined, byte-identical to prior output.
+    pub link_underline: bool,
+    /// Section-rule stroke thickness in pt. `single_column.typ` falls back to the
+    /// house `0.5pt` when this is absent or `0.0`, so every pre-PR3 ruled template
+    /// (all of which are `0.5`) renders byte-identical; only Cadence (`0.75`) sets
+    /// a non-default value.
+    pub rule_thickness: f32,
 }
 
 #[derive(Serialize)]
@@ -253,6 +265,9 @@ pub(crate) fn style_from_template(t: &Template) -> JsonStyle {
         section_pt: t.section_pt,
         body_pt: t.body_pt,
         emphasize_education,
+        heading_tracking: t.heading_tracking,
+        link_underline: t.link_underline,
+        rule_thickness: t.rule_thickness,
     }
 }
 

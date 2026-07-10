@@ -10,7 +10,9 @@ export type TemplateId =
   | 'meridian'
   | 'throughline'
   | 'portrait'
-  | 'lebenslauf';
+  | 'lebenslauf'
+  | 'cadence'
+  | 'regent';
 
 interface ExportMeta {
   candidateName?: string;
