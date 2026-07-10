@@ -188,7 +188,7 @@ export function JobsPage() {
       const needsKeysBoards = boardSummaries.filter((b) => b.skipped === 'needs-keys');
       if (needsKeysBoards.length > 0) {
         notify.warning({
-          message: t('jobs.needsKeysSkippedNote'),
+          message: t('jobs.needsKeys.skippedNote'),
           // Sticky: diagnostic notification requires user action (add API keys).
           duration: 0,
         });

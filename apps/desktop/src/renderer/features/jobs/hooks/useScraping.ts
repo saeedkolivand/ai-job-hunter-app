@@ -72,7 +72,7 @@ export function useScraping(
       scrapeForm.countryCode ?? '',
       scrapeForm.latitude ?? '',
       scrapeForm.longitude ?? '',
-      scrapeForm.radiusKm,
+      scrapeForm.radiusKm ?? '',
       scrapeForm.dateFilter ?? '',
       scrapeForm.companies.slice().sort().join(','),
     ].join('|');
