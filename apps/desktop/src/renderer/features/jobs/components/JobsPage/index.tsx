@@ -183,6 +183,16 @@ export function JobsPage() {
           duration: 0,
         });
       }
+      // Surface skipped-due-to-missing-API-keys boards (the aggregator) so the
+      // user knows to configure keys in Settings rather than see a silent zero.
+      const needsKeysBoards = boardSummaries.filter((b) => b.skipped === 'needs-keys');
+      if (needsKeysBoards.length > 0) {
+        notify.warning({
+          message: t('jobs.needsKeysSkippedNote'),
+          // Sticky: diagnostic notification requires user action (add API keys).
+          duration: 0,
+        });
+      }
     } else if (ev.type === 'job.failed') {
       noteScrapeFinished(ev.jobId, {
         ok: false,

@@ -1798,6 +1798,7 @@
       "skippedNote_one": "{{boards}} was skipped — add a company slug to scrape this board.",
       "skippedNote_other": "{{boards}} were skipped — add a company slug to scrape these boards."
     },
+    "needsKeysSkippedNote": "Job aggregator skipped — no API keys configured. Add keys in Settings.",
     "companies": {
       "label": "Companies",
       "placeholder": "e.g. stripe, airbnb",
