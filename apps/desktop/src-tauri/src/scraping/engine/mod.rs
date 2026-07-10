@@ -411,6 +411,12 @@ impl ScraperEngine {
                 if s.requires_company() && !has_usable_company {
                     return Some("needs-company");
                 }
+                // Skip 3: key-backed board (e.g. the aggregator) with no API keys
+                // configured. Surfaces "needs-keys" so the UI can prompt the user
+                // to add keys instead of showing a silent, unexplained zero.
+                if s.needs_keys() {
+                    return Some("needs-keys");
+                }
                 None
             });
 

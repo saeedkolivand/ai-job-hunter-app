@@ -712,36 +712,101 @@ fn u32_field_in_range(v: &serde_json::Value, key: &str, max: u32) -> Option<u32>
         .filter(|&n| n <= max)
 }
 
+/// Canonical dedup key for a found job.
+///
+/// Uses the app-wide [`crate::applications::normalize_job_url`] (lowercased host,
+/// `www.`/fragment/tracking-param stripped) so tracking-param/hash variants of the
+/// SAME URL collapse to a single row — this is same-host URL-variant dedup, not
+/// cross-provider identity: an aggregator's `redirect_url` (e.g. Adzuna's `FoundJob.url`,
+/// hosted on an adzuna domain) normalizes to a different key than a board's direct
+/// posting URL, so the same job surfaced by both sources is NOT collapsed here (that
+/// needs redirect-chain canonicalization, deferred to trust-program PR E). Falls back
+/// to a normalized `title \u{1} company` when the URL is missing/unusable, so URL-less
+/// postings still dedupe sanely (the control-char separator can't be reproduced by a
+/// title that merely contains the company name) — known limitation: two distinct
+/// URL-less postings that happen to share title+company will also merge; rare, and
+/// only affects the discovery surface, so it's an accepted trade-off.
+fn merge_key(j: &FoundJob) -> String {
+    let normalized = crate::applications::normalize_job_url(&j.url);
+    if !normalized.is_empty() {
+        normalized
+    } else {
+        format!(
+            "{}\u{1}{}",
+            j.title.trim().to_lowercase(),
+            j.company.trim().to_lowercase()
+        )
+    }
+}
+
+/// Byte length of a job's description (0 when absent) — used to keep the richer of
+/// two same-key postings when collapsing a within-batch duplicate.
+fn description_len(j: &FoundJob) -> usize {
+    j.description.as_deref().map(str::len).unwrap_or(0)
+}
+
 /// Merge a fresh run's postings into the cumulative found-jobs list, idempotently:
 ///
+/// - the incoming batch is first collapsed on [`merge_key`], so the SAME job
+///   surfaced twice in one batch, or via two tracking-param/hash URL variants,
+///   becomes ONE row — and counts once in the "N new jobs" notification (this
+///   does NOT collapse an aggregator's redirect URL against a board's direct
+///   URL for the same job; see [`merge_key`]),
 /// - existing rows are kept (preserving `found_at`/first-seen) and have `is_new`
-///   cleared; if the run re-surfaced them, volatile fields (title/company/
-///   description/score/location) are refreshed,
-/// - postings whose URL was never seen are placed first (on top) and flagged
+///   cleared; if the run re-surfaced them (matched by `merge_key`), volatile
+///   fields (title/company/description/score/location/salary/board/trust) refresh,
+/// - postings whose key was never seen are placed first (on top) and flagged
 ///   `is_new`, in the incoming (already score-sorted) order.
 ///
 /// Re-running with the same postings yields the same set — only `is_new` moves.
 /// `applied` is derived on read, so it is left at its default here.
 fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<FoundJob> {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
-    let incoming_by_url: HashMap<&str, &FoundJob> =
-        incoming.iter().map(|j| (j.url.as_str(), j)).collect();
+    // 1) Collapse duplicates WITHIN the incoming batch by canonical key. First
+    //    occurrence keeps its position; a later duplicate carrying a longer
+    //    description upgrades that one field (richer text for the tailor flow).
+    let mut order: Vec<String> = Vec::new();
+    let mut by_key: HashMap<String, FoundJob> = HashMap::new();
+    for job in incoming {
+        let key = merge_key(&job);
+        match by_key.get_mut(&key) {
+            Some(kept) => {
+                if description_len(&job) > description_len(kept) {
+                    kept.description = job.description;
+                }
+            }
+            None => {
+                order.push(key.clone());
+                by_key.insert(key, job);
+            }
+        }
+    }
+    let incoming: Vec<FoundJob> = order
+        .into_iter()
+        .map(|k| by_key.remove(&k).expect("key inserted above"))
+        .collect();
+
+    // 2) Merge the de-duplicated batch against existing rows, keyed the same way so
+    //    a re-surfaced posting matches regardless of which URL variant/source
+    //    persisted it.
+    let incoming_by_key: HashMap<String, &FoundJob> =
+        incoming.iter().map(|j| (merge_key(j), j)).collect();
 
     let refreshed_existing: Vec<FoundJob> = existing
         .iter()
         .map(|e| {
             let mut row = e.clone();
             row.is_new = false;
-            if let Some(inc) = incoming_by_url.get(e.url.as_str()) {
+            if let Some(inc) = incoming_by_key.get(&merge_key(e)) {
                 row.title = inc.title.clone();
                 row.company = inc.company.clone();
                 if inc.location.is_some() {
                     row.location = inc.location.clone();
                 }
                 // Carry the board over: existing rows persisted before `board` existed
-                // (`None`) pick it up when the same URL re-surfaces; the append branch
-                // (`..inc`) preserves it for never-seen URLs.
+                // (`None`) pick it up when the same job re-surfaces; the append branch
+                // (`..inc`) preserves it for never-seen jobs.
                 if inc.board.is_some() {
                     row.board = inc.board.clone();
                 }
@@ -765,7 +830,7 @@ fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<Found
                 }
                 // Same legacy-migration case as `board` above: an existing row
                 // persisted before `trust` existed (`None`) picks it up when the
-                // same URL re-surfaces on a later run.
+                // same job re-surfaces on a later run.
                 if inc.trust.is_some() {
                     row.trust = inc.trust.clone();
                 }
@@ -774,13 +839,12 @@ fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<Found
         })
         .collect();
 
-    let existing_urls: std::collections::HashSet<&str> =
-        existing.iter().map(|j| j.url.as_str()).collect();
+    let existing_keys: HashSet<String> = existing.iter().map(merge_key).collect();
     // New jobs go on top: the batch is already score-sorted desc upstream
     // (commands/autopilot.rs), so preserving incoming order here keeps that.
     let mut merged: Vec<FoundJob> = incoming
         .into_iter()
-        .filter(|inc| !existing_urls.contains(inc.url.as_str()))
+        .filter(|inc| !existing_keys.contains(&merge_key(inc)))
         .map(|inc| FoundJob {
             is_new: true,
             applied: false,

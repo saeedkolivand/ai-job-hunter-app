@@ -93,3 +93,47 @@ describe('useScraping — companies field in scrapeBoards payload', () => {
     expect(payload).toHaveProperty('companies', ['stripe', 'airbnb']);
   });
 });
+
+describe('useScraping — geo fields in the replace-vs-append signature', () => {
+  it('replaces (not appends) when only the countryCode differs', async () => {
+    mutateAsync.mockClear();
+    const { result, rerender } = renderHookWithClient(
+      ({ form }: { form: ScrapeFormState }) => useScraping(noopNotify, form),
+      { initialProps: { form: makeForm({ countryCode: 'US' }) } }
+    );
+
+    // First run seeds the last-search signature.
+    await act(async () => {
+      await result.current.startScrape();
+    });
+
+    // Same keywords, different country → a different market must REPLACE the
+    // stale results. This fails if countryCode is missing from the signature.
+    rerender({ form: makeForm({ countryCode: 'DE' }) });
+    await act(async () => {
+      await result.current.startScrape();
+    });
+
+    expect(result.current.replacePendingRef.current).toBe(true);
+  });
+
+  it('appends (does not replace) when the search is byte-for-byte identical', async () => {
+    mutateAsync.mockClear();
+    const { result, rerender } = renderHookWithClient(
+      ({ form }: { form: ScrapeFormState }) => useScraping(noopNotify, form),
+      { initialProps: { form: makeForm({ countryCode: 'US' }) } }
+    );
+
+    await act(async () => {
+      await result.current.startScrape();
+    });
+
+    // Identical form (including geo) → "show more" semantics: keep + append.
+    rerender({ form: makeForm({ countryCode: 'US' }) });
+    await act(async () => {
+      await result.current.startScrape();
+    });
+
+    expect(result.current.replacePendingRef.current).toBe(false);
+  });
+});

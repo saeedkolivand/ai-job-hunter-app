@@ -1812,6 +1812,9 @@
       "skippedNote_one": "{{boards}} wurde übersprungen — füge einen Unternehmens-Slug hinzu, um dieses Board zu durchsuchen.",
       "skippedNote_other": "{{boards}} wurden übersprungen — füge einen Unternehmens-Slug hinzu, um diese Boards zu durchsuchen."
     },
+    "needsKeys": {
+      "skippedNote": "Job-Aggregator übersprungen — keine API-Schlüssel konfiguriert. Schlüssel in den Einstellungen hinzufügen."
+    },
     "companies": {
       "label": "Unternehmen",
       "placeholder": "z. B. stripe, airbnb",

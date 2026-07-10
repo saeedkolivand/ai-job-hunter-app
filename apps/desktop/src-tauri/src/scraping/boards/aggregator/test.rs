@@ -1,4 +1,5 @@
 use super::*;
+use crate::scraping::http::FetchOptions;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -718,7 +719,9 @@ async fn cancelled_after_adzuna_err_skips_jsearch() {
 
 use std::sync::Mutex;
 
-use crate::ipc_contracts::provider_slots::{ADZUNA_APP_ID, ADZUNA_APP_KEY, JSEARCH_KEY};
+use crate::ipc_contracts::provider_slots::{
+    ADZUNA_APP_ID, ADZUNA_APP_KEY, APIFY_TOKEN, JSEARCH_KEY,
+};
 
 static AGG_KEYRING_LOCK: Mutex<()> = Mutex::new(());
 
@@ -736,12 +739,21 @@ fn jsearch_slot() -> String {
     format!("ai:{JSEARCH_KEY}")
 }
 
+fn apify_slot() -> String {
+    format!("ai:{APIFY_TOKEN}")
+}
+
 /// Delete the aggregator's fixed keyring slots so a test starts from a known
 /// "absent" baseline regardless of what a previous serialized test left behind.
 fn clear_aggregator_slots() {
     let adzuna = adzuna_slots();
     let jsearch = jsearch_slot();
-    for slot in adzuna.iter().chain(std::iter::once(&jsearch)) {
+    let apify = apify_slot();
+    for slot in adzuna
+        .iter()
+        .chain(std::iter::once(&jsearch))
+        .chain(std::iter::once(&apify))
+    {
         if let Ok(entry) = keyring_core::Entry::new(crate::credentials::SERVICE, slot) {
             // NoEntry on a clean slot is fine; we only care it ends up absent.
             let _ = entry.delete_credential();
@@ -805,6 +817,205 @@ fn providers_degrade_to_unconfigured_on_keyring_error() {
     assert!(
         !adzuna.is_configured(),
         "Adzuna must be unconfigured when a key read errors"
+    );
+
+    clear_aggregator_slots();
+}
+
+// ── needs-keys skip classification (aggregator) ───────────────────────────────
+
+fn make_input() -> BoardSearchInput {
+    BoardSearchInput {
+        query: "engineer".into(),
+        location: Some("berlin".into()),
+        amount: 10,
+        pages: 1,
+        date_filter: None,
+        job_type: None,
+        work_type: None,
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        country_code: Some("de".into()),
+        latitude: None,
+        longitude: None,
+        radius_km: None,
+        companies: vec![],
+    }
+}
+
+fn make_ctx() -> ScrapeContext {
+    ScrapeContext {
+        signal: make_token(),
+        on_progress: None,
+        on_item: None,
+    }
+}
+
+/// Drive an async board `search` from a sync (`#[test]`) body so the keyring lock
+/// guard is never held across an `.await` suspend point clippy can observe
+/// (`await_holding_lock`) — same harness the comeet board uses.
+fn block_on<F: std::future::Future>(fut: F) -> F::Output {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(fut)
+}
+
+/// Unconfigured aggregator (store readable, no keys) → `needs_keys() == true`, so
+/// the engine skips it with "needs-keys" instead of a silent keyless-empty.
+#[test]
+fn aggregator_needs_keys_when_unconfigured() {
+    let _guard = AGG_KEYRING_LOCK.lock().unwrap();
+    crate::credentials::install_mock_keyring();
+    clear_aggregator_slots();
+
+    assert!(
+        AggregatorScraper.needs_keys(),
+        "an aggregator with no configured provider keys must report needs_keys()==true"
+    );
+}
+
+/// A configured aggregator (Adzuna keys present) → `needs_keys() == false`, so the
+/// board runs normally and is NOT skipped.
+#[test]
+fn aggregator_does_not_need_keys_when_configured() {
+    let _guard = AGG_KEYRING_LOCK.lock().unwrap();
+    crate::credentials::install_mock_keyring();
+    clear_aggregator_slots();
+
+    for slot in adzuna_slots() {
+        keyring_core::Entry::new(crate::credentials::SERVICE, &slot)
+            .unwrap()
+            .set_password("configured")
+            .unwrap();
+    }
+
+    assert!(
+        !AggregatorScraper.needs_keys(),
+        "a configured aggregator (both Adzuna keys present) must report needs_keys()==false"
+    );
+
+    clear_aggregator_slots();
+}
+
+/// A keyring READ FAILURE must NOT be classified as `needs-keys`: `needs_keys()`
+/// returns false so the board still runs, and `search` surfaces the fault as a
+/// board error (credential store unavailable) rather than a silent empty.
+#[test]
+fn aggregator_store_read_failure_is_not_a_needs_keys_skip() {
+    let _guard = AGG_KEYRING_LOCK.lock().unwrap();
+    crate::credentials::install_mock_keyring();
+    clear_aggregator_slots();
+
+    let entry = keyring_core::Entry::new(crate::credentials::SERVICE, &adzuna_slots()[0]).unwrap();
+    let mock: &keyring_core::mock::Cred = entry.as_any().downcast_ref().unwrap();
+    mock.set_error(keyring_core::Error::Invalid(
+        "induced".to_string(),
+        "keyring backend unavailable".to_string(),
+    ));
+
+    assert!(
+        !AggregatorScraper.needs_keys(),
+        "a store read failure must not be treated as a needs-keys skip"
+    );
+
+    clear_aggregator_slots();
+}
+
+/// Companion to the classification test: a store read failure makes `search`
+/// return a board error naming the store as unavailable — no silent empty, no
+/// network call (the guard short-circuits before any provider is built).
+#[test]
+fn aggregator_search_surfaces_store_read_failure_as_error() {
+    let _guard = AGG_KEYRING_LOCK.lock().unwrap();
+    crate::credentials::install_mock_keyring();
+    clear_aggregator_slots();
+
+    let entry = keyring_core::Entry::new(crate::credentials::SERVICE, &adzuna_slots()[0]).unwrap();
+    let mock: &keyring_core::mock::Cred = entry.as_any().downcast_ref().unwrap();
+    mock.set_error(keyring_core::Error::Invalid(
+        "induced".to_string(),
+        "keyring backend unavailable".to_string(),
+    ));
+
+    let result = block_on(AggregatorScraper.search(make_input(), make_ctx()));
+    assert!(
+        result.is_err(),
+        "a credential-store read failure must surface as a board error, not Ok(empty)"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("credential store unavailable"),
+        "the diagnostic must name the store as unavailable; got: {msg}"
+    );
+
+    clear_aggregator_slots();
+}
+
+/// Arm a non-NoEntry failure on the APIFY token slot only (Adzuna + JSearch stay
+/// absent — `NoEntry` → `Ok(None)`). `keyring_core::mock::Cred::set_error` is a
+/// ONE-SHOT: the induced error is returned and cleared on the very next entry
+/// method call, then the mock reads cleanly again — so callers must arm it
+/// immediately before the single probe they intend to exercise, never reuse one
+/// arm across two reads (a prior version of this test armed once and then called
+/// both `needs_keys()` and `search()` against it, so the second call silently saw
+/// a clean read and the test asserted the wrong thing without failing to compile).
+fn arm_apify_slot_fault() {
+    let entry = keyring_core::Entry::new(crate::credentials::SERVICE, &apify_slot()).unwrap();
+    let mock: &keyring_core::mock::Cred = entry.as_any().downcast_ref().unwrap();
+    mock.set_error(keyring_core::Error::Invalid(
+        "induced".to_string(),
+        "keyring backend unavailable".to_string(),
+    ));
+}
+
+/// Consistency guard: `aggregator_has_configured_provider` counts the Apify
+/// provider, so `aggregator_store_error` must probe the Apify token slot too. A
+/// keyring READ FAILURE on the APIFY token slot ALONE (Adzuna + JSearch merely
+/// absent) must classify as a store error — `needs_keys()` false — NOT a
+/// misleading `needs-keys` skip.
+#[test]
+fn aggregator_apify_slot_read_failure_is_not_a_needs_keys_skip() {
+    let _guard = AGG_KEYRING_LOCK.lock().unwrap();
+    crate::credentials::install_mock_keyring();
+    clear_aggregator_slots();
+
+    arm_apify_slot_fault();
+
+    assert!(
+        !AggregatorScraper.needs_keys(),
+        "an Apify-slot store fault (others absent) must NOT be a needs-keys skip"
+    );
+
+    clear_aggregator_slots();
+}
+
+/// Companion to the classification test above: an APIFY-slot-only store fault
+/// (Adzuna + JSearch merely absent) makes `search` return a board error naming
+/// the store as unavailable — NOT a silent `Ok(empty)`. Arms its own fresh fault
+/// (see [`arm_apify_slot_fault`] doc — the mock error is one-shot, so this must
+/// NOT share an arm with the `needs_keys()` probe above).
+#[test]
+fn aggregator_apify_slot_read_failure_surfaces_as_search_error() {
+    let _guard = AGG_KEYRING_LOCK.lock().unwrap();
+    crate::credentials::install_mock_keyring();
+    clear_aggregator_slots();
+
+    arm_apify_slot_fault();
+
+    let result = block_on(AggregatorScraper.search(make_input(), make_ctx()));
+    assert!(
+        result.is_err(),
+        "an Apify-slot store fault must surface as a board error, not Ok(empty)"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("credential store unavailable"),
+        "the diagnostic must name the store as unavailable; got: {msg}"
     );
 
     clear_aggregator_slots();
@@ -1332,6 +1543,224 @@ async fn guessed_market_empty_with_no_location_is_not_treated_as_untrustworthy()
         result.is_empty(),
         "a guessed market with NO location must keep the legacy Ok(empty) \
          behavior — JSearch must not be called"
+    );
+}
+
+/// Guessed market + non-empty location + a SPARSE Adzuna result (2 < the broaden
+/// floor of 3) + JSearch configured → the sparse hits are not trusted; JSearch is
+/// consulted and its results win. This is the "London → stray German hits" case.
+#[tokio::test]
+async fn guessed_market_sparse_with_location_falls_back_to_jsearch() {
+    let jsearch_posting = sample_posting("g-sparse", "jsearch");
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        // Two stray hits (< ADZUNA_BROADEN_FLOOR) from the GUESSED "de" market.
+        Box::new(FakeProvider::ok(
+            "adzuna",
+            vec![
+                sample_posting("s1", "adzuna"),
+                sample_posting("s2", "adzuna"),
+            ],
+        )),
+        Box::new(FakeProvider::ok("jsearch", vec![jsearch_posting.clone()])),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "London",
+        "de",
+        true, // country_guessed
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        result.len(),
+        1,
+        "a sparse (< floor) result from a GUESSED market must fall through to \
+         JSearch, not be trusted as authoritative"
+    );
+    assert_eq!(result[0].external_id, jsearch_posting.external_id);
+}
+
+/// Guessed market + a result AT the broaden floor (3 == ADZUNA_BROADEN_FLOOR) →
+/// authoritative; JSearch must NOT be consulted (the fake JSearch errors so any
+/// call would surface as an Err and fail `.unwrap()`).
+#[tokio::test]
+async fn guessed_market_at_floor_does_not_fall_back() {
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::ok(
+            "adzuna",
+            vec![
+                sample_posting("f1", "adzuna"),
+                sample_posting("f2", "adzuna"),
+                sample_posting("f3", "adzuna"),
+            ],
+        )),
+        Box::new(FakeProvider::err(
+            "jsearch",
+            "must not be called at/above the broaden floor",
+        )),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "London",
+        "de",
+        true, // country_guessed
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        result.len(),
+        3,
+        "a result at the broaden floor from a guessed market is authoritative — no fallback"
+    );
+    assert!(
+        result.iter().all(|p| p
+            .external_id
+            .as_deref()
+            .unwrap_or("")
+            .starts_with("adzuna-")),
+        "the at-floor result must be Adzuna's, not JSearch's"
+    );
+}
+
+/// Explicit country (`country_guessed == false`) + a sparse Adzuna result →
+/// unchanged behavior: the sparse hits are authoritative and JSearch is NOT
+/// consulted. The floor guard is guessed-market only.
+#[tokio::test]
+async fn explicit_country_sparse_does_not_fall_back() {
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::ok(
+            "adzuna",
+            vec![
+                sample_posting("e1", "adzuna"),
+                sample_posting("e2", "adzuna"),
+            ],
+        )),
+        Box::new(FakeProvider::err(
+            "jsearch",
+            "must not be called for an explicit country",
+        )),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "London",
+        "gb",
+        false, // explicit country — not guessed
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        result.len(),
+        2,
+        "explicit-country sparse results are authoritative; the floor guard is guessed-market only"
+    );
+}
+
+/// Guessed market + non-empty location + a SPARSE Adzuna result (2 < floor) +
+/// JSearch NOT configured → the sparse hits are the best available answer, so they
+/// are RETURNED (a user with only Adzuna keys keeps their 2 legit results) rather
+/// than discarded for a zero-results diagnostic Err. The uncertainty is logged.
+#[tokio::test]
+async fn guessed_market_sparse_no_fallback_returns_sparse_items() {
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::ok(
+            "adzuna",
+            vec![
+                sample_posting("s1", "adzuna"),
+                sample_posting("s2", "adzuna"),
+            ],
+        )),
+        // No configured fallback.
+        Box::new(FakeProvider::unconfigured("jsearch")),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "London",
+        "de",
+        true, // country_guessed
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .expect("sparse guessed-market items must be returned, not an Err, with no fallback");
+
+    assert_eq!(
+        result.len(),
+        2,
+        "sparse guessed-market Adzuna items must be returned when there is no JSearch fallback"
+    );
+    assert!(
+        result.iter().all(|p| p
+            .external_id
+            .as_deref()
+            .unwrap_or("")
+            .starts_with("adzuna-")),
+        "the returned items must be the sparse Adzuna hits"
+    );
+}
+
+/// Guessed market + non-empty location + a SPARSE Adzuna result + JSearch
+/// configured but ERRORING → the fallback failed, so the sparse Adzuna hits are
+/// returned (better than nothing) rather than surfacing the JSearch error.
+#[tokio::test]
+async fn guessed_market_sparse_fallback_errors_returns_sparse_items() {
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::ok(
+            "adzuna",
+            vec![
+                sample_posting("s1", "adzuna"),
+                sample_posting("s2", "adzuna"),
+            ],
+        )),
+        // Fallback is configured but fails on this call.
+        Box::new(FakeProvider::err("jsearch", "jsearch upstream 500")),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "London",
+        "de",
+        true, // country_guessed
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .expect("a failing fallback must not sink the sparse Adzuna items");
+
+    assert_eq!(
+        result.len(),
+        2,
+        "sparse guessed-market Adzuna items must survive a failing JSearch fallback"
+    );
+    assert!(
+        result.iter().all(|p| p
+            .external_id
+            .as_deref()
+            .unwrap_or("")
+            .starts_with("adzuna-")),
+        "the returned items must be the sparse Adzuna hits, not JSearch's"
     );
 }
 
