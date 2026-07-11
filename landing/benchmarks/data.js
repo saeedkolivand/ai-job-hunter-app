@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783754319793,
+  "lastUpdate": 1783761523644,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3731,6 +3731,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 288298,
             "range": "± 4674",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "75ba0f5f75e960a2d1b5783c8e414ba246e9470f",
+          "message": "feat: scheduler retry with honest scores and partial-visibility notes (#604)\n\n* feat: scheduler retry with honest scores and partial-visibility notes\n\nFailed or interrupted autopilot occurrences get one bounded in-process retry with a post-backoff re-check so a recovered slot never double-scrapes.\nA concurrent-run guard dedups double invokes; store write failures are logged loudly.\nAggregator snippet scores are flagged provisional and render muted with an accessible hint until the detail view rescored on full text.\nPersonio joins the shared all-fail semantics; rippling and workable gain the total-drift guard; partial slug rejections and dropped rows surface as chips.\nBoard-native notes win over the location-filtered fill; jobs sorting is deterministic with undated postings in a trailing band.\nTrust program PR H — final PR (audit 2026-07-10).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: pending retries respect pause and provisional flags follow scores\n\nThe failed-arm retry re-reads the record and skips unless still schedulable, so pausing or archiving during the backoff wins.\nmerge_found_jobs carries score_provisional with score in both resurface directions; a manual run blocked by the in-flight guard surfaces an already-running message instead of silent success.\nDocs synced with the program completion note and named fast-follows; lessons persisted.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: type the already-running skip and mute provisional scores everywhere\n\nThe run contract types the skipped payload the guard already emits (closes the CI typecheck failure).\nMatchBand gains a muted prop so a provisional High score renders muted like every other tier, with the test mock deriving from the real tier logic.\nBreezy's rows-dropped count now includes empty-title and invalid-url format drops while excluding duplicate-url hygiene; the aggregator board id is a shared constant; doc inaccuracies corrected.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-11T11:09:40+02:00",
+          "tree_id": "7cf061f96ffcaae1ac36127f89bcd8492e78e88f",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/75ba0f5f75e960a2d1b5783c8e414ba246e9470f"
+        },
+        "date": 1783761523001,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2162732,
+            "range": "± 54501",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2596138,
+            "range": "± 39173",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 296939,
+            "range": "± 5848",
             "unit": "ns/iter"
           }
         ]
