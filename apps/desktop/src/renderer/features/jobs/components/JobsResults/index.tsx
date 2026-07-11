@@ -3,10 +3,11 @@ import { useEffect, useRef } from 'react';
 import { useRouter } from '@tanstack/react-router';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
-import { PROVIDER_SLOTS } from '@ajh/shared';
+import { type BoardScrapeSummary, PROVIDER_SLOTS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, EmptyState, GlassCard, ProgressBar, RowSkeleton } from '@ajh/ui';
 
+import { BoardSummaryChips } from '@/components/scrape/BoardSummaryChips';
 import { ROUTES } from '@/constants/routes/routes';
 import { JobsSplitView } from '@/features/jobs/components/JobsSplitView';
 import { PostingRow } from '@/features/jobs/components/PostingRow';
@@ -21,6 +22,20 @@ interface JobsResultsProps {
   /** Live boards-done/total fraction (0..1) for the active scrape; null until the
    *  first board completes and after the scrape ends. */
   scrapeProgress?: number | null;
+  /** Per-board outcome of the most recent scrape — rendered in the empty state so
+   *  a zero result always explains *why* per board (skipped / errored / partial). */
+  boardSummaries?: BoardScrapeSummary[];
+  /** Sanitized note for an outright (non-per-board) scrape failure — mutually
+   *  exclusive in practice with `boardSummaries` (a `job.failed` clears it). */
+  failureNote?: string | null;
+  /** Unfiltered posting count (before the text-search filter) — lets the empty
+   *  state distinguish "genuinely zero postings" from "a text filter hid
+   *  everything that exists". Only the genuinely-zero case renders the scrape
+   *  diagnostics (chips/failure note); a filter-hides-all empty state must NOT
+   *  re-show a prior scrape's outcome as if the scrape itself found nothing.
+   *  Optional — when omitted, `filtered` is treated as authoritative (matches
+   *  every call site that doesn't apply a filter). */
+  totalCount?: number;
   onShowMore: () => void;
   onScrape: () => void;
 }
@@ -40,6 +55,9 @@ export function JobsResults({
   formatRelativeTime,
   scraping,
   scrapeProgress,
+  boardSummaries,
+  failureNote,
+  totalCount,
   onShowMore,
   onScrape,
 }: JobsResultsProps) {
@@ -70,6 +88,14 @@ export function JobsResults({
   // list rendered — the "Show more" button's own loading={scraping} covers the
   // in-progress state without displacing existing results.
   const waiting = scraping && filtered.length === 0;
+
+  // Distinguishes "genuinely zero postings" from "a text filter hid every
+  // posting that exists". Only the former re-shows the last scrape's outcome
+  // (chips/failure note) — otherwise a filter that hides everything would
+  // misleadingly imply the scrape itself found nothing. `totalCount` is
+  // optional; when the caller doesn't pass it (no filtering applied), fall
+  // back to `filtered` as authoritative.
+  const genuinelyEmpty = (totalCount ?? filtered.length) === 0;
 
   // Derive selection validity during render so display changes flow into deps.
   const topId = filtered[0]?.id ?? null;
@@ -166,6 +192,28 @@ export function JobsResults({
                 }
                 className="py-10"
               />
+            )}
+            {/* Per-board diagnostics so a zero result is never silent — the same
+                strip shown in the results header, wired here so the empty state
+                explains which boards were skipped / errored / returned partial.
+                Suppressed when `missingAdzunaKeys` already explains the zero
+                (that branch renders its own dedicated CTA) to avoid triple
+                -explaining the same root cause, AND when a text filter (not
+                the scrape) is what emptied the list — `genuinelyEmpty` keeps a
+                filter-hides-all view from re-showing a PRIOR scrape's outcome
+                as if this scrape found nothing. */}
+            {!missingAdzunaKeys &&
+              genuinelyEmpty &&
+              boardSummaries &&
+              boardSummaries.length > 0 && (
+                <div className="flex justify-center px-6 pb-8">
+                  <BoardSummaryChips summaries={boardSummaries} />
+                </div>
+              )}
+            {!missingAdzunaKeys && genuinelyEmpty && failureNote && (
+              <p className="px-6 pb-8 text-center text-[11px] text-red-400/80">
+                {t('jobs.lastScrapeFailed', { reason: failureNote })}
+              </p>
             )}
           </div>
         </GlassCard>
