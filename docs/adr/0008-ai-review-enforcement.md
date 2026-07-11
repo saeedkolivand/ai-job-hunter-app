@@ -40,14 +40,14 @@ Implement the final 6-PR surface: a **required CI status check** (`🤖 AI Revie
 
 ## Consequences
 
-- **Amends ADR-0002's "✅ CI OK is the sole required check" clause** — now **TWO required checks exist**: `✅ CI OK` (linting, testing, building, linting, secrets + gitleaks) and `🤖 AI Review OK` (semantic findings). Both must pass for merge (unless the admin overrides the ruleset). ADR-0002's on-demand CodeRabbit stance is preserved; CodeRabbit remains advisory (no merge block).
+- **Amends ADR-0002's "✅ CI OK is the sole required check" clause** — now **TWO required checks exist**: `✅ CI OK` (linting, testing, building, secrets + gitleaks) and `🤖 AI Review OK` (semantic findings). Both must pass for merge (unless the admin overrides the ruleset). ADR-0002's on-demand CodeRabbit stance is preserved; CodeRabbit remains advisory (no merge block).
 - **Amends ADR-0003's gate-isolation principle** — gitleaks now joins the `ci-ok` umbrella (part of the always-on functional gate, not a separate surface); the AI check stays separate. Both are required.
 - **Four review surfaces now exist:**
   1. **Stop gate** (local pre-commit) — schema-1 verdict, ratcheted enforcement (REVIEW_MODE env).
   2. **Pre-push gate** (local) — schema-1 verdict, skip patterns (REVIEW_SKIP).
   3. **CI gate** (this PR) — schema-1 verdict, auto-run, **required check**, fail-open on infra.
   4. **/review command** (on-demand) — advisory deep dive, agent-routed, inert until invoked.
-  5. **CodeRabbit** (advisory, on-demand per ADR-0002) — semantic review, labels, no merge block.
+  - **CodeRabbit** (external, advisory per ADR-0002) — semantic review, labels, no merge block.
 - **Quota spend per synchronize** is capped by concurrency-cancel (only one review per PR at a time) + draft skip (no review on WIP). Infra failures (action outage, no token) fail-open with no quotas spent. Model parse failures (invalid JSON) are retried once then fall back to conservative "no findings" pass.
 - **Operational dependency** — after merge, a **manual step** is required: in the GitHub repository's branch protection ruleset, add `🤖 AI Review OK` to the required status checks list (same place where `✅ CI OK` is required). Without this, the check runs but does not block merge. Admin can later un-require it to unblock merges on production emergencies (no code changes needed — the rule is in the ruleset, not the code).
 - **False-positive learning** (from ADR-0002 feedback) is baked into the prompt: "Honor the Hard exclusions / Signal-quality criteria / Precedents in `.claude/review-config.md` — never re-raise a listed false positive." Prior runs' findings ledger allows convergence tracking (PR 1) and re-filing avoided (same category+summary on the same file is suppressed if already resolved-changed or suppressed).

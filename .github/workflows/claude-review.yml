@@ -1,12 +1,6 @@
-name: 🤖 Claude Review (advisory + required)
+name: 🤖 Claude Review (required gate + advisory deep dive)
 
 # ──────────────────────────────────────────────────────────────────────
-# Lane A1 — AI review, ON-DEMAND ADVISORY DEEP DIVE.
-# ──────────────────────────────────────────────────────────────────────
-# Runs ONLY when the repository owner comments "@claude review" on a PR.
-# Nothing automatic — not on open, not on push. This keeps AI quota spend
-# fully under your control. Tag-mode review is advisory; never blocks.
-#
 # Lane A2 — AI review gate, REQUIRED ON EVERY PR (unless draft).
 # ──────────────────────────────────────────────────────────────────────
 # Runs automatically on every PR open/sync/ready_for_review. Diff-based
@@ -15,17 +9,23 @@ name: 🤖 Claude Review (advisory + required)
 # ADR-0008 for the 6-PR review-hardening program; the gate is the final
 # surface (join: Stop gate, /review, pre-push, ci-ok, this check).
 #
+# Lane A1 — AI review, ON-DEMAND ADVISORY DEEP DIVE.
+# ──────────────────────────────────────────────────────────────────────
+# Runs ONLY when the repository owner comments "@claude review" on a PR.
+# Nothing automatic — not on open, not on push. This keeps AI quota spend
+# fully under your control. Tag-mode review is advisory; never blocks.
+#
 # Auth: a CLAUDE_CODE_OAUTH_TOKEN secret generated locally with
 #   `claude setup-token` (uses your Claude Pro/Max subscription quota — no
 #   per-token API bill). Until that secret is added, this workflow is inert.
 #   ⚠️ Do NOT also add ANTHROPIC_API_KEY — if both exist, the API key wins
 #      and usage is billed per-token instead of drawing on the subscription.
 #
-# Security (public repo): Lane A1's `if:` gate restricts triggering to the
-# repo owner with an exact phrase, so strangers cannot drain quota or
-# prompt-inject. Lane A2 is automatic (no owner gate, but concurrency-cancel
-# + draft-skip + deterministic verdict + fail-open limit quota spend and
-# false-positive impact). Permissions are least-privilege.
+# Security (public repo): Lane A2 is automatic (no owner gate, but
+# concurrency-cancel + draft-skip + deterministic verdict + fail-open
+# limit quota spend and false-positive impact). Lane A1's `if:` gate
+# restricts triggering to the repo owner with an exact phrase, so strangers
+# cannot drain quota or prompt-inject. Permissions are least-privilege.
 # ──────────────────────────────────────────────────────────────────────
 
 on:

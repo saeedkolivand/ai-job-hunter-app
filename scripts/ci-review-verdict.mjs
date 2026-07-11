@@ -44,6 +44,12 @@ if (!findings) {
   process.exit(0);
 }
 
+// markdown-table cell escape: backslashes FIRST, then pipes; newlines flattened
+const cell = (t) =>
+  String(t || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/\r?\n/g, ' ');
 const blocking = blockingFindings(findings, 0.8);
 const c = countBySeverity(findings);
 summary(
@@ -54,7 +60,7 @@ if (findings.length) {
   summary('|---|---|---|---|');
   for (const f of findings)
     summary(
-      `| ${f.severity}${blocking.includes(f) ? ' 🚫' : ''} | ${f.file}:${f.line} | ${f.summary.replace(/\|/g, '\\|')} | ${(f.fix || '').replace(/\|/g, '\\|')} |`
+      `| ${f.severity}${blocking.includes(f) ? ' 🚫' : ''} | ${f.file}:${f.line} | ${cell(f.summary)} | ${cell(f.fix)} |`
     );
 }
 if (blocking.length) {

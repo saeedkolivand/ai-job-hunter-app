@@ -12,7 +12,7 @@
 ### ✅ Required — gates merge
 
 [![🚀 CI Pipeline](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml)
-[![🤖 Claude Review (advisory + required)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml)
+[![🤖 Claude Review (required gate + advisory deep dive)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml)
 
 ### 🔒 Security — reports to the Security tab
 
@@ -35,10 +35,10 @@
 
 ### ✅ Required — gates merge
 
-| Workflow                                                    | Triggers    | What it does                                                               |
-| ----------------------------------------------------------- | ----------- | -------------------------------------------------------------------------- |
-| [🚀 CI Pipeline](ci-pipeline.yml)                           | PR, manual  | Validate code quality, type safety, test coverage, and secrets on every PR |
-| [🤖 Claude Review (advisory + required)](claude-review.yml) | PR, comment | AI review, ON-DEMAND ADVISORY DEEP DIVE.                                   |
+| Workflow                                                                   | Triggers    | What it does                                                               |
+| -------------------------------------------------------------------------- | ----------- | -------------------------------------------------------------------------- |
+| [🚀 CI Pipeline](ci-pipeline.yml)                                          | PR, manual  | Validate code quality, type safety, test coverage, and secrets on every PR |
+| [🤖 Claude Review (required gate + advisory deep dive)](claude-review.yml) | PR, comment | AI review gate, REQUIRED ON EVERY PR (unless draft).                       |
 
 ### 🔒 Security — reports to the Security tab
 
