@@ -5,10 +5,18 @@
 //! board with `"needs-company"` when `input.companies` is empty.
 //!
 //! Endpoint reconnaissance ported from santifer/career-ops (MIT), `providers/breezy.mjs`.
+//! Live-verified 2026-07-11 against slug `breezy` (3 jobs). DRIFT FOUND + FIXED:
+//! `location.state` is an OBJECT (`{id, name}`) on the live API, not the bare
+//! string the career-ops port assumed — the old atomic `Vec<BzPosting>`
+//! deserialize failed every real tenant's whole payload (silent zero). Now
+//! `BzStateField` tolerates both shapes and rows deserialize per-row via
+//! `rows_to_jobs` (mirrors Rippling/Workable), so one drifted row can't zero the
+//! board. Confirmed present: `name`, `url`, `published_date` (RFC3339),
+//! `location{name, city, state{name}, country{name}, is_remote}`.
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use super::common::{
-    ats_all_fetches_failed, is_https_url, is_valid_dns_label_slug, normalize_companies,
+    ats_finish_search, is_https_url, is_valid_dns_label_slug, normalize_companies,
 };
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -36,11 +44,32 @@ struct BzCountry {
     name: Option<String>,
 }
 
+/// Breezy's `location.state` is an OBJECT (`{id, name}`) on the live API
+/// (verified 2026-07-11) but a bare string on some tenants/fixtures — accept
+/// both so one shape doesn't fail the row. `Text` (a JSON string) and the object
+/// form are unambiguous under serde's untagged matching (a string can only be
+/// `Text`; an object can only be `Named`).
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum BzStateField {
+    Text(String),
+    Named { name: Option<String> },
+}
+
+impl BzStateField {
+    fn into_name(self) -> Option<String> {
+        match self {
+            BzStateField::Text(s) => Some(s),
+            BzStateField::Named { name } => name,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct BzLocation {
     name: Option<String>,
     city: Option<String>,
-    state: Option<String>,
+    state: Option<BzStateField>,
     country: Option<BzCountry>,
     #[serde(rename = "is_remote")]
     is_remote: Option<bool>,
@@ -53,6 +82,31 @@ pub(crate) struct BzPosting {
     #[serde(rename = "published_date")]
     published_date: Option<String>,
     location: Option<BzLocation>,
+}
+
+/// Deserialize each posting row independently, dropping (with a debug log) any
+/// row that fails to type-check — e.g. a future field-shape drift on one row.
+/// Without this, an atomic `Vec<BzPosting>` deserialize would fail the WHOLE
+/// company on a single malformed row (silent zero-jobs) — which is exactly how
+/// the live `location.state`-as-object shape broke every real tenant before this
+/// PR. Mirrors Rippling's/Workable's `rows_to_jobs`.
+pub(crate) fn rows_to_jobs(values: Vec<serde_json::Value>) -> Vec<BzPosting> {
+    let total = values.len();
+    let jobs: Vec<BzPosting> = values
+        .into_iter()
+        .filter_map(|v| match serde_json::from_value::<BzPosting>(v) {
+            Ok(job) => Some(job),
+            Err(e) => {
+                log::debug!("[breezy] skipping malformed row: {e}");
+                None
+            }
+        })
+        .collect();
+    let skipped = total - jobs.len();
+    if skipped > 0 {
+        log::warn!("[breezy] skipped {skipped}/{total} malformed rows");
+    }
+    jobs
 }
 
 /// Map a parsed Breezy response into postings for one company. Standalone
@@ -89,12 +143,16 @@ pub(crate) fn parse_breezy_response(
             let mut base = match l.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
                 Some(name) => name.to_string(),
                 None => {
-                    let parts: Vec<String> = [l.city, l.state, l.country.and_then(|c| c.name)]
-                        .into_iter()
-                        .flatten()
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect();
+                    let parts: Vec<String> = [
+                        l.city,
+                        l.state.and_then(BzStateField::into_name),
+                        l.country.and_then(|c| c.name),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
                     parts.join(", ")
                 }
             };
@@ -166,6 +224,7 @@ impl Scraper for BreezyScraper {
         let total = companies.len();
 
         let mut successful_fetches = 0usize;
+        let mut rejected_slugs = 0usize;
         let mut first_fetch_error: Option<String> = None;
 
         for (i, raw_company) in companies.iter().enumerate() {
@@ -179,6 +238,7 @@ impl Scraper for BreezyScraper {
             // A slug like `127.0.0.1:8443/foo` would change the URL authority
             // and redirect the fetch away from Breezy (SSRF).
             if !is_valid_dns_label_slug(&company) {
+                rejected_slugs += 1;
                 log::warn!("[breezy] skipping invalid company slug '{}'", company);
                 if let Some(ref on_progress) = ctx.on_progress {
                     on_progress((i + 1) as f32 / total as f32);
@@ -188,30 +248,54 @@ impl Scraper for BreezyScraper {
 
             let url = format!("https://{company}.breezy.hr/json");
 
-            let data =
-                match fetch_json::<Vec<BzPosting>>(&url, Default::default(), ctx.signal.clone())
-                    .await
-                {
-                    Ok(d) => d,
-                    Err(e) => {
-                        // Check cancellation first: a fetch that failed because
-                        // the run was cancelled is not a real board-level error.
-                        if ctx.signal.is_cancelled() {
-                            break;
-                        }
-                        log::warn!("[breezy] fetch failed for '{}': {e}", company);
-                        first_fetch_error.get_or_insert_with(|| e.to_string());
-                        if let Some(ref on_progress) = ctx.on_progress {
-                            on_progress((i + 1) as f32 / total as f32);
-                        }
-                        continue;
+            // Fetch as raw rows so `rows_to_jobs` can drop a single drifted row
+            // instead of failing the whole company (see the module doc: the live
+            // `location.state` object shape used to zero every tenant here).
+            let data = match fetch_json::<Vec<serde_json::Value>>(
+                &url,
+                Default::default(),
+                ctx.signal.clone(),
+            )
+            .await
+            {
+                Ok(d) => d,
+                Err(e) => {
+                    // Check cancellation first: a fetch that failed because
+                    // the run was cancelled is not a real board-level error.
+                    if ctx.signal.is_cancelled() {
+                        break;
                     }
-                };
+                    log::warn!("[breezy] fetch failed for '{}': {e}", company);
+                    first_fetch_error.get_or_insert_with(|| e.to_string());
+                    if let Some(ref on_progress) = ctx.on_progress {
+                        on_progress((i + 1) as f32 / total as f32);
+                    }
+                    continue;
+                }
+            };
 
-            // A non-2xx / schema-drift response is now an `Err` above (which records
-            // `first_fetch_error`), so reaching here means a real success — count it.
+            // A non-2xx response is now an `Err` above (which records
+            // `first_fetch_error`). A 200 where EVERY row fails to deserialize is
+            // schema drift too — the exact failure class the `location.state`
+            // object drift caused before `rows_to_jobs` existed — so treat that
+            // as a fetch failure rather than a silent success-with-zero-jobs
+            // (round-2 review finding).
+            let raw_row_count = data.len();
+            let postings = rows_to_jobs(data);
+            if raw_row_count > 0 && postings.is_empty() {
+                log::warn!(
+                    "[breezy] all {raw_row_count} rows failed to parse for '{}'; treating as a fetch failure",
+                    company
+                );
+                first_fetch_error.get_or_insert_with(|| {
+                    format!("all {raw_row_count} rows failed to parse — response shape may have changed")
+                });
+                if let Some(ref on_progress) = ctx.on_progress {
+                    on_progress((i + 1) as f32 / total as f32);
+                }
+                continue;
+            }
             successful_fetches += 1;
-            let postings = data;
 
             for posting in parse_breezy_response(postings, &company, now) {
                 if let Some(ref on_item) = ctx.on_item {
@@ -225,14 +309,16 @@ impl Scraper for BreezyScraper {
             }
         }
 
-        // Return Err only when every attempt failed — see `ats_all_fetches_failed`.
-        if let Some(message) =
-            ats_all_fetches_failed(self.id(), successful_fetches, &first_fetch_error)
-        {
-            return Err(anyhow::anyhow!(message));
-        }
-
-        Ok(out)
+        // See `ats_finish_search`: cancellation wins over a synthesized
+        // all-fetches-failed/all-slugs-invalid board error.
+        ats_finish_search(
+            &ctx.signal,
+            out,
+            self.id(),
+            successful_fetches,
+            rejected_slugs,
+            &first_fetch_error,
+        )
     }
 }
 

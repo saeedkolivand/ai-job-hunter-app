@@ -11,7 +11,7 @@
 //! doc/blog — so it isn't marked "unverified" like those.
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
-use super::common::{ats_all_fetches_failed, normalize_companies};
+use super::common::{ats_finish_search, normalize_companies};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -257,6 +257,7 @@ impl Scraper for WorkableScraper {
         let total = companies.len();
 
         let mut successful_fetches = 0usize;
+        let mut rejected_slugs = 0usize;
         let mut first_fetch_error: Option<String> = None;
 
         for (i, slug) in companies.iter().enumerate() {
@@ -267,6 +268,7 @@ impl Scraper for WorkableScraper {
             // Guard: reject slugs that could redirect the request via path
             // traversal or an injected query string.
             if !is_valid_workable_slug(slug) {
+                rejected_slugs += 1;
                 log::warn!("[workable] skipping invalid company slug '{}'", slug);
                 if let Some(ref on_progress) = ctx.on_progress {
                     on_progress((i + 1) as f32 / total as f32);
@@ -323,14 +325,16 @@ impl Scraper for WorkableScraper {
             }
         }
 
-        // Return Err only when every attempt failed — see `ats_all_fetches_failed`.
-        if let Some(message) =
-            ats_all_fetches_failed(self.id(), successful_fetches, &first_fetch_error)
-        {
-            return Err(anyhow::anyhow!(message));
-        }
-
-        Ok(out)
+        // See `ats_finish_search`: cancellation wins over a synthesized
+        // all-fetches-failed/all-slugs-invalid board error.
+        ats_finish_search(
+            &ctx.signal,
+            out,
+            self.id(),
+            successful_fetches,
+            rejected_slugs,
+            &first_fetch_error,
+        )
     }
 }
 
