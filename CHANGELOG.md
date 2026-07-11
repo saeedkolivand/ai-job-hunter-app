@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.125.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.124.2...v0.125.0) (2026-07-11)
+
+### ✨ Features
+
+* aria and saffron photo templates with per-template placement (templates pr 4/6) ([#593](https://github.com/saeedkolivand/ai-job-hunter-app/issues/593)) ([4a5d18c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/4a5d18c955c270d0bf272fb33acfc612b0c0b6ff))
+* cadence and regent single-column templates (templates pr 3/6) ([#592](https://github.com/saeedkolivand/ai-job-hunter-app/issues/592)) ([1172aff](https://github.com/saeedkolivand/ai-job-hunter-app/commit/1172aff7a72ebea50954e612846f88cc113b9137))
+* canonical location model with honest per-board location handling ([#602](https://github.com/saeedkolivand/ai-job-hunter-app/issues/602)) ([7abc20e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/7abc20e2f80596c4b5247b93dfe8ae458abf550c))
+* collapse cross-source duplicate jobs behind one canonical key ([#601](https://github.com/saeedkolivand/ai-job-hunter-app/issues/601)) ([0b13fc3](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0b13fc3bb44286b8941ca84baba8563b04c21b64))
+* make location broadening and guessed markets visible ([#600](https://github.com/saeedkolivand/ai-job-hunter-app/issues/600)) ([b5e9c38](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b5e9c387282e6c41bfb21e6a46ea85e0c4ce0c3b))
+* merge modern into classic and add per-export document accent (templates pr 1/6) ([#590](https://github.com/saeedkolivand/ai-job-hunter-app/issues/590)) ([0eda637](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0eda637072557b64c13e35dc5db54f828ab12785))
+* record honest autopilot run status with per-board summaries ([#598](https://github.com/saeedkolivand/ai-job-hunter-app/issues/598)) ([dcd5081](https://github.com/saeedkolivand/ai-job-hunter-app/commit/dcd50817f698a04d314647e85f114c699ec27d41))
+* scheduler retry with honest scores and partial-visibility notes ([#604](https://github.com/saeedkolivand/ai-job-hunter-app/issues/604)) ([75ba0f5](https://github.com/saeedkolivand/ai-job-hunter-app/commit/75ba0f5f75e960a2d1b5783c8e414ba246e9470f))
+* selectable letter layouts inheriting the resume template palette (templates pr 5/6) ([#594](https://github.com/saeedkolivand/ai-job-hunter-app/issues/594)) ([1adb050](https://github.com/saeedkolivand/ai-job-hunter-app/commit/1adb050e7827640f636470e2efcc624bf2581b8e))
+* surface per-board scrape diagnostics in jobs and autopilot views ([#599](https://github.com/saeedkolivand/ai-job-hunter-app/issues/599)) ([f47851b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f47851b803de050f13612e678ea8e2f135ffd484))
+* template tiers with grouped gallery and lebenslauf ats toggle fix (templates pr 2/6) ([#591](https://github.com/saeedkolivand/ai-job-hunter-app/issues/591)) ([256ee72](https://github.com/saeedkolivand/ai-job-hunter-app/commit/256ee72fb933ccb95a9ca05d0804094a93a25905))
+
+### 🐛 Bug Fixes
+
+* classic cover letters render the recipient address block again ([#596](https://github.com/saeedkolivand/ai-job-hunter-app/issues/596)) ([f060c8d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f060c8de1f15070bd40a0a8959712ed345a526cb))
+* job-search trust quick wins (silent failures, location determinism, dedupe) ([#589](https://github.com/saeedkolivand/ai-job-hunter-app/issues/589)) ([5cf5bdd](https://github.com/saeedkolivand/ai-job-hunter-app/commit/5cf5bdd5ae610c9320251fc7d34b780bc2ba7818))
+* live-verified board hygiene with honest failure reasons ([#603](https://github.com/saeedkolivand/ai-job-hunter-app/issues/603)) ([8b1a167](https://github.com/saeedkolivand/ai-job-hunter-app/commit/8b1a16715b0e41117ef397f87cc11e4a6c00f347))
+* represent board fetch failures instead of silent zero results ([#597](https://github.com/saeedkolivand/ai-job-hunter-app/issues/597)) ([4245370](https://github.com/saeedkolivand/ai-job-hunter-app/commit/4245370dc79fe7d0b6f9107c7b8b109bf4bccdba))
+
+### 🎨 UI/UX
+
+* autopilot board results behind an info popover ([#611](https://github.com/saeedkolivand/ai-job-hunter-app/issues/611)) ([b002882](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b002882cefd0050ba21870ef31dc2eb31fb6358b))
+
+### 📚 Documentation
+
+* template series closeout (templates pr 6/6) ([#595](https://github.com/saeedkolivand/ai-job-hunter-app/issues/595)) ([8e28429](https://github.com/saeedkolivand/ai-job-hunter-app/commit/8e28429d48462a5db5989c6e8b4cef84f9c5ed24))
+
 ## [0.124.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.124.1...v0.124.2) (2026-07-09)
 
 ### 🐛 Bug Fixes
