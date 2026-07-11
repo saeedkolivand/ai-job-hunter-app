@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import type { Autopilot, AutopilotFoundJob } from '@ajh/shared';
+import type { Autopilot, AutopilotFoundJob, BoardScrapeSummary } from '@ajh/shared';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
 
@@ -100,7 +100,25 @@ vi.mock('@ajh/ui', () => ({
     React.createElement('button', { onClick, 'aria-label': ariaLabel, title, disabled }, children),
   ConfirmModal: () => null,
   GlassCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Tag: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  // Render both trigger and panel content so the badge label AND its hover
+  // explainer are queryable in jsdom (no real hover needed).
+  HoverPopover: ({
+    trigger,
+    children,
+  }: {
+    trigger: React.ReactNode;
+    children: React.ReactNode;
+  }) => (
+    <span>
+      {trigger}
+      {children}
+    </span>
+  ),
+  Tag: ({ color, children }: { color?: string; children: React.ReactNode }) => (
+    <span data-testid="chip" data-color={color}>
+      {children}
+    </span>
+  ),
   cn: (...args: string[]) => args.filter(Boolean).join(' '),
   transition: { fast: {}, normal: {} },
 }));
@@ -179,6 +197,16 @@ function makeJob(url = 'https://example.com/job/1', score?: number): AutopilotFo
 // to the union via `as`, which is valid for string → string-literal.
 function withRunStatus(status: string): Autopilot {
   return { ...makeAutopilot(), runStatus: status as Autopilot['runStatus'] };
+}
+
+// Autopilot with a persisted run outcome AND its per-board summaries (PR B) so
+// the chip strip + needs-configuration guard can be exercised.
+function withRun(status: string, summaries: BoardScrapeSummary[]): Autopilot {
+  return {
+    ...makeAutopilot(),
+    runStatus: status as Autopilot['runStatus'],
+    lastRunSummaries: summaries,
+  };
 }
 
 const defaultProps = {
@@ -688,5 +716,66 @@ describe('AutopilotCard — run-status badge', () => {
   it('hides the badge while a run is in progress', () => {
     renderCard(withRunStatus('failed'), { runState: 'scraping' });
     expect(screen.queryByText('autopilot.badge.failed')).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Needs-configuration guard (PR B carry-over 2) + badge hover explainers
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('AutopilotCard — needs-configuration guard', () => {
+  it('a failed run where every board was merely skipped shows a neutral needs-config badge, not red failed', () => {
+    renderCard(
+      withRun('failed', [
+        { board: 'aggregator', count: 0, skipped: 'needs-keys' },
+        { board: 'linkedin', count: 0, skipped: 'needs-login' },
+      ])
+    );
+    expect(screen.getByText('autopilot.badge.needsConfig')).toBeInTheDocument();
+    expect(screen.queryByText('autopilot.badge.failed')).not.toBeInTheDocument();
+  });
+
+  it('a failed run with a real board error keeps the red failed badge (not needs-config)', () => {
+    renderCard(
+      withRun('failed', [
+        { board: 'linkedin', count: 0, error: '429 Too Many Requests' },
+        { board: 'aggregator', count: 0, skipped: 'needs-keys' },
+      ])
+    );
+    expect(screen.getByText('autopilot.badge.failed')).toBeInTheDocument();
+    expect(screen.queryByText('autopilot.badge.needsConfig')).not.toBeInTheDocument();
+  });
+
+  it('the needs-config badge carries a hover explainer', () => {
+    renderCard(withRun('failed', [{ board: 'aggregator', count: 0, skipped: 'needs-keys' }]));
+    expect(screen.getByText('autopilot.badge.needsConfigHint')).toBeInTheDocument();
+  });
+
+  it('the partial-results badge carries a hover explainer', () => {
+    renderCard(withRun('completedWithErrors', [{ board: 'linkedin', count: 0, error: 'boom' }]));
+    expect(screen.getByText('autopilot.badge.completedWithErrorsHint')).toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Persisted per-board chip strip — survives the run ending
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('AutopilotCard — persisted per-board chips', () => {
+  it('renders the last run per-board chips when not running', () => {
+    renderCard(
+      withRun('completedWithErrors', [
+        { board: 'greenhouse', count: 4 },
+        { board: 'linkedin', count: 0, error: 'blocked' },
+      ])
+    );
+    expect(screen.getAllByTestId('chip').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('does NOT render persisted chips while a run is in progress (live log shown instead)', () => {
+    renderCard(withRun('completed', [{ board: 'greenhouse', count: 4 }]), {
+      runState: 'scraping',
+    });
+    expect(screen.queryAllByTestId('chip')).toHaveLength(0);
   });
 });

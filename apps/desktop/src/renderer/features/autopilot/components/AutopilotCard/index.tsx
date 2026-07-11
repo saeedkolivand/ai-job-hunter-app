@@ -24,10 +24,12 @@ import {
   cn,
   ConfirmModal,
   GlassCard,
+  HoverPopover,
   Tag,
   transition,
 } from '@ajh/ui';
 
+import { BoardSummaryChips } from '@/components/scrape/BoardSummaryChips';
 import { type AutopilotRunState, RUN_STATE_LABEL } from '@/lib/machines/autopilot-run.machine';
 import { MatchBand } from '@/lib/match-band';
 import { timeAgo } from '@/lib/time';
@@ -93,6 +95,24 @@ const RUN_STATUS_BADGE: Partial<
   },
 };
 
+/**
+ * Cry-wolf guard (PR B carry-over 2): a `failed` run whose boards were ALL merely
+ * skipped (needs-login / needs-keys / needs-company) — none actually errored —
+ * isn't a failure, it's an unconfigured run. Present it neutrally + actionably
+ * ("needs configuration") instead of a red "Failed", with the per-board chip
+ * strip below spelling out exactly what to configure.
+ */
+const NEEDS_CONFIG_BADGE = {
+  labelKey: 'autopilot.badge.needsConfig',
+  className: 'bg-foreground/[0.06] text-foreground/70',
+};
+
+/** Badges that carry a hover/focus explainer now that the chip strip exists. */
+const BADGE_HINT_KEY = {
+  completedWithErrors: 'autopilot.badge.completedWithErrorsHint',
+  needsConfig: 'autopilot.badge.needsConfigHint',
+} as const;
+
 export function AutopilotCard({
   autopilot: ap,
   runState,
@@ -116,10 +136,32 @@ export function AutopilotCard({
   const headerRef = useRef<HTMLDivElement>(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
   const foundJobs = ap.foundJobs ?? [];
+  // Persisted per-board outcome of the most recent run (PR B). Unlike the live
+  // step log (below), this survives the run ending, so a zero/partial/failed
+  // result stays explainable. Empty for the happy path + pre-summaries records.
+  const lastRunSummaries = ap.lastRunSummaries ?? [];
+  // Cry-wolf guard (PR B carry-over 2): a `failed` run whose boards were ALL
+  // merely skipped (none errored) is an UNCONFIGURED run, not a failure.
+  const needsConfig =
+    ap.runStatus === 'failed' &&
+    lastRunSummaries.length > 0 &&
+    lastRunSummaries.every((s) => Boolean(s.skipped) && !s.error);
   // Persisted run-outcome badge (failed / completedWithErrors / interrupted).
-  // Undefined for the happy path and for any unknown/future status — the
-  // explicit graceful fallback (renders nothing rather than a raw enum).
-  const runStatusBadge = ap.runStatus ? RUN_STATUS_BADGE[ap.runStatus] : undefined;
+  // `needsConfig` overrides the red `failed` badge with a neutral one; otherwise
+  // undefined for the happy path and any unknown/future status — the explicit
+  // graceful fallback (renders nothing rather than a raw enum).
+  const runStatusBadge = needsConfig
+    ? NEEDS_CONFIG_BADGE
+    : ap.runStatus
+      ? RUN_STATUS_BADGE[ap.runStatus]
+      : undefined;
+  // Optional hover/focus explainer for the neutral/amber badges now that the
+  // chip strip spells out the per-board detail below.
+  const badgeHintKey = needsConfig
+    ? BADGE_HINT_KEY.needsConfig
+    : ap.runStatus === 'completedWithErrors'
+      ? BADGE_HINT_KEY.completedWithErrors
+      : undefined;
 
   // Scroll-to-row + transient highlight target for `focusedJobUrl` (returning
   // from an Apply via Back). Kept in a ref (not state) since it isn't rendered;
@@ -300,16 +342,42 @@ export function AutopilotCard({
             <span className="text-[10px] text-foreground/30 bg-muted px-1.5 py-0.5 rounded capitalize">
               {ap.schedule.replace('_', ' ')}
             </span>
-            {!running && runStatusBadge && (
-              <span
-                className={cn(
-                  'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium',
-                  runStatusBadge.className
-                )}
-              >
-                {t(runStatusBadge.labelKey)}
-              </span>
-            )}
+            {!running &&
+              runStatusBadge &&
+              (badgeHintKey ? (
+                // stopProp wrapper keeps a click/Enter on the badge from toggling
+                // the card's found-jobs panel; Escape-to-close still reaches the
+                // popover (its handler sits between the trigger and this wrapper).
+                <span onClick={stopProp} onKeyDown={stopProp} className="inline-flex shrink-0">
+                  <HoverPopover
+                    placement="top"
+                    ariaLabel={t(runStatusBadge.labelKey)}
+                    contentClassName="max-w-[240px] rounded-lg border border-[var(--border-clear)] bg-card px-3 py-2 text-[11px] leading-relaxed text-foreground/70 shadow-lg"
+                    trigger={
+                      <span
+                        tabIndex={0}
+                        className={cn(
+                          'inline-flex cursor-help rounded px-1.5 py-0.5 text-[10px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-brand/50',
+                          runStatusBadge.className
+                        )}
+                      >
+                        {t(runStatusBadge.labelKey)}
+                      </span>
+                    }
+                  >
+                    {t(badgeHintKey)}
+                  </HoverPopover>
+                </span>
+              ) : (
+                <span
+                  className={cn(
+                    'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium',
+                    runStatusBadge.className
+                  )}
+                >
+                  {t(runStatusBadge.labelKey)}
+                </span>
+              ))}
           </div>
           <div className="flex items-center gap-4 text-[10px] text-foreground/35">
             <span>"{ap.target.query}"</span>
@@ -376,6 +444,13 @@ export function AutopilotCard({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Persisted per-board outcome of the LAST run — visible after the run
+          ends (the live step log above only shows while running), so a zero /
+          partial / needs-configuration result is always explainable. */}
+      {!running && lastRunSummaries.length > 0 && (
+        <BoardSummaryChips summaries={lastRunSummaries} />
+      )}
 
       {/* Found jobs from the most recent run */}
       <AnimatePresence>
