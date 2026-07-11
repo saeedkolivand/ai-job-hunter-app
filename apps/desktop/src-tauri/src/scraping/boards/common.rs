@@ -122,5 +122,58 @@ pub(crate) fn should_propagate_page_error(collected_so_far: usize) -> bool {
     collected_so_far == 0
 }
 
+/// App-wide canonical dedup key for a job posting — the single source of truth
+/// for "is this the same job?" across every source (the scrape engine's
+/// cross-board pass, autopilot's `merge_found_jobs`, and — mirrored in TS at
+/// `apps/desktop/src/renderer/features/jobs/lib/canonical-job-key.ts` — the
+/// renderer's `mergePostings`). Keeping all three keyed identically is the whole
+/// point of trust-program PR E: a job surfaced by two boards collapses to one row
+/// and fires one notification, not two or three.
+///
+/// **Exact algorithm (mirror this precisely in any other language):**
+/// 1. `n = normalize_job_url(url)` — the app-wide URL identity
+///    ([`crate::applications::normalize_job_url`]): rejects any non-`http(s)`
+///    scheme to `""`; lowercases the whole URL; strips a leading `www.` on the
+///    host; drops the `#fragment`; drops the query string **except** per-host
+///    identifying params (currently only `indeed.com`'s `jk`, emitted in a fixed
+///    order); strips a trailing `/` on the path. Empty/blank input → `""`.
+/// 2. If `n` is non-empty, the key **is** `n` (URL identity).
+/// 3. Otherwise (missing/unusable/non-http URL) fall back to
+///    `"{title}\u{1}{company}"` with each side `.trim().to_lowercase()`. The
+///    `U+0001` (SOH) separator can't occur in real text, so a title that merely
+///    contains the company name can't forge a colliding key — and near-miss
+///    titles stay distinct (`"senior rust engineer\u{1}acme"` ≠
+///    `"rust engineer\u{1}acme"`).
+///
+/// Chosen over the aggregator's narrower private `canonical_url` (which only
+/// strips LinkedIn query params and is a within-aggregator provider-merge
+/// concern): `normalize_job_url` is the genuinely app-wide, well-tested URL
+/// identity that autopilot's merge already keys on, so building on it keeps the
+/// stages in lockstep instead of diverging on two different URL notions.
+///
+/// Known limitation (out of scope for stage 1): an aggregator *redirect* URL and
+/// the board's *direct* posting URL normalize to different keys, so the same job
+/// reached via a redirect is not collapsed here — that needs redirect-chain
+/// canonicalization, tracked separately.
+///
+/// The title+company fallback assumes each board already validated/populated
+/// `title` (every registered `Scraper` does); it is not itself a title
+/// validator, so postings with all-empty titles/companies collapse to the
+/// single `"\u{1}"` key.
+///
+/// Pure — no I/O — so the key is directly unit-testable.
+pub(crate) fn canonical_job_key(url: &str, title: &str, company: &str) -> String {
+    let normalized = crate::applications::normalize_job_url(url);
+    if !normalized.is_empty() {
+        normalized
+    } else {
+        format!(
+            "{}\u{1}{}",
+            title.trim().to_lowercase(),
+            company.trim().to_lowercase()
+        )
+    }
+}
+
 #[cfg(test)]
 mod test;
