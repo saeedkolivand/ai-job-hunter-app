@@ -105,10 +105,6 @@ vi.mock('@/services/use-ai-provider', () => ({
 }));
 
 // Sub-components used inside StepTarget that bring in further heavy deps.
-vi.mock('@/features/autopilot/components/wizard-steps/ComingSoonBadge', () => ({
-  ComingSoonBadge: () => null,
-}));
-
 vi.mock('@/features/autopilot/components/wizard-steps/PrefilledBadge', () => ({
   PrefilledBadge: () => null,
 }));
