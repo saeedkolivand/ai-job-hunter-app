@@ -251,9 +251,19 @@ impl ScraperEngine {
             Ok(mut items) => {
                 let out = if has_active_filter {
                     // `kept`, not a raw truncate — see `KeepItemFn`.
-                    kept.lock()
-                        .map(|mut g| std::mem::take(&mut *g))
-                        .unwrap_or_default()
+                    match kept.lock() {
+                        Ok(mut g) => std::mem::take(&mut *g),
+                        Err(_) => {
+                            // A poisoned mutex here silently drops this board's
+                            // WHOLE result (empty Vec) — that must be visible, not
+                            // a quiet zero indistinguishable from a clean run.
+                            log::warn!(
+                                "[scrape] board '{board}' kept-items mutex poisoned; \
+                                 returning empty result"
+                            );
+                            Vec::new()
+                        }
+                    }
                 } else {
                     items.truncate(amount);
                     items
@@ -267,10 +277,19 @@ impl ScraperEngine {
                 // A real user cancel leaves `reached == false`, so it propagates the
                 // error exactly as before.
                 if reached.load(Ordering::SeqCst) {
-                    let mut kept_items = kept
-                        .lock()
-                        .map(|mut g| std::mem::take(&mut *g))
-                        .unwrap_or_default();
+                    let mut kept_items = match kept.lock() {
+                        Ok(mut g) => std::mem::take(&mut *g),
+                        Err(_) => {
+                            // Same visibility concern as the Ok(items) arm above:
+                            // a poisoned mutex must not silently present as "0
+                            // items recovered" with no trace.
+                            log::warn!(
+                                "[scrape] board '{board}' kept-items mutex poisoned on \
+                                 cap-recovery; returning empty result"
+                            );
+                            Vec::new()
+                        }
+                    };
                     kept_items.truncate(amount);
                     span.end_with(&format!("count={}", kept_items.len()), true);
                     Ok(kept_items)

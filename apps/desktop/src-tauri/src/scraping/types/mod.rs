@@ -132,6 +132,8 @@ impl BoardSearchInput {
 pub struct ScrapeContext {
     pub signal: tokio_util::sync::CancellationToken,
     pub on_progress: Option<Box<dyn Fn(f32) + Send>>,
+    /// Streamed per-posting sink. See [`Scraper::search`]'s doc contract: the
+    /// set streamed here must equal the `search` return value's set.
     pub on_item: Option<Box<dyn Fn(JobPosting) + Send>>,
     /// Reports that a paginated board stopped early after a mid-run page failure
     /// and kept its partial harvest (e.g. `"page 3 of 5 failed: HTTP 429"`). Only
@@ -258,6 +260,12 @@ pub trait Scraper: Send + Sync {
         false
     }
 
+    /// **Contract:** every posting streamed via `ctx.on_item` must also appear in
+    /// the returned `Vec` (and vice versa) — the same set, not a subset/superset.
+    /// The engine relies on this identity: under a live location filter it
+    /// returns the streamed/kept set as the board's authoritative result, so a
+    /// board that streams a different set than it returns would silently lose or
+    /// fabricate results for that board.
     async fn search(
         &self,
         input: BoardSearchInput,
