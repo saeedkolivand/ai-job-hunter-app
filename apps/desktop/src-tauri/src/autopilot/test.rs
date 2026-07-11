@@ -479,6 +479,7 @@ fn board_summary(
         error: error.map(String::from),
         skipped: skipped.map(String::from),
         truncated: truncated.map(String::from),
+        note: None,
     }
 }
 

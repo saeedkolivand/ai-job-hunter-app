@@ -32,6 +32,7 @@ fn make_ctx() -> ScrapeContext {
         on_progress: None,
         on_item: None,
         on_truncation: None,
+        on_note: None,
     }
 }
 

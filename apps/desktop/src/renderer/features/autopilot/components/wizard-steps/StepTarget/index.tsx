@@ -1,3 +1,4 @@
+import { Globe } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 
@@ -7,6 +8,7 @@ import { Alert, Button, cn, Dropdown, Input, LocationInput, NumberField } from '
 
 import type { Prefilled, WizardState } from '@/features/autopilot/types';
 import { makeMultiSelectKeyHandler } from '@/hooks/use-roving-tabindex';
+import { regionName } from '@/lib/region-name';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { useHasProviderKey } from '@/services/use-ai-provider';
 import { useBoardsCatalog } from '@/services/use-boards';
@@ -22,12 +24,16 @@ interface StepTargetProps {
 }
 
 export function StepTarget({ prefilled }: StepTargetProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const api = useAppClient();
   const { control, setValue } = useFormContext<WizardState>();
   // Disabled "coming soon" control — display the current value without binding.
   const workType = useWatch({ control, name: 'workType' });
   const boards = useWatch({ control, name: 'boards' });
+  // Country derived from the picked location suggestion — surfaced inline so the
+  // user SEES which market the autopilot will search (vs. the silent save-time
+  // backfill, now only a legacy fallback). Cleared by editing the location.
+  const countryCode = useWatch({ control, name: 'countryCode' });
 
   const boardRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const focusedBoardIdx = useRef<number>(0);
@@ -199,6 +205,14 @@ export function StepTarget({ prefilled }: StepTargetProps) {
                   placeholder={t('autopilot.wizard.target.locationPlaceholder')}
                   onFetchSuggestions={(q) => api.geocode.suggest(q)}
                 />
+                {countryCode && (
+                  <p className="flex items-center gap-1 text-[10px] text-foreground/45">
+                    <Globe size={10} aria-hidden />
+                    {t('autopilot.wizard.target.countryResolved', {
+                      country: regionName(countryCode, i18n.language),
+                    })}
+                  </p>
+                )}
                 {prefilled.location && (
                   <PrefilledBadge field={t('autopilot.wizard.target.fromLocationSettings')} />
                 )}

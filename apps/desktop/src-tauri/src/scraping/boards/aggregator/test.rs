@@ -277,6 +277,7 @@ fn adzuna_is_configured_requires_both_keys() {
     let unconfigured = AdzunaProvider {
         app_id: None,
         app_key: None,
+        note_sink: None,
     };
     assert!(!unconfigured.is_configured());
 
@@ -284,6 +285,7 @@ fn adzuna_is_configured_requires_both_keys() {
     let partial = AdzunaProvider {
         app_id: Some("id123".to_string()),
         app_key: None,
+        note_sink: None,
     };
     assert!(!partial.is_configured());
 
@@ -291,6 +293,7 @@ fn adzuna_is_configured_requires_both_keys() {
     let full = AdzunaProvider {
         app_id: Some("id123".to_string()),
         app_key: Some("key456".to_string()),
+        note_sink: None,
     };
     assert!(full.is_configured());
 }
@@ -585,6 +588,7 @@ async fn adzuna_unconfigured_returns_err_without_network() {
     let p = AdzunaProvider {
         app_id: None,
         app_key: None,
+        note_sink: None,
     };
     let result = p
         .search("engineer", "berlin", "de", false, None, None, make_token())
@@ -852,6 +856,7 @@ fn make_ctx() -> ScrapeContext {
         on_progress: None,
         on_item: None,
         on_truncation: None,
+        on_note: None,
     }
 }
 
@@ -1076,6 +1081,41 @@ fn should_broaden_only_for_explicit_sparse_market() {
 }
 
 #[test]
+fn guessed_market_note_only_for_authoritative_guess() {
+    // Guessed market + real location + an AUTHORITATIVE result (>= the floor of 3)
+    // → surface the otherwise-silent market guess, carrying the country code only.
+    assert_eq!(
+        guessed_market_note(true, "London", 3, "de").as_deref(),
+        Some("guessed-market:de")
+    );
+    assert_eq!(
+        guessed_market_note(true, "London", 12, "us").as_deref(),
+        Some("guessed-market:us"),
+        "the note carries the guessed market's country code, never the raw location"
+    );
+
+    // Guessed market but a SUB-floor result (0/1/2): primary_chain re-routes to the
+    // global fallback, so NO guessed-market results are actually shown — flagging
+    // the guess here would mislead. No note.
+    for count in [0usize, 1, 2] {
+        assert_eq!(
+            guessed_market_note(true, "London", count, "de"),
+            None,
+            "a sub-floor guessed result ({count}) routes to the fallback — no note"
+        );
+    }
+
+    // Explicit country (not guessed) → never a guessed-market note; the broaden
+    // path owns the sparse-city case for an explicitly-supplied market.
+    assert_eq!(guessed_market_note(false, "London", 10, "de"), None);
+
+    // Guessed market but EMPTY / whitespace-only location → guessing a default
+    // market for a location-less browse is expected, not worth surfacing.
+    assert_eq!(guessed_market_note(true, "", 10, "de"), None);
+    assert_eq!(guessed_market_note(true, "   ", 10, "de"), None);
+}
+
+#[test]
 fn jsearch_date_posted_maps_correctly() {
     // All sub-day windows floor at "3days" (JSearch has no sub-day token, and
     // "today" zeroed out autopilot "recent" filters on quiet days — regression guard).
@@ -1285,6 +1325,7 @@ async fn adzuna_empty_country_resolves_to_supported_de() {
     let p = AdzunaProvider {
         app_id: Some("fake-id".to_string()),
         app_key: Some("fake-key".to_string()),
+        note_sink: None,
     };
     // Empty country → production code resolves to "de" → passes allowlist → fails
     // downstream at the network/auth layer (no real keys), NOT at country validation.
@@ -1773,6 +1814,7 @@ async fn adzuna_provider_rejects_unsupported_country_before_network() {
     let p = AdzunaProvider {
         app_id: Some("fake-id".to_string()),
         app_key: Some("fake-key".to_string()),
+        note_sink: None,
     };
     // "xx" is not in the allowlist.
     let result = p
@@ -1800,6 +1842,7 @@ async fn adzuna_provider_accepts_supported_country_passes_allowlist() {
     let p = AdzunaProvider {
         app_id: Some("fake-id".to_string()),
         app_key: Some("fake-key".to_string()),
+        note_sink: None,
     };
     // "de" is in the allowlist; the error that comes back must NOT mention the
     // allowlist — it should be a network/auth error (or similar), not a country error.

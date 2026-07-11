@@ -30,6 +30,9 @@ vi.mock('@ajh/translations', () => ({
       if (opts && 'defaultValue' in opts) return `label(${String(opts.defaultValue)})`;
       return k;
     },
+    // `note` chips resolve the country name via i18n.language + the real
+    // regionName helper (not mocked), so the hook must expose i18n here.
+    i18n: { language: 'en' },
   }),
 }));
 
@@ -210,6 +213,93 @@ describe('BoardSummaryChips — variants', () => {
     );
     expect(chips()[0]?.textContent).toContain('jobs.boardSummary.skip.other');
     expect(chips()[0]?.textContent).not.toContain('mystery');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Location note chips (PR D) — broadened / guessed-market tokens
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('BoardSummaryChips — location note chips', () => {
+  it('maps a "broadened:<cc>" note to the informational (processing) broadened label', () => {
+    render(
+      <BoardSummaryChips summaries={[{ board: 'aggregator', count: 3, note: 'broadened:de' }]} />
+    );
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('processing');
+    expect(chip?.textContent).toContain('jobs.boardSummary.note.broadened');
+    // The raw machine token must never leak into the UI.
+    expect(chip?.textContent).not.toContain('broadened:de');
+  });
+
+  it('maps a "guessed-market:<cc>" note to the guessed-market label', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[{ board: 'aggregator', count: 2, note: 'guessed-market:gb' }]}
+      />
+    );
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('processing');
+    expect(chip?.textContent).toContain('jobs.boardSummary.note.guessed');
+    expect(chip?.textContent).not.toContain('guessed-market:gb');
+  });
+
+  it('tolerates an unknown/future note token — falls through to the plain success chip', () => {
+    render(
+      <BoardSummaryChips summaries={[{ board: 'aggregator', count: 4, note: 'future-token:de' }]} />
+    );
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('success');
+    expect(chip?.textContent).toContain('jobs.boardSummary.count:4');
+    expect(chip?.textContent).not.toContain('future-token');
+  });
+
+  it('ignores a malformed (colon-less) note token', () => {
+    render(<BoardSummaryChips summaries={[{ board: 'aggregator', count: 4, note: 'mystery' }]} />);
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('success');
+    expect(chip?.textContent).not.toContain('mystery');
+  });
+
+  it('ignores a malformed multi-colon token instead of rendering the trailing garbage as a country', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[{ board: 'aggregator', count: 4, note: 'broadened:de:extra' }]}
+      />
+    );
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('success');
+    expect(chip?.textContent).not.toContain('DE:EXTRA');
+    expect(chip?.textContent).not.toContain('extra');
+  });
+
+  it('precedence: error wins over a co-present note', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[{ board: 'aggregator', count: 0, error: 'boom', note: 'broadened:de' }]}
+      />
+    );
+    expect(chips()[0]?.getAttribute('data-color')).toBe('error');
+  });
+
+  it('precedence: truncated wins over a co-present note', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[
+          { board: 'aggregator', count: 5, truncated: 'page 2 failed', note: 'broadened:de' },
+        ]}
+      />
+    );
+    expect(chips()[0]?.getAttribute('data-color')).toBe('warning');
+  });
+
+  it('precedence: a valid note wins over the plain success count', () => {
+    render(
+      <BoardSummaryChips summaries={[{ board: 'aggregator', count: 6, note: 'broadened:de' }]} />
+    );
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('processing');
+    expect(chip?.textContent).not.toContain('jobs.boardSummary.count');
   });
 });
 

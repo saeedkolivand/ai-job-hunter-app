@@ -366,6 +366,7 @@ async fn central_amount_cap_truncates_stream_and_return() {
         None,
         Some(on_item),
         None,
+        None,
     )
     .await
     .expect("capped scrape recovers as success");
@@ -421,6 +422,7 @@ async fn run_boards_collects_all_boards_up_to_amount() {
         None,
         Some(on_item),
         None,
+        None,
         test_browser_sem(),
     )
     .await;
@@ -454,6 +456,7 @@ async fn run_boards_one_error_does_not_kill_others() {
         resolved,
         fake_input(10),
         parent,
+        None,
         None,
         None,
         None,
@@ -497,6 +500,7 @@ async fn run_boards_parent_cancel_stops_all() {
         None,
         None,
         None,
+        None,
         test_browser_sem(),
     )
     .await;
@@ -524,6 +528,7 @@ async fn run_boards_child_cap_stops_only_its_board() {
         resolved,
         fake_input(3),
         parent.clone(),
+        None,
         None,
         None,
         None,
@@ -562,6 +567,7 @@ async fn run_boards_browser_board_collects_items() {
         resolved,
         fake_input(10),
         parent,
+        None,
         None,
         None,
         None,
@@ -654,6 +660,7 @@ async fn run_boards_browser_boards_serialized() {
         None,
         None,
         None,
+        None,
         test_browser_sem(),
     )
     .await;
@@ -703,6 +710,7 @@ async fn scrape_boards_dedupes_and_caps_large_input() {
         fake_refs,
         fake_input(1),
         parent,
+        None,
         None,
         None,
         None,
@@ -1211,6 +1219,176 @@ async fn scrape_boards_partial_pagination_surfaces_truncated_and_keeps_count() {
     assert_eq!(complete.count, 4, "complete board returns all its items");
 }
 
+/// PR D — a board that applied a silent location policy (the aggregator's guessed
+/// market / sparse-city broadening) reports it through `ctx.report_note`; the
+/// engine tags it with the board name and attributes it to THAT board's summary
+/// as `BoardScrapeSummary.note`, while a sibling that reports nothing stays
+/// `note: None`. Exercised through the engine seam (the aggregator hardcodes its
+/// providers) rather than a live network — same pattern as the truncation test.
+#[tokio::test]
+async fn scrape_boards_surfaces_location_note_on_the_right_summary() {
+    struct NotingScraper;
+
+    #[async_trait::async_trait]
+    impl Scraper for NotingScraper {
+        fn id(&self) -> &'static str {
+            "noting"
+        }
+        fn display_name(&self) -> &'static str {
+            "Noting"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            let job = JobPosting {
+                id: "noting:0".to_string(),
+                external_id: Some("0".to_string()),
+                title: "Job".to_string(),
+                company: "Note Co".to_string(),
+                location: None,
+                url: "https://note.example.com/0".to_string(),
+                source: "noting".to_string(),
+                description: None,
+                requirements: None,
+                posted_at: None,
+                captured_at: 0,
+                extra: std::collections::HashMap::new(),
+            };
+            if let Some(ref on_item) = ctx.on_item {
+                on_item(job.clone());
+            }
+            // A location policy was applied (e.g. no country supplied → market
+            // guessed) — surface it, country code only.
+            ctx.report_note("guessed-market:de".to_string());
+            Ok(vec![job])
+        }
+    }
+
+    static NOTING: std::sync::LazyLock<NotingScraper> = std::sync::LazyLock::new(|| NotingScraper);
+    // A sibling that applies no policy — must report note: None.
+    static PLAIN: std::sync::LazyLock<FakeScraper> =
+        std::sync::LazyLock::new(|| FakeScraper::http(2));
+
+    let engine = ScraperEngine::new();
+    let boards = vec!["note-board".to_string(), "plain-board".to_string()];
+
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &boards,
+            fake_input(10),
+            "job-trust-d-note".to_string(),
+            None,
+            None,
+            std::path::Path::new("."),
+            |id| match id {
+                "note-board" => Ok(&*NOTING as &'static dyn Scraper),
+                "plain-board" => Ok(&*PLAIN as &'static dyn Scraper),
+                other => Err(anyhow::anyhow!("Unknown board: {other}")),
+            },
+        )
+        .await
+        .expect("a board that only reports a note still succeeds");
+
+    let noted = summaries
+        .iter()
+        .find(|s| s.board == "note-board")
+        .expect("note-board summary missing");
+    assert_eq!(
+        noted.note.as_deref(),
+        Some("guessed-market:de"),
+        "the location-policy note must survive into BoardScrapeSummary.note on the \
+         reporting board"
+    );
+    assert!(noted.error.is_none() && noted.skipped.is_none() && noted.truncated.is_none());
+
+    let plain = summaries
+        .iter()
+        .find(|s| s.board == "plain-board")
+        .expect("plain-board summary missing");
+    assert!(
+        plain.note.is_none(),
+        "a board that applied no location policy must not be tagged with a note; got {plain:?}"
+    );
+}
+
+/// PR D regression guard — a board that reports a note and THEN fails (returns
+/// `Err`) must end up `note: None` on its summary: the Err arm of
+/// `scrape_boards_with_resolver` intentionally does not read the notes map, so
+/// the note is dropped rather than misattributed to an error summary that also
+/// carries stale/irrelevant location-policy context. Pins the intended Err-arm
+/// behavior for any future note-emitting board.
+#[tokio::test]
+async fn scrape_boards_drops_note_when_board_then_errors() {
+    struct NotingThenFailingScraper;
+
+    #[async_trait::async_trait]
+    impl Scraper for NotingThenFailingScraper {
+        fn id(&self) -> &'static str {
+            "noting-failing"
+        }
+        fn display_name(&self) -> &'static str {
+            "NotingThenFailing"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            // Report a location-policy note, then fail — e.g. Adzuna guessed a
+            // market and reported it, but the subsequent network call errored.
+            ctx.report_note("guessed-market:de".to_string());
+            Err(anyhow::anyhow!("board error"))
+        }
+    }
+
+    static NOTING_FAILING: std::sync::LazyLock<NotingThenFailingScraper> =
+        std::sync::LazyLock::new(|| NotingThenFailingScraper);
+
+    let engine = ScraperEngine::new();
+    let boards = vec!["noting-failing-board".to_string()];
+
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &boards,
+            fake_input(10),
+            "job-trust-d-note-err".to_string(),
+            None,
+            None,
+            std::path::Path::new("."),
+            |id| match id {
+                "noting-failing-board" => Ok(&*NOTING_FAILING as &'static dyn Scraper),
+                other => Err(anyhow::anyhow!("Unknown board: {other}")),
+            },
+        )
+        .await
+        .expect(
+            "one board erroring with no items recovered is still an Ok run \
+                 (parent token was never cancelled)",
+        );
+
+    let summary = summaries
+        .iter()
+        .find(|s| s.board == "noting-failing-board")
+        .expect("noting-failing-board summary missing");
+    assert!(
+        summary.note.is_none(),
+        "a note reported before an Err must be dropped, not attached to the \
+         error summary; got {summary:?}"
+    );
+    assert!(
+        summary.error.is_some(),
+        "the board error itself must still surface"
+    );
+}
+
 // ── F1: empty boards guard ────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -1394,6 +1572,7 @@ async fn run_boards_preserves_input_order() {
         resolved,
         fake_input(5),
         parent,
+        None,
         None,
         None,
         None,
