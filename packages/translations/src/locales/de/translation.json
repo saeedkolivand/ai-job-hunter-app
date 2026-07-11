@@ -1601,6 +1601,7 @@
       },
       "runFailed": "Ausführung fehlgeschlagen",
       "allBoardsFailed": "Keine Ergebnisse — keine Jobbörse hat diesen Lauf abgeschlossen.",
+      "alreadyRunning": "Für diesen Autopilot läuft bereits ein Durchlauf.",
       "createFailed": "Autopilot konnte nicht erstellt werden",
       "updateFailed": "Autopilot konnte nicht aktualisiert werden",
       "running": "Läuft…",

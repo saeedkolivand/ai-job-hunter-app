@@ -1364,6 +1364,55 @@ fn merge_preserves_and_refreshes_trust_across_resurface() {
     );
 }
 
+#[test]
+fn merge_score_provisional_moves_with_score_across_resurface() {
+    // `score_provisional` describes WHICH score is on the row, so a resurface
+    // that refreshes `score` must refresh the flag alongside it — in BOTH
+    // directions. Resurfacing is ORDINARY autopilot behavior (the same job
+    // returned by more than one board, or seen again on a later run), not an
+    // edge case, so a desync here would be routinely user-visible.
+
+    // (a) aggregator-first (provisional score) resurfaced by a full-text board
+    // (authoritative score) → the flag must flip to false with the new score.
+    let mut existing_provisional = found_job("https://a.com/1", 100);
+    existing_provisional.score = Some(40.0);
+    existing_provisional.score_provisional = true;
+
+    let mut resurfaced_authoritative = found_job("https://a.com/1", 999);
+    resurfaced_authoritative.score = Some(72.0);
+    resurfaced_authoritative.score_provisional = false;
+
+    let merged = merge_found_jobs(&[existing_provisional], vec![resurfaced_authoritative]);
+    let row = merged.iter().find(|j| j.url == "https://a.com/1").unwrap();
+    assert_eq!(row.score, Some(72.0));
+    assert!(
+        !row.score_provisional,
+        "a full-text board's authoritative score resurfacing over an old \
+         aggregator snippet score must clear the provisional flag"
+    );
+
+    // (b) full-text-first (authoritative) resurfaced by the aggregator
+    // (snippet) → the flag must flip to TRUE with the snippet score — the
+    // worse direction: a snippet score must never display as authoritative.
+    let mut existing_authoritative = found_job("https://b.com/1", 100);
+    existing_authoritative.score = Some(72.0);
+    existing_authoritative.score_provisional = false;
+
+    let mut resurfaced_provisional = found_job("https://b.com/1", 999);
+    resurfaced_provisional.score = Some(40.0);
+    resurfaced_provisional.score_provisional = true;
+
+    let merged = merge_found_jobs(&[existing_authoritative], vec![resurfaced_provisional]);
+    let row = merged.iter().find(|j| j.url == "https://b.com/1").unwrap();
+    assert_eq!(row.score, Some(40.0));
+    assert!(
+        row.score_provisional,
+        "an aggregator snippet score resurfacing over a prior authoritative \
+         score must set the provisional flag — a snippet score must never \
+         display as authoritative"
+    );
+}
+
 // ── AutopilotStore::create filter fallback ────────────────────────────────────
 
 #[test]

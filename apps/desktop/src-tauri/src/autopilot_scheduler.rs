@@ -43,19 +43,22 @@ const STARTUP_CATCHUP_DELAY_SECS: u64 = 5;
 ///
 /// This duration alone does NOT guarantee a retry never races a fresh scheduled
 /// run — for an hourly schedule, 12 minutes is NOT always "well inside" the next
-/// occurrence. What actually prevents that race differs per arm:
-///   - [`schedule_interrupted_retries`] re-validates immediately before running
-///     (see [`still_needs_recovery`]) and defers to the tick if the slot rolled
-///     or was already served during the sleep — the guarantee is real for that
-///     arm.
-///   - [`run_with_single_retry`]'s Failed-run retry does NOT re-validate before
-///     its single retry — a schedule whose interval is on the same order as
-///     this backoff (hourly) could in theory have its retry race a fresh tick
-///     run that already served the next occurrence. Accepted as a narrow,
-///     documented trade-off (not closed here): the retry is still bounded to
-///     ONE, and the concurrent-run guard on `autopilot_run` prevents the two
-///     from literally overlapping, even though it can't prevent them running
-///     sequentially.
+/// occurrence. Both arms re-validate the record immediately before firing, but
+/// on DIFFERENT signals, so the closed gap differs:
+///   - [`schedule_interrupted_retries`] re-checks the FULL [`still_needs_recovery`]
+///     predicate (schedulable + not due + `last_run_at` unchanged) and defers to
+///     the tick if the slot rolled or was already served during the sleep — the
+///     race against a normal scheduled run is fully closed for this arm.
+///   - [`run_with_single_retry`]'s Failed-run retry re-checks only
+///     [`should_retry_after_backoff`] — PAUSE WINS: a user Pausing/Archiving/
+///     switching to manual during the backoff must not still get the retry
+///     scrape. It does NOT re-check due-ness/`last_run_at`, so a schedule whose
+///     interval is on the same order as this backoff (hourly) could in theory
+///     still have its retry race a fresh tick run that already served the next
+///     occurrence. Accepted as a narrower, documented trade-off (not closed
+///     here): the retry is still bounded to ONE, and the concurrent-run guard
+///     on `autopilot_run` prevents the two from literally overlapping, even
+///     though it can't prevent them running sequentially.
 const RETRY_BACKOFF: Duration = Duration::from_secs(12 * 60);
 
 /// Default local clock time for daily/twice_daily when no time is set, so
@@ -226,8 +229,9 @@ async fn tick(app: &AppHandle, store: &Arc<Mutex<AutopilotStore>>) {
         store.lock().stamp_last_run(&ap.id);
 
         let app_clone = app.clone();
+        let store_clone = store.clone();
         let ap_id = ap.id.clone();
-        tauri::async_runtime::spawn(run_with_single_retry(app_clone, ap_id));
+        tauri::async_runtime::spawn(run_with_single_retry(app_clone, store_clone, ap_id));
     }
 }
 
@@ -236,6 +240,13 @@ async fn tick(app: &AppHandle, store: &Arc<Mutex<AutopilotStore>>) {
 /// double-fire guard consumes the occurrence up-front, so before this a failed
 /// occurrence was lost with no retry until the next one rolled.
 ///
+/// Immediately before firing the retry, the record is re-read and the retry is
+/// skipped unless [`should_retry_after_backoff`] still holds — PAUSE WINS: a
+/// user Pausing, Archiving, or switching the schedule to manual during the
+/// backoff must not still get a full scrape (updated `lastRunAt`/`foundJobs`,
+/// a possible notification) for a record they just told the app to stop
+/// running.
+///
 /// Bounded to a single retry — the retry's own outcome is deliberately NOT
 /// re-inspected — so a persistently-failing board can never spin a retry storm.
 /// In-process (not persisted): a retry still pending when the app closes is
@@ -243,18 +254,37 @@ async fn tick(app: &AppHandle, store: &Arc<Mutex<AutopilotStore>>) {
 /// the audit asked for ONE bounded retry, not a job queue; the next scheduled
 /// occurrence still runs, and the concurrent-run guard on `autopilot_run` keeps
 /// a retry that overlaps a fresh run from double-running.
-async fn run_with_single_retry(app: AppHandle, ap_id: String) {
+async fn run_with_single_retry(app: AppHandle, store: Arc<Mutex<AutopilotStore>>, ap_id: String) {
     let outcome = crate::commands::autopilot::autopilot_run(app.clone(), ap_id.clone()).await;
     if !outcome_failed(&outcome) {
         return;
     }
     log::info!(
-        "[autopilot] run {ap_id} failed; one retry in {}s",
+        "[autopilot] run {ap_id} failed; one retry in {}s if still active",
         RETRY_BACKOFF.as_secs()
     );
     tokio::time::sleep(RETRY_BACKOFF).await;
+    // Re-check right before firing (see the doc comment above and
+    // `should_retry_after_backoff`): pause/archive/switch-to-manual (or a
+    // deletion) during the backoff wins over the pending retry.
+    let record = store.lock().get(&ap_id);
+    if !should_retry_after_backoff(record.as_ref()) {
+        log::info!("[autopilot] retry for {ap_id} skipped — no longer schedulable");
+        return;
+    }
     // Single retry — outcome intentionally ignored (bounded; no second retry).
     crate::commands::autopilot::autopilot_run(app, ap_id).await;
+}
+
+/// Whether the Failed-run retry should still fire, given a fresh read of the
+/// record taken immediately before it (after the backoff sleep). Mirrors
+/// [`still_needs_recovery`]'s pause-wins principle for this OTHER retry arm: a
+/// user Pausing, Archiving, or switching the schedule to manual during the
+/// backoff window must win over the pending retry — a paused record must never
+/// get a scrape, even from a bounded recovery retry. `None` (the record was
+/// deleted during the backoff) also skips.
+fn should_retry_after_backoff(ap: Option<&Autopilot>) -> bool {
+    ap.is_some_and(is_schedulable)
 }
 
 /// Whether an `autopilot_run` resolved payload represents a run that ended
@@ -641,6 +671,51 @@ mod test {
             &json!({ "jobId": "j1", "cancelled": true })
         ));
         assert!(!outcome_failed(&json!({ "skipped": "already-running" })));
+    }
+
+    #[test]
+    fn should_retry_after_backoff_pause_wins_over_pending_retry() {
+        // This is the exact predicate `run_with_single_retry` re-checks right
+        // before firing its single Failed-run retry — pins that fix directly,
+        // since an AppHandle-free seam to drive the full async retry doesn't
+        // exist in this crate's unit tests.
+
+        // Still Active + recurring → the retry still fires.
+        assert!(should_retry_after_backoff(Some(&ap(
+            "daily",
+            AutopilotStatus::Active,
+            Some(0),
+            None,
+            None
+        ))));
+
+        // Paused/Archived/switched-to-manual during the backoff → PAUSE WINS,
+        // the retry is skipped even though "the record just failed" is exactly
+        // what the retry exists to fix.
+        assert!(!should_retry_after_backoff(Some(&ap(
+            "daily",
+            AutopilotStatus::Paused,
+            Some(0),
+            None,
+            None
+        ))));
+        assert!(!should_retry_after_backoff(Some(&ap(
+            "daily",
+            AutopilotStatus::Archived,
+            Some(0),
+            None,
+            None
+        ))));
+        assert!(!should_retry_after_backoff(Some(&ap(
+            "manual",
+            AutopilotStatus::Active,
+            Some(0),
+            None,
+            None
+        ))));
+
+        // Deleted during the backoff → nothing left to retry.
+        assert!(!should_retry_after_backoff(None));
     }
 
     #[test]

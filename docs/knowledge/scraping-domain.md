@@ -1,6 +1,6 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-07-10
+Last updated: 2026-07-11
 
 Describes the job-scraping subsystem: board registry (23 active scrapers), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
@@ -355,6 +355,39 @@ New `ats_finish_search(signal, out, board_id, successful_fetches, rejected_slugs
 - LinkedIn soft-block + geoId cache: `apps/desktop/src-tauri/src/scraping/boards/linkedin/mod.rs` (`page0_is_soft_block`, `GEO_ID_CACHE`, `select_geo_id`, `country_aliases`)
 - Rejected-slug finalization: `apps/desktop/src-tauri/src/scraping/boards/common.rs` (`ats_finish_search`, `ats_all_slugs_invalid_message`)
 - Tests: breezy `rows_to_jobs_all_rows_undeserializable_returns_empty` · linkedin `page0_is_soft_block`, `select_geo_id` · common `finish_search_*` truth table + personio inline cancel-after-reject seam
+
+## Partial-failure notes (PR H, 2026-07-11)
+
+When a board achieves partial success (some companies reached, some invalid slugs; some rows parsed, some dropped), fixed note tokens surface the partial outcome:
+
+- **`slugs-invalid:<n>`** — `<n>` = count of company slugs rejected by SSRF/DNS-label validator. Emitted ONLY when `successful_fetches > 0` (at least one company reached) and some slugs were invalid. All-invalid case is the error instead (`ats_finish_search` Err). All 7 ATS slug-validating boards: bamboohr, breezy, pinpoint, rippling, workable, recruitee, personio.
+- **`rows-dropped:<n>`** — `<n>` = total rows dropped by per-row deserialize across successful companies (partial parse failure, not fetch failure). Breezy, rippling, workable only (the 4 ATS boards with per-row parsing; others deserialize atomically).
+- **Token emission** — via `ctx.report_note` (PR D side-channel), gated on `!ctx.signal.is_cancelled()`. At most ONE token per board per run; `slugs-invalid` wins when both apply (precedence order below).
+- **Frontend rendering** — `BoardSummaryChips.tsx` maps both tokens: numeric gate `n > 0` (strict; these tokens only emitted for n>0), tone `processing` (informational blue). No precedence change within the chip severity order (error > skipped > truncated > note > success); both are `note` tone.
+- **I18n keys** — `jobs.boardSummary.note.slugsInvalid` (en "{{count}} company name(s) invalid", de "{{count}} Firmenname(n) ungültig") and `jobs.boardSummary.note.rowsDropped` (en "{{count}} row(s) unreadable — board format may have changed", de "{{count}} Zeile(n) unlesbar — Board-Format evtl. geändert"). Pluralized via i18next `_one`/`_other`.
+
+**Note precedence table (all 4 note types):**
+
+| note token                                     | condition                                 | winner            | tone        | example                        |
+| ---------------------------------------------- | ----------------------------------------- | ----------------- | ----------- | ------------------------------ |
+| board-native (`slugs-invalid`, `rows-dropped`) | present                                   | board-native wins | note (blue) | 3 invalid company slugs        |
+| `location-filtered`                            | non-supporting board + location requested | fallback          | note (blue) | 5 off-location results hidden  |
+| `broadened`/`guessed`                          | aggregator location heuristic             | aggregator-only   | note (blue) | broadened from city to country |
+| error                                          | fatal (all-fail, all-reject)              | error not note    | error (red) | all hosts failed               |
+
+**Implementation:** `location-filtered` uses `note.get_or_insert_with()` (fills empty slot only); `ats_partial_note(successful_fetches, rejected_slugs, rows_dropped)` returns `Option<String>` (None for clean runs). A run with both slugs-invalid and rows-dropped on the same board emits only `slugs-invalid` via the `preferred_token` logic in `ats_partial_note`. Source: `apps/desktop/src-tauri/src/scraping/boards/common.rs` + `scraping/engine/mod.rs:733-741`.
+
+## Job-search trust program — COMPLETE (PRs A–H, 2026-07-10/11)
+
+**Program status:** All 8 PRs shipped (#597–#604). Audit root causes (retry gap, run-guard gap, snippet-score honesty, personio semantics, note precedence, partial-failure visibility, stable sort, provisional-score rendering) are resolved.
+
+**Fast-follow work items (deferred, not blocking):**
+
+1. **`fetches-failed:<n>` token** — partial fetch-error runs (some companies 404/5xx while others succeed on the SAME board) stay log-only; a dedicated note token was deferred as an explicit fast-follow for the next scraping PR. Not required for PR H; tracked for context.
+2. **LinkedIn geoId via fetch_json** — routing LinkedIn's geographic typeahead through `fetch_json` (for UA-override + size-cap + rate-limit parity) requires teaching `fetch_text` to let a caller UA header OVERRIDE the default. Security LOW; deferred pending concrete use case.
+3. **LinkedIn soft-block telemetry** — verify the 200-zero-cards soft-block detector against real LinkedIn changes; currently unverified post-launch (unlike the verified 200-zero-cards claim in the code comments).
+4. **Per-posting truncation signal** — forwarding a per-posting `truncated` flag from scrapers (for JSearch vs Adzuna distinction in Autopilot) enables smarter provisional-score derivation; currently the flag keys on `source=="aggregator"` (conservative, flags JSearch as provisional). Deferred to avoid a schema change in Scope A.
+5. **Thundering-herd jitter** — add random jitter to `RETRY_BACKOFF` and daily-schedule retry delays to prevent multiple Autopilots retry-firing in lock-step; currently both retry at exactly `12min` / `00:00 UTC`. Low priority (most users have 1 Autopilot).
 
 ## See also
 

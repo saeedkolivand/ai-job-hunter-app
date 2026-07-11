@@ -926,7 +926,14 @@ fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<Found
                     row.description = inc.description.clone();
                 }
                 if inc.score.is_some() {
+                    // Paired fields — `score_provisional` describes WHICH score
+                    // is on the row, so it must move with `score`, never be left
+                    // stale from a prior source (e.g. a full-text board's
+                    // authoritative score resurfacing over an old aggregator
+                    // snippet score, or vice versa — a snippet score must never
+                    // display as authoritative).
                     row.score = inc.score;
+                    row.score_provisional = inc.score_provisional;
                 }
                 // Same fill-without-clobbering pattern as `board`/`description`: a
                 // re-scrape that newly learns the salary updates the row, but never
