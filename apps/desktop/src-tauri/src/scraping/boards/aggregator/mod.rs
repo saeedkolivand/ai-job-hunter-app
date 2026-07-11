@@ -143,19 +143,17 @@ async fn primary_chain(
     let fallback = providers.iter().find(|p| p.provider_id() == "jsearch");
     let jooble = providers.iter().find(|p| p.provider_id() == "jooble");
 
-    // Track whether Adzuna was configured-but-failed so we can distinguish
-    // "keys present, request failed" from "no keys at all" at the end.
+    // Track whether each provider was CONFIGURED but its call FAILED, so we can
+    // distinguish "keys present, request failed" from "no keys at all" at the
+    // end. All three are collected (not just the first) — see the total-failure
+    // resolution below: a LATER-tier provider's failure must never be silently
+    // dropped just because an EARLIER-tier provider also failed.
     let mut adzuna_configured_failed: Option<anyhow::Error> = None;
-    // Same tracking for JSearch: its raw error must be returned VERBATIM (no
-    // "add a JSearch key" suffix — that suffix only makes sense when JSearch was
-    // never configured at all) when Jooble also fails to salvage a result.
     let mut jsearch_configured_failed: Option<anyhow::Error> = None;
-    // Same tracking for Jooble — lowest precedence of the three (checked last,
-    // below): without it, a user with ONLY a Jooble key whose Jooble call fails
-    // got a silent `Ok(empty)` ("no jobs found") instead of an honest error —
-    // exactly the silent-empty-failure bug the trust program eliminated. Its raw
-    // error already carries the `"jooble: "` prefix from the provider, so — like
-    // `jsearch_configured_failed` — it is returned verbatim, no added suffix.
+    // Jooble's tracking closes the same silent-empty-failure gap Adzuna/JSearch
+    // already guard: without it, a user with ONLY a Jooble key whose Jooble call
+    // fails would get a silent `Ok(empty)` ("no jobs found") instead of an
+    // honest error.
     let mut jooble_configured_failed: Option<anyhow::Error> = None;
 
     // Real (non-empty) but SPARSE items from a GUESSED market. We distrust them
@@ -308,34 +306,55 @@ async fn primary_chain(
         return Ok(dedupe(items));
     }
 
-    // JSearch had keys but failed (Jooble either absent/unconfigured or also
-    // failed) → surface JSearch's own error verbatim, matching this function's
-    // pre-Jooble contract (no "add a JSearch key" suffix — that phrasing only
-    // applies when JSearch was never configured at all).
-    if let Some(e) = jsearch_configured_failed {
-        return Err(e);
-    }
+    // Total-failure resolution: gather every CONFIGURED-and-failed provider's
+    // error (tier order — adzuna, jsearch, jooble), not just the first. Each
+    // provider's error message is already self-prefixed (`"adzuna: …"` /
+    // `"jsearch: …"` / `"jooble: …"`) at its own call site, so combining them
+    // (when more than one failed) names every failing provider instead of
+    // surfacing only the first and silently dropping the rest — e.g. Adzuna AND
+    // Jooble both configured+failing with JSearch unconfigured must name BOTH,
+    // not just Adzuna's (with a now-stale "add a JSearch key" nudge on top).
+    // The engine records the result in BoardScrapeSummary.error, which the Jobs
+    // page renders as a partial-failure warning and autopilot logs as a skipped
+    // board.
+    let failures: Vec<(&'static str, anyhow::Error)> = [
+        adzuna_configured_failed.map(|e| ("adzuna", e)),
+        jsearch_configured_failed.map(|e| ("jsearch", e)),
+        jooble_configured_failed.map(|e| ("jooble", e)),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
 
-    // Adzuna had keys but failed (e.g. unsupported country, or an EMPTY guessed
-    // market) AND neither JSearch nor Jooble produced a result → surface a
-    // diagnostic error instead of a silent empty result. The engine records this
-    // in BoardScrapeSummary.error, which the Jobs page renders as a partial-failure
-    // warning and autopilot logs as a skipped board.
-    if let Some(e) = adzuna_configured_failed {
-        return Err(anyhow::anyhow!(
-            "{e}; add a JSearch key in Settings → API Keys for global coverage"
-        ));
-    }
-
-    // Jooble had keys but failed, and NEITHER Adzuna nor JSearch was configured
-    // (otherwise one of the checks above would already have returned) → surface
-    // Jooble's own error rather than a silent empty result. This is the case a
-    // user with ONLY a Jooble key hits: without this check, a failing Jooble call
-    // degraded to `Ok(vec![])` ("no jobs found"), indistinguishable from a
-    // genuine zero-results search — the exact silent-empty-failure bug the trust
-    // program (PR #597-#604) eliminated for Adzuna/JSearch.
-    if let Some(e) = jooble_configured_failed {
-        return Err(e);
+    if failures.len() == 1 {
+        // Solo failure — the pre-multi-failure per-provider contract is
+        // unchanged: JSearch-alone or Jooble-alone returns its own message
+        // verbatim (no suffix). Adzuna-alone keeps its "add a fallback" nudge —
+        // reaching here with Adzuna as the ONLY failure means neither JSearch
+        // nor Jooble was ever configured (a configured provider either
+        // succeeds — an early return above — or fails, landing in `failures`),
+        // so the nudge is still accurate; the wording now names both fallback
+        // options instead of only JSearch.
+        let (source, e) = failures
+            .into_iter()
+            .next()
+            .expect("len == 1, checked above");
+        return Err(if source == "adzuna" {
+            anyhow::anyhow!(
+                "{e}; add a JSearch or Jooble key in Settings → API Keys for global coverage"
+            )
+        } else {
+            e
+        });
+    } else if !failures.is_empty() {
+        // Two or more configured providers failed — combine so every one is
+        // named. No suffix: the combined message already names what failed.
+        let combined = failures
+            .into_iter()
+            .map(|(_, e)| e.to_string())
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(anyhow::anyhow!("{combined}"));
     }
 
     // None of the providers configured → keyless-empty (intended, never an error).

@@ -294,8 +294,8 @@ async fn adzuna_configured_err_and_no_jsearch_returns_diagnostic_err() {
         "diagnostic error must include the original Adzuna failure ('timeout'); got: {msg}"
     );
     assert!(
-        msg.contains("add a JSearch key in Settings"),
-        "diagnostic error must include the actionable JSearch-remedy suffix; got: {msg}"
+        msg.contains("add a JSearch or Jooble key in Settings"),
+        "diagnostic error must include the actionable fallback-remedy suffix; got: {msg}"
     );
 }
 
@@ -1935,12 +1935,12 @@ async fn jooble_not_called_when_jsearch_succeeds() {
     assert_eq!(result[0].external_id, jsearch_posting.external_id);
 }
 
-/// Adzuna + JSearch + Jooble all configured-but-erroring, no sparse-guessed
-/// salvage available → JSearch's raw error (not Adzuna's wrapped diagnostic) is
-/// surfaced, matching the pre-Jooble contract for a configured-but-failing
-/// JSearch.
+/// Adzuna + JSearch + Jooble ALL configured-but-erroring, no sparse-guessed
+/// salvage available → the combined diagnostic names EVERY failing provider,
+/// not just the first. Regression guard for the "only the first configured
+/// failure surfaces, silently dropping the rest" bug.
 #[tokio::test]
-async fn jooble_erroring_falls_through_to_jsearch_raw_error() {
+async fn all_three_configured_and_erroring_combines_every_failure() {
     let providers: Vec<Box<dyn JobProvider>> = vec![
         Box::new(FakeProvider::err("adzuna", "adzuna down")),
         Box::new(FakeProvider::err("jsearch", "jsearch upstream 500")),
@@ -1961,8 +1961,67 @@ async fn jooble_erroring_falls_through_to_jsearch_raw_error() {
 
     let msg = result.unwrap_err().to_string();
     assert!(
+        msg.contains("adzuna down"),
+        "combined diagnostic must name Adzuna's failure too; got: {msg}"
+    );
+    assert!(
         msg.contains("jsearch upstream 500"),
-        "must surface JSearch's raw error (not Adzuna's) when Jooble also fails; got: {msg}"
+        "combined diagnostic must name JSearch's failure; got: {msg}"
+    );
+    assert!(
+        msg.contains("jooble upstream 500"),
+        "combined diagnostic must name Jooble's failure — not silently dropped \
+         behind Adzuna's/JSearch's; got: {msg}"
+    );
+    assert!(
+        !msg.contains("add a JSearch"),
+        "a combined multi-provider failure must not carry the stale single-provider \
+         fallback-remedy suffix; got: {msg}"
+    );
+}
+
+/// Adzuna + Jooble both configured-and-erroring, JSearch UNCONFIGURED — the
+/// exact scenario the review flagged: previously only Adzuna's message (with a
+/// now-stale "add a JSearch key" suffix) surfaced, and Jooble's real failure
+/// was silently dropped. The combined diagnostic must name BOTH.
+#[tokio::test]
+async fn adzuna_and_jooble_both_failing_combines_both_names() {
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::err("adzuna", "adzuna down")),
+        Box::new(FakeProvider::unconfigured("jsearch")),
+        Box::new(FakeProvider::err("jooble", "jooble upstream 500")),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        false,
+        None,
+        100,
+        make_token(),
+    )
+    .await;
+
+    assert!(
+        result.is_err(),
+        "two configured providers failing must surface Err, not silent Ok(empty)"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("adzuna down"),
+        "combined diagnostic must name Adzuna's failure; got: {msg}"
+    );
+    assert!(
+        msg.contains("jooble upstream 500"),
+        "combined diagnostic must name Jooble's failure, not drop it silently \
+         behind Adzuna's; got: {msg}"
+    );
+    assert!(
+        !msg.contains("add a JSearch key in Settings"),
+        "must not carry the stale 'add a JSearch key' nudge when Jooble is \
+         ALSO configured and already failing; got: {msg}"
     );
 }
 
@@ -2085,8 +2144,8 @@ async fn guessed_market_empty_with_location_and_no_jsearch_returns_diagnostic_er
         "diagnostic must NOT leak the raw user-entered location (PII); got: {msg}"
     );
     assert!(
-        msg.contains("add a JSearch key in Settings"),
-        "diagnostic error must include the actionable JSearch-remedy suffix; got: {msg}"
+        msg.contains("add a JSearch or Jooble key in Settings"),
+        "diagnostic error must include the actionable fallback-remedy suffix; got: {msg}"
     );
 }
 
