@@ -287,6 +287,10 @@ try {
   // Owners with a shared checklist file load it INSTEAD of their agent persona —
   // .claude/review-checklists/*.md is the single source of truth shared with
   // pr-reviewer and the CI review job; agent files remain the fallback.
+  // ponytail: hand-kept 3-entry map, not derived from review-routes.json — owners
+  // and lessons_domains keys don't correspond 1:1 (e.g. job-match-expert→ats).
+  // Adding a checklist file? Extend this map or the gate silently keeps the
+  // agent-file fallback.
   const OWNER_CHECKLIST = {
     'frontend-reviewer': 'frontend',
     'rust-backend-architect': 'rust',
@@ -294,7 +298,10 @@ try {
   };
   const agentDir = path.join(cwd, '.claude', 'agents');
   const checklistDir = path.join(cwd, '.claude', 'review-checklists');
-  const CHECKLIST_BUDGET = 12000;
+  // sized so three full domain checklists (~4-5K each) + one agent fallback all fit —
+  // dropping a whole domain's deep invariants on a multi-domain diff costs more than
+  // the extra prompt tokens
+  const CHECKLIST_BUDGET = 18000;
   const consulted = [];
   const notConsulted = [];
   let checklists = '';

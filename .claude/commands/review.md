@@ -38,8 +38,8 @@ Spawn the ensemble **in parallel** (one Agent call per pass, per the tier). Rese
 ## 5. Synthesis — dedup, verify, decide (the precision step)
 
 1. **Parse** each pass's fenced ```json findings block (plus carried security advisories). A pass whose JSON is missing/invalid: ask it once to re-emit the block; if still invalid, treat its prose 🔴/🟠 items as findings with `confidence: 0.5`.
-2. **Dedup** by `file` + `line ±3` + `category`. Findings raised by **≥2 passes are auto-confirmed** (consensus — keep the max severity, mean confidence).
-3. **Verify single-source findings**: for each finding only one pass raised, spawn ONE `finding-verifier` subagent (all in parallel), passing the finding JSON + its diff hunk. **Drop anything scoring < 80.** Do NOT re-verify findings yourself in-session — fresh-context verification is the point (same-session self-review is the weakest form).
+2. **Dedup** by `file` + `line ±3` + `category`. Findings raised by **≥2 passes are auto-confirmed** (consensus — keep the max severity and the **max** confidence: independent agreement is stronger evidence than either pass alone, never weaker).
+3. **Verify single-source findings**: for each finding only one pass raised, spawn ONE `finding-verifier` subagent (all in parallel), passing the finding JSON + its diff hunk. **Drop anything scoring < 80.** For survivors, the verifier's score **replaces** the finding's confidence (`score / 100`) — fresh-context verification is the strongest signal we have, so it, not the originating pass's self-rating, feeds the verdict. Do NOT re-verify findings yourself in-session (same-session self-review is the weakest form).
 4. **Verdict — mechanical**: BLOCK iff any surviving finding has severity CRITICAL/HIGH (🔴/🟠) with `confidence ≥ 0.8` and `introduced_by_diff !== false`. 🟡/⚪ and low-confidence survivors are advisory. **🔴 + 🟠 must be resolved before the PR goes up.**
 5. Report: verdict line first, then surviving findings grouped by severity (`severity | file:line | defect | substantiation | fix`), then advisories. Append any `UNVERIFIED (cross-OS: …)` coverage caveats from the passes verbatim.
 
