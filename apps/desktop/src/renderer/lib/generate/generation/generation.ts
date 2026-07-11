@@ -241,7 +241,7 @@ export async function generateResume(
   const profile = buildProviderProfile(model);
   const tone = usePreferencesStore.getState().outputTone;
 
-  const system = buildResumeSystemPrompt(mode, profile, tone);
+  const system = buildResumeSystemPrompt(mode, profile, tone, meta.targetLanguage);
   const user = buildResumePrompt(resume, jobAd, meta, mode, profile);
   const raw = await streamGenerate(
     model,
@@ -436,7 +436,12 @@ export async function generateCoverLetter(
   const applicant = usePreferencesStore.getState().applicant;
   const tone = usePreferencesStore.getState().outputTone;
 
-  const system = buildCoverLetterSystemPrompt(mode, profile, tone);
+  // No external writing-style sample is threaded through here: the candidate's
+  // résumé is already embedded verbatim in <candidate_resume>, and the prompt
+  // builder's own voice directive points there instead of duplicating it (see
+  // buildResumeVoiceDirective). `hasStyleReference` stays false (default), so
+  // the fictional tone exemplar (English-target only) still applies.
+  const system = buildCoverLetterSystemPrompt(mode, profile, tone, meta.targetLanguage);
   const user = buildCoverLetterPrompt(
     resume,
     jobAd,
@@ -530,7 +535,7 @@ export async function generateApplicationAnswer(params: {
   const applicant = usePreferencesStore.getState().applicant;
   const tone = usePreferencesStore.getState().outputTone;
 
-  const system = buildApplicationAnswerSystemPrompt(tone);
+  const system = buildApplicationAnswerSystemPrompt(tone, meta.targetLanguage);
   const user = buildApplicationAnswerPrompt({
     question,
     resume,
@@ -543,6 +548,9 @@ export async function generateApplicationAnswer(params: {
     applicant,
     guidance,
     salaryRange,
+    // No external writing-style sample: the résumé is already in
+    // <candidate_resume>, and the prompt builder's own voice directive points
+    // there instead of duplicating it (see buildResumeVoiceDirective).
   });
   // Application answers are prose but résumé-grounded (no-fabrication surface):
   // keep topP/frequencyPenalty/repeatPenalty for detector resistance, but drop
@@ -1006,6 +1014,9 @@ export async function generateApplicationEmail(params: {
     onToken,
   } = params;
   const profile = buildProviderProfile(model);
+  // No external writing-style sample: the résumé is already in
+  // <candidate_resume>, and the prompt builder's own voice directive points
+  // there instead of duplicating it (see buildResumeVoiceDirective).
   const { system, user } = buildApplicationEmailPrompt(
     { resume, jobAd, meta, recipientName, recipientEmail, companyBrief },
     profile
