@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783748625994,
+  "lastUpdate": 1783754319793,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3689,6 +3689,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 225168,
             "range": "± 3669",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8b1a16715b0e41117ef397f87cc11e4a6c00f347",
+          "message": "fix: live-verified board hygiene with honest failure reasons (#603)\n\n* fix: live-verified board hygiene with honest failure reasons\n\nLive verification found breezy functionally dead (location.state drifted to an object, zeroing every tenant) — fixed with a tolerant per-row parse.\nThemuse, bamboohr, and rippling shapes confirmed with dated notes; pinpoint documented unverifiable. Comeet hidden from the picker while staying dispatchable for saved targets.\nLinkedIn detects the zero-cards soft block as a board error (page 0 always pads cards, so zero is never a genuine empty) and gains country-biased cached geoId resolution.\nRuns where every company slug is invalid now say so instead of returning silent zero, with the all-rejected check guarded against mid-list cancellation.\nTrust program PR G (audit 2026-07-10).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: guard total row drift and centralize ats search finish\n\nA response whose rows all fail to parse now records a fetch failure instead of a silent empty success; the all-invalid message points at the jobs search form.\nShared ats_finish_search puts the cancellation-wins invariant in one tested place across the seven slug boards. Docs synced, lessons persisted.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: anchor geoid country bias to the trailing display-name segment\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-11T09:09:03+02:00",
+          "tree_id": "528af3ab8e28d754c9535be709180a8661a68396",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/8b1a16715b0e41117ef397f87cc11e4a6c00f347"
+        },
+        "date": 1783754319257,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2233311,
+            "range": "± 58842",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2651079,
+            "range": "± 44735",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 288298,
+            "range": "± 4674",
             "unit": "ns/iter"
           }
         ]
