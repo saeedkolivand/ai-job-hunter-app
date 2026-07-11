@@ -283,20 +283,37 @@ try {
   const model = 'sonnet';
   metric.model = model;
 
-  // owner checklists — 12K TOTAL budget; drop whole trailing owners, never truncate text
+  // owner checklists — 12K TOTAL budget; drop whole trailing owners, never truncate text.
+  // Owners with a shared checklist file load it INSTEAD of their agent persona —
+  // .claude/review-checklists/*.md is the single source of truth shared with
+  // pr-reviewer and the CI review job; agent files remain the fallback.
+  const OWNER_CHECKLIST = {
+    'frontend-reviewer': 'frontend',
+    'rust-backend-architect': 'rust',
+    'testing-reviewer': 'testing',
+  };
   const agentDir = path.join(cwd, '.claude', 'agents');
+  const checklistDir = path.join(cwd, '.claude', 'review-checklists');
   const CHECKLIST_BUDGET = 12000;
   const consulted = [];
   const notConsulted = [];
   let checklists = '';
   for (const name of selected) {
     let body = '';
-    try {
-      body = fs
-        .readFileSync(path.join(agentDir, name + '.md'), 'utf8')
-        .replace(/^---[\s\S]*?---/, '')
-        .trim();
-    } catch {}
+    const domain = OWNER_CHECKLIST[name];
+    if (domain) {
+      try {
+        body = fs.readFileSync(path.join(checklistDir, domain + '.md'), 'utf8').trim();
+      } catch {}
+    }
+    if (!body) {
+      try {
+        body = fs
+          .readFileSync(path.join(agentDir, name + '.md'), 'utf8')
+          .replace(/^---[\s\S]*?---/, '')
+          .trim();
+      } catch {}
+    }
     const entry = `### ${name}\n${body}\n\n`;
     if (checklists.length + entry.length > CHECKLIST_BUDGET && consulted.length) {
       notConsulted.push(name);

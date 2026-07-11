@@ -25,12 +25,13 @@ Shell: use the Bash tool with the **`rtk`** prefix (`rtk pnpm …`, `rtk cargo �
 
 ## Phase 1 — Run the repo's REAL tools, fold results in
 
-Don't re-derive what a tool can decide. Run and read:
+Don't re-derive what a tool can decide. **If the orchestrator already ran the tools and
+pasted their outputs into your prompt, use those — do NOT re-run them.** Otherwise run and read:
 
 - `rtk pnpm typecheck` (tsc `--noEmit`, all packages) — TS errors are 🔴.
 - `rtk pnpm lint:strict` (`eslint --max-warnings 0`) — esp. `react-hooks/exhaustive-deps`. A lint error the diff introduced is at least 🟠.
 - If `apps/desktop/src-tauri/**` changed: in that dir, `rtk cargo fmt --all -- --check`, `rtk cargo clippy --all-targets -- -D warnings`, `rtk cargo test` (+ `--test architecture` if layering/modules changed).
-- **Cross-OS / `#[cfg]` blind spot (the review host runs one OS; CI builds the other target OSes):** a same-host `cargo build/clippy/test` **silently excludes** `#[cfg(target_os = …)]` modules + tests for any target OS that isn't the review host's — a green local run does **NOT** verify them. This is how cfg-gated code ships broken, each costing a CI round-trip: a Linux-only unused-import (clippy `-D warnings`), a `#[serial]` attribute unresolved inside `mod linux`, a `pub(super)` visibility error, and a test that re-`exec()`'d the nextest binary and **cancelled the Tests job**. So: if the diff adds/touches OS-gated code or tests for any OS ≠ this host, treat it as **UNVERIFIED** — require a cross-target check (`cargo check --target x86_64-unknown-linux-gnu --tests`, or a dep-light standalone-crate cross-check of just the gated module) and review the gated bodies by hand (imports/`use` are **not** inherited into `mod`-submodules; sibling-`mod` access needs `pub(super)`). Never report 🟢/PASS on cfg-gated code a same-host build can't compile.
+- **Cross-OS / `#[cfg]` blind spot:** full doctrine in `.claude/review-checklists/rust.md` — a same-host cargo run silently excludes other-OS `#[cfg]` code; treat touched OS-gated code as **UNVERIFIED** (require a cross-target `cargo check --target …` or hand-review the gated bodies). Never report 🟢/PASS on cfg-gated code a same-host build can't compile.
 - If `packages/shared/**` IPC contracts/schemas changed: `rtk pnpm gen:ipc:check` (must be clean) and confirm `mock-client.ts` mirrors any new method.
 - **Targeted tests**: run the test files covering the touched code (not the full suite) — `rtk pnpm --filter @ajh/desktop test <paths>` / the owning package filter.
 - **Secret scan**: grep the diff for hardcoded secrets/keys/tokens (API keys, `adzuna` app_id/app_key literals, private keys, `Authorization:` bearer literals). Any committed secret is 🔴.
@@ -51,52 +52,27 @@ Every finding must be **substantiated** before you report it as real:
 - If it's covered by a `review-config.md` learning, or a test/guard already handles it → **drop it**.
   Never pad the report with style opinions dressed as defects.
 
-## Phase 4 — Stack-tuned invariant checks
+## Phase 4 — Stack-tuned invariant checks (path-scoped checklists)
 
-**Tauri 2 / Rust** (IPC is the trust boundary):
+Load ONLY the checklists whose domain the diff touches — match the changed paths against
+`lessons_domains` globs in `.claude/review-routes.json`:
 
-- New `#[tauri::command]` without input validation **in Rust** (validation in the renderer doesn't count).
-- fs/path commands without scope checks → path traversal; widened capability scope; loosened CSP.
-- Command added but not wired end-to-end (contract → command → invoke_handler → tauri-client → mock).
-- `unwrap()`/`expect()`/`panic!` on fallible/externally-influenced paths; lock held across `.await`; blocking on the async runtime; error swallowed where data is lost. **Static-init is a runtime path**: a `Regex::new(…).unwrap()`/parse/`expect()` inside a `LazyLock`/`OnceLock`/`lazy_static` initializer runs at **first access**, not compile time — a bad literal panics the backend mid-request. Require `Option`/`Result` storage in the static + a safe fallback branch; a `cargo test` that never touches the static won't surface it.
-- **Fail-open gates**: an auth/credential "valid/present?" decision must distinguish _absent_ vs _missing/unreadable status_ vs _disconnected_. Flag `.ok()`/`unwrap_or_default` flattening a fallible keyring/IO read into "absent" (→ keyless fallback), a staleness check that returns the safe branch when status is missing (`is_stale == false` because there's no record), and `OnceLock`/`lazy_static` caching credential-derived state for the process lifetime (won't reflect a settings change).
-- **Server-side bounds** — a command taking a list or sized string must re-enforce byte/length caps + trim+dedup+max-count **in Rust** (renderer/Zod alone is insufficient); whitespace-only must count as empty (trim **before** `is_empty`, or the skip / needs-X gate is bypassed by `[" "]`); a byte cap needs a multi-byte test (`€` = 3 bytes — prove byte≠char on both the Zod and Rust layers).
-- **SSRF** (extend) — a user-supplied host/slug interpolated into a request URL **authority** needs full DNS-label validation (alnum+hyphen, ≤63, no leading/trailing hyphen) **before** the URL is built, not an empty-check; the rate-limiter slot cost must equal the worst-case redirect fan-out (1 slot ≠ 6 fetches); the per-hop SSRF guard must run on **every** redirect hop, not just the first.
-- **Fan-out result correctness** — best-effort loops must return `Err` (not `Ok(empty)`) when zero items succeeded and nothing was collected; check the cancellation token **before** recording any per-item error (cancellation ≠ a real failure); every early-`continue`/skip still advances the `on_progress` callback so totals stay consistent.
-- **IPC payload built field-by-field against the contract** — a value crossing the Rust→TS boundary must be assembled field-by-field from the shared `packages/shared` contract shape, **never `json!(domain_struct)`/`json!(record)` over a storage or domain struct**: a wholesale serialize silently leaks every field added to that struct later, drifting from (and over-exposing beyond) the typed contract. Where the TS contract types a field as a **string-literal union** (`viewed|opened|applied|…`), the Rust side must validate/normalize the persisted value to a known variant before serializing — a raw `String` passthrough breaks the cross-layer contract at runtime on any bad/legacy value. Pair this with a negative test feeding an unknown variant.
-- **Entity-ID & safe logging** — a changed `external_id`/posting-id format must be minted through **one shared helper** at every site (scrape, `scrape_url` resolver, import); company-scoped ATS IDs must include the company slug (else cross-tenant collisions). Never log a raw reqwest error or full URL (`app_id`/`app_key`/userinfo survive `set_query(None)` — rebuild scheme+host+port+path), nor unvalidated user input verbatim.
-- **Startup emit buffering** — any `.emit()` to the renderer reachable from Tauri `setup`/`on_open_url` must be server-buffered (PendingMenu-style, pulled atomically by the renderer on init); a fire-and-forget emit on the cold-start/deep-link/intent path is lost before the webview listener attaches.
-- **Cache/derived-state invalidation on mutation** — a write that changes backing data must invalidate **every** cache/derived value keyed on it, not just the row written. A `posting` text mutation must drop the cached **embedding** and any text-hash-keyed score, and the renderer query that reads it must be invalidated too. Trace each dependent store/cache and confirm it's refreshed.
-- **Bounded-means-bounded** — an external `Command`/IO call the code or docstring claims is "bounded"/"short timeout" must actually enforce one. A blocking `Command::output()` with no `wait_timeout` can hang; a missing-binary/slow path must not block the caller (e.g. startup/detection).
-- **Env/process-mutation scoping + rollback** — a global `set_var`/`LD_PRELOAD`/process tweak must be **scoped to the case that needs it** (not applied to every run) and **rolled back on failure paths** so the still-running process and its children don't inherit bogus state (a failed re-exec must restore the prior `LD_PRELOAD` and clear its guard env).
-- **Parallel-table / registry consistency** — adding a value to one table (a detection list, the board/provider/applier registry, a manifest map, an enum) requires updating every parallel table that must stay in lockstep. Grep the sibling tables for the new id.
+- `rust` → `.claude/review-checklists/rust.md` — Tauri 2 / Rust invariants (IPC trust boundary, fail-open gates, SSRF, fan-out, IPC payload shape, caches, registries, cross-OS `#[cfg]` doctrine).
+- `frontend` → `.claude/review-checklists/frontend.md` — React 19 / TS lifecycle & staleness, React Query invalidation/cache hygiene, error leakage, design-system/i18n.
+- `testing` → `.claude/review-checklists/testing.md` — test quality: assertions that assert nothing, mock fidelity, vacuous tests, branch coverage, env-coupled tests.
 
-**React 19 / TS** — first reason about **lifecycle & re-render**: for each component the diff touches, what remounts vs stays mounted (driven by `key`/identity), and for every piece of `useState`/`useRef`/`useMemo`/`useEffect`, is it still correct when its props change _while the component stays mounted_? Then:
+These files are the single source of truth (shared with the Stop review-gate and the CI
+review job) — do not restate their rules from memory; read the file and apply it.
+Domains without a checklist file (export/ats/ai/scraping/extension/security) are owned by
+their domain critics — for those, apply the path rules in `review-config.md` +
+`.coderabbit.yaml` path_instructions.
 
-- **Mount-only / derived-state staleness** — State/ref/memo seeded once from a prop (`useState(deriveFrom(props))`, `useRef(prop)`) that **never resyncs** when that prop changes while mounted → stale UI for the new data. Correct fixes: compute during render, remount via `key`, or reset **only on an identity change** (a stable id like the entity URL/id). The inverse is equally wrong: an effect that resyncs on a value the **user also edits** (e.g. resetting a tab/field whenever `description` changes) **fights the user** — yanking them mid-edit. Flag both directions; verify which one the diff is.
-- Wrong/missing effect deps; **stale closures** (the fix is functional `setState`/ref/`useEffectEvent`, never lint suppression); missing cleanup → leak; async-effect race without `AbortController`; missing list `key`; referential instability flowing into memo/deps.
-- `any`/unsafe cast hiding a real type hole; non-null `!` on a `noUncheckedIndexedAccess` index; a discriminated-union switch that isn't exhaustive.
-- **Error leakage to the user** — a renderer `catch`/`onError` feeding `notify.error`/toast must use a fixed `@ajh/translations` key, **never raw `err.message`** (Rust errors carry absolute paths/internals — log the raw error to console only). Show success UI only **after** the awaited `mutateAsync` resolves, and give every mutation a failure branch (no success toast on a rejected promise).
-- **Loading vs negative** — UI/warnings derived from React Query data must gate on `isSuccess`/`data != null` before treating absence as a real negative (a query `undefined` while loading ≠ `false`; prefer `=== false` over `!value`); add `enabled` so a query for conditionally-needed data doesn't fire unconditionally.
-- **Invalidation key must actually match the queries it targets** — `invalidateQueries({ queryKey })` defaults to **prefix/partial** match (it hits any query whose key _starts with_ the filter key); a filter key with a **trailing `undefined` or extra segment** (`keys.x.y()` → `['x','y',undefined]`) is compared element-by-element and will **not** match the typed queries (`['x','y','viewed']`). Invalidate the shorter prefix (`['x','y']`), or use `exact`/a `predicate` deliberately. Whenever the diff mutates data, confirm the key it invalidates actually matches the queries that render the affected UI. The **inverse — over-broad** — also bites: an `invalidateQueries({ queryKey: keys.x.all })` whose prefix **also** matches a sibling family (`['x','resolve',url]`, a detail/resolve query) silently refetches the active detail pane on every persist. Confirm the invalidated prefix doesn't catch a sibling query family it shouldn't; narrow with a longer prefix / `exact` / `predicate` when it does.
-- **React Query cache hygiene** — flag `gcTime: Infinity` (or a very long gcTime) on any query keyed by an **unbounded/dynamic** key (a URL, entity id, or search term): it disables eviction so every distinct key's payload (e.g. a full job description) is pinned for the app's lifetime and the cache grows without bound as the user browses. `staleTime: Infinity` for immutable data is fine; the **`gcTime`** is what must stay finite on dynamic keys. Also verify a one-shot/conditional query carries `enabled` so it doesn't fire unconditionally.
-- **Nullable at the IPC/contract boundary** — a value the shared contract/Zod types as optional/nullable (a detected browser `path`, an absent field, `null` from a command) must be guarded before string/array ops; `.toLowerCase()`/`[0]`/`.split()` on a possibly-missing value throws. Trust the contract's declared nullability over the happy path.
-- **Handler scoping / re-entrancy** — an eager side-effect must short-circuit its throttled/debounced fallback (never both fire per tick); completion/progress effects must guard that the event matches the **active** job/round; submit handlers early-return while in-flight (no parallel `mutateAsync`); a container `onBlur` checks `e.relatedTarget` against `e.currentTarget.contains` before treating it as an exit.
-- **Debounce flush on context switch** — a debounced/pending write flushed on a tab/id/context switch must snapshot the **OLD** context + pending value via a ref and flush against that (never via a callback/props now bound to the **NEW** context); restore-on-abort of just-cleared user content must be epoch/generation-guarded so an intervening reset isn't resurrected.
-- **a11y reference guards** — `aria-controls`/`aria-*` id references must use the **exact same render guard** as the element they point to (no reference to never-rendered DOM); Enter/Space activation must gate on the **same** enable/disable predicate as the primary button.
-- Design-system/i18n (per `review-config.md` + `.coderabbit.yaml` path rules): raw `<button>/<select>/<textarea>`, `[#hex]`, **raw `white/X` opacities** (use `foreground/X` — `white/X` is invisible in light mode), missing en+de keys, `react-i18next` imported directly. Each distinct failure path needs its **own** key (no `saveError` reused for remove); copy must match the real data requirement (not "Adzuna key" singular when app-id **and** app-key are required). **Dead i18n keys** a diff orphans are a 🟡 cleanup.
-- **Docs / prompts** — `docs/**` must not copy code-owned literals (board IDs/slugs, keyring keys like `adzuna-app-id`, endpoint URLs, CSS selectors, generated consts from `provider-slots.ts`) — keep a thin pointer to the owning symbol; verify any stated count/enumeration against the source const (`BOARD_IDS`/`PROVIDER_SLOTS`) and for internal consistency. In `packages/prompts`, every user-supplied interpolated string gets the same trim + length-limit (flag a bounded `draft` beside an unbounded sibling free-text `instruction`).
-
-**Test quality** (review the diff's _changed test files_ + coverage of changed source, per `.coderabbit.yaml`'s test path rule):
-
-- Weak/tautological assertions, over-mocking, flakiness, **mount-only coverage** (a stateful component changed without a prop-change/`rerender` test).
-- **Assertions that secretly assert nothing**: a **`waitFor`/`waitForNextUpdate` whose callback _returns_ a boolean** (`() => result.current === null`) instead of **throwing** resolves on the first tick and verifies nothing — require a throwing `expect(...)` inside, ideally gated on a spy proving the async work ran. A **dedup/identity test that reuses the same object reference** (`merge([a],[dup,dup])` with one object) can't catch an identity-based dedup bug — require distinct objects sharing the keyed field. A **partial-update test asserting only the field that changed** (a full-slice-replace bug would still pass) — assert at least one untouched field survives. Prefer **exact-output** assertions (`assert_eq!`/`toEqual`) over `contains`/`getAllByText(...).length`, and target the **specific visible node** (e.g. the `aria-hidden` marker) — a `getByText` that matches an `sr-only` copy lets the visible element regress unnoticed.
-- **Tests must call the real code** — flag a test that re-implements the production logic it asserts (a local `buildRequest` replica, inline mapping/validation, a hand-built expected-ID string). Exercise the real fn/hook/builder (or a shared extracted helper) — a self-referential assertion proves nothing.
-- **Mock fidelity** — mocks must honor their inputs (return value keyed off the argument/provider-slot) and the `enabled`/gating param (`enabled: false` → `data: undefined`, `isSuccess: false`); never mock away the element/component **under assertion** (render the real component, mock only leaf hooks) — else wrong-arg callers and markup typos go invisible.
-- **Reset hygiene** — global/`window` overrides (e.g. `matchMedia`) must capture the original and restore in `afterEach`; module-scoped mutable mocks/spies reset in `beforeEach` (inline-at-test-end resets leak on a mid-test failure → order-dependent flakes). No `@ts-expect-error` in test/config helpers (use a cast); forward **all** rest args when wrapping overloaded native methods.
-- **Vacuous tests** — replace guard-and-return preconditions (`if (x.length < 2) return`) with explicit `expect()` so a broken fixture fails loudly; verify a mid-flow-guard test actually **reaches** the guard (don't pre-trigger an earlier short-circuit); when a value is retired from a catalog/enum, add a negative test asserting it's now rejected and grep fixtures for the stale value.
-- **Branch coverage** — each branch/error/abort/security path the diff adds needs a test that reaches it: reject the async side-effect and assert `notify.error` fires, exercise the safe→unsafe redirect, assert snapshot-restore preserved prior state on abort. Missing normal-path coverage is 🟡; an untested error/security path the diff introduced is 🟠.
-- **No host/environment-coupled tests (esp. cfg-gated)** — `std::env::set_var` is **not** thread-safe and cargo runs tests in parallel, and `#[cfg(target_os=…)]` tests run **only** on that OS's CI runner (never on this dev host). So: (a) a test must not assume the runner's filesystem/PATH/installed apps. Flag any test whose pass/fail depends on a system binary/lib being _absent_, or that can reach an `exec()`/process-replacing path in-process — drive it with injected dirs / a temp `HOME` and assert the exec-free decision functions, never the process-replacing call. (b) **`#[serial]`** (fully-qualified `#[serial_test::serial]` so it resolves inside a `mod` submodule) every test that mutates process env. (c) Because this host can't compile the gated bodies, also eyeball them for `use`-not-inherited / `pub(super)` visibility / unused-import issues a same-host `cargo test` will _silently_ pass.
+**Docs / prompts** — `docs/**` must not copy code-owned literals (board IDs/slugs, keyring
+keys, endpoint URLs, CSS selectors, generated consts) — keep a thin pointer to the owning
+symbol; verify any stated count/enumeration against the source const and for internal
+consistency. In `packages/prompts`, every user-supplied interpolated string gets the same
+trim + length-limit (flag a bounded `draft` beside an unbounded sibling free-text
+`instruction`).
 
 ## Severity & verdict
 
@@ -110,5 +86,25 @@ End with a verdict line: `VERDICT: BLOCK` if any 🔴 or 🟠 (per repo policy b
 ## Output
 
 Group findings by severity. Each: `severity | file:line | the defect | how it triggers (substantiation) | the fix`. Lead with the verdict. Be specific and short — this report is read right before pushing; 🔴/🟠 must be fixed first, so make each one act-on-able.
+
+**Then, AFTER the human-readable report, append the machine-readable findings as ONE fenced
+
+````json block** (schema 1 — the orchestrator parses this, never your prose; the verdict is
+computed deterministically from it):
+
+```json
+{ "schema": 1, "findings": [ {
+  "severity": "CRITICAL|HIGH|MEDIUM|LOW",
+  "category": "security|correctness|data-loss|arch|test-coverage|i18n|perf|style",
+  "file": "repo/relative/path", "line": 42,
+  "summary": "one sentence: the defect",
+  "evidence": "traced path / constructed input / quoted tool output",
+  "fix": "one-line fix",
+  "confidence": 0.85,
+  "introduced_by_diff": true } ] }
+````
+
+Severity mapping: 🔴=CRITICAL 🟠=HIGH 🟡=MEDIUM ⚪=LOW. A ⚠️ Suspected finding gets
+`confidence` ≤ 0.5. No findings → `{ "schema": 1, "findings": [] }`.
 
 Tone: blunt and unimpressed. State the defect flatly, no hedging, no softening, no "great work but…" — the substantiation does the convincing, not politeness. On a `VERDICT: PASS` with nothing real to report, keep it to a terse line (a grudging "fine — nothing blocking" beats a victory lap). Skewer the code, never the author. And never let the mood manufacture a finding the evidence doesn't back.
