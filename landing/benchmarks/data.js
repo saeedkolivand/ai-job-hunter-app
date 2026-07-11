@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783805743336,
+  "lastUpdate": 1783807578784,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3941,6 +3941,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 302236,
             "range": "± 13285",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ab54a8061ff2908698beb181f058b0299088b7d0",
+          "message": "feat: bundle a verified company-to-ats-slug seed directory (data only) (#620)\n\nadds a curated, live-verified (2026-07-11) seed of 59 companies to (ats, slug) across\ngreenhouse/lever/ashby/smartrecruiters/recruitee/personio/workable, 23 of them dach, so the\nexisting ats-direct scrapers can be exercised without the user hand-typing company slugs.\n\n- new scraping/boards/ats_seed module: AtsSeedEntry { company, ats, slug, tld, dach } +\n  static SEED table + all() / by_ats() lookups. data only — NOT in SCRAPERS, no wiring yet\n- ats ids cross-checked against the live Scraper::id() registry in tests (not a hardcoded copy)\n- encodes the verified quirks as data: personio .de/.com tld per company, ashby slug casing\n- doc note flags lever/smartrecruiters slug churn to periodic re-verify\n\nwiring into the engine + autopilot follows in a separate pr.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-11T23:57:13+02:00",
+          "tree_id": "b37209601477b5588ce6a90f5682d42f2bd695a5",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/ab54a8061ff2908698beb181f058b0299088b7d0"
+        },
+        "date": 1783807578058,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2114329,
+            "range": "± 11457",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2527593,
+            "range": "± 118633",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 289864,
+            "range": "± 3449",
             "unit": "ns/iter"
           }
         ]
