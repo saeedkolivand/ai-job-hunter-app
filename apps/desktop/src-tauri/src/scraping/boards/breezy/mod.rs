@@ -109,8 +109,19 @@ pub(crate) fn rows_to_jobs(values: Vec<serde_json::Value>) -> Vec<BzPosting> {
     jobs
 }
 
-/// Map a parsed Breezy response into postings for one company. Standalone
-/// (no `&self`) so it is unit-testable against a JSON fixture.
+/// Map a parsed Breezy response into postings for one company, plus a FORMAT
+/// drop count for the `rows-dropped:<n>` partial-visibility note (trust-H item
+/// 3; CodeRabbit follow-up on PR #604). **The boundary:** a row counts as a
+/// format drop when it deserialized fine (passed [`rows_to_jobs`]) but is
+/// unusable as a posting — a missing/blank title, or a missing/unparseable
+/// url — the same "this row's shape looks wrong" signal `rows_to_jobs`
+/// reports one level earlier, so the note stays about DRIFT. Duplicate-url
+/// drops are DELIBERATELY EXCLUDED from the count: two rows sharing one apply
+/// link is normal Breezy multi-listing hygiene (e.g. a posting cross-listed
+/// under two departments), not evidence the response shape changed — counting
+/// it would make `"rows unreadable — board format may have changed"` fire on
+/// a perfectly healthy response. Standalone (no `&self`) so it is
+/// unit-testable against a JSON fixture.
 ///
 /// The response has no stable job id, so the (deduped) posting URL doubles as
 /// the id — same precedent as the We Work Remotely RSS `<guid>` permalink.
@@ -118,21 +129,28 @@ pub(crate) fn parse_breezy_response(
     postings: Vec<BzPosting>,
     company: &str,
     now: i64,
-) -> Vec<JobPosting> {
+) -> (Vec<JobPosting>, usize) {
     let mut seen_urls = std::collections::HashSet::new();
     let mut out = Vec::new();
+    let mut format_drops = 0usize;
 
     for p in postings {
         let title = p.name.unwrap_or_default().trim().to_string();
         if title.is_empty() {
+            format_drops += 1;
             continue;
         }
 
         let url = match p.url.as_deref().map(str::trim) {
             Some(u) if is_https_url(u) => u.to_string(),
-            _ => continue,
+            _ => {
+                format_drops += 1;
+                continue;
+            }
         };
         if !seen_urls.insert(url.clone()) {
+            // Duplicate url — normal hygiene, never a format drop (see the doc
+            // comment above).
             continue;
         }
 
@@ -182,7 +200,7 @@ pub(crate) fn parse_breezy_response(
         });
     }
 
-    out
+    (out, format_drops)
 }
 
 pub struct BreezyScraper;
@@ -297,11 +315,17 @@ impl Scraper for BreezyScraper {
                 continue;
             }
             successful_fetches += 1;
-            // SOME (not all) rows dropped by per-row parse → a partial-visibility
-            // anomaly surfaced as a `rows-dropped:<n>` note after the loop.
+            // SOME (not all) rows dropped by per-row parse (rows_to_jobs
+            // deserialize failures) → tallied here; `parse_breezy_response`'s
+            // own FORMAT-relevant drops (empty title / bad url — NOT
+            // duplicate-url drops, see its doc comment) are folded in below so
+            // `rows-dropped:<n>` doesn't undercount (CodeRabbit, PR #604).
             rows_dropped += raw_row_count - postings.len();
 
-            for posting in parse_breezy_response(postings, &company, now) {
+            let (parsed, format_drops) = parse_breezy_response(postings, &company, now);
+            rows_dropped += format_drops;
+
+            for posting in parsed {
                 if let Some(ref on_item) = ctx.on_item {
                     on_item(posting.clone());
                 }

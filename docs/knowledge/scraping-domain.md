@@ -361,7 +361,7 @@ New `ats_finish_search(signal, out, board_id, successful_fetches, rejected_slugs
 When a board achieves partial success (some companies reached, some invalid slugs; some rows parsed, some dropped), fixed note tokens surface the partial outcome:
 
 - **`slugs-invalid:<n>`** — `<n>` = count of company slugs rejected by SSRF/DNS-label validator. Emitted ONLY when `successful_fetches > 0` (at least one company reached) and some slugs were invalid. All-invalid case is the error instead (`ats_finish_search` Err). All 7 ATS slug-validating boards: bamboohr, breezy, pinpoint, rippling, workable, recruitee, personio.
-- **`rows-dropped:<n>`** — `<n>` = total rows dropped by per-row deserialize across successful companies (partial parse failure, not fetch failure). Breezy, rippling, workable only (the 4 ATS boards with per-row parsing; others deserialize atomically).
+- **`rows-dropped:<n>`** — `<n>` = total rows dropped by per-row deserialize across successful companies (partial parse failure, not fetch failure). Breezy, rippling, workable only (the 3 ATS boards with per-row parsing; bamboohr, pinpoint, recruitee deserialize atomically and pass `rows_dropped=0`).
 - **Token emission** — via `ctx.report_note` (PR D side-channel), gated on `!ctx.signal.is_cancelled()`. At most ONE token per board per run; `slugs-invalid` wins when both apply (precedence order below).
 - **Frontend rendering** — `BoardSummaryChips.tsx` maps both tokens: numeric gate `n > 0` (strict; these tokens only emitted for n>0), tone `processing` (informational blue). No precedence change within the chip severity order (error > skipped > truncated > note > success); both are `note` tone.
 - **I18n keys** — `jobs.boardSummary.note.slugsInvalid` (en "{{count}} company name(s) invalid", de "{{count}} Firmenname(n) ungültig") and `jobs.boardSummary.note.rowsDropped` (en "{{count}} row(s) unreadable — board format may have changed", de "{{count}} Zeile(n) unlesbar — Board-Format evtl. geändert"). Pluralized via i18next `_one`/`_other`.
@@ -375,7 +375,7 @@ When a board achieves partial success (some companies reached, some invalid slug
 | `broadened`/`guessed`                          | aggregator location heuristic             | aggregator-only   | note (blue) | broadened from city to country |
 | error                                          | fatal (all-fail, all-reject)              | error not note    | error (red) | all hosts failed               |
 
-**Implementation:** `location-filtered` uses `note.get_or_insert_with()` (fills empty slot only); `ats_partial_note(successful_fetches, rejected_slugs, rows_dropped)` returns `Option<String>` (None for clean runs). A run with both slugs-invalid and rows-dropped on the same board emits only `slugs-invalid` via the `preferred_token` logic in `ats_partial_note`. Source: `apps/desktop/src-tauri/src/scraping/boards/common.rs` + `scraping/engine/mod.rs:733-741`.
+**Implementation:** `location-filtered` uses `note.get_or_insert_with()` (fills empty slot only). `ats_partial_note(successful_fetches, rejected_slugs, rows_dropped)` returns `Option<String>` (None for clean runs) via sequential if checks: `successful_fetches==0` → None (all-fail is an error); `rejected_slugs>0` → `"slugs-invalid:{n}"` (preferred, wins); else `rows_dropped>0` → `"rows-dropped:{n}"`. Source: `apps/desktop/src-tauri/src/scraping/boards/common.rs:210-222` + `scraping/engine/mod.rs:733-741`.
 
 ## Job-search trust program — COMPLETE (PRs A–H, 2026-07-10/11)
 

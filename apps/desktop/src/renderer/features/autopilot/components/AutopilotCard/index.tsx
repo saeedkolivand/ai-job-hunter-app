@@ -538,14 +538,17 @@ export function AutopilotCard({
                             // Provisional score (audit root cause 6): computed
                             // over a truncated aggregator snippet, so the detail
                             // pane's full-text re-score may differ. Mark it
-                            // honestly — a muted band + "~" prefix + a hover
-                            // `title` AND an always-present sr-only span (the
-                            // TrustBadge non-interactive precedent: a `title`
-                            // alone isn't reliably announced). No focusable
-                            // HoverPopover — this whole row is already a
-                            // <Button>; a focusable popover trigger nested in
-                            // it would be invalid button-in-button HTML (same
-                            // reason TrustBadge above renders interactive=false).
+                            // honestly — a muted band (ALL tiers, `muted`, not
+                            // `subtle` — a provisional HIGH must read muted too,
+                            // unlike `subtle`'s High-stays-bright contract) + "~"
+                            // prefix + a hover `title` AND an always-present
+                            // sr-only span (the TrustBadge non-interactive
+                            // precedent: a `title` alone isn't reliably
+                            // announced). No focusable HoverPopover — this whole
+                            // row is already a <Button>; a focusable popover
+                            // trigger nested in it would be invalid
+                            // button-in-button HTML (same reason TrustBadge
+                            // above renders interactive=false).
                             <span
                               className="inline-flex shrink-0 items-center gap-0.5"
                               title={t('autopilot.provisionalScoreHint')}
@@ -556,7 +559,7 @@ export function AutopilotCard({
                               >
                                 ~
                               </span>
-                              <MatchBand value={job.score} variant="coverage" subtle />
+                              <MatchBand value={job.score} variant="coverage" muted />
                               <span className="sr-only">
                                 : {t('autopilot.provisionalScoreHint')}
                               </span>

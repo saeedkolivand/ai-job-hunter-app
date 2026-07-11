@@ -514,9 +514,9 @@ pub fn autopilot_resume(app: AppHandle, autopilot_id: String) -> Value {
 /// keyword-coverage score computed over that snippet can diverge from the detail
 /// pane's full-text re-score (trust-audit root cause 6). A run's aggregator
 /// scores are therefore flagged provisional; direct full-text boards are not.
-/// Kept in lockstep with the aggregator scraper's `id()` (`scraping::boards::
-/// aggregator`); a rename there must update this literal.
-const AGGREGATOR_SNIPPET_SOURCE: &str = "aggregator";
+/// Sourced directly from the aggregator scraper's own `id()` constant (not a
+/// duplicated literal), so a rename there can't silently desync this check.
+const AGGREGATOR_SNIPPET_SOURCE: &str = crate::scraping::boards::aggregator::AGGREGATOR_BOARD_ID;
 
 /// Pure `JobPosting → FoundJob` projection — the same one `autopilot_run`'s
 /// `postings.iter().map(..)` calls. Extracted so a unit test can exercise the
