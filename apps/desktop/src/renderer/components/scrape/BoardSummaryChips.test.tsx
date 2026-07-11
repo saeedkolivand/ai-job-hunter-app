@@ -304,6 +304,78 @@ describe('BoardSummaryChips — location note chips', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// location-filtered:<n> note chips (PR F) — off-location rows hidden locally
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('BoardSummaryChips — location-filtered note chips', () => {
+  it('maps "location-filtered:<n>" to the pluralized informational (processing) label', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[{ board: 'greenhouse', count: 6, note: 'location-filtered:5' }]}
+      />
+    );
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('processing');
+    // The identity mock echoes `${key}:${count}` so the count is threaded through.
+    expect(chip?.textContent).toContain('jobs.boardSummary.note.locationFiltered:5');
+    // The raw machine token must never leak into the UI.
+    expect(chip?.textContent).not.toContain('location-filtered:5');
+  });
+
+  it('tolerates a non-numeric n — falls through to the plain success chip', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[{ board: 'greenhouse', count: 6, note: 'location-filtered:abc' }]}
+      />
+    );
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('success');
+    expect(chip?.textContent).toContain('jobs.boardSummary.count:6');
+    expect(chip?.textContent).not.toContain('location-filtered');
+  });
+
+  it('maps "location-filtered:0" to the plain marker label (engine now emits n=0 too)', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[{ board: 'greenhouse', count: 6, note: 'location-filtered:0' }]}
+      />
+    );
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('processing');
+    expect(chip?.textContent).toContain('jobs.boardSummary.note.locationFilteredNone');
+    // The pluralized hidden-count key must NOT be used for the zero case.
+    expect(chip?.textContent).not.toContain('jobs.boardSummary.note.locationFiltered:');
+  });
+
+  it('tolerates an empty n (bare "location-filtered:") — falls through to success', () => {
+    render(
+      <BoardSummaryChips summaries={[{ board: 'lever', count: 3, note: 'location-filtered:' }]} />
+    );
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('success');
+    expect(chip?.textContent).not.toContain('locationFiltered');
+  });
+
+  it('tolerates a fractional / negative n (no chip)', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[{ board: 'greenhouse', count: 6, note: 'location-filtered:2.5' }]}
+      />
+    );
+    expect(chips()[0]?.getAttribute('data-color')).toBe('success');
+  });
+
+  it('precedence: an error still wins over a co-present location-filtered note', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[{ board: 'greenhouse', count: 0, error: 'boom', note: 'location-filtered:4' }]}
+      />
+    );
+    expect(chips()[0]?.getAttribute('data-color')).toBe('error');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Robustness
 // ─────────────────────────────────────────────────────────────────────────────
 

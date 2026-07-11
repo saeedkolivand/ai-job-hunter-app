@@ -60,6 +60,75 @@ pub struct BoardSearchInput {
     pub companies: Vec<String>,
 }
 
+/// Canonical structured location for a search — the single model the engine's
+/// central location post-filter (and location-aware boards) reason over,
+/// assembled once from the free-text `location` plus the structured geo fields a
+/// picked geocode suggestion carries. All fields are optional so a partial or
+/// absent location degrades gracefully; a `None` spec (see
+/// [`BoardSearchInput::location_spec`]) means "no location was requested", which
+/// keeps location-agnostic searches byte-identical. Serde so it can ride IPC /
+/// be persisted; `#[serde(default)]` on every field so a sparse or older payload
+/// deserializes cleanly.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocationSpec {
+    /// City / place name. Today sourced from the free-text `location`; a
+    /// structured geocode city can populate it later.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub city: Option<String>,
+    /// Region / state, when a structured pick provides one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    /// ISO 3166-1 alpha-2 country code — routes the aggregator's market directly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub country_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latitude: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub longitude: Option<f64>,
+    /// Search radius in km — consumed by LinkedIn's `distance` param.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius_km: Option<u32>,
+}
+
+impl LocationSpec {
+    /// True when the spec carries no location signal at all.
+    pub fn is_empty(&self) -> bool {
+        self.city.is_none()
+            && self.region.is_none()
+            && self.country_code.is_none()
+            && self.latitude.is_none()
+            && self.longitude.is_none()
+            && self.radius_km.is_none()
+    }
+}
+
+impl BoardSearchInput {
+    /// The canonical structured location for this search, assembled from the
+    /// free-text `location` (as the city) plus the structured geo fields. Returns
+    /// `None` when no location signal was supplied, so location-agnostic searches
+    /// stay byte-identical (the engine's central location post-filter is inert for
+    /// a `None` spec). The free-text `location` field is preserved alongside for
+    /// boards that only understand text.
+    pub fn location_spec(&self) -> Option<LocationSpec> {
+        let city = self
+            .location
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let spec = LocationSpec {
+            city,
+            region: None,
+            country_code: self.country_code.clone(),
+            latitude: self.latitude,
+            longitude: self.longitude,
+            radius_km: self.radius_km,
+        };
+        (!spec.is_empty()).then_some(spec)
+    }
+}
+
 pub struct ScrapeContext {
     pub signal: tokio_util::sync::CancellationToken,
     pub on_progress: Option<Box<dyn Fn(f32) + Send>>,
@@ -167,6 +236,25 @@ pub trait Scraper: Send + Sync {
     ///
     /// Defaults to `false` so only key-backed boards override it.
     fn needs_keys(&self) -> bool {
+        false
+    }
+
+    /// Whether this board narrows results by the requested location SERVER-SIDE
+    /// (the query itself is scoped to the place before results return), as opposed
+    /// to ignoring location or only filtering it client-side.
+    ///
+    /// When this is `false` and a location was requested, the engine applies a
+    /// conservative central post-filter to this board's results (drops only
+    /// postings whose OWN location clearly mismatches; never remote or
+    /// unknown-location rows). Verified per board by reading each `search()`:
+    /// - aggregator: Adzuna/JSearch `where` param + country market routing → `true`
+    /// - linkedin: geoId typeahead + `distance`/radius params → `true`
+    /// - arbeitsagentur: `wo` (where) param → `true`
+    ///
+    /// Every other board — remote-only feeds, regional feeds, company-slug ATS,
+    /// and boards that only filter location client-side — returns the default
+    /// `false`.
+    fn supports_location(&self) -> bool {
         false
     }
 

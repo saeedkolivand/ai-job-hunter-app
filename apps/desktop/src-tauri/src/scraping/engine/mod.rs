@@ -14,6 +14,27 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
 
+mod location_filter;
+
+/// Per-item keep predicate for a single board (already bound to that board's
+/// name where relevant) — `true` = keep. Trust PR F's central location filter;
+/// `None` when no location filter applies to this run.
+///
+/// **Cap/filter ordering invariant (canonical explanation — HIGH-1):** `run_one`
+/// checks this predicate BEFORE its item cap counts/cancels, so a filtered item
+/// never increments the cap and never triggers cap-cancel — a board keeps
+/// paginating until `amount` MATCHING items are found, not `amount` raw ones.
+/// When active, `run_one` also returns the tracked kept set (not a raw-Vec
+/// truncate) as the final result, since raw order can otherwise keep an early
+/// mismatch while dropping a later real match. See `run_one`/`run_boards` for
+/// the wiring; every other mention below just points back here.
+type KeepItemFn = dyn Fn(&JobPosting) -> bool + Send;
+
+/// Board-name-aware keep predicate shared across every board in a
+/// `run_boards` fan-out; `run_boards` binds it to each board's name into a
+/// [`KeepItemFn`] before passing it to `run_one`.
+type KeepItemByBoardFn = dyn Fn(&str, &JobPosting) -> bool + Send + Sync;
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ScraperCatalogEntry {
     pub id: String,
@@ -29,6 +50,12 @@ pub struct ScraperCatalogEntry {
     /// when `input.companies` is empty, reporting `skipped: "needs-company"`.
     #[serde(rename = "requiresCompany")]
     pub requires_company: bool,
+    /// Whether the board narrows results by the requested location server-side.
+    /// When `false`, the engine conservatively post-filters this board's results
+    /// against the requested location (drops only clear city mismatches; never
+    /// remote/unknown-location rows). Drives the picker's per-board indicator.
+    #[serde(rename = "supportsLocation")]
+    pub supports_location: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -118,6 +145,7 @@ impl ScraperEngine {
                 auth: s.auth(),
                 listed: s.listed(),
                 requires_company: s.requires_company(),
+                supports_location: s.supports_location(),
             })
             .collect()
     }
@@ -136,6 +164,13 @@ impl ScraperEngine {
     ///
     /// `scraper` is the resolved board (or an error for an unknown board);
     /// tests inject a fake scraper through this seam.
+    ///
+    /// One parameter per independent callback/seam (progress, item, truncation,
+    /// note, keep-filter) — each is optional and semantically distinct, so
+    /// bundling them into a struct would obscure the call sites more than it
+    /// clarifies; matches the `#[allow(...)]` precedent used elsewhere in this
+    /// codebase for similar low-level fan-out functions.
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_one(
         board: &str,
         scraper: anyhow::Result<&dyn Scraper>,
@@ -145,6 +180,8 @@ impl ScraperEngine {
         on_item: Option<Box<dyn Fn(JobPosting) + Send>>,
         on_truncation: Option<Box<dyn Fn(String) + Send>>,
         on_note: Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
+        // See `KeepItemFn` for the cap/filter ordering invariant this implements.
+        keep_item: Option<Box<KeepItemFn>>,
     ) -> anyhow::Result<Vec<JobPosting>> {
         // Central item cap. The board loops stream items through `on_item` and
         // check `ctx.signal`; we count the stream here and cancel the token the
@@ -156,6 +193,10 @@ impl ScraperEngine {
         let kept: Arc<std::sync::Mutex<Vec<JobPosting>>> =
             Arc::new(std::sync::Mutex::new(Vec::new()));
 
+        // Only exercised when a live on_item sink is ALSO wired (the gate lives
+        // inside its wrapper below). See `KeepItemFn`.
+        let has_active_filter = keep_item.is_some() && on_item.is_some();
+
         // Wrap the caller's `on_item` so each streamed posting is counted, kept,
         // and forwarded only while under the cap; the cap-reaching item flips
         // `reached` and cancels the token so each board's pagination stops early.
@@ -165,6 +206,12 @@ impl ScraperEngine {
             let kept = kept.clone();
             let token_for_wrapper = token.clone();
             let boxed: Box<dyn Fn(JobPosting) + Send> = Box::new(move |mut item: JobPosting| {
+                // Gate first — see `KeepItemFn`.
+                if let Some(ref keep) = keep_item {
+                    if !keep(&item) {
+                        return;
+                    }
+                }
                 let n = streamed.fetch_add(1, Ordering::SeqCst);
                 if n < amount {
                     // Trust assessment is attached here — the single funnel every
@@ -202,9 +249,17 @@ impl ScraperEngine {
 
         match result {
             Ok(mut items) => {
-                items.truncate(amount);
-                span.end_with(&format!("count={}", items.len()), true);
-                Ok(items)
+                let out = if has_active_filter {
+                    // `kept`, not a raw truncate — see `KeepItemFn`.
+                    kept.lock()
+                        .map(|mut g| std::mem::take(&mut *g))
+                        .unwrap_or_default()
+                } else {
+                    items.truncate(amount);
+                    items
+                };
+                span.end_with(&format!("count={}", out.len()), true);
+                Ok(out)
             }
             Err(e) => {
                 // Our own target-reached cancellation: the kept items were already
@@ -231,6 +286,9 @@ impl ScraperEngine {
     /// browser boards are serialized via the process-wide `browser_sem`) and
     /// collect per-board results in **input order**. Tests inject fake scrapers
     /// through this seam.
+    ///
+    /// See `run_one`'s doc note on the per-callback parameter shape.
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_boards<'s>(
         resolved: Vec<(String, anyhow::Result<&'s dyn Scraper>)>,
         input: BoardSearchInput,
@@ -239,6 +297,8 @@ impl ScraperEngine {
         on_item: Option<Arc<dyn Fn(JobPosting) + Send + Sync>>,
         on_truncation: Option<Arc<dyn Fn(String, String) + Send + Sync>>,
         on_note: Option<Arc<dyn Fn(String, String) + Send + Sync>>,
+        // `None` when no location filter applies to this run. See `KeepItemFn`.
+        keep_item: Option<Arc<KeepItemByBoardFn>>,
         browser_sem: Arc<Semaphore>,
     ) -> Vec<(String, anyhow::Result<Vec<JobPosting>>)> {
         let total = resolved.len();
@@ -257,6 +317,7 @@ impl ScraperEngine {
                 let on_item = on_item.clone();
                 let on_truncation = on_truncation.clone();
                 let on_note = on_note.clone();
+                let keep_item = keep_item.clone();
                 let done = done.clone();
                 let browser_sem = browser_sem.clone();
 
@@ -313,6 +374,16 @@ impl ScraperEngine {
                                 wrapped
                             });
 
+                        // Bind to this board's name — see `KeepItemFn`.
+                        let per_board_keep_item: Option<Box<KeepItemFn>> =
+                            keep_item.as_ref().map(|arc| {
+                                let arc = arc.clone();
+                                let name = name.clone();
+                                let boxed: Box<KeepItemFn> =
+                                    Box::new(move |item: &JobPosting| arc(&name, item));
+                                boxed
+                            });
+
                         let res = Self::run_one(
                             &name,
                             scraper,
@@ -322,6 +393,7 @@ impl ScraperEngine {
                             per_board_on_item,
                             per_board_on_truncation,
                             per_board_on_note,
+                            per_board_keep_item,
                         )
                         .await;
 
@@ -454,6 +526,28 @@ impl ScraperEngine {
         // as an empty list.  Check once here so the per-board skip stays O(1).
         let has_usable_company = input.companies.iter().any(|c| !c.trim().is_empty());
 
+        // Central location post-filter (trust PR F): when a location was requested,
+        // boards that do NOT consume it server-side (`supports_location() == false`)
+        // get their results conservatively filtered so a wrong-city row can't pass
+        // as a hit. Computed once here; the set is empty (filter inert) when no
+        // location was requested, keeping location-agnostic searches byte-identical.
+        let requested_location = input.location_spec();
+        let non_location_boards: std::collections::HashSet<String> = if requested_location.is_some()
+        {
+            resolved
+                .iter()
+                .filter(|(_, scraper)| {
+                    scraper
+                        .as_ref()
+                        .map(|s| !s.supports_location())
+                        .unwrap_or(false)
+                })
+                .map(|(id, _)| id.clone())
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+
         for (idx, (id, scraper)) in resolved.into_iter().enumerate() {
             // Determine skip reason (if any) from the resolved scraper.
             // Unknown-board Err values always pass through (no skip) so they
@@ -528,6 +622,30 @@ impl ScraperEngine {
             })
         };
 
+        // Per-board LIVE drop counts (see `KeepItemFn`) — the only place a
+        // live-filtered item's count is observable; merged with the post-hoc
+        // pass below (the no-live-streaming path, e.g. tests) into the note.
+        let location_drops: Arc<std::sync::Mutex<HashMap<String, usize>>> =
+            Arc::new(std::sync::Mutex::new(HashMap::new()));
+        let keep_item: Option<Arc<KeepItemByBoardFn>> = requested_location.clone().map(|req| {
+            let non_loc = non_location_boards.clone();
+            let drops = location_drops.clone();
+            let f: Arc<KeepItemByBoardFn> = Arc::new(move |board: &str, item: &JobPosting| {
+                if !non_loc.contains(board) {
+                    return true; // board supports location — never filtered here
+                }
+                if location_filter::location_mismatch(item, &req) {
+                    if let Ok(mut guard) = drops.lock() {
+                        *guard.entry(board.to_string()).or_insert(0) += 1;
+                    }
+                    false
+                } else {
+                    true
+                }
+            });
+            f
+        });
+
         let results = Self::run_boards(
             runnable,
             input,
@@ -536,6 +654,7 @@ impl ScraperEngine {
             on_item,
             Some(truncation_sink),
             Some(note_sink),
+            keep_item,
             self.browser_sem.clone(),
         )
         .await;
@@ -555,6 +674,16 @@ impl ScraperEngine {
             let idx = name_to_idx[&board];
             match res {
                 Ok(postings) => {
+                    // Central location post-filter (trust PR F, see `location_filter`)
+                    // — a SAFETY NET here, not the primary filter: a no-op when the
+                    // live gate already ran (see `KeepItemFn`), the only filtering
+                    // pass otherwise (callers with no live on_item, e.g. tests).
+                    let (postings, post_hoc_dropped) = match &requested_location {
+                        Some(req) if non_location_boards.contains(&board) => {
+                            location_filter::filter_postings(postings, req)
+                        }
+                        _ => (postings, 0),
+                    };
                     if !postings.is_empty() {
                         any_recovered_items = true;
                     }
@@ -562,7 +691,36 @@ impl ScraperEngine {
                     // is surfaced here so it is not indistinguishable from a complete
                     // run; a board that completed its pages has no map entry.
                     let truncated = truncations.lock().ok().and_then(|mut m| m.remove(&board));
-                    let note = notes.lock().ok().and_then(|mut m| m.remove(&board));
+                    let mut note = notes.lock().ok().and_then(|mut m| m.remove(&board));
+                    // Combine the live gate's drop count with this pass's.
+                    let live_dropped = location_drops
+                        .lock()
+                        .ok()
+                        .and_then(|mut m| m.remove(&board))
+                        .unwrap_or(0);
+                    let dropped = live_dropped + post_hoc_dropped;
+                    // UNCONDITIONAL (incl. dropped==0): a location was requested and
+                    // this board doesn't honor it server-side, so its results were
+                    // never authoritative for that location regardless of whether any
+                    // row actually got dropped this run — the picker/chips must say so
+                    // every time, not just when there happened to be a drop. Emitting
+                    // only on dropped>0 let a non-supporting board with 0 drops read as
+                    // indistinguishable from a supporting one ("all ok"), half-telling
+                    // the 17/23-boards-ignore-location story. Deliberate consequence:
+                    // any run touching a non-supporting board with a location set no
+                    // longer collapses to a clean chip — that's intended honesty, not
+                    // a bug (stage-2 renders n=0 as a plain "location filtered
+                    // locally" marker, n>0 as the count).
+                    if non_location_boards.contains(&board) && requested_location.is_some() {
+                        // Surface via the existing note side-channel using the PR D
+                        // `kind:value` grammar (cf. `broadened:<cc>`). Count only —
+                        // never the raw location text (free-text PII). A non-location
+                        // board never emits its own note today, so this can't clobber
+                        // one — LOW: if a future non-supporting board ever also wires
+                        // `on_note`, this unconditional overwrite would silently drop
+                        // its message; join with "; " instead when that day comes.
+                        note = Some(format!("location-filtered:{dropped}"));
+                    }
                     slot_summaries[idx] = Some(BoardScrapeSummary {
                         board,
                         count: postings.len(),
