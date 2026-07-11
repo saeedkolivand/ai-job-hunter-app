@@ -93,6 +93,19 @@ Adzuna's API is country-scoped with a fixed market allowlist; see `ADZUNA_SUPPOR
 - **Empty results:** Legitimate (do NOT trigger fallback to next provider; only errors do).
 - **Cancellation:** Pre-fallback cancel signal skips the paid provider entirely.
 
+**Aggregator location determinism (PR D, 2026-07-10):**
+
+Location input policy is now visible via per-board summary notes. When a search input lacks explicit country but specifies a city/region, the aggregator may broaden to country-level results or guess a market (fallback when Adzuna is sparse).
+
+- **Floor guard:** `ADZUNA_BROADEN_FLOOR = 3` at `aggregator/mod.rs:44`. Broaden is triggered only when Adzuna returns fewer than 3 results for a location query AND `!country_guessed` (i.e. the user didn't supply a country). Guessed-market fallback to JSearch happens only when guessed Adzuna also returns `< 3` results.
+- **Note tokens:** `BoardScrapeSummary.note: Option<String>` records the location policy decision as a machine token:
+  - `broadened:<cc>` — Adzuna results exist but sparse (`< 3`); broadened from city to country-level (e.g., "few local results in Berlin — showing Germany-wide").
+  - `guessed-market:<cc>` — No explicit country provided; market was guessed and Adzuna returned >= 3 results (authoritative guess). Never emitted for sub-floor guesses that fall through to JSearch global fallback.
+  - Only one note per run; guessed and broadened are mutually exclusive (guessed when `country_guessed=false`, broadened when `country_guessed=false`).
+- **Frontend rendering:** Chips mapped via `BoardSummaryChips.tsx` `ChipTone 'note'` (informational blue); locale-keyed labels `jobs.boardSummary.note.{broadened, guessed}` with country name via `Intl.DisplayNames({type:'region'})` for user-friendly labels (en + de).
+- **Wizard visibility:** Autopilot wizard shows inline "Country: <Name>" when `countryCode` is set, cleared on manual location edit (user may re-pick via the location-input autocompleter).
+- **Source:** `scraping/types/mod.rs` (`on_note` side-channel + `report_note()`), `scraping/engine/mod.rs` (`BoardScrapeSummary.note` wiring), `boards/aggregator/mod.rs` (inject), `boards/aggregator/providers.rs` (Adzuna emit sites + `guessed_market_note` helper).
+
 ## Trust assessment (PR 3, 2026-07-01)
 
 Every finalized `JobPosting` carries a **ghost-job / trust signal** — a pure,
@@ -177,8 +190,8 @@ Per-board scrape outcomes are now visible via a shared `BoardSummaryChips` compo
 - **Header strip** (Jobs page) — persistent chip strip rendered in the pinned header when results are present, survives the auto-closing scrape form. Gated on `!scraping && filteredJobs.length > 0`. Cleared on new scrape start, `job.failed`, or clear-postings.
 - **Empty state** (Jobs page) — same strip rendered below the zero-results message to explain per-board why nothing was found. Only owner of the zero-results explanation surface; header strip is never shown alongside it (mutual exclusivity).
 - **Autopilot card** — renders persisted `lastRunSummaries` as chips when run is finished (`!running`). Needs-configuration variant (when `runStatus==='failed'` AND every summary skipped with none errored) renders a neutral `autopilot.badge.needsConfig` badge + HoverPopover hint, not a red failure state.
-- **Chip rendering** — `BoardSummaryChips.tsx` (component + pure `sanitizeReason` sanitizer). Sanitizer redacts UNC paths, IPv4/IPv6, URLs, emails, credential patterns; caps input @1000 chars, output @200 chars. Chip detail display is further capped @60 chars (wraps with `whitespace-normal break-words`). Chip order by severity: error (red) > skipped (neutral) > truncated (amber) > success (green). All-success all-green collapse when multiple boards and all succeeded. Source: `apps/desktop/src/renderer/components/scrape/BoardSummaryChips.tsx`.
-- **I18n keys** — `jobs.boardSummary.{label, count_one, count_other, partial, allOk_one, allOk_other, skip.{needsLogin, needsCompany, needsKeys, other}}` + `autopilot.badge.{needsConfig, needsConfigHint, completedWithErrorsHint}` (en + de).
+- **Chip rendering** — `BoardSummaryChips.tsx` (component + pure `sanitizeReason` sanitizer). Sanitizer redacts UNC paths, IPv4/IPv6, URLs, emails, credential patterns; caps input @1000 chars, output @200 chars. Chip detail display is further capped @60 chars (wraps with `whitespace-normal break-words`). Chip order by severity: error (red) > skipped (neutral) > truncated (amber) > note (blue, informational) > success (green). All-success all-green collapse when multiple boards and all succeeded. **Location notes** (`broadened:<cc>` / `guessed-market:<cc>`, added in PR D) are rendered with tone 'note' and i18n labels mapping the machine token to a user-friendly country-aware message. Source: `apps/desktop/src/renderer/components/scrape/BoardSummaryChips.tsx`.
+- **I18n keys** — `jobs.boardSummary.{label, count_one, count_other, partial, allOk_one, allOk_other, skip.{needsLogin, needsCompany, needsKeys, other}, note.{broadened, guessed}}` + `autopilot.badge.{needsConfig, needsConfigHint, completedWithErrorsHint}` + `autopilot.wizard.target.countryResolved` (en + de).
 - **Whole-scrape failures** — persisted as `lastFailureNote` (sanitized, same redactor) on `JobsPage`; rendered as a small `role="status"` line in header + forwarded to `JobsResults` empty state (never triple-explained when `missingAdzunaKeys` is the root cause).
 - **Skip-toast folding** — the three sticky notification warnings (needs-login / needs-company / needs-keys) were removed; their signal is now persistent in the chip strip (still actionable via `BoardConnectChip` in the scrape form for login boards).
 

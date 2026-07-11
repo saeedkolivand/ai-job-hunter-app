@@ -375,6 +375,19 @@ describe('BoardSummaryChips — all-ok collapse', () => {
     );
     expect(chips()).toHaveLength(2);
   });
+
+  it('does NOT collapse when a sibling board carries an informational note (note ≠ success)', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[
+          { board: 'a', count: 4 },
+          { board: 'b', count: 2, note: 'broadened:de' },
+        ]}
+      />
+    );
+    expect(chips()).toHaveLength(2);
+    expect(chips()[1]?.getAttribute('data-color')).toBe('processing');
+  });
 });
 
 describe('BoardSummaryChips — chip detail cap + wrap classes', () => {
