@@ -135,6 +135,23 @@ fn valid_slug_passes_guard_predicate() {
     }
 }
 
+/// Every curated `ats_seed` slug for this board must pass the production
+/// hostname guard — regression guard against a seed entry silently drifting
+/// out of validator-compatible shape.
+#[test]
+fn ats_seed_recruitee_slugs_pass_the_guard() {
+    let entries: Vec<_> = crate::scraping::boards::ats_seed::by_ats("recruitee").collect();
+    assert!(!entries.is_empty(), "recruitee must have seed entries");
+    for e in entries {
+        assert!(
+            is_valid_recruitee_slug(e.slug),
+            "seed slug '{}' ({}) must pass is_valid_recruitee_slug",
+            e.slug,
+            e.company
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Existing scraper-metadata tests
 // ---------------------------------------------------------------------------

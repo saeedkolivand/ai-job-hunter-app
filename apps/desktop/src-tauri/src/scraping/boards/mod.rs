@@ -3,7 +3,8 @@ pub mod arbeitnow;
 pub mod arbeitsagentur;
 pub mod ashby;
 /// Curated company -> (ATS, slug) seed data + lookup. Not a `Scraper` — not
-/// registered in `SCRAPERS`; a later wiring PR routes these into search input.
+/// registered in `SCRAPERS`; the engine (`scraping/engine/mod.rs`) reads it
+/// via `by_ats` to auto-populate a company-scoped board's search input.
 pub mod ats_seed;
 pub mod bamboohr;
 pub mod berlinstartupjobs;

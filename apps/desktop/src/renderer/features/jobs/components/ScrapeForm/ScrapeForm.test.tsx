@@ -116,6 +116,19 @@ const LISTED_CATALOG: BoardCatalogEntry[] = [
   },
 ];
 
+// #621 — a catalog where the selected board carries a curated company seed.
+const SEEDED_CATALOG: BoardCatalogEntry[] = [
+  {
+    id: 'greenhouse',
+    displayName: 'Greenhouse',
+    mode: 'http',
+    auth: 'guest',
+    listed: true,
+    requiresCompany: true,
+    seededCompanies: ['Stripe', 'Airbnb', 'OpenAI', 'Bosch', 'N26', 'Lyft'],
+  },
+];
+
 const DEFAULT_FORM = {
   boards: ['greenhouse'],
   query: '',
@@ -279,6 +292,36 @@ describe('ScrapeForm — location filter note (PR F integration)', () => {
   });
 
   it('hides the note when no location is set (default form)', () => {
+    renderForm({ form: { ...DEFAULT_FORM, boards: ['greenhouse'], location: '' } });
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SeededCompaniesNote integration (#621) — real component, not stubbed here,
+// so a wrong prop name at the ScrapeForm call site would fail this render
+// instead of silently compiling and passing every other test in the file.
+// No location set in either case, so LocationFilterNote stays out of the way
+// and `getByRole('note')` is unambiguous.
+// ---------------------------------------------------------------------------
+
+describe('ScrapeForm — seeded companies disclosure (#621 integration)', () => {
+  it('shows the disclosure for a selected board with seededCompanies, truncated to 5 names + more', () => {
+    renderForm({
+      catalog: SEEDED_CATALOG,
+      form: { ...DEFAULT_FORM, boards: ['greenhouse'], location: '' },
+    });
+    const note = screen.getByRole('note');
+    expect(note.textContent).toContain('Stripe');
+    expect(note.textContent).toContain('N26');
+    // 6th name truncated away; the pluralized "more" key fired instead (real
+    // interpolated count covered by SeededCompaniesNote.i18n.test.ts).
+    expect(note.textContent).not.toContain('Lyft');
+    expect(note.textContent).toContain('autopilot.wizard.target.seededCompanies.more');
+  });
+
+  it('shows no disclosure for a selected board with no seededCompanies', () => {
+    // Default LISTED_CATALOG's greenhouse entry carries no seededCompanies.
     renderForm({ form: { ...DEFAULT_FORM, boards: ['greenhouse'], location: '' } });
     expect(screen.queryByRole('note')).not.toBeInTheDocument();
   });
