@@ -1332,13 +1332,16 @@
       "applied": "Applied",
       "failed": "Failed",
       "completedWithErrors": "Partial results",
-      "completedWithErrorsHint": "Some boards errored or returned only part of their results. See the per-board summary below.",
+      "completedWithErrorsHint": "Some boards errored or returned only part of their results. Hover the info icon next to the found count for per-board results.",
       "needsConfig": "Needs configuration",
       "needsConfigHint": "No board could run — sign in to boards under Settings → Accounts, or add API keys in Settings → Jobs, then run again.",
       "interrupted": "Interrupted"
     },
     "card": {
       "boardsCount": "{{count}} boards"
+    },
+    "boardResults": {
+      "infoLabel": "Board results"
     },
     "apply": {
       "back": "Back to autopilot",

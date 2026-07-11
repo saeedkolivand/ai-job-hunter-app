@@ -71,6 +71,7 @@ vi.mock('lucide-react', () => ({
   ChevronUp: () => null,
   ExternalLink: () => null,
   Eye: () => null,
+  Info: () => null,
   Pause: () => null,
   Pencil: () => null,
   Play: () => null,
@@ -90,16 +91,25 @@ vi.mock('@ajh/ui', () => ({
     disabled,
     'aria-label': ariaLabel,
     title,
+    'data-degraded': dataDegraded,
   }: {
     children?: React.ReactNode;
     onClick?: () => void;
     disabled?: boolean;
     'aria-label'?: string;
     title?: string;
+    'data-degraded'?: boolean;
   }) =>
     // Use createElement to avoid the JSXOpeningElement[name="button"] lint rule.
     // A native <button> is required so disabled + keyboard behavior are real.
-    React.createElement('button', { onClick, 'aria-label': ariaLabel, title, disabled }, children),
+    // `data-degraded` is forwarded (not the raw className) as the seam for the
+    // amber-tone assertion — a data-* seam over a Tailwind class string, per the
+    // jsdom-CSS-parsing lesson.
+    React.createElement(
+      'button',
+      { onClick, 'aria-label': ariaLabel, title, disabled, 'data-degraded': dataDegraded },
+      children
+    ),
   ConfirmModal: () => null,
   GlassCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   // Render both trigger and panel content so the badge label AND its hover
@@ -876,5 +886,65 @@ describe('AutopilotCard — persisted per-board chips', () => {
       runState: 'scraping',
     });
     expect(screen.queryAllByTestId('chip')).toHaveLength(0);
+    // Asserted independently of the chips (not just implied by sharing one JSX
+    // conditional) so a future refactor decoupling the two is still caught.
+    expect(
+      screen.queryByRole('button', { name: 'autopilot.boardResults.infoLabel' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows an info button with a localized aria-label that reveals the chips when persisted summaries exist', () => {
+    renderCard(
+      withRun('completedWithErrors', [
+        { board: 'greenhouse', count: 4 },
+        { board: 'linkedin', count: 0, error: 'blocked' },
+      ])
+    );
+    // The chips themselves stay in the DOM (behind the HoverPopover mock, which
+    // renders trigger + content unconditionally) — the meaningful assertion is
+    // that the on-demand trigger exists with a real, localized accessible name.
+    expect(
+      screen.getByRole('button', { name: 'autopilot.boardResults.infoLabel' })
+    ).toBeInTheDocument();
+    expect(screen.getAllByTestId('chip').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('does NOT render the info button when there are no persisted summaries', () => {
+    renderCard(makeAutopilot());
+    expect(
+      screen.queryByRole('button', { name: 'autopilot.boardResults.infoLabel' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('escalates the info trigger to the degraded tone when a board is merely skipped beside a succeeding one, even though no colored badge fires', () => {
+    // Plain `completed` + one skipped board: `RUN_STATUS_BADGE` has no entry
+    // for `completed`, so no colored badge renders at all — the info
+    // trigger's own tone is the ONLY surviving "something's off" signal.
+    renderCard(
+      withRun('completed', [
+        { board: 'xing', count: 0, skipped: 'needs-login' },
+        { board: 'linkedin', count: 5 },
+      ])
+    );
+    expect(screen.queryByText('autopilot.badge.failed')).not.toBeInTheDocument();
+    expect(screen.queryByText('autopilot.badge.completedWithErrors')).not.toBeInTheDocument();
+    expect(screen.queryByText('autopilot.badge.needsConfig')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'autopilot.boardResults.infoLabel' })
+    ).toHaveAttribute('data-degraded', 'true');
+  });
+
+  it('keeps the resting (non-degraded) tone when every board succeeded', () => {
+    renderCard(withRun('completed', [{ board: 'linkedin', count: 5 }]));
+    expect(
+      screen.getByRole('button', { name: 'autopilot.boardResults.infoLabel' })
+    ).toHaveAttribute('data-degraded', 'false');
+  });
+
+  it('does NOT escalate for an informational location note alone (no cry-wolf amber)', () => {
+    renderCard(withRun('completed', [{ board: 'linkedin', count: 5, note: 'broadened:de' }]));
+    expect(
+      screen.getByRole('button', { name: 'autopilot.boardResults.infoLabel' })
+    ).toHaveAttribute('data-degraded', 'false');
   });
 });
