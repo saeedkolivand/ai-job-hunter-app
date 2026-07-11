@@ -68,6 +68,7 @@ export TURBO_FORCE=1
 # diff against the merge-base with origin/main. Any failure → FULL gate.
 ZERO=0000000000000000000000000000000000000000
 CHANGED=""
+RANGES=""
 HAVE_RANGE=0
 while read -r local_ref local_sha remote_ref remote_sha; do
   if [ -z "${local_sha:-}" ] || [ "$local_sha" = "$ZERO" ]; then
@@ -85,6 +86,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     range="$remote_sha..$local_sha"
   fi
   files=$(git diff --name-only "$range" 2>/dev/null || true)
+  RANGES="$RANGES $range"
   CHANGED="$CHANGED
 $files"
   HAVE_RANGE=1
@@ -181,8 +183,19 @@ if [ -n "$RUST" ]; then
   echo "▶ Running cargo check..."
   cargo check --all-targets --all-features --locked
 
-  echo "▶ Running Rust tests (incl. architecture boundary tests)..."
-  cargo test --all-features --locked
+  if [ -n "${AJH_SKIP_CARGO_TEST:-}" ]; then
+    echo "⚠ AJH_SKIP_CARGO_TEST=1 — skipping ONLY cargo test (known host DLL fault). CI still runs it."
+  else
+    echo "▶ Running Rust tests (incl. architecture boundary tests)..."
+    test_out=$(cargo test --all-features --locked 2>&1) || {
+      if printf '%s' "$test_out" | grep -qi "STATUS_ENTRYPOINT_NOT_FOUND\|0xc0000139"; then
+        echo "⚠ cargo test hit the known host entrypoint fault — skipping ONLY cargo test; check/clippy/fmt/deny still run. CI remains authoritative."
+      else
+        printf '%s\n' "$test_out"
+        exit 1
+      fi
+    }
+  fi
 
   echo "▶ Running Rust clippy..."
   cargo clippy --all-targets --all-features --locked -- -D warnings
@@ -208,6 +221,19 @@ if [ -n "$RUST" ]; then
   fi
 
   cd "$GIT_ROOT"
+fi
+
+# ── AI review of the push range (ADR-0008) ─────────────────────────────────────
+# Deterministic findings (ast-grep) block from day one; LLM findings are in
+# RATCHET warn mode (REVIEW_MODE=block to enforce). REVIEW_SKIP=1 skips but is
+# AUDITED in .claude/.review-metrics.jsonl — prefer it over --no-verify, which
+# silently skips this whole gate.
+if [ -n "${REVIEW_SKIP:-}" ]; then
+  echo "⚠ REVIEW_SKIP=1 — AI pre-push review skipped (audited)."
+  PREPUSH_RANGES="$RANGES" node scripts/pre-push-review.mjs --log-skip || true
+else
+  echo "▶ AI review of push range..."
+  PREPUSH_RANGES="$RANGES" node scripts/pre-push-review.mjs
 fi
 
 echo "✓ Pre-push gate complete"

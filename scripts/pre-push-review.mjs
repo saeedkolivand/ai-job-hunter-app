@@ -196,7 +196,8 @@ ${learnings ? `\n## Known repo false positives — do NOT re-raise any of these\
 ${diff}
 \`\`\`
 `;
-  const r = runClaudeReview({ cwd, prompt, model });
+  // no Stop-hook timeout constrains us here — give big pushes more headroom
+  const r = runClaudeReview({ cwd, prompt, model, timeoutMs: 180000 });
   metric.parse_retries = r.parseRetries;
   if (r.error === 'llm_unavailable' || r.parseFailed) {
     say(
