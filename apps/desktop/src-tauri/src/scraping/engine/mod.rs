@@ -713,6 +713,11 @@ fn desc_len(p: &JobPosting) -> usize {
 /// JSON `null` or `""`) is left untouched; a key the incumbent lacks, or holds
 /// null/empty for, is filled from the challenger. Never removes an incumbent
 /// key the challenger doesn't have.
+///
+/// Unions arbitrary extra keys; the TS mirror
+/// (`features/jobs/lib/merge-postings.ts` `collapseDuplicate`) fills a FIXED
+/// field list instead — any NEW key a board writes into `JobPosting.extra`
+/// must be added to that TS fill-list too (lockstep pair).
 fn merge_extra(
     incumbent: &mut HashMap<String, serde_json::Value>,
     challenger: HashMap<String, serde_json::Value>,

@@ -293,3 +293,55 @@ describe('mergePostings — cross-source canonical-key dedup', () => {
     expect(result[0]?.company).toBe('BackendCo');
   });
 });
+
+describe('mergePostings — absorbed out-param (selection traceability)', () => {
+  it('records the exact root-cause scenario: a selected board-id live row absorbed into the aggregator-id persisted incumbent', () => {
+    // boards=[aggregator, board]. `board` streams first (only live copy), the
+    // user selects it. The persisted refetch (postings, arriving after
+    // job.completed) holds the SAME job under the aggregator's id — the engine's
+    // incumbent-selection order follows board input order, not display arrival
+    // order — so `aggregator-1` is first-seen (incumbent) and `board-1` is the
+    // absorbed challenger.
+    const aggregatorPersisted = makePosting({
+      id: 'aggregator-1',
+      source: 'aggregator',
+      url: 'https://acme.example/jobs/42',
+    });
+    const boardLive = makePosting({
+      id: 'board-1',
+      source: 'board',
+      url: 'https://www.acme.example/jobs/42?utm_source=x',
+    });
+    const absorbed = new Map<string, string>();
+    const result = mergePostings([aggregatorPersisted], [boardLive], absorbed);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe('aggregator-1');
+    expect(absorbed.get('board-1')).toBe('aggregator-1');
+    expect(absorbed.size).toBe(1);
+  });
+
+  it('does not record an entry when no collapse happens (distinct jobs)', () => {
+    const a = makePosting({ id: 'a', url: 'https://acme.example/jobs/1' });
+    const b = makePosting({ id: 'b', url: 'https://acme.example/jobs/2' });
+    const absorbed = new Map<string, string>();
+    mergePostings([a], [b], absorbed);
+    expect(absorbed.size).toBe(0);
+  });
+
+  it('does not record an entry when the id-merge (pass 1) already unified the row (same id both sides)', () => {
+    // Pass 1 drops the live copy before pass 2 ever runs — same id, not a
+    // cross-source absorb, so nothing should be recorded as "absorbed".
+    const backend = makePosting({ id: 'shared', url: 'https://acme.example/jobs/42' });
+    const live = makePosting({ id: 'shared', url: 'https://acme.example/jobs/42' });
+    const absorbed = new Map<string, string>();
+    mergePostings([backend], [live], absorbed);
+    expect(absorbed.size).toBe(0);
+  });
+
+  it('is a no-op (does not throw) when the caller omits the out-param', () => {
+    const a = makePosting({ id: 'a', url: 'https://acme.example/jobs/42' });
+    const b = makePosting({ id: 'b', url: 'https://acme.example/jobs/42' });
+    expect(() => mergePostings([], [a, b])).not.toThrow();
+  });
+});

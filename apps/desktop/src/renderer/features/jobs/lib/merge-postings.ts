@@ -52,7 +52,8 @@ function mergeInteractions(
  *   usePostingActions / TailorFlow / ApplicationDetailPage) when a direct-board
  *   duplicate with no salary beat it on description length. `trust` (the ghost-job
  *   signal) is filled the same way so a collapse never regresses a row from "has a
- *   trust read" to "none".
+ *   trust read" to "none". This fill-list must track every key any board writes
+ *   into `JobPosting.extra` — lockstep with Rust `merge_extra`.
  */
 function collapseDuplicate(incumbent: Posting, challenger: Posting): Posting {
   return {
@@ -91,8 +92,26 @@ function collapseDuplicate(incumbent: Posting, challenger: Posting): Posting {
  *    puts backend `postings` before `livePostings`, a persisted row (which carries
  *    the user's interactions) is the incumbent over a streamed duplicate. See
  *    {@link collapseDuplicate} for the survivor policy.
+ *
+ * @param absorbed Optional out-param: when a challenger id collapses into a
+ *   survivor, `absorbed.set(challengerId, survivorId)` is recorded. Traceability
+ *   for callers that hold external state keyed by posting id (concretely:
+ *   `JobsResults`' `selectedId`) — a `board`-id row can be selected while it's
+ *   the only live copy, then later absorbed into an `aggregator`-id incumbent
+ *   once the persisted list refetches (boards stream at different speeds; the
+ *   engine's incumbent-selection order need not match display arrival order).
+ *   Without this, the id the caller has selected silently vanishes from the
+ *   merged list and any "selection missing → fall back to top" reconciliation
+ *   swaps the open detail pane to an unrelated job. An out-param (not a return-
+ *   shape change) was chosen to keep every existing `mergePostings(...)` call
+ *   site — which uses the return value as a plain `Posting[]` — unchanged; only
+ *   `JobsPage` (which owns `selectedId`) needs to pass one.
  */
-export function mergePostings(postings: Posting[], livePostings: Posting[]): Posting[] {
+export function mergePostings(
+  postings: Posting[],
+  livePostings: Posting[],
+  absorbed?: Map<string, string>
+): Posting[] {
   // Pass 1 — merge by id (backend wins).
   const byId = new Map<string, Posting>();
   for (const p of postings) byId.set(p.id, p);
@@ -111,7 +130,10 @@ export function mergePostings(postings: Posting[], livePostings: Posting[]): Pos
       continue;
     }
     const incumbent = survivors[idx];
-    if (incumbent) survivors[idx] = collapseDuplicate(incumbent, p);
+    if (incumbent) {
+      survivors[idx] = collapseDuplicate(incumbent, p);
+      if (p.id !== incumbent.id) absorbed?.set(p.id, incumbent.id);
+    }
   }
   return survivors;
 }
