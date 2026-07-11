@@ -264,6 +264,28 @@ If a commit is rejected, check the terminal output for the specific lint error. 
 
 ---
 
+## Deterministic Review Tooling
+
+The Stop review-gate runs **Tier-0 structural linters** to catch regressions before human review:
+
+```bash
+pnpm scan:rules              # ast-grep structural rules from .claude/review-rules/*.yml
+```
+
+These rules are zero-false-positive and **mandatory** — the repo must always scan clean. A rule that fires on `main` is either a real regression (fix the code) or a bad rule (disable/refine in `sgconfig.yml`). Rules check for unsafe patterns (environment variables outside platform modules, Result-to-string conversions, GC infinity bugs in queries, etc.) — see `.claude/review-rules/*.yml` for the full catalog.
+
+For **secret scanning** during local review (before push), install [gitleaks](https://github.com/gitleaks/gitleaks):
+
+```bash
+winget install gitleaks              # Windows
+brew install gitleaks                # macOS
+scoop install gitleaks               # Windows (alternative)
+```
+
+Then run `gitleaks detect --source . -v` in the repo root to catch hardcoded credentials, API keys, etc. The reviewer falls back to a grep-based scan if gitleaks is absent.
+
+---
+
 ## Optional: Knowledge-Graph MCP (graphify)
 
 [graphify](https://pypi.org/project/graphifyy/) builds a queryable knowledge graph of the codebase under `graphify-out/`. It can also run as a local [MCP](https://modelcontextprotocol.io) server, exposing `query` / `explain` / `path` retrieval to AI dev tools (Claude Code, etc.) — usually far cheaper than grepping raw files.

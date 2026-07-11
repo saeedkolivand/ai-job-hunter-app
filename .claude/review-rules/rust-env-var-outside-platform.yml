@@ -1,0 +1,13 @@
+id: rust-env-var-outside-platform
+language: rust
+severity: error
+message: std::env::var outside platform/ — move env access into platform/config.rs
+note: docs/architecture-rules.md — env access is centralized in the platform layer (CI-enforced by cargo test --test architecture)
+files:
+  - apps/desktop/src-tauri/src/**
+ignores:
+  - '**/platform/**'
+rule:
+  any:
+    - pattern: std::env::var($$$A)
+    - pattern: std::env::var_os($$$A)

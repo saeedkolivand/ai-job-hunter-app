@@ -1,0 +1,14 @@
+id: rust-reqwest-construct-outside-net
+language: rust
+severity: error
+message: reqwest client CONSTRUCTED outside net/http.rs — use net::http shared()/build_client()
+note: docs/architecture-rules.md R5 — construction only; using the reqwest::Client type elsewhere is fine
+files:
+  - apps/desktop/src-tauri/src/**
+ignores:
+  - '**/net/http.rs'
+rule:
+  any:
+    - pattern: reqwest::Client::new($$$A)
+    - pattern: reqwest::Client::builder($$$A)
+    - pattern: reqwest::ClientBuilder::new($$$A)
