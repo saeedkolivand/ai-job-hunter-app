@@ -6,6 +6,7 @@ packages:
 overrides:
   esbuild: '>=0.28.1 <0.29'
 allowBuilds:
+  '@ast-grep/cli': true
   '@swc/core': true
   better-sqlite3: true
   core-js: false

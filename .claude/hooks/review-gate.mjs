@@ -151,8 +151,10 @@ try {
     exit0();
   }
 
-  // 5. Tier 0 — architecture guards (deterministic findings, confidence 1.0).
-  // ponytail: JS regex over changed .rs contents; PR 3 swaps this for ast-grep.
+  // 5. Tier 0 — deterministic guards (confidence 1.0). Primary: the ast-grep pack
+  // (.claude/review-rules/*.yml, discovered via repo-root sgconfig.yml — never pass
+  // -c, it silently breaks the rules' files: globs). Fallback: legacy JS regexes
+  // when the binary is unavailable.
   const findLine = (content, re) => {
     const i = content.split('\n').findIndex((l) => re.test(l));
     return i >= 0 ? i + 1 : 0;
@@ -169,52 +171,100 @@ try {
       .join('\n');
     addedByFile.set(s.file, (addedByFile.get(s.file) || '') + added + '\n');
   }
+  const introducedIn = (file, snippet) => {
+    const probe = (snippet || '').split('\n')[0].trim();
+    return probe ? (addedByFile.get(file) || '').includes(probe) : false;
+  };
   const tier0 = [];
-  const arch = (file, line, summary, fix, introduced) =>
-    tier0.push({
-      severity: 'HIGH',
-      category: 'arch',
-      file,
-      line,
-      summary: introduced ? summary : `${summary} (pre-existing)`,
-      evidence: introduced
-        ? 'deterministic Tier-0 guard (docs/architecture-rules.md)'
-        : 'pre-existing in a touched file — not introduced by this diff',
-      fix,
-      confidence: 1,
-      introduced_by_diff: introduced,
-    });
-  const ARCH_RULES = [
-    [
-      /std::env::var\b/,
-      /\/platform\//,
-      'std::env::var outside platform/',
-      'move env access into platform/config.rs',
-    ],
-    [/reqwest::Client\b/, /\/net\//, 'reqwest::Client outside net/', 'use net/http.rs shared()'],
-    [
-      /Result<[^>]*,\s*String\s*>/,
-      /\/error(\.rs|\/)/,
-      'untyped Result<_, String> outside error/',
-      'use AppError/AppResult',
-    ],
-  ];
-  for (const f of nonSkipped) {
-    if (!f.endsWith('.rs')) continue;
-    let content = '';
-    try {
-      content = fs.readFileSync(path.join(cwd, f), 'utf8');
-    } catch {
-      continue;
+  let sgRan = false;
+  try {
+    // ast-grep exits 1 when error findings exist — that is a result, not a failure;
+    // forward-slash repo-relative paths only (backslashes break files: globs).
+    // shell:true is required on Windows (pnpm is a .cmd) — quote every path so
+    // spaces/metacharacters in a filename can't break or be interpreted by the shell.
+    const r = spawnSync(
+      'pnpm',
+      ['exec', 'ast-grep', 'scan', '--json=compact', '--', ...nonSkipped.map((f) => `"${f}"`)],
+      { cwd, encoding: 'utf8', shell: true, timeout: 60000, maxBuffer: 20 * 1024 * 1024 }
+    );
+    const out = (r.stdout || '').trim();
+    // distinguish "ran clean, empty output" from "binary missing/errored" — only the
+    // latter may fall back to the legacy regexes
+    const matches = !r.error && r.status === 0 && !out ? [] : JSON.parse(out);
+    sgRan = true;
+    for (const m of matches) {
+      const file = String(m.file || '').replace(/\\/g, '/');
+      const introduced = introducedIn(file, m.text);
+      tier0.push({
+        severity: m.severity === 'error' ? 'HIGH' : 'MEDIUM',
+        category: 'arch',
+        file,
+        line: (m.range && m.range.start && m.range.start.line + 1) || 0,
+        summary: (m.message || m.ruleId) + (introduced ? '' : ' (pre-existing)'),
+        evidence: introduced
+          ? `ast-grep rule ${m.ruleId}`
+          : `ast-grep rule ${m.ruleId} — pre-existing in a touched file, not introduced by this diff`,
+        fix: m.note || '',
+        confidence: 1,
+        introduced_by_diff: introduced,
+      });
     }
-    const p = '/' + f;
-    const added = addedByFile.get(f) || '';
-    // true = introduced by the diff, false = pre-existing, null = absent
-    const hit = (re) => (re.test(added) ? true : re.test(content) ? false : null);
-    for (const [re, exemptRe, summary, fix] of ARCH_RULES) {
-      if (exemptRe.test(p)) continue;
-      const h = hit(re);
-      if (h !== null) arch(f, findLine(content, re), summary, fix, h);
+  } catch {}
+  if (!sgRan) {
+    metric.sg_fallback = true;
+    const arch = (file, line, summary, fix, introduced) =>
+      tier0.push({
+        severity: 'HIGH',
+        category: 'arch',
+        file,
+        line,
+        summary: introduced ? summary : `${summary} (pre-existing)`,
+        evidence: introduced
+          ? 'deterministic Tier-0 guard (docs/architecture-rules.md)'
+          : 'pre-existing in a touched file — not introduced by this diff',
+        fix,
+        confidence: 1,
+        introduced_by_diff: introduced,
+      });
+    const ARCH_RULES = [
+      [
+        /std::env::var(_os)?\b/,
+        /\/platform\//,
+        'std::env::var outside platform/',
+        'move env access into platform/config.rs',
+      ],
+      [
+        // R5 is about CONSTRUCTION — using the reqwest::Client type elsewhere is fine.
+        // exempt only net/http.rs, matching the ast-grep rule's ignores exactly
+        /reqwest::Client::(new|builder)\(|reqwest::ClientBuilder::new\(/,
+        /\/net\/http\.rs$/,
+        'reqwest client constructed outside net/http.rs',
+        'use net/http.rs shared()/build_client()',
+      ],
+      [
+        /Result<[^>]*,\s*String\s*>/,
+        /\/error(\.rs|\/)/,
+        'untyped Result<_, String> outside error/',
+        'use AppError/AppResult',
+      ],
+    ];
+    for (const f of nonSkipped) {
+      if (!f.endsWith('.rs')) continue;
+      let content = '';
+      try {
+        content = fs.readFileSync(path.join(cwd, f), 'utf8');
+      } catch {
+        continue;
+      }
+      const p = '/' + f;
+      const added = addedByFile.get(f) || '';
+      // true = introduced by the diff, false = pre-existing, null = absent
+      const hit = (re) => (re.test(added) ? true : re.test(content) ? false : null);
+      for (const [re, exemptRe, summary, fix] of ARCH_RULES) {
+        if (exemptRe.test(p)) continue;
+        const h = hit(re);
+        if (h !== null) arch(f, findLine(content, re), summary, fix, h);
+      }
     }
   }
 
@@ -225,8 +275,8 @@ try {
     cache = new Set(fs.readFileSync(cachePath, 'utf8').split('\n').filter(Boolean));
   } catch {}
   const hashes = hunkHashes(diff);
-  // pre-existing (non-blocking) tier-0 hits must not defeat the cache forever
-  const tier0Blocking = tier0.some((t) => t.introduced_by_diff);
+  // pre-existing / warning-severity tier-0 hits must not defeat the cache forever
+  const tier0Blocking = tier0.some((t) => t.introduced_by_diff && t.severity === 'HIGH');
   if (hashes.length && hashes.every((h) => cache.has(h)) && !tier0Blocking) {
     logM({ outcome: 'cache-skip', blocked: false });
     exit0();
@@ -241,7 +291,7 @@ try {
     logM({ outcome: 'tier0-block', blocked: true });
     block(
       `Review gate [tier-0 arch guards] — blocking issues, address then finish:\n\n${tier0
-        .filter((t) => t.introduced_by_diff)
+        .filter((t) => t.introduced_by_diff && t.severity === 'HIGH')
         .map(formatFinding)
         .join('\n')}`
     );

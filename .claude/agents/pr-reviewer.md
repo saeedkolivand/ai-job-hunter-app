@@ -34,7 +34,7 @@ pasted their outputs into your prompt, use those — do NOT re-run them.** Other
 - **Cross-OS / `#[cfg]` blind spot:** full doctrine in `.claude/review-checklists/rust.md` — a same-host cargo run silently excludes other-OS `#[cfg]` code; treat touched OS-gated code as **UNVERIFIED** (require a cross-target `cargo check --target …` or hand-review the gated bodies). Never report 🟢/PASS on cfg-gated code a same-host build can't compile.
 - If `packages/shared/**` IPC contracts/schemas changed: `rtk pnpm gen:ipc:check` (must be clean) and confirm `mock-client.ts` mirrors any new method.
 - **Targeted tests**: run the test files covering the touched code (not the full suite) — `rtk pnpm --filter @ajh/desktop test <paths>` / the owning package filter.
-- **Secret scan**: grep the diff for hardcoded secrets/keys/tokens (API keys, `adzuna` app_id/app_key literals, private keys, `Authorization:` bearer literals). Any committed secret is 🔴.
+- **Secret scan**: prefer `gitleaks` when on PATH — `gitleaks detect --no-banner --log-opts "<base>..HEAD"` for committed changes plus `gitleaks protect --staged --no-banner` for staged ones (install: `winget install gitleaks` / `scoop install gitleaks`). If absent, fall back to grepping the diff for hardcoded secrets/keys/tokens (API keys, `adzuna` app_id/app_key literals, private keys, `Authorization:` bearer literals) and say the scan was grep-only. Any committed secret is 🔴.
 
 A tool failure the diff caused is a finding. Quote the tool's own output.
 
