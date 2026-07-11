@@ -36,10 +36,7 @@ on:
   pull_request:
     types: [opened, synchronize, ready_for_review]
 
-permissions:
-  contents: read
-  pull-requests: write
-  id-token: write
+permissions: {}
 
 # cancel-in-progress MUST stay false: while a review runs, claude[bot] posts a
 # "working…" comment, which is itself an issue_comment event that starts a second
@@ -64,6 +61,10 @@ jobs:
       github.event.comment.user.login == github.repository_owner
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
 
     steps:
       - name: 🛡️ Harden Runner
@@ -136,7 +137,7 @@ jobs:
             "file": "...", "line": 0, "summary": "...", "evidence": "...", "fix": "...",
             "confidence": 0.0, "introduced_by_diff": true } ] }
             No findings -> { "schema": 1, "findings": [] }. Write the file even when empty.
-          claude_args: '--model claude-sonnet-5 --allowedTools "Read,Grep,Glob,Bash,Write"'
+          claude_args: '--model claude-sonnet-5 --allowedTools "Read,Grep,Glob,Write"'
 
       - name: Deterministic verdict
         run: node scripts/ci-review-verdict.mjs review-findings.json

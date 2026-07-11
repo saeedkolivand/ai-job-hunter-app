@@ -1035,9 +1035,9 @@ jobs:
           fetch-depth: 0
 
       - name: 🔐 Gitleaks Scan
-        uses: gitleaks/gitleaks-action@v2
-        with:
-          config-path: .gitleaksignore
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ──────────────────────────────────────────────────────────────────────
   # Umbrella gate — the single required status check for branch protection.
