@@ -114,8 +114,13 @@ try {
     // unresolved blockers from previous reviews ride the deterministic lane
     say('✗ AI review: unresolved HIGH/CRITICAL findings from previous reviews:');
     openBlocking.forEach((f) => say('  ' + formatFinding(f)));
-    logM({ outcome: 'reemit-block', blocked: true });
-    process.exit(REVIEW_MODE === 'block' ? 1 : 0); // ledger re-emits ratchet too
+    if (REVIEW_MODE === 'block') {
+      logM({ outcome: 'reemit-block', blocked: true });
+      process.exit(1);
+    }
+    // warn mode: record the re-emits but CONTINUE into layers 2-3 — a stale open
+    // finding must not suppress fresh review of the NEW code in this push
+    metric.reemits = openBlocking.length;
   }
 
   // added (+) lines per file — everything in the push range is being pushed, but
