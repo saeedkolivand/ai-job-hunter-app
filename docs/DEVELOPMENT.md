@@ -285,6 +285,22 @@ scoop install gitleaks               # Windows (alternative)
 
 Then run `gitleaks detect --source . -v` in the repo root to catch hardcoded credentials, API keys, etc. The reviewer falls back to a grep-based scan if gitleaks is absent.
 
+### Pre-push AI review
+
+An LLM review runs immediately before each push. The gate has **three layers** (run sequentially, cheapest first, short-circuiting on the first blocking layer):
+
+1. **Cache fast-path** — hunks already reviewed by a prior Stop gate pass through in <1s
+2. **ast-grep deterministic scan** — structural rules from `.claude/review-rules/` (zero false-positives); any HIGH/CRITICAL finding **blocks the push immediately**
+3. **One Sonnet schema-1 review** — in `RATCHET warn mode` (advisory); set `REVIEW_MODE=block` via environment variable (`REVIEW_MODE=block git push`) or permanently by exporting it / flipping the script default to enforce block-on-finding after `/review-stats` shows a clean false-positive rate
+
+**Escape hatches:**
+
+- `REVIEW_SKIP=1 git push` — skips AI review but is **audited** in `.claude/.review-metrics.jsonl` (preferred over `--no-verify`, which hides the audit trail)
+- `AJH_SKIP_CARGO_TEST=1` — skip `cargo test` only (known Windows `STATUS_ENTRYPOINT_NOT_FOUND` DLL fault; CI is authoritative). Use this to work around the host issue without hiding the full pre-push audit.
+- `--no-verify` — unsafe; bypasses entire hook but leaves no audit trail
+
+The hook flows: `CHANGED` files → `RANGES` per commit → passed to `scripts/pre-push-review.mjs` via `PREPUSH_RANGES` env var. If the script exits non-zero, the push fails; `REVIEW_SKIP=1` allows the push and logs it.
+
 ---
 
 ## Optional: Knowledge-Graph MCP (graphify)
