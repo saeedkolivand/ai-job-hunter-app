@@ -1060,6 +1060,38 @@ fn merge_dedups_same_job_across_two_url_variants() {
 }
 
 #[test]
+fn merge_collapses_persisted_row_against_a_new_url_variant() {
+    // Back-compat: a found-job persisted under one raw URL must merge with an
+    // incoming batch item that is a *variant* of the same URL (tracking params
+    // vs. hash fragment) — they share one canonical key, so the re-surfaced job
+    // updates the existing row instead of adding a duplicate, and only the truly
+    // new job is flagged. Guards the merge_key → canonical_job_key delegation:
+    // the algorithm is unchanged, so old-scheme keys still recompute identically.
+    let persisted = found_job("https://boards.example.com/jobs/42?utm_source=x", 100);
+    let variant = found_job("https://boards.example.com/jobs/42#apply", 999);
+    let fresh = found_job("https://boards.example.com/jobs/99", 200);
+
+    let merged = merge_found_jobs(&[persisted], vec![variant, fresh]);
+
+    assert_eq!(
+        merged.len(),
+        2,
+        "the variant merges into the persisted row; only the fresh job is added"
+    );
+    let resurfaced = merged
+        .iter()
+        .find(|j| j.url.contains("/jobs/42"))
+        .expect("the persisted job's row survives");
+    assert_eq!(resurfaced.found_at, 100, "first-seen time preserved");
+    assert!(!resurfaced.is_new, "a re-surfaced URL variant is not new");
+    let brand_new = merged
+        .iter()
+        .find(|j| j.url.contains("/jobs/99"))
+        .expect("the fresh job is present");
+    assert!(brand_new.is_new, "the never-seen job is flagged new");
+}
+
+#[test]
 fn merge_dedups_internal_batch_duplicate() {
     // The same job surfaced by two sources (aggregator + a named board) in ONE run.
     let from_aggregator = found_job("https://jobs.example.com/eng-42", 1);

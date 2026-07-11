@@ -210,10 +210,16 @@ export function JobsPage() {
     if (livePostings.length > 0) setShowScrapeForm(false);
   }, [livePostings.length]);
 
-  const allPostings = useMemo(
-    () => mergePostings(postings, livePostings),
-    [postings, livePostings]
-  );
+  // `absorbedInto` traces which live-stream ids collapsed into which survivor id
+  // (boards stream at different speeds and the persisted refetch can land under a
+  // DIFFERENT incumbent than the one currently selected) — JobsResults consumes it
+  // to re-point a stale `selectedId` at its survivor instead of silently falling
+  // back to the top of the list.
+  const { allPostings, absorbedInto } = useMemo(() => {
+    const absorbedInto = new Map<string, string>();
+    const allPostings = mergePostings(postings, livePostings, absorbedInto);
+    return { allPostings, absorbedInto };
+  }, [postings, livePostings]);
 
   const handleClearPostings = async () => {
     setConfirmClear(false);
@@ -394,6 +400,7 @@ export function JobsPage() {
             // empty state doesn't re-show a prior scrape's diagnostics when a
             // filter (not the scrape) is what emptied the visible list.
             totalCount={allPostings.length}
+            absorbedInto={absorbedInto}
             onShowMore={handleShowMore}
             onScrape={() => setShowScrapeForm(true)}
           />

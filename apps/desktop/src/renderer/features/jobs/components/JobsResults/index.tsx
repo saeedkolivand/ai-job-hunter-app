@@ -36,6 +36,12 @@ interface JobsResultsProps {
    *  Optional — when omitted, `filtered` is treated as authoritative (matches
    *  every call site that doesn't apply a filter). */
   totalCount?: number;
+  /** Maps an absorbed cross-source-duplicate id to the survivor id it collapsed
+   *  into (`mergePostings`'s `absorbed` out-param) — lets the selection
+   *  reconciliation effect below re-point a stale `selectedId` at the SAME job
+   *  under its new id, instead of silently falling back to the top of the list.
+   *  Optional: callers that never merge duplicate sources (or tests) can omit it. */
+  absorbedInto?: Map<string, string>;
   onShowMore: () => void;
   onScrape: () => void;
 }
@@ -58,6 +64,7 @@ export function JobsResults({
   boardSummaries,
   failureNote,
   totalCount,
+  absorbedInto,
   onShowMore,
   onScrape,
 }: JobsResultsProps) {
@@ -101,16 +108,26 @@ export function JobsResults({
   const topId = filtered[0]?.id ?? null;
   const selectionInDisplay = selectedId !== null && filtered.some((p) => p.id === selectedId);
 
-  // Auto-select: pick topId only when there is NO valid selection in the display.
-  // This preserves the user's chosen job across re-scrapes, show-more, and live
-  // prepends — we only step in when the detail pane would otherwise be blank
-  // (fresh search with nothing selected, or selection was filtered out).
+  // If the selection isn't directly in `filtered`, it may have been absorbed by
+  // mergePostings' cross-source collapse (a live `board`-id row selected before
+  // the persisted refetch lands it under a DIFFERENT `aggregator`-id incumbent —
+  // boards stream at different speeds, so the engine's incumbent choice need not
+  // match the id the user already had open). Resolve to that survivor BEFORE
+  // falling back to topId — the survivor IS the same job, just a new id.
+  const survivorId = selectedId !== null ? (absorbedInto?.get(selectedId) ?? null) : null;
+  const survivorInDisplay = survivorId !== null && filtered.some((p) => p.id === survivorId);
+
+  // Auto-select: pick the survivor (if the selection collapsed into one) or
+  // topId, only when there is NO valid selection in the display. This preserves
+  // the user's chosen job across re-scrapes, show-more, and live prepends — we
+  // only step in when the detail pane would otherwise be blank/wrong (fresh
+  // search with nothing selected, selection was filtered out, or it collapsed
+  // into a differently-id'd survivor).
   useEffect(() => {
     if (viewMode !== 'split' || topId === null) return;
-    if (!selectionInDisplay) {
-      setJobs({ selectedId: topId });
-    }
-  }, [viewMode, topId, selectionInDisplay, setJobs]);
+    if (selectionInDisplay) return;
+    setJobs({ selectedId: survivorInDisplay && survivorId !== null ? survivorId : topId });
+  }, [viewMode, topId, selectionInDisplay, survivorInDisplay, survivorId, setJobs]);
 
   // Windowed list: only visible rows (+ overscan) mount. Keyed by posting id so
   // measurement survives live-prepended rows during a scrape.

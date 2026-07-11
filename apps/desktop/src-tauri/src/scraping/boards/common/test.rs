@@ -92,3 +92,85 @@ fn partial_harvest_is_kept_not_propagated() {
         "a page failure after many items were already collected must keep the partial harvest"
     );
 }
+
+// ── canonical_job_key (trust PR E, stage 1) ──────────────────────────────────
+//
+// The app-wide cross-source dedup key. Stage 2 (autopilot merge) and stage 3
+// (renderer `mergePostings`, mirrored in TS) key on the EXACT same algorithm, so
+// these assertions pin the contract all three stages must agree on.
+
+#[test]
+fn canonical_key_same_url_across_boards_collapses() {
+    // www/tracking variants of the same URL from different boards → same key
+    // (URL identity via normalize_job_url); differing titles don't matter once a
+    // usable URL exists (the URL is the identity).
+    let a = canonical_job_key(
+        "https://www.acme.example/jobs/42?utm_source=x",
+        "Senior Engineer",
+        "Acme",
+    );
+    let b = canonical_job_key("https://acme.example/jobs/42", "Sr. Engineer", "Acme Inc");
+    assert_eq!(
+        a, b,
+        "same canonical URL must key identically regardless of board/title"
+    );
+    assert_eq!(a, "https://acme.example/jobs/42");
+}
+
+#[test]
+fn canonical_key_urlless_matches_on_title_and_company() {
+    // No usable URL → normalized `title\u{1}company` key; case- and
+    // whitespace(edge)-insensitive via trim + lowercase.
+    let a = canonical_job_key("", " Senior Rust Engineer ", "Acme");
+    let b = canonical_job_key("", "senior rust engineer", "  ACME ");
+    assert_eq!(
+        a, b,
+        "same title+company must key identically when no URL exists"
+    );
+    assert_eq!(a, "senior rust engineer\u{1}acme");
+}
+
+/// Cross-language drift fixture — the TS mirror
+/// (`features/jobs/lib/canonical-job-key.ts`) asserts against this EXACT same
+/// title/company pair, so a divergence in either language's lowercasing rules
+/// is caught by comparing the two expected strings side by side.
+#[test]
+fn canonical_key_urlless_non_ascii_lowercases_correctly() {
+    let key = canonical_job_key("", "Développeur Sénior", "Müller GmbH");
+    assert_eq!(key, "développeur sénior\u{1}müller gmbh");
+}
+
+#[test]
+fn canonical_key_near_miss_titles_stay_distinct() {
+    // Precision requirement: a broader/narrower title at the same company must
+    // NOT merge.
+    let senior = canonical_job_key("", "Senior Rust Engineer", "Acme");
+    let plain = canonical_job_key("", "Rust Engineer", "Acme");
+    assert_ne!(senior, plain, "near-miss titles must stay distinct");
+}
+
+#[test]
+fn canonical_key_separator_cannot_be_forged_by_title() {
+    // The U+0001 (SOH) separator means a title that merely CONTAINS the company
+    // name can't collide with a genuine title+company split.
+    let forged = canonical_job_key("", "Engineer Acme", "");
+    let genuine = canonical_job_key("", "Engineer", "Acme");
+    assert_ne!(
+        forged, genuine,
+        "the SOH separator must prevent a title-contains-company collision"
+    );
+}
+
+#[test]
+fn canonical_key_empty_or_non_http_url_falls_back_to_title_company() {
+    // Empty, whitespace-only, and dangerous non-http(s) schemes all normalize to
+    // "" (no openable link) → fall back to the title+company key.
+    let expected = "t\u{1}co";
+    assert_eq!(canonical_job_key("", "T", "Co"), expected);
+    assert_eq!(canonical_job_key("   ", "T", "Co"), expected);
+    assert_eq!(
+        canonical_job_key("javascript:alert(1)", "T", "Co"),
+        expected
+    );
+    assert_eq!(canonical_job_key("file:///etc/passwd", "T", "Co"), expected);
+}
