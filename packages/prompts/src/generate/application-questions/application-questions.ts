@@ -18,6 +18,7 @@ import {
   buildApplicantDetailsBlock,
   buildCompanyResearchBlock,
   buildGroundingBlock,
+  buildResumeVoiceDirective,
   buildSalaryRangeBlock,
   buildStyleReferenceBlock,
   buildWebSearchBlock,
@@ -175,7 +176,7 @@ export function buildApplicationAnswerPrompt(params: {
   const webSearchBlock = buildWebSearchBlock(webSearchNotes);
   const applicantBlock = buildApplicantDetailsBlock(applicant);
   const salaryBlock = buildSalaryRangeBlock(salaryRange);
-  const styleBlock = buildStyleReferenceBlock(styleReference);
+  const styleBlock = buildStyleReferenceBlock(styleReference) || buildResumeVoiceDirective();
 
   const conv = letterConventions(market);
   const langNote = meta.mismatch

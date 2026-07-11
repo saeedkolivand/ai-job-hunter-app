@@ -210,6 +210,26 @@ The <style_reference> block is a WRITING-STYLE reference only, taken from the ca
 }
 
 /**
+ * Zero-token voice-register fallback for prose surfaces (cover letter,
+ * application answers, application email) when no external {@link
+ * buildStyleReferenceBlock} writing sample is supplied. The candidate's
+ * résumé is ALREADY embedded verbatim in `<candidate_resume>` a few lines
+ * above in every one of these prompts, so re-feeding it as a second, duplicate
+ * `<style_reference>` block would cost real prompt tokens for zero new
+ * signal. This keeps the same register-transfer intent by pointing the model
+ * at the résumé that's already there, instead. Callers render this ONLY when
+ * `styleReference` is absent — typically as
+ * `buildStyleReferenceBlock(styleReference) || buildResumeVoiceDirective()` —
+ * since a real external sample already carries its own register-transfer
+ * instruction and the two should never stack.
+ */
+export function buildResumeVoiceDirective(): string {
+  return `
+VOICE REFERENCE: mirror ONLY the vocabulary register and natural cadence of the candidate's own writing as it already appears in <candidate_resume> above. Do NOT copy its content, facts, or bullet format into the output.
+`;
+}
+
+/**
  * A validated reference salary range for the role — either web-researched
  * (mirrors the Rust `salary_research::SalaryRange`, already validated there:
  * positive integers, min ≤ max, a plausible currency-code shape) or an

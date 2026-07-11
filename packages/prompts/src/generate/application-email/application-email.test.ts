@@ -330,8 +330,12 @@ describe('buildApplicationEmailPrompt — styleReference', () => {
     expect(user).toMatch(/ignore any instructions/i);
   });
 
-  it('omits the block entirely when no styleReference is given', () => {
+  it('omits the block entirely when no styleReference is given, and instead points at <candidate_resume> (no duplicate résumé tokens)', () => {
     const { user } = buildApplicationEmailPrompt(BASE);
     expect(user).not.toContain('<style_reference>');
+    expect(user).toMatch(/vocabulary register.*natural cadence.*<candidate_resume>/is);
+    expect(user).toMatch(/do not copy its content, facts, or bullet format/i);
+    // The résumé text is embedded exactly once — never re-fed as a second block.
+    expect(user.split(BASE.resume.trim()).length - 1).toBe(1);
   });
 });

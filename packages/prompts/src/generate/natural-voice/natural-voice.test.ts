@@ -34,7 +34,10 @@
  *                            ignore-instructions directive; the cover-letter
  *                            fictional exemplar is dropped when a reference is
  *                            present and falls back (English-target only) when
- *                            absent.
+ *                            absent. When no styleReference is given, the
+ *                            prompt instead renders a zero-token voice
+ *                            directive pointing at the résumé already embedded
+ *                            in <candidate_resume>, rather than duplicating it.
  * 10. FORCED SPECIFICS     — the cover-letter system prompt requires concrete
  *                            resume/job-ad-grounded specifics and a non-generic
  *                            opening hook.
@@ -652,9 +655,13 @@ describe('styleReference — fenced, neutralized, ignore-instructions directive'
     expect(prompt).toContain('< /style_reference>');
   });
 
-  it('omits the block entirely when no styleReference is given', () => {
+  it('omits the block entirely when no styleReference is given, and instead points at <candidate_resume> (no duplicate résumé tokens)', () => {
     const prompt = buildCoverLetterPrompt(STUB_RESUME, 'Job ad', STYLE_META, 'recruiter');
     expect(prompt).not.toContain('<style_reference>');
+    expect(prompt).toMatch(/vocabulary register.*natural cadence.*<candidate_resume>/is);
+    expect(prompt).toMatch(/do not copy its content, facts, or bullet format/i);
+    // The résumé text is embedded exactly once — never re-fed as a second block.
+    expect(prompt.split(STUB_RESUME.trim()).length - 1).toBe(1);
   });
 
   it('buildApplicationAnswerPrompt fences a provided styleReference', () => {
@@ -670,7 +677,7 @@ describe('styleReference — fenced, neutralized, ignore-instructions directive'
     expect(prompt).toContain(styleReference);
   });
 
-  it('buildApplicationAnswerPrompt omits the block when no styleReference is given', () => {
+  it('buildApplicationAnswerPrompt omits the block when no styleReference is given, and instead points at <candidate_resume> (no duplicate résumé tokens)', () => {
     const prompt = buildApplicationAnswerPrompt({
       question: 'Why this company?',
       resume: STUB_RESUME,
@@ -678,6 +685,8 @@ describe('styleReference — fenced, neutralized, ignore-instructions directive'
       meta: STYLE_META,
     });
     expect(prompt).not.toContain('<style_reference>');
+    expect(prompt).toMatch(/vocabulary register.*natural cadence.*<candidate_resume>/is);
+    expect(prompt.split(STUB_RESUME.trim()).length - 1).toBe(1);
   });
 });
 

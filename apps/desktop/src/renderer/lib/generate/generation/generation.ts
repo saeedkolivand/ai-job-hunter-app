@@ -436,17 +436,12 @@ export async function generateCoverLetter(
   const applicant = usePreferencesStore.getState().applicant;
   const tone = usePreferencesStore.getState().outputTone;
 
-  // The candidate's own résumé text doubles as a writing-style reference (their
-  // real vocabulary/register), replacing the fictional tone exemplar — see
-  // buildCoverLetterSystemPrompt's `hasStyleReference` + buildStyleReferenceBlock.
-  const styleReference = resume;
-  const system = buildCoverLetterSystemPrompt(
-    mode,
-    profile,
-    tone,
-    meta.targetLanguage,
-    Boolean(styleReference.trim())
-  );
+  // No external writing-style sample is threaded through here: the candidate's
+  // résumé is already embedded verbatim in <candidate_resume>, and the prompt
+  // builder's own voice directive points there instead of duplicating it (see
+  // buildResumeVoiceDirective). `hasStyleReference` stays false (default), so
+  // the fictional tone exemplar (English-target only) still applies.
+  const system = buildCoverLetterSystemPrompt(mode, profile, tone, meta.targetLanguage);
   const user = buildCoverLetterPrompt(
     resume,
     jobAd,
@@ -455,8 +450,7 @@ export async function generateCoverLetter(
     profile,
     companyBrief,
     market,
-    applicant,
-    styleReference
+    applicant
   );
   // Cover letters are prose: more temperature + the shared detector-resistance
   // penalty set (see PROSE_SAMPLING) loosens the phrasing so it reads human, not
@@ -554,9 +548,9 @@ export async function generateApplicationAnswer(params: {
     applicant,
     guidance,
     salaryRange,
-    // The candidate's own résumé doubles as a writing-style reference (their
-    // real vocabulary/register) — see buildStyleReferenceBlock.
-    styleReference: resume,
+    // No external writing-style sample: the résumé is already in
+    // <candidate_resume>, and the prompt builder's own voice directive points
+    // there instead of duplicating it (see buildResumeVoiceDirective).
   });
   // Application answers are prose but résumé-grounded (no-fabrication surface):
   // keep topP/frequencyPenalty/repeatPenalty for detector resistance, but drop
@@ -1020,10 +1014,11 @@ export async function generateApplicationEmail(params: {
     onToken,
   } = params;
   const profile = buildProviderProfile(model);
+  // No external writing-style sample: the résumé is already in
+  // <candidate_resume>, and the prompt builder's own voice directive points
+  // there instead of duplicating it (see buildResumeVoiceDirective).
   const { system, user } = buildApplicationEmailPrompt(
-    // The candidate's own résumé doubles as a writing-style reference (their
-    // real vocabulary/register) — see buildStyleReferenceBlock.
-    { resume, jobAd, meta, recipientName, recipientEmail, companyBrief, styleReference: resume },
+    { resume, jobAd, meta, recipientName, recipientEmail, companyBrief },
     profile
   );
   // Application emails are prose: randomness + the shared detector-resistance

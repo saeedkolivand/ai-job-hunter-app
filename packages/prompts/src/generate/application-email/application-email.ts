@@ -18,6 +18,7 @@ import { type PromptTarget, resolveProfile } from '../../provider/index.js';
 import {
   buildCompanyResearchBlock,
   buildGroundingBlock,
+  buildResumeVoiceDirective,
   buildStyleReferenceBlock,
 } from '../emphasis/index.js';
 import { parseLinksFromResume, stripLinkBlock } from '../links/index.js';
@@ -125,7 +126,7 @@ export function buildApplicationEmailPrompt(
     : `Write in ${lang}.`;
 
   const groundingBlock = buildGroundingBlock(resumeBody, meta.topRequirements ?? []);
-  const styleBlock = buildStyleReferenceBlock(styleReference);
+  const styleBlock = buildStyleReferenceBlock(styleReference) || buildResumeVoiceDirective();
 
   // ── Format skeleton (shared across all depths) ────────────────────────────
   const formatSkeleton = `FORMAT:
