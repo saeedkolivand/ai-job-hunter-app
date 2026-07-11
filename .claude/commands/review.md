@@ -7,8 +7,9 @@ Run the **strict internal pre-PR review** — the gate that runs BEFORE a PR is 
 
 ## 1. Context
 
-- Read `.claude/review-config.md` (path rules + learnings — do not re-raise the listed false positives).
+- Read `.claude/review-config.md` (path rules + Hard exclusions / Signal-quality criteria / Precedents — do not re-raise the listed false positives).
 - Query prior lessons for the touched domains: `node .claude/hooks/lessons.mjs query --domain <d> --limit 4` for each domain whose `lessons_domains` globs (`.claude/review-routes.json`) match the diff (≤3 domains).
+- Load the branch's finding ledger (`.claude/.review-ledger.jsonl`, entries for this branch, last-status-wins per finding): findings already `open` are CONFIRMED — re-emit them in the report without re-verifying; skip spawning verifiers for them.
 
 ## 2. Scope + risk tier (mechanical — compute, don't vibe)
 
@@ -43,6 +44,7 @@ Spawn the ensemble **in parallel** (one Agent call per pass, per the tier). Rese
 4. **Verdict — mechanical**: BLOCK iff any surviving finding has severity CRITICAL/HIGH (🔴/🟠) with `confidence ≥ 0.8` and `introduced_by_diff !== false`. 🟡/⚪ and low-confidence survivors are advisory. **🔴 + 🟠 must be resolved before the PR goes up.**
 5. Report: verdict line first, then surviving findings grouped by severity (`severity | file:line | defect | substantiation | fix`), then advisories. Append any `UNVERIFIED (cross-OS: …)` coverage caveats from the passes verbatim.
 
-## 6. Learnings
+## 6. Learnings + ledger
 
-When a finding turns out to be a false positive, append it to `.claude/review-config.md` learnings so it isn't re-raised — and tell the user which verifier/pass produced it (calibration data for `/review-stats`).
+- When a finding turns out to be a false positive, append it to the right `.claude/review-config.md` section (Hard exclusions / Signal-quality criteria / Precedents) so it isn't re-raised — and tell the user which verifier/pass produced it (calibration data for `/review-stats`).
+- Append each surviving finding to `.claude/.review-ledger.jsonl` as `{"branch": "<branch>", "status": "open", "source": "review", "finding": <schema-1 finding>, "fileHunks": []}` (one JSON line each) so `/review-stats` can track resolution (entries without a hunk baseline are stats-only — the Stop gate neither re-emits nor auto-resolves them).
