@@ -283,20 +283,44 @@ try {
   const model = 'sonnet';
   metric.model = model;
 
-  // owner checklists — 12K TOTAL budget; drop whole trailing owners, never truncate text
+  // owner checklists — 12K TOTAL budget; drop whole trailing owners, never truncate text.
+  // Owners with a shared checklist file load it INSTEAD of their agent persona —
+  // .claude/review-checklists/*.md is the single source of truth shared with
+  // pr-reviewer and the CI review job; agent files remain the fallback.
+  // ponytail: hand-kept 3-entry map, not derived from review-routes.json — owners
+  // and lessons_domains keys don't correspond 1:1 (e.g. job-match-expert→ats).
+  // Adding a checklist file? Extend this map or the gate silently keeps the
+  // agent-file fallback.
+  const OWNER_CHECKLIST = {
+    'frontend-reviewer': 'frontend',
+    'rust-backend-architect': 'rust',
+    'testing-reviewer': 'testing',
+  };
   const agentDir = path.join(cwd, '.claude', 'agents');
-  const CHECKLIST_BUDGET = 12000;
+  const checklistDir = path.join(cwd, '.claude', 'review-checklists');
+  // sized so three full domain checklists (~4-5K each) + one agent fallback all fit —
+  // dropping a whole domain's deep invariants on a multi-domain diff costs more than
+  // the extra prompt tokens
+  const CHECKLIST_BUDGET = 18000;
   const consulted = [];
   const notConsulted = [];
   let checklists = '';
   for (const name of selected) {
     let body = '';
-    try {
-      body = fs
-        .readFileSync(path.join(agentDir, name + '.md'), 'utf8')
-        .replace(/^---[\s\S]*?---/, '')
-        .trim();
-    } catch {}
+    const domain = OWNER_CHECKLIST[name];
+    if (domain) {
+      try {
+        body = fs.readFileSync(path.join(checklistDir, domain + '.md'), 'utf8').trim();
+      } catch {}
+    }
+    if (!body) {
+      try {
+        body = fs
+          .readFileSync(path.join(agentDir, name + '.md'), 'utf8')
+          .replace(/^---[\s\S]*?---/, '')
+          .trim();
+      } catch {}
+    }
     const entry = `### ${name}\n${body}\n\n`;
     if (checklists.length + entry.length > CHECKLIST_BUDGET && consulted.length) {
       notConsulted.push(name);
