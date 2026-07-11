@@ -1340,6 +1340,9 @@
     "card": {
       "boardsCount": "{{count}} boards"
     },
+    "boardResults": {
+      "infoLabel": "Board results"
+    },
     "apply": {
       "back": "Back to autopilot",
       "match": "match",

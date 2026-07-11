@@ -1344,6 +1344,9 @@
     "card": {
       "boardsCount": "{{count}} Boards"
     },
+    "boardResults": {
+      "infoLabel": "Board-Ergebnisse"
+    },
     "apply": {
       "back": "Zurück zum Autopilot",
       "match": "Übereinstimmung",
