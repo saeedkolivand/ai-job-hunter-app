@@ -100,8 +100,8 @@ Active scrapers: **23 boards** (registry as of 2026-07-02). Five boards were ret
 **Jooble** (free tier, third-tier fallback)
 
 - **Search URL:** `https://jooble.org/api/{key}` (POST)
-- **Query params:** `keywords` (required), `location`, `page` (1-indexed)
-- **Pagination:** `page` (1-indexed); returns max 100 results
+- **Request body:** JSON with `keywords` (required), `location`, optional `ResultOnPage` (per-request result cap)
+- **Pagination:** No pagination support; returns up to `ResultOnPage` results per request (or API default if not specified)
 - **Auth required:** API key (user-supplied, free tier from https://jooble.org); stored encrypted in OS keyring
 - **Response format:** JSON `{ jobs: [...], totalCount: N }`
 - **Key data fields:**

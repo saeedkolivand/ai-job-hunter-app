@@ -75,7 +75,7 @@ Two more boards, bringing the registry to 23. Neither is career-ops-ported — s
 - **Ashby casing:** Slug casing is exact and preserved verbatim (e.g., `Linear`, `Perplexity`); must match the registered board.
 - **Lever and SmartRecruiters churn:** Slugs churn fastest (companies migrate off or go dormant); re-verify live before trusting future updates to this table.
 - **Accessor functions:** `all()` → all 59 entries in source order; `by_ats(board_id)` → entries for one ATS board (e.g., `"greenhouse"`).
-- **Test coverage:** Compile-time truth table (`apps/desktop/src-tauri/src/scraping/boards/ats_seed/test.rs`) verifies table integrity: non-empty, every `ats` value matches a registered `Scraper::id()`, Personio entries have exactly one TLD, DACH count ≥ 23, no duplicate ats-slug pairs, etc.
+- **Test coverage:** Compile-time truth table (`apps/desktop/src-tauri/src/scraping/boards/ats_seed/test.rs`) verifies table integrity: non-empty, every `ats` value matches a registered `Scraper::id()`, Personio entries have exactly one TLD, DACH count ≥ 20 (currently 23), no duplicate ats-slug pairs, etc.
 
 ## Retired boards (Glassdoor, Indeed, Xing, StepStone, Workday)
 
@@ -90,7 +90,7 @@ These five boards were retired as direct scrapers (ADR-026, 2026-06-21). Their R
 **Keys and configuration:**
 
 - Adzuna, JSearch, and Jooble API keys are stored in the OS keyring and never logged (encrypted at rest, decrypted only in Rust).
-- Settings → Jobs exposes UI to enter/remove credentials (three separate `AggregatorKeyField` controls).
+- Settings → Jobs exposes UI to enter/remove credentials (four `AggregatorKeyField` controls: two for Adzuna's app-id and app-key pair, one each for JSearch and Jooble).
 - Keys are read on-demand via `credentials::read_credential` (module at `apps/desktop/src-tauri/src/credentials/mod.rs`) into the respective slots: `ai:adzuna-app-id`, `ai:adzuna-app-key`, `ai:jsearch-key`, `ai:jooble-key`.
 - **Path-embedded-key redaction (PR #618):** Jooble embeds its API key in the URL path (`POST https://jooble.org/api/{key}`), unlike Adzuna/JSearch which use query params. New `FetchOptions.redact_path` boolean + `safe_log_url(url, redact_path)` in `apps/desktop/src-tauri/src/scraping/http/mod.rs` redact the entire path when `true`, keeping logs safe. Providers using path-embedded keys must pass `redact_path: true` in their `FetchOptions`.
 
