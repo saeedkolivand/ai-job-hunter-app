@@ -92,11 +92,17 @@ vi.mock('@/providers/AppClientProvider', () => ({
 }));
 
 // Boards catalog — return a minimal listed board so the board selector renders.
+// Overridable per-test (mockReturnValue) for the seeded-companies disclosure tests
+// — explicitly typed so `seededCompanies` is a valid (optional) fixture field.
+type CatalogBoardFixture = { id: string; listed: boolean; seededCompanies?: string[] };
+
+const boardsCatalogImpl = vi.fn((): { data: CatalogBoardFixture[]; isLoading: boolean } => ({
+  data: [{ id: 'aggregator', listed: true }],
+  isLoading: false,
+}));
+
 vi.mock('@/services/use-boards', () => ({
-  useBoardsCatalog: () => ({
-    data: [{ id: 'aggregator', listed: true }],
-    isLoading: false,
-  }),
+  useBoardsCatalog: () => boardsCatalogImpl(),
 }));
 
 // Provider-key queries — always "key absent" (safe default for the hint path).
@@ -260,6 +266,56 @@ describe('StepTarget — location filter note (PR F integration)', () => {
 
   it('hides the note when no location is set (default empty location)', () => {
     renderStep({ boards: ['aggregator'], location: '' });
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  });
+});
+
+// ── SeededCompaniesNote integration (#621) ──────────────────────────────────
+// Real component, not stubbed here, so a wrong prop name at the StepTarget
+// call site would fail this render instead of silently compiling and passing
+// every other test in the file. Uses the overridable `boardsCatalogImpl` mock
+// so each test can supply its own `seededCompanies` catalog fixture.
+
+describe('StepTarget — seeded companies disclosure (#621 integration)', () => {
+  afterEach(() => {
+    boardsCatalogImpl.mockReturnValue({
+      data: [{ id: 'aggregator', listed: true }],
+      isLoading: false,
+    });
+  });
+
+  it('shows the disclosure for a selected board with seededCompanies, truncated to 5 names + more', () => {
+    boardsCatalogImpl.mockReturnValue({
+      data: [
+        {
+          id: 'greenhouse',
+          listed: true,
+          seededCompanies: ['Stripe', 'Airbnb', 'OpenAI', 'Bosch', 'N26', 'Lyft'],
+        },
+      ],
+      isLoading: false,
+    });
+    renderStep({ boards: ['greenhouse'] });
+
+    const note = screen.getByRole('note');
+    expect(note.textContent).toContain('Stripe');
+    expect(note.textContent).toContain('Airbnb');
+    expect(note.textContent).toContain('OpenAI');
+    expect(note.textContent).toContain('Bosch');
+    expect(note.textContent).toContain('N26');
+    // 6th name truncated away; the pluralized "more" key fired instead (real
+    // interpolated count covered by SeededCompaniesNote.i18n.test.ts).
+    expect(note.textContent).not.toContain('Lyft');
+    expect(note.textContent).toContain('autopilot.wizard.target.seededCompanies.more');
+  });
+
+  it('shows no disclosure for a selected board with no seededCompanies', () => {
+    boardsCatalogImpl.mockReturnValue({
+      data: [{ id: 'greenhouse', listed: true }],
+      isLoading: false,
+    });
+    renderStep({ boards: ['greenhouse'] });
+
     expect(screen.queryByRole('note')).not.toBeInTheDocument();
   });
 });

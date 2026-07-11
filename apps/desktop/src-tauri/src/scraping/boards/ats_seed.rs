@@ -2,8 +2,10 @@
 //!
 //! Lets the company-scoped ATS boards (Greenhouse, Lever, Ashby,
 //! SmartRecruiters, Recruitee, Personio, Workable) be exercised without the
-//! user hand-typing a company slug. **Data + lookup only** — nothing here is
-//! wired into the scrape engine or autopilot yet; that's a follow-up PR.
+//! user hand-typing a company slug. The engine (`scraping/engine/mod.rs`)
+//! auto-populates `input.companies` from [`by_ats`] for any runnable
+//! company-scoped board when the user left the global company field blank;
+//! an explicit user company list always wins.
 //!
 //! Quirks encoded per entry (see live-verify notes for detail — not
 //! re-checked by this module):
@@ -99,7 +101,7 @@ static SEED: &[AtsSeedEntry] = &[
     AtsSeedEntry { company: "Athereon GRC",          ats: "personio", slug: "athereon",             tld: Some("com"), dach: true },
     AtsSeedEntry { company: "Groß & Partner",        ats: "personio", slug: "gross-und-partner",    tld: Some("de"),  dach: true },
 
-    // Workable (3) — POST-only, apply.workable.com/api/v3/accounts/{slug}/jobs
+    // Workable (3) — GET apply.workable.com/api/v1/widget/accounts/{slug}
     AtsSeedEntry { company: "Startups.com", ats: "workable", slug: "startups",     tld: None, dach: false },
     AtsSeedEntry { company: "500 Global",   ats: "workable", slug: "500startups",  tld: None, dach: false },
     AtsSeedEntry { company: "atmio",        ats: "workable", slug: "atmio",        tld: None, dach: true },

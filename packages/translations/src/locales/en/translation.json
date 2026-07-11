@@ -1543,7 +1543,12 @@
         "anyTime": "Any time",
         "last24h": "Last 24h",
         "lastWeek": "Last week",
-        "lastMonth": "Last month"
+        "lastMonth": "Last month",
+        "seededCompanies": {
+          "hint": "Searches a curated set of companies:",
+          "more_one": ", +{{count}} more",
+          "more_other": ", +{{count}} more"
+        }
       },
       "filter": {
         "title": "How should we filter results?",

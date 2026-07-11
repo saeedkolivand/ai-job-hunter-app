@@ -52,8 +52,12 @@ pub async fn autopilot_scrape(
         latitude: None,
         longitude: None,
         radius_km: None,
-        // Autopilot has no per-company target; ATS company slugs are a manual
-        // search affordance, so this stays empty (a no-op for every board).
+        // Autopilot has no per-company target, so it passes no explicit
+        // companies here. Company-scoped ATS boards (greenhouse, lever, ashby,
+        // smartrecruiters, recruitee, personio, workable) don't no-op on that —
+        // the engine (`scraping/engine/mod.rs`) falls back to the curated
+        // `ats_seed` directory for them when the list is empty. Non-company
+        // boards are unaffected.
         companies: Vec::new(),
     };
 
