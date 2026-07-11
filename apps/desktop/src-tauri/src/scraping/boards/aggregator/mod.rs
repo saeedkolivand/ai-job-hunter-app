@@ -1,13 +1,20 @@
-/// Aggregator board — Adzuna (primary) with JSearch (paid fallback).
+/// Aggregator board — Adzuna (primary) → JSearch (paid fallback) → Jooble
+/// (last-resort fallback).
 ///
 /// Design:
 /// * One `Scraper` in the registry (id = `"aggregator"`).
-/// * Internally holds an ordered `JobProvider` registry: Adzuna → JSearch.
-/// * Fallback semantics (enforced in `search_with_providers`):
-///   - Adzuna configured + `Ok(items)` (even empty) → use those, do NOT call JSearch.
+/// * Internally holds an ordered `JobProvider` registry: Adzuna → JSearch → Jooble.
+/// * Fallback semantics (enforced in `primary_chain`):
+///   - Adzuna configured + `Ok(items)` (even empty) → use those, do NOT call JSearch/Jooble.
 ///   - Adzuna configured + `Err(_)` → log, try JSearch if configured.
 ///   - Adzuna not configured → try JSearch if configured.
-///   - Neither configured → `Ok(vec![])` (keyless-empty, never an error).
+///   - JSearch configured + `Ok(items)` (even empty) → use those, do NOT call Jooble.
+///   - JSearch configured + `Err(_)`, or not configured → try Jooble if configured
+///     (Jooble is a LAST-RESORT tier — it only fires once both Adzuna and JSearch
+///     have failed to produce a decisive result, e.g. the unsupported-country case,
+///     never on a routine "genuinely zero results" search, since its rate limit is
+///     undocumented).
+///   - None of the three configured → `Ok(vec![])` (keyless-empty, never an error).
 /// * Keys are optional: absent = keyless-empty.  Never hardcoded, never logged.
 /// * Keys are read from the OS keychain via `credentials::read_credential`,
 ///   under the `ai:` keyring namespace + the BARE slot names generated from the
@@ -16,13 +23,14 @@
 ///   - `ai:adzuna-app-id`   (`provider_slots::ADZUNA_APP_ID`)  — Adzuna application ID
 ///   - `ai:adzuna-app-key`  (`provider_slots::ADZUNA_APP_KEY`) — Adzuna application key
 ///   - `ai:jsearch-key`     (`provider_slots::JSEARCH_KEY`)    — RapidAPI key for JSearch
+///   - `ai:jooble-key`      (`provider_slots::JOOBLE_KEY`)     — Jooble API key
 ///   - `ai:apify-token`     (`provider_slots::APIFY_TOKEN`)    — Apify Bearer token
 ///
 /// Rate-limiting and cancellation are honoured: every network call flows
 /// through `scraping::http::fetch_json` (which checks `ctx.signal` and calls
 /// the per-host `rate_limiter`).
 ///
-/// The three `JobProvider` impls (Adzuna/JSearch/Apify) live in `providers.rs`
+/// The `JobProvider` impls (Adzuna/JSearch/Jooble/Apify) live in `providers.rs`
 /// (split out to stay under the R8 module-size cap); this file holds the shared
 /// `JobProvider` trait, the fallback orchestration (`primary_chain` /
 /// `search_with_providers`), the credential-state helpers, and the `Scraper` impl.
@@ -108,6 +116,14 @@ pub(crate) trait JobProvider: Send + Sync {
 /// unaffected — `Ok(empty)` there returns as before.
 ///
 /// Items from each provider are keyed by their `external_id` to deduplicate.
+///
+/// **Jooble (last-resort tier)**: tried only when JSearch ALSO fails to produce
+/// a decisive result (unconfigured or `Err`) — i.e. only in the terminal branches
+/// this function would otherwise resolve to a diagnostic `Err` or keyless-empty.
+/// A JSearch `Ok(items)` (even empty) still short-circuits before Jooble is ever
+/// reached, symmetric with Adzuna's own "configured Ok, even empty, wins" rule —
+/// this keeps Jooble off the hot path for a routine zero-results search (its rate
+/// limit is undocumented) and reserves it for genuinely unmet capacity.
 async fn primary_chain(
     providers: &[Box<dyn JobProvider>],
     query: &str,
@@ -121,13 +137,24 @@ async fn primary_chain(
         return Ok(vec![]);
     }
 
-    // Locate primary (Adzuna) and fallback (JSearch) by id.
+    // Locate primary (Adzuna), fallback (JSearch), and the last-resort tier
+    // (Jooble) by id.
     let primary = providers.iter().find(|p| p.provider_id() == "adzuna");
     let fallback = providers.iter().find(|p| p.provider_id() == "jsearch");
+    let jooble = providers.iter().find(|p| p.provider_id() == "jooble");
 
-    // Track whether Adzuna was configured-but-failed so we can distinguish
-    // "keys present, request failed" from "no keys at all" at the end.
+    // Track whether each provider was CONFIGURED but its call FAILED, so we can
+    // distinguish "keys present, request failed" from "no keys at all" at the
+    // end. All three are collected (not just the first) — see the total-failure
+    // resolution below: a LATER-tier provider's failure must never be silently
+    // dropped just because an EARLIER-tier provider also failed.
     let mut adzuna_configured_failed: Option<anyhow::Error> = None;
+    let mut jsearch_configured_failed: Option<anyhow::Error> = None;
+    // Jooble's tracking closes the same silent-empty-failure gap Adzuna/JSearch
+    // already guard: without it, a user with ONLY a Jooble key whose Jooble call
+    // fails would get a silent `Ok(empty)` ("no jobs found") instead of an
+    // honest error.
+    let mut jooble_configured_failed: Option<anyhow::Error> = None;
 
     // Real (non-empty) but SPARSE items from a GUESSED market. We distrust them
     // enough to prefer a fallback, but if there is no working fallback they beat
@@ -207,10 +234,43 @@ async fn primary_chain(
         return Ok(vec![]);
     }
 
-    // Try fallback.
+    // Try JSearch fallback.
     if let Some(f) = fallback {
         if f.is_configured() {
             match f
+                .search(
+                    query,
+                    location,
+                    country,
+                    country_guessed,
+                    date_filter,
+                    None,
+                    signal.clone(),
+                )
+                .await
+            {
+                Ok(items) => return Ok(dedupe(items)),
+                Err(e) => {
+                    // JSearch itself failed. Don't salvage/return yet — Jooble (the
+                    // last-resort tier, below) still gets a chance at a decisive
+                    // result before falling back to the sparse-guessed salvage or
+                    // the diagnostic error.
+                    log::warn!("[aggregator] jsearch error, attempting jooble fallback: {e}");
+                    jsearch_configured_failed = Some(e);
+                }
+            }
+        }
+    }
+
+    // Guard: don't fire a paid/rate-limited Jooble call after cancellation.
+    if signal.is_cancelled() {
+        return Ok(vec![]);
+    }
+
+    // Try Jooble — LAST-RESORT tier (see the doc comment above `primary_chain`).
+    if let Some(j) = jooble {
+        if j.is_configured() {
+            match j
                 .search(
                     query,
                     location,
@@ -224,18 +284,10 @@ async fn primary_chain(
             {
                 Ok(items) => return Ok(dedupe(items)),
                 Err(e) => {
-                    // Fallback itself failed. If we retained sparse-but-real Adzuna
-                    // items from a guessed market, return those (better than nothing)
-                    // rather than surfacing the fallback error and losing legit hits.
-                    if let Some(items) = sparse_guessed_items.take() {
-                        log::warn!(
-                            "[aggregator] jsearch fallback failed ({e}); returning {} \
-                             sparse guessed-market adzuna result(s) instead",
-                            items.len()
-                        );
-                        return Ok(dedupe(items));
-                    }
-                    return Err(e);
+                    log::warn!("[aggregator] jooble fallback failed: {e}");
+                    jooble_configured_failed = Some(e);
+                    // Fall through to the sparse-guessed salvage / diagnostic below,
+                    // same as a JSearch failure would without Jooble configured.
                 }
             }
         }
@@ -245,28 +297,67 @@ async fn primary_chain(
     // them rather than the diagnostic — a user with only Adzuna keys keeps their few
     // legit hits (better than nothing). The uncertainty was already logged above.
     //
-    // NOTE (deliberately under-surfaced, PR D): this salvage path — and the sibling
-    // one at the `sparse_guessed_items.take()` above — return the sparse guessed
-    // hits WITHOUT a `BoardScrapeSummary.note`, because only `primary_chain` (not
-    // `AdzunaProvider`, which holds the note sink) knows the guess was salvaged
+    // NOTE (deliberately under-surfaced, PR D): this salvage path returns the sparse
+    // guessed hits WITHOUT a `BoardScrapeSummary.note`, because only `primary_chain`
+    // (not `AdzunaProvider`, which holds the note sink) knows the guess was salvaged
     // rather than authoritative or replaced. Revisit when PR F threads location
     // context through this path.
     if let Some(items) = sparse_guessed_items {
         return Ok(dedupe(items));
     }
 
-    // Adzuna had keys but failed (e.g. unsupported country, or an EMPTY guessed
-    // market) AND JSearch is not configured → surface a diagnostic error instead
-    // of a silent empty result. The engine records this in BoardScrapeSummary.error,
-    // which the Jobs page renders as a partial-failure warning and autopilot logs
-    // as a skipped board.
-    if let Some(e) = adzuna_configured_failed {
-        return Err(anyhow::anyhow!(
-            "{e}; add a JSearch key in Settings → API Keys for global coverage"
-        ));
+    // Total-failure resolution: gather every CONFIGURED-and-failed provider's
+    // error (tier order — adzuna, jsearch, jooble), not just the first. Each
+    // provider's error message is already self-prefixed (`"adzuna: …"` /
+    // `"jsearch: …"` / `"jooble: …"`) at its own call site, so combining them
+    // (when more than one failed) names every failing provider instead of
+    // surfacing only the first and silently dropping the rest — e.g. Adzuna AND
+    // Jooble both configured+failing with JSearch unconfigured must name BOTH,
+    // not just Adzuna's (with a now-stale "add a JSearch key" nudge on top).
+    // The engine records the result in BoardScrapeSummary.error, which the Jobs
+    // page renders as a partial-failure warning and autopilot logs as a skipped
+    // board.
+    let failures: Vec<(&'static str, anyhow::Error)> = [
+        adzuna_configured_failed.map(|e| ("adzuna", e)),
+        jsearch_configured_failed.map(|e| ("jsearch", e)),
+        jooble_configured_failed.map(|e| ("jooble", e)),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    if failures.len() == 1 {
+        // Solo failure — the pre-multi-failure per-provider contract is
+        // unchanged: JSearch-alone or Jooble-alone returns its own message
+        // verbatim (no suffix). Adzuna-alone keeps its "add a fallback" nudge —
+        // reaching here with Adzuna as the ONLY failure means neither JSearch
+        // nor Jooble was ever configured (a configured provider either
+        // succeeds — an early return above — or fails, landing in `failures`),
+        // so the nudge is still accurate; the wording now names both fallback
+        // options instead of only JSearch.
+        let (source, e) = failures
+            .into_iter()
+            .next()
+            .expect("len == 1, checked above");
+        return Err(if source == "adzuna" {
+            anyhow::anyhow!(
+                "{e}; add a JSearch or Jooble key in Settings → API Keys for global coverage"
+            )
+        } else {
+            e
+        });
+    } else if !failures.is_empty() {
+        // Two or more configured providers failed — combine so every one is
+        // named. No suffix: the combined message already names what failed.
+        let combined = failures
+            .into_iter()
+            .map(|(_, e)| e.to_string())
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(anyhow::anyhow!("{combined}"));
     }
 
-    // Neither provider configured → keyless-empty (intended, never an error).
+    // None of the providers configured → keyless-empty (intended, never an error).
     Ok(vec![])
 }
 
@@ -330,8 +421,8 @@ fn dedupe_by_url(items: Vec<JobPosting>) -> Vec<JobPosting> {
 
 /// Top-level provider orchestration.
 ///
-/// 1. **Primary result** — the Adzuna → JSearch fallback chain ([`primary_chain`]),
-///    with its existing semantics fully preserved.
+/// 1. **Primary result** — the Adzuna → JSearch → Jooble fallback chain
+///    ([`primary_chain`]), with its existing semantics fully preserved.
 /// 2. **Additive LinkedIn (Apify)** — runs IN ADDITION to (never as a fallback of)
 ///    the primary result, and ONLY when `apify_linkedin` is configured (the toggle
 ///    is ON and a token is present). Its results are merged onto the primary,
@@ -442,25 +533,32 @@ async fn search_with_providers(
 fn aggregator_has_configured_provider() -> bool {
     AdzunaProvider::new().is_configured()
         || JSearchProvider::new().is_configured()
+        || JoobleProvider::new().is_configured()
         || ApifyLinkedInProvider::new().is_configured()
 }
 
 /// First keyring READ error across the aggregator's provider credential slots
-/// (Adzuna id/key, JSearch key, and the Apify token), if any. Probes the SAME slot
-/// set [`aggregator_has_configured_provider`] counts — including the Apify token —
-/// so a faulting Apify slot (with Adzuna/JSearch merely absent) is classified as a
-/// store error rather than a misleading `needs-keys` skip. Distinguishes a
-/// credential-store FAULT (surfaced as a board error) from mere key absence
-/// (surfaced as a `needs-keys` skip). Returns `None` when every slot reads
-/// cleanly — whether the key is present or simply absent.
+/// (Adzuna id/key, JSearch key, Jooble key, and the Apify token), if any. Probes
+/// the SAME slot set [`aggregator_has_configured_provider`] counts — including
+/// Jooble and the Apify token — so a faulting slot (with the others merely
+/// absent) is classified as a store error rather than a misleading `needs-keys`
+/// skip. Distinguishes a credential-store FAULT (surfaced as a board error) from
+/// mere key absence (surfaced as a `needs-keys` skip). Returns `None` when every
+/// slot reads cleanly — whether the key is present or simply absent.
 ///
 /// The error string is a keyring backend message + slot name only; it never
 /// carries a credential value (see `credentials::read_credential`).
 fn aggregator_store_error() -> Option<String> {
     use crate::ipc_contracts::provider_slots::{
-        ADZUNA_APP_ID, ADZUNA_APP_KEY, APIFY_TOKEN, JSEARCH_KEY,
+        ADZUNA_APP_ID, ADZUNA_APP_KEY, APIFY_TOKEN, JOOBLE_KEY, JSEARCH_KEY,
     };
-    for slot in [ADZUNA_APP_ID, ADZUNA_APP_KEY, JSEARCH_KEY, APIFY_TOKEN] {
+    for slot in [
+        ADZUNA_APP_ID,
+        ADZUNA_APP_KEY,
+        JSEARCH_KEY,
+        JOOBLE_KEY,
+        APIFY_TOKEN,
+    ] {
         if let Err(e) = crate::credentials::read_credential(&format!("ai:{slot}")) {
             return Some(e.to_string());
         }
@@ -552,6 +650,9 @@ impl Scraper for AggregatorScraper {
         let providers: Vec<Box<dyn JobProvider>> = vec![
             Box::new(AdzunaProvider::new().with_note_sink(ctx.on_note.clone())),
             Box::new(JSearchProvider::new()),
+            // Last-resort fallback (see `primary_chain`'s doc comment) — only
+            // reached once both Adzuna and JSearch fail to produce a result.
+            Box::new(JoobleProvider::new()),
             // Additive, opt-in, paid: only runs when the toggle is ON and a token
             // is present (gated in `ApifyLinkedInProvider::is_configured`).
             Box::new(ApifyLinkedInProvider::new()),

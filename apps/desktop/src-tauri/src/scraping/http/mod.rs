@@ -68,6 +68,14 @@ pub struct FetchOptions {
     /// Set it for third-party egresses that need a hard ceiling (e.g. the GitHub
     /// repo import) so a slow/stalled connection can't hang indefinitely.
     pub timeout: Option<Duration>,
+    /// When true, `fetch_json`'s non-2xx / schema-drift log lines omit the URL
+    /// PATH entirely (only scheme+host+port are logged). The default log-safe
+    /// URL strips the query string (where most callers' secrets live, e.g.
+    /// Adzuna's `app_key`) but keeps the path — that leaks a credential embedded
+    /// directly in the path instead, e.g. Jooble's `POST /api/{apiKey}`. Set this
+    /// for that shape so the key never reaches the logs, including on the exact
+    /// "bad key" 403 that would otherwise echo it straight back.
+    pub redact_path: bool,
 }
 
 impl Default for FetchOptions {
@@ -79,6 +87,7 @@ impl Default for FetchOptions {
             retries: 2,
             max_bytes: None,
             timeout: None,
+            redact_path: false,
         }
     }
 }
@@ -281,6 +290,27 @@ fn retry_after_ms(headers: &reqwest::header::HeaderMap) -> Option<u64> {
     Some(secs.saturating_mul(1_000).min(30_000))
 }
 
+/// Build the log-safe representation of a request URL: scheme + host + port,
+/// and the path UNLESS `redact_path` is set — never the query string or
+/// userinfo/fragment (those are where most callers' secrets live, e.g. Adzuna's
+/// `app_key`). `redact_path` additionally drops the path for the rarer shape
+/// where a caller embeds a secret directly IN the path instead of the query
+/// (e.g. Jooble's `POST /api/{apiKey}`), which the query-only redaction above
+/// doesn't cover. Pulled out of `fetch_json` so the redaction contract is
+/// independently unit-testable without a network call.
+fn safe_log_url(url: &str, redact_path: bool) -> String {
+    reqwest::Url::parse(url)
+        .map(|u| {
+            let port = u.port().map(|p| format!(":{p}")).unwrap_or_default();
+            let path = if redact_path { "" } else { u.path() };
+            match u.host_str() {
+                Some(host) => format!("{}://{}{}{}", u.scheme(), host, port, path),
+                None => format!("{}:{}", u.scheme(), path),
+            }
+        })
+        .unwrap_or_else(|_| "<unparseable-url>".to_string())
+}
+
 /// Fetch a URL and deserialize a 2xx JSON body into `T`.
 ///
 /// Failures are **representable** — a caller can tell these three apart:
@@ -298,6 +328,9 @@ pub async fn fetch_json<T: for<'de> serde::Deserialize<'de>>(
     opts: FetchOptions,
     signal: tokio_util::sync::CancellationToken,
 ) -> AppResult<T> {
+    // Captured before `opts` is moved into the `..opts` struct-update below.
+    let redact_path = opts.redact_path;
+
     // Merge `accept: application/json` into caller headers.
     // Caller-supplied headers win — if the caller already set an `accept` header we
     // leave it as-is; otherwise we prepend the JSON accept so fetch_text's broader
@@ -321,17 +354,7 @@ pub async fn fetch_json<T: for<'de> serde::Deserialize<'de>>(
     )
     .await?;
 
-    // Log scheme+host+port+path only — never query (may contain API
-    // secrets like Adzuna app_key) or userinfo/fragment.
-    let safe_url = reqwest::Url::parse(url)
-        .map(|u| {
-            let port = u.port().map(|p| format!(":{p}")).unwrap_or_default();
-            match u.host_str() {
-                Some(host) => format!("{}://{}{}{}", u.scheme(), host, port, u.path()),
-                None => format!("{}:{}", u.scheme(), u.path()),
-            }
-        })
-        .unwrap_or_else(|_| "<unparseable-url>".to_string());
+    let safe_url = safe_log_url(url, redact_path);
 
     if res.status_code < 200 || res.status_code >= 300 {
         log::warn!(

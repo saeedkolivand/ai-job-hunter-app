@@ -5,6 +5,7 @@
 pub const ADZUNA_APP_ID: &str = "adzuna-app-id";
 pub const ADZUNA_APP_KEY: &str = "adzuna-app-key";
 pub const JSEARCH_KEY: &str = "jsearch-key";
+pub const JOOBLE_KEY: &str = "jooble-key";
 pub const APIFY_TOKEN: &str = "apify-token";
 pub const COMEET_COMPANY_UID: &str = "comeet-company-uid";
 pub const COMEET_API_TOKEN: &str = "comeet-api-token";

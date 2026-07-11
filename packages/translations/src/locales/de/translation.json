@@ -708,6 +708,14 @@
         "removeConfirmTitle": "JSearch-Schlüssel entfernen?",
         "removeConfirmDesc": "Dadurch wird der gespeicherte JSearch-Schlüssel gelöscht. Der JSearch-Fallback wird deaktiviert, bis Sie ihn erneut hinzufügen."
       },
+      "joobleKey": {
+        "label": "Jooble-API-Schlüssel — optional",
+        "placeholder": "Jooble-API-Schlüssel einfügen…",
+        "connected": "Jooble-API-Schlüssel sicher gespeichert",
+        "removeConfirmTitle": "Jooble-API-Schlüssel entfernen?",
+        "removeConfirmDesc": "Dadurch wird der gespeicherte Jooble-API-Schlüssel gelöscht. Der Jooble-Fallback wird deaktiviert, bis Sie ihn erneut hinzufügen.",
+        "helper": "Jooble ist ein letzter Fallback, der nur genutzt wird, wenn Adzuna und JSearch beide keine Ergebnisse liefern. Einen kostenlosen Schlüssel erhalten Sie unter"
+      },
       "apifyToken": {
         "label": "Apify API-Token",
         "placeholder": "Apify API-Token einfügen…",
