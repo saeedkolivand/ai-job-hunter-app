@@ -164,8 +164,8 @@ export function AutopilotCard({
     : ap.runStatus
       ? RUN_STATUS_BADGE[ap.runStatus]
       : undefined;
-  // Optional hover/focus explainer for the neutral/amber badges now that the
-  // chip strip spells out the per-board detail below.
+  // Optional hover/focus explainer for the neutral/amber badges — the
+  // per-board detail itself lives behind the info icon next to "Found N".
   const badgeHintKey = needsConfig
     ? BADGE_HINT_KEY.needsConfig
     : ap.runStatus === 'completedWithErrors'

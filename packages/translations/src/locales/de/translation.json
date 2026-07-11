@@ -1336,7 +1336,7 @@
       "applied": "Beworben",
       "failed": "Fehlgeschlagen",
       "completedWithErrors": "Teilweise Ergebnisse",
-      "completedWithErrorsHint": "Einige Boards schlugen fehl oder lieferten nur einen Teil ihrer Ergebnisse. Siehe die Board-Übersicht unten.",
+      "completedWithErrorsHint": "Einige Boards schlugen fehl oder lieferten nur einen Teil ihrer Ergebnisse. Fahre mit der Maus über das Info-Symbol neben der Trefferzahl für die Board-Übersicht.",
       "needsConfig": "Konfiguration nötig",
       "needsConfigHint": "Kein Board konnte laufen — melde dich bei den Boards unter Einstellungen → Konten an, oder hinterlege die API-Schlüssel in den Einstellungen → Jobs, und starte erneut.",
       "interrupted": "Unterbrochen"
