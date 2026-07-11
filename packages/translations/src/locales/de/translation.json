@@ -1547,7 +1547,12 @@
         "anyTime": "Jederzeit",
         "last24h": "Letzte 24h",
         "lastWeek": "Letzte Woche",
-        "lastMonth": "Letzter Monat"
+        "lastMonth": "Letzter Monat",
+        "seededCompanies": {
+          "hint": "Durchsucht eine kuratierte Liste von Unternehmen:",
+          "more_one": ", +{{count}} weitere",
+          "more_other": ", +{{count}} weitere"
+        }
       },
       "filter": {
         "title": "Wie sollen wir Ergebnisse filtern?",

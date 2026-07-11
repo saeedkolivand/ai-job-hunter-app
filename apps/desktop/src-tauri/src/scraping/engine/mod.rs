@@ -56,6 +56,11 @@ pub struct ScraperCatalogEntry {
     /// remote/unknown-location rows). Drives the picker's per-board indicator.
     #[serde(rename = "supportsLocation")]
     pub supports_location: bool,
+    /// Curated company display names this company-scoped ATS board will query
+    /// when the user supplies none (from `boards::ats_seed::by_ats`, source
+    /// order). Empty for boards without a curated seed.
+    #[serde(rename = "seededCompanies")]
+    pub seeded_companies: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -146,6 +151,9 @@ impl ScraperEngine {
                 listed: s.listed(),
                 requires_company: s.requires_company(),
                 supports_location: s.supports_location(),
+                seeded_companies: super::boards::ats_seed::by_ats(s.id())
+                    .map(|e| e.company.to_string())
+                    .collect(),
             })
             .collect()
     }
@@ -319,6 +327,11 @@ impl ScraperEngine {
         // `None` when no location filter applies to this run. See `KeepItemFn`.
         keep_item: Option<Arc<KeepItemByBoardFn>>,
         browser_sem: Arc<Semaphore>,
+        // Per-board company-slug override, keyed by the same board id used as
+        // this fn's `name` (not `Scraper::id()`). `run_boards` stays seed-
+        // agnostic — it only applies a caller-provided map; the caller
+        // (`scrape_boards_with_resolver`) is what actually consults `ats_seed`.
+        seeded_companies: &HashMap<String, Vec<String>>,
     ) -> Vec<(String, anyhow::Result<Vec<JobPosting>>)> {
         let total = resolved.len();
         let done = Arc::new(AtomicUsize::new(0));
@@ -330,7 +343,10 @@ impl ScraperEngine {
         let tasks: Vec<BoxFuture<'s, (String, anyhow::Result<Vec<JobPosting>>)>> = resolved
             .into_iter()
             .map(|(name, scraper)| {
-                let input = input.clone();
+                let mut input = input.clone();
+                if let Some(slugs) = seeded_companies.get(&name) {
+                    input.companies = slugs.clone();
+                }
                 let parent = parent.clone();
                 let on_progress = on_progress.clone();
                 let on_item = on_item.clone();
@@ -584,7 +600,16 @@ impl ScraperEngine {
                 // Skip 2: ATS board that requires a company slug but none usable.
                 // Treats whitespace-only entries (e.g. [" ", "\t"]) the same as
                 // an empty list — they are trimmed-and-dropped by ATS scrapers.
-                if s.requires_company() && !has_usable_company {
+                // Exception: a board with a curated `ats_seed` entry still runs —
+                // the engine auto-populates `input.companies` from the seed right
+                // before `run_boards` (see `seeded_companies` below), so skipping
+                // here would strand those seeded slugs unused. Keyed on `s.id()`
+                // (the Scraper trait id the seed's `ats` field matches), NOT the
+                // caller-supplied board-list string (`id`), which can differ.
+                if s.requires_company()
+                    && !has_usable_company
+                    && super::boards::ats_seed::by_ats(s.id()).next().is_none()
+                {
                     return Some("needs-company");
                 }
                 // Skip 3: key-backed board (e.g. the aggregator) with no API keys
@@ -665,6 +690,29 @@ impl ScraperEngine {
             f
         });
 
+        // Auto-populate ATS boards' company filter from the curated `ats_seed`
+        // table when the user left the global company field blank — gives the
+        // company-scoped ATS scrapers real slugs to fetch without hand-typed
+        // input. Only when `companies` is globally empty so an explicit user
+        // list always wins (never overridden). Keyed on the caller-supplied
+        // board-list id (`run_boards`'s `name` param), matching how `runnable`
+        // is keyed — NOT on `s.id()` (used above for the seed lookup itself).
+        let mut seeded_companies: HashMap<String, Vec<String>> = HashMap::new();
+        if !has_usable_company {
+            for (id, scraper) in &runnable {
+                let Ok(s) = scraper else { continue };
+                if !s.requires_company() {
+                    continue;
+                }
+                let slugs: Vec<String> = super::boards::ats_seed::by_ats(s.id())
+                    .map(|e| e.slug.to_string())
+                    .collect();
+                if !slugs.is_empty() {
+                    seeded_companies.insert(id.clone(), slugs);
+                }
+            }
+        }
+
         let results = Self::run_boards(
             runnable,
             input,
@@ -675,6 +723,7 @@ impl ScraperEngine {
             Some(note_sink),
             keep_item,
             self.browser_sem.clone(),
+            &seeded_companies,
         )
         .await;
 

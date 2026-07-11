@@ -33,6 +33,11 @@ export interface BoardCatalogEntry {
    * genuinely honor a location. Optional so older/absent payloads read as `false`.
    */
   supportsLocation?: boolean;
+  /**
+   * Curated companies this company-scoped ATS board will query when the user
+   * supplies none; empty/absent for boards without a seed.
+   */
+  seededCompanies?: string[];
 }
 
 export interface BoardsContract {

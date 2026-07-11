@@ -94,6 +94,23 @@ fn slug_validation_rejects_invalid_slugs() {
     );
 }
 
+/// Every curated `ats_seed` slug for this board must pass the production
+/// path-segment guard — regression guard against a seed entry silently
+/// drifting out of validator-compatible shape.
+#[test]
+fn ats_seed_workable_slugs_pass_the_guard() {
+    let entries: Vec<_> = crate::scraping::boards::ats_seed::by_ats("workable").collect();
+    assert!(!entries.is_empty(), "workable must have seed entries");
+    for e in entries {
+        assert!(
+            is_valid_workable_slug(e.slug),
+            "seed slug '{}' ({}) must pass is_valid_workable_slug",
+            e.slug,
+            e.company
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // normalize_workable_companies — lowercase-before-dedup ordering
 // ---------------------------------------------------------------------------

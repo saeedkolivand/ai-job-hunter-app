@@ -7,6 +7,7 @@ import { useTranslation } from '@ajh/translations';
 import { Alert, Button, cn, Dropdown, Input, LocationInput, NumberField } from '@ajh/ui';
 
 import { LocationFilterNote } from '@/components/scrape/LocationFilterNote';
+import { SeededCompaniesNote } from '@/components/scrape/SeededCompaniesNote';
 import type { Prefilled, WizardState } from '@/features/autopilot/types';
 import { makeMultiSelectKeyHandler } from '@/hooks/use-roving-tabindex';
 import { regionName } from '@/lib/region-name';
@@ -164,6 +165,10 @@ export function StepTarget({ prefilled }: StepTargetProps) {
               <div className="mt-2 empty:mt-0">
                 <LocationFilterNote boards={selectedListedBoards} hasLocation={hasLocation} />
               </div>
+
+              {/* Seeded-companies disclosure — names the curated companies a
+                  company-scoped ATS board (Greenhouse/Lever/Ashby/…) will query (#621) */}
+              <SeededCompaniesNote boards={selectedListedBoards} />
             </WizardField>
           );
         }}
