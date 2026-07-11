@@ -782,11 +782,13 @@ fn parse_ollama_frames(buf: &mut String) -> Vec<StreamPiece> {
     out
 }
 
-async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> AppResult<()> {
-    let base = host();
-    let endpoint = format!("{base}/api/chat");
-    let trace = RequestTrace::begin(ProviderId::Ollama, &req.model, "/api/chat", &base, true);
-
+/// Build the `/api/chat` streaming request body for a given [`AiGenerateRequest`].
+/// Pure + unit-tested. `options.top_p`/`options.repeat_penalty` are the
+/// detector-resistance sampling knobs (RAID, ACL 2024) the renderer sets only
+/// for prose generation surfaces, added only when `Some` (never sent as
+/// `null`). `repeat_penalty` uses Ollama's own field/semantics — it is NEVER a
+/// remap of `frequency_penalty` (different math, different field).
+fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
     let messages = serde_json::to_value(
         req.messages
             .iter()
@@ -800,6 +802,12 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
     if let Some(t) = req.temperature {
         options.insert("temperature".to_string(), json!(t));
     }
+    if let Some(top_p) = req.top_p {
+        options.insert("top_p".to_string(), json!(top_p));
+    }
+    if let Some(rp) = req.repeat_penalty {
+        options.insert("repeat_penalty".to_string(), json!(rp));
+    }
     if let Some(mt) = req.max_tokens {
         options.insert("num_predict".to_string(), json!(mt));
     }
@@ -812,6 +820,15 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
         body["options"] = Value::Object(options);
     }
     body["keep_alive"] = json!(crate::performance::ollama_keep_alive());
+    body
+}
+
+async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> AppResult<()> {
+    let base = host();
+    let endpoint = format!("{base}/api/chat");
+    let trace = RequestTrace::begin(ProviderId::Ollama, &req.model, "/api/chat", &base, true);
+
+    let body = build_chat_stream_body(req);
 
     let response = crate::net::http::shared()
         .post(&endpoint)
@@ -854,11 +871,52 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_show, ollama_supports_tools, parse_ollama_frames, parse_ollama_turn,
-        parse_web_search, StreamPiece,
+        build_chat_stream_body, normalize_show, ollama_supports_tools, parse_ollama_frames,
+        parse_ollama_turn, parse_web_search, StreamPiece,
     };
-    use crate::commands::ai_provider::{StopReason, ToolCall};
+    use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
+    use crate::ipc_contracts::ai::AiGenerateRequestMessage;
     use serde_json::json;
+
+    fn base_request() -> AiGenerateRequest {
+        AiGenerateRequest {
+            model: "llama3.1:8b".to_string(),
+            messages: vec![AiGenerateRequestMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+            }],
+            locale: "en".to_string(),
+            temperature: Some(0.8),
+            top_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            repeat_penalty: None,
+            max_tokens: None,
+            context_window: None,
+            provider: None,
+            base_url: None,
+            effort: None,
+        }
+    }
+
+    #[test]
+    fn chat_stream_body_serializes_top_p_and_repeat_penalty_when_set() {
+        let mut req = base_request();
+        req.top_p = Some(0.95);
+        req.repeat_penalty = Some(1.15);
+        let body = build_chat_stream_body(&req);
+        assert_eq!(body["options"]["top_p"], json!(0.95));
+        assert_eq!(body["options"]["repeat_penalty"], json!(1.15));
+        // frequency_penalty is never remapped into Ollama's repeat_penalty field.
+        assert!(body["options"].get("frequency_penalty").is_none());
+    }
+
+    #[test]
+    fn chat_stream_body_omits_sampling_options_when_none() {
+        let body = build_chat_stream_body(&base_request());
+        assert!(body["options"].get("top_p").is_none());
+        assert!(body["options"].get("repeat_penalty").is_none());
+    }
 
     #[test]
     fn parse_ollama_frames_splits_thinking_and_content() {

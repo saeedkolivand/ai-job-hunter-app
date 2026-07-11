@@ -242,6 +242,59 @@ fn parse_gemini_frames(buf: &mut String, state: &mut GeminiScanner) -> Vec<Strea
     out
 }
 
+/// Build the `streamGenerateContent` request body for a given
+/// [`AiGenerateRequest`]. Pure + unit-tested. `topP`/`frequencyPenalty`/
+/// `presencePenalty` are the detector-resistance sampling knobs (RAID, ACL
+/// 2024) the renderer sets only for prose generation surfaces — the v1beta API
+/// supports all three on `generationConfig`, each added only when `Some`
+/// (never sent as `null`).
+fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
+    let temperature = req.temperature.unwrap_or(0.7);
+    let system_text: String = req
+        .messages
+        .iter()
+        .filter(|m| m.role == "system")
+        .map(|m| m.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let contents: Vec<Value> = req
+        .messages
+        .iter()
+        .filter(|m| m.role != "system")
+        .map(|m| {
+            let role = if m.role == "assistant" {
+                "model"
+            } else {
+                "user"
+            };
+            json!({ "role": role, "parts": [{ "text": m.content }] })
+        })
+        .collect();
+
+    let mut generation_config = json!({ "temperature": temperature });
+    if let Some(top_p) = req.top_p {
+        generation_config["topP"] = json!(top_p);
+    }
+    if let Some(fp) = req.frequency_penalty {
+        generation_config["frequencyPenalty"] = json!(fp);
+    }
+    if let Some(pp) = req.presence_penalty {
+        generation_config["presencePenalty"] = json!(pp);
+    }
+    if let Some(mt) = req.max_tokens {
+        generation_config["maxOutputTokens"] = json!(mt);
+    }
+    // Ask thinking-capable models to stream their reasoning as `thought` parts.
+    if gemini_supports_thinking(&req.model) {
+        generation_config["thinkingConfig"] = json!({ "includeThoughts": true });
+    }
+    let mut body = json!({ "contents": contents, "generationConfig": generation_config });
+    if !system_text.is_empty() {
+        body["systemInstruction"] = json!({ "parts": [{ "text": system_text }] });
+    }
+    body
+}
+
 pub struct GeminiClient;
 
 impl GeminiClient {
@@ -343,40 +396,7 @@ impl AiProvider for GeminiClient {
         let trace =
             RequestTrace::begin(ProviderId::Gemini, &req.model, &endpoint_label, BASE, true);
 
-        let temperature = req.temperature.unwrap_or(0.7);
-        let system_text: String = req
-            .messages
-            .iter()
-            .filter(|m| m.role == "system")
-            .map(|m| m.content.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
-        let contents: Vec<Value> = req
-            .messages
-            .iter()
-            .filter(|m| m.role != "system")
-            .map(|m| {
-                let role = if m.role == "assistant" {
-                    "model"
-                } else {
-                    "user"
-                };
-                json!({ "role": role, "parts": [{ "text": m.content }] })
-            })
-            .collect();
-
-        let mut generation_config = json!({ "temperature": temperature });
-        if let Some(mt) = req.max_tokens {
-            generation_config["maxOutputTokens"] = json!(mt);
-        }
-        // Ask thinking-capable models to stream their reasoning as `thought` parts.
-        if gemini_supports_thinking(&req.model) {
-            generation_config["thinkingConfig"] = json!({ "includeThoughts": true });
-        }
-        let mut body = json!({ "contents": contents, "generationConfig": generation_config });
-        if !system_text.is_empty() {
-            body["systemInstruction"] = json!({ "parts": [{ "text": system_text }] });
-        }
+        let body = build_chat_stream_body(req);
 
         let url = format!("{BASE}{endpoint_label}");
         let response = crate::net::http::shared()
@@ -704,12 +724,56 @@ impl AiProvider for GeminiClient {
 #[cfg(test)]
 mod tests {
     use super::{
-        gemini_supports_thinking, join_parts_text, parse_gemini_frames, parse_gemini_parts,
-        parse_gemini_turn, validate_gemini_key, GeminiScanner, StreamPiece,
+        build_chat_stream_body, gemini_supports_thinking, join_parts_text, parse_gemini_frames,
+        parse_gemini_parts, parse_gemini_turn, validate_gemini_key, GeminiScanner, StreamPiece,
     };
-    use crate::commands::ai_provider::{StopReason, ToolCall};
+    use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
     use crate::error::AppError;
+    use crate::ipc_contracts::ai::AiGenerateRequestMessage;
     use serde_json::json;
+
+    fn base_request() -> AiGenerateRequest {
+        AiGenerateRequest {
+            model: "gemini-1.5-flash".to_string(),
+            messages: vec![AiGenerateRequestMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+            }],
+            locale: "en".to_string(),
+            temperature: Some(0.8),
+            top_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            repeat_penalty: None,
+            max_tokens: None,
+            context_window: None,
+            provider: None,
+            base_url: None,
+            effort: None,
+        }
+    }
+
+    #[test]
+    fn chat_stream_body_serializes_sampling_params_when_set() {
+        let mut req = base_request();
+        req.top_p = Some(0.95);
+        req.frequency_penalty = Some(0.3);
+        req.presence_penalty = Some(0.2);
+        let body = build_chat_stream_body(&req);
+        let config = &body["generationConfig"];
+        assert_eq!(config["topP"], json!(0.95));
+        assert_eq!(config["frequencyPenalty"], json!(0.3));
+        assert_eq!(config["presencePenalty"], json!(0.2));
+    }
+
+    #[test]
+    fn chat_stream_body_omits_sampling_params_when_none() {
+        let body = build_chat_stream_body(&base_request());
+        let config = &body["generationConfig"];
+        assert!(config.get("topP").is_none());
+        assert!(config.get("frequencyPenalty").is_none());
+        assert!(config.get("presencePenalty").is_none());
+    }
 
     #[test]
     fn blank_or_missing_key_is_rejected_with_unauthorized() {

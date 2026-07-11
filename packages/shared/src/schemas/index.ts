@@ -51,6 +51,19 @@ export const AiGenerateRequestSchema = z.object({
   messages: z.array(AiMessageSchema).min(1),
   locale: LocaleSchema,
   temperature: z.number().min(0).max(2).optional(),
+  /**
+   * Nucleus-sampling threshold. Detector-resistance knob (RAID, ACL 2024):
+   * random sampling + repetition penalties measurably drop AI-detector
+   * accuracy — applied only to prose generation surfaces (cover letter,
+   * application answers, email, referral, interview), never resume/analysis.
+   */
+  topP: z.number().min(0).max(1).optional(),
+  /** OpenAI/OpenAI-compatible + Gemini frequency penalty. */
+  frequencyPenalty: z.number().min(-2).max(2).optional(),
+  /** OpenAI/OpenAI-compatible + Gemini presence penalty. */
+  presencePenalty: z.number().min(-2).max(2).optional(),
+  /** Ollama `repeat_penalty` (distinct semantics from frequency/presence penalty — never remap). */
+  repeatPenalty: z.number().min(1).max(2).optional(),
   maxTokens: z.number().int().min(1).max(32768).optional(),
   /**
    * Context window in tokens (Ollama `num_ctx`). Local models only — large
