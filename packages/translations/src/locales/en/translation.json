@@ -1526,6 +1526,7 @@
         "locationOptional": "(optional)",
         "locationPlaceholder": "e.g. Berlin, remote",
         "fromLocationSettings": "from location settings",
+        "countryResolved": "Country: {{country}}",
         "workType": "Work type",
         "items": "Items to scrape",
         "postedWithin": "Posted within",
@@ -1841,6 +1842,10 @@
         "needsCompany": "needs company",
         "needsKeys": "needs keys",
         "other": "skipped"
+      },
+      "note": {
+        "broadened": "few local results — showing {{country}} wide",
+        "guessed": "no country set — searched {{country}}"
       }
     },
     "viewList": "List",

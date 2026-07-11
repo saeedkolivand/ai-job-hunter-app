@@ -134,6 +134,7 @@ async fn empty_companies_returns_empty_without_network() {
         on_progress: None,
         on_item: None,
         on_truncation: None,
+        on_note: None,
     };
     let result = scraper.search(input, ctx).await;
     assert!(result.is_ok(), "empty companies must return Ok, not Err");
@@ -175,6 +176,7 @@ async fn cancelled_before_fetch_returns_ok_not_err() {
         on_progress: None,
         on_item: None,
         on_truncation: None,
+        on_note: None,
     };
     // Cancel before search runs so the per-company loop breaks on the first
     // iteration without attempting any network I/O.
@@ -221,6 +223,7 @@ async fn all_blank_companies_returns_ok_empty() {
         on_progress: None,
         on_item: None,
         on_truncation: None,
+        on_note: None,
     };
     let result = scraper.search(input, ctx).await;
     assert!(result.is_ok());
@@ -255,6 +258,7 @@ async fn live_search_returns_results() {
         on_progress: None,
         on_item: None,
         on_truncation: None,
+        on_note: None,
     };
     let results = tokio::time::timeout(
         std::time::Duration::from_secs(30),

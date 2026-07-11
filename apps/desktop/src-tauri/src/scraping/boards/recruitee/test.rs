@@ -32,6 +32,7 @@ fn make_ctx() -> ScrapeContext {
         on_progress: None,
         on_item: None,
         on_truncation: None,
+        on_note: None,
     }
 }
 
@@ -102,6 +103,7 @@ async fn mixed_list_invalid_slug_skipped_no_panic() {
         on_progress: None,
         on_item: None,
         on_truncation: None,
+        on_note: None,
     };
     // Cancel immediately so the valid slug's fetch attempt is aborted before
     // any I/O, keeping the test network-free.
@@ -282,6 +284,7 @@ async fn live_search_returns_results() {
         on_progress: None,
         on_item: None,
         on_truncation: None,
+        on_note: None,
     };
     let results = tokio::time::timeout(
         std::time::Duration::from_secs(30),
