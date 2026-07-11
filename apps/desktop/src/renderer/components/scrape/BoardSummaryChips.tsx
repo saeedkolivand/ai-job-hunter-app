@@ -295,10 +295,11 @@ export function BoardSummaryChips({ summaries, className }: BoardSummaryChipsPro
           className="max-w-[220px] whitespace-normal break-words text-[10px] font-normal"
         >
           {c.board ? (
-            <>
+            <span>
               <span className="font-semibold">{c.board}</span>
-              <span>· {c.detail}</span>
-            </>
+              {' · '}
+              {c.detail}
+            </span>
           ) : (
             c.detail
           )}
