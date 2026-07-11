@@ -30,6 +30,7 @@
     "gen:ipc:check": "pnpm --filter @ajh/shared gen:ipc:check",
     "gen:workflows": "node scripts/gen-workflow-catalog.mjs && prettier --write .github/workflows/README.md README.md",
     "gen:workflows:check": "node scripts/gen-workflow-catalog.mjs && prettier --write .github/workflows/README.md README.md && git diff --exit-code -- .github/workflows/README.md README.md",
+    "scan:rules": "ast-grep scan",
     "check:landing-drift": "node scripts/check-landing-drift.mjs",
     "check:agent-system": "node scripts/check-agent-system.mjs",
     "clean": "pnpm -r exec rimraf dist out .turbo node_modules/.cache",
@@ -39,6 +40,7 @@
     "prepare": "husky"
   },
   "devDependencies": {
+    "@ast-grep/cli": "^0.44.1",
     "@axe-core/playwright": "^4.12.1",
     "@commitlint/cli": "^21.2.0",
     "@commitlint/config-conventional": "^21.2.0",
