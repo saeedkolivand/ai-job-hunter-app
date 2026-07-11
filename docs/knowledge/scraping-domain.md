@@ -101,7 +101,7 @@ Location input policy is now visible via per-board summary notes. When a search 
 - **Note tokens:** `BoardScrapeSummary.note: Option<String>` records the location policy decision as a machine token:
   - `broadened:<cc>` — Adzuna results exist but sparse (`< 3`); broadened from city to country-level (e.g., "few local results in Berlin — showing Germany-wide").
   - `guessed-market:<cc>` — No explicit country provided; market was guessed and Adzuna returned >= 3 results (authoritative guess). Never emitted for sub-floor guesses that fall through to JSearch global fallback.
-  - Only one note per run; guessed and broadened are mutually exclusive (guessed when `country_guessed=false`, broadened when `country_guessed=false`).
+  - Only one note per run; guessed and broadened are mutually exclusive (guessed when `country_guessed=true`, broadened when `country_guessed=false`).
 - **Frontend rendering:** Chips mapped via `BoardSummaryChips.tsx` `ChipTone 'note'` (informational blue); locale-keyed labels `jobs.boardSummary.note.{broadened, guessed}` with country name via `Intl.DisplayNames({type:'region'})` for user-friendly labels (en + de).
 - **Wizard visibility:** Autopilot wizard shows inline "Country: <Name>" when `countryCode` is set, cleared on manual location edit (user may re-pick via the location-input autocompleter).
 - **Source:** `scraping/types/mod.rs` (`on_note` side-channel + `report_note()`), `scraping/engine/mod.rs` (`BoardScrapeSummary.note` wiring), `boards/aggregator/mod.rs` (inject), `boards/aggregator/providers.rs` (Adzuna emit sites + `guessed_market_note` helper).
