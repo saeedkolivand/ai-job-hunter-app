@@ -114,7 +114,7 @@ pub(crate) fn ats_all_fetches_failed(
 /// any network call ran. Shared so every ATS board words it identically.
 pub(crate) fn ats_all_slugs_invalid_message(board_id: &str, rejected_slugs: usize) -> String {
     format!(
-        "all {rejected_slugs} company slug(s) invalid for {board_id} — check the company names in Settings"
+        "all {rejected_slugs} company slug(s) invalid for {board_id} — check the company names in the jobs search form"
     )
 }
 
@@ -149,6 +149,43 @@ pub(crate) fn ats_board_failure(
     }
     (successful_fetches == 0 && rejected_slugs > 0)
         .then(|| ats_all_slugs_invalid_message(board_id, rejected_slugs))
+}
+
+/// Finalize an ATS multi-company board's `search()`: cancellation ALWAYS wins
+/// over a synthesized board error. A cancel that fires right after an invalid
+/// slug is rejected — but before a later valid slug is reached — must not be
+/// misattributed as "all slugs invalid" (a benign interruption reported as
+/// user misconfiguration). This priority is easy to get right per board and
+/// easy to silently drop in a copy-paste (it was — see the round-1 review
+/// finding this fixed), so it is centralized here: every board that shares
+/// this finish step gets the priority for free instead of re-deriving it, and
+/// the ONE test on this function pins it for all of them at once.
+///
+/// Shared by every ATS board using the full `ats_board_failure` shape
+/// (BambooHR, Breezy, Pinpoint, Recruitee, Rippling, Workable). Personio
+/// tracks a narrower `(attempted, rejected_slugs)` pair (no
+/// `successful_fetches`/`first_fetch_error` — a tracked follow-up) so it
+/// checks cancellation inline rather than sharing this exact shape.
+pub(crate) fn ats_finish_search(
+    signal: &tokio_util::sync::CancellationToken,
+    out: Vec<crate::scraping::types::JobPosting>,
+    board_id: &str,
+    successful_fetches: usize,
+    rejected_slugs: usize,
+    first_fetch_error: &Option<String>,
+) -> anyhow::Result<Vec<crate::scraping::types::JobPosting>> {
+    if signal.is_cancelled() {
+        return Ok(out);
+    }
+    if let Some(message) = ats_board_failure(
+        board_id,
+        successful_fetches,
+        rejected_slugs,
+        first_fetch_error,
+    ) {
+        return Err(anyhow::anyhow!(message));
+    }
+    Ok(out)
 }
 
 /// Decide the pagination-failure policy for a page fetch: a page reached with

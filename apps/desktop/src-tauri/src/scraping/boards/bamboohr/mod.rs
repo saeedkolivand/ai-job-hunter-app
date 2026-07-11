@@ -10,7 +10,7 @@
 //! isRemote}]}` — shape confirmed, no drift.
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
-use super::common::{ats_board_failure, is_valid_dns_label_slug, normalize_companies};
+use super::common::{ats_finish_search, is_valid_dns_label_slug, normalize_companies};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -225,25 +225,16 @@ impl Scraper for BambooHrScraper {
             }
         }
 
-        // A cancel that fired after an invalid slug was rejected (but before a
-        // later valid slug was reached) must not be misattributed as "all slugs
-        // invalid" — the run was interrupted, not misconfigured.
-        if ctx.signal.is_cancelled() {
-            return Ok(out);
-        }
-
-        // Err when every attempt failed OR every slug was rejected pre-fetch —
-        // see `ats_board_failure`.
-        if let Some(message) = ats_board_failure(
+        // See `ats_finish_search`: cancellation wins over a synthesized
+        // all-fetches-failed/all-slugs-invalid board error.
+        ats_finish_search(
+            &ctx.signal,
+            out,
             self.id(),
             successful_fetches,
             rejected_slugs,
             &first_fetch_error,
-        ) {
-            return Err(anyhow::anyhow!(message));
-        }
-
-        Ok(out)
+        )
     }
 }
 

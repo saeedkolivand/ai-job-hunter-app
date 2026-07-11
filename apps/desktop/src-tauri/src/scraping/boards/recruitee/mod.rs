@@ -5,7 +5,7 @@
 /// board with `"needs-company"` when `input.companies` is empty.
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
-use super::common::ats_board_failure;
+use super::common::ats_finish_search;
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -186,25 +186,16 @@ impl Scraper for RecruiteeScraper {
             }
         }
 
-        // A cancel that fired after an invalid slug was rejected (but before a
-        // later valid slug was reached) must not be misattributed as "all slugs
-        // invalid" — the run was interrupted, not misconfigured.
-        if ctx.signal.is_cancelled() {
-            return Ok(out);
-        }
-
-        // Distinguishes an all-slug 403/parse-drift run OR an all-slug-rejected
-        // run from a genuine zero result; see `ats_board_failure` for the decision.
-        if let Some(message) = ats_board_failure(
+        // See `ats_finish_search`: cancellation wins over a synthesized
+        // all-fetches-failed/all-slugs-invalid board error.
+        ats_finish_search(
+            &ctx.signal,
+            out,
             self.id(),
             successful_fetches,
             rejected_slugs,
             &first_fetch_error,
-        ) {
-            return Err(anyhow::anyhow!(message));
-        }
-
-        Ok(out)
+        )
     }
 }
 

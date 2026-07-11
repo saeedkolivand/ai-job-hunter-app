@@ -80,6 +80,52 @@ async fn all_invalid_slugs_error_without_network() {
     }
 }
 
+/// Personio keeps its own inline cancellation guard (narrower `(attempted,
+/// rejected_slugs)` shape than the shared `ats_finish_search` the other 6 ATS
+/// boards use — see the common.rs doc). Pins the same round-1 regression for
+/// this board specifically: a cancel firing right after an invalid slug is
+/// rejected (via the `on_progress` callback the reject branch already calls)
+/// must return `Ok`, not the all-slugs-invalid error.
+#[tokio::test]
+async fn cancel_after_reject_before_next_slug_returns_ok_not_all_invalid_error() {
+    let scraper = PersonioScraper;
+    let signal = tokio_util::sync::CancellationToken::new();
+    let cancel_on_progress = signal.clone();
+    let ctx = ScrapeContext {
+        signal: signal.clone(),
+        on_progress: Some(Box::new(move |_p: f32| cancel_on_progress.cancel())),
+        on_item: None,
+        on_truncation: None,
+        on_note: None,
+    };
+    let input = BoardSearchInput {
+        query: String::new(),
+        location: None,
+        amount: 10,
+        pages: 1,
+        date_filter: None,
+        job_type: None,
+        work_type: None,
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        country_code: None,
+        latitude: None,
+        longitude: None,
+        radius_km: None,
+        companies: vec!["dotted.host".to_string(), "clark".to_string()],
+    };
+    let result = scraper.search(input, ctx).await;
+    assert!(
+        result.is_ok(),
+        "a cancel firing right after a reject must return Ok (interrupted), not the \
+         all-slugs-invalid error — got {:?}",
+        result.err()
+    );
+}
+
 // ── ID namespacing — cross-tenant collision prevention ────────────────────────
 
 /// Two companies returning the same raw position ID must produce distinct

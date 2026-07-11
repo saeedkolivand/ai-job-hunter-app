@@ -405,6 +405,25 @@ fn rows_to_jobs_drops_undeserializable_rows_keeps_valid() {
     );
 }
 
+/// Round-2 review finding: when EVERY row in a batch fails to deserialize
+/// (not just a stray one), `rows_to_jobs` must still return an empty `Vec` —
+/// this is the exact signal `search()` uses (`raw_row_count > 0 &&
+/// rows_to_jobs(..).is_empty()`) to treat the company as a FETCH FAILURE
+/// (recorded into `first_fetch_error`) instead of a silent success-with-zero
+/// — the same failure class the `location.state` object drift caused before
+/// `rows_to_jobs` existed, but now for a retype `rows_to_jobs` also can't
+/// parse at all.
+#[test]
+fn rows_to_jobs_all_rows_undeserializable_returns_empty() {
+    let values: Vec<serde_json::Value> =
+        serde_json::from_str(r#"["not-an-object", 42, null, ["also", "not", "valid"]]"#).unwrap();
+    let jobs = rows_to_jobs(values);
+    assert!(
+        jobs.is_empty(),
+        "every row failing to deserialize must yield an empty Vec (the all-drift signal)"
+    );
+}
+
 #[test]
 fn parse_breezy_response_accepts_bare_date_published_date() {
     let json = r#"[

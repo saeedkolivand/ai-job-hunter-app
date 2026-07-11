@@ -92,9 +92,62 @@ fn board_failure_all_slugs_rejected_returns_distinct_error() {
     let msg = ats_board_failure("rippling", 0, 3, &None).expect("all-rejected must error");
     assert_eq!(
         msg,
-        "all 3 company slug(s) invalid for rippling — check the company names in Settings",
+        "all 3 company slug(s) invalid for rippling — check the company names in the jobs search form",
     );
     assert_eq!(msg, ats_all_slugs_invalid_message("rippling", 3));
+}
+
+// ── ats_finish_search (cancellation-priority fix, round-2 review) ────────────
+//
+// The shared finish step for the 6 boards using the full `ats_board_failure`
+// shape. Pinned here ONCE so every board that calls it inherits the same
+// cancellation-wins-over-synthesized-error priority instead of a per-board
+// copy that can silently drop the guard (as happened in round 1).
+
+#[test]
+fn finish_search_cancelled_returns_ok_even_when_all_slugs_rejected() {
+    // The exact round-1 regression: a cancel that fired after every slug was
+    // rejected (no successes, no fetch error) must return the collected `out`
+    // as-is, NOT the all-slugs-invalid error — a benign interruption is not a
+    // board misconfiguration.
+    let signal = tokio_util::sync::CancellationToken::new();
+    signal.cancel();
+    let result = ats_finish_search(&signal, vec![], "breezy", 0, 3, &None);
+    assert!(
+        result.is_ok(),
+        "cancellation must win over the all-slugs-invalid synthesis, got {result:?}"
+    );
+    assert!(result.unwrap().is_empty());
+}
+
+#[test]
+fn finish_search_cancelled_returns_ok_even_when_all_fetches_failed() {
+    // Same priority for the other `ats_board_failure` branch: a cancel must
+    // suppress the all-fetches-failed error too.
+    let signal = tokio_util::sync::CancellationToken::new();
+    signal.cancel();
+    let result = ats_finish_search(
+        &signal,
+        vec![],
+        "rippling",
+        0,
+        0,
+        &Some("HTTP 403".to_string()),
+    );
+    assert!(result.is_ok(), "cancellation must win, got {result:?}");
+}
+
+#[test]
+fn finish_search_not_cancelled_surfaces_ats_board_failure_as_before() {
+    // Without cancellation, behavior is unchanged: delegates straight to
+    // `ats_board_failure`.
+    let signal = tokio_util::sync::CancellationToken::new();
+    let err = ats_finish_search(&signal, vec![], "pinpoint", 0, 2, &None)
+        .expect_err("uncancelled all-rejected run must still error");
+    assert!(err.to_string().contains("slug(s) invalid"));
+
+    let ok = ats_finish_search(&signal, vec![], "pinpoint", 1, 0, &None);
+    assert!(ok.is_ok(), "a successful fetch must still keep Ok");
 }
 
 /// Nothing attempted and nothing rejected (e.g. the incoming list was empty

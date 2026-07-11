@@ -16,7 +16,7 @@
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use super::common::{
-    ats_board_failure, is_https_url, is_valid_dns_label_slug, normalize_companies,
+    ats_finish_search, is_https_url, is_valid_dns_label_slug, normalize_companies,
 };
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -274,10 +274,28 @@ impl Scraper for BreezyScraper {
                 }
             };
 
-            // A non-2xx / schema-drift response is now an `Err` above (which records
-            // `first_fetch_error`), so reaching here means a real success — count it.
-            successful_fetches += 1;
+            // A non-2xx response is now an `Err` above (which records
+            // `first_fetch_error`). A 200 where EVERY row fails to deserialize is
+            // schema drift too — the exact failure class the `location.state`
+            // object drift caused before `rows_to_jobs` existed — so treat that
+            // as a fetch failure rather than a silent success-with-zero-jobs
+            // (round-2 review finding).
+            let raw_row_count = data.len();
             let postings = rows_to_jobs(data);
+            if raw_row_count > 0 && postings.is_empty() {
+                log::warn!(
+                    "[breezy] all {raw_row_count} rows failed to parse for '{}'; treating as a fetch failure",
+                    company
+                );
+                first_fetch_error.get_or_insert_with(|| {
+                    format!("all {raw_row_count} rows failed to parse — response shape may have changed")
+                });
+                if let Some(ref on_progress) = ctx.on_progress {
+                    on_progress((i + 1) as f32 / total as f32);
+                }
+                continue;
+            }
+            successful_fetches += 1;
 
             for posting in parse_breezy_response(postings, &company, now) {
                 if let Some(ref on_item) = ctx.on_item {
@@ -291,25 +309,16 @@ impl Scraper for BreezyScraper {
             }
         }
 
-        // A cancel that fired after an invalid slug was rejected (but before a
-        // later valid slug was reached) must not be misattributed as "all slugs
-        // invalid" — the run was interrupted, not misconfigured.
-        if ctx.signal.is_cancelled() {
-            return Ok(out);
-        }
-
-        // Err when every attempt failed OR every slug was rejected pre-fetch —
-        // see `ats_board_failure`.
-        if let Some(message) = ats_board_failure(
+        // See `ats_finish_search`: cancellation wins over a synthesized
+        // all-fetches-failed/all-slugs-invalid board error.
+        ats_finish_search(
+            &ctx.signal,
+            out,
             self.id(),
             successful_fetches,
             rejected_slugs,
             &first_fetch_error,
-        ) {
-            return Err(anyhow::anyhow!(message));
-        }
-
-        Ok(out)
+        )
     }
 }
 
