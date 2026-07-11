@@ -129,6 +129,9 @@ try {
       if (e && typeof e.stdout === 'string') segments.push(...splitByFile(e.stdout));
     }
   }
+  // count files that actually produced diff segments (a committed-then-reverted
+  // file is in nonSkipped but nets to zero) — metrics must reflect what was reviewed
+  metric.files = new Set(segments.map((s) => s.file)).size;
   const { diff, omitted, deletedCount } = assembleDiff(segments, MAX);
   if (!diff.trim()) exit0();
 
@@ -227,6 +230,21 @@ try {
   if (hashes.length && hashes.every((h) => cache.has(h)) && !tier0Blocking) {
     logM({ outcome: 'cache-skip', blocked: false });
     exit0();
+  }
+
+  // an INTRODUCED tier-0 hit is deterministic (confidence 1) — the verdict is
+  // already known, so don't spend an LLM review on it; the fixed code gets its
+  // full review on the next finish.
+  if (tier0Blocking) {
+    metric.model = 'none';
+    metric.findings = countBySeverity(tier0);
+    logM({ outcome: 'tier0-block', blocked: true });
+    block(
+      `Review gate [tier-0 arch guards] — blocking issues, address then finish:\n\n${tier0
+        .filter((t) => t.introduced_by_diff)
+        .map(formatFinding)
+        .join('\n')}`
+    );
   }
 
   // 7. route → ≤cap owners (+ secondaries on risk)
