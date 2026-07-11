@@ -6,6 +6,10 @@
 /// that have no server-side search either.
 ///
 /// Endpoint reconnaissance ported from santifer/career-ops (MIT), `providers/themuse.mjs`.
+/// Live-verified 2026-07-11 (page 0): response is `{page, page_count, total,
+/// items_per_page: 20, results[{name, refs{landing_page}, company{name},
+/// locations[{name}]}]}` — every parsed field present, `page_count` in the tens
+/// of thousands. Shape confirmed, no drift.
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use super::common::{matches_filters, should_propagate_page_error};
@@ -20,9 +24,9 @@ const BASE_URL: &str = "https://www.themuse.com/api/public/jobs";
 /// 100-page fetch (this is a UI-triggered search, not a bulk crawl).
 const MAX_PAGES: u32 = 5;
 
-/// The Muse's actual per-page result count is unconfirmed (unverified
-/// endpoint). Used only to flag likely response-shape drift on page 0: a
-/// truly single-page feed rarely holds this many jobs, so `page_count == 0`
+/// The Muse's per-page result count is 20 (confirmed live 2026-07-11). This
+/// floor stays well under that. Used only to flag likely response-shape drift
+/// on page 0: a truly single-page feed rarely holds this many jobs, so `page_count == 0`
 /// alongside a page this full is far more likely a renamed/dropped field
 /// than a legitimate one-page result set.
 const LIKELY_FULL_PAGE_LEN: usize = 10;

@@ -92,6 +92,24 @@ pub(crate) async fn cancellable_sleep(
     }
 }
 
+/// Structural discriminator for LinkedIn's guest `seeMoreJobPostings/search`
+/// endpoint: whether a **page-0** 200 response that parsed to `card_count` job
+/// cards indicates a soft-block rather than a genuine empty result.
+///
+/// Verified live 2026-07-11: the guest endpoint pads ANY real page-0 query with
+/// talent-pool / "spontaneous application" cards (a real, non-block query never
+/// returns an empty card list on page 0), and paging past the end returns HTTP
+/// 400 (already surfaced as an error upstream). So a 200 page-0 body that yields
+/// **zero** job cards is never "0 jobs found" — it is an anti-bot soft-block, a
+/// login-wall interstitial, or a card-markup change. Surfacing it as a board
+/// error (not the previous silent `Ok(vec![])`) is what makes LinkedIn honest.
+///
+/// Only page 0 is treated this way: a later page legitimately returns zero once
+/// the harvest is exhausted, and by then real cards were already collected.
+fn page0_is_soft_block(card_count: usize) -> bool {
+    card_count == 0
+}
+
 #[derive(Debug, Clone)]
 pub struct JobsSearchParams {
     pub keywords: String,
@@ -371,6 +389,21 @@ impl LinkedInJobsApiClient {
                     Ok(jobs) => jobs,
                     Err(e) => return Err(e),
                 };
+            }
+
+            // Honest block detection: a page-0 200 that yields zero job cards is a
+            // soft-block / login-wall / markup drift, NOT a genuine empty result
+            // (see `page0_is_soft_block`). Surface it as a board error instead of
+            // the previous silent `Ok(vec![])`. Guarded on cancellation so a cancel
+            // firing between fetch and here isn't mislabelled as a block.
+            if page == 0
+                && page0_is_soft_block(jobs.len())
+                && !signal.is_some_and(|s| s.is_cancelled())
+            {
+                return Err(anyhow::anyhow!(
+                    "LinkedIn returned no job cards — it may be rate-limiting guest traffic, \
+                     require login, or have changed its page layout; results unavailable"
+                ));
             }
 
             for job in &jobs {

@@ -247,3 +247,19 @@ async fn test_cancellable_sleep_elapses_normally() {
         "sleep must actually elapse the full duration"
     );
 }
+
+// ── page-0 soft-block discriminator (trust PR G) ─────────────────────────────
+//
+// Verified live 2026-07-11: the guest endpoint pads any real page-0 query with
+// talent-pool cards and 400s past the end, so a 200 page-0 body that parsed to
+// ZERO cards is a soft-block / login-wall / markup drift, never "0 jobs found".
+
+#[test]
+fn page0_soft_block_only_on_zero_cards() {
+    assert!(
+        page0_is_soft_block(0),
+        "zero page-0 cards is the soft-block signal (never a genuine empty result)"
+    );
+    assert!(!page0_is_soft_block(1), "one card is a real result");
+    assert!(!page0_is_soft_block(10), "a full page is a real result");
+}

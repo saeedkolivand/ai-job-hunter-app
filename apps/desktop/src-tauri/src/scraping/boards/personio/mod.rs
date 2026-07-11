@@ -5,6 +5,7 @@
 /// board with `"needs-company"` when `input.companies` is empty.
 use super::super::http::{fetch_text, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
+use super::common::ats_all_slugs_invalid_message;
 use async_trait::async_trait;
 
 const HOSTS: &[&str] = &["jobs.personio.de", "jobs.personio.com"];
@@ -148,6 +149,11 @@ impl Scraper for PersonioScraper {
         let now = chrono::Utc::now().timestamp_millis();
         let mut out = vec![];
         let total = input.companies.len();
+        // #597: count slugs rejected by the SSRF guard vs. those that reached a
+        // fetch, so an all-invalid-slug run surfaces a distinct board error
+        // instead of a silent zero (see the all-rejected check after the loop).
+        let mut rejected_slugs = 0usize;
+        let mut attempted = 0usize;
 
         for (i, raw_company) in input.companies.iter().enumerate() {
             if ctx.signal.is_cancelled() {
@@ -163,12 +169,14 @@ impl Scraper for PersonioScraper {
             // A slug like `127.0.0.1:8443/foo` would change the URL authority and
             // redirect the fetch away from Personio (SSRF).
             if !is_valid_personio_slug(&company) {
+                rejected_slugs += 1;
                 log::warn!("[personio] skipping invalid company slug '{}'", company);
                 if let Some(ref on_progress) = ctx.on_progress {
                     on_progress((i + 1) as f32 / total as f32);
                 }
                 continue;
             }
+            attempted += 1;
 
             let mut xml_and_host: Option<(String, String)> = None;
             for &host in HOSTS {
@@ -253,6 +261,24 @@ impl Scraper for PersonioScraper {
             if let Some(ref on_progress) = ctx.on_progress {
                 on_progress((i + 1) as f32 / total as f32);
             }
+        }
+
+        // A cancel that fired after an invalid slug was rejected (but before a
+        // later valid slug was reached) must not be misattributed as "all slugs
+        // invalid" — the run was interrupted, not misconfigured.
+        if ctx.signal.is_cancelled() {
+            return Ok(out);
+        }
+
+        // #597: every non-blank slug was rejected pre-fetch (no fetch ran) — a
+        // silent zero otherwise. A run where at least one slug WAS fetched keeps
+        // its (possibly empty) result: a well-formed but wrong slug is not a
+        // validation error. Mirrors the ATS boards' `ats_board_failure` reject branch.
+        if attempted == 0 && rejected_slugs > 0 {
+            return Err(anyhow::anyhow!(ats_all_slugs_invalid_message(
+                self.id(),
+                rejected_slugs
+            )));
         }
 
         Ok(out)

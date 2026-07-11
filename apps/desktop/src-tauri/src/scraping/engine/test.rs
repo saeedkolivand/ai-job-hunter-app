@@ -191,9 +191,29 @@ fn test_catalog_listed_flags() {
         "arbeitsagentur must be listed"
     );
 
-    // All 23 active boards are listed
+    // Comeet is registered (dispatchable) but HIDDEN from the picker until its
+    // response shape is live-verified (trust PR G) — it must still be present in
+    // the catalog, just with `listed = false`.
+    assert!(
+        catalog.iter().any(|e| e.id == "comeet"),
+        "comeet must stay registered (dispatchable)"
+    );
+    assert!(
+        !entry("comeet").listed,
+        "comeet must be hidden from the picker until live-verified"
+    );
+
+    // Every board except the hidden Comeet is listed (23 registered, 1 hidden).
     let listed_count = catalog.iter().filter(|e| e.listed).count();
-    assert_eq!(listed_count, 23, "all 23 boards should be listed");
+    assert_eq!(
+        listed_count,
+        catalog.len() - 1,
+        "all boards except the hidden Comeet should be listed"
+    );
+    assert_eq!(
+        listed_count, 22,
+        "22 of the 23 registered boards are listed"
+    );
 }
 
 #[test]

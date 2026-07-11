@@ -328,6 +328,34 @@ Board fetch errors are now representable end-to-end, distinguishing between "boa
 - **Rust commands:** `apps/desktop/src-tauri/src/commands/scrape.rs` (`scrape_resolve_url`, `scrape_update_description`)
 - **PostingsCache mutation:** `apps/desktop/src-tauri/src/postings/mod.rs: update_description(job_id, text)` — in-place cache mutation; text-hash-keyed result/embedding caches auto-invalidate on changed job text
 
+## Board hygiene (PR G, 2026-07-11)
+
+Live verification of never-verified recon-ported boards and hardening against silent zeros.
+
+**Live verification (curl, single polite requests, 2026-07-11):**
+
+- **Themuse** — `GET /api/public/jobs?page=0` shape confirmed; `items_per_page=20` documented.
+- **Breezy HR** — drift FIXED: `location.state` is object `{id,name}`, not string. Parser switched to per-row `rows_to_jobs` (matching rippling/workable idiom) so a single drifted row can't zero the board. Added recovery from `all rows failed to parse` state (`raw_row_count > 0 && postings.empty()` → records `first_fetch_error`, skips `successful_fetches` increment, treated as fetch failure not genuine zero).
+- **BambooHR** — response shape confirmed; `state` IS a plain string (unlike breezy). No changes needed.
+- **Rippling** — response shape confirmed; `workLocation` tolerant of per-row objects. No changes needed.
+- **Pinpoint** — unverifiable: no public slug found (bespoke subdomains). Parser kept as reconnaissance; drift/wrong-slug covered by existing error plumbing.
+- **Comeet** — hidden from picker via `listed()→false`; code kept, dispatchable via API. Credentials remain configurable in Settings (no removal to avoid orphaning user data).
+
+**LinkedIn soft-block detection:**
+
+A 200 page-0 response with zero job cards is never genuine empty (verified: nonsense-keyword query still returns 10 padded cards). Chosen discriminator: `page0_is_soft_block(card_count)==card_count==0`. Returns board Err (`"LinkedIn returned no job cards — may be rate-limiting/require login/changed layout; results unavailable"`). Also: added country-biased cached `select_geo_id` (in-process cache keyed `(query, country)`, successes only) + `country_aliases` map for ambiguous names (e.g. `"be"→"Belgium"`).
+
+**Rejected-slug surfacing (ATS boards):**
+
+New `ats_finish_search(signal, out, board_id, successful_fetches, rejected_slugs, first_fetch_error)` in `boards/common.rs` centralizes "cancellation wins, else delegate to `ats_board_failure`"; wired into 7 ATS boards (bamboohr, breezy, pinpoint, rippling, workable, recruitee, personio). All-rejected → distinct error: `"all N company slug(s) invalid for {board} — check the company names in the jobs search form"`. Partial-reject (some fetched, some invalid) → log-only (chip mapping deferred).
+
+**Source pointers:**
+
+- Breezy row-drift recovery: `apps/desktop/src-tauri/src/scraping/boards/breezy/mod.rs` (capture `raw_row_count`, check emptiness post-`rows_to_jobs`)
+- LinkedIn soft-block + geoId cache: `apps/desktop/src-tauri/src/scraping/boards/linkedin/mod.rs` (`page0_is_soft_block`, `GEO_ID_CACHE`, `select_geo_id`, `country_aliases`)
+- Rejected-slug finalization: `apps/desktop/src-tauri/src/scraping/boards/common.rs` (`ats_finish_search`, `ats_all_slugs_invalid_message`)
+- Tests: breezy `rows_to_jobs_all_rows_undeserializable_returns_empty` · linkedin `page0_is_soft_block`, `select_geo_id` · common `finish_search_*` truth table + personio inline cancel-after-reject seam
+
 ## See also
 
 - `docs/SCRAPING_ENDPOINTS.md` — verified external endpoint reconnaissance (23 active boards, `aggregator` counted once among them; retired boards noted)
