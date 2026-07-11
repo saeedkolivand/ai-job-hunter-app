@@ -652,6 +652,85 @@ fn jooble_response_maps_to_job_posting() {
     assert!(posting.posted_at.unwrap() > 0);
 }
 
+/// Jooble's REAL live `updated` value has NO timezone offset despite looking
+/// ISO-8601-ish (e.g. "2026-05-15T00:00:00.0000000", 7-digit fraction) — a
+/// live-key test found `parse_from_rfc3339` returns `None` for every real
+/// Jooble job with this shape. The naive-datetime fallback (assumed UTC) must
+/// recover it.
+#[test]
+fn jooble_updated_without_timezone_parses_as_utc() {
+    let job = JoobleJob {
+        id: Some("no-tz".to_string()),
+        title: Some("No-TZ job".to_string()),
+        company: None,
+        location: None,
+        snippet: None,
+        salary: None,
+        link: Some("https://jooble.org/desc/no-tz".to_string()),
+        updated: Some("2026-05-15T00:00:00.0000000".to_string()),
+    };
+    let posting = map_jooble_job(job, 0).unwrap();
+
+    let expected = chrono::NaiveDate::from_ymd_opt(2026, 5, 15)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc()
+        .timestamp_millis();
+    assert_eq!(
+        posting.posted_at,
+        Some(expected),
+        "the naive-datetime (no-TZ) fallback must recover Jooble's real timestamp shape"
+    );
+}
+
+/// A TZ-bearing RFC3339 `updated` (in case an entry ever does carry an offset)
+/// must still parse via the FIRST branch, not the naive-datetime fallback.
+#[test]
+fn jooble_updated_with_timezone_still_parses_via_rfc3339() {
+    let job = JoobleJob {
+        id: Some("with-tz".to_string()),
+        title: Some("With-TZ job".to_string()),
+        company: None,
+        location: None,
+        snippet: None,
+        salary: None,
+        link: Some("https://jooble.org/desc/with-tz".to_string()),
+        updated: Some("2026-05-15T02:00:00+02:00".to_string()),
+    };
+    let posting = map_jooble_job(job, 0).unwrap();
+
+    let expected = chrono::NaiveDate::from_ymd_opt(2026, 5, 15)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc()
+        .timestamp_millis();
+    assert_eq!(
+        posting.posted_at,
+        Some(expected),
+        "a TZ-bearing timestamp (+02:00, i.e. 00:00 UTC) must parse via RFC3339"
+    );
+}
+
+/// A malformed `updated` string matches neither branch → `posted_at` stays
+/// `None`, never a panic or a wrong guess.
+#[test]
+fn jooble_malformed_updated_yields_no_posted_at() {
+    let job = JoobleJob {
+        id: Some("bad-date".to_string()),
+        title: Some("Bad-date job".to_string()),
+        company: None,
+        location: None,
+        snippet: None,
+        salary: None,
+        link: Some("https://jooble.org/desc/bad-date".to_string()),
+        updated: Some("not-a-date".to_string()),
+    };
+    let posting = map_jooble_job(job, 0).unwrap();
+    assert_eq!(posting.posted_at, None);
+}
+
 /// Jooble's `id` can arrive as a bare integer — must parse and normalise to
 /// String (same shape as the Adzuna `id` regression this mirrors).
 #[test]
