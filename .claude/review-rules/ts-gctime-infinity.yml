@@ -1,0 +1,15 @@
+id: ts-gctime-infinity
+language: typescript
+severity: warning
+message: "gcTime: Infinity pins every distinct query key's payload for the app lifetime — keep gcTime finite on dynamic keys (staleTime: Infinity is fine for immutable data)"
+note: pr-reviewer frontend checklist — React Query cache hygiene
+files:
+  - apps/desktop/src/renderer/**
+rule:
+  pattern:
+    context: 'const q = { gcTime: Infinity }'
+    selector: pair
+ignores:
+  - '**/*.test.*'
+  - '**/*.spec.*'
+  - '**/test-support*'

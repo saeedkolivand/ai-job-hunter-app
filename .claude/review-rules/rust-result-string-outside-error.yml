@@ -1,0 +1,13 @@
+id: rust-result-string-outside-error
+language: rust
+severity: error
+message: untyped Result<_, String> outside error/ — use AppError/AppResult
+note: docs/architecture-rules.md — error types are centralized in the error layer
+files:
+  - apps/desktop/src-tauri/src/**
+ignores:
+  - '**/error/**'
+  - '**/error.rs'
+rule:
+  kind: generic_type
+  regex: 'Result<[^>]*,\s*String\s*>'
