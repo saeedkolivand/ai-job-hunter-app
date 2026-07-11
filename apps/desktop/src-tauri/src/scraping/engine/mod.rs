@@ -56,6 +56,11 @@ pub struct ScraperCatalogEntry {
     /// remote/unknown-location rows). Drives the picker's per-board indicator.
     #[serde(rename = "supportsLocation")]
     pub supports_location: bool,
+    /// Curated company display names this company-scoped ATS board will query
+    /// when the user supplies none (from `boards::ats_seed::by_ats`, source
+    /// order). Empty for boards without a curated seed.
+    #[serde(rename = "seededCompanies")]
+    pub seeded_companies: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -146,6 +151,9 @@ impl ScraperEngine {
                 listed: s.listed(),
                 requires_company: s.requires_company(),
                 supports_location: s.supports_location(),
+                seeded_companies: super::boards::ats_seed::by_ats(s.id())
+                    .map(|e| e.company.to_string())
+                    .collect(),
             })
             .collect()
     }

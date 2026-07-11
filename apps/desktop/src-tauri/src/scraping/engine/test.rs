@@ -78,6 +78,33 @@ fn test_catalog_supports_location_flags() {
 }
 
 #[test]
+fn test_catalog_seeded_companies() {
+    let engine = ScraperEngine::new();
+    let catalog = engine.catalog();
+    let entry = |id: &str| {
+        catalog
+            .iter()
+            .find(|e| e.id == id)
+            .unwrap_or_else(|| panic!("missing board: {id}"))
+    };
+
+    // Seeded ATS board: non-empty, carries a known curated company.
+    assert!(
+        entry("greenhouse")
+            .seeded_companies
+            .iter()
+            .any(|c| c == "Stripe"),
+        "greenhouse must include the curated 'Stripe' seed"
+    );
+
+    // Non-ATS board: no curated seed, must be empty.
+    assert!(
+        entry("aggregator").seeded_companies.is_empty(),
+        "aggregator has no curated company seed"
+    );
+}
+
+#[test]
 fn test_catalog_auth_tiers() {
     use crate::scraping::types::AuthRequirement;
 
