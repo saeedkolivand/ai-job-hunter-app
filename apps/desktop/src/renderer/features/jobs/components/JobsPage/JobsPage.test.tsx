@@ -50,7 +50,11 @@ const boardChips = { summaries: null as unknown };
 
 // JobsResults prop capture — asserts the same per-board summaries + failure
 // note reach the empty-state wiring, not just the header strip.
-const resultsProps = { boardSummaries: undefined as unknown, failureNote: undefined as unknown };
+const resultsProps = {
+  boardSummaries: undefined as unknown,
+  failureNote: undefined as unknown,
+  totalCount: undefined as unknown,
+};
 
 // usePostings — mutable container so tests can simulate "results present" vs
 // "zero results" for the header-strip mutual-exclusivity gating (the header
@@ -141,13 +145,17 @@ vi.mock('@/features/jobs/components/JobsResults', () => ({
   JobsResults: ({
     boardSummaries,
     failureNote,
+    totalCount,
   }: {
     boardSummaries?: unknown;
     failureNote?: unknown;
+    totalCount?: unknown;
   }) => {
-    // Records the summaries + failure note forwarded into the empty-state wiring.
+    // Records the summaries + failure note + unfiltered count forwarded into
+    // the empty-state wiring.
     resultsProps.boardSummaries = boardSummaries;
     resultsProps.failureNote = failureNote;
+    resultsProps.totalCount = totalCount;
     return <div data-testid={TEST_IDS.jobs.jobsResults} />;
   },
 }));
@@ -231,6 +239,7 @@ describe('JobsPage — job.completed event handler', () => {
     boardChips.summaries = null;
     resultsProps.boardSummaries = undefined;
     resultsProps.failureNote = undefined;
+    resultsProps.totalCount = undefined;
     postingsContainer.data = [];
   });
 
@@ -494,6 +503,13 @@ describe('JobsPage — job.completed event handler', () => {
     expect(screen.queryByText(/jobs\.lastScrapeFailed/)).not.toBeInTheDocument();
   });
 
+  it('forwards the unfiltered posting count as totalCount (claude review advisory #2)', () => {
+    postingsContainer.data = [samplePosting('a'), samplePosting('b'), samplePosting('c')];
+    renderJobsPage();
+
+    expect(resultsProps.totalCount).toBe(3);
+  });
+
   // ---------------------------------------------------------------------------
   // Outright failure note (no per-board summaries to chip) — HIGH #3
   // ---------------------------------------------------------------------------
@@ -584,6 +600,7 @@ describe('JobsPage — header strip mutual exclusivity with the empty state', ()
     boardChips.summaries = null;
     resultsProps.boardSummaries = undefined;
     resultsProps.failureNote = undefined;
+    resultsProps.totalCount = undefined;
     postingsContainer.data = [];
   });
 

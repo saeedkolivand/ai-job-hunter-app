@@ -151,7 +151,9 @@ export function JobsPage() {
       if (failedBoards.length > 0) {
         const total = boardSummaries.length;
         const done = total - failedBoards.length;
-        const failedNames = failedBoards.map((b) => t(`jobs.boards.${b.board}`)).join(', ');
+        const failedNames = failedBoards
+          .map((b) => t(`jobs.boards.${b.board}`, { defaultValue: b.board }))
+          .join(', ');
         note = t('jobs.partialScrapeNote', {
           done: String(done),
           total: String(total),
@@ -387,6 +389,11 @@ export function JobsPage() {
             scrapeProgress={scrapeProgress}
             boardSummaries={lastSummaries}
             failureNote={lastFailureNote}
+            // Unfiltered count — lets JobsResults tell "genuinely zero
+            // postings" apart from "the text filter hid everything" so the
+            // empty state doesn't re-show a prior scrape's diagnostics when a
+            // filter (not the scrape) is what emptied the visible list.
+            totalCount={allPostings.length}
             onShowMore={handleShowMore}
             onScrape={() => setShowScrapeForm(true)}
           />

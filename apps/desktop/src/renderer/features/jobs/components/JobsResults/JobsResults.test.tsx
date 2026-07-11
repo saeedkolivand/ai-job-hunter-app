@@ -134,6 +134,7 @@ function renderResults(opts: {
   resumeId?: string | null;
   boardSummaries?: BoardScrapeSummary[];
   failureNote?: string | null;
+  totalCount?: number;
 }) {
   const resumeId = 'resumeId' in opts ? (opts.resumeId ?? null) : RESUME_ID;
   const wrapper = ({ children }: { children: ReactNode }) => (
@@ -146,6 +147,7 @@ function renderResults(opts: {
       scraping={opts.scraping ?? false}
       boardSummaries={opts.boardSummaries}
       failureNote={opts.failureNote}
+      totalCount={opts.totalCount}
       onShowMore={noop}
       onScrape={noop}
     />,
@@ -354,6 +356,60 @@ describe('JobsResults — board diagnostics in the empty state', () => {
       screen.queryByRole('group', { name: 'jobs.boardSummary.label' })
     ).not.toBeInTheDocument();
     expect(screen.queryByText('jobs.lastScrapeFailed')).not.toBeInTheDocument();
+  });
+
+  // ── filter-hides-all vs. genuinely-zero (claude review advisory #2) ─────────
+  //
+  // `totalCount` (unfiltered posting count) lets the empty state tell "the
+  // text filter hid every posting that exists" apart from "there really are
+  // zero postings". Only the genuinely-zero case may re-show the last
+  // scrape's diagnostics — a filter-hides-all view must NOT imply the scrape
+  // itself found nothing.
+
+  it('filter hides all postings (totalCount > 0, filtered = []) → NO chips/note even though both are set', () => {
+    const boardSummaries: BoardScrapeSummary[] = [
+      { board: 'linkedin', count: 12, error: 'blocked' },
+    ];
+    renderResults({
+      filtered: [],
+      resumeId: null,
+      boardSummaries,
+      failureNote: 'connection refused',
+      totalCount: 12, // 12 postings exist; the active text filter hid all of them
+    });
+
+    expect(
+      screen.queryByRole('group', { name: 'jobs.boardSummary.label' })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('jobs.lastScrapeFailed')).not.toBeInTheDocument();
+    // The plain empty-state title still renders (filter just hid everything).
+    expect(screen.getByText('jobs.empty')).toBeInTheDocument();
+  });
+
+  it('genuinely zero postings (totalCount = 0) → chips/note DO render', () => {
+    const boardSummaries: BoardScrapeSummary[] = [
+      { board: 'linkedin', count: 0, error: 'blocked' },
+    ];
+    renderResults({
+      filtered: [],
+      resumeId: null,
+      boardSummaries,
+      failureNote: 'connection refused',
+      totalCount: 0,
+    });
+
+    expect(screen.getByRole('group', { name: 'jobs.boardSummary.label' })).toBeInTheDocument();
+    expect(screen.getByText('jobs.lastScrapeFailed')).toBeInTheDocument();
+  });
+
+  it('totalCount omitted (no filtering call site) → falls back to filtered, chips/note still render for filtered=[]', () => {
+    const boardSummaries: BoardScrapeSummary[] = [
+      { board: 'linkedin', count: 0, error: 'blocked' },
+    ];
+    renderResults({ filtered: [], resumeId: null, boardSummaries, failureNote: 'boom' });
+
+    expect(screen.getByRole('group', { name: 'jobs.boardSummary.label' })).toBeInTheDocument();
+    expect(screen.getByText('jobs.lastScrapeFailed')).toBeInTheDocument();
   });
 });
 
