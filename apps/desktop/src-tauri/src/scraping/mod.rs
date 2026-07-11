@@ -9,4 +9,4 @@ pub mod trust;
 pub mod types;
 
 pub use engine::{BoardScrapeSummary, ScraperEngine};
-pub use types::{BoardSearchInput, JobPosting};
+pub use types::{BoardSearchInput, JobPosting, LocationSpec};

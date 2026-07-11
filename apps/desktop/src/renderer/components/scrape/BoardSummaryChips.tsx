@@ -150,18 +150,38 @@ function skipDetail(skipped: string, t: TFunction): string {
 /**
  * Map a controlled location `note` token to a localized label — or `null` for an
  * unknown/future token so a legacy or newer backend can never leak a raw machine
- * token into the UI (tolerant, like the `skipped` fallback). Shape is
- * `kind:<countryCode>` (lowercase cc); the country name is resolved natively.
+ * token into the UI (tolerant, like the `skipped` fallback). Two shapes:
+ *   - `kind:<countryCode>` (lowercase alpha-2) — `broadened` / `guessed-market`;
+ *     the country name is resolved natively.
+ *   - `location-filtered:<n>` (PR F) — the engine emits this unconditionally for
+ *     a board without server-side location support (even n=0, "checked, nothing
+ *     hidden"); n=0 gets a plain marker label, n>0 the pluralized hidden-count.
  */
 function noteDetail(note: string, t: TFunction, locale: string): string | null {
   const sep = note.indexOf(':');
   if (sep < 0) return null;
   const kind = note.slice(0, sep);
-  const cc = note.slice(sep + 1).trim();
-  // Alpha-2 only — a malformed multi-colon token (e.g. "broadened:de:extra")
-  // must not render its trailing garbage as a "country".
-  if (cc.length !== 2) return null;
-  const country = regionName(cc, locale);
+  const value = note.slice(sep + 1).trim();
+
+  // `location-filtered:<n>` — count of results dropped by the local location
+  // filter (0 = the board was checked and nothing was hidden). A malformed /
+  // negative / non-integer `n` is tolerated (no chip), like an unknown token,
+  // so a legacy or garbled payload never renders junk.
+  if (kind === 'location-filtered') {
+    // `Number('')` coerces to `0` in JS — reject empty explicitly so a bare
+    // "location-filtered:" (no digits at all) stays malformed, not a false 0.
+    if (!value) return null;
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 0) return null;
+    return n === 0
+      ? t('jobs.boardSummary.note.locationFilteredNone')
+      : t('jobs.boardSummary.note.locationFiltered', { count: n });
+  }
+
+  // `kind:<cc>` — alpha-2 only; a malformed multi-colon token (e.g.
+  // "broadened:de:extra") must not render its trailing garbage as a "country".
+  if (value.length !== 2) return null;
+  const country = regionName(value, locale);
   switch (kind) {
     case 'broadened':
       return t('jobs.boardSummary.note.broadened', { country });

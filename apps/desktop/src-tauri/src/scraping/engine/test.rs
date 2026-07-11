@@ -30,6 +30,54 @@ fn test_catalog() {
 }
 
 #[test]
+fn test_catalog_supports_location_flags() {
+    // Verified catalog (trust PR F): only boards that consume the requested
+    // location SERVER-SIDE claim support. Everything else falls back to the
+    // conservative central post-filter, so it must report false.
+    let engine = ScraperEngine::new();
+    let catalog = engine.catalog();
+    let entry = |id: &str| {
+        catalog
+            .iter()
+            .find(|e| e.id == id)
+            .unwrap_or_else(|| panic!("missing board: {id}"))
+    };
+
+    // Server-side location consumers (verified by reading each `search()`).
+    assert!(
+        entry("aggregator").supports_location,
+        "aggregator routes market + `where`"
+    );
+    assert!(
+        entry("linkedin").supports_location,
+        "linkedin resolves geoId + distance"
+    );
+    assert!(
+        entry("arbeitsagentur").supports_location,
+        "arbeitsagentur sends `wo`"
+    );
+
+    // Boards that ignore location or only filter it client-side must be false.
+    for id in [
+        "remotive",
+        "remoteok",
+        "wwr",
+        "themuse",
+        "germantechjobs",
+        "arbeitnow",
+        "ycombinator",
+        "greenhouse",
+        "lever",
+        "comeet",
+    ] {
+        assert!(
+            !entry(id).supports_location,
+            "{id} must not claim server-side location support"
+        );
+    }
+}
+
+#[test]
 fn test_catalog_auth_tiers() {
     use crate::scraping::types::AuthRequirement;
 
@@ -367,6 +415,7 @@ async fn central_amount_cap_truncates_stream_and_return() {
         Some(on_item),
         None,
         None,
+        None,
     )
     .await
     .expect("capped scrape recovers as success");
@@ -423,6 +472,7 @@ async fn run_boards_collects_all_boards_up_to_amount() {
         Some(on_item),
         None,
         None,
+        None,
         test_browser_sem(),
     )
     .await;
@@ -456,6 +506,7 @@ async fn run_boards_one_error_does_not_kill_others() {
         resolved,
         fake_input(10),
         parent,
+        None,
         None,
         None,
         None,
@@ -501,6 +552,7 @@ async fn run_boards_parent_cancel_stops_all() {
         None,
         None,
         None,
+        None,
         test_browser_sem(),
     )
     .await;
@@ -528,6 +580,7 @@ async fn run_boards_child_cap_stops_only_its_board() {
         resolved,
         fake_input(3),
         parent.clone(),
+        None,
         None,
         None,
         None,
@@ -567,6 +620,7 @@ async fn run_boards_browser_board_collects_items() {
         resolved,
         fake_input(10),
         parent,
+        None,
         None,
         None,
         None,
@@ -661,6 +715,7 @@ async fn run_boards_browser_boards_serialized() {
         None,
         None,
         None,
+        None,
         test_browser_sem(),
     )
     .await;
@@ -710,6 +765,7 @@ async fn scrape_boards_dedupes_and_caps_large_input() {
         fake_refs,
         fake_input(1),
         parent,
+        None,
         None,
         None,
         None,
@@ -1572,6 +1628,7 @@ async fn run_boards_preserves_input_order() {
         resolved,
         fake_input(5),
         parent,
+        None,
         None,
         None,
         None,
@@ -2897,5 +2954,631 @@ async fn scrape_boards_collapses_cross_source_duplicates_keeping_richer() {
         postings[0].description.as_deref(),
         Some("full description with many more characters than the snippet"),
         "the surviving row's description must upgrade to the full text, not stay truncated"
+    );
+}
+
+// ── TRUST PR F: central conservative location post-filter ─────────────────────
+
+/// TRUST PR F — for a board WITHOUT server-side location support
+/// (`supports_location() == false`), the engine drops postings whose OWN location
+/// clearly mismatches the requested one, but conservatively keeps remote and
+/// unknown-location rows. The drop count surfaces as a `location-filtered:<n>`
+/// note (PR D grammar). A board that DOES consume location server-side is left
+/// untouched — re-filtering it could drop a legitimate in-radius match its server
+/// correctly included. Exercised through the engine seam (boards hardcode hosts).
+#[tokio::test]
+async fn scrape_boards_central_location_filter_drops_only_clear_mismatches() {
+    // Ignores location (supports_location defaults false). Returns a mix: matching
+    // city, clear mismatch, remote-flagged, and unknown-location.
+    struct LocationFake;
+    #[async_trait::async_trait]
+    impl Scraper for LocationFake {
+        fn id(&self) -> &'static str {
+            "locfake"
+        }
+        fn display_name(&self) -> &'static str {
+            "LocFake"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            let rows: [(&str, Option<&str>, bool); 4] = [
+                ("keep-berlin", Some("Berlin, Germany"), false),
+                ("drop-london", Some("London, UK"), false),
+                ("keep-remote", Some("USA Only"), true), // remote flag → keep
+                ("keep-unknown", None, false),           // unknown → keep
+            ];
+            let mut out = Vec::new();
+            for (slug, loc, remote) in rows {
+                let mut extra = std::collections::HashMap::new();
+                if remote {
+                    extra.insert("remote".to_string(), serde_json::json!(true));
+                }
+                let job = JobPosting {
+                    id: format!("locfake:{slug}"),
+                    external_id: Some(slug.to_string()),
+                    title: "Job".to_string(),
+                    company: "LF".to_string(),
+                    location: loc.map(str::to_string),
+                    url: format!("https://lf.example/{slug}"),
+                    source: "locfake".to_string(),
+                    description: None,
+                    requirements: None,
+                    posted_at: None,
+                    captured_at: 0,
+                    extra,
+                };
+                if let Some(ref on_item) = ctx.on_item {
+                    on_item(job.clone());
+                }
+                out.push(job);
+            }
+            Ok(out)
+        }
+    }
+
+    // A board that DOES consume location server-side — the central filter must
+    // leave it alone even though it returns a row for a different city name.
+    struct LocationAwareFake;
+    #[async_trait::async_trait]
+    impl Scraper for LocationAwareFake {
+        fn id(&self) -> &'static str {
+            "locaware"
+        }
+        fn display_name(&self) -> &'static str {
+            "LocAware"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        fn supports_location(&self) -> bool {
+            true
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            // An in-radius suburb the server correctly included — must survive.
+            let job = JobPosting {
+                id: "locaware:0".to_string(),
+                external_id: Some("0".to_string()),
+                title: "Job".to_string(),
+                company: "LA".to_string(),
+                location: Some("Potsdam".to_string()),
+                url: "https://la.example/0".to_string(),
+                source: "locaware".to_string(),
+                description: None,
+                requirements: None,
+                posted_at: None,
+                captured_at: 0,
+                extra: std::collections::HashMap::new(),
+            };
+            if let Some(ref on_item) = ctx.on_item {
+                on_item(job.clone());
+            }
+            Ok(vec![job])
+        }
+    }
+
+    static LOCFAKE: std::sync::LazyLock<LocationFake> = std::sync::LazyLock::new(|| LocationFake);
+    static LOCAWARE: std::sync::LazyLock<LocationAwareFake> =
+        std::sync::LazyLock::new(|| LocationAwareFake);
+
+    let engine = ScraperEngine::new();
+    let input = BoardSearchInput {
+        query: "q".to_string(),
+        location: Some("Berlin".to_string()),
+        amount: 100,
+        pages: 10,
+        date_filter: None,
+        job_type: None,
+        work_type: None,
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        country_code: None,
+        latitude: None,
+        longitude: None,
+        radius_km: None,
+        companies: Vec::new(),
+    };
+
+    let (postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["locfake".to_string(), "locaware".to_string()],
+            input,
+            "job-trust-f-locfilter".to_string(),
+            None,
+            None,
+            std::path::Path::new("."),
+            |id| match id {
+                "locfake" => Ok(&*LOCFAKE as &'static dyn Scraper),
+                "locaware" => Ok(&*LOCAWARE as &'static dyn Scraper),
+                other => Err(anyhow::anyhow!("Unknown board: {other}")),
+            },
+        )
+        .await
+        .expect("a filtered run is still Ok");
+
+    // Non-supporting board: London dropped; Berlin + remote + unknown kept (3).
+    let locfake = summaries
+        .iter()
+        .find(|s| s.board == "locfake")
+        .expect("locfake summary missing");
+    assert_eq!(
+        locfake.count, 3,
+        "only the clear London mismatch is dropped; got {locfake:?}"
+    );
+    assert_eq!(
+        locfake.note.as_deref(),
+        Some("location-filtered:1"),
+        "the single drop must surface as a location-filtered note; got {locfake:?}"
+    );
+    assert!(
+        !postings
+            .iter()
+            .any(|p| p.location.as_deref() == Some("London, UK")),
+        "the wrong-city row must not appear in the aggregated result"
+    );
+    assert!(
+        postings
+            .iter()
+            .any(|p| p.location.as_deref() == Some("Berlin, Germany")),
+        "the matching-city row must survive"
+    );
+    assert!(
+        postings
+            .iter()
+            .any(|p| p.source == "locfake" && p.location.is_none()),
+        "the unknown-location row must survive (never dropped)"
+    );
+
+    // Location-aware board: NOT filtered — its differently-named-city row survives
+    // and it carries no location-filtered note.
+    let locaware = summaries
+        .iter()
+        .find(|s| s.board == "locaware")
+        .expect("locaware summary missing");
+    assert_eq!(
+        locaware.count, 1,
+        "a server-side location board is not re-filtered; got {locaware:?}"
+    );
+    assert!(
+        locaware.note.is_none(),
+        "a supporting board must not get a location-filtered note; got {locaware:?}"
+    );
+    assert!(
+        postings
+            .iter()
+            .any(|p| p.location.as_deref() == Some("Potsdam")),
+        "the location-aware board's in-radius row must survive the central filter"
+    );
+}
+
+/// TRUST PR F back-compat — with NO location requested, a non-supporting board's
+/// results pass through byte-identically (the central filter is inert).
+#[tokio::test]
+async fn scrape_boards_no_location_requested_is_inert() {
+    struct AnywhereFake;
+    #[async_trait::async_trait]
+    impl Scraper for AnywhereFake {
+        fn id(&self) -> &'static str {
+            "anywherefake"
+        }
+        fn display_name(&self) -> &'static str {
+            "AnywhereFake"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            let mut out = Vec::new();
+            for (i, loc) in ["London, UK", "Tokyo", "Paris"].into_iter().enumerate() {
+                let job = JobPosting {
+                    id: format!("anywherefake:{i}"),
+                    external_id: Some(i.to_string()),
+                    title: "Job".to_string(),
+                    company: "AF".to_string(),
+                    location: Some(loc.to_string()),
+                    url: format!("https://af.example/{i}"),
+                    source: "anywherefake".to_string(),
+                    description: None,
+                    requirements: None,
+                    posted_at: None,
+                    captured_at: 0,
+                    extra: std::collections::HashMap::new(),
+                };
+                if let Some(ref on_item) = ctx.on_item {
+                    on_item(job.clone());
+                }
+                out.push(job);
+            }
+            Ok(out)
+        }
+    }
+    static ANYWHERE: std::sync::LazyLock<AnywhereFake> = std::sync::LazyLock::new(|| AnywhereFake);
+
+    let engine = ScraperEngine::new();
+    // `fake_input` has `location: None` → no location requested → filter inert.
+    let (postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["anywherefake".to_string()],
+            fake_input(100),
+            "job-trust-f-inert".to_string(),
+            None,
+            None,
+            std::path::Path::new("."),
+            |id| {
+                if id == "anywherefake" {
+                    Ok(&*ANYWHERE as &'static dyn Scraper)
+                } else {
+                    Err(anyhow::anyhow!("Unknown board: {id}"))
+                }
+            },
+        )
+        .await
+        .expect("ok");
+
+    assert_eq!(
+        postings.len(),
+        3,
+        "no location requested → nothing dropped; got {postings:?}"
+    );
+    let s = summaries
+        .iter()
+        .find(|s| s.board == "anywherefake")
+        .expect("anywherefake summary missing");
+    assert_eq!(s.count, 3, "all rows kept when no location was requested");
+    assert!(
+        s.note.is_none(),
+        "no location requested → no location-filtered note; got {s:?}"
+    );
+}
+
+/// A fake board that streams 4 rows (2 clear location mismatches interleaved
+/// with 2 matches) via `ctx.on_item`, in the SAME row order it returns them —
+/// mirrors the real board loop pattern (`on_item` then `out.push`, no gap).
+struct CapFilterFake;
+
+#[async_trait::async_trait]
+impl Scraper for CapFilterFake {
+    fn id(&self) -> &'static str {
+        "capfilter"
+    }
+    fn display_name(&self) -> &'static str {
+        "CapFilter"
+    }
+    fn mode(&self) -> ScraperMode {
+        ScraperMode::Http
+    }
+    async fn search(
+        &self,
+        _input: BoardSearchInput,
+        ctx: ScrapeContext,
+    ) -> anyhow::Result<Vec<JobPosting>> {
+        // Rows 1 and 3 clearly mismatch a "Berlin" request; rows 2 and 4 match.
+        let rows: [(&str, &str); 4] = [
+            ("row1-mismatch", "London, UK"),
+            ("row2-match", "Berlin, Germany"),
+            ("row3-mismatch", "Paris, France"),
+            ("row4-match", "Berlin, Mitte"),
+        ];
+        let mut out = Vec::new();
+        for (slug, loc) in rows {
+            if ctx.signal.is_cancelled() {
+                break;
+            }
+            let job = JobPosting {
+                id: format!("capfilter:{slug}"),
+                external_id: Some(slug.to_string()),
+                title: "Job".to_string(),
+                company: "CF".to_string(),
+                location: Some(loc.to_string()),
+                url: format!("https://cf.example/{slug}"),
+                source: "capfilter".to_string(),
+                description: None,
+                requirements: None,
+                posted_at: None,
+                captured_at: 0,
+                extra: std::collections::HashMap::new(),
+            };
+            if let Some(ref on_item) = ctx.on_item {
+                on_item(job.clone());
+            }
+            out.push(job);
+        }
+        Ok(out)
+    }
+}
+
+/// HIGH-1 — cap/filter ordering: the item cap must count only MATCHING items,
+/// never raw pre-filter items, and the final result must be the true matching
+/// set (not a naive truncate of the raw board return, which can keep an early
+/// mismatch while dropping a later real match — see `run_one`'s `has_active_filter`
+/// branch). `amount=2`, 4 rows where rows 1 and 3 mismatch → both matches (rows
+/// 2 and 4) must be delivered, `count == 2`, and NEITHER mismatch survives.
+#[tokio::test]
+async fn scrape_boards_cap_and_location_filter_combined_delivers_only_matches() {
+    static CAPFILTER: std::sync::LazyLock<CapFilterFake> =
+        std::sync::LazyLock::new(|| CapFilterFake);
+
+    let streamed: Arc<std::sync::Mutex<Vec<JobPosting>>> =
+        Arc::new(std::sync::Mutex::new(Vec::new()));
+    let streamed_cb = streamed.clone();
+    let on_item: Arc<dyn Fn(JobPosting) + Send + Sync> = Arc::new(move |item: JobPosting| {
+        if let Ok(mut g) = streamed_cb.lock() {
+            g.push(item);
+        }
+    });
+
+    let engine = ScraperEngine::new();
+    let mut input = fake_input(2); // amount=2 — the cap under test
+    input.location = Some("Berlin".to_string());
+
+    let (postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["capfilter".to_string()],
+            input,
+            "job-trust-f-cap-and-filter".to_string(),
+            None,
+            Some(on_item),
+            std::path::Path::new("."),
+            |id| {
+                if id == "capfilter" {
+                    Ok(&*CAPFILTER as &'static dyn Scraper)
+                } else {
+                    Err(anyhow::anyhow!("Unknown board: {id}"))
+                }
+            },
+        )
+        .await
+        .expect("ok");
+
+    let s = summaries
+        .iter()
+        .find(|s| s.board == "capfilter")
+        .expect("capfilter summary missing");
+    assert_eq!(
+        s.count, 2,
+        "both real matches must be delivered despite amount=2 and 2 raw \
+         mismatches ahead of/interleaved with them; got {s:?}"
+    );
+    assert_eq!(
+        s.note.as_deref(),
+        Some("location-filtered:2"),
+        "both mismatches must be counted as dropped; got {s:?}"
+    );
+
+    let ids: std::collections::HashSet<&str> = postings.iter().map(|p| p.id.as_str()).collect();
+    assert!(
+        ids.contains("capfilter:row2-match") && ids.contains("capfilter:row4-match"),
+        "both real matches must survive, including the LATER one (row4) that a naive \
+         raw truncate(2) would have discarded in favor of the earlier mismatch (row1); \
+         got {postings:?}"
+    );
+    assert!(
+        !ids.contains("capfilter:row1-mismatch") && !ids.contains("capfilter:row3-mismatch"),
+        "neither mismatch may survive; got {postings:?}"
+    );
+}
+
+/// MEDIUM — the live stream gate and the final returned Vec must drop the
+/// IDENTICAL set: every item forwarded to the caller's `on_item` during the
+/// run must also be present in the final result, and vice versa (no item
+/// streamed-then-dropped, and no item present-in-result-but-never-streamed).
+#[tokio::test]
+async fn scrape_boards_stream_and_final_result_agree_under_location_filter() {
+    static CAPFILTER2: std::sync::LazyLock<CapFilterFake> =
+        std::sync::LazyLock::new(|| CapFilterFake);
+
+    let streamed: Arc<std::sync::Mutex<Vec<JobPosting>>> =
+        Arc::new(std::sync::Mutex::new(Vec::new()));
+    let streamed_cb = streamed.clone();
+    let on_item: Arc<dyn Fn(JobPosting) + Send + Sync> = Arc::new(move |item: JobPosting| {
+        if let Ok(mut g) = streamed_cb.lock() {
+            g.push(item);
+        }
+    });
+
+    let engine = ScraperEngine::new();
+    let mut input = fake_input(100); // no cap interaction — isolates this invariant
+    input.location = Some("Berlin".to_string());
+
+    let (postings, _summaries) = engine
+        .scrape_boards_with_resolver(
+            &["capfilter2".to_string()],
+            input,
+            "job-trust-f-stream-agree".to_string(),
+            None,
+            Some(on_item),
+            std::path::Path::new("."),
+            |id| {
+                if id == "capfilter2" {
+                    Ok(&*CAPFILTER2 as &'static dyn Scraper)
+                } else {
+                    Err(anyhow::anyhow!("Unknown board: {id}"))
+                }
+            },
+        )
+        .await
+        .expect("ok");
+
+    let streamed_ids: std::collections::HashSet<String> = streamed
+        .lock()
+        .expect("lock")
+        .iter()
+        .map(|p| p.id.clone())
+        .collect();
+    let final_ids: std::collections::HashSet<String> =
+        postings.iter().map(|p| p.id.clone()).collect();
+
+    assert_eq!(
+        streamed_ids, final_ids,
+        "the live-streamed kept set must exactly equal the final returned set"
+    );
+    // Sanity: the agreeing set is exactly the 2 real matches, not e.g. empty sets
+    // trivially "agreeing".
+    assert_eq!(
+        streamed_ids.len(),
+        2,
+        "2 real matches expected in both sets"
+    );
+}
+
+/// Trust-story completeness (frontend-reviewer follow-up): the
+/// `location-filtered:<n>` note must be UNCONDITIONAL for a non-supporting
+/// board when a location was requested — including `n=0`. Emitting it only on
+/// `dropped>0` let a non-supporting board that happened to have zero mismatches
+/// this run read as indistinguishable from a genuinely location-aware one (a
+/// clean chip, "all ok"), half-telling the 17/23-boards-ignore-location story.
+/// Covers all three cases: non-supporting+location+0 drops → note "…:0";
+/// supporting board+location → no note; (no-location case is already covered
+/// by `scrape_boards_no_location_requested_is_inert`).
+#[tokio::test]
+async fn scrape_boards_zero_drops_still_emits_unconditional_note_for_non_supporting_board() {
+    // Non-supporting board whose rows ALL match the request — 0 drops, but the
+    // note must still fire since this board never honored location server-side.
+    struct AllMatchNonSupporting;
+    #[async_trait::async_trait]
+    impl Scraper for AllMatchNonSupporting {
+        fn id(&self) -> &'static str {
+            "allmatch"
+        }
+        fn display_name(&self) -> &'static str {
+            "AllMatch"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            let job = JobPosting {
+                id: "allmatch:0".to_string(),
+                external_id: Some("0".to_string()),
+                title: "Job".to_string(),
+                company: "AM".to_string(),
+                location: Some("Berlin, Germany".to_string()),
+                url: "https://am.example/0".to_string(),
+                source: "allmatch".to_string(),
+                description: None,
+                requirements: None,
+                posted_at: None,
+                captured_at: 0,
+                extra: std::collections::HashMap::new(),
+            };
+            if let Some(ref on_item) = ctx.on_item {
+                on_item(job.clone());
+            }
+            Ok(vec![job])
+        }
+    }
+
+    // Supporting board — must NEVER get a location-filtered note, regardless of
+    // its own location text (the central filter never touches it).
+    struct SupportingBoard;
+    #[async_trait::async_trait]
+    impl Scraper for SupportingBoard {
+        fn id(&self) -> &'static str {
+            "supporting"
+        }
+        fn display_name(&self) -> &'static str {
+            "Supporting"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        fn supports_location(&self) -> bool {
+            true
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            let job = JobPosting {
+                id: "supporting:0".to_string(),
+                external_id: Some("0".to_string()),
+                title: "Job".to_string(),
+                company: "SB".to_string(),
+                location: Some("Munich".to_string()), // doesn't matter — never filtered
+                url: "https://sb.example/0".to_string(),
+                source: "supporting".to_string(),
+                description: None,
+                requirements: None,
+                posted_at: None,
+                captured_at: 0,
+                extra: std::collections::HashMap::new(),
+            };
+            if let Some(ref on_item) = ctx.on_item {
+                on_item(job.clone());
+            }
+            Ok(vec![job])
+        }
+    }
+
+    static ALLMATCH: std::sync::LazyLock<AllMatchNonSupporting> =
+        std::sync::LazyLock::new(|| AllMatchNonSupporting);
+    static SUPPORTING: std::sync::LazyLock<SupportingBoard> =
+        std::sync::LazyLock::new(|| SupportingBoard);
+
+    let engine = ScraperEngine::new();
+    let mut input = fake_input(10);
+    input.location = Some("Berlin".to_string());
+
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["allmatch".to_string(), "supporting".to_string()],
+            input,
+            "job-trust-f-zero-drop-note".to_string(),
+            None,
+            None, // no live on_item — exercises the post-hoc path
+            std::path::Path::new("."),
+            |id| match id {
+                "allmatch" => Ok(&*ALLMATCH as &'static dyn Scraper),
+                "supporting" => Ok(&*SUPPORTING as &'static dyn Scraper),
+                other => Err(anyhow::anyhow!("Unknown board: {other}")),
+            },
+        )
+        .await
+        .expect("ok");
+
+    let allmatch = summaries
+        .iter()
+        .find(|s| s.board == "allmatch")
+        .expect("allmatch summary missing");
+    assert_eq!(
+        allmatch.count, 1,
+        "the matching row is kept; got {allmatch:?}"
+    );
+    assert_eq!(
+        allmatch.note.as_deref(),
+        Some("location-filtered:0"),
+        "a non-supporting board must emit the note even with ZERO drops when a \
+         location was requested; got {allmatch:?}"
+    );
+
+    let supporting = summaries
+        .iter()
+        .find(|s| s.board == "supporting")
+        .expect("supporting summary missing");
+    assert!(
+        supporting.note.is_none(),
+        "a server-side location board must never carry a location-filtered note; \
+         got {supporting:?}"
     );
 }

@@ -25,6 +25,14 @@ export interface BoardCatalogEntry {
    * if no companies are supplied.
    */
   requiresCompany: boolean;
+  /**
+   * Whether the board narrows results by the requested location server-side.
+   * When `false`, the engine conservatively post-filters this board's results
+   * against the requested location (dropping only clear city mismatches; never
+   * remote/unknown-location rows), so the picker can indicate which boards will
+   * genuinely honor a location. Optional so older/absent payloads read as `false`.
+   */
+  supportsLocation?: boolean;
 }
 
 export interface BoardsContract {
@@ -62,6 +70,10 @@ export interface BoardsContract {
  *     deterministic results.
  *   - `"broadened:<cc>"` — a sparse city search was widened country-wide within
  *     the `<cc>` market.
+ *   - `"location-filtered:<n>"` — this board doesn't honor location server-side
+ *     (`supportsLocation: false`), so the engine conservatively dropped `<n>`
+ *     of its results whose own location clearly mismatched the request; never
+ *     drops remote/unknown-location rows.
  *   `<cc>` is an ISO country code; the field never carries the raw location text.
  */
 export interface BoardScrapeSummary {

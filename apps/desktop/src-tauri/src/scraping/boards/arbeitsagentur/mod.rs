@@ -97,6 +97,11 @@ impl Scraper for ArbeitsagenturScraper {
         ScraperMode::Http
     }
 
+    fn supports_location(&self) -> bool {
+        // The free-text location is sent server-side as the `wo` (where) param.
+        true
+    }
+
     async fn search(
         &self,
         input: BoardSearchInput,
