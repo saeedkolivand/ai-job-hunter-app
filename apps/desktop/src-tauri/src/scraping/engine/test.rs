@@ -78,6 +78,33 @@ fn test_catalog_supports_location_flags() {
 }
 
 #[test]
+fn test_catalog_seeded_companies() {
+    let engine = ScraperEngine::new();
+    let catalog = engine.catalog();
+    let entry = |id: &str| {
+        catalog
+            .iter()
+            .find(|e| e.id == id)
+            .unwrap_or_else(|| panic!("missing board: {id}"))
+    };
+
+    // Seeded ATS board: non-empty, carries a known curated company.
+    assert!(
+        entry("greenhouse")
+            .seeded_companies
+            .iter()
+            .any(|c| c == "Stripe"),
+        "greenhouse must include the curated 'Stripe' seed"
+    );
+
+    // Non-ATS board: no curated seed, must be empty.
+    assert!(
+        entry("aggregator").seeded_companies.is_empty(),
+        "aggregator has no curated company seed"
+    );
+}
+
+#[test]
 fn test_catalog_auth_tiers() {
     use crate::scraping::types::AuthRequirement;
 
@@ -388,6 +415,57 @@ impl super::super::types::Scraper for FailingScraper {
     }
 }
 
+/// Fake board that captures the `input.companies` it actually receives at
+/// `search()` time, with a configurable `id()`/`requires_company()` — used to
+/// prove the `ats_seed` auto-population targets exactly ATS-requiring boards
+/// by `Scraper::id()`, and leaves everything else untouched.
+struct SeedCapturingScraper {
+    board_id: &'static str,
+    ats_board: bool,
+    captured: std::sync::Mutex<Option<Vec<String>>>,
+}
+
+impl SeedCapturingScraper {
+    fn ats(board_id: &'static str) -> Self {
+        Self {
+            board_id,
+            ats_board: true,
+            captured: std::sync::Mutex::new(None),
+        }
+    }
+    fn non_ats(board_id: &'static str) -> Self {
+        Self {
+            board_id,
+            ats_board: false,
+            captured: std::sync::Mutex::new(None),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl super::super::types::Scraper for SeedCapturingScraper {
+    fn id(&self) -> &'static str {
+        self.board_id
+    }
+    fn display_name(&self) -> &'static str {
+        "SeedCapturing"
+    }
+    fn mode(&self) -> ScraperMode {
+        ScraperMode::Http
+    }
+    fn requires_company(&self) -> bool {
+        self.ats_board
+    }
+    async fn search(
+        &self,
+        input: BoardSearchInput,
+        _ctx: ScrapeContext,
+    ) -> anyhow::Result<Vec<JobPosting>> {
+        *self.captured.lock().unwrap() = Some(input.companies);
+        Ok(Vec::new())
+    }
+}
+
 fn fake_input(amount: u32) -> BoardSearchInput {
     BoardSearchInput {
         query: "q".to_string(),
@@ -494,6 +572,7 @@ async fn run_boards_collects_all_boards_up_to_amount() {
         None,
         None,
         test_browser_sem(),
+        &HashMap::new(),
     )
     .await;
 
@@ -532,6 +611,7 @@ async fn run_boards_one_error_does_not_kill_others() {
         None,
         None,
         test_browser_sem(),
+        &HashMap::new(),
     )
     .await;
 
@@ -574,6 +654,7 @@ async fn run_boards_parent_cancel_stops_all() {
         None,
         None,
         test_browser_sem(),
+        &HashMap::new(),
     )
     .await;
 
@@ -606,6 +687,7 @@ async fn run_boards_child_cap_stops_only_its_board() {
         None,
         None,
         test_browser_sem(),
+        &HashMap::new(),
     )
     .await;
 
@@ -646,6 +728,7 @@ async fn run_boards_browser_board_collects_items() {
         None,
         None,
         test_browser_sem(),
+        &HashMap::new(),
     )
     .await;
 
@@ -737,6 +820,7 @@ async fn run_boards_browser_boards_serialized() {
         None,
         None,
         test_browser_sem(),
+        &HashMap::new(),
     )
     .await;
 
@@ -791,6 +875,7 @@ async fn scrape_boards_dedupes_and_caps_large_input() {
         None,
         None,
         test_browser_sem(),
+        &HashMap::new(),
     )
     .await;
 
@@ -1792,6 +1877,7 @@ async fn run_boards_preserves_input_order() {
         None,
         None,
         test_browser_sem(),
+        &HashMap::new(),
     )
     .await;
 
@@ -2642,6 +2728,156 @@ async fn ats_board_with_companies_runs() {
     assert_eq!(
         summaries[0].count, 3,
         "FakeScraper::http(3) must return 3 items when companies is non-empty"
+    );
+}
+
+// ── ats_seed auto-population (P2 sourcing depth) ──────────────────────────────
+
+/// A real registered id ("greenhouse") with curated `ats_seed` entries and an
+/// EMPTY global `companies` list must (a) NOT be skipped, and (b) receive the
+/// seed's real slugs — in the seed's order and casing — driven through the live
+/// `ats_seed::by_ats` table (real static SEED — no injection).
+#[tokio::test]
+async fn ats_seed_populates_companies_for_a_seeded_board_and_it_is_not_skipped() {
+    static SCRAPER: std::sync::LazyLock<SeedCapturingScraper> =
+        std::sync::LazyLock::new(|| SeedCapturingScraper::ats("greenhouse"));
+
+    let engine = ScraperEngine::new();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let input = fake_input(5); // companies: Vec::new() — global list is empty
+
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["greenhouse".to_string()],
+            input,
+            "job-ats-seed-populates".to_string(),
+            None,
+            None,
+            tmp.path(),
+            |_id| Ok(&*SCRAPER as &'static dyn Scraper),
+        )
+        .await
+        .expect("seeded ATS board must return Ok");
+
+    assert_eq!(summaries.len(), 1);
+    assert!(
+        summaries[0].skipped.is_none(),
+        "a seeded ATS board must NOT be skipped even with an empty global \
+         company list; got {:?}",
+        summaries[0].skipped
+    );
+
+    let expected: Vec<String> = crate::scraping::boards::ats_seed::by_ats("greenhouse")
+        .map(|e| e.slug.to_string())
+        .collect();
+    assert!(!expected.is_empty(), "greenhouse must have seed entries");
+
+    let received = SCRAPER
+        .captured
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("search() must have been called and captured input.companies");
+    assert_eq!(
+        received, expected,
+        "the board must receive the seed's slugs, in seed order and casing"
+    );
+}
+
+/// When the user supplies an explicit (non-empty) `companies` list, a seeded ATS
+/// board must receive exactly the USER's list — the seed must never override an
+/// explicit choice.
+#[tokio::test]
+async fn explicit_companies_override_the_seed_for_a_seeded_board() {
+    static SCRAPER: std::sync::LazyLock<SeedCapturingScraper> =
+        std::sync::LazyLock::new(|| SeedCapturingScraper::ats("greenhouse"));
+
+    let engine = ScraperEngine::new();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let mut input = fake_input(5);
+    input.companies = vec!["user-typed-co".to_string()];
+
+    let _ = engine
+        .scrape_boards_with_resolver(
+            &["greenhouse".to_string()],
+            input,
+            "job-ats-seed-user-override".to_string(),
+            None,
+            None,
+            tmp.path(),
+            |_id| Ok(&*SCRAPER as &'static dyn Scraper),
+        )
+        .await
+        .expect("ATS board with explicit companies must return Ok");
+
+    let received = SCRAPER
+        .captured
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("search() must have been called");
+    assert_eq!(
+        received,
+        vec!["user-typed-co".to_string()],
+        "an explicit user company list must win over the ats_seed table"
+    );
+}
+
+/// A non-ATS board's `companies` field must be untouched by the seed
+/// auto-population, and running it alongside a seeded ATS board must not
+/// disturb result ordering or summary/count assembly.
+#[tokio::test]
+async fn non_ats_board_companies_untouched_alongside_a_seeded_board() {
+    static ATS: std::sync::LazyLock<SeedCapturingScraper> =
+        std::sync::LazyLock::new(|| SeedCapturingScraper::ats("greenhouse"));
+    static NON_ATS: std::sync::LazyLock<SeedCapturingScraper> =
+        std::sync::LazyLock::new(|| SeedCapturingScraper::non_ats("guest-board"));
+
+    let engine = ScraperEngine::new();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let input = fake_input(5); // companies: Vec::new()
+
+    let (postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["greenhouse".to_string(), "guest-board".to_string()],
+            input,
+            "job-ats-seed-mixed".to_string(),
+            None,
+            None,
+            tmp.path(),
+            |id| match id {
+                "greenhouse" => Ok(&*ATS as &'static dyn Scraper),
+                "guest-board" => Ok(&*NON_ATS as &'static dyn Scraper),
+                other => Err(anyhow::anyhow!("unknown: {other}")),
+            },
+        )
+        .await
+        .expect("mixed run must return Ok");
+
+    // Order preserved (input-board order), summaries/counts assembled normally.
+    assert_eq!(summaries.len(), 2);
+    assert_eq!(summaries[0].board, "greenhouse");
+    assert_eq!(summaries[1].board, "guest-board");
+    assert!(summaries[0].skipped.is_none());
+    assert!(summaries[1].skipped.is_none());
+    assert_eq!(summaries[0].count, 0);
+    assert_eq!(summaries[1].count, 0);
+    assert_eq!(
+        postings.len(),
+        0,
+        "both fakes return an empty Vec by design"
+    );
+
+    let non_ats_received = NON_ATS
+        .captured
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("search() must have been called");
+    assert!(
+        non_ats_received.is_empty(),
+        "a non-ATS board's companies must be untouched by the seed \
+         auto-population; got {non_ats_received:?}"
     );
 }
 

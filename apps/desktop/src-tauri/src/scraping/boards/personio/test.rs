@@ -32,6 +32,23 @@ fn slug_validation_rejects_ssrf_slugs() {
     assert!(!is_valid_personio_slug(&"a".repeat(64)));
 }
 
+/// Every curated `ats_seed` slug for this board must pass the production
+/// hostname guard — regression guard against a seed entry silently drifting
+/// out of validator-compatible shape.
+#[test]
+fn ats_seed_personio_slugs_pass_the_guard() {
+    let entries: Vec<_> = crate::scraping::boards::ats_seed::by_ats("personio").collect();
+    assert!(!entries.is_empty(), "personio must have seed entries");
+    for e in entries {
+        assert!(
+            is_valid_personio_slug(e.slug),
+            "seed slug '{}' ({}) must pass is_valid_personio_slug",
+            e.slug,
+            e.company
+        );
+    }
+}
+
 /// An invalid slug must be rejected without any network request (SSRF guard).
 /// A run where EVERY slug is rejected now surfaces a distinct board error
 /// instead of a silent zero (claude review #597).

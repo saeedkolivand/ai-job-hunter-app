@@ -9,6 +9,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button, CardSkeleton, cn, GlassCard, Input, transition } from '@ajh/ui';
 
 import { LocationFilterNote } from '@/components/scrape/LocationFilterNote';
+import { SeededCompaniesNote } from '@/components/scrape/SeededCompaniesNote';
 import { AUTH_BENEFITS } from '@/features/jobs/constants';
 import { makeMultiSelectKeyHandler } from '@/hooks/use-roving-tabindex';
 import { useHasProviderKey } from '@/services/use-ai-provider';
@@ -323,6 +324,10 @@ export function ScrapeForm({
             {/* Honest location hint — names selected boards that don't filter by
                 location server-side (results are matched on-device instead). */}
             <LocationFilterNote boards={selectedListedBoards} hasLocation={hasLocation} />
+
+            {/* Seeded-companies disclosure — names the curated companies a
+                company-scoped ATS board (Greenhouse/Lever/Ashby/…) will query (#621) */}
+            <SeededCompaniesNote boards={selectedListedBoards} />
 
             {/* Aggregator key hint — shown when aggregator selected but Adzuna keys absent */}
             {showAggregatorKeyHint && (

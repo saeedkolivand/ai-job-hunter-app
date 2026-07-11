@@ -89,6 +89,23 @@ fn normalize_cap_exact_boundary() {
     assert_eq!(result.len(), 50);
 }
 
+/// Ashby slug casing is exact and must match the registered board (e.g.
+/// `Linear`, `Perplexity`) — `normalize_companies` must never lowercase it.
+#[test]
+fn ats_seed_ashby_casing_survives_normalize_companies() {
+    let slugs: Vec<String> = crate::scraping::boards::ats_seed::by_ats("ashby")
+        .map(|e| e.slug.to_string())
+        .collect();
+    assert!(!slugs.is_empty(), "ashby must have seed entries");
+    let normalized = normalize_companies(&slugs, 50);
+    for casing_sensitive in ["Linear", "Perplexity"] {
+        assert!(
+            normalized.iter().any(|s| s == casing_sensitive),
+            "casing '{casing_sensitive}' must survive verbatim; got {normalized:?}"
+        );
+    }
+}
+
 #[test]
 fn normalize_empty_input_returns_empty() {
     let result = normalize_companies(&[], 50);
