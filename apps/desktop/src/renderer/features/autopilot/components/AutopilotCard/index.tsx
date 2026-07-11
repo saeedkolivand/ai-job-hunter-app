@@ -4,6 +4,7 @@ import {
   ChevronUp,
   ExternalLink,
   Eye,
+  Info,
   Pause,
   Pencil,
   Play,
@@ -140,6 +141,14 @@ export function AutopilotCard({
   // step log (below), this survives the run ending, so a zero/partial/failed
   // result stays explainable. Empty for the happy path + pre-summaries records.
   const lastRunSummaries = ap.lastRunSummaries ?? [];
+  // Discoverability guard: `runStatus` doesn't escalate for a board that's
+  // merely `skipped`/`truncated` beside an otherwise-succeeding board (e.g.
+  // "Xing · needs login" next to a clean LinkedIn run reads as plain
+  // `completed` — no colored badge at all), so the collapsed info trigger is
+  // the ONLY surviving signal and must carry its own amber tone. An
+  // informational `note` (e.g. a broadened-location hint) does NOT count —
+  // it's benign, not a cry-wolf amber.
+  const boardsDegraded = lastRunSummaries.some((s) => s.error || s.skipped || s.truncated);
   // Cry-wolf guard (PR B carry-over 2): a `failed` run whose boards were ALL
   // merely skipped (none errored) is an UNCONFIGURED run, not a failure.
   const needsConfig =
@@ -155,8 +164,8 @@ export function AutopilotCard({
     : ap.runStatus
       ? RUN_STATUS_BADGE[ap.runStatus]
       : undefined;
-  // Optional hover/focus explainer for the neutral/amber badges now that the
-  // chip strip spells out the per-board detail below.
+  // Optional hover/focus explainer for the neutral/amber badges — the
+  // per-board detail itself lives behind the info icon next to "Found N".
   const badgeHintKey = needsConfig
     ? BADGE_HINT_KEY.needsConfig
     : ap.runStatus === 'completedWithErrors'
@@ -385,8 +394,58 @@ export function AutopilotCard({
             <span>
               · {t('autopilot.wizard.lastRun')} {lastRun}
             </span>
-            <span>
-              · {t('autopilot.wizard.found')} {foundJobs.length}
+            {/* gap-1 sub-group: the info trigger reads as an annotation ON the
+                found-count, not a stray icon floating at the row's gap-4. */}
+            <span className="inline-flex items-center gap-1">
+              <span>
+                · {t('autopilot.wizard.found')} {foundJobs.length}
+              </span>
+              {!running && lastRunSummaries.length > 0 && (
+                // stopProp wrapper: same reason as the badge popover above —
+                // keeps this from also toggling the card's found-jobs panel.
+                // The trigger is a real <Button> (native focus, no tabIndex
+                // needed), so the HoverPopover's focus-opens-it mechanic is
+                // keyboard-reachable by default (Tab to it, Esc to close)
+                // without extra wiring.
+                <span onClick={stopProp} onKeyDown={stopProp} className="inline-flex shrink-0">
+                  <HoverPopover
+                    placement="top"
+                    ariaLabel={t('autopilot.boardResults.infoLabel')}
+                    contentClassName="max-w-[280px] rounded-lg border border-[var(--border-clear)] bg-card px-3 py-2 shadow-lg"
+                    trigger={
+                      <Button
+                        variant="unstyled"
+                        type="button"
+                        aria-label={t('autopilot.boardResults.infoLabel')}
+                        title={t('autopilot.boardResults.infoLabel')}
+                        data-degraded={boardsDegraded}
+                        className={cn(
+                          // ≥20px hit target (14px icon + p-1). Discoverability:
+                          // a degraded board (error/skipped/truncated) escalates
+                          // to the same amber the warning badges use, at
+                          // near-full opacity — it's the ONLY surviving signal
+                          // once runStatus itself doesn't escalate (e.g. one
+                          // skipped board beside an otherwise-clean run). Clean
+                          // runs rest at the documented /70 floor, never lower.
+                          'inline-flex items-center justify-center rounded p-1 transition-colors',
+                          // No hover shade on the degraded state: amber-200
+                          // isn't in tokens.css's light-scheme remap (only
+                          // 300/400/500 are), so it'd render raw pale amber on
+                          // light (~1.2:1). Already near-full opacity; the
+                          // popover itself is the real hover feedback.
+                          boardsDegraded
+                            ? 'text-amber-300'
+                            : 'text-foreground/70 hover:text-foreground'
+                        )}
+                      >
+                        <Info size={14} />
+                      </Button>
+                    }
+                  >
+                    <BoardSummaryChips summaries={lastRunSummaries} />
+                  </HoverPopover>
+                </span>
+              )}
             </span>
           </div>
         </div>
@@ -445,13 +504,6 @@ export function AutopilotCard({
         )}
       </AnimatePresence>
 
-      {/* Persisted per-board outcome of the LAST run — visible after the run
-          ends (the live step log above only shows while running), so a zero /
-          partial / needs-configuration result is always explainable. */}
-      {!running && lastRunSummaries.length > 0 && (
-        <BoardSummaryChips summaries={lastRunSummaries} />
-      )}
-
       {/* Found jobs from the most recent run */}
       <AnimatePresence>
         {showFound && foundJobs.length > 0 && (
@@ -474,9 +526,9 @@ export function AutopilotCard({
                   onClick={() => setShowFound(false)}
                   aria-label={t('autopilot.collapse')}
                   title={t('autopilot.collapse')}
-                  className="rounded p-0.5 text-foreground/30 transition-colors hover:text-foreground/70"
+                  className="rounded p-1 text-foreground/30 transition-colors hover:text-foreground/70"
                 >
-                  <ChevronUp size={12} />
+                  <ChevronUp size={14} />
                 </Button>
               </div>
               <div
