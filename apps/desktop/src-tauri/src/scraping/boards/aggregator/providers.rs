@@ -693,11 +693,22 @@ pub(super) fn map_jooble_job(j: JoobleJob, now: i64) -> Option<JobPosting> {
         source: "aggregator".to_string(),
         description: j.snippet.map(|d| html_to_markdown(&d)),
         requirements: None,
-        posted_at: j
-            .updated
-            .as_deref()
-            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.timestamp_millis()),
+        // Jooble's real `updated` value has NO timezone offset (e.g.
+        // "2026-05-15T00:00:00.0000000") despite looking ISO-8601-ish, so plain
+        // RFC3339 parsing fails for every live job — `posted_at` silently stayed
+        // `None` for all of them. Try RFC3339 first (in case an entry ever does
+        // carry an offset), then fall back to a naive datetime — tolerant of
+        // Jooble's fractional-seconds-no-tz form — assumed UTC.
+        posted_at: j.updated.as_deref().and_then(|s| {
+            chrono::DateTime::parse_from_rfc3339(s)
+                .ok()
+                .map(|dt| dt.timestamp_millis())
+                .or_else(|| {
+                    chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
+                        .ok()
+                        .map(|ndt| ndt.and_utc().timestamp_millis())
+                })
+        }),
         captured_at: now,
         extra,
     })
