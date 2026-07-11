@@ -40,6 +40,38 @@ fn test_fetch_options_timeout_field_contract() {
     assert_eq!(with_timeout.retries, 2);
 }
 
+/// `redact_path: false` (the default) keeps the path — the shared query-only
+/// redaction is what protects the common case (Adzuna/Comeet-style secrets in
+/// the query string).
+#[test]
+fn test_safe_log_url_keeps_path_by_default() {
+    let url = "https://jooble.org/api/super-secret-key";
+    assert_eq!(
+        safe_log_url(url, false),
+        "https://jooble.org/api/super-secret-key"
+    );
+}
+
+/// `redact_path: true` — for endpoints that embed a secret directly in the URL
+/// PATH (e.g. Jooble's `POST /api/{apiKey}`) — must drop the path entirely so
+/// the credential never reaches a non-2xx / schema-drift log line.
+#[test]
+fn test_safe_log_url_redacts_path_when_requested() {
+    let url = "https://jooble.org/api/super-secret-key";
+    let redacted = safe_log_url(url, true);
+    assert_eq!(redacted, "https://jooble.org");
+    assert!(!redacted.contains("super-secret-key"));
+}
+
+/// Regression guard: the query string (Adzuna `app_key`, Comeet token, …) must
+/// never appear in the log-safe URL regardless of `redact_path`.
+#[test]
+fn test_safe_log_url_never_includes_query() {
+    let url = "https://api.adzuna.com/v1/api/jobs/de/search/1?app_key=secret123";
+    assert!(!safe_log_url(url, false).contains("secret123"));
+    assert!(!safe_log_url(url, true).contains("secret123"));
+}
+
 #[test]
 fn test_strip_html_basic() {
     let html = "<p>Hello <b>World</b></p>";

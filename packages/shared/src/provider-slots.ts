@@ -15,6 +15,10 @@ export const PROVIDER_SLOTS = {
   adzunaAppId: 'adzuna-app-id',
   adzunaAppKey: 'adzuna-app-key',
   jsearchKey: 'jsearch-key',
+  // Jooble API key — path-segment auth (`POST /api/{key}`) for the Jooble
+  // aggregator fallback provider (fires after Adzuna + JSearch both come up
+  // empty/erroring — see `aggregator/mod.rs: primary_chain`).
+  joobleKey: 'jooble-key',
   // Apify API token — Bearer auth for the LinkedIn (Apify) aggregator provider.
   apifyToken: 'apify-token',
   // Comeet board credentials — company UID + API token for the
