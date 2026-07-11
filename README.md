@@ -463,6 +463,7 @@ at-a-glance status of every workflow, grouped by role, fetched live from the Act
 ### ✅ Required — gates merge
 
 [![🚀 CI Pipeline](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml)
+[![🤖 Claude Review (advisory + required)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml)
 
 ### 🔒 Security — reports to the Security tab
 
@@ -470,7 +471,6 @@ at-a-glance status of every workflow, grouped by role, fetched live from the Act
 
 ### 🔎 Advisory — never blocks
 
-[![🤖 Claude Review (on demand)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml)
 [![🎨 Format Guard](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/format-guard.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/format-guard.yml)
 [![🏷️ PR Labeler](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/labeler.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/labeler.yml)
 [![🔎 Quality](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/quality.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/quality.yml)

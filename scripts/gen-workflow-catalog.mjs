@@ -21,10 +21,11 @@ const ROOT_README = 'README.md';
 const BADGE_START = '<!-- workflows:badges:start -->';
 const BADGE_END = '<!-- workflows:badges:end -->';
 
-// The only workflow whose checks the branch ruleset requires (via its "✅ CI OK"
-// umbrella). Everything else is advisory or reports to the Security tab. Keep this
-// in sync with the ruleset's required_status_checks if it ever changes.
-const GATING_FILES = new Set(['ci-pipeline.yml']);
+// The only workflows whose checks the branch ruleset requires: ci-pipeline's "✅ CI OK"
+// umbrella + claude-review's "🤖 AI Review OK" gate (ADR-0008). Everything else is
+// advisory or reports to the Security tab. Keep this in sync with the ruleset's
+// required_status_checks if it ever changes.
+const GATING_FILES = new Set(['ci-pipeline.yml', 'claude-review.yml']);
 
 /** Latest-run status badge for a workflow, linked to its runs page. */
 function badge(file, name) {
