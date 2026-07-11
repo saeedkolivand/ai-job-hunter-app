@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783803509969,
+  "lastUpdate": 1783805743336,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3899,6 +3899,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 287702,
             "range": "± 4611",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c6b8b85d5037c005772a305691c2f6bfb79b6353",
+          "message": "fix: parse jooble timezone-less timestamps instead of dropping posted_at (#619)\n\nverified against the live jooble api: 'updated' arrives as '2026-05-15T00:00:00.0000000'\nwith no timezone offset, which parse_from_rfc3339 rejects — so posted_at was silently None\nfor every real jooble job (no dates, broken date filtering). now tries rfc3339 first, then\nfalls back to a naive datetime assumed utc (tolerant of the 7-digit-fraction no-tz form).\nadzuna/jsearch parsing untouched. 3 tests cover the real no-tz shape, a tz-bearing shape, and\na malformed string.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-11T23:26:39+02:00",
+          "tree_id": "500dc3a46d6751eaa340cbcf10017beb0e147343",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/c6b8b85d5037c005772a305691c2f6bfb79b6353"
+        },
+        "date": 1783805742682,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2159974,
+            "range": "± 18605",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2631885,
+            "range": "± 32000",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 302236,
+            "range": "± 13285",
             "unit": "ns/iter"
           }
         ]
