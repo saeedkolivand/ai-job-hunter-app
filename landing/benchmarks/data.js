@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783734885653,
+  "lastUpdate": 1783740981212,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3605,6 +3605,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 281815,
             "range": "± 3486",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0b13fc3bb44286b8941ca84baba8563b04c21b64",
+          "message": "feat: collapse cross-source duplicate jobs behind one canonical key (#601)\n\n* feat: collapse cross-source duplicate jobs behind one canonical key\n\nOne shared canonical job key (normalize_job_url, else title+company) drives an engine dedup pass, the autopilot merge, and the renderer mergePostings mirror.\nThe same job no longer lists 2-3 times or re-fires notifications.\nSurvivors merge field-level: incumbent identity kept, longer description adopted (byte length both sides), salary/trust/extra filled from the loser, interactions unioned.\nRust and TS key fns are a documented lockstep pair with verbatim shared test fixtures as the drift guard. Trust program PR E (audit 2026-07-10).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: keep the selected job selected when a duplicate collapses into it\n\nmergePostings reports absorbed ids so the selection reconciler re-points at the surviving row instead of jumping to the top of the list.\nLockstep comments added on both sides of the extra-field fill list; docs/knowledge synced and lessons persisted.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test: pin enrichment fill-list and non-ascii key parity\n\nGuard test asserts every extra enrichment survives a renderer collapse; a shared non-ascii fixture pins rust/ts lowercasing parity on the fallback key.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-11T05:26:56+02:00",
+          "tree_id": "db7ff23e02af068eca08ea41973a4031a2915288",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/0b13fc3bb44286b8941ca84baba8563b04c21b64"
+        },
+        "date": 1783740980996,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2195411,
+            "range": "± 50584",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2690000,
+            "range": "± 100156",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 305015,
+            "range": "± 16005",
             "unit": "ns/iter"
           }
         ]
