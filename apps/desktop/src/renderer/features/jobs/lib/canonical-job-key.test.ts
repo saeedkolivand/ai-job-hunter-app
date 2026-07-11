@@ -38,6 +38,14 @@ describe('canonicalJobKey — Rust truth-table parity (verbatim inputs)', () => 
     expect(a).toBe(`senior rust engineer${SEP}acme`);
   });
 
+  it('URL-less non-ASCII title+company normalizes to the exact expected key (Rust drift guard)', () => {
+    // Same case verbatim is pinned in the Rust truth table — a JS `.toLowerCase()`
+    // vs Rust `.to_lowercase()` divergence on accented Unicode would show up here
+    // as a mismatched exact string, not just an equality-between-variants check.
+    const key = canonicalJobKey('', 'Développeur Sénior', 'Müller GmbH');
+    expect(key).toBe(`développeur sénior${SEP}müller gmbh`);
+  });
+
   it('near-miss titles at the same company stay distinct', () => {
     const senior = canonicalJobKey('', 'Senior Rust Engineer', 'Acme');
     const plain = canonicalJobKey('', 'Rust Engineer', 'Acme');

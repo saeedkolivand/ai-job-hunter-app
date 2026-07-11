@@ -221,6 +221,35 @@ describe('mergePostings — cross-source canonical-key dedup', () => {
     expect(result[0]?.trust).toEqual(incumbentTrust);
   });
 
+  it('every enrichment field the challenger carries survives a collapse onto a bare incumbent (fill-list guard)', () => {
+    // Mechanical pin on collapseDuplicate's fill-list: builds a challenger with
+    // every enrichment key `JobPosting.extra` carries today (salaryMin/Max/
+    // Currency, remote, trust) set, and a bare incumbent with none of them, then
+    // asserts ALL of them survive the collapse. A future `extra` key added to the
+    // Rust side without a matching entry in collapseDuplicate's fill-list makes
+    // THIS test fail once the new field is added to the fixture below — when you
+    // add a key here, add the matching `?? ` line in collapseDuplicate too.
+    const trust: JobTrustAssessment = { score: 55, level: 'medium', flags: [] };
+    const incumbent = makePosting({ id: 'a', url: 'https://acme.example/jobs/42' });
+    const challenger = makePosting({
+      id: 'b',
+      url: 'https://acme.example/jobs/42',
+      remote: true,
+      salaryMin: 80000,
+      salaryMax: 100000,
+      salaryCurrency: 'GBP',
+      trust,
+    });
+    const result = mergePostings([], [incumbent, challenger]);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe('a'); // incumbent identity kept
+    expect(result[0]?.remote).toBe(true);
+    expect(result[0]?.salaryMin).toBe(80000);
+    expect(result[0]?.salaryMax).toBe(100000);
+    expect(result[0]?.salaryCurrency).toBe('GBP');
+    expect(result[0]?.trust).toEqual(trust);
+  });
+
   it('equal-length descriptions tie to the incumbent (no upgrade)', () => {
     const a = makePosting({ id: 'a', url: 'https://acme.example/jobs/42', description: 'abcd' });
     const b = makePosting({ id: 'b', url: 'https://acme.example/jobs/42', description: 'wxyz' });

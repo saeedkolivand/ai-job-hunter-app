@@ -130,6 +130,16 @@ fn canonical_key_urlless_matches_on_title_and_company() {
     assert_eq!(a, "senior rust engineer\u{1}acme");
 }
 
+/// Cross-language drift fixture — the TS mirror
+/// (`features/jobs/lib/canonical-job-key.ts`) asserts against this EXACT same
+/// title/company pair, so a divergence in either language's lowercasing rules
+/// is caught by comparing the two expected strings side by side.
+#[test]
+fn canonical_key_urlless_non_ascii_lowercases_correctly() {
+    let key = canonical_job_key("", "Développeur Sénior", "Müller GmbH");
+    assert_eq!(key, "développeur sénior\u{1}müller gmbh");
+}
+
 #[test]
 fn canonical_key_near_miss_titles_stay_distinct() {
     // Precision requirement: a broader/narrower title at the same company must
