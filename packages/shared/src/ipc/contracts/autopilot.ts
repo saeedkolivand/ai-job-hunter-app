@@ -23,10 +23,18 @@ export interface AutopilotContract {
    * a caller can tell a run that found real jobs from one where every board
    * failed WITHOUT re-fetching the record. Absent on the early `{ error }` and
    * `{ cancelled }` outcomes.
+   *
+   * `skipped: 'already-running'` is the concurrent-run guard's early return: a
+   * double-invoke of the SAME autopilot (a scheduler retry racing a fresh
+   * occurrence, or two manual triggers) is de-duplicated rather than run twice.
+   * No `jobId`/`error`/`status` accompanies it — no run happened for this call.
    */
-  run(req: {
-    autopilotId: string;
-  }): Promise<{ jobId?: string; error?: string; status?: AutopilotRunStatus }>;
+  run(req: { autopilotId: string }): Promise<{
+    jobId?: string;
+    error?: string;
+    status?: AutopilotRunStatus;
+    skipped?: 'already-running';
+  }>;
 
   pause(req: { autopilotId: string }): Promise<void>;
 

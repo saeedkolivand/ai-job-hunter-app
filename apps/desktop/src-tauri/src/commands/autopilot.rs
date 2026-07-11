@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use parking_lot::Mutex;
@@ -19,6 +20,42 @@ pub use crate::ipc_contracts::autopilot::{AutopilotCreateRequest, AutopilotUpdat
 
 fn store(app: &AppHandle) -> Arc<Mutex<AutopilotStore>> {
     app.state::<Arc<Mutex<AutopilotStore>>>().inner().clone()
+}
+
+/// Process-global set of autopilot ids with a run currently in flight. Backs the
+/// concurrent-run guard on [`autopilot_run`]: a double-invoke of the SAME
+/// autopilot (the scheduler's retry racing a fresh occurrence, a scheduled run
+/// racing a manual one, or two manual clicks) must not double-run. It is
+/// process-local and transient (holds no user data), so it lives in a module
+/// static rather than managed Tauri state / the reset registry, and resets on
+/// restart — where any run left `InProgress` is separately reconciled to
+/// `Interrupted`.
+static RUNS_IN_FLIGHT: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// RAII claim on an in-flight autopilot run. [`RunGuard::try_acquire`] returns
+/// `None` when a run for `id` is already in flight (the caller must no-op);
+/// dropping the returned guard removes the id, so the claim is released on EVERY
+/// exit path — a normal return, an early `?`, or a panic unwind. The lock is
+/// held only for the check-and-insert (and the drop), never across an `.await`.
+struct RunGuard(String);
+
+impl RunGuard {
+    fn try_acquire(id: &str) -> Option<RunGuard> {
+        let mut in_flight = RUNS_IN_FLIGHT.lock();
+        if in_flight.contains(id) {
+            None
+        } else {
+            in_flight.insert(id.to_string());
+            Some(RunGuard(id.to_string()))
+        }
+    }
+}
+
+impl Drop for RunGuard {
+    fn drop(&mut self) {
+        RUNS_IN_FLIGHT.lock().remove(&self.0);
+    }
 }
 
 /// Fill each found job's `applied` from the set of `job_url`s that have a saved
@@ -161,6 +198,17 @@ pub fn autopilot_remove(app: AppHandle, autopilot_id: String) -> Value {
 
 #[tauri::command]
 pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
+    // Concurrent-run guard: a double-invoke of the SAME autopilot must not
+    // double-run. Held for the whole command body — the RAII guard releases on
+    // every exit path (each early return below, and a panic unwind). PR B's
+    // startup reconcile only covers a stale `InProgress` after a crash; this
+    // covers a live overlap (scheduler retry vs. fresh occurrence, or a manual
+    // click racing either).
+    let Some(_run_guard) = RunGuard::try_acquire(&autopilot_id) else {
+        log::info!("[autopilot] run already in flight for {autopilot_id}; skipping double-invoke");
+        return json!({ "skipped": "already-running" });
+    };
+
     let autopilot = store(&app).lock().get(&autopilot_id);
 
     let Some(autopilot) = autopilot else {
@@ -461,6 +509,15 @@ pub fn autopilot_resume(app: AppHandle, autopilot_id: String) -> Value {
 
 // Helper functions
 
+/// `JobPosting.source` of the aggregator board (Adzuna → JSearch). Adzuna caps
+/// descriptions to a snippet and its detail pages block anonymous fetches, so a
+/// keyword-coverage score computed over that snippet can diverge from the detail
+/// pane's full-text re-score (trust-audit root cause 6). A run's aggregator
+/// scores are therefore flagged provisional; direct full-text boards are not.
+/// Sourced directly from the aggregator scraper's own `id()` constant (not a
+/// duplicated literal), so a rename there can't silently desync this check.
+const AGGREGATOR_SNIPPET_SOURCE: &str = crate::scraping::boards::aggregator::AGGREGATOR_BOARD_ID;
+
 /// Pure `JobPosting → FoundJob` projection — the same one `autopilot_run`'s
 /// `postings.iter().map(..)` calls. Extracted so a unit test can exercise the
 /// REAL projection (every field, plus the `assess_trust(&p.url, &p.company)`
@@ -503,6 +560,10 @@ pub(crate) fn build_found_job(p: &JobPosting, resume: &str, found_at: u64) -> Fo
             .and_then(|v| v.as_str())
             .map(str::to_string),
         score,
+        // Only a real score is qualified: an aggregator (snippet-ranked) score
+        // is provisional, a full-text board's is authoritative, and an unscored
+        // job (no résumé/description) is neither.
+        score_provisional: score.is_some() && p.source.trim() == AGGREGATOR_SNIPPET_SOURCE,
         found_at,
         // Set by the dedup merge in `record_run`; `applied` is derived on read.
         is_new: false,
@@ -773,6 +834,7 @@ mod tests {
             salary_max: None,
             salary_currency: None,
             score,
+            score_provisional: false,
             found_at: 0,
             is_new: false,
             applied: false,
@@ -808,5 +870,69 @@ mod tests {
     fn take_pending_focus_returns_none_when_empty() {
         let buf = crate::tray::PendingFocus(Mutex::new(None));
         assert_eq!(take_pending_focus(&buf), None);
+    }
+
+    // ── concurrent-run guard (item 2) ──────────────────────────────────────
+    // Distinct ids per test isolate the process-global RUNS_IN_FLIGHT set from
+    // the parallel test runner, so no #[serial] is needed.
+
+    #[test]
+    fn run_guard_blocks_a_second_concurrent_acquire() {
+        let id = "guard-test-concurrent";
+        let first = RunGuard::try_acquire(id).expect("first acquire succeeds");
+        assert!(
+            RunGuard::try_acquire(id).is_none(),
+            "a second acquire for the same in-flight id is blocked (no double-run)"
+        );
+        drop(first);
+        assert!(
+            RunGuard::try_acquire(id).is_some(),
+            "after the first guard drops, the id can be acquired again"
+        );
+    }
+
+    #[test]
+    fn run_guard_distinct_ids_do_not_block_each_other() {
+        let _a = RunGuard::try_acquire("guard-test-a").expect("id a acquires");
+        assert!(
+            RunGuard::try_acquire("guard-test-b").is_some(),
+            "different autopilot ids run concurrently — the guard is per-id"
+        );
+    }
+
+    // ── snippet-score provisional flag (item 4) ────────────────────────────
+
+    #[test]
+    fn build_found_job_flags_aggregator_snippet_scores_as_provisional() {
+        // An aggregator (Adzuna) posting is ranked over a truncated snippet, so
+        // its score is provisional.
+        let mut agg = posting("Rust Engineer", Some("We use Rust and Go"));
+        agg.source = AGGREGATOR_SNIPPET_SOURCE.into();
+        let job = build_found_job(&agg, "rust go", 0);
+        assert!(job.score.is_some(), "a résumé + description yields a score");
+        assert!(
+            job.score_provisional,
+            "an aggregator snippet score must be flagged provisional"
+        );
+
+        // A direct full-text board's score is authoritative — not provisional.
+        let mut greenhouse = posting("Rust Engineer", Some("We use Rust and Go"));
+        greenhouse.source = "greenhouse".into();
+        let job = build_found_job(&greenhouse, "rust go", 0);
+        assert!(job.score.is_some());
+        assert!(
+            !job.score_provisional,
+            "a full-text board score must not be flagged provisional"
+        );
+
+        // No résumé → no score → nothing to qualify, even for an aggregator job.
+        let mut agg_unscored = posting("Rust Engineer", Some("We use Rust"));
+        agg_unscored.source = AGGREGATOR_SNIPPET_SOURCE.into();
+        let job = build_found_job(&agg_unscored, "", 0);
+        assert!(job.score.is_none());
+        assert!(
+            !job.score_provisional,
+            "an unscored job is never provisional"
+        );
     }
 }

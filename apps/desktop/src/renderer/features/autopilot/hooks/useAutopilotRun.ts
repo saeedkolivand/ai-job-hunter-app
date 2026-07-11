@@ -72,6 +72,18 @@ export function useAutopilotRun() {
       //   • `status:'failed'`  — the run reached the record but zero boards
       //     succeeded (the "success theater" case: found:0, no `error` key).
       const result = await runAutopilot.mutateAsync(id);
+      // Concurrent-run guard (PR H): a second invocation while one is already
+      // in flight (another manual click, or a scheduler tick racing this one)
+      // resolves with `{ skipped: "already-running" }` instead of running.
+      // Nothing happened from THIS call, so it's neither a failure (no red
+      // 'error' state) nor a success ('done' would misreport a run that never
+      // occurred) — revert the optimistic 'scraping' state back to idle and
+      // surface a distinct, honest message via the same banner `error` uses.
+      if (result.skipped === 'already-running') {
+        setRunStates({ [id]: 'idle' });
+        setError(t('autopilot.wizard.alreadyRunning'));
+        return;
+      }
       if (result.error || result.status === 'failed') {
         setRunStates({ [id]: 'error' });
         setError(result.error ?? t('autopilot.wizard.allBoardsFailed'));

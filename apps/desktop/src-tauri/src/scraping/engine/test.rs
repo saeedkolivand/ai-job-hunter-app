@@ -1465,6 +1465,144 @@ async fn scrape_boards_drops_note_when_board_then_errors() {
     );
 }
 
+/// trust-H HIGH fix — a non-location board's OWN note (e.g. an ATS board's
+/// `slugs-invalid:<n>`, trust-H) must win over the central `location-filtered`
+/// note, not be silently clobbered by it. A sibling non-location board that
+/// reports no note of its own still gets `location-filtered` — the precedence
+/// only protects a board that actually reported something.
+#[tokio::test]
+async fn scrape_boards_board_native_note_wins_over_location_filtered() {
+    /// Non-location board (default `supports_location() == false`) that reports
+    /// its own note AND streams one row whose location clearly mismatches the
+    /// requested "Berlin" — so `dropped > 0` and `location-filtered` would fire
+    /// if the board hadn't already reported a note.
+    struct NativeNotingNonLocFake;
+    #[async_trait::async_trait]
+    impl Scraper for NativeNotingNonLocFake {
+        fn id(&self) -> &'static str {
+            "nativenoting"
+        }
+        fn display_name(&self) -> &'static str {
+            "NativeNoting"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            let job = JobPosting {
+                id: "nativenoting:0".to_string(),
+                external_id: Some("0".to_string()),
+                title: "Job".to_string(),
+                company: "NN".to_string(),
+                location: Some("London, UK".to_string()),
+                url: "https://nn.example/0".to_string(),
+                source: "nativenoting".to_string(),
+                description: None,
+                requirements: None,
+                posted_at: None,
+                captured_at: 0,
+                extra: std::collections::HashMap::new(),
+            };
+            if let Some(ref on_item) = ctx.on_item {
+                on_item(job.clone());
+            }
+            // Mirrors an ATS board's trust-H partial note (e.g. slugs-invalid:2).
+            ctx.report_note("slugs-invalid:2".to_string());
+            Ok(vec![job])
+        }
+    }
+
+    /// Non-location board with no note of its own — the plain case, must still
+    /// get `location-filtered` when a location was requested.
+    struct QuietNonLocFake;
+    #[async_trait::async_trait]
+    impl Scraper for QuietNonLocFake {
+        fn id(&self) -> &'static str {
+            "quietnonloc"
+        }
+        fn display_name(&self) -> &'static str {
+            "QuietNonLoc"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            ctx: ScrapeContext,
+        ) -> anyhow::Result<Vec<JobPosting>> {
+            let job = JobPosting {
+                id: "quietnonloc:0".to_string(),
+                external_id: Some("0".to_string()),
+                title: "Job".to_string(),
+                company: "QN".to_string(),
+                location: Some("Tokyo".to_string()),
+                url: "https://qn.example/0".to_string(),
+                source: "quietnonloc".to_string(),
+                description: None,
+                requirements: None,
+                posted_at: None,
+                captured_at: 0,
+                extra: std::collections::HashMap::new(),
+            };
+            if let Some(ref on_item) = ctx.on_item {
+                on_item(job.clone());
+            }
+            Ok(vec![job])
+        }
+    }
+
+    static NATIVE_NOTING: std::sync::LazyLock<NativeNotingNonLocFake> =
+        std::sync::LazyLock::new(|| NativeNotingNonLocFake);
+    static QUIET_NON_LOC: std::sync::LazyLock<QuietNonLocFake> =
+        std::sync::LazyLock::new(|| QuietNonLocFake);
+
+    let engine = ScraperEngine::new();
+    let mut input = fake_input(10);
+    input.location = Some("Berlin".to_string());
+
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver(
+            &["nativenoting".to_string(), "quietnonloc".to_string()],
+            input,
+            "job-trust-h-note-precedence".to_string(),
+            None,
+            None,
+            std::path::Path::new("."),
+            |id| match id {
+                "nativenoting" => Ok(&*NATIVE_NOTING as &'static dyn Scraper),
+                "quietnonloc" => Ok(&*QUIET_NON_LOC as &'static dyn Scraper),
+                other => Err(anyhow::anyhow!("Unknown board: {other}")),
+            },
+        )
+        .await
+        .expect("a located run over two non-location boards is still Ok");
+
+    let native = summaries
+        .iter()
+        .find(|s| s.board == "nativenoting")
+        .expect("nativenoting summary missing");
+    assert_eq!(
+        native.note.as_deref(),
+        Some("slugs-invalid:2"),
+        "the board's own note must win over location-filtered, not be clobbered; got {native:?}"
+    );
+
+    let quiet = summaries
+        .iter()
+        .find(|s| s.board == "quietnonloc")
+        .expect("quietnonloc summary missing");
+    assert_eq!(
+        quiet.note.as_deref(),
+        Some("location-filtered:1"),
+        "a board with no note of its own must still get location-filtered; got {quiet:?}"
+    );
+}
+
 // ── F1: empty boards guard ────────────────────────────────────────────────────
 
 #[tokio::test]

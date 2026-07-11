@@ -376,6 +376,72 @@ describe('BoardSummaryChips — location-filtered note chips', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// slugs-invalid:<n> / rows-dropped:<n> note chips (PR H) — partial ATS visibility
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('BoardSummaryChips — partial ATS note chips (PR H)', () => {
+  it('maps "slugs-invalid:<n>" to the pluralized informational (processing) label', () => {
+    render(
+      <BoardSummaryChips summaries={[{ board: 'greenhouse', count: 6, note: 'slugs-invalid:3' }]} />
+    );
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('processing');
+    // The identity mock echoes `${key}:${count}` so the count is threaded through.
+    expect(chip?.textContent).toContain('jobs.boardSummary.note.slugsInvalid:3');
+    // The raw machine token must never leak into the UI.
+    expect(chip?.textContent).not.toContain('slugs-invalid:3');
+  });
+
+  it('maps "rows-dropped:<n>" to the pluralized informational (processing) label', () => {
+    render(
+      <BoardSummaryChips summaries={[{ board: 'rippling', count: 8, note: 'rows-dropped:2' }]} />
+    );
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('processing');
+    expect(chip?.textContent).toContain('jobs.boardSummary.note.rowsDropped:2');
+    expect(chip?.textContent).not.toContain('rows-dropped:2');
+  });
+
+  it('rejects n=0 (these tokens are only emitted for n>0) — falls through to the success chip', () => {
+    render(
+      <BoardSummaryChips summaries={[{ board: 'greenhouse', count: 6, note: 'slugs-invalid:0' }]} />
+    );
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('success');
+    expect(chip?.textContent).toContain('jobs.boardSummary.count:6');
+    expect(chip?.textContent).not.toContain('slugsInvalid');
+  });
+
+  it('rejects a negative / fractional / non-numeric n (no chip, falls through to success)', () => {
+    for (const note of ['slugs-invalid:-1', 'rows-dropped:2.5', 'slugs-invalid:abc']) {
+      const { unmount } = render(
+        <BoardSummaryChips summaries={[{ board: 'greenhouse', count: 6, note }]} />
+      );
+      expect(chips()[0]?.getAttribute('data-color')).toBe('success');
+      unmount();
+    }
+  });
+
+  it('tolerates a bare "slugs-invalid:" (empty n) — falls through to success', () => {
+    render(
+      <BoardSummaryChips summaries={[{ board: 'lever', count: 3, note: 'slugs-invalid:' }]} />
+    );
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('success');
+    expect(chip?.textContent).not.toContain('slugsInvalid');
+  });
+
+  it('precedence: an error still wins over a co-present partial note', () => {
+    render(
+      <BoardSummaryChips
+        summaries={[{ board: 'greenhouse', count: 0, error: 'boom', note: 'slugs-invalid:2' }]}
+      />
+    );
+    expect(chips()[0]?.getAttribute('data-color')).toBe('error');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Robustness
 // ─────────────────────────────────────────────────────────────────────────────
 

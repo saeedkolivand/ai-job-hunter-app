@@ -54,6 +54,7 @@ const resultsProps = {
   boardSummaries: undefined as unknown,
   failureNote: undefined as unknown,
   totalCount: undefined as unknown,
+  filtered: undefined as unknown,
 };
 
 // usePostings — mutable container so tests can simulate "results present" vs
@@ -146,16 +147,20 @@ vi.mock('@/features/jobs/components/JobsResults', () => ({
     boardSummaries,
     failureNote,
     totalCount,
+    filtered,
   }: {
     boardSummaries?: unknown;
     failureNote?: unknown;
     totalCount?: unknown;
+    filtered?: unknown;
   }) => {
     // Records the summaries + failure note + unfiltered count forwarded into
-    // the empty-state wiring.
+    // the empty-state wiring, plus the sorted `filtered` list so the stable
+    // sort (PR H) is assertable end-to-end.
     resultsProps.boardSummaries = boardSummaries;
     resultsProps.failureNote = failureNote;
     resultsProps.totalCount = totalCount;
+    resultsProps.filtered = filtered;
     return <div data-testid={TEST_IDS.jobs.jobsResults} />;
   },
 }));
@@ -689,5 +694,74 @@ describe('JobsPage — SegmentedControl viewMode toggle', () => {
     });
 
     expect(setJobsSpy).toHaveBeenCalledWith({ viewMode: 'list' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Stable "newest" sort (PR H, audit quick win 8): equal timestamps get a
+// deterministic id tiebreak, and undated postings (no `postedAt`) collect in a
+// trailing band instead of interleaving via the `capturedAt` fallback. The
+// session-store mock hardcodes sortBy: 'newest', so these assert that path.
+// ---------------------------------------------------------------------------
+
+function sortPosting(
+  id: string,
+  opts: { postedAt?: number; capturedAt: number }
+): Record<string, unknown> {
+  return {
+    id,
+    source: 'linkedin',
+    externalId: id,
+    // Distinct url/title so mergePostings' canonical-key dedup keeps every row.
+    url: `https://example.com/${id}`,
+    title: `Engineer ${id}`,
+    company: 'Acme',
+    description: '',
+    postedAt: opts.postedAt,
+    capturedAt: opts.capturedAt,
+  };
+}
+
+function filteredIds(): string[] {
+  return (resultsProps.filtered as Array<{ id: string }>).map((p) => p.id);
+}
+
+describe('JobsPage — stable newest sort', () => {
+  beforeEach(() => {
+    resultsProps.filtered = undefined;
+    postingsContainer.data = [];
+  });
+
+  it('equal postedAt falls back to a deterministic id tiebreak (not input order)', () => {
+    // Fed in reverse id order; a plain stable sort would keep it, so a passing
+    // ['a','b'] proves the id tiebreak actually ran.
+    postingsContainer.data = [
+      sortPosting('b', { postedAt: 1000, capturedAt: 5 }),
+      sortPosting('a', { postedAt: 1000, capturedAt: 5 }),
+    ];
+    renderJobsPage();
+    expect(filteredIds()).toEqual(['a', 'b']);
+  });
+
+  it('undated postings (no postedAt) trail the dated ones, never interleaved', () => {
+    postingsContainer.data = [
+      // No postedAt but a very recent capture — must NOT jump above the dated row.
+      sortPosting('undated', { capturedAt: 9999 }),
+      sortPosting('dated', { postedAt: 100, capturedAt: 1 }),
+    ];
+    renderJobsPage();
+    expect(filteredIds()).toEqual(['dated', 'undated']);
+  });
+
+  it('dated band is newest-first; undated band trails, sorted by capture then id', () => {
+    postingsContainer.data = [
+      sortPosting('old', { postedAt: 100, capturedAt: 1 }),
+      sortPosting('new', { postedAt: 200, capturedAt: 1 }),
+      sortPosting('u2', { capturedAt: 50 }),
+      sortPosting('u1', { capturedAt: 50 }),
+    ];
+    renderJobsPage();
+    // Dated newest-first: new, old. Undated trail; equal capture → id tiebreak.
+    expect(filteredIds()).toEqual(['new', 'old', 'u1', 'u2']);
   });
 });
