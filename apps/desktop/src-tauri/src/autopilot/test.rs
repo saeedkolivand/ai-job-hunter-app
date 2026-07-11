@@ -431,14 +431,22 @@ fn mark_interrupted_runs_flips_only_in_progress() {
     store.set_run_status(&done.id, RunStatus::Completed);
 
     let reconciled = store.mark_interrupted_runs();
-    assert_eq!(reconciled, 1, "only the in-progress run is reconciled");
+    assert_eq!(
+        reconciled.len(),
+        1,
+        "only the in-progress run is reconciled"
+    );
+    assert_eq!(
+        reconciled[0], running.id,
+        "the reconciled id is the interrupted run's, so the scheduler retries the right one"
+    );
 
     let status = |id: &str| store.get(id).unwrap().run_status;
     assert_eq!(status(&running.id), Some(RunStatus::Interrupted));
     assert_eq!(status(&done.id), Some(RunStatus::Completed));
 
     // Idempotent: a second startup sweep finds nothing to reconcile.
-    assert_eq!(store.mark_interrupted_runs(), 0);
+    assert!(store.mark_interrupted_runs().is_empty());
 }
 
 #[test]
@@ -856,6 +864,36 @@ fn save_writes_when_file_is_missing() {
     assert!(after.contains("\"_id\""), "serialized state was written");
 }
 
+#[test]
+fn write_to_disk_surfaces_error_instead_of_swallowing_it() {
+    use tempfile::TempDir;
+
+    // Point the store's "data dir" at a real FILE, so `data_file` resolves to a
+    // path *under* a non-directory. Neither the create_dir_all in `new` (`.ok`'d)
+    // nor the final `std::fs::write` can create a child of a file, so the write
+    // fails deterministically on every OS. This is exactly the error `save` now
+    // logs via `log::error` instead of `.ok()`-swallowing (quick win 9) — proving
+    // the error path is real and detectable rather than silently lost.
+    let temp = TempDir::new().unwrap();
+    let file_as_dir = temp.path().join("not-a-directory");
+    std::fs::write(&file_as_dir, b"x").unwrap();
+
+    let store = AutopilotStore::new(&file_as_dir);
+    let result = store.write_to_disk(&HashMap::new());
+    assert!(
+        result.is_err(),
+        "writing under a non-directory path must surface an IO error, not be swallowed"
+    );
+
+    // `save` (which now logs that error) must not panic on the failure path and
+    // still keeps the in-memory cache consistent for the running process.
+    store.save(HashMap::new());
+    assert!(
+        store.list().is_empty(),
+        "save tolerates a persist failure without panicking and reflects the intended state in-memory"
+    );
+}
+
 // ── AutopilotTarget boards back-compat deserialization ────────────────────────
 
 #[test]
@@ -982,6 +1020,7 @@ fn found_job(url: &str, found_at: u64) -> FoundJob {
         salary_max: None,
         salary_currency: None,
         score: None,
+        score_provisional: false,
         found_at,
         is_new: false,
         applied: false,

@@ -1323,6 +1323,7 @@
     "viewJob": "Open posting",
     "applyJob": "Apply",
     "aiNote": "AI note",
+    "provisionalScoreHint": "Estimated from a summary — open the job for the exact match score.",
     "delete": "Delete",
     "deleteTitle": "Delete this autopilot?",
     "deleteDescription": "This stops its schedule and permanently removes the autopilot and its found-jobs history.",
@@ -1849,7 +1850,11 @@
         "guessed": "no country set — searched {{country}}",
         "locationFilteredNone": "location filtered locally",
         "locationFiltered_one": "{{count}} off-location result hidden",
-        "locationFiltered_other": "{{count}} off-location results hidden"
+        "locationFiltered_other": "{{count}} off-location results hidden",
+        "slugsInvalid_one": "{{count}} company name invalid",
+        "slugsInvalid_other": "{{count}} company names invalid",
+        "rowsDropped_one": "{{count}} row unreadable — board format may have changed",
+        "rowsDropped_other": "{{count}} rows unreadable — board format may have changed"
       }
     },
     "viewList": "List",

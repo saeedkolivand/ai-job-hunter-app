@@ -313,6 +313,25 @@ fn rows_to_jobs_empty_array_returns_empty_vec() {
     assert!(rows_to_jobs(values).is_empty());
 }
 
+/// trust-H item 2: when EVERY row in a non-empty batch fails to deserialize,
+/// `rows_to_jobs` returns an empty `Vec` — the exact signal `search()` uses
+/// (`raw_row_count > 0 && rows_to_jobs(..).is_empty()`) to treat the company as
+/// a FETCH FAILURE (recorded into `first_fetch_error`) instead of a silent
+/// success-with-zero-jobs. Mirrors Breezy's round-2 fix, now applied to
+/// Rippling too.
+#[test]
+fn rows_to_jobs_all_rows_undeserializable_returns_empty() {
+    // Every row is unparseable as `RpJob`: missing the required `uuid`, or not
+    // even an object.
+    let values: Vec<serde_json::Value> =
+        serde_json::from_str(r#"[{"name": "No UUID"}, "not-an-object", 42, null]"#).unwrap();
+    let jobs = rows_to_jobs(values);
+    assert!(
+        jobs.is_empty(),
+        "every row failing to deserialize must yield an empty Vec (the all-drift signal)"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // parse_rippling_response — fixture-based parsing
 // ---------------------------------------------------------------------------

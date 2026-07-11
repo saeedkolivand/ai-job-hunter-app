@@ -126,8 +126,21 @@ vi.mock('@ajh/ui', () => ({
 // ── MatchBand stub ────────────────────────────────────────────────────────────
 
 vi.mock('@/lib/match-band', () => ({
-  MatchBand: ({ value, variant }: { value: number; variant?: string }) => (
-    <span data-testid="match-band" data-value={value} data-variant={variant ?? 'combined'} />
+  MatchBand: ({
+    value,
+    variant,
+    subtle,
+  }: {
+    value: number;
+    variant?: string;
+    subtle?: boolean;
+  }) => (
+    <span
+      data-testid="match-band"
+      data-value={value}
+      data-variant={variant ?? 'combined'}
+      data-subtle={subtle ? 'true' : 'false'}
+    />
   ),
 }));
 
@@ -488,6 +501,62 @@ describe('AutopilotCard — found-jobs MatchBand variant', () => {
     });
 
     expect(screen.queryByTestId('match-band')).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Provisional score marker (PR H, audit root cause 6) — a snippet-based score
+// is muted + tilde-prefixed + carries a hover hint; an exact score is plain.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('AutopilotCard — provisional score marker', () => {
+  it('renders a muted band + "~" prefix + hover title + sr-only text when scoreProvisional is true', async () => {
+    const job = { ...makeJob('https://example.com/job/prov', 82), scoreProvisional: true };
+    renderCard(makeAutopilot([job]));
+
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await act(async () => {
+      header.click();
+    });
+
+    // The native hover hint (title) is present...
+    expect(screen.getByTitle('autopilot.provisionalScoreHint')).toBeInTheDocument();
+    // ...the "~" estimate prefix is visible...
+    expect(screen.getByText('~')).toBeInTheDocument();
+    // ...an always-present sr-only span carries the same hint for screen
+    // readers (a `title` alone isn't reliably announced — TrustBadge precedent)...
+    expect(screen.getByText(': autopilot.provisionalScoreHint')).toHaveClass('sr-only');
+    // ...and the band renders muted (subtle).
+    expect(screen.getByTestId('match-band')).toHaveAttribute('data-subtle', 'true');
+  });
+
+  it('renders a plain (non-muted) band with no marker when scoreProvisional is false', async () => {
+    const job = { ...makeJob('https://example.com/job/exact', 82), scoreProvisional: false };
+    renderCard(makeAutopilot([job]));
+
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await act(async () => {
+      header.click();
+    });
+
+    expect(screen.queryByTitle('autopilot.provisionalScoreHint')).not.toBeInTheDocument();
+    expect(screen.queryByText('~')).not.toBeInTheDocument();
+    expect(screen.queryByText(': autopilot.provisionalScoreHint')).not.toBeInTheDocument();
+    expect(screen.getByTestId('match-band')).toHaveAttribute('data-subtle', 'false');
+  });
+
+  it('treats an absent scoreProvisional field (older records) as non-provisional', async () => {
+    // makeJob() sets no scoreProvisional — the legacy record shape.
+    const job = makeJob('https://example.com/job/legacy', 82);
+    renderCard(makeAutopilot([job]));
+
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await act(async () => {
+      header.click();
+    });
+
+    expect(screen.queryByTitle('autopilot.provisionalScoreHint')).not.toBeInTheDocument();
+    expect(screen.getByTestId('match-band')).toHaveAttribute('data-subtle', 'false');
   });
 });
 

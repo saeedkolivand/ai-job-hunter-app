@@ -5,7 +5,7 @@
 /// board with `"needs-company"` when `input.companies` is empty.
 use super::super::http::{fetch_text, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
-use super::common::ats_all_slugs_invalid_message;
+use super::common::{ats_finish_search, ats_partial_note};
 use async_trait::async_trait;
 
 const HOSTS: &[&str] = &["jobs.personio.de", "jobs.personio.com"];
@@ -149,11 +149,15 @@ impl Scraper for PersonioScraper {
         let now = chrono::Utc::now().timestamp_millis();
         let mut out = vec![];
         let total = input.companies.len();
-        // #597: count slugs rejected by the SSRF guard vs. those that reached a
-        // fetch, so an all-invalid-slug run surfaces a distinct board error
-        // instead of a silent zero (see the all-rejected check after the loop).
+        // #597 + trust-H: track slugs rejected by the SSRF guard, per-company
+        // fetch success, and the first fetch error so BOTH an all-invalid-slug
+        // run AND an all-hosts-all-companies-fetch-fail run surface a distinct
+        // board error instead of a silent zero (see `ats_finish_search` after
+        // the loop). Personio is a `fetch_text` (XML feed) board, so PR A's
+        // representable-failure semantics never applied here until now.
         let mut rejected_slugs = 0usize;
-        let mut attempted = 0usize;
+        let mut successful_fetches = 0usize;
+        let mut first_fetch_error: Option<String> = None;
 
         for (i, raw_company) in input.companies.iter().enumerate() {
             if ctx.signal.is_cancelled() {
@@ -176,8 +180,19 @@ impl Scraper for PersonioScraper {
                 }
                 continue;
             }
-            attempted += 1;
 
+            // Try each host. A company counts as REACHED once any host returns a
+            // 200 — even a 200 with no `<position>` (a genuinely empty feed is a
+            // reached, zero-job company, NOT a fetch failure). Only a 404/5xx on
+            // every host, or a network error on every host, is a fetch failure
+            // recorded into `first_fetch_error` (unchanged 200-with-`<position>`
+            // success heuristic drives what we actually parse). CAVEAT (unverified,
+            // unlike LinkedIn's live-verified soft-block claim): this assumes
+            // Personio never serves a 200 bot-block/interstitial page in place of
+            // the feed — if it does, a blocked company would count as
+            // reached-empty rather than a fetch failure.
+            let mut company_reached = false;
+            let mut company_error: Option<String> = None;
             let mut xml_and_host: Option<(String, String)> = None;
             for &host in HOSTS {
                 if ctx.signal.is_cancelled() {
@@ -197,14 +212,30 @@ impl Scraper for PersonioScraper {
                         if ctx.signal.is_cancelled() {
                             break;
                         }
+                        company_error.get_or_insert_with(|| e.to_string());
                         continue;
                     }
                 };
 
-                if res.status_code == 200 && res.text.contains("<position") {
-                    xml_and_host = Some((res.text, host.to_string()));
-                    break;
+                if res.status_code == 200 {
+                    company_reached = true;
+                    if res.text.contains("<position") {
+                        xml_and_host = Some((res.text, host.to_string()));
+                        break;
+                    }
+                } else {
+                    company_error
+                        .get_or_insert_with(|| format!("HTTP {} from {host}", res.status_code));
                 }
+            }
+
+            // Any 200 = a successful fetch (reached the endpoint); otherwise the
+            // first 404/5xx/network error is recorded so an all-companies-fail
+            // run returns Err via `ats_finish_search`.
+            if company_reached {
+                successful_fetches += 1;
+            } else if let Some(e) = company_error {
+                first_fetch_error.get_or_insert(e);
             }
 
             let (xml, serving_host) = match xml_and_host {
@@ -263,25 +294,29 @@ impl Scraper for PersonioScraper {
             }
         }
 
-        // A cancel that fired after an invalid slug was rejected (but before a
-        // later valid slug was reached) must not be misattributed as "all slugs
-        // invalid" — the run was interrupted, not misconfigured.
-        if ctx.signal.is_cancelled() {
-            return Ok(out);
+        // trust-H item 3: surface a partial-visibility anomaly (some slugs
+        // rejected while others fetched) as ONE informational note (PR D
+        // grammar). Personio has no per-row parse drop count, so only
+        // `slugs-invalid` can fire here. Gated on non-cancellation: a benign
+        // interruption reports nothing (mirrors `ats_finish_search`).
+        if !ctx.signal.is_cancelled() {
+            if let Some(note) = ats_partial_note(successful_fetches, rejected_slugs, 0) {
+                ctx.report_note(note);
+            }
         }
 
-        // #597: every non-blank slug was rejected pre-fetch (no fetch ran) — a
-        // silent zero otherwise. A run where at least one slug WAS fetched keeps
-        // its (possibly empty) result: a well-formed but wrong slug is not a
-        // validation error. Mirrors the ATS boards' `ats_board_failure` reject branch.
-        if attempted == 0 && rejected_slugs > 0 {
-            return Err(anyhow::anyhow!(ats_all_slugs_invalid_message(
-                self.id(),
-                rejected_slugs
-            )));
-        }
-
-        Ok(out)
+        // See `ats_finish_search`: cancellation wins over a synthesized
+        // all-fetches-failed/all-slugs-invalid board error. This is the same
+        // finish shape the other 6 ATS boards use — extended to Personio now
+        // that it tracks `successful_fetches`/`first_fetch_error`.
+        ats_finish_search(
+            &ctx.signal,
+            out,
+            self.id(),
+            successful_fetches,
+            rejected_slugs,
+            &first_fetch_error,
+        )
     }
 }
 

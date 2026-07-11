@@ -1080,6 +1080,7 @@ mod tests {
             salary_max: None,
             salary_currency: None,
             score: None,
+            score_provisional: false,
             found_at: 0,
             is_new: true,
             applied: false,

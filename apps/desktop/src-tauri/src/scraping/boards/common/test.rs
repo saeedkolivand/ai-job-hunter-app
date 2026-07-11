@@ -157,6 +157,60 @@ fn board_failure_nothing_attempted_returns_none() {
     assert!(ats_board_failure("bamboohr", 0, 0, &None).is_none());
 }
 
+// ── ats_partial_note (partial-visibility notes, trust-H item 3) ──────────────
+//
+// The complement to `ats_board_failure`: when a run partially degraded but
+// still returned a result, the anomaly (some slugs rejected / some rows
+// dropped) becomes ONE informational note instead of staying log-only.
+
+/// SOME slugs rejected while ≥1 fetch succeeded → the partial `slugs-invalid:<n>`
+/// note (the `n` is the rejected count, not the success count).
+#[test]
+fn partial_note_some_slugs_rejected_with_a_success_emits_slugs_invalid() {
+    assert_eq!(
+        ats_partial_note(2, 3, 0).as_deref(),
+        Some("slugs-invalid:3"),
+        "a partial reject alongside a success must surface the rejected-slug count",
+    );
+}
+
+/// SOME rows dropped (no rejects) while ≥1 fetch succeeded → `rows-dropped:<n>`.
+#[test]
+fn partial_note_some_rows_dropped_emits_rows_dropped() {
+    assert_eq!(ats_partial_note(1, 0, 4).as_deref(), Some("rows-dropped:4"),);
+}
+
+/// Both anomalies present → `slugs-invalid` wins (the more actionable signal);
+/// exactly ONE token is ever emitted.
+#[test]
+fn partial_note_both_anomalies_prefers_slugs_invalid() {
+    assert_eq!(
+        ats_partial_note(1, 2, 5).as_deref(),
+        Some("slugs-invalid:2"),
+        "when both fire, slugs-invalid must win — never two notes",
+    );
+}
+
+/// Zero successful fetches → `None`, even with rejects/drops recorded: that is a
+/// whole-board FAILURE (`ats_finish_search` surfaces the Err), NOT a note.
+#[test]
+fn partial_note_no_success_returns_none_even_with_rejects() {
+    assert!(
+        ats_partial_note(0, 3, 0).is_none(),
+        "all-rejected is an error, not a partial note",
+    );
+    assert!(
+        ats_partial_note(0, 0, 7).is_none(),
+        "no success means no partial note (drops without a kept row can't happen anyway)",
+    );
+}
+
+/// A clean run (successes, no rejects, no drops) emits no note.
+#[test]
+fn partial_note_clean_run_returns_none() {
+    assert!(ats_partial_note(5, 0, 0).is_none());
+}
+
 // ── should_propagate_page_error ──────────────────────────────────────────────
 
 #[test]

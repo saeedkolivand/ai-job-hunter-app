@@ -254,6 +254,37 @@ async fn all_invalid_slugs_error_without_network() {
     );
 }
 
+/// trust-H item 3: an all-invalid-slug run is a whole-board FAILURE (Err), not a
+/// partial — so it must NOT emit a `slugs-invalid` partial note (that note is
+/// only for SOME-rejected-with-a-success runs). Wires an `on_note` sink and
+/// asserts it stayed empty. Network-free (every slug is rejected pre-fetch).
+#[tokio::test]
+async fn all_invalid_slugs_emits_no_note_and_errors() {
+    let scraper = BreezyScraper;
+    let notes = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let sink = notes.clone();
+    let ctx = ScrapeContext {
+        signal: tokio_util::sync::CancellationToken::new(),
+        on_progress: None,
+        on_item: None,
+        on_truncation: None,
+        on_note: Some(std::sync::Arc::new(move |n: String| {
+            sink.lock().unwrap().push(n);
+        })),
+    };
+    let result = scraper
+        .search(make_input(vec!["dotted.host".to_string()]), ctx)
+        .await;
+    assert!(
+        result.is_err(),
+        "an all-invalid-slug run must be a board error"
+    );
+    assert!(
+        notes.lock().unwrap().is_empty(),
+        "an all-reject run must NOT emit a partial note — it's an error, not a partial"
+    );
+}
+
 /// A pre-cancelled signal must make the loop break immediately without
 /// recording `first_fetch_error`.
 #[tokio::test]

@@ -16,7 +16,7 @@
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
 use super::common::{
-    ats_finish_search, is_https_url, is_valid_dns_label_slug, normalize_companies,
+    ats_finish_search, ats_partial_note, is_https_url, is_valid_dns_label_slug, normalize_companies,
 };
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -225,6 +225,7 @@ impl Scraper for BreezyScraper {
 
         let mut successful_fetches = 0usize;
         let mut rejected_slugs = 0usize;
+        let mut rows_dropped = 0usize;
         let mut first_fetch_error: Option<String> = None;
 
         for (i, raw_company) in companies.iter().enumerate() {
@@ -296,6 +297,9 @@ impl Scraper for BreezyScraper {
                 continue;
             }
             successful_fetches += 1;
+            // SOME (not all) rows dropped by per-row parse → a partial-visibility
+            // anomaly surfaced as a `rows-dropped:<n>` note after the loop.
+            rows_dropped += raw_row_count - postings.len();
 
             for posting in parse_breezy_response(postings, &company, now) {
                 if let Some(ref on_item) = ctx.on_item {
@@ -306,6 +310,17 @@ impl Scraper for BreezyScraper {
 
             if let Some(ref on_progress) = ctx.on_progress {
                 on_progress((i + 1) as f32 / total as f32);
+            }
+        }
+
+        // trust-H item 3: surface a partial-visibility anomaly (some slugs
+        // rejected / some rows dropped, while others succeeded) as ONE
+        // informational note (PR D grammar; `slugs-invalid` wins over
+        // `rows-dropped`). Gated on non-cancellation — a benign interruption
+        // reports nothing (mirrors `ats_finish_search`).
+        if !ctx.signal.is_cancelled() {
+            if let Some(note) = ats_partial_note(successful_fetches, rejected_slugs, rows_dropped) {
+                ctx.report_note(note);
             }
         }
 

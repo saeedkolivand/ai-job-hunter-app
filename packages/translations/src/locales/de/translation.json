@@ -1327,6 +1327,7 @@
     "viewJob": "Anzeige öffnen",
     "applyJob": "Bewerben",
     "aiNote": "KI-Notiz",
+    "provisionalScoreHint": "Aus einer Kurzfassung geschätzt — öffne den Job für den genauen Match-Score.",
     "delete": "Löschen",
     "deleteTitle": "Diesen Autopilot löschen?",
     "deleteDescription": "Dies stoppt den Zeitplan und entfernt den Autopilot und seinen Verlauf gefundener Jobs dauerhaft.",
@@ -1853,7 +1854,11 @@
         "guessed": "kein Land gesetzt — {{country}} durchsucht",
         "locationFilteredNone": "Ort lokal gefiltert",
         "locationFiltered_one": "{{count}} Treffer am falschen Ort ausgeblendet",
-        "locationFiltered_other": "{{count}} Treffer am falschen Ort ausgeblendet"
+        "locationFiltered_other": "{{count}} Treffer am falschen Ort ausgeblendet",
+        "slugsInvalid_one": "{{count}} Firmenname ungültig",
+        "slugsInvalid_other": "{{count}} Firmennamen ungültig",
+        "rowsDropped_one": "{{count}} Zeile unlesbar — Board-Format eventuell geändert",
+        "rowsDropped_other": "{{count}} Zeilen unlesbar — Board-Format eventuell geändert"
       }
     },
     "viewList": "Liste",

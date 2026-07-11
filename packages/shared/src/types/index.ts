@@ -290,6 +290,11 @@ export interface AutopilotFoundJob {
   salaryCurrency?: string;
   /** Match score (0–100) when the posting passed ranking. */
   score?: number;
+  /** The `score` was computed over a TRUNCATED snippet (an aggregator/Adzuna
+   *  description, which the detail pane re-scores against full text), so it may
+   *  diverge from that full-text score — the renderer marks such scores as
+   *  provisional. Absent/false for full-text boards and for unscored jobs. */
+  scoreProvisional?: boolean;
   foundAt: number;
   /** First surfaced in the most recent run — drives the "New" badge. */
   isNew?: boolean;

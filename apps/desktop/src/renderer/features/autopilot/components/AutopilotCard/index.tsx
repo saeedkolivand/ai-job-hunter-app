@@ -533,9 +533,37 @@ export function AutopilotCard({
                             {job.location && <span className="truncate">· {job.location}</span>}
                           </div>
                         </div>
-                        {typeof job.score === 'number' && (
-                          <MatchBand value={job.score} variant="coverage" />
-                        )}
+                        {typeof job.score === 'number' &&
+                          (job.scoreProvisional ? (
+                            // Provisional score (audit root cause 6): computed
+                            // over a truncated aggregator snippet, so the detail
+                            // pane's full-text re-score may differ. Mark it
+                            // honestly — a muted band + "~" prefix + a hover
+                            // `title` AND an always-present sr-only span (the
+                            // TrustBadge non-interactive precedent: a `title`
+                            // alone isn't reliably announced). No focusable
+                            // HoverPopover — this whole row is already a
+                            // <Button>; a focusable popover trigger nested in
+                            // it would be invalid button-in-button HTML (same
+                            // reason TrustBadge above renders interactive=false).
+                            <span
+                              className="inline-flex shrink-0 items-center gap-0.5"
+                              title={t('autopilot.provisionalScoreHint')}
+                            >
+                              <span
+                                aria-hidden="true"
+                                className="text-[11px] leading-none text-foreground/35"
+                              >
+                                ~
+                              </span>
+                              <MatchBand value={job.score} variant="coverage" subtle />
+                              <span className="sr-only">
+                                : {t('autopilot.provisionalScoreHint')}
+                              </span>
+                            </span>
+                          ) : (
+                            <MatchBand value={job.score} variant="coverage" />
+                          ))}
                         <ExternalLink size={11} className="shrink-0 text-foreground/25" />
                       </Button>
                       <Button
