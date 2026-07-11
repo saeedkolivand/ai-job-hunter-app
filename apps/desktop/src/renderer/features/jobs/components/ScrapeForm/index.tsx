@@ -8,6 +8,7 @@ import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { Button, CardSkeleton, cn, GlassCard, Input, transition } from '@ajh/ui';
 
+import { LocationFilterNote } from '@/components/scrape/LocationFilterNote';
 import { AUTH_BENEFITS } from '@/features/jobs/constants';
 import { makeMultiSelectKeyHandler } from '@/hooks/use-roving-tabindex';
 import { useHasProviderKey } from '@/services/use-ai-provider';
@@ -85,6 +86,11 @@ export function ScrapeForm({
   const needsLoginBoards = listedBoards.filter(
     (e) => selectedSet.has(e.id) && (e.auth === 'optional' || e.auth === 'required')
   );
+
+  // Selected boards + whether a location is set — drives the honest "location
+  // filtered locally" picker hint for boards without server-side location support.
+  const selectedListedBoards = listedBoards.filter((e) => selectedSet.has(e.id));
+  const hasLocation = form.location.trim().length > 0;
 
   // True when any currently-selected board requires a company slug (ATS boards).
   // Derived entirely from catalog metadata — no hardcoded board list.
@@ -313,6 +319,10 @@ export function ScrapeForm({
                 ))}
               </div>
             )}
+
+            {/* Honest location hint — names selected boards that don't filter by
+                location server-side (results are matched on-device instead). */}
+            <LocationFilterNote boards={selectedListedBoards} hasLocation={hasLocation} />
 
             {/* Aggregator key hint — shown when aggregator selected but Adzuna keys absent */}
             {showAggregatorKeyHint && (

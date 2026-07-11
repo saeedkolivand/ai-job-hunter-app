@@ -1827,6 +1827,7 @@
       "loginToEnable": "Anmelden zum Aktivieren",
       "loginToEnableHint": "{{board}} erfordert eine Anmeldung — verbinde dein Konto, damit die Suche Ergebnisse liefert."
     },
+    "locationFilterHint": "Ort lokal gefiltert:",
     "companies": {
       "label": "Unternehmen",
       "placeholder": "z. B. stripe, airbnb",
@@ -1849,7 +1850,10 @@
       },
       "note": {
         "broadened": "wenige lokale Treffer — landesweit in {{country}} gesucht",
-        "guessed": "kein Land gesetzt — {{country}} durchsucht"
+        "guessed": "kein Land gesetzt — {{country}} durchsucht",
+        "locationFilteredNone": "Ort lokal gefiltert",
+        "locationFiltered_one": "{{count}} Treffer am falschen Ort ausgeblendet",
+        "locationFiltered_other": "{{count}} Treffer am falschen Ort ausgeblendet"
       }
     },
     "viewList": "Liste",

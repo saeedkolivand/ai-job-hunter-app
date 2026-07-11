@@ -106,6 +106,48 @@ Location input policy is now visible via per-board summary notes. When a search 
 - **Wizard visibility:** Autopilot wizard shows inline "Country: <Name>" when `countryCode` is set, cleared on manual location edit (user may re-pick via the location-input autocompleter).
 - **Source:** `scraping/types/mod.rs` (`on_note` side-channel + `report_note()`), `scraping/engine/mod.rs` (`BoardScrapeSummary.note` wiring), `boards/aggregator/mod.rs` (inject), `boards/aggregator/providers.rs` (Adzuna emit sites + `guessed_market_note` helper).
 
+## Canonical location model & central filter (PR F, 2026-07-11)
+
+Location input is now canonical: resolved once from user-supplied city/region/country/lat/lon/radius at search time; boards declare server-side support via `supports_location()`; the engine centrally filters results for boards that cannot honor location constraints.
+
+**LocationSpec canonical model:**
+
+- **Type:** `apps/desktop/src-tauri/src/scraping/types/mod.rs` — struct with optional fields: `city`, `region`, `country_code`, `lat`, `lon`, `radius_km` (all present per Nominatim pick, but none required).
+- **Accessor:** `BoardSearchInput::location_spec()` (not a stored field) — assembles the spec from existing input fields (`location` string + loose geo fields). Zero literal churn; back-compat automatic (None spec ⇒ filter inert).
+
+**Board supports_location() flag:**
+
+- **Trait method:** `Scraper::supports_location()` — returns true ONLY for boards with server-side location consumption.
+- **Truthful catalog:** Only **3 boards** read location server-side:
+  - **Aggregator** (Adzuna `where` param + country-scoped market routing; JSearch fallback)
+  - **LinkedIn** (`geoId` typeahead + `distance` radius)
+  - **Arbeitsagentur** (`wo` param)
+- **20 non-supporting boards:** Remote feeds (remotive/remoteok/wwr), regional feeds (berlinstartupjobs/germantechjobs), ycombinator/arbeitnow, themuse+comeet, all 10 company-slug ATS (greenhouse/lever/ashby/smartrecruiters/personio/recruitee/pinpoint/rippling/breezy/bamboohr/workable).
+- **IPC contract:** `BoardCatalogEntry.supportsLocation?` boolean flag in `packages/shared/src/ipc/contracts/boards.ts` (flows to renderer picker).
+
+**Central conservative filter:**
+
+- **Module:** `apps/desktop/src-tauri/src/scraping/engine/location_filter.rs` — pure function `location_mismatch(posting, &LocationSpec) -> bool`.
+- **Policy:** DROP a posting iff it has a concrete, non-remote location whose diacritic-folded form (ü/ö/ä→u/o/a variants) shares NO substring token (len≥3) with any folded-expanded requested needle (raw city/region tokens + curated exonym pairs like Munich/München). KEEP always: `extra.remote==true`; remote text marker (remote/wfh/etc.); empty/unknown location; no usable requested token (country-code-only is inert); diacritic spelling variant; curated exonym pair. **Known limitation:** exonym pairs outside the small curated table (`EXONYM_PAIRS`: Munich/München, Cologne/Köln, Nuremberg/Nürnberg) still drop — this is documented and tested, not silently "fixed" by folding alone.
+- **Wiring:** Applied ONLY to `supports_location()==false` boards ONLY when a location was requested. Threaded into the per-item streaming cap counting (not downstream, so cap counts POST-filter matches) + applied once post-hoc to final Vec for consistency across manual-cache, autopilot-found-jobs, and per-board `count` signals.
+- **Drop tracking:** `location-filtered:<n>` note token records the count (never raw location text — PII). Emitted UNCONDITIONALLY on every `supports_location()==false` board when location requested, even if n=0 (preserves honesty that location was NOT honored, whether or not anything was dropped this run).
+
+**Frontend picker surface:**
+
+- **LocationFilterNote component:** `apps/desktop/src/renderer/components/scrape/LocationFilterNote.tsx` — renders when selected boards include non-supporting ones + location is set. Lists by name the non-supporting boards in the selection (absent flag reads as unsupported per contract). Scoped to SELECTED boards (not all 20, to avoid noise).
+- **Chip rendering:** `BoardSummaryChips.tsx` extends note token mapping with `location-filtered:<n>` handling — `n>0` shows pluralized "N off-location result(s) hidden", `n===0` shows plain "location filtered locally" marker.
+- **I18n keys:** `jobs.locationFilterHint` (label row), `jobs.boardSummary.note.locationFiltered_one` / `_other` (count/marker), en+de parity verified by real `@ajh/translations` import test.
+
+**Source pointers:**
+
+- **LocationSpec + accessor:** `apps/desktop/src-tauri/src/scraping/types/mod.rs` + `BoardSearchInput::location_spec()` (call path)
+- **Filter policy + tests:** `apps/desktop/src-tauri/src/scraping/engine/location_filter.rs`
+- **Trait flag + catalog:** `apps/desktop/src-tauri/src/scraping/boards/mod.rs` (`Scraper::supports_location()`, `SCRAPERS` overrides)
+- **Filter wiring + note emission:** `apps/desktop/src-tauri/src/scraping/engine/mod.rs` (stream gate + post-hoc filter + note unconditional gate)
+- **Frontend picker + chip mapping:** `apps/desktop/src/renderer/components/scrape/LocationFilterNote.tsx` + `BoardSummaryChips.tsx` `noteDetail()`
+- **Autopilot forwarding (scope):** `apps/desktop/src-tauri/src/autopilot_helpers/mod.rs` (comment documents that lat/lon/radius are NOT persisted on AutopilotTarget; location+country_code are forwarded, future follow-up needed for radius expansion)
+- **IPC contract:** `packages/shared/src/ipc/contracts/boards.ts` (BoardCatalogEntry.supportsLocation)
+
 ## Trust assessment (PR 3, 2026-07-01)
 
 Every finalized `JobPosting` carries a **ghost-job / trust signal** — a pure,

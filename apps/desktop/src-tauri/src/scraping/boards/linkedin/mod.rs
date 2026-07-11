@@ -53,6 +53,12 @@ impl Scraper for LinkedInScraper {
         crate::scraping::types::AuthRequirement::Optional
     }
 
+    fn supports_location(&self) -> bool {
+        // LinkedIn narrows server-side: it resolves the free-text location to a
+        // geoId typeahead and passes `distance` (radius) to the jobs search.
+        true
+    }
+
     async fn search(&self, input: BoardSearchInput, ctx: ScrapeContext) -> Result<Vec<JobPosting>> {
         // Try to load session data from disk
         let session_data = self.load_session_data().await;

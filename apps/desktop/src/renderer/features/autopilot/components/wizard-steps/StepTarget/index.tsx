@@ -6,6 +6,7 @@ import { AGGREGATOR_BOARD_ID, type BoardCatalogEntry, PROVIDER_SLOTS } from '@aj
 import { useTranslation } from '@ajh/translations';
 import { Alert, Button, cn, Dropdown, Input, LocationInput, NumberField } from '@ajh/ui';
 
+import { LocationFilterNote } from '@/components/scrape/LocationFilterNote';
 import type { Prefilled, WizardState } from '@/features/autopilot/types';
 import { makeMultiSelectKeyHandler } from '@/hooks/use-roving-tabindex';
 import { regionName } from '@/lib/region-name';
@@ -34,12 +35,18 @@ export function StepTarget({ prefilled }: StepTargetProps) {
   // user SEES which market the autopilot will search (vs. the silent save-time
   // backfill, now only a legacy fallback). Cleared by editing the location.
   const countryCode = useWatch({ control, name: 'countryCode' });
+  // Location text — drives the honest "location filtered locally" board hint.
+  const location = useWatch({ control, name: 'location' });
 
   const boardRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const focusedBoardIdx = useRef<number>(0);
 
   const { data: catalogRaw, isLoading: catalogLoading } = useBoardsCatalog();
   const listedBoards: BoardCatalogEntry[] = (catalogRaw ?? []).filter((e) => e.listed);
+
+  // Selected boards + whether a location is set — feeds the location hint below.
+  const selectedListedBoards = listedBoards.filter((e) => boards.includes(e.id));
+  const hasLocation = (location ?? '').trim().length > 0;
 
   // Normalize: ensure every persisted board id still exists in the catalog.
   // Mirror ScrapeForm normalization guard — prevents an infinite re-render loop
@@ -155,6 +162,11 @@ export function StepTarget({ prefilled }: StepTargetProps) {
                   <Alert type="warning" showIcon message={t('jobs.aggregatorKeyHint')} />
                 </div>
               )}
+
+              {/* Honest location hint — mirrors ScrapeForm */}
+              <div className="mt-2 empty:mt-0">
+                <LocationFilterNote boards={selectedListedBoards} hasLocation={hasLocation} />
+              </div>
             </WizardField>
           );
         }}

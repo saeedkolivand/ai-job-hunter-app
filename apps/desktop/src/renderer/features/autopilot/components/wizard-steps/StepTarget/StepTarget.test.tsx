@@ -249,3 +249,21 @@ describe('StepTarget — countryCode wiring (Fix A)', () => {
     expect(readProbe().countryCode).toBeUndefined();
   });
 });
+
+// ── LocationFilterNote integration (PR F) ───────────────────────────────────
+// Real component, not stubbed here, so a wrong prop name at the StepTarget
+// call site would fail this render instead of silently compiling and passing
+// every other test in the file.
+
+describe('StepTarget — location filter note (PR F integration)', () => {
+  it('shows the note when a location is set and the selected board does not support it', () => {
+    // catalog stub: aggregator, listed, no `supportsLocation` — falsy, non-supporting.
+    renderStep({ boards: ['aggregator'], location: 'Berlin' });
+    expect(screen.getByRole('note')).toBeInTheDocument();
+  });
+
+  it('hides the note when no location is set (default empty location)', () => {
+    renderStep({ boards: ['aggregator'], location: '' });
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  });
+});

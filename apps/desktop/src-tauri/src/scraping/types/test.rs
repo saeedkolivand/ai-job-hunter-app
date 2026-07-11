@@ -117,6 +117,93 @@ fn test_board_search_input_defaults() {
 }
 
 #[test]
+fn location_spec_assembles_from_fields() {
+    let input = BoardSearchInput {
+        query: "dev".into(),
+        location: Some("  Berlin  ".into()),
+        amount: 10,
+        pages: 1,
+        date_filter: None,
+        job_type: None,
+        work_type: None,
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        country_code: Some("DE".into()),
+        latitude: Some(52.52),
+        longitude: Some(13.405),
+        radius_km: Some(25),
+        companies: Vec::new(),
+    };
+    let spec = input.location_spec().expect("a location was requested");
+    assert_eq!(spec.city.as_deref(), Some("Berlin")); // trimmed from free text
+    assert_eq!(spec.country_code.as_deref(), Some("DE"));
+    assert_eq!(spec.latitude, Some(52.52));
+    assert_eq!(spec.radius_km, Some(25));
+}
+
+#[test]
+fn location_spec_none_when_no_location_signal() {
+    // Back-compat: no location signal → None spec, so the central filter stays
+    // inert and location-agnostic searches behave byte-identically.
+    let input = BoardSearchInput {
+        query: "dev".into(),
+        location: None,
+        amount: 10,
+        pages: 1,
+        date_filter: None,
+        job_type: None,
+        work_type: None,
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        country_code: None,
+        latitude: None,
+        longitude: None,
+        radius_km: None,
+        companies: Vec::new(),
+    };
+    assert!(input.location_spec().is_none());
+    // A whitespace-only location is not a signal either.
+    let ws = BoardSearchInput {
+        location: Some("   ".into()),
+        ..input
+    };
+    assert!(ws.location_spec().is_none());
+}
+
+#[test]
+fn supports_location_defaults_false() {
+    // A minimal scraper that only implements the required methods must inherit the
+    // conservative default (a board opts IN to server-side location handling).
+    struct Bare;
+    #[async_trait::async_trait]
+    impl Scraper for Bare {
+        fn id(&self) -> &'static str {
+            "bare"
+        }
+        fn display_name(&self) -> &'static str {
+            "Bare"
+        }
+        fn mode(&self) -> ScraperMode {
+            ScraperMode::Http
+        }
+        async fn search(
+            &self,
+            _input: BoardSearchInput,
+            _ctx: ScrapeContext,
+        ) -> Result<Vec<JobPosting>, anyhow::Error> {
+            Ok(vec![])
+        }
+    }
+    assert!(!Bare.supports_location());
+}
+
+#[test]
 fn test_scraper_mode_http() {
     let mode = ScraperMode::Http;
     assert_eq!(mode, ScraperMode::Http);
