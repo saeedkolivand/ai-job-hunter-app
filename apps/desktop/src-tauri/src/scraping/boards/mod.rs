@@ -2,6 +2,9 @@ pub mod aggregator;
 pub mod arbeitnow;
 pub mod arbeitsagentur;
 pub mod ashby;
+/// Curated company -> (ATS, slug) seed data + lookup. Not a `Scraper` — not
+/// registered in `SCRAPERS`; a later wiring PR routes these into search input.
+pub mod ats_seed;
 pub mod bamboohr;
 pub mod berlinstartupjobs;
 pub mod breezy;
