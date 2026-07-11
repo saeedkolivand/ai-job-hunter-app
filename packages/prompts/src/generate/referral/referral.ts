@@ -28,7 +28,7 @@
 import { truncateResume } from '../../context-manager/index.js';
 import { type PromptTarget, resolveProfile } from '../../provider/index.js';
 import { stripLinkBlock } from '../links/index.js';
-import { ANTI_AI_TELL_PROSE, HUMANIZE_PROSE } from '../natural-voice/index.js';
+import { antiAiTellProse, HUMANIZE_PROSE } from '../natural-voice/index.js';
 
 /** The outreach format the user picked — drives the variant + any hard limits. */
 export type ReferralFormat = 'email' | 'linkedin_message' | 'connection_note';
@@ -122,7 +122,7 @@ ${REFERRAL_CONTRACT}
 FORMAT (${FORMAT_LABELS[format]}):
 ${formatRule}
 
-${ANTI_AI_TELL_PROSE}
+${antiAiTellProse()}
 ${HUMANIZE_PROSE}`;
 
   const user = `<candidate_resume>
@@ -229,7 +229,7 @@ ${REFERRAL_CONTRACT}
 FORMAT (${FORMAT_LABELS[format]}):
 ${formatRule}
 
-${ANTI_AI_TELL_PROSE}
+${antiAiTellProse()}
 ${HUMANIZE_PROSE}`;
 
   const user = `<candidate_resume>

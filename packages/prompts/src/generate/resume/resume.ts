@@ -11,7 +11,7 @@ import {
 import { buildBodyLinksBlock, parseLinksFromResume, stripLinkBlock } from '../links/index.js';
 import { type GenerationMeta, type GenerationMode, MODES } from '../modes/index.js';
 import {
-  ANTI_AI_TELL_LEXICAL,
+  antiAiTellLexical,
   HUMANIZE_LEXICAL,
   type OutputTone,
   toneDirective,
@@ -35,15 +35,19 @@ const TONE_PRECEDENCE = `TONE PRECEDENCE: the requested tone shapes word choice 
 export function buildResumeSystemPrompt(
   mode: GenerationMode,
   target: PromptTarget = 'large',
-  tone?: OutputTone
+  tone?: OutputTone,
+  /** Target output language (ISO-639-1, e.g. `meta.targetLanguage`) — selects the
+   *  anti-AI-tell lexicon (see {@link antiAiTellLexical}). Defaults to English. */
+  language?: string
 ): string {
   const { depth } = resolveProfile(target);
   const modeInstr = MODES[mode].toneInstruction;
   // Résumé-tier tone: never license contractions/prose imperfection (that
   // stays ATS-safe regardless of tone; see HUMANIZE_LEXICAL/TONE_PRECEDENCE).
   const toneBlock = `${toneDirective(tone, { lexical: true })}\n${TONE_PRECEDENCE}`;
-  if (depth === 'task') return buildResumeSystemTaskBrief(mode, modeInstr, toneBlock);
-  if (depth !== 'brief') return buildResumeSystemFull(mode, modeInstr, toneBlock);
+  const lexical = antiAiTellLexical(language);
+  if (depth === 'task') return buildResumeSystemTaskBrief(mode, modeInstr, toneBlock, lexical);
+  if (depth !== 'brief') return buildResumeSystemFull(mode, modeInstr, toneBlock, lexical);
 
   const emphasisNote = `Wrap important job-ad keywords in **double asterisks** when they appear naturally (e.g. **React**, **TypeScript**). Max 2–3 bolded terms per bullet.`;
   return `You are an expert resume writer. Rewrite the candidate's resume for the target job.
@@ -64,7 +68,7 @@ DATE FORMAT: "January 2021 – March 2023" or "Jan 2021 – Mar 2023" — consis
 
 ${emphasisNote}
 
-${ANTI_AI_TELL_LEXICAL}
+${lexical}
 ${HUMANIZE_LEXICAL}
 ${ATS_PRECEDENCE}
 
@@ -82,7 +86,8 @@ FINAL CHECK — read your output and confirm:
 function buildResumeSystemTaskBrief(
   mode: GenerationMode,
   modeInstr: string,
-  toneBlock: string
+  toneBlock: string,
+  lexical: string
 ): string {
   return `You are a resume-rewriting agent working a TASK. You may plan, draft, self-review, and revise before finalizing.
 
@@ -99,7 +104,7 @@ ACCEPTANCE CHECKS — verify and revise until all pass:
 - No skill or phrase was copied from the job ad as if the candidate did it.
 - Keyword emphasis uses **double asterisks**, max 2–3 per bullet.
 
-${ANTI_AI_TELL_LEXICAL}
+${lexical}
 ${HUMANIZE_LEXICAL}
 ${ATS_PRECEDENCE}
 
@@ -110,7 +115,12 @@ ${toneBlock}
 OUTPUT: the finished resume (may be written to a file or returned).`;
 }
 
-function buildResumeSystemFull(mode: GenerationMode, modeInstr: string, toneBlock: string): string {
+function buildResumeSystemFull(
+  mode: GenerationMode,
+  modeInstr: string,
+  toneBlock: string,
+  lexical: string
+): string {
   return `You are an expert Resume Writer with deep knowledge of ATS systems, recruiter behavior, and modern hiring practices.
 
 Your resume rewrites achieve 90%+ ATS pass rates and 3x higher callback rates.
@@ -237,7 +247,7 @@ ATS KEYWORD STRATEGY (CRITICAL):
 
 Your goal: Achieve 85%+ keyword match while maintaining natural, readable prose.
 
-${ANTI_AI_TELL_LEXICAL}
+${lexical}
 ${HUMANIZE_LEXICAL}
 ${ATS_PRECEDENCE}
 ${toneBlock}

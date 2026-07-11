@@ -18,14 +18,16 @@ import {
   buildApplicantDetailsBlock,
   buildCompanyResearchBlock,
   buildGroundingBlock,
+  buildResumeVoiceDirective,
   buildSalaryRangeBlock,
+  buildStyleReferenceBlock,
   buildWebSearchBlock,
   type SalaryRange,
 } from '../emphasis/index.js';
 import { stripLinkBlock } from '../links/index.js';
 import type { GenerationMeta } from '../modes/index.js';
 import {
-  ANTI_AI_TELL_PROSE,
+  antiAiTellProse,
   HUMANIZE_PROSE,
   type OutputTone,
   toneDirective,
@@ -95,8 +97,12 @@ export const APPLICATION_QUESTIONS: ApplicationQuestion[] = [
   },
 ];
 
-/** System prompt — the no-fabrication / résumé-grounding contract for answers. */
-export function buildApplicationAnswerSystemPrompt(tone?: OutputTone): string {
+/**
+ * System prompt — the no-fabrication / résumé-grounding contract for answers.
+ * `language` (ISO-639-1, e.g. `meta.targetLanguage`) selects the anti-AI-tell
+ * ruleset (see {@link antiAiTellProse}); defaults to English.
+ */
+export function buildApplicationAnswerSystemPrompt(tone?: OutputTone, language?: string): string {
   return `You are helping a job candidate answer an application question truthfully and specifically.
 
 ABSOLUTE RULES (never break these):
@@ -108,7 +114,7 @@ ABSOLUTE RULES (never break these):
 6. First person, natural, 60 to 120 words, in the target language and the target market's register. Avoid clichés.
 7. Output the answer only. No preamble, no restating the question, no commentary.
 
-${ANTI_AI_TELL_PROSE}
+${antiAiTellProse(language)}
 ${HUMANIZE_PROSE}
 ${toneDirective(tone)}`;
 }
@@ -143,6 +149,10 @@ export function buildApplicationAnswerPrompt(params: {
    *  employer-stated scraped data, a validated numbers-only reference; see
    *  {@link buildSalaryRangeBlock}. Absent when neither source has one. */
   salaryRange?: SalaryRange;
+  /** Optional writing-style reference (the candidate's own writing, e.g. their
+   *  résumé text) — fenced via {@link buildStyleReferenceBlock}; absent/blank
+   *  renders nothing. */
+  styleReference?: string;
 }): string {
   const {
     question,
@@ -156,6 +166,7 @@ export function buildApplicationAnswerPrompt(params: {
     applicant,
     guidance,
     salaryRange,
+    styleReference,
   } = params;
   const { jobAdChars, truncation } = resolveProfile(target);
 
@@ -165,6 +176,7 @@ export function buildApplicationAnswerPrompt(params: {
   const webSearchBlock = buildWebSearchBlock(webSearchNotes);
   const applicantBlock = buildApplicantDetailsBlock(applicant);
   const salaryBlock = buildSalaryRangeBlock(salaryRange);
+  const styleBlock = buildStyleReferenceBlock(styleReference) || buildResumeVoiceDirective();
 
   const conv = letterConventions(market);
   const langNote = meta.mismatch
@@ -181,7 +193,7 @@ ${resumeBody}
 <job_ad>
 ${jobAd.slice(0, jobAdChars)}
 </job_ad>
-${researchBlock}${webSearchBlock}${applicantBlock}${salaryBlock}
+${researchBlock}${webSearchBlock}${applicantBlock}${salaryBlock}${styleBlock}
 Every factual claim about the candidate MUST be traceable to a line in <candidate_resume>. Never claim skills or experience from <job_ad> alone.
 
 ### CONTEXT ###
