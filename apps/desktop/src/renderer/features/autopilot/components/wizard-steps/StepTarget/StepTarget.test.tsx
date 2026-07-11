@@ -31,30 +31,45 @@ import { StepTarget } from './index';
 // ── Module stubs ──────────────────────────────────────────────────────────────
 
 vi.mock('@ajh/translations', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
 }));
 
 // Replace LocationInput with a test double backed by a vi.fn() so individual
 // tests can override the emitted suggestion via mockImplementation.
 // All other @ajh/ui exports pass through so the component renders normally.
 type LocationInputStubProps = {
+  onChange?: (v: string) => void;
   onSelectSuggestion?: (s: { display: string; countryCode?: string | null }) => void;
 };
 
-function defaultLocationInputImpl({ onSelectSuggestion }: LocationInputStubProps) {
-  const handler = () => onSelectSuggestion?.({ display: 'London, UK', countryCode: 'gb' });
+function defaultLocationInputImpl({ onChange, onSelectSuggestion }: LocationInputStubProps) {
+  const pick = () => onSelectSuggestion?.({ display: 'London, UK', countryCode: 'gb' });
+  const editManually = () => onChange?.('Lon');
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      data-testid="location-input-stub"
-      onClick={handler}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') handler();
-      }}
-    >
-      pick-location
-    </div>
+    <>
+      <div
+        role="button"
+        tabIndex={0}
+        data-testid="location-input-stub"
+        onClick={pick}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') pick();
+        }}
+      >
+        pick-location
+      </div>
+      <div
+        role="button"
+        tabIndex={0}
+        data-testid="location-input-manual-edit"
+        onClick={editManually}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') editManually();
+        }}
+      >
+        edit-location
+      </div>
+    </>
   );
 }
 
@@ -176,6 +191,21 @@ describe('StepTarget — countryCode wiring (Fix A)', () => {
     await user.click(screen.getByTestId('location-input-stub'));
 
     expect(readProbe().countryCode).toBe('gb');
+  });
+
+  it('shows the derived "Country" line after a suggestion pick, and hides it again on manual edit', async () => {
+    const user = userEvent.setup();
+    renderStep({ countryCode: undefined });
+
+    expect(screen.queryByText('autopilot.wizard.target.countryResolved')).toBeNull();
+
+    await user.click(screen.getByTestId('location-input-stub'));
+    expect(screen.getByText('autopilot.wizard.target.countryResolved')).toBeInTheDocument();
+
+    // Manually editing the location clears countryCode (index.tsx's onChange
+    // handler) — the derived-country line must disappear with it.
+    await user.click(screen.getByTestId('location-input-manual-edit'));
+    expect(screen.queryByText('autopilot.wizard.target.countryResolved')).toBeNull();
   });
 
   it('renders a warning Alert for the aggregator key hint when aggregator is selected and keys are absent', () => {

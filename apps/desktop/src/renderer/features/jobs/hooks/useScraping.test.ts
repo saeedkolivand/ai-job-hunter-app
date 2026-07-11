@@ -117,6 +117,27 @@ describe('useScraping — geo fields in the replace-vs-append signature', () => 
     expect(result.current.replacePendingRef.current).toBe(true);
   });
 
+  it('replaces (not appends) when only the search radius differs', async () => {
+    mutateAsync.mockClear();
+    const { result, rerender } = renderHookWithClient(
+      ({ form }: { form: ScrapeFormState }) => useScraping(noopNotify, form),
+      { initialProps: { form: makeForm({ radiusKm: 0 }) } }
+    );
+
+    await act(async () => {
+      await result.current.startScrape();
+    });
+
+    // Same city, wider radius → a different search area must REPLACE. This
+    // fails if radiusKm is missing from the signature.
+    rerender({ form: makeForm({ radiusKm: 25 }) });
+    await act(async () => {
+      await result.current.startScrape();
+    });
+
+    expect(result.current.replacePendingRef.current).toBe(true);
+  });
+
   it('appends (does not replace) when the search is byte-for-byte identical', async () => {
     mutateAsync.mockClear();
     const { result, rerender } = renderHookWithClient(

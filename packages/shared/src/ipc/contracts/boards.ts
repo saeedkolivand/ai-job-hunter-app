@@ -55,6 +55,14 @@ export interface BoardsContract {
  * - `truncated` — a paginated board kept a partial harvest after a mid-run page
  *   failure (e.g. `"page 3 of 5 failed: HTTP 429"`); `count` is a partial tally,
  *   not the full result set. Absent when the harvest ran to completion.
+ * - `note` — an INFORMATIONAL location policy the board applied that the user did
+ *   not explicitly request (not a failure; `count` is still authoritative). One of:
+ *   - `"guessed-market:<cc>"` — no country was supplied, so the `<cc>` market was
+ *     guessed and returned an authoritative result set; set a country for
+ *     deterministic results.
+ *   - `"broadened:<cc>"` — a sparse city search was widened country-wide within
+ *     the `<cc>` market.
+ *   `<cc>` is an ISO country code; the field never carries the raw location text.
  */
 export interface BoardScrapeSummary {
   board: string;
@@ -62,6 +70,7 @@ export interface BoardScrapeSummary {
   error?: string;
   skipped?: 'needs-login' | 'needs-company' | 'needs-keys';
   truncated?: string;
+  note?: string;
 }
 
 export const BOARDS_CHANNELS = {

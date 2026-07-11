@@ -20,7 +20,7 @@ import { TEST_IDS } from '@ajh/test-ids';
 // ── i18n stub ─────────────────────────────────────────────────────────────────
 
 vi.mock('@ajh/translations', () => ({
-  useTranslation: () => ({ t: (k: string) => k }),
+  useTranslation: () => ({ t: (k: string) => k, i18n: { language: 'en' } }),
 }));
 
 // ── router stub ───────────────────────────────────────────────────────────────

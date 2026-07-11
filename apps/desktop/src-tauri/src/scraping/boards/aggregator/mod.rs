@@ -244,6 +244,13 @@ async fn primary_chain(
     // No working fallback fired. If we retained sparse guessed-market items, return
     // them rather than the diagnostic — a user with only Adzuna keys keeps their few
     // legit hits (better than nothing). The uncertainty was already logged above.
+    //
+    // NOTE (deliberately under-surfaced, PR D): this salvage path — and the sibling
+    // one at the `sparse_guessed_items.take()` above — return the sparse guessed
+    // hits WITHOUT a `BoardScrapeSummary.note`, because only `primary_chain` (not
+    // `AdzunaProvider`, which holds the note sink) knows the guess was salvaged
+    // rather than authoritative or replaced. Revisit when PR F threads location
+    // context through this path.
     if let Some(items) = sparse_guessed_items {
         return Ok(dedupe(items));
     }
@@ -525,9 +532,11 @@ impl Scraper for AggregatorScraper {
             .unwrap_or_else(|| "de".to_string());
 
         // Construct providers fresh per call so that key changes made in Settings
-        // take effect immediately without requiring an app restart.
+        // take effect immediately without requiring an app restart. Adzuna carries
+        // the location-policy note sink so its guessed-market / broadening decisions
+        // surface as `BoardScrapeSummary.note` (see `AdzunaProvider::report_note`).
         let providers: Vec<Box<dyn JobProvider>> = vec![
-            Box::new(AdzunaProvider::new()),
+            Box::new(AdzunaProvider::new().with_note_sink(ctx.on_note.clone())),
             Box::new(JSearchProvider::new()),
             // Additive, opt-in, paid: only runs when the toggle is ON and a token
             // is present (gated in `ApifyLinkedInProvider::is_configured`).

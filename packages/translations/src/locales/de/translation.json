@@ -1530,6 +1530,7 @@
         "locationOptional": "(optional)",
         "locationPlaceholder": "z.B. Berlin, remote",
         "fromLocationSettings": "aus Standortseinstellungen",
+        "countryResolved": "Land: {{country}}",
         "workType": "Arbeitsart",
         "items": "Zu scrapende Einträge",
         "postedWithin": "Veröffentlicht innerhalb",
@@ -1845,6 +1846,10 @@
         "needsCompany": "Firma nötig",
         "needsKeys": "API-Schlüssel nötig",
         "other": "übersprungen"
+      },
+      "note": {
+        "broadened": "wenige lokale Treffer — landesweit in {{country}} gesucht",
+        "guessed": "kein Land gesetzt — {{country}} durchsucht"
       }
     },
     "viewList": "Liste",

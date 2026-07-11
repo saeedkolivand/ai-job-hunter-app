@@ -60,6 +60,18 @@ pub struct BoardScrapeSummary {
     /// Serde-optional so records persisted before this field deserialize as `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub truncated: Option<String>,
+    /// Set when a board applied a location policy the user did not explicitly
+    /// request (informational, NOT a failure — `count` is still authoritative):
+    /// - `"guessed-market:<cc>"` — no country was supplied, so the `<cc>` market
+    ///   was guessed and returned an authoritative result set; set a country for
+    ///   deterministic results.
+    /// - `"broadened:<cc>"` — a sparse city search was widened country-wide within
+    ///   the `<cc>` market.
+    ///
+    /// `<cc>` is an ISO country code; the note never carries the raw location
+    /// (free-text PII). Serde-optional so pre-existing records deserialize as `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// Maximum number of distinct boards processed per `scrape_boards` call.
@@ -132,6 +144,7 @@ impl ScraperEngine {
         on_progress: Option<Box<dyn Fn(f32) + Send>>,
         on_item: Option<Box<dyn Fn(JobPosting) + Send>>,
         on_truncation: Option<Box<dyn Fn(String) + Send>>,
+        on_note: Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
     ) -> anyhow::Result<Vec<JobPosting>> {
         // Central item cap. The board loops stream items through `on_item` and
         // check `ctx.signal`; we count the stream here and cancel the token the
@@ -178,6 +191,7 @@ impl ScraperEngine {
             on_progress,
             on_item: wrapped,
             on_truncation,
+            on_note,
         };
 
         let span = crate::observability::Span::begin("scrape", format!("board={board}"));
@@ -224,6 +238,7 @@ impl ScraperEngine {
         on_progress: Option<Arc<dyn Fn(f32) + Send + Sync>>,
         on_item: Option<Arc<dyn Fn(JobPosting) + Send + Sync>>,
         on_truncation: Option<Arc<dyn Fn(String, String) + Send + Sync>>,
+        on_note: Option<Arc<dyn Fn(String, String) + Send + Sync>>,
         browser_sem: Arc<Semaphore>,
     ) -> Vec<(String, anyhow::Result<Vec<JobPosting>>)> {
         let total = resolved.len();
@@ -241,6 +256,7 @@ impl ScraperEngine {
                 let on_progress = on_progress.clone();
                 let on_item = on_item.clone();
                 let on_truncation = on_truncation.clone();
+                let on_note = on_note.clone();
                 let done = done.clone();
                 let browser_sem = browser_sem.clone();
 
@@ -285,6 +301,18 @@ impl ScraperEngine {
                                 boxed
                             });
 
+                        // Same per-board tagging for the informational location-policy
+                        // note channel; kept as an `Arc` (not a `Box`) because the
+                        // aggregator forwards it to a sub-provider held across `.await`.
+                        let per_board_on_note: Option<Arc<dyn Fn(String) + Send + Sync>> =
+                            on_note.as_ref().map(|arc| {
+                                let arc = arc.clone();
+                                let name = name.clone();
+                                let wrapped: Arc<dyn Fn(String) + Send + Sync> =
+                                    Arc::new(move |note: String| arc(name.clone(), note));
+                                wrapped
+                            });
+
                         let res = Self::run_one(
                             &name,
                             scraper,
@@ -293,6 +321,7 @@ impl ScraperEngine {
                             None,
                             per_board_on_item,
                             per_board_on_truncation,
+                            per_board_on_note,
                         )
                         .await;
 
@@ -461,6 +490,7 @@ impl ScraperEngine {
                     error: None,
                     skipped: Some(reason.into()),
                     truncated: None,
+                    note: None,
                 });
             } else {
                 name_to_idx.insert(id.clone(), idx);
@@ -483,6 +513,21 @@ impl ScraperEngine {
             })
         };
 
+        // Per-board informational location-policy notes (aggregator guessed-market /
+        // sparse city broadened country-wide). Same board-name-keyed collection as
+        // truncations; folded into `BoardScrapeSummary.note` below. Empty for a run
+        // where no board applied such a policy.
+        let notes: Arc<std::sync::Mutex<HashMap<String, String>>> =
+            Arc::new(std::sync::Mutex::new(HashMap::new()));
+        let note_sink: Arc<dyn Fn(String, String) + Send + Sync> = {
+            let notes = notes.clone();
+            Arc::new(move |board, note| {
+                if let Ok(mut guard) = notes.lock() {
+                    guard.insert(board, note);
+                }
+            })
+        };
+
         let results = Self::run_boards(
             runnable,
             input,
@@ -490,6 +535,7 @@ impl ScraperEngine {
             on_progress,
             on_item,
             Some(truncation_sink),
+            Some(note_sink),
             self.browser_sem.clone(),
         )
         .await;
@@ -516,12 +562,14 @@ impl ScraperEngine {
                     // is surfaced here so it is not indistinguishable from a complete
                     // run; a board that completed its pages has no map entry.
                     let truncated = truncations.lock().ok().and_then(|mut m| m.remove(&board));
+                    let note = notes.lock().ok().and_then(|mut m| m.remove(&board));
                     slot_summaries[idx] = Some(BoardScrapeSummary {
                         board,
                         count: postings.len(),
                         error: None,
                         skipped: None,
                         truncated,
+                        note,
                     });
                     all_postings.extend(postings);
                 }
@@ -532,6 +580,7 @@ impl ScraperEngine {
                         error: Some(e.to_string()),
                         skipped: None,
                         truncated: None,
+                        note: None,
                     });
                 }
             }
