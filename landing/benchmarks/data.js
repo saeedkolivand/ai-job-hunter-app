@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783796518173,
+  "lastUpdate": 1783803509969,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3857,6 +3857,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 296237,
             "range": "± 4818",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7e4c72f943fcabb3be6154b234c9fd4401c6fc73",
+          "message": "feat: add jooble as a byo-key aggregator fallback provider (#618)\n\n* feat: add jooble as a byo-key aggregator fallback provider\n\njooble (jooble.org/api) adds ~67-country coverage vs adzuna's ~19 markets, patching the\nunsupported-country zero-jobs case. wired as a third fallback tier: fires only when both\nadzuna and jsearch come up unconfigured/empty/err, so it never hammers the undocumented\nquota on searches the primary chain already answers.\n\n- new JoobleProvider in aggregator/providers.rs (JobProvider trait), modeled on jsearch;\n  key read from ai:jooble-key keyring slot, degrades read error to none (optional-key)\n- primary_chain third tier; jsearch ok(empty) short-circuits before jooble, symmetric with\n  adzuna's empty-means-stop rule (regression-tested both edges)\n- routes through fetch_json (failure-representable, 429/503 backoff, per-host rate limit,\n  cancellation); errors prefixed jooble:; external_id prefixed jooble- for dedup\n- security: jooble puts the api key in the URL PATH, so added FetchOptions.redact_path +\n  safe_log_url() to strip the path from any non-2xx/schema-drift log line (default false =\n  byte-identical for the 20+ existing callers). key percent-encoded; params in POST body\n- provider-slots contract + settings AggregatorKeyField (en+de) for the key\n- reviewed by scraping-applier-expert + tauri-security-reviewer: no high/critical\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: surface jooble configured-but-failed instead of a silent empty result\n\nthe jooble tier's Err arm only logged and fell through untracked, so a jooble-only setup\nwhose jooble call failed returned Ok(empty) ('no jobs') instead of a diagnostic error —\nthe exact silent-empty honesty bug the trust program (#597-#604) eliminated. now tracked in\njooble_configured_failed and surfaced last in primary_chain (after adzuna/jsearch configured-\nfailed, before the keyless-empty Ok), carrying jooble's own prefixed message. regression test\njooble_only_configured_failure_surfaces_error added; empty-vs-error edges stay distinct.\n\ncaught by the pre-push review gate (rust-backend-architect/scraping-applier-expert lens) after\nboth domain+security reviews missed it.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: combine all configured-failed aggregator providers into one diagnostic\n\nthe total-failure path returned only the first configured-failed provider in fixed order\n(adzuna→jsearch→jooble), so an adzuna+jooble both-failing setup (no jsearch) showed only\nadzuna's error plus a now-stale 'add a JSearch key' nudge, dropping jooble's failure. now\ncollects every configured-and-failed provider and joins their self-prefixed messages; the\nremedy nudge is generalized to 'add a JSearch or Jooble key' and omitted on multi-provider\nfailures. empty-vs-error distinction and the salvage path unchanged.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-11T22:49:28+02:00",
+          "tree_id": "f4fcd0810dcf34b9030a1e8ed53197573c5fdc58",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/7e4c72f943fcabb3be6154b234c9fd4401c6fc73"
+        },
+        "date": 1783803509394,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2139039,
+            "range": "± 108565",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2640614,
+            "range": "± 54919",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 287702,
+            "range": "± 4611",
             "unit": "ns/iter"
           }
         ]
