@@ -816,31 +816,17 @@ fn u32_field_in_range(v: &serde_json::Value, key: &str, max: u32) -> Option<u32>
         .filter(|&n| n <= max)
 }
 
-/// Canonical dedup key for a found job.
-///
-/// Uses the app-wide [`crate::applications::normalize_job_url`] (lowercased host,
-/// `www.`/fragment/tracking-param stripped) so tracking-param/hash variants of the
-/// SAME URL collapse to a single row — this is same-host URL-variant dedup, not
-/// cross-provider identity: an aggregator's `redirect_url` (e.g. Adzuna's `FoundJob.url`,
-/// hosted on an adzuna domain) normalizes to a different key than a board's direct
-/// posting URL, so the same job surfaced by both sources is NOT collapsed here (that
-/// needs redirect-chain canonicalization, deferred to trust-program PR E). Falls back
-/// to a normalized `title \u{1} company` when the URL is missing/unusable, so URL-less
-/// postings still dedupe sanely (the control-char separator can't be reproduced by a
-/// title that merely contains the company name) — known limitation: two distinct
-/// URL-less postings that happen to share title+company will also merge; rare, and
-/// only affects the discovery surface, so it's an accepted trade-off.
+/// Canonical dedup key for a [`FoundJob`] — a thin `FoundJob` adapter over the
+/// app-wide [`canonical_job_key`](crate::scraping::boards::common::canonical_job_key),
+/// the single source of truth for "is this the same job?" shared with the scrape
+/// engine's cross-source pass and (mirrored in TS) the renderer's `mergePostings`.
+/// Forwarding the posting's `url`/`title`/`company` keeps autopilot's merge keyed
+/// byte-for-byte identically to those, so a job surfaced by two sources collapses to
+/// one row and fires one notification — and persisted found-jobs keyed under the old
+/// inlined copy recompute to the same key (the algorithm is unchanged, only DRYed).
+/// The aggregator-redirect-vs-direct-URL limitation is documented on that fn.
 fn merge_key(j: &FoundJob) -> String {
-    let normalized = crate::applications::normalize_job_url(&j.url);
-    if !normalized.is_empty() {
-        normalized
-    } else {
-        format!(
-            "{}\u{1}{}",
-            j.title.trim().to_lowercase(),
-            j.company.trim().to_lowercase()
-        )
-    }
+    crate::scraping::boards::common::canonical_job_key(&j.url, &j.title, &j.company)
 }
 
 /// Byte length of a job's description (0 when absent) — used to keep the richer of
@@ -870,6 +856,11 @@ fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<Found
     // 1) Collapse duplicates WITHIN the incoming batch by canonical key. First
     //    occurrence keeps its position; a later duplicate carrying a longer
     //    description upgrades that one field (richer text for the tailor flow).
+    //    (The engine's dedup_cross_source runs upstream and — like this pass —
+    //    keeps the incumbent's identity and only upgrades description/extra
+    //    field-by-field, never a whole-posting replace; cross-source dupes are
+    //    already collapsed before they reach here, so this pass only ever sees
+    //    same-source within-batch repeats.)
     let mut order: Vec<String> = Vec::new();
     let mut by_key: HashMap<String, FoundJob> = HashMap::new();
     for job in incoming {
