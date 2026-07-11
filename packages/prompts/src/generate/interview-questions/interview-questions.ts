@@ -17,7 +17,7 @@
 import { truncateResume } from '../../context-manager/index.js';
 import { letterConventions } from '../../locale/index.js';
 import { type PromptTarget, resolveProfile } from '../../provider/index.js';
-import { buildCompanyResearchBlock } from '../emphasis/index.js';
+import { buildCompanyResearchBlock, buildJobAdBlock } from '../emphasis/index.js';
 import { stripLinkBlock } from '../links/index.js';
 import type { GenerationMeta } from '../modes/index.js';
 import { antiAiTellProse, HUMANIZE_PROSE } from '../natural-voice/index.js';
@@ -149,9 +149,7 @@ Tag each question with its AUDIENCE exactly (one of: ${INTERVIEW_AUDIENCES.join(
 ${resumeBody}
 </candidate_resume>
 
-<job_ad>
-${jobAd.slice(0, jobAdChars)}
-</job_ad>
+${buildJobAdBlock(jobAd, jobAdChars)}
 ${researchBlock}${seedBlock}
 ### CONTEXT ###
 Role: ${meta.jobTitle || 'this role'} at ${meta.companyName || 'this company'}

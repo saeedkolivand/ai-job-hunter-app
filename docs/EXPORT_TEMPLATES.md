@@ -292,15 +292,15 @@ The test is a **hard-wall isolation**: `typst` and `typst_svg` crates stay
 confined to the test function; no typst types appear in production code paths.
 `typst-svg` is a dev-dependency, never shipped.
 
-**Dev note — preview-regen debt.** The two preview generators are `#[ignore]`
+**Dev note — preview-regen.** The two preview generators are `#[ignore]`
 libtest fns (`generate_templates_showcase_banner` and
-`generate_cover_template_previews` in `typst_engine/test.rs`) and **cannot run on
-the current dev host** (`cargo test` aborts with `STATUS_ENTRYPOINT_NOT_FOUND`). As
-a result the preview assets are **stale/incomplete**: `cadence`, `regent`, `aria`,
-and `saffron` have no `.svg` yet (résumé + cover), the migrated `classic` preview
-still reflects the pre-merge `classic.typ`, and the résumé showcase banner
-(`docs/assets/templates-showcase.png`) still shows the old nine. **Regenerate on a
-working host or in CI and commit** the refreshed `template-previews/`,
+`generate_cover_template_previews` in `typst_engine/test.rs`). Local `cargo test`
+now works on branches containing the build.rs delay-load fix (2fb85227). Preview
+assets may still be stale/incomplete: `cadence`, `regent`, `aria`,
+and `saffron` may lack `.svg` (résumé + cover), the `classic` preview
+may still reflect older `classic.typ`, and the résumé showcase banner
+(`docs/assets/templates-showcase.png`) may show the old nine. **Regenerate in CI
+or on a dev host with the fix, and commit** the refreshed `template-previews/`,
 `cover-template-previews/`, and the showcase banner.
 
 ---
