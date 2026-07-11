@@ -201,8 +201,11 @@ ${learnings ? `\n## Known repo false positives — do NOT re-raise any of these\
 ${diff}
 \`\`\`
 `;
-  // no Stop-hook timeout constrains us here — give big pushes more headroom
-  const r = runClaudeReview({ cwd, prompt, model, timeoutMs: 180000 });
+  // no Stop-hook timeout constrains us here — give pushes real headroom: a
+  // MEASURED small-diff sonnet review takes ~170s in this environment, so 180s
+  // was razor-thin and real diffs always fail-opened (3x llm-unavailable streak
+  // before this was caught via the metrics log)
+  const r = runClaudeReview({ cwd, prompt, model, timeoutMs: 300000 });
   metric.parse_retries = r.parseRetries;
   if (r.error === 'llm_unavailable' || r.parseFailed) {
     say(
