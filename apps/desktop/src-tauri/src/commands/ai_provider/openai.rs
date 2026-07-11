@@ -190,6 +190,44 @@ fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
     out
 }
 
+/// Build the `/chat/completions` streaming request body for a given
+/// [`AiGenerateRequest`] + capability matrix. Pure + unit-tested — this is the
+/// shared body shape for native OpenAI, any OpenAI-compatible gateway, and
+/// Ollama Cloud (all backed by [`OpenAiClient`]). `top_p`/`frequency_penalty`/
+/// `presence_penalty` are the detector-resistance sampling knobs (RAID, ACL
+/// 2024) the renderer sets only for prose generation surfaces — each is only
+/// ever added when `Some` (never sent as `null`), and skipped entirely on
+/// reasoning models that reject `temperature`.
+fn build_chat_stream_body(req: &AiGenerateRequest, caps: ModelCapabilities) -> Value {
+    let messages = req
+        .messages
+        .iter()
+        .map(|m| json!({ "role": m.role, "content": m.content }))
+        .collect::<Vec<_>>();
+
+    let mut body = json!({ "model": req.model, "messages": messages, "stream": true });
+    if caps.supports_temperature {
+        body["temperature"] = json!(req.temperature.unwrap_or(0.7));
+        if let Some(top_p) = req.top_p {
+            body["top_p"] = json!(top_p);
+        }
+        if let Some(fp) = req.frequency_penalty {
+            body["frequency_penalty"] = json!(fp);
+        }
+        if let Some(pp) = req.presence_penalty {
+            body["presence_penalty"] = json!(pp);
+        }
+    }
+    if let Some(mt) = req.max_tokens {
+        let field = match caps.token_param {
+            TokenParam::MaxCompletionTokens => "max_completion_tokens",
+            _ => "max_tokens",
+        };
+        body[field] = json!(mt);
+    }
+    body
+}
+
 pub struct OpenAiClient {
     id: ProviderId,
     base_url: String,
@@ -344,23 +382,7 @@ impl AiProvider for OpenAiClient {
             true,
         );
 
-        let messages = req
-            .messages
-            .iter()
-            .map(|m| json!({ "role": m.role, "content": m.content }))
-            .collect::<Vec<_>>();
-
-        let mut body = json!({ "model": req.model, "messages": messages, "stream": true });
-        if caps.supports_temperature {
-            body["temperature"] = json!(req.temperature.unwrap_or(0.7));
-        }
-        if let Some(mt) = req.max_tokens {
-            let field = match caps.token_param {
-                TokenParam::MaxCompletionTokens => "max_completion_tokens",
-                _ => "max_tokens",
-            };
-            body[field] = json!(mt);
-        }
+        let body = build_chat_stream_body(req, caps);
 
         let response = crate::net::http::shared()
             .post(&endpoint)
@@ -703,11 +725,85 @@ impl AiProvider for OpenAiClient {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_reasoning_model, join_responses_text, parse_openai_delta, parse_openai_frames,
-        parse_openai_turn, should_list_model, OpenAiClient,
+        build_chat_stream_body, is_reasoning_model, join_responses_text, parse_openai_delta,
+        parse_openai_frames, parse_openai_turn, should_list_model, OpenAiClient,
     };
-    use crate::commands::ai_provider::{AiProvider, ProviderId, StopReason, ToolCall};
+    use crate::commands::ai_provider::{
+        AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, StopReason, TokenParam,
+        ToolCall,
+    };
+    use crate::ipc_contracts::ai::AiGenerateRequestMessage;
     use serde_json::json;
+
+    fn base_request() -> AiGenerateRequest {
+        AiGenerateRequest {
+            model: "gpt-4o".to_string(),
+            messages: vec![AiGenerateRequestMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+            }],
+            locale: "en".to_string(),
+            temperature: Some(0.8),
+            top_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            repeat_penalty: None,
+            max_tokens: None,
+            context_window: None,
+            provider: None,
+            base_url: None,
+            effort: None,
+        }
+    }
+
+    fn chat_caps(supports_temperature: bool) -> ModelCapabilities {
+        ModelCapabilities {
+            supports_temperature,
+            supports_system_role: true,
+            supports_streaming: true,
+            supports_reasoning: !supports_temperature,
+            supports_tools: true,
+            supports_json_mode: true,
+            supports_embeddings: true,
+            supports_web_search: false,
+            token_param: TokenParam::MaxTokens,
+        }
+    }
+
+    #[test]
+    fn chat_stream_body_serializes_sampling_params_when_set() {
+        let mut req = base_request();
+        req.top_p = Some(0.95);
+        req.frequency_penalty = Some(0.3);
+        req.presence_penalty = Some(0.2);
+        let body = build_chat_stream_body(&req, chat_caps(true));
+        assert_eq!(body["top_p"], json!(0.95));
+        assert_eq!(body["frequency_penalty"], json!(0.3));
+        assert_eq!(body["presence_penalty"], json!(0.2));
+    }
+
+    #[test]
+    fn chat_stream_body_omits_sampling_params_when_none() {
+        let body = build_chat_stream_body(&base_request(), chat_caps(true));
+        assert!(body.get("top_p").is_none());
+        assert!(body.get("frequency_penalty").is_none());
+        assert!(body.get("presence_penalty").is_none());
+    }
+
+    #[test]
+    fn chat_stream_body_skips_sampling_params_on_reasoning_models() {
+        // o-series models reject `temperature` entirely — sampling knobs must be
+        // skipped alongside it, never sent to a model that 400s on them.
+        let mut req = base_request();
+        req.top_p = Some(0.95);
+        req.frequency_penalty = Some(0.3);
+        req.presence_penalty = Some(0.2);
+        let body = build_chat_stream_body(&req, chat_caps(false));
+        assert!(body.get("temperature").is_none());
+        assert!(body.get("top_p").is_none());
+        assert!(body.get("frequency_penalty").is_none());
+        assert!(body.get("presence_penalty").is_none());
+    }
 
     #[test]
     fn embedding_cap_is_token_safe_for_every_language() {
