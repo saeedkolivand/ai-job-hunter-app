@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783761523644,
+  "lastUpdate": 1783788210587,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3773,6 +3773,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 296939,
             "range": "± 5848",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d6102dd54b2a8b52b810e7ce6d8cef22905e317a",
+          "message": "feat: add detector-resistant sampling params for prose generation (#615)\n\nplumbs topP/frequencyPenalty/presencePenalty/repeatPenalty (optional, zod range-validated) through\nAiGenerateRequest into all four providers; prose surfaces only — resume/analysis/rewrite untouched\nto protect ats keyword repetition.\n\n- provider mapping never serializes null; openai gates all params by supports_temperature (o-series parity)\n- anthropic sends top_p only and never alongside extended thinking; gemini uses generationConfig fields\n- ollama maps options.top_p + repeat_penalty; frequencyPenalty never remapped across semantics\n- per-provider body construction extracted into pure unit-tested build_chat_stream_body fns\n- renderer resolveSampling(): cover 0.8 large/0.58 small (topP 0.9 small tier), answers 0.5 without\n  presencePenalty (grounded surface), email+referral 0.7, interview 0.5\n- shared prose set: topP 0.95, frequencyPenalty 0.3, repeatPenalty 1.15\n- basis: RAID (ACL 2024) — repetition penalty + random sampling drop detector accuracy up to 38 points\n- audited by ai-provider-expert: no high/critical; both medium value-tuning findings applied\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-11T18:27:33+02:00",
+          "tree_id": "9974d5179d9afc625746a2038e618ef9ff2c321d",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/d6102dd54b2a8b52b810e7ce6d8cef22905e317a"
+        },
+        "date": 1783788209387,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1704226,
+            "range": "± 13558",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2056048,
+            "range": "± 11649",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 231861,
+            "range": "± 3082",
             "unit": "ns/iter"
           }
         ]
