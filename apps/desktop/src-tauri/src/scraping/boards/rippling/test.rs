@@ -224,19 +224,19 @@ async fn empty_companies_returns_empty_without_network() {
     );
 }
 
+/// An all-invalid-slug run rejects every slug pre-fetch (no network — the SSRF
+/// guard) and now surfaces a distinct board error instead of a silent zero
+/// (claude review #597).
 #[tokio::test]
-async fn invalid_slug_skipped_without_network() {
+async fn all_invalid_slugs_error_without_network() {
     let scraper = RipplingScraper;
     let result = scraper
         .search(make_input(vec!["dotted.host".to_string()]), make_ctx())
         .await;
+    let err = result.expect_err("an all-invalid-slug run must be a board error, not a silent zero");
     assert!(
-        result.is_ok(),
-        "search must return Ok even for invalid slug"
-    );
-    assert!(
-        result.unwrap().is_empty(),
-        "invalid slug must produce empty result (skipped, no network)"
+        err.to_string().contains("slug(s) invalid"),
+        "error must name the invalid-slug reason, got: {err}"
     );
 }
 

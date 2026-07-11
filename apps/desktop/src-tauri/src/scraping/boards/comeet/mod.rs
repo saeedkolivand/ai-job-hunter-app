@@ -15,6 +15,13 @@
 //! live-verification with a real company UID + token via the Settings UI
 //! (Pass 3). `CmPosition::company_name` below is a further speculative guess
 //! not in that field spec at all — see its own doc comment.
+//!
+//! Trust PR G (2026-07-11): because the shape is still unverified and the live
+//! endpoint 400s without credentials, Comeet is HIDDEN from the user-facing jobs
+//! picker/catalog via `listed() → false` — it stays registered and dispatchable
+//! (so a saved Comeet target still runs and a future live-verification just flips
+//! the flag back), but the app no longer PROMISES a board that can currently only
+//! return a silent zero. Do NOT delete the code.
 use super::super::http::fetch_json;
 use super::super::types::{
     AuthRequirement, BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode,
@@ -182,6 +189,15 @@ impl Scraper for ComeetScraper {
 
     fn mode(&self) -> ScraperMode {
         ScraperMode::Http
+    }
+
+    // Hidden from the manual jobs picker + autopilot board catalog until the
+    // response shape is live-verified (see the module doc). The board stays in
+    // the SCRAPERS registry so it remains dispatchable — a saved Comeet target
+    // still runs — but the picker no longer offers a board that can only return
+    // a silent zero today.
+    fn listed(&self) -> bool {
+        false
     }
 
     // Explicit override (matches the trait default) — mirrors the Aggregator

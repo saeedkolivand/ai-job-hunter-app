@@ -238,19 +238,19 @@ async fn empty_companies_returns_empty_without_network() {
     );
 }
 
+/// An all-invalid-slug run rejects every slug pre-fetch (no network — the SSRF
+/// guard) and now surfaces a distinct board error instead of a silent zero
+/// (claude review #597).
 #[tokio::test]
-async fn invalid_slug_skipped_without_network() {
+async fn all_invalid_slugs_error_without_network() {
     let scraper = BreezyScraper;
     let result = scraper
         .search(make_input(vec!["dotted.host".to_string()]), make_ctx())
         .await;
+    let err = result.expect_err("an all-invalid-slug run must be a board error, not a silent zero");
     assert!(
-        result.is_ok(),
-        "search must return Ok even for invalid slug"
-    );
-    assert!(
-        result.unwrap().is_empty(),
-        "invalid slug must produce empty result (skipped, no network)"
+        err.to_string().contains("slug(s) invalid"),
+        "error must name the invalid-slug reason, got: {err}"
     );
 }
 
@@ -267,6 +267,40 @@ async fn cancelled_before_fetch_returns_ok_not_err() {
     assert!(
         result.is_ok(),
         "cancelled run must return Ok, not Err — cancellation must not be recorded as first_fetch_error"
+    );
+}
+
+/// Pins the exact scenario a HIGH-severity review finding raised: a cancel
+/// firing AFTER an invalid slug is rejected but BEFORE a later valid slug is
+/// reached must not be misattributed as "all slugs invalid" (a benign
+/// cancellation, blamed on the user's company-name config). Uses the
+/// `on_progress` callback the reject branch already calls as the timing seam —
+/// the closure cancels the token the instant the first (invalid) slug is
+/// rejected; the second (valid-shaped) slug is never reached because the
+/// loop's top-of-iteration cancellation check breaks first.
+#[tokio::test]
+async fn cancel_after_reject_before_next_slug_returns_ok_not_all_invalid_error() {
+    let scraper = BreezyScraper;
+    let signal = tokio_util::sync::CancellationToken::new();
+    let cancel_on_progress = signal.clone();
+    let ctx = ScrapeContext {
+        signal: signal.clone(),
+        on_progress: Some(Box::new(move |_p: f32| cancel_on_progress.cancel())),
+        on_item: None,
+        on_truncation: None,
+        on_note: None,
+    };
+    let result = scraper
+        .search(
+            make_input(vec!["dotted.host".to_string(), "acme".to_string()]),
+            ctx,
+        )
+        .await;
+    assert!(
+        result.is_ok(),
+        "a cancel firing right after a reject must return Ok (interrupted), not the \
+         all-slugs-invalid error — got {:?}",
+        result.err()
     );
 }
 
@@ -302,6 +336,92 @@ fn parse_breezy_response_happy_path_with_posted_at() {
         .unwrap()
         .timestamp_millis();
     assert_eq!(p.posted_at, Some(expected_posted_at));
+}
+
+/// Live drift (verified 2026-07-11): `location.state` and `location.country`
+/// arrive as OBJECTS (`{id, name}`), not bare strings. `BzStateField` +
+/// `BzCountry` must accept the object shape so the row deserializes AND the
+/// state/country names still contribute to the composed location string.
+#[test]
+fn parse_breezy_response_accepts_object_state_and_country() {
+    let json = r#"[
+        {
+            "name": "Backend Engineer",
+            "url": "https://acme.breezy.hr/p/obj-state",
+            "published_date": "2024-02-15T14:37:22.684Z",
+            "location": {
+                "name": null,
+                "city": "Sandy Hook",
+                "state": {"id": "CT", "name": "Connecticut"},
+                "country": {"name": "United States", "id": "US"},
+                "is_remote": false
+            }
+        }
+    ]"#;
+    let postings_in: Vec<BzPosting> =
+        serde_json::from_str(json).expect("object-shaped state/country must deserialize");
+    let postings = parse_breezy_response(postings_in, "acme", 0);
+    assert_eq!(postings.len(), 1);
+    assert_eq!(
+        postings[0].location,
+        Some("Sandy Hook, Connecticut, United States".to_string()),
+        "object state/country names must still compose into the location"
+    );
+}
+
+/// A bare-string `state` (older/other tenants) must still deserialize — the
+/// untagged `BzStateField` accepts both shapes.
+#[test]
+fn parse_breezy_response_accepts_string_state() {
+    let json = r#"[
+        {"name": "X", "url": "https://acme.breezy.hr/p/str-state", "published_date": null,
+         "location": {"name": null, "city": "Austin", "state": "TX", "country": null, "is_remote": false}}
+    ]"#;
+    let postings_in: Vec<BzPosting> = serde_json::from_str(json).unwrap();
+    let postings = parse_breezy_response(postings_in, "acme", 0);
+    assert_eq!(postings[0].location, Some("Austin, TX".to_string()));
+}
+
+/// `rows_to_jobs` drops a row that can't deserialize (e.g. a bare string where
+/// an object is required) and keeps the valid rows — one drifted row no longer
+/// zeros the whole company (the exact failure the live object-`state` shape
+/// caused under the old atomic `Vec<BzPosting>` deserialize).
+#[test]
+fn rows_to_jobs_drops_undeserializable_rows_keeps_valid() {
+    let values: Vec<serde_json::Value> = serde_json::from_str(
+        r#"[
+        {"name": "Valid", "url": "https://acme.breezy.hr/p/valid", "published_date": null, "location": null},
+        "not-an-object",
+        {"name": "Object State", "url": "https://acme.breezy.hr/p/obj", "published_date": null,
+         "location": {"state": {"id": "CT", "name": "Connecticut"}}}
+    ]"#,
+    )
+    .unwrap();
+    let jobs = rows_to_jobs(values);
+    assert_eq!(
+        jobs.len(),
+        2,
+        "the bare-string row is dropped; both object rows (incl. object-state) survive"
+    );
+}
+
+/// Round-2 review finding: when EVERY row in a batch fails to deserialize
+/// (not just a stray one), `rows_to_jobs` must still return an empty `Vec` —
+/// this is the exact signal `search()` uses (`raw_row_count > 0 &&
+/// rows_to_jobs(..).is_empty()`) to treat the company as a FETCH FAILURE
+/// (recorded into `first_fetch_error`) instead of a silent success-with-zero
+/// — the same failure class the `location.state` object drift caused before
+/// `rows_to_jobs` existed, but now for a retype `rows_to_jobs` also can't
+/// parse at all.
+#[test]
+fn rows_to_jobs_all_rows_undeserializable_returns_empty() {
+    let values: Vec<serde_json::Value> =
+        serde_json::from_str(r#"["not-an-object", 42, null, ["also", "not", "valid"]]"#).unwrap();
+    let jobs = rows_to_jobs(values);
+    assert!(
+        jobs.is_empty(),
+        "every row failing to deserialize must yield an empty Vec (the all-drift signal)"
+    );
 }
 
 #[test]

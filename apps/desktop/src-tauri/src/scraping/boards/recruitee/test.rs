@@ -40,54 +40,26 @@ fn make_ctx() -> ScrapeContext {
 // Hostname-slug validation guard
 // ---------------------------------------------------------------------------
 
-/// Slugs with characters outside [a-zA-Z0-9-] must be skipped without any
-/// network request (the guard rejects them before the first fetch).
+/// Slugs with characters outside [a-zA-Z0-9-] must be rejected without any
+/// network request (the guard rejects them before the first fetch). A run where
+/// EVERY slug is rejected now surfaces a distinct board error instead of a
+/// silent zero (claude review #597).
 #[tokio::test]
-async fn invalid_slug_skipped_without_network() {
+async fn all_invalid_slugs_error_without_network() {
     let scraper = RecruiteeScraper;
 
-    // `@` is not a valid hostname label character
-    let result = scraper
-        .search(make_input(vec!["bad@host".to_string()]), make_ctx())
-        .await;
-    assert!(
-        result.is_ok(),
-        "search must return Ok even for invalid slug"
-    );
-    assert!(
-        result.unwrap().is_empty(),
-        "invalid slug 'bad@host' must produce empty result (skipped, no network)"
-    );
-
-    // space is not a valid hostname label character
-    let result = scraper
-        .search(make_input(vec!["has space".to_string()]), make_ctx())
-        .await;
-    assert!(result.is_ok());
-    assert!(
-        result.unwrap().is_empty(),
-        "invalid slug 'has space' must produce empty result (skipped, no network)"
-    );
-
-    // dot is not a valid hostname label character (would split the subdomain)
-    let result = scraper
-        .search(make_input(vec!["dotted.host".to_string()]), make_ctx())
-        .await;
-    assert!(result.is_ok());
-    assert!(
-        result.unwrap().is_empty(),
-        "invalid slug 'dotted.host' must produce empty result (skipped, no network)"
-    );
-
-    // percent-encoded character is not a valid hostname label character
-    let result = scraper
-        .search(make_input(vec!["bad%20slug".to_string()]), make_ctx())
-        .await;
-    assert!(result.is_ok());
-    assert!(
-        result.unwrap().is_empty(),
-        "invalid slug 'bad%20slug' must produce empty result (skipped, no network)"
-    );
+    // `@`, space, dot, and percent-encoding are each invalid hostname-label
+    // characters — every one is rejected pre-fetch, so each run is a board error.
+    for slug in ["bad@host", "has space", "dotted.host", "bad%20slug"] {
+        let err = scraper
+            .search(make_input(vec![slug.to_string()]), make_ctx())
+            .await
+            .expect_err("an all-invalid-slug run must be a board error, not a silent zero");
+        assert!(
+            err.to_string().contains("slug(s) invalid"),
+            "error for '{slug}' must name the invalid-slug reason, got: {err}"
+        );
+    }
 }
 
 /// A mixed list with one invalid slug followed by one valid-shaped slug must
