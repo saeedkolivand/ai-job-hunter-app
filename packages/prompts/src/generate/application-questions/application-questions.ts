@@ -18,6 +18,7 @@ import {
   buildApplicantDetailsBlock,
   buildCompanyResearchBlock,
   buildGroundingBlock,
+  buildJobAdBlock,
   buildResumeVoiceDirective,
   buildSalaryRangeBlock,
   buildStyleReferenceBlock,
@@ -190,9 +191,7 @@ export function buildApplicationAnswerPrompt(params: {
 ${resumeBody}
 </candidate_resume>
 
-<job_ad>
-${jobAd.slice(0, jobAdChars)}
-</job_ad>
+${buildJobAdBlock(jobAd, jobAdChars)}
 ${researchBlock}${webSearchBlock}${applicantBlock}${salaryBlock}${styleBlock}
 Every factual claim about the candidate MUST be traceable to a line in <candidate_resume>. Never claim skills or experience from <job_ad> alone.
 
