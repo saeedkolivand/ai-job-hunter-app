@@ -167,6 +167,61 @@ fn parse_anthropic_frames(buf: &mut String, last_event: &mut String) -> Vec<Stre
     out
 }
 
+/// Build the `/messages` streaming request body for a given [`AiGenerateRequest`].
+/// Pure + unit-tested. `top_p` is Anthropic's only sampling knob beyond
+/// temperature (no frequency/presence penalty in this API) — set only when the
+/// caller supplied it (prose surfaces). CRITICAL: extended thinking forces
+/// `temperature=1.0` and the Anthropic API rejects `top_p` alongside `thinking`
+/// (400), so `top_p` is skipped whenever thinking is enabled.
+fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
+    let temperature = req.temperature.unwrap_or(0.7);
+    let max_tokens = req.max_tokens.unwrap_or(4096);
+
+    let system_content: String = req
+        .messages
+        .iter()
+        .filter(|m| m.role == "system")
+        .map(|m| m.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let messages: Vec<Value> = req
+        .messages
+        .iter()
+        .filter(|m| m.role != "system")
+        .map(|m| json!({ "role": m.role, "content": m.content }))
+        .collect();
+
+    // Extended thinking for balanced effort and above — but ONLY on models that
+    // support it. Enabling it forces temperature=1 and spends extra output
+    // tokens; an unsupported model 400s on a `thinking` block, so we gate on the
+    // model id. A caller can opt out by selecting a non-thinking model.
+    let thinking_budget = if max_tokens >= 2048 && anthropic_supports_thinking(&req.model) {
+        max_tokens / 2
+    } else {
+        0
+    };
+    let actual_max_tokens = max_tokens + thinking_budget;
+
+    let mut body = json!({
+        "model": req.model,
+        "messages": messages,
+        "max_tokens": actual_max_tokens,
+        "stream": true,
+        "temperature": if thinking_budget > 0 { 1.0 } else { temperature },
+    });
+    if thinking_budget > 0 {
+        body["thinking"] = json!({ "type": "enabled", "budget_tokens": thinking_budget });
+    } else if let Some(top_p) = req.top_p {
+        // Anthropic 400s if `top_p` rides alongside `thinking` — only add it on
+        // the non-thinking path.
+        body["top_p"] = json!(top_p);
+    }
+    if !system_content.is_empty() {
+        body["system"] = json!(system_content);
+    }
+    body
+}
+
 pub struct AnthropicClient;
 
 impl AnthropicClient {
@@ -272,47 +327,7 @@ impl AiProvider for AnthropicClient {
         let endpoint = format!("{BASE}/messages");
         let trace = RequestTrace::begin(ProviderId::Anthropic, &req.model, "/messages", BASE, true);
 
-        let temperature = req.temperature.unwrap_or(0.7);
-        let max_tokens = req.max_tokens.unwrap_or(4096);
-
-        let system_content: String = req
-            .messages
-            .iter()
-            .filter(|m| m.role == "system")
-            .map(|m| m.content.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
-        let messages: Vec<Value> = req
-            .messages
-            .iter()
-            .filter(|m| m.role != "system")
-            .map(|m| json!({ "role": m.role, "content": m.content }))
-            .collect();
-
-        // Extended thinking for balanced effort and above — but ONLY on models that
-        // support it. Enabling it forces temperature=1 and spends extra output
-        // tokens; an unsupported model 400s on a `thinking` block, so we gate on the
-        // model id. A caller can opt out by selecting a non-thinking model.
-        let thinking_budget = if max_tokens >= 2048 && anthropic_supports_thinking(&req.model) {
-            max_tokens / 2
-        } else {
-            0
-        };
-        let actual_max_tokens = max_tokens + thinking_budget;
-
-        let mut body = json!({
-            "model": req.model,
-            "messages": messages,
-            "max_tokens": actual_max_tokens,
-            "stream": true,
-            "temperature": if thinking_budget > 0 { 1.0 } else { temperature },
-        });
-        if thinking_budget > 0 {
-            body["thinking"] = json!({ "type": "enabled", "budget_tokens": thinking_budget });
-        }
-        if !system_content.is_empty() {
-            body["system"] = json!(system_content);
-        }
+        let body = build_chat_stream_body(req);
 
         let response = crate::net::http::shared()
             .post(&endpoint)
@@ -608,11 +623,65 @@ impl AiProvider for AnthropicClient {
 #[cfg(test)]
 mod tests {
     use super::{
-        anthropic_supports_thinking, join_text_blocks, parse_anthropic_frames,
-        parse_anthropic_turn, StreamPiece,
+        anthropic_supports_thinking, build_chat_stream_body, join_text_blocks,
+        parse_anthropic_frames, parse_anthropic_turn, StreamPiece,
     };
-    use crate::commands::ai_provider::{StopReason, ToolCall};
+    use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
+    use crate::ipc_contracts::ai::AiGenerateRequestMessage;
     use serde_json::json;
+
+    fn base_request(model: &str) -> AiGenerateRequest {
+        AiGenerateRequest {
+            model: model.to_string(),
+            messages: vec![AiGenerateRequestMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+            }],
+            locale: "en".to_string(),
+            temperature: Some(0.8),
+            top_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            repeat_penalty: None,
+            max_tokens: None,
+            context_window: None,
+            provider: None,
+            base_url: None,
+            effort: None,
+        }
+    }
+
+    #[test]
+    fn chat_stream_body_serializes_top_p_when_set_on_a_non_thinking_model() {
+        let mut req = base_request("claude-3-5-sonnet-20241022");
+        req.top_p = Some(0.95);
+        let body = build_chat_stream_body(&req);
+        assert_eq!(body["top_p"], json!(0.95));
+        assert!(body.get("thinking").is_none());
+    }
+
+    #[test]
+    fn chat_stream_body_omits_top_p_when_none() {
+        let body = build_chat_stream_body(&base_request("claude-3-5-sonnet-20241022"));
+        assert!(body.get("top_p").is_none());
+    }
+
+    #[test]
+    fn chat_stream_body_skips_top_p_when_extended_thinking_is_enabled() {
+        // Extended thinking forces temperature=1 and the API rejects `top_p`
+        // alongside `thinking` — must never be sent together, even if the caller
+        // (an application-answer/cover-letter prose call) supplied top_p.
+        let mut req = base_request("claude-opus-4-20250514");
+        req.top_p = Some(0.95);
+        req.max_tokens = Some(4096); // >= 2048 → thinking budget kicks in
+        let body = build_chat_stream_body(&req);
+        assert!(body.get("thinking").is_some(), "thinking should be enabled");
+        assert_eq!(body["temperature"], json!(1.0));
+        assert!(
+            body.get("top_p").is_none(),
+            "top_p must be omitted when thinking is enabled"
+        );
+    }
 
     #[test]
     fn thinking_gate_enables_only_extended_thinking_models() {

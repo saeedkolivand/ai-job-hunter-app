@@ -83,6 +83,48 @@ function resolveTemperature(step: TemperatureStep, stepDefault: number): number 
   return override ?? stepDefault;
 }
 
+/** Effective sampling parameters for one generation step. */
+interface SamplingParams {
+  temperature: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  repeatPenalty?: number;
+}
+
+// ponytail: detector-resistance sampling knobs. RAID (ACL 2024) found that
+// random sampling + repetition/frequency penalties drop AI-detector accuracy
+// by up to 38 points — today the app only plumbs temperature. Applied ONLY to
+// PROSE generation surfaces (cover letter, application answers, email,
+// referral, interview); resume/analysis/inline-rewrite stay excluded because
+// frequency/presence penalties would suppress the exact job-ad keyword
+// repetition ATS keyword-matching needs. NOTE: on Anthropic's extended-thinking
+// path these knobs are a near-no-op — `top_p` is dropped and temperature is
+// forced to 1.0 (the API rejects `top_p` alongside `thinking`), and Anthropic
+// has no frequency/presence/repeat penalty params at all — don't assume this
+// set is "active" there.
+const PROSE_SAMPLING = {
+  topP: 0.95,
+  frequencyPenalty: 0.3,
+  presencePenalty: 0.2,
+  repeatPenalty: 1.15,
+} as const;
+
+/** Generalizes {@link resolveTemperature} into a per-step sampling resolver:
+ *  the temperature override lookup is unchanged, and `prose: true` layers on
+ *  the shared {@link PROSE_SAMPLING} penalty set for detector-resistant steps.
+ *  `overrides` lets one surface tune a specific knob (e.g. drop a penalty, or
+ *  tighten topP for a drift-prone small model) without forking the shared set. */
+function resolveSampling(
+  step: TemperatureStep,
+  temperatureDefault: number,
+  prose = false,
+  overrides?: Partial<Omit<SamplingParams, 'temperature'>>
+): SamplingParams {
+  const temperature = resolveTemperature(step, temperatureDefault);
+  return prose ? { temperature, ...PROSE_SAMPLING, ...overrides } : { temperature };
+}
+
 async function streamGenerate(
   model: string,
   system: string,
@@ -91,7 +133,8 @@ async function streamGenerate(
   temperature = 0.3,
   locale = 'en',
   signal?: AbortSignal,
-  onThinking?: (tok: string) => void
+  onThinking?: (tok: string) => void,
+  sampling?: Omit<SamplingParams, 'temperature'>
 ): Promise<string> {
   const api = getClient();
   const { activeProvider, providerSettings, activeModel } = resolveActiveProvider(model);
@@ -110,6 +153,12 @@ async function streamGenerate(
     ],
     locale: safeLocale(locale),
     temperature,
+    // Detector-resistance sampling knobs — present only for prose steps that
+    // opted in (see PROSE_SAMPLING); omitted (undefined) everywhere else.
+    topP: sampling?.topP,
+    frequencyPenalty: sampling?.frequencyPenalty,
+    presencePenalty: sampling?.presencePenalty,
+    repeatPenalty: sampling?.repeatPenalty,
     // Always send the active provider — the backend routes strictly and will
     // not fall back to Ollama. baseUrl only applies to OpenAI-compatible servers.
     provider: activeProvider,
@@ -398,20 +447,31 @@ export async function generateCoverLetter(
     market,
     applicant
   );
-  // Cover letters are prose: a little more temperature loosens the phrasing so it
-  // reads human, not mechanical. Small models stay lower to limit drift. A
-  // per-model override (if set) wins over this tier-based default.
-  const stepDefault = tier === 'small' ? 0.4 : 0.55;
-  const temperature = resolveTemperature('cover', stepDefault);
+  // Cover letters are prose: more temperature + the shared detector-resistance
+  // penalty set (see PROSE_SAMPLING) loosens the phrasing so it reads human, not
+  // mechanical, and resists AI-detector fingerprinting. Small models stay lower
+  // to limit drift (raised proportionally from the previous 0.4/0.55 split). A
+  // per-model override (if set) wins over this tier-based default. Small local
+  // models (7-8B) also compound drift when the full topP randomness stacks with
+  // repeatPenalty, so tighten topP for the small tier only; large stays at the
+  // shared PROSE_SAMPLING default.
+  const stepDefault = tier === 'small' ? 0.58 : 0.8;
+  const sampling = resolveSampling(
+    'cover',
+    stepDefault,
+    true,
+    tier === 'small' ? { topP: 0.9 } : undefined
+  );
   const raw = await streamGenerate(
     model,
     system,
     user,
     onToken,
-    temperature,
+    sampling.temperature,
     locale,
     signal,
-    onThinking
+    onThinking,
+    sampling
   );
   return {
     text: injectLinksIntoGeneratedText(extractPlainText(raw), getLinkMap(resume)),
@@ -484,14 +544,22 @@ export async function generateApplicationAnswer(params: {
     guidance,
     salaryRange,
   });
+  // Application answers are prose but résumé-grounded (no-fabrication surface):
+  // keep topP/frequencyPenalty/repeatPenalty for detector resistance, but drop
+  // presencePenalty (it pushes toward new topics, which risks factual drift
+  // here) and use a lower temperature than the freer prose surfaces (cover
+  // letter, referral) to keep answers traceable to the résumé.
+  const sampling = resolveSampling('answers', 0.5, true, { presencePenalty: undefined });
   const raw = await streamGenerate(
     model,
     system,
     user,
     onToken ?? (() => {}),
-    resolveTemperature('answers', 0.3),
+    sampling.temperature,
     meta.targetLanguage || 'en',
-    signal
+    signal,
+    undefined,
+    sampling
   );
   return extractPlainText(raw);
 }
@@ -584,14 +652,19 @@ export async function generateInterviewQuestions(params: {
     target: profile,
     market,
   });
+  // Interview questions are prose: keep the existing 0.5 temperature default,
+  // adding only the shared detector-resistance penalty set (see PROSE_SAMPLING).
+  const sampling = resolveSampling('answers', 0.5, true);
   const raw = await streamGenerate(
     model,
     system,
     user,
     onToken ?? (() => {}),
-    resolveTemperature('answers', 0.5),
+    sampling.temperature,
     meta.targetLanguage || 'en',
-    signal
+    signal,
+    undefined,
+    sampling
   );
   return extractPlainText(raw);
 }
@@ -812,14 +885,19 @@ export async function generateReferral(params: {
     { personName, personRole, companyName, jobTitle, resume, format, charLimit },
     profile
   );
+  // Referral messages are prose: randomness + the shared detector-resistance
+  // penalty set (see PROSE_SAMPLING) resist AI-detector fingerprinting.
+  const sampling = resolveSampling('referral', 0.7, true);
   const raw = await streamGenerate(
     model,
     system,
     user,
     onToken ?? (() => {}),
-    resolveTemperature('referral', 0.4),
+    sampling.temperature,
     locale,
-    signal
+    signal,
+    undefined,
+    sampling
   );
   return extractPlainText(raw);
 }
@@ -881,14 +959,19 @@ export async function generateReferralImprove(params: {
     },
     profile
   );
+  // Referral messages are prose: randomness + the shared detector-resistance
+  // penalty set (see PROSE_SAMPLING) resist AI-detector fingerprinting.
+  const sampling = resolveSampling('referral', 0.7, true);
   const raw = await streamGenerate(
     model,
     system,
     user,
     onToken ?? (() => {}),
-    resolveTemperature('referral', 0.4),
+    sampling.temperature,
     locale,
-    signal
+    signal,
+    undefined,
+    sampling
   );
   return extractPlainText(raw);
 }
@@ -927,13 +1010,18 @@ export async function generateApplicationEmail(params: {
     { resume, jobAd, meta, recipientName, recipientEmail, companyBrief },
     profile
   );
+  // Application emails are prose: randomness + the shared detector-resistance
+  // penalty set (see PROSE_SAMPLING) resist AI-detector fingerprinting.
+  const sampling = resolveSampling('cover', 0.7, true);
   return streamGenerate(
     model,
     system,
     user,
     onToken ?? (() => {}),
-    resolveTemperature('cover', 0.5),
+    sampling.temperature,
     meta.targetLanguage ?? 'en',
-    signal
+    signal,
+    undefined,
+    sampling
   );
 }
