@@ -79,8 +79,13 @@ fn select_geo_id(hits: &[serde_json::Value], country_code: Option<&str>) -> Opti
                 && h.get("displayName")
                     .and_then(|v| v.as_str())
                     .map(|dn| {
-                        let dn = dn.to_lowercase();
-                        aliases.iter().any(|a| dn.contains(a))
+                        // Anchor to the TRAILING segment, not a substring anywhere —
+                        // `displayName` ends with the English country name, so
+                        // `contains` false-positived on "India" matching "Indiana,
+                        // United States" and "Ireland" matching "Northern Ireland,
+                        // United Kingdom".
+                        let dn = dn.trim().to_lowercase();
+                        aliases.iter().any(|a| dn.ends_with(a))
                     })
                     .unwrap_or(false)
         });

@@ -73,6 +73,40 @@ fn select_geo_id_biases_to_requested_country() {
     );
 }
 
+/// PR #603 review: matching must anchor to the TRAILING country segment
+/// (`ends_with`), not a substring anywhere (`contains`) — "india" is a
+/// substring of "Indiana, United States" and "ireland" is a substring of
+/// "Northern Ireland, United Kingdom", so a naive `contains` false-positives
+/// an `in`/`ie` search onto the wrong hit.
+#[test]
+fn select_geo_id_does_not_substring_match_country_name_inside_a_place_name() {
+    let hits: Vec<serde_json::Value> = serde_json::from_str(
+        r#"[
+        {"id": "1", "displayName": "Indianapolis, Indiana, United States"},
+        {"id": "2", "displayName": "Mumbai, India"}
+    ]"#,
+    )
+    .unwrap();
+    assert_eq!(
+        select_geo_id(&hits, Some("in")).as_deref(),
+        Some("2"),
+        "'in' must pick the real India hit, not fall for 'Indiana' containing 'india'"
+    );
+
+    let hits: Vec<serde_json::Value> = serde_json::from_str(
+        r#"[
+        {"id": "3", "displayName": "Belfast, Northern Ireland, United Kingdom"},
+        {"id": "4", "displayName": "Dublin, Ireland"}
+    ]"#,
+    )
+    .unwrap();
+    assert_eq!(
+        select_geo_id(&hits, Some("ie")).as_deref(),
+        Some("4"),
+        "'ie' must pick the real Ireland hit, not fall for 'Northern Ireland' containing 'ireland'"
+    );
+}
+
 /// No country, an unlisted code, or no matching displayName all fall back to the
 /// first usable hit — the prior behaviour, so a resolvable location never regresses.
 #[test]
