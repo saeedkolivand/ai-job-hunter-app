@@ -21,6 +21,7 @@ import {
   splitByFile,
   assembleDiff,
   hunkHashes,
+  keptHashes,
   fileHunkHashes,
   ledgerKey,
   loadLedger,
@@ -193,8 +194,11 @@ try {
 
   // files with verbatim re-emits don't go back to the model
   const modelSegments = segments.filter((s) => !reEmitFiles.has(s.file));
-  const { diff, omitted, deletedCount } = assembleDiff(modelSegments, MAX);
-  if (!diff.trim() && !reEmitted.length) exit0();
+  const { diff, omitted, deletedCount, kept } = assembleDiff(modelSegments, MAX);
+  if (!diff.trim() && !reEmitted.length) {
+    appendLedger(cwd, ledgerAppends); // record resolved-changed transitions
+    exit0();
+  }
 
   // trivial-change heuristic (comment/import/blank-only → skip)
   const codeLines = diff.split('\n').filter((l) => /^[+-]/.test(l) && !/^[+-]{3}/.test(l));
@@ -208,6 +212,7 @@ try {
   if (!meaningful.length && !reEmitted.length) {
     // deletion-only / over-budget-only changes carry no +/- lines — the review is
     // skipped as a degradation, but the metrics must not read as "clean".
+    appendLedger(cwd, ledgerAppends); // record resolved-changed transitions
     if (deletedCount || omitted.length) logM({ outcome: 'degraded', blocked: false });
     exit0();
   }
@@ -537,7 +542,12 @@ ${diff}
       return why;
     };
     if (round2) {
-      const dropped = parsed.filter((f) => f.severity === 'MEDIUM' || f.severity === 'LOW');
+      // symmetric with category-suppression: convergence also only silences the
+      // suppressible categories — a NEW medium correctness/security finding on a
+      // later commit still surfaces (as advisory; MEDIUM/LOW never block anyway)
+      const dropped = parsed.filter(
+        (f) => (f.severity === 'MEDIUM' || f.severity === 'LOW') && SUPPRESSIBLE.has(f.category)
+      );
       if (dropped.length) {
         parsed = parsed.filter((f) => !dropped.includes(f));
         dropped.forEach((f) => suppress(f));
@@ -638,10 +648,8 @@ ${diff}
     // fix-and-refinish cycle only re-reviews what actually changed.
     appendLedger(cwd, ledgerAppends);
     if (parsed) {
-      const blockedFiles = new Set(blocking.map((f) => f.file));
-      writeCache(
-        segments.filter((s) => !blockedFiles.has(s.file)).flatMap((s) => hunkHashes(s.text))
-      );
+      // only hunks the model ACTUALLY saw (assembleDiff's `kept`), minus blocked files
+      writeCache(keptHashes(kept, new Set(blocking.map((f) => f.file))));
     }
     logM({ outcome: 'blocked', blocked: true });
     block(
@@ -650,6 +658,9 @@ ${diff}
         .join('\n')}` +
         (unverified.length
           ? `\n\nNon-blocking HIGH/CRITICAL (low confidence or pre-existing):\n${unverified.map(fmt).join('\n')}`
+          : '') +
+        (lowmed.length
+          ? `\n\nAdvisory findings (non-blocking):\n${lowmed.map(fmt).join('\n')}`
           : '') +
         (advisory.length ? `\n\nAdvisory:\n- ${advisory.join('\n- ')}` : '') +
         (suppressedNotes.length ? `\n\n${suppressedNotes.join('\n')}` : '') +
@@ -671,9 +682,10 @@ ${diff}
   }
 
   // No blocking findings → record ledger state + reviewed hunks so a future finish
-  // skips this clean code.
+  // skips this clean code. Cache ONLY what the model actually saw (`kept`) — an
+  // omitted over-budget file or a cut hunk tail must never be marked reviewed-clean.
   appendLedger(cwd, ledgerAppends);
-  writeCache(hashes);
+  writeCache(keptHashes(kept));
 
   const advisoryOut = [];
   if (unverified.length)

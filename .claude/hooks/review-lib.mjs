@@ -85,7 +85,10 @@ export const splitByFile = (blob) => {
  * Assemble per-file segments into one bounded diff, by priority: source → test →
  * docs (PR-Agent drop-order). Deletions and over-budget files degrade to
  * one-line notes; a single over-budget segment is cut at hunk boundaries only.
- * Returns { diff, omitted } — omitted = ['file (+a/-b)'].
+ * Returns { diff, omitted, deletedCount, kept } — omitted = ['file (+a/-b)'];
+ * kept = Map(file → the diff text ACTUALLY included). Cache writes must hash only
+ * `kept` — anything else (omitted files, deletion notes, cut hunk tails) was never
+ * shown to a reviewer and must never be marked reviewed-clean.
  */
 export const assembleDiff = (segments, max = 60000) => {
   const order = { source: 0, test: 1, docs: 2 };
@@ -94,6 +97,7 @@ export const assembleDiff = (segments, max = 60000) => {
   );
   let diff = '';
   const omitted = [];
+  const kept = new Map();
   let deletedCount = 0;
   for (const s of segs) {
     if (s.deleted) {
@@ -104,6 +108,7 @@ export const assembleDiff = (segments, max = 60000) => {
     const room = max - diff.length;
     if (s.text.length <= room) {
       diff += s.text;
+      kept.set(s.file, (kept.get(s.file) || '') + s.text);
       continue;
     }
     // Doesn't fit whole — keep the longest prefix of WHOLE hunks if there is
@@ -118,14 +123,19 @@ export const assembleDiff = (segments, max = 60000) => {
       const keep = cut > 0 ? s.text.slice(0, cut) : '';
       if (/^@@/m.test(keep)) {
         diff += keep + `# …remaining hunks of ${s.file} omitted (+${s.adds}/-${s.dels} total)\n`;
+        kept.set(s.file, (kept.get(s.file) || '') + keep);
         continue;
       }
     }
     omitted.push(`${s.file} (+${s.adds}/-${s.dels})`);
   }
   if (omitted.length) diff += `# omitted files (over budget): ${omitted.join(', ')}\n`;
-  return { diff, omitted, deletedCount };
+  return { diff, omitted, deletedCount, kept };
 };
+
+/** Hashes of the hunks a reviewer actually saw (from assembleDiff's `kept`). */
+export const keptHashes = (kept, excludeFiles = new Set()) =>
+  [...kept.entries()].filter(([f]) => !excludeFiles.has(f)).flatMap(([, text]) => hunkHashes(text));
 
 // ─── hunk hashing (body-only, line-number agnostic) ──────────────────────────
 
