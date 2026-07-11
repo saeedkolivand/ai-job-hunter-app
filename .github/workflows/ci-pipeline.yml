@@ -3,7 +3,7 @@ name: 🚀 CI Pipeline
 # ──────────────────────────────────────────────────────────────────────
 # Continuous Integration Pipeline
 # ──────────────────────────────────────────────────────────────────────
-# Purpose: Validate code quality, type safety, and test coverage on every PR
+# Purpose: Validate code quality, type safety, test coverage, and secrets on every PR
 # Triggers: pull_request to main only (push to main intentionally excluded — release.yml handles that)
 # Jobs:
 #   - dependencies: Install deps + build shared packages (cache producer)
@@ -13,6 +13,7 @@ name: 🚀 CI Pipeline
 #   - tests: JavaScript and Rust test suites
 #   - build-verification: Production build validation
 #   - quality-checks: Rust fmt, clippy, architecture boundary tests (R1-R8), cargo-deny, cargo-machete
+#   - secret-scan: Gitleaks credential detection (PRs only)
 # ──────────────────────────────────────────────────────────────────────
 
 on:
@@ -1013,6 +1014,33 @@ jobs:
           echo "::endgroup::"
 
   # ──────────────────────────────────────────────────────────────────────
+  # Secret Scanning
+  # Detects hardcoded credentials, API keys, and other secrets via gitleaks.
+  # Runs on all PRs to catch issues before they land. Always-on, not path-filtered.
+  # ──────────────────────────────────────────────────────────────────────
+  secret-scan:
+    name: 🔐 Secret Scan
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: 🔐 Gitleaks Scan
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────────────────────────────────
   # Umbrella gate — the single required status check for branch protection.
   # Passes if every gated job SUCCEEDED or was SKIPPED (path-filtered out), and
   # fails if any failed/cancelled. Make THIS ("✅ CI OK") the only required
@@ -1033,6 +1061,7 @@ jobs:
         build-verification,
         quality-checks,
         extension,
+        secret-scan,
       ]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -1041,11 +1070,11 @@ jobs:
         run: |
           # Always-on jobs: never path-skipped on PRs, so 'skipped' means an
           # upstream failure or cancellation — only 'success' passes.
-          # (dependency-review only exists on pull_request events, so it is
-          # exempted on workflow_dispatch runs.)
+          # (dependency-review and secret-scan only exist on pull_request events, so
+          # they are exempted on workflow_dispatch runs.)
           strict="${{ needs.changes.result }} ${{ needs.dependencies.result }}"
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            strict="$strict ${{ needs.dependency-review.result }}"
+            strict="$strict ${{ needs.dependency-review.result }} ${{ needs.secret-scan.result }}"
           fi
           echo "Always-on job results: $strict"
           for r in $strict; do
