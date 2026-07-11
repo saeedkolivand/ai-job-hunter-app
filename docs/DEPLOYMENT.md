@@ -198,15 +198,19 @@ Every uploadable installer artifact (`.exe`, `.msi`, `.dmg`, `.AppImage`, `.deb`
 
 ### Pull-request checks & review
 
-PRs to `main` run three layers (all under [`.github/workflows/`](../.github/workflows/)):
+PRs to `main` run multiple layers (all under [`.github/workflows/`](../.github/workflows/)). **Two are required** (must pass to merge):
 
-- **Gating** — `ci-pipeline.yml` (lint, type-check, tests, build, Rust quality + architecture R1–R8, `cargo-deny`, dependency-review). The only layer that blocks merge.
-- **Always-on AI review — CodeRabbit** (external SaaS, free on this public repo; config in [`.coderabbit.yaml`](../.coderabbit.yaml)). Posts a PR summary + walkthrough + line-by-line review, applies area labels, and runs ESLint / Clippy / Semgrep / secret-scan / actionlint inline. Advisory only — it never approves or blocks (only "✅ CI OK" gates). Its `path_instructions` mirror `.claude/review-routes.json` ownership + the `CLAUDE.md` conventions; the former `pr-review.yml` (reviewdog ESLint/Clippy + `dangerfile.ts`) and `labeler.yml` were retired in its favor.
+- **Gating: ✅ CI OK** — `ci-pipeline.yml` umbrella check encompassing lint, type-check, tests, build, Rust quality + architecture R1–R8, `cargo-deny`, dependency-review, and gitleaks secret-scan. The required functional gate.
+- **Gating: 🤖 AI Review OK** — `claude-review.yml` ai-review-gate job runs automatic semantic review on every PR (unless draft) with deterministic verdict: HIGH/CRITICAL findings at confidence ≥ 0.8 block merge; fails open on infra (no outage freeze). See [`docs/adr/0008-ai-review-enforcement.md`](adr/0008-ai-review-enforcement.md). **Manual setup step after this PR merges:** add "🤖 AI Review OK" to the required status checks in the branch protection ruleset (same UI where "✅ CI OK" is required).
+
+Additional advisory layers:
+
+- **CodeRabbit** (external SaaS, free on this public repo; config in [`.coderabbit.yaml`](../.coderabbit.yaml)). Posts a PR summary + walkthrough + line-by-line review, applies area labels, and runs ESLint / Clippy / Semgrep / secret-scan / actionlint inline. **Advisory only — never blocks merge**. Its `path_instructions` mirror `.claude/review-routes.json` ownership + the `CLAUDE.md` conventions; the former `pr-review.yml` (reviewdog ESLint/Clippy + `dangerfile.ts`) and `labeler.yml` were retired in its favor.
 - **Advisory checks** — `quality.yml` (typos/links/knip/i18n/a11y + Rust cargo-hack/cargo-mutants + the export-render benchmark) and `ui-checks.yml` (Playwright e2e + Lighthouse + Lost Pixel). Never block.
 - **Security → Security tab** — `security.yml` consolidates CodeQL + Semgrep + OpenSSF Scorecard + the weekly npm/cargo audit (each job event-gated + least-privilege).
-- **On-demand deep review — Claude** — comment `@claude review` on a PR (repo owner only) to run `claude-review.yml`, an agent-routed deep dive as the `.claude/agents` owner. Inert until invoked. Requires the `CLAUDE_CODE_OAUTH_TOKEN` repo secret (from `claude setup-token`); do **not** also set `ANTHROPIC_API_KEY`.
+- **On-demand deep review — Claude** — comment `@claude review` on a PR (repo owner only) to run `claude-review.yml` tag-mode job, an agent-routed deep dive as the `.claude/agents` owner. Inert until invoked. Requires the `CLAUDE_CODE_OAUTH_TOKEN` repo secret (from `claude setup-token`); do **not** also set `ANTHROPIC_API_KEY`.
 
-> CodeRabbit reviews **fork** PRs too (it's a GitHub App, not a `GITHUB_TOKEN` job); all PRs still hit the gating layer. CodeQL **Default setup** must stay off; the advanced CodeQL job in `security.yml` conflicts with it. See [`docs/adr/0003-consolidate-ci-workflows.md`](adr/0003-consolidate-ci-workflows.md).
+> CodeRabbit reviews **fork** PRs too (it's a GitHub App, not a `GITHUB_TOKEN` job); fork PRs hit ✅ CI OK + CodeRabbit, and 🤖 AI Review OK fail-opens on forks (no secret access) — consistent with ADR-0008's fail-open list. CodeQL **Default setup** must stay off; the advanced CodeQL job in `security.yml` conflicts with it. See [`docs/adr/0003-consolidate-ci-workflows.md`](adr/0003-consolidate-ci-workflows.md).
 
 ---
 

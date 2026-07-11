@@ -1,11 +1,19 @@
-name: 🤖 Claude Review (on demand)
+name: 🤖 Claude Review (required gate + advisory deep dive)
 
 # ──────────────────────────────────────────────────────────────────────
-# Lane A1 — AI review, ON-DEMAND ONLY.
+# Lane A2 — AI review gate, REQUIRED ON EVERY PR (unless draft).
+# ──────────────────────────────────────────────────────────────────────
+# Runs automatically on every PR open/sync/ready_for_review. Diff-based
+# review with deterministic verdict: HIGH/CRITICAL at confidence ≥ 0.8
+# blocks merge; fails open on infra (no action outage freeze). See
+# ADR-0008 for the 6-PR review-hardening program; the gate is the final
+# surface (join: Stop gate, /review, pre-push, ci-ok, this check).
+#
+# Lane A1 — AI review, ON-DEMAND ADVISORY DEEP DIVE.
 # ──────────────────────────────────────────────────────────────────────
 # Runs ONLY when the repository owner comments "@claude review" on a PR.
 # Nothing automatic — not on open, not on push. This keeps AI quota spend
-# fully under your control.
+# fully under your control. Tag-mode review is advisory; never blocks.
 #
 # Auth: a CLAUDE_CODE_OAUTH_TOKEN secret generated locally with
 #   `claude setup-token` (uses your Claude Pro/Max subscription quota — no
@@ -13,9 +21,11 @@ name: 🤖 Claude Review (on demand)
 #   ⚠️ Do NOT also add ANTHROPIC_API_KEY — if both exist, the API key wins
 #      and usage is billed per-token instead of drawing on the subscription.
 #
-# Security (public repo): the `if:` gate restricts triggering to the repo
-# owner with an exact phrase, so strangers cannot drain quota or prompt-inject.
-# Permissions are least-privilege (no contents write).
+# Security (public repo): Lane A2 is automatic (no owner gate, but
+# concurrency-cancel + draft-skip + deterministic verdict + fail-open
+# limit quota spend and false-positive impact). Lane A1's `if:` gate
+# restricts triggering to the repo owner with an exact phrase, so strangers
+# cannot drain quota or prompt-inject. Permissions are least-privilege.
 # ──────────────────────────────────────────────────────────────────────
 
 on:
@@ -23,11 +33,10 @@ on:
     types: [created]
   pull_request_review_comment:
     types: [created]
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
 
-permissions:
-  contents: read
-  pull-requests: write
-  id-token: write
+permissions: {}
 
 # cancel-in-progress MUST stay false: while a review runs, claude[bot] posts a
 # "working…" comment, which is itself an issue_comment event that starts a second
@@ -52,6 +61,10 @@ jobs:
       github.event.comment.user.login == github.repository_owner
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
 
     steps:
       - name: 🛡️ Harden Runner
@@ -80,3 +93,51 @@ jobs:
           claude_args: |
             --model claude-opus-4-8
             --append-system-prompt "Review this pull request. Map the changed files to their owner in .claude/review-routes.json (first matching primary glob wins), apply that .claude/agents checklist plus the .claude/skills/token-efficiency contract, and review only the changed files. Severity: only HIGH or CRITICAL are blocking (architecture violations; untested error or security paths; credential, IPC, or updater exploits; data loss); treat the rest as advisory. Post findings as inline comments on the changed lines. Be advisory only and do not approve or block the PR."
+
+  ai-review-gate:
+    name: 🤖 AI Review OK
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ai-review-gate-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: 🤖 Run AI Review
+        uses: anthropics/claude-code-action@6c0083bb7289c31716797a039b6367b3079cc46e # v1.0.162
+        continue-on-error: true
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Review ONLY the diff of this PR (git diff origin/${{ github.base_ref }}...HEAD).
+            Load the path-scoped checklists for touched domains: match changed paths against
+            lessons_domains globs in .claude/review-routes.json and read the matching
+            .claude/review-checklists/<domain>.md files (fall back to .claude/agents/<owner>.md).
+            Honor the Hard exclusions / Signal-quality criteria / Precedents in
+            .claude/review-config.md — never re-raise a listed false positive.
+            Report only defects introduced by the diff; pre-existing issues get
+            introduced_by_diff: false. Give every finding a calibrated confidence (0-1);
+            anything you cannot substantiate gets <= 0.5.
+            Write the findings as schema-1 JSON to review-findings.json in the workspace
+            root — the JSON object only, no fences: { "schema": 1, "findings": [ {
+            "severity": "CRITICAL|HIGH|MEDIUM|LOW", "category": "security|correctness|data-loss|arch|test-coverage|i18n|perf|style",
+            "file": "...", "line": 0, "summary": "...", "evidence": "...", "fix": "...",
+            "confidence": 0.0, "introduced_by_diff": true } ] }
+            No findings -> { "schema": 1, "findings": [] }. Write the file even when empty.
+          claude_args: '--model claude-sonnet-5 --allowedTools "Read,Grep,Glob,Write"'
+
+      - name: Deterministic verdict
+        run: node scripts/ci-review-verdict.mjs review-findings.json
