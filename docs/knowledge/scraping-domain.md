@@ -183,6 +183,46 @@ Results now persist across navigation thanks to React Query + backend cache:
 - **Frontend:** Throttled `invalidatePostings()` on `job.stream` event (~1 ms throttle; eager on first item of new search)
 - **Hydration:** React Query re-fetches cache on component remount → results reappear
 
+## Cross-source dedup (PR E, 2026-07-10)
+
+When a job posting appears across multiple boards (e.g., a job scraped both from the Aggregator and a direct ATS board), the engine performs a single cross-source dedup pass to eliminate duplicates before the UI renders them.
+
+**Canonical job key:**
+
+Every job is keyed by its `canonical_job_key(url, title, company)` — defined in `apps/desktop/src-tauri/src/scraping/boards/common.rs`, mirrored in `apps/desktop/src/renderer/features/jobs/lib/canonical-job-key.ts` for renderer-side dedup. The key normalizes URLs (lowercase whole URL, strip `www.`, drop fragments, keep only board-identifying query params like `indeed.com`'s `jk`) or falls back to `{title.trim().lowercase()}\u{0001}{company.trim().lowercase()}` (U+0001 separator prevents title/company forgery). The Rust function `normalize_job_url` is the shared app-wide URL identity (also used by autopilot's merge and extension import); the TS mirror must maintain byte-equivalence to the Rust implementation to ensure the same duplicate pairs are identified both sides.
+
+**Engine dedup pass:**
+
+`scraping/engine/mod.rs`: `dedup_cross_source()` runs once per manual scrape after all boards are concatenated, before results are returned to the UI. Duplicates sharing a canonical key are collapsed down to one survivor; the survivor is the incumbent (first-seen job for that key), but its fields are field-level-upgraded (not wholesale replaced):
+
+- `id`, `url`, `source`, `interactions` — never overwritten (incumbent identity kept; user-state is tied to `id`)
+- `description` — upgraded when the challenger's is strictly longer (measured in UTF-8 bytes)
+- `extra` (salary/remote/etc.) — unioned key-by-key, non-empty incumbent values win, keys the incumbent lacks are filled from the challenger
+
+This policy prevents silent data loss (e.g., Adzuna's salary fields wouldn't be dropped if a direct board with no salary won purely on description length).
+
+**Autopilot merge:**
+
+`autopilot/mod.rs`: `merge_found_jobs()` dedupes the incoming batch intra-batch using the same canonical key before merging against existing persisted rows. The engine's cross-source pass runs upstream (the Autopilot path consumes the already-deduped vec directly), so this is defensive; intra-batch dedup follows the same field-level-upgrade pattern. Notification count reflects post-dedup genuinely-new jobs only.
+
+**Renderer dedup pass:**
+
+`features/jobs/lib/merge-postings.ts`: `mergePostings(display, livePostings, absorbed?)` now runs a second pass (after pass 1's same-id merge) keyed by `canonicalJobKey`. The survivor is the incumbent (first-seen row, persisted rows over streamed duplicates), field-level-upgraded (description byte-length, extra union), and has its user-state preserved. An optional `absorbed` out-param records which row ids were collapsed so the selection-reconciliation effect can re-point a stale `selectedId` to the survivor instead of falling back to `display[0]`.
+
+This renderer pass reconciles manual-scrape live streams (which are not engine-deduped) with the completion count — visible rows now match the deduped unique total.
+
+**Shared fixtures:**
+
+The 5 Rust truth-table test cases (same URL across boards, url-less title+company, near-miss distinct, U+0001-unforgeable, empty/whitespace/dangerous-scheme fallback) are copied verbatim into the TS test as a drift guard — if either side's algorithm diverges, one of these tests fails.
+
+**Source pointers:**
+
+- Canonical key (Rust): `apps/desktop/src-tauri/src/scraping/boards/common.rs:canonical_job_key`
+- Engine dedup: `apps/desktop/src-tauri/src/scraping/engine/mod.rs:dedup_cross_source`
+- Autopilot merge: `apps/desktop/src-tauri/src/autopilot/mod.rs:merge_found_jobs` (delegates `merge_key` to the shared canonical key)
+- Canonical key (TS mirror): `apps/desktop/src/renderer/features/jobs/lib/canonical-job-key.ts`
+- Renderer dedup: `apps/desktop/src/renderer/features/jobs/lib/merge-postings.ts:mergePostings`
+
 ## Jobs-page diagnostics surface (PR C, 2026-07-10)
 
 Per-board scrape outcomes are now visible via a shared `BoardSummaryChips` component, surfacing the sanitized failure reasons, skip reasons, partial-harvest signals, and success counts:

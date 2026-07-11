@@ -128,7 +128,11 @@ function posting(id: string): Posting {
 const noop = () => {};
 const formatRelativeTime = () => '';
 
-function renderResults(filtered: Posting[], resumeId: string | null = null) {
+function renderResults(
+  filtered: Posting[],
+  resumeId: string | null = null,
+  absorbedInto?: Map<string, string>
+) {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <MatchScoresProvider resumeId={resumeId}>{children}</MatchScoresProvider>
   );
@@ -137,6 +141,7 @@ function renderResults(filtered: Posting[], resumeId: string | null = null) {
       filtered={filtered}
       formatRelativeTime={formatRelativeTime}
       scraping={false}
+      absorbedInto={absorbedInto}
       onShowMore={noop}
       onScrape={noop}
     />,
@@ -223,5 +228,58 @@ describe('JobsResults — selectedId reconciliation', () => {
     });
 
     expect(mockSetJobs).not.toHaveBeenCalled();
+  });
+
+  // ── Regression: a selected id absorbed by mergePostings' cross-source collapse
+  // must re-point at the survivor, NOT silently fall back to display[0] ─────────
+  //
+  // Root-cause scenario: boards=[aggregator, board]. The fast `board` streams
+  // first, so its live-stream row (id `board-1`) is the only copy and gets
+  // selected by the user. `livePostings` is never cleared on job.completed. The
+  // persisted refetch holds the SAME job under `aggregator-1` (the engine's
+  // incumbent-selection order follows board input order, not display arrival
+  // order). mergePostings' pass 2 absorbs `board-1` into `aggregator-1` — before
+  // this fix, `selectedId` (`board-1`) vanished from `filtered` and the existing
+  // reconciliation effect silently swapped the detail pane to display[0], an
+  // UNRELATED job.
+  it('re-points selection at the survivor id when the selected live-id row was absorbed by a persisted incumbent (not display[0])', async () => {
+    STORE_STATE.jobs = { viewMode: 'split', selectedId: 'board-1' };
+    const absorbedInto = new Map([['board-1', 'aggregator-1']]);
+
+    await act(async () => {
+      // `board-1` no longer appears — mergePostings already collapsed it into
+      // `aggregator-1`, which is unrelated-job-shaped ('unrelated-job') to prove
+      // the fix isn't accidentally passing via display[0] coincidentally matching.
+      renderResults([posting('unrelated-job'), posting('aggregator-1')], null, absorbedInto);
+    });
+
+    expect(mockSetJobs).toHaveBeenCalledWith({ selectedId: 'aggregator-1' });
+    expect(mockSetJobs).not.toHaveBeenCalledWith({ selectedId: 'unrelated-job' });
+  });
+
+  it('falls back to display[0] when the selected id was absorbed but the survivor is somehow not in display', async () => {
+    // Defensive: absorbedInto claims a survivor that isn't actually in `filtered`
+    // (should not happen in practice — the survivor is always in the merged
+    // output — but the effect must not select a phantom id).
+    STORE_STATE.jobs = { viewMode: 'split', selectedId: 'board-1' };
+    const absorbedInto = new Map([['board-1', 'not-in-display']]);
+
+    await act(async () => {
+      renderResults([posting('job-present')], null, absorbedInto);
+    });
+
+    expect(mockSetJobs).toHaveBeenCalledWith({ selectedId: 'job-present' });
+  });
+
+  it('does NOT call setJobs when the selection is absorbed but the caller passes no absorbedInto map', async () => {
+    // absorbedInto omitted entirely (e.g. a caller that never merges duplicate
+    // sources) — must fall back to the existing topId behaviour, not throw.
+    STORE_STATE.jobs = { viewMode: 'split', selectedId: 'job-missing' };
+
+    await act(async () => {
+      renderResults([posting('job-present')]);
+    });
+
+    expect(mockSetJobs).toHaveBeenCalledWith({ selectedId: 'job-present' });
   });
 });
