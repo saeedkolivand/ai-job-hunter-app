@@ -26,31 +26,41 @@ export function scoreTier(
 
 /** Low/Medium/High match-score Tag — localized label.
  *
- *  subtle=true: Medium/Low render muted-neutral; High stays bright.
- *  Used in compact list rows; detail pane always passes subtle=false (default).
+ *  subtle=true: Medium/Low render muted-neutral; High stays bright — the tier
+ *  itself is trustworthy, only the LOWER tiers are de-emphasized. Used in
+ *  compact list rows; detail pane always passes subtle=false (default).
+ *
+ *  muted=true: EVERY tier (including High) renders muted-neutral — a stronger,
+ *  distinct de-emphasis for when the SCORE ITSELF is approximate/provisional
+ *  (not the tier), so a "confident High" never reads as more certain than it
+ *  actually is. Deliberately a separate prop from `subtle`, not an extension
+ *  of it — `subtle`'s High-stays-bright contract is pinned by its own tests
+ *  and other callers may rely on it.
  */
 export function MatchBand({
   value,
   large,
   variant = 'combined',
   subtle = false,
+  muted = false,
 }: {
   value: number;
   large?: boolean;
   variant?: 'combined' | 'coverage';
   subtle?: boolean;
+  muted?: boolean;
 }) {
   const { t } = useTranslation();
   const band = scoreTier(value, variant);
-  // When subtle, Medium/Low collapse to a muted neutral pill; High stays full-color.
-  const isSubtleMuted = subtle && band.key !== 'High';
+  // `muted` mutes unconditionally (all tiers); `subtle` mutes only Medium/Low.
+  const isMutedStyle = muted || (subtle && band.key !== 'High');
   return (
     <Tag
-      color={isSubtleMuted ? undefined : band.color}
+      color={isMutedStyle ? undefined : band.color}
       className={cn(
         'rounded-full font-semibold uppercase tracking-wider',
         large ? 'px-2.5 py-1 text-xs' : 'px-2 py-0.5 text-[10px]',
-        isSubtleMuted && 'bg-muted text-foreground/70'
+        isMutedStyle && 'bg-muted text-foreground/70'
       )}
     >
       {t(`jobs.matchBand.${band.key}`)}

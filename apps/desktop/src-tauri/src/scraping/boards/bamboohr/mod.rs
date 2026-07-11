@@ -10,7 +10,9 @@
 //! isRemote}]}` — shape confirmed, no drift.
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
-use super::common::{ats_finish_search, is_valid_dns_label_slug, normalize_companies};
+use super::common::{
+    ats_finish_search, ats_partial_note, is_valid_dns_label_slug, normalize_companies,
+};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -222,6 +224,17 @@ impl Scraper for BambooHrScraper {
 
             if let Some(ref on_progress) = ctx.on_progress {
                 on_progress((i + 1) as f32 / total as f32);
+            }
+        }
+
+        // trust-H item 3: surface a partial-visibility anomaly (some slugs
+        // rejected while others fetched) as ONE informational note (PR D
+        // grammar). BambooHR deserializes its result array atomically (no
+        // per-row drop count), so only `slugs-invalid` can fire. Gated on
+        // non-cancellation — a benign interruption reports nothing.
+        if !ctx.signal.is_cancelled() {
+            if let Some(note) = ats_partial_note(successful_fetches, rejected_slugs, 0) {
+                ctx.report_note(note);
             }
         }
 

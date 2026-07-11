@@ -733,12 +733,12 @@ impl ScraperEngine {
                     if non_location_boards.contains(&board) && requested_location.is_some() {
                         // Surface via the existing note side-channel using the PR D
                         // `kind:value` grammar (cf. `broadened:<cc>`). Count only —
-                        // never the raw location text (free-text PII). A non-location
-                        // board never emits its own note today, so this can't clobber
-                        // one — LOW: if a future non-supporting board ever also wires
-                        // `on_note`, this unconditional overwrite would silently drop
-                        // its message; join with "; " instead when that day comes.
-                        note = Some(format!("location-filtered:{dropped}"));
+                        // never the raw location text (free-text PII). Precedence: a
+                        // board-native note (e.g. an ATS board's `slugs-invalid:<n>`/
+                        // `rows-dropped:<n>`, trust-H) wins — `get_or_insert_with` only
+                        // fills an empty slot, so `location-filtered` never clobbers a
+                        // message the board already reported this run.
+                        note.get_or_insert_with(|| format!("location-filtered:{dropped}"));
                     }
                     slot_summaries[idx] = Some(BoardScrapeSummary {
                         board,

@@ -7,7 +7,8 @@
  *   variant='coverage':           ≥55 High, ≥30 Medium, <30 Low
  *
  * Also renders MatchBand with subtle=true/false to pin the muted-neutral
- * styling: High always stays bright; Medium/Low go muted when subtle.
+ * styling: High always stays bright; Medium/Low go muted when subtle. And
+ * with muted=true, which — unlike subtle — mutes EVERY tier including High.
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -180,5 +181,34 @@ describe('MatchBand — subtle=true', () => {
     render(<MatchBand value={75} subtle />);
     const el = screen.getByText('jobs.matchBand.High');
     expect(el.className).not.toContain('bg-muted');
+  });
+});
+
+describe('MatchBand — muted=true (mutes ALL tiers, unlike subtle)', () => {
+  it('High gets muted-neutral styling (distinct from subtle, which keeps High bright)', () => {
+    render(<MatchBand value={80} muted />);
+    const el = screen.getByText('jobs.matchBand.High');
+    expect(el.className).toContain('text-foreground/70');
+    expect(el.className).toContain('bg-muted');
+  });
+
+  it('Medium gets muted-neutral styling', () => {
+    render(<MatchBand value={60} muted />);
+    const el = screen.getByText('jobs.matchBand.Medium');
+    expect(el.className).toContain('text-foreground/70');
+    expect(el.className).toContain('bg-muted');
+  });
+
+  it('Low gets muted-neutral styling', () => {
+    render(<MatchBand value={20} muted />);
+    const el = screen.getByText('jobs.matchBand.Low');
+    expect(el.className).toContain('text-foreground/70');
+    expect(el.className).toContain('bg-muted');
+  });
+
+  it('muted and subtle together still mute High (muted wins)', () => {
+    render(<MatchBand value={80} muted subtle />);
+    const el = screen.getByText('jobs.matchBand.High');
+    expect(el.className).toContain('bg-muted');
   });
 });

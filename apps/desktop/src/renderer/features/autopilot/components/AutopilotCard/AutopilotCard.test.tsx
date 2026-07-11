@@ -19,6 +19,8 @@ import userEvent from '@testing-library/user-event';
 
 import type { Autopilot, AutopilotFoundJob, BoardScrapeSummary } from '@ajh/shared';
 
+import type * as MatchBandModule from '@/lib/match-band';
+
 // ── i18n ──────────────────────────────────────────────────────────────────────
 
 vi.mock('@ajh/translations', () => ({
@@ -124,12 +126,42 @@ vi.mock('@ajh/ui', () => ({
 }));
 
 // ── MatchBand stub ────────────────────────────────────────────────────────────
+//
+// Keeps the REAL `scoreTier` (via importActual) so the mock's muted/not-muted
+// output actually reflects the real component's tier-dependent formula
+// (`muted || (subtle && tier !== 'High')`) instead of just echoing whatever
+// boolean prop was passed — a naive echo would pass this test file even if the
+// real MatchBand left a provisional HIGH score full-color (the CodeRabbit gap).
 
-vi.mock('@/lib/match-band', () => ({
-  MatchBand: ({ value, variant }: { value: number; variant?: string }) => (
-    <span data-testid="match-band" data-value={value} data-variant={variant ?? 'combined'} />
-  ),
-}));
+vi.mock('@/lib/match-band', async (importActual) => {
+  const actual = await importActual<typeof MatchBandModule>();
+  return {
+    ...actual,
+    MatchBand: ({
+      value,
+      variant,
+      subtle,
+      muted,
+    }: {
+      value: number;
+      variant?: 'combined' | 'coverage';
+      subtle?: boolean;
+      muted?: boolean;
+    }) => {
+      const tier = actual.scoreTier(value, variant ?? 'combined').key;
+      const isMutedStyle = Boolean(muted) || (Boolean(subtle) && tier !== 'High');
+      return (
+        <span
+          data-testid="match-band"
+          data-value={value}
+          data-variant={variant ?? 'combined'}
+          data-tier={tier}
+          data-muted={isMutedStyle ? 'true' : 'false'}
+        />
+      );
+    },
+  };
+});
 
 // ── timeAgo ───────────────────────────────────────────────────────────────────
 
@@ -488,6 +520,73 @@ describe('AutopilotCard — found-jobs MatchBand variant', () => {
     });
 
     expect(screen.queryByTestId('match-band')).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Provisional score marker (PR H, audit root cause 6) — a snippet-based score
+// is muted + tilde-prefixed + carries a hover hint; an exact score is plain.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('AutopilotCard — provisional score marker', () => {
+  it('renders a muted band + "~" prefix + hover title + sr-only text when scoreProvisional is true (HIGH-tier score)', async () => {
+    // 82 under variant='coverage' (>=55 threshold) is a HIGH-tier score — the
+    // exact case CodeRabbit flagged: MatchBand's `subtle` prop deliberately
+    // keeps High bright, so the provisional marker must use `muted` (mutes
+    // ALL tiers) instead, or a provisional HIGH would misleadingly stay
+    // full-color. The mock recomputes muting from the REAL scoreTier, so this
+    // assertion only passes if AutopilotCard passes `muted`, not `subtle`.
+    const job = { ...makeJob('https://example.com/job/prov', 82), scoreProvisional: true };
+    renderCard(makeAutopilot([job]));
+
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await act(async () => {
+      header.click();
+    });
+
+    // The native hover hint (title) is present...
+    expect(screen.getByTitle('autopilot.provisionalScoreHint')).toBeInTheDocument();
+    // ...the "~" estimate prefix is visible...
+    expect(screen.getByText('~')).toBeInTheDocument();
+    // ...an always-present sr-only span carries the same hint for screen
+    // readers (a `title` alone isn't reliably announced — TrustBadge precedent)...
+    expect(screen.getByText(': autopilot.provisionalScoreHint')).toHaveClass('sr-only');
+    // ...the band IS the High tier (proving this is genuinely a HIGH-score case)...
+    const band = screen.getByTestId('match-band');
+    expect(band).toHaveAttribute('data-tier', 'High');
+    // ...and still renders muted, unlike `subtle`'s High-stays-bright contract.
+    expect(band).toHaveAttribute('data-muted', 'true');
+  });
+
+  it('renders a plain (non-muted) HIGH band with no marker when scoreProvisional is false', async () => {
+    const job = { ...makeJob('https://example.com/job/exact', 82), scoreProvisional: false };
+    renderCard(makeAutopilot([job]));
+
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await act(async () => {
+      header.click();
+    });
+
+    expect(screen.queryByTitle('autopilot.provisionalScoreHint')).not.toBeInTheDocument();
+    expect(screen.queryByText('~')).not.toBeInTheDocument();
+    expect(screen.queryByText(': autopilot.provisionalScoreHint')).not.toBeInTheDocument();
+    const band = screen.getByTestId('match-band');
+    expect(band).toHaveAttribute('data-tier', 'High');
+    expect(band).toHaveAttribute('data-muted', 'false');
+  });
+
+  it('treats an absent scoreProvisional field (older records) as non-provisional', async () => {
+    // makeJob() sets no scoreProvisional — the legacy record shape.
+    const job = makeJob('https://example.com/job/legacy', 82);
+    renderCard(makeAutopilot([job]));
+
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await act(async () => {
+      header.click();
+    });
+
+    expect(screen.queryByTitle('autopilot.provisionalScoreHint')).not.toBeInTheDocument();
+    expect(screen.getByTestId('match-band')).toHaveAttribute('data-muted', 'false');
   });
 });
 

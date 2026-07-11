@@ -94,8 +94,9 @@ pub(crate) fn matches_filters(
 /// Pure — no I/O, no board host — so it is directly unit-testable without a
 /// mock server. Shared by every ATS board that tracks
 /// `successful_fetches`/`first_fetch_error` (Ashby, BambooHR, Breezy,
-/// Greenhouse, Lever, Pinpoint, Recruitee, Rippling, SmartRecruiters,
-/// Workable).
+/// Greenhouse, Lever, Personio, Pinpoint, Recruitee, Rippling, SmartRecruiters,
+/// Workable — Personio joined in trust-H, closing the gap where its
+/// `fetch_text` XML-feed fetches never fed this shared failure check).
 pub(crate) fn ats_all_fetches_failed(
     board_id: &str,
     successful_fetches: usize,
@@ -162,10 +163,11 @@ pub(crate) fn ats_board_failure(
 /// the ONE test on this function pins it for all of them at once.
 ///
 /// Shared by every ATS board using the full `ats_board_failure` shape
-/// (BambooHR, Breezy, Pinpoint, Recruitee, Rippling, Workable). Personio
-/// tracks a narrower `(attempted, rejected_slugs)` pair (no
-/// `successful_fetches`/`first_fetch_error` — a tracked follow-up) so it
-/// checks cancellation inline rather than sharing this exact shape.
+/// (BambooHR, Breezy, Personio, Pinpoint, Recruitee, Rippling, Workable —
+/// Personio joined in trust-H, replacing the narrower inline
+/// `(attempted, rejected_slugs)` pair it used to track on its own with the
+/// full `successful_fetches`/`first_fetch_error` shape every other board here
+/// already used).
 pub(crate) fn ats_finish_search(
     signal: &tokio_util::sync::CancellationToken,
     out: Vec<crate::scraping::types::JobPosting>,
@@ -186,6 +188,37 @@ pub(crate) fn ats_finish_search(
         return Err(anyhow::anyhow!(message));
     }
     Ok(out)
+}
+
+/// The ONE informational partial-visibility note (PR D `kind:value` grammar) an
+/// ATS multi-company board emits when its run partially degraded but STILL
+/// returned a result — the previously log-only anomalies now made visible:
+/// - `slugs-invalid:<n>` — SOME (not all) company slugs were rejected pre-fetch
+///   (`n` = rejected count). Preferred over `rows-dropped`: an invalid slug is a
+///   fixable user input, the more actionable signal.
+/// - `rows-dropped:<n>` — SOME rows were dropped by per-row parsing (`rows_to_jobs`
+///   schema-drift on individual rows, `n` = total dropped) while the rest parsed.
+///
+/// Returns `None` when there was no such anomaly, OR when EVERY fetch failed /
+/// every slug was rejected (`successful_fetches == 0`) — that whole-board FAILURE
+/// is surfaced as an `Err` by [`ats_finish_search`], never as a note. At most ONE
+/// token per board per run; `slugs-invalid` wins when both apply.
+///
+/// Pure — directly unit-testable without a mock server. The caller emits the
+/// returned token via `ScrapeContext::report_note`, gated on non-cancellation
+/// (a benign interruption reports nothing, mirroring [`ats_finish_search`]).
+pub(crate) fn ats_partial_note(
+    successful_fetches: usize,
+    rejected_slugs: usize,
+    rows_dropped: usize,
+) -> Option<String> {
+    if successful_fetches == 0 {
+        return None;
+    }
+    if rejected_slugs > 0 {
+        return Some(format!("slugs-invalid:{rejected_slugs}"));
+    }
+    (rows_dropped > 0).then(|| format!("rows-dropped:{rows_dropped}"))
 }
 
 /// Decide the pagination-failure policy for a page fetch: a page reached with

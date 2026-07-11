@@ -24,6 +24,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Datelike, Local, TimeZone, Timelike};
+use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
 use crate::autopilot::{Autopilot, AutopilotStatus, AutopilotStore};
@@ -34,6 +35,31 @@ const TICK_INTERVAL_SECS: u64 = 60;
 /// Grace period after launch before the first catch-up sweep, so the app finishes
 /// startup (window, stores, plugins) before any autopilot scrape kicks off.
 const STARTUP_CATCHUP_DELAY_SECS: u64 = 5;
+
+/// Backoff before a bounded retry: [`run_with_single_retry`]'s single retry of
+/// a `Failed` run, and [`schedule_interrupted_retries`]'s crash-recovery retry.
+/// Long enough to let a transient cause clear (a 429 window, a flaky network)
+/// without hammering.
+///
+/// This duration alone does NOT guarantee a retry never races a fresh scheduled
+/// run — for an hourly schedule, 12 minutes is NOT always "well inside" the next
+/// occurrence. Both arms re-validate the record immediately before firing, but
+/// on DIFFERENT signals, so the closed gap differs:
+///   - [`schedule_interrupted_retries`] re-checks the FULL [`still_needs_recovery`]
+///     predicate (schedulable + not due + `last_run_at` unchanged) and defers to
+///     the tick if the slot rolled or was already served during the sleep — the
+///     race against a normal scheduled run is fully closed for this arm.
+///   - [`run_with_single_retry`]'s Failed-run retry re-checks only
+///     [`should_retry_after_backoff`] — PAUSE WINS: a user Pausing/Archiving/
+///     switching to manual during the backoff must not still get the retry
+///     scrape. It does NOT re-check due-ness/`last_run_at`, so a schedule whose
+///     interval is on the same order as this backoff (hourly) could in theory
+///     still have its retry race a fresh tick run that already served the next
+///     occurrence. Accepted as a narrower, documented trade-off (not closed
+///     here): the retry is still bounded to ONE, and the concurrent-run guard
+///     on `autopilot_run` prevents the two from literally overlapping, even
+///     though it can't prevent them running sequentially.
+const RETRY_BACKOFF: Duration = Duration::from_secs(12 * 60);
 
 /// Default local clock time for daily/twice_daily when no time is set, so
 /// records created before the run-time picker keep firing in the morning.
@@ -114,6 +140,21 @@ fn last_occurrence_ms(
     }
 }
 
+/// Whether the scheduler auto-runs this record at all — `Active` with a
+/// recurring (non-manual) schedule — independent of whether it is *currently*
+/// due. Used to decide if a crash-interrupted run is worth a recovery retry: a
+/// paused, archived, or manual record never auto-runs, so it is never retried.
+fn is_schedulable(ap: &Autopilot) -> bool {
+    ap.status == AutopilotStatus::Active
+        && last_occurrence_ms(
+            &ap.schedule,
+            ap.schedule_hour,
+            ap.schedule_minute,
+            Local::now(),
+        )
+        .is_some()
+}
+
 fn is_due(ap: &Autopilot) -> bool {
     if ap.status != AutopilotStatus::Active {
         return false;
@@ -143,14 +184,19 @@ pub fn start(app: AppHandle) {
 
     // Reconcile any run left mid-flight by a crash/close before the first sweep
     // could start a new one, so the UI shows an honest "interrupted" badge
-    // rather than a stuck "running" state.
-    store.lock().mark_interrupted_runs();
+    // rather than a stuck "running" state. The reconciled ids drive a bounded
+    // recovery retry below.
+    let interrupted = store.lock().mark_interrupted_runs();
 
     // One-shot, idempotent loosen of autopilots saved with the old auto-prefilled
     // restrictive filters (the zero-jobs bug). Gated by a sidecar marker file, so
     // it is a no-op after the first run. Synchronous file IO — fine here on the
     // setup path, before the sweep loop spawns below.
     store.lock().relax_legacy_filters_once();
+
+    // Recover runs cut off mid-flight by the last crash/close (see below). Done
+    // before the catch-up sweep spawns so both observe the same reconciled state.
+    schedule_interrupted_retries(&app, &store, interrupted);
 
     tauri::async_runtime::spawn(async move {
         // Catch up on autopilots that fell overdue while the app was closed:
@@ -177,13 +223,155 @@ async fn tick(app: &AppHandle, store: &Arc<Mutex<AutopilotStore>>) {
     let due = collect_due(store);
 
     for ap in due {
-        // Stamp lastRunAt immediately so a slow run doesn't trigger twice.
+        // Stamp lastRunAt immediately so a slow run doesn't trigger twice. This
+        // stamp-before-run double-fire guard is UNCHANGED — the retry below is a
+        // separate, bounded recovery that never re-stamps or re-enters `is_due`.
         store.lock().stamp_last_run(&ap.id);
 
         let app_clone = app.clone();
+        let store_clone = store.clone();
         let ap_id = ap.id.clone();
+        tauri::async_runtime::spawn(run_with_single_retry(app_clone, store_clone, ap_id));
+    }
+}
+
+/// Run an autopilot once and, if it ended `Failed`, retry it exactly ONCE after
+/// [`RETRY_BACKOFF`]. This closes the scheduler's only gap: the stamp-before-run
+/// double-fire guard consumes the occurrence up-front, so before this a failed
+/// occurrence was lost with no retry until the next one rolled.
+///
+/// Immediately before firing the retry, the record is re-read and the retry is
+/// skipped unless [`should_retry_after_backoff`] still holds — PAUSE WINS: a
+/// user Pausing, Archiving, or switching the schedule to manual during the
+/// backoff must not still get a full scrape (updated `lastRunAt`/`foundJobs`,
+/// a possible notification) for a record they just told the app to stop
+/// running.
+///
+/// Bounded to a single retry — the retry's own outcome is deliberately NOT
+/// re-inspected — so a persistently-failing board can never spin a retry storm.
+/// In-process (not persisted): a retry still pending when the app closes is
+/// dropped rather than queued. Justified over a durable retry queue by YAGNI —
+/// the audit asked for ONE bounded retry, not a job queue; the next scheduled
+/// occurrence still runs, and the concurrent-run guard on `autopilot_run` keeps
+/// a retry that overlaps a fresh run from double-running.
+async fn run_with_single_retry(app: AppHandle, store: Arc<Mutex<AutopilotStore>>, ap_id: String) {
+    let outcome = crate::commands::autopilot::autopilot_run(app.clone(), ap_id.clone()).await;
+    if !outcome_failed(&outcome) {
+        return;
+    }
+    log::info!(
+        "[autopilot] run {ap_id} failed; one retry in {}s if still active",
+        RETRY_BACKOFF.as_secs()
+    );
+    tokio::time::sleep(RETRY_BACKOFF).await;
+    // Re-check right before firing (see the doc comment above and
+    // `should_retry_after_backoff`): pause/archive/switch-to-manual (or a
+    // deletion) during the backoff wins over the pending retry.
+    let record = store.lock().get(&ap_id);
+    if !should_retry_after_backoff(record.as_ref()) {
+        log::info!("[autopilot] retry for {ap_id} skipped — no longer schedulable");
+        return;
+    }
+    // Single retry — outcome intentionally ignored (bounded; no second retry).
+    crate::commands::autopilot::autopilot_run(app, ap_id).await;
+}
+
+/// Whether the Failed-run retry should still fire, given a fresh read of the
+/// record taken immediately before it (after the backoff sleep). Mirrors
+/// [`still_needs_recovery`]'s pause-wins principle for this OTHER retry arm: a
+/// user Pausing, Archiving, or switching the schedule to manual during the
+/// backoff window must win over the pending retry — a paused record must never
+/// get a scrape, even from a bounded recovery retry. `None` (the record was
+/// deleted during the backoff) also skips.
+fn should_retry_after_backoff(ap: Option<&Autopilot>) -> bool {
+    ap.is_some_and(is_schedulable)
+}
+
+/// Whether an `autopilot_run` resolved payload represents a run that ended
+/// `Failed` — the ONLY outcome eligible for a retry. Two failure shapes both
+/// qualify: the outright-scrape-error `{ error, .. }` (never reached the record;
+/// persisted `Failed` via `fail_run_without_summaries`) and the derived
+/// `status: "failed"` (reached the record but zero boards succeeded). A
+/// `Completed`/`CompletedWithErrors` run (real, possibly-partial results), a
+/// user-`cancelled` run, and a `skipped` double-invoke are NEVER retried.
+fn outcome_failed(payload: &Value) -> bool {
+    // A user stop or a de-duplicated double-invoke is not a failure.
+    if payload
+        .get("cancelled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || payload.get("skipped").is_some()
+    {
+        return false;
+    }
+    if payload.get("error").is_some() {
+        return true;
+    }
+    payload.get("status").and_then(Value::as_str) == Some("failed")
+}
+
+/// Whether an interrupted-run recovery is still warranted for `ap`, given the
+/// `last_run_at` snapshot captured when the recovery was first scheduled.
+/// Evaluated both at scheduling time and again immediately before the retry
+/// actually runs (after the backoff sleep) — a NORMAL scheduled `tick` can
+/// independently serve this record's occurrence during that sleep, and its own
+/// `stamp_last_run` moves `last_run_at` forward. Re-running on top of that would
+/// be a redundant, purely SEQUENTIAL double-scrape the concurrent-run guard
+/// (`RunGuard`) cannot catch, since the two runs never overlap.
+///
+/// All three must hold:
+///   - `is_schedulable` — still `Active` with a recurring schedule (not paused/
+///     archived/switched to manual since the crash);
+///   - `!is_due` — the slot is still consumed by SOME stamp, not a freshly-due,
+///     not-yet-served occurrence the tick is about to own;
+///   - `last_run_at == baseline` — nothing has re-stamped it since the snapshot.
+///     This is the clause that actually distinguishes "still the original
+///     crashed stamp" from "a fresh tick run already served a later
+///     occurrence" — `!is_due` alone reads identically for both (either way the
+///     slot reads as "not due"), so it can't tell them apart on its own.
+fn still_needs_recovery(ap: &Autopilot, baseline_last_run_at: Option<u64>) -> bool {
+    is_schedulable(ap) && !is_due(ap) && ap.last_run_at == baseline_last_run_at
+}
+
+/// Schedule ONE delayed, best-effort recovery retry for each run interrupted by
+/// the last crash/close whose scheduled occurrence has NOT since rolled. A
+/// rolled occurrence is already re-run by the startup catch-up sweep, so only
+/// the same-occurrence gap ([`still_needs_recovery`]: a schedulable record whose
+/// slot is already consumed, and unchanged since) is recovered here — a paused/
+/// manual record is skipped, and skipped again on the pre-run recheck below if
+/// the tick beat the recovery to it. Bounded to a single `autopilot_run` (not
+/// [`run_with_single_retry`], which would add a further retry) so a run that
+/// keeps being interrupted can only re-run once per app launch — never a storm.
+/// In-process/best-effort: a pending recovery is dropped if the app closes
+/// again.
+fn schedule_interrupted_retries(
+    app: &AppHandle,
+    store: &Arc<Mutex<AutopilotStore>>,
+    interrupted: Vec<String>,
+) {
+    for id in interrupted {
+        let Some(ap) = store.lock().get(&id) else {
+            continue;
+        };
+        let baseline_last_run_at = ap.last_run_at;
+        if !still_needs_recovery(&ap, baseline_last_run_at) {
+            continue;
+        }
+        let app = app.clone();
+        let store = store.clone();
         tauri::async_runtime::spawn(async move {
-            crate::commands::autopilot::autopilot_run(app_clone, ap_id).await;
+            tokio::time::sleep(RETRY_BACKOFF).await;
+            // Re-check right before running (see `still_needs_recovery` doc): if
+            // the slot rolled to a fresh due occurrence, or a tick already
+            // served it during the sleep, the normal scheduler owns it — skip.
+            let still_needed = store
+                .lock()
+                .get(&id)
+                .is_some_and(|ap| still_needs_recovery(&ap, baseline_last_run_at));
+            if !still_needed {
+                return;
+            }
+            crate::commands::autopilot::autopilot_run(app, id).await;
         });
     }
 }
@@ -455,5 +643,190 @@ mod test {
             Some(9),
             Some(0)
         )));
+    }
+
+    // ── bounded retry (item 1) ─────────────────────────────────────────────
+
+    #[test]
+    fn outcome_failed_only_true_for_failed_runs() {
+        use serde_json::json;
+
+        // Retry: an outright scrape error (never reached the record — persisted
+        // Failed via fail_run_without_summaries) …
+        assert!(outcome_failed(&json!({ "error": "boom", "jobId": "j1" })));
+        // … and a derived all-boards-failed status (reached the record, 0 succeeded).
+        assert!(outcome_failed(
+            &json!({ "jobId": "j1", "found": 0, "applied": 0, "status": "failed" })
+        ));
+
+        // Never retry: a clean completion, a partial success, a user cancel, or a
+        // de-duplicated double-invoke skip.
+        assert!(!outcome_failed(
+            &json!({ "jobId": "j1", "found": 3, "applied": 0, "status": "completed" })
+        ));
+        assert!(!outcome_failed(
+            &json!({ "jobId": "j1", "found": 2, "applied": 0, "status": "completedWithErrors" })
+        ));
+        assert!(!outcome_failed(
+            &json!({ "jobId": "j1", "cancelled": true })
+        ));
+        assert!(!outcome_failed(&json!({ "skipped": "already-running" })));
+    }
+
+    #[test]
+    fn should_retry_after_backoff_pause_wins_over_pending_retry() {
+        // This is the exact predicate `run_with_single_retry` re-checks right
+        // before firing its single Failed-run retry — pins that fix directly,
+        // since an AppHandle-free seam to drive the full async retry doesn't
+        // exist in this crate's unit tests.
+
+        // Still Active + recurring → the retry still fires.
+        assert!(should_retry_after_backoff(Some(&ap(
+            "daily",
+            AutopilotStatus::Active,
+            Some(0),
+            None,
+            None
+        ))));
+
+        // Paused/Archived/switched-to-manual during the backoff → PAUSE WINS,
+        // the retry is skipped even though "the record just failed" is exactly
+        // what the retry exists to fix.
+        assert!(!should_retry_after_backoff(Some(&ap(
+            "daily",
+            AutopilotStatus::Paused,
+            Some(0),
+            None,
+            None
+        ))));
+        assert!(!should_retry_after_backoff(Some(&ap(
+            "daily",
+            AutopilotStatus::Archived,
+            Some(0),
+            None,
+            None
+        ))));
+        assert!(!should_retry_after_backoff(Some(&ap(
+            "manual",
+            AutopilotStatus::Active,
+            Some(0),
+            None,
+            None
+        ))));
+
+        // Deleted during the backoff → nothing left to retry.
+        assert!(!should_retry_after_backoff(None));
+    }
+
+    #[test]
+    fn is_schedulable_only_for_active_recurring_records() {
+        // Active + recurring → schedulable (eligible for an interrupted-run retry).
+        assert!(is_schedulable(&ap(
+            "daily",
+            AutopilotStatus::Active,
+            Some(0),
+            None,
+            None
+        )));
+        assert!(is_schedulable(&ap(
+            "hourly",
+            AutopilotStatus::Active,
+            None,
+            None,
+            None
+        )));
+        // Manual never auto-runs → never retried.
+        assert!(!is_schedulable(&ap(
+            "manual",
+            AutopilotStatus::Active,
+            Some(0),
+            None,
+            None
+        )));
+        // Paused/archived never auto-run → never retried.
+        assert!(!is_schedulable(&ap(
+            "daily",
+            AutopilotStatus::Paused,
+            Some(0),
+            None,
+            None
+        )));
+        assert!(!is_schedulable(&ap(
+            "daily",
+            AutopilotStatus::Archived,
+            Some(0),
+            None,
+            None
+        )));
+    }
+
+    // ── still_needs_recovery (interrupted-retry pre-run recheck) ───────────
+    //
+    // `still_needs_recovery` (unlike `last_occurrence_ms`) calls the live-clock
+    // `is_due`/`is_schedulable`, so these cases are built to be clock-stable
+    // without depending on the real current occurrence: `FAR_FUTURE_MS` is a
+    // stamp far past any real test run, which deterministically reads as
+    // "not due" for any live clock, and `Some(0)` (epoch) deterministically
+    // reads as "always due" — the same clock-stable trick `is_due`'s own
+    // never-run/long-ago-run tests already rely on above.
+
+    /// A `last_run_at` stamp far enough in the future (~year 2286) that it is
+    /// always `>=` any occurrence computed from the real `Local::now()` at test
+    /// time — a clock-stable "definitely not due" fixture.
+    const FAR_FUTURE_MS: u64 = 9_999_999_999_999;
+
+    #[test]
+    fn still_needs_recovery_true_when_unchanged_and_not_due() {
+        // The exact "still needs recovery" state: schedulable, not due (the
+        // slot is consumed by the crashed run's own stamp), and nothing has
+        // re-stamped it since the baseline snapshot was taken.
+        let record = ap(
+            "daily",
+            AutopilotStatus::Active,
+            Some(FAR_FUTURE_MS),
+            None,
+            None,
+        );
+        assert!(still_needs_recovery(&record, record.last_run_at));
+    }
+
+    #[test]
+    fn still_needs_recovery_false_once_a_fresh_run_re_stamps_last_run_at() {
+        // A normal tick served this record's occurrence during the recovery's
+        // backoff sleep and re-stamped `last_run_at` — `!is_due` alone reads
+        // the same as the original crash stamp (both "not due"), so only the
+        // baseline comparison catches this and defers to the tick's own run.
+        let record = ap(
+            "daily",
+            AutopilotStatus::Active,
+            Some(FAR_FUTURE_MS),
+            None,
+            None,
+        );
+        let stale_baseline = Some(FAR_FUTURE_MS - 1);
+        assert!(!still_needs_recovery(&record, stale_baseline));
+    }
+
+    #[test]
+    fn still_needs_recovery_false_once_a_newer_occurrence_is_pending() {
+        // The slot rolled to a fresh, not-yet-served occurrence (epoch-0
+        // last_run_at is always due) — the normal tick owns it now, not the
+        // crash-recovery path.
+        let record = ap("hourly", AutopilotStatus::Active, Some(0), None, None);
+        assert!(!still_needs_recovery(&record, record.last_run_at));
+    }
+
+    #[test]
+    fn still_needs_recovery_false_when_no_longer_schedulable() {
+        // Paused/archived/manual since the crash — never retried, regardless of
+        // the due-ness or baseline match.
+        let paused = ap(
+            "daily",
+            AutopilotStatus::Paused,
+            Some(FAR_FUTURE_MS),
+            None,
+            None,
+        );
+        assert!(!still_needs_recovery(&paused, paused.last_run_at));
     }
 }

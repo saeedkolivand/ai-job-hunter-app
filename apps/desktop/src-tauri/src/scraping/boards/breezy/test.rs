@@ -254,6 +254,37 @@ async fn all_invalid_slugs_error_without_network() {
     );
 }
 
+/// trust-H item 3: an all-invalid-slug run is a whole-board FAILURE (Err), not a
+/// partial — so it must NOT emit a `slugs-invalid` partial note (that note is
+/// only for SOME-rejected-with-a-success runs). Wires an `on_note` sink and
+/// asserts it stayed empty. Network-free (every slug is rejected pre-fetch).
+#[tokio::test]
+async fn all_invalid_slugs_emits_no_note_and_errors() {
+    let scraper = BreezyScraper;
+    let notes = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let sink = notes.clone();
+    let ctx = ScrapeContext {
+        signal: tokio_util::sync::CancellationToken::new(),
+        on_progress: None,
+        on_item: None,
+        on_truncation: None,
+        on_note: Some(std::sync::Arc::new(move |n: String| {
+            sink.lock().unwrap().push(n);
+        })),
+    };
+    let result = scraper
+        .search(make_input(vec!["dotted.host".to_string()]), ctx)
+        .await;
+    assert!(
+        result.is_err(),
+        "an all-invalid-slug run must be a board error"
+    );
+    assert!(
+        notes.lock().unwrap().is_empty(),
+        "an all-reject run must NOT emit a partial note — it's an error, not a partial"
+    );
+}
+
 /// A pre-cancelled signal must make the loop break immediately without
 /// recording `first_fetch_error`.
 #[tokio::test]
@@ -319,9 +350,13 @@ fn parse_breezy_response_happy_path_with_posted_at() {
         }
     ]"#;
     let postings_in: Vec<BzPosting> = serde_json::from_str(json).expect("fixture must parse");
-    let postings = parse_breezy_response(postings_in, "acme", 1_700_000_000_000);
+    let (postings, format_drops) = parse_breezy_response(postings_in, "acme", 1_700_000_000_000);
 
     assert_eq!(postings.len(), 1);
+    assert_eq!(
+        format_drops, 0,
+        "a fully-valid row must not count as a format drop"
+    );
     let p = &postings[0];
     assert_eq!(p.title, "Product Designer");
     assert_eq!(p.url, "https://acme.breezy.hr/p/abc123");
@@ -360,7 +395,7 @@ fn parse_breezy_response_accepts_object_state_and_country() {
     ]"#;
     let postings_in: Vec<BzPosting> =
         serde_json::from_str(json).expect("object-shaped state/country must deserialize");
-    let postings = parse_breezy_response(postings_in, "acme", 0);
+    let (postings, _) = parse_breezy_response(postings_in, "acme", 0);
     assert_eq!(postings.len(), 1);
     assert_eq!(
         postings[0].location,
@@ -378,7 +413,7 @@ fn parse_breezy_response_accepts_string_state() {
          "location": {"name": null, "city": "Austin", "state": "TX", "country": null, "is_remote": false}}
     ]"#;
     let postings_in: Vec<BzPosting> = serde_json::from_str(json).unwrap();
-    let postings = parse_breezy_response(postings_in, "acme", 0);
+    let (postings, _) = parse_breezy_response(postings_in, "acme", 0);
     assert_eq!(postings[0].location, Some("Austin, TX".to_string()));
 }
 
@@ -430,7 +465,7 @@ fn parse_breezy_response_accepts_bare_date_published_date() {
         {"name": "X", "url": "https://acme.breezy.hr/p/bare-date", "published_date": "2024-03-15", "location": null}
     ]"#;
     let postings_in: Vec<BzPosting> = serde_json::from_str(json).unwrap();
-    let postings = parse_breezy_response(postings_in, "acme", 0);
+    let (postings, _) = parse_breezy_response(postings_in, "acme", 0);
     assert_eq!(postings.len(), 1);
     assert!(
         postings[0].posted_at.is_some(),
@@ -450,7 +485,7 @@ fn parse_breezy_response_is_remote_true_with_no_other_info_yields_remote() {
         }
     ]"#;
     let postings_in: Vec<BzPosting> = serde_json::from_str(json).unwrap();
-    let postings = parse_breezy_response(postings_in, "acme", 0);
+    let (postings, _) = parse_breezy_response(postings_in, "acme", 0);
     assert_eq!(postings.len(), 1);
     assert_eq!(postings[0].location, Some("Remote".to_string()));
 }
@@ -468,7 +503,7 @@ fn parse_breezy_response_is_remote_true_appends_to_city_state() {
         }
     ]"#;
     let postings_in: Vec<BzPosting> = serde_json::from_str(json).unwrap();
-    let postings = parse_breezy_response(postings_in, "acme", 0);
+    let (postings, _) = parse_breezy_response(postings_in, "acme", 0);
     assert_eq!(postings.len(), 1);
     assert_eq!(postings[0].location, Some("Austin, TX, Remote".to_string()));
 }
@@ -486,7 +521,7 @@ fn parse_breezy_response_is_remote_true_does_not_duplicate_existing_remote_text(
         }
     ]"#;
     let postings_in: Vec<BzPosting> = serde_json::from_str(json).unwrap();
-    let postings = parse_breezy_response(postings_in, "acme", 0);
+    let (postings, _) = parse_breezy_response(postings_in, "acme", 0);
     assert_eq!(postings.len(), 1);
     assert_eq!(postings[0].location, Some("Remote - US".to_string()));
 }
@@ -494,14 +529,19 @@ fn parse_breezy_response_is_remote_true_does_not_duplicate_existing_remote_text(
 #[test]
 fn parse_breezy_response_empty_array_returns_empty_vec() {
     let postings_in: Vec<BzPosting> = serde_json::from_str("[]").unwrap();
+    let (postings, format_drops) = parse_breezy_response(postings_in, "acme", 0);
     assert!(
-        parse_breezy_response(postings_in, "acme", 0).is_empty(),
+        postings.is_empty(),
         "empty array must parse to an empty Vec, not an error"
     );
+    assert_eq!(format_drops, 0);
 }
 
 /// Missing/empty title and missing/malformed url each drop the row; valid
-/// rows in the same payload must still come through.
+/// rows in the same payload must still come through. CodeRabbit follow-up
+/// (PR #604): each of these 4 drops is a FORMAT drop (missing/blank title or
+/// unusable url) — the exact class `rows-dropped:<n>` must count — so
+/// `format_drops` pins the boundary at 4, not 0.
 #[test]
 fn parse_breezy_response_drops_malformed_rows() {
     let json = r#"[
@@ -513,17 +553,24 @@ fn parse_breezy_response_drops_malformed_rows() {
         {"name": "Valid Two", "url": "https://acme.breezy.hr/p/valid-two", "published_date": null, "location": null}
     ]"#;
     let postings_in: Vec<BzPosting> = serde_json::from_str(json).unwrap();
-    let postings = parse_breezy_response(postings_in, "acme", 0);
+    let (postings, format_drops) = parse_breezy_response(postings_in, "acme", 0);
     let titles: Vec<&str> = postings.iter().map(|p| p.title.as_str()).collect();
     assert_eq!(
         titles,
         vec!["Valid One", "Valid Two"],
         "malformed rows must be dropped without panicking, valid rows kept: {titles:?}"
     );
+    assert_eq!(
+        format_drops, 4,
+        "all 4 title/url drops must count as format drops (2 title + 2 url)"
+    );
 }
 
 /// Breezy has no stable job id — the (deduped) posting URL doubles as the
 /// id/dedup key: two rows sharing a url dedupe to one, distinct urls are kept.
+/// CodeRabbit follow-up (PR #604): a duplicate-url drop is normal multi-listing
+/// hygiene, NOT drift — `format_drops` must stay `0` even though a row was
+/// dropped, so `rows-dropped:<n>` never fires on a perfectly healthy response.
 #[test]
 fn parse_breezy_response_dedupes_by_url_distinct_urls_kept() {
     let json = r#"[
@@ -532,7 +579,7 @@ fn parse_breezy_response_dedupes_by_url_distinct_urls_kept() {
         {"name": "Distinct Listing", "url": "https://acme.breezy.hr/p/other", "published_date": null, "location": null}
     ]"#;
     let postings_in: Vec<BzPosting> = serde_json::from_str(json).unwrap();
-    let postings = parse_breezy_response(postings_in, "acme", 0);
+    let (postings, format_drops) = parse_breezy_response(postings_in, "acme", 0);
     assert_eq!(
         postings.len(),
         2,
@@ -543,11 +590,16 @@ fn parse_breezy_response_dedupes_by_url_distinct_urls_kept() {
         "first-seen row wins the dedupe"
     );
     assert_eq!(postings[1].url, "https://acme.breezy.hr/p/other");
+    assert_eq!(
+        format_drops, 0,
+        "a duplicate-url drop must NOT count as a format drop — it's hygiene, not drift"
+    );
 }
 
 /// Regression: a `https://user:pass@evil.example/job` url must be dropped —
 /// the userinfo-rejecting URL sanity check applies inside the parser too, not
-/// just at the network layer.
+/// just at the network layer. CodeRabbit follow-up (PR #604): an invalid-url
+/// drop IS a format drop.
 #[test]
 fn parse_breezy_response_rejects_userinfo_url() {
     let json = r#"[
@@ -555,11 +607,15 @@ fn parse_breezy_response_rejects_userinfo_url() {
         {"name": "Legit Listing", "url": "https://acme.breezy.hr/p/legit", "published_date": null, "location": null}
     ]"#;
     let postings_in: Vec<BzPosting> = serde_json::from_str(json).unwrap();
-    let postings = parse_breezy_response(postings_in, "acme", 0);
+    let (postings, format_drops) = parse_breezy_response(postings_in, "acme", 0);
     assert_eq!(
         postings.len(),
         1,
         "userinfo url must be dropped, legit row kept"
+    );
+    assert_eq!(
+        format_drops, 1,
+        "the invalid-url drop must count as a format drop"
     );
     assert_eq!(postings[0].title, "Legit Listing");
 }

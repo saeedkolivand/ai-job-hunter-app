@@ -470,12 +470,20 @@ fn aggregator_store_error() -> Option<String> {
 
 // ── Scraper impl ──────────────────────────────────────────────────────────────
 
+/// This board's `Scraper::id()` / `JobPosting.source` value. Exposed as a
+/// crate-visible constant (rather than the bare `"aggregator"` literal
+/// duplicated at each call site) so a caller that needs to recognise an
+/// aggregator-sourced posting — e.g. `commands::autopilot`'s snippet-score
+/// provisional-flag check — references this single source of truth instead of
+/// a string that could silently drift out of lockstep with `id()`.
+pub(crate) const AGGREGATOR_BOARD_ID: &str = "aggregator";
+
 pub struct AggregatorScraper;
 
 #[async_trait]
 impl Scraper for AggregatorScraper {
     fn id(&self) -> &'static str {
-        "aggregator"
+        AGGREGATOR_BOARD_ID
     }
 
     fn display_name(&self) -> &'static str {

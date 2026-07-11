@@ -80,12 +80,60 @@ async fn all_invalid_slugs_error_without_network() {
     }
 }
 
-/// Personio keeps its own inline cancellation guard (narrower `(attempted,
-/// rejected_slugs)` shape than the shared `ats_finish_search` the other 6 ATS
-/// boards use — see the common.rs doc). Pins the same round-1 regression for
-/// this board specifically: a cancel firing right after an invalid slug is
-/// rejected (via the `on_progress` callback the reject branch already calls)
-/// must return `Ok`, not the all-slugs-invalid error.
+/// trust-H item 3: an all-invalid-slug run is a whole-board FAILURE (Err), not a
+/// partial — so it must NOT emit a `slugs-invalid` partial note. Wires an
+/// `on_note` sink and asserts it stayed empty. Network-free (every slug is
+/// rejected pre-fetch, so `successful_fetches == 0` and `ats_partial_note`
+/// returns `None`).
+#[tokio::test]
+async fn all_invalid_slugs_emits_no_note_and_errors() {
+    let scraper = PersonioScraper;
+    let notes = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let sink = notes.clone();
+    let input = BoardSearchInput {
+        query: String::new(),
+        location: None,
+        amount: 10,
+        pages: 1,
+        date_filter: None,
+        job_type: None,
+        work_type: None,
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        country_code: None,
+        latitude: None,
+        longitude: None,
+        radius_km: None,
+        companies: vec!["dotted.host".to_string()],
+    };
+    let ctx = ScrapeContext {
+        signal: tokio_util::sync::CancellationToken::new(),
+        on_progress: None,
+        on_item: None,
+        on_truncation: None,
+        on_note: Some(std::sync::Arc::new(move |n: String| {
+            sink.lock().unwrap().push(n);
+        })),
+    };
+    let result = scraper.search(input, ctx).await;
+    assert!(
+        result.is_err(),
+        "an all-invalid-slug run must be a board error"
+    );
+    assert!(
+        notes.lock().unwrap().is_empty(),
+        "an all-reject run must NOT emit a partial note — it's an error, not a partial"
+    );
+}
+
+/// Personio now shares the `ats_finish_search` finish shape (trust-H item 1) but
+/// still cancels inline in its host loop. Pins the round-1 regression for this
+/// board specifically: a cancel firing right after an invalid slug is rejected
+/// (via the `on_progress` callback the reject branch already calls) must return
+/// `Ok`, not the all-slugs-invalid error.
 #[tokio::test]
 async fn cancel_after_reject_before_next_slug_returns_ok_not_all_invalid_error() {
     let scraper = PersonioScraper;
