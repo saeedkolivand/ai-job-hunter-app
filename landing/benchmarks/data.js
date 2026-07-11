@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783722289290,
+  "lastUpdate": 1783734885653,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3563,6 +3563,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 283368,
             "range": "± 11163",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b5e9c387282e6c41bfb21e6a46ea85e0c4ce0c3b",
+          "message": "feat: make location broadening and guessed markets visible (#600)\n\n* feat: make location broadening and guessed markets visible\n\nThe aggregator reports city-to-country broadening and guessed-market fallbacks as per-board notes (machine tokens, country code only) surfaced as informational chips.\nThe autopilot wizard shows the resolved country inline once a location suggestion is picked, so the save-time backfill is a legacy fallback only.\nGeo fields were already part of the replace-vs-append search signature; the missing radius test now pins it. Trust program PR D (audit 2026-07-10).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test: pin note chips against the all-green collapse\n\nA note-bearing board renders per-board chips instead of collapsing into the all-ok summary; docs/knowledge synced and lessons persisted.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: correct the note mutual-exclusivity condition\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-11T03:46:01+02:00",
+          "tree_id": "e6e646d68ff65b907a8f3432f541ac560161a2bc",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/b5e9c387282e6c41bfb21e6a46ea85e0c4ce0c3b"
+        },
+        "date": 1783734885022,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2157839,
+            "range": "± 82517",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2545705,
+            "range": "± 59272",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 281815,
+            "range": "± 3486",
             "unit": "ns/iter"
           }
         ]
