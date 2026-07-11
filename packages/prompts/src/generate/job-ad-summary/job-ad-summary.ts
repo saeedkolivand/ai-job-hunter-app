@@ -11,6 +11,7 @@
  */
 
 import { type PromptTarget, resolveProfile } from '../../provider/index.js';
+import { buildJobAdBlock } from '../emphasis/index.js';
 import type { GenerationMeta } from '../modes/index.js';
 
 /**
@@ -58,9 +59,7 @@ export function buildJobAdSummaryPrompt(
     ? `Write the digest in ${lang} (the ad's language).`
     : `Write the digest in the ad's own language.`;
 
-  return `<job_ad>
-${jobAd.slice(0, jobAdChars)}
-</job_ad>
+  return `${buildJobAdBlock(jobAd, jobAdChars)}
 
 ### TASK ###
 Summarize the job ad above into a short, scannable markdown digest. ${langNote}

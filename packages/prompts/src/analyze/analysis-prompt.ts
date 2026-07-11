@@ -1,6 +1,7 @@
 /** The resume-analysis user prompt (brief / task / full), with locale conventions. */
 
 import { estimateTokens, getModelTier, truncateResume } from '../context-manager/index.js';
+import { buildJobAdBlock } from '../generate/emphasis/index.js';
 import { resumeConventions } from '../locale/index.js';
 import { type PromptTarget, resolveProfile } from '../provider/index.js';
 import { SCHEMA, SCHEMA_COMPACT } from './schema.js';
@@ -75,10 +76,10 @@ Use these pre-detected languages for your analysis. DO NOT perform your own lang
 ### MARKET CONVENTIONS (job-ad locale: ${meta.jobAdLanguage ?? meta.targetLocale ?? 'unknown'})
 Standard section headers for this market: ${conv.headers.summary} / ${conv.headers.experience} / ${conv.headers.education} / ${conv.headers.skills}. Treat these and their direct English equivalents as ATS-standard — do not penalize a resume for using them. Judge date formatting against this market's convention (e.g. ${conv.dateExample}), not a fixed US or German style.`;
 
-  // Truncate the resume per the resolved strategy; cap the job ad by chars.
+  // Truncate the resume per the resolved strategy; the job ad is capped and
+  // fenced by buildJobAdBlock() at each use site below.
   const resumeTokens = estimateTokens(resume, meta.jobAdLanguage);
   const r = resumeTokens > truncation.maxTokens ? truncateResume(resume, truncation) : resume;
-  const j = jobAd.slice(0, jobAdChars);
 
   // Compact prompt for small / unknown-local models — fewer steps.
   if (depth === 'brief') {
@@ -86,9 +87,7 @@ Standard section headers for this market: ${conv.headers.summary} / ${conv.heade
 ${r}
 </candidate_resume>
 
-<job_ad>
-${j}
-</job_ad>
+${buildJobAdBlock(jobAd, jobAdChars)}
 ${langDetectionNote}
 ${marketNote}
 ${modeNote}
@@ -119,9 +118,7 @@ Return ONLY the JSON.`;
 ${r}
 </candidate_resume>
 
-<job_ad>
-${j}
-</job_ad>
+${buildJobAdBlock(jobAd, jobAdChars)}
 ${langDetectionNote}
 ${marketNote}
 ${modeNote}
@@ -140,8 +137,7 @@ Return only the JSON object.`;
   return `### RESUME TEXT ###
 ${r}
 
-### JOB ADVERTISEMENT ###
-${j}
+${buildJobAdBlock(jobAd, jobAdChars)}
 ${langDetectionNote}
 ${marketNote}
 ${modeNote}
