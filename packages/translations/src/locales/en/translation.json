@@ -1331,6 +1331,9 @@
       "applied": "Applied",
       "failed": "Failed",
       "completedWithErrors": "Partial results",
+      "completedWithErrorsHint": "Some boards errored or returned only part of their results. See the per-board summary below.",
+      "needsConfig": "Needs configuration",
+      "needsConfigHint": "No board could run — sign in to boards under Settings → Accounts, or add API keys in Settings → Jobs, then run again.",
       "interrupted": "Interrupted"
     },
     "card": {
@@ -1817,16 +1820,7 @@
       "connectBoard": "Connect",
       "blockedHint": "Sign in to {{boards}} to start scraping.",
       "loginToEnable": "Sign in to enable",
-      "loginToEnableHint": "{{board}} requires a login — connect your account so scraping returns results.",
-      "skippedNote_one": "{{boards}} was skipped — sign in to enable results from this board.",
-      "skippedNote_other": "{{boards}} were skipped — sign in to enable results from these boards."
-    },
-    "needsCompany": {
-      "skippedNote_one": "{{boards}} was skipped — add a company slug to scrape this board.",
-      "skippedNote_other": "{{boards}} were skipped — add a company slug to scrape these boards."
-    },
-    "needsKeys": {
-      "skippedNote": "Job aggregator skipped — no API keys configured. Add keys in Settings."
+      "loginToEnableHint": "{{board}} requires a login — connect your account so scraping returns results."
     },
     "companies": {
       "label": "Companies",
@@ -1834,6 +1828,21 @@
       "hint": "Comma-separated company slugs for ATS boards."
     },
     "partialScrapeNote": "{{done}} of {{total}} boards · {{failed}} failed",
+    "lastScrapeFailed": "Last scrape failed: {{reason}}",
+    "boardSummary": {
+      "label": "Per-board results",
+      "count_one": "{{count}} job",
+      "count_other": "{{count}} jobs",
+      "partial": "partial results",
+      "allOk_one": "{{count}} board · all ok",
+      "allOk_other": "{{count}} boards · all ok",
+      "skip": {
+        "needsLogin": "needs login",
+        "needsCompany": "needs company",
+        "needsKeys": "needs keys",
+        "other": "skipped"
+      }
+    },
     "viewList": "List",
     "viewSplit": "Split",
     "viewMode": "View mode",
