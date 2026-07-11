@@ -11,7 +11,7 @@
 //! doc/blog — so it isn't marked "unverified" like those.
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
-use super::common::{ats_finish_search, normalize_companies};
+use super::common::{ats_finish_search, ats_partial_note, normalize_companies};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -258,6 +258,7 @@ impl Scraper for WorkableScraper {
 
         let mut successful_fetches = 0usize;
         let mut rejected_slugs = 0usize;
+        let mut rows_dropped = 0usize;
         let mut first_fetch_error: Option<String> = None;
 
         for (i, slug) in companies.iter().enumerate() {
@@ -299,9 +300,11 @@ impl Scraper for WorkableScraper {
                     }
                 };
 
-            // A non-2xx / schema-drift response is now an `Err` above (which records
-            // `first_fetch_error`), so reaching here means a real success — count it.
-            successful_fetches += 1;
+            // A non-2xx response is an `Err` above (which records
+            // `first_fetch_error`). A 200 where EVERY job row fails to
+            // deserialize is schema drift too — mirror Breezy's fix so it's
+            // treated as a fetch failure, not a silent success-with-zero-jobs
+            // (trust-H item 2).
             let resp = data;
 
             let company = resp
@@ -311,7 +314,25 @@ impl Scraper for WorkableScraper {
                 .filter(|s| !s.is_empty())
                 .unwrap_or(slug.as_str())
                 .to_string();
+            let raw_row_count = resp.jobs.len();
             let jobs = rows_to_jobs(resp.jobs);
+            if raw_row_count > 0 && jobs.is_empty() {
+                log::warn!(
+                    "[workable] all {raw_row_count} rows failed to parse for '{}'; treating as a fetch failure",
+                    slug
+                );
+                first_fetch_error.get_or_insert_with(|| {
+                    format!("all {raw_row_count} rows failed to parse — response shape may have changed")
+                });
+                if let Some(ref on_progress) = ctx.on_progress {
+                    on_progress((i + 1) as f32 / total as f32);
+                }
+                continue;
+            }
+            successful_fetches += 1;
+            // SOME (not all) rows dropped by per-row parse → a partial-visibility
+            // anomaly surfaced as a `rows-dropped:<n>` note after the loop.
+            rows_dropped += raw_row_count - jobs.len();
 
             for posting in parse_workable_response(jobs, &company, slug, now) {
                 if let Some(ref on_item) = ctx.on_item {
@@ -322,6 +343,17 @@ impl Scraper for WorkableScraper {
 
             if let Some(ref on_progress) = ctx.on_progress {
                 on_progress((i + 1) as f32 / total as f32);
+            }
+        }
+
+        // trust-H item 3: surface a partial-visibility anomaly (some slugs
+        // rejected / some rows dropped, while others succeeded) as ONE
+        // informational note (PR D grammar; `slugs-invalid` wins over
+        // `rows-dropped`). Gated on non-cancellation — a benign interruption
+        // reports nothing (mirrors `ats_finish_search`).
+        if !ctx.signal.is_cancelled() {
+            if let Some(note) = ats_partial_note(successful_fetches, rejected_slugs, rows_dropped) {
+                ctx.report_note(note);
             }
         }
 

@@ -126,6 +126,20 @@ describe('useAutopilotRun — handleRun error-payload handling', () => {
     expect(result.current.error).toBeNull();
   });
 
+  it('routes a resolved { skipped: "already-running" } payload to idle (not done, not error) with a distinct message', async () => {
+    runMutateAsync.mockResolvedValueOnce({ skipped: 'already-running' });
+    const { result } = renderHookWithClient(() => useAutopilotRun());
+
+    await act(async () => {
+      await result.current.handleRun('ap-concurrent');
+    });
+
+    // Not the silent-success 'done' state — no run actually happened.
+    expect(result.current.runStates['ap-concurrent']).toBe('idle');
+    // Not the red 'error' banner either — a distinct, honest message.
+    expect(result.current.error).toBe('autopilot.wizard.alreadyRunning');
+  });
+
   it('clears a stale failure banner once a subsequent run succeeds', async () => {
     runMutateAsync.mockResolvedValueOnce({ jobId: 'j7', status: 'failed', found: 0 });
     const { result } = renderHookWithClient(() => useAutopilotRun());

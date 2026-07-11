@@ -74,6 +74,15 @@ export interface BoardsContract {
  *     (`supportsLocation: false`), so the engine conservatively dropped `<n>`
  *     of its results whose own location clearly mismatched the request; never
  *     drops remote/unknown-location rows.
+ *   - `"slugs-invalid:<n>"` — a company-slug ATS board rejected `<n>` of the
+ *     supplied slugs pre-fetch (malformed company names) but still returned
+ *     results from the valid ones. If EVERY slug was rejected it's an `error`,
+ *     not a note.
+ *   - `"rows-dropped:<n>"` — a company-slug ATS board dropped `<n>` individual
+ *     response rows that failed per-row parsing (schema drift on those rows)
+ *     while the rest parsed. If EVERY row of a company dropped it's counted as
+ *     a fetch failure, not a note. At most one of `slugs-invalid`/`rows-dropped`
+ *     is emitted per board per run (`slugs-invalid` wins when both apply).
  *   `<cc>` is an ISO country code; the field never carries the raw location text.
  */
 export interface BoardScrapeSummary {

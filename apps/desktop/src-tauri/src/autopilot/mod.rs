@@ -150,6 +150,15 @@ pub struct FoundJob {
     /// Match score (0–100) when the posting passed ranking; absent otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub score: Option<f64>,
+    /// The [`Self::score`] was computed over a TRUNCATED snippet (an aggregator/
+    /// Adzuna description, which the board caps and the detail pane re-resolves
+    /// to full text), so it may diverge from the detail pane's full-text
+    /// re-score — the renderer marks such scores as provisional. `false` for
+    /// full-text boards and for unscored jobs. Set at find-time in
+    /// `commands::autopilot::build_found_job`. `#[serde(default)]` so a record
+    /// written before this field existed loads as `false`.
+    #[serde(default)]
+    pub score_provisional: bool,
     pub found_at: u64,
     /// First surfaced in the most recent run (set by the dedup merge in
     /// [`AutopilotStore::record_run`]). Drives the "New" badge.
@@ -516,21 +525,23 @@ impl AutopilotStore {
     /// Reconcile runs left mid-flight: any autopilot still marked `InProgress`
     /// when the app starts was interrupted by a crash or close, so flip it to
     /// `Interrupted` for an honest badge instead of a stuck "running" state.
-    /// Returns how many were reconciled. Called once at startup.
-    pub fn mark_interrupted_runs(&self) -> usize {
+    /// Returns the ids reconciled, so the scheduler can schedule a single
+    /// bounded recovery retry for the ones whose scheduled occurrence hasn't
+    /// since rolled (see `autopilot_scheduler`). Called once at startup.
+    pub fn mark_interrupted_runs(&self) -> Vec<String> {
         let mut map = self.load();
-        let mut count = 0;
+        let mut reconciled = Vec::new();
         for ap in map.values_mut() {
             if ap.run_status == Some(RunStatus::InProgress) {
                 ap.run_status = Some(RunStatus::Interrupted);
                 ap.updated_at = now_ms();
-                count += 1;
+                reconciled.push(ap.id.clone());
             }
         }
-        if count > 0 {
+        if !reconciled.is_empty() {
             self.save(map);
         }
-        count
+        reconciled
     }
 
     /// Persist the outcome of a run: counts, last-run time, and the found-jobs
@@ -623,9 +634,15 @@ impl AutopilotStore {
     }
 
     fn save(&self, map: HashMap<String, Autopilot>) {
-        // Existing behavior: best-effort write, errors swallowed. Migrations that
-        // need to *observe* a successful persist call `write_to_disk` directly.
-        self.write_to_disk(&map).ok();
+        // A persistent-write failure must be LOUD, not swallowed: the in-memory
+        // cache below would otherwise diverge from disk silently, and the next
+        // reader (or a restart) would lose this state with no signal at all
+        // (quick win 9). Smallest honest surface — a `log::error` with context;
+        // deliberately NOT a retry queue. Migrations that need to *observe* a
+        // successful persist still call `write_to_disk` directly.
+        if let Err(e) = self.write_to_disk(&map) {
+            log::error!("[autopilot] failed to persist autopilots.json: {e}");
+        }
         *self.cache.lock() = Some(map);
     }
 
@@ -909,7 +926,14 @@ fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<Found
                     row.description = inc.description.clone();
                 }
                 if inc.score.is_some() {
+                    // Paired fields — `score_provisional` describes WHICH score
+                    // is on the row, so it must move with `score`, never be left
+                    // stale from a prior source (e.g. a full-text board's
+                    // authoritative score resurfacing over an old aggregator
+                    // snippet score, or vice versa — a snippet score must never
+                    // display as authoritative).
                     row.score = inc.score;
+                    row.score_provisional = inc.score_provisional;
                 }
                 // Same fill-without-clobbering pattern as `board`/`description`: a
                 // re-scrape that newly learns the salary updates the row, but never

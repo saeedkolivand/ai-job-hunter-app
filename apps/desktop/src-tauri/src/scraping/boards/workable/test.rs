@@ -205,6 +205,27 @@ fn rows_to_jobs_empty_input_returns_empty() {
     assert!(rows_to_jobs(vec![]).is_empty());
 }
 
+/// trust-H item 2: when EVERY job row in a non-empty batch fails to deserialize,
+/// `rows_to_jobs` returns an empty `Vec` — the signal `search()` uses
+/// (`raw_row_count > 0 && rows_to_jobs(..).is_empty()`) to treat the company as
+/// a FETCH FAILURE instead of a silent success-with-zero-jobs. Mirrors Breezy's
+/// round-2 fix, now applied to Workable too.
+#[test]
+fn rows_to_jobs_all_rows_undeserializable_returns_empty() {
+    // Every row is unparseable as `WkJob`: a bad `telecommuting` type, or not
+    // even an object (all of `WkJob`'s fields are optional, so an EMPTY object
+    // would parse — these must genuinely fail instead).
+    let values: Vec<serde_json::Value> = serde_json::from_str(
+        r#"[{"telecommuting": "yes"}, "not-an-object", 42, {"title": "X", "telecommuting": 3}]"#,
+    )
+    .unwrap();
+    let jobs = rows_to_jobs(values);
+    assert!(
+        jobs.is_empty(),
+        "every row failing to deserialize must yield an empty Vec (the all-drift signal)"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // parse_workable_response — fixture-based parsing
 // ---------------------------------------------------------------------------

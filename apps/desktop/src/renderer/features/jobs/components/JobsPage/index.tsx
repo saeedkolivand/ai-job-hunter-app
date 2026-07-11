@@ -259,19 +259,28 @@ export function JobsPage() {
       );
     }
 
+    // Stable, deterministic ordering (audit quick win 8): an `id` tiebreak so
+    // equal timestamps never reorder between renders (nondeterministic order
+    // reads as flakiness), and — for the date sorts — undated postings (no
+    // `postedAt`) collect in a trailing band instead of interleaving with
+    // genuinely-dated ones via the `capturedAt` fallback (a scrape-time clock,
+    // not a posting date, so a just-captured undated row would otherwise jump
+    // above a real week-old posting).
+    // Ordinal (not localeCompare) — ids are opaque keys, not display text;
+    // collation can canonically-equate distinct sequences.
+    const byId = (x: Posting, y: Posting) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0);
     result = [...result].sort((a, b) => {
-      if (sortBy === 'newest') {
-        const aTime = a.postedAt ?? a.capturedAt;
-        const bTime = b.postedAt ?? b.capturedAt;
-        return bTime - aTime;
-      } else if (sortBy === 'oldest') {
-        const aTime = a.postedAt ?? a.capturedAt;
-        const bTime = b.postedAt ?? b.capturedAt;
-        return aTime - bTime;
-      } else if (sortBy === 'company') {
-        return a.company.localeCompare(b.company);
+      if (sortBy === 'company') {
+        return a.company.localeCompare(b.company) || byId(a, b);
       }
-      return 0;
+      // newest / oldest: dated band first, undated (postedAt-less) band last.
+      const aDated = typeof a.postedAt === 'number';
+      const bDated = typeof b.postedAt === 'number';
+      if (aDated !== bDated) return aDated ? -1 : 1;
+      const aTime = a.postedAt ?? a.capturedAt;
+      const bTime = b.postedAt ?? b.capturedAt;
+      const cmp = sortBy === 'oldest' ? aTime - bTime : bTime - aTime;
+      return cmp || byId(a, b);
     });
 
     return result;
