@@ -335,7 +335,7 @@ footer{margin-top:64px; text-align:center}
   <p class="scrawl reveal">the .claude/ agent system</p>
   <h1 class="reveal">The Agent Fleet</h1>
   <p class="tag reveal">a swarm of tiny specialists builds this repo, and a second swarm <em>tears their work apart.</em></p>
-  <p class="count reveal"><span class="num" id="agent-count" data-to="24">24</span> <b>agents</b> · paired author + critic per domain · nobody approves their own work.</p>
+  <p class="count reveal"><span class="num" id="agent-count" data-to="25">25</span> <b>agents</b> · paired author + critic per domain · nobody approves their own work.</p>
 
   <div class="hero-scene reveal draw" aria-hidden="true">
     <svg viewBox="0 0 560 220">
@@ -524,7 +524,7 @@ footer{margin-top:64px; text-align:center}
   <hr class="div draw" aria-hidden="true"><svg viewBox="0 0 620 16" preserveAspectRatio="none"><path class="ink" d="M2 8 Q160 13 320 7 T618 9"/></svg></hr>
 
   <footer>
-    <p class="byline">24 specialists, zero of them with a real job either.</p>
+    <p class="byline">25 specialists, zero of them with a real job either.</p>
     <p class="foot-links">
       <a href="/">home</a> · <a href="/download">download</a> · <a href="https://github.com/saeedkolivand/ai-job-hunter-app" target="_blank" rel="noopener">GitHub</a> · <a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener">♥ sponsor</a>
     </p>
@@ -561,6 +561,7 @@ footer{margin-top:64px; text-align:center}
       ['extension-reviewer','critic','Reviews the browser extension + bridge — MV3 compliance, permission minimization, per-frame token auth correctness, protocol lockstep (TS ↔ Rust), and Chrome Web Store + Firefox AMO store-policy compliance.','audits <b>extension-author</b> (+ tauri-security-reviewer on auth/permission/data risk)','apps/extension/** · extension_bridge/** · extension-protocol*','/review-extension on the new message type.'],
     ],
     cross: [
+      ['finding-verifier','cross','Per-finding verification judge in the /review pipeline — reads code at file:line, refutes-by-default, requires rule-based claims to quote the exact rule or score 0. Never edits, only scores 0–100.','runs per single-source candidate finding in /review synthesis','review-config.md · .claude/agents/** · target file:line (read-only)','/review to score findings <80 confidence.'],
       ['cleanup','cross','Dead-code audit across the TS/React + Rust monorepo — unused files, exports, deps. Report-first; safe-tier deletes only after confirmation.','runs immediately before <b>project-steward</b>','whole monorepo','/cleanup after the feature lands.'],
       ['project-steward','cross','Sole owner of docs, the knowledge base, ADRs, the lessons log, and release — the only agent that persists lessons.','closes every task','docs/** · docs/knowledge/** · landing/** · release config','/update-docs to sync docs + graphify after the change.'],
       ['pr-reviewer','cross','Strict generalist PRE-PR reviewer — runs the real repo tools (typecheck, lint, clippy, tests) + cross-file blast-radius + a verification gate before a PR opens, so CodeRabbit finds fewer issues.','final internal gate before push — 🔴+🟠 block','any changed files (diff-scoped)','/review before opening a PR.'],
@@ -580,7 +581,7 @@ footer{margin-top:64px; text-align:center}
     ['code-quality-author', ['code-quality-reviewer']],
     ['extension-author',    ['extension-reviewer']],
   ];
-  var CROSS_NODES = ['tauri-security-reviewer','performance-profiler','cleanup','project-steward','pr-reviewer'];
+  var CROSS_NODES = ['finding-verifier','tauri-security-reviewer','performance-profiler','cleanup','project-steward','pr-reviewer'];
 
   function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function escAttr(s){ return esc(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
