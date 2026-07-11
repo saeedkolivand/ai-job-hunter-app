@@ -120,9 +120,9 @@ export function ExtensionBridgeSection() {
             </span>
           </div>
 
-          {/* Help + availability (extension is not yet published to any store). */}
+          {/* Help + availability (published on the Chrome Web Store and Firefox AMO). */}
           <p className="text-xs leading-snug text-foreground/40">
-            {t('settings.accounts.extension.help')} {t('settings.accounts.extension.notPublished')}
+            {t('settings.accounts.extension.help')} {t('settings.accounts.extension.availability')}
           </p>
 
           {/* Regenerate */}
