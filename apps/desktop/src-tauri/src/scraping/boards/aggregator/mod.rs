@@ -150,6 +150,13 @@ async fn primary_chain(
     // "add a JSearch key" suffix — that suffix only makes sense when JSearch was
     // never configured at all) when Jooble also fails to salvage a result.
     let mut jsearch_configured_failed: Option<anyhow::Error> = None;
+    // Same tracking for Jooble — lowest precedence of the three (checked last,
+    // below): without it, a user with ONLY a Jooble key whose Jooble call fails
+    // got a silent `Ok(empty)` ("no jobs found") instead of an honest error —
+    // exactly the silent-empty-failure bug the trust program eliminated. Its raw
+    // error already carries the `"jooble: "` prefix from the provider, so — like
+    // `jsearch_configured_failed` — it is returned verbatim, no added suffix.
+    let mut jooble_configured_failed: Option<anyhow::Error> = None;
 
     // Real (non-empty) but SPARSE items from a GUESSED market. We distrust them
     // enough to prefer a fallback, but if there is no working fallback they beat
@@ -280,6 +287,7 @@ async fn primary_chain(
                 Ok(items) => return Ok(dedupe(items)),
                 Err(e) => {
                     log::warn!("[aggregator] jooble fallback failed: {e}");
+                    jooble_configured_failed = Some(e);
                     // Fall through to the sparse-guessed salvage / diagnostic below,
                     // same as a JSearch failure would without Jooble configured.
                 }
@@ -317,6 +325,17 @@ async fn primary_chain(
         return Err(anyhow::anyhow!(
             "{e}; add a JSearch key in Settings → API Keys for global coverage"
         ));
+    }
+
+    // Jooble had keys but failed, and NEITHER Adzuna nor JSearch was configured
+    // (otherwise one of the checks above would already have returned) → surface
+    // Jooble's own error rather than a silent empty result. This is the case a
+    // user with ONLY a Jooble key hits: without this check, a failing Jooble call
+    // degraded to `Ok(vec![])` ("no jobs found"), indistinguishable from a
+    // genuine zero-results search — the exact silent-empty-failure bug the trust
+    // program (PR #597-#604) eliminated for Adzuna/JSearch.
+    if let Some(e) = jooble_configured_failed {
+        return Err(e);
     }
 
     // None of the providers configured → keyless-empty (intended, never an error).

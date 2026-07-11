@@ -1966,6 +1966,43 @@ async fn jooble_erroring_falls_through_to_jsearch_raw_error() {
     );
 }
 
+/// Adzuna + JSearch both UNCONFIGURED (a Jooble-only setup) and Jooble is
+/// configured but ERRORS → the aggregator must surface Jooble's error, NOT a
+/// silent `Ok(empty)`. Regression guard: a user with only a Jooble key whose
+/// Jooble call fails must get an honest diagnostic, not "no jobs found" — the
+/// exact silent-empty-failure bug the trust program (PR #597-#604) eliminated
+/// for Adzuna/JSearch.
+#[tokio::test]
+async fn jooble_only_configured_failure_surfaces_error() {
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::unconfigured("adzuna")),
+        Box::new(FakeProvider::unconfigured("jsearch")),
+        Box::new(FakeProvider::err("jooble", "jooble upstream 500")),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        false,
+        None,
+        100,
+        make_token(),
+    )
+    .await;
+
+    assert!(
+        result.is_err(),
+        "a Jooble-only setup with a failing Jooble call must return Err, not silent Ok(empty)"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("jooble upstream 500"),
+        "the diagnostic must carry Jooble's own error; got: {msg}"
+    );
+}
+
 // ── Guessed-market empty-result guard (autopilot aggregator zero-jobs fix) ────
 //
 // When the caller supplied NO `country_code`, `AggregatorScraper::search` defaults
