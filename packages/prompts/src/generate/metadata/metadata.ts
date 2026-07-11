@@ -1,6 +1,7 @@
 /** Metadata-extraction prompt + validator. */
 
 import { type PromptTarget, resolveProfile } from '../../provider/index.js';
+import { buildJobAdBlock } from '../emphasis/index.js';
 import { parseLinksFromResume, stripLinkBlock } from '../links/index.js';
 import type { GenerationMeta } from '../modes/index.js';
 
@@ -26,9 +27,7 @@ ${linksBlock ? `\n${linksBlock}\n` : ''}
 ${resumeBody.slice(0, 3000)}
 </candidate_resume>
 
-<job_ad>
-${jobAd.slice(0, 4000)}
-</job_ad>
+${buildJobAdBlock(jobAd, 4000)}
 
 Return this exact JSON (no other text):
 {

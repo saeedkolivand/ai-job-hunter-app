@@ -18,6 +18,7 @@ import { type PromptTarget, resolveProfile } from '../../provider/index.js';
 import {
   buildCompanyResearchBlock,
   buildGroundingBlock,
+  buildJobAdBlock,
   buildResumeVoiceDirective,
   buildStyleReferenceBlock,
 } from '../emphasis/index.js';
@@ -205,9 +206,7 @@ ${formatSkeleton}`;
 ${resumeBody}
 </candidate_resume>
 
-<job_ad>
-${jobAd.slice(0, jobAdChars)}
-</job_ad>
+${buildJobAdBlock(jobAd, jobAdChars)}
 ${buildCompanyResearchBlock(companyBrief)}${styleBlock}
 Every factual claim about the candidate MUST be traceable to a line in <candidate_resume>. Never claim skills or experience from <job_ad> alone.
 

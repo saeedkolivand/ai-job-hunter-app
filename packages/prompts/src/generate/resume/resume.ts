@@ -7,6 +7,7 @@ import {
   buildEmphasisBlock,
   buildEmphasisDirectivesBlock,
   buildGroundingBlock,
+  buildJobAdBlock,
 } from '../emphasis/index.js';
 import { buildBodyLinksBlock, parseLinksFromResume, stripLinkBlock } from '../links/index.js';
 import { type GenerationMeta, type GenerationMode, MODES } from '../modes/index.js';
@@ -291,9 +292,7 @@ export function buildResumePrompt(
 ${resumeBody}
 </candidate_resume>
 
-<job_ad>
-${jobAd.slice(0, jobAdChars)}
-</job_ad>
+${buildJobAdBlock(jobAd, jobAdChars)}
 
 Every skill, job title, company, date, achievement, and responsibility in your output MUST come from <candidate_resume>.
 
