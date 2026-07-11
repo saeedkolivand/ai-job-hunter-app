@@ -144,6 +144,7 @@ fn test_scrape_context_creation() {
         on_progress: None,
         on_item: None,
         on_truncation: None,
+        on_note: None,
     };
     assert!(!ctx.signal.is_cancelled());
 }
@@ -155,6 +156,7 @@ fn test_scrape_context_with_callbacks() {
         on_progress: Some(Box::new(|_| {})),
         on_item: Some(Box::new(|_| {})),
         on_truncation: None,
+        on_note: None,
     };
     assert!(ctx.on_progress.is_some());
     assert!(ctx.on_item.is_some());

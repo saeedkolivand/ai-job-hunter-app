@@ -7,6 +7,8 @@
 /// descendants, including `test.rs`) rather than fully private, purely to
 /// preserve this behavior-preserving move — no API surface beyond `aggregator`
 /// is intended.
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -76,6 +78,28 @@ pub(super) fn adzuna_max_days_old(date_filter: Option<&str>) -> u32 {
 /// which keys off Adzuna returning empty.
 pub(super) fn should_broaden(country_guessed: bool, where_val: &str, count: usize) -> bool {
     !country_guessed && !where_val.is_empty() && count < super::ADZUNA_BROADEN_FLOOR
+}
+
+/// User-facing note token when a GUESSED market (no `country_code` was supplied)
+/// returned an AUTHORITATIVE result set — `count` at or above the broaden floor,
+/// so [`super::primary_chain`] returns it as-is instead of routing to the global
+/// (JSearch) fallback. Surfaces the otherwise-silent market guess so the user can
+/// set a country for deterministic results.
+///
+/// `None` for an explicit country, an empty location, or a sub-floor count (which
+/// `primary_chain` re-routes to the global fallback, so no guessed-market results
+/// are actually shown — flagging the guess there would mislead). Country code
+/// only — never the raw location (free-text PII).
+pub(super) fn guessed_market_note(
+    country_guessed: bool,
+    location: &str,
+    count: usize,
+    country: &str,
+) -> Option<String> {
+    // `.trim()` here is defensive for direct unit-test callers — the real call
+    // site (`AdzunaProvider::search`) already passes a caller-trimmed `location`.
+    (country_guessed && !location.trim().is_empty() && count >= super::ADZUNA_BROADEN_FLOOR)
+        .then(|| format!("guessed-market:{country}"))
 }
 
 /// Adzuna's `where` wants a place *inside* the market (the country is already the
@@ -207,6 +231,12 @@ pub(super) struct AdzunaResp {
 pub(crate) struct AdzunaProvider {
     pub(super) app_id: Option<String>,
     pub(super) app_key: Option<String>,
+    /// Optional side-channel for user-facing location-policy notes (guessed
+    /// market, sparse city → country-wide broadening). Injected by
+    /// `AggregatorScraper::search` from the `ScrapeContext`; `None` in unit tests
+    /// and credential-state probes. `Arc` (Send + Sync) so the provider stays
+    /// `Sync` while it holds the sink across `.await`.
+    pub(super) note_sink: Option<Arc<dyn Fn(String) + Send + Sync>>,
 }
 
 impl AdzunaProvider {
@@ -223,6 +253,23 @@ impl AdzunaProvider {
                     log::warn!("[aggregator] {ADZUNA_APP_KEY} keyring error: {e}");
                     None
                 }),
+            note_sink: None,
+        }
+    }
+
+    /// Attach a location-policy note sink (from the aggregator's `ScrapeContext`).
+    pub(super) fn with_note_sink(
+        mut self,
+        sink: Option<Arc<dyn Fn(String) + Send + Sync>>,
+    ) -> Self {
+        self.note_sink = sink;
+        self
+    }
+
+    /// Emit an informational location-policy note through the injected sink, if any.
+    fn report_note(&self, note: String) {
+        if let Some(ref sink) = self.note_sink {
+            sink(note);
         }
     }
 }
@@ -284,6 +331,15 @@ impl JobProvider for AdzunaProvider {
         )
         .await?;
 
+        // Surface the guessed-market policy when this guess produced the
+        // authoritative result (>= floor, so `primary_chain` keeps it). `broaden`
+        // never fires for a guessed market, so `postings.len()` here is final for
+        // that branch. Country code only — the raw location is never emitted.
+        if let Some(note) = guessed_market_note(country_guessed, location, postings.len(), country)
+        {
+            self.report_note(note);
+        }
+
         // Broaden on near-empty: even a hygienic `where` can over-narrow a sparse
         // market, so if a real Adzuna market returned under the floor, retry ONCE
         // country-wide (`where=""`) — same `what`, sort, and `max_days_old` — and
@@ -306,6 +362,9 @@ impl JobProvider for AdzunaProvider {
                         postings.len(),
                         broadened.len()
                     );
+                    // Surface the sparse-city → country-wide broadening. Country
+                    // code only — never the raw location (free-text PII).
+                    self.report_note(format!("broadened:{country}"));
                     return Ok(broadened);
                 }
                 Ok(_) => {}

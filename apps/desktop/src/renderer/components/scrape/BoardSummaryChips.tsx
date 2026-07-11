@@ -2,6 +2,8 @@ import type { BoardScrapeSummary } from '@ajh/shared';
 import { type TFunction, useTranslation } from '@ajh/translations';
 import { cn, Tag } from '@ajh/ui';
 
+import { regionName } from '@/lib/region-name';
+
 /**
  * Compact per-board diagnostics strip. Renders a `BoardScrapeSummary[]` as one
  * chip per board — `board · count | reason` — so a zero / partial / failed run is
@@ -10,10 +12,11 @@ import { cn, Tag } from '@ajh/ui';
  * it lives outside both feature dirs (no cross-feature import).
  *
  * Variants: success (green count), error (red, sanitized reason), skipped
- * (neutral "config" tone, mapped reason), truncated (amber "partial"). When
- * EVERY board succeeded, the whole strip collapses to one compact "N boards ·
- * all ok" chip instead of one green chip per board (noise reduction — a clean
- * run doesn't need a per-board breakdown).
+ * (neutral "config" tone, mapped reason), truncated (amber "partial"), note
+ * (blue "informational" — a benign location policy the board applied, e.g. a
+ * broadened / guessed market). When EVERY board succeeded, the whole strip
+ * collapses to one compact "N boards · all ok" chip instead of one green chip
+ * per board (noise reduction — a clean run doesn't need a per-board breakdown).
  */
 
 /** Max length of a sanitized reason — a hint, not a full error dump. */
@@ -108,14 +111,17 @@ function redactToken(token: string): string {
   return placeholder ? token.replace(trimmed, placeholder) : token;
 }
 
-type ChipTone = 'success' | 'error' | 'skipped' | 'truncated';
+type ChipTone = 'success' | 'error' | 'skipped' | 'truncated' | 'note';
 
-/** Tone → `Tag` colour. Skipped is the neutral "needs configuration" tone. */
-const TONE_COLOR: Record<ChipTone, 'success' | 'error' | 'default' | 'warning'> = {
+/** Tone → `Tag` colour. Skipped is the neutral "needs configuration" tone;
+ *  `note` uses the informational (blue) `processing` tone — distinct from the
+ *  error/skip/partial tones — for a benign "how the search was adjusted" hint. */
+const TONE_COLOR: Record<ChipTone, 'success' | 'error' | 'default' | 'warning' | 'processing'> = {
   success: 'success',
   error: 'error',
   skipped: 'default',
   truncated: 'warning',
+  note: 'processing',
 };
 
 interface Chip {
@@ -142,13 +148,39 @@ function skipDetail(skipped: string, t: TFunction): string {
 }
 
 /**
+ * Map a controlled location `note` token to a localized label — or `null` for an
+ * unknown/future token so a legacy or newer backend can never leak a raw machine
+ * token into the UI (tolerant, like the `skipped` fallback). Shape is
+ * `kind:<countryCode>` (lowercase cc); the country name is resolved natively.
+ */
+function noteDetail(note: string, t: TFunction, locale: string): string | null {
+  const sep = note.indexOf(':');
+  if (sep < 0) return null;
+  const kind = note.slice(0, sep);
+  const cc = note.slice(sep + 1).trim();
+  // Alpha-2 only — a malformed multi-colon token (e.g. "broadened:de:extra")
+  // must not render its trailing garbage as a "country".
+  if (cc.length !== 2) return null;
+  const country = regionName(cc, locale);
+  switch (kind) {
+    case 'broadened':
+      return t('jobs.boardSummary.note.broadened', { country });
+    case 'guessed-market':
+      return t('jobs.boardSummary.note.guessed', { country });
+    default:
+      return null;
+  }
+}
+
+/**
  * Normalize + classify each summary defensively — the array crosses IPC and may
  * be a legacy/tampered persisted record, so unknown shapes are tolerated (a
  * non-object entry, a missing board id, a non-numeric count) rather than trusted.
- * Per-board precedence mirrors Rust `scrape_diagnostics`: error > skipped >
- * truncated > success.
+ * Per-board precedence mirrors Rust `scrape_diagnostics`, with the informational
+ * location note slotting below the failure/partial tones: error > skipped >
+ * truncated > note > success.
  */
-function toChips(summaries: readonly BoardScrapeSummary[], t: TFunction): Chip[] {
+function toChips(summaries: readonly BoardScrapeSummary[], t: TFunction, locale: string): Chip[] {
   if (!Array.isArray(summaries)) return [];
   const chips: Chip[] = [];
   summaries.forEach((raw, i) => {
@@ -160,6 +192,8 @@ function toChips(summaries: readonly BoardScrapeSummary[], t: TFunction): Chip[]
     const error = typeof s.error === 'string' && s.error.trim() ? s.error : null;
     const skipped = typeof s.skipped === 'string' && s.skipped.trim() ? s.skipped : null;
     const truncated = typeof s.truncated === 'string' && s.truncated.trim() ? s.truncated : null;
+    const noteRaw = typeof s.note === 'string' && s.note.trim() ? s.note : null;
+    const note = noteRaw ? noteDetail(noteRaw, t, locale) : null;
     const count = typeof s.count === 'number' && Number.isFinite(s.count) ? s.count : 0;
 
     let tone: ChipTone;
@@ -173,6 +207,9 @@ function toChips(summaries: readonly BoardScrapeSummary[], t: TFunction): Chip[]
     } else if (truncated) {
       tone = 'truncated';
       detail = t('jobs.boardSummary.partial');
+    } else if (note) {
+      tone = 'note';
+      detail = note;
     } else {
       tone = 'success';
       detail = t('jobs.boardSummary.count', { count });
@@ -188,8 +225,8 @@ export interface BoardSummaryChipsProps {
 }
 
 export function BoardSummaryChips({ summaries, className }: BoardSummaryChipsProps) {
-  const { t } = useTranslation();
-  const boardChips = toChips(summaries, t);
+  const { t, i18n } = useTranslation();
+  const boardChips = toChips(summaries, t, i18n.language);
   if (boardChips.length === 0) return null;
 
   // Noise reduction: a fully clean run (every board succeeded) collapses to one
