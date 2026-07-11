@@ -128,7 +128,13 @@ const DEFAULT_FORM = {
 
 const NOOP = () => {};
 
-function renderForm(overrides: { catalogLoading?: boolean; catalog?: BoardCatalogEntry[] } = {}) {
+function renderForm(
+  overrides: {
+    catalogLoading?: boolean;
+    catalog?: BoardCatalogEntry[];
+    form?: typeof DEFAULT_FORM;
+  } = {}
+) {
   stubCatalog = overrides.catalog ?? LISTED_CATALOG;
   stubLoading = overrides.catalogLoading ?? false;
 
@@ -140,7 +146,7 @@ function renderForm(overrides: { catalogLoading?: boolean; catalog?: BoardCatalo
   return render(
     <ScrapeForm
       show={true}
-      form={DEFAULT_FORM}
+      form={overrides.form ?? DEFAULT_FORM}
       scraping={false}
       scrapeOutcome={null}
       onToggle={NOOP}
@@ -256,5 +262,24 @@ describe('ScrapeForm — hidden when show=false', () => {
     );
     // AnimatePresence renders nothing when show=false
     expect(container.firstChild).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LocationFilterNote integration (PR F) — real component, not stubbed here,
+// so a wrong prop name at the ScrapeForm call site would fail this render
+// instead of silently compiling and passing every other test in the file.
+// ---------------------------------------------------------------------------
+
+describe('ScrapeForm — location filter note (PR F integration)', () => {
+  it('shows the note when a location is set and the selected board does not support it', () => {
+    // greenhouse (LISTED_CATALOG) has no `supportsLocation` — falsy, non-supporting.
+    renderForm({ form: { ...DEFAULT_FORM, boards: ['greenhouse'], location: 'Berlin' } });
+    expect(screen.getByRole('note')).toBeInTheDocument();
+  });
+
+  it('hides the note when no location is set (default form)', () => {
+    renderForm({ form: { ...DEFAULT_FORM, boards: ['greenhouse'], location: '' } });
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
   });
 });

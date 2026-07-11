@@ -1823,6 +1823,7 @@
       "loginToEnable": "Sign in to enable",
       "loginToEnableHint": "{{board}} requires a login — connect your account so scraping returns results."
     },
+    "locationFilterHint": "Location filtered locally:",
     "companies": {
       "label": "Companies",
       "placeholder": "e.g. stripe, airbnb",
@@ -1845,7 +1846,10 @@
       },
       "note": {
         "broadened": "few local results — showing {{country}} wide",
-        "guessed": "no country set — searched {{country}}"
+        "guessed": "no country set — searched {{country}}",
+        "locationFilteredNone": "location filtered locally",
+        "locationFiltered_one": "{{count}} off-location result hidden",
+        "locationFiltered_other": "{{count}} off-location results hidden"
       }
     },
     "viewList": "List",

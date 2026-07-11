@@ -40,6 +40,14 @@ pub async fn autopilot_scrape(
         actively_hiring: None,
         verified: None,
         sort_by: None,
+        // Location forwarding (trust PR F): the persisted `AutopilotTarget` carries
+        // only `location` (free text) + `country_code` — verified: it has no
+        // lat/lon/radius fields to forward (the wizard never captures them). Both
+        // are forwarded here, so `input.location_spec()` yields a spec with a city
+        // + country, which drives the engine's central location post-filter for
+        // non-supporting boards AND the aggregator's market routing on autopilot
+        // runs. Wiring lat/lon/radius needs the wizard + `AutopilotTargetSchema` to
+        // capture + persist them first (stage-2 / follow-up).
         country_code: target.country_code.clone(),
         latitude: None,
         longitude: None,

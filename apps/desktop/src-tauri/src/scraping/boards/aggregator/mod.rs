@@ -502,6 +502,12 @@ impl Scraper for AggregatorScraper {
         aggregator_store_error().is_none() && !aggregator_has_configured_provider()
     }
 
+    fn supports_location(&self) -> bool {
+        // Adzuna/JSearch consume the location server-side: `country_code` routes the
+        // market directly and the free-text `location` is the `where`/query param.
+        true
+    }
+
     async fn search(
         &self,
         input: BoardSearchInput,
