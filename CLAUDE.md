@@ -127,7 +127,7 @@ Cross-cutting critics (no author — fixes route to the owning domain author): `
 **Hard rules:**
 
 - **Main session never edits source directly** — delegate all code changes to a domain author via `Agent`. Exceptions: `CLAUDE.md`, `.claude/**` meta-config, plan files, single-char typo fixes.
-- **Trivial diffs skip the swarm** (docs/config/rename/one-liners) — the Stop review-gate (`.claude/hooks/review-gate.mjs`) reviews the real diff regardless; only HIGH/CRITICAL block, once per finish-chain, inert in plan mode.
+- **Trivial diffs skip the swarm** (docs/config/rename/one-liners) — the Stop review-gate (`.claude/hooks/review-gate.mjs`) reviews the full branch diff (committed + working tree) regardless; blocks on parsed HIGH/CRITICAL findings with confidence ≥ 0.6 (deterministic verdict, schema-1 JSON — never prose matching), once per finish-chain, inert in plan mode. Every run logs to `.claude/.review-metrics.jsonl`.
 - **Lessons** (`.claude/memory/lessons.jsonl`) — only `project-steward` writes; others propose via `LESSON · category · Context/Decision/Outcome`.
 - **Cross-session recall** — all agents may call `mcp__mcp-search` (claude-mem: `search`/`timeline`/`get_observations`/`memory_search`/`memory_context`) for prior-session context. Provided by the user-installed `thedotmack/claude-mem` plugin, not the repo — absent if the plugin isn't installed (the allowlist entry then just no-ops). Honor `docs/` path-privacy + `<private>` for PII.
 
