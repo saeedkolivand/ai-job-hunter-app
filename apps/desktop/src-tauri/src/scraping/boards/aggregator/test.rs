@@ -147,6 +147,45 @@ async fn adzuna_ok_empty_does_not_call_jsearch() {
     );
 }
 
+/// JSearch Ok(empty) → empty returned, Jooble NOT called. Symmetric with
+/// Adzuna's own "configured Ok, even empty, wins" rule: a JSearch `Ok(vec![])`
+/// is a DECISIVE (if empty) result, not "nothing" — it must short-circuit
+/// before the Jooble last-resort tier, exactly like
+/// `adzuna_ok_empty_does_not_call_jsearch` above one tier up.
+///
+/// Adzuna is UNCONFIGURED here (not `Ok(empty)`) so control actually reaches
+/// the JSearch tier — an `Ok(empty)` Adzuna would short-circuit before JSearch
+/// is ever consulted (see the sibling test above), which would make this test
+/// pass for the wrong reason.
+#[tokio::test]
+async fn jsearch_ok_empty_does_not_call_jooble() {
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::unconfigured("adzuna")),
+        Box::new(FakeProvider::ok("jsearch", vec![])),
+        // Jooble is configured and would return items — but must not be called.
+        Box::new(FakeProvider::err("jooble", "should not be called")),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        false,
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        result.len(),
+        0,
+        "Jooble must not be called when JSearch returns Ok(empty)"
+    );
+}
+
 /// Adzuna Err → JSearch called and its results returned.
 #[tokio::test]
 async fn adzuna_err_falls_back_to_jsearch() {
@@ -305,6 +344,17 @@ fn jsearch_is_configured_reflects_key_presence() {
 
     let with_key = JSearchProvider {
         api_key: Some("rapidapikey".to_string()),
+    };
+    assert!(with_key.is_configured());
+}
+
+#[test]
+fn jooble_is_configured_reflects_key_presence() {
+    let no_key = JoobleProvider { api_key: None };
+    assert!(!no_key.is_configured());
+
+    let with_key = JoobleProvider {
+        api_key: Some("joobleapikey".to_string()),
     };
     assert!(with_key.is_configured());
 }
@@ -569,6 +619,219 @@ fn jsearch_drops_jobs_without_any_link() {
     assert_eq!(count, 1, "job without either link must be dropped");
 }
 
+// ── Jooble response → JobPosting mapping ─────────────────────────────────────
+
+#[test]
+fn jooble_response_maps_to_job_posting() {
+    let json = serde_json::json!({
+        "totalCount": 1,
+        "jobs": [{
+            "id": "abc-1",
+            "title": "Backend Engineer",
+            "company": "Acme",
+            "location": "Munich",
+            "snippet": "Truncated description…",
+            "salary": "€60,000",
+            "link": "https://jooble.org/desc/abc-1",
+            "updated": "2026-05-01T10:00:00Z"
+        }]
+    });
+    let resp: JoobleResp = serde_json::from_value(json).unwrap();
+    let posting = map_jooble_job(resp.jobs.into_iter().next().unwrap(), 0).unwrap();
+
+    assert_eq!(posting.external_id.as_deref(), Some("jooble-abc-1"));
+    assert_eq!(posting.id, "aggregator:jooble-abc-1");
+    assert_eq!(posting.title, "Backend Engineer");
+    assert_eq!(posting.company, "Acme");
+    assert_eq!(posting.location.as_deref(), Some("Munich"));
+    assert_eq!(posting.url, "https://jooble.org/desc/abc-1");
+    assert_eq!(
+        posting.extra.get("salaryText").and_then(|v| v.as_str()),
+        Some("€60,000")
+    );
+    assert!(posting.posted_at.unwrap() > 0);
+}
+
+/// Jooble's `id` can arrive as a bare integer — must parse and normalise to
+/// String (same shape as the Adzuna `id` regression this mirrors).
+#[test]
+fn jooble_integer_id_deserializes_to_string() {
+    let json = serde_json::json!({
+        "jobs": [{
+            "id": 987654,
+            "title": "QA Engineer",
+            "company": "Corp",
+            "location": null,
+            "snippet": null,
+            "salary": null,
+            "link": "https://jooble.org/desc/987654",
+            "updated": null
+        }]
+    });
+    let resp: JoobleResp = serde_json::from_value(json).expect("integer id must deserialize");
+    assert_eq!(resp.jobs[0].id.as_deref(), Some("987654"));
+}
+
+/// A job missing `id` falls back to the URL as the dedupe key, still prefixed
+/// `"jooble-"` — dedup must never crash/collapse on a missing id.
+#[test]
+fn jooble_missing_id_falls_back_to_url_based_external_id() {
+    let job = JoobleJob {
+        id: None,
+        title: Some("No-id job".to_string()),
+        company: Some("Co".to_string()),
+        location: None,
+        snippet: None,
+        salary: None,
+        link: Some("https://jooble.org/desc/no-id".to_string()),
+        updated: None,
+    };
+    let posting = map_jooble_job(job, 0).unwrap();
+    assert_eq!(
+        posting.external_id.as_deref(),
+        Some("jooble-https://jooble.org/desc/no-id")
+    );
+}
+
+/// Jobs missing a title, or missing a link, are dropped — neither can be shown
+/// nor opened.
+#[test]
+fn jooble_drops_jobs_without_title_or_link() {
+    let no_title = JoobleJob {
+        id: Some("1".to_string()),
+        title: None,
+        company: None,
+        location: None,
+        snippet: None,
+        salary: None,
+        link: Some("https://jooble.org/desc/1".to_string()),
+        updated: None,
+    };
+    let no_link = JoobleJob {
+        id: Some("2".to_string()),
+        title: Some("Has title".to_string()),
+        company: None,
+        location: None,
+        snippet: None,
+        salary: None,
+        link: None,
+        updated: None,
+    };
+    assert!(map_jooble_job(no_title, 0).is_none());
+    assert!(map_jooble_job(no_link, 0).is_none());
+}
+
+// ── Jooble is_configured() / network-avoidance guard ───────────────────────────
+
+#[tokio::test]
+async fn jooble_unconfigured_returns_err_without_network() {
+    let p = JoobleProvider { api_key: None };
+    let result = p
+        .search("engineer", "berlin", "de", false, None, None, make_token())
+        .await;
+    assert!(result.is_err(), "unconfigured Jooble must return Err");
+    assert!(
+        result.unwrap_err().to_string().contains("not configured"),
+        "error must say 'not configured'"
+    );
+}
+
+// ── Jooble non-2xx / redact_path wiring (wiremock) ──────────────────────────────
+
+/// A non-2xx (e.g. a bad-key 403) propagates as a provider failure prefixed
+/// `"jooble:"` — so `BoardScrapeSummary.error` names which provider failed —
+/// and the API key (embedded in the URL PATH per Jooble's contract, not a
+/// header/query) never appears in the surfaced message, only the HTTP status.
+#[tokio::test]
+async fn jooble_non_2xx_maps_to_prefixed_err() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let mock_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(403).set_body_string(r#"{"message":"bad key"}"#))
+        .mount(&mock_server)
+        .await;
+
+    let result = fetch_jooble(
+        &mock_server.uri(),
+        "totally-fake-key",
+        "engineer",
+        "Berlin",
+        None,
+        make_token(),
+    )
+    .await;
+
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.starts_with("jooble:"),
+        "error must be prefixed so BoardScrapeSummary.error names the provider; got: {msg}"
+    );
+    assert!(
+        msg.contains("403"),
+        "the HTTP status must be carried; got: {msg}"
+    );
+    assert!(
+        !msg.contains("totally-fake-key"),
+        "the API key (URL-path-embedded) must never appear in the surfaced error; got: {msg}"
+    );
+}
+
+/// A 2xx Jooble response round-trips end-to-end through `fetch_jooble` (POST +
+/// path-embedded key + `redact_path` wiring + response mapping) into a
+/// `"jooble-"`-prefixed posting.
+#[tokio::test]
+async fn jooble_ok_response_maps_end_to_end() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let mock_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "totalCount": 1,
+            "jobs": [{
+                "id": 555,
+                "title": "Rust Engineer",
+                "company": "JoobleCo",
+                "location": "Remote",
+                "snippet": "Truncated…",
+                "salary": "$80,000 - $100,000",
+                "link": "https://jooble.org/desc/555",
+                "updated": "2026-06-01T09:00:00Z"
+            }]
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let items = fetch_jooble(
+        &mock_server.uri(),
+        "fake-key",
+        "engineer",
+        "Berlin",
+        None,
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].external_id.as_deref(), Some("jooble-555"));
+    assert_eq!(items[0].url, "https://jooble.org/desc/555");
+}
+
+/// `jooble_endpoint` puts the key in the PATH, not a query param — pins the
+/// URL shape independently of the network round trip above.
+#[test]
+fn jooble_endpoint_puts_key_in_path() {
+    let url = jooble_endpoint("https://jooble.org", "my-key");
+    assert_eq!(url, "https://jooble.org/api/my-key");
+    assert!(
+        !url.contains('?'),
+        "the key must be a path segment, not a query param"
+    );
+}
+
 // ── Scraper trait basics ──────────────────────────────────────────────────────
 
 #[test]
@@ -724,7 +987,7 @@ async fn cancelled_after_adzuna_err_skips_jsearch() {
 use std::sync::Mutex;
 
 use crate::ipc_contracts::provider_slots::{
-    ADZUNA_APP_ID, ADZUNA_APP_KEY, APIFY_TOKEN, JSEARCH_KEY,
+    ADZUNA_APP_ID, ADZUNA_APP_KEY, APIFY_TOKEN, JOOBLE_KEY, JSEARCH_KEY,
 };
 
 static AGG_KEYRING_LOCK: Mutex<()> = Mutex::new(());
@@ -747,16 +1010,22 @@ fn apify_slot() -> String {
     format!("ai:{APIFY_TOKEN}")
 }
 
+fn jooble_slot() -> String {
+    format!("ai:{JOOBLE_KEY}")
+}
+
 /// Delete the aggregator's fixed keyring slots so a test starts from a known
 /// "absent" baseline regardless of what a previous serialized test left behind.
 fn clear_aggregator_slots() {
     let adzuna = adzuna_slots();
     let jsearch = jsearch_slot();
     let apify = apify_slot();
+    let jooble = jooble_slot();
     for slot in adzuna
         .iter()
         .chain(std::iter::once(&jsearch))
         .chain(std::iter::once(&apify))
+        .chain(std::iter::once(&jooble))
     {
         if let Ok(entry) = keyring_core::Entry::new(crate::credentials::SERVICE, slot) {
             // NoEntry on a clean slot is fine; we only care it ends up absent.
@@ -1017,6 +1286,86 @@ fn aggregator_apify_slot_read_failure_surfaces_as_search_error() {
     assert!(
         result.is_err(),
         "an Apify-slot store fault must surface as a board error, not Ok(empty)"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("credential store unavailable"),
+        "the diagnostic must name the store as unavailable; got: {msg}"
+    );
+
+    clear_aggregator_slots();
+}
+
+/// Arm a non-NoEntry failure on the JOOBLE key slot only (Adzuna + JSearch +
+/// Apify stay absent — `NoEntry` → `Ok(None)`). One-shot — see the doc comment
+/// on [`arm_apify_slot_fault`] for why callers must arm immediately before the
+/// single probe they intend to exercise, never reuse one arm across two reads.
+fn arm_jooble_slot_fault() {
+    let entry = keyring_core::Entry::new(crate::credentials::SERVICE, &jooble_slot()).unwrap();
+    let mock: &keyring_core::mock::Cred = entry.as_any().downcast_ref().unwrap();
+    mock.set_error(keyring_core::Error::Invalid(
+        "induced".to_string(),
+        "keyring backend unavailable".to_string(),
+    ));
+}
+
+/// Consistency guard (this PR's regression risk): `aggregator_has_configured_provider`
+/// counts the Jooble provider, so a Jooble-only configured key must clear the
+/// needs-keys skip — otherwise the aggregator board is wrongly skipped when only
+/// a Jooble key is set.
+#[test]
+fn aggregator_does_not_need_keys_when_only_jooble_configured() {
+    let _guard = AGG_KEYRING_LOCK.lock().unwrap();
+    crate::credentials::install_mock_keyring();
+    clear_aggregator_slots();
+
+    keyring_core::Entry::new(crate::credentials::SERVICE, &jooble_slot())
+        .unwrap()
+        .set_password("configured")
+        .unwrap();
+
+    assert!(
+        !AggregatorScraper.needs_keys(),
+        "a Jooble-only configured aggregator must report needs_keys()==false"
+    );
+
+    clear_aggregator_slots();
+}
+
+/// `aggregator_store_error` must probe the Jooble slot too. A keyring READ
+/// FAILURE on the JOOBLE slot ALONE (others merely absent) must classify as a
+/// store error — `needs_keys()` false — NOT a misleading `needs-keys` skip.
+#[test]
+fn aggregator_jooble_slot_read_failure_is_not_a_needs_keys_skip() {
+    let _guard = AGG_KEYRING_LOCK.lock().unwrap();
+    crate::credentials::install_mock_keyring();
+    clear_aggregator_slots();
+
+    arm_jooble_slot_fault();
+
+    assert!(
+        !AggregatorScraper.needs_keys(),
+        "a Jooble-slot store fault (others absent) must NOT be a needs-keys skip"
+    );
+
+    clear_aggregator_slots();
+}
+
+/// Companion to the classification test above: a JOOBLE-slot-only store fault
+/// (others merely absent) makes `search` return a board error naming the store
+/// as unavailable — NOT a silent `Ok(empty)`.
+#[test]
+fn aggregator_jooble_slot_read_failure_surfaces_as_search_error() {
+    let _guard = AGG_KEYRING_LOCK.lock().unwrap();
+    crate::credentials::install_mock_keyring();
+    clear_aggregator_slots();
+
+    arm_jooble_slot_fault();
+
+    let result = block_on(AggregatorScraper.search(make_input(), make_ctx()));
+    assert!(
+        result.is_err(),
+        "a Jooble-slot store fault must surface as a board error, not Ok(empty)"
     );
     let msg = result.unwrap_err().to_string();
     assert!(
@@ -1462,6 +1811,158 @@ async fn unsupported_country_no_keys_returns_keyless_empty() {
     assert!(
         result.is_empty(),
         "no keys at all must still return keyless-empty (no diagnostic needed)"
+    );
+}
+
+// ── Jooble last-resort tier ───────────────────────────────────────────────────
+//
+// Jooble is a THIRD tier, tried only once Adzuna AND JSearch have both failed
+// to produce a decisive result (unconfigured or `Err`) — never merely because
+// one of them returned an empty-but-Ok page. See `primary_chain`'s doc comment.
+
+/// Both Adzuna and JSearch unconfigured (a Jooble-only setup) → Jooble is
+/// consulted and its results win.
+#[tokio::test]
+async fn jooble_fires_when_adzuna_and_jsearch_unconfigured() {
+    let jooble_posting = sample_posting("j1", "jooble");
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::unconfigured("adzuna")),
+        Box::new(FakeProvider::unconfigured("jsearch")),
+        Box::new(FakeProvider::ok("jooble", vec![jooble_posting.clone()])),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "Seoul",
+        "xx",
+        false,
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].external_id, jooble_posting.external_id);
+}
+
+/// Adzuna AND JSearch both configured-but-erroring (e.g. the unsupported-country
+/// case with a JSearch key that's also failing) → Jooble is consulted and its
+/// results win.
+#[tokio::test]
+async fn jooble_fires_after_adzuna_and_jsearch_both_err() {
+    let jooble_posting = sample_posting("j2", "jooble");
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::err(
+            "adzuna",
+            "adzuna: country 'xx' is not in Adzuna's supported market list",
+        )),
+        Box::new(FakeProvider::err("jsearch", "jsearch upstream 500")),
+        Box::new(FakeProvider::ok("jooble", vec![jooble_posting.clone()])),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "Seoul",
+        "xx",
+        false,
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].external_id, jooble_posting.external_id);
+}
+
+/// Adzuna returns real results → Jooble must NOT be called (the fake Jooble
+/// always errors, proving it wasn't reached).
+#[tokio::test]
+async fn jooble_not_called_when_adzuna_succeeds() {
+    let adzuna_posting = sample_posting("a1", "adzuna");
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::ok("adzuna", vec![adzuna_posting.clone()])),
+        Box::new(FakeProvider::err("jsearch", "should not be called")),
+        Box::new(FakeProvider::err("jooble", "should not be called")),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        false,
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].external_id, adzuna_posting.external_id);
+}
+
+/// Adzuna fails but JSearch returns real results → Jooble must NOT be called.
+#[tokio::test]
+async fn jooble_not_called_when_jsearch_succeeds() {
+    let jsearch_posting = sample_posting("js1", "jsearch");
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::err("adzuna", "adzuna down")),
+        Box::new(FakeProvider::ok("jsearch", vec![jsearch_posting.clone()])),
+        Box::new(FakeProvider::err("jooble", "should not be called")),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        false,
+        None,
+        100,
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].external_id, jsearch_posting.external_id);
+}
+
+/// Adzuna + JSearch + Jooble all configured-but-erroring, no sparse-guessed
+/// salvage available → JSearch's raw error (not Adzuna's wrapped diagnostic) is
+/// surfaced, matching the pre-Jooble contract for a configured-but-failing
+/// JSearch.
+#[tokio::test]
+async fn jooble_erroring_falls_through_to_jsearch_raw_error() {
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::err("adzuna", "adzuna down")),
+        Box::new(FakeProvider::err("jsearch", "jsearch upstream 500")),
+        Box::new(FakeProvider::err("jooble", "jooble upstream 500")),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        false,
+        None,
+        100,
+        make_token(),
+    )
+    .await;
+
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("jsearch upstream 500"),
+        "must surface JSearch's raw error (not Adzuna's) when Jooble also fails; got: {msg}"
     );
 }
 

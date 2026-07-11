@@ -708,6 +708,14 @@
         "removeConfirmTitle": "Remove JSearch key?",
         "removeConfirmDesc": "This deletes the saved JSearch key. The JSearch fallback will be disabled until you add it again."
       },
+      "joobleKey": {
+        "label": "Jooble API key — optional",
+        "placeholder": "Paste your Jooble API key…",
+        "connected": "Jooble API key stored securely",
+        "removeConfirmTitle": "Remove Jooble API key?",
+        "removeConfirmDesc": "This deletes the saved Jooble API key. The Jooble fallback will be disabled until you add it again.",
+        "helper": "Jooble is a last-resort fallback used only when Adzuna and JSearch both come up empty. Get a free key at"
+      },
       "apifyToken": {
         "label": "Apify API token",
         "placeholder": "Paste your Apify API token…",

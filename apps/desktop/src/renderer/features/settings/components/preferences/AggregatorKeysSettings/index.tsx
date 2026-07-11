@@ -16,6 +16,7 @@ import {
 } from '@/services';
 
 const ADZUNA_DOCS_URL = 'https://developer.adzuna.com';
+const JOOBLE_DOCS_URL = 'https://jooble.org/api/about';
 
 // ── Credential key field (reused for every provider) ─────────────────────────
 
@@ -299,6 +300,29 @@ export function AggregatorKeysSettings() {
           removeConfirmTitleKey="settings.aggregatorKeys.jsearchKey.removeConfirmTitle"
           removeConfirmDescKey="settings.aggregatorKeys.jsearchKey.removeConfirmDesc"
         />
+
+        {/* Jooble — last-resort fallback fired only once Adzuna + JSearch both
+            come up empty/erroring (see aggregator/mod.rs: primary_chain). */}
+        <div className="space-y-1.5">
+          <AggregatorKeyField
+            slot={PROVIDER_SLOTS.joobleKey}
+            labelKey="settings.aggregatorKeys.joobleKey.label"
+            placeholderKey="settings.aggregatorKeys.joobleKey.placeholder"
+            connectedKey="settings.aggregatorKeys.joobleKey.connected"
+            removeConfirmTitleKey="settings.aggregatorKeys.joobleKey.removeConfirmTitle"
+            removeConfirmDescKey="settings.aggregatorKeys.joobleKey.removeConfirmDesc"
+          />
+          <p className="text-xs text-foreground/40">
+            {t('settings.aggregatorKeys.joobleKey.helper')}{' '}
+            <Button
+              variant="unstyled"
+              onClick={() => void openExternal.mutateAsync(JOOBLE_DOCS_URL)}
+              className="text-brand-soft/70 underline underline-offset-2 hover:text-brand-soft"
+            >
+              jooble.org/api/about
+            </Button>
+          </p>
+        </div>
 
         {/* Apify API token — credential slot for the LinkedIn (Apify) provider */}
         <AggregatorKeyField

@@ -111,9 +111,9 @@ function getPasswordInputs(container: HTMLElement) {
 // ── tests — not connected (default keyState = all false) ──────────────────
 
 describe('AggregatorKeysSettings — not connected', () => {
-  it('renders password inputs for all six key fields (incl. Comeet)', () => {
+  it('renders password inputs for all seven key fields (incl. Jooble, Comeet)', () => {
     const { container } = render(<AggregatorKeysSettings />);
-    expect(getPasswordInputs(container).length).toBe(6);
+    expect(getPasswordInputs(container).length).toBe(7);
   });
 
   it('Save buttons are disabled when inputs are empty', () => {
@@ -122,28 +122,61 @@ describe('AggregatorKeysSettings — not connected', () => {
     saveButtons.forEach((btn) => expect(btn).toBeDisabled());
   });
 
-  it('eye-toggle buttons have accessible names for all six fields', () => {
+  it('eye-toggle buttons have accessible names for all seven fields', () => {
     render(<AggregatorKeysSettings />);
     const eyeToggles = screen.getAllByRole('button', {
       name: 'settings.aiProvider.showKey',
     });
-    expect(eyeToggles.length).toBe(6);
+    expect(eyeToggles.length).toBe(7);
   });
 
   it('toggling the first eye-button switches that field from password to text', async () => {
     const user = userEvent.setup();
     const { container } = render(<AggregatorKeysSettings />);
 
-    expect(getPasswordInputs(container).length).toBe(6);
+    expect(getPasswordInputs(container).length).toBe(7);
 
     const toggles = screen.getAllByRole('button', { name: 'settings.aiProvider.showKey' });
     const firstToggle = toggles[0];
     if (!firstToggle) throw new Error('No eye-toggle found');
     await user.click(firstToggle);
 
-    expect(getPasswordInputs(container).length).toBe(5);
+    expect(getPasswordInputs(container).length).toBe(6);
     // actor-id input is always type="text"; toggled credential input adds a second.
     expect(Array.from(container.querySelectorAll('input[type="text"]')).length).toBe(2);
+  });
+
+  it('renders the Jooble field with its "get a free key" docs link', () => {
+    render(<AggregatorKeysSettings />);
+    expect(screen.getByText('settings.aggregatorKeys.joobleKey.label')).toBeInTheDocument();
+    expect(screen.getByText('jooble.org/api/about')).toBeInTheDocument();
+  });
+
+  it('calls setProviderKey with the Jooble slot on Save', async () => {
+    mockSetMutateAsync.mockClear();
+    const user = userEvent.setup();
+    render(<AggregatorKeysSettings />);
+
+    const label = screen.getByText('settings.aggregatorKeys.joobleKey.label');
+    const row = label.parentElement;
+    if (!row) throw new Error('Jooble field row not found');
+
+    const joobleInput = within(row).getByPlaceholderText(
+      'settings.aggregatorKeys.joobleKey.placeholder'
+    );
+    await user.type(joobleInput, 'my-jooble-key');
+
+    const joobleSave = within(row).getByRole('button', {
+      name: /settings\.aggregatorKeys\.save/i,
+    });
+    await user.click(joobleSave);
+
+    await waitFor(() =>
+      expect(mockSetMutateAsync).toHaveBeenCalledWith({
+        provider: PROVIDER_SLOTS.joobleKey,
+        apiKey: 'my-jooble-key',
+      })
+    );
   });
 
   it('calls setProviderKey with the correct slot and value on Save', async () => {
