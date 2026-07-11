@@ -12,6 +12,7 @@
 ### ✅ Required — gates merge
 
 [![🚀 CI Pipeline](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml)
+[![🤖 Claude Review (required gate + advisory deep dive)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml)
 
 ### 🔒 Security — reports to the Security tab
 
@@ -19,7 +20,6 @@
 
 ### 🔎 Advisory — never blocks
 
-[![🤖 Claude Review (on demand)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml)
 [![🎨 Format Guard](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/format-guard.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/format-guard.yml)
 [![🏷️ PR Labeler](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/labeler.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/labeler.yml)
 [![🔎 Quality](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/quality.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/quality.yml)
@@ -35,9 +35,10 @@
 
 ### ✅ Required — gates merge
 
-| Workflow                          | Triggers   | What it does                                                      |
-| --------------------------------- | ---------- | ----------------------------------------------------------------- |
-| [🚀 CI Pipeline](ci-pipeline.yml) | PR, manual | Validate code quality, type safety, and test coverage on every PR |
+| Workflow                                                                   | Triggers    | What it does                                                               |
+| -------------------------------------------------------------------------- | ----------- | -------------------------------------------------------------------------- |
+| [🚀 CI Pipeline](ci-pipeline.yml)                                          | PR, manual  | Validate code quality, type safety, test coverage, and secrets on every PR |
+| [🤖 Claude Review (required gate + advisory deep dive)](claude-review.yml) | PR, comment | AI review gate, REQUIRED ON EVERY PR (unless draft).                       |
 
 ### 🔒 Security — reports to the Security tab
 
@@ -47,14 +48,13 @@
 
 ### 🔎 Advisory — never blocks
 
-| Workflow                                          | Triggers         | What it does                                                                                                                    |
-| ------------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| [🤖 Claude Review (on demand)](claude-review.yml) | comment          | AI review, ON-DEMAND ONLY.                                                                                                      |
-| [🎨 Format Guard](format-guard.yml)               | push, manual     | Format Guard (push to main only) The main CI Pipeline runs on pull_request only — push to main is intentionally excluded there. |
-| [🏷️ PR Labeler](labeler.yml)                      | PR               | Applies area/type labels to pull requests from their changed paths (config: .github/labeler.yml).                               |
-| [🔎 Quality](quality.yml)                         | PR, push, manual | Advisory quality + perf (consolidated from quality/rust-quality/benchmark).                                                     |
-| [🖥️ UI Checks](ui-checks.yml)                     | PR, manual       | Advisory renderer/UI checks (consolidated from e2e/lighthouse/visual).                                                          |
-| [🧹 Workflow Lint](workflow-lint.yml)             | PR, manual       | Security-audits the GitHub Actions workflows & composite actions, and keeps the workflow catalog honest.                        |
+| Workflow                              | Triggers         | What it does                                                                                                                    |
+| ------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| [🎨 Format Guard](format-guard.yml)   | push, manual     | Format Guard (push to main only) The main CI Pipeline runs on pull_request only — push to main is intentionally excluded there. |
+| [🏷️ PR Labeler](labeler.yml)          | PR               | Applies area/type labels to pull requests from their changed paths (config: .github/labeler.yml).                               |
+| [🔎 Quality](quality.yml)             | PR, push, manual | Advisory quality + perf (consolidated from quality/rust-quality/benchmark).                                                     |
+| [🖥️ UI Checks](ui-checks.yml)         | PR, manual       | Advisory renderer/UI checks (consolidated from e2e/lighthouse/visual).                                                          |
+| [🧹 Workflow Lint](workflow-lint.yml) | PR, manual       | Security-audits the GitHub Actions workflows & composite actions, and keeps the workflow catalog honest.                        |
 
 ### 🚀 Deploy — publishes on push to main
 

@@ -1,5 +1,7 @@
 ---
 status: accepted
+amendments:
+  - ADR-0008 (AI review enforcement) — the sole-required-check clause is amended; now TWO required checks (✅ CI OK, 🤖 AI Review OK)
 ---
 
 # CodeRabbit is the always-on AI PR reviewer; the duplicated reviewdog/Danger/labeler lanes are retired
