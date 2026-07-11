@@ -1,9 +1,11 @@
-# review-config — path rules + learnings for `pr-reviewer`
+# review-config — path rules + learnings for every review surface
 
-`pr-reviewer` reads this every run. Two jobs: (1) tell it which extra tools/risks
-apply per path, (2) record **learnings** — repo-specific facts that stop it from
-re-raising known false positives. Append a learning the moment a finding turns out
-to be a false positive.
+`pr-reviewer`, the Stop review-gate, `/review`, and `finding-verifier` all read this.
+Two jobs: (1) tell reviewers which extra tools/risks apply per path, (2) record
+**learnings** — repo-specific facts that stop known false positives from being
+re-raised. Append the moment a finding turns out to be a false positive, into the
+right section: **Hard exclusions** (never raise), **Signal-quality criteria** (how to
+verify before raising), **Precedents** (severity/design calls already made).
 
 ## Path-specific rules
 
@@ -16,16 +18,24 @@ to be a false positive.
 | `packages/prompts/**`                                                   | Prompt-injection posture: untrusted inputs fenced; user instruction bounded; honesty/grounding rules intact. No UI/`window`.                                                                                                                                                                                                |
 | `**/*.test.*`, `**/*.spec.*`                                            | Tests cover changed **edge/error/security** paths; no tautological assertions; fake-timer + async `act()` pitfalls.                                                                                                                                                                                                         |
 
-## Learnings (repo exceptions — do NOT flag these)
+## Hard exclusions (never re-raise — confirmed repo false positives)
 
 - **`architecture.rs` / `docs/architecture-rules.md` L0–L3 lists** intentionally enumerate every module per layer; repeated module names / parallel headings are the house style, **not** duplication/drift.
 - **Custom Tauri commands are NOT listed in `capabilities/default.json`** (e.g. `menu_take_pending`, all `autopilot_*`). Their absence is correct — do not raise "missing permission".
 - **`import type` everywhere** is enforced by `@typescript-eslint/consistent-type-imports` (auto-fix). It is required, not a smell.
 - **ESLint `noInlineConfig`** is on: never recommend `eslint-disable`/`@ts-ignore`. Refs read inside effects (`ref.current`) are exempt from `exhaustive-deps` **without** suppression — that's correct.
+- **Dotted-key mock overrides are valid** in renderer tests. `createMockClient` in `apps/desktop/src/renderer/test-support.tsx` is a `Proxy` whose `get` trap resolves dotted paths, so `createMockClient({ 'autopilot.takePendingFocus': fn })` correctly overrides `client.autopilot.takePendingFocus`. Do NOT flag this as a "wrong override shape / shallow-merge miss" (CodeRabbit raised this on #477; it was a false positive). The concrete-object variant at `renderer/lib/mock-client/mock-client.ts` is different — it takes nested objects — so match the override shape to whichever factory the test imports.
+- **`unwrap()`/`expect()` on a KNOWN-GOOD LITERAL inside a `LazyLock`/`OnceLock` static initializer** (e.g. `Regex::new(r"…").unwrap()` with a hardcoded pattern) is accepted house style (~70 instances) — flag static-init unwraps only when the input is fallible/externally influenced.
+- **`json!(local)` over a contract-shaped local in `commands/**`** is pervasive house style — flag `json!` only when it wholesale-serializes a domain/storage STRUCT across the IPC boundary.
+
+## Signal-quality criteria (what makes a finding real here)
+
 - **`noUncheckedIndexedAccess` is strict**: tests pass under esbuild (`pnpm test`) but `tsc`/CI is stricter. Always trust `rtk pnpm typecheck`, and guard array indices (no `!`).
 - **jsdom drops hex-stop `linear-gradient`** in the full `pnpm test` run — assert gradients via `data-*` seams, not computed CSS. Not a renderer bug.
 - **`rtk`-wrapped tool _output_ is lossy** (it substitutes tokens) — never trust `rtk rg`/`rtk git` stdout for exact symbol names, IDs, or GraphQL. Exit codes from `rtk pnpm typecheck`/`lint`/`cargo` ARE reliable.
-- **Cold-start intent buffers** (`PendingMenu`, `PendingFocus`) are `app.manage`d **early** in setup (before the deep-link handler), deliberately NOT in `tray::build` — that ordering is the fix, not a bug.
 - **New (untracked) files are invisible to plain `git diff`** — before raising "imported file missing from diff", run `git status` for `??` entries (the orchestrator should `git add -N` new files so review diffs include them; a Stop-gate review raised this falsely on PR C while typecheck + full vitest were green).
 - **Helper fns defined near the top of long components** (e.g. `stopProp` at `AutopilotCard/index.tsx:272`) sit outside a diff hunk's context lines — do NOT flag "undefined identifier / ReferenceError" from diff context alone; grep the whole file first (a Stop-gate review raised this falsely on PR C while typecheck + full vitest were green).
-- **Dotted-key mock overrides are valid** in renderer tests. `createMockClient` in `apps/desktop/src/renderer/test-support.tsx` is a `Proxy` whose `get` trap resolves dotted paths, so `createMockClient({ 'autopilot.takePendingFocus': fn })` correctly overrides `client.autopilot.takePendingFocus`. Do NOT flag this as a "wrong override shape / shallow-merge miss" (CodeRabbit raised this on #477; it was a false positive). The concrete-object variant at `renderer/lib/mock-client/mock-client.ts` is different — it takes nested objects — so match the override shape to whichever factory the test imports.
+
+## Precedents (severity + design calls already made)
+
+- **Cold-start intent buffers** (`PendingMenu`, `PendingFocus`) are `app.manage`d **early** in setup (before the deep-link handler), deliberately NOT in `tray::build` — that ordering is the fix, not a bug.
