@@ -109,6 +109,48 @@ pub(crate) fn ats_all_fetches_failed(
         .map(|error| format!("all {board_id} company fetches failed: {error}"))
 }
 
+/// The distinct board-error message for a run whose every company slug was
+/// rejected by a pre-fetch validator (e.g. [`is_valid_dns_label_slug`]) before
+/// any network call ran. Shared so every ATS board words it identically.
+pub(crate) fn ats_all_slugs_invalid_message(board_id: &str, rejected_slugs: usize) -> String {
+    format!(
+        "all {rejected_slugs} company slug(s) invalid for {board_id} — check the company names in Settings"
+    )
+}
+
+/// Extends [`ats_all_fetches_failed`] to also surface company slugs that a
+/// pre-fetch validation guard rejected before any fetch ran. Those rejects were
+/// previously invisible: a run whose every slug was malformed recorded no
+/// `successful_fetches` AND no `first_fetch_error`, so `ats_all_fetches_failed`
+/// returned `None` and the board reported a silent zero (claude review #597).
+/// Used by the ATS boards that validate slugs up front (BambooHR, Breezy,
+/// Pinpoint, Rippling, Workable).
+///
+/// Decision table (given `successful_fetches`, `rejected_slugs`, `first_fetch_error`):
+/// - `successful_fetches > 0` → `None` (partial success kept — a rejected or
+///   errored remainder is a per-board log concern, not a whole-board failure);
+/// - else a real fetch error was recorded → the same
+///   `"all {board} company fetches failed: {error}"` message as
+///   [`ats_all_fetches_failed`] (a mix of rejects + fetch errors reports the
+///   fetch error, the more actionable signal);
+/// - else `rejected_slugs > 0` → the distinct
+///   [`ats_all_slugs_invalid_message`] ("all N company slug(s) invalid …");
+/// - else (nothing attempted, nothing rejected) → `None`.
+///
+/// Pure — directly unit-testable without a mock server.
+pub(crate) fn ats_board_failure(
+    board_id: &str,
+    successful_fetches: usize,
+    rejected_slugs: usize,
+    first_fetch_error: &Option<String>,
+) -> Option<String> {
+    if let Some(msg) = ats_all_fetches_failed(board_id, successful_fetches, first_fetch_error) {
+        return Some(msg);
+    }
+    (successful_fetches == 0 && rejected_slugs > 0)
+        .then(|| ats_all_slugs_invalid_message(board_id, rejected_slugs))
+}
+
 /// Decide the pagination-failure policy for a page fetch: a page reached with
 /// nothing collected yet (typically page 0) propagates the fetch failure as a
 /// board error; a later page that fails after some items were already

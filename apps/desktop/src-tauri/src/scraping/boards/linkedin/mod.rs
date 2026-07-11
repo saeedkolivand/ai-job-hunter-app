@@ -4,14 +4,108 @@ use crate::scraping::types::BoardSearchInput;
 use crate::scraping::types::{JobPosting, ScrapeContext, Scraper};
 use anyhow::Result;
 use async_trait::async_trait;
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
 
 pub struct LinkedInScraper;
 
-/// Best-effort LinkedIn geoId lookup via the public jobs-guest typeahead.
+/// In-process cache of resolved geoIds, keyed by `(lowercased location query,
+/// lowercased country code)`. LinkedIn geoIds are stable, so caching successful
+/// resolutions avoids re-hitting the typeahead endpoint for repeated searches in
+/// the same session (e.g. every autopilot run for the same target). Only
+/// successful resolutions are cached — a transient network failure is left
+/// uncached so the next search retries. Bounded in practice by the small number
+/// of distinct (location, country) pairs a user searches.
+static GEO_ID_CACHE: LazyLock<Mutex<HashMap<(String, String), String>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// English country-name aliases used to bias typeahead selection toward the
+/// requested ISO alpha-2 country. LinkedIn's typeahead `displayName` ends with
+/// the English country name (e.g. "Berlin, Germany" vs "Berlin, Connecticut,
+/// United States"), and blindly taking the first hit leaks the search into the
+/// wrong country (#49). Covers the markets the app searches; an unlisted code
+/// returns `None`, so selection falls back to the first hit (no regression).
+fn country_aliases(cc: &str) -> Option<&'static [&'static str]> {
+    Some(match cc {
+        "de" => &["germany"],
+        "at" => &["austria"],
+        "ch" => &["switzerland"],
+        "be" => &["belgium"],
+        "gb" | "uk" => &["united kingdom"],
+        "ie" => &["ireland"],
+        "us" => &["united states"],
+        "ca" => &["canada"],
+        "fr" => &["france"],
+        "nl" => &["netherlands"],
+        "es" => &["spain"],
+        "it" => &["italy"],
+        "pl" => &["poland"],
+        "pt" => &["portugal"],
+        "se" => &["sweden"],
+        "au" => &["australia"],
+        "nz" => &["new zealand"],
+        "in" => &["india"],
+        "sg" => &["singapore"],
+        "br" => &["brazil"],
+        "mx" => &["mexico"],
+        "za" => &["south africa"],
+        _ => return None,
+    })
+}
+
+/// Extract a geoId string from one typeahead hit's `id` (number or string).
+fn hit_geo_id(hit: &serde_json::Value) -> Option<String> {
+    match hit.get("id")? {
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::String(s) => (!s.is_empty()).then(|| s.clone()),
+        _ => None,
+    }
+}
+
+/// Pick a geoId from the typeahead hits, biased toward `country_code` when set.
+/// When a country_code maps to known name aliases AND some hit's `displayName`
+/// matches that country, the FIRST such hit wins; otherwise (no country_code, an
+/// unlisted code, or no hit matches) fall back to the first usable hit — the
+/// prior behaviour, so this never regresses a resolvable location. Pure +
+/// unit-testable (no network).
+fn select_geo_id(hits: &[serde_json::Value], country_code: Option<&str>) -> Option<String> {
+    if let Some(aliases) = country_code
+        .map(str::to_lowercase)
+        .filter(|s| !s.is_empty())
+        .and_then(|cc| country_aliases(&cc))
+    {
+        let biased = hits.iter().find(|h| {
+            hit_geo_id(h).is_some()
+                && h.get("displayName")
+                    .and_then(|v| v.as_str())
+                    .map(|dn| {
+                        let dn = dn.to_lowercase();
+                        aliases.iter().any(|a| dn.contains(a))
+                    })
+                    .unwrap_or(false)
+        });
+        if let Some(hit) = biased {
+            return hit_geo_id(hit);
+        }
+    }
+    hits.iter().find_map(hit_geo_id)
+}
+
+/// Best-effort LinkedIn geoId lookup via the public jobs-guest typeahead,
+/// biased toward `country_code` and cached in-process (see `GEO_ID_CACHE`).
 /// Returns `None` on any failure so callers fall back to the free-text location
 /// filter (no regression). The endpoint is unofficial — verify behaviour with a
-/// real scrape after changing this.
-async fn resolve_geo_id(location: &str) -> Option<String> {
+/// real scrape after changing this (live-verified 2026-07-11: returns a
+/// `text/plain` JSON array of `{id, displayName, …}`, several hits per query).
+async fn resolve_geo_id(location: &str, country_code: Option<&str>) -> Option<String> {
+    let key = (
+        location.trim().to_lowercase(),
+        country_code.unwrap_or_default().to_lowercase(),
+    );
+    if let Some(cached) = GEO_ID_CACHE.lock().ok().and_then(|c| c.get(&key).cloned()) {
+        return Some(cached);
+    }
+
     let url = format!(
         "https://www.linkedin.com/jobs-guest/api/typeaheadHits?typeaheadType=GEO&query={}",
         urlencoding::encode(location)
@@ -27,12 +121,12 @@ async fn resolve_geo_id(location: &str) -> Option<String> {
         .await
         .ok()?;
     let hits: Vec<serde_json::Value> = resp.json().await.ok()?;
-    let geo = match hits.first()?.get("id")? {
-        serde_json::Value::Number(n) => n.to_string(),
-        serde_json::Value::String(s) => s.clone(),
-        _ => return None,
-    };
-    (!geo.is_empty()).then_some(geo)
+    let geo = select_geo_id(&hits, country_code)?;
+
+    if let Ok(mut cache) = GEO_ID_CACHE.lock() {
+        cache.insert(key, geo.clone());
+    }
+    Some(geo)
 }
 
 #[async_trait]
@@ -74,10 +168,13 @@ impl Scraper for LinkedInScraper {
         let http_client = LinkedInHttpClient::new(session_data)?;
         let api_client = LinkedInJobsApiClient::new(http_client);
 
-        // Resolve a precise geoId for the location (best-effort). On failure we
-        // fall back to the free-text `location` filter below (no regression, #49).
+        // Resolve a precise geoId for the location (best-effort, country-biased,
+        // cached). On failure we fall back to the free-text `location` filter
+        // below (no regression, #49).
         let geo_id = match input.location.as_deref() {
-            Some(loc) if !loc.trim().is_empty() => resolve_geo_id(loc).await,
+            Some(loc) if !loc.trim().is_empty() => {
+                resolve_geo_id(loc, input.country_code.as_deref()).await
+            }
             _ => None,
         };
 

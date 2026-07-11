@@ -64,6 +64,46 @@ fn zero_companies_edge_no_error_recorded_returns_none() {
     );
 }
 
+// ── ats_board_failure (rejected-slug surfacing, claude review #597) ───────────
+
+/// Partial success suppresses every failure signal — a rejected or errored
+/// remainder alongside ≥1 success is kept, not turned into a board error.
+#[test]
+fn board_failure_partial_success_returns_none() {
+    assert!(ats_board_failure("breezy", 1, 3, &Some("HTTP 404".into())).is_none());
+    assert!(ats_board_failure("breezy", 2, 0, &None).is_none());
+}
+
+/// Zero successes + a recorded fetch error → the SAME all-fetches-failed message
+/// (the fetch error is the more actionable signal even when slugs were also
+/// rejected).
+#[test]
+fn board_failure_fetch_error_beats_rejects() {
+    assert_eq!(
+        ats_board_failure("pinpoint", 0, 2, &Some("HTTP 403".into())).as_deref(),
+        Some("all pinpoint company fetches failed: HTTP 403"),
+    );
+}
+
+/// Zero successes, NO fetch error, but every slug was rejected pre-fetch → the
+/// distinct all-slugs-invalid error (this is the #597 silent-zero fix).
+#[test]
+fn board_failure_all_slugs_rejected_returns_distinct_error() {
+    let msg = ats_board_failure("rippling", 0, 3, &None).expect("all-rejected must error");
+    assert_eq!(
+        msg,
+        "all 3 company slug(s) invalid for rippling — check the company names in Settings",
+    );
+    assert_eq!(msg, ats_all_slugs_invalid_message("rippling", 3));
+}
+
+/// Nothing attempted and nothing rejected (e.g. the incoming list was empty
+/// after normalisation) → not a board failure.
+#[test]
+fn board_failure_nothing_attempted_returns_none() {
+    assert!(ats_board_failure("bamboohr", 0, 0, &None).is_none());
+}
+
 // ── should_propagate_page_error ──────────────────────────────────────────────
 
 #[test]

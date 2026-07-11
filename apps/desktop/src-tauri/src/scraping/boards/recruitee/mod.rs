@@ -5,7 +5,7 @@
 /// board with `"needs-company"` when `input.companies` is empty.
 use super::super::http::{fetch_json, strip_html};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
-use super::common::ats_all_fetches_failed;
+use super::common::ats_board_failure;
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -81,6 +81,7 @@ impl Scraper for RecruiteeScraper {
         let total = input.companies.len();
 
         let mut successful_fetches = 0usize;
+        let mut rejected_slugs = 0usize;
         let mut first_fetch_error: Option<String> = None;
 
         for (i, company) in input.companies.iter().enumerate() {
@@ -97,6 +98,7 @@ impl Scraper for RecruiteeScraper {
             // percent-encode dots and produce a malformed host. Accept only
             // labels that are valid hostname components (alphanumeric + hyphen).
             if !is_valid_recruitee_slug(company) {
+                rejected_slugs += 1;
                 log::warn!("[recruitee] skipping invalid hostname slug '{}'", company);
                 continue;
             }
@@ -184,11 +186,21 @@ impl Scraper for RecruiteeScraper {
             }
         }
 
-        // Distinguishes an all-slug 403/parse-drift run from a genuine zero result;
-        // see `ats_all_fetches_failed` for the decision.
-        if let Some(message) =
-            ats_all_fetches_failed(self.id(), successful_fetches, &first_fetch_error)
-        {
+        // A cancel that fired after an invalid slug was rejected (but before a
+        // later valid slug was reached) must not be misattributed as "all slugs
+        // invalid" — the run was interrupted, not misconfigured.
+        if ctx.signal.is_cancelled() {
+            return Ok(out);
+        }
+
+        // Distinguishes an all-slug 403/parse-drift run OR an all-slug-rejected
+        // run from a genuine zero result; see `ats_board_failure` for the decision.
+        if let Some(message) = ats_board_failure(
+            self.id(),
+            successful_fetches,
+            rejected_slugs,
+            &first_fetch_error,
+        ) {
             return Err(anyhow::anyhow!(message));
         }
 

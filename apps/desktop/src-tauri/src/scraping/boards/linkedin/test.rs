@@ -26,6 +26,85 @@ fn test_linkedin_scraper_mode_partial_eq() {
     assert_ne!(mode, crate::scraping::types::ScraperMode::Browser);
 }
 
+// ── country-biased geoId selection (trust PR G, #49) ─────────────────────────
+
+#[test]
+fn country_aliases_known_and_unknown() {
+    assert!(country_aliases("de").is_some());
+    assert!(
+        country_aliases("uk").is_some(),
+        "uk must alias united kingdom"
+    );
+    assert!(
+        country_aliases("gb").is_some(),
+        "gb must alias united kingdom"
+    );
+    assert!(
+        country_aliases("be").is_some(),
+        "be must alias belgium (Adzuna allowlist parity)"
+    );
+    assert!(
+        country_aliases("za").is_some(),
+        "za must alias south africa (Adzuna allowlist parity)"
+    );
+    assert!(country_aliases("zz").is_none(), "unknown code → no bias");
+    assert!(country_aliases("").is_none(), "empty code → no bias");
+}
+
+/// The whole point of #49: "Berlin" typeaheads to Germany first AND a US
+/// "Berlin"; a `us` search must pick the US hit, a `de` search the German one —
+/// not blindly the first hit.
+#[test]
+fn select_geo_id_biases_to_requested_country() {
+    let hits: Vec<serde_json::Value> = serde_json::from_str(
+        r#"[
+        {"id": "103035651", "displayName": "Berlin, Germany"},
+        {"id": "105506608", "displayName": "Berlin, Connecticut, United States"}
+    ]"#,
+    )
+    .unwrap();
+    assert_eq!(
+        select_geo_id(&hits, Some("us")).as_deref(),
+        Some("105506608")
+    );
+    assert_eq!(
+        select_geo_id(&hits, Some("de")).as_deref(),
+        Some("103035651")
+    );
+}
+
+/// No country, an unlisted code, or no matching displayName all fall back to the
+/// first usable hit — the prior behaviour, so a resolvable location never regresses.
+#[test]
+fn select_geo_id_falls_back_to_first_hit() {
+    let hits: Vec<serde_json::Value> = serde_json::from_str(
+        r#"[
+        {"id": "111", "displayName": "Somewhere, Nowhereland"},
+        {"id": "222", "displayName": "Elsewhere, Germany"}
+    ]"#,
+    )
+    .unwrap();
+    assert_eq!(select_geo_id(&hits, None).as_deref(), Some("111"));
+    assert_eq!(
+        select_geo_id(&hits, Some("fr")).as_deref(),
+        Some("111"),
+        "a country with no matching hit falls back to the first hit"
+    );
+    assert_eq!(select_geo_id(&hits, Some("")).as_deref(), Some("111"));
+}
+
+/// A numeric `id` (LinkedIn returns both) must resolve; empty hits → None.
+#[test]
+fn select_geo_id_numeric_id_and_empty() {
+    let hits: Vec<serde_json::Value> =
+        serde_json::from_str(r#"[{"id": 103035651, "displayName": "Berlin, Germany"}]"#).unwrap();
+    assert_eq!(
+        select_geo_id(&hits, Some("de")).as_deref(),
+        Some("103035651")
+    );
+    assert!(select_geo_id(&[], Some("de")).is_none());
+}
+
 #[tokio::test]
 #[ignore = "live network"]
 async fn live_search_returns_results() {

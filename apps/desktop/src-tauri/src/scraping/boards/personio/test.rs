@@ -32,10 +32,11 @@ fn slug_validation_rejects_ssrf_slugs() {
     assert!(!is_valid_personio_slug(&"a".repeat(64)));
 }
 
-/// An invalid slug must be skipped without any network request — the search
-/// returns Ok([]) immediately.
+/// An invalid slug must be rejected without any network request (SSRF guard).
+/// A run where EVERY slug is rejected now surfaces a distinct board error
+/// instead of a silent zero (claude review #597).
 #[tokio::test]
-async fn invalid_slug_skipped_without_network() {
+async fn all_invalid_slugs_error_without_network() {
     let scraper = PersonioScraper;
 
     let make_input = |companies: Vec<String>| BoardSearchInput {
@@ -65,32 +66,18 @@ async fn invalid_slug_skipped_without_network() {
         on_note: None,
     };
 
-    // IP:port — the primary SSRF vector.
-    let result = scraper
-        .search(make_input(vec!["127.0.0.1:8443".to_string()]), make_ctx())
-        .await;
-    assert!(result.is_ok(), "invalid slug must return Ok");
-    assert!(
-        result.unwrap().is_empty(),
-        "SSRF slug must produce empty result (skipped, no network)"
-    );
-
-    // Dotted host.
-    let result = scraper
-        .search(make_input(vec!["dotted.host".to_string()]), make_ctx())
-        .await;
-    assert!(result.is_ok());
-    assert!(result.unwrap().is_empty(), "dotted slug must be skipped");
-
-    // Path injection.
-    let result = scraper
-        .search(make_input(vec!["127.0.0.1/foo".to_string()]), make_ctx())
-        .await;
-    assert!(result.is_ok());
-    assert!(
-        result.unwrap().is_empty(),
-        "path-injection slug must be skipped"
-    );
+    // Each all-invalid-slug run rejects pre-fetch (no network) AND now returns a
+    // distinct board error rather than a silent empty result.
+    for slug in ["127.0.0.1:8443", "dotted.host", "127.0.0.1/foo"] {
+        let err = scraper
+            .search(make_input(vec![slug.to_string()]), make_ctx())
+            .await
+            .expect_err("an all-invalid-slug run must be a board error, not a silent zero");
+        assert!(
+            err.to_string().contains("slug(s) invalid"),
+            "error for '{slug}' must name the invalid-slug reason, got: {err}"
+        );
+    }
 }
 
 // ── ID namespacing — cross-tenant collision prevention ────────────────────────

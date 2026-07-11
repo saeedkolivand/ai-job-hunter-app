@@ -5,9 +5,12 @@
 //! board with `"needs-company"` when `input.companies` is empty.
 //!
 //! Endpoint reconnaissance ported from santifer/career-ops (MIT), `providers/bamboohr.mjs`.
+//! Live-verified 2026-07-11 against slug `fivetran` (4 jobs): response is
+//! `{meta, result[{id (string), jobOpeningName, location{city, state (string)},
+//! isRemote}]}` — shape confirmed, no drift.
 use super::super::http::fetch_json;
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
-use super::common::{ats_all_fetches_failed, is_valid_dns_label_slug, normalize_companies};
+use super::common::{ats_board_failure, is_valid_dns_label_slug, normalize_companies};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -162,6 +165,7 @@ impl Scraper for BambooHrScraper {
         let total = companies.len();
 
         let mut successful_fetches = 0usize;
+        let mut rejected_slugs = 0usize;
         let mut first_fetch_error: Option<String> = None;
 
         for (i, raw_company) in companies.iter().enumerate() {
@@ -175,6 +179,7 @@ impl Scraper for BambooHrScraper {
             // A slug like `127.0.0.1:8443/foo` would change the URL authority
             // and redirect the fetch away from BambooHR (SSRF).
             if !is_valid_dns_label_slug(&company) {
+                rejected_slugs += 1;
                 log::warn!("[bamboohr] skipping invalid company slug '{}'", company);
                 if let Some(ref on_progress) = ctx.on_progress {
                     on_progress((i + 1) as f32 / total as f32);
@@ -220,10 +225,21 @@ impl Scraper for BambooHrScraper {
             }
         }
 
-        // Return Err only when every attempt failed — see `ats_all_fetches_failed`.
-        if let Some(message) =
-            ats_all_fetches_failed(self.id(), successful_fetches, &first_fetch_error)
-        {
+        // A cancel that fired after an invalid slug was rejected (but before a
+        // later valid slug was reached) must not be misattributed as "all slugs
+        // invalid" — the run was interrupted, not misconfigured.
+        if ctx.signal.is_cancelled() {
+            return Ok(out);
+        }
+
+        // Err when every attempt failed OR every slug was rejected pre-fetch —
+        // see `ats_board_failure`.
+        if let Some(message) = ats_board_failure(
+            self.id(),
+            successful_fetches,
+            rejected_slugs,
+            &first_fetch_error,
+        ) {
             return Err(anyhow::anyhow!(message));
         }
 
