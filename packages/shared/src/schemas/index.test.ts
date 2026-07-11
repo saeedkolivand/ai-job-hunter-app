@@ -102,6 +102,30 @@ describe('AiGenerateRequestSchema', () => {
     expect(() => AiGenerateRequestSchema.parse({ ...valid, temperature: -0.1 })).toThrow();
     expect(() => AiGenerateRequestSchema.parse({ ...valid, temperature: 1.5 })).not.toThrow();
   });
+
+  it('accepts every sampling param unset (all optional)', () => {
+    expect(() => AiGenerateRequestSchema.parse(valid)).not.toThrow();
+  });
+
+  it('clamps topP to 0–1', () => {
+    expect(() => AiGenerateRequestSchema.parse({ ...valid, topP: -0.1 })).toThrow();
+    expect(() => AiGenerateRequestSchema.parse({ ...valid, topP: 1.1 })).toThrow();
+    expect(() => AiGenerateRequestSchema.parse({ ...valid, topP: 0.95 })).not.toThrow();
+  });
+
+  it('clamps frequencyPenalty and presencePenalty to -2–2', () => {
+    for (const key of ['frequencyPenalty', 'presencePenalty'] as const) {
+      expect(() => AiGenerateRequestSchema.parse({ ...valid, [key]: -2.1 })).toThrow();
+      expect(() => AiGenerateRequestSchema.parse({ ...valid, [key]: 2.1 })).toThrow();
+      expect(() => AiGenerateRequestSchema.parse({ ...valid, [key]: 0.3 })).not.toThrow();
+    }
+  });
+
+  it('clamps repeatPenalty to 1–2 (Ollama semantics)', () => {
+    expect(() => AiGenerateRequestSchema.parse({ ...valid, repeatPenalty: 0.9 })).toThrow();
+    expect(() => AiGenerateRequestSchema.parse({ ...valid, repeatPenalty: 2.1 })).toThrow();
+    expect(() => AiGenerateRequestSchema.parse({ ...valid, repeatPenalty: 1.15 })).not.toThrow();
+  });
 });
 
 describe('AutopilotCreateSchema', () => {

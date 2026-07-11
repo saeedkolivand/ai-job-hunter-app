@@ -807,7 +807,7 @@ describe('per-step temperature override', () => {
     emit('Dear Hiring Team.');
     done();
     await p;
-    // cover override resolves; the medium tier's 0.55 default is overridden.
+    // cover override resolves; the small tier's 0.58 default is overridden.
     expect(tempOf(client)).toBeCloseTo(0.85);
   });
 
@@ -840,8 +840,129 @@ describe('per-step temperature override', () => {
     emit('Dear Hiring Team.');
     done();
     await p;
-    // large tier default for cloud = 0.55; the ollama override does not apply.
-    expect(tempOf(client)).toBeCloseTo(0.55);
+    // large tier default for cloud = 0.8; the ollama override does not apply.
+    expect(tempOf(client)).toBeCloseTo(0.8);
+  });
+});
+
+describe('prose detector-resistance sampling params', () => {
+  // RAID (ACL 2024): random sampling + repetition/frequency penalties drop
+  // AI-detector accuracy. Applied only to prose surfaces — resume/analysis stay
+  // LEXICAL (no new params) to protect exact ATS keyword repetition.
+  const META = {
+    resumeLanguage: 'en',
+    jobAdLanguage: 'en',
+    mismatch: false,
+    candidateName: 'X',
+    jobTitle: 'Y',
+    companyName: 'Z',
+    targetLanguage: 'en',
+    topRequirements: [],
+  };
+
+  const samplingOf = (client: ReturnType<typeof register>) => {
+    const call = (client.ai.generatePipeline as ReturnType<typeof vi.fn>).mock.calls[0];
+    const arg = call?.[0] as {
+      temperature?: number;
+      topP?: number;
+      frequencyPenalty?: number;
+      presencePenalty?: number;
+      repeatPenalty?: number;
+    };
+    const { temperature, topP, frequencyPenalty, presencePenalty, repeatPenalty } = arg;
+    return { temperature, topP, frequencyPenalty, presencePenalty, repeatPenalty };
+  };
+
+  it('cover letter (small-tier local model) tightens topP to limit drift', async () => {
+    // 'llama3' has no size suffix → classified small tier (see model-size.ts);
+    // small local models compound drift when the full 0.95 topP stacks with
+    // repeatPenalty, so the small tier tightens topP to 0.9.
+    const client = register();
+    const p = generateCoverLetter('My resume', 'Job ad', META, 'recruiter', 'llama3', vi.fn());
+    await flushUntilStreaming();
+    emit('Dear Hiring Team.');
+    done();
+    await p;
+    expect(samplingOf(client)).toEqual({
+      temperature: 0.58,
+      topP: 0.9,
+      frequencyPenalty: 0.3,
+      presencePenalty: 0.2,
+      repeatPenalty: 1.15,
+    });
+  });
+
+  it('cover letter (large-tier cloud model) keeps the shared topP default', async () => {
+    usePreferencesStore.setState({
+      aiProviderConfig: { activeProvider: 'openai', providers: { openai: { model: 'gpt-4o' } } },
+    });
+    const client = register();
+    const p = generateCoverLetter('My resume', 'Job ad', META, 'recruiter', 'gpt-4o', vi.fn());
+    await flushUntilStreaming();
+    emit('Dear Hiring Team.');
+    done();
+    await p;
+    expect(samplingOf(client)).toEqual({
+      temperature: 0.8,
+      topP: 0.95,
+      frequencyPenalty: 0.3,
+      presencePenalty: 0.2,
+      repeatPenalty: 1.15,
+    });
+  });
+
+  it('application answer generation drops presencePenalty and lowers temperature (no-fabrication surface)', async () => {
+    // Résumé-grounded: presencePenalty pushes toward new topics (fabrication
+    // risk) so it's dropped; temperature stays lower than the freer prose
+    // surfaces to limit factual drift, while topP/frequencyPenalty/
+    // repeatPenalty still resist AI-detector fingerprinting.
+    const client = register();
+    const p = generateApplicationAnswer({
+      question: 'Why do you want to work here?',
+      resume: 'My resume',
+      jobAd: 'Backend role at Acme',
+      meta: META,
+      model: 'llama3',
+    });
+    await flushUntilStreaming();
+    emit('Because I love building things.');
+    done();
+    await p;
+    expect(samplingOf(client)).toEqual({
+      temperature: 0.5,
+      topP: 0.95,
+      frequencyPenalty: 0.3,
+      presencePenalty: undefined,
+      repeatPenalty: 1.15,
+    });
+  });
+
+  it('resume generation carries no sampling params (LEXICAL — protects ATS keyword repetition)', async () => {
+    const client = register();
+    const p = generateResume('My resume', 'Job ad', META, 'ats', 'llama3', vi.fn());
+    await flushUntilStreaming();
+    emit('RESUME CONTENT');
+    done();
+    await p;
+    const sampling = samplingOf(client);
+    expect(sampling.topP).toBeUndefined();
+    expect(sampling.frequencyPenalty).toBeUndefined();
+    expect(sampling.presencePenalty).toBeUndefined();
+    expect(sampling.repeatPenalty).toBeUndefined();
+  });
+
+  it('metadata extraction (analysis) carries no sampling params', async () => {
+    const client = register();
+    const p = extractMetadata('My resume', 'Job ad', 'llama3');
+    await flushUntilStreaming();
+    emit('{}');
+    done();
+    await p;
+    const sampling = samplingOf(client);
+    expect(sampling.topP).toBeUndefined();
+    expect(sampling.frequencyPenalty).toBeUndefined();
+    expect(sampling.presencePenalty).toBeUndefined();
+    expect(sampling.repeatPenalty).toBeUndefined();
   });
 });
 
