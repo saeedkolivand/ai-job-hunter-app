@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783807578784,
+  "lastUpdate": 1783813406989,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3983,6 +3983,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 289864,
             "range": "± 3449",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0dd532b51af0e1c62206a56b8a49c8ccd6dcfcf3",
+          "message": "feat: route the ats seed into company-scoped boards (engine-side) — DO NOT MERGE until disclosure decision (#621)\n\n* feat: route the ats seed into company-scoped boards (engine-side)\n\nfinishes p2 sourcing depth: the engine now auto-populates a company-scoped ats board's\ncompanies from ats_seed::by_ats(scraper.id()) when the board is selected, requires a company,\nand the run supplied none. so the 7 seeded ats-direct boards (greenhouse/lever/ashby/\nsmartrecruiters/recruitee/personio/workable) finally get exercised — autopilot, which always\npassed an empty companies list, previously skipped every one as needs-company.\n\n- option (b), engine-local: no BoardSearchInput contract change, no scraper changes, no\n  renderer changes. run_boards gains one borrowed &HashMap override param; stays seed-agnostic\n- keyed on scraper.id(); explicit user companies always win (override only when list is empty);\n  unseeded requires-company boards still skip\n- fetch volume bounded per-board (sum of selected boards' slugs, capped by max_boards_per_batch),\n  not 59xN; rotted slugs 404 harmlessly and surface CompletedWithErrors, no silent-empty\n- verified all 7 boards consume seeds as-is (personio self-probes .de/.com, workable v1 GET,\n  ashby/smartrecruiters preserve casing); doc comments corrected\n- reviewed by scraping-applier-expert: no correctness blockers\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* feat: disclose curated ats-seed companies in the board pickers\n\ncompanion to the engine ats-seed routing: since selecting a company-scoped ats board now\nsilently queries a curated company set, both board pickers (autopilot wizard + manual jobs\nsearch) now disclose which companies. addresses the review's honesty concern.\n\n- backend: ScraperCatalogEntry/BoardCatalogEntry gain seededCompanies (serde-renamed camelcase),\n  populated from ats_seed::by_ats(scraper.id()); empty for non-seeded boards\n- frontend: shared components/scrape/SeededCompaniesNote (beside LocationFilterNote), rendered by\n  both StepTarget and ScrapeForm; shows first 5 names + \"+N more\" (full list on hover), role=note,\n  i18n en+de with pluralized suffix. only renders for selected boards with a seed\n- reviewed by frontend-reviewer: no high/critical\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-12T01:34:19+02:00",
+          "tree_id": "f7f01b724acf3ca7d4d3aacb83da93ac357d2738",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/0dd532b51af0e1c62206a56b8a49c8ccd6dcfcf3"
+        },
+        "date": 1783813406877,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2118534,
+            "range": "± 77996",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2538844,
+            "range": "± 44958",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 289450,
+            "range": "± 5627",
             "unit": "ns/iter"
           }
         ]
