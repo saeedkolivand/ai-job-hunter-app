@@ -18,7 +18,10 @@ import {
 
 const FILE = process.argv[2] || 'review-findings.json';
 const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+const lines = [];
+
 const summary = (md) => {
+  lines.push(md);
   if (summaryPath) {
     try {
       fs.appendFileSync(summaryPath, md + '\n');
@@ -27,6 +30,14 @@ const summary = (md) => {
     }
   }
   console.log(md);
+};
+
+const writeSummaryFile = () => {
+  try {
+    fs.writeFileSync('review-comment.md', lines.join('\n'));
+  } catch {
+    /* fail-open: file write failures must not crash the verdict */
+  }
 };
 
 let findings = null;
@@ -41,6 +52,7 @@ if (!findings) {
     `::warning::AI review produced no parseable verdict (${FILE} missing/invalid) — infra fail-open; ci-ok, pre-push and CodeRabbit still gate.`
   );
   summary('## 🤖 AI Review OK\n\n⚠ No parseable findings file — fail-open (infra).');
+  writeSummaryFile();
   process.exit(0);
 }
 
@@ -63,6 +75,7 @@ if (findings.length) {
       `| ${f.severity}${blocking.includes(f) ? ' 🚫' : ''} | ${f.file}:${f.line} | ${cell(f.summary)} | ${cell(f.fix)} |`
     );
 }
+writeSummaryFile();
 if (blocking.length) {
   console.error(`✗ ${blocking.length} blocking finding(s) (HIGH/CRITICAL, confidence >= 0.8):`);
   blocking.forEach((f) => console.error('  ' + formatFinding(f)));
