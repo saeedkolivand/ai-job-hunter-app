@@ -5,9 +5,16 @@ name: 🤖 Claude Review (required gate + advisory deep dive)
 # ──────────────────────────────────────────────────────────────────────
 # Runs automatically on every PR open/sync/ready_for_review. Diff-based
 # review with deterministic verdict: HIGH/CRITICAL at confidence ≥ 0.8
-# blocks merge; fails open on infra (no action outage freeze). See
-# ADR-0008 for the 6-PR review-hardening program; the gate is the final
-# surface (join: Stop gate, /review, pre-push, ci-ok, this check).
+# blocks merge; fails open on infra (no action outage freeze). Findings
+# are posted as a STICKY PR comment (edited in place per push; only when
+# findings exist; flipped to "resolved" when a later run is clean). The
+# check status stays the blocking signal. See ADR-0008 for the 6-PR
+# review-hardening program; the gate is the final surface (join: Stop
+# gate, /review, pre-push, ci-ok, this check).
+#
+# Permissions trade: pull-requests: write is re-added to post the sticky
+# comment, accepting this over strict least-privilege for in-PR findings
+# visibility.
 #
 # Lane A1 — AI review, ON-DEMAND ADVISORY DEEP DIVE.
 # ──────────────────────────────────────────────────────────────────────
@@ -104,6 +111,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      pull-requests: write
 
     steps:
       - name: 🛡️ Harden Runner
@@ -141,3 +149,33 @@ jobs:
 
       - name: Deterministic verdict
         run: node scripts/ci-review-verdict.mjs review-findings.json
+
+      - name: 💬 Sticky findings comment
+        if: ${{ !cancelled() }}
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- ai-review-gate-sticky -->';
+            let findings = [];
+            try {
+              findings = JSON.parse(fs.readFileSync('review-findings.json', 'utf8')).findings || [];
+            } catch {
+              /* fail-open: no findings file means nothing to post */
+            }
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo, issue_number: context.issue.number, per_page: 100,
+            });
+            const sticky = comments.find((c) => c.body && c.body.includes(marker));
+            let body = null;
+            if (findings.length) {
+              body = marker + '\n' + fs.readFileSync('review-comment.md', 'utf8');
+            } else if (sticky) {
+              body = marker + '\n## 🤖 AI Review OK\n\n✓ Latest run found no findings — earlier findings are resolved or superseded.';
+            }
+            if (!body) return; // clean run and no prior sticky: stay silent
+            if (sticky) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: sticky.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
+            }
