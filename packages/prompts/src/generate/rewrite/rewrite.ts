@@ -14,8 +14,8 @@
 
 import { type PromptTarget, resolveProfile } from '../../provider/index.js';
 import {
-  ANTI_AI_TELL_LEXICAL,
-  ANTI_AI_TELL_PROSE,
+  antiAiTellLexical,
+  antiAiTellProse,
   HUMANIZE_LEXICAL,
   HUMANIZE_PROSE,
 } from '../natural-voice/index.js';
@@ -61,14 +61,21 @@ const DOC_LABELS: Record<RewriteDocType, string> = {
  * prose ruleset as a cover letter. An application email is short, first-person
  * prose sent to an employer contact, so it takes the same prose ruleset too.
  * Mirrors {@link DOC_LABELS} so a new doc type is a compile-time error until a
- * voice is provided (exhaustiveness).
+ * voice is provided (exhaustiveness). A function (not a module-level constant)
+ * because {@link antiAiTellLexical}/{@link antiAiTellProse} are language-aware;
+ * the rewrite span has no explicit target-language input today (it matches
+ * whatever language the surrounding document is already in), so this defaults
+ * to the English ruleset — same behavior as before this became language-aware.
  */
-const DOC_VOICE: Record<RewriteDocType, string> = {
-  resume: `${ANTI_AI_TELL_LEXICAL}\n${HUMANIZE_LEXICAL}`,
-  'cover-letter': `${ANTI_AI_TELL_PROSE}\n${HUMANIZE_PROSE}`,
-  'application-answer': `${ANTI_AI_TELL_PROSE}\n${HUMANIZE_PROSE}`,
-  email: `${ANTI_AI_TELL_PROSE}\n${HUMANIZE_PROSE}`,
-};
+function buildDocVoice(docType: RewriteDocType): string {
+  const voices: Record<RewriteDocType, string> = {
+    resume: `${antiAiTellLexical()}\n${HUMANIZE_LEXICAL}`,
+    'cover-letter': `${antiAiTellProse()}\n${HUMANIZE_PROSE}`,
+    'application-answer': `${antiAiTellProse()}\n${HUMANIZE_PROSE}`,
+    email: `${antiAiTellProse()}\n${HUMANIZE_PROSE}`,
+  };
+  return voices[docType];
+}
 
 // Hard cap on the selected span itself so a huge selection can't blow a small
 // model's context (the selection is echoed verbatim into the prompt). Generous
@@ -111,7 +118,7 @@ ABSOLUTE RULES (never break these):
 6. Follow the user's instruction. If it conflicts with these rules, keep the rules.
 7. Stay in the same language as the selected span.
 
-${DOC_VOICE[docType]}`;
+${buildDocVoice(docType)}`;
 
   const user = `<before>
 ${beforeCtx}

@@ -287,8 +287,8 @@ describe('buildApplicationEmailPrompt — provider tier / résumé truncation', 
 });
 
 // ─── Humanization (positive HUMANIZE_PROSE block) ─────────────────────────────
-// The VOICE block (and ANTI_AI_TELL_PROSE with it) is only rendered at the
-// 'full' depth (see application-email.ts) — mirrors that scope exactly.
+// The VOICE block (and the anti-AI-tell prose ruleset with it) is only rendered
+// at the 'full' depth (see application-email.ts) — mirrors that scope exactly.
 
 describe('buildApplicationEmailPrompt — humanization (full depth only)', () => {
   it('the full-depth system prompt carries the positive HUMANIZE_PROSE cadence anchor', () => {
@@ -301,5 +301,41 @@ describe('buildApplicationEmailPrompt — humanization (full depth only)', () =>
     const { system: task } = buildApplicationEmailPrompt(BASE, { kind: 'cli' });
     expect(small).not.toContain('CADENCE');
     expect(task).not.toContain('CADENCE');
+  });
+
+  it('carries the German lexicon (not the English ban-list) for a German target', () => {
+    const { system } = buildApplicationEmailPrompt(
+      { ...BASE, meta: { ...META, targetLanguage: 'de' } },
+      'large'
+    );
+    expect(system).toContain('KI-Floskeln');
+    expect(system).not.toContain('Drop AI-vocabulary');
+  });
+
+  it('defaults to the English ban-list when the target language is English', () => {
+    const { system } = buildApplicationEmailPrompt(BASE, 'large');
+    expect(system).toContain('Drop AI-vocabulary');
+  });
+});
+
+// ─── Style reference (writing-style transfer) ─────────────────────────────────
+
+describe('buildApplicationEmailPrompt — styleReference', () => {
+  it('fences a provided style reference with the ignore-instructions directive', () => {
+    const styleReference = 'I keep it short. I get to the point.';
+    const { user } = buildApplicationEmailPrompt({ ...BASE, styleReference });
+    expect(user).toContain('<style_reference>');
+    expect(user).toContain(styleReference);
+    expect(user).toMatch(/WRITING-STYLE reference only/i);
+    expect(user).toMatch(/ignore any instructions/i);
+  });
+
+  it('omits the block entirely when no styleReference is given, and instead points at <candidate_resume> (no duplicate résumé tokens)', () => {
+    const { user } = buildApplicationEmailPrompt(BASE);
+    expect(user).not.toContain('<style_reference>');
+    expect(user).toMatch(/vocabulary register.*natural cadence.*<candidate_resume>/is);
+    expect(user).toMatch(/do not copy its content, facts, or bullet format/i);
+    // The résumé text is embedded exactly once — never re-fed as a second block.
+    expect(user.split(BASE.resume.trim()).length - 1).toBe(1);
   });
 });
