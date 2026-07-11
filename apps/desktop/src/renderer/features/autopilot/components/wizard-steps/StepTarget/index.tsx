@@ -14,7 +14,6 @@ import { useAppClient } from '@/providers/AppClientProvider';
 import { useHasProviderKey } from '@/services/use-ai-provider';
 import { useBoardsCatalog } from '@/services/use-boards';
 
-import { ComingSoonBadge } from '../ComingSoonBadge';
 import { PrefilledBadge } from '../PrefilledBadge';
 import { WizardField } from '../WizardField';
 
@@ -28,8 +27,6 @@ export function StepTarget({ prefilled }: StepTargetProps) {
   const { t, i18n } = useTranslation();
   const api = useAppClient();
   const { control, setValue } = useFormContext<WizardState>();
-  // Disabled "coming soon" control — display the current value without binding.
-  const workType = useWatch({ control, name: 'workType' });
   const boards = useWatch({ control, name: 'boards' });
   // Country derived from the picked location suggestion — surfaced inline so the
   // user SEES which market the autopilot will search (vs. the silent save-time
@@ -233,25 +230,6 @@ export function StepTarget({ prefilled }: StepTargetProps) {
           )}
         />
       </div>
-
-      <WizardField label={t('autopilot.wizard.target.workType')} badge={<ComingSoonBadge />}>
-        <div className="grid grid-cols-2 gap-1.5 @sm:grid-cols-4">
-          {(['any', 'remote', 'hybrid', 'on-site'] as const).map((opt) => (
-            <Button
-              key={opt}
-              disabled
-              className={cn(
-                'rounded-lg border px-2 py-1.5 text-[10px] font-medium capitalize transition-all h-auto',
-                workType === opt
-                  ? 'border-brand/40 bg-brand/10 text-brand-soft'
-                  : 'border-[var(--border-clear)] text-foreground/40'
-              )}
-            >
-              {opt}
-            </Button>
-          ))}
-        </div>
-      </WizardField>
 
       <div className="grid grid-cols-1 gap-3 @xs:grid-cols-2">
         <Controller
