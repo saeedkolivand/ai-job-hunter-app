@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783788210587,
+  "lastUpdate": 1783796518173,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3815,6 +3815,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 231861,
             "range": "± 3082",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bac6c0a6992f7b099e66073993319dde59bd69bf",
+          "message": "fix: fence the scraped job ad as untrusted input in all prompt builders (#617)\n\n* fix: fence the scraped job ad as untrusted input in all prompt builders\n\nthe scraped job ad is the primary attacker-controlled input yet was interpolated raw\ninto <job_ad> fences across 9 builders — no neutralization, no treat-as-data directive —\nwhile company-research/web-search/style-reference content was already fenced. a malicious\nposting with a forged </job_ad> + injected instructions could skew the ats score or bias\nresume/cover/answer generation.\n\n- new exported buildJobAdBlock(jobAd, maxChars) in emphasis.ts: slice (caller budget) →\n  neutralizeFenceTag → fenced block + JOB_AD_UNTRUSTED_NOTE ignore-instructions directive\n- all raw job-ad interpolations routed through it: analyze (brief/task/full), resume,\n  cover-letter, application-questions, application-email, interview-questions, metadata,\n  job-ad-summary. all three analyzer depths now structurally identical (real fence + note)\n- neutralizeFenceTag widened to whitespace-tolerant + forged-opening-tag, case-insensitive,\n  regex-escaped tagName, bounded \\s* (no redos) — hardens all four fences at once\n- benign job ads byte-identical; exact-keyword ats matching unaffected\n- tauri-security-reviewer: no high/critical; both medium findings (whitespace bypass +\n  forgeable full-depth header) fixed in this diff\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* build: delay-load comctl32 on windows so cargo test binaries load\n\nThe lib statically imports comctl32!TaskDialogIndirect (via the wry/muda/rfd dialog path), a ComCtl32 v6-only export. Cargo test\nbinaries get no Common-Controls 6.0.0.0 manifest, so on windows-msvc the loader binds System32 comctl32 v5.82 and the exe aborts at\nload with STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139) before main. CI never sees it because tests run on linux/macos.\n\nThe library's own unit-test harness (where nearly all tests live) is a lib target: Cargo has no link-arg category that reaches it\nexcept the crate-wide rustc-link-arg, and a /MANIFEST:EMBED there collides with tauri-build's bin manifest resource (CVT1100 duplicate\nMANIFEST). So instead of manifesting the harness, delay-load comctl32: the v6-only import is no longer bound at process start (it\nresolves on first call, which the tests never make). Bins and dialogs still resolve v6 at runtime via tauri-build's bin manifest, so\nruntime behavior is unchanged.\n\nGated on the build-script target env (CARGO_CFG_TARGET_OS=windows, CARGO_CFG_TARGET_ENV=msvc), not #[cfg(windows)] which reflects the host.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: update cargo test comctl32 fix status and preview-regen notes\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-11T20:52:33+02:00",
+          "tree_id": "af5e417ce474bc55b4afd1230be7eaa58c52fc2f",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/bac6c0a6992f7b099e66073993319dde59bd69bf"
+        },
+        "date": 1783796517847,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2159161,
+            "range": "± 113836",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2591124,
+            "range": "± 45017",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 296237,
+            "range": "± 4818",
             "unit": "ns/iter"
           }
         ]
