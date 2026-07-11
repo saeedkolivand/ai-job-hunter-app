@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783740981212,
+  "lastUpdate": 1783748625994,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -3647,6 +3647,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 305015,
             "range": "± 16005",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7abc20e2f80596c4b5247b93dfe8ae458abf550c",
+          "message": "feat: canonical location model with honest per-board location handling (#602)\n\n* feat: canonical location model with honest per-board location handling\n\nLocationSpec derives once from the geo fields the renderer already sends; boards declare supports_location (verified catalog: aggregator, linkedin, arbeitsagentur only).\nThe engine centrally filters non-supporting boards with a conservative predicate: diacritic folding plus a curated exonym table, remote and unknown locations always kept.\nFiltered items never count toward the item cap, so boards keep paginating until enough matching rows arrive.\nEvery non-supporting board notes location-filtered:<n> (including zero) so a board that ignored the location can never read clean; the picker warns before the scrape.\nTrust program PR F (audit 2026-07-10) — the one sanctioned refactor.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test: cover the location filter note at both picker call sites\n\nReal render tests for ScrapeForm and StepTarget pin the hint's presence when a location is set; docs/knowledge synced and lessons persisted.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: pin the on_item stream contract and warn on poisoned kept mutex\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-11T07:32:46+02:00",
+          "tree_id": "3c51d0bbc253b1f344916fc45ae77319749f82ed",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/7abc20e2f80596c4b5247b93dfe8ae458abf550c"
+        },
+        "date": 1783748625322,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1872865,
+            "range": "± 31994",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2320226,
+            "range": "± 51163",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 225168,
+            "range": "± 3669",
             "unit": "ns/iter"
           }
         ]
