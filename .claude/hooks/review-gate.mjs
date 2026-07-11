@@ -180,12 +180,17 @@ try {
   try {
     // ast-grep exits 1 when error findings exist — that is a result, not a failure;
     // forward-slash repo-relative paths only (backslashes break files: globs).
+    // shell:true is required on Windows (pnpm is a .cmd) — quote every path so
+    // spaces/metacharacters in a filename can't break or be interpreted by the shell.
     const r = spawnSync(
       'pnpm',
-      ['exec', 'ast-grep', 'scan', '--json=compact', '--', ...nonSkipped],
+      ['exec', 'ast-grep', 'scan', '--json=compact', '--', ...nonSkipped.map((f) => `"${f}"`)],
       { cwd, encoding: 'utf8', shell: true, timeout: 60000, maxBuffer: 20 * 1024 * 1024 }
     );
-    const matches = JSON.parse(r.stdout || '');
+    const out = (r.stdout || '').trim();
+    // distinguish "ran clean, empty output" from "binary missing/errored" — only the
+    // latter may fall back to the legacy regexes
+    const matches = !r.error && r.status === 0 && !out ? [] : JSON.parse(out);
     sgRan = true;
     for (const m of matches) {
       const file = String(m.file || '').replace(/\\/g, '/');
@@ -229,10 +234,11 @@ try {
         'move env access into platform/config.rs',
       ],
       [
-        // R5 is about CONSTRUCTION — using the reqwest::Client type elsewhere is fine
+        // R5 is about CONSTRUCTION — using the reqwest::Client type elsewhere is fine.
+        // exempt only net/http.rs, matching the ast-grep rule's ignores exactly
         /reqwest::Client::(new|builder)\(|reqwest::ClientBuilder::new\(/,
-        /\/net\//,
-        'reqwest client constructed outside net/',
+        /\/net\/http\.rs$/,
+        'reqwest client constructed outside net/http.rs',
         'use net/http.rs shared()/build_client()',
       ],
       [

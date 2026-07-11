@@ -272,13 +272,14 @@ The Stop review-gate runs **Tier-0 structural linters** to catch regressions bef
 pnpm scan:rules              # ast-grep structural rules from .claude/review-rules/*.yml
 ```
 
-These rules are zero-false-positive and **mandatory** — the repo must always scan clean. A rule that fires on `main` is either a real regression (fix the code) or a bad rule (disable/refine in `sgconfig.yml`). Rules check for unsafe patterns (environment variables outside platform modules, Result-to-string conversions, GC infinity bugs in queries, etc.) — see `.claude/review-rules/*.yml` for the full catalog.
+These rules are zero-false-positive and **mandatory** — the repo must always scan clean. A rule that fires on `main` is either a real regression (fix the code) or a bad rule (disable/refine in the rule's YAML under `.claude/review-rules/*.yml`). Rules check for unsafe patterns (environment variables outside platform modules, Result-to-string conversions, GC infinity bugs in queries, etc.) — see `.claude/review-rules/*.yml` for the full catalog.
 
 For **secret scanning** during local review (before push), install [gitleaks](https://github.com/gitleaks/gitleaks):
 
 ```bash
 winget install gitleaks              # Windows
 brew install gitleaks                # macOS
+apt install gitleaks                 # Linux (Debian/Ubuntu)
 scoop install gitleaks               # Windows (alternative)
 ```
 
