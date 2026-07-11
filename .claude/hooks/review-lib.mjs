@@ -94,8 +94,10 @@ export const assembleDiff = (segments, max = 60000) => {
   );
   let diff = '';
   const omitted = [];
+  let deletedCount = 0;
   for (const s of segs) {
     if (s.deleted) {
+      deletedCount += 1;
       diff += `# deleted: ${s.file} (-${s.dels} lines)\n`;
       continue;
     }
@@ -122,7 +124,7 @@ export const assembleDiff = (segments, max = 60000) => {
     omitted.push(`${s.file} (+${s.adds}/-${s.dels})`);
   }
   if (omitted.length) diff += `# omitted files (over budget): ${omitted.join(', ')}\n`;
-  return { diff, omitted };
+  return { diff, omitted, deletedCount };
 };
 
 // ─── hunk hashing (body-only, line-number agnostic) ──────────────────────────

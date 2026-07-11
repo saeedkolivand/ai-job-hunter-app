@@ -13,8 +13,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   SKIP_GLOBS,
   matchesAny,
@@ -115,8 +114,9 @@ try {
       segments.push(...splitByFile(git(args)));
     } catch {}
   };
-  if (mergeBase) collect(['diff', '-M', `${mergeBase}..HEAD`, '--unified=3', '--', ...nonSkipped]);
-  collect(['diff', '-M', 'HEAD', '--unified=3', '--', ...nonSkipped]);
+  // ONE diff from merge-base (or HEAD) to the WORKING TREE — committed + uncommitted
+  // captured in a single pass, so a file changed in both never yields two segments.
+  collect(['diff', '-M', mergeBase || 'HEAD', '--unified=3', '--', ...nonSkipped]);
   // `git diff HEAD` is blind to untracked files — diff each against /dev/null.
   // --no-index exits 1 on difference, so output is recovered from the thrown error.
   for (const f of untracked) {
@@ -129,7 +129,7 @@ try {
       if (e && typeof e.stdout === 'string') segments.push(...splitByFile(e.stdout));
     }
   }
-  const { diff } = assembleDiff(segments, MAX);
+  const { diff, omitted, deletedCount } = assembleDiff(segments, MAX);
   if (!diff.trim()) exit0();
 
   // trivial-change heuristic (comment/import/blank-only → skip)
@@ -141,7 +141,12 @@ try {
     if (/^(import |use |pub use |mod |from )/.test(b)) return false;
     return true;
   });
-  if (!meaningful.length) exit0();
+  if (!meaningful.length) {
+    // deletion-only / over-budget-only changes carry no +/- lines — the review is
+    // skipped as a degradation, but the metrics must not read as "clean".
+    if (deletedCount || omitted.length) logM({ outcome: 'degraded', blocked: false });
+    exit0();
+  }
 
   // 5. Tier 0 — architecture guards (deterministic findings, confidence 1.0).
   // ponytail: JS regex over changed .rs contents; PR 3 swaps this for ast-grep.
@@ -149,19 +154,48 @@ try {
     const i = content.split('\n').findIndex((l) => re.test(l));
     return i >= 0 ? i + 1 : 0;
   };
+  // added (+) lines per file — a violation only BLOCKS when the diff introduced it;
+  // a pre-existing hit in a touched file surfaces honestly as non-blocking
+  // (introduced_by_diff: false — CI architecture tests own pre-existing debt).
+  const addedByFile = new Map();
+  for (const s of segments) {
+    const added = s.text
+      .split('\n')
+      .filter((l) => l.startsWith('+') && !l.startsWith('+++'))
+      .map((l) => l.slice(1))
+      .join('\n');
+    addedByFile.set(s.file, (addedByFile.get(s.file) || '') + added + '\n');
+  }
   const tier0 = [];
-  const arch = (file, line, summary, fix) =>
+  const arch = (file, line, summary, fix, introduced) =>
     tier0.push({
       severity: 'HIGH',
       category: 'arch',
       file,
       line,
-      summary,
-      evidence: 'deterministic Tier-0 guard (docs/architecture-rules.md)',
+      summary: introduced ? summary : `${summary} (pre-existing)`,
+      evidence: introduced
+        ? 'deterministic Tier-0 guard (docs/architecture-rules.md)'
+        : 'pre-existing in a touched file — not introduced by this diff',
       fix,
       confidence: 1,
-      introduced_by_diff: true,
+      introduced_by_diff: introduced,
     });
+  const ARCH_RULES = [
+    [
+      /std::env::var\b/,
+      /\/platform\//,
+      'std::env::var outside platform/',
+      'move env access into platform/config.rs',
+    ],
+    [/reqwest::Client\b/, /\/net\//, 'reqwest::Client outside net/', 'use net/http.rs shared()'],
+    [
+      /Result<[^>]*,\s*String\s*>/,
+      /\/error(\.rs|\/)/,
+      'untyped Result<_, String> outside error/',
+      'use AppError/AppResult',
+    ],
+  ];
   for (const f of nonSkipped) {
     if (!f.endsWith('.rs')) continue;
     let content = '';
@@ -171,27 +205,14 @@ try {
       continue;
     }
     const p = '/' + f;
-    if (!/\/platform\//.test(p) && /std::env::var\b/.test(content))
-      arch(
-        f,
-        findLine(content, /std::env::var\b/),
-        'std::env::var outside platform/',
-        'move env access into platform/config.rs'
-      );
-    if (!/\/net\//.test(p) && /reqwest::Client\b/.test(content))
-      arch(
-        f,
-        findLine(content, /reqwest::Client\b/),
-        'reqwest::Client outside net/',
-        'use net/http.rs shared()'
-      );
-    if (!/\/error(\.rs|\/)/.test(p) && /Result<[^>]*,\s*String\s*>/.test(content))
-      arch(
-        f,
-        findLine(content, /Result<[^>]*,\s*String\s*>/),
-        'untyped Result<_, String> outside error/',
-        'use AppError/AppResult'
-      );
+    const added = addedByFile.get(f) || '';
+    // true = introduced by the diff, false = pre-existing, null = absent
+    const hit = (re) => (re.test(added) ? true : re.test(content) ? false : null);
+    for (const [re, exemptRe, summary, fix] of ARCH_RULES) {
+      if (exemptRe.test(p)) continue;
+      const h = hit(re);
+      if (h !== null) arch(f, findLine(content, re), summary, fix, h);
+    }
   }
 
   // 6. reviewed-hash cache (body-only hunk hashes; line-number agnostic)
@@ -201,7 +222,9 @@ try {
     cache = new Set(fs.readFileSync(cachePath, 'utf8').split('\n').filter(Boolean));
   } catch {}
   const hashes = hunkHashes(diff);
-  if (hashes.length && hashes.every((h) => cache.has(h)) && !tier0.length) {
+  // pre-existing (non-blocking) tier-0 hits must not defeat the cache forever
+  const tier0Blocking = tier0.some((t) => t.introduced_by_diff);
+  if (hashes.length && hashes.every((h) => cache.has(h)) && !tier0Blocking) {
     logM({ outcome: 'cache-skip', blocked: false });
     exit0();
   }
@@ -375,7 +398,7 @@ ${diff}
         .map(formatFinding)
         .join('\n')}` +
         (unverified.length
-          ? `\n\nUnverified (low-confidence, advisory):\n${unverified.map(formatFinding).join('\n')}`
+          ? `\n\nNon-blocking HIGH/CRITICAL (low confidence or pre-existing):\n${unverified.map(formatFinding).join('\n')}`
           : '') +
         (advisory.length ? `\n\nAdvisory:\n- ${advisory.join('\n- ')}` : '') +
         fallbackNote
@@ -404,7 +427,7 @@ ${diff}
   const advisoryOut = [];
   if (unverified.length)
     advisoryOut.push(
-      `Unverified findings (confidence < 0.6):\n${unverified.map(formatFinding).join('\n')}`
+      `Non-blocking HIGH/CRITICAL (low confidence or pre-existing):\n${unverified.map(formatFinding).join('\n')}`
     );
   if (lowmed.length)
     advisoryOut.push(`Advisory findings:\n${lowmed.map(formatFinding).join('\n')}`);

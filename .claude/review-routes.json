@@ -38,6 +38,7 @@
     { "glob": "apps/desktop/src/**", "owner": "frontend-reviewer" },
     { "glob": "apps/desktop/src-tauri/src/**", "owner": "rust-backend-architect" },
     { "glob": "packages/shared/**", "owner": "rust-backend-architect" },
+    { "glob": ".claude/**", "owner": "project-steward" },
     { "glob": "landing/**", "owner": "project-steward" },
     { "glob": "docs/**", "owner": "project-steward" },
     { "glob": "scripts/**", "owner": "project-steward" },
