@@ -19,7 +19,7 @@ use async_trait::async_trait;
 use tauri::AppHandle;
 
 use crate::commands::ai_provider::{
-    resolve, AgentTurn, AiProvider, ChatMsg, ModelCapabilities, ProviderId, ToolSpec,
+    record_usage, resolve, AgentTurn, AiProvider, ChatMsg, ModelCapabilities, ProviderId, ToolSpec,
 };
 use crate::error::AppResult;
 
@@ -33,6 +33,11 @@ pub struct Completer {
     app: AppHandle,
     provider: Box<dyn AiProvider>,
     model: String,
+    /// The resolved base URL, when one was supplied — only meaningful for
+    /// `openai-compatible` (LM Studio/vLLM/OpenRouter/…). Threaded through to
+    /// [`record_usage`]'s free/paid cost gate; `None` for every other
+    /// provider, which the gate ignores it for.
+    base_url: Option<String>,
 }
 
 impl Completer {
@@ -66,8 +71,9 @@ impl Completer {
         provider_id.validate_model(&model)?;
         Ok(Self {
             app: app.clone(),
-            provider: resolve(provider_id, base_url),
+            provider: resolve(provider_id, base_url.clone()),
             model,
+            base_url,
         })
     }
 
@@ -149,31 +155,66 @@ impl Completer {
     /// analogue used by agentic text-generating tools (cover letter, interview
     /// questions) that need the whole response before returning. Reuses the same
     /// resolved provider + keychain auth + tracing as chat.
+    ///
+    /// This is the shared non-streaming-text chokepoint for AI-spend visibility
+    /// (`crate::spend`): every call records the provider's REAL reported token
+    /// usage (zero when a provider genuinely reports none) against today's
+    /// spend before returning — covering autopilot notes and the résumé/cover
+    /// pipeline, with zero changes needed at either call site. The agent
+    /// controller's multi-turn tool-calling runs through
+    /// [`chat_with_tools`](Self::chat_with_tools) instead, which records its
+    /// own usage the same way.
     pub async fn complete(
         &self,
         system: &str,
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
-        self.provider
-            .complete(&self.app, &self.model, system, user, temperature)
-            .await
+        let (text, usage) = self
+            .provider
+            .complete_with_usage(&self.app, &self.model, system, user, temperature)
+            .await?;
+        record_usage(
+            &self.app,
+            self.provider.id().as_str(),
+            &self.model,
+            usage.input_tokens,
+            usage.output_tokens,
+            self.base_url.as_deref(),
+        );
+        Ok(text)
     }
 
     /// One agentic tool-calling turn through the active provider — the multi-turn
     /// analogue of [`research`](Self::research). Delegates to
     /// [`AiProvider::chat_with_tools`](crate::commands::ai_provider::AiProvider::chat_with_tools):
     /// providers without native tool support degrade to a single-shot answer.
-    /// Consumed by the agent controller (`crate::agent`).
+    /// Consumed by the agent controller (`crate::agent`) — plausibly the
+    /// biggest paid-token consumer, since one "Prep this application" run fans
+    /// out into several turns. Records the returned [`AgentTurn::usage`]
+    /// (each provider's own turn-parser populates it from the same
+    /// response fields `complete`/`chat_stream` already parse) against
+    /// today's AI spend before returning, so every turn — not just the final
+    /// one — is counted.
     pub async fn chat_with_tools(
         &self,
         messages: &[ChatMsg],
         tools: &[ToolSpec],
         temperature: Option<f64>,
     ) -> AppResult<AgentTurn> {
-        self.provider
+        let turn = self
+            .provider
             .chat_with_tools(&self.app, &self.model, messages, tools, temperature)
-            .await
+            .await?;
+        record_usage(
+            &self.app,
+            self.provider.id().as_str(),
+            &self.model,
+            turn.usage.input_tokens,
+            turn.usage.output_tokens,
+            self.base_url.as_deref(),
+        );
+        Ok(turn)
     }
 }
 

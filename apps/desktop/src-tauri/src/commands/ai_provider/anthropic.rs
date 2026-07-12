@@ -15,7 +15,7 @@ use super::timeouts;
 use super::{
     friendly_api_error, single_shot_turn, split_system, AgentTurn, AiGenerateRequest, AiProvider,
     ChatMsg, ModelCapabilities, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall,
-    ToolSpec,
+    ToolSpec, Usage,
 };
 
 const BASE: &str = "https://api.anthropic.com/v1";
@@ -98,6 +98,7 @@ fn parse_anthropic_turn(data: &Value) -> AgentTurn {
         text,
         tool_calls,
         stop,
+        usage: parse_anthropic_usage(data),
     }
 }
 
@@ -106,9 +107,21 @@ fn parse_anthropic_turn(data: &Value) -> AgentTurn {
 /// most recent `event:` in `last_event` (carried across chunk boundaries by the
 /// caller). `message_stop` (by event name or embedded `type`) yields a terminal
 /// sentinel; `thinking_delta` / `text_delta` map to reasoning / answer pieces.
+///
+/// Real token usage (`crate::spend`) arrives split across two events:
+/// `message_start` carries `message.usage.input_tokens` (once, at the top of
+/// the stream) and each `message_delta` carries a running `usage.output_tokens`
+/// total (the LAST one is authoritative). `usage` is caller-carried mutable
+/// state (like `last_event`) so the two halves combine into one [`Usage`]; a
+/// [`StreamPiece::usage`] piece is emitted whenever either half updates.
+///
 /// Pure + unit-tested; this is the OpenAI-style `parse` closure for Anthropic, so
 /// its SSE framing lives here only.
-fn parse_anthropic_frames(buf: &mut String, last_event: &mut String) -> Vec<StreamPiece> {
+fn parse_anthropic_frames(
+    buf: &mut String,
+    last_event: &mut String,
+    usage: &mut Usage,
+) -> Vec<StreamPiece> {
     let mut out = Vec::new();
     // Walk the buffer by a `consumed` offset and `drain(..consumed)` once at the end,
     // instead of reallocating the whole tail per line (O(n²) on a big frame).
@@ -135,6 +148,30 @@ fn parse_anthropic_frames(buf: &mut String, last_event: &mut String) -> Vec<Stre
             Ok(v) => v,
             Err(_) => continue,
         };
+        match last_event.as_str() {
+            "message_start" => {
+                if let Some(input) = event
+                    .get("message")
+                    .and_then(|m| m.get("usage"))
+                    .and_then(|u| u.get("input_tokens"))
+                    .and_then(|v| v.as_u64())
+                {
+                    usage.input_tokens = input as u32;
+                    out.push(StreamPiece::usage(*usage));
+                }
+            }
+            "message_delta" => {
+                if let Some(output) = event
+                    .get("usage")
+                    .and_then(|u| u.get("output_tokens"))
+                    .and_then(|v| v.as_u64())
+                {
+                    usage.output_tokens = output as u32;
+                    out.push(StreamPiece::usage(*usage));
+                }
+            }
+            _ => {}
+        }
         let delta_obj = event.get("delta");
         let delta_type = delta_obj
             .and_then(|d| d.get("type"))
@@ -222,9 +259,88 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
     body
 }
 
+/// Extract `usage.{input_tokens,output_tokens}` from a non-streaming Anthropic
+/// Messages response — always present on a successful response. Pure +
+/// unit-tested.
+fn parse_anthropic_usage(data: &Value) -> Usage {
+    let usage = data.get("usage");
+    Usage {
+        input_tokens: usage
+            .and_then(|u| u.get("input_tokens"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32,
+        output_tokens: usage
+            .and_then(|u| u.get("output_tokens"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32,
+    }
+}
+
 pub struct AnthropicClient;
 
 impl AnthropicClient {
+    /// Shared body of `complete`/`complete_with_usage`: one non-streaming
+    /// `/messages` call, parsed once into `(text, usage)` so the two trait
+    /// methods never duplicate the HTTP round-trip.
+    async fn complete_impl(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+    ) -> AppResult<(String, Usage)> {
+        let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
+        let endpoint = format!("{BASE}/messages");
+        let trace = RequestTrace::begin(ProviderId::Anthropic, model, "/messages", BASE, false);
+
+        let mut body = json!({
+            "model": model,
+            "max_tokens": 4096,
+            "messages": [ { "role": "user", "content": user } ],
+            "temperature": temperature.unwrap_or(0.7),
+        });
+        if !system.is_empty() {
+            body["system"] = json!(system);
+        }
+
+        let resp = send_with_retry(|| {
+            crate::net::http::shared()
+                .post(&endpoint)
+                .timeout(timeouts::COMPLETION)
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", VERSION)
+                .json(&body)
+        })
+        .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                return Err(AppError::Network(format!("Anthropic unreachable: {e}")));
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            return Err(friendly_api_error(
+                ProviderId::Anthropic,
+                status,
+                &body_text,
+            ));
+        }
+        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        trace.end(Some(status.as_u16()), true);
+        let text = join_text_blocks(&data);
+        if text.is_empty() {
+            return Err(AppError::Provider(
+                "Anthropic: unexpected response shape".to_string(),
+            ));
+        }
+        Ok((text, parse_anthropic_usage(&data)))
+    }
+
     /// Shared transport for every `research*` facet: a non-streaming Messages
     /// call with the server-side web-search tool, `system`/`user` supplied by the
     /// caller. Capped at 3 searches (a brief, not deep research); the enricher
@@ -359,11 +475,20 @@ impl AiProvider for AnthropicClient {
 
         // The shared loop owns cancel-check + chunk read + emit + complete; the
         // closure is the only Anthropic-specific part (paired `event:`/`data:` SSE
-        // framing, with `last_event` carried across chunks).
+        // framing, with `last_event`/`usage` carried across chunks).
         let mut last_event = String::new();
-        stream_response(app, job_id, &trace, response, status.as_u16(), move |buf| {
-            parse_anthropic_frames(buf, &mut last_event)
-        })
+        let mut usage = Usage::default();
+        stream_response(
+            app,
+            job_id,
+            &trace,
+            response,
+            status.as_u16(),
+            ProviderId::Anthropic,
+            &req.model,
+            BASE,
+            move |buf| parse_anthropic_frames(buf, &mut last_event, &mut usage),
+        )
         .await
     }
 
@@ -375,55 +500,21 @@ impl AiProvider for AnthropicClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
-        let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
-        let endpoint = format!("{BASE}/messages");
-        let trace = RequestTrace::begin(ProviderId::Anthropic, model, "/messages", BASE, false);
+        self.complete_impl(app, model, system, user, temperature)
+            .await
+            .map(|(text, _)| text)
+    }
 
-        let mut body = json!({
-            "model": model,
-            "max_tokens": 4096,
-            "messages": [ { "role": "user", "content": user } ],
-            "temperature": temperature.unwrap_or(0.7),
-        });
-        if !system.is_empty() {
-            body["system"] = json!(system);
-        }
-
-        let resp = send_with_retry(|| {
-            crate::net::http::shared()
-                .post(&endpoint)
-                .timeout(timeouts::COMPLETION)
-                .header("x-api-key", &api_key)
-                .header("anthropic-version", VERSION)
-                .json(&body)
-        })
-        .await;
-        let resp = match resp {
-            Ok(r) => r,
-            Err(e) => {
-                trace.end(None, false);
-                return Err(AppError::Network(format!("Anthropic unreachable: {e}")));
-            }
-        };
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
-            trace.end(Some(status.as_u16()), false);
-            return Err(friendly_api_error(
-                ProviderId::Anthropic,
-                status,
-                &body_text,
-            ));
-        }
-        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
-        trace.end(Some(status.as_u16()), true);
-        let text = join_text_blocks(&data);
-        if text.is_empty() {
-            return Err(AppError::Provider(
-                "Anthropic: unexpected response shape".to_string(),
-            ));
-        }
-        Ok(text)
+    async fn complete_with_usage(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+    ) -> AppResult<(String, Usage)> {
+        self.complete_impl(app, model, system, user, temperature)
+            .await
     }
 
     async fn research(
@@ -624,9 +715,9 @@ impl AiProvider for AnthropicClient {
 mod tests {
     use super::{
         anthropic_supports_thinking, build_chat_stream_body, join_text_blocks,
-        parse_anthropic_frames, parse_anthropic_turn, StreamPiece,
+        parse_anthropic_frames, parse_anthropic_turn, parse_anthropic_usage, StreamPiece,
     };
-    use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
+    use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall, Usage};
     use crate::ipc_contracts::ai::AiGenerateRequestMessage;
     use serde_json::json;
 
@@ -711,13 +802,14 @@ mod tests {
     #[test]
     fn parse_frames_splits_thinking_and_text_deltas() {
         let mut last = String::new();
+        let mut usage = Usage::default();
         let mut buf = String::from(
             "event: content_block_delta\n\
              data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"hmm\"}}\n\
              event: content_block_delta\n\
              data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n",
         );
-        let pieces = parse_anthropic_frames(&mut buf, &mut last);
+        let pieces = parse_anthropic_frames(&mut buf, &mut last, &mut usage);
         assert_eq!(
             pieces,
             vec![StreamPiece::thinking("hmm"), StreamPiece::text("hi")]
@@ -727,9 +819,10 @@ mod tests {
     #[test]
     fn parse_frames_done_on_message_stop_event() {
         let mut last = String::new();
+        let mut usage = Usage::default();
         let mut buf = String::from("event: message_stop\ndata: {\"type\":\"message_stop\"}\n");
         assert_eq!(
-            parse_anthropic_frames(&mut buf, &mut last),
+            parse_anthropic_frames(&mut buf, &mut last, &mut usage),
             vec![StreamPiece::done("")]
         );
     }
@@ -739,12 +832,13 @@ mod tests {
         // The `event:` line arrives in one chunk, the `data:` in the next — the
         // caller carries `last_event`, so message_stop is still detected.
         let mut last = String::new();
+        let mut usage = Usage::default();
         let mut buf = String::from("event: message_stop\n");
-        assert!(parse_anthropic_frames(&mut buf, &mut last).is_empty());
+        assert!(parse_anthropic_frames(&mut buf, &mut last, &mut usage).is_empty());
         assert_eq!(last, "message_stop");
         buf.push_str("data: {}\n");
         assert_eq!(
-            parse_anthropic_frames(&mut buf, &mut last),
+            parse_anthropic_frames(&mut buf, &mut last, &mut usage),
             vec![StreamPiece::done("")]
         );
     }
@@ -752,8 +846,9 @@ mod tests {
     #[test]
     fn parse_frames_leaves_partial_trailing_line_buffered() {
         let mut last = String::new();
+        let mut usage = Usage::default();
         let mut buf = String::from("data: {\"type\":\"content_block_de");
-        assert!(parse_anthropic_frames(&mut buf, &mut last).is_empty());
+        assert!(parse_anthropic_frames(&mut buf, &mut last, &mut usage).is_empty());
         assert_eq!(buf, "data: {\"type\":\"content_block_de");
     }
 
@@ -763,14 +858,60 @@ mod tests {
         // (incl. a multi-byte char before the newline) and keep the partial tail —
         // the offset arithmetic stays on char boundaries.
         let mut last = String::new();
+        let mut usage = Usage::default();
         let mut buf = String::from(
             "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"café\"}}\n\
              data: {\"type\":\"content_block_de",
         );
-        let pieces = parse_anthropic_frames(&mut buf, &mut last);
+        let pieces = parse_anthropic_frames(&mut buf, &mut last, &mut usage);
         assert_eq!(pieces, vec![StreamPiece::text("café")]);
         // Only the unterminated trailing line survives the drain.
         assert_eq!(buf, "data: {\"type\":\"content_block_de");
+    }
+
+    #[test]
+    fn parse_frames_combines_message_start_input_and_message_delta_output_tokens() {
+        let mut last = String::new();
+        let mut usage = Usage::default();
+        let mut buf = String::from(
+            "event: message_start\n\
+             data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":25,\"output_tokens\":1}}}\n",
+        );
+        let pieces = parse_anthropic_frames(&mut buf, &mut last, &mut usage);
+        assert_eq!(
+            pieces,
+            vec![StreamPiece::usage(Usage {
+                input_tokens: 25,
+                output_tokens: 0
+            })]
+        );
+
+        buf.push_str(
+            "event: message_delta\n\
+             data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":91}}\n",
+        );
+        let pieces = parse_anthropic_frames(&mut buf, &mut last, &mut usage);
+        assert_eq!(
+            pieces,
+            vec![StreamPiece::usage(Usage {
+                input_tokens: 25,
+                output_tokens: 91
+            })]
+        );
+    }
+
+    #[test]
+    fn parse_usage_reads_a_non_streaming_response() {
+        let data = json!({ "usage": { "input_tokens": 12, "output_tokens": 34 } });
+        let usage = parse_anthropic_usage(&data);
+        assert_eq!(usage.input_tokens, 12);
+        assert_eq!(usage.output_tokens, 34);
+    }
+
+    #[test]
+    fn parse_usage_defaults_to_zero_when_absent() {
+        let usage = parse_anthropic_usage(&json!({}));
+        assert_eq!(usage, Usage::default());
     }
 
     #[test]

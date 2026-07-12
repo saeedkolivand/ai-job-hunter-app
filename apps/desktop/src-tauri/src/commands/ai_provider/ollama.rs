@@ -18,7 +18,7 @@ use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
     single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, ModelCapabilities,
-    ProviderId, RequestTrace, StopReason, TokenParam, ToolCall, ToolSpec,
+    ProviderId, RequestTrace, StopReason, TokenParam, ToolCall, ToolSpec, Usage,
 };
 
 const EMBED_MODEL: &str = "nomic-embed-text";
@@ -101,7 +101,26 @@ fn parse_ollama_turn(data: &Value) -> AgentTurn {
         text,
         tool_calls,
         stop,
+        usage: parse_ollama_usage(data).unwrap_or_default(),
     }
+}
+
+/// Extract `prompt_eval_count`/`eval_count` — Ollama's real input/output token
+/// counts, present at the top level of both the non-streaming `/api/chat`
+/// response and the final (`done: true`) streamed object. `None` when NEITHER
+/// field is present (an absent/malformed response never fabricates a zero
+/// that looks like a real reported value). Pure + unit-tested.
+fn parse_ollama_usage(data: &Value) -> Option<Usage> {
+    if data.get("prompt_eval_count").is_none() && data.get("eval_count").is_none() {
+        return None;
+    }
+    Some(Usage {
+        input_tokens: data
+            .get("prompt_eval_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32,
+        output_tokens: data.get("eval_count").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+    })
 }
 
 // ── Provider impl ───────────────────────────────────────────────────────────────
@@ -149,53 +168,20 @@ impl AiProvider for OllamaClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
-        let base = host();
-        let endpoint = format!("{base}/api/chat");
-        let trace = RequestTrace::begin(ProviderId::Ollama, model, "/api/chat", &base, false);
-
-        let mut body = json!({
-            "model": model,
-            "stream": false,
-            "messages": [
-                { "role": "system", "content": system },
-                { "role": "user", "content": user },
-            ],
-        });
-        if let Some(t) = temperature {
-            body["options"] = json!({ "temperature": t });
-        }
-        body["keep_alive"] = json!(crate::performance::ollama_keep_alive());
-
-        let resp = match super::retry::send_with_retry(|| {
-            crate::net::http::shared()
-                .post(&endpoint)
-                .timeout(timeouts::OLLAMA_COMPLETION)
-                .json(&body)
-        })
-        .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                trace.end(None, false);
-                return Err(AppError::Network(format!("Ollama unreachable: {e}")));
-            }
-        };
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
-            trace.end(Some(status.as_u16()), false);
-            return Err(AppError::Provider(format!("Ollama {status}: {body_text}")));
-        }
-        let data: Value = resp
-            .json()
+        complete_impl(model, system, user, temperature)
             .await
-            .map_err(|e| format!("Ollama parse: {e}"))?;
-        trace.end(Some(status.as_u16()), true);
-        data.get("message")
-            .and_then(|m| m.get("content"))
-            .and_then(|c| c.as_str())
-            .map(String::from)
-            .ok_or_else(|| AppError::Provider("Ollama: unexpected response shape".to_string()))
+            .map(|(text, _)| text)
+    }
+
+    async fn complete_with_usage(
+        &self,
+        _app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+    ) -> AppResult<(String, Usage)> {
+        complete_impl(model, system, user, temperature).await
     }
 
     async fn research(
@@ -769,8 +755,12 @@ fn parse_ollama_frames(buf: &mut String) -> Vec<StreamPiece> {
         if done {
             // Final object — carry its content on the terminal sentinel so the
             // shared loop emits it then completes (matches the original framing).
+            // Real token usage (`prompt_eval_count`/`eval_count`) lives on this
+            // same final object, so it rides along on the sentinel piece too.
             buf.drain(..consumed);
-            out.push(StreamPiece::done(delta));
+            let mut sentinel = StreamPiece::done(delta);
+            sentinel.usage = parse_ollama_usage(&event);
+            out.push(sentinel);
             return out;
         }
         if !delta.is_empty() {
@@ -863,16 +853,81 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
         &trace,
         response,
         status.as_u16(),
+        ProviderId::Ollama,
+        &req.model,
+        &base,
         parse_ollama_frames,
     )
     .await
+}
+
+/// Shared body of [`AiProvider::complete`]/[`AiProvider::complete_with_usage`]
+/// for [`OllamaClient`]: one non-streaming `/api/chat` call, parsed once into
+/// `(text, usage)` so the two trait methods never duplicate the HTTP
+/// round-trip. A free function (no `&self`) since `OllamaClient` is a unit
+/// struct with no other state.
+async fn complete_impl(
+    model: &str,
+    system: &str,
+    user: &str,
+    temperature: Option<f64>,
+) -> AppResult<(String, Usage)> {
+    let base = host();
+    let endpoint = format!("{base}/api/chat");
+    let trace = RequestTrace::begin(ProviderId::Ollama, model, "/api/chat", &base, false);
+
+    let mut body = json!({
+        "model": model,
+        "stream": false,
+        "messages": [
+            { "role": "system", "content": system },
+            { "role": "user", "content": user },
+        ],
+    });
+    if let Some(t) = temperature {
+        body["options"] = json!({ "temperature": t });
+    }
+    body["keep_alive"] = json!(crate::performance::ollama_keep_alive());
+
+    let resp = match super::retry::send_with_retry(|| {
+        crate::net::http::shared()
+            .post(&endpoint)
+            .timeout(timeouts::OLLAMA_COMPLETION)
+            .json(&body)
+    })
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            trace.end(None, false);
+            return Err(AppError::Network(format!("Ollama unreachable: {e}")));
+        }
+    };
+    let status = resp.status();
+    if !status.is_success() {
+        let body_text = resp.text().await.unwrap_or_default();
+        trace.end(Some(status.as_u16()), false);
+        return Err(AppError::Provider(format!("Ollama {status}: {body_text}")));
+    }
+    let data: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Ollama parse: {e}"))?;
+    trace.end(Some(status.as_u16()), true);
+    let text = data
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .map(String::from)
+        .ok_or_else(|| AppError::Provider("Ollama: unexpected response shape".to_string()))?;
+    Ok((text, parse_ollama_usage(&data).unwrap_or_default()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
         build_chat_stream_body, normalize_show, ollama_supports_tools, parse_ollama_frames,
-        parse_ollama_turn, parse_web_search, StreamPiece,
+        parse_ollama_turn, parse_ollama_usage, parse_web_search, StreamPiece,
     };
     use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
     use crate::ipc_contracts::ai::AiGenerateRequestMessage;
@@ -940,6 +995,31 @@ mod tests {
             parse_ollama_frames(&mut buf),
             vec![StreamPiece::done("end")]
         );
+    }
+
+    #[test]
+    fn parse_ollama_frames_done_carries_real_token_usage() {
+        let mut buf = String::from(
+            "{\"message\":{\"content\":\"end\"},\"done\":true,\"prompt_eval_count\":123,\"eval_count\":45}\n",
+        );
+        let pieces = parse_ollama_frames(&mut buf);
+        assert_eq!(pieces.len(), 1);
+        let usage = pieces[0].usage.expect("done piece must carry usage");
+        assert_eq!(usage.input_tokens, 123);
+        assert_eq!(usage.output_tokens, 45);
+    }
+
+    #[test]
+    fn parse_usage_reads_prompt_eval_and_eval_counts() {
+        let data = json!({ "prompt_eval_count": 10, "eval_count": 20 });
+        let usage = parse_ollama_usage(&data).expect("usage present");
+        assert_eq!(usage.input_tokens, 10);
+        assert_eq!(usage.output_tokens, 20);
+    }
+
+    #[test]
+    fn parse_usage_is_none_when_absent() {
+        assert!(parse_ollama_usage(&json!({})).is_none());
     }
 
     #[test]

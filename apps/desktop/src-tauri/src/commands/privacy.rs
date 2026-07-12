@@ -18,6 +18,7 @@ use crate::notifications::NotificationStore;
 use crate::pipeline::cache::KvCache;
 use crate::postings::{InteractionStore, PostingsCache};
 use crate::referrals::ReferralStore;
+use crate::spend::SpendStore;
 
 // ── Full-reset registry ───────────────────────────────────────────────────────
 //
@@ -94,6 +95,11 @@ impl Resettable for KvCache {
         self.clear();
     }
 }
+impl Resettable for SpendStore {
+    fn reset(&self) {
+        self.clear_all();
+    }
+}
 
 /// A type-erased factory-reset action: resolve a store from app state and wipe it.
 type ResetAction = Box<dyn Fn(&AppHandle) + Send + Sync>;
@@ -115,6 +121,7 @@ pub const MANAGE_RESETTABLE_LABELS: &[&str] = &[
     "job_tracker",
     "postings",
     "interactions",
+    "spend",
     "cache",
 ];
 
@@ -483,6 +490,7 @@ mod tests {
         reg.register::<Mutex<JobTracker>>("job_tracker");
         reg.register::<Mutex<PostingsCache>>("postings");
         reg.register::<Mutex<InteractionStore>>("interactions");
+        reg.register::<SpendStore>("spend");
         reg.register::<KvCache>("cache");
 
         let labels = reg.labels();
