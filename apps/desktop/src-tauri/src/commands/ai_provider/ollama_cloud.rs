@@ -14,6 +14,7 @@ use crate::error::AppResult;
 use super::openai::OpenAiClient;
 use super::{
     AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, ModelCapabilities, ProviderId, ToolSpec,
+    Usage,
 };
 
 /// Ollama Cloud's OpenAI-compatible base URL.
@@ -76,6 +77,23 @@ impl AiProvider for OllamaCloudClient {
             .await
     }
 
+    async fn complete_with_usage(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+    ) -> AppResult<(String, Usage)> {
+        // Ollama Cloud's `/v1` endpoint is served by the inner OpenAI-compatible
+        // client, which sends `stream_options.include_usage` and parses the
+        // real `usage.{prompt_tokens,completion_tokens}` OpenAI-shape response —
+        // real token counts, not a naive default-to-zero delegation.
+        self.inner
+            .complete_with_usage(app, model, system, user, temperature)
+            .await
+    }
+
     async fn research(
         &self,
         app: &AppHandle,
@@ -126,6 +144,17 @@ impl AiProvider for OllamaCloudClient {
 
     async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
         self.inner.embed(app, model, text).await
+    }
+
+    async fn embed_with_usage(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        text: &str,
+    ) -> AppResult<(Vec<f64>, Usage)> {
+        // Real usage parsing lives on the inner OpenAI-compatible client, exactly
+        // like `complete_with_usage` above — never a naive default-to-zero.
+        self.inner.embed_with_usage(app, model, text).await
     }
 
     fn default_embedding_model(&self) -> Option<&'static str> {

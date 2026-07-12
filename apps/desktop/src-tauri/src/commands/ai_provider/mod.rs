@@ -12,7 +12,7 @@
 use async_trait::async_trait;
 use serde::Serialize;
 use serde_json::Value;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, AiStreamChunk, AiStreamChunkError, AI_STREAM};
@@ -240,12 +240,19 @@ pub enum StopReason {
     Other,
 }
 
-/// One assistant turn: visible text, any tool calls, and the stop reason.
+/// One assistant turn: visible text, any tool calls, the stop reason, and the
+/// provider's REAL reported token usage for this turn (zero when a provider
+/// genuinely reports none — a CLI agent, or a `single_shot_turn` fallback
+/// against one that does). Consumed by `pipeline::Completer::chat_with_tools`
+/// to record AI spend for the agent controller's tool-calling turns —
+/// plausibly the biggest paid-token consumer, since one agent run fans out
+/// into several turns.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AgentTurn {
     pub text: String,
     pub tool_calls: Vec<ToolCall>,
     pub stop: StopReason,
+    pub usage: Usage,
 }
 
 /// Transcript role. `System` is trusted + fixed; every other role is untrusted data.
@@ -306,6 +313,59 @@ impl ChatMsg {
     }
 }
 
+// ── Spend visibility (real token usage) ─────────────────────────────────────
+
+/// Real per-call token usage as reported by the provider's own response —
+/// never estimated. Zero on both fields when a provider genuinely reports no
+/// usage (e.g. a CLI agent — see `cli_agent`, which relies on the
+/// [`AiProvider::complete_with_usage`] default rather than fabricating a
+/// number). Consumed by `crate::spend` to compute an estimated dollar cost.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Usage {
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+}
+
+/// Record one AI call's REAL token usage against today's spend via the
+/// managed [`crate::spend::SpendStore`], if one is present. Best-effort:
+/// spend tracking never blocks or fails a generation — a missing store (e.g.
+/// it failed to open at startup) is silently skipped, exactly like the other
+/// `try_state`-gated convenience writers in this crate (see
+/// `commands::notifications::push_and_notify`). `base_url` is whatever base
+/// URL the caller resolved the request against — passed straight through to
+/// [`crate::spend::SpendStore::record`]'s free/paid cost gate, which only
+/// ever consults it for the `openai-compatible` provider id (every other
+/// provider ignores it), so a local LM Studio/llama.cpp/vLLM server never
+/// shows a fake dollar figure. Pass `None` when no base URL was resolved
+/// (every non-`openai-compatible` provider).
+///
+/// Lives HERE (the command/shell layer, L3) rather than in `crate::spend`
+/// (a data-layer store, L1) because it needs `AppHandle`/`Manager` to resolve
+/// the managed state — the architecture boundary test (R2: no Tauri below the
+/// shell layer) forbids a store module from importing `tauri::*` itself.
+/// `crate::spend::SpendStore` stays Tauri-free; this is the AppHandle→
+/// `try_state`→`record` hop every call site (streaming, `Completer`, CLI
+/// agents, `embed_text`) goes through.
+pub(crate) fn record_usage(
+    app: &AppHandle,
+    provider: &str,
+    model: &str,
+    input_tokens: u32,
+    output_tokens: u32,
+    base_url: Option<&str>,
+) {
+    if let Some(store) = app.try_state::<crate::spend::SpendStore>() {
+        store.record(crate::spend::SpendRecord {
+            provider: provider.to_string(),
+            model: model.to_string(),
+            input_tokens,
+            output_tokens,
+            run_id: None,
+            base_url: base_url.map(str::to_string),
+        });
+    }
+}
+
 // ── Provider trait & registry ────────────────────────────────────────────────
 
 /// A chat backend. Object-safe so the registry can return `Box<dyn AiProvider>`.
@@ -338,6 +398,26 @@ pub trait AiProvider: Send + Sync {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String>;
+
+    /// [`complete`](Self::complete) plus the provider's REAL reported token
+    /// usage (never estimated) — the non-streaming half of AI-spend
+    /// visibility (`crate::spend`), consumed by `pipeline::Completer::complete`.
+    /// DEFAULT: wraps `complete` and reports [`Usage::default`] (zero) —
+    /// correct for any provider that genuinely reports no usage (a CLI
+    /// agent). Providers whose API returns usage (OpenAI, Anthropic, Gemini,
+    /// Ollama, Ollama Cloud) override this to parse it from the same
+    /// response `complete` already fetches, so there is no duplicate call.
+    async fn complete_with_usage(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+    ) -> AppResult<(String, Usage)> {
+        let text = self.complete(app, model, system, user, temperature).await?;
+        Ok((text, Usage::default()))
+    }
 
     /// Produce a ~150-word company-research brief using **this provider's own**
     /// web search — a native search tool (OpenAI/Anthropic/Gemini), the agent's
@@ -406,6 +486,25 @@ pub trait AiProvider: Send + Sync {
     /// Embed a single text, returning the raw vector. Errors when this provider
     /// has no embeddings API (callers gate on `capabilities().supports_embeddings`).
     async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>>;
+
+    /// [`embed`](Self::embed) plus the provider's REAL reported token usage
+    /// (never estimated) — consumed by [`embed_text`], the shared chokepoint
+    /// for AI-spend visibility on every embedding call (manual embed,
+    /// match-score resolution, and `ai_reembed_all`'s batch re-index).
+    /// DEFAULT: wraps `embed` and reports [`Usage::default`] (zero) — correct
+    /// for a provider whose embeddings response carries no usage field
+    /// (Ollama's local embeddings cost $0 anyway; CLI agents have no
+    /// embeddings API at all). OpenAI/Gemini override this to parse the real
+    /// `usage`/`usageMetadata` field their embeddings response carries.
+    async fn embed_with_usage(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        text: &str,
+    ) -> AppResult<(Vec<f64>, Usage)> {
+        let values = self.embed(app, model, text).await?;
+        Ok((values, Usage::default()))
+    }
 
     /// The provider's default embedding model, or `None` if it has no embeddings API.
     fn default_embedding_model(&self) -> Option<&'static str>;
@@ -491,10 +590,12 @@ pub(crate) fn split_system(messages: &[ChatMsg]) -> (String, Vec<&ChatMsg>) {
     (system, rest)
 }
 
-/// The single-shot tool-calling fallback: run `complete` and return an
-/// [`AgentTurn`] carrying no tool calls. Used by the trait default and by any
-/// adapter whose model doesn't support tools. Generic over `?Sized` so it works
-/// from both the trait default (`&Self`) and a concrete adapter.
+/// The single-shot tool-calling fallback: run `complete_with_usage` and return
+/// an [`AgentTurn`] carrying no tool calls but the real reported usage (zero
+/// for a provider that genuinely reports none, e.g. a CLI agent). Used by the
+/// trait default and by any adapter whose model doesn't support tools.
+/// Generic over `?Sized` so it works from both the trait default (`&Self`) and
+/// a concrete adapter.
 pub(crate) async fn single_shot_turn<P: AiProvider + ?Sized>(
     provider: &P,
     app: &AppHandle,
@@ -503,13 +604,14 @@ pub(crate) async fn single_shot_turn<P: AiProvider + ?Sized>(
     temperature: Option<f64>,
 ) -> AppResult<AgentTurn> {
     let (system, user) = flatten_messages(messages);
-    let text = provider
-        .complete(app, model, &system, &user, temperature)
+    let (text, usage) = provider
+        .complete_with_usage(app, model, &system, &user, temperature)
         .await?;
     Ok(AgentTurn {
         text,
         tool_calls: Vec::new(),
         stop: StopReason::End,
+        usage,
     })
 }
 
@@ -592,6 +694,12 @@ pub struct EmbeddingVector {
 /// Embed `text` with an explicit provider/model, returning a space-tagged vector.
 /// Routes through the same `resolve` + capability + auth flow as chat, so there
 /// are no Ollama assumptions and no silent fallback.
+///
+/// This is the shared chokepoint for AI-spend visibility on embedding calls —
+/// every caller (`ai_embed`, `posting_vector_or_embed`'s match-score
+/// resolution, `ai_reembed_all`'s batch re-index) routes through here, so
+/// each records the provider's REAL reported token usage (zero when a
+/// provider genuinely reports none) with no changes needed at any call site.
 pub async fn embed_text(
     app: &AppHandle,
     provider: ProviderId,
@@ -599,7 +707,7 @@ pub async fn embed_text(
     base_url: Option<String>,
     text: &str,
 ) -> AppResult<EmbeddingVector> {
-    let client = resolve(provider, base_url);
+    let client = resolve(provider, base_url.clone());
     let model = if model.trim().is_empty() {
         client
             .default_embedding_model()
@@ -632,7 +740,15 @@ pub async fn embed_text(
         Some((byte_offset, _)) => &text[..byte_offset],
         None => text,
     };
-    let values = client.embed(app, &model, text).await?;
+    let (values, usage) = client.embed_with_usage(app, &model, text).await?;
+    record_usage(
+        app,
+        provider.as_str(),
+        &model,
+        usage.input_tokens,
+        usage.output_tokens,
+        base_url.as_deref(),
+    );
     if values.is_empty() {
         return Err(AppError::Provider(format!(
             "{} returned an empty embedding.",

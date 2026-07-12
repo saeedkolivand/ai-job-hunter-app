@@ -862,6 +862,9 @@
       },
       "embeddings": {
         "title": "Embeddings"
+      },
+      "spend": {
+        "title": "AI spend"
       }
     },
     "outputTone": {
@@ -1061,6 +1064,16 @@
       "reindexIncomplete": "Re-indexing did not finish.",
       "semanticScoring": "Semantic scoring",
       "semanticScoringDesc": "Uses embeddings for deeper match quality. Disable for faster keyword-only scoring."
+    },
+    "spend": {
+      "heading": "AI spend (today)",
+      "disclaimer": "Token counts are exact; the dollar amount is an estimate from list prices, not an actual charge. Local models cost $0.",
+      "perProviderHeading": "Per provider",
+      "tokensSummary": "{{input}} in / {{output}} out tokens",
+      "freeLocal": "local — free",
+      "emptyTitle": "No AI activity recorded today",
+      "errorTitle": "Couldn't load AI spend",
+      "errorDescription": "Something went wrong loading today's AI spend."
     },
     "cancel": "Cancel"
   },

@@ -862,6 +862,9 @@
       },
       "embeddings": {
         "title": "Einbettungen"
+      },
+      "spend": {
+        "title": "KI-Ausgaben"
       }
     },
     "outputTone": {
@@ -1065,6 +1068,16 @@
       "reindexIncomplete": "Neuindizierung nicht abgeschlossen.",
       "semanticScoring": "Semantische Bewertung",
       "semanticScoringDesc": "Nutzt Embeddings für höhere Abgleichqualität. Deaktivieren für schnellere reine Stichwortbewertung."
+    },
+    "spend": {
+      "heading": "KI-Ausgaben (heute)",
+      "disclaimer": "Token-Zahlen sind exakt; der Dollarbetrag ist eine Schätzung anhand von Listenpreisen, keine tatsächliche Abrechnung. Lokale Modelle kosten $0.",
+      "perProviderHeading": "Nach Anbieter",
+      "tokensSummary": "{{input}} ein / {{output}} aus Token",
+      "freeLocal": "lokal — kostenlos",
+      "emptyTitle": "Heute keine KI-Aktivität erfasst",
+      "errorTitle": "KI-Ausgaben konnten nicht geladen werden",
+      "errorDescription": "Beim Laden der heutigen KI-Ausgaben ist ein Fehler aufgetreten."
     },
     "cancel": "Abbrechen"
   },
