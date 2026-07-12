@@ -2524,6 +2524,39 @@
           "team": "Team",
           "leadership": "Leadership",
           "general": "Anyone"
+        },
+        "toggle": {
+          "label": "Interview prep mode",
+          "ask": "Questions to ask",
+          "practice": "Practice answers"
+        },
+        "practice": {
+          "hint": "Likely questions you'll be asked for this role — practice your answer and get STAR-based feedback.",
+          "generate": "Generate practice questions",
+          "regenerate": "Regenerate",
+          "generating": "Generating…",
+          "empty": "No practice questions yet",
+          "emptyDesc": "Generate likely interview questions and rehearse your answers.",
+          "answerPlaceholder": "Type your answer… (Situation, Task, Action, Result)",
+          "getFeedback": "Get feedback",
+          "gettingFeedback": "Analyzing…",
+          "type": {
+            "behavioral": "Behavioral",
+            "roleSpecific": "Role-specific",
+            "technical": "Technical"
+          },
+          "feedback": {
+            "strengths": "Strengths",
+            "gaps": "Gaps vs. the job ad",
+            "starCompleteness": "STAR completeness",
+            "situation": "Situation",
+            "task": "Task",
+            "action": "Action",
+            "result": "Result",
+            "present": "Present",
+            "missing": "Missing",
+            "rewrite": "Tightened rewrite"
+          }
         }
       },
       "jdTitle": "Job description",

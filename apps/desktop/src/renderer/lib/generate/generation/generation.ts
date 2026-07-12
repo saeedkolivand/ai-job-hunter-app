@@ -26,12 +26,16 @@ import {
   buildInterviewQuestionsSystemPrompt,
   buildJobAdSummaryPrompt,
   buildJobAdSummarySystemPrompt,
+  buildLikelyQuestionsPrompt,
+  buildLikelyQuestionsSystemPrompt,
   buildMetadataPrompt,
   buildReferralImprovePrompt,
   buildReferralPrompt,
   buildResumePrompt,
   buildResumeSystemPrompt,
   buildRewritePrompt,
+  buildStarFeedbackPrompt,
+  buildStarFeedbackSystemPrompt,
   extractPlainText,
   type GenerationMeta,
   type GenerationMode,
@@ -663,6 +667,82 @@ export async function generateInterviewQuestions(params: {
   // Interview questions are prose: keep the existing 0.5 temperature default,
   // adding only the shared detector-resistance penalty set (see PROSE_SAMPLING).
   const sampling = resolveSampling('answers', 0.5, true);
+  const raw = await streamGenerate(
+    model,
+    system,
+    user,
+    onToken ?? (() => {}),
+    sampling.temperature,
+    meta.targetLanguage || 'en',
+    signal,
+    undefined,
+    sampling
+  );
+  return extractPlainText(raw);
+}
+
+/**
+ * Generate likely questions the CANDIDATE will be ASKED for this role — the
+ * mock-interview practice set (distinct from {@link generateInterviewQuestions},
+ * where the candidate asks the interviewer). Routes through the same streaming
+ * pipeline as every other generator (zero new IPC). Session-only feature:
+ * nothing produced here is persisted to the aiGenerations aggregate. Returns
+ * the raw delimited text — parse with `parseLikelyQuestions`.
+ */
+export async function generateLikelyInterviewQuestions(params: {
+  resume: string;
+  jobAd: string;
+  meta: GenerationMeta;
+  model: string;
+  signal?: AbortSignal;
+  onToken?: (tok: string) => void;
+}): Promise<string> {
+  const { resume, jobAd, meta, model, signal, onToken } = params;
+  const profile = buildProviderProfile(model);
+
+  const system = buildLikelyQuestionsSystemPrompt();
+  const user = buildLikelyQuestionsPrompt({ resume, jobAd, meta, target: profile });
+  // Prose, same detector-resistance treatment as the other interview surfaces.
+  const sampling = resolveSampling('answers', 0.5, true);
+  const raw = await streamGenerate(
+    model,
+    system,
+    user,
+    onToken ?? (() => {}),
+    sampling.temperature,
+    meta.targetLanguage || 'en',
+    signal,
+    undefined,
+    sampling
+  );
+  return extractPlainText(raw);
+}
+
+/**
+ * Generate STAR-rubric feedback on the candidate's typed practice answer to one
+ * likely question — strengths, gaps vs the job ad, STAR completeness, and a
+ * tightened rewrite. Routes through the same streaming pipeline (zero new IPC).
+ * Session-only: nothing here persists to the aiGenerations aggregate. Returns
+ * the raw delimited text — parse with `parseStarFeedback`.
+ */
+export async function generateStarFeedback(params: {
+  question: string;
+  answer: string;
+  resume: string;
+  jobAd: string;
+  meta: GenerationMeta;
+  model: string;
+  signal?: AbortSignal;
+  onToken?: (tok: string) => void;
+}): Promise<string> {
+  const { question, answer, resume, jobAd, meta, model, signal, onToken } = params;
+  const profile = buildProviderProfile(model);
+
+  const system = buildStarFeedbackSystemPrompt();
+  const user = buildStarFeedbackPrompt({ question, answer, resume, jobAd, meta, target: profile });
+  // Slightly lower temperature than free-form prose — feedback should stay
+  // traceable to the candidate's actual answer, not wander.
+  const sampling = resolveSampling('answers', 0.4, true);
   const raw = await streamGenerate(
     model,
     system,
