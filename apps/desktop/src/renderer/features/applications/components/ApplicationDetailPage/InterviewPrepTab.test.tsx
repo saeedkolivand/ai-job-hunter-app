@@ -18,7 +18,7 @@
 
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 import type { AiGenerationRecord, Application } from '@ajh/shared';
 
@@ -84,7 +84,23 @@ vi.mock('@/hooks/use-interview-questions', () => ({
   },
 }));
 
-// ── AudienceSelector / InterviewQuestionsAccordion — stubs ───────────────────
+// ── useInterviewPractice — controlled mock (session-only, no aggregate) ──────
+
+const practiceMock = {
+  questions: [] as { id: string; question: string; type: string }[],
+  generating: false,
+  error: null as string | null,
+  generate: vi.fn(),
+  canGenerate: true,
+  feedback: {} as Record<string, unknown>,
+  getFeedback: vi.fn(),
+};
+
+vi.mock('@/hooks/use-interview-practice', () => ({
+  useInterviewPractice: () => practiceMock,
+}));
+
+// ── AudienceSelector / InterviewQuestionsAccordion / InterviewPracticePanel — stubs ──
 
 vi.mock('@/components/interview/AudienceSelector', () => ({
   AudienceSelector: () => <div data-testid="audience-selector" />,
@@ -92,6 +108,10 @@ vi.mock('@/components/interview/AudienceSelector', () => ({
 
 vi.mock('@/components/interview/InterviewQuestionsAccordion', () => ({
   InterviewQuestionsAccordion: () => <div data-testid="iq-accordion" />,
+}));
+
+vi.mock('@/components/interview/InterviewPracticePanel', () => ({
+  InterviewPracticePanel: () => <div data-testid="practice-panel" />,
 }));
 
 // ── Import component AFTER all mocks ─────────────────────────────────────────
@@ -157,6 +177,8 @@ beforeEach(() => {
   resolveJobUrlState.isLoading = false;
   iqMock.questions = [];
   iqMock.generate.mockClear();
+  practiceMock.generate.mockClear();
+  practiceMock.getFeedback.mockClear();
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -232,5 +254,37 @@ describe('InterviewPrepTab — application.jobDescription as primary source', ()
     render(<InterviewPrepTab application={app} matchingGenerations={[]} />);
 
     expect(capturedHasDesc).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. Mode toggle — "Questions to ask" vs "Practice answers"
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('InterviewPrepTab — mode toggle', () => {
+  it('defaults to "ask" mode: the accordion body renders, the practice panel does not', () => {
+    render(<InterviewPrepTab application={makeApp()} matchingGenerations={[]} />);
+
+    expect(screen.getByTestId('audience-selector')).toBeInTheDocument();
+    expect(screen.queryByTestId('practice-panel')).not.toBeInTheDocument();
+  });
+
+  it('switches to the practice panel when "Practice answers" is selected, hiding the ask-mode toolbar', () => {
+    render(<InterviewPrepTab application={makeApp()} matchingGenerations={[]} />);
+
+    fireEvent.click(screen.getByText('applications.detail.interview.toggle.practice'));
+
+    expect(screen.getByTestId('practice-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('audience-selector')).not.toBeInTheDocument();
+  });
+
+  it('switches back to "ask" mode', () => {
+    render(<InterviewPrepTab application={makeApp()} matchingGenerations={[]} />);
+
+    fireEvent.click(screen.getByText('applications.detail.interview.toggle.practice'));
+    fireEvent.click(screen.getByText('applications.detail.interview.toggle.ask'));
+
+    expect(screen.getByTestId('audience-selector')).toBeInTheDocument();
+    expect(screen.queryByTestId('practice-panel')).not.toBeInTheDocument();
   });
 });

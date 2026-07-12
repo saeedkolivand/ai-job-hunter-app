@@ -1,12 +1,15 @@
 import { MessagesSquare, Sparkles } from 'lucide-react';
+import { useState } from 'react';
 
 import type { AiGenerationRecord, Application, InterviewQuestion } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, CardSkeleton, EmptyState, TextArea } from '@ajh/ui';
+import { Button, CardSkeleton, EmptyState, SegmentedControl, TextArea } from '@ajh/ui';
 
 import { AudienceSelector } from '@/components/interview/AudienceSelector';
+import { InterviewPracticePanel } from '@/components/interview/InterviewPracticePanel';
 import { InterviewQuestionsAccordion } from '@/components/interview/InterviewQuestionsAccordion';
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
+import { useInterviewPractice } from '@/hooks/use-interview-practice';
 import { useInterviewQuestions } from '@/hooks/use-interview-questions';
 import { useDefaultResumeId } from '@/hooks/useDefaultResumeId';
 import { useDocuments, useDocumentText, useResolveJobUrl } from '@/services';
@@ -16,16 +19,25 @@ interface Props {
   matchingGenerations: AiGenerationRecord[];
 }
 
+/** Which half of the interview-prep tab is showing. */
+type InterviewPrepMode = 'ask' | 'practice';
+
 /**
- * Interview-prep tab — AI-suggested questions the candidate can ASK the
- * interviewer, grouped by audience. Self-sources the résumé (default doc) + job
- * description (saved generation or resolved from the URL) and persists generated
- * questions onto the per-job aggregate via {@link useInterviewQuestions}.
+ * Interview-prep tab — two modes, toggled by a segmented control:
+ * - "Questions to ask" — AI-suggested questions the candidate can ASK the
+ *   interviewer, grouped by audience, persisted onto the per-job aggregate via
+ *   {@link useInterviewQuestions}.
+ * - "Practice answers" — likely questions the candidate will be ASKED, with a
+ *   freeform answer box and streamed STAR feedback per question, entirely
+ *   session-only via {@link useInterviewPractice} (never persisted).
+ * Both modes self-source the résumé (default doc) + job description (saved
+ * generation or resolved from the URL).
  */
 export function InterviewPrepTab({ application, matchingGenerations }: Props) {
   const { t } = useTranslation();
   const model = useSelectedModel();
   const { canUse } = useCanUseAI();
+  const [mode, setMode] = useState<InterviewPrepMode>('ask');
 
   const docsQuery = useDocuments();
   const defaultResumeId = useDefaultResumeId();
@@ -52,6 +64,7 @@ export function InterviewPrepTab({ application, matchingGenerations }: Props) {
     jobUrl: application.jobUrl,
     board: application.board ?? '',
   });
+  const practice = useInterviewPractice({ resume, jobDesc, model, canUse, hasDesc });
 
   if (docsQuery.isLoading || (!!defaultResumeId && resumeQuery.isLoading)) {
     return (
@@ -67,70 +80,101 @@ export function InterviewPrepTab({ application, matchingGenerations }: Props) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Toolbar — audience selector + seed topics + generate */}
-      <div className="shrink-0 space-y-2 border-b border-[var(--border-soft)] px-8 py-3">
-        <span className="block text-xs font-medium text-foreground/70">
-          {t('applications.detail.interview.audienceLabel')}
-        </span>
-        <AudienceSelector selected={iq.audiences} onToggle={iq.toggleAudience} />
-        <label htmlFor="iq-seeds" className="block pt-1 text-xs font-medium text-foreground/70">
-          {t('applications.detail.interview.seedLabel')}
-        </label>
-        <div className="flex items-start gap-2">
-          <TextArea
-            id="iq-seeds"
-            variant="glass"
-            rows={2}
-            value={iq.seedTopics}
-            onChange={(e) => iq.setSeedTopics(e.target.value)}
-            placeholder={t('applications.detail.interview.seedPlaceholder')}
-            className="flex-1"
-          />
-          <Button
-            variant="primary"
-            disabled={!iq.canGenerate || iq.generating}
-            onClick={() => void iq.generate()}
-            className="shrink-0 gap-1.5"
-          >
-            <Sparkles size={13} />
-            {iq.generating
-              ? t('applications.detail.interview.generating')
-              : displayed.length > 0
-                ? t('applications.detail.interview.regenerate')
-                : t('applications.detail.interview.generate')}
-          </Button>
-        </div>
-        {!canUse && (
-          <p className="text-[11px] text-amber-400/80">
-            {t('applications.detail.interview.needsModel')}
-          </p>
-        )}
-        {canUse && !hasDesc && (
-          <p className="text-[11px] text-amber-400/80">
-            {t('applications.detail.interview.needsJob')}
-          </p>
-        )}
-        {iq.needsResearchKey && (
-          <p className="text-[11px] text-amber-400/70">{t('aiGenerate.research.ollamaKeyHint')}</p>
-        )}
-        {iq.error && <p className="text-[11px] text-red-400/80">{iq.error}</p>}
+      {/* Mode toggle — "Questions to ask" (unchanged) vs "Practice answers" (new). */}
+      <div className="shrink-0 border-b border-[var(--border-soft)] px-8 py-3">
+        <SegmentedControl<InterviewPrepMode>
+          value={mode}
+          onChange={setMode}
+          ariaLabel={t('applications.detail.interview.toggle.label')}
+          options={[
+            { value: 'ask', label: t('applications.detail.interview.toggle.ask') },
+            { value: 'practice', label: t('applications.detail.interview.toggle.practice') },
+          ]}
+        />
       </div>
 
-      {/* Body */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-8 py-5">
-        {displayed.length === 0 ? (
-          <div className="flex h-full items-center justify-center">
-            <EmptyState
-              icon={MessagesSquare}
-              title={t('applications.detail.interview.empty')}
-              description={t('applications.detail.interview.emptyDesc')}
-              className="py-12"
-            />
+      {mode === 'ask' ? (
+        <>
+          {/* Toolbar — audience selector + seed topics + generate */}
+          <div className="shrink-0 space-y-2 border-b border-[var(--border-soft)] px-8 py-3">
+            <span className="block text-xs font-medium text-foreground/70">
+              {t('applications.detail.interview.audienceLabel')}
+            </span>
+            <AudienceSelector selected={iq.audiences} onToggle={iq.toggleAudience} />
+            <label htmlFor="iq-seeds" className="block pt-1 text-xs font-medium text-foreground/70">
+              {t('applications.detail.interview.seedLabel')}
+            </label>
+            <div className="flex items-start gap-2">
+              <TextArea
+                id="iq-seeds"
+                variant="glass"
+                rows={2}
+                value={iq.seedTopics}
+                onChange={(e) => iq.setSeedTopics(e.target.value)}
+                placeholder={t('applications.detail.interview.seedPlaceholder')}
+                className="flex-1"
+              />
+              <Button
+                variant="primary"
+                disabled={!iq.canGenerate || iq.generating}
+                onClick={() => void iq.generate()}
+                className="shrink-0 gap-1.5"
+              >
+                <Sparkles size={13} />
+                {iq.generating
+                  ? t('applications.detail.interview.generating')
+                  : displayed.length > 0
+                    ? t('applications.detail.interview.regenerate')
+                    : t('applications.detail.interview.generate')}
+              </Button>
+            </div>
+            {!canUse && (
+              <p className="text-[11px] text-amber-400/80">
+                {t('applications.detail.interview.needsModel')}
+              </p>
+            )}
+            {canUse && !hasDesc && (
+              <p className="text-[11px] text-amber-400/80">
+                {t('applications.detail.interview.needsJob')}
+              </p>
+            )}
+            {iq.needsResearchKey && (
+              <p className="text-[11px] text-amber-400/70">
+                {t('aiGenerate.research.ollamaKeyHint')}
+              </p>
+            )}
+            {iq.error && <p className="text-[11px] text-red-400/80">{iq.error}</p>}
           </div>
-        ) : (
-          <InterviewQuestionsAccordion questions={displayed} />
-        )}
-      </div>
+
+          {/* Body */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-8 py-5">
+            {displayed.length === 0 ? (
+              <div className="flex h-full items-center justify-center">
+                <EmptyState
+                  icon={MessagesSquare}
+                  title={t('applications.detail.interview.empty')}
+                  description={t('applications.detail.interview.emptyDesc')}
+                  className="py-12"
+                />
+              </div>
+            ) : (
+              <InterviewQuestionsAccordion questions={displayed} />
+            )}
+          </div>
+        </>
+      ) : (
+        <InterviewPracticePanel
+          questions={practice.questions}
+          generating={practice.generating}
+          error={practice.error}
+          canGenerate={practice.canGenerate}
+          canUse={canUse}
+          hasDesc={hasDesc}
+          onGenerate={() => void practice.generate()}
+          feedback={practice.feedback}
+          onGetFeedback={(question, answer) => void practice.getFeedback(question, answer)}
+        />
+      )}
     </div>
   );
 }
