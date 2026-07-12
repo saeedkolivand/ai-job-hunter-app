@@ -18,6 +18,7 @@ use crate::documents::DocumentStore;
 use crate::job_preferences::JobPreferencesStore;
 use crate::postings::{InteractionRecord, InteractionStore};
 use crate::referrals::ReferralStore;
+use crate::spend::SpendStore;
 
 const BUNDLE_VERSION: u32 = 1;
 
@@ -58,6 +59,7 @@ fn validate_sections(stores: &Value) -> crate::error::AppResult<()> {
         "referrals",
         "autopilots",
         "interactions",
+        "spend",
     ];
     // Sections whose export is a single JSON object (single-row settings stores).
     const OBJECT_SECTIONS: &[&str] = &["jobPreferences", "contactProfile"];
@@ -112,6 +114,9 @@ fn build_bundle(app: &AppHandle) -> Value {
     if let Some(s) = app.try_state::<Mutex<InteractionStore>>() {
         let interactions = s.lock().export_all();
         stores.insert("interactions".to_string(), json!(interactions));
+    }
+    if let Some(s) = app.try_state::<SpendStore>() {
+        stores.insert(s.key().to_string(), s.export());
     }
 
     json!({
@@ -244,6 +249,12 @@ pub async fn data_import(app: AppHandle) -> Value {
         let guard = s.lock();
         import_into("autopilots", &*guard);
     }
+    if let Some(s) = app.try_state::<SpendStore>() {
+        import_into("spend", s.inner());
+    }
+    // `import_into` (the `imported`/`had_error`-capturing closure) is never
+    // called again after this point, so NLL can end its borrow here — letting
+    // the interactions block below touch `imported`/`had_error` directly.
     if let Some(s) = app.try_state::<Mutex<InteractionStore>>() {
         if let Some(data) = stores.get("interactions") {
             match serde_json::from_value::<Vec<InteractionRecord>>(data.clone()) {

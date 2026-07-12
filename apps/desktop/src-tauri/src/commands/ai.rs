@@ -615,6 +615,48 @@ pub async fn ai_embedding_status(app: AppHandle) -> Value {
     })
 }
 
+// ── AI-spend visibility ──────────────────────────────────────────────────────
+
+/// Read-only AI-spend summary: today's REAL per-provider token totals — as
+/// reported by each provider's own response, never estimated (see
+/// `commands::ai_provider::stream` / `pipeline::Completer::complete`, the two
+/// chokepoints that record them) — plus an ESTIMATED USD cost from a static
+/// list-price rate table (`crate::spend::estimate_cost`). The dollar figure is
+/// a best-effort ballpark, not a billing-accurate source: a BYO-key user has
+/// no billing API to query. Local (Ollama) and CLI-agent calls always cost
+/// $0. A missing store (failed to open at startup) degrades to all-zero
+/// rather than erroring.
+#[tauri::command]
+pub fn ai_spend_summary(app: AppHandle) -> Value {
+    let Some(store) = app.try_state::<crate::spend::SpendStore>() else {
+        return json!({
+            "today": { "inputTokens": 0, "outputTokens": 0, "estCostUsd": 0.0 },
+            "perProvider": [],
+        });
+    };
+    let today = store.today_totals();
+    let per_provider: Vec<Value> = store
+        .by_provider_today()
+        .into_iter()
+        .map(|p| {
+            json!({
+                "provider": p.provider,
+                "inputTokens": p.input_tokens,
+                "outputTokens": p.output_tokens,
+                "estCostUsd": p.est_cost_usd,
+            })
+        })
+        .collect();
+    json!({
+        "today": {
+            "inputTokens": today.input_tokens,
+            "outputTokens": today.output_tokens,
+            "estCostUsd": today.est_cost_usd,
+        },
+        "perProvider": per_provider,
+    })
+}
+
 /// Set the active embedding provider/model. The provider must support embeddings
 /// (validated server-side); an empty model resolves to the provider's default.
 /// Changing this changes the embedding space — call `ai_reembed_all` afterwards

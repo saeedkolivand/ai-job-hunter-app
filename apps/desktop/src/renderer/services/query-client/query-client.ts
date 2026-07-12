@@ -72,6 +72,7 @@ export const keys = {
     models: ['ai', 'models'] as const,
     capabilities: ['ai', 'capabilities'] as const,
     embeddingStatus: ['ai', 'embeddingStatus'] as const,
+    spend: ['ai', 'spend'] as const,
   },
   documents: {
     all: ['documents'] as const,

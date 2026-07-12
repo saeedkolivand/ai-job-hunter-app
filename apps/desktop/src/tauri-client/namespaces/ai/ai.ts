@@ -104,4 +104,5 @@ export const ai = {
     baseUrl?: string;
   }) => invoke('ai_set_embedding_config', { provider, model, baseUrl }),
   reembedAll: () => invoke('ai_reembed_all'),
+  spendSummary: () => invoke('ai_spend_summary'),
 };

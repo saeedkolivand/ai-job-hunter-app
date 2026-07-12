@@ -150,6 +150,16 @@ export interface AiContract {
 
   /** Re-embed every document with the active embedding config. Returns a job id. */
   reembedAll(): Promise<{ jobId: string }>;
+
+  /**
+   * Read-only AI-spend summary: today's REAL per-provider token totals — as
+   * reported by each provider's own response, never estimated — plus an
+   * ESTIMATED USD cost from a static list-price rate table. The dollar
+   * figure is a best-effort ballpark (BYO-key users have no billing API to
+   * query), not a billing-accurate source. Local (Ollama) and CLI-agent
+   * calls always cost $0.
+   */
+  spendSummary(): Promise<AiSpendSummary>;
 }
 
 export interface EmbeddingConfig {
@@ -179,6 +189,21 @@ export interface EmbeddingStatus {
   active: EmbeddingConfig;
   spaces: EmbeddingSpaceInfo[];
   documents: { total: number; indexedInActiveSpace: number; stale: number };
+}
+
+/** One provider's real token totals + estimated cost, since the start of the
+ *  current UTC day. */
+export interface AiSpendProviderTotals {
+  provider: string;
+  inputTokens: number;
+  outputTokens: number;
+  estCostUsd: number;
+}
+
+/** Today's real AI-spend totals, overall and per provider. */
+export interface AiSpendSummary {
+  today: { inputTokens: number; outputTokens: number; estCostUsd: number };
+  perProvider: AiSpendProviderTotals[];
 }
 
 export const AI_CHANNELS = {

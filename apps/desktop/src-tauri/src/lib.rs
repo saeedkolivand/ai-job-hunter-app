@@ -47,6 +47,7 @@ pub mod recommend;
 pub mod referrals;
 pub mod salary_research;
 pub mod scraping;
+pub mod spend;
 pub mod theme;
 pub mod tray;
 pub mod updater;
@@ -637,6 +638,13 @@ pub fn run() {
                 "interactions",
                 Mutex::new(InteractionStore::new(&data_dir)),
             );
+            // AI-spend visibility: real per-call token usage + estimated cost,
+            // recorded by the streaming and pipeline chokepoints in
+            // `commands::ai_provider::stream` / `pipeline::Completer::complete`.
+            match spend::SpendStore::open(&data_dir) {
+                Ok(store) => manage_resettable(app, &mut reset_registry, "spend", store),
+                Err(e) => log::warn!("[setup] spend store failed to open (non-fatal): {e}"),
+            }
             app.manage(Mutex::new(UpdaterState::default()));
             app.manage(std::sync::Arc::new(ScraperEngine::new()));
             // In-memory anti-abuse limiter (rate + concurrency + per-provider daily
@@ -793,6 +801,7 @@ pub fn run() {
             commands::ai::ai_embedding_status,
             commands::ai::ai_set_embedding_config,
             commands::ai::ai_reembed_all,
+            commands::ai::ai_spend_summary,
             commands::pipeline::generate_pipeline,
             // agent ("prep this application" flow + human-in-the-loop confirm gate)
             commands::agent::agent_run,

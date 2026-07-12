@@ -11,6 +11,7 @@ import { CompanyResearchSettings } from '../CompanyResearchSettings';
 import { EmbeddingsSettings } from '../EmbeddingsSettings';
 import { ProviderDebugBadge } from '../ProviderDebugBadge';
 import { ProviderRow } from '../ProviderRow';
+import { SpendSettings } from '../SpendSettings';
 import { LocalModelLimits } from './LocalModelLimits';
 import { OllamaResourcesPanel } from './OllamaResourcesPanel';
 import { useProviderKeys } from './useProviderKeys';
@@ -130,6 +131,11 @@ export function AISettingsTab() {
       {/* Company research — provider-native web search (Ollama needs the free key) */}
       <div data-settings-anchor="ai-company-research">
         <CompanyResearchSettings />
+      </div>
+
+      {/* AI spend — today's real token totals + a rate-table cost estimate */}
+      <div data-settings-anchor="ai-spend">
+        <SpendSettings />
       </div>
     </motion.div>
   );

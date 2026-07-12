@@ -21,7 +21,7 @@ use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, AiStreamChunk, AI_STREAM};
 use crate::jobs::JobTracker;
 
-use super::RequestTrace;
+use super::{ProviderId, RequestTrace, Usage};
 
 /// One emittable piece pulled from a provider's stream by its `parse` closure.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,6 +35,13 @@ pub struct StreamPiece {
     /// (OpenAI `[DONE]`, Anthropic `message_stop`, Ollama `done:true`). The loop
     /// emits the terminal event and returns after processing this piece.
     pub done: bool,
+    /// The provider's REAL token usage, when this piece happens to carry it
+    /// (OpenAI's separate `stream_options.include_usage` chunk, Anthropic's
+    /// `message_start`/`message_delta` events, Gemini's `usageMetadata`,
+    /// Ollama's final `done:true` object). The shared loop remembers the
+    /// LATEST non-`None` value it sees across the whole stream and records it
+    /// at completion — never estimated, never fabricated when absent.
+    pub usage: Option<Usage>,
 }
 
 impl StreamPiece {
@@ -44,6 +51,7 @@ impl StreamPiece {
             delta: delta.into(),
             thinking: false,
             done: false,
+            usage: None,
         }
     }
 
@@ -53,6 +61,7 @@ impl StreamPiece {
             delta: delta.into(),
             thinking: true,
             done: false,
+            usage: None,
         }
     }
 
@@ -62,6 +71,20 @@ impl StreamPiece {
             delta: delta.into(),
             thinking: false,
             done: true,
+            usage: None,
+        }
+    }
+
+    /// A usage-only piece: no visible text, not a completion sentinel — just
+    /// reports the provider's real token usage as it becomes known (mid-stream
+    /// for OpenAI/Gemini, incrementally for Anthropic, or attached directly to
+    /// the `done` piece for Ollama).
+    pub fn usage(usage: Usage) -> Self {
+        Self {
+            delta: String::new(),
+            thinking: false,
+            done: false,
+            usage: Some(usage),
         }
     }
 }
@@ -81,8 +104,22 @@ fn emit_delta(app: &AppHandle, job_id: &str, delta: &str, thinking: bool) {
     );
 }
 
-/// Emit the terminal `ai:stream` event, mark the job complete, and close the trace.
-fn finish(app: &AppHandle, job_id: &str, trace: &RequestTrace, status: u16) {
+/// Emit the terminal `ai:stream` event, mark the job complete, close the
+/// trace, and record the stream's REAL token usage (zero when the provider
+/// never reported any) against today's AI spend. `base_url` is passed through
+/// to the free/paid cost gate — only meaningful for `openai-compatible`
+/// (LM Studio/vLLM/OpenRouter/…), ignored for every other provider.
+#[allow(clippy::too_many_arguments)]
+fn finish(
+    app: &AppHandle,
+    job_id: &str,
+    trace: &RequestTrace,
+    status: u16,
+    provider: ProviderId,
+    model: &str,
+    base_url: &str,
+    usage: Usage,
+) {
     emit_event(
         app,
         AI_STREAM,
@@ -96,6 +133,14 @@ fn finish(app: &AppHandle, job_id: &str, trace: &RequestTrace, status: u16) {
     );
     crate::commands::jobs::job_complete(app, job_id, json!({ "done": true }));
     trace.end(Some(status), true);
+    super::record_usage(
+        app,
+        provider.as_str(),
+        model,
+        usage.input_tokens,
+        usage.output_tokens,
+        Some(base_url),
+    );
 }
 
 /// Whether `job_id` has been cancelled.
@@ -116,11 +161,15 @@ fn is_cancelled(app: &AppHandle, job_id: &str) -> bool {
 enum StreamSink {
     /// Forward a decoded delta to the renderer.
     Emit { delta: String, thinking: bool },
-    /// Provider's end-of-stream sentinel — emit terminal event + complete.
-    Complete,
-    /// Cancelled mid-stream — fail with `"Job cancelled"`, no terminal event.
+    /// Provider's end-of-stream sentinel — emit terminal event + complete +
+    /// record spend. Carries the LATEST [`Usage`] seen across the whole
+    /// stream (mirroring `stream_response`/`finish`'s "last write wins" +
+    /// "record once, at completion" behavior).
+    Complete(Usage),
+    /// Cancelled mid-stream — fail with `"Job cancelled"`, no terminal event
+    /// and (mirroring production) no spend recorded.
     Cancelled,
-    /// Transport read error.
+    /// Transport read error — no terminal event and no spend recorded.
     Error(AppError),
 }
 
@@ -131,7 +180,11 @@ enum StreamSink {
 /// yields the resulting [`StreamSink`] actions via `on`. Returns once a sentinel
 /// piece, cancellation, an error, or end-of-body is reached. End-of-body without a
 /// sentinel still yields a trailing [`StreamSink::Complete`] (graceful close).
-/// [`stream_response`] mirrors this loop against a real `reqwest::Response`.
+/// Tracks the LATEST [`StreamPiece::usage`] seen (mirroring `stream_response`'s
+/// "last write wins") and carries it on [`StreamSink::Complete`] — cancellation
+/// and a transport error never reach that branch, so (mirroring production)
+/// nothing is ever recorded on those paths. [`stream_response`] mirrors this
+/// loop against a real `reqwest::Response`.
 #[cfg(test)]
 async fn drive_stream<Cancel, Next, Fut, B, P>(
     mut cancelled: Cancel,
@@ -146,6 +199,7 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
     P: FnMut(&mut String) -> Vec<StreamPiece>,
 {
     let mut buf = String::new();
+    let mut usage = Usage::default();
     loop {
         if cancelled() {
             on(StreamSink::Cancelled);
@@ -155,6 +209,9 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
             Ok(Some(bytes)) => {
                 buf.push_str(&String::from_utf8_lossy(bytes.as_ref()));
                 for piece in parse(&mut buf) {
+                    if let Some(u) = piece.usage {
+                        usage = u;
+                    }
                     if !piece.delta.is_empty() {
                         on(StreamSink::Emit {
                             delta: piece.delta,
@@ -162,7 +219,7 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
                         });
                     }
                     if piece.done {
-                        on(StreamSink::Complete);
+                        on(StreamSink::Complete(usage));
                         return;
                     }
                 }
@@ -174,7 +231,7 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
             }
         }
     }
-    on(StreamSink::Complete);
+    on(StreamSink::Complete(usage));
 }
 
 /// Drive a provider's streaming response to completion.
@@ -194,18 +251,29 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
 /// The body mirrors [`drive_stream`] (the tested control-flow core), kept as a
 /// direct loop here so the returned `Future` stays `Send` (an async-trait
 /// requirement — nothing non-`Send` is held across the `await`).
+///
+/// `provider`/`model`/`base_url` identify the call for spend recording only —
+/// every [`StreamPiece::usage`] seen is remembered (last write wins, since
+/// Anthropic reports usage incrementally and Gemini/Ollama repeat a running
+/// total), and [`finish`] records whatever was last seen (zero if the
+/// provider never reported any) against today's AI spend.
+#[allow(clippy::too_many_arguments)]
 pub async fn stream_response<F>(
     app: &AppHandle,
     job_id: &str,
     trace: &RequestTrace,
     mut response: reqwest::Response,
     status: u16,
+    provider: ProviderId,
+    model: &str,
+    base_url: &str,
     mut parse: F,
 ) -> AppResult<()>
 where
     F: FnMut(&mut String) -> Vec<StreamPiece> + Send,
 {
     let mut buf = String::new();
+    let mut usage = Usage::default();
     loop {
         if is_cancelled(app, job_id) {
             drop(response);
@@ -217,11 +285,14 @@ where
             Ok(Some(bytes)) => {
                 buf.push_str(&String::from_utf8_lossy(&bytes));
                 for piece in parse(&mut buf) {
+                    if let Some(u) = piece.usage {
+                        usage = u;
+                    }
                     if !piece.delta.is_empty() {
                         emit_delta(app, job_id, &piece.delta, piece.thinking);
                     }
                     if piece.done {
-                        finish(app, job_id, trace, status);
+                        finish(app, job_id, trace, status, provider, model, base_url, usage);
                         return Ok(());
                     }
                 }
@@ -234,7 +305,7 @@ where
         }
     }
 
-    finish(app, job_id, trace, status);
+    finish(app, job_id, trace, status, provider, model, base_url, usage);
     Ok(())
 }
 
@@ -261,10 +332,11 @@ mod tests {
 
     /// Collect the sink actions `drive_stream` produces for a canned chunk list.
     /// Each piece is identified by `(emit:delta/thinking, complete, cancelled, error)`.
+    /// `Complete` carries the final [`Usage`] — see the usage-tracking tests below.
     #[derive(Debug, PartialEq)]
     enum Act {
         Emit(String, bool),
-        Complete,
+        Complete(Usage),
         Cancelled,
         Error(String),
     }
@@ -296,7 +368,7 @@ mod tests {
             |sink| {
                 let act = match sink {
                     StreamSink::Emit { delta, thinking } => Act::Emit(delta, thinking),
-                    StreamSink::Complete => Act::Complete,
+                    StreamSink::Complete(usage) => Act::Complete(usage),
                     StreamSink::Cancelled => Act::Cancelled,
                     StreamSink::Error(e) => Act::Error(e.to_string()),
                 };
@@ -339,7 +411,7 @@ mod tests {
             vec![
                 Act::Emit("hello".to_string(), false),
                 Act::Emit("world".to_string(), false),
-                Act::Complete,
+                Act::Complete(Usage::default()),
             ]
         );
     }
@@ -357,7 +429,7 @@ mod tests {
             vec![
                 Act::Emit("a".to_string(), false),
                 Act::Emit("b".to_string(), false),
-                Act::Complete,
+                Act::Complete(Usage::default()),
             ]
         );
     }
@@ -420,7 +492,114 @@ mod tests {
         let acts = run(vec![Ok(Some(b"tail".to_vec()))], None, parser);
         assert_eq!(
             acts,
-            vec![Act::Emit("tail".to_string(), false), Act::Complete]
+            vec![
+                Act::Emit("tail".to_string(), false),
+                Act::Complete(Usage::default())
+            ]
+        );
+    }
+
+    // ── Usage tracking: latest-wins + record-once-at-completion ────────────────
+
+    #[test]
+    fn a_later_usage_piece_overwrites_an_earlier_one_at_completion() {
+        // Two usage-only pieces (no delta) arrive across two chunks, then the
+        // sentinel — `Complete` must carry only the LAST usage seen, mirroring
+        // Anthropic's incremental `message_start`/`message_delta` reporting and
+        // Gemini/Ollama repeating a running total.
+        let parser = |buf: &mut String| -> Vec<StreamPiece> {
+            let mut out = Vec::new();
+            while let Some(nl) = buf.find('\n') {
+                let line = buf[..nl].trim().to_string();
+                *buf = buf[nl + 1..].to_string();
+                match line.as_str() {
+                    "USAGE1" => out.push(StreamPiece::usage(Usage {
+                        input_tokens: 10,
+                        output_tokens: 1,
+                    })),
+                    "USAGE2" => out.push(StreamPiece::usage(Usage {
+                        input_tokens: 10,
+                        output_tokens: 99,
+                    })),
+                    "END" => out.push(StreamPiece::done("")),
+                    _ => {}
+                }
+            }
+            out
+        };
+        let acts = run(
+            vec![
+                Ok(Some(b"USAGE1\n".to_vec())),
+                Ok(Some(b"USAGE2\nEND\n".to_vec())),
+            ],
+            None,
+            parser,
+        );
+        assert_eq!(
+            acts,
+            vec![Act::Complete(Usage {
+                input_tokens: 10,
+                output_tokens: 99,
+            })],
+            "only the LAST usage piece must be recorded, not the first or a sum"
+        );
+    }
+
+    #[test]
+    fn cancellation_after_a_usage_piece_records_nothing() {
+        // A usage piece arrives, then cancellation — production only records
+        // spend on the `Complete` sink, which cancellation never reaches.
+        let parser = |buf: &mut String| -> Vec<StreamPiece> {
+            let mut out = Vec::new();
+            while let Some(nl) = buf.find('\n') {
+                *buf = buf[nl + 1..].to_string();
+                out.push(StreamPiece::usage(Usage {
+                    input_tokens: 50,
+                    output_tokens: 50,
+                }));
+            }
+            out
+        };
+        let acts = run(
+            vec![Ok(Some(b"USAGE\n".to_vec())), Ok(Some(b"USAGE\n".to_vec()))],
+            Some(1),
+            parser,
+        );
+        assert_eq!(
+            acts,
+            vec![Act::Cancelled],
+            "cancellation must never emit Complete, so no spend is ever recorded"
+        );
+    }
+
+    #[test]
+    fn transport_error_after_a_usage_piece_records_nothing() {
+        // Same shape, but the stream fails with a read error instead of a
+        // cancellation — production only records spend on the `Complete` sink,
+        // which a transport error never reaches either.
+        let parser = |buf: &mut String| -> Vec<StreamPiece> {
+            let mut out = Vec::new();
+            while let Some(nl) = buf.find('\n') {
+                *buf = buf[nl + 1..].to_string();
+                out.push(StreamPiece::usage(Usage {
+                    input_tokens: 50,
+                    output_tokens: 50,
+                }));
+            }
+            out
+        };
+        let acts = run(
+            vec![
+                Ok(Some(b"USAGE\n".to_vec())),
+                Err(AppError::Message("boom".to_string())),
+            ],
+            None,
+            parser,
+        );
+        assert_eq!(
+            acts,
+            vec![Act::Error("boom".to_string())],
+            "a transport error must never emit Complete, so no spend is ever recorded"
         );
     }
 }
