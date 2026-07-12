@@ -192,6 +192,13 @@ export const SEARCH_INDEX: SearchEntry[] = [
     keywords: ['company', 'research', 'web search', 'brief', 'ollama key'],
     anchor: 'ai-company-research',
   },
+  {
+    id: 'ai-spend',
+    section: 'ai',
+    titleKey: 'settings.ai.spend.title',
+    keywords: ['spend', 'cost', 'tokens', 'usage', 'budget', 'price', 'estimate'],
+    anchor: 'ai-spend',
+  },
 
   // ── job ──────────────────────────────────────────────────────────────────────
   {

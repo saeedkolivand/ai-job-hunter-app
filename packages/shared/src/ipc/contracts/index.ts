@@ -134,6 +134,8 @@ export {
 export {
   AI_CHANNELS,
   type AiContract,
+  type AiSpendProviderTotals,
+  type AiSpendSummary,
   type EmbeddingConfig,
   type EmbeddingSpaceInfo,
   type EmbeddingStatus,
