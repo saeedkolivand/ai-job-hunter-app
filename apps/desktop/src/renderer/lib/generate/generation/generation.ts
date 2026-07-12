@@ -699,9 +699,13 @@ export async function generateLikelyInterviewQuestions(params: {
 }): Promise<string> {
   const { resume, jobAd, meta, model, signal, onToken } = params;
   const profile = buildProviderProfile(model);
+  const market = resolveMarket({
+    jobCountry: meta.jobCountry,
+    targetLanguage: meta.targetLanguage,
+  });
 
   const system = buildLikelyQuestionsSystemPrompt();
-  const user = buildLikelyQuestionsPrompt({ resume, jobAd, meta, target: profile });
+  const user = buildLikelyQuestionsPrompt({ resume, jobAd, meta, target: profile, market });
   // Prose, same detector-resistance treatment as the other interview surfaces.
   const sampling = resolveSampling('answers', 0.5, true);
   const raw = await streamGenerate(
@@ -737,9 +741,21 @@ export async function generateStarFeedback(params: {
 }): Promise<string> {
   const { question, answer, resume, jobAd, meta, model, signal, onToken } = params;
   const profile = buildProviderProfile(model);
+  const market = resolveMarket({
+    jobCountry: meta.jobCountry,
+    targetLanguage: meta.targetLanguage,
+  });
 
   const system = buildStarFeedbackSystemPrompt();
-  const user = buildStarFeedbackPrompt({ question, answer, resume, jobAd, meta, target: profile });
+  const user = buildStarFeedbackPrompt({
+    question,
+    answer,
+    resume,
+    jobAd,
+    meta,
+    target: profile,
+    market,
+  });
   // Slightly lower temperature than free-form prose — feedback should stay
   // traceable to the candidate's actual answer, not wander.
   const sampling = resolveSampling('answers', 0.4, true);
