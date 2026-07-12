@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783813406989,
+  "lastUpdate": 1783840573646,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4025,6 +4025,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 289450,
             "range": "± 5627",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9f93f42db49beea10f9c5a18930bbb3e400b12ae",
+          "message": "feat: ai spend visibility — real per-provider token + estimated cost tracking (#624)\n\n* feat: real per-provider ai token + estimated-cost tracking (backend)\n\ncaptures the REAL input/output token counts each provider reports (openai include_usage,\nanthropic message_start/delta, gemini usageMetadata, ollama eval counts; cli agents report\nhonest zero; ollama-cloud kept paid), persists per-call to a new spend sqlite store, and\nconverts to an ESTIMATED cost via a static prefix-matched rate table (tokens exact, $ is a\nlist-price estimate — byo-key has no billing api). ai_spend_summary ipc + useSpendSummary hook.\nrecorded at the two shared chokepoints (stream finish + Completer::complete) so autopilot/\nagent/pipeline get tracking with zero call-site changes. settings panel follows.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: record agent + embedding spend, honest coverage, estimate edge-cases\n\nai-provider-expert review of the spend backend: (HIGH) agent tool-calling turns were unrecorded\nwhile the doc claimed coverage — the biggest token consumer was invisible; now AgentTurn carries\nUsage (per-provider turn parsers populate it, single_shot_turn uses complete_with_usage) and\nCompleter::chat_with_tools records it. (MED) embeddings now tracked via embed_with_usage\n(embed_text chokepoint: manual embed, match-score, reembed-all); research/web-search explicitly\nEXCLUDED + documented (per-search pricing, not token-rate); models/ prefix stripped in\nestimate_cost; openai-compatible at a localhost base_url is $0 (real local calls no longer show a\nfake cost); stream latest-usage-wins + record-once now tested; now_ms bound once.\n\ncovered: stream, complete, agent tools, embed. excluded (documented): research/web-search.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* feat: ai spend settings panel (today estimate + per-provider breakdown)\n\nsettings → ai 'ai spend' panel consuming useSpendSummary: today's estimated $ + exact token\ntotals + per-provider rows (local/cli read 'local — free'), with the honest disclaimer that\ntoken counts are exact but the dollar figure is a list-price estimate, not an actual charge.\nloading/empty/error states, en+de, search-indexed. also fixed two pre-existing branch issues:\nAiSpendSummary barrel re-export (tsc portability) + the search-anchor manifest count.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: keep the spend store tauri-free + register it as an l1 domain module\n\nthe pre-push architecture test caught the spend store violating the L0-L3 layer rules:\nunclassified module, rusqlite outside the R3 store allowlist, and tauri::AppHandle imported\ninto a data-layer store (R2). classified spend as L1 (domain, like ai_generations), added\nspend/mod.rs to R3_ALLOW, and moved the record_usage AppHandle->try_state->store.record hop\nup to the command layer (commands/ai_provider). spend/mod.rs is now tauri-free; behavior\nunchanged. architecture test 11/11.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: log dropped spend rows + live-refresh the panel (coderabbit)\n\ncoderabbit #624 (all trivial/minor): (1) spend record() now logs an insert failure instead\nof silently swallowing it — still non-propagating so a store error can't break an ai call, but\na dropped spend row is no longer invisible; (2) useSpendSummary polls (refetchInterval 30s +\n20s stale, while the settings panel is mounted) so totals refresh live as a generation finishes;\n(3) DataStore::import negative-path tests (non-array + bad-row → err, store untouched); (4)\nsub-cent (<$0.01) format test. skipped: cli-agent zero-row pruning (premature).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-12T09:07:11+02:00",
+          "tree_id": "1dd764540507f0b2a009cfe3416dbd60430df966",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/9f93f42db49beea10f9c5a18930bbb3e400b12ae"
+        },
+        "date": 1783840573041,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2107903,
+            "range": "± 84454",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2531110,
+            "range": "± 84679",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 289848,
+            "range": "± 2607",
             "unit": "ns/iter"
           }
         ]
