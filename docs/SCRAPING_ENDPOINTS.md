@@ -12,11 +12,11 @@
 
 ## Summary table
 
-Active scrapers: **23 boards** (registry as of 2026-07-02). Five boards were retired as direct scrapers and are now covered via the Adzuna/JSearch aggregator (see "Retired — now via aggregator" section below).
+Active scrapers: **23 boards** (registry as of 2026-07-02). Five boards were retired as direct scrapers and are now covered via the Adzuna/JSearch/Jooble aggregator (see "Retired — now via aggregator" section below).
 
 | Board               | Mode                                | Status            | Confidence | Verified endpoint                                                                 | Notes                                                 |
 | ------------------- | ----------------------------------- | ----------------- | ---------- | --------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| **Aggregator**      | **HTTP (provider registry)**        | **✅ works**      | **high**   | **Adzuna (primary) / JSearch (paid fallback)**                                    | **Bring-your-own-key; keyless = empty**               |
+| **Aggregator**      | **HTTP (provider registry)**        | **✅ works**      | **high**   | **Adzuna (primary) / JSearch (fallback) / Jooble (third-tier)**                   | **Bring-your-own-key; path-embedded redaction**       |
 | LinkedIn            | HTTP (guest)                        | ✅ works          | high       | `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search`          |                                                       |
 | YCombinator (HN)    | HTTP (JSON API)                     | ✅ works          | high       | `https://hacker-news.firebaseio.com/v0/jobstories.json`                           |                                                       |
 | Remotive            | HTTP (JSON API)                     | ✅ works          | high       | `https://remotive.com/api/remote-jobs`                                            |                                                       |
@@ -40,7 +40,7 @@ Active scrapers: **23 boards** (registry as of 2026-07-02). Five boards were ret
 | **Workable**        | **HTTP (JSON API, company-scoped)** | **✅ works**      | **high**   | **`https://apply.workable.com/api/v1/widget/accounts/{slug}?details=true`**       | **Requires company slug**                             |
 | **Comeet**          | **HTTP (JSON API, credentialed)**   | **⚠️ unverified** | **low**    | **`https://www.comeet.co/careers-api/2.0/company/{uid}/positions?token={token}`** | **Requires company UID + API token; keyless = empty** |
 
-**Retired — now via aggregator** (removed from `SCRAPERS` registry; results available via Adzuna/JSearch):
+**Retired — now via aggregator** (removed from `SCRAPERS` registry; results available via Adzuna/JSearch/Jooble):
 
 | Board     | Former mode              | Retirement reason                                                                 |
 | --------- | ------------------------ | --------------------------------------------------------------------------------- |
@@ -97,9 +97,28 @@ Active scrapers: **23 boards** (registry as of 2026-07-02). Five boards were ret
 - **Fallback trigger:** Adzuna returns an error (network fault, auth error, etc.); will NOT fallback on empty results (empty results are legitimate)
 - **Cancellation guard:** If a cancel signal arrives before JSearch fires, the fallback is skipped entirely
 
+**Jooble** (free tier, third-tier fallback)
+
+- **Search URL:** `https://jooble.org/api/{key}` (POST)
+- **Request body:** JSON with `keywords` (required), `location`, optional `ResultOnPage` (per-request result cap)
+- **Pagination:** No pagination support; returns up to `ResultOnPage` results per request (or API default if not specified)
+- **Auth required:** API key (user-supplied, free tier from https://jooble.org); stored encrypted in OS keyring
+- **Response format:** JSON `{ jobs: [...], totalCount: N }`
+- **Key data fields:**
+  - Stable ID: `id` (string)
+  - Title: `title`
+  - Company: `company`
+  - Location: `location`
+  - URL: `link`
+  - Posted: `updated` (ISO 8601 but timezone-naive; falls back to naive-UTC parse)
+  - Description: `snippet`
+- **Anti-bot:** None; standard API
+- **Secrets guard:** Key is embedded in the URL path (unlike Adzuna/JSearch query params); redacted via `FetchOptions.redact_path=true` + `safe_log_url()` in `scraping/http/mod.rs` to keep logs clean
+- **Fallback trigger:** Adzuna error OR JSearch error; will NOT fallback on empty results (empty results are legitimate)
+
 #### Recommendation
 
-Bring-your-own-key design: users with no key see empty results (not an error). Settings → Jobs shows a dedicated field to enter/update Adzuna app keys with a link to https://developer.adzuna.com. Removed the OnceLock cache so a newly-saved key takes effect on the next search without app restart. On-save errors are surfaced as generic i18n strings, not raw backend text.
+Bring-your-own-key design: users with no key see empty results (not an error). Settings → Jobs shows dedicated fields to enter/update Adzuna app keys, JSearch key, and Jooble key with links to their respective developer portals. Removed the OnceLock cache so a newly-saved key takes effect on the next search without app restart. On-save errors are surfaced as generic i18n strings, not raw backend text. Jooble's `updated` field is timezone-naive; parsing tolerates the fallback to naive-UTC per PR #619.
 
 ---
 

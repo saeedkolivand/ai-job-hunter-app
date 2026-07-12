@@ -63,21 +63,36 @@ Two more boards, bringing the registry to 23. Neither is career-ops-ported — s
 - **Comeet** (`comeet`, `apps/desktop/src-tauri/src/scraping/boards/comeet/mod.rs` — credentialed, single-company, `requires_company()` stays `false` since the "company" is a fixed per-user credential rather than a per-search input). Endpoint `www.comeet.co/careers-api/2.0/company/{uid}/positions?token={token}` is confirmed live (400 without real credentials) but its **response shape is unconfirmed** — built from the career-ops (MIT) field spec, needs live-verification with a real company UID + token via the Settings UI. Clones the Apify LinkedIn provider's credential pattern: company UID + API token read via `credentials::read_credential("ai:comeet-company-uid" / "ai:comeet-api-token")` at scrape time (slots in `packages/shared/src/provider-slots.ts`); absent credentials → keyless-empty (`Ok(vec![])`), never an error; job URL is host-locked to `comeet.co`; client-side query/location filtering reuses the shared `boards::common::matches_filters` helper (originally The Muse-local, extracted to `common.rs` once Comeet needed the identical filter). `auth()` is explicitly `Guest` (credentials aren't surfaced through the board-login connect flow) — same explicit-override precedent as the Aggregator board.
 - `scraping/trust/mod.rs`'s `ATS_ALLOWLIST` gained `comeet.co` (Workable's `workable.com`/`apply.workable.com` were already present from an earlier pass) so postings from either board don't trip a spurious `CompanyDomainMismatch` badge.
 
+## ATS seed table (PR #620, wired in PR #621)
+
+**Purpose:** Curated, live-verified (2026-07-11) static table of 59 companies → (ats, slug) mappings. Wired into engine routing (PR #621): when a company-scoped ATS board is selected with an empty `companies` list, the engine auto-populates it from `ats_seed::by_ats(scraper.id())`. Reachable by both autopilot (which passes no companies) and manual search. User-provided companies take priority; if supplied, the seed is ignored. Unseeded boards still skip when no companies are provided. Catalog surface exposes `seededCompanies` (curated company names per board), and a shared `SeededCompaniesNote` disclosure component renders in both the autopilot wizard and manual jobs picker.
+
+**Shape and quirks:**
+
+- **Module:** `apps/desktop/src-tauri/src/scraping/boards/ats_seed.rs` — struct `AtsSeedEntry` with fields: `company`, `ats` (matches `Scraper::id()`), `slug`, `tld` (Personio only), `dach` (DACH market flag).
+- **Entries:** 59 total; 23 DACH-flagged (Germany/Austria/Switzerland market). Organized per ATS: 27 Greenhouse, 4 Lever, 9 Ashby, 4 SmartRecruiters, 5 Recruitee, 7 Personio, 3 Workable.
+- **Personio TLD quirk:** Each entry has `tld: Some("de")` or `Some("com")` (one TLD per company) or `None` for all other ATS boards. Personio's URL pattern requires the TLD: `https://{slug}.jobs.personio.{tld}/xml`.
+- **Ashby casing:** Slug casing is exact and preserved verbatim (e.g., `Linear`, `Perplexity`); must match the registered board.
+- **Lever and SmartRecruiters churn:** Slugs churn fastest (companies migrate off or go dormant); re-verify live before trusting future updates to this table.
+- **Accessor functions:** `all()` → all 59 entries in source order; `by_ats(board_id)` → entries for one ATS board (e.g., `"greenhouse"`).
+- **Test coverage:** Compile-time truth table (`apps/desktop/src-tauri/src/scraping/boards/ats_seed/test.rs`) verifies table integrity: non-empty, every `ats` value matches a registered `Scraper::id()`, Personio entries have exactly one TLD, DACH count ≥ 20 (currently 23), no duplicate ats-slug pairs, etc.
+
 ## Retired boards (Glassdoor, Indeed, Xing, StepStone, Workday)
 
 These five boards were retired as direct scrapers (ADR-026, 2026-06-21). Their Rust modules are deleted; the registry went from 21 → 16 boards. Coverage is now provided by the Aggregator. The single-job import resolvers (`scrape_url::canonical_job_url` for Indeed, `scrape_url::try_workday`) and the dormant `board_login`/credential machinery are **deliberately kept** — see ADR-026 for the full keep-list and rationale.
 
-## Aggregator board (Adzuna + JSearch)
+## Aggregator board (Adzuna + JSearch + Jooble)
 
-**Purpose:** Cover anti-bot sites (Indeed, Glassdoor, Xing, Workday, StepStone) that return empty results or errors when self-scraped. Uses a provider registry pattern: Adzuna (primary, free) with JSearch (paid fallback, invoked only on Adzuna errors).
+**Purpose:** Cover anti-bot sites (Indeed, Glassdoor, Xing, Workday, StepStone) that return empty results or errors when self-scraped. Uses a provider registry pattern: Adzuna (primary, free), JSearch (paid fallback, invoked only on Adzuna errors), Jooble (third-tier BYO-key fallback, ~67-country coverage).
 
 **Full-description resolution:** Aggregator sources return short snippets; the detail pane auto-fetches full descriptions on open by following redirect chains and re-dispatching to named-board handlers. See `apps/desktop/src-tauri/src/scraping/http/html_to_markdown.rs` and `scraping/boards/aggregator/mod.rs` for fetch logic, IP-guarding, and snippet-vs-resolved floor semantics.
 
 **Keys and configuration:**
 
-- Adzuna and JSearch API keys are stored in the OS keyring and never logged (encrypted at rest, decrypted only in Rust).
-- Settings → Jobs exposes UI to enter/remove credentials.
-- Keys are read on-demand via `credentials::read_credential` (module at `apps/desktop/src-tauri/src/credentials/mod.rs`).
+- Adzuna, JSearch, and Jooble API keys are stored in the OS keyring and never logged (encrypted at rest, decrypted only in Rust).
+- Settings → Jobs exposes UI to enter/remove credentials (four `AggregatorKeyField` controls: two for Adzuna's app-id and app-key pair, one each for JSearch and Jooble).
+- Keys are read on-demand via `credentials::read_credential` (module at `apps/desktop/src-tauri/src/credentials/mod.rs`) into the respective slots: `ai:adzuna-app-id`, `ai:adzuna-app-key`, `ai:jsearch-key`, `ai:jooble-key`.
+- **Path-embedded-key redaction (PR #618):** Jooble embeds its API key in the URL path (`POST https://jooble.org/api/{key}`), unlike Adzuna/JSearch which use query params. New `FetchOptions.redact_path` boolean + `safe_log_url(url, redact_path)` in `apps/desktop/src-tauri/src/scraping/http/mod.rs` redact the entire path when `true`, keeping logs safe. Providers using path-embedded keys must pass `redact_path: true` in their `FetchOptions`.
 
 **Provider details, endpoints, and fallback logic:** see `apps/desktop/src-tauri/src/scraping/boards/aggregator/mod.rs` (AdzunaProvider, JSearchProvider, and JobProvider trait).
 
