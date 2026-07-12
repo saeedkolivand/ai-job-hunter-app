@@ -149,15 +149,31 @@ impl Completer {
     /// analogue used by agentic text-generating tools (cover letter, interview
     /// questions) that need the whole response before returning. Reuses the same
     /// resolved provider + keychain auth + tracing as chat.
+    ///
+    /// This is the shared non-streaming chokepoint for AI-spend visibility
+    /// (`crate::spend`): every call records the provider's REAL reported token
+    /// usage (zero when a provider genuinely reports none) against today's
+    /// spend before returning — covering autopilot notes, the résumé/cover
+    /// pipeline, and the agent controller's tool-calling turns, with zero
+    /// changes needed at any of their call sites.
     pub async fn complete(
         &self,
         system: &str,
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
-        self.provider
-            .complete(&self.app, &self.model, system, user, temperature)
-            .await
+        let (text, usage) = self
+            .provider
+            .complete_with_usage(&self.app, &self.model, system, user, temperature)
+            .await?;
+        crate::spend::record_usage(
+            &self.app,
+            self.provider.id().as_str(),
+            &self.model,
+            usage.input_tokens,
+            usage.output_tokens,
+        );
+        Ok(text)
     }
 
     /// One agentic tool-calling turn through the active provider — the multi-turn

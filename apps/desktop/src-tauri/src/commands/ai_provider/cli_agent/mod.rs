@@ -650,6 +650,16 @@ async fn run_stream(
         ));
     }
 
+    // CLI agents run headless via their own tool's login (no API response to
+    // read a `usage` field from) and stream over plain stdout lines, so they
+    // never pass through the shared `commands::ai_provider::stream` loop that
+    // records spend for the cloud adapters. Record zero tokens/cost here
+    // (honest — never fabricate an estimate) so the AI-spend summary still
+    // reflects that a call happened, at $0 real cost. The non-streaming
+    // `complete`/`agent_run` path needs no equivalent call: it goes through
+    // `AiProvider::complete_with_usage`'s DEFAULT impl, which already reports
+    // zero usage for any provider (like this one) that doesn't override it.
+    crate::spend::record_usage(app, backend.id().as_str(), model, 0, 0);
     emit_done(app, job_id);
     trace.end(status.and_then(|s| s.code()).map(|c| c as u16), true);
     Ok(())

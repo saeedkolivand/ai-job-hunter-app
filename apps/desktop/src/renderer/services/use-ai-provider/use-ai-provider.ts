@@ -114,6 +114,21 @@ export const useReembedAll = () => {
   });
 };
 
+/**
+ * Today's real AI-spend summary — per-provider token totals as reported by
+ * each provider itself (never estimated), plus a best-effort estimated USD
+ * cost from a static rate table. Read-only: every write happens server-side,
+ * at the point a generation/completion actually runs.
+ */
+export const useSpendSummary = () => {
+  const api = useAppClient();
+  return useQuery({
+    queryKey: keys.ai.spend,
+    queryFn: () => api.ai.spendSummary(),
+    staleTime: QUERY_TIMES.SHORT,
+  });
+};
+
 /** Returns the provider/model/baseUrl to inject into every ai_generate call. */
 export const useGenerateConfig = () => {
   const config = useAiProviderConfig();

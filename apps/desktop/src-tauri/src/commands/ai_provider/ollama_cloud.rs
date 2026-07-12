@@ -14,6 +14,7 @@ use crate::error::AppResult;
 use super::openai::OpenAiClient;
 use super::{
     AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, ModelCapabilities, ProviderId, ToolSpec,
+    Usage,
 };
 
 /// Ollama Cloud's OpenAI-compatible base URL.
@@ -73,6 +74,23 @@ impl AiProvider for OllamaCloudClient {
     ) -> AppResult<String> {
         self.inner
             .complete(app, model, system, user, temperature)
+            .await
+    }
+
+    async fn complete_with_usage(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+    ) -> AppResult<(String, Usage)> {
+        // Ollama Cloud's `/v1` endpoint is served by the inner OpenAI-compatible
+        // client, which sends `stream_options.include_usage` and parses the
+        // real `usage.{prompt_tokens,completion_tokens}` OpenAI-shape response —
+        // real token counts, not a naive default-to-zero delegation.
+        self.inner
+            .complete_with_usage(app, model, system, user, temperature)
             .await
     }
 

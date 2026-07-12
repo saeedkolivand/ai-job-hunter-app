@@ -16,7 +16,7 @@ use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
     friendly_api_error, single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg,
-    ModelCapabilities, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall, ToolSpec,
+    ModelCapabilities, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall, ToolSpec, Usage,
 };
 
 const DEFAULT_BASE: &str = "https://api.openai.com/v1";
@@ -133,6 +133,26 @@ fn is_reasoning_model(model: &str) -> bool {
 ///
 /// Honest limitation: OpenAI's own o-series hide their reasoning text over Chat
 /// Completions, so there is nothing to surface there — only the answer streams.
+/// Extract `usage.{prompt_tokens,completion_tokens}` from an OpenAI Chat
+/// Completions response/chunk — always present on the non-streaming response,
+/// and (with `stream_options.include_usage: true`, set by
+/// [`build_chat_stream_body`]) on ONE extra streamed chunk carrying no delta,
+/// emitted right before `[DONE]`. `None` on every other streamed chunk. Pure +
+/// unit-tested.
+fn parse_openai_usage(data: &Value) -> Option<Usage> {
+    let usage = data.get("usage")?;
+    Some(Usage {
+        input_tokens: usage
+            .get("prompt_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32,
+        output_tokens: usage
+            .get("completion_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32,
+    })
+}
+
 fn parse_openai_delta(event: &Value) -> (&str, &str) {
     let delta = event
         .get("choices")
@@ -177,6 +197,9 @@ fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
             Ok(v) => v,
             Err(_) => continue,
         };
+        if let Some(usage) = parse_openai_usage(&event) {
+            out.push(StreamPiece::usage(usage));
+        }
         let (reasoning, delta) = parse_openai_delta(&event);
         if !reasoning.is_empty() {
             out.push(StreamPiece::thinking(reasoning));
@@ -206,6 +229,12 @@ fn build_chat_stream_body(req: &AiGenerateRequest, caps: ModelCapabilities) -> V
         .collect::<Vec<_>>();
 
     let mut body = json!({ "model": req.model, "messages": messages, "stream": true });
+    // Real per-call token usage (AI-spend visibility, `crate::spend`): asks for
+    // one extra streamed chunk carrying `usage` right before `[DONE]`. Every
+    // OpenAI-compatible server this client talks to (native OpenAI, LM
+    // Studio/vLLM/OpenRouter/Groq/…, Ollama Cloud) either honors this or
+    // silently ignores the unknown field — never a 400.
+    body["stream_options"] = json!({ "include_usage": true });
     if caps.supports_temperature {
         body["temperature"] = json!(req.temperature.unwrap_or(0.7));
         if let Some(top_p) = req.top_p {
@@ -252,6 +281,74 @@ impl OpenAiClient {
     /// to end — see the same note on `salary_research::SalaryResearch::enrich`).
     fn supports_web_search(&self) -> bool {
         self.id == ProviderId::OpenAi
+    }
+
+    /// Shared body of `complete`/`complete_with_usage`: one non-streaming
+    /// `/chat/completions` call, parsed once into `(text, usage)` so the two
+    /// trait methods never duplicate the HTTP round-trip.
+    async fn complete_impl(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+    ) -> AppResult<(String, Usage)> {
+        let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
+        let caps = self.capabilities(model);
+        let endpoint = format!("{}/chat/completions", self.base_url);
+        let trace = RequestTrace::begin(self.id, model, "/chat/completions", &self.base_url, false);
+
+        let mut body = json!({
+            "model": model,
+            "messages": [
+                { "role": "system", "content": system },
+                { "role": "user", "content": user },
+            ],
+            "stream": false,
+        });
+        if caps.supports_temperature {
+            body["temperature"] = json!(temperature.unwrap_or(0.7));
+        }
+
+        let resp = send_with_retry(|| {
+            crate::net::http::shared()
+                .post(&endpoint)
+                .timeout(timeouts::COMPLETION)
+                .bearer_auth(&api_key)
+                .json(&body)
+        })
+        .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                return Err(AppError::Network(format!(
+                    "{} unreachable: {e}",
+                    self.id.as_str()
+                )));
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            return Err(friendly_api_error(self.id, status, &body_text));
+        }
+        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        trace.end(Some(status.as_u16()), true);
+        let text = data
+            .get("choices")
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("message"))
+            .and_then(|m| m.get("content"))
+            .and_then(|t| t.as_str())
+            .map(String::from)
+            .ok_or_else(|| {
+                AppError::Provider(format!("{}: unexpected response shape", self.id.as_str()))
+            })?;
+        let usage = parse_openai_usage(&data).unwrap_or_default();
+        Ok((text, usage))
     }
 
     /// Shared transport for every `research*` facet: the Responses API with the
@@ -418,6 +515,8 @@ impl AiProvider for OpenAiClient {
             &trace,
             response,
             status.as_u16(),
+            self.id,
+            &req.model,
             parse_openai_frames,
         )
         .await
@@ -431,58 +530,21 @@ impl AiProvider for OpenAiClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
-        let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
-        let caps = self.capabilities(model);
-        let endpoint = format!("{}/chat/completions", self.base_url);
-        let trace = RequestTrace::begin(self.id, model, "/chat/completions", &self.base_url, false);
+        self.complete_impl(app, model, system, user, temperature)
+            .await
+            .map(|(text, _)| text)
+    }
 
-        let mut body = json!({
-            "model": model,
-            "messages": [
-                { "role": "system", "content": system },
-                { "role": "user", "content": user },
-            ],
-            "stream": false,
-        });
-        if caps.supports_temperature {
-            body["temperature"] = json!(temperature.unwrap_or(0.7));
-        }
-
-        let resp = send_with_retry(|| {
-            crate::net::http::shared()
-                .post(&endpoint)
-                .timeout(timeouts::COMPLETION)
-                .bearer_auth(&api_key)
-                .json(&body)
-        })
-        .await;
-        let resp = match resp {
-            Ok(r) => r,
-            Err(e) => {
-                trace.end(None, false);
-                return Err(AppError::Network(format!(
-                    "{} unreachable: {e}",
-                    self.id.as_str()
-                )));
-            }
-        };
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
-            trace.end(Some(status.as_u16()), false);
-            return Err(friendly_api_error(self.id, status, &body_text));
-        }
-        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
-        trace.end(Some(status.as_u16()), true);
-        data.get("choices")
-            .and_then(|c| c.get(0))
-            .and_then(|c| c.get("message"))
-            .and_then(|m| m.get("content"))
-            .and_then(|t| t.as_str())
-            .map(String::from)
-            .ok_or_else(|| {
-                AppError::Provider(format!("{}: unexpected response shape", self.id.as_str()))
-            })
+    async fn complete_with_usage(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+    ) -> AppResult<(String, Usage)> {
+        self.complete_impl(app, model, system, user, temperature)
+            .await
     }
 
     async fn research(
@@ -726,7 +788,8 @@ impl AiProvider for OpenAiClient {
 mod tests {
     use super::{
         build_chat_stream_body, is_reasoning_model, join_responses_text, parse_openai_delta,
-        parse_openai_frames, parse_openai_turn, should_list_model, OpenAiClient,
+        parse_openai_frames, parse_openai_turn, parse_openai_usage, should_list_model,
+        OpenAiClient,
     };
     use crate::commands::ai_provider::{
         AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, StopReason, TokenParam,
@@ -768,6 +831,29 @@ mod tests {
             supports_web_search: false,
             token_param: TokenParam::MaxTokens,
         }
+    }
+
+    #[test]
+    fn chat_stream_body_always_requests_streamed_usage() {
+        // AI-spend visibility depends on this flag being sent on every OpenAI
+        // Chat Completions stream (native, OpenAI-compatible, and Ollama Cloud).
+        let body = build_chat_stream_body(&base_request(), chat_caps(true));
+        assert_eq!(body["stream_options"], json!({ "include_usage": true }));
+    }
+
+    #[test]
+    fn parse_usage_extracts_real_token_counts() {
+        let data = json!({ "usage": { "prompt_tokens": 42, "completion_tokens": 17 } });
+        let usage = parse_openai_usage(&data).expect("usage present");
+        assert_eq!(usage.input_tokens, 42);
+        assert_eq!(usage.output_tokens, 17);
+    }
+
+    #[test]
+    fn parse_usage_is_none_when_absent() {
+        // Every streamed chunk except the final one has no `usage` field.
+        assert!(parse_openai_usage(&json!({ "choices": [] })).is_none());
+        assert!(parse_openai_usage(&json!({})).is_none());
     }
 
     #[test]

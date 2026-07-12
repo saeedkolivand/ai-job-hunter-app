@@ -306,6 +306,19 @@ impl ChatMsg {
     }
 }
 
+// ── Spend visibility (real token usage) ─────────────────────────────────────
+
+/// Real per-call token usage as reported by the provider's own response —
+/// never estimated. Zero on both fields when a provider genuinely reports no
+/// usage (e.g. a CLI agent — see `cli_agent`, which relies on the
+/// [`AiProvider::complete_with_usage`] default rather than fabricating a
+/// number). Consumed by `crate::spend` to compute an estimated dollar cost.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Usage {
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+}
+
 // ── Provider trait & registry ────────────────────────────────────────────────
 
 /// A chat backend. Object-safe so the registry can return `Box<dyn AiProvider>`.
@@ -338,6 +351,26 @@ pub trait AiProvider: Send + Sync {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String>;
+
+    /// [`complete`](Self::complete) plus the provider's REAL reported token
+    /// usage (never estimated) — the non-streaming half of AI-spend
+    /// visibility (`crate::spend`), consumed by `pipeline::Completer::complete`.
+    /// DEFAULT: wraps `complete` and reports [`Usage::default`] (zero) —
+    /// correct for any provider that genuinely reports no usage (a CLI
+    /// agent). Providers whose API returns usage (OpenAI, Anthropic, Gemini,
+    /// Ollama, Ollama Cloud) override this to parse it from the same
+    /// response `complete` already fetches, so there is no duplicate call.
+    async fn complete_with_usage(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+    ) -> AppResult<(String, Usage)> {
+        let text = self.complete(app, model, system, user, temperature).await?;
+        Ok((text, Usage::default()))
+    }
 
     /// Produce a ~150-word company-research brief using **this provider's own**
     /// web search — a native search tool (OpenAI/Anthropic/Gemini), the agent's

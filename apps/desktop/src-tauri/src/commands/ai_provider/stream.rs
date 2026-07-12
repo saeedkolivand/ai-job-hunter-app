@@ -21,7 +21,7 @@ use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, AiStreamChunk, AI_STREAM};
 use crate::jobs::JobTracker;
 
-use super::RequestTrace;
+use super::{ProviderId, RequestTrace, Usage};
 
 /// One emittable piece pulled from a provider's stream by its `parse` closure.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,6 +35,13 @@ pub struct StreamPiece {
     /// (OpenAI `[DONE]`, Anthropic `message_stop`, Ollama `done:true`). The loop
     /// emits the terminal event and returns after processing this piece.
     pub done: bool,
+    /// The provider's REAL token usage, when this piece happens to carry it
+    /// (OpenAI's separate `stream_options.include_usage` chunk, Anthropic's
+    /// `message_start`/`message_delta` events, Gemini's `usageMetadata`,
+    /// Ollama's final `done:true` object). The shared loop remembers the
+    /// LATEST non-`None` value it sees across the whole stream and records it
+    /// at completion — never estimated, never fabricated when absent.
+    pub usage: Option<Usage>,
 }
 
 impl StreamPiece {
@@ -44,6 +51,7 @@ impl StreamPiece {
             delta: delta.into(),
             thinking: false,
             done: false,
+            usage: None,
         }
     }
 
@@ -53,6 +61,7 @@ impl StreamPiece {
             delta: delta.into(),
             thinking: true,
             done: false,
+            usage: None,
         }
     }
 
@@ -62,6 +71,20 @@ impl StreamPiece {
             delta: delta.into(),
             thinking: false,
             done: true,
+            usage: None,
+        }
+    }
+
+    /// A usage-only piece: no visible text, not a completion sentinel — just
+    /// reports the provider's real token usage as it becomes known (mid-stream
+    /// for OpenAI/Gemini, incrementally for Anthropic, or attached directly to
+    /// the `done` piece for Ollama).
+    pub fn usage(usage: Usage) -> Self {
+        Self {
+            delta: String::new(),
+            thinking: false,
+            done: false,
+            usage: Some(usage),
         }
     }
 }
@@ -81,8 +104,19 @@ fn emit_delta(app: &AppHandle, job_id: &str, delta: &str, thinking: bool) {
     );
 }
 
-/// Emit the terminal `ai:stream` event, mark the job complete, and close the trace.
-fn finish(app: &AppHandle, job_id: &str, trace: &RequestTrace, status: u16) {
+/// Emit the terminal `ai:stream` event, mark the job complete, close the
+/// trace, and record the stream's REAL token usage (zero when the provider
+/// never reported any) against today's AI spend.
+#[allow(clippy::too_many_arguments)]
+fn finish(
+    app: &AppHandle,
+    job_id: &str,
+    trace: &RequestTrace,
+    status: u16,
+    provider: ProviderId,
+    model: &str,
+    usage: Usage,
+) {
     emit_event(
         app,
         AI_STREAM,
@@ -96,6 +130,13 @@ fn finish(app: &AppHandle, job_id: &str, trace: &RequestTrace, status: u16) {
     );
     crate::commands::jobs::job_complete(app, job_id, json!({ "done": true }));
     trace.end(Some(status), true);
+    crate::spend::record_usage(
+        app,
+        provider.as_str(),
+        model,
+        usage.input_tokens,
+        usage.output_tokens,
+    );
 }
 
 /// Whether `job_id` has been cancelled.
@@ -194,18 +235,28 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
 /// The body mirrors [`drive_stream`] (the tested control-flow core), kept as a
 /// direct loop here so the returned `Future` stays `Send` (an async-trait
 /// requirement — nothing non-`Send` is held across the `await`).
+///
+/// `provider`/`model` identify the call for spend recording only — every
+/// [`StreamPiece::usage`] seen is remembered (last write wins, since Anthropic
+/// reports usage incrementally and Gemini/Ollama repeat a running total), and
+/// [`finish`] records whatever was last seen (zero if the provider never
+/// reported any) against today's AI spend.
+#[allow(clippy::too_many_arguments)]
 pub async fn stream_response<F>(
     app: &AppHandle,
     job_id: &str,
     trace: &RequestTrace,
     mut response: reqwest::Response,
     status: u16,
+    provider: ProviderId,
+    model: &str,
     mut parse: F,
 ) -> AppResult<()>
 where
     F: FnMut(&mut String) -> Vec<StreamPiece> + Send,
 {
     let mut buf = String::new();
+    let mut usage = Usage::default();
     loop {
         if is_cancelled(app, job_id) {
             drop(response);
@@ -217,11 +268,14 @@ where
             Ok(Some(bytes)) => {
                 buf.push_str(&String::from_utf8_lossy(&bytes));
                 for piece in parse(&mut buf) {
+                    if let Some(u) = piece.usage {
+                        usage = u;
+                    }
                     if !piece.delta.is_empty() {
                         emit_delta(app, job_id, &piece.delta, piece.thinking);
                     }
                     if piece.done {
-                        finish(app, job_id, trace, status);
+                        finish(app, job_id, trace, status, provider, model, usage);
                         return Ok(());
                     }
                 }
@@ -234,7 +288,7 @@ where
         }
     }
 
-    finish(app, job_id, trace, status);
+    finish(app, job_id, trace, status, provider, model, usage);
     Ok(())
 }
 

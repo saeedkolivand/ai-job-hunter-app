@@ -15,7 +15,7 @@ use super::timeouts;
 use super::{
     friendly_api_error, single_shot_turn, split_system, AgentTurn, AiGenerateRequest, AiProvider,
     ChatMsg, ModelCapabilities, ProviderId, RequestTrace, Role, StopReason, TokenParam, ToolCall,
-    ToolSpec,
+    ToolSpec, Usage,
 };
 
 const BASE: &str = "https://generativelanguage.googleapis.com";
@@ -118,6 +118,26 @@ fn parse_gemini_turn(data: &Value) -> AgentTurn {
         tool_calls,
         stop,
     }
+}
+
+/// Extract `usageMetadata.{promptTokenCount,candidatesTokenCount}` — present
+/// on the non-streaming `generateContent` response and on every
+/// `streamGenerateContent` chunk once Gemini starts reporting it (each repeats
+/// the running total for the whole response so far, so the LAST one is
+/// authoritative — the shared loop already keeps the latest). `None` when
+/// absent. Pure + unit-tested.
+fn parse_gemini_usage(data: &Value) -> Option<Usage> {
+    let um = data.get("usageMetadata")?;
+    Some(Usage {
+        input_tokens: um
+            .get("promptTokenCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32,
+        output_tokens: um
+            .get("candidatesTokenCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32,
+    })
 }
 
 /// Whether to request `thinkingConfig.includeThoughts`. Gemini 1.5 and the GA
@@ -235,6 +255,9 @@ fn parse_gemini_frames(buf: &mut String, state: &mut GeminiScanner) -> Vec<Strea
                         StreamPiece::text(text)
                     });
                 }
+                if let Some(usage) = parse_gemini_usage(&event) {
+                    out.push(StreamPiece::usage(usage));
+                }
             }
             state.pending.clear();
         }
@@ -298,6 +321,64 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
 pub struct GeminiClient;
 
 impl GeminiClient {
+    /// Shared body of `complete`/`complete_with_usage`: one non-streaming
+    /// `generateContent` call, parsed once into `(text, usage)` so the two
+    /// trait methods never duplicate the HTTP round-trip.
+    async fn complete_impl(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+    ) -> AppResult<(String, Usage)> {
+        let api_key = require_gemini_key(app)?;
+        let m = model.strip_prefix("models/").unwrap_or(model);
+        let endpoint_label = format!("/v1beta/models/{m}:generateContent");
+        let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
+
+        let mut body = json!({
+            "contents": [ { "role": "user", "parts": [{ "text": user }] } ],
+            "generationConfig": { "temperature": temperature.unwrap_or(0.7) },
+        });
+        if !system.is_empty() {
+            body["systemInstruction"] = json!({ "parts": [{ "text": system }] });
+        }
+
+        let url = format!("{BASE}{endpoint_label}");
+        let resp = send_with_retry(|| {
+            crate::net::http::shared()
+                .post(&url)
+                .timeout(timeouts::COMPLETION)
+                .header("x-goog-api-key", &api_key)
+                .json(&body)
+        })
+        .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                return Err(AppError::Network(format!("Gemini unreachable: {e}")));
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            return Err(friendly_api_error(ProviderId::Gemini, status, &body_text));
+        }
+        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        trace.end(Some(status.as_u16()), true);
+        let text = join_parts_text(&data);
+        if text.is_empty() {
+            return Err(AppError::Provider(
+                "Gemini: unexpected response shape".to_string(),
+            ));
+        }
+        let usage = parse_gemini_usage(&data).unwrap_or_default();
+        Ok((text, usage))
+    }
+
     /// Shared transport for every `research*` facet: `generateContent` grounded
     /// with the native Google Search tool, `system`/`user` supplied by the
     /// caller. Degrades to `""` (never an error) on a missing key or any
@@ -428,9 +509,16 @@ impl AiProvider for GeminiClient {
         // chunk boundaries). Gemini has no in-band done sentinel, so the loop
         // completes on end-of-body.
         let mut state = GeminiScanner::default();
-        stream_response(app, job_id, &trace, response, status.as_u16(), move |buf| {
-            parse_gemini_frames(buf, &mut state)
-        })
+        stream_response(
+            app,
+            job_id,
+            &trace,
+            response,
+            status.as_u16(),
+            ProviderId::Gemini,
+            &req.model,
+            move |buf| parse_gemini_frames(buf, &mut state),
+        )
         .await
     }
 
@@ -442,50 +530,21 @@ impl AiProvider for GeminiClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
-        let api_key = require_gemini_key(app)?;
-        let m = model.strip_prefix("models/").unwrap_or(model);
-        let endpoint_label = format!("/v1beta/models/{m}:generateContent");
-        let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
+        self.complete_impl(app, model, system, user, temperature)
+            .await
+            .map(|(text, _)| text)
+    }
 
-        let mut body = json!({
-            "contents": [ { "role": "user", "parts": [{ "text": user }] } ],
-            "generationConfig": { "temperature": temperature.unwrap_or(0.7) },
-        });
-        if !system.is_empty() {
-            body["systemInstruction"] = json!({ "parts": [{ "text": system }] });
-        }
-
-        let url = format!("{BASE}{endpoint_label}");
-        let resp = send_with_retry(|| {
-            crate::net::http::shared()
-                .post(&url)
-                .timeout(timeouts::COMPLETION)
-                .header("x-goog-api-key", &api_key)
-                .json(&body)
-        })
-        .await;
-        let resp = match resp {
-            Ok(r) => r,
-            Err(e) => {
-                trace.end(None, false);
-                return Err(AppError::Network(format!("Gemini unreachable: {e}")));
-            }
-        };
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
-            trace.end(Some(status.as_u16()), false);
-            return Err(friendly_api_error(ProviderId::Gemini, status, &body_text));
-        }
-        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
-        trace.end(Some(status.as_u16()), true);
-        let text = join_parts_text(&data);
-        if text.is_empty() {
-            return Err(AppError::Provider(
-                "Gemini: unexpected response shape".to_string(),
-            ));
-        }
-        Ok(text)
+    async fn complete_with_usage(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+    ) -> AppResult<(String, Usage)> {
+        self.complete_impl(app, model, system, user, temperature)
+            .await
     }
 
     async fn research(
@@ -725,7 +784,8 @@ impl AiProvider for GeminiClient {
 mod tests {
     use super::{
         build_chat_stream_body, gemini_supports_thinking, join_parts_text, parse_gemini_frames,
-        parse_gemini_parts, parse_gemini_turn, validate_gemini_key, GeminiScanner, StreamPiece,
+        parse_gemini_parts, parse_gemini_turn, parse_gemini_usage, validate_gemini_key,
+        GeminiScanner, StreamPiece,
     };
     use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
     use crate::error::AppError;
@@ -897,6 +957,34 @@ mod tests {
             parse_gemini_frames(&mut buf, &mut state),
             vec![StreamPiece::text("a } b { c")]
         );
+    }
+
+    #[test]
+    fn parse_usage_reads_prompt_and_candidates_token_counts() {
+        let data = json!({ "usageMetadata": { "promptTokenCount": 55, "candidatesTokenCount": 22, "totalTokenCount": 77 } });
+        let usage = parse_gemini_usage(&data).expect("usage present");
+        assert_eq!(usage.input_tokens, 55);
+        assert_eq!(usage.output_tokens, 22);
+    }
+
+    #[test]
+    fn parse_usage_is_none_when_absent() {
+        assert!(parse_gemini_usage(&json!({})).is_none());
+    }
+
+    #[test]
+    fn frames_emit_a_usage_piece_when_usage_metadata_is_present() {
+        let obj = r#"{"candidates":[{"content":{"parts":[{"text":"answer"}]}}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}"#;
+        let mut state = GeminiScanner::default();
+        let mut buf = String::from(obj);
+        let pieces = parse_gemini_frames(&mut buf, &mut state);
+        assert_eq!(pieces.len(), 2);
+        assert_eq!(pieces[0], StreamPiece::text("answer"));
+        let usage_piece = &pieces[1];
+        assert!(usage_piece.usage.is_some());
+        let usage = usage_piece.usage.unwrap();
+        assert_eq!(usage.input_tokens, 10);
+        assert_eq!(usage.output_tokens, 5);
     }
 
     #[test]
