@@ -2541,6 +2541,39 @@
           "team": "Team",
           "leadership": "Führungsebene",
           "general": "Alle"
+        },
+        "toggle": {
+          "label": "Interviewvorbereitungs-Modus",
+          "ask": "Fragen, die du stellst",
+          "practice": "Antworten üben"
+        },
+        "practice": {
+          "hint": "Wahrscheinliche Fragen für diese Stelle — übe deine Antwort und erhalte STAR-basiertes Feedback.",
+          "generate": "Übungsfragen generieren",
+          "regenerate": "Neu generieren",
+          "generating": "Wird generiert…",
+          "empty": "Noch keine Übungsfragen",
+          "emptyDesc": "Generiere wahrscheinliche Interviewfragen und übe deine Antworten.",
+          "answerPlaceholder": "Antwort eingeben… (Situation, Task, Action, Result)",
+          "getFeedback": "Feedback erhalten",
+          "gettingFeedback": "Wird analysiert…",
+          "type": {
+            "behavioral": "Verhaltensbasiert",
+            "roleSpecific": "Rollenspezifisch",
+            "technical": "Technisch"
+          },
+          "feedback": {
+            "strengths": "Stärken",
+            "gaps": "Lücken zur Stellenanzeige",
+            "starCompleteness": "STAR-Vollständigkeit",
+            "situation": "Situation",
+            "task": "Aufgabe",
+            "action": "Aktion",
+            "result": "Ergebnis",
+            "present": "Vorhanden",
+            "missing": "Fehlt",
+            "rewrite": "Verdichtete Überarbeitung"
+          }
         }
       },
       "jdTitle": "Stellenbeschreibung",
