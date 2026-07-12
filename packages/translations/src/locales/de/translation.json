@@ -772,7 +772,13 @@
         "regenerateFailed": "Token konnte nicht neu generiert werden.",
         "regenerateConfirmTitle": "Kopplungs-Token neu generieren",
         "regenerateConfirmDescription": "Beim Neugenerieren wird jeder gekoppelte Browser getrennt. Sie müssen die Erweiterung erneut koppeln. Fortfahren?",
-        "regenerateConfirm": "Neu generieren"
+        "regenerateConfirm": "Neu generieren",
+        "autofill": {
+          "label": "Assistiertes Formular-Ausfüllen",
+          "description": "Erlaubt der Schaltfläche „Ausfüllen“ der Erweiterung, Ihre gespeicherten Kontaktdaten in ein Formular auf der Seite einzutragen.",
+          "disclosure": "Wenn aktiviert, sendet ein Klick auf „Ausfüllen“ in der Erweiterung Ihre gespeicherten Kontaktdaten in das Formular der aktuellen Seite. Ihre Daten verlassen Ihren Computer nur in Seiten, die Sie selbst auswählen.",
+          "toggleFailed": "Die Autofill-Einstellung konnte nicht aktualisiert werden."
+        }
       },
       "connectedViaBrowser": "{{board}} über Browser-Erweiterung verbunden",
       "boards": {

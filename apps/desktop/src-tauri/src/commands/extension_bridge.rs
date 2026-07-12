@@ -36,3 +36,27 @@ pub async fn extension_bridge_regenerate_token(app: AppHandle) -> Value {
         None => json!({ "token": "" }),
     }
 }
+
+/// Current assisted-autofill opt-in: `{ enabled }`. Default OFF when the bridge
+/// state isn't managed (start-up failure) — the safe state.
+#[tauri::command]
+pub async fn extension_bridge_autofill_enabled(app: AppHandle) -> Value {
+    let enabled = app
+        .try_state::<BridgeState>()
+        .map(|s| s.autofill_enabled())
+        .unwrap_or(false);
+    json!({ "enabled": enabled })
+}
+
+/// Set (and persist) the assisted-autofill opt-in; echoes the stored value:
+/// `{ enabled }`. A no-op returning `false` when the bridge state is unavailable.
+#[tauri::command]
+pub async fn extension_bridge_set_autofill_enabled(app: AppHandle, enabled: bool) -> Value {
+    match app.try_state::<BridgeState>() {
+        Some(state) => {
+            state.set_autofill_enabled(enabled);
+            json!({ "enabled": state.autofill_enabled() })
+        }
+        None => json!({ "enabled": false }),
+    }
+}

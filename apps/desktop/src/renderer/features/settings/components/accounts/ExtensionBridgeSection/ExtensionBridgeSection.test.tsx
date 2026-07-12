@@ -18,11 +18,15 @@ import { ExtensionBridgeSection } from './index';
 
 function renderSection(
   statusPayload: ExtensionBridgeStatus = { port: 9712, connected: true, token: 'tok-abc123' },
-  regenerateImpl: () => Promise<unknown> = () => Promise.resolve({ token: 'tok-new' })
+  regenerateImpl: () => Promise<unknown> = () => Promise.resolve({ token: 'tok-new' }),
+  autofillEnabled = false,
+  setAutofill = vi.fn().mockImplementation((enabled: boolean) => Promise.resolve({ enabled }))
 ) {
   const client = createMockClient({
     'extensionBridge.status': vi.fn().mockResolvedValue(statusPayload),
     'extensionBridge.regenerateToken': vi.fn().mockImplementation(regenerateImpl),
+    'extensionBridge.autofillEnabled': vi.fn().mockResolvedValue({ enabled: autofillEnabled }),
+    'extensionBridge.setAutofillEnabled': setAutofill,
   });
   const queryClient = makeQueryClient();
 
@@ -178,6 +182,43 @@ describe('ExtensionBridgeSection', () => {
 
     await waitFor(() => {
       expect(regenerateToken).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('renders the assisted-autofill switch reflecting the persisted opt-in (default off)', async () => {
+    renderSection({ port: 9712, connected: true, token: 'tok-abc123' }, undefined, false);
+
+    await waitFor(() => {
+      const sw = screen.getByRole('switch', { name: /assisted form autofill/i });
+      expect(sw).toHaveAttribute('aria-checked', 'false');
+    });
+  });
+
+  it('reflects an enabled opt-in as a checked switch', async () => {
+    renderSection({ port: 9712, connected: true, token: 'tok-abc123' }, undefined, true);
+
+    await waitFor(() => {
+      const sw = screen.getByRole('switch', { name: /assisted form autofill/i });
+      expect(sw).toHaveAttribute('aria-checked', 'true');
+    });
+  });
+
+  it('persists the opt-in when the autofill switch is toggled on', async () => {
+    const setAutofill = vi
+      .fn()
+      .mockImplementation((enabled: boolean) => Promise.resolve({ enabled }));
+    renderSection(
+      { port: 9712, connected: true, token: 'tok-abc123' },
+      undefined,
+      false,
+      setAutofill
+    );
+
+    const sw = await screen.findByRole('switch', { name: /assisted form autofill/i });
+    await userEvent.click(sw);
+
+    await waitFor(() => {
+      expect(setAutofill).toHaveBeenCalledWith(true);
     });
   });
 

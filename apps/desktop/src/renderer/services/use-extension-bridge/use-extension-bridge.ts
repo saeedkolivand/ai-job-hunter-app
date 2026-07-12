@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import type { ExtensionBridgeStatus, ExtensionBridgeTokenResult } from '@ajh/shared';
+import type {
+  ExtensionAutofillSetting,
+  ExtensionBridgeStatus,
+  ExtensionBridgeTokenResult,
+} from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
@@ -37,6 +41,30 @@ export const useRegenerateExtensionToken = () => {
     mutationFn: () => api.extensionBridge.regenerateToken(),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.extensionBridge.status });
+    },
+  });
+};
+
+/**
+ * Assisted-autofill opt-in (default OFF). Gates whether the extension's "Fill"
+ * button can pull the contact profile from the desktop into the current page.
+ */
+export const useExtensionAutofillSetting = () => {
+  const api = useAppClient();
+  return useQuery<ExtensionAutofillSetting>({
+    queryKey: keys.extensionBridge.autofill,
+    queryFn: () => api.extensionBridge.autofillEnabled(),
+  });
+};
+
+/** Toggle + persist the assisted-autofill opt-in; refreshes the cached setting. */
+export const useSetExtensionAutofillSetting = () => {
+  const api = useAppClient();
+  const qc = useQueryClient();
+  return useMutation<ExtensionAutofillSetting, Error, boolean>({
+    mutationFn: (enabled: boolean) => api.extensionBridge.setAutofillEnabled(enabled),
+    onSuccess: (data) => {
+      qc.setQueryData(keys.extensionBridge.autofill, data);
     },
   });
 };

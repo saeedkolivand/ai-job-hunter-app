@@ -64,6 +64,29 @@ export function resolveImportResponse(res: PopupResponse): { text: string; tone:
   return { text: `${lead} ${IMPORT_LANDING_HINT}`, tone: 'ok' };
 }
 
+/**
+ * Given a `fill` response, return the popup message + tone. The detailed summary
+ * lives in the in-page overlay; the popup shows a short confirmation (or the
+ * desktop's refusal when autofill is opted out). Handles the "nothing matched"
+ * case explicitly so a no-op never reads as a failure.
+ *
+ * Pure: no DOM access, no side effects.
+ */
+export function resolveFillResponse(res: PopupResponse): { text: string; tone: 'ok' | 'err' } {
+  if (!res.ok) return { text: res.error, tone: 'err' };
+  if (res.kind !== 'fill') return { text: 'Unexpected response — please retry.', tone: 'err' };
+  const { summary } = res;
+  if (summary.filledNothing) {
+    return { text: 'No matchable fields found on this page.', tone: 'ok' };
+  }
+  const total = summary.filled.reduce((n, f) => n + f.count, 0);
+  const base = `Filled ${total} field${total === 1 ? '' : 's'} — review them on the page`;
+  return {
+    text: summary.nameSplit ? `${base} (name split is a guess — verify).` : `${base}.`,
+    tone: 'ok',
+  };
+}
+
 function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`missing element #${id}`);
@@ -79,6 +102,7 @@ const els = {
     searching: byId<HTMLElement>('view-searching'),
   },
   btnImport: byId<HTMLButtonElement>('btn-import'),
+  btnFill: byId<HTMLButtonElement>('btn-fill'),
   chkApplied: byId<HTMLInputElement>('chk-applied'),
   importMsg: byId<HTMLParagraphElement>('import-msg'),
   btnUnpair: byId<HTMLButtonElement>('btn-unpair'),
@@ -285,6 +309,21 @@ async function doImport(): Promise<void> {
   }
 }
 
+async function doFill(): Promise<void> {
+  els.btnFill.disabled = true;
+  setMsg(els.importMsg, 'Filling…', 'muted');
+  try {
+    const res = await send({ kind: 'fill' });
+    const { text, tone } = resolveFillResponse(res);
+    setMsg(els.importMsg, text, tone);
+  } catch {
+    // A transport/messaging rejection must not strand the status on "Filling…".
+    setMsg(els.importMsg, 'Autofill failed. Please retry.', 'err');
+  } finally {
+    els.btnFill.disabled = false;
+  }
+}
+
 async function savePairing(): Promise<void> {
   const value = els.tokenInput.value.trim();
   if (!looksLikeToken(value)) {
@@ -372,6 +411,7 @@ async function getApp(): Promise<void> {
 
 function wire(): void {
   els.btnImport.addEventListener('click', () => void doImport());
+  els.btnFill.addEventListener('click', () => void doFill());
   els.btnSaveToken.addEventListener('click', () => void savePairing());
   els.tokenInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') void savePairing();
