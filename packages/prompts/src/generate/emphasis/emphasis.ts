@@ -142,8 +142,11 @@ export function buildGroundingBlock(resumeBody: string, topRequirements: string[
  * (no ReDoS); `tagName` is regex-escaped defensively even though every call
  * site passes a fixed literal today. Produces a visibly-broken replacement
  * (space right after `<`) so the tag renders as inert text either way.
+ * Exported so a caller fencing a NEW untrusted/user block that doesn't
+ * already have a dedicated `build*Block` helper (e.g. a one-off tag like
+ * `<candidate_answer>`) can reuse the same neutralization primitive.
  */
-function neutralizeFenceTag(text: string, tagName: string): string {
+export function neutralizeFenceTag(text: string, tagName: string): string {
   const escaped = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = new RegExp(`<\\s*(/?)\\s*${escaped}\\s*>`, 'gi');
   return text.replace(pattern, (_match, slash: string) =>
