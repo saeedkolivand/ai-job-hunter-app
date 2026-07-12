@@ -118,14 +118,18 @@ export const useReembedAll = () => {
  * Today's real AI-spend summary — per-provider token totals as reported by
  * each provider itself (never estimated), plus a best-effort estimated USD
  * cost from a static rate table. Read-only: every write happens server-side,
- * at the point a generation/completion actually runs.
+ * at the point a generation/completion actually runs. Polls on a modest
+ * interval (mirrors `useSystemHealth`'s pairing) so the Settings panel keeps
+ * up while the user watches a generation/embed finish in the same session —
+ * bounded cost since it only polls while the panel is mounted.
  */
 export const useSpendSummary = () => {
   const api = useAppClient();
   return useQuery({
     queryKey: keys.ai.spend,
     queryFn: () => api.ai.spendSummary(),
-    staleTime: QUERY_TIMES.SHORT,
+    refetchInterval: QUERY_TIMES.MEDIUM,
+    staleTime: QUERY_TIMES.POLLING_STALE,
   });
 };
 

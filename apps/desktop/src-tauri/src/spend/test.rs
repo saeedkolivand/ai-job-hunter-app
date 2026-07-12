@@ -280,6 +280,68 @@ fn data_store_export_import_round_trips_rows() {
 }
 
 #[test]
+fn import_rejects_non_array_json_and_leaves_the_store_untouched() {
+    let dir = TempDir::new().unwrap();
+    let store = SpendStore::open(&dir.path().to_path_buf()).unwrap();
+    store.record(rec("openai", "gpt-4o", 100, 50));
+    assert_eq!(store.list().len(), 1, "precondition: one row present");
+
+    let result = store.import(&serde_json::json!({ "not": "an array" }));
+    assert!(result.is_err(), "non-array JSON must be rejected");
+
+    // A malformed/incorrectly-shaped bundle must never clear existing data —
+    // factory-restore honesty depends on this being atomic, not partial.
+    assert_eq!(
+        store.list().len(),
+        1,
+        "a rejected import must leave prior rows intact"
+    );
+}
+
+#[test]
+fn import_rejects_a_row_that_fails_to_deserialize_and_leaves_the_store_untouched() {
+    let dir = TempDir::new().unwrap();
+    let store = SpendStore::open(&dir.path().to_path_buf()).unwrap();
+    store.record(rec("openai", "gpt-4o", 100, 50));
+    assert_eq!(store.list().len(), 1, "precondition: one row present");
+
+    // One well-formed row followed by one missing the required `id` field —
+    // the whole import must abort, not partially apply the good row.
+    let bundle = serde_json::json!([
+        {
+            "id": "spend-1",
+            "createdAt": 1_000_u64,
+            "provider": "gemini",
+            "model": "gemini-2.5-flash",
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "estCostUsd": 0.001,
+        },
+        {
+            "createdAt": 2_000_u64,
+            "provider": "openai",
+            "model": "gpt-4o",
+            "inputTokens": 10,
+            "outputTokens": 5,
+            "estCostUsd": 0.001,
+        }
+    ]);
+    let result = store.import(&bundle);
+    assert!(
+        result.is_err(),
+        "a row failing to deserialize must error, not panic or silently succeed"
+    );
+
+    let rows = store.list();
+    assert_eq!(rows.len(), 1, "the pre-existing row must survive intact");
+    assert_eq!(rows[0].provider, "openai");
+    assert_eq!(
+        rows[0].model, "gpt-4o",
+        "the aborted import's rows must never partially land"
+    );
+}
+
+#[test]
 fn data_store_key_is_spend() {
     let dir = TempDir::new().unwrap();
     let store = SpendStore::open(&dir.path().to_path_buf()).unwrap();

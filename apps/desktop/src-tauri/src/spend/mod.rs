@@ -147,7 +147,10 @@ impl SpendStore {
         let now = now_ms();
         let id = format!("spend-{now}-{}", &Uuid::new_v4().to_string()[..8]);
         let conn = self.conn.lock();
-        let _ = conn.execute(
+        // Non-propagating by design — a store failure must never break/fail
+        // an AI call — but a silently-dropped row would undercut "spend
+        // visibility", so at least log it.
+        if let Err(e) = conn.execute(
             "INSERT INTO ai_spend
              (id, created_at, provider, model, input_tokens, output_tokens, est_cost_usd, run_id)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
@@ -161,7 +164,9 @@ impl SpendStore {
                 est_cost_usd,
                 rec.run_id,
             ],
-        );
+        ) {
+            log::warn!("spend: failed to record row: {e}");
+        }
     }
 
     /// Every persisted row, newest first — the `DataStore::export` payload.

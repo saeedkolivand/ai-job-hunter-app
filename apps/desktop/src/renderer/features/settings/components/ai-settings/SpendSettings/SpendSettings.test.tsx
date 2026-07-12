@@ -58,6 +58,25 @@ describe('SpendSettings — loaded with data', () => {
     expect(screen.getByText('settings.spend.disclaimer')).toBeInTheDocument();
   });
 
+  it('renders "<$0.01" for a sub-cent estimate (never "~$0.00" or "$0")', () => {
+    mockUseSpendSummary.mockReturnValue({
+      data: {
+        today: { inputTokens: 40, outputTokens: 10, estCostUsd: 0.005 },
+        perProvider: [{ provider: 'openai', inputTokens: 40, outputTokens: 10, estCostUsd: 0.005 }],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    render(<SpendSettings />);
+
+    const subCentAmounts = screen.getAllByText('<$0.01');
+    expect(subCentAmounts).toHaveLength(2); // today total + the one provider row
+    expect(screen.queryByText('~$0.00')).not.toBeInTheDocument();
+    expect(screen.queryByText('$0')).not.toBeInTheDocument();
+  });
+
   it('shows "local — free" for a zero-cost (local/CLI) provider row', () => {
     mockUseSpendSummary.mockReturnValue({
       data: {
