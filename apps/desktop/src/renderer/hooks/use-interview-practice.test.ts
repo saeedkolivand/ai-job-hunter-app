@@ -86,6 +86,33 @@ describe('useInterviewPractice', () => {
     ]);
   });
 
+  it('generate() surfaces an error message and leaves questions empty when metadata extraction fails', async () => {
+    vi.mocked(extractMetadata).mockRejectedValueOnce(new Error('extract boom'));
+    const { result } = render();
+
+    await act(async () => {
+      await result.current.generate();
+    });
+
+    expect(result.current.error).toBe('extract boom');
+    expect(result.current.questions).toEqual([]);
+    expect(result.current.generating).toBe(false);
+    expect(generateLikelyInterviewQuestions).not.toHaveBeenCalled();
+  });
+
+  it('generate() surfaces an error message when the question-generation call itself fails', async () => {
+    vi.mocked(generateLikelyInterviewQuestions).mockRejectedValueOnce(new Error('generate boom'));
+    const { result } = render();
+
+    await act(async () => {
+      await result.current.generate();
+    });
+
+    expect(result.current.error).toBe('generate boom');
+    expect(result.current.questions).toEqual([]);
+    expect(result.current.generating).toBe(false);
+  });
+
   it('does not call the generator when canGenerate is false', async () => {
     const { result } = render({ ...params, hasDesc: false });
 

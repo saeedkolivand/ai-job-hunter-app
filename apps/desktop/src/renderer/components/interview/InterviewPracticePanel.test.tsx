@@ -64,6 +64,15 @@ describe('InterviewPracticePanel', () => {
     ).toBeInTheDocument();
   });
 
+  it('clicking the generate button calls onGenerate', () => {
+    const onGenerate = vi.fn();
+    render(<InterviewPracticePanel {...baseProps} onGenerate={onGenerate} />);
+
+    fireEvent.click(screen.getByText('applications.detail.interview.practice.generate'));
+
+    expect(onGenerate).toHaveBeenCalledTimes(1);
+  });
+
   it('disables the generate button when canGenerate is false, and surfaces needsModel/needsJob hints', () => {
     render(
       <InterviewPracticePanel {...baseProps} canGenerate={false} canUse={false} hasDesc={false} />
