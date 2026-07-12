@@ -12,7 +12,7 @@
 use async_trait::async_trait;
 use serde::Serialize;
 use serde_json::Value;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, AiStreamChunk, AiStreamChunkError, AI_STREAM};
@@ -324,6 +324,46 @@ impl ChatMsg {
 pub struct Usage {
     pub input_tokens: u32,
     pub output_tokens: u32,
+}
+
+/// Record one AI call's REAL token usage against today's spend via the
+/// managed [`crate::spend::SpendStore`], if one is present. Best-effort:
+/// spend tracking never blocks or fails a generation — a missing store (e.g.
+/// it failed to open at startup) is silently skipped, exactly like the other
+/// `try_state`-gated convenience writers in this crate (see
+/// `commands::notifications::push_and_notify`). `base_url` is whatever base
+/// URL the caller resolved the request against — passed straight through to
+/// [`crate::spend::SpendStore::record`]'s free/paid cost gate, which only
+/// ever consults it for the `openai-compatible` provider id (every other
+/// provider ignores it), so a local LM Studio/llama.cpp/vLLM server never
+/// shows a fake dollar figure. Pass `None` when no base URL was resolved
+/// (every non-`openai-compatible` provider).
+///
+/// Lives HERE (the command/shell layer, L3) rather than in `crate::spend`
+/// (a data-layer store, L1) because it needs `AppHandle`/`Manager` to resolve
+/// the managed state — the architecture boundary test (R2: no Tauri below the
+/// shell layer) forbids a store module from importing `tauri::*` itself.
+/// `crate::spend::SpendStore` stays Tauri-free; this is the AppHandle→
+/// `try_state`→`record` hop every call site (streaming, `Completer`, CLI
+/// agents, `embed_text`) goes through.
+pub(crate) fn record_usage(
+    app: &AppHandle,
+    provider: &str,
+    model: &str,
+    input_tokens: u32,
+    output_tokens: u32,
+    base_url: Option<&str>,
+) {
+    if let Some(store) = app.try_state::<crate::spend::SpendStore>() {
+        store.record(crate::spend::SpendRecord {
+            provider: provider.to_string(),
+            model: model.to_string(),
+            input_tokens,
+            output_tokens,
+            run_id: None,
+            base_url: base_url.map(str::to_string),
+        });
+    }
 }
 
 // ── Provider trait & registry ────────────────────────────────────────────────
@@ -701,7 +741,7 @@ pub async fn embed_text(
         None => text,
     };
     let (values, usage) = client.embed_with_usage(app, &model, text).await?;
-    crate::spend::record_usage(
+    record_usage(
         app,
         provider.as_str(),
         &model,

@@ -19,7 +19,7 @@ use async_trait::async_trait;
 use tauri::AppHandle;
 
 use crate::commands::ai_provider::{
-    resolve, AgentTurn, AiProvider, ChatMsg, ModelCapabilities, ProviderId, ToolSpec,
+    record_usage, resolve, AgentTurn, AiProvider, ChatMsg, ModelCapabilities, ProviderId, ToolSpec,
 };
 use crate::error::AppResult;
 
@@ -35,8 +35,8 @@ pub struct Completer {
     model: String,
     /// The resolved base URL, when one was supplied — only meaningful for
     /// `openai-compatible` (LM Studio/vLLM/OpenRouter/…). Threaded through to
-    /// `crate::spend::record_usage`'s free/paid cost gate; `None` for every
-    /// other provider, which the gate ignores it for.
+    /// [`record_usage`]'s free/paid cost gate; `None` for every other
+    /// provider, which the gate ignores it for.
     base_url: Option<String>,
 }
 
@@ -174,7 +174,7 @@ impl Completer {
             .provider
             .complete_with_usage(&self.app, &self.model, system, user, temperature)
             .await?;
-        crate::spend::record_usage(
+        record_usage(
             &self.app,
             self.provider.id().as_str(),
             &self.model,
@@ -206,7 +206,7 @@ impl Completer {
             .provider
             .chat_with_tools(&self.app, &self.model, messages, tools, temperature)
             .await?;
-        crate::spend::record_usage(
+        record_usage(
             &self.app,
             self.provider.id().as_str(),
             &self.model,

@@ -40,7 +40,6 @@ use std::path::PathBuf;
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 use crate::data_store::DataStore;
@@ -284,39 +283,6 @@ impl DataStore for SpendStore {
         }
         tx.commit()?;
         Ok(rows.len())
-    }
-}
-
-// ── App-managed convenience ─────────────────────────────────────────────────
-
-/// Record one AI call's REAL token usage against today's spend via the
-/// managed [`SpendStore`], if one is present. Best-effort: spend tracking
-/// never blocks or fails a generation — a missing store (e.g. it failed to
-/// open at startup) is silently skipped, exactly like the other
-/// `try_state`-gated convenience writers in this crate (see
-/// `commands::notifications::push_and_notify`). `base_url` is whatever base
-/// URL the caller resolved the request against — passed straight through to
-/// [`is_free_call`], which only ever consults it for the `openai-compatible`
-/// provider id (every other provider ignores it), so a local LM Studio/
-/// llama.cpp/vLLM server never shows a fake dollar figure. Pass `None` when
-/// no base URL was resolved (every non-`openai-compatible` provider).
-pub fn record_usage(
-    app: &AppHandle,
-    provider: &str,
-    model: &str,
-    input_tokens: u32,
-    output_tokens: u32,
-    base_url: Option<&str>,
-) {
-    if let Some(store) = app.try_state::<SpendStore>() {
-        store.record(SpendRecord {
-            provider: provider.to_string(),
-            model: model.to_string(),
-            input_tokens,
-            output_tokens,
-            run_id: None,
-            base_url: base_url.map(str::to_string),
-        });
     }
 }
 

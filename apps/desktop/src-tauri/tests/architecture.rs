@@ -52,6 +52,9 @@ const L1: &[&str] = &[
     "validate",
     "locale",
     "theme",
+    // AI-spend visibility store (real per-call token usage + estimated cost).
+    // Same layer as ai_generations: a per-domain SQLite store, Tauri-free.
+    "spend",
 ];
 const L2: &[&str] = &[
     "pipeline",
@@ -318,6 +321,7 @@ const R3_ALLOW: &[&str] = &[
     "db.rs",    // sole owner of the SQLite handle
     "error.rs", // From<rusqlite::Error> conversion
     "ai_generations/mod.rs",
+    "spend/mod.rs",
     "applications/mod.rs",
     "documents/mod.rs",
     "job_preferences/mod.rs",

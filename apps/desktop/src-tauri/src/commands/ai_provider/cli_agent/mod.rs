@@ -659,7 +659,7 @@ async fn run_stream(
     // `complete`/`agent_run` path needs no equivalent call: it goes through
     // `AiProvider::complete_with_usage`'s DEFAULT impl, which already reports
     // zero usage for any provider (like this one) that doesn't override it.
-    crate::spend::record_usage(app, backend.id().as_str(), model, 0, 0, None);
+    super::record_usage(app, backend.id().as_str(), model, 0, 0, None);
     emit_done(app, job_id);
     trace.end(status.and_then(|s| s.code()).map(|c| c as u16), true);
     Ok(())

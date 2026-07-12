@@ -133,7 +133,7 @@ fn finish(
     );
     crate::commands::jobs::job_complete(app, job_id, json!({ "done": true }));
     trace.end(Some(status), true);
-    crate::spend::record_usage(
+    super::record_usage(
         app,
         provider.as_str(),
         model,
