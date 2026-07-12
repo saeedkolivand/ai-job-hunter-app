@@ -52,6 +52,19 @@ fn estimate_cost_zero_tokens_is_zero_cost() {
 }
 
 #[test]
+fn estimate_cost_strips_a_leading_models_prefix() {
+    // Gemini ids can arrive as "models/gemini-2.5-flash" — must match the
+    // same rate as the bare id, not fall through to DEFAULT_RATE.
+    let prefixed = estimate_cost("models/gemini-2.5-flash", 1_000_000, 0);
+    let bare = estimate_cost("gemini-2.5-flash", 1_000_000, 0);
+    assert!((prefixed - bare).abs() < 1e-9);
+    assert!(
+        (prefixed - 0.30).abs() < 1e-9,
+        "expected the gemini-2.5-flash rate, got {prefixed} (looks like DEFAULT_RATE)"
+    );
+}
+
+#[test]
 fn is_free_provider_covers_local_and_cli_agents_only() {
     for p in [
         "ollama",
@@ -73,6 +86,56 @@ fn is_free_provider_covers_local_and_cli_agents_only() {
     }
 }
 
+#[test]
+fn is_localhost_url_recognizes_common_local_forms() {
+    for url in [
+        "http://localhost:1234/v1",
+        "http://127.0.0.1:1234/v1",
+        "http://0.0.0.0:8080",
+        "https://localhost/v1",
+        "localhost:11434",
+        "http://[::1]:1234/v1",
+    ] {
+        assert!(is_localhost_url(url), "{url} should be recognized as local");
+    }
+    for url in [
+        "https://openrouter.ai/api/v1",
+        "https://api.groq.com/openai/v1",
+        "http://my-localhost-lookalike.example.com/v1",
+    ] {
+        assert!(!is_localhost_url(url), "{url} must NOT be treated as local");
+    }
+}
+
+#[test]
+fn is_free_call_treats_openai_compatible_localhost_as_free() {
+    assert!(is_free_call(
+        "openai-compatible",
+        Some("http://localhost:1234/v1")
+    ));
+    assert!(is_free_call(
+        "openai-compatible",
+        Some("http://127.0.0.1:8080")
+    ));
+}
+
+#[test]
+fn is_free_call_still_charges_openai_compatible_remote_gateways() {
+    assert!(!is_free_call(
+        "openai-compatible",
+        Some("https://openrouter.ai/api/v1")
+    ));
+    assert!(!is_free_call("openai-compatible", None));
+}
+
+#[test]
+fn is_free_call_ignores_base_url_for_non_openai_compatible_providers() {
+    // A localhost-looking base_url must never make a genuinely paid cloud
+    // provider id look free.
+    assert!(!is_free_call("openai", Some("http://localhost:1234")));
+    assert!(is_free_call("ollama", Some("https://not-actually-checked")));
+}
+
 // ── Store round-trip ─────────────────────────────────────────────────────────
 
 fn rec(provider: &str, model: &str, input: u32, output: u32) -> SpendRecord {
@@ -82,6 +145,7 @@ fn rec(provider: &str, model: &str, input: u32, output: u32) -> SpendRecord {
         input_tokens: input,
         output_tokens: output,
         run_id: None,
+        base_url: None,
     }
 }
 
@@ -146,6 +210,39 @@ fn today_totals_and_by_provider_today_aggregate_correctly() {
         .unwrap();
     assert_eq!(anthropic.input_tokens, 2000);
     assert_eq!(anthropic.output_tokens, 2000);
+}
+
+#[test]
+fn record_zeroes_cost_for_openai_compatible_localhost_despite_real_tokens() {
+    let dir = TempDir::new().unwrap();
+    let store = SpendStore::open(&dir.path().to_path_buf()).unwrap();
+
+    store.record(SpendRecord {
+        provider: "openai-compatible".to_string(),
+        model: "llama-3.1-8b-instruct".to_string(),
+        input_tokens: 5000,
+        output_tokens: 2000,
+        run_id: None,
+        base_url: Some("http://localhost:1234/v1".to_string()),
+    });
+    // A remote OpenAI-compatible gateway (OpenRouter et al.) still costs money.
+    store.record(SpendRecord {
+        provider: "openai-compatible".to_string(),
+        model: "some-model".to_string(),
+        input_tokens: 1000,
+        output_tokens: 1000,
+        run_id: None,
+        base_url: Some("https://openrouter.ai/api/v1".to_string()),
+    });
+
+    let per_provider = store.by_provider_today();
+    assert_eq!(per_provider.len(), 1, "both rows share the provider id");
+    let row = &per_provider[0];
+    assert_eq!(row.input_tokens, 6000, "real tokens still recorded");
+    assert!(
+        row.est_cost_usd > 0.0,
+        "the remote-gateway row must still cost something"
+    );
 }
 
 #[test]

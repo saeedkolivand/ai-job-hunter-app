@@ -98,6 +98,7 @@ fn parse_anthropic_turn(data: &Value) -> AgentTurn {
         text,
         tool_calls,
         stop,
+        usage: parse_anthropic_usage(data),
     }
 }
 
@@ -485,6 +486,7 @@ impl AiProvider for AnthropicClient {
             status.as_u16(),
             ProviderId::Anthropic,
             &req.model,
+            BASE,
             move |buf| parse_anthropic_frames(buf, &mut last_event, &mut usage),
         )
         .await

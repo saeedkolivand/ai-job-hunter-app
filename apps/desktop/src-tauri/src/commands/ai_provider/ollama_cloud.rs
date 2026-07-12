@@ -146,6 +146,17 @@ impl AiProvider for OllamaCloudClient {
         self.inner.embed(app, model, text).await
     }
 
+    async fn embed_with_usage(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        text: &str,
+    ) -> AppResult<(Vec<f64>, Usage)> {
+        // Real usage parsing lives on the inner OpenAI-compatible client, exactly
+        // like `complete_with_usage` above — never a naive default-to-zero.
+        self.inner.embed_with_usage(app, model, text).await
+    }
+
     fn default_embedding_model(&self) -> Option<&'static str> {
         self.inner.default_embedding_model()
     }

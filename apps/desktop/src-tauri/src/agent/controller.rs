@@ -616,7 +616,7 @@ pub async fn run_agent_live(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::ai_provider::{Role, StopReason, ToolCall};
+    use crate::commands::ai_provider::{Role, StopReason, ToolCall, Usage};
     use parking_lot::Mutex;
     use serde_json::json;
     use std::collections::VecDeque;
@@ -688,6 +688,7 @@ mod tests {
             text: format!("calling {name}"),
             tool_calls: vec![tool_call(name, "1")],
             stop: StopReason::ToolUse,
+            usage: Usage::default(),
         }
     }
     /// A turn requesting several tool calls at once (case (i) of the alternation
@@ -701,6 +702,7 @@ mod tests {
                 .map(|(i, n)| tool_call(n, &i.to_string()))
                 .collect(),
             stop: StopReason::ToolUse,
+            usage: Usage::default(),
         }
     }
     /// A tool-call turn with NO preamble text (case (ii)): the fold must still
@@ -710,6 +712,7 @@ mod tests {
             text: String::new(),
             tool_calls: vec![tool_call(name, "1")],
             stop: StopReason::ToolUse,
+            usage: Usage::default(),
         }
     }
     /// A turn that hit the provider's length limit WHILE requesting a tool call —
@@ -719,6 +722,7 @@ mod tests {
             text: "truncat".into(),
             tool_calls: vec![tool_call(name, "1")],
             stop: StopReason::Length,
+            usage: Usage::default(),
         }
     }
     fn final_turn(text: &str) -> AgentTurn {
@@ -726,6 +730,7 @@ mod tests {
             text: text.into(),
             tool_calls: vec![],
             stop: StopReason::End,
+            usage: Usage::default(),
         }
     }
 
@@ -1081,6 +1086,7 @@ mod tests {
             text: "the answer was cut off mid-sen".into(),
             tool_calls: vec![],
             stop: StopReason::Length,
+            usage: Usage::default(),
         }]);
         let out = run_agent(&env, &whitelist(), "help".into(), &CancellationToken::new())
             .await

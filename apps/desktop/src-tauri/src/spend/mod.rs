@@ -7,12 +7,33 @@
 //! `run_migrations`, implementing [`DataStore`] (key `"spend"`) so export/
 //! import + factory reset work for free via the existing registries.
 //!
-//! Tokens are exact — sourced from each provider adapter's own usage fields
-//! (see `commands::ai_provider::stream` and `pipeline::Completer::complete`,
-//! the two shared chokepoints that call [`record_usage`]). The dollar figure
-//! is a best-effort list-price conversion: a BYO-key user has no billing API
-//! we could query, so this can never be billing-accurate — it's a ballpark,
-//! not an invoice.
+//! Tokens are exact — sourced from each provider adapter's own usage fields.
+//! **Covered** (every standard token-billed call, at its shared chokepoint,
+//! so a new caller inherits tracking with no code change of its own):
+//! - `commands::ai_provider::stream::stream_response` — every streamed
+//!   generation (`ai_generate`/`generate_pipeline`'s UI-facing path).
+//! - `pipeline::Completer::complete` — every non-streaming completion
+//!   (autopilot notes, the résumé/cover pipeline's research-brief synthesis).
+//! - `pipeline::Completer::chat_with_tools` — every agent tool-calling turn
+//!   (`agent_run`'s "Prep this application" loop; one run fans out into
+//!   several turns, so this is plausibly the biggest paid-token consumer).
+//! - `commands::ai_provider::embed_text` — every embedding call (`ai_embed`,
+//!   match-score resolution, `ai_reembed_all`'s batch re-index).
+//!
+//! **Explicitly NOT covered** — `AiProvider::research`/`research_salary`/
+//! `research_answer`: these run through each provider's native **web-search**
+//! tool (OpenAI Responses API `web_search`, Anthropic's server-side
+//! `web_search_20250305` tool, Gemini's `google_search` grounding tool, or the
+//! Ollama Web Search API), which is priced per-search / by the account's web-
+//! search plan, not the standard per-token chat rate this module's `RATES`
+//! table models. Recording them here under a token-based estimate would be a
+//! confident-looking number that is actively WRONG, not just imprecise — so
+//! this module makes no attempt to track them; they are honestly invisible to
+//! today's spend summary rather than silently mis-costed.
+//!
+//! The dollar figure for what IS tracked is a best-effort list-price
+//! conversion: a BYO-key user has no billing API we could query, so this can
+//! never be billing-accurate — it's a ballpark, not an invoice.
 
 use parking_lot::Mutex;
 use std::path::PathBuf;
@@ -43,13 +64,18 @@ pub struct SpendRow {
 }
 
 /// Input to [`SpendStore::record`] — the real usage a provider adapter
-/// reports at one of the two shared chokepoints.
+/// reports at one of the shared chokepoints.
 pub struct SpendRecord {
     pub provider: String,
     pub model: String,
     pub input_tokens: u32,
     pub output_tokens: u32,
     pub run_id: Option<String>,
+    /// The resolved base URL for an `openai-compatible` call, when known —
+    /// used ONLY to decide the free/paid cost gate ([`is_free_call`]); never
+    /// persisted (not part of the `ai_spend` schema). `None` for every
+    /// non-`openai-compatible` provider, which decides purely on `provider`.
+    pub base_url: Option<String>,
 }
 
 /// Aggregate totals over a set of calls.
@@ -110,15 +136,17 @@ impl SpendStore {
     }
 
     /// Persist one call's real usage, computing its estimated cost from the
-    /// static rate table. Local/CLI-agent providers ([`is_free_provider`])
-    /// are always $0 regardless of token volume — never fabricated.
+    /// static rate table. Free calls ([`is_free_call`] — local/CLI-agent
+    /// providers, or an `openai-compatible` endpoint pointed at localhost) are
+    /// always $0 regardless of token volume — never fabricated.
     pub fn record(&self, rec: SpendRecord) {
-        let est_cost_usd = if is_free_provider(&rec.provider) {
+        let est_cost_usd = if is_free_call(&rec.provider, rec.base_url.as_deref()) {
             0.0
         } else {
             estimate_cost(&rec.model, rec.input_tokens, rec.output_tokens)
         };
-        let id = format!("spend-{}-{}", now_ms(), &Uuid::new_v4().to_string()[..8]);
+        let now = now_ms();
+        let id = format!("spend-{now}-{}", &Uuid::new_v4().to_string()[..8]);
         let conn = self.conn.lock();
         let _ = conn.execute(
             "INSERT INTO ai_spend
@@ -126,7 +154,7 @@ impl SpendStore {
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
             params![
                 id,
-                ts_to_db(now_ms()),
+                ts_to_db(now),
                 rec.provider,
                 rec.model,
                 rec.input_tokens,
@@ -266,13 +294,19 @@ impl DataStore for SpendStore {
 /// never blocks or fails a generation — a missing store (e.g. it failed to
 /// open at startup) is silently skipped, exactly like the other
 /// `try_state`-gated convenience writers in this crate (see
-/// `commands::notifications::push_and_notify`).
+/// `commands::notifications::push_and_notify`). `base_url` is whatever base
+/// URL the caller resolved the request against — passed straight through to
+/// [`is_free_call`], which only ever consults it for the `openai-compatible`
+/// provider id (every other provider ignores it), so a local LM Studio/
+/// llama.cpp/vLLM server never shows a fake dollar figure. Pass `None` when
+/// no base URL was resolved (every non-`openai-compatible` provider).
 pub fn record_usage(
     app: &AppHandle,
     provider: &str,
     model: &str,
     input_tokens: u32,
     output_tokens: u32,
+    base_url: Option<&str>,
 ) {
     if let Some(store) = app.try_state::<SpendStore>() {
         store.record(SpendRecord {
@@ -281,6 +315,7 @@ pub fn record_usage(
             input_tokens,
             output_tokens,
             run_id: None,
+            base_url: base_url.map(str::to_string),
         });
     }
 }
@@ -295,6 +330,35 @@ fn is_free_provider(provider: &str) -> bool {
     matches!(
         provider,
         "ollama" | "claude-code" | "codex" | "gemini-cli" | "antigravity"
+    )
+}
+
+/// Whether a call costs nothing: [`is_free_provider`], OR an
+/// `openai-compatible` request resolved against a local server (LM Studio /
+/// llama.cpp / vLLM on `localhost`/`127.0.0.1`/`0.0.0.0`/`::1`) — the
+/// `openai-compatible` provider id is otherwise treated as paid (OpenRouter/
+/// Groq/Together/DeepSeek/Azure-style gateways are genuinely metered), so
+/// without this a local dev server would show a fake `DEFAULT_RATE` dollar
+/// figure. `base_url` is ignored for every other provider.
+fn is_free_call(provider: &str, base_url: Option<&str>) -> bool {
+    if is_free_provider(provider) {
+        return true;
+    }
+    provider == "openai-compatible" && base_url.is_some_and(is_localhost_url)
+}
+
+/// Crude host check — good enough for a cost gate, never used for routing or
+/// security. Tolerates a scheme, a trailing path/query, and a `:port` (found
+/// via the LAST `:`, so a bracketed IPv6 host's internal colons stay intact).
+fn is_localhost_url(url: &str) -> bool {
+    let without_scheme = url.rsplit_once("://").map_or(url, |(_, rest)| rest);
+    let host_and_port = without_scheme.split(['/', '?']).next().unwrap_or("");
+    let host = host_and_port
+        .rsplit_once(':')
+        .map_or(host_and_port, |(h, _)| h);
+    matches!(
+        host,
+        "localhost" | "127.0.0.1" | "0.0.0.0" | "::1" | "[::1]"
     )
 }
 
@@ -337,6 +401,12 @@ const RATES: &[(&str, f64, f64)] = &[
     ("gemini-2.0-flash", 0.10, 0.40),
     ("gemini-1.5-flash", 0.075, 0.30),
     ("gemini-1.5-pro", 1.25, 5.00),
+    // Embeddings — input-only (no completion tokens), so the output rate is
+    // always 0.0 and unused (`embed_text` always records `output_tokens: 0`).
+    ("text-embedding-3-small", 0.02, 0.0),
+    ("text-embedding-3-large", 0.13, 0.0),
+    ("text-embedding-ada-002", 0.10, 0.0),
+    ("text-embedding-004", 0.025, 0.0),
 ];
 
 /// Conservative default for a cloud model this table doesn't recognize (a
@@ -350,7 +420,10 @@ const DEFAULT_RATE: (f64, f64) = (3.00, 15.00);
 /// CLI-agent providers to $0 via [`is_free_provider`] before calling this, so
 /// this function never needs to know about providers at all.
 pub fn estimate_cost(model: &str, input_tokens: u32, output_tokens: u32) -> f64 {
-    let m = model.to_ascii_lowercase();
+    // Gemini ids can arrive prefixed (`models/gemini-2.5-flash`); strip it
+    // before matching so it isn't silently mismatched to DEFAULT_RATE.
+    let lower = model.to_ascii_lowercase();
+    let m = lower.strip_prefix("models/").unwrap_or(&lower);
     let (in_rate, out_rate) = RATES
         .iter()
         .find(|(prefix, _, _)| m.starts_with(prefix))

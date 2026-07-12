@@ -117,6 +117,7 @@ fn parse_gemini_turn(data: &Value) -> AgentTurn {
         text,
         tool_calls,
         stop,
+        usage: parse_gemini_usage(data).unwrap_or_default(),
     }
 }
 
@@ -138,6 +139,25 @@ fn parse_gemini_usage(data: &Value) -> Option<Usage> {
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as u32,
     })
+}
+
+/// Extract real token usage from an `embedContent` response. Gemini's
+/// embeddings endpoint does not document a `usageMetadata` field the way
+/// `generateContent` does — defensively reads the same key name in case a
+/// future/regional variant sends it, but degrades to zero (never fabricated)
+/// when absent, exactly like every other "provider reports nothing" case in
+/// this module. `output_tokens: 0` always — an embed call has no completion
+/// tokens. Pure + unit-tested.
+fn parse_gemini_embed_usage(data: &Value) -> Usage {
+    let input_tokens = data
+        .get("usageMetadata")
+        .and_then(|u| u.get("promptTokenCount"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
+    Usage {
+        input_tokens,
+        output_tokens: 0,
+    }
 }
 
 /// Whether to request `thinkingConfig.includeThoughts`. Gemini 1.5 and the GA
@@ -379,6 +399,52 @@ impl GeminiClient {
         Ok((text, usage))
     }
 
+    /// Shared body of `embed`/`embed_with_usage`: one `embedContent` call,
+    /// parsed once into `(vector, usage)` so the two trait methods never
+    /// duplicate the HTTP round-trip.
+    async fn embed_impl(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        text: &str,
+    ) -> AppResult<(Vec<f64>, Usage)> {
+        let api_key = require_gemini_key(app)?;
+        let m = model.strip_prefix("models/").unwrap_or(model);
+        let endpoint_label = format!("/v1beta/models/{m}:embedContent");
+        let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
+        let body = json!({
+            "model": format!("models/{m}"),
+            "content": { "parts": [{ "text": text }] },
+        });
+        let url = format!("{BASE}{endpoint_label}");
+        let resp = send_with_retry(|| {
+            crate::net::http::shared()
+                .post(&url)
+                .timeout(timeouts::EMBED)
+                .header("x-goog-api-key", &api_key)
+                .json(&body)
+        })
+        .await
+        .map_err(|e| format!("Gemini unreachable: {e}"))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            return Err(friendly_api_error(ProviderId::Gemini, status, &body_text));
+        }
+        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        trace.end(Some(status.as_u16()), true);
+        let vector: Vec<f64> = data
+            .get("embedding")
+            .and_then(|e| e.get("values"))
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_f64()).collect())
+            .ok_or_else(|| {
+                AppError::Provider("Gemini: missing embedding in response".to_string())
+            })?;
+        Ok((vector, parse_gemini_embed_usage(&data)))
+    }
+
     /// Shared transport for every `research*` facet: `generateContent` grounded
     /// with the native Google Search tool, `system`/`user` supplied by the
     /// caller. Degrades to `""` (never an error) on a missing key or any
@@ -517,6 +583,7 @@ impl AiProvider for GeminiClient {
             status.as_u16(),
             ProviderId::Gemini,
             &req.model,
+            BASE,
             move |buf| parse_gemini_frames(buf, &mut state),
         )
         .await
@@ -601,37 +668,16 @@ impl AiProvider for GeminiClient {
     }
 
     async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
-        let api_key = require_gemini_key(app)?;
-        let m = model.strip_prefix("models/").unwrap_or(model);
-        let endpoint_label = format!("/v1beta/models/{m}:embedContent");
-        let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
-        let body = json!({
-            "model": format!("models/{m}"),
-            "content": { "parts": [{ "text": text }] },
-        });
-        let url = format!("{BASE}{endpoint_label}");
-        let resp = send_with_retry(|| {
-            crate::net::http::shared()
-                .post(&url)
-                .timeout(timeouts::EMBED)
-                .header("x-goog-api-key", &api_key)
-                .json(&body)
-        })
-        .await
-        .map_err(|e| format!("Gemini unreachable: {e}"))?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
-            trace.end(Some(status.as_u16()), false);
-            return Err(friendly_api_error(ProviderId::Gemini, status, &body_text));
-        }
-        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
-        trace.end(Some(status.as_u16()), true);
-        data.get("embedding")
-            .and_then(|e| e.get("values"))
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_f64()).collect())
-            .ok_or_else(|| AppError::Provider("Gemini: missing embedding in response".to_string()))
+        self.embed_impl(app, model, text).await.map(|(v, _)| v)
+    }
+
+    async fn embed_with_usage(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        text: &str,
+    ) -> AppResult<(Vec<f64>, Usage)> {
+        self.embed_impl(app, model, text).await
     }
 
     fn default_embedding_model(&self) -> Option<&'static str> {
@@ -783,9 +829,9 @@ impl AiProvider for GeminiClient {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_chat_stream_body, gemini_supports_thinking, join_parts_text, parse_gemini_frames,
-        parse_gemini_parts, parse_gemini_turn, parse_gemini_usage, validate_gemini_key,
-        GeminiScanner, StreamPiece,
+        build_chat_stream_body, gemini_supports_thinking, join_parts_text,
+        parse_gemini_embed_usage, parse_gemini_frames, parse_gemini_parts, parse_gemini_turn,
+        parse_gemini_usage, validate_gemini_key, GeminiScanner, StreamPiece,
     };
     use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
     use crate::error::AppError;
@@ -970,6 +1016,23 @@ mod tests {
     #[test]
     fn parse_usage_is_none_when_absent() {
         assert!(parse_gemini_usage(&json!({})).is_none());
+    }
+
+    #[test]
+    fn parse_embed_usage_reads_prompt_token_count_when_present() {
+        let data = json!({ "usageMetadata": { "promptTokenCount": 7 } });
+        let usage = parse_gemini_embed_usage(&data);
+        assert_eq!(usage.input_tokens, 7);
+        assert_eq!(usage.output_tokens, 0);
+    }
+
+    #[test]
+    fn parse_embed_usage_zero_when_absent() {
+        // Gemini's embedContent response typically carries no usageMetadata —
+        // must degrade to zero, never fabricate a token count.
+        let usage = parse_gemini_embed_usage(&json!({ "embedding": { "values": [0.1] } }));
+        assert_eq!(usage.input_tokens, 0);
+        assert_eq!(usage.output_tokens, 0);
     }
 
     #[test]

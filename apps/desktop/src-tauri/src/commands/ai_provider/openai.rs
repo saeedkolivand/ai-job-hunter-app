@@ -94,6 +94,7 @@ fn parse_openai_turn(data: &Value) -> AgentTurn {
         text,
         tool_calls,
         stop,
+        usage: parse_openai_usage(data).unwrap_or_default(),
     }
 }
 
@@ -151,6 +152,23 @@ fn parse_openai_usage(data: &Value) -> Option<Usage> {
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as u32,
     })
+}
+
+/// Extract real token usage from an OpenAI `/embeddings` response:
+/// `usage.prompt_tokens` (falling back to `usage.total_tokens`, which some
+/// OpenAI-compatible servers send instead), and `output_tokens: 0` — an
+/// embedding call has no completion tokens. Zero on both fields when `usage`
+/// is entirely absent (never fabricated). Pure + unit-tested.
+fn parse_openai_embed_usage(data: &Value) -> Usage {
+    let usage = data.get("usage");
+    let input_tokens = usage
+        .and_then(|u| u.get("prompt_tokens").or_else(|| u.get("total_tokens")))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
+    Usage {
+        input_tokens,
+        output_tokens: 0,
+    }
 }
 
 fn parse_openai_delta(event: &Value) -> (&str, &str) {
@@ -351,6 +369,51 @@ impl OpenAiClient {
         Ok((text, usage))
     }
 
+    /// Shared body of `embed`/`embed_with_usage`: one `/embeddings` call,
+    /// parsed once into `(vector, usage)` so the two trait methods never
+    /// duplicate the HTTP round-trip.
+    async fn embed_impl(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        text: &str,
+    ) -> AppResult<(Vec<f64>, Usage)> {
+        let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
+        let endpoint = format!("{}/embeddings", self.base_url);
+        let trace = RequestTrace::begin(self.id, model, "/embeddings", &self.base_url, false);
+        let body = json!({ "model": model, "input": text });
+        let resp = send_with_retry(|| {
+            crate::net::http::shared()
+                .post(&endpoint)
+                .timeout(timeouts::EMBED)
+                .bearer_auth(&api_key)
+                .json(&body)
+        })
+        .await
+        .map_err(|e| format!("{} unreachable: {e}", self.id.as_str()))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            trace.end(Some(status.as_u16()), false);
+            return Err(friendly_api_error(self.id, status, &body_text));
+        }
+        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        trace.end(Some(status.as_u16()), true);
+        let vector: Vec<f64> = data
+            .get("data")
+            .and_then(|d| d.get(0))
+            .and_then(|e| e.get("embedding"))
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_f64()).collect())
+            .ok_or_else(|| {
+                AppError::Provider(format!(
+                    "{}: missing embedding in response",
+                    self.id.as_str()
+                ))
+            })?;
+        Ok((vector, parse_openai_embed_usage(&data)))
+    }
+
     /// Shared transport for every `research*` facet: the Responses API with the
     /// native `web_search` tool, `system`/`user` supplied by the caller. Every
     /// non-OpenAI id degrades to `""`, exactly like a missing key or a failed
@@ -517,6 +580,7 @@ impl AiProvider for OpenAiClient {
             status.as_u16(),
             self.id,
             &req.model,
+            &self.base_url,
             parse_openai_frames,
         )
         .await
@@ -601,38 +665,16 @@ impl AiProvider for OpenAiClient {
     }
 
     async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
-        let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
-        let endpoint = format!("{}/embeddings", self.base_url);
-        let trace = RequestTrace::begin(self.id, model, "/embeddings", &self.base_url, false);
-        let body = json!({ "model": model, "input": text });
-        let resp = send_with_retry(|| {
-            crate::net::http::shared()
-                .post(&endpoint)
-                .timeout(timeouts::EMBED)
-                .bearer_auth(&api_key)
-                .json(&body)
-        })
-        .await
-        .map_err(|e| format!("{} unreachable: {e}", self.id.as_str()))?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
-            trace.end(Some(status.as_u16()), false);
-            return Err(friendly_api_error(self.id, status, &body_text));
-        }
-        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
-        trace.end(Some(status.as_u16()), true);
-        data.get("data")
-            .and_then(|d| d.get(0))
-            .and_then(|e| e.get("embedding"))
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_f64()).collect())
-            .ok_or_else(|| {
-                AppError::Provider(format!(
-                    "{}: missing embedding in response",
-                    self.id.as_str()
-                ))
-            })
+        self.embed_impl(app, model, text).await.map(|(v, _)| v)
+    }
+
+    async fn embed_with_usage(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        text: &str,
+    ) -> AppResult<(Vec<f64>, Usage)> {
+        self.embed_impl(app, model, text).await
     }
 
     fn default_embedding_model(&self) -> Option<&'static str> {
@@ -788,8 +830,8 @@ impl AiProvider for OpenAiClient {
 mod tests {
     use super::{
         build_chat_stream_body, is_reasoning_model, join_responses_text, parse_openai_delta,
-        parse_openai_frames, parse_openai_turn, parse_openai_usage, should_list_model,
-        OpenAiClient,
+        parse_openai_embed_usage, parse_openai_frames, parse_openai_turn, parse_openai_usage,
+        should_list_model, OpenAiClient,
     };
     use crate::commands::ai_provider::{
         AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, StopReason, TokenParam,
@@ -854,6 +896,28 @@ mod tests {
         // Every streamed chunk except the final one has no `usage` field.
         assert!(parse_openai_usage(&json!({ "choices": [] })).is_none());
         assert!(parse_openai_usage(&json!({})).is_none());
+    }
+
+    #[test]
+    fn parse_embed_usage_prefers_prompt_tokens() {
+        let data = json!({ "usage": { "prompt_tokens": 12, "total_tokens": 12 } });
+        let usage = parse_openai_embed_usage(&data);
+        assert_eq!(usage.input_tokens, 12);
+        assert_eq!(usage.output_tokens, 0, "an embed call has no output tokens");
+    }
+
+    #[test]
+    fn parse_embed_usage_falls_back_to_total_tokens() {
+        // Some OpenAI-compatible embed servers send only `total_tokens`.
+        let data = json!({ "usage": { "total_tokens": 9 } });
+        assert_eq!(parse_openai_embed_usage(&data).input_tokens, 9);
+    }
+
+    #[test]
+    fn parse_embed_usage_zero_when_absent() {
+        let usage = parse_openai_embed_usage(&json!({}));
+        assert_eq!(usage.input_tokens, 0);
+        assert_eq!(usage.output_tokens, 0);
     }
 
     #[test]

@@ -503,7 +503,7 @@ mod tests {
         AGENT_SYSTEM,
     };
     use crate::agent::tools::{ToolContext, ToolKind};
-    use crate::commands::ai_provider::{AgentTurn, ChatMsg, Role, StopReason, ToolCall};
+    use crate::commands::ai_provider::{AgentTurn, ChatMsg, Role, StopReason, ToolCall, Usage};
 
     /// A scripted fake: pops a canned [`AgentTurn`] per `turn()` (repeating the last
     /// one forever), records executed read AND write tools + narrated steps + the
@@ -629,6 +629,7 @@ mod tests {
                 args,
             }],
             stop: StopReason::ToolUse,
+            usage: Usage::default(),
         }
     }
     /// A turn requesting the SAME Write tool TWICE — with the SAME
@@ -652,6 +653,7 @@ mod tests {
                 },
             ],
             stop: StopReason::ToolUse,
+            usage: Usage::default(),
         }
     }
     fn final_turn(text: &str) -> AgentTurn {
@@ -659,6 +661,7 @@ mod tests {
             text: text.into(),
             tool_calls: vec![],
             stop: StopReason::End,
+            usage: Usage::default(),
         }
     }
 

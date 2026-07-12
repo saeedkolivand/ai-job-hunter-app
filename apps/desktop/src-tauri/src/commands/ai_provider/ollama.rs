@@ -101,6 +101,7 @@ fn parse_ollama_turn(data: &Value) -> AgentTurn {
         text,
         tool_calls,
         stop,
+        usage: parse_ollama_usage(data).unwrap_or_default(),
     }
 }
 
@@ -854,6 +855,7 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
         status.as_u16(),
         ProviderId::Ollama,
         &req.model,
+        &base,
         parse_ollama_frames,
     )
     .await
