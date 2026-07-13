@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783972092367,
+  "lastUpdate": 1783980337138,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4151,6 +4151,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 285200,
             "range": "± 1954",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3e2f32549a4b8eefdf30a11411240c942ea9e0b7",
+          "message": "fix: derive multi-board batch cap from the scraper registry so selecting all boards works (#629)\n\n* fix: derive multi-board batch cap from the scraper registry so selecting all boards works\n\nSelecting a 7th board in the autopilot wizard (arbeit now onward in catalog order) failed\nvalidation with a misleading generic error: the fixed MAX_BOARDS_PER_BATCH = 6 cap predates\nthe board-catalog expansion to 23 scrapers.\n\nThe engine cap is now registry-derived (boards::all().len()), so it scales with the catalog\nwhile keeping the CWE-770 request-amplification defense (dedup + registry-size truncation).\nShared Zod schemas mirror it (BOARD_IDS.length for the enum-typed scrape request, a generous\nsanity bound for the relaxed autopilot boards) and the wizard schema drops its .max(6).\nDocs updated (PATTERNS.md, anti-abuse-limits.md).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: address review findings on the board-cap pr\n\n- landing/how-it-works.html: drop the stale 'up to 6 boards per run' claim (now catalog-bound)\n- renderer schema test now validates the full BOARD_IDS catalog instead of 20 arbitrary ids\n- docs: thin pointers to max_boards_per_batch() instead of copied formulas; scaling claim\n  qualified by the shared-schema bounds\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-13T23:56:49+02:00",
+          "tree_id": "5b560bd549335fac29139499da2ecb480c35e0e9",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/3e2f32549a4b8eefdf30a11411240c942ea9e0b7"
+        },
+        "date": 1783980333839,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1637350,
+            "range": "± 49838",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 1994850,
+            "range": "± 117509",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 199339,
+            "range": "± 12765",
             "unit": "ns/iter"
           }
         ]
