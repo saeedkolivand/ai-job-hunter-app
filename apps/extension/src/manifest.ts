@@ -47,8 +47,11 @@ function baseManifest(): ManifestRecord {
   return {
     manifest_version: 3,
     name: 'AI Job Hunter — Job Importer',
+    // ≤132 chars — Chrome Web Store caps the manifest `description`. Mentions
+    // both capabilities (import + assisted autofill) honestly; the autofill
+    // capability is opt-in/off-by-default (see the Settings toggle + README).
     description:
-      'Import the job posting you are viewing into your local AI Job Hunter desktop app over a private loopback connection.',
+      'Import job postings into, and fill application forms from, your local AI Job Hunter desktop app over a private loopback connection.',
     version: VERSION,
     // activeTab → read the clicked tab's DOM on user action without broad host
     // access. storage → persist the pairing token. scripting → MV3 dynamic

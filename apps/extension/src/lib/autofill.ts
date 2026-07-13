@@ -130,14 +130,21 @@ export function splitName(fullName: string): { first: string; last: string } {
  * True when the element or ANY ancestor is hidden — via the `hidden` attribute
  * or COMPUTED style (not just inline `style`): `display:none`/`visibility:hidden`,
  * `opacity:0`, off-screen absolute/fixed positioning (`left`/`top` shoved past
- * -9999px — the classic honeypot trap), or a zero-size box. Computed style is
- * what catches an external-stylesheet / `<style>` CSS-class honeypot (e.g. a
- * `.visually-hidden`/`.sr-only`-shaped utility class) as well as the
- * opacity/off-screen/zero-size variants — this is exactly how anti-bot honeypot
- * fields are planted on real ATS forms (Greenhouse/Lever/Workday). An inline-only
- * or display/visibility-only check would fill them, and a filled invisible field
- * is worse than an ordinary mis-fill (the user can't see it to undo, and it can
- * flag them as a bot).
+ * -9999px — the classic honeypot trap), or a box whose computed `width` AND
+ * `height` are BOTH exactly `0px`. Computed style (not just inline `style`) is
+ * what catches an external-stylesheet / `<style>` CSS-class honeypot — this is
+ * how anti-bot honeypot fields are commonly planted on real ATS forms
+ * (Greenhouse/Lever/Workday). An inline-only or display/visibility-only check
+ * would fill them, and a filled invisible field is worse than an ordinary
+ * mis-fill (the user can't see it to undo, and it can flag them as a bot).
+ *
+ * NOT caught, deliberately: clip-based hiding (`clip:rect(0,0,0,0)`/
+ * `clip-path`) or a single-dimension-zero box (e.g. the `width:1px;height:1px`
+ * shape common to `.sr-only`-style utility classes) — that is also exactly how a
+ * LEGITIMATE screen-reader-only field is hidden visually while staying
+ * functionally real, so treating it as hidden (and skip-filling it) would be
+ * wrong. Only an unambiguous honeypot shape — display/visibility/opacity-off,
+ * off-screen, or BOTH dimensions zero — is treated as hidden.
  *
  * Deliberately `getComputedStyle`-ONLY — never `getBoundingClientRect`/
  * `offsetWidth`/layout reads. jsdom (the test environment) always reports those
