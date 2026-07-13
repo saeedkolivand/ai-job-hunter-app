@@ -129,6 +129,17 @@
         <button id="btn-get-app" class="btn btn--primary" type="button">Get the app</button>
       </section>
 
+      <!-- Outdated-desktop state: the pill reads "⟳ Update the app". The stored
+           pairing token is fine — the desktop app is too old to speak the v2
+           handshake, so it must be updated (NOT re-paired). The header Retry
+           re-checks the connection once the app is updated. -->
+      <section id="view-outdated" class="view" hidden>
+        <p class="hint">
+          Your AI Job Hunter desktop app is out of date. Update it to reconnect the extension.
+        </p>
+        <button id="btn-update-app" class="btn btn--primary" type="button">Update the app</button>
+      </section>
+
       <!-- Searching state: the "○ Connecting…" pill conveys it; no body needed. -->
       <section id="view-searching" class="view"></section>
     </main>

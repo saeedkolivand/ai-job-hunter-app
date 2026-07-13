@@ -26,7 +26,11 @@ fn message_type_constants_match_ts() {
     // Each Rust constant must appear as a single-quoted string literal in the TS
     // `EXTENSION_MESSAGE_TYPES` map (e.g. `import.request: 'import.request'`).
     for literal in [
+        msg::HELLO,
+        msg::CHALLENGE,
         msg::AUTH,
+        msg::AUTH_OK,
+        msg::UPDATE_REQUIRED,
         msg::IMPORT_REQUEST,
         msg::IMPORT_RESULT,
         msg::PROFILE_GET,
@@ -43,11 +47,34 @@ fn message_type_constants_match_ts() {
     }
 }
 
+/// Numeric parity companion to [`message_type_constants_match_ts`]: the
+/// message-type test only pins the `msg::*` STRING literals — it says nothing
+/// about the handshake's numeric `PROTOCOL_VERSION`. A one-sided bump (Rust
+/// bumps to 3 but TS stays at 2, or vice versa) would silently miscalibrate the
+/// force-cutover gate (`advance_hello`'s `protocol < PROTOCOL_VERSION` check) —
+/// this pins the exact literal on both sides. The needle includes the trailing
+/// `;` so `= 2` can never prefix-match a future `= 20` (etc).
+#[test]
+fn protocol_version_matches_ts() {
+    let ts = ts_protocol_source();
+    let needle = format!("EXTENSION_PROTOCOL_VERSION = {};", PROTOCOL_VERSION);
+    assert!(
+        ts.contains(&needle),
+        "Rust PROTOCOL_VERSION ({PROTOCOL_VERSION}) not found as `{needle}` in \
+         extension-protocol-constants.ts — the numeric handshake protocol version \
+         drifted from the TS EXTENSION_PROTOCOL_VERSION"
+    );
+}
+
 #[test]
 fn reserved_types_are_distinct() {
     // Every wire type must be a distinct string.
     let all = [
+        msg::HELLO,
+        msg::CHALLENGE,
         msg::AUTH,
+        msg::AUTH_OK,
+        msg::UPDATE_REQUIRED,
         msg::IMPORT_REQUEST,
         msg::IMPORT_RESULT,
         msg::PROFILE_GET,
