@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.126.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.125.0...v0.126.0) (2026-07-13)
+
+### ✨ Features
+
+* add detector-resistant sampling params for prose generation ([#615](https://github.com/saeedkolivand/ai-job-hunter-app/issues/615)) ([d6102dd](https://github.com/saeedkolivand/ai-job-hunter-app/commit/d6102dd54b2a8b52b810e7ce6d8cef22905e317a))
+* add jooble as a byo-key aggregator fallback provider ([#618](https://github.com/saeedkolivand/ai-job-hunter-app/issues/618)) ([7e4c72f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/7e4c72f943fcabb3be6154b234c9fd4401c6fc73)), closes [597-#604](https://github.com/saeedkolivand/597-/issues/604)
+* ai spend visibility — real per-provider token + estimated cost tracking ([#624](https://github.com/saeedkolivand/ai-job-hunter-app/issues/624)) ([9f93f42](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9f93f42db49beea10f9c5a18930bbb3e400b12ae))
+* assisted autofill for application forms from contact profile ([#625](https://github.com/saeedkolivand/ai-job-hunter-app/issues/625)) ([49ba3e6](https://github.com/saeedkolivand/ai-job-hunter-app/commit/49ba3e60e8bdd80be68ece395234a6f5e062ab87))
+* bundle a verified company-to-ats-slug seed directory (data only) ([#620](https://github.com/saeedkolivand/ai-job-hunter-app/issues/620)) ([ab54a80](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ab54a8061ff2908698beb181f058b0299088b7d0))
+* interview practice mode (mock questions + star answer feedback) ([#623](https://github.com/saeedkolivand/ai-job-hunter-app/issues/623)) ([65bf385](https://github.com/saeedkolivand/ai-job-hunter-app/commit/65bf38502404c3e1c68b0e7167c2731846368f1f)), closes [#617](https://github.com/saeedkolivand/ai-job-hunter-app/issues/617)
+* language-aware anti-ai-tell voice + résumé style transfer for prose ([#616](https://github.com/saeedkolivand/ai-job-hunter-app/issues/616)) ([5ddb3d9](https://github.com/saeedkolivand/ai-job-hunter-app/commit/5ddb3d9b50236d5458bb1c9e393b44cce8535528))
+* mutual hmac handshake for the extension bridge (protocol v2) ([#627](https://github.com/saeedkolivand/ai-job-hunter-app/issues/627)) ([548f841](https://github.com/saeedkolivand/ai-job-hunter-app/commit/548f84196f4ee6e493e04059cab19faa223897c4))
+* route the ats seed into company-scoped boards (engine-side) — DO NOT MERGE until disclosure decision ([#621](https://github.com/saeedkolivand/ai-job-hunter-app/issues/621)) ([0dd532b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0dd532b51af0e1c62206a56b8a49c8ccd6dcfcf3))
+
+### 🐛 Bug Fixes
+
+* derive multi-board batch cap from the scraper registry so selecting all boards works ([#629](https://github.com/saeedkolivand/ai-job-hunter-app/issues/629)) ([3e2f325](https://github.com/saeedkolivand/ai-job-hunter-app/commit/3e2f32549a4b8eefdf30a11411240c942ea9e0b7))
+* fence the scraped job ad as untrusted input in all prompt builders ([#617](https://github.com/saeedkolivand/ai-job-hunter-app/issues/617)) ([bac6c0a](https://github.com/saeedkolivand/ai-job-hunter-app/commit/bac6c0a6992f7b099e66073993319dde59bd69bf))
+* parse jooble timezone-less timestamps instead of dropping posted_at ([#619](https://github.com/saeedkolivand/ai-job-hunter-app/issues/619)) ([c6b8b85](https://github.com/saeedkolivand/ai-job-hunter-app/commit/c6b8b85d5037c005772a305691c2f6bfb79b6353))
+* remove dead work-type stub, wire monitoring i18n, correct landing license claim ([#614](https://github.com/saeedkolivand/ai-job-hunter-app/issues/614)) ([6c7a9e0](https://github.com/saeedkolivand/ai-job-hunter-app/commit/6c7a9e050320aefc12d143c64027c4c201d8ac53))
+
+### 📚 Documentation
+
+* fix architecture drift (rusqlite not drizzle, semantic scoring not hybrid search) ([#628](https://github.com/saeedkolivand/ai-job-hunter-app/issues/628)) ([b17d12f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b17d12f4498387b41254d6add95eb53ca445a8fd))
+* sync scraping docs for merged jooble + ats seed work ([#622](https://github.com/saeedkolivand/ai-job-hunter-app/issues/622)) ([9760d38](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9760d38e7bdeb0779964a919299f48217dc1df74)), closes [#618](https://github.com/saeedkolivand/ai-job-hunter-app/issues/618) [#619](https://github.com/saeedkolivand/ai-job-hunter-app/issues/619) [#620](https://github.com/saeedkolivand/ai-job-hunter-app/issues/620) [#621](https://github.com/saeedkolivand/ai-job-hunter-app/issues/621) [#621](https://github.com/saeedkolivand/ai-job-hunter-app/issues/621)
+
 ## [0.125.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.124.2...v0.125.0) (2026-07-11)
 
 ### ✨ Features
