@@ -5,6 +5,7 @@ import {
   AgentRunRequestSchema,
   AiGenerateRequestSchema,
   AutopilotCreateSchema,
+  BOARD_IDS,
   LocaleSchema,
   ScrapeBoardsRequestSchema,
 } from './index';
@@ -233,13 +234,12 @@ describe('ScrapeBoardsRequestSchema', () => {
     expect(() => ScrapeBoardsRequestSchema.parse({ boards: [], query: 'test' })).toThrow();
   });
 
-  it('rejects more than 6 boards', () => {
-    expect(() =>
-      ScrapeBoardsRequestSchema.parse({
-        boards: ['linkedin', 'arbeitsagentur', 'greenhouse', 'lever', 'ashby', 'remotive', 'wwr'],
-        query: 'test',
-      })
-    ).toThrow();
+  it('rejects more entries than the catalog size', () => {
+    // BOARD_IDS entries are unique, so exceeding the catalog size requires a
+    // duplicate — the real dedup+truncate defense lives server-side in Rust;
+    // this schema bound only guards against a grossly oversized payload.
+    const tooMany = [...BOARD_IDS, BOARD_IDS[0]];
+    expect(() => ScrapeBoardsRequestSchema.parse({ boards: tooMany, query: 'test' })).toThrow();
   });
 
   it('defaults amount to 25', () => {
@@ -253,12 +253,9 @@ describe('ScrapeBoardsRequestSchema', () => {
     ).toThrow();
   });
 
-  it('accepts up to 6 boards', () => {
+  it('accepts every catalog board selected at once', () => {
     expect(() =>
-      ScrapeBoardsRequestSchema.parse({
-        boards: ['linkedin', 'arbeitsagentur', 'greenhouse', 'lever', 'ashby', 'remotive'],
-        query: 'test',
-      })
+      ScrapeBoardsRequestSchema.parse({ boards: [...BOARD_IDS], query: 'test' })
     ).not.toThrow();
   });
 
