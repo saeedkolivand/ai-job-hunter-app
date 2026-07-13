@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { ExtensionEnvelopeSchema, ExtensionImportRequestSchema } from './extension-protocol.js';
+import {
+  ExtensionEnvelopeSchema,
+  ExtensionImportRequestSchema,
+  ExtensionProfileResultSchema,
+} from './extension-protocol.js';
 import { EXTENSION_MESSAGE_TYPES } from './extension-protocol-constants.js';
 
 // ---------------------------------------------------------------------------
@@ -92,5 +96,50 @@ describe('ExtensionEnvelopeSchema', () => {
     // payload is intentionally z.unknown() — validation is deferred to the message-type-specific
     // handler, so the envelope schema accepts any payload shape (including null) without failing.
     expect(() => ExtensionEnvelopeSchema.parse({ ...VALID_ENVELOPE, payload: null })).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ExtensionProfileResultSchema (assisted-autofill profile.result payload)
+// ---------------------------------------------------------------------------
+
+describe('ExtensionProfileResultSchema', () => {
+  it('round-trips a full profile payload', () => {
+    const payload = {
+      fullName: 'Saeed Kolivand',
+      email: 'saeed@example.com',
+      phone: '+31 6 1234 5678',
+      location: 'Amsterdam, Netherlands',
+      linkedin: 'https://linkedin.com/in/saeed',
+      github: 'https://github.com/saeed',
+      website: 'https://saeed.dev',
+    };
+    expect(ExtensionProfileResultSchema.parse(payload)).toEqual(payload);
+  });
+
+  it('accepts a sparse profile (every field optional)', () => {
+    expect(() => ExtensionProfileResultSchema.parse({ email: 'x@y.z' })).not.toThrow();
+    expect(() => ExtensionProfileResultSchema.parse({})).not.toThrow();
+  });
+
+  it('accepts a refusal payload carrying only an error', () => {
+    expect(() =>
+      ExtensionProfileResultSchema.parse({ error: 'autofill is disabled' })
+    ).not.toThrow();
+  });
+
+  it('rejects a non-string field', () => {
+    expect(() => ExtensionProfileResultSchema.parse({ email: 42 })).toThrow();
+  });
+
+  it('carries profile.result through a valid envelope', () => {
+    expect(() =>
+      ExtensionEnvelopeSchema.parse({
+        type: EXTENSION_MESSAGE_TYPES.profileResult,
+        token: 'secret-token',
+        reqId: 'req-002',
+        payload: { email: 'x@y.z' },
+      })
+    ).not.toThrow();
   });
 });

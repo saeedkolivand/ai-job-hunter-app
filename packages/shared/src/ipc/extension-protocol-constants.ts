@@ -26,6 +26,15 @@ export const EXTENSION_MESSAGE_TYPES = {
   importRequest: 'import.request',
   /** Desktop → extension: the import outcome (or an `error`). */
   importResult: 'import.result',
+  /**
+   * Extension → desktop: fetch the user's Contact Profile fresh for assisted
+   * autofill; no payload (authed by the per-frame token). The desktop returns
+   * the profile ONLY when the autofill opt-in is on, else a refusal `error`. The
+   * profile is held transiently for the one fill and NEVER persisted client-side.
+   */
+  profileGet: 'profile.get',
+  /** Desktop → extension: the contact profile fields for autofill (or an `error`). */
+  profileResult: 'profile.result',
   /** RESERVED — live ATS match for the open posting (not yet handled). */
   matchLive: 'match.live',
   /** RESERVED — "have I already applied to this URL?" (not yet handled). */
@@ -62,6 +71,26 @@ export interface ExtensionImportResult {
   error?: string;
   /** True when the import was saved but the page could not be fully parsed (stub posting). */
   partial?: boolean;
+}
+
+/**
+ * `profile.result` payload. On success carries the user's Contact Profile fields
+ * for assisted autofill (each optional — a sparse profile is normal); `location`
+ * is the profile's single free-text location string (the desktop resolves it from
+ * `ContactProfile.location.default`). On refusal (autofill opt-in off) or failure
+ * carries `error`. These fields are transient: the extension uses them for the one
+ * fill and never writes them to `chrome.storage`.
+ */
+export interface ExtensionProfileResult {
+  fullName?: string;
+  email?: string;
+  phone?: string;
+  location?: string;
+  linkedin?: string;
+  github?: string;
+  website?: string;
+  /** Refusal (autofill disabled) or failure reason; present ⇒ no fields were sent. */
+  error?: string;
 }
 
 /**

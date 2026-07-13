@@ -109,6 +109,20 @@ server listens on `127.0.0.1` loopback, validates the Origin header and per-fram
 token, and guards the import URL against SSRF (DNS-rebinding-safe via IP pinning).
 _Avoid_: scrape (the headless board path), Apply (extension imports are Saves)
 
+**Autofill** (a.k.a. assisted autofill):
+The inverse of **Extension import**: the extension writes the user's **own** Contact
+Profile fields (fullName, email, phone, location, linkedin, github, website) _out_ onto
+the application form on the current page, instead of reading a job _in_. **User-initiated**
+(a click, via `activeTab` + `executeScript` — no broad host access), fills **empty** fields
+only via a generic label/`autocomplete`/`name` matcher, **never submits**, and is
+**transparent** (shows what it filled). PII is **fetched fresh** from the desktop over the
+same authenticated bridge (`profile.get` → `profile.result`) at fill time and **never
+persisted** in `chrome.storage`. **Opt-in, default OFF, enforced desktop-side** — the app
+refuses `profile.get` when the toggle is off. See [ADR 0009](adr/0009-assisted-autofill.md).
+_Avoid_: auto-apply / auto-submit (autofill never submits — the human does), scrape
+(that's the inbound import path), "fills every field" (empty + unambiguous fields only;
+no file upload; complex ATS partial)
+
 **Pairing token**:
 The per-install secret the browser extension sends on every bridge frame (`token` field).
 Generated on app first-run, persisted to the app data dir, and rotatable via the

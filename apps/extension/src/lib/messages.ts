@@ -6,6 +6,8 @@
 
 import type { ExtensionImportResult } from '@ajh/shared';
 
+import type { AutofillSummary } from './autofill';
+
 /** Coarse connection state the popup renders. */
 type ConnectionPhase =
   /** Background has not yet found a desktop bridge port. */
@@ -33,11 +35,14 @@ export type PopupRequest =
   | { kind: 'setToken'; token: string }
   | { kind: 'clearToken' }
   | { kind: 'reconnect' }
-  | { kind: 'import'; applied: boolean };
+  | { kind: 'import'; applied: boolean }
+  /** Assisted autofill: fetch the profile fresh + inject the filler on this tab. */
+  | { kind: 'fill' };
 
 /** background → popup responses (discriminated by the originating request). */
 export type PopupResponse =
   | { ok: true; kind: 'status'; status: ConnectionStatus }
   | { ok: true; kind: 'token' }
   | { ok: true; kind: 'import'; result: ExtensionImportResult }
+  | { ok: true; kind: 'fill'; summary: AutofillSummary }
   | { ok: false; error: string };

@@ -12,9 +12,33 @@ import { browser } from '@wxt-dev/browser';
 
 import type { ExtensionImportRequest } from '@ajh/shared';
 
+// TYPE-ONLY import from the autofill module. This is deliberate: `fill.js` is
+// injected via `executeScript({ files })`, which runs as a CLASSIC script (no ES
+// modules) — so `fill.js` must bundle with ZERO `import` statements. If the
+// background also imported autofill.ts at RUNTIME, Rollup would hoist it into a
+// shared chunk that `fill.js` then `import`s, breaking injection. Keeping this
+// type-only (elided at build) means autofill.ts is runtime-imported ONLY by
+// fill.ts and gets inlined into a self-contained `fill.js`. The tiny runtime
+// bits the background needs (the global key + a result guard) are defined below.
+import type { AutofillProfile, AutofillSummary } from './lib/autofill';
 import { BridgeClient } from './lib/bridge';
 import type { ConnectionStatus, PopupRequest, PopupResponse } from './lib/messages';
 import { clearToken, getToken, looksLikeToken, setToken } from './lib/storage';
+
+/**
+ * Isolated-world global key under which `fill.js` exposes the filler. MUST match
+ * `AUTOFILL_GLOBAL` in `lib/autofill.ts` (pinned by a test there). Duplicated as a
+ * local literal — not imported — so autofill.ts stays out of the background's
+ * runtime graph (see the type-only import note above).
+ */
+const AUTOFILL_GLOBAL = '__ajhRunAutofill';
+
+/** Minimal guard for the summary that crossed the `executeScript` boundary. */
+function isFillSummary(v: unknown): v is AutofillSummary {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return Array.isArray(o.filled) && typeof o.filledNothing === 'boolean';
+}
 
 /** Lazily-built, worker-lifetime-scoped client. Recreated after eviction. */
 let client: BridgeClient | null = null;
@@ -116,6 +140,69 @@ async function runImport(applied: boolean): Promise<PopupResponse> {
   return { ok: true, kind: 'import', result };
 }
 
+/**
+ * Inject the assisted-autofill filler into the active tab and run it with the
+ * given profile. Two steps so the profile (PII) is passed transiently as an
+ * `executeScript` arg rather than through any stored/registered surface:
+ *   1. `files: ['fill.js']` registers {@link runAutofill} on the page global;
+ *   2. a self-contained `func` (params + `globalThis` only) calls it with the
+ *      profile and returns the summary.
+ */
+async function injectFill(profile: AutofillProfile): Promise<AutofillSummary> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tabId = tab?.id;
+  if (typeof tabId !== 'number') throw new Error('No active tab to fill.');
+
+  await browser.scripting.executeScript({ target: { tabId }, files: ['fill.js'] });
+
+  const results = await browser.scripting.executeScript({
+    target: { tabId },
+    func: (p: AutofillProfile, key: string): AutofillSummary | null => {
+      const runner = (globalThis as Record<string, unknown>)[key] as
+        ((profile: AutofillProfile) => AutofillSummary) | undefined;
+      return runner ? runner(p) : null;
+    },
+    args: [profile, AUTOFILL_GLOBAL],
+  });
+
+  const summary = results[0]?.result;
+  if (!isFillSummary(summary)) {
+    throw new Error('Could not fill the form on this page.');
+  }
+  return summary;
+}
+
+/**
+ * Assisted autofill: fetch the contact profile FRESH from the desktop (gated by
+ * the desktop's opt-in — a refusal surfaces as an error) and inject the filler.
+ * The profile is held only for this call and never persisted client-side.
+ */
+async function runFill(): Promise<PopupResponse> {
+  const token = await getToken();
+  if (!token) {
+    return { ok: false, error: 'Not paired. Paste your pairing token first.' };
+  }
+
+  const profile = await getClient().getProfile(token);
+  if (profile.error) {
+    // Desktop refused (autofill off) or the reply was malformed — surface it.
+    return { ok: false, error: profile.error };
+  }
+
+  // Project to the fill shape, dropping the transport-only `error` field.
+  const fields: AutofillProfile = {
+    fullName: profile.fullName,
+    email: profile.email,
+    phone: profile.phone,
+    location: profile.location,
+    linkedin: profile.linkedin,
+    github: profile.github,
+    website: profile.website,
+  };
+  const summary = await injectFill(fields);
+  return { ok: true, kind: 'fill', summary };
+}
+
 /** Central popup-request dispatcher. Never throws — maps errors to `ok:false`. */
 async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
   try {
@@ -152,6 +239,8 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
       }
       case 'import':
         return await runImport(req.applied);
+      case 'fill':
+        return await runFill();
       default: {
         // Exhaustiveness guard — a new PopupRequest variant must be handled.
         const _never: never = req;

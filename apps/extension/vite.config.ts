@@ -61,6 +61,8 @@ export default defineConfig({
       input: {
         background: resolve(srcDir, 'background.ts'),
         content: resolve(srcDir, 'content.ts'),
+        // Assisted-autofill injected script (executeScript files: ['fill.js']).
+        fill: resolve(srcDir, 'fill.ts'),
         popup: resolve(srcDir, 'popup.html'),
       },
       output: {
