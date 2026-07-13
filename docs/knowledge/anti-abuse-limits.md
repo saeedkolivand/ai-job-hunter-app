@@ -9,7 +9,7 @@ The `limits` module provides **in-memory rate limiting + concurrency control** o
 - `ai_generate`: AI inference (cost, latency)
 - `scrape_boards` / `scrape_url`: Web scraping (target rate-limits, IP bans)
 
-The limiter is **process-scoped** (in-memory; resets on app restart) and operates at the **command boundary** (right after deserialization, before business logic). **Multi-board batch limit**: `MAX_BOARDS_PER_BATCH` server-side cap in `scraping/engine/mod.rs` prevents unbounded request amplification from crafted IPC payloads (even if Zod validates on the renderer).
+The limiter is **process-scoped** (in-memory; resets on app restart) and operates at the **command boundary** (right after deserialization, before business logic). **Multi-board batch limit**: server-side cap enforced by `max_boards_per_batch()` in `apps/desktop/src-tauri/src/scraping/engine/mod.rs` prevents unbounded request amplification from crafted IPC payloads. The engine-level bound scales automatically as new boards are added to the registry (see `max_boards_per_batch()` source; no `scraping/engine` code edit required). Note: the shared Zod schemas in `packages/shared/src/schemas/index.ts` (ScrapeBoardsRequestSchema `.max(BOARD_IDS.length)`) independently bound request size at the IPC boundary; scaling is subject to both limits.
 
 ## Design
 
@@ -77,8 +77,8 @@ pub async fn scrape_boards(
         state.limits.check_scrape(board).await?;
     }
 
-    // Engine enforces MAX_BOARDS_PER_BATCH (scraping/engine/mod.rs) server-side
-    // Proceed with multi-board scraping
+    // Engine enforces multi-board batch cap via max_boards_per_batch() in scraping/engine/mod.rs
+    // See: apps/desktop/src-tauri/src/scraping/engine/mod.rs::max_boards_per_batch (CWE-770 defense)
     // ...
 }
 ```
