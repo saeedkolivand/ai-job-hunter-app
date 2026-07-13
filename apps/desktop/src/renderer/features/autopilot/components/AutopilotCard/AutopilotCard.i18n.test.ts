@@ -1,8 +1,14 @@
 /**
- * en/de parity for the PR H provisional-score hint. Uses the REAL
+ * Resolution check for the PR H provisional-score hint. Uses the REAL
  * @ajh/translations instance (not the identity mock AutopilotCard.test.tsx
- * uses) so a key present in only one locale fails here instead of shipping the
- * raw key string as UI copy. Mirrors LocationFilterNote.i18n.test.ts (PR F).
+ * uses) so this verifies the key resolves to real, non-empty copy per locale.
+ *
+ * NOTE: because @ajh/translations initializes with `fallbackLng: 'en'`, a key
+ * missing in de would still resolve here (to the English string), so this
+ * file does NOT catch locale gaps — that's owned by the global
+ * `i18n/translations-parity.test.ts`, which reads the raw resource trees
+ * directly per-locale via `i18n.exists(key, { lng, fallbackLng: false })`.
+ * Mirrors LocationFilterNote.i18n.test.ts (PR F).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -13,9 +19,11 @@ const LOCALES = ['en', 'de'] as const;
 
 describe('PR H provisional-score i18n — en/de parity', () => {
   it.each(LOCALES)('%s resolves the provisional-score hint', (lng) => {
+    const key = 'autopilot.provisionalScoreHint';
+    expect(i18n.exists(key, { lng, fallbackLng: false }), `${lng}:${key}`).toBe(true);
     const t = i18n.getFixedT(lng);
-    const out = t('autopilot.provisionalScoreHint');
-    expect(out).not.toBe('autopilot.provisionalScoreHint');
+    const out = t(key);
+    expect(out).not.toBe(key);
     expect(out.trim().length).toBeGreaterThan(0);
   });
 });
