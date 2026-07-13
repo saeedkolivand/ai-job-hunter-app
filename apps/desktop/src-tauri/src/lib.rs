@@ -899,6 +899,8 @@ pub fn run() {
             // browser-extension bridge (Feature 2 — loopback WS control)
             commands::extension_bridge::extension_bridge_status,
             commands::extension_bridge::extension_bridge_regenerate_token,
+            commands::extension_bridge::extension_bridge_autofill_enabled,
+            commands::extension_bridge::extension_bridge_set_autofill_enabled,
             // export
             export::commands::documents_export_document,
             export::commands::documents_export_and_save,

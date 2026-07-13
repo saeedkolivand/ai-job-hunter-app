@@ -15,6 +15,8 @@ This is the browser half of the **AI Job Hunter** job-import feature. An MV3 ext
 
 **What it does:** while browsing a job board, click the extension button → click **Import this job** → the job appears in your **AI Job Hunter** saved applications, tagged **New**. The extension automatically captures the rendered DOM when possible (for login-walled boards like LinkedIn/Indeed that block headless fetching); on restricted pages it falls back to URL-only. Tick **"I already applied"** to mark it applied instead.
 
+**Assisted autofill (opt-in, off by default):** if you enable _Assisted form autofill_ in the desktop app (**Settings → Accounts → Browser extension**), the popup also shows a **Fill this form** button. Clicking it fetches your saved **Contact Profile** (name, email, phone, location, LinkedIn/GitHub/website) **fresh from the desktop over the same loopback connection** and fills matching **empty** form fields on the current page, then shows an in-page summary of exactly what it filled. It **never auto-submits** — you review and submit yourself. It only fills unambiguous, visible, empty fields (email/name/phone/socials/location); it skips passwords, hidden fields, textareas (cover letters), search boxes, and ambiguous fields (referrer/emergency/confirm/company/…). A single "full name" split into first/last is flagged as a guess. The profile is used only for that one fill and is **never stored in the browser**; autofill therefore only works while the desktop app is running.
+
 The desktop half (bridge server, parser, Applications store) lives in `apps/desktop/src-tauri/src/extension_bridge/`. The wire protocol is shared: `packages/shared/src/ipc/extension-protocol.ts`.
 
 ---
@@ -149,6 +151,7 @@ both browsers; it grants **no** access to any public or LAN host.
 - The only stored value is the pairing token, kept in `chrome.storage.local`,
   used solely to authenticate to the local desktop app.
 - The extension captures the page's rendered DOM **only when the user clicks Import this job** — never in the background — and sends it only to the local app. On restricted pages (e.g. browser system pages) DOM capture is skipped and only the URL is sent.
+- **Assisted autofill data flow:** the feature is **opt-in and off by default** (the toggle lives in the desktop app; the desktop refuses the request when it is off). When on and the user clicks **Fill this form**, the extension requests the user's Contact Profile from the desktop over the same loopback connection, holds it **transiently** to fill matching empty fields on the **current tab only** (`activeTab`, on the click), then discards it. The profile is the user's **own data**, never written to `chrome.storage`, and **never sent to any remote or third-party server** — it only ever moves from the user's desktop into a page the user chose to fill. This is why the Firefox AMO `data_collection_permissions` stays `["none"]` (see `src/manifest.ts`): the extension does not collect or transmit data to the developer or any third party.
 
 ### Threat model
 
@@ -163,10 +166,15 @@ the pairing token to the **first loopback port that answers** (see the
   same machine under the same OS user account**. It is not reachable from the
   network or from any website — the connection target is loopback-only
   (`127.0.0.1`) and the host permission grants no public/LAN access.
-- **Bounded impact:** the token only authorizes **local job-import** to the
-  desktop bridge, whose fetch path is **SSRF-guarded**, and the token is
-  **rotatable** from the app's Settings (re-pairing invalidates the old one).
-  There is no remote backend or account to compromise.
+- **Bounded impact:** the token authorizes **local job-import** to the desktop
+  bridge, whose fetch path is **SSRF-guarded** — and, **when the user has turned
+  on Assisted form autofill**, it also authorizes reading the user's **Contact
+  Profile** (name, email, phone, location, LinkedIn/GitHub/website) via
+  `profile.get`. Autofill is **off by default**; a harvested token only reaches
+  the profile while that opt-in is on. The token is **rotatable** from the
+  app's Settings (re-pairing invalidates the old one), and there is no remote
+  backend or account to compromise — everything stays on the same loopback
+  device.
 - **Future fix:** add a server→client **challenge HMAC** over a nonce the
   desktop app **shows in-app** at pair time (so only the genuine app, which
   knows the nonce, can complete the handshake), or adopt the **native-messaging

@@ -996,3 +996,103 @@ describe('BridgeClient – auth handshake', () => {
     client.dispose();
   });
 });
+
+// ── assisted-autofill profile.get ↔ profile.result ─────────────────────────────
+
+describe('BridgeClient – getProfile (assisted autofill)', () => {
+  let latestSocket: FakeWebSocket | undefined;
+  let restoreWS: () => void;
+
+  beforeEach(() => {
+    latestSocket = undefined;
+    restoreWS = installFakeWS((ws) => {
+      latestSocket = ws;
+    });
+  });
+
+  afterEach(() => {
+    restoreWS();
+  });
+
+  async function connectedClient(): Promise<{ client: BridgeClient; socket: FakeWebSocket }> {
+    const client = new BridgeClient(vi.fn());
+    const p = client.ensureConnected();
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+    await p;
+    return { client, socket };
+  }
+
+  function makeProfileEnvelope(reqId: string, payload: unknown): string {
+    return JSON.stringify({
+      type: EXTENSION_MESSAGE_TYPES.profileResult,
+      token: FAKE_TOKEN,
+      reqId,
+      payload,
+    });
+  }
+
+  /** Start a getProfile and wait until the outgoing frame is sent; return the reqId. */
+  async function startProfile(
+    client: BridgeClient,
+    socket: FakeWebSocket
+  ): Promise<{ profilePromise: Promise<unknown>; reqId: string }> {
+    const profilePromise = client.getProfile(FAKE_TOKEN);
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const frame = JSON.parse(raw) as { type: string; reqId: string; payload: unknown };
+    // The outgoing frame is a profile.get with a null payload (authed by token only).
+    expect(frame.type).toBe(EXTENSION_MESSAGE_TYPES.profileGet);
+    expect(frame.payload).toBeNull();
+    return { profilePromise, reqId: frame.reqId };
+  }
+
+  it('round-trips a profile.result reply into the resolved profile fields', async () => {
+    const { client, socket } = await connectedClient();
+    const { profilePromise, reqId } = await startProfile(client, socket);
+
+    const payload = {
+      fullName: 'Saeed Kolivand',
+      email: 'saeed@example.com',
+      phone: '+31 6 1234 5678',
+      linkedin: 'https://linkedin.com/in/saeed',
+    };
+    socket.simulateMessage(makeProfileEnvelope(reqId, payload));
+
+    const result = await profilePromise;
+    expect(result).toEqual(payload);
+
+    client.dispose();
+  });
+
+  it('resolves with the refusal error when autofill is opted out on the desktop', async () => {
+    const { client, socket } = await connectedClient();
+    const { profilePromise, reqId } = await startProfile(client, socket);
+
+    socket.simulateMessage(makeProfileEnvelope(reqId, { error: 'Autofill is off.' }));
+
+    const result = (await profilePromise) as { error?: string };
+    expect(result.error).toBe('Autofill is off.');
+
+    client.dispose();
+  });
+
+  it('resolves with a malformed error (never throws) when the payload is bad', async () => {
+    const { client, socket } = await connectedClient();
+    const { profilePromise, reqId } = await startProfile(client, socket);
+
+    // email must be an optional string; a number breaks the guard.
+    socket.simulateMessage(makeProfileEnvelope(reqId, { email: 42 }));
+
+    const result = (await profilePromise) as { error?: string; email?: unknown };
+    expect(result.error).toMatch(/malformed/i);
+    expect(result.email).toBeUndefined();
+
+    client.dispose();
+  });
+});

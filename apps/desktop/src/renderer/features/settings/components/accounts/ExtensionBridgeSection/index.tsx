@@ -2,9 +2,14 @@ import { Check, Copy, Puzzle, RotateCcw, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, cn, ConfirmModal, Input, SettingsSection, useNotification } from '@ajh/ui';
+import { Button, cn, ConfirmModal, Input, SettingsSection, Switch, useNotification } from '@ajh/ui';
 
-import { useExtensionBridgeStatus, useRegenerateExtensionToken } from '@/services';
+import {
+  useExtensionAutofillSetting,
+  useExtensionBridgeStatus,
+  useRegenerateExtensionToken,
+  useSetExtensionAutofillSetting,
+} from '@/services';
 import { useUiStore } from '@/store/ui-store';
 
 export function ExtensionBridgeSection() {
@@ -14,6 +19,18 @@ export function ExtensionBridgeSection() {
 
   const { data: status } = useExtensionBridgeStatus();
   const regenerate = useRegenerateExtensionToken();
+
+  const { data: autofill } = useExtensionAutofillSetting();
+  const setAutofill = useSetExtensionAutofillSetting();
+  const autofillEnabled = autofill?.enabled ?? false;
+
+  const handleToggleAutofill = async (next: boolean) => {
+    try {
+      await setAutofill.mutateAsync(next);
+    } catch {
+      notify.error({ message: t('settings.accounts.extension.autofill.toggleFailed') });
+    }
+  };
 
   const token = status?.token ?? '';
   const port = status?.port ?? null;
@@ -124,6 +141,22 @@ export function ExtensionBridgeSection() {
           <p className="text-xs leading-snug text-foreground/40">
             {t('settings.accounts.extension.help')} {t('settings.accounts.extension.availability')}
           </p>
+
+          {/* Assisted autofill opt-in (default OFF). The disclosure spells out
+              exactly what flows and that it never leaves the machine except into
+              pages the user chooses. */}
+          <div className="space-y-2 border-t border-foreground/10 pt-3">
+            <Switch
+              checked={autofillEnabled}
+              onCheckedChange={(next) => void handleToggleAutofill(next)}
+              disabled={setAutofill.isPending}
+              label={t('settings.accounts.extension.autofill.label')}
+              description={t('settings.accounts.extension.autofill.description')}
+            />
+            <p className="text-[11px] leading-snug text-foreground/40">
+              {t('settings.accounts.extension.autofill.disclosure')}
+            </p>
+          </div>
 
           {/* Regenerate */}
           <div className="flex justify-end border-t border-foreground/10 pt-3">

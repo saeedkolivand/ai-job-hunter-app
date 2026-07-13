@@ -84,6 +84,12 @@ pub mod msg {
     pub const AUTH: &str = "auth";
     pub const IMPORT_REQUEST: &str = "import.request";
     pub const IMPORT_RESULT: &str = "import.result";
+    /// Extension → desktop: fetch the contact profile for assisted autofill; no
+    /// payload (authed by the per-frame token). Returned only when the autofill
+    /// opt-in is on, else a refusal `error`.
+    pub const PROFILE_GET: &str = "profile.get";
+    /// Desktop → extension: the contact-profile fields for autofill (or an `error`).
+    pub const PROFILE_RESULT: &str = "profile.result";
     /// RESERVED (not handled yet) — live ATS match for the open posting.
     pub const MATCH_LIVE: &str = "match.live";
     /// RESERVED (not handled yet) — "have I already applied to this URL?".
@@ -102,6 +108,11 @@ const PORT_RANGE: std::ops::RangeInclusive<u16> = 47615..=47620;
 /// File under the app data dir holding the persisted pairing token.
 const TOKEN_FILE: &str = "extension_token";
 
+/// File under the app data dir holding the assisted-autofill opt-in flag
+/// (`"1"` = on, anything else / absent = off). Default OFF: the desktop returns
+/// the contact profile for a `profile.get` only when this is on.
+const AUTOFILL_OPTIN_FILE: &str = "extension_autofill_optin";
+
 /// Managed Tauri state for the bridge. Commands read the bound port + token off
 /// this; the server flips `connected` while a socket is paired.
 pub struct BridgeState {
@@ -119,19 +130,26 @@ pub struct BridgeState {
     /// open. If concurrent sockets ever become real, promote to an
     /// `AtomicUsize` refcount.
     connected: AtomicBool,
+    /// Assisted-autofill opt-in (default OFF, persisted to [`AUTOFILL_OPTIN_FILE`]).
+    /// A `profile.get` returns the contact profile only while this is on; off ⇒
+    /// the desktop replies with a clear refusal (never silently). This is the
+    /// consent gate for sending the user's saved contact details into a page.
+    autofill_enabled: AtomicBool,
     /// App data dir — where the token file lives.
     data_dir: PathBuf,
 }
 
 impl BridgeState {
     /// Load (or first-run create + persist) the pairing token, returning a state
-    /// with no port yet (the server sets it once bound).
+    /// with no port yet (the server sets it once bound). The autofill opt-in is
+    /// read from disk (default OFF when the flag file is absent).
     pub fn load(data_dir: &Path) -> Self {
         let token = load_or_create_token(data_dir);
         Self {
             port: Mutex::new(None),
             token: Mutex::new(token),
             connected: AtomicBool::new(false),
+            autofill_enabled: AtomicBool::new(load_autofill_optin(data_dir)),
             data_dir: data_dir.to_path_buf(),
         }
     }
@@ -163,6 +181,20 @@ impl BridgeState {
         fresh
     }
 
+    /// Whether assisted autofill is opted in (the `profile.get` consent gate).
+    pub fn autofill_enabled(&self) -> bool {
+        self.autofill_enabled.load(Ordering::Relaxed)
+    }
+
+    /// Set (and persist) the assisted-autofill opt-in. A persist failure is
+    /// non-fatal but leaves the in-memory value authoritative for this run.
+    pub fn set_autofill_enabled(&self, enabled: bool) {
+        self.autofill_enabled.store(enabled, Ordering::Relaxed);
+        if let Err(e) = persist_autofill_optin(&self.data_dir, enabled) {
+            log::warn!("[extension_bridge] failed to persist autofill opt-in (non-fatal): {e}");
+        }
+    }
+
     fn set_port(&self, port: Option<u16>) {
         *self.port.lock() = port;
     }
@@ -172,10 +204,12 @@ impl BridgeState {
     }
 }
 
-/// Factory-reset hook: rotate the token so a wiped install re-pairs from scratch.
+/// Factory-reset hook: rotate the token so a wiped install re-pairs from scratch,
+/// and return the autofill opt-in to its default OFF (consent must be re-granted).
 impl crate::data_store::Resettable for BridgeState {
     fn reset(&self) {
         self.regenerate_token();
+        self.set_autofill_enabled(false);
     }
 }
 
@@ -202,6 +236,22 @@ fn load_or_create_token(data_dir: &Path) -> String {
         log::warn!("[extension_bridge] failed to persist initial token (non-fatal): {e}");
     }
     fresh
+}
+
+/// Read the persisted autofill opt-in (`"1"` ⇒ on). Absent / any other value ⇒
+/// OFF, so a first run and a corrupt flag both default to the safe (off) state.
+fn load_autofill_optin(data_dir: &Path) -> bool {
+    std::fs::read_to_string(data_dir.join(AUTOFILL_OPTIN_FILE))
+        .map(|s| s.trim() == "1")
+        .unwrap_or(false)
+}
+
+fn persist_autofill_optin(data_dir: &Path, enabled: bool) -> std::io::Result<()> {
+    std::fs::create_dir_all(data_dir)?;
+    std::fs::write(
+        data_dir.join(AUTOFILL_OPTIN_FILE),
+        if enabled { "1" } else { "0" },
+    )
 }
 
 fn persist_token(data_dir: &Path, token: &str) -> std::io::Result<()> {
@@ -414,6 +464,11 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                 let outcome = handle_import(&app, payload).await;
                 Some(result_reply(&req_id, outcome))
             }
+            FrameDecision::Profile { req_id } => {
+                // A token-validated profile fetch — authenticated, mark connected.
+                state.set_connected(true);
+                Some(handle_profile(&app, &req_id))
+            }
         };
         if let Some(reply) = reply {
             if writer.send(Message::text(reply)).await.is_err() {
@@ -446,6 +501,9 @@ enum FrameDecision {
     Reply(String),
     /// An authenticated `import.request` to dispatch through [`handle_import`].
     Import { req_id: String, payload: Value },
+    /// An authenticated `profile.get` to answer through [`handle_profile`]. Carries
+    /// no payload — the reply is gated on the autofill opt-in, not on any input.
+    Profile { req_id: String },
 }
 
 /// The per-message security gate + dispatch routing, with the size cap, the JSON
@@ -504,6 +562,9 @@ fn classify_frame(state: &BridgeState, text: &str) -> FrameDecision {
             let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
             FrameDecision::Import { req_id, payload }
         }
+        // Assisted autofill: fetch the contact profile fresh (gated on the opt-in).
+        // No payload is read — the token already passed the gate above.
+        msg::PROFILE_GET => FrameDecision::Profile { req_id },
         // Reserved message types — acknowledged as unimplemented, never panic.
         msg::MATCH_LIVE | msg::APPLIED_CHECK => FrameDecision::Reply(result_reply(
             &req_id,
@@ -551,6 +612,108 @@ fn result_reply(req_id: &str, outcome: AppResult<ImportOk>) -> String {
         "payload": payload,
     })
     .to_string()
+}
+
+// ── Assisted autofill (profile.get → profile.result) ──────────────────────────
+
+/// The contact-profile fields sent to the extension for assisted autofill. A
+/// flat, string-only projection of [`crate::contact_profile::ContactProfile`]
+/// (location collapsed to its default free-text string) — the extension fills
+/// matching empty form fields from it and never persists it. Every field is
+/// optional (a sparse profile is normal); absent fields are omitted from the wire
+/// payload entirely.
+#[derive(Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AutofillProfile {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    full_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    email: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    phone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    linkedin: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    github: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    website: Option<String>,
+}
+
+impl AutofillProfile {
+    /// Project a stored [`ContactProfile`] to the flat autofill shape. Empty /
+    /// whitespace-only values are dropped so the extension never fills a blank.
+    fn from_contact(p: &crate::contact_profile::ContactProfile) -> Self {
+        fn clean(v: &Option<String>) -> Option<String> {
+            v.as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        }
+        Self {
+            full_name: clean(&p.full_name),
+            email: clean(&p.email),
+            phone: clean(&p.phone),
+            // Collapse the localized location to its default string; the extension
+            // fills a single free-text location field.
+            location: p
+                .location
+                .as_ref()
+                .map(|l| l.default.trim().to_string())
+                .filter(|s| !s.is_empty()),
+            linkedin: clean(&p.linkedin),
+            github: clean(&p.github),
+            website: clean(&p.website),
+        }
+    }
+}
+
+/// The opt-in-gated core of a `profile.get`: refuse with a clear, actionable
+/// error when autofill is off (never silently return nothing), else project the
+/// profile. Pure (no `AppHandle`) so the consent gate is unit-testable.
+fn resolve_profile(
+    enabled: bool,
+    profile: Option<&crate::contact_profile::ContactProfile>,
+) -> AppResult<AutofillProfile> {
+    if !enabled {
+        return Err(AppError::Validation(
+            "Autofill is off. Turn it on in AI Job Hunter → Settings → Accounts → Browser extension."
+                .to_string(),
+        ));
+    }
+    let profile =
+        profile.ok_or_else(|| AppError::Config("contact profile unavailable".to_string()))?;
+    Ok(AutofillProfile::from_contact(profile))
+}
+
+/// Build a `profile.result` envelope (success carries the flat profile; refusal /
+/// failure carries `error`). Mirrors [`result_reply`] for the import path.
+fn profile_result_reply(req_id: &str, outcome: AppResult<AutofillProfile>) -> String {
+    let payload = match outcome {
+        Ok(p) => serde_json::to_value(&p).unwrap_or_else(|_| json!({})),
+        Err(e) => json!({ "error": e.to_string() }),
+    };
+    json!({
+        "type": msg::PROFILE_RESULT,
+        "reqId": req_id,
+        "payload": payload,
+    })
+    .to_string()
+}
+
+/// Answer an authenticated `profile.get`: read the opt-in + the contact profile
+/// off app state and return a ready-to-send `profile.result` reply. Fetch-fresh —
+/// nothing is cached; the desktop is the sole owner of the PII.
+fn handle_profile(app: &AppHandle, req_id: &str) -> String {
+    let enabled = app
+        .try_state::<BridgeState>()
+        .map(|s| s.autofill_enabled())
+        .unwrap_or(false);
+    let profile = app
+        .try_state::<crate::contact_profile::ContactProfileStore>()
+        .map(|s| s.get());
+    profile_result_reply(req_id, resolve_profile(enabled, profile.as_ref()))
 }
 
 /// Persist a parsed [`JobPosting`] from an import as a Saved Application and

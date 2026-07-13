@@ -29,6 +29,7 @@ import {
   type ExtensionEnvelope,
   type ExtensionImportRequest,
   type ExtensionImportResult,
+  type ExtensionProfileResult,
 } from '@ajh/shared/extension-protocol';
 
 /** Inclusive probe range — mirrors the desktop `PORT_RANGE` (47615..=47620). */
@@ -59,6 +60,7 @@ const AUTH_ERROR_UNAUTHORIZED = 'unauthorized';
 const READY_TIMEOUT_MS = 1_500;
 
 type PendingResolver = (result: ExtensionImportResult) => void;
+type ProfileResolver = (result: ExtensionProfileResult) => void;
 
 export type BridgePhase = 'searching' | 'connected' | 'app_not_running' | 'bad_token';
 
@@ -92,6 +94,44 @@ function isExtensionImportResult(v: unknown): v is ExtensionImportResult {
     (o.matchScore === undefined || typeof o.matchScore === 'number') &&
     (o.partial === undefined || typeof o.partial === 'boolean')
   );
+}
+
+/**
+ * Hand-written guard for a `profile.result` payload (extension stays zod-free).
+ * Mirrors `ExtensionProfileResultSchema`: every field is an optional string.
+ */
+function isExtensionProfileResult(v: unknown): v is ExtensionProfileResult {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  const optStr = (x: unknown): boolean => x === undefined || typeof x === 'string';
+  return (
+    optStr(o.fullName) &&
+    optStr(o.email) &&
+    optStr(o.phone) &&
+    optStr(o.location) &&
+    optStr(o.linkedin) &&
+    optStr(o.github) &&
+    optStr(o.website) &&
+    optStr(o.error)
+  );
+}
+
+/** Rebuild an {@link ExtensionProfileResult} from only the known, defined keys. */
+function normalizeProfileResult(payload: unknown): ExtensionProfileResult {
+  if (!isExtensionProfileResult(payload)) {
+    return { error: 'The desktop app sent a malformed profile result.' };
+  }
+  const src = payload;
+  const out: ExtensionProfileResult = {};
+  if (src.fullName !== undefined) out.fullName = src.fullName;
+  if (src.email !== undefined) out.email = src.email;
+  if (src.phone !== undefined) out.phone = src.phone;
+  if (src.location !== undefined) out.location = src.location;
+  if (src.linkedin !== undefined) out.linkedin = src.linkedin;
+  if (src.github !== undefined) out.github = src.github;
+  if (src.website !== undefined) out.website = src.website;
+  if (src.error !== undefined) out.error = src.error;
+  return out;
 }
 
 // ── transport seam ──────────────────────────────────────────────────────────
@@ -238,6 +278,10 @@ export class BridgeClient {
   private port: number | null = null;
   private phase: BridgePhase = 'searching';
   private readonly pending = new Map<string, PendingResolver>();
+  /** In-flight `profile.get` resolvers, correlated by `reqId` (autofill). Kept
+   *  separate from {@link pending} so the battle-tested import/auth path is
+   *  untouched; both share the {@link timers} map (reqIds are unique UUIDs). */
+  private readonly pendingProfile = new Map<string, ProfileResolver>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private backoffIndex = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -331,6 +375,7 @@ export class BridgeClient {
     for (const t of this.timers.values()) clearTimeout(t);
     this.timers.clear();
     this.pending.clear();
+    this.pendingProfile.clear();
     this.transport?.close();
     this.transport = null;
   }
@@ -374,6 +419,48 @@ export class BridgeClient {
     });
   }
 
+  /**
+   * Send a `profile.get` and resolve with the validated `profile.result`
+   * payload — the contact profile for assisted autofill, or `{ error }` when the
+   * desktop refuses (autofill opt-in off) or the reply is malformed. Rejects only
+   * on no connection / timeout / send failure. The profile is returned to the
+   * caller transiently and is never stored by this client.
+   */
+  async getProfile(token: string): Promise<ExtensionProfileResult> {
+    await this.ensureConnected();
+    const transport = this.transport;
+    if (!transport) {
+      throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
+    }
+
+    const reqId = newReqId();
+    const envelope: ExtensionEnvelope = {
+      type: EXTENSION_MESSAGE_TYPES.profileGet,
+      token,
+      reqId,
+      payload: null,
+    };
+
+    return new Promise<ExtensionProfileResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingProfile.delete(reqId);
+        this.timers.delete(reqId);
+        reject(new Error('Timed out waiting for the desktop app to respond.'));
+      }, REQUEST_TIMEOUT_MS);
+      this.timers.set(reqId, timer);
+      this.pendingProfile.set(reqId, resolve);
+
+      try {
+        transport.send(envelope);
+      } catch (err) {
+        clearTimeout(timer);
+        this.timers.delete(reqId);
+        this.pendingProfile.delete(reqId);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
   // ── internals ─────────────────────────────────────────────────────────────
 
   private setPhase(phase: BridgePhase): void {
@@ -386,8 +473,10 @@ export class BridgeClient {
   private async probeRange(): Promise<WebSocket | null> {
     // TODO(bridge): the token is sent to the FIRST loopback port that answers in
     // this range, so a same-account local process squatting a port before the app
-    // binds could harvest it on first import (accepted v1 risk). See the
-    // "Threat model" section in apps/extension/README.md for the bounded impact
+    // binds could harvest it on first import (accepted v1 risk). A harvested token
+    // now also grants Contact-Profile READ via profile.get (assisted autofill)
+    // whenever the user has that opt-in on, not just job-import — see the
+    // "Threat model" section in apps/extension/README.md for the full impact
     // and the planned fix (server→client challenge HMAC over an in-app nonce, or
     // the native-messaging fallback, which cannot be port-squatted).
     this.setPhase('searching');
@@ -523,21 +612,37 @@ export class BridgeClient {
     }
   }
 
-  /** Match a parsed reply envelope by `reqId`, validate payload, resolve caller. */
-  private onMessage(parsed: unknown): void {
-    if (typeof parsed !== 'object' || parsed === null) return;
-    const env = parsed as Partial<ExtensionEnvelope>;
-    if (env.type !== EXTENSION_MESSAGE_TYPES.importResult) return;
-    const reqId = typeof env.reqId === 'string' ? env.reqId : '';
-    const resolve = this.pending.get(reqId);
-    if (typeof resolve !== 'function') return;
-
-    this.pending.delete(reqId);
+  /** Clear + return the correlation timer for a settled `reqId`. */
+  private clearTimer(reqId: string): void {
     const timer = this.timers.get(reqId);
     if (timer) {
       clearTimeout(timer);
       this.timers.delete(reqId);
     }
+  }
+
+  /** Match a parsed reply envelope by `reqId`, validate payload, resolve caller. */
+  private onMessage(parsed: unknown): void {
+    if (typeof parsed !== 'object' || parsed === null) return;
+    const env = parsed as Partial<ExtensionEnvelope>;
+    const reqId = typeof env.reqId === 'string' ? env.reqId : '';
+
+    // profile.result → the assisted-autofill contact profile (separate map).
+    if (env.type === EXTENSION_MESSAGE_TYPES.profileResult) {
+      const resolveProfile = this.pendingProfile.get(reqId);
+      if (typeof resolveProfile !== 'function') return;
+      this.pendingProfile.delete(reqId);
+      this.clearTimer(reqId);
+      resolveProfile(normalizeProfileResult(env.payload));
+      return;
+    }
+
+    if (env.type !== EXTENSION_MESSAGE_TYPES.importResult) return;
+    const resolve = this.pending.get(reqId);
+    if (typeof resolve !== 'function') return;
+
+    this.pending.delete(reqId);
+    this.clearTimer(reqId);
 
     if (!isExtensionImportResult(env.payload)) {
       resolve({ error: 'The desktop app sent a malformed import result.' });
@@ -566,7 +671,13 @@ export class BridgeClient {
       if (timer) clearTimeout(timer);
       resolve({ error: reason });
     }
+    for (const [reqId, resolve] of this.pendingProfile.entries()) {
+      const timer = this.timers.get(reqId);
+      if (timer) clearTimeout(timer);
+      resolve({ error: reason });
+    }
     this.pending.clear();
+    this.pendingProfile.clear();
     this.timers.clear();
   }
 
