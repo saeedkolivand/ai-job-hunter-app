@@ -11,7 +11,7 @@ Last updated: 2026-06-03
 > boundary contract.
 >
 > Historic measurements: **36 top-level modules, 162 source files, ~28,000 non-test LOC
-> (June 2026).** For current codebase stats, run `find apps/desktop/src-tauri/src -name "*.rs" | xargs wc -l`.
+> (June 2026).** For current _total_ source-tree LOC — note this includes inline `#[cfg(test)]` tests, so it is not directly comparable to the non-test figure above — run `find apps/desktop/src-tauri/src -name "*.rs" | xargs wc -l`.
 
 ---
 

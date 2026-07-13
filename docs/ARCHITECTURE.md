@@ -239,9 +239,9 @@ sequenceDiagram
 
 ### Semantic Similarity Scoring
 
-The **semantic scoring** component is an **optional, opt-in (default OFF)** half of a match score. When enabled, the app computes embedding-based cosine similarity between a résumé and a job posting, blending it with ATS/keyword coverage. See `CONTEXT.md` ("Semantic scoring") for the definition and `match.rs` for the implementation.
+The **semantic scoring** component is an **optional, opt-in (default OFF)** half of a match score. When enabled, the app computes embedding-based cosine similarity between a résumé and a job posting, blending it with ATS/keyword coverage. See `docs/CONTEXT.md` ("Semantic scoring") for the definition and `apps/desktop/src-tauri/src/commands/match_resume.rs` (the `match_resume` command) for the implementation.
 
-- Embeddings are vectorized locally (Ollama) or via a cloud provider (OpenAI, Anthropic, Gemini).
+- Embeddings are vectorized locally (Ollama) or via a cloud provider (OpenAI, Gemini) — Anthropic has no embeddings API.
 - Vectors are cached in the `posting_vectors` table (self-invalidating on space/text change).
 - Match-score results are cached in `match_scores` (composite PK encodes formula version, space, semantic flag, text hash).
 - **The removed Cmd+K hybrid search surface is gone.** Semantic scoring is now tied to opt-in Match Score calculation only, not a separate search UI.
@@ -295,7 +295,7 @@ const result = await client.ai.generate(req);
 
 ### SQLite (rusqlite)
 
-The app uses **rusqlite** (`Cargo.toml`: `rusqlite = "0.40"`, bundled) for local-first persistence. All SQL operations are Rust-native with in-process schema management: **in-code migrations in `src-tauri/src/db.rs`** (each an `up` closure), applied transactionally and tracked via `PRAGMA user_version` — no `.sql` files, no `migrations/` dir. No ORM; direct `rusqlite::Connection` queries scoped by `db::open()` (L0 shared infra).
+The app uses **rusqlite** (`Cargo.toml`: `rusqlite = "0.40"`, bundled) for local-first persistence. All SQL operations are Rust-native with in-process schema management: **in-code migrations in `apps/desktop/src-tauri/src/db.rs`** (each an `up` closure), applied transactionally and tracked via `PRAGMA user_version` — no `.sql` files, no `migrations/` dir. No ORM; direct `rusqlite::Connection` queries scoped by `db::open()` (L0 shared infra).
 
 ```mermaid
 erDiagram
