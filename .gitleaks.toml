@@ -1,0 +1,22 @@
+# Gitleaks configuration.
+#
+# `[extend] useDefault = true` keeps the ENTIRE default ruleset (this file is only
+# consulted when present; absent → gitleaks uses its defaults). The allowlist below
+# adds narrow, value-scoped exceptions for deterministic test fixtures that only LOOK
+# like secrets — it never disables a rule or excludes a path, so a real secret
+# anywhere (including the same files) is still caught.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Deterministic known-answer test fixtures — fake values, not real secrets"
+regexTarget = "match"
+# The extension⇄desktop bridge HMAC handshake ships a cross-implementation known-answer
+# vector (a fixed, obviously-fake pairing token + nonces → expected proofs) so the Rust
+# (`hmac` crate) and TypeScript (Web Crypto) HMAC canonicalizations are pinned byte-for-
+# byte (packages/shared/src/ipc/extension-protocol-constants.ts, and the Rust KAT in
+# extension_bridge/handshake.rs). The fake token trips gitleaks' generic high-entropy
+# `token:` rule. Allowlist that one literal only.
+regexes = [
+  '''0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef''',
+]

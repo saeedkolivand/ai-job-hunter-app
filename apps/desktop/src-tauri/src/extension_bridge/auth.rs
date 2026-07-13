@@ -33,19 +33,21 @@ pub const ALLOWED_EXTENSION_IDS: &[&str] = &[
 /// loopback bridge. The host is our OWN native process (spawned by the browser,
 /// our exe in `--native-host` mode) bridging stdio → `ws://127.0.0.1`, so it has
 /// no `chrome-extension://`/`moz-extension://` origin of its own. Accepting this
-/// sentinel is defense-in-depth only: the real boundary stays the per-frame
-/// 256-bit pairing token over the loopback-only listener, which the host relays
-/// through unchanged.
+/// sentinel is defense-in-depth only: the real boundary is the v2 mutual HMAC
+/// handshake ([`super::handshake::verify_client_proof`]) over the loopback-only
+/// listener, which the host relays through unchanged.
 pub const NATIVE_HOST_ORIGIN: &str = "ajh-native-host";
 
 /// Whether a handshake `Origin` is an allowed extension origin.
 ///
 /// This check is **defense-in-depth, not the primary boundary**. The real
-/// authentication is the per-frame 256-bit pairing token enforced in
-/// [`super::classify_frame`] (every envelope token must equal `state.token()`),
-/// over a loopback-only (`127.0.0.1`) listener. The token is copied by the user
-/// from the app Settings and a sibling extension cannot read it, so even a local
-/// extension that opens a socket cannot import anything without it.
+/// authentication is the v2 mutual HMAC challenge-response
+/// ([`super::advance_frame`] drives it; [`super::handshake::verify_client_proof`]
+/// does the **constant-time** proof check) over a loopback-only (`127.0.0.1`)
+/// listener — the pairing token is used only as an HMAC key and is NEVER sent on
+/// the wire. The token is copied by the user from the app Settings and a sibling
+/// extension cannot read it, so even a local extension that opens a socket
+/// cannot import anything without proving it knows the token.
 ///
 /// Acceptance:
 /// - **Dev override** (checked first): any exact-match `dev_origins` entry (a
@@ -55,7 +57,7 @@ pub const NATIVE_HOST_ORIGIN: &str = "ajh-native-host";
 /// - **Firefox**: `moz-extension://<uuid>` where `<uuid>` is a well-formed
 ///   extension UUID ([`is_extension_uuid`]). The Firefox per-install UUID is
 ///   unknowable in advance, so the origin check can only assert scheme + UUID
-///   shape; the pairing token is what actually authenticates.
+///   shape; the mutual handshake is what actually authenticates.
 ///
 /// In all cases the origin must be scheme + host only — a trailing path or any
 /// extra slash segment is rejected.
@@ -73,15 +75,15 @@ pub fn is_allowed_origin(origin: &str, dev_origins: &[String]) -> bool {
     // UUID rather than leak it (Bugzilla 1607936 / 1257989). So the real Firefox
     // bridge handshake arrives as `null`, NOT `moz-extension://<uuid>`. Accept
     // it: the origin gate is defense-in-depth only — the actual boundary is the
-    // per-frame 256-bit pairing token over a loopback-only (`127.0.0.1`)
-    // listener, which a null-origin page cannot satisfy without the token the
+    // v2 mutual HMAC handshake over a loopback-only (`127.0.0.1`) listener, which
+    // a null-origin page cannot satisfy without proving it knows the token the
     // user copied from the app's Settings.
     if origin == "null" {
         return true;
     }
     // Native-messaging host (our own native process relaying to the loopback
-    // bridge — see `NATIVE_HOST_ORIGIN`). Exact match only; the per-frame token +
-    // loopback binding remain the real boundary.
+    // bridge — see `NATIVE_HOST_ORIGIN`). Exact match only; the mutual handshake
+    // + loopback binding remain the real boundary.
     if origin == NATIVE_HOST_ORIGIN {
         return true;
     }
@@ -180,7 +182,7 @@ mod tests {
         // extension background script — it strips the moz-extension UUID rather
         // than leak it (Bugzilla 1607936 / 1257989). This is the REAL Firefox
         // bridge handshake (NOT `moz-extension://<uuid>`). The origin gate is
-        // defense-in-depth only; the per-frame 256-bit pairing token over a
+        // defense-in-depth only; the v2 mutual HMAC handshake over a
         // loopback-only listener is the actual boundary.
         assert!(is_allowed_origin("null", &[]));
         // Leading/trailing whitespace is trimmed before the check.
@@ -199,7 +201,7 @@ mod tests {
     fn allows_native_host_sentinel_origin() {
         // Our native-messaging host relays to the loopback bridge with this
         // sentinel Origin (it has no extension origin of its own). Accepted
-        // (defense-in-depth); the per-frame token is the real boundary.
+        // (defense-in-depth); the v2 mutual HMAC handshake is the real boundary.
         assert!(is_allowed_origin(NATIVE_HOST_ORIGIN, &[]));
         assert!(is_allowed_origin("ajh-native-host", &[]));
         // Leading/trailing whitespace is trimmed before the check.

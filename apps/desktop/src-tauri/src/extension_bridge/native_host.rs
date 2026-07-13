@@ -15,8 +15,10 @@
 //! ```
 //!
 //! ## Not a protocol parser
-//! The host does NOT understand the bridge protocol. The per-frame pairing token
-//! flows through verbatim, so bridge auth ([`super::auth`]) + pairing UX are
+//! The host does NOT understand the bridge protocol. The v2 mutual-handshake
+//! frames (`hello`/`challenge`/`auth`/`auth.ok` — never a per-frame token) and
+//! every session-authorized frame after relay through **verbatim**, 1:1, so
+//! bridge auth ([`super::auth`], [`super::handshake`]) + pairing UX are
 //! untouched. The ONE thing it speaks itself is a transport-local readiness
 //! control frame (`bridge.ready`) so the extension can tell "app reachable" from
 //! "app down" — that frame never reaches the bridge and is NOT part of the
@@ -214,7 +216,8 @@ mod tests {
     // this pins only the stdio framing — the one bit of non-trivial byte logic.
     #[tokio::test]
     async fn stdio_frame_round_trips() {
-        let value = json!({ "type": "import.request", "reqId": "1", "token": "abc" });
+        // v2 frames carry no token; the host is a dumb byte relay either way.
+        let value = json!({ "type": "import.request", "reqId": "1", "payload": { "url": "x" } });
         let json = value.to_string();
 
         // Encode: native-order u32 length prefix + UTF-8 JSON.

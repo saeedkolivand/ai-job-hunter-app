@@ -56,6 +56,8 @@ function buildPopupDom(): void {
     <button id="btn-help"></button>
     <p id="help-popover" hidden></p>
     <button id="btn-get-app"></button>
+    <div id="view-outdated" hidden></div>
+    <button id="btn-update-app"></button>
   `;
 }
 
@@ -497,5 +499,33 @@ describe('offline-sticky — searching after app_not_running must not hide offli
     push('searching');
     expect(searchingView.hidden).toBe(false);
     expect(offlineView.hidden).toBe(true);
+  });
+});
+
+// ── outdated-desktop view (v2 handshake force cutover) ──────────────────────────
+
+describe('outdated-desktop view', () => {
+  const statusListener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
+    ((message: unknown) => void) | undefined;
+  if (!statusListener) throw new Error('onMessage status listener not registered');
+  const push = (phase: ConnectionStatus['phase']) =>
+    statusListener({ ok: true, kind: 'status', status: { phase, port: null, hasToken: true } });
+
+  it('shows the dedicated update view (NOT the pairing view) and the update pill', () => {
+    push('outdated');
+
+    const outdatedView = byId<HTMLElement>('view-outdated');
+    const pairView = byId<HTMLElement>('view-pair');
+    const importView = byId<HTMLElement>('view-import');
+    const pill = byId<HTMLSpanElement>('status-pill');
+    const retry = byId<HTMLButtonElement>('btn-retry');
+
+    expect(outdatedView.hidden).toBe(false);
+    // Critical: an outdated desktop is NOT a token problem — never show pairing.
+    expect(pairView.hidden).toBe(true);
+    expect(importView.hidden).toBe(true);
+    expect(pill.textContent).toBe('⟳ Update the app');
+    // Retry is available so the user can re-probe after updating the app.
+    expect(retry.hidden).toBe(false);
   });
 });
