@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { BOARD_IDS } from '@ajh/shared';
+
 import type { WizardState } from '@/features/autopilot/types';
 
 import { autopilotWizardSchema } from './schema';
@@ -67,8 +69,10 @@ describe('autopilotWizardSchema — step-0 gate', () => {
   });
 
   it('accepts a full-catalog-sized board selection (no upper bound)', () => {
-    const allBoards = Array.from({ length: 20 }, (_, i) => `board-${i}`);
-    expect(autopilotWizardSchema.safeParse(makeForm({ boards: allBoards })).success).toBe(true);
+    expect(BOARD_IDS.length).toBeGreaterThan(0);
+    expect(autopilotWizardSchema.safeParse(makeForm({ boards: [...BOARD_IDS] })).success).toBe(
+      true
+    );
   });
 
   it('rejects a boards array containing an empty string (per-item min(1))', () => {
