@@ -8,7 +8,7 @@
  * missing in de would still resolve here (to the English string), so this
  * file does NOT catch locale gaps — that's owned by the global
  * `i18n/translations-parity.test.ts`, which reads the raw resource trees
- * directly per-locale via `i18n.exists(key, { lng, fallbackLng: false })`.
+ * directly per-locale via `i18n.getResourceBundle` + `flatten`.
  * Mirrors AutopilotCard.i18n.test.ts.
  */
 
