@@ -1,8 +1,15 @@
 /**
- * en/de parity for the interview-practice keys (mock Q&A + STAR feedback).
+ * Resolution check for the interview-practice keys (mock Q&A + STAR feedback).
  * Uses the REAL @ajh/translations instance (not the identity mock the
- * component test uses) so a key present in only one locale fails here instead
- * of shipping the raw key string as UI copy. Mirrors AutopilotCard.i18n.test.ts.
+ * component test uses) so this verifies each key resolves to real, non-empty
+ * copy per locale — not just that it renders *something*.
+ *
+ * NOTE: because @ajh/translations initializes with `fallbackLng: 'en'`, a key
+ * missing in de would still resolve here (to the English string), so this
+ * file does NOT catch locale gaps — that's owned by the global
+ * `i18n/translations-parity.test.ts`, which reads the raw resource trees
+ * directly per-locale via `i18n.getResourceBundle` + `flatten`.
+ * Mirrors AutopilotCard.i18n.test.ts.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -43,6 +50,7 @@ describe('interview-practice i18n — en/de parity', () => {
   it.each(LOCALES)('%s resolves every practice-mode key to real copy', (lng) => {
     const t = i18n.getFixedT(lng);
     for (const key of KEYS) {
+      expect(i18n.exists(key, { lng, fallbackLng: false }), `${lng}:${key}`).toBe(true);
       const out = t(key);
       expect(out, `${lng}:${key}`).not.toBe(key);
       expect(out.trim().length, `${lng}:${key}`).toBeGreaterThan(0);
