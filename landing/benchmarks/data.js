@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783957010150,
+  "lastUpdate": 1783972092367,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4109,6 +4109,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 295630,
             "range": "± 17214",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "548f84196f4ee6e493e04059cab19faa223897c4",
+          "message": "feat: mutual hmac handshake for the extension bridge (protocol v2) (#627)\n\n* feat: mutual hmac handshake for the extension bridge (protocol v2)\n\nReplace plaintext-token-per-frame auth with a mutual HMAC-SHA256 challenge-response so\nthe pairing token is used only as an HMAC key and is never transmitted. Handshake:\nhello{protocol,clientNonce} -> challenge{serverNonce} -> auth{proof} -> auth.ok{serverProof},\nthen session-authorized frames carry no token. Both sides prove knowledge of the token over\nper-connection nonces; the extension sends zero PII until it has verified the server's proof,\nso a loopback port-squatter that does not know the token harvests no reusable secret and no\ndata. Domain-separated proofs (no reflection), fresh CSPRNG nonces (no replay), constant-time\nverification both sides, and a cross-impl known-answer vector pinning the Rust and Web-Crypto\ncanonicalizations together. Force cutover: legacy plaintext frames get update.required, and a\nnew outdated phase surfaces the version mismatch on both sides. The send path is gated on the\nauthenticated session (connected phase), never on transport liveness. See ADR-0010.\n\n* ci: allowlist the hmac known-answer test vector in gitleaks\n\nThe bridge handshake ships a deterministic cross-impl known-answer vector whose fixed,\nobviously-fake pairing token trips gitleaks' generic high-entropy token rule. Add a\nnarrow value-scoped allowlist (extends the default ruleset; excludes no rule or path) so\nthe fixture passes while every other secret is still caught.\n\n* build: drop the duplicate direct hmac dep breaking all-features clippy\n\nThe new hmac 0.12 (handshake) and the pre-existing Unix-only direct hmac 0.13 (Chromium\ncookie pbkdf2) both landed in the extern prelude as `hmac`, so `use hmac::{Hmac, Mac}`\nwas ambiguous under `cargo clippy --all-features` (E0464), which CI runs but the local\n`--all-targets` clippy does not. The direct hmac 0.13 entry was unused — the cookie path\ncalls pbkdf2::pbkdf2_hmac and pbkdf2 pulls hmac 0.13 transitively via its own hmac\nfeature — so removing the direct dep clears the collision with no behavior change.\n\n* docs: align bridge comments and the stray-token test with protocol v2\n\nUpdate the extension_bridge doc comments left describing the removed v1 per-frame-token\nmodel (handle_connection, native_host, auth, the top-of-file security model, regenerate_token,\nand a README line) to the v2 mutual-handshake + session-auth reality, and fix the token-free\nenvelope test to actually parse a token-bearing frame and assert the stray token is stripped\n(was a no-op destructure with a mismatched name). Comment/test only. Addresses the CodeRabbit\n+ AI-review-gate findings on #627.",
+          "timestamp": "2026-07-13T21:28:38+02:00",
+          "tree_id": "cb21f74510d3af14959f6eea0af6e8fc2c894e9d",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/548f84196f4ee6e493e04059cab19faa223897c4"
+        },
+        "date": 1783972091673,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2127282,
+            "range": "± 92910",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2528489,
+            "range": "± 102539",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 285200,
+            "range": "± 1954",
             "unit": "ns/iter"
           }
         ]
