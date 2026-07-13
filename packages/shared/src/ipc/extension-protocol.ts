@@ -23,6 +23,7 @@ import {
   type ExtensionImportRequest,
   type ExtensionImportResult,
   type ExtensionMessageType,
+  type ExtensionProfileResult,
 } from './extension-protocol-constants.js';
 
 export {
@@ -31,12 +32,15 @@ export {
   type ExtensionImportRequest,
   type ExtensionImportResult,
   type ExtensionMessageType,
+  type ExtensionProfileResult,
 };
 
 export const ExtensionMessageTypeSchema = z.enum([
   EXTENSION_MESSAGE_TYPES.auth,
   EXTENSION_MESSAGE_TYPES.importRequest,
   EXTENSION_MESSAGE_TYPES.importResult,
+  EXTENSION_MESSAGE_TYPES.profileGet,
+  EXTENSION_MESSAGE_TYPES.profileResult,
   EXTENSION_MESSAGE_TYPES.matchLive,
   EXTENSION_MESSAGE_TYPES.appliedCheck,
 ]) satisfies z.ZodType<ExtensionMessageType>;
@@ -67,6 +71,22 @@ export const ExtensionImportResultSchema = z.object({
   error: z.string().optional(),
   partial: z.boolean().optional(),
 }) satisfies z.ZodType<ExtensionImportResult>;
+
+/**
+ * `profile.result` payload. Every profile field is optional (a sparse profile is
+ * normal); `error` (present on refusal/failure) is mutually exclusive with the
+ * fields in practice. Mirrors {@link ExtensionProfileResult}.
+ */
+export const ExtensionProfileResultSchema = z.object({
+  fullName: z.string().optional(),
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  location: z.string().optional(),
+  linkedin: z.string().optional(),
+  github: z.string().optional(),
+  website: z.string().optional(),
+  error: z.string().optional(),
+}) satisfies z.ZodType<ExtensionProfileResult>;
 
 /**
  * The transport envelope every frame is wrapped in. `payload` is left as

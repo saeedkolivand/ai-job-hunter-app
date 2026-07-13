@@ -20,12 +20,27 @@ export interface ExtensionBridgeTokenResult {
   token: string;
 }
 
+/**
+ * Assisted-autofill opt-in state. When `enabled`, a `profile.get` from the
+ * extension returns the user's contact profile so it can fill matching empty form
+ * fields on the current page; when off, the desktop refuses. Default OFF.
+ */
+export interface ExtensionAutofillSetting {
+  enabled: boolean;
+}
+
 export interface ExtensionBridgeContract {
   status(): Promise<ExtensionBridgeStatus>;
   regenerateToken(): Promise<ExtensionBridgeTokenResult>;
+  /** Read the assisted-autofill opt-in (default OFF). */
+  autofillEnabled(): Promise<ExtensionAutofillSetting>;
+  /** Set + persist the assisted-autofill opt-in; echoes the stored value. */
+  setAutofillEnabled(enabled: boolean): Promise<ExtensionAutofillSetting>;
 }
 
 export const EXTENSION_BRIDGE_CHANNELS = {
   status: 'extensionBridge:status',
   regenerateToken: 'extensionBridge:regenerateToken',
+  autofillEnabled: 'extensionBridge:autofillEnabled',
+  setAutofillEnabled: 'extensionBridge:setAutofillEnabled',
 } as const;

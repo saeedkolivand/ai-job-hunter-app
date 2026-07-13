@@ -44,6 +44,7 @@ function buildPopupDom(): void {
     <div id="view-offline" hidden></div>
     <div id="view-searching"></div>
     <button id="btn-import"></button>
+    <button id="btn-fill"></button>
     <input id="chk-applied" type="checkbox" />
     <p id="import-msg"></p>
     <button id="btn-unpair"></button>
@@ -63,7 +64,8 @@ buildPopupDom();
 // Dynamic import AFTER DOM + mocks are in place. The module wires its DOM event
 // listeners at load (wire()), so the behavioral tests below drive the controller
 // by dispatching real clicks on the wired buttons and asserting DOM state.
-const { resolveStatusResponse, resolveImportResponse } = await import('./popup');
+const { resolveStatusResponse, resolveImportResponse, resolveFillResponse } =
+  await import('./popup');
 
 const sendMessageMock = vi.mocked(browser.runtime.sendMessage);
 const looksLikeTokenMock = vi.mocked(looksLikeToken);
@@ -177,6 +179,68 @@ describe('resolveImportResponse', () => {
   });
 });
 
+// ── resolveFillResponse (assisted autofill) ────────────────────────────────────
+
+describe('resolveFillResponse', () => {
+  it('surfaces the desktop refusal (autofill opted out) as an error', () => {
+    const res = { ok: false as const, error: 'Autofill is off.' };
+    const { text, tone } = resolveFillResponse(res);
+    expect(tone).toBe('err');
+    expect(text).toBe('Autofill is off.');
+  });
+
+  it('returns the unexpected-response error when kind is not fill', () => {
+    const res = { ok: true as const, kind: 'token' as const };
+    const { text, tone } = resolveFillResponse(res);
+    expect(tone).toBe('err');
+    expect(text).toBe('Unexpected response — please retry.');
+  });
+
+  it('reports the no-match case as a benign message, not an error', () => {
+    const res = {
+      ok: true as const,
+      kind: 'fill' as const,
+      summary: { filled: [], nameSplit: null, filledNothing: true },
+    };
+    const { text, tone } = resolveFillResponse(res);
+    expect(tone).toBe('ok');
+    expect(text).toBe('No matchable fields found on this page.');
+  });
+
+  it('summarises the filled count and points the user at the page', () => {
+    const res = {
+      ok: true as const,
+      kind: 'fill' as const,
+      summary: {
+        filled: [
+          { key: 'email', label: 'Email', count: 2 },
+          { key: 'phone', label: 'Phone', count: 1 },
+        ],
+        nameSplit: null,
+        filledNothing: false,
+      },
+    };
+    const { text, tone } = resolveFillResponse(res);
+    expect(tone).toBe('ok');
+    expect(text).toBe('Filled 3 fields — review them on the page.');
+  });
+
+  it('flags the name-split guess in the confirmation', () => {
+    const res = {
+      ok: true as const,
+      kind: 'fill' as const,
+      summary: {
+        filled: [{ key: 'firstName', label: 'First name', count: 1 }],
+        nameSplit: { first: 'Saeed', last: 'Kolivand' },
+        filledNothing: false,
+      },
+    };
+    const { text, tone } = resolveFillResponse(res);
+    expect(tone).toBe('ok');
+    expect(text).toBe('Filled 1 field — review them on the page (name split is a guess — verify).');
+  });
+});
+
 // ── controller behavior (wired DOM) ───────────────────────────────────────────
 
 describe('help toggle (#btn-help)', () => {
@@ -262,6 +326,55 @@ describe('savePairing (#btn-save-token)', () => {
     expect(btn.disabled).toBe(false);
     expect(btn.textContent).toBe('Save & pair');
     expect(byId<HTMLParagraphElement>('pair-msg').textContent).toMatch(/failed/i);
+  });
+});
+
+describe('doFill (#btn-fill)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  beforeEach(() => {
+    sendMessageMock.mockReset();
+    byId<HTMLButtonElement>('btn-fill').disabled = false;
+    byId<HTMLParagraphElement>('import-msg').textContent = '';
+  });
+
+  it('shows "Filling…" then the success summary, and re-enables the button', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'fill',
+      summary: {
+        filled: [{ key: 'email', label: 'Email', count: 1 }],
+        nameSplit: null,
+        filledNothing: false,
+      },
+    });
+
+    const btn = byId<HTMLButtonElement>('btn-fill');
+    btn.click();
+    // The click handler disables the button and sets "Filling…" synchronously,
+    // before the (mocked) sendMessage promise resolves.
+    expect(btn.disabled).toBe(true);
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe('Filling…');
+
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Filled 1 field — review them on the page.'
+    );
+    expect(btn.disabled).toBe(false);
+  });
+
+  it('shows the retry message and re-enables the button when sendMessage rejects', async () => {
+    sendMessageMock.mockRejectedValueOnce(new Error('message channel closed'));
+
+    const btn = byId<HTMLButtonElement>('btn-fill');
+    btn.click();
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Autofill failed. Please retry.'
+    );
+    expect(btn.disabled).toBe(false);
   });
 });
 

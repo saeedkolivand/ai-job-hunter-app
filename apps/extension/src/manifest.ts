@@ -47,8 +47,11 @@ function baseManifest(): ManifestRecord {
   return {
     manifest_version: 3,
     name: 'AI Job Hunter — Job Importer',
+    // ≤132 chars — Chrome Web Store caps the manifest `description`. Mentions
+    // both capabilities (import + assisted autofill) honestly; the autofill
+    // capability is opt-in/off-by-default (see the Settings toggle + README).
     description:
-      'Import the job posting you are viewing into your local AI Job Hunter desktop app over a private loopback connection.',
+      'Import job postings into, and fill application forms from, your local AI Job Hunter desktop app over a private loopback connection.',
     version: VERSION,
     // activeTab → read the clicked tab's DOM on user action without broad host
     // access. storage → persist the pairing token. scripting → MV3 dynamic
@@ -109,6 +112,15 @@ function firefoxManifest(): ManifestRecord {
       gecko: {
         id: FIREFOX_EXTENSION_ID,
         strict_min_version: '140.0',
+        // AMO data-collection declaration — stays ['none'] AND that is honest,
+        // including with assisted autofill. The extension neither collects nor
+        // transmits data to the developer or any third party: the contact profile
+        // is the user's OWN data, fetched over loopback from their OWN paired
+        // desktop app, held only for the one click, and written into the form on
+        // the page the user chose to fill. Nothing is stored by the extension and
+        // nothing leaves the device to a server. (Re-verify against the AMO
+        // taxonomy before each submission; if the extension ever transmits profile
+        // data off-device, declare personallyIdentifyingInfo/locationInfo here.)
         data_collection_permissions: { required: ['none'] },
       },
       // Android's data_collection_permissions support landed in 142; this is a

@@ -772,7 +772,13 @@
         "regenerateFailed": "Could not regenerate the token.",
         "regenerateConfirmTitle": "Regenerate pairing token",
         "regenerateConfirmDescription": "Regenerating disconnects any paired browser. You will need to pair the extension again. Continue?",
-        "regenerateConfirm": "Regenerate"
+        "regenerateConfirm": "Regenerate",
+        "autofill": {
+          "label": "Assisted form autofill",
+          "description": "Let the extension's Fill button pull your saved contact details into a page's form.",
+          "disclosure": "When on, clicking Fill in the extension sends your saved contact details into the current page's form. Your details never leave your computer except into pages you choose.",
+          "toggleFailed": "Could not update the autofill setting."
+        }
       },
       "connectedViaBrowser": "{{board}} connected via browser extension",
       "boards": {
