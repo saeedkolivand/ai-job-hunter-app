@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783840573646,
+  "lastUpdate": 1783957010150,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4067,6 +4067,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 289848,
             "range": "± 2607",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "49ba3e60e8bdd80be68ece395234a6f5e062ab87",
+          "message": "feat: assisted autofill for application forms from contact profile (#625)\n\n* feat: assisted autofill for application forms from contact profile\n\nAdd a user-initiated \"Fill this form\" action to the MV3 extension that fills empty\nform fields on the current page from the user's Contact Profile (name, email, phone,\nlocation, linkedin, github, website). Mirror of Extension import: writes the user's own\ndata out instead of reading a job in.\n\nDesign (ADR-0009, grill-locked):\n- User-gestured, no broad host_permissions: activeTab + executeScript on click, so it\n  works on any site without standing access and keeps the AMO data-collection [\"none\"] stance.\n- Generic tiered matcher (autocomplete -> label -> name/id -> placeholder); fills empty,\n  unambiguous fields only; skips a denylist of sensitive/ambiguous keys.\n- Never submits: the extension fills, the human reviews and clicks submit.\n- PII travels over the existing authenticated loopback bridge via a new profile.get ->\n  profile.result message, fetched fresh at fill time, never persisted in chrome.storage.\n- Opt-in, default OFF, enforced desktop-side: the app refuses profile.get when the toggle\n  is off, so disabling it actually stops PII from leaving the device.\n- Transparent + honest limits: shows what it filled; no resume FILE upload (browser-forbidden),\n  complex custom ATS (Workday shadow DOM) fill partially at best. Disclosed in README + privacy page.\n\nisHidden walks getComputedStyle for every ancestor so CSS-class honeypot fields are skipped;\nthe bare-name fallback excludes education fields; the pairing-token threat model notes that a\nharvested token also reads the Contact Profile while autofill is on.\n\n* fix: catch opacity and off-screen honeypots in autofill field detection\n\nExtend the hidden-field check to also skip fields hidden via opacity:0, off-screen\nabsolute/fixed positioning (left/top <= -9999px), and zero-size (0x0), on top of the\nexisting display:none / visibility:hidden / CSS-class checks. All heuristics stay\ncomputed-style only (no getBoundingClientRect/offsetWidth, which jsdom zeroes out) so a\nfilled invisible honeypot can no longer flag the user as a bot. Adds coverage for the two\nnew honeypot shapes (with a normal-sibling false-positive guard), the autofill-toggle\nfailure path, and the popup fill-button click flow. Addresses CodeRabbit review on #625.\n\n* test: cover autofill background orchestration and refresh docs and store copy\n\nAdd background.test.ts (6 cases) exercising the fill dispatcher's real paths: not-paired\nshort-circuit, desktop refusal (opt-in off + transport reject), no-active-tab, malformed\ninjected result, and the success path — closing the AI-review-flagged coverage gap. Soften\nthe hidden-field doc comment to state actual coverage honestly (clip-based and single-\ndimension-zero .sr-only shapes are deliberately not treated as hidden, since those can be\nlegitimate screen-reader fields). Refresh the store description to disclose the new\nfill-form capability alongside job import. Addresses the @claude review on #625.",
+          "timestamp": "2026-07-13T17:26:35+02:00",
+          "tree_id": "eff3d2171f26cde8c2010bb9abb2d7c5693f4bad",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/49ba3e60e8bdd80be68ece395234a6f5e062ab87"
+        },
+        "date": 1783957009443,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2149582,
+            "range": "± 26134",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2605621,
+            "range": "± 55409",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 295630,
+            "range": "± 17214",
             "unit": "ns/iter"
           }
         ]
