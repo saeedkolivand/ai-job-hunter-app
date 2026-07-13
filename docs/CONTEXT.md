@@ -124,22 +124,31 @@ _Avoid_: auto-apply / auto-submit (autofill never submits — the human does), s
 no file upload; complex ATS partial)
 
 **Pairing token**:
-The per-install secret the browser extension sends on every bridge frame (`token` field).
-Generated on app first-run, persisted to the app data dir, and rotatable via the
-`extension_bridge_regenerate_token` IPC command. Shown in Settings for the user to
-copy/paste into the extension. A mismatch closes the socket; the pair is 256-bit random,
-lowercase hex.
-_Avoid_: API key, credential (it authenticates only to the local app, never remote)
+The per-install shared secret that authenticates the browser extension to the local
+bridge. **In protocol v2 it is never transmitted** — it is used only as the
+**HMAC-SHA256 key** in a mutual challenge-response handshake (each side proves it knows
+the token over exchanged per-connection nonces; token stays on both machines). Generated
+on app first-run, persisted to the app data dir (per-user file perms), rotatable via the
+`extension_bridge_regenerate_token` IPC command, and shown in Settings to copy/paste into
+the extension. 256-bit random, lowercase hex. See [ADR 0010](adr/0010-bridge-hmac-handshake.md).
+_Avoid_: API key, credential (it authenticates only to the local app, never remote);
+"sent on every frame" / a `token` field on the wire (v1 behavior — v2 never puts the
+token on the wire)
 
 **Connection phase**:
 The bridge/extension link state the popup renders. Canonical set: `app_not_running`
-(desktop app unreachable), `searching` (probing/reconnecting — also the state a transient
-auth **timeout** folds into: transient → retry), `not_paired` (no token stored), `bad_token`
-(a wrong token, surfaced only via the server's **explicit error reply** before it closes the
-socket — never inferred from a timeout), and `connected` (auth handshake succeeded). A
-handshake timeout is a transport failure (→ `searching`), not a token failure.
-_Avoid_: an `auth_timeout` phase (a timeout is transient, not a distinct terminal state);
-treating a timeout as `bad_token` (falsely accuses a good token)
+(desktop unreachable — also where an **ambiguous silent socket-close** folds, because the
+v2 desktop rejects a bad proof by closing **without a reply**, indistinguishable from a
+crash, so it stays recoverable), `searching` (probing/reconnecting), `not_paired` (no token
+stored), `bad_token` (a real, **unambiguous** auth failure — the peer sent an `auth.ok`
+whose **`serverProof` fails verification**, i.e. a rogue/mismatched server; the extension
+sends zero PII), `outdated` (a **protocol-version mismatch** — a v2 extension reached a v1
+desktop or vice versa; the user must update the app/extension), and `connected` (the
+**mutual** handshake verified — the only state in which `import`/`profile.get` frames are
+sent). See [ADR 0010](adr/0010-bridge-hmac-handshake.md).
+_Avoid_: inferring `bad_token` from a silent close/timeout (v2 auth failure closes with no
+reply → ambiguous with a crash → treat as recoverable `app_not_running`, never falsely
+accuse a good token); an `auth_timeout` phase
 
 **Scan mode** vs **URL mode**:
 Two import paths on the extension bridge. **Scan mode** sends the rendered (authenticated)

@@ -5,7 +5,11 @@ import {
   ExtensionImportRequestSchema,
   ExtensionProfileResultSchema,
 } from './extension-protocol.js';
-import { EXTENSION_MESSAGE_TYPES } from './extension-protocol-constants.js';
+import {
+  EXTENSION_MESSAGE_TYPES,
+  HANDSHAKE_TEST_VECTOR,
+  handshakeMessage,
+} from './extension-protocol-constants.js';
 
 // ---------------------------------------------------------------------------
 // ExtensionImportRequestSchema
@@ -45,9 +49,10 @@ describe('ExtensionImportRequestSchema', () => {
 // ExtensionEnvelopeSchema
 // ---------------------------------------------------------------------------
 
+// v2 envelope: NO `token` field — the handshake authenticates the socket, so no
+// frame carries the pairing secret.
 const VALID_ENVELOPE = {
   type: EXTENSION_MESSAGE_TYPES.importRequest,
-  token: 'secret-token',
   reqId: 'req-001',
   payload: { url: 'https://example.com/job/1' },
 } as const;
@@ -63,23 +68,43 @@ describe('ExtensionEnvelopeSchema', () => {
     }
   });
 
+  it('accepts the v2 handshake frames (hello / challenge / auth / auth.ok)', () => {
+    expect(() =>
+      ExtensionEnvelopeSchema.parse({
+        type: EXTENSION_MESSAGE_TYPES.hello,
+        reqId: 'h1',
+        payload: { protocol: 2, clientNonce: 'abcd' },
+      })
+    ).not.toThrow();
+    expect(() =>
+      ExtensionEnvelopeSchema.parse({
+        type: EXTENSION_MESSAGE_TYPES.authOk,
+        reqId: 'a1',
+        payload: { serverProof: 'deadbeef' },
+      })
+    ).not.toThrow();
+  });
+
   it('rejects an unknown message type', () => {
     expect(() =>
       ExtensionEnvelopeSchema.parse({ ...VALID_ENVELOPE, type: 'unknown.type' })
     ).toThrow();
   });
 
-  it('rejects an envelope with an empty token', () => {
-    expect(() => ExtensionEnvelopeSchema.parse({ ...VALID_ENVELOPE, token: '' })).toThrow();
+  it('ignores a stray token field (v2 envelopes are token-free)', () => {
+    // `z.object()`'s default behavior is to STRIP unknown keys (no `.strict()`/
+    // `.passthrough()` on ExtensionEnvelopeSchema) — verified empirically, not
+    // assumed. A frame that still carries a `token` (e.g. a stale caller that
+    // hasn't migrated) parses successfully AND the key is dropped from the
+    // output — the schema no longer requires OR echoes a token; the mutual
+    // handshake is what actually authenticates, never a per-frame secret.
+    const withStrayToken = { ...VALID_ENVELOPE, token: 'stale-v1-token' };
+    const parsed = ExtensionEnvelopeSchema.parse(withStrayToken);
+    expect(parsed).not.toHaveProperty('token');
   });
 
   it('rejects an envelope with an empty reqId', () => {
     expect(() => ExtensionEnvelopeSchema.parse({ ...VALID_ENVELOPE, reqId: '' })).toThrow();
-  });
-
-  it('rejects an envelope missing the token field', () => {
-    const { token: _omit, ...noToken } = VALID_ENVELOPE;
-    expect(() => ExtensionEnvelopeSchema.parse(noToken)).toThrow();
   });
 
   it('rejects an envelope missing the reqId field', () => {
@@ -96,6 +121,22 @@ describe('ExtensionEnvelopeSchema', () => {
     // payload is intentionally z.unknown() — validation is deferred to the message-type-specific
     // handler, so the envelope schema accepts any payload shape (including null) without failing.
     expect(() => ExtensionEnvelopeSchema.parse({ ...VALID_ENVELOPE, payload: null })).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Handshake message canonicalization (byte-identical with the Rust side)
+// ---------------------------------------------------------------------------
+
+describe('handshakeMessage', () => {
+  it('builds the exact domain-separated, newline-delimited canonical string', () => {
+    const { clientNonce, serverNonce } = HANDSHAKE_TEST_VECTOR;
+    expect(handshakeMessage('client', serverNonce, clientNonce)).toBe(
+      `ajh-bridge/v2\nclient\n${serverNonce}\n${clientNonce}`
+    );
+    expect(handshakeMessage('server', serverNonce, clientNonce)).toBe(
+      `ajh-bridge/v2\nserver\n${serverNonce}\n${clientNonce}`
+    );
   });
 });
 
@@ -136,7 +177,6 @@ describe('ExtensionProfileResultSchema', () => {
     expect(() =>
       ExtensionEnvelopeSchema.parse({
         type: EXTENSION_MESSAGE_TYPES.profileResult,
-        token: 'secret-token',
         reqId: 'req-002',
         payload: { email: 'x@y.z' },
       })

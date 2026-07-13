@@ -175,6 +175,13 @@ aes-gcm = "0.10"
 # deterministic, restart-stable hash so a stale or wrong-language cache row is a
 # natural miss. Resolves to 0.10.9 already in the tree (lopdf/tauri-codegen).
 sha2 = "0.10"
+# HMAC-SHA256 for the extension-bridge v2 mutual challenge-response handshake
+# (extension_bridge/handshake.rs): constant-time `Mac::verify_slice` of the
+# client proof, keyed by the pairing token's UTF-8 bytes. Cross-platform (the
+# `hmac = "0.13"` under `[target.'cfg(unix)']` pairs with sha1/digest-0.11 for
+# Chromium cookie PBKDF2 and is NOT usable with sha2 0.10 / digest-0.10 here).
+# 0.12.1 is already resolved in the lock and shares digest 0.10 with sha2 0.10.
+hmac = "0.12"
 htmd = "0.5.4"
 
 [target.'cfg(windows)'.dependencies]
@@ -210,7 +217,14 @@ aes = "0.9"
 # macOS/Linux release build fails to compile (the path is `cfg(not(windows))`,
 # so it never surfaces in a Windows dev build).
 cbc = { version = "0.2", features = ["alloc", "block-padding"] }
-hmac = "0.13"
+# No direct `hmac` dep here — this crate never calls `hmac::` itself (only
+# `pbkdf2::pbkdf2_hmac::<Sha1>`, below); `pbkdf2`'s own `hmac` feature pulls
+# hmac 0.13 in transitively. A direct `hmac = "0.13"` here used to collide with
+# the top-level `hmac = "0.12"` (extension-bridge handshake HMAC) in the extern
+# prelude under `--all-features` (E0464: multiple candidates for `hmac`) — two
+# DIRECT deps of the same name are ambiguous even on disjoint cfg targets, since
+# `--all-features`/lockstep tooling can materialize both. Removing this direct
+# entry leaves exactly one `hmac` in the direct-dependency namespace.
 pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
 sha1 = "0.11"
 

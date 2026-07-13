@@ -16,9 +16,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { browser } from '@wxt-dev/browser';
 
-import { EXTENSION_MESSAGE_TYPES } from '@ajh/shared';
+import { EXTENSION_MESSAGE_TYPES, EXTENSION_PROTOCOL_VERSION } from '@ajh/shared';
 
 import { BridgeClient } from './bridge';
+import { computeProof } from './handshake';
 
 // Default `connectNative` THROWS so the existing ws describe-blocks (which never
 // mock it) go straight to the ws probe — native is treated as "host unavailable
@@ -121,9 +122,9 @@ function extractReqId(sentFrameArg: unknown): string {
 }
 
 function makeResultEnvelope(reqId: string, payload: unknown): string {
+  // v2 replies carry no token — the socket is already session-authenticated.
   return JSON.stringify({
     type: EXTENSION_MESSAGE_TYPES.importResult,
-    token: FAKE_TOKEN,
     reqId,
     payload,
   });
@@ -252,7 +253,7 @@ describe('BridgeClient – request/reply correlation', () => {
   it('resolves the correct pending promise when a matching reqId reply arrives', async () => {
     const { client, socket } = await connectedClient();
 
-    const importPromise = client.importJob(FAKE_TOKEN, makeImportRequest());
+    const importPromise = client.importJob(makeImportRequest());
 
     // Wait for the outgoing frame, then extract the real reqId and echo a reply.
     await vi.waitFor(() => {
@@ -274,7 +275,7 @@ describe('BridgeClient – request/reply correlation', () => {
 
     const { client, socket } = await connectedClient();
 
-    const importPromise = client.importJob(FAKE_TOKEN, makeImportRequest());
+    const importPromise = client.importJob(makeImportRequest());
 
     await vi.waitFor(() => {
       expect(socket.send).toHaveBeenCalled();
@@ -307,8 +308,8 @@ describe('BridgeClient – request/reply correlation', () => {
   it('resolves two concurrent requests independently via their reqIds', async () => {
     const { client, socket } = await connectedClient();
 
-    const p1 = client.importJob(FAKE_TOKEN, makeImportRequest());
-    const p2 = client.importJob(FAKE_TOKEN, makeImportRequest());
+    const p1 = client.importJob(makeImportRequest());
+    const p2 = client.importJob(makeImportRequest());
 
     // Wait for both frames to be sent.
     await vi.waitFor(() => {
@@ -367,7 +368,7 @@ describe('BridgeClient – Zod schema validation on incoming payload', () => {
     client: BridgeClient,
     socket: FakeWebSocket
   ): Promise<{ importPromise: Promise<unknown>; reqId: string }> {
-    const importPromise = client.importJob(FAKE_TOKEN, makeImportRequest());
+    const importPromise = client.importJob(makeImportRequest());
     await vi.waitFor(() => {
       expect(socket.send).toHaveBeenCalled();
     });
@@ -559,7 +560,7 @@ describe('BridgeClient – native messaging transport', () => {
     expect(client.status().phase).toBe('connected');
     expect(createdSockets).toHaveLength(0); // never touched ws
 
-    const importPromise = client.importJob(FAKE_TOKEN, makeImportRequest());
+    const importPromise = client.importJob(makeImportRequest());
     await vi.waitFor(() => {
       expect(port.postMessage).toHaveBeenCalled();
     });
@@ -569,7 +570,6 @@ describe('BridgeClient – native messaging transport', () => {
     // Reply arrives as a PARSED OBJECT (native auto-parses JSON), not a string.
     port.simulateMessage({
       type: EXTENSION_MESSAGE_TYPES.importResult,
-      token: FAKE_TOKEN,
       reqId: sent.reqId,
       payload: { applicationId: 'native-1', status: 'saved' },
     });
@@ -667,9 +667,9 @@ describe('BridgeClient – native messaging transport', () => {
   });
 });
 
-// ── auth handshake ─────────────────────────────────────────────────────────────
+// ── v2 mutual HMAC handshake ────────────────────────────────────────────────
 
-describe('BridgeClient – auth handshake', () => {
+describe('BridgeClient – v2 mutual handshake', () => {
   let latestSocket: FakeWebSocket | undefined;
   let restoreWS: () => void;
 
@@ -685,10 +685,10 @@ describe('BridgeClient – auth handshake', () => {
     vi.useRealTimers();
   });
 
-  /**
-   * Build a connected BridgeClient whose getStoredToken returns the given value.
-   * Opens the socket synchronously, then returns the socket for further control.
-   */
+  /** A fixed, well-formed server nonce (16 bytes = 32 lowercase-hex chars). */
+  const SERVER_NONCE = 'ffeeddccbbaa99887766554433221100';
+
+  /** Build a BridgeClient whose getStoredToken returns the given value + open the socket. */
   async function clientWithToken(
     storedToken: string | null
   ): Promise<{ client: BridgeClient; socket: FakeWebSocket; connectPromise: Promise<void> }> {
@@ -703,194 +703,217 @@ describe('BridgeClient – auth handshake', () => {
     return { client, socket, connectPromise };
   }
 
-  /** Reply to an auth frame: extract the reqId from the outgoing send call at
-   *  `callIndex` and simulate a desktop reply on the socket. */
-  function replyToAuth(
-    socket: FakeWebSocket,
-    callIndex: number,
-    payload: Record<string, unknown>
-  ): void {
-    const raw = socket.send.mock.calls[callIndex]?.[0] as string | undefined;
-    if (!raw) throw new Error(`No send call at index ${callIndex}`);
-    const frame = JSON.parse(raw) as { reqId: string };
+  const parseSend = (socket: FakeWebSocket, i: number) =>
+    JSON.parse(socket.send.mock.calls[i]?.[0] as string) as {
+      type: string;
+      reqId: string;
+      token?: unknown;
+      payload: { clientNonce?: string; proof?: string };
+    };
+
+  /** Wait for the opening `hello` frame; return its reqId + clientNonce. */
+  async function awaitHello(
+    socket: FakeWebSocket
+  ): Promise<{ helloReqId: string; clientNonce: string }> {
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+    const hello = parseSend(socket, 0);
+    expect(hello.type).toBe(EXTENSION_MESSAGE_TYPES.hello);
+    expect((hello.payload as { protocol?: number }).protocol).toBe(EXTENSION_PROTOCOL_VERSION);
+    // The token is NEVER on the wire.
+    expect(hello.token).toBeUndefined();
+    return { helloReqId: hello.reqId, clientNonce: hello.payload.clientNonce! };
+  }
+
+  function sendChallenge(socket: FakeWebSocket, reqId: string): void {
     socket.simulateMessage(
       JSON.stringify({
-        type: EXTENSION_MESSAGE_TYPES.importResult,
-        token: FAKE_TOKEN,
-        reqId: frame.reqId,
-        payload,
+        type: EXTENSION_MESSAGE_TYPES.challenge,
+        reqId,
+        payload: { serverNonce: SERVER_NONCE },
       })
     );
   }
 
-  it('sends an auth frame on open when a token is stored', async () => {
-    const { socket, connectPromise } = await clientWithToken(FAKE_TOKEN);
-
-    // Auth frame must be sent before the handshake resolves.
+  /** After the challenge, wait for the `auth` frame; return its reqId + proof. */
+  async function awaitAuth(socket: FakeWebSocket): Promise<{ authReqId: string; proof: string }> {
     await vi.waitFor(() => {
-      expect(socket.send).toHaveBeenCalled();
+      expect(socket.send.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
+    const auth = parseSend(socket, 1);
+    expect(auth.type).toBe(EXTENSION_MESSAGE_TYPES.auth);
+    expect(auth.token).toBeUndefined();
+    return { authReqId: auth.reqId, proof: auth.payload.proof! };
+  }
 
-    const raw = socket.send.mock.calls[0]?.[0] as string;
-    const frame = JSON.parse(raw) as { type: string; token: string; payload: unknown };
-    expect(frame.type).toBe(EXTENSION_MESSAGE_TYPES.auth);
-    expect(frame.token).toBe(FAKE_TOKEN);
-    expect(frame.payload).toBeNull();
+  async function sendAuthOk(
+    socket: FakeWebSocket,
+    reqId: string,
+    token: string,
+    clientNonce: string,
+    kind: 'valid' | 'invalid' = 'valid'
+  ): Promise<void> {
+    const serverProof =
+      kind === 'valid'
+        ? await computeProof(token, 'server', SERVER_NONCE, clientNonce)
+        : '0'.repeat(64);
+    socket.simulateMessage(
+      JSON.stringify({
+        type: EXTENSION_MESSAGE_TYPES.authOk,
+        reqId,
+        payload: { serverProof },
+      })
+    );
+  }
 
-    // Reply with success so the promise resolves cleanly.
-    replyToAuth(socket, 0, {
-      applicationId: '',
-      status: '',
-      title: '',
-      company: '',
-      partial: false,
-    });
-    await connectPromise;
-  });
-
-  it('sets phase to connected after a valid-token auth reply (no error field)', async () => {
+  it('completes the full handshake (hello→challenge→auth→auth.ok) and reaches connected', async () => {
     const { client, socket, connectPromise } = await clientWithToken(FAKE_TOKEN);
 
-    await vi.waitFor(() => {
-      expect(socket.send).toHaveBeenCalled();
-    });
+    const { helloReqId, clientNonce } = await awaitHello(socket);
+    sendChallenge(socket, helloReqId);
 
-    // Desktop replies with the success payload (no error field).
-    replyToAuth(socket, 0, {
-      applicationId: '',
-      status: '',
-      title: '',
-      company: '',
-      partial: false,
-    });
+    const { authReqId, proof } = await awaitAuth(socket);
+    // The client proof must be the real HMAC(token, CLIENT_MSG) for the issued
+    // nonces — proving the token is used as a key, never transmitted.
+    expect(proof).toBe(await computeProof(FAKE_TOKEN, 'client', SERVER_NONCE, clientNonce));
+
+    await sendAuthOk(socket, authReqId, FAKE_TOKEN, clientNonce, 'valid');
     await connectPromise;
 
     expect(client.status().phase).toBe('connected');
     client.dispose();
   });
 
-  it('sets phase to bad_token after an unauthorized auth reply and does NOT reconnect', async () => {
-    vi.useFakeTimers();
-    let socketCount = 0;
-    restoreWS();
-    restoreWS = installFakeWS((ws) => {
-      socketCount += 1;
-      latestSocket = ws;
-    });
+  it('enters bad_token on an INVALID serverProof and sends NO import/profile frame (no PII)', async () => {
+    const { client, socket, connectPromise } = await clientWithToken(FAKE_TOKEN);
 
-    const getStoredToken = vi.fn<[], Promise<string | null>>().mockResolvedValue(FAKE_TOKEN);
-    const client = new BridgeClient(vi.fn(), getStoredToken);
-    const connectPromise = client.ensureConnected();
-
-    await vi.waitFor(() => {
-      expect(latestSocket).toBeDefined();
-    });
-    const socket = latestSocket!;
-    socket.simulateOpen();
-
-    // Wait for the auth frame.
-    await vi.waitFor(() => {
-      expect(socket.send).toHaveBeenCalled();
-    });
-
-    // Desktop replies with unauthorized.
-    replyToAuth(socket, 0, { error: 'unauthorized' });
+    const { helloReqId, clientNonce } = await awaitHello(socket);
+    sendChallenge(socket, helloReqId);
+    const { authReqId } = await awaitAuth(socket);
+    // A rogue/port-squatting peer cannot produce a valid serverProof.
+    await sendAuthOk(socket, authReqId, FAKE_TOKEN, clientNonce, 'invalid');
     await connectPromise;
 
     expect(client.status().phase).toBe('bad_token');
-
-    // Advance well past all backoff intervals — must NOT trigger a reconnect.
-    const socketCountBefore = socketCount;
-    await vi.advanceTimersByTimeAsync(15_000);
-    expect(socketCount).toBe(socketCountBefore);
-
+    // CRITICAL: only hello + auth were ever sent — mutual auth failed BEFORE any
+    // import/profile frame, so no PII ever left the extension.
+    expect(socket.send.mock.calls.length).toBe(2);
     client.dispose();
   });
 
-  it('does NOT enter bad_token when the socket closes before the auth reply — transport failure, reconnect allowed', async () => {
-    vi.useFakeTimers();
-    let socketCount = 0;
-    restoreWS();
-    restoreWS = installFakeWS((ws) => {
-      socketCount += 1;
-      latestSocket = ws;
-    });
+  // ── unverified-peer race: importJob/getProfile must never race ahead of the
+  // handshake (a non-null transport does NOT mean the peer is verified) ────────
 
+  it('a concurrent importJob during a PENDING handshake sends NO import.request, and rejects (sending nothing) once the handshake times out unresolved', async () => {
+    // The attack this closes: a port-squatter answers `hello` with a `challenge`
+    // then WITHHOLDS `auth.ok` (stays silent). If a concurrent `importJob` (the
+    // user clicking Import mid-handshake) were gated on transport liveness
+    // (`this.transport !== null`, set by `attach()` BEFORE the peer is verified)
+    // instead of the authenticated session, it would ship the active-tab DOM to
+    // this unverified peer. It must instead await the SAME handshake and see it
+    // fail — sending nothing.
+    vi.useFakeTimers();
     const getStoredToken = vi.fn<[], Promise<string | null>>().mockResolvedValue(FAKE_TOKEN);
     const client = new BridgeClient(vi.fn(), getStoredToken);
-    const connectPromise = client.ensureConnected();
 
+    // Kick off the initial connection attempt (mirrors the background's
+    // module-load / reconnect-timer probe) — NOT awaited, so it is still
+    // in-flight when importJob is called below.
+    const initialConnect = client.ensureConnected();
     await vi.waitFor(() => {
       expect(latestSocket).toBeDefined();
     });
     const socket = latestSocket!;
     socket.simulateOpen();
 
-    // Wait for the auth frame to be sent.
-    await vi.waitFor(() => {
-      expect(socket.send).toHaveBeenCalled();
-    });
+    const { helloReqId } = await awaitHello(socket);
+    sendChallenge(socket, helloReqId);
+    await awaitAuth(socket); // client sent its auth{proof} — 2 frames total so far
+    const framesBeforeImport = socket.send.mock.calls.length;
+    expect(framesBeforeImport).toBe(2);
 
-    // Close the socket BEFORE any auth reply arrives — simulates disconnect
-    // during handshake (not an unauthorized rejection).
+    // The user clicks "Import" WHILE the handshake is still awaiting auth.ok —
+    // the port-squatter attack window. `this.transport` is already non-null here
+    // (set by attach() at open time) — the OLD (unpatched) `ensureConnected()`
+    // would see `isOpen()` true and return immediately, letting this send NOW.
+    const importPromise = client.importJob(makeImportRequest());
+    // Attach the outcome handler SYNCHRONOUSLY (same tick) so vitest never flags
+    // a transient "unhandled rejection" while we advance timers below — Node's
+    // unhandled-rejection check cares whether a handler is attached, not when the
+    // promise actually settles.
+    const outcomePromise = importPromise.then(
+      () => ({ ok: true as const }),
+      (e: unknown) => ({ ok: false as const, error: e })
+    );
+
+    // Flush microtasks and assert NO import.request was sent while the peer is
+    // still unverified.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(socket.send.mock.calls.length).toBe(framesBeforeImport);
+
+    // The port-squatter never replies — advance past the handshake timeout.
+    await vi.advanceTimersByTimeAsync(8_100);
+    await initialConnect;
+
+    const outcome = await outcomePromise;
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toBeInstanceOf(Error);
+      expect((outcome.error as Error).message).toBe(
+        'Desktop app not reachable. Is AI Job Hunter running?'
+      );
+    }
+    // CRITICAL: the import.request frame was NEVER sent — only hello + auth.
+    expect(socket.send.mock.calls.length).toBe(2);
+    expect(client.status().phase).not.toBe('connected');
+
+    client.dispose();
+  });
+
+  it('a concurrent getProfile during a PENDING handshake sends NO profile.get, and rejects (sending nothing) if the peer closes without auth.ok', async () => {
+    const { client, socket, connectPromise } = await clientWithToken(FAKE_TOKEN);
+    const { helloReqId } = await awaitHello(socket);
+    sendChallenge(socket, helloReqId);
+    await awaitAuth(socket);
+    const framesBeforeProfile = socket.send.mock.calls.length;
+    expect(framesBeforeProfile).toBe(2);
+
+    // Fetching the Contact Profile mid-handshake — the highest-sensitivity PII
+    // this client sends. Must never race ahead of the mutual auth.
+    const profilePromise = client.getProfile();
+    // Attach synchronously — see the note in the importJob variant above.
+    const outcomePromise = profilePromise.then(
+      () => ({ ok: true as const }),
+      (e: unknown) => ({ ok: false as const, error: e })
+    );
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(socket.send.mock.calls.length).toBe(framesBeforeProfile);
+
+    // The peer closes without ever sending auth.ok (ambiguous silence).
     socket.simulateClose();
+    await connectPromise;
 
-    // Must NOT land in bad_token; onClose handles it as a transport failure.
-    await connectPromise.catch(() => {
-      // ensureConnected may reject if connect throws; that's fine.
-    });
-
-    // Allow pending microtasks/timers to settle.
-    await vi.advanceTimersByTimeAsync(0);
-
-    expect(client.status().phase).not.toBe('bad_token');
-    // Reconnect must be scheduled (phase is app_not_running, new socket probed).
-    const socketCountBefore = socketCount;
-    await vi.advanceTimersByTimeAsync(600);
-    expect(socketCount).toBeGreaterThan(socketCountBefore);
+    const outcome = await outcomePromise;
+    expect(outcome.ok).toBe(false);
+    // CRITICAL: profile.get was NEVER sent — only hello + auth.
+    expect(socket.send.mock.calls.length).toBe(2);
+    expect(client.status().phase).toBe('app_not_running');
 
     client.dispose();
   });
 
-  it('does NOT enter bad_token on auth timeout — transport failure, reconnect allowed', async () => {
-    vi.useFakeTimers();
-    restoreWS();
-    restoreWS = installFakeWS((ws) => {
-      latestSocket = ws;
-    });
-
-    const getStoredToken = vi.fn<[], Promise<string | null>>().mockResolvedValue(FAKE_TOKEN);
-    const client = new BridgeClient(vi.fn(), getStoredToken);
-    const connectPromise = client.ensureConnected();
-
-    await vi.waitFor(() => {
-      expect(latestSocket).toBeDefined();
-    });
-    const socket = latestSocket!;
-    socket.simulateOpen();
-
-    // Wait for the auth frame to be sent.
-    await vi.waitFor(() => {
-      expect(socket.send).toHaveBeenCalled();
-    });
-
-    // Advance past REQUEST_TIMEOUT_MS (30 000ms) with no reply — triggers timeout.
-    // This also drains any reconnect backoff timers that fire in the same window.
-    await vi.advanceTimersByTimeAsync(31_000);
-
-    await connectPromise.catch(() => {
-      // may reject; ignore
-    });
-
-    // Timeout is a transport failure — must NOT permanently lock out reconnect.
-    // Phase may be app_not_running or searching (if a reconnect probe already
-    // fired within the 31 s window), but never bad_token.
-    expect(client.status().phase).not.toBe('bad_token');
-
-    client.dispose();
-  });
-
-  it('a non-unauthorized error reply is a transport failure — phase never becomes bad_token and a reconnect is scheduled', async () => {
+  it('enters app_not_running (NOT bad_token) when the desktop closes without an auth.ok, and reconnect is allowed', async () => {
+    // The Rust `Unauthorized` path closes WITHOUT a reply BY DESIGN (a wrong
+    // proof and an app crash look identical on the wire) — this ambiguous
+    // silence must never assert a hard wrong-token verdict; it must stay
+    // recoverable so a genuine crash/restart doesn't strand the user in a
+    // manual-re-pair state.
     vi.useFakeTimers();
     let socketCount = 0;
     restoreWS();
@@ -902,37 +925,131 @@ describe('BridgeClient – auth handshake', () => {
     const getStoredToken = vi.fn<[], Promise<string | null>>().mockResolvedValue(FAKE_TOKEN);
     const client = new BridgeClient(vi.fn(), getStoredToken);
     const connectPromise = client.ensureConnected();
-
     await vi.waitFor(() => {
       expect(latestSocket).toBeDefined();
     });
     const socket = latestSocket!;
     socket.simulateOpen();
 
-    // Wait for the auth frame to be sent.
-    await vi.waitFor(() => {
-      expect(socket.send).toHaveBeenCalled();
-    });
+    const { helloReqId } = await awaitHello(socket);
+    sendChallenge(socket, helloReqId);
+    await awaitAuth(socket);
+    // Desktop spoke v2 (sent a challenge) but never replies auth.ok — closes.
+    socket.simulateClose();
+    await connectPromise;
 
-    // Desktop replies with a non-unauthorized error (transport/server crash, NOT token rejection).
-    replyToAuth(socket, 0, { error: 'server-crash' });
-
-    await connectPromise.catch(() => {
-      // may reject; ignore
-    });
-
-    // Allow the close + microtasks to settle (the bridge calls transport.close() which
-    // fires onClose synchronously in our fake, but microtasks still need to drain).
-    await vi.advanceTimersByTimeAsync(0);
-
-    // MUST NOT enter bad_token — 'server-crash' is not the sentinel 'unauthorized'.
+    expect(client.status().phase).toBe('app_not_running');
     expect(client.status().phase).not.toBe('bad_token');
-
-    // Reconnect must be scheduled: advance past backoff[0]=500ms and assert a new socket appears.
-    const socketCountBefore = socketCount;
+    // Reconnect IS scheduled (recoverable) — advance past backoff[0]=500ms.
+    const before = socketCount;
     await vi.advanceTimersByTimeAsync(600);
-    expect(socketCount).toBeGreaterThan(socketCountBefore);
+    expect(socketCount).toBeGreaterThan(before);
+    client.dispose();
+  });
 
+  it('resolves app_not_running (NOT bad_token) when the socket closes while computing the client proof', async () => {
+    // Race: the socket closes in the window between receiving the challenge and
+    // `performHandshake` noticing the transport is gone (after `await
+    // computeProof(...)` resolves) — the "closed while hashing" branch. Same
+    // ambiguity as above: never assert wrong-token from silence alone.
+    const { client, socket, connectPromise } = await clientWithToken(FAKE_TOKEN);
+    const { helloReqId } = await awaitHello(socket);
+    sendChallenge(socket, helloReqId);
+    // Close in the SAME synchronous tick as the challenge — `settle()` for step 1
+    // clears `handshakeClosed` synchronously before `performHandshake`'s
+    // continuation (which awaits `computeProof`) gets a chance to run as a
+    // microtask, so this close is only noticed by the post-hash `!this.transport`
+    // check — exactly the "closed while hashing" race, not the step-1 close path.
+    socket.simulateClose();
+    await connectPromise;
+
+    expect(client.status().phase).toBe('app_not_running');
+    expect(client.status().phase).not.toBe('bad_token');
+    client.dispose();
+  });
+
+  it('enters outdated when the desktop closes without a challenge (old desktop)', async () => {
+    const { client, socket, connectPromise } = await clientWithToken(FAKE_TOKEN);
+    await awaitHello(socket);
+    // An old desktop refuses the v2 hello and closes — no challenge ever arrives.
+    socket.simulateClose();
+    await connectPromise;
+    expect(client.status().phase).toBe('outdated');
+    client.dispose();
+  });
+
+  it('enters outdated when the desktop replies a non-challenge frame (legacy import.result)', async () => {
+    const { client, socket, connectPromise } = await clientWithToken(FAKE_TOKEN);
+    const { helloReqId } = await awaitHello(socket);
+    // An old v1 desktop replies import.result{unauthorized} to our hello (it read
+    // an empty token) instead of a challenge → we know it does not speak v2.
+    socket.simulateMessage(
+      JSON.stringify({
+        type: EXTENSION_MESSAGE_TYPES.importResult,
+        reqId: helloReqId,
+        payload: { error: 'unauthorized' },
+      })
+    );
+    await connectPromise;
+    expect(client.status().phase).toBe('outdated');
+    client.dispose();
+  });
+
+  it('enters outdated when the challenge carries a malformed serverNonce (defense-in-depth)', async () => {
+    // Mirrors the Rust `is_valid_nonce` shape check: a serverNonce that is not
+    // exactly 32 lowercase-hex chars must never feed the HMAC — reject it as a
+    // clean handshake failure before any proof is computed.
+    const { client, socket, connectPromise } = await clientWithToken(FAKE_TOKEN);
+    const { helloReqId } = await awaitHello(socket);
+    socket.simulateMessage(
+      JSON.stringify({
+        type: EXTENSION_MESSAGE_TYPES.challenge,
+        reqId: helloReqId,
+        payload: { serverNonce: 'not-hex!!' },
+      })
+    );
+    await connectPromise;
+    expect(client.status().phase).toBe('outdated');
+    // The malformed nonce must never reach computeProof — only the hello frame
+    // was ever sent (no auth frame follows a rejected challenge).
+    expect(socket.send.mock.calls.length).toBe(1);
+    client.dispose();
+  });
+
+  it('does NOT enter bad_token/outdated on a pure handshake timeout — reconnect allowed', async () => {
+    vi.useFakeTimers();
+    let socketCount = 0;
+    restoreWS();
+    restoreWS = installFakeWS((ws) => {
+      socketCount += 1;
+      latestSocket = ws;
+    });
+
+    const getStoredToken = vi.fn<[], Promise<string | null>>().mockResolvedValue(FAKE_TOKEN);
+    const client = new BridgeClient(vi.fn(), getStoredToken);
+    const connectPromise = client.ensureConnected();
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+    await awaitHello(socket);
+
+    // No challenge, no close — advance just past the handshake timeout (8s). This
+    // fires the timeout (→ app_not_running) and SCHEDULES the reconnect (500ms)
+    // without firing it yet.
+    await vi.advanceTimersByTimeAsync(8_100);
+    await connectPromise.catch(() => {
+      /* may reject; ignore */
+    });
+
+    // A silent timeout is a transport blip, not a token/outdated verdict.
+    expect(client.status().phase).not.toBe('bad_token');
+    expect(client.status().phase).not.toBe('outdated');
+    // Reconnect scheduled — advance past backoff[0]=500ms; a new socket appears.
+    const before = socketCount;
+    await vi.advanceTimersByTimeAsync(600);
+    expect(socketCount).toBeGreaterThan(before);
     client.dispose();
   });
 
@@ -948,51 +1065,38 @@ describe('BridgeClient – auth handshake', () => {
     const getStoredToken = vi.fn<[], Promise<string | null>>().mockResolvedValue(FAKE_TOKEN);
     const client = new BridgeClient(vi.fn(), getStoredToken);
     const connectPromise = client.ensureConnected();
-
     await vi.waitFor(() => {
       expect(latestSocket).toBeDefined();
     });
     const socket = latestSocket!;
     socket.simulateOpen();
 
-    await vi.waitFor(() => {
-      expect(socket.send).toHaveBeenCalled();
-    });
-
-    // Drive into bad_token via an explicit unauthorized reply.
-    replyToAuth(socket, 0, { error: 'unauthorized' });
+    const { helloReqId, clientNonce } = await awaitHello(socket);
+    sendChallenge(socket, helloReqId);
+    const { authReqId } = await awaitAuth(socket);
+    // A genuine, non-ambiguous rejection: the desktop DID reply auth.ok, but the
+    // serverProof does not verify → bad_token (a real mismatch, not silence).
+    await sendAuthOk(socket, authReqId, FAKE_TOKEN, clientNonce, 'invalid');
     await connectPromise;
-
-    // Confirm bad_token before recovery.
     expect(client.status().phase).toBe('bad_token');
 
-    // ── recovery ──────────────────────────────────────────────────────────────
     client.resetForNewToken();
-
-    // Phase must return to 'searching' (no longer bad_token).
     expect(client.status().phase).toBe('searching');
 
-    // The bad_token guard in ensureConnected() must now be lifted —
-    // a fresh ensureConnected() call must attempt a new socket.
-    const socketCountBefore = socketCount;
+    const before = socketCount;
     void client.ensureConnected();
     await vi.advanceTimersByTimeAsync(0);
-    expect(socketCount).toBeGreaterThan(socketCountBefore);
-
+    expect(socketCount).toBeGreaterThan(before);
     client.dispose();
   });
 
-  it('does NOT send an auth frame when no token is stored, and stays not-paired', async () => {
+  it('does NOT send any frame when no token is stored, and stays not-paired', async () => {
     const { client, socket, connectPromise } = await clientWithToken(null);
-
-    // Let the attach() complete (it awaits getStoredToken which resolves to null).
     await connectPromise;
-
-    // No auth frame should have been sent.
+    // No hello (nor any frame) is sent when unpaired.
     expect(socket.send).not.toHaveBeenCalled();
-    // Phase is 'connected' from bridge perspective (background will map to not_paired).
+    // Phase is 'connected' from the bridge perspective (background → not_paired).
     expect(client.status().phase).toBe('connected');
-
     client.dispose();
   });
 });
@@ -1029,7 +1133,6 @@ describe('BridgeClient – getProfile (assisted autofill)', () => {
   function makeProfileEnvelope(reqId: string, payload: unknown): string {
     return JSON.stringify({
       type: EXTENSION_MESSAGE_TYPES.profileResult,
-      token: FAKE_TOKEN,
       reqId,
       payload,
     });
@@ -1040,7 +1143,7 @@ describe('BridgeClient – getProfile (assisted autofill)', () => {
     client: BridgeClient,
     socket: FakeWebSocket
   ): Promise<{ profilePromise: Promise<unknown>; reqId: string }> {
-    const profilePromise = client.getProfile(FAKE_TOKEN);
+    const profilePromise = client.getProfile();
     await vi.waitFor(() => {
       expect(socket.send).toHaveBeenCalled();
     });
