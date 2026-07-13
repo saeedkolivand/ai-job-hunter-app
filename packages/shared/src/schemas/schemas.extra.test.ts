@@ -115,7 +115,7 @@ describe('AutopilotTargetSchema', () => {
     expect(() => AutopilotTargetSchema.parse({ boards: [], query: 'dev' })).toThrow();
   });
 
-  it('rejects more than 6 boards', () => {
+  it('accepts more than 6 boards (catalog has grown past the old cap)', () => {
     expect(() =>
       AutopilotTargetSchema.parse({
         boards: [
@@ -129,7 +129,14 @@ describe('AutopilotTargetSchema', () => {
         ],
         query: 'dev',
       })
-    ).toThrow();
+    ).not.toThrow();
+  });
+
+  it('rejects a grossly oversized boards array (sanity bound, not the real cap)', () => {
+    // The real dedup+truncate defense is server-side (Rust registry cap); this
+    // schema-level bound only guards against a corrupt/hostile payload.
+    const tooMany = Array.from({ length: 65 }, (_, i) => `board_${i}`);
+    expect(() => AutopilotTargetSchema.parse({ boards: tooMany, query: 'dev' })).toThrow();
   });
 });
 

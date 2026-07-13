@@ -834,23 +834,26 @@ async fn run_boards_browser_boards_serialized() {
 // ── CWE-770 board-batch cap tests ─────────────────────────────────────────────
 
 /// A 5000-entry input made of duplicates + a handful of distinct valid ids must
-/// resolve to at most MAX_BOARDS_PER_BATCH (6) distinct board runs.
+/// resolve to at most `max_boards_per_batch()` (the registry size) distinct
+/// board runs.
 /// Uses the engine's `scrape_boards` method directly via the public API seam,
 /// injecting a real (but fast-returning) FakeScraper via run_boards for isolation.
 #[tokio::test]
 async fn scrape_boards_dedupes_and_caps_large_input() {
-    use super::MAX_BOARDS_PER_BATCH;
+    let cap = super::max_boards_per_batch();
 
-    // Build 8 distinct names (>6) plus duplicates filling 5000 total entries.
-    let distinct: Vec<String> = (0..8).map(|i| format!("board_{i}")).collect();
+    // Build `cap + 3` distinct names (always > cap, whatever the registry size
+    // grows to) plus duplicates filling 5000 total entries.
+    let distinct_count = cap + 3;
+    let distinct: Vec<String> = (0..distinct_count).map(|i| format!("board_{i}")).collect();
     let mut boards: Vec<String> = Vec::with_capacity(5000);
     for i in 0..5000 {
         boards.push(distinct[i % distinct.len()].clone());
     }
 
-    // Wire up fake scrapers for all 8 distinct ids so "unknown board" errors don't
+    // Wire up fake scrapers for every distinct id so "unknown board" errors don't
     // confuse the count — we test the batch size cap, not unknown-id handling.
-    let fakes: Vec<FakeScraper> = (0..8).map(|_| FakeScraper::http(1)).collect();
+    let fakes: Vec<FakeScraper> = (0..distinct_count).map(|_| FakeScraper::http(1)).collect();
     let fake_refs: Vec<(String, anyhow::Result<&dyn Scraper>)> = {
         // Dedupe + truncate exactly as scrape_boards does — mirror the logic here
         // so the test drives run_boards at the capped slice.
@@ -858,7 +861,7 @@ async fn scrape_boards_dedupes_and_caps_large_input() {
         boards
             .iter()
             .filter(|id| seen.insert(id.as_str()))
-            .take(MAX_BOARDS_PER_BATCH)
+            .take(cap)
             .enumerate()
             .map(|(i, id)| (id.clone(), Ok(&fakes[i] as &dyn Scraper)))
             .collect()
@@ -880,15 +883,15 @@ async fn scrape_boards_dedupes_and_caps_large_input() {
     .await;
 
     assert!(
-        results.len() <= MAX_BOARDS_PER_BATCH,
-        "run_boards result count ({}) must not exceed MAX_BOARDS_PER_BATCH ({})",
+        results.len() <= cap,
+        "run_boards result count ({}) must not exceed max_boards_per_batch() ({})",
         results.len(),
-        MAX_BOARDS_PER_BATCH
+        cap
     );
     assert_eq!(
         results.len(),
-        MAX_BOARDS_PER_BATCH,
-        "expected exactly MAX_BOARDS_PER_BATCH distinct board runs after dedup+truncate"
+        cap,
+        "expected exactly max_boards_per_batch() distinct board runs after dedup+truncate"
     );
 }
 
@@ -896,25 +899,29 @@ async fn scrape_boards_dedupes_and_caps_large_input() {
 /// not just `run_boards`. A future refactor moving the guard out of `scrape_boards`
 /// MUST fail this test.
 ///
-/// Strategy: pass 5 000 entries composed of > MAX_BOARDS_PER_BATCH distinct IDs
-/// directly to `ScraperEngine::scrape_boards`. Unknown board IDs resolve to
+/// Strategy: pass 5 000 entries composed of > `max_boards_per_batch()` distinct
+/// IDs directly to `ScraperEngine::scrape_boards`. Unknown board IDs resolve to
 /// `Err("Unknown board: …")` entries immediately — no network calls — so the run
-/// is fast. The test asserts that summaries.len() ≤ MAX_BOARDS_PER_BATCH and that
-/// first-seen order is preserved (the first 6 distinct IDs win, not a random set).
+/// is fast. The test asserts that summaries.len() ≤ max_boards_per_batch() and
+/// that first-seen order is preserved (the first `cap` distinct IDs win, not a
+/// random set).
 #[tokio::test]
 async fn scrape_boards_real_entrypoint_caps_and_dedupes() {
-    use super::MAX_BOARDS_PER_BATCH;
+    let cap = super::max_boards_per_batch();
 
-    // 9 distinct fake IDs (> MAX_BOARDS_PER_BATCH=6) interleaved with duplicates.
+    // `cap + 3` distinct fake IDs (always > cap) interleaved with duplicates.
     // None of these match registered boards, so they resolve to Err immediately.
-    let distinct: Vec<String> = (0..9).map(|i| format!("nonexistent_board_{i}")).collect();
+    let distinct_count = cap + 3;
+    let distinct: Vec<String> = (0..distinct_count)
+        .map(|i| format!("nonexistent_board_{i}"))
+        .collect();
     let mut boards: Vec<String> = Vec::with_capacity(5000);
     for i in 0..5000 {
         boards.push(distinct[i % distinct.len()].clone());
     }
 
-    // The first 6 distinct IDs we see in iteration order.
-    let expected_first_six: Vec<String> = distinct[..MAX_BOARDS_PER_BATCH].to_vec();
+    // The first `cap` distinct IDs we see in iteration order.
+    let expected_first_cap: Vec<String> = distinct[..cap].to_vec();
 
     let engine = ScraperEngine::new();
     // No cancellation — all_failed=true but parent.is_cancelled()=false → Ok.
@@ -933,20 +940,20 @@ async fn scrape_boards_real_entrypoint_caps_and_dedupes() {
 
     assert!(postings.is_empty(), "unknown boards produce no postings");
     assert!(
-        summaries.len() <= MAX_BOARDS_PER_BATCH,
-        "summaries ({}) must not exceed MAX_BOARDS_PER_BATCH ({})",
+        summaries.len() <= cap,
+        "summaries ({}) must not exceed max_boards_per_batch() ({})",
         summaries.len(),
-        MAX_BOARDS_PER_BATCH
+        cap
     );
     assert_eq!(
         summaries.len(),
-        MAX_BOARDS_PER_BATCH,
-        "exactly MAX_BOARDS_PER_BATCH summaries expected after dedup+truncate"
+        cap,
+        "exactly max_boards_per_batch() summaries expected after dedup+truncate"
     );
 
-    // Verify first-seen order: the winning IDs must be the first 6 distinct ones.
+    // Verify first-seen order: the winning IDs must be the first `cap` distinct ones.
     let summary_boards: Vec<&str> = summaries.iter().map(|s| s.board.as_str()).collect();
-    let expected_refs: Vec<&str> = expected_first_six.iter().map(|s| s.as_str()).collect();
+    let expected_refs: Vec<&str> = expected_first_cap.iter().map(|s| s.as_str()).collect();
     assert_eq!(
         summary_boards, expected_refs,
         "dedupe must preserve first-seen order; got {summary_boards:?}"

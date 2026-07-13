@@ -66,11 +66,9 @@ describe('autopilotWizardSchema — step-0 gate', () => {
     expect(autopilotWizardSchema.safeParse(makeForm({ boards: [] })).success).toBe(false);
   });
 
-  it('rejects more than 6 boards', () => {
-    expect(
-      autopilotWizardSchema.safeParse(makeForm({ boards: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] }))
-        .success
-    ).toBe(false);
+  it('accepts a full-catalog-sized board selection (no upper bound)', () => {
+    const allBoards = Array.from({ length: 20 }, (_, i) => `board-${i}`);
+    expect(autopilotWizardSchema.safeParse(makeForm({ boards: allBoards })).success).toBe(true);
   });
 
   it('rejects a boards array containing an empty string (per-item min(1))', () => {

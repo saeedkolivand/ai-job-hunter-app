@@ -106,13 +106,21 @@ pub struct BoardScrapeSummary {
     pub note: Option<String>,
 }
 
-/// Maximum number of distinct boards processed per `scrape_boards` call.
+/// Maximum number of distinct boards processed per `scrape_boards` call —
+/// bound to the number of registered scrapers ([`super::boards::all`]) rather
+/// than a fixed number.
 ///
-/// Mirrors the Zod `.array().max(6)` cap in the renderer contract, but enforced
-/// server-side so a crafted IPC payload or tampered autopilots.json with thousands
-/// of (valid) board ids cannot build thousands of concurrent futures and drive
-/// ban amplification against the user's own authenticated sessions.
-const MAX_BOARDS_PER_BATCH: usize = 6;
+/// The registry size is the real ceiling on distinct board dispatches a
+/// request can ever need, so a legitimate "search every catalog board"
+/// selection is never truncated as the catalog grows (no schema/engine edit
+/// needed when a board is added — see the Future-Proof Extensibility rule).
+/// This still defends CWE-770: dedup (below) collapses a crafted payload with
+/// thousands of (even valid) board ids to at most one dispatch per registered
+/// board, so it cannot build thousands of concurrent futures or drive ban
+/// amplification against the user's own authenticated sessions.
+fn max_boards_per_batch() -> usize {
+    super::boards::all().len()
+}
 
 pub struct ScraperEngine {
     /// Bounded concurrency — swapped on `set_concurrency`. Holding an
@@ -523,15 +531,16 @@ impl ScraperEngine {
             }
         };
 
-        // Dedupe (first-seen order) + truncate to MAX_BOARDS_PER_BATCH so a
-        // crafted payload with thousands of valid ids cannot build thousands of
-        // futures and drive ban amplification on the user's own sessions.
+        // Dedupe (first-seen order) + truncate to max_boards_per_batch() (the
+        // registry size) so a crafted payload with thousands of valid ids
+        // cannot build thousands of futures and drive ban amplification on
+        // the user's own sessions.
         let boards_deduped: Vec<&String> = {
             let mut seen = std::collections::HashSet::new();
             boards
                 .iter()
                 .filter(|id| seen.insert(id.as_str()))
-                .take(MAX_BOARDS_PER_BATCH)
+                .take(max_boards_per_batch())
                 .collect()
         };
 
