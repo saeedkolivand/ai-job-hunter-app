@@ -12,8 +12,11 @@
  *    `apps/desktop/src-tauri/src/extension_bridge/mod.rs::PORT_RANGE`). Used when
  *    the native host isn't registered (old/never-installed app).
  *
- * Either way we hold a SINGLE transport, send `import.request` envelopes (token
- * on every frame), and correlate replies by `reqId`.
+ * Either way we hold a SINGLE transport. On connect we run the v2 mutual HMAC
+ * handshake (`hello` → `challenge` → `auth{proof}` → `auth.ok{serverProof}`) —
+ * the pairing token is used only as an HMAC key and is NEVER put on the wire —
+ * then send token-free `import.request` / `profile.get` envelopes over the
+ * now-authenticated socket, correlating replies by `reqId`.
  *
  * Lifecycle note (MV3): the background service worker can be evicted at any
  * time, tearing down this client. The background entry re-creates it on wake
@@ -26,11 +29,14 @@ import { type Browser, browser } from '@wxt-dev/browser';
 
 import {
   EXTENSION_MESSAGE_TYPES,
+  EXTENSION_PROTOCOL_VERSION,
   type ExtensionEnvelope,
   type ExtensionImportRequest,
   type ExtensionImportResult,
   type ExtensionProfileResult,
 } from '@ajh/shared/extension-protocol';
+
+import { computeProof, constantTimeHexEqual, isValidNonceHex, randomNonceHex } from './handshake';
 
 /** Inclusive probe range — mirrors the desktop `PORT_RANGE` (47615..=47620). */
 const PORT_START = 47615;
@@ -49,12 +55,12 @@ const BACKOFF_MS = [500, 1_000, 2_000, 5_000, 10_000];
 const OPEN_TIMEOUT_MS = 1_500;
 
 /**
- * The exact error string the desktop sends when the pairing token is wrong.
- * Only this string triggers permanent `bad_token` + no-reconnect.
- * Every other auth error (timeout / connection-closed / malformed) is a
- * TRANSPORT failure that allows reconnect via `app_not_running`.
+ * Per-step timeout for the v2 handshake (await challenge / await auth.ok). On
+ * loopback each step is a fast round-trip; a total silence (no frame, no close)
+ * is treated as a transient transport failure (reconnect), while an explicit
+ * close / a non-`challenge` reply is the outdated-desktop signal.
  */
-const AUTH_ERROR_UNAUTHORIZED = 'unauthorized';
+const HANDSHAKE_TIMEOUT_MS = 8_000;
 
 /** How long to wait for the native host's `bridge.ready` before falling back to ws. */
 const READY_TIMEOUT_MS = 1_500;
@@ -62,7 +68,18 @@ const READY_TIMEOUT_MS = 1_500;
 type PendingResolver = (result: ExtensionImportResult) => void;
 type ProfileResolver = (result: ExtensionProfileResult) => void;
 
-export type BridgePhase = 'searching' | 'connected' | 'app_not_running' | 'bad_token';
+export type BridgePhase = 'searching' | 'connected' | 'app_not_running' | 'outdated' | 'bad_token';
+
+/** One step of the v2 handshake: a frame arrived, the socket closed, or timeout. */
+type HandshakeStep =
+  { kind: 'frame'; env: Partial<ExtensionEnvelope> } | { kind: 'closed' } | { kind: 'timeout' };
+
+/** Read a non-empty string field (a nonce / proof) off a handshake payload. */
+function readHexField(payload: unknown, key: string): string | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const v = (payload as Record<string, unknown>)[key];
+  return typeof v === 'string' && v.length > 0 ? v : null;
+}
 
 export interface BridgeStatus {
   phase: BridgePhase;
@@ -286,9 +303,34 @@ export class BridgeClient {
   private backoffIndex = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
-  private connecting = false;
+  /**
+   * The in-flight `doConnect()` promise (transport probe THROUGH the full v2
+   * handshake), or `null` when no connection attempt is running. A concurrent
+   * `ensureConnected()` call AWAITS this SAME promise instead of returning early
+   * — this is the fix for the "app frame reaches an unverified peer" race: the
+   * transport can be non-null while `performHandshake` is still verifying the
+   * peer's `serverProof`, so `isOpen()` alone is never a safe "ready" signal for
+   * a concurrent caller. See `importJob`/`getProfile`, which additionally gate on
+   * `this.phase === 'connected'` (the authenticated session), never on transport
+   * liveness.
+   */
+  private connectPromise: Promise<void> | null = null;
   /** When true the last close was an auth rejection — suppress normal reconnect. */
   private authRejected = false;
+  /**
+   * When true the desktop is too old for the v2 handshake (it never sent a
+   * `challenge`) — suppress the reconnect loop so we don't hammer an old app; the
+   * next popup open / Retry re-probes and recovers once the desktop is updated.
+   */
+  private outdated = false;
+  /**
+   * Set while a v2 handshake is in flight. `handshakeFrame` receives every
+   * incoming frame (so `performHandshake` can advance step by step);
+   * `handshakeClosed` is invoked on socket close so a step resolves as `closed`.
+   * Both are cleared when a step settles.
+   */
+  private handshakeFrame: ((env: Partial<ExtensionEnvelope>) => void) | null = null;
+  private handshakeClosed: (() => void) | null = null;
 
   /** Notified on every phase change so the background can broadcast status. */
   constructor(
@@ -307,52 +349,68 @@ export class BridgeClient {
   }
 
   /**
-   * Ensure a connection: if already open, no-op; otherwise try native then ws.
-   * Safe to call repeatedly (popup-open wake, reconnect button).
+   * Ensure a connection: if already open (authenticated), no-op; otherwise try
+   * native then ws — INCLUDING the full v2 handshake. Safe to call repeatedly
+   * (popup-open wake, reconnect button, a concurrent `importJob`/`getProfile`).
+   *
+   * A concurrent call while a connection attempt is already running AWAITS the
+   * SAME promise rather than short-circuiting — critical because `attach()` sets
+   * `this.transport` before `performHandshake` has verified the peer's
+   * `serverProof`. Without this, a second caller would see `isOpen()` (transport
+   * non-null) and treat an unverified transport as ready, sending an app frame
+   * (e.g. the active-tab DOM) to a peer that has not yet proven it knows the
+   * pairing token.
    */
   async ensureConnected(): Promise<void> {
-    if (this.disposed || this.isOpen() || this.connecting || this.phase === 'bad_token') return;
-    this.connecting = true;
+    if (this.disposed || this.phase === 'bad_token') return;
+    if (this.connectPromise) return this.connectPromise;
+    if (this.isOpen()) return; // already open + past a settled handshake
+    this.connectPromise = this.doConnect();
     try {
-      this.setPhase('searching');
-      // Native first. ponytail: serial single-in-flight is fine — the popup
-      // imports one job at a time, matching the Rust host's serial relay.
-      // `connectNative()` THROWS SYNCHRONOUSLY when the host isn't registered, so
-      // building the readiness promise is separated from awaiting it — that keeps
-      // the ws fallback probe firing in the SAME tick (no microtask hop) when
-      // native is unavailable, which the ws reconnect test relies on.
-      let readyPromise: Promise<NativeMessagingTransport> | null = null;
-      try {
-        readyPromise = connectNative();
-      } catch {
-        readyPromise = null; // host not registered → straight to ws, same tick.
-      }
-      if (readyPromise) {
-        try {
-          const native = await readyPromise;
-          this.port = null; // native has no port number; diagnostics only.
-          await this.attach(native);
-          return;
-        } catch (err) {
-          if (err instanceof Error && err.message === NATIVE_APP_DOWN) {
-            // Host reachable, app down — do NOT fall back to ws.
-            this.setPhase('app_not_running');
-            this.scheduleReconnect();
-            return;
-          }
-          // NATIVE_UNAVAILABLE → fall through to the ws probe.
-        }
-      }
-
-      const socket = await this.probeRange();
-      if (socket) {
-        await this.attach(new WebSocketTransport(socket));
-      } else {
-        this.setPhase('app_not_running');
-        this.scheduleReconnect();
-      }
+      await this.connectPromise;
     } finally {
-      this.connecting = false;
+      this.connectPromise = null;
+    }
+  }
+
+  /** The actual connect-then-handshake attempt tracked by {@link connectPromise}. */
+  private async doConnect(): Promise<void> {
+    this.setPhase('searching');
+    // Native first. ponytail: serial single-in-flight is fine — the popup
+    // imports one job at a time, matching the Rust host's serial relay.
+    // `connectNative()` THROWS SYNCHRONOUSLY when the host isn't registered, so
+    // building the readiness promise is separated from awaiting it — that keeps
+    // the ws fallback probe firing in the SAME tick (no microtask hop) when
+    // native is unavailable, which the ws reconnect test relies on.
+    let readyPromise: Promise<NativeMessagingTransport> | null;
+    try {
+      readyPromise = connectNative();
+    } catch {
+      readyPromise = null; // host not registered → straight to ws, same tick.
+    }
+    if (readyPromise) {
+      try {
+        const native = await readyPromise;
+        this.port = null; // native has no port number; diagnostics only.
+        await this.attach(native);
+        return;
+      } catch (err) {
+        if (err instanceof Error && err.message === NATIVE_APP_DOWN) {
+          // Host reachable, app down — do NOT fall back to ws.
+          this.setPhase('app_not_running');
+          this.scheduleReconnect();
+          return;
+        }
+        // NATIVE_UNAVAILABLE → fall through to the ws probe.
+      }
+    }
+
+    const socket = await this.probeRange();
+    if (socket) {
+      await this.attach(new WebSocketTransport(socket));
+    } else {
+      this.setPhase('app_not_running');
+      this.scheduleReconnect();
     }
   }
 
@@ -363,7 +421,8 @@ export class BridgeClient {
    */
   resetForNewToken(): void {
     this.authRejected = false;
-    if (this.phase === 'bad_token') {
+    this.outdated = false;
+    if (this.phase === 'bad_token' || this.phase === 'outdated') {
       this.setPhase('searching');
     }
   }
@@ -372,6 +431,10 @@ export class BridgeClient {
   dispose(): void {
     this.disposed = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    // Settle any in-flight handshake step so its timeout timer is cleared.
+    this.handshakeClosed?.();
+    this.handshakeFrame = null;
+    this.handshakeClosed = null;
     for (const t of this.timers.values()) clearTimeout(t);
     this.timers.clear();
     this.pending.clear();
@@ -382,19 +445,26 @@ export class BridgeClient {
 
   /**
    * Send an `import.request` and resolve with the validated `import.result`
-   * payload. Rejects on no connection, timeout, or a malformed reply.
+   * payload. Rejects on no connection, timeout, or a malformed reply. The frame
+   * carries NO token — the socket is already authenticated by the v2 handshake.
+   *
+   * Gated on `this.phase === 'connected'` — the AUTHENTICATED SESSION — never on
+   * transport liveness. A non-null `this.transport` does NOT mean the peer is
+   * verified: `attach()` sets it before `performHandshake` checks the peer's
+   * `serverProof`. Only `'connected'` means the mutual handshake completed, so
+   * this is the seam that stops the active-tab DOM (or the profile) from ever
+   * reaching an unverified/rogue peer.
    */
-  async importJob(token: string, payload: ExtensionImportRequest): Promise<ExtensionImportResult> {
+  async importJob(payload: ExtensionImportRequest): Promise<ExtensionImportResult> {
     await this.ensureConnected();
-    const transport = this.transport;
-    if (!transport) {
+    if (this.phase !== 'connected' || !this.transport) {
       throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
     }
+    const transport = this.transport;
 
     const reqId = newReqId();
     const envelope: ExtensionEnvelope = {
       type: EXTENSION_MESSAGE_TYPES.importRequest,
-      token,
       reqId,
       payload,
     };
@@ -426,17 +496,19 @@ export class BridgeClient {
    * on no connection / timeout / send failure. The profile is returned to the
    * caller transiently and is never stored by this client.
    */
-  async getProfile(token: string): Promise<ExtensionProfileResult> {
+  async getProfile(): Promise<ExtensionProfileResult> {
     await this.ensureConnected();
-    const transport = this.transport;
-    if (!transport) {
+    // Gate on the authenticated session — see the note on `importJob`. The
+    // Contact Profile is the highest-sensitivity payload this client sends;
+    // never hand it to a peer that has not proven it knows the pairing token.
+    if (this.phase !== 'connected' || !this.transport) {
       throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
     }
+    const transport = this.transport;
 
     const reqId = newReqId();
     const envelope: ExtensionEnvelope = {
       type: EXTENSION_MESSAGE_TYPES.profileGet,
-      token,
       reqId,
       payload: null,
     };
@@ -471,14 +543,13 @@ export class BridgeClient {
 
   /** Try each port in order; resolve the first socket that reaches OPEN. */
   private async probeRange(): Promise<WebSocket | null> {
-    // TODO(bridge): the token is sent to the FIRST loopback port that answers in
-    // this range, so a same-account local process squatting a port before the app
-    // binds could harvest it on first import (accepted v1 risk). A harvested token
-    // now also grants Contact-Profile READ via profile.get (assisted autofill)
-    // whenever the user has that opt-in on, not just job-import — see the
-    // "Threat model" section in apps/extension/README.md for the full impact
-    // and the planned fix (server→client challenge HMAC over an in-app nonce, or
-    // the native-messaging fallback, which cannot be port-squatted).
+    // v2 mutual handshake: even though we still connect to the FIRST loopback
+    // port that answers, the pairing token is NEVER sent — the extension proves
+    // knowledge of it via HMAC and, crucially, verifies the desktop's own
+    // `serverProof` before sending ANY import/profile frame. A port-squatter that
+    // cannot produce a valid serverProof lands us in `bad_token` with zero PII
+    // sent (see performHandshake). See the "Threat model" section in
+    // apps/extension/README.md.
     this.setPhase('searching');
     for (let port = PORT_START; port <= PORT_END; port += 1) {
       const socket = await this.tryOpen(port);
@@ -526,90 +597,173 @@ export class BridgeClient {
     });
   }
 
-  /** Wire an opened transport, then perform the auth handshake if a token is stored. */
+  /** Wire an opened transport, then run the v2 handshake if a token is stored. */
   private async attach(transport: BridgeTransport): Promise<void> {
     this.transport = transport;
     this.backoffIndex = 0;
     this.authRejected = false;
+    this.outdated = false;
 
     transport.onMessage((env) => this.onMessage(env));
     transport.onClose(() => {
       this.transport = null;
       this.failAllPending('Connection to the desktop app closed.');
-      if (!this.disposed) {
-        if (this.authRejected) {
-          // Desktop closed the socket after rejecting our token — do NOT reconnect
-          // in a loop. The user must re-pair with a new token.
-          this.setPhase('bad_token');
-        } else {
-          this.setPhase('app_not_running');
-          this.scheduleReconnect();
-        }
+      // If a handshake is in flight, let it settle (it decides outdated /
+      // bad_token / reconnect) — don't set a phase or reconnect from here.
+      if (this.handshakeClosed) {
+        const notify = this.handshakeClosed;
+        this.handshakeClosed = null;
+        this.handshakeFrame = null;
+        notify();
+        return;
+      }
+      if (this.disposed) return;
+      if (this.authRejected) {
+        // Desktop rejected our proof (wrong token) — do NOT reconnect in a loop;
+        // the user must re-pair with a new token.
+        this.setPhase('bad_token');
+      } else if (this.outdated) {
+        // Desktop too old to speak v2 — recover on the next popup open / Retry.
+        this.setPhase('outdated');
+      } else {
+        this.setPhase('app_not_running');
+        this.scheduleReconnect();
       }
     });
 
-    // Auth handshake: if we have a stored token, verify it with the desktop
-    // before declaring the connection authorized.
+    // v2 mutual handshake: run it only if a token is stored. Without a token the
+    // socket is open but unpaired — computeStatus() surfaces that as 'not_paired'.
     const token = this.getStoredToken ? await this.getStoredToken() : null;
     if (!token) {
-      // No token stored — socket is open but we're not paired yet.  The
-      // background's computeStatus() will surface this as 'not_paired'.
       this.setPhase('connected');
       return;
     }
+    await this.performHandshake(token);
+  }
 
-    // Send the auth frame and await the import.result reply.
-    const reqId = newReqId();
-    const authEnvelope: ExtensionEnvelope = {
-      type: EXTENSION_MESSAGE_TYPES.auth,
-      token,
-      reqId,
-      payload: null,
-    };
+  /**
+   * Drive the v2 mutual HMAC handshake to completion. The token is used ONLY as
+   * an HMAC key — it never goes on the wire. The extension MUST verify the
+   * desktop's `serverProof` before this resolves `connected`; a peer that can't
+   * prove it knows the token (rogue/port-squatter) never receives any PII.
+   */
+  private async performHandshake(token: string): Promise<void> {
+    const transport = this.transport;
+    if (!transport) return;
 
-    const result = await new Promise<ExtensionImportResult>((resolve) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(reqId);
-        this.timers.delete(reqId);
-        // Treat a timeout the same as a failed auth — we cannot confirm.
-        resolve({ error: 'auth timeout' });
-      }, REQUEST_TIMEOUT_MS);
-      this.timers.set(reqId, timer);
-      this.pending.set(reqId, resolve);
+    const clientNonce = randomNonceHex();
 
-      try {
-        transport.send(authEnvelope);
-      } catch {
-        clearTimeout(timer);
-        this.timers.delete(reqId);
-        this.pending.delete(reqId);
-        resolve({ error: 'auth send failed' });
-      }
+    // Step 1: hello (no token) → await the desktop's challenge.
+    transport.send({
+      type: EXTENSION_MESSAGE_TYPES.hello,
+      reqId: newReqId(),
+      payload: { protocol: EXTENSION_PROTOCOL_VERSION, clientNonce },
     });
-
-    if (result.error === AUTH_ERROR_UNAUTHORIZED) {
-      // Explicit token rejection: block reconnect so the user must re-pair.
-      // The desktop closes the socket immediately after this reply; if it
-      // hasn't yet, close from our side so the onClose handler fires.
-      this.authRejected = true;
-      if (this.transport) {
-        this.transport.close();
-        this.transport = null;
-      }
-      this.setPhase('bad_token');
-    } else if (result.error) {
-      // Transport failure (timeout / connection-closed before reply / malformed):
-      // do NOT enter bad_token. Close cleanly so the onClose handler transitions
-      // to app_not_running + scheduleReconnect(), letting the extension recover
-      // when the desktop comes back.
-      if (this.transport) {
-        this.transport.close();
-        this.transport = null;
-      }
-      // onClose already fires on close(); don't double-set phase here.
-    } else {
-      this.setPhase('connected');
+    const step1 = await this.awaitHandshakeFrame();
+    if (step1.kind === 'timeout') {
+      // Total silence — treat as a transient transport failure (recoverable).
+      return this.finishHandshake('app_not_running');
     }
+    if (step1.kind === 'closed' || step1.env.type !== EXTENSION_MESSAGE_TYPES.challenge) {
+      // The desktop closed without a challenge, or replied a non-challenge frame
+      // (e.g. an old desktop's import.result / update.required). Either way it
+      // does not speak v2 → the user must update the desktop app.
+      return this.finishHandshake('outdated');
+    }
+    const serverNonce = readHexField(step1.env.payload, 'serverNonce');
+    // Defense-in-depth (mirrors the Rust `is_valid_nonce` shape check on the
+    // client nonce): reject a malformed/oversized serverNonce as a clean
+    // handshake failure BEFORE it feeds the HMAC — never silently proceed with
+    // attacker-shaped input. Grouped with "missing" as `outdated`: a peer whose
+    // very first reply doesn't carry a well-formed nonce does not properly speak
+    // v2.
+    if (!serverNonce || !isValidNonceHex(serverNonce)) {
+      return this.finishHandshake('outdated');
+    }
+
+    // Step 3: prove we know the token (HMAC over the client role) → await auth.ok.
+    const clientProof = await computeProof(token, 'client', serverNonce, clientNonce);
+    if (!this.transport) {
+      // Socket closed while we were computing the proof. AMBIGUOUS: the Rust
+      // `Unauthorized` path closes WITHOUT a reply BY DESIGN (see
+      // extension_bridge/mod.rs), so this is indistinguishable from a genuine
+      // app crash/restart. Never assert a hard wrong-token verdict from silence
+      // alone — recoverable, consistent with the step-1 timeout above.
+      return this.finishHandshake('app_not_running');
+    }
+    this.transport.send({
+      type: EXTENSION_MESSAGE_TYPES.auth,
+      reqId: newReqId(),
+      payload: { proof: clientProof },
+    });
+    const step2 = await this.awaitHandshakeFrame();
+    if (step2.kind === 'closed' || step2.kind === 'timeout') {
+      // No auth.ok arrived — silence (closed or timed out) after we already sent
+      // our proof. Same ambiguity as above: the Rust `Unauthorized` path closes
+      // without a reply, indistinguishable from a crash. Recoverable.
+      return this.finishHandshake('app_not_running');
+    }
+    if (step2.env.type !== EXTENSION_MESSAGE_TYPES.authOk) {
+      // The peer DID reply — with something other than auth.ok. Unlike silence,
+      // this is an actual, non-ambiguous response from a peer that spoke v2 far
+      // enough to send a challenge; treat it as untrusted → bad_token (re-pair).
+      return this.finishHandshake('bad_token');
+    }
+
+    // Step 5: verify the desktop's serverProof CONSTANT-TIME before trusting it.
+    const serverProof = readHexField(step2.env.payload, 'serverProof');
+    const expected = await computeProof(token, 'server', serverNonce, clientNonce);
+    if (!serverProof || !constantTimeHexEqual(serverProof, expected)) {
+      // The peer cannot prove it knows the token (rogue/port-squatter). We have
+      // sent NO PII (import/profile only happen after 'connected'); drop the
+      // socket and surface bad_token.
+      return this.finishHandshake('bad_token');
+    }
+
+    // Mutual auth complete — the socket is authenticated.
+    this.handshakeFrame = null;
+    this.handshakeClosed = null;
+    this.setPhase('connected');
+  }
+
+  /**
+   * Await the next handshake frame, a socket close, or a per-step timeout. While
+   * pending, `onMessage` routes EVERY incoming frame here (no import/profile
+   * frames are expected before the socket is authenticated).
+   */
+  private awaitHandshakeFrame(): Promise<HandshakeStep> {
+    return new Promise<HandshakeStep>((resolve) => {
+      let done = false;
+      const settle = (step: HandshakeStep): void => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        this.handshakeFrame = null;
+        this.handshakeClosed = null;
+        resolve(step);
+      };
+      const timer = setTimeout(() => settle({ kind: 'timeout' }), HANDSHAKE_TIMEOUT_MS);
+      this.handshakeFrame = (env) => settle({ kind: 'frame', env });
+      this.handshakeClosed = () => settle({ kind: 'closed' });
+    });
+  }
+
+  /**
+   * Terminal handshake outcome: clear the handshake hooks, set the phase, and
+   * drop the transport. `bad_token` / `outdated` suppress the reconnect loop;
+   * `app_not_running` schedules a reconnect (a transient transport blip).
+   */
+  private finishHandshake(phase: 'app_not_running' | 'outdated' | 'bad_token'): void {
+    this.handshakeFrame = null;
+    this.handshakeClosed = null;
+    if (phase === 'bad_token') this.authRejected = true;
+    if (phase === 'outdated') this.outdated = true;
+    const transport = this.transport;
+    this.transport = null;
+    transport?.close();
+    if (this.disposed) return;
+    this.setPhase(phase);
+    if (phase === 'app_not_running') this.scheduleReconnect();
   }
 
   /** Clear + return the correlation timer for a settled `reqId`. */
@@ -625,6 +779,15 @@ export class BridgeClient {
   private onMessage(parsed: unknown): void {
     if (typeof parsed !== 'object' || parsed === null) return;
     const env = parsed as Partial<ExtensionEnvelope>;
+
+    // While the v2 handshake is in flight, EVERY frame goes to the handshake
+    // driver (challenge / auth.ok / an unexpected non-v2 reply). No import or
+    // profile frames are expected before the socket is authenticated.
+    if (this.handshakeFrame) {
+      this.handshakeFrame(env);
+      return;
+    }
+
     const reqId = typeof env.reqId === 'string' ? env.reqId : '';
 
     // profile.result → the assisted-autofill contact profile (separate map).

@@ -4,9 +4,11 @@
 //! These tests are hermetic (no network). They exercise:
 //!  - `parse_from_html`: JSON-LD path (LinkedIn-style) and generic-meta path
 //!    (Indeed/Lever-style).
-//!  - `classify_frame`: the per-message security gate (size cap, per-frame token,
-//!    type dispatch) — empty/wrong token → `unauthorized` reply (no dispatch),
-//!    over-cap frame → close, SSRF private host blocked, non-JSON dropped.
+//!  - `advance_frame`: the v2 handshake state machine + per-message gate (size
+//!    cap, hello→challenge→auth mutual HMAC, session dispatch) — an outdated first
+//!    frame → `update_required` + close, a failed proof → close (never connected),
+//!    import/profile ONLY in the Authenticated state, over-cap → close, SSRF
+//!    private host blocked, non-JSON dropped.
 //!  - `upsert_for_origin`: saved/applied/dedup outcomes at the persistence
 //!    boundary (mirrors what `handle_import` calls in production).
 //!  - `normalize_job_url`: the exact dedup-key transforms (www/query/fragment/
@@ -18,7 +20,7 @@ use serde_json::json;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
 
-use super::{classify_frame, BridgeState, FrameDecision, MAX_FRAME_BYTES};
+use super::{advance_frame, handshake, BridgeState, ConnState, FrameDecision, MAX_FRAME_BYTES};
 use crate::applications::{
     normalize_job_url, ApplicationOrigin, ApplicationStatus, ApplicationStore,
 };
@@ -535,100 +537,309 @@ fn persistence_matrix_reimport_with_applied_true_advances_saved_to_applied() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// B1. Per-frame token rejection (HIGH 1)
+// B1. v2 mutual-handshake state machine (the token-never-on-the-wire fix)
 //
-// `classify_frame` is the per-message security gate the connection loop runs
-// before any app-stateful work. A frame with an empty or wrong token must be
-// REJECTED with an `unauthorized` import.result reply and must NOT be classified
-// as an `Import` — so `handle_import` is never reached and NOTHING is persisted.
-// (handle_import is the only persistence path; a `Reply` decision can't reach it.)
+// `advance_frame` is the per-message gate the connection loop runs. The security
+// invariant: an `import.request` / `profile.get` is dispatched ONLY from the
+// `Authenticated` state (i.e. AFTER a verified client proof). A socket that has
+// not completed the handshake can NEVER reach `handle_import` — so nothing is
+// ever persisted for an unauthenticated peer.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// An empty `token` must be rejected as `unauthorized` and must not dispatch an
-/// import — even though the envelope is a well-formed `import.request`.
+/// A valid protocol-2 `hello` (with a well-formed clientNonce) is accepted:
+/// `Challenge` carrying a fresh `serverNonce`, advancing to `AwaitingAuth` bound
+/// to that nonce pair. NOT yet connected.
 #[test]
-fn frame_empty_token_is_unauthorized_and_persists_nothing() {
+fn hello_v2_is_accepted_and_advances_to_awaiting_auth() {
     let (_dir, state) = bridge_state();
+    let client_nonce = handshake::new_nonce();
 
     let frame = json!({
-        "token": "",
-        "reqId": "r-empty",
-        "type": super::msg::IMPORT_REQUEST,
-        "payload": { "url": "https://jobs.example.com/posting/1" }
+        "type": super::msg::HELLO,
+        "reqId": "r-hello",
+        "payload": { "protocol": super::PROTOCOL_VERSION, "clientNonce": client_nonce },
     })
     .to_string();
 
-    let decision = classify_frame(&state, &frame);
-    let reply = match decision {
-        FrameDecision::Unauthorized(text) => text,
-        other => panic!("empty token must produce an Unauthorized decision, got {other:?}"),
-    };
-    // An `Unauthorized` (not `Import`) means handle_import is never invoked → no
-    // persist; at the connection level it also closes the socket.
-    let err = reply_error(&reply).expect("empty token reply must carry an error");
-    assert!(!err.is_empty(), "unauthorized error must be non-empty");
-    assert!(
-        err.contains("unauthorized"),
-        "empty token must map to an unauthorized error, got {err:?}"
-    );
-    let parsed: serde_json::Value = serde_json::from_str(&reply).unwrap();
-    assert_eq!(
-        parsed.get("reqId").and_then(|r| r.as_str()),
-        Some("r-empty"),
-        "reply must echo the request id"
-    );
-}
-
-/// A wrong (non-matching) `token` must be rejected as `unauthorized` and must not
-/// dispatch an import.
-#[test]
-fn frame_wrong_token_is_unauthorized_and_persists_nothing() {
-    let (_dir, state) = bridge_state();
-    // A token that is the right shape but is NOT the state's secret.
-    let wrong = "f".repeat(64);
-    assert_ne!(
-        wrong,
-        state.token(),
-        "fixture must use a non-matching token"
-    );
-
-    let frame = json!({
-        "token": wrong,
-        "reqId": "r-wrong",
-        "type": super::msg::IMPORT_REQUEST,
-        "payload": { "url": "https://jobs.example.com/posting/2" }
-    })
-    .to_string();
-
-    match classify_frame(&state, &frame) {
-        FrameDecision::Unauthorized(reply) => {
-            let err = reply_error(&reply).expect("wrong token reply must carry an error");
+    match advance_frame(&state, &ConnState::AwaitingHello, &frame) {
+        FrameDecision::Challenge { reply, next } => {
+            let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
+            assert_eq!(v["type"], super::msg::CHALLENGE);
+            assert_eq!(v["reqId"], "r-hello");
+            let server_nonce = v["payload"]["serverNonce"].as_str().unwrap();
             assert!(
-                err.contains("unauthorized"),
-                "wrong token must map to an unauthorized error, got {err:?}"
+                handshake::is_valid_nonce(server_nonce),
+                "challenge must carry a well-formed server nonce"
             );
+            match next {
+                ConnState::AwaitingAuth {
+                    server_nonce: sn,
+                    client_nonce: cn,
+                } => {
+                    assert_eq!(sn, server_nonce, "next state binds the sent server nonce");
+                    assert_eq!(cn, client_nonce, "next state binds the client nonce");
+                }
+                other => panic!("hello must advance to AwaitingAuth, got {other:?}"),
+            }
         }
-        other => panic!("wrong token must produce an Unauthorized decision, got {other:?}"),
+        other => panic!("a valid v2 hello must be Challenge, got {other:?}"),
     }
 }
 
-/// The matching token DOES classify an `import.request` as `Import` (positive
-/// control — proves the rejection tests above aren't passing for the wrong
-/// reason). The `Import` payload is forwarded verbatim to `handle_import`.
+/// A legacy `{type:'auth', token}` FIRST frame (an OLD extension) is `Outdated`:
+/// `update_required` reply then close — the force cutover, never an import.
 #[test]
-fn frame_correct_token_classifies_as_import() {
+fn legacy_auth_first_frame_is_outdated() {
     let (_dir, state) = bridge_state();
-    let token = state.token();
 
     let frame = json!({
-        "token": token,
-        "reqId": "r-ok",
+        "type": super::msg::AUTH,
+        "token": state.token(), // legacy plaintext token — must NOT authenticate
+        "reqId": "r-legacy",
+        "payload": serde_json::Value::Null,
+    })
+    .to_string();
+
+    match advance_frame(&state, &ConnState::AwaitingHello, &frame) {
+        FrameDecision::Outdated(reply) => {
+            let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
+            assert_eq!(v["type"], super::msg::UPDATE_REQUIRED);
+            assert_eq!(v["reqId"], "r-legacy");
+            assert!(v["payload"]["error"].as_str().unwrap().contains("Update"));
+        }
+        other => panic!("a legacy token `auth` first frame must be Outdated, got {other:?}"),
+    }
+}
+
+/// A `hello` carrying a lower/older protocol is treated as an outdated client.
+#[test]
+fn hello_with_lower_protocol_is_outdated() {
+    let (_dir, state) = bridge_state();
+    let frame = json!({
+        "type": super::msg::HELLO,
+        "reqId": "r-old",
+        "payload": { "protocol": 1, "clientNonce": handshake::new_nonce() },
+    })
+    .to_string();
+    assert!(
+        matches!(
+            advance_frame(&state, &ConnState::AwaitingHello, &frame),
+            FrameDecision::Outdated(_)
+        ),
+        "protocol < 2 must be Outdated"
+    );
+}
+
+/// A `hello` with a malformed clientNonce (wrong shape) is rejected as outdated —
+/// junk never reaches the HMAC.
+#[test]
+fn hello_with_malformed_nonce_is_outdated() {
+    let (_dir, state) = bridge_state();
+    let frame = json!({
+        "type": super::msg::HELLO,
+        "reqId": "r-bad-nonce",
+        "payload": { "protocol": super::PROTOCOL_VERSION, "clientNonce": "not-hex!!" },
+    })
+    .to_string();
+    assert!(matches!(
+        advance_frame(&state, &ConnState::AwaitingHello, &frame),
+        FrameDecision::Outdated(_)
+    ));
+}
+
+/// An `import.request` in the AwaitingHello state is NEVER dispatched — it is an
+/// outdated first frame (not a hello). This is the core invariant: you cannot
+/// import before completing the handshake.
+#[test]
+fn import_before_handshake_is_not_dispatched() {
+    let (_dir, state) = bridge_state();
+    let frame = json!({
         "type": super::msg::IMPORT_REQUEST,
+        "reqId": "r-early",
+        "payload": { "url": "https://jobs.example.com/posting/early" },
+    })
+    .to_string();
+    match advance_frame(&state, &ConnState::AwaitingHello, &frame) {
+        FrameDecision::Outdated(_) => {}
+        other => panic!("an import.request before hello must NOT be an Import, got {other:?}"),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B1b. Handshake step 3: constant-time client-proof verification
+//
+// In the AwaitingAuth state, only an `auth { proof }` with a proof that verifies
+// constant-time against HMAC-SHA256(token, CLIENT_MSG) advances to Authenticated
+// (AuthOk, replying the server proof). A wrong/absent proof, or any non-auth
+// frame, closes the socket (Unauthorized) and never marks it connected.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Helper: the AwaitingAuth state for a fixed nonce pair, plus the CORRECT client
+/// proof the extension would compute for `state`'s token.
+fn awaiting_auth(state: &BridgeState) -> (ConnState, String) {
+    let server_nonce = handshake::new_nonce();
+    let client_nonce = handshake::new_nonce();
+    let proof = handshake::client_proof(&state.token(), &server_nonce, &client_nonce);
+    (
+        ConnState::AwaitingAuth {
+            server_nonce,
+            client_nonce,
+        },
+        proof,
+    )
+}
+
+/// A correct client proof advances to `AuthOk`: the reply is an `auth.ok`
+/// envelope whose `serverProof` equals `HMAC(token, SERVER_MSG)` for the bound
+/// nonces — so the extension can verify the desktop is genuine.
+#[test]
+fn correct_proof_yields_auth_ok_with_matching_server_proof() {
+    let (_dir, state) = bridge_state();
+    let (conn, proof) = awaiting_auth(&state);
+    let (server_nonce, client_nonce) = match &conn {
+        ConnState::AwaitingAuth {
+            server_nonce,
+            client_nonce,
+        } => (server_nonce.clone(), client_nonce.clone()),
+        _ => unreachable!(),
+    };
+
+    let frame = json!({
+        "type": super::msg::AUTH,
+        "reqId": "r-auth",
+        "payload": { "proof": proof },
+    })
+    .to_string();
+
+    match advance_frame(&state, &conn, &frame) {
+        FrameDecision::AuthOk(reply) => {
+            let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
+            assert_eq!(v["type"], super::msg::AUTH_OK);
+            assert_eq!(v["reqId"], "r-auth");
+            let server_proof = v["payload"]["serverProof"].as_str().unwrap();
+            assert_eq!(
+                server_proof,
+                handshake::server_proof(&state.token(), &server_nonce, &client_nonce),
+                "the desktop must return the exact server proof the extension expects"
+            );
+        }
+        other => panic!("a correct client proof must be AuthOk, got {other:?}"),
+    }
+}
+
+/// A WRONG proof (right shape, wrong bytes) is `Unauthorized` — the socket closes
+/// and is never marked connected. This is the token-mismatch path (bad_token).
+#[test]
+fn wrong_proof_is_unauthorized() {
+    let (_dir, state) = bridge_state();
+    let (conn, _correct) = awaiting_auth(&state);
+    // A validly-shaped but wrong proof (all zeros).
+    let frame = json!({
+        "type": super::msg::AUTH,
+        "reqId": "r-bad",
+        "payload": { "proof": "0".repeat(64) },
+    })
+    .to_string();
+    assert!(matches!(
+        advance_frame(&state, &conn, &frame),
+        FrameDecision::Unauthorized
+    ));
+}
+
+/// An absent/empty proof is `Unauthorized` (never a panic, never connected).
+#[test]
+fn absent_proof_is_unauthorized() {
+    let (_dir, state) = bridge_state();
+    let (conn, _correct) = awaiting_auth(&state);
+    let frame = json!({
+        "type": super::msg::AUTH,
+        "reqId": "r-empty",
+        "payload": serde_json::Value::Null,
+    })
+    .to_string();
+    assert!(matches!(
+        advance_frame(&state, &conn, &frame),
+        FrameDecision::Unauthorized
+    ));
+}
+
+/// A non-auth frame in AwaitingAuth (e.g. an import.request trying to skip the
+/// proof) is `Unauthorized` — you cannot bypass step 3.
+#[test]
+fn non_auth_frame_mid_handshake_is_unauthorized() {
+    let (_dir, state) = bridge_state();
+    let (conn, _correct) = awaiting_auth(&state);
+    let frame = json!({
+        "type": super::msg::IMPORT_REQUEST,
+        "reqId": "r-skip",
+        "payload": { "url": "https://jobs.example.com/posting/skip" },
+    })
+    .to_string();
+    match advance_frame(&state, &conn, &frame) {
+        FrameDecision::Unauthorized => {}
+        other => panic!("an import.request mid-handshake must be Unauthorized, got {other:?}"),
+    }
+}
+
+/// End-to-end pure handshake: AwaitingHello --hello--> Challenge(next) ; feed the
+/// derived server+client nonces the REAL client proof --auth--> AuthOk. Proves the
+/// two-frame mutual handshake composes with the actual nonces the desktop issues.
+#[test]
+fn full_handshake_hello_then_auth_authenticates() {
+    let (_dir, state) = bridge_state();
+    let client_nonce = handshake::new_nonce();
+
+    let hello = json!({
+        "type": super::msg::HELLO,
+        "reqId": "h",
+        "payload": { "protocol": super::PROTOCOL_VERSION, "clientNonce": client_nonce },
+    })
+    .to_string();
+
+    let next = match advance_frame(&state, &ConnState::AwaitingHello, &hello) {
+        FrameDecision::Challenge { next, .. } => next,
+        other => panic!("hello must Challenge, got {other:?}"),
+    };
+    let server_nonce = match &next {
+        ConnState::AwaitingAuth { server_nonce, .. } => server_nonce.clone(),
+        _ => unreachable!(),
+    };
+
+    // The extension computes the client proof for the issued nonces.
+    let proof = handshake::client_proof(&state.token(), &server_nonce, &client_nonce);
+    let auth = json!({
+        "type": super::msg::AUTH,
+        "reqId": "a",
+        "payload": { "proof": proof },
+    })
+    .to_string();
+
+    assert!(
+        matches!(
+            advance_frame(&state, &next, &auth),
+            FrameDecision::AuthOk(_)
+        ),
+        "the real client proof for the issued nonces must authenticate"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B1c. Post-auth dispatch — import/profile ONLY in the Authenticated state
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// An authenticated `import.request` classifies as `Import` (positive control),
+/// carrying the payload verbatim to `handle_import`.
+#[test]
+fn authenticated_import_classifies_as_import() {
+    let (_dir, state) = bridge_state();
+    let frame = json!({
+        "type": super::msg::IMPORT_REQUEST,
+        "reqId": "r-ok",
         "payload": { "url": "https://jobs.example.com/posting/3" }
     })
     .to_string();
 
-    match classify_frame(&state, &frame) {
+    match advance_frame(&state, &ConnState::Authenticated, &frame) {
         FrameDecision::Import { req_id, payload } => {
             assert_eq!(req_id, "r-ok");
             assert_eq!(
@@ -636,254 +847,43 @@ fn frame_correct_token_classifies_as_import() {
                 Some("https://jobs.example.com/posting/3")
             );
         }
-        other => panic!("a valid token + import.request must classify as Import, got {other:?}"),
+        other => panic!("an authenticated import.request must be Import, got {other:?}"),
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// B1b. Connection-time `auth` frame (the wrong-token-never-connected fix)
-//
-// The extension sends an `auth` frame immediately after the socket opens to
-// verify the pairing before any import. A WRONG token must be `Unauthorized`
-// (reply carries the `unauthorized` error; the connection loop then closes the
-// socket and never marks it connected). A CORRECT token must be a `Reply` whose
-// `import.result` payload carries NO `error` (the extension reads "no error" =
-// authorized). The connection loop marks `connected` true only for `Reply` /
-// `Import` (token-validated), never for `Unauthorized`.
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// An `auth` frame with the WRONG token is `Unauthorized` (not `Reply`): the
-/// connection loop sends the reply then closes the socket and never marks it
-/// connected. This is the core fix — a wrong token is rejected at the handshake-
-/// adjacent first frame, never reported as connected/authorized.
+/// An authenticated `profile.get` classifies as `Profile`.
 #[test]
-fn auth_frame_wrong_token_is_unauthorized() {
+fn authenticated_profile_get_classifies_as_profile() {
     let (_dir, state) = bridge_state();
-    let wrong = "9".repeat(64);
-    assert_ne!(
-        wrong,
-        state.token(),
-        "fixture must use a non-matching token"
-    );
-
     let frame = json!({
-        "token": wrong,
-        "reqId": "r-auth-bad",
-        "type": super::msg::AUTH,
+        "type": super::msg::PROFILE_GET,
+        "reqId": "r-prof",
         "payload": serde_json::Value::Null,
     })
     .to_string();
-
-    match classify_frame(&state, &frame) {
-        FrameDecision::Unauthorized(reply) => {
-            let err = reply_error(&reply).expect("wrong-token auth reply must carry an error");
-            assert!(
-                err.contains("unauthorized"),
-                "wrong-token auth must map to an unauthorized error, got {err:?}"
-            );
-        }
-        other => panic!("an `auth` frame with a wrong token must be Unauthorized, got {other:?}"),
+    match advance_frame(&state, &ConnState::Authenticated, &frame) {
+        FrameDecision::Profile { req_id } => assert_eq!(req_id, "r-prof"),
+        other => panic!("an authenticated profile.get must be Profile, got {other:?}"),
     }
 }
 
-/// An `auth` frame with the CORRECT token is a `Reply` whose `import.result`
-/// payload contains NO `error` field — the extension treats "no error" as
-/// authorized. The `auth` frame does no import (empty fields), it only verifies
-/// the token.
+/// A reserved type in the Authenticated state gets an `import.result` error reply
+/// (never a panic).
 #[test]
-fn auth_frame_correct_token_replies_with_no_error() {
+fn authenticated_reserved_type_replies_with_error() {
     let (_dir, state) = bridge_state();
-    let token = state.token();
-
     let frame = json!({
-        "token": token,
-        "reqId": "r-auth-ok",
-        "type": super::msg::AUTH,
+        "type": super::msg::MATCH_LIVE,
+        "reqId": "r-reserved",
         "payload": serde_json::Value::Null,
     })
     .to_string();
-
-    match classify_frame(&state, &frame) {
+    match advance_frame(&state, &ConnState::Authenticated, &frame) {
         FrameDecision::Reply(reply) => {
-            assert!(
-                reply_error(&reply).is_none(),
-                "a correct-token auth reply must carry NO error (no error = authorized), got {reply}"
-            );
-            let parsed: serde_json::Value = serde_json::from_str(&reply).unwrap();
-            assert_eq!(
-                parsed.get("type").and_then(|t| t.as_str()),
-                Some(super::msg::IMPORT_RESULT),
-                "the auth ok reply reuses the import.result envelope"
-            );
-            assert_eq!(
-                parsed.get("reqId").and_then(|r| r.as_str()),
-                Some("r-auth-ok"),
-                "the auth reply must echo the request id"
-            );
+            let err = reply_error(&reply).expect("reserved type must carry an error");
+            assert!(err.contains("not implemented"), "got {err:?}");
         }
-        other => panic!("an `auth` frame with the correct token must be a Reply, got {other:?}"),
-    }
-}
-
-/// A wrong-token frame yields `Unauthorized` while a valid-token frame yields
-/// `Reply`/`Import` — and ONLY the latter two cause the connection loop to call
-/// `set_connected(true)`. `set_connected` lives in the async connection loop
-/// (not unit-reachable without a live socket), so we pin the classify-level
-/// variant split that drives it: `Unauthorized` (never connected) is a distinct
-/// variant from `Reply`/`Import` (connected). A fresh state is disconnected.
-#[test]
-fn unauthorized_variant_is_distinct_from_connecting_variants() {
-    let (_dir, state) = bridge_state();
-    assert!(
-        !state.is_connected(),
-        "a fresh bridge state is not connected until a token-validated frame arrives"
-    );
-
-    let bad = json!({
-        "token": "0".repeat(64),
-        "reqId": "r-bad",
-        "type": super::msg::AUTH,
-        "payload": serde_json::Value::Null,
-    })
-    .to_string();
-    assert!(
-        matches!(classify_frame(&state, &bad), FrameDecision::Unauthorized(_)),
-        "a wrong-token frame must classify as Unauthorized (loop never marks it connected)"
-    );
-
-    let ok = json!({
-        "token": state.token(),
-        "reqId": "r-ok",
-        "type": super::msg::AUTH,
-        "payload": serde_json::Value::Null,
-    })
-    .to_string();
-    assert!(
-        matches!(classify_frame(&state, &ok), FrameDecision::Reply(_)),
-        "a valid-token auth frame must classify as Reply (the loop marks it connected)"
-    );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// B1c. classify_frame with absent / empty reqId
-//
-// When a frame's `reqId` field is absent OR is an empty string, `classify_frame`
-// defaults `req_id` to `""`. The reply is still emitted with `"reqId": ""`.
-//
-// KNOWN CORRELATION HAZARD: two concurrent requests both lacking `reqId` would
-// both receive `"reqId": ""` replies, making them indistinguishable on the
-// extension side. This is NOT fixed here — it is pinned as a documented behavior
-// so a future change (e.g. server-side reqId generation) has a test to land on.
-// Auth frames are normally sent one-at-a-time, so the hazard is advisory for now.
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// An `auth` frame whose `reqId` is ABSENT defaults `req_id` to `""`. The frame
-/// still classifies correctly (correct token → Reply, wrong token → Unauthorized)
-/// and the reply carries `"reqId": ""` rather than panicking or mis-routing to a
-/// non-existent request.
-#[test]
-fn classify_frame_auth_absent_req_id_defaults_to_empty_string() {
-    let (_dir, state) = bridge_state();
-    let token = state.token();
-
-    // Auth with correct token, NO reqId field at all.
-    let frame = json!({
-        "token": token,
-        "type": super::msg::AUTH,
-        "payload": serde_json::Value::Null,
-    })
-    .to_string();
-
-    match classify_frame(&state, &frame) {
-        FrameDecision::Reply(reply) => {
-            // Must not panic; error-free means "authorized".
-            assert!(
-                reply_error(&reply).is_none(),
-                "absent-reqId auth with correct token must reply with no error"
-            );
-            let parsed: serde_json::Value = serde_json::from_str(&reply).unwrap();
-            // PINNED BEHAVIOR: absent reqId → reply carries "reqId": "".
-            // If this assertion ever changes, the correlation-hazard comment above
-            // must be revisited (e.g. the bridge started generating its own reqId).
-            assert_eq!(
-                parsed.get("reqId").and_then(|r| r.as_str()),
-                Some(""),
-                "absent reqId must default the reply's reqId to empty string (pinned behavior)"
-            );
-        }
-        other => {
-            panic!("correct-token auth with absent reqId must classify as Reply, got {other:?}")
-        }
-    }
-}
-
-/// An `import.request` frame whose `reqId` is an empty string `""` is treated
-/// the same as absent — `req_id` is `""` and the `Import` decision carries it.
-/// This pins the correlation hazard: a reply for this request would have
-/// `"reqId": ""` and cannot be distinguished from another no-reqId import reply.
-#[test]
-fn classify_frame_import_empty_req_id_carries_empty_string() {
-    let (_dir, state) = bridge_state();
-    let token = state.token();
-
-    let frame = json!({
-        "token": token,
-        "reqId": "",  // explicitly empty — same as absent for correlation purposes
-        "type": super::msg::IMPORT_REQUEST,
-        "payload": { "url": "https://jobs.example.com/posting/empty-req" }
-    })
-    .to_string();
-
-    match classify_frame(&state, &frame) {
-        FrameDecision::Import { req_id, payload } => {
-            // PINNED BEHAVIOR: empty reqId passes through as "".
-            assert_eq!(
-                req_id, "",
-                "empty reqId must be carried as-is (empty string) into the Import decision"
-            );
-            assert_eq!(
-                payload.get("url").and_then(|u| u.as_str()),
-                Some("https://jobs.example.com/posting/empty-req")
-            );
-            // CORRELATION HAZARD (advisory, not a panic): `result_reply(&req_id, …)`
-            // will produce `"reqId": ""` — indistinguishable from any other empty-reqId
-            // reply. The extension always sets a non-empty reqId today, so this is
-            // defensive documentation rather than an active bug.
-        }
-        other => {
-            panic!("correct-token import with empty reqId must classify as Import, got {other:?}")
-        }
-    }
-}
-
-/// Wrong-token frame with ABSENT `reqId` still produces an Unauthorized reply
-/// (token gate runs before reqId is meaningful), and the reply carries `"reqId": ""`.
-#[test]
-fn classify_frame_unauthorized_absent_req_id_reply_carries_empty_string() {
-    let (_dir, state) = bridge_state();
-    let wrong = "a".repeat(64);
-    assert_ne!(wrong, state.token());
-
-    // No reqId field.
-    let frame = json!({
-        "token": wrong,
-        "type": super::msg::AUTH,
-        "payload": serde_json::Value::Null,
-    })
-    .to_string();
-
-    match classify_frame(&state, &frame) {
-        FrameDecision::Unauthorized(reply) => {
-            let err = reply_error(&reply).expect("unauthorized reply must carry an error");
-            assert!(err.contains("unauthorized"));
-            let parsed: serde_json::Value = serde_json::from_str(&reply).unwrap();
-            assert_eq!(
-                parsed.get("reqId").and_then(|r| r.as_str()),
-                Some(""),
-                "unauthorized reply with no reqId must echo empty string (pinned behavior)"
-            );
-        }
-        other => panic!("wrong-token + absent reqId must be Unauthorized, got {other:?}"),
+        other => panic!("a reserved type must be a Reply(error), got {other:?}"),
     }
 }
 
@@ -905,7 +905,8 @@ fn frame_over_size_cap_is_closed_without_dispatch() {
     let oversize = "a".repeat(MAX_FRAME_BYTES + 1);
     assert!(oversize.len() > MAX_FRAME_BYTES);
 
-    match classify_frame(&state, &oversize) {
+    // The size guard runs before parse/state — state-independent.
+    match advance_frame(&state, &ConnState::Authenticated, &oversize) {
         FrameDecision::CloseOverCap => {}
         other => panic!("an over-cap frame must be CloseOverCap, got {other:?}"),
     }
@@ -920,7 +921,7 @@ fn frame_exactly_at_cap_is_not_over_size() {
     assert_eq!(at_cap.len(), MAX_FRAME_BYTES);
 
     // Not over-cap → it is parsed; raw "aaa…" is not JSON → Drop (not CloseOverCap).
-    match classify_frame(&state, &at_cap) {
+    match advance_frame(&state, &ConnState::Authenticated, &at_cap) {
         FrameDecision::Drop => {}
         other => panic!("a frame exactly at the cap must parse (Drop here), got {other:?}"),
     }
@@ -931,29 +932,28 @@ fn frame_exactly_at_cap_is_not_over_size() {
 //
 // An authenticated import.request whose `url` is a private/loopback host must be
 // rejected by the SSRF gate `handle_import` applies (`is_safe_import_url`) before
-// any persistence. classify_frame correctly routes it to Import (auth passed);
+// any persistence. advance_frame (in the Authenticated state) routes it to Import;
 // we then assert the exact gate handle_import runs rejects the host, so nothing
 // is ever persisted.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A private-host import URL passes the token gate (classified as Import) but is
+/// A private-host import URL classifies as Import (session-authenticated) but is
 /// blocked by the host SSRF guard handle_import applies before persisting.
 #[test]
 fn frame_private_host_import_is_blocked_by_ssrf_gate() {
     let (_dir, state) = bridge_state();
-    let token = state.token();
     let private_url = "http://192.168.1.1/job";
 
+    // v2: no token on the frame; the socket is already session-authenticated.
     let frame = json!({
-        "token": token,
         "reqId": "r-ssrf",
         "type": super::msg::IMPORT_REQUEST,
         "payload": { "url": private_url }
     })
     .to_string();
 
-    // Auth passes → Import; the URL is non-empty after normalization …
-    match classify_frame(&state, &frame) {
+    // Authenticated → Import; the URL is non-empty after normalization …
+    match advance_frame(&state, &ConnState::Authenticated, &frame) {
         FrameDecision::Import { payload, .. } => {
             let url = payload.get("url").and_then(|u| u.as_str()).unwrap();
             assert!(
@@ -976,7 +976,7 @@ fn frame_private_host_import_is_blocked_by_ssrf_gate() {
 #[test]
 fn frame_non_json_is_dropped() {
     let (_dir, state) = bridge_state();
-    match classify_frame(&state, "this is not json {") {
+    match advance_frame(&state, &ConnState::Authenticated, "this is not json {") {
         FrameDecision::Drop => {}
         other => panic!("non-JSON must Drop, got {other:?}"),
     }

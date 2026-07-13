@@ -214,7 +214,8 @@ mod tests {
     // this pins only the stdio framing — the one bit of non-trivial byte logic.
     #[tokio::test]
     async fn stdio_frame_round_trips() {
-        let value = json!({ "type": "import.request", "reqId": "1", "token": "abc" });
+        // v2 frames carry no token; the host is a dumb byte relay either way.
+        let value = json!({ "type": "import.request", "reqId": "1", "payload": { "url": "x" } });
         let json = value.to_string();
 
         // Encode: native-order u32 length prefix + UTF-8 JSON.

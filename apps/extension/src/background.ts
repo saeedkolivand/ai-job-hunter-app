@@ -65,6 +65,9 @@ async function computeStatus(): Promise<ConnectionStatus> {
   let phase: ConnectionStatus['phase'];
   if (bridge.phase === 'bad_token') {
     phase = 'bad_token';
+  } else if (bridge.phase === 'outdated') {
+    // Desktop too old for the v2 handshake → prompt the user to update the app.
+    phase = 'outdated';
   } else if (bridge.phase === 'app_not_running') {
     phase = 'app_not_running';
   } else if (bridge.phase === 'searching') {
@@ -73,7 +76,7 @@ async function computeStatus(): Promise<ConnectionStatus> {
     // Bridge reachable but we have no secret yet → show the pairing screen.
     phase = 'not_paired';
   } else {
-    // bridge.phase === 'connected' AND hasToken, meaning the auth handshake succeeded.
+    // bridge.phase === 'connected' AND hasToken → the mutual handshake succeeded.
     phase = 'connected';
   }
   return { phase, port: bridge.port, hasToken };
@@ -136,7 +139,7 @@ async function runImport(applied: boolean): Promise<PopupResponse> {
     // ponytail: restricted page or scripting permission denied — URL-only fallback
   }
 
-  const result = await getClient().importJob(token, payload);
+  const result = await getClient().importJob(payload);
   return { ok: true, kind: 'import', result };
 }
 
@@ -183,7 +186,7 @@ async function runFill(): Promise<PopupResponse> {
     return { ok: false, error: 'Not paired. Paste your pairing token first.' };
   }
 
-  const profile = await getClient().getProfile(token);
+  const profile = await getClient().getProfile();
   if (profile.error) {
     // Desktop refused (autofill off) or the reply was malformed — surface it.
     return { ok: false, error: profile.error };

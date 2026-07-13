@@ -99,6 +99,7 @@ const els = {
     import: byId<HTMLElement>('view-import'),
     pair: byId<HTMLElement>('view-pair'),
     offline: byId<HTMLElement>('view-offline'),
+    outdated: byId<HTMLElement>('view-outdated'),
     searching: byId<HTMLElement>('view-searching'),
   },
   btnImport: byId<HTMLButtonElement>('btn-import'),
@@ -114,6 +115,7 @@ const els = {
   btnHelp: byId<HTMLButtonElement>('btn-help'),
   helpPopover: byId<HTMLParagraphElement>('help-popover'),
   btnGetApp: byId<HTMLButtonElement>('btn-get-app'),
+  btnUpdateApp: byId<HTMLButtonElement>('btn-update-app'),
 };
 
 /** Actionable label for the pairing button; restored after a failed/cleared pair. */
@@ -134,6 +136,7 @@ const PILL_LABEL: Record<ConnectionStatus['phase'], string> = {
   not_paired: '⚠ Not paired',
   connected: '● Connected',
   app_not_running: '✕ App not running',
+  outdated: '⟳ Update the app',
   bad_token: '✕ Wrong token',
 };
 
@@ -179,6 +182,9 @@ function showView(phase: ConnectionStatus['phase']): void {
   // enter a corrected token in both cases.
   els.views.pair.hidden = phase !== 'not_paired' && phase !== 'bad_token';
   els.views.offline.hidden = phase !== 'app_not_running';
+  // Outdated desktop: a distinct "update the desktop app" view (NOT the pairing
+  // view — the token is fine; the app is too old to speak the v2 handshake).
+  els.views.outdated.hidden = phase !== 'outdated';
   els.views.searching.hidden = phase !== 'searching';
 }
 
@@ -192,7 +198,8 @@ function render(status: ConnectionStatus): void {
   } else if (
     status.phase === 'connected' ||
     status.phase === 'not_paired' ||
-    status.phase === 'bad_token'
+    status.phase === 'bad_token' ||
+    status.phase === 'outdated'
   ) {
     // A real outcome arrived — reset so the next session starts fresh.
     hasShownOffline = false;
@@ -211,9 +218,9 @@ function render(status: ConnectionStatus): void {
 
   els.pill.textContent = PILL_LABEL[status.phase];
   els.pill.className = `pill pill--${status.phase}`;
-  // Retry lives in the header (left of the pill) and only makes sense when the
-  // app is unreachable — a reconnect is a no-op once the app is up.
-  els.btnRetry.hidden = status.phase !== 'app_not_running';
+  // Retry lives in the header (left of the pill) and makes sense when the app is
+  // unreachable OR outdated (re-probe after the user updates the desktop app).
+  els.btnRetry.hidden = status.phase !== 'app_not_running' && status.phase !== 'outdated';
   showView(status.phase);
   // On bad_token, surface a clear error in the pairing view so the user knows
   // they need to copy the current token from the desktop app's Settings.
@@ -420,6 +427,9 @@ function wire(): void {
   els.btnRetry.addEventListener('click', () => void retry());
   els.btnOpenSettings.addEventListener('click', () => void openAppPairing());
   els.btnGetApp.addEventListener('click', () => void getApp());
+  // The outdated-desktop view sends the user to the same download page (which
+  // serves the latest build) to update their app.
+  els.btnUpdateApp.addEventListener('click', () => void getApp());
   els.btnHelp.addEventListener('click', toggleHelp);
 
   // Live status pushes from the background while the popup is open.

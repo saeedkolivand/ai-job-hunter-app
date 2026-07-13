@@ -17,15 +17,21 @@
 //!    unknowable in advance — see [`auth::is_allowed_origin`]. A dev override
 //!    (`platform::config::extension_dev_origins`) admits a locally-loaded
 //!    extension. The per-frame token (3) is what actually authenticates.
-//! 3. **Per-frame token** — every envelope carries the paired secret; a mismatch
-//!    is rejected with the `unauthorized` reply and closes the socket. The
-//!    extension verifies the pairing up front with an [`msg::AUTH`] frame sent
-//!    immediately after the socket opens (a token check with no payload): a
-//!    correct token gets an `import.result` reply with **no** `error`, a wrong
-//!    token gets the unauthorized reply and the socket is closed. The handshake
-//!    (1–2) alone does NOT mark the socket connected: `connected` flips true only
-//!    once a frame passes the token gate, so a wrong-token socket is never
-//!    reported as connected/authorized (see [`handle_connection`]).
+//! 3. **Mutual HMAC challenge-response (protocol v2)** — the pairing token is
+//!    NEVER transmitted. On connect the extension sends [`msg::HELLO`]
+//!    `{protocol, clientNonce}`; the desktop replies [`msg::CHALLENGE`]
+//!    `{serverNonce}`; the extension sends [`msg::AUTH`] `{proof}` where
+//!    `proof = HMAC-SHA256(token, CLIENT_MSG)`; the desktop verifies it
+//!    **constant-time** ([`handshake::verify_client_proof`]) and, on success,
+//!    replies [`msg::AUTH_OK`] `{serverProof}` (`HMAC-SHA256(token, SERVER_MSG)`)
+//!    so the extension can prove the desktop is genuine (not a port-squatter).
+//!    `connected` flips true ONLY once the client proof verifies — the WS
+//!    handshake and the `hello`/`challenge` exchange alone do NOT authorize.
+//!    After auth the socket is session-authenticated: `import.request` /
+//!    `profile.get` frames carry NO token (see [`advance_frame`]). A first frame
+//!    that is not a valid protocol-2 `hello` (an old extension's legacy
+//!    `{type:'auth', token}` frame, a lower protocol) gets [`msg::UPDATE_REQUIRED`]
+//!    and the socket closes — a hard cutover with no dual-support path.
 //! 4. **Size cap** — frames over [`MAX_FRAME_BYTES`] are rejected.
 //! 5. **URL/SSRF guard** — the imported `url` is normalized (http(s) only) and
 //!    run through [`auth::is_safe_public_host`] (rejects loopback/private/
@@ -57,6 +63,7 @@ use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, APPLICATIONS_CHANGED};
 
 pub mod auth;
+pub mod handshake;
 #[cfg(test)]
 mod import_tests;
 pub mod native_host;
@@ -77,16 +84,28 @@ pub const NATIVE_HOST_MANIFEST: &str = "app.aijobhunter.bridge.json";
 /// in `packages/shared/src/ipc/extension-protocol.ts`. A parity test
 /// ([`test`]) pins these to the TS literals so the two can never drift.
 pub mod msg {
-    /// Connection-time token verification; no payload. The extension sends this
-    /// first frame right after the socket opens; the desktop replies with an
-    /// `import.result` envelope carrying no `error` on success (or the
-    /// unauthorized error reply on a bad token, after which the socket closes).
+    /// Handshake step 1 (extension → desktop): `{ protocol, clientNonce }`. NO
+    /// token — the proof (step 3) authenticates. Must be the FIRST frame.
+    pub const HELLO: &str = "hello";
+    /// Handshake step 2 (desktop → extension): `{ serverNonce }`.
+    pub const CHALLENGE: &str = "challenge";
+    /// Handshake step 3 (extension → desktop): `{ proof }` where
+    /// `proof = HMAC-SHA256(token, CLIENT_MSG)`. The token is NEVER on the wire
+    /// in v2; the desktop verifies `proof` constant-time (see [`super::handshake`]).
     pub const AUTH: &str = "auth";
+    /// Handshake step 4 (desktop → extension): `{ serverProof }` where
+    /// `serverProof = HMAC-SHA256(token, SERVER_MSG)` — the desktop proving IT
+    /// knows the token so the extension can reject a rogue/port-squatting peer.
+    pub const AUTH_OK: &str = "auth.ok";
+    /// Force-cutover reply (desktop → extension): sent, then the socket closes,
+    /// when a connection's first frame is not a valid protocol-2 `hello` (e.g. an
+    /// old extension's legacy `{type:'auth', token}` frame, or a lower protocol).
+    pub const UPDATE_REQUIRED: &str = "update.required";
     pub const IMPORT_REQUEST: &str = "import.request";
     pub const IMPORT_RESULT: &str = "import.result";
     /// Extension → desktop: fetch the contact profile for assisted autofill; no
-    /// payload (authed by the per-frame token). Returned only when the autofill
-    /// opt-in is on, else a refusal `error`.
+    /// payload (authed by the already-authenticated session). Returned only when
+    /// the autofill opt-in is on, else a refusal `error`.
     pub const PROFILE_GET: &str = "profile.get";
     /// Desktop → extension: the contact-profile fields for autofill (or an `error`).
     pub const PROFILE_RESULT: &str = "profile.result";
@@ -95,6 +114,11 @@ pub mod msg {
     /// RESERVED (not handled yet) — "have I already applied to this URL?".
     pub const APPLIED_CHECK: &str = "applied.check";
 }
+
+/// Handshake protocol version carried in the `hello` frame. MUST match the TS
+/// `EXTENSION_PROTOCOL_VERSION` in `packages/shared/.../extension-protocol-constants.ts`.
+/// A `hello` with a lower (or absent) protocol is treated as an outdated client.
+pub const PROTOCOL_VERSION: u64 = 2;
 
 /// Hard cap on a single WS message. A job page's full `outerHTML` can run to a
 /// few MB, so 8 MB matches the scraper's per-response cap
@@ -121,8 +145,9 @@ pub struct BridgeState {
     port: Mutex<Option<u16>>,
     /// The pairing secret. Persisted to disk; rotated by `regenerate`.
     token: Mutex<String>,
-    /// Last-writer-wins status hint: set `true` once a frame passes the
-    /// per-frame token gate (never on the bare handshake, so a wrong-token
+    /// Last-writer-wins status hint: set `true` once the extension's client
+    /// proof verifies (the v2 mutual handshake completes — never on the bare WS
+    /// handshake nor the `hello`/`challenge` exchange, so an unauthenticated
     /// client is never reported as connected) and `false` when a socket loop
     /// exits. It is **not** a refcount — this single bool assumes the de-facto
     /// single extension socket (loopback, one extension), so with concurrent
@@ -408,12 +433,14 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
         Some(s) => s,
         None => return,
     };
-    // NOT marked connected yet: the bare handshake (loopback + origin) is not
-    // authentication. `connected` flips true only once a frame passes the
-    // per-frame token gate (an `Import` or a `Reply` from `classify_frame`), so
-    // a wrong-token socket is never reported as connected/authorized.
+    // NOT marked connected yet: the bare WS handshake (loopback + origin) is not
+    // authentication. The socket walks the v2 mutual handshake below; `connected`
+    // flips true only once the extension's client proof verifies (an `AuthOk`
+    // decision), so an unauthenticated socket is never reported as connected.
 
     let (mut writer, mut reader) = ws.split();
+    // Per-connection handshake state; every socket starts by expecting `hello`.
+    let mut conn = ConnState::AwaitingHello;
 
     while let Some(frame) = reader.next().await {
         let msg = match frame {
@@ -434,41 +461,52 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
             _ => continue,
         };
 
-        // Classify the frame against the size + token + type gates (no app state).
-        // An over-cap frame closes the socket; a bad token replies `unauthorized`
-        // then closes; a reserved/unknown type replies with an error; only an
-        // authenticated import request reaches `app` state.
-        let reply = match classify_frame(&state, &text) {
+        // Advance the handshake state machine (pure — no app state). An over-cap
+        // frame closes; an outdated first frame gets `update_required` then close;
+        // a failed proof closes without marking connected; only an authenticated
+        // import/profile frame reaches `app` state.
+        let reply = match advance_frame(&state, &conn, &text) {
             FrameDecision::CloseOverCap => {
                 log::warn!("[extension_bridge] frame over size cap — closing");
                 break;
             }
             FrameDecision::Drop => None,
-            FrameDecision::Unauthorized(reply) => {
-                // A wrong-token client must not linger: send the unauthorized
-                // reply (best-effort) and close the socket without ever marking
-                // it connected.
+            FrameDecision::Outdated(reply) => {
+                // Force cutover: the first frame was not a valid protocol-2 hello
+                // (a legacy token `auth`, a missing/older protocol). Tell the
+                // client to update, then close — no dual-support path.
+                log::warn!(
+                    "[extension_bridge] rejected outdated/legacy first frame — \
+                     sending update_required and closing"
+                );
                 let _ = writer.send(Message::text(reply)).await;
                 break;
             }
-            FrameDecision::Reply(text) => {
-                // A token-validated frame (e.g. the `auth` ok reply, or a
-                // reserved-type error) — the socket is authenticated, mark it
-                // connected.
-                state.set_connected(true);
-                Some(text)
+            FrameDecision::Unauthorized => {
+                // A handshake step failed (bad/absent proof, or an unexpected
+                // frame mid-handshake). Close WITHOUT a reply and without ever
+                // marking the socket connected.
+                log::warn!("[extension_bridge] handshake auth failed — closing");
+                break;
             }
-            FrameDecision::Import { req_id, payload } => {
-                // A token-validated import — authenticated, mark connected.
+            FrameDecision::Challenge { reply, next } => {
+                // hello accepted → advance to AwaitingAuth (still NOT connected).
+                conn = next;
+                Some(reply)
+            }
+            FrameDecision::AuthOk(reply) => {
+                // Client proof verified — the mutual handshake completes. Only now
+                // is the socket authorized; mark it connected and reply auth.ok.
+                conn = ConnState::Authenticated;
                 state.set_connected(true);
+                Some(reply)
+            }
+            FrameDecision::Reply(text) => Some(text),
+            FrameDecision::Import { req_id, payload } => {
                 let outcome = handle_import(&app, payload).await;
                 Some(result_reply(&req_id, outcome))
             }
-            FrameDecision::Profile { req_id } => {
-                // A token-validated profile fetch — authenticated, mark connected.
-                state.set_connected(true);
-                Some(handle_profile(&app, &req_id))
-            }
+            FrameDecision::Profile { req_id } => Some(handle_profile(&app, &req_id)),
         };
         if let Some(reply) = reply {
             if writer.send(Message::text(reply)).await.is_err() {
@@ -480,24 +518,53 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     state.set_connected(false);
 }
 
-/// Outcome of the per-frame security/dispatch decision, isolated from any
-/// `AppHandle` so the size + token + type gates are unit-testable. The connection
-/// loop runs the (async, app-stateful) import only for [`FrameDecision::Import`];
-/// every other variant is resolved here from pure inputs.
+/// Per-connection handshake state. A socket starts `AwaitingHello`; a valid
+/// protocol-2 `hello` moves it to `AwaitingAuth` (holding the two fresh nonces);
+/// a **verified** client proof moves it to `Authenticated`. Only in
+/// `Authenticated` are `import.request` / `profile.get` frames honored — the
+/// socket is session-authenticated, so those frames carry no token.
+#[cfg_attr(test, derive(Debug, Clone, PartialEq, Eq))]
+enum ConnState {
+    /// Fresh socket — the next frame must be a protocol-2 `hello`.
+    AwaitingHello,
+    /// `hello` accepted; a `challenge` was sent. The next frame must be
+    /// `auth { proof }`; these nonces bind the expected proof.
+    AwaitingAuth {
+        server_nonce: String,
+        client_nonce: String,
+    },
+    /// Mutual handshake complete — subsequent frames are session-authorized.
+    Authenticated,
+}
+
+/// Outcome of the per-frame handshake/dispatch decision, isolated from any
+/// `AppHandle` so the size gate + handshake state machine are unit-testable. The
+/// connection loop runs the (async, app-stateful) import only for
+/// [`FrameDecision::Import`]; every other variant is resolved here from pure
+/// inputs (+ the token off [`BridgeState`] for the constant-time proof check).
 #[cfg_attr(test, derive(Debug))]
 enum FrameDecision {
     /// Frame exceeds [`MAX_FRAME_BYTES`] — close the socket without parsing.
     CloseOverCap,
-    /// Not JSON (malformed) — drop silently, no reply.
+    /// Not JSON, or an ignorable frame — drop silently, no reply, stay in state.
     Drop,
-    /// A bad-token frame: send this ready-to-send `unauthorized` `import.result`
-    /// reply text, then CLOSE the socket. Distinct from [`FrameDecision::Reply`]
-    /// so the connection loop never marks an unauthorized socket connected and
-    /// never lets a wrong-token client linger.
-    Unauthorized(String),
-    /// A ready-to-send `import.result` reply text from a **token-validated**
-    /// frame (a reserved / unknown message type acknowledged as an error, or the
-    /// `auth` success reply). The socket stays open and is marked connected.
+    /// The first frame was not a valid protocol-2 `hello` (a legacy `{type:'auth',
+    /// token}` frame, a missing/older protocol): send this ready-to-send
+    /// [`msg::UPDATE_REQUIRED`] reply, then CLOSE. Force cutover — no dual path.
+    Outdated(String),
+    /// A handshake step failed (bad/absent proof, or an unexpected frame
+    /// mid-handshake): CLOSE without a reply and without marking connected.
+    /// Distinct from [`FrameDecision::AuthOk`] so the loop never authorizes a
+    /// socket whose proof did not verify.
+    Unauthorized,
+    /// `hello` accepted: send this `challenge` reply and advance to `next`
+    /// (`AwaitingAuth`). NOT yet connected.
+    Challenge { reply: String, next: ConnState },
+    /// The client proof VERIFIED (constant-time): send this `auth.ok` reply, mark
+    /// the socket connected, and advance to `Authenticated`.
+    AuthOk(String),
+    /// A ready-to-send reply from an authenticated frame (a reserved / unknown
+    /// message type acknowledged as an error). Stays `Authenticated`.
     Reply(String),
     /// An authenticated `import.request` to dispatch through [`handle_import`].
     Import { req_id: String, payload: Value },
@@ -506,13 +573,12 @@ enum FrameDecision {
     Profile { req_id: String },
 }
 
-/// The per-message security gate + dispatch routing, with the size cap, the JSON
-/// parse, the per-frame token check, and the type match — everything that does
-/// NOT need an `AppHandle`. Behaviorally identical to the prior inline path in
-/// [`handle_connection`]/`process_frame`: same order (size → parse → token →
-/// type), same replies (`unauthorized` / "not implemented" / "unknown message
-/// type"), and the same close-on-over-cap semantics.
-fn classify_frame(state: &BridgeState, text: &str) -> FrameDecision {
+/// The per-message handshake gate + dispatch routing (size cap → JSON parse →
+/// state-machine step) — everything that does NOT need an `AppHandle`. Pure
+/// aside from reading the pairing token off [`BridgeState`] for the
+/// constant-time proof check; the loop performs the I/O and the app-stateful
+/// import/profile work. See [`ConnState`] for the state transitions.
+fn advance_frame(state: &BridgeState, conn: &ConnState, text: &str) -> FrameDecision {
     if text.len() > MAX_FRAME_BYTES {
         return FrameDecision::CloseOverCap;
     }
@@ -522,48 +588,93 @@ fn classify_frame(state: &BridgeState, text: &str) -> FrameDecision {
         Err(_) => return FrameDecision::Drop, // not JSON — drop silently
     };
 
-    let token = envelope.get("token").and_then(|v| v.as_str()).unwrap_or("");
+    let kind = envelope.get("type").and_then(|v| v.as_str()).unwrap_or("");
     let req_id = envelope
         .get("reqId")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let kind = envelope.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    let payload = envelope.get("payload");
 
-    // Per-frame token check. A mismatch is an auth failure — reply with an error
-    // (so the caller learns to re-pair) but do NOT echo or confirm the token.
-    // Plain `!=` (non-constant-time) is acceptable here: the bridge binds
-    // loopback only (127.0.0.1) and the token is a 256-bit random secret, so
-    // remote timing side-channels are not a practical risk.
-    if token.is_empty() || token != state.token() {
-        log::warn!("[extension_bridge] rejected frame: bad token");
-        return FrameDecision::Unauthorized(result_reply(
-            &req_id,
-            Err(AppError::Validation("unauthorized".to_string())),
-        ));
+    match conn {
+        ConnState::AwaitingHello => advance_hello(kind, &req_id, payload),
+        ConnState::AwaitingAuth {
+            server_nonce,
+            client_nonce,
+        } => advance_auth(state, kind, &req_id, payload, server_nonce, client_nonce),
+        ConnState::Authenticated => advance_authenticated(kind, req_id, &envelope),
     }
+}
 
+/// Handshake step 1: the FIRST frame must be a valid protocol-2 `hello`. A legacy
+/// `{type:'auth', token}` frame, a missing/older `protocol`, or a malformed
+/// `clientNonce` are all treated as an outdated client → `update_required` + close.
+fn advance_hello(kind: &str, req_id: &str, payload: Option<&Value>) -> FrameDecision {
+    if kind != msg::HELLO {
+        return FrameDecision::Outdated(update_required_reply(req_id));
+    }
+    let protocol = payload
+        .and_then(|p| p.get("protocol"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let client_nonce = payload
+        .and_then(|p| p.get("clientNonce"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if protocol < PROTOCOL_VERSION || !handshake::is_valid_nonce(client_nonce) {
+        return FrameDecision::Outdated(update_required_reply(req_id));
+    }
+    // Fresh server nonce (CSPRNG, per connection). Bind it + the client nonce into
+    // the next state so the proof is verified against exactly this pair.
+    let server_nonce = handshake::new_nonce();
+    let reply = challenge_reply(req_id, &server_nonce);
+    FrameDecision::Challenge {
+        reply,
+        next: ConnState::AwaitingAuth {
+            server_nonce,
+            client_nonce: client_nonce.to_string(),
+        },
+    }
+}
+
+/// Handshake step 3: only an `auth { proof }` is valid here. The proof is verified
+/// CONSTANT-TIME against `HMAC-SHA256(token, CLIENT_MSG)`; on success the desktop
+/// proves ITSELF via `serverProof` (step 4). Any other frame, or a bad/absent
+/// proof, closes the socket (never connected).
+fn advance_auth(
+    state: &BridgeState,
+    kind: &str,
+    req_id: &str,
+    payload: Option<&Value>,
+    server_nonce: &str,
+    client_nonce: &str,
+) -> FrameDecision {
+    if kind != msg::AUTH {
+        return FrameDecision::Unauthorized;
+    }
+    let proof = payload
+        .and_then(|p| p.get("proof"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let token = state.token();
+    if !handshake::verify_client_proof(&token, server_nonce, client_nonce, proof) {
+        log::warn!("[extension_bridge] handshake: client proof failed constant-time verification");
+        return FrameDecision::Unauthorized;
+    }
+    let server_proof = handshake::server_proof(&token, server_nonce, client_nonce);
+    FrameDecision::AuthOk(auth_ok_reply(req_id, &server_proof))
+}
+
+/// Post-auth dispatch: the socket is session-authenticated, so frames carry no
+/// token. Routes `import.request` / `profile.get`; reserved / unknown types get
+/// an `import.result` error reply (never a panic).
+fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameDecision {
     match kind {
-        // Connection-time token check. The token already passed the gate above,
-        // so a minimal `Ok` outcome — serializing with NO `error` field — is the
-        // "authorized" reply the extension expects (no error = authorized). An
-        // `auth` frame does no import; the empty fields are never read.
-        msg::AUTH => FrameDecision::Reply(result_reply(
-            &req_id,
-            Ok(ImportOk {
-                application_id: String::new(),
-                status: String::new(),
-                title: String::new(),
-                company: String::new(),
-                partial: false,
-            }),
-        )),
         msg::IMPORT_REQUEST => {
             let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
             FrameDecision::Import { req_id, payload }
         }
         // Assisted autofill: fetch the contact profile fresh (gated on the opt-in).
-        // No payload is read — the token already passed the gate above.
         msg::PROFILE_GET => FrameDecision::Profile { req_id },
         // Reserved message types — acknowledged as unimplemented, never panic.
         msg::MATCH_LIVE | msg::APPLIED_CHECK => FrameDecision::Reply(result_reply(
@@ -579,6 +690,39 @@ fn classify_frame(state: &BridgeState, text: &str) -> FrameDecision {
             ))),
         )),
     }
+}
+
+/// Build the `challenge` reply (handshake step 2) carrying the fresh server nonce.
+fn challenge_reply(req_id: &str, server_nonce: &str) -> String {
+    json!({
+        "type": msg::CHALLENGE,
+        "reqId": req_id,
+        "payload": { "serverNonce": server_nonce },
+    })
+    .to_string()
+}
+
+/// Build the `auth.ok` reply (handshake step 4) carrying the desktop's proof.
+fn auth_ok_reply(req_id: &str, server_proof: &str) -> String {
+    json!({
+        "type": msg::AUTH_OK,
+        "reqId": req_id,
+        "payload": { "serverProof": server_proof },
+    })
+    .to_string()
+}
+
+/// Build the `update_required` force-cutover reply. Sent, then the socket closes,
+/// when the first frame is not a valid protocol-2 `hello` (an old extension).
+fn update_required_reply(req_id: &str) -> String {
+    json!({
+        "type": msg::UPDATE_REQUIRED,
+        "reqId": req_id,
+        "payload": {
+            "error": "Update the AI Job Hunter browser extension to reconnect (bridge protocol v2)."
+        },
+    })
+    .to_string()
 }
 
 /// The successful import outcome: the created/merged application id, its status,

@@ -175,6 +175,13 @@ aes-gcm = "0.10"
 # deterministic, restart-stable hash so a stale or wrong-language cache row is a
 # natural miss. Resolves to 0.10.9 already in the tree (lopdf/tauri-codegen).
 sha2 = "0.10"
+# HMAC-SHA256 for the extension-bridge v2 mutual challenge-response handshake
+# (extension_bridge/handshake.rs): constant-time `Mac::verify_slice` of the
+# client proof, keyed by the pairing token's UTF-8 bytes. Cross-platform (the
+# `hmac = "0.13"` under `[target.'cfg(unix)']` pairs with sha1/digest-0.11 for
+# Chromium cookie PBKDF2 and is NOT usable with sha2 0.10 / digest-0.10 here).
+# 0.12.1 is already resolved in the lock and shares digest 0.10 with sha2 0.10.
+hmac = "0.12"
 htmd = "0.5.4"
 
 [target.'cfg(windows)'.dependencies]

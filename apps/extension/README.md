@@ -149,38 +149,48 @@ both browsers; it grants **no** access to any public or LAN host.
 - **No data is ever sent to any remote or third-party server** by this
   extension. There is no telemetry, no analytics, no external API.
 - The only stored value is the pairing token, kept in `chrome.storage.local`,
-  used solely to authenticate to the local desktop app.
+  used solely as the HMAC key for the mutual challenge-response handshake with the
+  local desktop app — it is **never transmitted** to the app (or anywhere else).
 - The extension captures the page's rendered DOM **only when the user clicks Import this job** — never in the background — and sends it only to the local app. On restricted pages (e.g. browser system pages) DOM capture is skipped and only the URL is sent.
 - **Assisted autofill data flow:** the feature is **opt-in and off by default** (the toggle lives in the desktop app; the desktop refuses the request when it is off). When on and the user clicks **Fill this form**, the extension requests the user's Contact Profile from the desktop over the same loopback connection, holds it **transiently** to fill matching empty fields on the **current tab only** (`activeTab`, on the click), then discards it. The profile is the user's **own data**, never written to `chrome.storage`, and **never sent to any remote or third-party server** — it only ever moves from the user's desktop into a page the user chose to fill. This is why the Firefox AMO `data_collection_permissions` stays `["none"]` (see `src/manifest.ts`): the extension does not collect or transmit data to the developer or any third party.
 
 ### Threat model
 
-The extension finds the desktop bridge by probing `47615..47620` and sending
-the pairing token to the **first loopback port that answers** (see the
-`TODO(bridge)` comment in `src/lib/bridge.ts::probeRange`).
+The extension finds the desktop bridge by probing `47615..47620` and connecting
+to the **first loopback port that answers**. Authentication is a **mutual HMAC
+challenge-response (protocol v2)** in which the pairing token is used only as an
+HMAC key and is **never transmitted** — see `src/lib/handshake.ts` +
+`src/lib/bridge.ts::performHandshake` (extension) and
+`apps/desktop/src-tauri/src/extension_bridge/handshake.rs` (desktop).
 
-- **Risk (accepted for v1):** a malicious **same-account local process** that
-  squats one of those ports **before** the desktop app binds it could accept the
-  connection and harvest the pairing token on the user's first import.
-- **Preconditions:** this requires an attacker that is **already running on the
-  same machine under the same OS user account**. It is not reachable from the
-  network or from any website — the connection target is loopback-only
-  (`127.0.0.1`) and the host permission grants no public/LAN access.
-- **Bounded impact:** the token authorizes **local job-import** to the desktop
-  bridge, whose fetch path is **SSRF-guarded** — and, **when the user has turned
-  on Assisted form autofill**, it also authorizes reading the user's **Contact
-  Profile** (name, email, phone, location, LinkedIn/GitHub/website) via
-  `profile.get`. Autofill is **off by default**; a harvested token only reaches
-  the profile while that opt-in is on. The token is **rotatable** from the
-  app's Settings (re-pairing invalidates the old one), and there is no remote
-  backend or account to compromise — everything stays on the same loopback
-  device.
-- **Future fix:** add a server→client **challenge HMAC** over a nonce the
-  desktop app **shows in-app** at pair time (so only the genuine app, which
-  knows the nonce, can complete the handshake), or adopt the **native-messaging
-  fallback** described below — a native messaging host **cannot be
-  port-squatted**, since the browser launches it by registered name rather than
-  by connecting to a listening port.
+- **The token never goes on the wire.** The extension sends `hello{clientNonce}`,
+  the desktop replies `challenge{serverNonce}`, and the extension proves it knows
+  the token with
+  `HMAC-SHA256(token, "ajh-bridge/v2\nclient\n<serverNonce>\n<clientNonce>")` over
+  fresh per-connection CSPRNG nonces. A passive observer or a port-squatter learns
+  nothing about the token from that proof, and the desktop verifies it
+  **constant-time**.
+- **Mutual auth closes the v1 port-squat leak.** Before sending ANY job posting or
+  Contact-Profile data, the extension verifies the desktop's own reply
+  `auth.ok{serverProof}` (`HMAC(token, "…\nserver\n…")`) **constant-time**. A
+  malicious same-account process that squats the port **cannot** produce a valid
+  `serverProof` (it does not know the token), so the extension lands in the
+  untrusted (`bad_token`) state and sends **zero** PII — closing the v1
+  "harvest the token / read the profile on first import" risk.
+- **Preconditions unchanged:** any attacker must already run on the same machine
+  under the same OS user account; the bridge is loopback-only (`127.0.0.1`) and
+  the host permission grants no public/LAN access.
+- **Force cutover (no dual-support on the desktop).** The desktop no longer
+  accepts a plaintext-token frame: an old extension (still sending
+  `{type:'auth', token}`) is answered with `update.required` and disconnected,
+  and a new extension talking to an **old** desktop (which never sends a
+  `challenge`) shows a distinct **"Update the app"** state (separate from
+  `bad_token` and `app_not_running`). The token remains **rotatable** from the
+  app's Settings, and there is no remote backend or account to compromise —
+  everything stays on the same loopback device.
+- **Native messaging** cannot be port-squatted at all (the browser launches the
+  host by registered name, not by connecting to a listening port) and carries the
+  identical v2 handshake end-to-end.
 
 ---
 
@@ -275,7 +285,7 @@ emitted JS stays readable for review.
 
 ## Extension origin validation (bridge side)
 
-The desktop bridge validates extension origins in the handshake (`apps/desktop/src-tauri/src/extension_bridge/auth.rs::is_allowed_origin`). **The origin is not the auth boundary** — the per-frame 256-bit pairing token is; the origin is defense-in-depth.
+The desktop bridge validates extension origins in the WS handshake (`apps/desktop/src-tauri/src/extension_bridge/auth.rs::is_allowed_origin`). **The origin is not the auth boundary** — the v2 mutual HMAC challenge-response is (the 256-bit pairing token is proven, never transmitted); the origin is defense-in-depth.
 
 - **Firefox:** a background-script WebSocket sends `Origin: null` (Firefox deliberately strips the per-install UUID to prevent fingerprinting per Bugzilla 1607936/1257989). The bridge accepts `null`. The gecko id (`job-importer@aijobhunter.app`) never appears as an origin and is intentionally absent from the allowlist.
 - **Chrome:** the bridge pins the published Chrome Web Store id `oaoekkgkhmgdfnpmfkpphgiikliaicll` in `ALLOWED_EXTENSION_IDS` (in `apps/desktop/src-tauri/src/extension_bridge/auth.rs`). A locally-loaded Chrome build is still admitted only via the dev-origin override (`AJH_EXTENSION_DEV_ORIGINS`).
@@ -294,4 +304,4 @@ The extension uses **native-messaging as the primary transport**, with **loopbac
 
 2. **WebSocket fallback:** if the native host is not registered (old app / never installed), or native-messaging is unavailable, the extension probes `127.0.0.1:47615..47620` and falls back to the loopback WebSocket. Chrome and older desktop app versions keep working.
 
-All origins flow through unchanged (the per-frame 256-bit pairing token over the loopback-only listener remains the real boundary). Native messaging cannot be port-squatted and survives permission policies that block loopback WS.
+All origins flow through unchanged (the v2 mutual HMAC handshake over the loopback-only listener remains the real boundary — the token is proven, never transmitted). Native messaging cannot be port-squatted and survives permission policies that block loopback WS.

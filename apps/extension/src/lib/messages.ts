@@ -14,10 +14,17 @@ type ConnectionPhase =
   | 'searching'
   /** A bridge port answered but no token is stored — show the pairing screen. */
   | 'not_paired'
-  /** Paired token present and the auth handshake with the desktop succeeded. */
+  /** Paired + the v2 mutual handshake (incl. serverProof) with the desktop succeeded. */
   | 'connected'
   /** No bridge port answered in the probe range — the app is not running. */
   | 'app_not_running'
+  /**
+   * The desktop is too old to speak the v2 handshake (it never sent a
+   * `challenge` — it closed the socket instead) — the user must UPDATE the
+   * desktop app. Distinct from `bad_token` (a real token mismatch on a genuine
+   * v2 desktop) and `app_not_running` (nothing answered at all).
+   */
+  | 'outdated'
   /** The stored token was rejected by the desktop — the user must re-pair. */
   | 'bad_token';
 
