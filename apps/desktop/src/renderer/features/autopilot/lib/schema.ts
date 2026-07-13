@@ -14,6 +14,11 @@ import type { WizardState } from '@/features/autopilot/types';
  * their own widgets, so only `name` and `query` are user-failable — both live on
  * step 0, which is what gates the wizard's "Next".
  *
+ * `boards` has no upper bound here: the picker only toggles catalog entries and
+ * a normalization effect strips unknown ids (see `StepTarget`), so the board
+ * catalog itself bounds the selection. The real defense against an oversized
+ * payload is the server-side registry dedup+truncate in the Rust scrape engine.
+ *
  * No field uses `.default()`: the wizard always seeds complete `defaultValues`
  * (`buildDefaults` / `autopilotToWizardState`), so the schema's input and output
  * types match (a zod `.default()` input/output mismatch otherwise breaks the
@@ -22,7 +27,7 @@ import type { WizardState } from '@/features/autopilot/types';
  */
 export const autopilotWizardSchema = z.object({
   name: z.string().trim().min(1, 'autopilot.wizard.validation.nameRequired'),
-  boards: z.array(z.string().min(1)).min(1, 'autopilot.wizard.validation.missingFields').max(6),
+  boards: z.array(z.string().min(1)).min(1, 'autopilot.wizard.validation.missingFields'),
   query: z.string().trim().min(1, 'autopilot.wizard.validation.queryRequired'),
   location: z.string(),
   countryCode: z.string().optional(),

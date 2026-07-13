@@ -159,7 +159,12 @@ export const DATE_FILTER_OPTIONS = [
 export type DateFilterOption = (typeof DATE_FILTER_OPTIONS)[number];
 
 export const ScrapeBoardsRequestSchema = z.object({
-  boards: z.array(z.enum(BOARD_IDS)).min(1).max(6),
+  // Bounded by the catalog size (not a fixed number) so selecting every listed
+  // board always validates and adding a board needs no schema edit. Each entry
+  // is already constrained to a known `BoardId`, so the real dedup+truncate
+  // defense against a request-amplification payload lives server-side in the
+  // Rust engine (registry-size cap over the deduped set).
+  boards: z.array(z.enum(BOARD_IDS)).min(1).max(BOARD_IDS.length),
   query: z.string().min(1),
   location: z.string().optional(),
   // Target number of postings to collect per board. The backend paginates each
@@ -423,7 +428,12 @@ export type ResumeExtractTextRequest = z.infer<typeof ResumeExtractTextSchema>;
 // ─── Autopilot schemas ────────────────────────────────────────────────────────
 
 export const AutopilotTargetSchema = z.object({
-  boards: z.array(z.string().min(1)).min(1).max(6),
+  // Free-text (not `BoardId`-typed) deliberately, so a saved target with a since-
+  // retired board id still deserializes. The 64 ceiling is just a generous sanity
+  // bound against a corrupt/hostile autopilots.json — the real bound is the Rust
+  // engine's server-side registry dedup+truncate (`max_boards_per_batch()`), so
+  // this never needs to change as the board catalog grows.
+  boards: z.array(z.string().min(1)).min(1).max(64),
   query: z.string().min(1),
   location: z.string().optional(),
   // ISO 3166-1 alpha-2 (sourced from the same geocode suggestion as the manual

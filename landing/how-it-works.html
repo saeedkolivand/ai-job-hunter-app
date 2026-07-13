@@ -1507,7 +1507,7 @@
             {
               layer: 'ipc',
               title: 'invoke scrape_boards',
-              body: "<code>useScrapeBoards().mutateAsync(req)</code> → <code>invoke('scrape_boards', { req })</code>. The UI sets <code>scraping=true</code>, clears the live list, and waits for the jobId. Multi-board: up to 6 boards per run, fanned out ≤3 concurrent.",
+              body: "<code>useScrapeBoards().mutateAsync(req)</code> → <code>invoke('scrape_boards', { req })</code>. The UI sets <code>scraping=true</code>, clears the live list, and waits for the jobId. Multi-board: up to the full board catalog per run, fanned out ≤3 concurrent.",
               code: 'boards: (req) =&gt; invoke(<span class="s">\'scrape_boards\'</span>, { req })',
               files: ['apps/desktop/src/tauri-client/namespaces/scrape/scrape.ts'],
             },
