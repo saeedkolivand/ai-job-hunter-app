@@ -2,15 +2,16 @@
 
 Last updated: 2026-06-03
 
-> **Status:** discovery report (Phase 1). Read-only — describes the architecture **as it
-> actually exists** in `apps/desktop/src-tauri/`, measured from the source tree, not an
-> idealized target. The enforceable rules derived from this report live in
+> **⚠️ Point-in-time snapshot (June 2026).** This is a discovery report (Phase 1) captured on
+> `feat/rust-arch-enforcement` branch; it is read-only and describes the architecture
+> **as it existed on that date**. The codebase has evolved since then (LOC figures are
+> no longer current). The enforceable rules derived from this report live in
 > [`architecture-rules.md`](architecture-rules.md); they are enforced by
-> `apps/desktop/src-tauri/tests/architecture.rs` and CI.
+> `apps/desktop/src-tauri/tests/architecture.rs` and CI — those rules remain the live
+> boundary contract.
 >
-> Measurements taken at commit on branch `feat/rust-arch-enforcement`: **36 top-level
-> modules, 162 source files, ~28,000 non-test LOC.** Regenerate with the methodology in
-> the appendix.
+> Historic measurements: **36 top-level modules, 162 source files, ~28,000 non-test LOC
+> (June 2026).** For current _total_ source-tree LOC — note this includes inline `#[cfg(test)]` tests, so it is not directly comparable to the non-test figure above — run `find apps/desktop/src-tauri/src -name "*.rs" | xargs wc -l`.
 
 ---
 
