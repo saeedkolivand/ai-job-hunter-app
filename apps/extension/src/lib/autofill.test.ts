@@ -191,6 +191,33 @@ describe('planAndFill – skips ambiguous / sensitive / hidden / filled', () => 
     expect(val('hp')).toBe('');
   });
 
+  it('skips a field hidden by an ancestor with opacity:0 (honeypot), but still fills a normal sibling', () => {
+    const style = document.createElement('style');
+    style.setAttribute('data-ajh-test', '');
+    style.textContent = '.ajh-opacity-trap { opacity: 0; }';
+    document.head.appendChild(style);
+
+    setForm(`
+      <div class="ajh-opacity-trap"><input id="op" autocomplete="email" /></div>
+      <label for="normal">Email</label><input id="normal" type="email" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('op')).toBe('');
+    // Guard against false positives: a normal visible field must still fill.
+    expect(val('normal')).toBe('saeed@example.com');
+  });
+
+  it('skips a field shoved off-screen via position:absolute + left:-9999px (honeypot), but still fills a normal sibling', () => {
+    setForm(`
+      <div style="position:absolute; left:-9999px;"><input id="off" autocomplete="email" /></div>
+      <label for="normal2">Email</label><input id="normal2" type="email" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('off')).toBe('');
+    // Guard against false positives: a normal visible field must still fill.
+    expect(val('normal2')).toBe('saeed@example.com');
+  });
+
   it('under-fills: a bare "Website" is skipped, but "Portfolio" is filled', () => {
     setForm(`
       <label for="w1">Website</label><input id="w1" type="url" />

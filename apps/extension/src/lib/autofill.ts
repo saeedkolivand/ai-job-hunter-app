@@ -128,13 +128,23 @@ export function splitName(fullName: string): { first: string; last: string } {
 
 /**
  * True when the element or ANY ancestor is hidden — via the `hidden` attribute
- * or COMPUTED `display`/`visibility` (not just inline `style`). Computed style is
+ * or COMPUTED style (not just inline `style`): `display:none`/`visibility:hidden`,
+ * `opacity:0`, off-screen absolute/fixed positioning (`left`/`top` shoved past
+ * -9999px — the classic honeypot trap), or a zero-size box. Computed style is
  * what catches an external-stylesheet / `<style>` CSS-class honeypot (e.g. a
- * `.visually-hidden`/`.sr-only`-shaped utility class), which is exactly how
- * anti-bot honeypot fields are planted on real ATS forms (Greenhouse/Lever/
- * Workday) — an inline-only check would fill them, and a filled invisible field
+ * `.visually-hidden`/`.sr-only`-shaped utility class) as well as the
+ * opacity/off-screen/zero-size variants — this is exactly how anti-bot honeypot
+ * fields are planted on real ATS forms (Greenhouse/Lever/Workday). An inline-only
+ * or display/visibility-only check would fill them, and a filled invisible field
  * is worse than an ordinary mis-fill (the user can't see it to undo, and it can
  * flag them as a bot).
+ *
+ * Deliberately `getComputedStyle`-ONLY — never `getBoundingClientRect`/
+ * `offsetWidth`/layout reads. jsdom (the test environment) always reports those
+ * as zero, which would make every field — including normal visible ones — read
+ * as hidden. Computed style has no such gap: a real field's computed `width` is
+ * `auto`/a real length (never the literal string `'0px'`), its `position` is
+ * `static`, and its `opacity` is `1`, so this stays jsdom-safe.
  */
 function isHidden(el: HTMLElement): boolean {
   const view = el.ownerDocument.defaultView;
@@ -142,7 +152,16 @@ function isHidden(el: HTMLElement): boolean {
   while (node) {
     if (node.hidden) return true;
     const cs = view?.getComputedStyle(node);
-    if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) return true;
+    if (cs) {
+      if (cs.display === 'none' || cs.visibility === 'hidden') return true;
+      if (Number.parseFloat(cs.opacity) === 0) return true;
+      if (
+        (cs.position === 'absolute' || cs.position === 'fixed') &&
+        (Number.parseFloat(cs.left) <= -9999 || Number.parseFloat(cs.top) <= -9999)
+      )
+        return true;
+      if (cs.width === '0px' && cs.height === '0px') return true;
+    }
     node = node.parentElement;
   }
   return false;

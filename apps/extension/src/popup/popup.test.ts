@@ -329,6 +329,55 @@ describe('savePairing (#btn-save-token)', () => {
   });
 });
 
+describe('doFill (#btn-fill)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  beforeEach(() => {
+    sendMessageMock.mockReset();
+    byId<HTMLButtonElement>('btn-fill').disabled = false;
+    byId<HTMLParagraphElement>('import-msg').textContent = '';
+  });
+
+  it('shows "Filling…" then the success summary, and re-enables the button', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'fill',
+      summary: {
+        filled: [{ key: 'email', label: 'Email', count: 1 }],
+        nameSplit: null,
+        filledNothing: false,
+      },
+    });
+
+    const btn = byId<HTMLButtonElement>('btn-fill');
+    btn.click();
+    // The click handler disables the button and sets "Filling…" synchronously,
+    // before the (mocked) sendMessage promise resolves.
+    expect(btn.disabled).toBe(true);
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe('Filling…');
+
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Filled 1 field — review them on the page.'
+    );
+    expect(btn.disabled).toBe(false);
+  });
+
+  it('shows the retry message and re-enables the button when sendMessage rejects', async () => {
+    sendMessageMock.mockRejectedValueOnce(new Error('message channel closed'));
+
+    const btn = byId<HTMLButtonElement>('btn-fill');
+    btn.click();
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Autofill failed. Please retry.'
+    );
+    expect(btn.disabled).toBe(false);
+  });
+});
+
 describe('get the app (#btn-get-app)', () => {
   const flush = () => new Promise((r) => setTimeout(r, 0));
   const tabsCreateMock = vi.mocked(browser.tabs.create);

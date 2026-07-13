@@ -222,6 +222,26 @@ describe('ExtensionBridgeSection', () => {
     });
   });
 
+  it('shows the toggleFailed notification when setAutofillEnabled rejects', async () => {
+    const setAutofill = vi.fn().mockRejectedValue(new Error('store write failed'));
+    renderSection(
+      { port: 9712, connected: true, token: 'tok-abc123' },
+      undefined,
+      false,
+      setAutofill
+    );
+
+    const sw = await screen.findByRole('switch', { name: /assisted form autofill/i });
+    await userEvent.click(sw);
+
+    await waitFor(() => {
+      expect(setAutofill).toHaveBeenCalledWith(true);
+    });
+    await waitFor(() => {
+      expect(screen.getByText('Could not update the autofill setting.')).toBeInTheDocument();
+    });
+  });
+
   it('closes the ConfirmModal without calling regenerateToken when Cancel is clicked', async () => {
     const regenerateToken = vi.fn().mockResolvedValue({ token: 'tok-new' });
     const client = createMockClient({
