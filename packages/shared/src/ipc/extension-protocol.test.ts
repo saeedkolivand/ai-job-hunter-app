@@ -91,12 +91,16 @@ describe('ExtensionEnvelopeSchema', () => {
     ).toThrow();
   });
 
-  it('rejects an envelope that still carries a token (v2 removed it — must not be required, but a bare token alone is not a valid frame)', () => {
-    // A frame WITH an extra token still parses (extra keys are ignored by zod object),
-    // but the security guarantee is that NEITHER side ever puts one there. This pins
-    // that the schema no longer REQUIRES a token: an envelope without one is valid.
-    const { ...noToken } = VALID_ENVELOPE;
-    expect(() => ExtensionEnvelopeSchema.parse(noToken)).not.toThrow();
+  it('ignores a stray token field (v2 envelopes are token-free)', () => {
+    // `z.object()`'s default behavior is to STRIP unknown keys (no `.strict()`/
+    // `.passthrough()` on ExtensionEnvelopeSchema) — verified empirically, not
+    // assumed. A frame that still carries a `token` (e.g. a stale caller that
+    // hasn't migrated) parses successfully AND the key is dropped from the
+    // output — the schema no longer requires OR echoes a token; the mutual
+    // handshake is what actually authenticates, never a per-frame secret.
+    const withStrayToken = { ...VALID_ENVELOPE, token: 'stale-v1-token' };
+    const parsed = ExtensionEnvelopeSchema.parse(withStrayToken);
+    expect(parsed).not.toHaveProperty('token');
   });
 
   it('rejects an envelope with an empty reqId', () => {

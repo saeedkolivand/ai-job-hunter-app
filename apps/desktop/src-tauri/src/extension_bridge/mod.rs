@@ -16,7 +16,8 @@
 //!    (`moz-extension://<uuid>`), since its per-install internal UUID is
 //!    unknowable in advance — see [`auth::is_allowed_origin`]. A dev override
 //!    (`platform::config::extension_dev_origins`) admits a locally-loaded
-//!    extension. The per-frame token (3) is what actually authenticates.
+//!    extension. The mutual HMAC handshake below (3) is what actually
+//!    authenticates.
 //! 3. **Mutual HMAC challenge-response (protocol v2)** — the pairing token is
 //!    NEVER transmitted. On connect the extension sends [`msg::HELLO`]
 //!    `{protocol, clientNonce}`; the desktop replies [`msg::CHALLENGE`]
@@ -195,8 +196,10 @@ impl BridgeState {
     }
 
     /// Rotate the pairing token: generate a new secret, persist it, and return
-    /// it. Any already-paired socket will fail its next per-frame token check
-    /// and must re-pair with the new value.
+    /// it. Any socket that re-runs the v2 handshake (a fresh connection, or a
+    /// reconnect) with the old token will fail the client-proof check and must
+    /// re-pair with the new value; an already-authenticated session is
+    /// unaffected until it needs to reconnect.
     pub fn regenerate_token(&self) -> String {
         let fresh = new_token();
         *self.token.lock() = fresh.clone();
@@ -377,10 +380,21 @@ async fn probe_ports(range: std::ops::RangeInclusive<u16>) -> Option<(TcpListene
     None
 }
 
-/// Perform the WS handshake (validating `Origin`), then service frames until the
-/// socket closes or fails a guard. `connected` flips true only once a frame
-/// passes the per-frame token gate (not on the bare handshake); a wrong-token
-/// frame replies `unauthorized` and closes the socket without marking connected.
+/// Perform the WS handshake (validating `Origin`), then drive the v2 mutual
+/// HMAC challenge-response before servicing any application frame:
+/// `hello{clientNonce}` → `challenge{serverNonce}` →
+/// `auth{proof}` — verified **constant-time** via
+/// [`handshake::verify_client_proof`] — → `auth.ok{serverProof}`. The pairing
+/// token is never transmitted; both sides only prove they know it. `connected`
+/// flips true ONLY once the client proof verifies (see [`ConnState`]); the bare
+/// WS handshake and the `hello`/`challenge` exchange never mark it connected. A
+/// FAILED proof closes the socket with **NO reply** — by design, so a wrong
+/// token and a genuine app crash are indistinguishable on the wire (no oracle
+/// for a peer probing for a valid token). Once authenticated, subsequent frames
+/// (`import.request`, `profile.get`, …) are session-authorized — no per-frame
+/// secret. A first frame that isn't a valid protocol-2 `hello` (a legacy
+/// plaintext-token `auth` frame, a lower protocol) gets `update.required` and
+/// closes — the v1→v2 force cutover, no dual-support path.
 async fn handle_connection(app: AppHandle, stream: TcpStream) {
     use tokio_tungstenite::tungstenite::handshake::server::ErrorResponse;
     use tokio_tungstenite::tungstenite::http::StatusCode;

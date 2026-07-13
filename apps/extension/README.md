@@ -289,7 +289,7 @@ The desktop bridge validates extension origins in the WS handshake (`apps/deskto
 
 - **Firefox:** a background-script WebSocket sends `Origin: null` (Firefox deliberately strips the per-install UUID to prevent fingerprinting per Bugzilla 1607936/1257989). The bridge accepts `null`. The gecko id (`job-importer@aijobhunter.app`) never appears as an origin and is intentionally absent from the allowlist.
 - **Chrome:** the bridge pins the published Chrome Web Store id `oaoekkgkhmgdfnpmfkpphgiikliaicll` in `ALLOWED_EXTENSION_IDS` (in `apps/desktop/src-tauri/src/extension_bridge/auth.rs`). A locally-loaded Chrome build is still admitted only via the dev-origin override (`AJH_EXTENSION_DEV_ORIGINS`).
-- **Native-messaging host:** sends the sentinel `Origin: ajh-native-host` (see `NATIVE_HOST_ORIGIN` in `auth.rs`). Defense-in-depth only; the per-frame token + loopback binding remain the real boundary.
+- **Native-messaging host:** sends the sentinel `Origin: ajh-native-host` (see `NATIVE_HOST_ORIGIN` in `auth.rs`). Defense-in-depth only; the v2 mutual HMAC handshake + loopback binding remain the real boundary.
 
 ---
 
