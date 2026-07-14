@@ -63,6 +63,7 @@ use crate::applications::{
 use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, APPLICATIONS_CHANGED};
 
+mod answers_save;
 pub mod auth;
 pub mod handshake;
 #[cfg(test)]
@@ -72,6 +73,14 @@ pub mod register;
 mod status_update;
 #[cfg(test)]
 mod test;
+
+/// Refusal text for the assisted-autofill opt-in gate — shared verbatim by
+/// [`resolve_profile`] (`profile.get`) and
+/// [`answers_save::resolve_answers_save`] (`answers.save`), the fill/capture
+/// mirror pair riding the SAME consent gate. A single constant (not two
+/// copies) so the two can never drift.
+pub(crate) const AUTOFILL_OFF_MESSAGE: &str =
+    "Autofill is off. Turn it on in AI Job Hunter → Settings → Accounts → Browser extension.";
 
 /// Native-messaging host name — the registered identifier the browser uses to
 /// spawn our relay (our exe in `--native-host` mode). MUST match the extension
@@ -134,6 +143,18 @@ pub mod msg {
     /// a malformed request. UNLIKE `applied.result`, this verb's errors ARE
     /// user-facing (it answers a deliberate click, not a passive check).
     pub const STATUS_RESULT: &str = "status.result";
+    /// Extension → desktop: "save my answers from this page" — append the
+    /// captured `{question, answer}` pairs onto the Application matched by
+    /// (canonicalized + normalized) `url`. No match → a refusal telling the
+    /// user to import the job first; NEVER auto-creates. Rides the SAME
+    /// assisted-autofill opt-in as `profile.get` (capture is the mirror
+    /// direction of fill) — see [`super::answers_save::resolve_answers_save`].
+    pub const ANSWERS_SAVE: &str = "answers.save";
+    /// Desktop → extension: the `answers.save` outcome — `{ ok: true,
+    /// applicationId, saved, skipped, title?, company? }` on success, `{ ok:
+    /// false, error }` on a refusal (opt-in off / no match / malformed
+    /// request). Like `status.update`, this verb's errors ARE user-facing.
+    pub const ANSWERS_RESULT: &str = "answers.result";
 }
 
 /// Handshake protocol version carried in the `hello` frame. MUST match the TS
@@ -547,6 +568,9 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
             FrameDecision::StatusUpdate { req_id, payload } => {
                 Some(status_update::handle_status_update(&app, &req_id, &payload))
             }
+            FrameDecision::AnswersSave { req_id, payload } => {
+                Some(answers_save::handle_answers_save(&app, &req_id, &payload))
+            }
         };
         if let Some(reply) = reply {
             if writer.send(Message::text(reply)).await.is_err() {
@@ -623,6 +647,10 @@ enum FrameDecision {
     /// [`status_update::resolve_status_update`] is what actually restricts it
     /// to `saved → applied` on an exact match.
     StatusUpdate { req_id: String, payload: Value },
+    /// An authenticated `answers.save` to answer through
+    /// [`answers_save::handle_answers_save`]. Carries the payload verbatim so
+    /// the handler can read `url` + `answers`.
+    AnswersSave { req_id: String, payload: Value },
 }
 
 /// The per-message handshake gate + dispatch routing (size cap → JSON parse →
@@ -719,8 +747,8 @@ fn advance_auth(
 
 /// Post-auth dispatch: the socket is session-authenticated, so frames carry no
 /// token. Routes `import.request` / `profile.get` / `applied.check` /
-/// `status.update`; reserved / unknown types get an `import.result` error
-/// reply (never a panic).
+/// `status.update` / `answers.save`; reserved / unknown types get an
+/// `import.result` error reply (never a panic).
 fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameDecision {
     match kind {
         msg::IMPORT_REQUEST => {
@@ -739,6 +767,11 @@ fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameD
         msg::STATUS_UPDATE => {
             let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
             FrameDecision::StatusUpdate { req_id, payload }
+        }
+        // "Save my answers from this page" — a consent-gated append-only write.
+        msg::ANSWERS_SAVE => {
+            let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
+            FrameDecision::AnswersSave { req_id, payload }
         }
         // Reserved message types — acknowledged as unimplemented, never panic.
         msg::MATCH_LIVE => FrameDecision::Reply(result_reply(
@@ -925,10 +958,7 @@ fn resolve_profile(
     profile: Option<&crate::contact_profile::ContactProfile>,
 ) -> AppResult<AutofillProfile> {
     if !enabled {
-        return Err(AppError::Validation(
-            "Autofill is off. Turn it on in AI Job Hunter → Settings → Accounts → Browser extension."
-                .to_string(),
-        ));
+        return Err(AppError::Validation(AUTOFILL_OFF_MESSAGE.to_string()));
     }
     let profile =
         profile.ok_or_else(|| AppError::Config("contact profile unavailable".to_string()))?;

@@ -2047,3 +2047,235 @@ fn salary_fields_persist_merge_and_export_import_round_trip() {
     assert_eq!(imported.salary_max, Some(90_000.0));
     assert_eq!(imported.salary_currency, Some("EUR".to_string()));
 }
+
+// ── merge_answers (extension bridge `answers.save`'s store-write boundary) ────
+// APPEND-only dedup merge — deliberately NOT `upsert_internal`'s meta path
+// (which REPLACES `answers` wholesale). See `extension_bridge::answers_save`
+// for the caller.
+
+#[test]
+fn merge_answers_adds_new_answers_and_returns_count() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .upsert_for_origin(
+            "https://acme.com/job/merge/1",
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    let added = store
+        .merge_answers(
+            &id,
+            vec![
+                ApplicationAnswer {
+                    id: String::new(),
+                    question: "Why this role?".to_string(),
+                    answer: "Because I love it.".to_string(),
+                },
+                ApplicationAnswer {
+                    id: String::new(),
+                    question: "Salary expectation?".to_string(),
+                    answer: "100k".to_string(),
+                },
+            ],
+        )
+        .unwrap();
+    assert_eq!(added, 2);
+
+    let app = store.get(&id).unwrap();
+    assert_eq!(app.answers.len(), 2);
+    // Each merged answer gets a fresh, non-empty generated id.
+    assert!(app.answers.iter().all(|a| !a.id.is_empty()));
+}
+
+#[test]
+fn merge_answers_dedups_by_normalized_question_and_never_overwrites() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let mut m = meta("Acme", "Engineer");
+    m.answers = vec![ApplicationAnswer {
+        id: "seed-1".to_string(),
+        question: "Why this role?".to_string(),
+        answer: "Original".to_string(),
+    }];
+    let id = store
+        .upsert_for_origin(
+            "https://acme.com/job/merge/2",
+            "linkedin",
+            &m,
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    // A re-capture with different whitespace/case for the SAME question, plus
+    // one genuinely new question.
+    let added = store
+        .merge_answers(
+            &id,
+            vec![
+                ApplicationAnswer {
+                    id: String::new(),
+                    question: "  WHY this   role?".to_string(),
+                    answer: "A newer answer that must be dropped".to_string(),
+                },
+                ApplicationAnswer {
+                    id: String::new(),
+                    question: "New question?".to_string(),
+                    answer: "New answer".to_string(),
+                },
+            ],
+        )
+        .unwrap();
+    assert_eq!(added, 1, "only the genuinely new question is added");
+
+    let app = store.get(&id).unwrap();
+    assert_eq!(app.answers.len(), 2);
+    let original = app
+        .answers
+        .iter()
+        .find(|a| a.question == "Why this role?")
+        .unwrap();
+    assert_eq!(
+        original.answer, "Original",
+        "existing answer never overwritten"
+    );
+    assert_eq!(
+        original.id, "seed-1",
+        "existing answer's id is untouched too"
+    );
+}
+
+#[test]
+fn merge_answers_dedups_within_the_same_incoming_batch() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .upsert_for_origin(
+            "https://acme.com/job/merge/3",
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    // Two entries in ONE call that normalize to the same question — only the
+    // first should be added.
+    let added = store
+        .merge_answers(
+            &id,
+            vec![
+                ApplicationAnswer {
+                    id: String::new(),
+                    question: "Why this role?".to_string(),
+                    answer: "First".to_string(),
+                },
+                ApplicationAnswer {
+                    id: String::new(),
+                    question: "why THIS role?".to_string(),
+                    answer: "Second (dropped)".to_string(),
+                },
+            ],
+        )
+        .unwrap();
+    assert_eq!(added, 1);
+    let app = store.get(&id).unwrap();
+    assert_eq!(app.answers.len(), 1);
+    assert_eq!(app.answers[0].answer, "First");
+}
+
+#[test]
+fn merge_answers_leaves_updated_at_unchanged_when_nothing_new_added() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let mut m = meta("Acme", "Engineer");
+    m.answers = vec![ApplicationAnswer {
+        id: "seed-1".to_string(),
+        question: "Why this role?".to_string(),
+        answer: "Original".to_string(),
+    }];
+    let id = store
+        .upsert_for_origin(
+            "https://acme.com/job/merge/4",
+            "linkedin",
+            &m,
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+    let before = store.get(&id).unwrap().updated_at;
+
+    let added = store
+        .merge_answers(
+            &id,
+            vec![ApplicationAnswer {
+                id: String::new(),
+                question: "Why this role?".to_string(),
+                answer: "Ignored".to_string(),
+            }],
+        )
+        .unwrap();
+    assert_eq!(added, 0);
+    assert_eq!(
+        store.get(&id).unwrap().updated_at,
+        before,
+        "an all-dedup merge (nothing added) must not touch updated_at"
+    );
+}
+
+#[test]
+fn merge_answers_returns_error_for_unknown_id() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let err = store.merge_answers("does-not-exist", vec![]).unwrap_err();
+    assert!(err.to_string().contains("not found"));
+}
+
+#[test]
+fn merge_answers_caps_total_stored_answers_and_drops_the_rest() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let mut m = meta("Acme", "Engineer");
+    // Seed to exactly (cap - 2) existing distinct answers.
+    m.answers = (0..MAX_TOTAL_ANSWERS - 2)
+        .map(|i| ApplicationAnswer {
+            id: format!("seed-{i}"),
+            question: format!("Existing question {i}?"),
+            answer: format!("Existing answer {i}"),
+        })
+        .collect();
+    let id = store
+        .upsert_for_origin(
+            "https://acme.com/job/merge/cap",
+            "linkedin",
+            &m,
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    // 5 new distinct questions incoming — only 2 fit under the cap; the rest
+    // are dropped (the caller derives `skipped` from `incoming_len - added`).
+    let incoming: Vec<ApplicationAnswer> = (0..5)
+        .map(|i| ApplicationAnswer {
+            id: String::new(),
+            question: format!("New question {i}?"),
+            answer: format!("New answer {i}"),
+        })
+        .collect();
+
+    let added = store.merge_answers(&id, incoming).unwrap();
+    assert_eq!(added, 2, "only enough to reach the cap are added");
+
+    let app = store.get(&id).unwrap();
+    assert_eq!(
+        app.answers.len(),
+        MAX_TOTAL_ANSWERS,
+        "total stored answers never exceeds the per-application cap"
+    );
+}

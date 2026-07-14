@@ -5,6 +5,7 @@
  */
 
 import type {
+  ExtensionAnswersSaveResult,
   ExtensionAppliedCheckResult,
   ExtensionImportResult,
   ExtensionStatusUpdateResult,
@@ -60,7 +61,14 @@ export type PopupRequest =
    * `appliedCheck`, this is a deliberate WRITE action — its failures are
    * surfaced to the user, never folded away.
    */
-  | { kind: 'statusUpdate' };
+  | { kind: 'statusUpdate' }
+  /**
+   * User-clicked "Save my answers from this page": capture the active tab's
+   * filled form fields and send them on as `answers.save`. Like
+   * `statusUpdate`, this is a deliberate WRITE action — its failures are
+   * surfaced to the user, never folded away.
+   */
+  | { kind: 'answersSave' };
 
 /** background → popup responses (discriminated by the originating request). */
 export type PopupResponse =
@@ -82,4 +90,10 @@ export type PopupResponse =
    * `result.ok` itself.
    */
   | { ok: true; kind: 'statusUpdate'; result: ExtensionStatusUpdateResult }
+  /**
+   * `ok:true` at the transport level; like `statusUpdate`, the desktop's own
+   * `ok`/`error` on `result` is what the popup renders — this verb's
+   * failures are NOT folded away.
+   */
+  | { ok: true; kind: 'answersSave'; result: ExtensionAnswersSaveResult }
   | { ok: false; error: string };

@@ -192,6 +192,39 @@ export function resolveMarkAppliedResponse(res: PopupResponse): {
 }
 
 /**
+ * Given an `answersSave` response, return the message text + tone. Mirrors
+ * `resolveMarkAppliedResponse` — this verb's errors ARE shown (a deliberate
+ * click, not a passive check). On success names the job from the reply's
+ * `title`/`company` (the smaller change vs. threading the separately-fetched
+ * `appliedCheck` state through this confirmation — see the PR-5 handoff) and
+ * reports the saved count; a re-capture with nothing new to add reads as a
+ * benign "no new answers", never an error.
+ *
+ * Pure: no DOM access, no side effects.
+ */
+export function resolveAnswersSaveResponse(res: PopupResponse): {
+  text: string;
+  tone: 'ok' | 'err';
+} {
+  if (!res.ok) return { text: res.error, tone: 'err' };
+  if (res.kind !== 'answersSave') {
+    return { text: 'Unexpected response — please retry.', tone: 'err' };
+  }
+  const { result } = res;
+  if (!result.ok) return { text: result.error, tone: 'err' };
+
+  const title = result.title?.trim();
+  const company = result.company?.trim();
+  const name = title && company ? `${title} @ ${company}` : (title ?? company);
+
+  if (result.saved === 0) {
+    return { text: 'No new answers to save from this page.', tone: 'ok' };
+  }
+  const count = `${result.saved} answer${result.saved === 1 ? '' : 's'}`;
+  return { text: name ? `Saved ${count} to ${name}.` : `Saved ${count}.`, tone: 'ok' };
+}
+
+/**
  * Given a `fill` response, return the popup message + tone. The detailed summary
  * lives in the in-page overlay; the popup shows a short confirmation (or the
  * desktop's refusal when autofill is opted out). Handles the "nothing matched"
@@ -232,6 +265,7 @@ const els = {
   btnImport: byId<HTMLButtonElement>('btn-import'),
   btnFill: byId<HTMLButtonElement>('btn-fill'),
   btnMarkApplied: byId<HTMLButtonElement>('btn-mark-applied'),
+  btnSaveAnswers: byId<HTMLButtonElement>('btn-save-answers'),
   appliedStatus: byId<HTMLParagraphElement>('applied-status'),
   chkApplied: byId<HTMLInputElement>('chk-applied'),
   importMsg: byId<HTMLParagraphElement>('import-msg'),
@@ -541,6 +575,26 @@ async function doMarkApplied(): Promise<void> {
   }
 }
 
+/**
+ * Click handler for "Save my answers from this page". Sends `answersSave`
+ * and shows the result in the existing message area — UNLIKE the passive
+ * auto-check, failures ARE shown here (this is a deliberate click action).
+ */
+async function doSaveAnswers(): Promise<void> {
+  els.btnSaveAnswers.disabled = true;
+  setMsg(els.importMsg, 'Saving your answers…', 'muted');
+  try {
+    const res = await send({ kind: 'answersSave' });
+    const { text, tone } = resolveAnswersSaveResponse(res);
+    setMsg(els.importMsg, text, tone);
+  } catch {
+    // A transport/messaging rejection must not strand the status on "Saving…".
+    setMsg(els.importMsg, 'Could not save your answers. Please retry.', 'err');
+  } finally {
+    els.btnSaveAnswers.disabled = false;
+  }
+}
+
 async function doImport(): Promise<void> {
   els.btnImport.disabled = true;
   setMsg(els.importMsg, 'Importing…', 'muted');
@@ -661,6 +715,7 @@ function wire(): void {
   els.btnImport.addEventListener('click', () => void doImport());
   els.btnFill.addEventListener('click', () => void doFill());
   els.btnMarkApplied.addEventListener('click', () => void doMarkApplied());
+  els.btnSaveAnswers.addEventListener('click', () => void doSaveAnswers());
   els.btnSaveToken.addEventListener('click', () => void savePairing());
   els.tokenInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') void savePairing();

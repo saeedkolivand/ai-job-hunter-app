@@ -35,6 +35,7 @@ const mockClient = vi.hoisted(() => ({
   getProfile: vi.fn(),
   checkApplied: vi.fn(),
   updateStatus: vi.fn(),
+  saveAnswers: vi.fn(),
 }));
 
 vi.mock('@wxt-dev/browser', () => ({
@@ -95,6 +96,7 @@ beforeEach(() => {
   mockClient.importJob.mockReset();
   mockClient.checkApplied.mockReset();
   mockClient.updateStatus.mockReset();
+  mockClient.saveAnswers.mockReset();
 });
 
 // ── not-paired short-circuit ────────────────────────────────────────────────
@@ -342,5 +344,106 @@ describe('statusUpdate request', () => {
 
     expect(res).toEqual({ ok: false, error: 'Could not read the current tab URL.' });
     expect(mockClient.updateStatus).not.toHaveBeenCalled();
+  });
+});
+
+// ── answersSave request — capture then send; errors are NOT folded ──────────
+
+describe('answersSave request', () => {
+  it('injects capture.js, sends the captured answers, and returns the success result', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    const captured = [{ question: 'Why this role?', answer: 'Because I love it.' }];
+    executeScriptMock.mockResolvedValueOnce([{ result: captured }] as never);
+    mockClient.saveAnswers.mockResolvedValue({
+      ok: true,
+      applicationId: 'app-1',
+      saved: 1,
+      skipped: 0,
+      title: 'Backend Engineer',
+      company: 'Acme',
+    });
+
+    const res = await send({ kind: 'answersSave' });
+
+    expect(executeScriptMock).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { tabId: 7 }, files: ['capture.js'] })
+    );
+    expect(mockClient.saveAnswers).toHaveBeenCalledWith(
+      'https://jobs.example.com/posting/9',
+      captured
+    );
+    expect(res).toEqual({
+      ok: true,
+      kind: 'answersSave',
+      result: {
+        ok: true,
+        applicationId: 'app-1',
+        saved: 1,
+        skipped: 0,
+        title: 'Backend Engineer',
+        company: 'Acme',
+      },
+    });
+  });
+
+  it('passes a desktop-side refusal straight through as result (never folds it, unlike appliedCheck)', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/none' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: [] }] as never);
+    mockClient.saveAnswers.mockResolvedValue({
+      ok: false,
+      error: "couldn't find a saved job for this page — import it first",
+    });
+
+    const res = await send({ kind: 'answersSave' });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'answersSave',
+      result: { ok: false, error: "couldn't find a saved job for this page — import it first" },
+    });
+  });
+
+  it('surfaces "Could not read the answers on this page." when the injected script returns a non-array', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: null }] as never);
+
+    const res = await send({ kind: 'answersSave' });
+
+    expect(res).toEqual({ ok: false, error: 'Could not read the answers on this page.' });
+    expect(mockClient.saveAnswers).not.toHaveBeenCalled();
+  });
+
+  it('surfaces "Could not read the current tab URL." when there is no active tab, without calling saveAnswers', async () => {
+    // activeTabUrl() runs BEFORE the capture injection (mirrors runStatusUpdate).
+    tabsQueryMock.mockResolvedValue([]);
+
+    const res = await send({ kind: 'answersSave' });
+
+    expect(res).toEqual({ ok: false, error: 'Could not read the current tab URL.' });
+    expect(executeScriptMock).not.toHaveBeenCalled();
+    expect(mockClient.saveAnswers).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a transport-level rejection as ok:false (UNLIKE appliedCheck, which folds every rejection)', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: [] }] as never);
+    mockClient.saveAnswers.mockRejectedValue(
+      new Error('Desktop app not reachable. Is AI Job Hunter running?')
+    );
+
+    const res = await send({ kind: 'answersSave' });
+
+    expect(res).toEqual({
+      ok: false,
+      error: 'Desktop app not reachable. Is AI Job Hunter running?',
+    });
   });
 });

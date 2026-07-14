@@ -159,6 +159,14 @@ pub struct ApplicationMeta {
 // of hardcoding a second literal.
 pub(crate) const MAX_JOB_DESCRIPTION_BYTES: usize = 200_000;
 
+/// Hard cap on the total number of `answers` entries [`ApplicationStore::merge_answers`]
+/// will store per application. `answers.save`'s per-call cap
+/// (`extension_bridge::answers_save::MAX_ANSWERS_PER_CALL`) only bounds one
+/// capture; this bounds the CUMULATIVE total across every capture on the same
+/// application, so repeated captures (or a hostile/buggy collector called many
+/// times) can't grow the stored list unboundedly.
+const MAX_TOTAL_ANSWERS: usize = 500;
+
 /// Clamp a job description to at most `MAX_JOB_DESCRIPTION_BYTES` bytes, cutting on
 /// a UTF-8 char boundary so the stored text is always valid UTF-8. Truncate (never
 /// reject): an over-cap import is clamped, not dropped.
@@ -799,6 +807,87 @@ impl ApplicationStore {
         Ok(true)
     }
 
+    /// Append newly-captured extension answers onto Application `id`'s answer
+    /// list — an APPEND-only dedup merge, `pub(crate)` so the extension
+    /// bridge's `answers.save` handler
+    /// (`extension_bridge::answers_save::resolve_answers_save`) is the first
+    /// caller. Deliberately independent of `upsert_internal`'s meta-merge
+    /// path — that path REPLACES `answers` wholesale
+    /// (`meta.answers.is_empty() ? existing : meta.answers`), which would
+    /// silently drop every prior answer the first time an answers-bearing
+    /// upsert ran again; this method only ever ADDS.
+    ///
+    /// Dedup key: the NORMALIZED question text (trim + lowercase + collapse
+    /// internal whitespace runs) compared against the CURRENT answers — an
+    /// existing answer for a given question always wins and is NEVER
+    /// overwritten, so a re-capture of the same page only ever adds
+    /// genuinely new questions. The dedup set also accumulates across
+    /// `incoming` itself, so two same-normalized entries in one call collapse
+    /// to a single added answer rather than two. A blank (post-trim) question
+    /// is dropped.
+    ///
+    /// The dedup READ and the WRITE happen in the SAME transaction (via
+    /// [`Self::row_by_id_conn`], not the self-locking [`Self::get`] — calling
+    /// `get` here would deadlock the non-reentrant `parking_lot::Mutex`), so
+    /// there is no earlier separate read a concurrent caller could race
+    /// against; only `answers` + `updated_at` are touched. Returns the count
+    /// of NEWLY ADDED answers (`0` when every captured question was already
+    /// present or blank).
+    ///
+    /// Capped at [`MAX_TOTAL_ANSWERS`] merged answers per application: once
+    /// that many are stored, further incoming entries are dropped rather than
+    /// appended (they count toward the caller's `skipped`, same as a dedup
+    /// hit — never rejected outright).
+    pub(crate) fn merge_answers(
+        &self,
+        id: &str,
+        incoming: Vec<ApplicationAnswer>,
+    ) -> AppResult<usize> {
+        let mut guard = self.conn.lock();
+        let tx = guard.transaction()?;
+
+        let existing = Self::row_by_id_conn(&tx, id)?
+            .ok_or_else(|| AppError::Validation(format!("application not found: {id}")))?;
+
+        let mut seen: std::collections::HashSet<String> = existing
+            .answers
+            .iter()
+            .map(|a| normalize_question(&a.question))
+            .collect();
+
+        let mut merged = existing.answers;
+        let mut added = 0usize;
+        for ans in incoming {
+            if merged.len() >= MAX_TOTAL_ANSWERS {
+                break; // per-application cap hit — remaining entries count as skipped
+            }
+            let key = normalize_question(&ans.question);
+            if key.is_empty() || !seen.insert(key) {
+                continue; // blank question, or an existing answer already wins
+            }
+            merged.push(ApplicationAnswer {
+                id: make_answer_id(),
+                question: ans.question,
+                answer: ans.answer,
+            });
+            added += 1;
+        }
+
+        if added > 0 {
+            // `?` (not `.unwrap_or_else(|_| "[]".into())`): a serialize failure
+            // must abort the transaction (never committed, so the existing
+            // `answers` column is untouched) rather than writing an empty `[]`
+            // that would silently wipe every previously-stored answer.
+            let answers_json = serde_json::to_string(&merged)?;
+            tx.execute(
+                "UPDATE applications SET answers = ?2, updated_at = ?3 WHERE id = ?1",
+                params![id, answers_json, ts_to_db(now_ms())],
+            )?;
+        }
+        tx.commit()?;
+        Ok(added)
+    }
+
     /// Patch the user-editable tracking fields. Each `None` leaves its field
     /// unchanged; bumps `updated_at` whenever called.
     #[allow(clippy::too_many_arguments)]
@@ -922,6 +1011,18 @@ impl ApplicationStore {
             ],
         )?;
         Ok(())
+    }
+
+    /// Connection-scoped single-row read by id, callable inside an existing
+    /// lock/transaction — unlike [`Self::get`] (which takes its OWN lock;
+    /// calling `get` while already holding `self.conn.lock()` would deadlock
+    /// the non-reentrant `parking_lot::Mutex`). Used by
+    /// [`Self::merge_answers`] so its dedup read and its write land in the
+    /// exact same transaction.
+    fn row_by_id_conn(conn: &Connection, id: &str) -> AppResult<Option<Application>> {
+        use rusqlite::OptionalExtension;
+        let mut stmt = conn.prepare(&format!("{SELECT_COLS} WHERE id = ?1"))?;
+        Ok(stmt.query_row(params![id], row_to_application).optional()?)
     }
 
     /// Connection-scoped status-event append, callable inside a transaction.
@@ -1132,6 +1233,25 @@ fn truncate_on_char_boundary(s: &str, max_bytes: usize) -> String {
 
 pub fn make_application_id() -> String {
     format!("app-{}-{}", now_ms(), &Uuid::new_v4().to_string()[..8])
+}
+
+/// Fresh id for an answer merged in by [`ApplicationStore::merge_answers`] —
+/// same shape as [`make_application_id`].
+fn make_answer_id() -> String {
+    format!("ans-{}-{}", now_ms(), &Uuid::new_v4().to_string()[..8])
+}
+
+/// Normalize a question for dedup comparison in
+/// [`ApplicationStore::merge_answers`]: trim, lowercase, and collapse
+/// internal whitespace runs to a single space — so "Why  this role?" and
+/// "why this role?" (a different capture pass / incidental whitespace) dedup
+/// to the same key.
+fn normalize_question(q: &str) -> String {
+    q.trim()
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 impl DataStore for ApplicationStore {

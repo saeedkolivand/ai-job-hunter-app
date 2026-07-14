@@ -20,6 +20,9 @@ import { z } from 'zod';
 import {
   EXTENSION_MESSAGE_TYPES,
   EXTENSION_PROTOCOL_VERSION,
+  type ExtensionAnswerPair,
+  type ExtensionAnswersSaveRequest,
+  type ExtensionAnswersSaveResult,
   type ExtensionAppliedCheckRequest,
   type ExtensionAppliedCheckResult,
   type ExtensionAuthOkPayload,
@@ -42,6 +45,9 @@ import {
 export {
   EXTENSION_MESSAGE_TYPES,
   EXTENSION_PROTOCOL_VERSION,
+  type ExtensionAnswerPair,
+  type ExtensionAnswersSaveRequest,
+  type ExtensionAnswersSaveResult,
   type ExtensionAppliedCheckRequest,
   type ExtensionAppliedCheckResult,
   type ExtensionAuthOkPayload,
@@ -76,6 +82,8 @@ export const ExtensionMessageTypeSchema = z.enum([
   EXTENSION_MESSAGE_TYPES.appliedResult,
   EXTENSION_MESSAGE_TYPES.statusUpdate,
   EXTENSION_MESSAGE_TYPES.statusResult,
+  EXTENSION_MESSAGE_TYPES.answersSave,
+  EXTENSION_MESSAGE_TYPES.answersResult,
 ]) satisfies z.ZodType<ExtensionMessageType>;
 
 /** `hello` payload (handshake step 1). No token — the proof authenticates later. */
@@ -189,6 +197,40 @@ export const ExtensionStatusUpdateResultSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true), applicationId: z.string(), status: z.literal('applied') }),
   z.object({ ok: z.literal(false), error: z.string() }),
 ]) satisfies z.ZodType<ExtensionStatusUpdateResult>;
+
+/** One captured `{question, answer}` pair. Mirrors {@link ExtensionAnswerPair}. */
+export const ExtensionAnswerPairSchema = z.object({
+  question: z.string(),
+  answer: z.string(),
+}) satisfies z.ZodType<ExtensionAnswerPair>;
+
+/**
+ * `answers.save` payload — the url plus the captured pairs to append. Mirrors
+ * {@link ExtensionAnswersSaveRequest}. Shape-only (no byte/entry caps): the
+ * desktop store boundary is the real clamp, matching the sibling request
+ * schemas above (`ExtensionImportRequestSchema` et al. don't cap either).
+ */
+export const ExtensionAnswersSaveRequestSchema = z.object({
+  url: z.string().min(1),
+  answers: z.array(ExtensionAnswerPairSchema),
+}) satisfies z.ZodType<ExtensionAnswersSaveRequest>;
+
+/**
+ * `answers.save` payload. Mirrors {@link ExtensionAnswersSaveResult} — a
+ * discriminated union on `ok`: `ok:true` requires `applicationId` + numeric
+ * `saved`/`skipped` (title/company optional); `ok:false` requires `error`.
+ */
+export const ExtensionAnswersSaveResultSchema = z.discriminatedUnion('ok', [
+  z.object({
+    ok: z.literal(true),
+    applicationId: z.string(),
+    saved: z.number(),
+    skipped: z.number(),
+    title: z.string().optional(),
+    company: z.string().optional(),
+  }),
+  z.object({ ok: z.literal(false), error: z.string() }),
+]) satisfies z.ZodType<ExtensionAnswersSaveResult>;
 
 /**
  * The transport envelope every frame is wrapped in. `payload` is left as

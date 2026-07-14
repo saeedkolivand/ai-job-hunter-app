@@ -1566,3 +1566,179 @@ describe('BridgeClient – updateStatus', () => {
     client.dispose();
   });
 });
+
+// ── "save my answers from this page" answers.save ↔ answers.result ────────────
+
+describe('BridgeClient – saveAnswers', () => {
+  let latestSocket: FakeWebSocket | undefined;
+  let createdSockets: FakeWebSocket[] = [];
+  let restoreWS: () => void;
+
+  beforeEach(() => {
+    latestSocket = undefined;
+    createdSockets = [];
+    restoreWS = installFakeWS((ws) => {
+      latestSocket = ws;
+      createdSockets.push(ws);
+    });
+  });
+
+  afterEach(() => {
+    restoreWS();
+    vi.useRealTimers();
+  });
+
+  async function connectedClient(): Promise<{ client: BridgeClient; socket: FakeWebSocket }> {
+    const client = new BridgeClient(vi.fn());
+    const p = client.ensureConnected();
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+    await p;
+    return { client, socket };
+  }
+
+  function makeAnswersEnvelope(reqId: string, payload: unknown): string {
+    return JSON.stringify({
+      type: EXTENSION_MESSAGE_TYPES.answersResult,
+      reqId,
+      payload,
+    });
+  }
+
+  /** Start a saveAnswers and wait until the outgoing frame is sent; return the reqId. */
+  async function startSaveAnswers(
+    client: BridgeClient,
+    socket: FakeWebSocket,
+    url: string,
+    answers: { question: string; answer: string }[]
+  ): Promise<{ resultPromise: Promise<unknown>; reqId: string }> {
+    const resultPromise = client.saveAnswers(url, answers);
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const frame = JSON.parse(raw) as { type: string; reqId: string; payload: unknown };
+    expect(frame.type).toBe(EXTENSION_MESSAGE_TYPES.answersSave);
+    expect(frame.payload).toEqual({ url, answers });
+    return { resultPromise, reqId: frame.reqId };
+  }
+
+  it('round-trips a success result (incl. title/company) into the resolved payload', async () => {
+    const { client, socket } = await connectedClient();
+    const url = 'https://jobs.example.com/posting/9';
+    const answers = [{ question: 'Why this role?', answer: 'Because I love it.' }];
+    const { resultPromise, reqId } = await startSaveAnswers(client, socket, url, answers);
+
+    const payload = {
+      ok: true,
+      applicationId: 'app-1',
+      saved: 1,
+      skipped: 0,
+      title: 'Backend Engineer',
+      company: 'Acme',
+    };
+    socket.simulateMessage(makeAnswersEnvelope(reqId, payload));
+
+    const result = await resultPromise;
+    expect(result).toEqual(payload);
+
+    client.dispose();
+  });
+
+  it('round-trips a success result WITHOUT title/company (both optional)', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startSaveAnswers(
+      client,
+      socket,
+      'https://jobs.example.com/posting/10',
+      []
+    );
+
+    socket.simulateMessage(
+      makeAnswersEnvelope(reqId, { ok: true, applicationId: 'app-1', saved: 0, skipped: 0 })
+    );
+
+    const result = await resultPromise;
+    expect(result).toEqual({ ok: true, applicationId: 'app-1', saved: 0, skipped: 0 });
+
+    client.dispose();
+  });
+
+  it('round-trips a desktop-side refusal (ok:false + error) into the resolved payload — never rejects', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startSaveAnswers(
+      client,
+      socket,
+      'https://jobs.example.com/posting/none',
+      []
+    );
+
+    socket.simulateMessage(
+      makeAnswersEnvelope(reqId, {
+        ok: false,
+        error: "couldn't find a saved job for this page — import it first",
+      })
+    );
+
+    const result = await resultPromise;
+    expect(result).toEqual({
+      ok: false,
+      error: "couldn't find a saved job for this page — import it first",
+    });
+
+    client.dispose();
+  });
+
+  it('resolves with a malformed error (never throws) when the payload is bad', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startSaveAnswers(
+      client,
+      socket,
+      'https://jobs.example.com/posting/bad',
+      []
+    );
+
+    // saved must be a number; a string breaks the guard.
+    socket.simulateMessage(
+      makeAnswersEnvelope(reqId, { ok: true, applicationId: 'app-1', saved: 'one', skipped: 0 })
+    );
+
+    const result = (await resultPromise) as { ok: boolean; error?: string };
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/malformed/i);
+
+    client.dispose();
+  });
+
+  it('rejects when not connected — every port fails and the ws probe exhausts', async () => {
+    vi.useFakeTimers();
+
+    const client = new BridgeClient(vi.fn());
+    const savePromise = client.saveAnswers('https://jobs.example.com/posting/x', []);
+    const outcomePromise = savePromise.then(
+      () => ({ ok: true as const }),
+      (e: unknown) => ({ ok: false as const, error: e })
+    );
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const idx = attempt;
+      await vi.waitFor(() => {
+        expect(createdSockets.length).toBeGreaterThanOrEqual(idx + 1);
+      });
+      createdSockets[idx]!.simulateClose();
+    }
+
+    const outcome = await outcomePromise;
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toBeInstanceOf(Error);
+      expect((outcome.error as Error).message).toMatch(/not reachable/i);
+    }
+    expect(client.status().phase).toBe('app_not_running');
+
+    client.dispose();
+  });
+});

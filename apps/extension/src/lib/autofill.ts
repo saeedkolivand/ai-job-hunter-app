@@ -14,7 +14,14 @@
  *  - Renders an in-page summary of exactly what it did (incl. the "nothing
  *    matched" case) so a no-op never looks broken. Name is split (first token /
  *    remainder) for separate first/last fields and FLAGGED as a guess.
+ *
+ * The label/visibility/denylist primitives (`labelText`/`textSignal`/
+ * `isHidden`/`escapeId`/`AMBIGUOUS`) live in `./field-signal` — shared with
+ * `answers-capture.ts` (PR 5 of the extension roadmap) so fill and capture
+ * never disagree on what counts as labelled/visible/ambiguous.
  */
+
+import { AMBIGUOUS, isHidden, matchNamedKey, textSignal } from './field-signal';
 
 /**
  * Isolated-world global key under which `fill.ts` exposes {@link runAutofill};
@@ -83,48 +90,6 @@ const OVERLAY_ID = 'ajh-autofill-overlay';
  *  number, date, search, checkbox, radio, file, submit, …) is skipped. */
 const FILLABLE_TYPES = new Set(['text', 'email', 'tel', 'url', '']);
 
-/**
- * Substrings that make a field ambiguous or sensitive — a match on the label /
- * name / id / placeholder skips the field entirely (under-fill over mis-fill).
- * Includes the grilled set (referrer/emergency/confirm/manager/parent) plus the
- * fields most likely to receive the WRONG identity on a job-application form
- * (company/employer/recruiter), login/search noise, and — defense-in-depth, since
- * the matcher only ever writes our own name/email/phone/socials — sensitive PII
- * categories it should never touch even by accident (SSN/tax id, passport,
- * date of birth).
- */
-const AMBIGUOUS = [
-  'referr',
-  'referral',
-  'reference',
-  'emergency',
-  'confirm',
-  'manager',
-  'supervisor',
-  'parent',
-  'guardian',
-  'company',
-  'employer',
-  'organization',
-  'organisation',
-  'recruiter',
-  'search',
-  'username',
-  'user name',
-  'password',
-  'captcha',
-  'coupon',
-  'promo',
-  'maiden',
-  'ssn',
-  'social security',
-  'tax',
-  'passport',
-  'dob',
-  'birth',
-  'date of birth',
-];
-
 /** Human labels for the summary, per logical key. */
 const KEY_LABELS: Record<string, string> = {
   email: 'Email',
@@ -147,86 +112,6 @@ export function splitName(fullName: string): { first: string; last: string } {
   const first = parts[0] ?? '';
   const last = parts.slice(1).join(' ');
   return { first, last };
-}
-
-/**
- * True when the element or ANY ancestor is hidden — via the `hidden` attribute
- * or COMPUTED style (not just inline `style`): `display:none`/`visibility:hidden`,
- * `opacity:0`, off-screen absolute/fixed positioning (`left`/`top` shoved past
- * -9999px — the classic honeypot trap), or a box whose computed `width` AND
- * `height` are BOTH exactly `0px`. Computed style (not just inline `style`) is
- * what catches an external-stylesheet / `<style>` CSS-class honeypot — this is
- * how anti-bot honeypot fields are commonly planted on real ATS forms
- * (Greenhouse/Lever/Workday). An inline-only or display/visibility-only check
- * would fill them, and a filled invisible field is worse than an ordinary
- * mis-fill (the user can't see it to undo, and it can flag them as a bot).
- *
- * NOT caught, deliberately: clip-based hiding (`clip:rect(0,0,0,0)`/
- * `clip-path`) or a single-dimension-zero box (e.g. the `width:1px;height:1px`
- * shape common to `.sr-only`-style utility classes) — that is also exactly how a
- * LEGITIMATE screen-reader-only field is hidden visually while staying
- * functionally real, so treating it as hidden (and skip-filling it) would be
- * wrong. Only an unambiguous honeypot shape — display/visibility/opacity-off,
- * off-screen, or BOTH dimensions zero — is treated as hidden.
- *
- * Deliberately `getComputedStyle`-ONLY — never `getBoundingClientRect`/
- * `offsetWidth`/layout reads. jsdom (the test environment) always reports those
- * as zero, which would make every field — including normal visible ones — read
- * as hidden. Computed style has no such gap: a real field's computed `width` is
- * `auto`/a real length (never the literal string `'0px'`), its `position` is
- * `static`, and its `opacity` is `1`, so this stays jsdom-safe.
- */
-function isHidden(el: HTMLElement): boolean {
-  const view = el.ownerDocument.defaultView;
-  let node: HTMLElement | null = el;
-  while (node) {
-    if (node.hidden) return true;
-    const cs = view?.getComputedStyle(node);
-    if (cs) {
-      if (cs.display === 'none' || cs.visibility === 'hidden') return true;
-      if (Number.parseFloat(cs.opacity) === 0) return true;
-      if (
-        (cs.position === 'absolute' || cs.position === 'fixed') &&
-        (Number.parseFloat(cs.left) <= -9999 || Number.parseFloat(cs.top) <= -9999)
-      )
-        return true;
-      if (cs.width === '0px' && cs.height === '0px') return true;
-    }
-    node = node.parentElement;
-  }
-  return false;
-}
-
-/** CSS.escape when available (jsdom + browsers), else a conservative fallback. */
-function escapeId(id: string): string {
-  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(id);
-  return id.replace(/["\\]/g, '\\$&');
-}
-
-/** The associated label text for an input: `<label for>` + any wrapping `<label>`. */
-function labelText(el: HTMLInputElement): string {
-  const doc = el.ownerDocument;
-  let text = '';
-  if (el.id) {
-    const forLabel = doc.querySelector(`label[for="${escapeId(el.id)}"]`);
-    if (forLabel?.textContent) text += ` ${forLabel.textContent}`;
-  }
-  const wrapping = el.closest('label');
-  if (wrapping?.textContent) text += ` ${wrapping.textContent}`;
-  return text;
-}
-
-/** The lowercased free-text signal for Tier-2 matching (name/id/placeholder/aria/label). */
-function textSignal(el: HTMLInputElement): string {
-  return [
-    el.getAttribute('name') ?? '',
-    el.id,
-    el.getAttribute('placeholder') ?? '',
-    el.getAttribute('aria-label') ?? '',
-    labelText(el),
-  ]
-    .join(' ')
-    .toLowerCase();
 }
 
 /** The last (field) token of an `autocomplete` value, e.g. "shipping email" → "email". */
@@ -293,30 +178,9 @@ export function matchFieldKey(el: HTMLInputElement): string | null {
       break;
   }
 
-  // ── Tier 2: unambiguous free-text signal ──────────────────────────────────
-  if (signal.includes('linkedin')) return 'linkedin';
-  if (signal.includes('github')) return 'github';
-  if (signal.includes('portfolio') || /personal (web ?site|site)/.test(signal)) return 'website';
-  if (signal.includes('email') || signal.includes('e-mail')) return 'email';
-  if (signal.includes('phone') || signal.includes('mobile') || signal.includes('telephone'))
-    return 'phone';
-  if (/first name|given name|forename/.test(signal)) return 'firstName';
-  if (/last name|surname|family name/.test(signal)) return 'lastName';
-  if (signal.includes('city') || signal.includes('town') || /\blocation\b/.test(signal))
-    return 'location';
-  if (/\bfull name\b/.test(signal)) return 'fullName';
-  // A bare "Name" field (not user/file/nick/display/business/org and not an
-  // education field — "School Name"/"University Name"/"Degree Name"/… — and not
-  // a first/last variant already handled) → full name.
-  if (
-    /\bname\b/.test(signal) &&
-    !/user|file|nick|screen|display|business|org|school|institution|university|college|degree|course|program|certificat/.test(
-      signal
-    )
-  )
-    return 'fullName';
-
-  return null;
+  // ── Tier 2: unambiguous free-text signal (shared with answers-capture's
+  // exclude-identity-fields check — see `matchNamedKey`) ────────────────────
+  return matchNamedKey(signal);
 }
 
 /** The value for a logical key from the profile (+ split for first/last). */

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ExtensionAnswersSaveRequestSchema,
+  ExtensionAnswersSaveResultSchema,
   ExtensionAppliedCheckRequestSchema,
   ExtensionAppliedCheckResultSchema,
   ExtensionEnvelopeSchema,
@@ -387,6 +389,129 @@ describe('ExtensionStatusUpdateResultSchema', () => {
         type: EXTENSION_MESSAGE_TYPES.statusResult,
         reqId: 'req-005',
         payload: { ok: true, applicationId: 'app-1', status: 'applied' },
+      })
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ExtensionAnswersSaveRequestSchema / ExtensionAnswersSaveResultSchema
+// ---------------------------------------------------------------------------
+
+describe('ExtensionAnswersSaveRequestSchema', () => {
+  it('accepts a valid request with captured pairs', () => {
+    expect(() =>
+      ExtensionAnswersSaveRequestSchema.parse({
+        url: 'https://example.com/job/123',
+        answers: [{ question: 'Why this role?', answer: 'Because I love it.' }],
+      })
+    ).not.toThrow();
+  });
+
+  it('accepts an empty answers array', () => {
+    expect(() =>
+      ExtensionAnswersSaveRequestSchema.parse({ url: 'https://example.com/job/123', answers: [] })
+    ).not.toThrow();
+  });
+
+  it('rejects an empty url', () => {
+    expect(() => ExtensionAnswersSaveRequestSchema.parse({ url: '', answers: [] })).toThrow();
+  });
+
+  it('rejects a request with no url field', () => {
+    expect(() => ExtensionAnswersSaveRequestSchema.parse({ answers: [] })).toThrow();
+  });
+
+  it('rejects a request with no answers field', () => {
+    expect(() =>
+      ExtensionAnswersSaveRequestSchema.parse({ url: 'https://example.com/job/123' })
+    ).toThrow();
+  });
+
+  it('rejects a malformed answer entry (missing answer)', () => {
+    expect(() =>
+      ExtensionAnswersSaveRequestSchema.parse({
+        url: 'https://example.com/job/123',
+        answers: [{ question: 'Why this role?' }],
+      })
+    ).toThrow();
+  });
+
+  it('rejects a non-array answers field', () => {
+    expect(() =>
+      ExtensionAnswersSaveRequestSchema.parse({
+        url: 'https://example.com/job/123',
+        answers: 'not-an-array',
+      })
+    ).toThrow();
+  });
+});
+
+describe('ExtensionAnswersSaveResultSchema', () => {
+  it('round-trips a success payload with title/company', () => {
+    const payload = {
+      ok: true,
+      applicationId: 'app-1',
+      saved: 3,
+      skipped: 1,
+      title: 'Backend Engineer',
+      company: 'Acme',
+    };
+    expect(ExtensionAnswersSaveResultSchema.parse(payload)).toEqual(payload);
+  });
+
+  it('round-trips a success payload without title/company (both optional)', () => {
+    const payload = { ok: true, applicationId: 'app-1', saved: 0, skipped: 0 };
+    expect(ExtensionAnswersSaveResultSchema.parse(payload)).toEqual(payload);
+  });
+
+  it("accepts a user-facing failure payload (this verb's errors are shown, unlike applied.check)", () => {
+    expect(() =>
+      ExtensionAnswersSaveResultSchema.parse({
+        ok: false,
+        error: "couldn't find a saved job for this page — import it first",
+      })
+    ).not.toThrow();
+  });
+
+  it('rejects a missing ok field', () => {
+    expect(() => ExtensionAnswersSaveResultSchema.parse({})).toThrow();
+  });
+
+  it('rejects a non-boolean ok field', () => {
+    expect(() => ExtensionAnswersSaveResultSchema.parse({ ok: 'yes' })).toThrow();
+  });
+
+  it('rejects an incomplete ok:true payload missing saved/skipped', () => {
+    expect(() =>
+      ExtensionAnswersSaveResultSchema.parse({ ok: true, applicationId: 'app-1' })
+    ).toThrow();
+  });
+
+  it('rejects a contradictory ok:false payload carrying success fields but no error', () => {
+    expect(() =>
+      ExtensionAnswersSaveResultSchema.parse({
+        ok: false,
+        applicationId: 'app-1',
+        saved: 1,
+        skipped: 0,
+      })
+    ).toThrow();
+  });
+
+  it('carries answers.save / answers.result through a valid envelope', () => {
+    expect(() =>
+      ExtensionEnvelopeSchema.parse({
+        type: EXTENSION_MESSAGE_TYPES.answersSave,
+        reqId: 'req-006',
+        payload: { url: 'https://example.com/job/123', answers: [] },
+      })
+    ).not.toThrow();
+    expect(() =>
+      ExtensionEnvelopeSchema.parse({
+        type: EXTENSION_MESSAGE_TYPES.answersResult,
+        reqId: 'req-007',
+        payload: { ok: true, applicationId: 'app-1', saved: 1, skipped: 0 },
       })
     ).not.toThrow();
   });
