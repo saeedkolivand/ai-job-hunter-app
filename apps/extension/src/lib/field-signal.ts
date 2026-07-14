@@ -28,7 +28,8 @@
  * to receive the WRONG identity on a job-application form
  * (company/employer/recruiter), login/search noise, and — defense-in-depth —
  * sensitive PII categories that should never be touched even by accident
- * (SSN/tax id, passport, date of birth).
+ * (SSN/tax id, passport, date of birth, national id, driver's license,
+ * bank/IBAN, visa status).
  */
 export const AMBIGUOUS = [
   'referr',
@@ -60,6 +61,17 @@ export const AMBIGUOUS = [
   'dob',
   'birth',
   'date of birth',
+  'national id',
+  'national insurance',
+  'license',
+  'licence',
+  'iban',
+  'bank account',
+  'routing number',
+  'sort code',
+  'visa status',
+  'green card',
+  'immigration status',
 ];
 
 /**

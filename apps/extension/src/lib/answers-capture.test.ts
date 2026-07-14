@@ -142,6 +142,13 @@ describe('collectAnswers — the AMBIGUOUS/sensitive denylist (shared with autof
     `);
     expect(collectAnswers(document)).toEqual([]);
   });
+
+  it('does not capture a filled "Driver\'s license number" field', () => {
+    setForm(
+      `<label for="dl">Driver's license number</label><input id="dl" type="text" value="D1234567" />`
+    );
+    expect(collectAnswers(document)).toEqual([]);
+  });
 });
 
 describe('collectAnswers — excludes identity fields (contact-profile data, not answers)', () => {

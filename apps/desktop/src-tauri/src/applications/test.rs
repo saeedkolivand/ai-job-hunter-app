@@ -2533,3 +2533,104 @@ fn upsert_for_origin_merges_answers_by_question_instead_of_replacing() {
         "a genuinely new AI answer must be added"
     );
 }
+
+/// Regression proxy for the upsert/`merge_answers` TOCTOU fix:
+/// `upsert_internal` used to look up the existing row via the self-locking
+/// `find_by_job_url` (its own lock acquired and released BEFORE the write
+/// transaction re-acquired the lock), leaving a gap where a concurrent
+/// `merge_answers` commit could be silently overwritten by the upsert's
+/// stale pre-gap snapshot. The fix folds both into one lock/transaction via
+/// `row_by_job_url_conn`.
+///
+/// A deterministic reproduction of the OLD race isn't feasible here: its
+/// window was the interval between two `Mutex` acquisitions inside a single
+/// call, on the order of nanoseconds, and hitting it reliably would need a
+/// test-only pause hook inside `upsert_internal` — production-code scope
+/// creep beyond this fix. As an honest proxy, this test instead hammers the
+/// SAME Application from two real threads — one repeatedly appending via
+/// `merge_answers`, the other repeatedly upserting via `upsert_for_origin` —
+/// each iteration contributing one distinct, individually-traceable
+/// question, and asserts every single one survives. With the fix, the
+/// lookup+write critical section is atomic under the shared lock, so no
+/// interleaving can lose an update; this test would be flaky (and could
+/// fail) against the old two-lock structure under real contention.
+#[test]
+fn upsert_and_merge_answers_race_never_loses_an_update() {
+    let dir = TempDir::new().unwrap();
+    let store = std::sync::Arc::new(ApplicationStore::open(dir.path()).unwrap());
+    let url = "https://acme.com/job/race";
+    let id = store
+        .upsert_for_origin(
+            url,
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    const ITERS: usize = 40;
+
+    let merge_store = store.clone();
+    let merge_id = id.clone();
+    let merge_thread = std::thread::spawn(move || {
+        for i in 0..ITERS {
+            merge_store
+                .merge_answers(
+                    &merge_id,
+                    vec![ApplicationAnswer {
+                        id: String::new(),
+                        question: format!("merge-question-{i}"),
+                        answer: format!("merge-answer-{i}"),
+                    }],
+                )
+                .unwrap();
+        }
+    });
+
+    let upsert_store = store.clone();
+    let upsert_url = url.to_string();
+    let upsert_thread = std::thread::spawn(move || {
+        for i in 0..ITERS {
+            let mut m = meta("Acme", "Engineer");
+            m.answers = vec![ApplicationAnswer {
+                id: String::new(),
+                question: format!("upsert-question-{i}"),
+                answer: format!("upsert-answer-{i}"),
+            }];
+            upsert_store
+                .upsert_for_origin(
+                    &upsert_url,
+                    "linkedin",
+                    &m,
+                    ApplicationOrigin::Generate,
+                    None,
+                )
+                .unwrap();
+        }
+    });
+
+    merge_thread.join().unwrap();
+    upsert_thread.join().unwrap();
+
+    let app = store.get(&id).unwrap();
+    for i in 0..ITERS {
+        assert!(
+            app.answers
+                .iter()
+                .any(|a| a.question == format!("merge-question-{i}")),
+            "merge_answers entry {i} was lost to a concurrent upsert"
+        );
+        assert!(
+            app.answers
+                .iter()
+                .any(|a| a.question == format!("upsert-question-{i}")),
+            "upsert entry {i} was lost to a concurrent merge_answers"
+        );
+    }
+    assert_eq!(
+        app.answers.len(),
+        ITERS * 2,
+        "no answer from either concurrent writer may be dropped"
+    );
+}

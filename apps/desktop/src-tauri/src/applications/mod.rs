@@ -614,7 +614,13 @@ impl ApplicationStore {
             }
         };
 
-        if let Some(existing) = self.find_by_job_url(normalized) {
+        // Lookup + write share ONE lock/transaction (`row_by_job_url_conn`, not
+        // self-locking `find_by_job_url`) — the old separately-released lookup
+        // lock left a gap where a concurrent `merge_answers` commit got clobbered.
+        let mut guard = self.conn.lock();
+        let tx = guard.transaction()?;
+
+        if let Some(existing) = Self::row_by_job_url_conn(&tx, normalized)? {
             let now = now_ms();
             let (status, new_applied_at) = if existing.status.is_pre_apply() && applied_at.is_some()
             {
@@ -659,11 +665,7 @@ impl ApplicationStore {
                     .clone()
                     .or_else(|| existing.salary_currency.clone()),
             };
-            // Row write + the (conditional) status event in ONE transaction so an
-            // upsert that changes status can never persist the row without its
-            // history event. `.transaction()` needs `&mut Connection`.
-            let mut guard = self.conn.lock();
-            let tx = guard.transaction()?;
+            // Row write + status event share the transaction opened above.
             Self::write_row_conn(&tx, &app)?;
             if status != existing.status {
                 Self::append_event_conn(
@@ -716,9 +718,7 @@ impl ApplicationStore {
             salary_max: meta.salary_max,
             salary_currency: meta.salary_currency.clone(),
         };
-        // New Application: the row + its seed status event in ONE transaction.
-        let mut guard = self.conn.lock();
-        let tx = guard.transaction()?;
+        // New row: its seed status event shares the same transaction.
         Self::write_row_conn(&tx, &app)?;
         Self::append_event_conn(&tx, &app.id, "", status.as_id(), "", now)?;
         tx.commit()?;
@@ -1106,6 +1106,19 @@ impl ApplicationStore {
         use rusqlite::OptionalExtension;
         let mut stmt = conn.prepare(&format!("{SELECT_COLS} WHERE id = ?1"))?;
         Ok(stmt.query_row(params![id], row_to_application).optional()?)
+    }
+
+    /// `find_by_job_url` sibling for [`Self::upsert_internal`] (self-locking here would deadlock).
+    fn row_by_job_url_conn(conn: &Connection, normalized: &str) -> AppResult<Option<Application>> {
+        use rusqlite::OptionalExtension;
+        if normalized.is_empty() {
+            return Ok(None);
+        }
+        let sql = format!("{SELECT_COLS} WHERE job_url = ?1 ORDER BY created_at DESC LIMIT 1");
+        let mut stmt = conn.prepare(&sql)?;
+        Ok(stmt
+            .query_row(params![normalized], row_to_application)
+            .optional()?)
     }
 
     /// Connection-scoped status-event append, callable inside a transaction.
