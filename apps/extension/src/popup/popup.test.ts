@@ -481,6 +481,23 @@ describe('doImport (#btn-import)', () => {
     // The checkbox was unticked — the outgoing request must carry applied: false.
     expect(sendMessageMock).toHaveBeenCalledWith({ kind: 'import', applied: false });
   });
+
+  it('shows the plain "Imported" success message and re-enables the button', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'import',
+      result: { applicationId: 'app-new', status: 'saved', title: 'Senior Rust Engineer' },
+    });
+
+    const btn = byId<HTMLButtonElement>('btn-import');
+    btn.click();
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Imported “Senior Rust Engineer”. Open AI Job Hunter → Applications to view it.'
+    );
+    expect(btn.disabled).toBe(false);
+  });
 });
 
 describe('get the app (#btn-get-app)', () => {
