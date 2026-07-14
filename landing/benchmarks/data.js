@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784021953100,
+  "lastUpdate": 1784027436648,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4319,6 +4319,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 282082,
             "range": "± 8091",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d267ad87bd65cd7099697025d3c3f32a138d20fd",
+          "message": "feat: fill portfolio and custom link fields from contact profile extra links (#634)\n\n* feat: fill portfolio and custom link fields from contact profile extra links\n\nThe autofill profile now carries the contact profile's extra links\n(cleaned desktop-side: http(s) allowlist, trimmed, capped at ten) and\nthe matcher fills link-labeled fields via conservative whole-word token\nmatching. Generic labels never match, multi-match skips as ambiguous,\nonly text/url inputs qualify, and the named-key fallthrough is scoped\nto the website key alone. Rides the existing autofill opt-in.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: token normalize generic link label denylist\n\nThe GENERIC_LINK_LABELS check compared an extra link's normalized-but-not-\ntokenized label against the raw denylist, so punctuation/hyphen variants\n(\"Website!\", \"Web-Site\") bypassed it while still token-matching a bare\nmatching field. Compare tokenized-vs-tokenized instead.\n\nAlso adds coverage for one link filling two same-labelled fields, label-side\ndiacritic symmetry, and suppresses the \"no matchable fields\" overlay line\nwhen fields were skipped as ambiguous instead (the skipped-note already\nexplains the outcome).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: sort denylist tokens and drop invalid link entries gracefully\n\nOrder-insensitive generic-link denylist comparison (sort tokens on both\nsides so e.g. \"Site Web\" can't bypass the denylisted \"web site\"), and\nfilter out malformed extraLinks entries instead of rejecting the whole\nprofile payload on one bad entry.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-14T13:01:51+02:00",
+          "tree_id": "bdb91108d23b17150744e378490bdd12ca049ddf",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/d267ad87bd65cd7099697025d3c3f32a138d20fd"
+        },
+        "date": 1784027436097,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2117890,
+            "range": "± 57776",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2534310,
+            "range": "± 21795",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 289650,
+            "range": "± 4936",
             "unit": "ns/iter"
           }
         ]
