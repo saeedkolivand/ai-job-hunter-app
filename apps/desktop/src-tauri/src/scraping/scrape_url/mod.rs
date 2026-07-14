@@ -149,8 +149,32 @@ pub fn canonical_job_url(url: &str) -> Option<String> {
         return None;
     }
 
-    // TODO(import): Glassdoor (jobListingId/jl), Xing, StepStone — need a real
-    // captured URL to pin the param + canonical template. Tracked as a follow-up.
+    // Xing (live-probed, PR 7): as observed in public/no-login sessions, selecting
+    // a job in the list navigates straight to the path-canonical URL — clicking a
+    // job title is a full same-tab navigation to `xing.com/jobs/<slug>-<id>`, never
+    // a shell URL with the selection only in a query param. So there is nothing for
+    // this function to rewrite; the per-visit tracking param Xing appends (`?ijt=`)
+    // is dropped whole by `applications::normalize_job_url`'s `retain_identifying_
+    // params` step, which consults `identifying_query_params(host)` for what to
+    // keep — Xing has no entry there, so the whole query is dropped. See
+    // `canonical_xing_*` tests below for the pinned evidence.
+    //
+    // TODO(import): StepStone — the same "nothing to rewrite" finding held for the
+    // public/no-login list flow (a job title opens the canonical detail URL, id in
+    // the path, in a new tab — `stepstone.de/stellenangebote--<slug>--<id>-inline.
+    // html`; its tracking param `?rltr=` is dropped the same way as Xing's `?ijt=`,
+    // see `canonical_stepstone_*` tests below). But the site also has a login-gated
+    // "inline preview" / split-view mode — a signup modal intercepted the
+    // card-body click during the live probe, so that mode was (correctly) never
+    // explored, and this resolver's only real caller is the extension import path
+    // on the user's authenticated tab. That mode may carry the selected job in a
+    // query param instead. Reopen if authenticated imports are observed resolving
+    // a list shell rather than the selected job.
+    //
+    // TODO(import): Glassdoor (jobListingId/jl) — still needs a real captured URL;
+    // glassdoor.com/.de returned a Cloudflare "Just a moment…" challenge page for
+    // this session (homepage + search, both TLDs), blocking live verification.
+    // Tracked as a follow-up.
     None
 }
 
