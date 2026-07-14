@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   ExtensionAnswersSaveRequestSchema,
   ExtensionAnswersSaveResultSchema,
+  ExtensionAnswersSuggestRequestSchema,
+  ExtensionAnswersSuggestResultSchema,
   ExtensionAppliedCheckRequestSchema,
   ExtensionAppliedCheckResultSchema,
   ExtensionEnvelopeSchema,
@@ -512,6 +514,137 @@ describe('ExtensionAnswersSaveResultSchema', () => {
         type: EXTENSION_MESSAGE_TYPES.answersResult,
         reqId: 'req-007',
         payload: { ok: true, applicationId: 'app-1', saved: 1, skipped: 0 },
+      })
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ExtensionAnswersSuggestRequestSchema / ExtensionAnswersSuggestResultSchema
+// ---------------------------------------------------------------------------
+
+describe('ExtensionAnswersSuggestRequestSchema', () => {
+  it('accepts a valid request with questions', () => {
+    expect(() =>
+      ExtensionAnswersSuggestRequestSchema.parse({
+        questions: ['Why this role?', 'What is your notice period?'],
+      })
+    ).not.toThrow();
+  });
+
+  it('accepts an empty questions array', () => {
+    expect(() => ExtensionAnswersSuggestRequestSchema.parse({ questions: [] })).not.toThrow();
+  });
+
+  it('rejects a request with no questions field', () => {
+    expect(() => ExtensionAnswersSuggestRequestSchema.parse({})).toThrow();
+  });
+
+  it('rejects a non-array questions field', () => {
+    expect(() =>
+      ExtensionAnswersSuggestRequestSchema.parse({ questions: 'not-an-array' })
+    ).toThrow();
+  });
+
+  it('rejects a non-string entry', () => {
+    expect(() => ExtensionAnswersSuggestRequestSchema.parse({ questions: [42] })).toThrow();
+  });
+});
+
+describe('ExtensionAnswersSuggestResultSchema', () => {
+  it('round-trips a success payload with a full suggestion', () => {
+    const payload = {
+      ok: true,
+      suggestions: [
+        {
+          question: 'Why this role?',
+          answer: 'Because I love it.',
+          sourceCompany: 'Acme',
+          sourceTitle: 'Backend Engineer',
+          sourceQuestion: 'Why this role?',
+          score: 0.8,
+          salary: false,
+        },
+      ],
+    };
+    expect(ExtensionAnswersSuggestResultSchema.parse(payload)).toEqual(payload);
+  });
+
+  it('round-trips a success payload with an empty suggestions array', () => {
+    const payload = { ok: true, suggestions: [] };
+    expect(ExtensionAnswersSuggestResultSchema.parse(payload)).toEqual(payload);
+  });
+
+  it('accepts a suggestion without sourceCompany/sourceTitle (both optional)', () => {
+    expect(() =>
+      ExtensionAnswersSuggestResultSchema.parse({
+        ok: true,
+        suggestions: [
+          {
+            question: 'Why this role?',
+            answer: 'Because I love it.',
+            sourceQuestion: 'Why this role?',
+            score: 0.6,
+            salary: false,
+          },
+        ],
+      })
+    ).not.toThrow();
+  });
+
+  it('rejects a suggestion missing the required sourceQuestion field', () => {
+    expect(() =>
+      ExtensionAnswersSuggestResultSchema.parse({
+        ok: true,
+        suggestions: [
+          { question: 'Why this role?', answer: 'Because I love it.', score: 0.6, salary: false },
+        ],
+      })
+    ).toThrow();
+  });
+
+  it("accepts a user-facing failure payload (this verb's errors are shown, unlike applied.check)", () => {
+    expect(() =>
+      ExtensionAnswersSuggestResultSchema.parse({ ok: false, error: 'Autofill is off.' })
+    ).not.toThrow();
+  });
+
+  it('rejects a missing ok field', () => {
+    expect(() => ExtensionAnswersSuggestResultSchema.parse({})).toThrow();
+  });
+
+  it('rejects an incomplete ok:true payload missing suggestions', () => {
+    expect(() => ExtensionAnswersSuggestResultSchema.parse({ ok: true })).toThrow();
+  });
+
+  it('rejects a suggestion missing the required salary field', () => {
+    expect(() =>
+      ExtensionAnswersSuggestResultSchema.parse({
+        ok: true,
+        suggestions: [{ question: 'Why this role?', answer: 'Because I love it.', score: 0.6 }],
+      })
+    ).toThrow();
+  });
+
+  it('rejects a contradictory ok:false payload carrying success fields but no error', () => {
+    expect(() =>
+      ExtensionAnswersSuggestResultSchema.parse({ ok: false, suggestions: [] })
+    ).toThrow();
+  });
+
+  it('carries answers.suggest / answers.suggest.result through a valid envelope', () => {
+    expect(() =>
+      ExtensionEnvelopeSchema.parse({
+        type: EXTENSION_MESSAGE_TYPES.answersSuggest,
+        reqId: 'req-008',
+        payload: { questions: ['Why this role?'] },
+      })
+    ).not.toThrow();
+    expect(() =>
+      ExtensionEnvelopeSchema.parse({
+        type: EXTENSION_MESSAGE_TYPES.answersSuggestResult,
+        reqId: 'req-009',
+        payload: { ok: true, suggestions: [] },
       })
     ).not.toThrow();
   });

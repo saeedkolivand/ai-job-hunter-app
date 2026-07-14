@@ -775,8 +775,8 @@
         "regenerateConfirm": "Neu generieren",
         "autofill": {
           "label": "Assistiertes Formular-Ausfüllen",
-          "description": "Erlaubt der Schaltfläche „Ausfüllen“ der Erweiterung, Ihre gespeicherten Kontaktdaten in ein Formular auf der Seite einzutragen.",
-          "disclosure": "Wenn aktiviert, sendet ein Klick auf „Ausfüllen“ in der Erweiterung Ihre gespeicherten Kontaktdaten in das Formular der aktuellen Seite. Ihre Daten verlassen Ihren Computer nur in Seiten, die Sie selbst auswählen.",
+          "description": "Erlaubt der Schaltfläche „Ausfüllen“ der Erweiterung, Kontaktdaten auszufüllen und Ihre bisherigen Antworten auf einem Seitenformular anzubieten.",
+          "disclosure": "Wenn aktiviert, sendet ein Klick auf „Ausfüllen“ in der Erweiterung Ihre gespeicherten Kontaktdaten in das Formular der aktuellen Seite. Das Vorschlagen von Antworten für ein Formular zeigt außerdem Ihren gespeicherten bisherigen Antworttext im Popup der Erweiterung an, zum Kopieren oder Ausfüllen, auf Seiten, die Sie selbst auswählen. Ihre Daten verlassen Ihren Computer nur in Seiten, die Sie selbst auswählen.",
           "toggleFailed": "Die Autofill-Einstellung konnte nicht aktualisiert werden."
         }
       },

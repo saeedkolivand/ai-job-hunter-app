@@ -402,6 +402,70 @@ body {
   gap: 8px;
 }
 
+/* answers.suggest reply — one card per suggestion (question / answer preview
+ * / source, plus Copy + optional Fill). */
+.suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.suggestion {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--card-border);
+  border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
+  background: var(--card);
+}
+
+.suggestion__question {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.suggestion__answer {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.suggestion__source {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+.suggestion__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+/* Ambiguous fill correlation (2+ live fields share the suggestion's exact
+ * label) — a short hint stands in for the (necessarily guessy) Fill button. */
+.suggestion__hint {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.btn--small {
+  flex: none;
+  padding: 5px 9px;
+  font-size: 12px;
+  box-shadow: 2px 2px 0 var(--shadow);
+}
+
 .empty__body {
   margin: 0;
   font-family: var(--sans);

@@ -25,13 +25,18 @@ const DIST = path.join(EXT_ROOT, 'dist');
 const { version } = createRequire(import.meta.url)('../package.json');
 const TARGETS = ['chrome', 'firefox'];
 
-// `fill.js`/`capture.js` are injected via
-// `chrome.scripting.executeScript({ files: [...] })` as CLASSIC scripts — no
-// ES module support. `vite.config.ts`'s `injectedEntries` plugin builds them
-// each in an isolated Rollup pass specifically so no `import`/`export`
+// `fill.js`/`capture.js`/`capture-questions.js`/`answer-fill.js` are injected
+// via `chrome.scripting.executeScript({ files: [...] })` as CLASSIC scripts —
+// no ES module support. `vite.config.ts`'s `injectedEntries` plugin builds
+// them each in an isolated Rollup pass specifically so no `import`/`export`
 // statement ever leaks in (see field-signal.ts's header comment); this is the
 // automated guard that invariant doesn't silently regress.
-const INJECTED_CLASSIC_SCRIPTS = ['fill.js', 'capture.js'];
+const INJECTED_CLASSIC_SCRIPTS = [
+  'fill.js',
+  'capture.js',
+  'capture-questions.js',
+  'answer-fill.js',
+];
 const IMPORT_EXPORT_TOKEN_RE = /\b(?:import|export)\b/;
 // A minifier can emit `import`/`export` mid-line (e.g. `...;import{x}from"y";...`),
 // so a line-anchored `^\s*` check misses it. Strip string/template literals and
