@@ -129,7 +129,11 @@ export const ExtensionImportResultSchema = z.object({
 /**
  * `profile.result` payload. Every profile field is optional (a sparse profile is
  * normal); `error` (present on refusal/failure) is mutually exclusive with the
- * fields in practice. Mirrors {@link ExtensionProfileResult}.
+ * fields in practice. `extraLinks` is additive/optional — absent on an old
+ * desktop's reply, ignored by an old extension — and each entry is validated as
+ * a plain `{label, url}` shape here (the non-empty-label / http(s)-url / cap-of-10
+ * rules are enforced desktop-side before the payload is ever sent). Mirrors
+ * {@link ExtensionProfileResult}.
  */
 export const ExtensionProfileResultSchema = z.object({
   fullName: z.string().optional(),
@@ -139,6 +143,7 @@ export const ExtensionProfileResultSchema = z.object({
   linkedin: z.string().optional(),
   github: z.string().optional(),
   website: z.string().optional(),
+  extraLinks: z.array(z.object({ label: z.string(), url: z.string() })).optional(),
   error: z.string().optional(),
 }) satisfies z.ZodType<ExtensionProfileResult>;
 

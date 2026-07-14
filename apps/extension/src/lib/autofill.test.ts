@@ -295,6 +295,198 @@ describe('planAndFill – filled-nothing', () => {
   });
 });
 
+describe('planAndFill – Tier-2 extra-link matching', () => {
+  // `website` deliberately unset: a "Portfolio"-labelled field maps to the
+  // generic `website` key first (the pre-existing heuristic), and only falls
+  // through to the extra-link matcher when that named slot is empty — see
+  // the `planAndFill` doc comment.
+  const PROFILE_WITH_LINKS: AutofillProfile = {
+    ...PROFILE,
+    website: undefined,
+    extraLinks: [
+      { label: 'Portfolio', url: 'https://saeed.dev/work' },
+      { label: 'Dribbble', url: 'https://dribbble.com/saeed' },
+    ],
+  };
+
+  it('fills a field whose label unambiguously matches one extra link', () => {
+    setForm(`<label for="p">Portfolio</label><input id="p" type="url" />`);
+    const summary = planAndFill(document, PROFILE_WITH_LINKS);
+    expect(val('p')).toBe('https://saeed.dev/work');
+    expect(summary.filled).toContainEqual({
+      key: 'extraLink:Portfolio',
+      label: 'Portfolio',
+      count: 1,
+    });
+  });
+
+  it('matches case/diacritic-insensitively, as whole-word tokens (not a substring)', () => {
+    setForm(`<label for="so">Stäck Overflöw profile</label><input id="so" type="url" />`);
+    const profile: AutofillProfile = {
+      extraLinks: [{ label: 'Stack Overflow', url: 'https://stackoverflow.com/users/1' }],
+    };
+    planAndFill(document, profile);
+    expect(val('so')).toBe('https://stackoverflow.com/users/1');
+  });
+
+  it('requires a whole-word token match, not a coincidental substring (e.g. "Dribbble" must not match "Dribbblers")', () => {
+    setForm(`<label for="d">Dribbblers only</label><input id="d" type="url" />`);
+    const profile: AutofillProfile = {
+      extraLinks: [{ label: 'Dribbble', url: 'https://dribbble.com/saeed' }],
+    };
+    planAndFill(document, profile);
+    expect(val('d')).toBe('');
+  });
+
+  it('skips (ambiguous) a field whose signal matches MULTIPLE extra links, and flags it in the summary', () => {
+    setForm(`<label for="both">Portfolio Dribbble</label><input id="both" type="url" />`);
+    const summary = planAndFill(document, PROFILE_WITH_LINKS);
+    expect(val('both')).toBe('');
+    expect(summary.skippedAmbiguous).toBe(1);
+    expect(summary.filled).toHaveLength(0);
+  });
+
+  it('does NOT match a bare "Website" field label to an extra link literally labelled "Website"', () => {
+    setForm(`<label for="w">Website</label><input id="w" type="url" />`);
+    const profile: AutofillProfile = {
+      extraLinks: [{ label: 'Website', url: 'https://saeed.dev/secondary' }],
+    };
+    const summary = planAndFill(document, profile);
+    expect(val('w')).toBe('');
+    expect(summary.skippedAmbiguous ?? 0).toBe(0);
+    expect(summary.filledNothing).toBe(true);
+  });
+
+  it('never overwrites an already-filled field, even when its label matches a link', () => {
+    setForm(`<label for="p">Portfolio</label><input id="p" type="url" value="https://keep.me" />`);
+    planAndFill(document, PROFILE_WITH_LINKS);
+    expect(val('p')).toBe('https://keep.me');
+  });
+
+  it('never fills a hidden (honeypot) field even when its label matches a link', () => {
+    setForm(
+      `<div style="display:none"><label for="hp">Portfolio</label><input id="hp" type="url" /></div>`
+    );
+    planAndFill(document, PROFILE_WITH_LINKS);
+    expect(val('hp')).toBe('');
+  });
+
+  it('leaves a field with no matching link untouched', () => {
+    setForm(`<label for="cl">Cover letter link</label><input id="cl" type="url" />`);
+    const summary = planAndFill(document, PROFILE_WITH_LINKS);
+    expect(val('cl')).toBe('');
+    expect(summary.filledNothing).toBe(true);
+  });
+
+  it('a field filled by a named key WITH a value is never additionally reconsidered against extraLinks', () => {
+    setForm(`<label for="li">LinkedIn profile</label><input id="li" type="url" />`);
+    const profile: AutofillProfile = {
+      linkedin: 'https://linkedin.com/in/saeed',
+      extraLinks: [{ label: 'LinkedIn Extra', url: 'https://example.com/other' }],
+    };
+    planAndFill(document, profile);
+    expect(val('li')).toBe('https://linkedin.com/in/saeed');
+  });
+
+  it('does NOT fall through to the extra-link matcher for a non-website named key with an empty profile value (only `website` falls through)', () => {
+    setForm(`<label for="li">LinkedIn</label><input id="li" type="url" />`);
+    const profile: AutofillProfile = {
+      extraLinks: [{ label: 'LinkedIn', url: 'https://linkedin.com/in/other' }],
+    };
+    const summary = planAndFill(document, profile);
+    expect(val('li')).toBe(''); // named `linkedin` key claims it; no fallthrough
+    expect(summary.filledNothing).toBe(true);
+  });
+
+  it('never fills an email/tel-typed field via the extra-link matcher (a URL is syntactically invalid there)', () => {
+    setForm(`<label for="pe">Portfolio</label><input id="pe" type="email" />`);
+    const summary = planAndFill(document, PROFILE_WITH_LINKS);
+    expect(val('pe')).toBe('');
+    expect(summary.filledNothing).toBe(true);
+  });
+
+  it('never matches a link labelled a bare "Profile" (GENERIC_LINK_LABELS)', () => {
+    setForm(`<label for="prof">Profile</label><input id="prof" type="url" />`);
+    const profile: AutofillProfile = {
+      extraLinks: [{ label: 'Profile', url: 'https://example.com/profile' }],
+    };
+    const summary = planAndFill(document, profile);
+    expect(val('prof')).toBe('');
+    expect(summary.filledNothing).toBe(true);
+  });
+
+  it('is a no-op when the profile has no extraLinks (absence tolerated)', () => {
+    // "Dribbble" matches no existing Tier 1/2 named-key heuristic, so this
+    // field is left untouched purely by the `links.length === 0` short-circuit.
+    setForm(`<label for="d">Dribbble</label><input id="d" type="url" />`);
+    const summary = planAndFill(document, PROFILE);
+    expect(val('d')).toBe('');
+    expect(summary.skippedAmbiguous ?? 0).toBe(0);
+  });
+
+  it('token-normalizes the generic-label denylist against punctuation/hyphen variants', () => {
+    // Matching is token-based, so a bare exact-string check on the denylist
+    // (e.g. "website!" not literally in the set) would let these slip through
+    // while still token-matching the plain field label.
+    const cases: Array<[linkLabel: string, fieldLabel: string]> = [
+      ['Website!', 'Website'],
+      ['Web-Site', 'Web Site'],
+      ['Personal-Site', 'Personal Site'],
+    ];
+    for (const [linkLabel, fieldLabel] of cases) {
+      setForm(`<label for="f">${fieldLabel}</label><input id="f" type="url" />`);
+      const summary = planAndFill(document, {
+        extraLinks: [{ label: linkLabel, url: 'https://example.com/x' }],
+      });
+      expect(val('f')).toBe('');
+      expect(summary.filledNothing).toBe(true);
+    }
+  });
+
+  it('token-normalizes the generic-label denylist independent of word order (e.g. "Site Web" vs "Website")', () => {
+    // The denylist comparison must be order-insensitive since the field
+    // matcher itself is (tokens.every) — otherwise "Site Web" would bypass
+    // the denylisted "web site" while still token-matching a "Website" field.
+    setForm(`<label for="f">Website</label><input id="f" type="url" />`);
+    const summary = planAndFill(document, {
+      extraLinks: [{ label: 'Site Web', url: 'https://example.com/x' }],
+    });
+    expect(val('f')).toBe('');
+    expect(summary.filledNothing).toBe(true);
+  });
+
+  it('fills BOTH fields when two fields share one label and one matching link exists', () => {
+    setForm(`
+      <label for="p1">Portfolio</label><input id="p1" type="url" />
+      <label for="p2">Portfolio</label><input id="p2" type="url" />
+    `);
+    const summary = planAndFill(document, PROFILE_WITH_LINKS);
+    expect(val('p1')).toBe('https://saeed.dev/work');
+    expect(val('p2')).toBe('https://saeed.dev/work');
+    expect(summary.skippedAmbiguous ?? 0).toBe(0);
+    expect(summary.filled).toContainEqual({
+      key: 'extraLink:Portfolio',
+      label: 'Portfolio',
+      count: 2,
+    });
+  });
+
+  it('matches a diacritic link label against an equivalent plain-ASCII field label (symmetry)', () => {
+    // The reverse of the "Stäck Overflöw" case above: here the LINK carries
+    // the diacritic and the FIELD is plain ASCII.
+    setForm(`<label for="up">Uberprofil</label><input id="up" type="url" />`);
+    const summary = planAndFill(document, {
+      extraLinks: [{ label: 'Überprofil', url: 'https://example.com/uber' }],
+    });
+    expect(val('up')).toBe('https://example.com/uber');
+    expect(summary.filled).toContainEqual({
+      key: 'extraLink:Überprofil',
+      label: 'Überprofil',
+      count: 1,
+    });
+  });
+});
+
 describe('renderSummaryOverlay', () => {
   it('renders a dismissable overlay listing the filled fields', () => {
     const summary = {
@@ -330,6 +522,44 @@ describe('renderSummaryOverlay', () => {
     renderSummaryOverlay(document, { filled: [], nameSplit: null, filledNothing: true });
     renderSummaryOverlay(document, { filled: [], nameSplit: null, filledNothing: true });
     expect(document.querySelectorAll('#ajh-autofill-overlay')).toHaveLength(1);
+  });
+
+  it('notes skipped-ambiguous extra-link fields alongside a successful fill', () => {
+    renderSummaryOverlay(document, {
+      filled: [{ key: 'extraLink:Portfolio', label: 'Portfolio', count: 1 }],
+      nameSplit: null,
+      filledNothing: false,
+      skippedAmbiguous: 2,
+    });
+    const overlay = document.getElementById('ajh-autofill-overlay');
+    expect(overlay!.textContent).toContain('Portfolio → 1 field');
+    expect(overlay!.textContent).toContain('2 fields skipped');
+  });
+
+  it('omits the skipped-ambiguous note when there is nothing to report', () => {
+    renderSummaryOverlay(document, {
+      filled: [{ key: 'email', label: 'Email', count: 1 }],
+      nameSplit: null,
+      filledNothing: false,
+      skippedAmbiguous: 0,
+    });
+    const overlay = document.getElementById('ajh-autofill-overlay');
+    expect(overlay!.textContent).not.toContain('skipped');
+  });
+
+  it('suppresses the "no matchable fields" line when fields were skipped as ambiguous instead', () => {
+    // filledNothing + skippedAmbiguous both true reads as contradictory
+    // ("no matchable fields" + "N fields skipped") — the skipped-note alone
+    // already explains the outcome.
+    renderSummaryOverlay(document, {
+      filled: [],
+      nameSplit: null,
+      filledNothing: true,
+      skippedAmbiguous: 1,
+    });
+    const overlay = document.getElementById('ajh-autofill-overlay');
+    expect(overlay!.textContent).not.toContain('No matchable fields found');
+    expect(overlay!.textContent).toContain('1 field skipped');
   });
 });
 

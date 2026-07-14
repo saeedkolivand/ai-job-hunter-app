@@ -201,6 +201,7 @@ async function runFill(): Promise<PopupResponse> {
     linkedin: profile.linkedin,
     github: profile.github,
     website: profile.website,
+    extraLinks: profile.extraLinks,
   };
   const summary = await injectFill(fields);
   return { ok: true, kind: 'fill', summary };
