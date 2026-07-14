@@ -38,6 +38,8 @@ fn message_type_constants_match_ts() {
         msg::MATCH_LIVE,
         msg::APPLIED_CHECK,
         msg::APPLIED_RESULT,
+        msg::STATUS_UPDATE,
+        msg::STATUS_RESULT,
     ] {
         let needle = format!("'{literal}'");
         assert!(
@@ -83,6 +85,8 @@ fn reserved_types_are_distinct() {
         msg::MATCH_LIVE,
         msg::APPLIED_CHECK,
         msg::APPLIED_RESULT,
+        msg::STATUS_UPDATE,
+        msg::STATUS_RESULT,
     ];
     let set: std::collections::HashSet<_> = all.iter().collect();
     assert_eq!(set.len(), all.len(), "wire type constants must be unique");

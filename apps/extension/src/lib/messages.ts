@@ -4,7 +4,11 @@
  * `browser.runtime.sendMessage` inside the extension only.
  */
 
-import type { ExtensionAppliedCheckResult, ExtensionImportResult } from '@ajh/shared';
+import type {
+  ExtensionAppliedCheckResult,
+  ExtensionImportResult,
+  ExtensionStatusUpdateResult,
+} from '@ajh/shared';
 
 import type { AutofillSummary } from './autofill';
 
@@ -50,7 +54,13 @@ export type PopupRequest =
    * active tab, run once when the popup shows the connected view. Read-only;
    * never blocks the import controls.
    */
-  | { kind: 'appliedCheck' };
+  | { kind: 'appliedCheck' }
+  /**
+   * User-clicked "Mark as applied" for the active tab's URL. Unlike
+   * `appliedCheck`, this is a deliberate WRITE action — its failures are
+   * surfaced to the user, never folded away.
+   */
+  | { kind: 'statusUpdate' };
 
 /** background → popup responses (discriminated by the originating request). */
 export type PopupResponse =
@@ -65,4 +75,11 @@ export type PopupResponse =
    * special-case an error path for this passive, best-effort check.
    */
   | { ok: true; kind: 'appliedCheck'; result: ExtensionAppliedCheckResult }
+  /**
+   * `ok:true` at the transport level; the desktop's own `ok`/`error` on
+   * `result` is what the popup renders — this verb's failures are NOT
+   * folded away (unlike `appliedCheck`), so the popup must check
+   * `result.ok` itself.
+   */
+  | { ok: true; kind: 'statusUpdate'; result: ExtensionStatusUpdateResult }
   | { ok: false; error: string };
