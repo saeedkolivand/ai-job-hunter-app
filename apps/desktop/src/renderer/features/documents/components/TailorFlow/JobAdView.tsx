@@ -98,7 +98,7 @@ export function JobAdView({
           ariaLabel={t('autopilot.apply.jobAdView.label')}
         />
         {tab === 'summary' && (
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             {/* Explicit label bound to the trigger (id) — visually redundant with
                 the selected language, so sr-only keeps the toolbar uncluttered. */}
             <label htmlFor="job-ad-summary-language" className="sr-only">
@@ -111,7 +111,10 @@ export function JobAdView({
               options={languageOptions}
               size="sm"
             />
-            <ModelSelector className="min-w-0 shrink-0" />
+            {/* `min-w-0` lets it shrink below its content (model label + guidance
+                line) instead of pushing past the card edge; `flex-1` gives it the
+                remaining row space so the language dropdown stays compact. */}
+            <ModelSelector className="min-w-0 flex-1" />
           </div>
         )}
       </div>
