@@ -41,9 +41,8 @@ export const EXTENSION_PROTOCOL_VERSION = 2;
  * is not a valid v2 `hello` (a legacy token `auth`, a missing/older protocol).
  * `import.request` / `import.result` / `profile.get` / `profile.result` /
  * `applied.check` / `applied.result` / `status.update` / `status.result` /
- * `answers.save` / `answers.result` are the post-auth application frames;
- * `match.live` is **reserved** (fixed now so a future build can add a
- * handler without a protocol bump).
+ * `answers.save` / `answers.result` / `match.live` / `match.result` are the
+ * post-auth application frames.
  *
  * **Consent-gate boundary** (the rule the remaining post-auth verbs copy): a
  * read-only lookup over the user's own device-local metadata (`applied.check`)
@@ -60,7 +59,14 @@ export const EXTENSION_PROTOCOL_VERSION = 2;
  * mirror direction of `profile.get`'s fill (capture vs. fill are the two
  * directions of the one PII-adjacent gesture) — so it rides that SAME
  * assisted-autofill opt-in too, not the read-only/exact-match-write carve-out
- * `applied.check`/`status.update` get.
+ * `applied.check`/`status.update` get. `match.live` ALSO rides that same
+ * opt-in (moved out of the ungated bucket): its `gaps` field is effectively a
+ * résumé-keyword membership oracle (which of the user's résumé keywords are
+ * ABSENT from the posting), the same consent class as `profile.get`'s PII and
+ * `answers.suggest`'s past-answer text — a pure local computation is not by
+ * itself a reason to skip the gate. The import-time `matchScore` fill
+ * (`import.result.matchScore`) stays ungated: it rides the already-consented
+ * import gesture and reveals only a single number, never `gaps`.
  */
 export const EXTENSION_MESSAGE_TYPES = {
   /** Extension → desktop: handshake step 1 — `{ protocol, clientNonce }`, no token. */
@@ -92,8 +98,22 @@ export const EXTENSION_MESSAGE_TYPES = {
   profileGet: 'profile.get',
   /** Desktop → extension: the contact profile fields for autofill (or an `error`). */
   profileResult: 'profile.result',
-  /** RESERVED — live ATS match for the open posting (not yet handled). */
+  /**
+   * Extension → desktop: "Check fit" — score the résumé against the open
+   * posting's captured DOM (Scan mode only, the SAME capture `import.request`
+   * uses; no URL-mode network fetch on this path). Keyword-only ALWAYS — see
+   * {@link ExtensionMatchLiveResult}'s doc for why the bridge can never honor
+   * the app's semantic-scoring setting. Rides the assisted-autofill opt-in
+   * (see the module doc's "Consent-gate boundary" section) — a refusal is
+   * just another user-facing `error` on {@link ExtensionMatchLiveResult}.
+   */
   matchLive: 'match.live',
+  /**
+   * Desktop → extension: the `match.live` outcome. Like `status.update`, this
+   * verb's errors are user-facing — it answers a deliberate click, never a
+   * passive background check.
+   */
+  matchResult: 'match.result',
   /**
    * Extension → desktop: "have I already applied to this URL?" — a pure,
    * read-only lookup keyed by the normalized job url (no fetch, never
@@ -245,8 +265,16 @@ export interface ExtensionImportRequest {
 /**
  * `import.result` payload. On success carries the created/merged
  * `applicationId` + its `status`, plus the parsed `title`/`company` so the
- * popup can confirm WHICH job was imported; `matchScore` is reserved for the
- * future live-match reply. On failure carries `error`.
+ * popup can confirm WHICH job was imported. `matchScore` is a best-effort
+ * keyword-only ATS score (0–100) against the user's default/most-recent
+ * résumé — see {@link ExtensionMatchLiveResult}'s doc for why it is always
+ * keyword-only. It is OMITTED (not `0`/`null`) when scoring failed for any
+ * reason (no résumé saved yet, unusable posting text, a scoring timeout) —
+ * the import itself always succeeds regardless of whether this field is
+ * present. UNLIKE `match.live`, this field is never gated on the
+ * assisted-autofill opt-in: it rides the already-consented import gesture
+ * and reveals only a single number, never the `gaps` list. On failure
+ * carries `error`.
  */
 export interface ExtensionImportResult {
   applicationId?: string;
@@ -424,6 +452,50 @@ export interface ExtensionAnswerSuggestion {
  */
 export type ExtensionAnswersSuggestResult =
   { ok: true; suggestions: ExtensionAnswerSuggestion[] } | { ok: false; error: string };
+
+/**
+ * `match.live` payload — the user-clicked "Check fit". `html` is the SAME
+ * Scan-mode DOM capture `import.request` sends (required here, not optional:
+ * there is no URL-mode network-fetch fallback for this verb, so the scoring
+ * path never adds egress beyond the DOM the extension already captured).
+ */
+export interface ExtensionMatchLiveRequest {
+  url: string;
+  html: string;
+}
+
+/**
+ * `match.live` payload — a discriminated union so a reply can never mix
+ * success and failure fields: `ok:true` carries the weighted `combined`
+ * score, the keyword-coverage `ats` sub-score, up to 8 missing-keyword
+ * `gaps`, the scored résumé's `resumeName` (so the popup can confirm WHICH
+ * résumé was used), and `scoreSource`. `ok:false` carries a user-facing
+ * `error` (the assisted-autofill opt-in is off / no résumé saved yet / the
+ * page couldn't be read / too many requests in quick succession / a
+ * malformed request) — like {@link ExtensionStatusUpdateResult}, this verb's
+ * errors ARE shown to the user, it answers a deliberate click, not a passive
+ * check.
+ *
+ * `semantic`/`scoreSource: 'combined'` are wire-reserved but NEVER populated
+ * by the current desktop implementation: the app's semantic-scoring setting
+ * lives ONLY in the renderer's `preferences-store` (persisted to the
+ * webview's `localStorage`), which the Rust extension-bridge has no read
+ * access to — so the extension's live-match path is unconditionally
+ * keyword-only today (`scoreSource` is always `'keyword'`). These fields are
+ * reserved so a future PR that gives the bridge a Rust-readable version of
+ * that setting doesn't need a protocol bump.
+ */
+export type ExtensionMatchLiveResult =
+  | {
+      ok: true;
+      combined: number;
+      ats: number;
+      semantic?: number;
+      gaps: string[];
+      resumeName: string;
+      scoreSource: 'keyword' | 'combined';
+    }
+  | { ok: false; error: string };
 
 /**
  * The transport envelope every frame is wrapped in. `payload` is left as
