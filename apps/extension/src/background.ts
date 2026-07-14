@@ -12,11 +12,16 @@ import { browser } from '@wxt-dev/browser';
 
 import type { ExtensionImportRequest } from '@ajh/shared';
 
-// Same type-only rationale as the autofill.ts import above — capture.js is
-// ALSO a classic-script injection target (see vite.config.ts's
-// `injectedEntries`), so this import must stay type-only (erased at build)
-// to keep answers-capture.ts's runtime code out of the background's bundle.
-import type { CapturedAnswer } from './lib/answers-capture';
+// TYPE-ONLY import from the answer-fill module — same rationale as the
+// autofill.ts import below: `answer-fill.js` is a classic-script injection
+// target, so its runtime code must be imported ONLY by `answer-fill.ts`.
+import type { FillAnswerResult } from './lib/answer-fill';
+// Same type-only rationale as the autofill.ts import above — capture.js /
+// capture-questions.js are ALSO classic-script injection targets (see
+// vite.config.ts's `injectedEntries`), so this import must stay type-only
+// (erased at build) to keep answers-capture.ts's runtime code out of the
+// background's bundle.
+import type { CapturedAnswer, ScannedQuestion } from './lib/answers-capture';
 // TYPE-ONLY import from the autofill module. This is deliberate: `fill.js` is
 // injected via `executeScript({ files })`, which runs as a CLASSIC script (no ES
 // modules) — so `fill.js` must bundle with ZERO `import` statements. If the
@@ -37,6 +42,39 @@ import { clearToken, getToken, looksLikeToken, setToken } from './lib/storage';
  * runtime graph (see the type-only import note above).
  */
 const AUTOFILL_GLOBAL = '__ajhRunAutofill';
+
+/** Isolated-world global key under which `answer-fill.js` exposes the filler.
+ *  MUST match `ANSWER_FILL_GLOBAL` in `lib/answer-fill.ts` (pinned by a test
+ *  there). Duplicated as a local literal for the same reason as
+ *  `AUTOFILL_GLOBAL` above. */
+const ANSWER_FILL_GLOBAL = '__ajhRunAnswerFill';
+
+/** Client-side cap on the number of scanned question labels sent in one
+ *  `answers.suggest` call — the desktop re-clamps independently (untrusted
+ *  page-derived input), this just avoids sending an unbounded payload. */
+const MAX_SUGGEST_QUESTIONS = 50;
+
+/** Minimal guard for the `{question, index}[]` array that crossed the
+ *  `executeScript` boundary (capture-questions.js's completion value). */
+function isScannedQuestions(v: unknown): v is ScannedQuestion[] {
+  return (
+    Array.isArray(v) &&
+    v.every(
+      (e) =>
+        typeof e === 'object' &&
+        e !== null &&
+        typeof (e as Record<string, unknown>).question === 'string' &&
+        typeof (e as Record<string, unknown>).index === 'number'
+    )
+  );
+}
+
+/** Minimal guard for the fill outcome that crossed the `executeScript`
+ *  boundary (answer-fill.js's completion value). */
+function isFillAnswerResult(v: unknown): v is FillAnswerResult {
+  if (typeof v !== 'object' || v === null) return false;
+  return typeof (v as Record<string, unknown>).filled === 'boolean';
+}
 
 /** Minimal guard for the summary that crossed the `executeScript` boundary. */
 function isFillSummary(v: unknown): v is AutofillSummary {
@@ -304,6 +342,110 @@ async function runAnswersSave(): Promise<PopupResponse> {
   return { ok: true, kind: 'answersSave', result };
 }
 
+/**
+ * Inject the questions-mode collector into the active tab and return its
+ * `{question, index}[]` scan-time correlation list. Single-step injection —
+ * same pattern as `captureActiveTabAnswers`.
+ */
+async function captureActiveTabQuestions(): Promise<ScannedQuestion[]> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tabId = tab?.id;
+  if (typeof tabId !== 'number') throw new Error('No active tab to scan.');
+
+  const results = await browser.scripting.executeScript({
+    target: { tabId },
+    files: ['capture-questions.js'],
+  });
+  const questions = results[0]?.result;
+  if (!isScannedQuestions(questions)) {
+    throw new Error('Could not read the questions on this page.');
+  }
+  return questions;
+}
+
+/**
+ * User-clicked "Suggest answers for this form". Mirrors `runAnswersSave`'s
+ * not-paired short-circuit (token checked BEFORE the scan injection) and its
+ * never-fold-errors discipline — a deliberate click, so failures propagate to
+ * `handleRequest`'s outer catch, and a resolved desktop-side refusal passes
+ * straight through as `result`. The scanned correlation list rides alongside
+ * `result` so the popup can decide, per suggestion, whether a live Fill
+ * target still exists on the page.
+ */
+async function runAnswersSuggest(): Promise<PopupResponse> {
+  const token = await getToken();
+  if (!token) {
+    return { ok: false, error: 'Not paired. Paste your pairing token first.' };
+  }
+
+  const scanned = await captureActiveTabQuestions();
+  // Dedup by exact text (the desktop dedups by normalized text) and cap
+  // client-side — untrusted page content, never send an unbounded array.
+  const questions = [...new Set(scanned.map((q) => q.question))].slice(0, MAX_SUGGEST_QUESTIONS);
+  const result = await getClient().suggestAnswers(questions);
+  return { ok: true, kind: 'answersSuggest', result, scanned };
+}
+
+/**
+ * Inject the single-field filler into the active tab and run it against
+ * `(question, index)` — refusing unless the CURRENT count of same-question
+ * fields still equals scan-time `count` — with `answer`. Two-step like
+ * `injectFill`: the answer text (the user's own past answer) is passed in
+ * transiently via the second `executeScript({ func, args })` rather than
+ * baked into the `files` injection.
+ */
+async function injectAnswerFill(
+  question: string,
+  index: number,
+  count: number,
+  answer: string
+): Promise<FillAnswerResult> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tabId = tab?.id;
+  if (typeof tabId !== 'number') throw new Error('No active tab to fill.');
+
+  await browser.scripting.executeScript({ target: { tabId }, files: ['answer-fill.js'] });
+
+  const results = await browser.scripting.executeScript({
+    target: { tabId },
+    func: (q: string, i: number, c: number, a: string, key: string): FillAnswerResult | null => {
+      const runner = (globalThis as Record<string, unknown>)[key] as
+        ((q: string, i: number, c: number, a: string) => FillAnswerResult) | undefined;
+      return runner ? runner(q, i, c, a) : null;
+    },
+    args: [question, index, count, answer, ANSWER_FILL_GLOBAL],
+  });
+
+  const result = results[0]?.result;
+  if (!isFillAnswerResult(result)) {
+    throw new Error('Could not fill this field.');
+  }
+  return result;
+}
+
+/**
+ * Per-row "Fill this field" click. Like `runStatusUpdate`, failures are NOT
+ * folded away (a deliberate click) and this NEVER fills a different field
+ * than the one that was scanned — `injectAnswerFill`/`fillAnswerField` fail
+ * safe (`{filled:false, error}`) on any page mutation since the scan,
+ * including a same-labelled field inserted elsewhere since then (`count`
+ * mismatch).
+ */
+async function runAnswerFill(
+  question: string,
+  index: number,
+  count: number,
+  answer: string
+): Promise<PopupResponse> {
+  const token = await getToken();
+  if (!token) {
+    return { ok: false, error: 'Not paired. Paste your pairing token first.' };
+  }
+
+  const result = await injectAnswerFill(question, index, count, answer);
+  return { ok: true, kind: 'answerFill', result };
+}
+
 /** Central popup-request dispatcher. Never throws — maps errors to `ok:false`. */
 async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
   try {
@@ -348,6 +490,10 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
         return await runStatusUpdate();
       case 'answersSave':
         return await runAnswersSave();
+      case 'answersSuggest':
+        return await runAnswersSuggest();
+      case 'answerFill':
+        return await runAnswerFill(req.question, req.index, req.count, req.answer);
       default: {
         // Exhaustiveness guard — a new PopupRequest variant must be handled.
         const _never: never = req;

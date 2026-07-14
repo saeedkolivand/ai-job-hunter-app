@@ -1337,12 +1337,10 @@ fn make_answer_id() -> String {
     format!("ans-{}-{}", now_ms(), &Uuid::new_v4().to_string()[..8])
 }
 
-/// Normalize a question for dedup comparison in
-/// [`ApplicationStore::merge_answers`]: trim, lowercase, and collapse
-/// internal whitespace runs to a single space — so "Why  this role?" and
-/// "why this role?" (a different capture pass / incidental whitespace) dedup
-/// to the same key.
-fn normalize_question(q: &str) -> String {
+/// Normalize a question for dedup comparison in [`ApplicationStore::merge_answers`]
+/// (and reused by `extension_bridge::answers_suggest`'s matcher): trim, lowercase,
+/// collapse whitespace — "Why  this role?" and "why this role?" dedup to one key.
+pub(crate) fn normalize_question(q: &str) -> String {
     q.trim()
         .to_lowercase()
         .split_whitespace()

@@ -47,6 +47,8 @@ function buildPopupDom(): void {
     <button id="btn-fill"></button>
     <button id="btn-mark-applied" hidden></button>
     <button id="btn-save-answers"></button>
+    <button id="btn-suggest-answers"></button>
+    <div id="suggestions-list" hidden></div>
     <p id="applied-status" hidden></p>
     <input id="chk-applied" type="checkbox" />
     <p id="import-msg"></p>
@@ -78,6 +80,8 @@ const {
   resolveShowMarkAppliedButton,
   resolveMarkAppliedResponse,
   resolveAnswersSaveResponse,
+  correlateSuggestions,
+  resolveAnswersSuggestResponse,
 } = await import('./popup');
 
 const sendMessageMock = vi.mocked(browser.runtime.sendMessage);
@@ -1174,6 +1178,185 @@ describe('resolveAnswersSaveResponse', () => {
   });
 });
 
+// ── correlateSuggestions ────────────────────────────────────────────────────
+
+describe('correlateSuggestions', () => {
+  const suggestion = (question: string) => ({
+    question,
+    answer: 'An answer.',
+    sourceQuestion: question,
+    score: 0.8,
+    salary: false,
+  });
+
+  it('assigns fieldIndex 0 when the scan contains exactly one matching question', () => {
+    const out = correlateSuggestions(
+      [suggestion('Why this role?')],
+      [{ question: 'Why this role?', index: 0 }]
+    );
+    expect(out).toEqual([
+      {
+        suggestion: suggestion('Why this role?'),
+        fieldIndex: 0,
+        multipleMatches: false,
+        scanCount: 1,
+      },
+    ]);
+  });
+
+  it('assigns scanCount 0 when no scanned field matches', () => {
+    const out = correlateSuggestions(
+      [suggestion('Why this role?')],
+      [{ question: 'A different question?', index: 0 }]
+    );
+    expect(out[0]?.scanCount).toBe(0);
+  });
+
+  it('assigns scanCount 2 when 2+ live fields share the exact label', () => {
+    const out = correlateSuggestions(
+      [suggestion('Why this role?')],
+      [
+        { question: 'Why this role?', index: 0 },
+        { question: 'Why this role?', index: 1 },
+      ]
+    );
+    expect(out[0]?.scanCount).toBe(2);
+  });
+
+  it('assigns fieldIndex null when no scanned field matches — never a guess', () => {
+    const out = correlateSuggestions(
+      [suggestion('Why this role?')],
+      [{ question: 'A different question?', index: 0 }]
+    );
+    expect(out[0]?.fieldIndex).toBeNull();
+    expect(out[0]?.multipleMatches).toBe(false);
+  });
+
+  it('assigns fieldIndex null against an empty scan list', () => {
+    const out = correlateSuggestions([suggestion('Why this role?')], []);
+    expect(out[0]?.fieldIndex).toBeNull();
+    expect(out[0]?.multipleMatches).toBe(false);
+  });
+
+  it('correlates each suggestion independently', () => {
+    const out = correlateSuggestions(
+      [suggestion('Why this role?'), suggestion('Notice period?')],
+      [{ question: 'Why this role?', index: 0 }]
+    );
+    expect(out[0]?.fieldIndex).toBe(0);
+    expect(out[1]?.fieldIndex).toBeNull();
+  });
+
+  it('assigns fieldIndex null AND multipleMatches true when 2+ live fields share the exact label — ambiguous, never a guess', () => {
+    const out = correlateSuggestions(
+      [suggestion('Why this role?')],
+      [
+        { question: 'Why this role?', index: 0 },
+        { question: 'Why this role?', index: 1 },
+      ]
+    );
+    expect(out[0]?.fieldIndex).toBeNull();
+    expect(out[0]?.multipleMatches).toBe(true);
+  });
+});
+
+// ── resolveAnswersSuggestResponse ───────────────────────────────────────────
+
+describe('resolveAnswersSuggestResponse', () => {
+  it('surfaces a transport-level error', () => {
+    const res = { ok: false as const, error: 'Desktop app not reachable.' };
+    const { text, tone, suggestions, scanned } = resolveAnswersSuggestResponse(res);
+    expect(tone).toBe('err');
+    expect(text).toBe('Desktop app not reachable.');
+    expect(suggestions).toEqual([]);
+    expect(scanned).toEqual([]);
+  });
+
+  it('returns the unexpected-response error when kind is not answersSuggest', () => {
+    const res = { ok: true as const, kind: 'token' as const };
+    const { text, tone } = resolveAnswersSuggestResponse(res);
+    expect(tone).toBe('err');
+    expect(text).toBe('Unexpected response — please retry.');
+  });
+
+  it('surfaces the desktop refusal text when result.ok is false', () => {
+    const res = {
+      ok: true as const,
+      kind: 'answersSuggest' as const,
+      result: { ok: false as const, error: 'Autofill is off.' },
+      scanned: [],
+    };
+    const { text, tone } = resolveAnswersSuggestResponse(res);
+    expect(tone).toBe('err');
+    expect(text).toBe('Autofill is off.');
+  });
+
+  it('reports no matches when the suggestions array is empty', () => {
+    const res = {
+      ok: true as const,
+      kind: 'answersSuggest' as const,
+      result: { ok: true as const, suggestions: [] },
+      scanned: [{ question: 'Why this role?', index: 0 }],
+    };
+    const { text, tone, suggestions } = resolveAnswersSuggestResponse(res);
+    expect(tone).toBe('ok');
+    expect(text).toBe('No matching past answers found for this form.');
+    expect(suggestions).toEqual([]);
+  });
+
+  it('singularizes the count for exactly one suggestion', () => {
+    const res = {
+      ok: true as const,
+      kind: 'answersSuggest' as const,
+      result: {
+        ok: true as const,
+        suggestions: [
+          {
+            question: 'Why this role?',
+            answer: 'Because.',
+            sourceQuestion: 'Why this role?',
+            score: 0.7,
+            salary: false,
+          },
+        ],
+      },
+      scanned: [],
+    };
+    const { text, suggestions } = resolveAnswersSuggestResponse(res);
+    expect(text).toBe('Found 1 suggestion for this form.');
+    expect(suggestions).toHaveLength(1);
+  });
+
+  it('pluralizes the count for multiple suggestions', () => {
+    const res = {
+      ok: true as const,
+      kind: 'answersSuggest' as const,
+      result: {
+        ok: true as const,
+        suggestions: [
+          {
+            question: 'Why this role?',
+            answer: 'Because.',
+            sourceQuestion: 'Why this role?',
+            score: 0.7,
+            salary: false,
+          },
+          {
+            question: 'Notice period?',
+            answer: 'Two weeks.',
+            sourceQuestion: 'Notice period?',
+            score: 0.9,
+            salary: false,
+          },
+        ],
+      },
+      scanned: [],
+    };
+    const { text } = resolveAnswersSuggestResponse(res);
+    expect(text).toBe('Found 2 suggestions for this form.');
+  });
+});
+
 // ── doSaveAnswers (#btn-save-answers) ─────────────────────────────────────────
 
 describe('doSaveAnswers (#btn-save-answers)', () => {
@@ -1241,6 +1424,327 @@ describe('doSaveAnswers (#btn-save-answers)', () => {
       'Could not save your answers. Please retry.'
     );
     expect(btn.disabled).toBe(false);
+  });
+});
+
+// ── doSuggestAnswers (#btn-suggest-answers) — rendering, salary Copy-only rule,
+// per-row Fill correlation incl. fail-safe ─────────────────────────────────
+
+describe('doSuggestAnswers (#btn-suggest-answers)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const writeTextMock = vi.fn().mockResolvedValue(undefined);
+
+  beforeEach(() => {
+    sendMessageMock.mockReset();
+    writeTextMock.mockReset().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: writeTextMock },
+      configurable: true,
+    });
+    byId<HTMLButtonElement>('btn-suggest-answers').disabled = false;
+    byId<HTMLParagraphElement>('import-msg').textContent = '';
+    byId<HTMLDivElement>('suggestions-list').textContent = '';
+    byId<HTMLDivElement>('suggestions-list').hidden = true;
+  });
+
+  it('renders a row per suggestion with Copy always present', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answersSuggest',
+      result: {
+        ok: true,
+        suggestions: [
+          {
+            question: 'Why this role?',
+            answer: 'Because I love it.',
+            sourceCompany: 'Acme',
+            sourceTitle: 'Backend Engineer',
+            sourceQuestion: 'Why this role?',
+            score: 0.8,
+            salary: false,
+          },
+        ],
+      },
+      scanned: [{ question: 'Why this role?', index: 0 }],
+    });
+
+    byId<HTMLButtonElement>('btn-suggest-answers').click();
+    await flush();
+
+    const list = byId<HTMLDivElement>('suggestions-list');
+    expect(list.hidden).toBe(false);
+    expect(list.textContent).toContain('Why this role?');
+    expect(list.textContent).toContain('Because I love it.');
+    expect(list.textContent).toContain(
+      'answered as: "Why this role?" — from your Backend Engineer @ Acme application'
+    );
+    expect(list.querySelector('button')?.textContent).toBe('Copy');
+  });
+
+  it('renders the sourceQuestion as a secondary line even when it differs from the scanned question — makes a cross-question match self-evident', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answersSuggest',
+      result: {
+        ok: true,
+        suggestions: [
+          {
+            question: 'What is your current location?',
+            answer: '$120,000',
+            sourceQuestion: 'What is your current salary?',
+            score: 0.67,
+            salary: true,
+          },
+        ],
+      },
+      scanned: [{ question: 'What is your current location?', index: 0 }],
+    });
+
+    byId<HTMLButtonElement>('btn-suggest-answers').click();
+    await flush();
+
+    const list = byId<HTMLDivElement>('suggestions-list');
+    expect(list.textContent).toContain('answered as: "What is your current salary?"');
+  });
+
+  it('renders no Fill button for a salary-flagged suggestion (Copy-only rule)', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answersSuggest',
+      result: {
+        ok: true,
+        suggestions: [
+          {
+            question: 'What is your expected salary?',
+            answer: '$120,000',
+            sourceQuestion: 'What is your expected salary?',
+            score: 0.9,
+            salary: true,
+          },
+        ],
+      },
+      scanned: [{ question: 'What is your expected salary?', index: 0 }],
+    });
+
+    byId<HTMLButtonElement>('btn-suggest-answers').click();
+    await flush();
+
+    const buttons = Array.from(byId<HTMLDivElement>('suggestions-list').querySelectorAll('button'));
+    expect(buttons.map((b) => b.textContent)).toEqual(['Copy']);
+  });
+
+  it('renders no Fill button when the scan found no matching live field', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answersSuggest',
+      result: {
+        ok: true,
+        suggestions: [
+          {
+            question: 'Why this role?',
+            answer: 'Because.',
+            sourceQuestion: 'Why this role?',
+            score: 0.7,
+            salary: false,
+          },
+        ],
+      },
+      // No scanned entry for this question — no live target.
+      scanned: [],
+    });
+
+    byId<HTMLButtonElement>('btn-suggest-answers').click();
+    await flush();
+
+    const buttons = Array.from(byId<HTMLDivElement>('suggestions-list').querySelectorAll('button'));
+    expect(buttons.map((b) => b.textContent)).toEqual(['Copy']);
+  });
+
+  it('renders no Fill button and shows a "fill manually" hint when the scan found MORE THAN ONE matching live field (ambiguous)', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answersSuggest',
+      result: {
+        ok: true,
+        suggestions: [
+          {
+            question: 'Why this role?',
+            answer: 'Because.',
+            sourceQuestion: 'Why this role?',
+            score: 0.7,
+            salary: false,
+          },
+        ],
+      },
+      // Two form fields share the exact same label — which one to fill is
+      // ambiguous, so Fill must never be offered.
+      scanned: [
+        { question: 'Why this role?', index: 0 },
+        { question: 'Why this role?', index: 1 },
+      ],
+    });
+
+    byId<HTMLButtonElement>('btn-suggest-answers').click();
+    await flush();
+
+    const list = byId<HTMLDivElement>('suggestions-list');
+    const buttons = Array.from(list.querySelectorAll('button'));
+    expect(buttons.map((b) => b.textContent)).toEqual(['Copy']);
+    expect(list.textContent).toContain('Multiple matching fields — fill manually.');
+  });
+
+  it('renders a Fill button when the scan found exactly ONE matching live field', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answersSuggest',
+      result: {
+        ok: true,
+        suggestions: [
+          {
+            question: 'Why this role?',
+            answer: 'Because.',
+            sourceQuestion: 'Why this role?',
+            score: 0.7,
+            salary: false,
+          },
+        ],
+      },
+      scanned: [{ question: 'Why this role?', index: 0 }],
+    });
+
+    byId<HTMLButtonElement>('btn-suggest-answers').click();
+    await flush();
+
+    const buttons = Array.from(byId<HTMLDivElement>('suggestions-list').querySelectorAll('button'));
+    expect(buttons.map((b) => b.textContent)).toEqual(['Copy', 'Fill this field']);
+  });
+
+  it('Copy button writes the full answer to the clipboard', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answersSuggest',
+      result: {
+        ok: true,
+        suggestions: [
+          {
+            question: 'Why this role?',
+            answer: 'Because I love it.',
+            sourceQuestion: 'Why this role?',
+            score: 0.8,
+            salary: false,
+          },
+        ],
+      },
+      scanned: [],
+    });
+
+    byId<HTMLButtonElement>('btn-suggest-answers').click();
+    await flush();
+
+    const copyBtn = byId<HTMLDivElement>('suggestions-list').querySelector('button')!;
+    copyBtn.click();
+    await flush();
+
+    expect(writeTextMock).toHaveBeenCalledWith('Because I love it.');
+    expect(copyBtn.textContent).toBe('✓ Copied');
+  });
+
+  it('Fill button sends the scan-time correlation and shows the filled confirmation', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answersSuggest',
+      result: {
+        ok: true,
+        suggestions: [
+          {
+            question: 'Why this role?',
+            answer: 'Because I love it.',
+            sourceQuestion: 'Why this role?',
+            score: 0.8,
+            salary: false,
+          },
+        ],
+      },
+      scanned: [{ question: 'Why this role?', index: 0 }],
+    });
+    byId<HTMLButtonElement>('btn-suggest-answers').click();
+    await flush();
+
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerFill',
+      result: { filled: true },
+    });
+    const fillBtn = Array.from(
+      byId<HTMLDivElement>('suggestions-list').querySelectorAll('button')
+    ).find((b) => b.textContent === 'Fill this field')!;
+    fillBtn.click();
+    await flush();
+
+    expect(sendMessageMock).toHaveBeenLastCalledWith({
+      kind: 'answerFill',
+      question: 'Why this role?',
+      index: 0,
+      count: 1,
+      answer: 'Because I love it.',
+    });
+    expect(fillBtn.textContent).toBe('✓ Filled');
+  });
+
+  it('shows the fail-safe error and re-enables the button when the field cannot be located', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answersSuggest',
+      result: {
+        ok: true,
+        suggestions: [
+          {
+            question: 'Why this role?',
+            answer: 'Because I love it.',
+            sourceQuestion: 'Why this role?',
+            score: 0.8,
+            salary: false,
+          },
+        ],
+      },
+      scanned: [{ question: 'Why this role?', index: 0 }],
+    });
+    byId<HTMLButtonElement>('btn-suggest-answers').click();
+    await flush();
+
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerFill',
+      result: { filled: false, error: 'Could not find this field — the page may have changed.' },
+    });
+    const fillBtn = Array.from(
+      byId<HTMLDivElement>('suggestions-list').querySelectorAll('button')
+    ).find((b) => b.textContent === 'Fill this field')!;
+    fillBtn.click();
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Could not find this field — the page may have changed.'
+    );
+    expect(fillBtn.disabled).toBe(false);
+    expect(fillBtn.textContent).toBe('Fill this field');
+  });
+
+  it('shows "No matching past answers" and hides the list when there are no suggestions', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answersSuggest',
+      result: { ok: true, suggestions: [] },
+      scanned: [],
+    });
+
+    byId<HTMLButtonElement>('btn-suggest-answers').click();
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'No matching past answers found for this form.'
+    );
+    expect(byId<HTMLDivElement>('suggestions-list').hidden).toBe(true);
   });
 });
 

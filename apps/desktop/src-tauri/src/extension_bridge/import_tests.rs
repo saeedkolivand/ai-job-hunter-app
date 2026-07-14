@@ -20,6 +20,7 @@ use serde_json::json;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
 
+use super::answers_suggest::{match_questions, AnswerCandidate};
 use super::{advance_frame, handshake, BridgeState, ConnState, FrameDecision, MAX_FRAME_BYTES};
 use crate::ai_generations::ApplicationAnswer;
 use crate::applications::{
@@ -2122,4 +2123,708 @@ fn canonical_spa_url_rewrite_skips_list_shell_dom_parse() {
         canonical.is_some(),
         "structural proof: canonical.is_some() → parse_from_html branch is unreachable          for this URL under the new handle_import precedence"
     );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F. answers.suggest — "suggest answers for this form", the headline replay
+// verb. Mirrors the answers.save section above: dispatch classification + the
+// 3 auth-boundary guards, then `resolve_answers_suggest` / the pure
+// `match_questions` matcher directly. Rides the SAME autofill opt-in as
+// `profile.get`/`answers.save`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// An authenticated `answers.suggest` classifies as `AnswersSuggest`, carrying
+/// the payload verbatim (mirrors `authenticated_answers_save_classifies_as_answers_save`).
+#[test]
+fn authenticated_answers_suggest_classifies_as_answers_suggest() {
+    let (_dir, state) = bridge_state();
+    let frame = json!({
+        "type": super::msg::ANSWERS_SUGGEST,
+        "reqId": "r-suggest",
+        "payload": { "questions": ["Why this role?"] }
+    })
+    .to_string();
+
+    match advance_frame(&state, &ConnState::Authenticated, &frame) {
+        FrameDecision::AnswersSuggest { req_id, payload } => {
+            assert_eq!(req_id, "r-suggest");
+            assert_eq!(
+                payload
+                    .get("questions")
+                    .and_then(|q| q.as_array())
+                    .map(Vec::len),
+                Some(1)
+            );
+        }
+        other => panic!("an authenticated answers.suggest must be AnswersSuggest, got {other:?}"),
+    }
+}
+
+/// An `answers.suggest` before the handshake completes is NEVER dispatched —
+/// same invariant as `answers_save_before_handshake_is_not_dispatched`.
+#[test]
+fn answers_suggest_before_handshake_is_not_dispatched() {
+    let (_dir, state) = bridge_state();
+    let frame = json!({
+        "type": super::msg::ANSWERS_SUGGEST,
+        "reqId": "r-early",
+        "payload": { "questions": [] },
+    })
+    .to_string();
+    match advance_frame(&state, &ConnState::AwaitingHello, &frame) {
+        FrameDecision::Outdated(_) => {}
+        other => {
+            panic!("an answers.suggest before hello must NOT be AnswersSuggest, got {other:?}")
+        }
+    }
+}
+
+/// Same mid-handshake bypass guard as `answers_save_mid_handshake_is_unauthorized`
+/// — `answers.suggest` cannot skip the proof step either (it returns the
+/// user's own past answer text, so it gets the same three auth-boundary tests
+/// as every other authenticated verb).
+#[test]
+fn answers_suggest_mid_handshake_is_unauthorized() {
+    let (_dir, state) = bridge_state();
+    let (conn, _correct) = awaiting_auth(&state);
+    let frame = json!({
+        "type": super::msg::ANSWERS_SUGGEST,
+        "reqId": "r-skip",
+        "payload": { "questions": [] },
+    })
+    .to_string();
+    match advance_frame(&state, &conn, &frame) {
+        FrameDecision::Unauthorized => {}
+        other => panic!("an answers.suggest mid-handshake must be Unauthorized, got {other:?}"),
+    }
+}
+
+/// Opt-in OFF is a fixed refusal mirroring `resolve_answers_save`'s exact
+/// sentinel — even with matching answers available, nothing is ever returned.
+#[test]
+fn resolve_answers_suggest_refuses_when_opt_in_off() {
+    let (_dir, store) = open_store();
+    let err = super::answers_suggest::resolve_answers_suggest(
+        &store,
+        false,
+        &json!({ "questions": ["Why this role?"] }),
+    )
+    .unwrap_err();
+    assert!(err.to_string().contains("Autofill is off"), "got: {err}");
+}
+
+/// No/empty `questions` is a well-formed no-op — never an error.
+#[test]
+fn resolve_answers_suggest_returns_empty_list_for_no_questions() {
+    let (_dir, store) = open_store();
+    let out =
+        super::answers_suggest::resolve_answers_suggest(&store, true, &json!({ "questions": [] }))
+            .unwrap();
+    assert!(out.is_empty());
+}
+
+/// Aggregates across MULTIPLE applications (not just one) via the real store —
+/// this is the read-only integration point that stands in for a dedicated
+/// store method (see the module doc: `applications/mod.rs` is at the R8 cap).
+#[test]
+fn resolve_answers_suggest_matches_across_multiple_applications() {
+    let (_dir, store) = open_store();
+    let mut meta_a = app_meta("Acme", "Backend Engineer");
+    meta_a.answers = vec![ApplicationAnswer {
+        id: "a1".to_string(),
+        question: "Why do you want to work here?".to_string(),
+        answer: "Because I love building things.".to_string(),
+    }];
+    store
+        .upsert_for_origin(
+            "https://jobs.example.com/posting/suggest-a",
+            "linkedin",
+            &meta_a,
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    let mut meta_b = app_meta("Globex", "QA Engineer");
+    meta_b.answers = vec![ApplicationAnswer {
+        id: "b1".to_string(),
+        question: "What is your notice period?".to_string(),
+        answer: "Two weeks.".to_string(),
+    }];
+    store
+        .upsert_for_origin(
+            "https://jobs.example.com/posting/suggest-b",
+            "linkedin",
+            &meta_b,
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    let out = super::answers_suggest::resolve_answers_suggest(
+        &store,
+        true,
+        &json!({ "questions": ["What is your notice period?"] }),
+    )
+    .unwrap();
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].answer, "Two weeks.");
+    assert_eq!(out[0].source_company.as_deref(), Some("Globex"));
+}
+
+/// Read-only proof: `resolve_answers_suggest` must never mutate the store — a
+/// `list()` snapshot taken before and after a real (matching) call is
+/// byte-identical.
+#[test]
+fn resolve_answers_suggest_never_mutates_the_store() {
+    let (_dir, store) = open_store();
+    let mut meta = app_meta("Acme", "Backend Engineer");
+    meta.answers = vec![ApplicationAnswer {
+        id: "a1".to_string(),
+        question: "Why do you want to work here?".to_string(),
+        answer: "Because I love building things.".to_string(),
+    }];
+    store
+        .upsert_for_origin(
+            "https://jobs.example.com/posting/suggest-readonly",
+            "linkedin",
+            &meta,
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    let before = serde_json::to_value(store.list()).unwrap();
+    let _ = super::answers_suggest::resolve_answers_suggest(
+        &store,
+        true,
+        &json!({ "questions": ["Why do you want to work here?"] }),
+    )
+    .unwrap();
+    let after = serde_json::to_value(store.list()).unwrap();
+
+    assert_eq!(before, after, "answers.suggest must never mutate the store");
+}
+
+/// `answers_suggest_reply` carries `ok:true` + the suggestions array.
+#[test]
+fn answers_suggest_reply_carries_type_and_req_id_on_success() {
+    let reply = super::answers_suggest::answers_suggest_reply(
+        "req-1",
+        Ok(vec![super::answers_suggest::Suggestion {
+            question: "Why this role?".to_string(),
+            answer: "Because I love it.".to_string(),
+            source_company: Some("Acme".to_string()),
+            source_title: Some("Backend Engineer".to_string()),
+            source_question: "Why do you want to work here?".to_string(),
+            score: 0.8,
+            salary: false,
+        }]),
+    );
+    let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(v["type"], super::msg::ANSWERS_SUGGEST_RESULT);
+    assert_eq!(v["reqId"], "req-1");
+    assert_eq!(v["payload"]["ok"], true);
+    assert_eq!(v["payload"]["suggestions"][0]["question"], "Why this role?");
+    assert_eq!(v["payload"]["suggestions"][0]["sourceCompany"], "Acme");
+    assert_eq!(
+        v["payload"]["suggestions"][0]["sourceQuestion"],
+        "Why do you want to work here?"
+    );
+    assert_eq!(v["payload"]["suggestions"][0]["salary"], false);
+}
+
+/// `answers_suggest_reply` carries `ok:false` + the refusal error.
+#[test]
+fn answers_suggest_reply_carries_refusal_error() {
+    let reply = super::answers_suggest::answers_suggest_reply(
+        "req-2",
+        Err(crate::error::AppError::Validation(
+            super::AUTOFILL_OFF_MESSAGE.to_string(),
+        )),
+    );
+    let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(v["payload"]["ok"], false);
+    assert!(v["payload"]["error"]
+        .as_str()
+        .unwrap()
+        .contains("Autofill is off"));
+}
+
+// ── match_questions — the pure token-Jaccard matcher ──────────────────────────
+
+fn candidate<'a>(
+    question: &'a str,
+    answer: &'a str,
+    company: &'a str,
+    title: &'a str,
+    updated_at: u64,
+) -> AnswerCandidate<'a> {
+    AnswerCandidate::new(question, answer, company, title, updated_at)
+}
+
+/// A close paraphrase above the threshold is matched.
+#[test]
+fn match_questions_returns_best_match_above_threshold() {
+    let candidates = vec![candidate(
+        "Why do you want to work at our company?",
+        "Because the mission excites me.",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["Why do you want to work here?".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].answer, "Because the mission excites me.");
+    assert!(out[0].score >= 0.5);
+}
+
+/// An unrelated question stays below the threshold and is skipped entirely.
+#[test]
+fn match_questions_skips_below_threshold() {
+    let candidates = vec![candidate(
+        "Why do you want to work here?",
+        "Because the mission excites me.",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(
+        &["What's your salary expectation?".to_string()],
+        &candidates,
+    );
+    assert!(
+        out.is_empty(),
+        "an unrelated question must never be suggested"
+    );
+}
+
+/// Two equally-scored candidates (identical question text) tie-break on the
+/// most recently updated application — never the first-seen one.
+#[test]
+fn match_questions_tie_breaks_by_score_then_most_recent() {
+    let candidates = vec![
+        candidate(
+            "Why this role?",
+            "Older answer.",
+            "Acme",
+            "Backend Engineer",
+            1_000,
+        ),
+        candidate(
+            "Why this role?",
+            "Newer answer.",
+            "Globex",
+            "QA Engineer",
+            5_000,
+        ),
+    ];
+    let out = match_questions(&["Why this role?".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert_eq!(
+        out[0].answer, "Newer answer.",
+        "the most recently updated application must win a tie"
+    );
+}
+
+/// At most one suggestion per question, even with multiple candidates that
+/// could match — never a fan-out.
+#[test]
+fn match_questions_caps_one_suggestion_per_question() {
+    let candidates = vec![
+        candidate(
+            "Why this role?",
+            "Answer A.",
+            "Acme",
+            "Backend Engineer",
+            1_000,
+        ),
+        candidate(
+            "Why this role?",
+            "Answer B.",
+            "Globex",
+            "QA Engineer",
+            2_000,
+        ),
+        candidate("Why this role?", "Answer C.", "Initech", "SRE", 3_000),
+    ];
+    let out = match_questions(&["Why this role?".to_string()], &candidates);
+    assert_eq!(out.len(), 1, "never more than one suggestion per question");
+}
+
+/// Two INPUT questions that normalize to the same text (case/whitespace
+/// variants — e.g. two form fields sharing a label) collapse to one output
+/// entry, not two.
+#[test]
+fn match_questions_dedupes_effectively_identical_input_questions() {
+    let candidates = vec![candidate(
+        "Why this role?",
+        "Because I love it.",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(
+        &["Why this role?".to_string(), "why   THIS role?".to_string()],
+        &candidates,
+    );
+    assert_eq!(out.len(), 1);
+}
+
+/// The overall reply is capped at 20 suggestions even when every question has
+/// a qualifying match.
+#[test]
+fn match_questions_caps_overall_at_max_suggestions() {
+    let questions: Vec<String> = (0..25).map(|i| format!("Question {i}?")).collect();
+    let candidates: Vec<AnswerCandidate> = questions
+        .iter()
+        .map(|q| candidate(q, "An answer.", "Acme", "Backend Engineer", 1_000))
+        .collect();
+    let out = match_questions(&questions, &candidates);
+    assert_eq!(
+        out.len(),
+        20,
+        "the overall reply must be capped at MAX_SUGGESTIONS"
+    );
+}
+
+/// A question matching a salary keyword is flagged `salary: true` — the
+/// popup's Copy-only rule reads this field directly.
+#[test]
+fn match_questions_flags_salary_keyword_questions() {
+    let candidates = vec![candidate(
+        "What is your expected salary?",
+        "$120,000",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(
+        &["What is your expected salary range?".to_string()],
+        &candidates,
+    );
+    assert_eq!(out.len(), 1);
+    assert!(
+        out[0].salary,
+        "a salary-keyword question must be flagged for Copy-only"
+    );
+}
+
+/// A question with no salary keyword is never flagged.
+#[test]
+fn match_questions_does_not_flag_non_salary_questions() {
+    let candidates = vec![candidate(
+        "Why do you want to work here?",
+        "Because the mission excites me.",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["Why do you want to work here?".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert!(!out[0].salary);
+}
+
+/// Cross-question footgun (review fix): "What is your current location?" and
+/// "What is your current salary?" share {what, is, your, current} = 4 of a
+/// 6-token union = 0.67, comfortably above MIN_SCORE, even though the two
+/// questions are about completely different things. The scanned INPUT
+/// question carries no salary keyword, but the matched candidate's own
+/// (stored) question does — the salary Copy-only guard must catch this via
+/// the candidate side, not just the input side.
+#[test]
+fn match_questions_flags_salary_when_matched_candidates_source_question_is_salary() {
+    let candidates = vec![candidate(
+        "What is your current salary?",
+        "$120,000",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["What is your current location?".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert!(
+        out[0].salary,
+        "a stored salary answer must stay Copy-only no matter which label it matched"
+    );
+    assert_eq!(out[0].source_question, "What is your current salary?");
+}
+
+/// The flip side of the above: when NEITHER the scanned input nor the
+/// matched candidate's own question is salary-shaped, the suggestion stays
+/// fillable — the OR'd guard must never over-flag an unrelated match.
+#[test]
+fn match_questions_stays_fillable_when_neither_side_is_salary() {
+    let candidates = vec![candidate(
+        "What is your notice period?",
+        "Two weeks.",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["What is your notice period?".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert!(!out[0].salary);
+}
+
+/// Punctuation must never fracture a token from its bare form elsewhere: a
+/// short stored question ("Notice period") against the verbose scanned label
+/// ("What is your notice period?") shares 2 tokens {notice, period} over a
+/// 5-token union = 0.4 — exactly at the (lowered) threshold. Before the
+/// matcher-local tokenizer, the trailing "?" made "period?" a distinct token
+/// from "period" and this pair scored only 0.2, well under the old 0.5.
+#[test]
+fn match_questions_matches_short_paraphrase_despite_trailing_punctuation() {
+    let candidates = vec![candidate(
+        "Notice period",
+        "Two weeks.",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["What is your notice period?".to_string()], &candidates);
+    assert_eq!(
+        out.len(),
+        1,
+        "punctuation must not block a genuine short-vs-verbose paraphrase"
+    );
+    assert_eq!(out[0].answer, "Two weeks.");
+}
+
+/// The other PR-6 regression pair: "want to work here" vs "want this role"
+/// share {why, do, you, want} (4) over a 9-token union = 0.44, just above the
+/// lowered 0.4 threshold — the pair the 0.5 threshold used to reject outright.
+#[test]
+fn match_questions_matches_why_this_role_paraphrase() {
+    let candidates = vec![candidate(
+        "Why do you want to work here?",
+        "Because I love building things.",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["Why do you want this role?".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].answer, "Because I love building things.");
+}
+
+/// Negative regression pair for the lowered 0.4 threshold: two genuinely
+/// unrelated questions share zero tokens and must never match, however low
+/// the threshold goes.
+#[test]
+fn match_questions_does_not_match_unrelated_salary_and_license_questions() {
+    let candidates = vec![candidate(
+        "What is your salary expectation?",
+        "$120,000",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(
+        &["Do you have a driver's license?".to_string()],
+        &candidates,
+    );
+    assert!(
+        out.is_empty(),
+        "unrelated questions must never match, even at a lowered threshold"
+    );
+}
+
+/// Near-miss negative regression: a partial-overlap pair that shares 3 of 8
+/// tokens ("what","is","your" out of {what,is,your,desired,start,date,
+/// favorite,color}) — 3/8 = 0.375, just below `MIN_SCORE` (0.4) — must never
+/// match despite sharing a common question-stem.
+#[test]
+fn match_questions_does_not_match_near_miss_partial_overlap() {
+    let candidates = vec![candidate(
+        "What is your desired start date?",
+        "Immediately",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["What is your favorite color?".to_string()], &candidates);
+    assert!(
+        out.is_empty(),
+        "3/8 = 0.375 overlap must fall below MIN_SCORE and never match"
+    );
+}
+
+/// Broadened salary keywords (critic finding): "how much ... paid" flags
+/// Copy-only without a literal "salary"/"compensation" token.
+#[test]
+fn match_questions_flags_how_much_paid_as_salary() {
+    let candidates = vec![candidate(
+        "How much do you expect to be paid?",
+        "$120,000",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(
+        &["How much do you expect to be paid?".to_string()],
+        &candidates,
+    );
+    assert_eq!(out.len(), 1);
+    assert!(out[0].salary);
+}
+
+/// "income" alone is enough to flag Copy-only.
+#[test]
+fn match_questions_flags_income_as_salary() {
+    let candidates = vec![candidate(
+        "Expected income",
+        "$120,000",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["Expected income".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert!(out[0].salary);
+}
+
+/// "day rate" (a salary-shaped multi-token phrase) is flagged.
+#[test]
+fn match_questions_flags_day_rate_as_salary() {
+    let candidates = vec![candidate(
+        "Day rate",
+        "£500",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["Day rate".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert!(out[0].salary);
+}
+
+/// Bare "rate" (no salary-shaped multi-token phrase) must NEVER trip the
+/// denylist — a skills self-rating question is not a salary question.
+#[test]
+fn match_questions_does_not_flag_rate_your_skills_as_salary() {
+    let candidates = vec![candidate(
+        "Rate your TypeScript skills",
+        "9/10",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["Rate your TypeScript skills".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert!(!out[0].salary);
+}
+
+/// Hyphen-proof salary check (critic finding): `normalize_question` only
+/// collapses whitespace, so "Day-rate" still carries the literal hyphen and
+/// would silently miss the "day rate" phrase without the matcher's
+/// non-alphanumeric re-tokenization.
+#[test]
+fn match_questions_flags_hyphenated_day_rate_as_salary() {
+    let candidates = vec![candidate(
+        "Day-rate",
+        "£500",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["Day-rate".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert!(out[0].salary);
+}
+
+/// Same as above with a slash instead of a hyphen.
+#[test]
+fn match_questions_flags_slash_day_rate_as_salary() {
+    let candidates = vec![candidate(
+        "day/rate",
+        "£500",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["day/rate".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert!(out[0].salary);
+}
+
+/// Hyphenated "How-much" must still flag Copy-only, same as the
+/// space-separated "How much" case above.
+#[test]
+fn match_questions_flags_hyphenated_how_much_as_salary() {
+    let candidates = vec![candidate(
+        "How-much do you expect?",
+        "$120,000",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["How-much do you expect?".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert!(out[0].salary);
+}
+
+/// CodeRabbit finding: a single-word keyword ("paid") must match a WHOLE
+/// token, never a substring inside an unrelated word — "unpaid" must never
+/// trip the salary denylist.
+#[test]
+fn match_questions_does_not_flag_unpaid_leave_as_salary() {
+    let candidates = vec![candidate(
+        "Unpaid leave policy acknowledgment",
+        "Acknowledged.",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(
+        &["Unpaid leave policy acknowledgment".to_string()],
+        &candidates,
+    );
+    assert_eq!(out.len(), 1);
+    assert!(
+        !out[0].salary,
+        "\"paid\" must not substring-match inside \"unpaid\""
+    );
+}
+
+/// The single-word exact-token fix must not regress the genuine "paid"
+/// salary question it was narrowed from.
+#[test]
+fn match_questions_still_flags_how_much_will_i_be_paid_as_salary() {
+    let candidates = vec![candidate(
+        "How much will I be paid?",
+        "$120,000",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["How much will I be paid?".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert!(out[0].salary);
+}
+
+/// Pure property: the SAME inputs always produce the SAME output — no AI, no
+/// egress, no randomness (the PR-6 handoff's binding determinism property).
+#[test]
+fn match_questions_is_deterministic() {
+    let candidates = vec![
+        candidate(
+            "Why this role?",
+            "Answer A.",
+            "Acme",
+            "Backend Engineer",
+            1_000,
+        ),
+        candidate(
+            "Why this role?",
+            "Answer B.",
+            "Globex",
+            "QA Engineer",
+            2_000,
+        ),
+    ];
+    let questions = vec!["Why this role?".to_string()];
+    let first = match_questions(&questions, &candidates);
+    let second = match_questions(&questions, &candidates);
+    assert_eq!(first, second);
 }

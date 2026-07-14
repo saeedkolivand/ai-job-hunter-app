@@ -64,6 +64,7 @@ use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, APPLICATIONS_CHANGED};
 
 mod answers_save;
+mod answers_suggest;
 pub mod auth;
 pub mod handshake;
 #[cfg(test)]
@@ -155,6 +156,17 @@ pub mod msg {
     /// false, error }` on a refusal (opt-in off / no match / malformed
     /// request). Like `status.update`, this verb's errors ARE user-facing.
     pub const ANSWERS_RESULT: &str = "answers.result";
+    /// Extension → desktop: "suggest answers for this form" — fuzzy-match the
+    /// scanned EMPTY question labels against every stored `ApplicationAnswer`
+    /// across ALL applications. Rides the SAME assisted-autofill opt-in as
+    /// `profile.get`/`answers.save` — see
+    /// [`super::answers_suggest::resolve_answers_suggest`].
+    pub const ANSWERS_SUGGEST: &str = "answers.suggest";
+    /// Desktop → extension: the `answers.suggest` outcome — `{ ok: true,
+    /// suggestions: [...] }` on success, `{ ok: false, error }` on a refusal
+    /// (opt-in off / malformed request). Like `status.update`, this verb's
+    /// errors ARE user-facing.
+    pub const ANSWERS_SUGGEST_RESULT: &str = "answers.suggest.result";
 }
 
 /// Handshake protocol version carried in the `hello` frame. MUST match the TS
@@ -571,6 +583,9 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
             FrameDecision::AnswersSave { req_id, payload } => {
                 Some(answers_save::handle_answers_save(&app, &req_id, &payload))
             }
+            FrameDecision::AnswersSuggest { req_id, payload } => Some(
+                answers_suggest::handle_answers_suggest(&app, &req_id, &payload),
+            ),
         };
         if let Some(reply) = reply {
             if writer.send(Message::text(reply)).await.is_err() {
@@ -651,6 +666,10 @@ enum FrameDecision {
     /// [`answers_save::handle_answers_save`]. Carries the payload verbatim so
     /// the handler can read `url` + `answers`.
     AnswersSave { req_id: String, payload: Value },
+    /// An authenticated `answers.suggest` to answer through
+    /// [`answers_suggest::handle_answers_suggest`]. Carries the payload
+    /// verbatim so the handler can read `questions`.
+    AnswersSuggest { req_id: String, payload: Value },
 }
 
 /// The per-message handshake gate + dispatch routing (size cap → JSON parse →
@@ -747,8 +766,8 @@ fn advance_auth(
 
 /// Post-auth dispatch: the socket is session-authenticated, so frames carry no
 /// token. Routes `import.request` / `profile.get` / `applied.check` /
-/// `status.update` / `answers.save`; reserved / unknown types get an
-/// `import.result` error reply (never a panic).
+/// `status.update` / `answers.save` / `answers.suggest`; reserved / unknown
+/// types get an `import.result` error reply (never a panic).
 fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameDecision {
     match kind {
         msg::IMPORT_REQUEST => {
@@ -772,6 +791,11 @@ fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameD
         msg::ANSWERS_SAVE => {
             let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
             FrameDecision::AnswersSave { req_id, payload }
+        }
+        // "Suggest answers for this form" — a consent-gated, read-only fuzzy match.
+        msg::ANSWERS_SUGGEST => {
+            let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
+            FrameDecision::AnswersSuggest { req_id, payload }
         }
         // Reserved message types — acknowledged as unimplemented, never panic.
         msg::MATCH_LIVE => FrameDecision::Reply(result_reply(

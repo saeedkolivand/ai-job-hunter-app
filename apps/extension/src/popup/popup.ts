@@ -10,6 +10,9 @@
 
 import { browser } from '@wxt-dev/browser';
 
+import type { ExtensionAnswerSuggestion } from '@ajh/shared';
+
+import type { ScannedQuestion } from '../lib/answers-capture';
 import type { ConnectionStatus, PopupRequest, PopupResponse } from '../lib/messages';
 import { looksLikeToken } from '../lib/storage';
 
@@ -234,6 +237,90 @@ export function resolveAnswersSaveResponse(res: PopupResponse): {
 }
 
 /**
+ * Pair each desktop-returned suggestion with its scan-time fill correlation.
+ * When `scanned` contains EXACTLY ONE field sharing the suggestion's exact
+ * question text, `fieldIndex` is `0` (that field's own occurrence index).
+ * When `scanned` contains NONE or MORE THAN ONE such field, `fieldIndex` is
+ * `null` and `multipleMatches` records which case it was — a page with two+
+ * fields sharing the identical label is ambiguous (which one would "Fill"
+ * even mean?), so it must never guess: Fill is omitted and the row falls back
+ * to Copy-only, same fail-safe discipline as `locateQuestionField`'s re-scan.
+ *
+ * Pure: no DOM access, no side effects.
+ */
+export interface RenderedSuggestion {
+  suggestion: ExtensionAnswerSuggestion;
+  fieldIndex: number | null;
+  /** `true` when the scan found MORE THAN ONE field sharing this exact
+   *  question text — the row shows a "fill manually" hint instead of a
+   *  (necessarily ambiguous) Fill button. */
+  multipleMatches: boolean;
+  /** Total live fields sharing this exact question text AT SCAN TIME (always
+   *  `1` whenever `fieldIndex` is non-null). Sent alongside `fieldIndex` on a
+   *  Fill click so the fill-time re-scan can refuse if the CURRENT count
+   *  differs — a same-labelled field inserted earlier in DOM order between
+   *  scan and click must never silently receive the fill. */
+  scanCount: number;
+}
+
+export function correlateSuggestions(
+  suggestions: ExtensionAnswerSuggestion[],
+  scanned: ScannedQuestion[]
+): RenderedSuggestion[] {
+  return suggestions.map((suggestion) => {
+    const matches = scanned.filter((q) => q.question === suggestion.question).length;
+    return {
+      suggestion,
+      fieldIndex: matches === 1 ? 0 : null,
+      multipleMatches: matches > 1,
+      scanCount: matches,
+    };
+  });
+}
+
+/**
+ * Given an `answersSuggest` response, return the message text + tone plus the
+ * suggestions to render and the scan-time correlation list. Mirrors
+ * `resolveAnswersSaveResponse` — this verb's errors ARE shown (a deliberate
+ * click, not a passive check).
+ *
+ * Pure: no DOM access, no side effects.
+ */
+export function resolveAnswersSuggestResponse(res: PopupResponse): {
+  text: string;
+  tone: 'ok' | 'err';
+  suggestions: ExtensionAnswerSuggestion[];
+  scanned: ScannedQuestion[];
+} {
+  if (!res.ok) return { text: res.error, tone: 'err', suggestions: [], scanned: [] };
+  if (res.kind !== 'answersSuggest') {
+    return {
+      text: 'Unexpected response — please retry.',
+      tone: 'err',
+      suggestions: [],
+      scanned: [],
+    };
+  }
+  const { result, scanned } = res;
+  if (!result.ok) return { text: result.error, tone: 'err', suggestions: [], scanned };
+  if (result.suggestions.length === 0) {
+    return {
+      text: 'No matching past answers found for this form.',
+      tone: 'ok',
+      suggestions: [],
+      scanned,
+    };
+  }
+  const count = result.suggestions.length;
+  return {
+    text: `Found ${count} suggestion${count === 1 ? '' : 's'} for this form.`,
+    tone: 'ok',
+    suggestions: result.suggestions,
+    scanned,
+  };
+}
+
+/**
  * Given a `fill` response, return the popup message + tone. The detailed summary
  * lives in the in-page overlay; the popup shows a short confirmation (or the
  * desktop's refusal when autofill is opted out). Handles the "nothing matched"
@@ -275,6 +362,8 @@ const els = {
   btnFill: byId<HTMLButtonElement>('btn-fill'),
   btnMarkApplied: byId<HTMLButtonElement>('btn-mark-applied'),
   btnSaveAnswers: byId<HTMLButtonElement>('btn-save-answers'),
+  btnSuggestAnswers: byId<HTMLButtonElement>('btn-suggest-answers'),
+  suggestionsList: byId<HTMLDivElement>('suggestions-list'),
   appliedStatus: byId<HTMLParagraphElement>('applied-status'),
   chkApplied: byId<HTMLInputElement>('chk-applied'),
   importMsg: byId<HTMLParagraphElement>('import-msg'),
@@ -351,6 +440,15 @@ let hasShownOffline = false;
  */
 let lastRenderedPhase: ConnectionStatus['phase'] | null = null;
 
+/**
+ * The most recent questions-mode scan (`{question, index}[]`), kept so the
+ * currently-rendered suggestion rows can correlate each suggestion to a live
+ * fill target — see `correlateSuggestions`. Cleared whenever the popup
+ * leaves the `connected` view (see `render`) so a stale correlation can
+ * never survive into a different page.
+ */
+let lastScannedQuestions: ScannedQuestion[] = [];
+
 /** Send a typed request to the background and return its typed response. */
 async function send(req: PopupRequest): Promise<PopupResponse> {
   const res = (await browser.runtime.sendMessage(req)) as PopupResponse | undefined;
@@ -389,6 +487,11 @@ function render(status: ConnectionStatus): void {
     els.btnImport.textContent = IMPORT_LABEL_DEFAULT;
     els.btnMarkApplied.hidden = true;
     els.btnMarkApplied.disabled = false;
+    // A stale suggestion list (and its fill correlation) must never linger
+    // into a different page's connected view.
+    els.suggestionsList.hidden = true;
+    els.suggestionsList.textContent = '';
+    lastScannedQuestions = [];
   }
   lastRenderedPhase = status.phase;
 
@@ -604,6 +707,201 @@ async function doSaveAnswers(): Promise<void> {
   }
 }
 
+/** Truncate an answer preview for the suggestion row (never the full text —
+ *  this is a preview, the full text travels to Copy/Fill unchanged). */
+function truncateAnswer(s: string, max = 140): string {
+  const t = s.trim();
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}
+
+/** Copy `text` to the clipboard; returns whether it succeeded. Extension
+ *  pages may call `navigator.clipboard.writeText` on a user gesture without
+ *  an extra permission. */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Click handler for a suggestion row's Copy button — briefly confirms on
+ *  the button itself, never touches the shared message area. */
+async function doCopySuggestion(text: string, btn: HTMLButtonElement): Promise<void> {
+  const original = btn.textContent;
+  const ok = await copyText(text);
+  btn.textContent = ok ? '✓ Copied' : 'Copy failed';
+  setTimeout(() => {
+    btn.textContent = original;
+  }, 1200);
+}
+
+/**
+ * Click handler for a suggestion row's "Fill this field" button. `question`/
+ * `fieldIndex`/`expectedCount` are the SAME scan-time correlation the
+ * collector produced — the filler re-locates that exact field and fails safe
+ * (never a different field) if the page changed since the scan, INCLUDING a
+ * same-labelled field inserted/removed elsewhere on the page (a count change,
+ * not just an out-of-range index).
+ */
+async function doFillSuggestion(
+  question: string,
+  fieldIndex: number,
+  expectedCount: number,
+  answer: string,
+  btn: HTMLButtonElement
+): Promise<void> {
+  btn.disabled = true;
+  const original = btn.textContent;
+  try {
+    const res = await send({
+      kind: 'answerFill',
+      question,
+      index: fieldIndex,
+      count: expectedCount,
+      answer,
+    });
+    if (res.ok && res.kind === 'answerFill' && res.result.filled) {
+      btn.textContent = '✓ Filled';
+      return;
+    }
+    const text =
+      res.ok && res.kind === 'answerFill'
+        ? (res.result.error ?? 'Could not fill this field.')
+        : !res.ok
+          ? res.error
+          : 'Could not fill this field.';
+    setMsg(els.importMsg, text, 'err');
+    btn.disabled = false;
+    btn.textContent = original;
+  } catch {
+    setMsg(els.importMsg, 'Could not fill this field. Please retry.', 'err');
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
+/** Build one suggestion row: question / answer preview / source (always
+ *  including the matched candidate's original `sourceQuestion`, so a
+ *  cross-question match is visible, not silent), plus Copy and (when a live
+ *  target exists and the question is not salary-like) Fill. When the scan
+ *  found more than one field sharing this exact question — which one to fill
+ *  is ambiguous — a short hint replaces Fill instead of guessing.
+ *  `textContent` only — no `innerHTML` with page/desktop-derived text. */
+function buildSuggestionRow(item: RenderedSuggestion): HTMLElement {
+  const { suggestion, fieldIndex, multipleMatches, scanCount } = item;
+  const row = document.createElement('div');
+  row.className = 'suggestion';
+
+  const q = document.createElement('p');
+  q.className = 'suggestion__question';
+  q.textContent = suggestion.question;
+  row.append(q);
+
+  const a = document.createElement('p');
+  a.className = 'suggestion__answer';
+  a.textContent = truncateAnswer(suggestion.answer);
+  row.append(a);
+
+  const sourceTitle = suggestion.sourceTitle?.trim();
+  const sourceCompany = suggestion.sourceCompany?.trim();
+  const sourceQuestion = suggestion.sourceQuestion.trim();
+  if (sourceTitle || sourceCompany || sourceQuestion) {
+    const name =
+      sourceTitle && sourceCompany
+        ? `${sourceTitle} @ ${sourceCompany}`
+        : (sourceTitle ?? sourceCompany);
+    const src = document.createElement('p');
+    src.className = 'suggestion__source';
+    // Always shows the matched candidate's ORIGINAL question text — makes a
+    // cross-question match (two questions similar enough on filler words to
+    // score above the matcher's threshold but about different things)
+    // self-evident rather than silent, whether or not it names an
+    // application below.
+    const bits = [`answered as: "${sourceQuestion}"`];
+    if (name) bits.push(`from your ${name} application`);
+    src.textContent = bits.join(' — ');
+    row.append(src);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'suggestion__actions';
+
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'btn btn--small';
+  copyBtn.textContent = 'Copy';
+  copyBtn.addEventListener('click', () => void doCopySuggestion(suggestion.answer, copyBtn));
+  actions.append(copyBtn);
+
+  // Salary-like questions are Copy-only (never fillable), and Fill is only
+  // offered when the scan found a live target for this exact question.
+  if (!suggestion.salary && fieldIndex !== null) {
+    const fillBtn = document.createElement('button');
+    fillBtn.type = 'button';
+    fillBtn.className = 'btn btn--small btn--primary';
+    fillBtn.textContent = 'Fill this field';
+    fillBtn.addEventListener(
+      'click',
+      () =>
+        void doFillSuggestion(
+          suggestion.question,
+          fieldIndex,
+          scanCount,
+          suggestion.answer,
+          fillBtn
+        )
+    );
+    actions.append(fillBtn);
+  } else if (!suggestion.salary && multipleMatches) {
+    // Ambiguous: more than one live field shares this exact label, so there is
+    // no single field to target — never guess, tell the user to fill by hand.
+    const hint = document.createElement('p');
+    hint.className = 'suggestion__hint';
+    hint.textContent = 'Multiple matching fields — fill manually.';
+    actions.append(hint);
+  }
+
+  row.append(actions);
+  return row;
+}
+
+/** Render the suggestion list — clears any prior rows first (no stale DOM
+ *  from a previous scan). */
+function renderSuggestions(suggestions: ExtensionAnswerSuggestion[]): void {
+  els.suggestionsList.textContent = '';
+  const rows = correlateSuggestions(suggestions, lastScannedQuestions);
+  for (const item of rows) {
+    els.suggestionsList.append(buildSuggestionRow(item));
+  }
+  els.suggestionsList.hidden = rows.length === 0;
+}
+
+/**
+ * Click handler for "Suggest answers for this form". Scans the active tab's
+ * empty candidate fields, sends their labels as `answers.suggest`, and
+ * renders the returned suggestions. Errors ARE shown (a deliberate click).
+ */
+async function doSuggestAnswers(): Promise<void> {
+  els.btnSuggestAnswers.disabled = true;
+  els.suggestionsList.hidden = true;
+  els.suggestionsList.textContent = '';
+  setMsg(els.importMsg, 'Looking for matching answers…', 'muted');
+  try {
+    const res = await send({ kind: 'answersSuggest' });
+    const { text, tone, suggestions, scanned } = resolveAnswersSuggestResponse(res);
+    lastScannedQuestions = scanned;
+    setMsg(els.importMsg, text, tone);
+    renderSuggestions(suggestions);
+  } catch {
+    // A transport/messaging rejection must not strand the status on "Looking…".
+    setMsg(els.importMsg, 'Could not suggest answers for this page. Please retry.', 'err');
+  } finally {
+    els.btnSuggestAnswers.disabled = false;
+  }
+}
+
 async function doImport(): Promise<void> {
   els.btnImport.disabled = true;
   setMsg(els.importMsg, 'Importing…', 'muted');
@@ -725,6 +1023,7 @@ function wire(): void {
   els.btnFill.addEventListener('click', () => void doFill());
   els.btnMarkApplied.addEventListener('click', () => void doMarkApplied());
   els.btnSaveAnswers.addEventListener('click', () => void doSaveAnswers());
+  els.btnSuggestAnswers.addEventListener('click', () => void doSuggestAnswers());
   els.btnSaveToken.addEventListener('click', () => void savePairing());
   els.tokenInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') void savePairing();

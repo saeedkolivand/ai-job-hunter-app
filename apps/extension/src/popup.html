@@ -99,6 +99,18 @@
         >
           Save my answers from this page
         </button>
+        <!-- Fuzzy-matches this page's EMPTY questions against every past answer.
+             Populated on click; rows carry per-suggestion Copy + (when a live
+             field target exists and it isn't salary-like) Fill actions. -->
+        <button
+          id="btn-suggest-answers"
+          class="btn"
+          type="button"
+          title="Suggest answers from your past applications for this page's empty questions"
+        >
+          Suggest answers for this form
+        </button>
+        <div id="suggestions-list" class="suggestions" hidden></div>
         <div class="actions">
           <button id="btn-import" class="btn btn--primary" type="button">Import this job</button>
           <button

@@ -775,8 +775,8 @@
         "regenerateConfirm": "Regenerate",
         "autofill": {
           "label": "Assisted form autofill",
-          "description": "Let the extension's Fill button pull your saved contact details into a page's form.",
-          "disclosure": "When on, clicking Fill in the extension sends your saved contact details into the current page's form. Your details never leave your computer except into pages you choose.",
+          "description": "Let the extension's Fill button fill contact details and offer your past answers on a page's form.",
+          "disclosure": "When on, clicking Fill in the extension sends your saved contact details into the current page's form. Suggesting answers for a form also surfaces your saved past answer text in the extension popup, for Copy or Fill, on pages you choose. Your details never leave your computer except into pages you choose.",
           "toggleFailed": "Could not update the autofill setting."
         }
       },
