@@ -105,7 +105,7 @@ describe('resolveStatusResponse', () => {
 describe('resolveImportResponse', () => {
   it('returns an error message when ok=false', () => {
     const res = { ok: false as const, error: 'Bridge unavailable.' };
-    const { text, tone } = resolveImportResponse(res);
+    const { text, tone } = resolveImportResponse(res, false);
     expect(tone).toBe('err');
     expect(text).toBe('Bridge unavailable.');
   });
@@ -114,7 +114,7 @@ describe('resolveImportResponse', () => {
     // Dead-end state: background replied with a non-import kind to an import
     // request (e.g. a stale status push, message ordering issue).
     const res = { ok: true as const, kind: 'token' as const };
-    const { text, tone } = resolveImportResponse(res);
+    const { text, tone } = resolveImportResponse(res, false);
     expect(tone).toBe('err');
     expect(text).toBe('Unexpected response — please retry.');
   });
@@ -125,7 +125,7 @@ describe('resolveImportResponse', () => {
       kind: 'import' as const,
       result: { error: 'Desktop app rejected the job URL.' },
     };
-    const { text, tone } = resolveImportResponse(res);
+    const { text, tone } = resolveImportResponse(res, false);
     expect(tone).toBe('err');
     expect(text).toBe('Desktop app rejected the job URL.');
   });
@@ -136,7 +136,7 @@ describe('resolveImportResponse', () => {
       kind: 'import' as const,
       result: { applicationId: 'app-123', status: 'saved', title: 'Senior Rust Engineer' },
     };
-    const { text, tone } = resolveImportResponse(res);
+    const { text, tone } = resolveImportResponse(res, false);
     expect(tone).toBe('ok');
     expect(text).toBe(
       'Imported “Senior Rust Engineer”. Open AI Job Hunter → Applications to view it.'
@@ -149,7 +149,7 @@ describe('resolveImportResponse', () => {
       kind: 'import' as const,
       result: { applicationId: 'app-456' },
     };
-    const { text, tone } = resolveImportResponse(res);
+    const { text, tone } = resolveImportResponse(res, false);
     expect(tone).toBe('ok');
     expect(text).toBe('Imported. Open AI Job Hunter → Applications to view it.');
   });
@@ -160,7 +160,7 @@ describe('resolveImportResponse', () => {
       kind: 'import' as const,
       result: { applicationId: 'app-789', title: 'Frontend Engineer', partial: true },
     };
-    const { text, tone } = resolveImportResponse(res);
+    const { text, tone } = resolveImportResponse(res, false);
     expect(tone).toBe('ok');
     expect(text).toBe(
       "Imported “Frontend Engineer” — couldn't read the description. Open AI Job Hunter → Applications to paste it."
@@ -173,10 +173,78 @@ describe('resolveImportResponse', () => {
       kind: 'import' as const,
       result: { applicationId: 'app-000', partial: true },
     };
-    const { text, tone } = resolveImportResponse(res);
+    const { text, tone } = resolveImportResponse(res, false);
     expect(tone).toBe('ok');
     expect(text).toBe(
       "Imported — couldn't read the description. Open AI Job Hunter → Applications to paste it."
+    );
+  });
+
+  // ── status transparency (dedup-merge into a pre-existing non-saved row) ─────
+
+  it('surfaces a "already tracked" transparency message when the matched row is already past saved and the checkbox was unticked', () => {
+    const res = {
+      ok: true as const,
+      kind: 'import' as const,
+      result: { applicationId: 'app-existing', status: 'applied', title: 'Backend Engineer' },
+    };
+    const { text, tone } = resolveImportResponse(res, false);
+    expect(tone).toBe('ok');
+    expect(text).toBe(
+      '“Backend Engineer” is already tracked as Applied — nothing was changed. Open AI Job Hunter → Applications to view it.'
+    );
+  });
+
+  it('surfaces the transparency message without a title when the desktop parsed none', () => {
+    const res = {
+      ok: true as const,
+      kind: 'import' as const,
+      result: { applicationId: 'app-existing', status: 'interviewing' },
+    };
+    const { text, tone } = resolveImportResponse(res, false);
+    expect(tone).toBe('ok');
+    expect(text).toBe(
+      'This job is already tracked as Interviewing — nothing was changed. Open AI Job Hunter → Applications to view it.'
+    );
+  });
+
+  it('does not show the transparency message when status is saved (unchanged behavior)', () => {
+    const res = {
+      ok: true as const,
+      kind: 'import' as const,
+      result: { applicationId: 'app-1', status: 'saved', title: 'QA Engineer' },
+    };
+    const { text, tone } = resolveImportResponse(res, false);
+    expect(tone).toBe('ok');
+    expect(text).toBe('Imported “QA Engineer”. Open AI Job Hunter → Applications to view it.');
+  });
+
+  it('does not show the transparency message when the checkbox was ticked, even for a non-saved status', () => {
+    const res = {
+      ok: true as const,
+      kind: 'import' as const,
+      result: { applicationId: 'app-2', status: 'applied', title: 'DevOps Engineer' },
+    };
+    const { text, tone } = resolveImportResponse(res, true);
+    expect(tone).toBe('ok');
+    expect(text).toBe('Imported “DevOps Engineer”. Open AI Job Hunter → Applications to view it.');
+  });
+
+  it('prefers the partial message over the transparency message (partial stub → unchanged)', () => {
+    const res = {
+      ok: true as const,
+      kind: 'import' as const,
+      result: {
+        applicationId: 'app-3',
+        status: 'applied',
+        title: 'Frontend Engineer',
+        partial: true,
+      },
+    };
+    const { text, tone } = resolveImportResponse(res, false);
+    expect(tone).toBe('ok');
+    expect(text).toBe(
+      "Imported “Frontend Engineer” — couldn't read the description. Open AI Job Hunter → Applications to paste it."
     );
   });
 });

@@ -45,9 +45,20 @@ const IMPORT_PARTIAL_HINT = 'Open AI Job Hunter → Applications to paste it.';
  * success it names the imported job (when the desktop parsed a title) and points
  * the user at where it landed, instead of a bare “Imported”.
  *
+ * `requestedApplied` is the "I already applied" checkbox state sent with the
+ * request. The desktop dedup-merges by URL and only ever advances a matched
+ * Application's status OUT of `saved` — it never demotes an existing
+ * applied-or-further row. So when the checkbox was NOT ticked and the matched
+ * row's status is already past `saved`, a bare "Imported" success would read
+ * like a fresh/changed import when nothing was actually touched — surface that
+ * explicitly instead.
+ *
  * Pure: no DOM access, no side effects.
  */
-export function resolveImportResponse(res: PopupResponse): { text: string; tone: 'ok' | 'err' } {
+export function resolveImportResponse(
+  res: PopupResponse,
+  requestedApplied: boolean
+): { text: string; tone: 'ok' | 'err' } {
   if (!res.ok) return { text: res.error, tone: 'err' };
   if (res.kind !== 'import') return { text: 'Unexpected response — please retry.', tone: 'err' };
   const { result } = res;
@@ -59,6 +70,13 @@ export function resolveImportResponse(res: PopupResponse): { text: string; tone:
       text: `${lead} — couldn't read the description. ${IMPORT_PARTIAL_HINT}`,
       tone: 'ok',
     };
+  }
+  if (!requestedApplied && result.status && result.status !== 'saved') {
+    const label = result.status.charAt(0).toUpperCase() + result.status.slice(1);
+    const lead = title
+      ? `“${title}” is already tracked as ${label}`
+      : `This job is already tracked as ${label}`;
+    return { text: `${lead} — nothing was changed. ${IMPORT_LANDING_HINT}`, tone: 'ok' };
   }
   const lead = title ? `Imported “${title}”.` : 'Imported.';
   return { text: `${lead} ${IMPORT_LANDING_HINT}`, tone: 'ok' };
@@ -305,8 +323,9 @@ async function doImport(): Promise<void> {
   els.btnImport.disabled = true;
   setMsg(els.importMsg, 'Importing…', 'muted');
   try {
-    const res = await send({ kind: 'import', applied: els.chkApplied.checked });
-    const { text, tone } = resolveImportResponse(res);
+    const requestedApplied = els.chkApplied.checked;
+    const res = await send({ kind: 'import', applied: requestedApplied });
+    const { text, tone } = resolveImportResponse(res, requestedApplied);
     setMsg(els.importMsg, text, tone);
   } catch {
     // A transport/messaging rejection must not strand the status on "Importing…".
