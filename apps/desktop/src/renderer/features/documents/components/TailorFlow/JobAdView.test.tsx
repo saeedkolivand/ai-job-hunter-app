@@ -36,8 +36,12 @@ vi.mock('@ajh/translations', () => ({
 // The real component pulls React Query + AppClient; a stub that renders a
 // sentinel element is sufficient to assert it mounts on the summary tab.
 
+// className is forwarded so the containment test below can assert it — the
+// real component applies `className` to its own root div.
 vi.mock('@/components/ui/ModelSelector', () => ({
-  ModelSelector: () => <div data-testid="model-selector-stub" />,
+  ModelSelector: ({ className }: { className?: string }) => (
+    <div data-testid="model-selector-stub" className={className} />
+  ),
 }));
 
 // ── ExternalLink — thin anchor wrapper, no special provider needed ─────────────
@@ -329,6 +333,21 @@ describe('JobAdView — ModelSelector visibility', () => {
     // Switch to source tab.
     await userEvent.click(screen.getByText('autopilot.apply.tabs.jobAd'));
     expect(screen.queryByTestId('model-selector-stub')).not.toBeInTheDocument();
+  });
+
+  // Regression: the model dropdown + guidance line used to overflow the card's
+  // right edge because `shrink-0` on ModelSelector pinned it to its full
+  // intrinsic width while its wrapper row lacked `min-w-0`. jsdom can't measure
+  // layout, so this asserts the structural fix (the classes that make it
+  // shrink/truncate inside its row) rather than pixels.
+  it('passes the containment class (min-w-0) to ModelSelector so it shrinks inside the toolbar row, without stretching it', () => {
+    render(<JobAdView {...makeProps({ jobDesc: 'Normal full description.', hasDesc: true })} />);
+    const stub = screen.getByTestId('model-selector-stub');
+    expect(stub).toHaveClass('min-w-0');
+    expect(stub).not.toHaveClass('shrink-0', 'flex-1');
+    // Its immediate row wrapper must also allow shrinking, or the fix on
+    // ModelSelector alone can't stop the row itself from overflowing.
+    expect(stub.parentElement).toHaveClass('min-w-0');
   });
 });
 
