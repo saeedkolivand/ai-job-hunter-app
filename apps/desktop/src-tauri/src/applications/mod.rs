@@ -696,7 +696,12 @@ impl ApplicationStore {
             company: meta.company.clone(),
             title: meta.title.clone(),
             candidate: meta.candidate.clone(),
-            answers: meta.answers.clone(),
+            // Route the new-row branch through the same capped+deduped merge as an
+            // existing-row update (against an empty existing list) so a caller
+            // handing `upsert_for_origin` an oversized/duplicate-question
+            // `meta.answers` on FIRST creation can't bypass `MAX_TOTAL_ANSWERS` the
+            // way storing `meta.answers` verbatim did.
+            answers: Self::merge_answers_by_question(Vec::new(), meta.answers.clone()),
             brief: meta.brief.clone(),
             job_description: clamped_jd.to_string(),
             notes: String::new(),

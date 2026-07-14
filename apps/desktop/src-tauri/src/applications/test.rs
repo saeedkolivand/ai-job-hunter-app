@@ -2289,6 +2289,72 @@ fn merge_answers_caps_total_stored_answers_and_drops_the_rest() {
     assert_eq!(seeded.answer, "Existing answer 0");
 }
 
+/// MEDIUM fix: `upsert_internal`'s NEW-ROW branch used to store `meta.answers`
+/// verbatim, bypassing `MAX_TOTAL_ANSWERS` entirely (only the existing-row merge
+/// branch enforced it). Creating a brand-new Application (no prior row for the
+/// url) with an oversized, duplicate-question `meta.answers` must still come out
+/// deduped-by-question and capped at `MAX_TOTAL_ANSWERS`.
+#[test]
+fn upsert_for_origin_caps_and_dedupes_answers_on_new_row_creation() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+
+    // MAX_TOTAL_ANSWERS + 2 distinct questions, plus one duplicate (different
+    // case/whitespace of question 0) inserted right after it — still over the
+    // cap even after the duplicate is dropped.
+    let mut answers: Vec<ApplicationAnswer> = (0..MAX_TOTAL_ANSWERS + 2)
+        .map(|i| ApplicationAnswer {
+            id: String::new(),
+            question: format!("Question {i}?"),
+            answer: format!("Answer {i}"),
+        })
+        .collect();
+    answers.insert(
+        1,
+        ApplicationAnswer {
+            id: String::new(),
+            question: "  question 0?  ".to_string(),
+            answer: "Duplicate (dropped)".to_string(),
+        },
+    );
+
+    let mut m = meta("Acme", "Engineer");
+    m.answers = answers;
+
+    let id = store
+        .upsert_for_origin(
+            "https://acme.com/job/new-row-cap",
+            "linkedin",
+            &m,
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    let app = store.get(&id).unwrap();
+    assert_eq!(
+        app.answers.len(),
+        MAX_TOTAL_ANSWERS,
+        "a brand-new Application's answers are capped on creation, not just on merge"
+    );
+    // The genuine duplicate must never reach the stored row at all (dropped as a
+    // within-batch dupe, not merely truncated by the cap).
+    assert_eq!(
+        app.answers
+            .iter()
+            .filter(|a| a.answer == "Duplicate (dropped)")
+            .count(),
+        0,
+        "a duplicate-question answer must be deduped, not stored twice"
+    );
+    let first = app
+        .answers
+        .iter()
+        .find(|a| a.question == "Question 0?")
+        .expect("the first-seen answer for the duplicated question must survive");
+    assert_eq!(first.answer, "Answer 0");
+}
+
 /// Regression for the HIGH cross-feature data-loss hazard: `upsert_internal`'s
 /// meta-merge path used to REPLACE `answers` wholesale, so an
 /// `ai_generations_save`-shaped upsert (a non-empty `meta.answers`) silently

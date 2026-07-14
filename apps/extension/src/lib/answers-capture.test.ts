@@ -167,6 +167,24 @@ describe('collectAnswers — excludes identity fields (contact-profile data, not
   });
 });
 
+describe('collectAnswers — autocomplete-aware identity exclusion (shared with autofill.ts Tier 1)', () => {
+  it('does not capture an autocomplete="name" field even under a quirky, non-identity-looking label', () => {
+    setForm(
+      `<label for="fn">Your details</label><input id="fn" type="text" autocomplete="name" value="Jane Doe" />`
+    );
+    expect(collectAnswers(document)).toEqual([]);
+  });
+
+  it('still captures an autocomplete="off" textarea labelled as a genuine question', () => {
+    setForm(
+      `<label for="q">Why this role?</label><textarea id="q" autocomplete="off">Because I love it.</textarea>`
+    );
+    expect(collectAnswers(document)).toEqual([
+      { question: 'Why this role?', answer: 'Because I love it.' },
+    ]);
+  });
+});
+
 describe('collectAnswers — visibility (computed-style-only, jsdom-safe)', () => {
   it('skips a field hidden by an ancestor display:none', () => {
     setForm(

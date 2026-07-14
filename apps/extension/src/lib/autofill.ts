@@ -21,7 +21,14 @@
  * never disagree on what counts as labelled/visible/ambiguous.
  */
 
-import { AMBIGUOUS, isHidden, matchNamedKey, textSignal } from './field-signal';
+import {
+  AMBIGUOUS,
+  autocompleteToken,
+  isHidden,
+  matchAutocompleteKey,
+  matchNamedKey,
+  textSignal,
+} from './field-signal';
 
 /**
  * Isolated-world global key under which `fill.ts` exposes {@link runAutofill};
@@ -114,13 +121,6 @@ export function splitName(fullName: string): { first: string; last: string } {
   return { first, last };
 }
 
-/** The last (field) token of an `autocomplete` value, e.g. "shipping email" → "email". */
-function autocompleteField(el: HTMLInputElement): string {
-  const raw = (el.getAttribute('autocomplete') ?? '').trim().toLowerCase();
-  if (!raw || raw === 'off' || raw === 'on') return '';
-  return raw.split(/\s+/).at(-1) ?? '';
-}
-
 /**
  * The baseline gate shared by every fill tier: a fillable input TYPE, visible,
  * empty, not a card/password autocomplete token, and not matching the
@@ -132,7 +132,7 @@ function isCandidateField(el: HTMLInputElement): boolean {
   if (isHidden(el)) return false;
   if (el.value.trim() !== '') return false; // never overwrite
 
-  const ac = autocompleteField(el);
+  const ac = autocompleteToken(el);
   if (ac.startsWith('cc-') || ac === 'current-password' || ac === 'new-password') return false;
 
   const signal = textSignal(el);
@@ -151,32 +151,11 @@ function isCandidateField(el: HTMLInputElement): boolean {
 export function matchFieldKey(el: HTMLInputElement): string | null {
   if (!isCandidateField(el)) return null;
 
-  const ac = autocompleteField(el);
   const signal = textSignal(el);
 
-  // ── Tier 1: standard autocomplete tokens ──────────────────────────────────
-  switch (ac) {
-    case 'email':
-      return 'email';
-    case 'tel':
-    case 'tel-national':
-    case 'tel-local':
-      return 'phone';
-    case 'given-name':
-      return 'firstName';
-    case 'family-name':
-      return 'lastName';
-    case 'name':
-      return 'fullName';
-    case 'url':
-      return 'website';
-    // Only the city-level address token maps to the single free-text location;
-    // street/postal/state/country sub-parts can't be filled from one string.
-    case 'address-level2':
-      return 'location';
-    default:
-      break;
-  }
+  // ── Tier 1: standard autocomplete tokens (see `matchAutocompleteKey`) ─────
+  const tier1 = matchAutocompleteKey(autocompleteToken(el));
+  if (tier1) return tier1;
 
   // ── Tier 2: unambiguous free-text signal (shared with answers-capture's
   // exclude-identity-fields check — see `matchNamedKey`) ────────────────────

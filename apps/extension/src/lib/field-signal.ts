@@ -148,6 +148,52 @@ export function textSignal(el: HTMLElement): string {
     .toLowerCase();
 }
 
+/** The last (field) token of an `autocomplete` attribute value, e.g.
+ *  "shipping email" → "email". `''` for a missing/`off`/`on` attribute. Takes
+ *  `HTMLElement` (not just `HTMLInputElement`) so `answers-capture.ts` can call
+ *  it on a `<textarea>`/`<select>` too — an `autocomplete` attribute there
+ *  simply normalizes to `''`/`off`, same as no match. Shared so autofill's
+ *  Tier-1 token reading and answers-capture's identity check never drift on
+ *  what the raw token is. */
+export function autocompleteToken(el: HTMLElement): string {
+  const raw = (el.getAttribute('autocomplete') ?? '').trim().toLowerCase();
+  if (!raw || raw === 'off' || raw === 'on') return '';
+  return raw.split(/\s+/).at(-1) ?? '';
+}
+
+/**
+ * Map a standard `autocomplete` {@link autocompleteToken} to autofill's Tier-1
+ * logical key, or `null` for a token with no fill/identity meaning here.
+ * Mirrors `matchFieldKey`'s Tier-1 switch (`autofill.ts`) — factored out here
+ * so `isCapturable` (`answers-capture.ts`) can exclude a field whose
+ * `autocomplete` attribute marks it as identity (e.g. `autocomplete="name"`)
+ * WITHOUT duplicating the token→key literals in a second copy.
+ */
+export function matchAutocompleteKey(token: string): string | null {
+  switch (token) {
+    case 'email':
+      return 'email';
+    case 'tel':
+    case 'tel-national':
+    case 'tel-local':
+      return 'phone';
+    case 'given-name':
+      return 'firstName';
+    case 'family-name':
+      return 'lastName';
+    case 'name':
+      return 'fullName';
+    case 'url':
+      return 'website';
+    // Only the city-level address token maps to the single free-text location;
+    // street/postal/state/country sub-parts can't be filled from one string.
+    case 'address-level2':
+      return 'location';
+    default:
+      return null;
+  }
+}
+
 /**
  * Resolve a lowercased field {@link textSignal} to a known identity key, or
  * `null` when it doesn't unambiguously match one. This is autofill's "Tier 2"

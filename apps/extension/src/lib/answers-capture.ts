@@ -21,7 +21,15 @@
  * jsdom document.
  */
 
-import { AMBIGUOUS, isHidden, labelText, matchNamedKey, textSignal } from './field-signal';
+import {
+  AMBIGUOUS,
+  autocompleteToken,
+  isHidden,
+  labelText,
+  matchAutocompleteKey,
+  matchNamedKey,
+  textSignal,
+} from './field-signal';
 
 /** One captured question/answer pair. */
 export interface CapturedAnswer {
@@ -40,13 +48,17 @@ const CAPTURABLE_INPUT_TYPES = new Set(['text', '']);
 /** True when `el`'s free-text signal is visible, not on the ambiguous/
  *  sensitive denylist (the same discipline `autofill.ts`'s
  *  `isCandidateField` applies, minus autofill's fill-direction-only checks —
- *  autocomplete tokens, "already has a value"), AND not a known IDENTITY
- *  field (name/first/last/email/phone/linkedin/github/website/location, via
- *  the shared `matchNamedKey`) — a filled "Full Name" or "LinkedIn URL" text
- *  field is contact-profile data, not a genuine application question, and
- *  must never pollute `Application.answers`. */
+ *  "already has a value"), AND not a known IDENTITY field
+ *  (name/first/last/email/phone/linkedin/github/website/location) — via
+ *  EITHER the shared `matchNamedKey` free-text signal OR the field's own
+ *  `autocomplete` attribute mapped through autofill's Tier-1
+ *  `matchAutocompleteKey` — a filled "Full Name" text field, or one merely
+ *  marked `autocomplete="name"` under a quirky label, is contact-profile
+ *  data, not a genuine application question, and must never pollute
+ *  `Application.answers`. */
 function isCapturable(el: HTMLElement): boolean {
   if (isHidden(el)) return false;
+  if (matchAutocompleteKey(autocompleteToken(el)) !== null) return false;
   const signal = textSignal(el);
   if (AMBIGUOUS.some((w) => signal.includes(w))) return false;
   return matchNamedKey(signal) === null;
