@@ -423,6 +423,56 @@ describe('planAndFill – Tier-2 extra-link matching', () => {
     expect(val('d')).toBe('');
     expect(summary.skippedAmbiguous ?? 0).toBe(0);
   });
+
+  it('token-normalizes the generic-label denylist against punctuation/hyphen variants', () => {
+    // Matching is token-based, so a bare exact-string check on the denylist
+    // (e.g. "website!" not literally in the set) would let these slip through
+    // while still token-matching the plain field label.
+    const cases: Array<[linkLabel: string, fieldLabel: string]> = [
+      ['Website!', 'Website'],
+      ['Web-Site', 'Web Site'],
+      ['Personal-Site', 'Personal Site'],
+    ];
+    for (const [linkLabel, fieldLabel] of cases) {
+      setForm(`<label for="f">${fieldLabel}</label><input id="f" type="url" />`);
+      const summary = planAndFill(document, {
+        extraLinks: [{ label: linkLabel, url: 'https://example.com/x' }],
+      });
+      expect(val('f')).toBe('');
+      expect(summary.filledNothing).toBe(true);
+    }
+  });
+
+  it('fills BOTH fields when two fields share one label and one matching link exists', () => {
+    setForm(`
+      <label for="p1">Portfolio</label><input id="p1" type="url" />
+      <label for="p2">Portfolio</label><input id="p2" type="url" />
+    `);
+    const summary = planAndFill(document, PROFILE_WITH_LINKS);
+    expect(val('p1')).toBe('https://saeed.dev/work');
+    expect(val('p2')).toBe('https://saeed.dev/work');
+    expect(summary.skippedAmbiguous ?? 0).toBe(0);
+    expect(summary.filled).toContainEqual({
+      key: 'extraLink:Portfolio',
+      label: 'Portfolio',
+      count: 2,
+    });
+  });
+
+  it('matches a diacritic link label against an equivalent plain-ASCII field label (symmetry)', () => {
+    // The reverse of the "Stäck Overflöw" case above: here the LINK carries
+    // the diacritic and the FIELD is plain ASCII.
+    setForm(`<label for="up">Uberprofil</label><input id="up" type="url" />`);
+    const summary = planAndFill(document, {
+      extraLinks: [{ label: 'Überprofil', url: 'https://example.com/uber' }],
+    });
+    expect(val('up')).toBe('https://example.com/uber');
+    expect(summary.filled).toContainEqual({
+      key: 'extraLink:Überprofil',
+      label: 'Überprofil',
+      count: 1,
+    });
+  });
 });
 
 describe('renderSummaryOverlay', () => {
@@ -483,6 +533,21 @@ describe('renderSummaryOverlay', () => {
     });
     const overlay = document.getElementById('ajh-autofill-overlay');
     expect(overlay!.textContent).not.toContain('skipped');
+  });
+
+  it('suppresses the "no matchable fields" line when fields were skipped as ambiguous instead', () => {
+    // filledNothing + skippedAmbiguous both true reads as contradictory
+    // ("no matchable fields" + "N fields skipped") — the skipped-note alone
+    // already explains the outcome.
+    renderSummaryOverlay(document, {
+      filled: [],
+      nameSplit: null,
+      filledNothing: true,
+      skippedAmbiguous: 1,
+    });
+    const overlay = document.getElementById('ajh-autofill-overlay');
+    expect(overlay!.textContent).not.toContain('No matchable fields found');
+    expect(overlay!.textContent).toContain('1 field skipped');
   });
 });
 

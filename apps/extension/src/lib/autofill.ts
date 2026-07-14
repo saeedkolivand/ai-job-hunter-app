@@ -381,6 +381,20 @@ const GENERIC_LINK_LABELS = new Set([
   'portal',
 ]);
 
+/**
+ * {@link GENERIC_LINK_LABELS}, but run through {@link labelTokens} and
+ * re-joined with a single space — the same normalization the label/field
+ * matcher itself uses below. `matchExtraLink` matching is TOKEN-based (case,
+ * diacritics, and punctuation all stripped before comparison), so gating on
+ * the raw strings above would let a link labelled "Website!"/"Web-Site" slip
+ * past the denylist (its exact string isn't in the set) while still
+ * token-matching a bare "Website" field. Comparing tokenized-vs-tokenized
+ * keeps the two checks in lockstep.
+ */
+const GENERIC_LINK_LABEL_TOKENS = new Set(
+  Array.from(GENERIC_LINK_LABELS, (label) => labelTokens(label).join(' '))
+);
+
 /** Lowercase, diacritic-stripped, trimmed normalization for label matching.
  *  NFD-decomposes (é → e + ´) then strips every combining mark via the
  *  `\p{Diacritic}` Unicode property escape. */
@@ -436,10 +450,9 @@ function matchExtraLink(
       .filter(Boolean)
   );
   const matches = links.filter((link) => {
-    const norm = normalizeLabel(link.label);
-    if (!norm || GENERIC_LINK_LABELS.has(norm)) return false;
     const tokens = labelTokens(link.label);
-    return tokens.length > 0 && tokens.every((t) => signalTokens.has(t));
+    if (tokens.length === 0 || GENERIC_LINK_LABEL_TOKENS.has(tokens.join(' '))) return false;
+    return tokens.every((t) => signalTokens.has(t));
   });
   if (matches.length === 0) return { link: null, ambiguous: false };
   if (matches.length > 1) return { link: null, ambiguous: true };
@@ -546,9 +559,14 @@ export function renderSummaryOverlay(doc: Document, summary: AutofillSummary): v
   box.appendChild(title);
 
   if (summary.filledNothing) {
-    const p = doc.createElement('div');
-    p.textContent = 'No matchable fields found on this page. Nothing was changed.';
-    box.appendChild(p);
+    // Suppress this line when fields WERE skipped as ambiguous — the
+    // skipped-note below already explains the outcome; showing both reads as
+    // contradictory ("no matchable fields" + "N fields skipped").
+    if (!summary.skippedAmbiguous) {
+      const p = doc.createElement('div');
+      p.textContent = 'No matchable fields found on this page. Nothing was changed.';
+      box.appendChild(p);
+    }
   } else {
     const list = doc.createElement('div');
     for (const f of summary.filled) {
