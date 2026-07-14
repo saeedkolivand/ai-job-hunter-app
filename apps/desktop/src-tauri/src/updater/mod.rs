@@ -21,9 +21,7 @@ use parking_lot::Mutex;
 /// The Update object is stored across commands so the download URL and signature
 /// are never re-fetched, avoiding race conditions and unnecessary network calls.
 use std::sync::Arc;
-use std::time::Duration;
 
-use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
@@ -195,71 +193,116 @@ pub async fn updater_install(app: AppHandle) -> Value {
 // ── Changelog (release history) ────────────────────────────────────────────────
 
 /// Most recent releases to surface in the in-app changelog.
-const CHANGELOG_LIMIT: u32 = 15;
+const CHANGELOG_LIMIT: usize = 15;
 
-/// GitHub Releases API for this repo. The renderer's CSP forbids talking to GitHub
-/// directly, so the changelog is fetched here (Rust is not bound by the webview
-/// CSP) and returned over IPC, reusing the shared HTTP client.
-fn releases_api_url() -> String {
-    format!(
-        "https://api.github.com/repos/saeedkolivand/ai-job-hunter-app/releases?per_page={CHANGELOG_LIMIT}"
-    )
+/// The repo's own `CHANGELOG.md`, bundled into the binary at compile time — the
+/// changelog now works fully offline and makes no GitHub request (removes an
+/// egress path the old per-release API fetch had). `include_str!` makes rustc
+/// track the file for rebuilds like any other source dependency, no `build.rs`
+/// needed. `@semantic-release/changelog` (`.releaserc.json`) regenerates this
+/// file as part of the release commit, before the Tauri build step packages this
+/// binary — see the release workflow for the ordering.
+const CHANGELOG_MD: &str = include_str!("../../../../../CHANGELOG.md");
+
+/// One version section parsed out of [`CHANGELOG_MD`].
+struct ChangelogEntry {
+    version: String,
+    date: Option<String>,
+    body: String,
 }
 
-/// Subset of the GitHub release payload we surface.
-#[derive(Deserialize)]
-struct GithubRelease {
-    tag_name: String,
-    name: Option<String>,
-    body: Option<String>,
-    published_at: Option<String>,
-    html_url: String,
-    #[serde(default)]
-    prerelease: bool,
-    #[serde(default)]
-    draft: bool,
-}
+/// Splits a changelog document into per-version entries, in file order (the
+/// generator writes newest-first). `@semantic-release/changelog` writes headings
+/// shaped `## [x.y.z](compare-url) (YYYY-MM-DD)`; any other line — including a
+/// malformed or empty document — simply yields no entry for that line rather
+/// than erroring, so a reformatted/corrupted changelog degrades to fewer
+/// releases instead of panicking.
+fn parse_changelog(raw: &str) -> Vec<ChangelogEntry> {
+    let mut entries = Vec::new();
+    let mut current: Option<(String, Option<String>, usize)> = None;
+    let mut offset = 0usize;
 
-/// Recent release history (newest first) for the in-app changelog. Returns
-/// `{ releases: [...] }` or `{ error }` — never throws, so the UI can render a
-/// friendly empty/error state instead of only linking out to GitHub.
-#[tauri::command]
-pub async fn updater_changelog() -> Value {
-    let resp = crate::net::http::shared()
-        .get(releases_api_url())
-        .header("Accept", "application/vnd.github+json")
-        .timeout(Duration::from_secs(15))
-        .send()
-        .await;
-
-    let resp = match resp {
-        Ok(r) if r.status().is_success() => r,
-        Ok(r) => {
-            return json!({ "error": format!("Changelog unavailable (HTTP {}).", r.status().as_u16()) })
+    for line in raw.split_inclusive('\n') {
+        if let Some((version, date)) = parse_heading(line) {
+            if let Some((v, d, body_start)) = current.take() {
+                entries.push(ChangelogEntry {
+                    version: v,
+                    date: d,
+                    body: raw[body_start..offset].trim().to_string(),
+                });
+            }
+            current = Some((version, date, offset + line.len()));
         }
-        Err(e) => return json!({ "error": format!("Could not reach GitHub: {e}") }),
-    };
-
-    match resp.json::<Vec<GithubRelease>>().await {
-        Ok(releases) => {
-            let items: Vec<Value> = releases
-                .into_iter()
-                .filter(|r| !r.draft)
-                .map(|r| {
-                    json!({
-                        "version": r.tag_name.trim_start_matches('v'),
-                        "name": r.name,
-                        "body": r.body,
-                        "publishedAt": r.published_at,
-                        "url": r.html_url,
-                        "prerelease": r.prerelease,
-                    })
-                })
-                .collect();
-            json!({ "releases": items })
-        }
-        Err(e) => json!({ "error": format!("Could not parse changelog: {e}") }),
+        offset += line.len();
     }
+    if let Some((v, d, body_start)) = current {
+        entries.push(ChangelogEntry {
+            version: v,
+            date: d,
+            body: raw[body_start..].trim().to_string(),
+        });
+    }
+    entries
+}
+
+/// Parses one `## [x.y.z](...) (YYYY-MM-DD)` version heading line. `None` for any
+/// other line (subsection headings like `### Features`, prose, blank lines). This
+/// also deliberately excludes `@semantic-release/changelog`'s first-ever-release
+/// heading shape `## x.y.z` (no `[...]` link, since there's no prior tag to
+/// compare against) — harmless in practice, since `CHANGELOG_LIMIT` means the
+/// capped, newest-first list never reaches that far back.
+fn parse_heading(line: &str) -> Option<(String, Option<String>)> {
+    let rest = line.trim_end().strip_prefix("## [")?;
+    let (version, rest) = rest.split_once(']')?;
+    if !version.starts_with(|c: char| c.is_ascii_digit()) {
+        return None;
+    }
+    // Shape is `(compare-url) (YYYY-MM-DD)` — the date is the last `(...)`.
+    let date = rest
+        .rsplit_once('(')
+        .and_then(|(_, tail)| tail.strip_suffix(')'))
+        .filter(|d| d.len() == 10)
+        .map(str::to_string);
+    Some((version.to_string(), date))
+}
+
+/// Builds the `updater_changelog` reply from raw changelog text — split out from
+/// the command so tests can exercise the malformed/empty path without needing a
+/// separate on-disk fixture.
+fn changelog_response(raw: &str) -> Value {
+    let entries = parse_changelog(raw);
+    if entries.is_empty() {
+        return json!({ "error": "Changelog unavailable (bundled CHANGELOG.md has no releases)." });
+    }
+
+    let items: Vec<Value> = entries
+        .into_iter()
+        .take(CHANGELOG_LIMIT)
+        .map(|e| {
+            let url = format!(
+                "https://github.com/saeedkolivand/ai-job-hunter-app/releases/tag/v{}",
+                e.version
+            );
+            json!({
+                "version": e.version,
+                "name": null,
+                "body": e.body,
+                "publishedAt": e.date,
+                "url": url,
+                "prerelease": e.version.contains('-'),
+            })
+        })
+        .collect();
+    json!({ "releases": items })
+}
+
+/// Recent release history (newest first) for the in-app changelog, parsed from
+/// the bundled [`CHANGELOG_MD`] — no network call. Returns `{ releases: [...] }`
+/// or `{ error }` — never panics, so the UI can render a friendly empty/error
+/// state.
+#[tauri::command]
+pub fn updater_changelog() -> Value {
+    changelog_response(CHANGELOG_MD)
 }
 
 // ── Background polling ────────────────────────────────────────────────────────
