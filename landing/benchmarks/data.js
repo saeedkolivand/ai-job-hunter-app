@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783980337138,
+  "lastUpdate": 1784004247784,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4193,6 +4193,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 199339,
             "range": "± 12765",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "63994473b965ebeeb351474862737e769441dc38",
+          "message": "feat: add applied.check bridge verb with adaptive popup status (#631)\n\n* feat: add applied.check bridge verb with adaptive popup status\n\nImplements the reserved applied.check protocol verb end-to-end: the\npopup auto-checks the active tab URL on entering the connected phase\n(fire-and-forget, soft-fail silent) and the desktop answers with a pure\nread-only store lookup — canonical url, normalize, find by job url. The\npopup renders an already-in-pipeline status line and relabels the\nimport button. No protocol bump, no manifest changes, no consent gate\nneeded (device-local metadata over the authenticated loopback bridge).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: reset applied status line and import label on phase change\n\nClear the appliedCheck status line and import button label whenever the\nconnection leaves connected, and synchronously before each fresh check, so\nstale text from a prior page never flashes after a reconnect.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: include year in applied date when not current year\n\nformatShortDate omitted the year unconditionally, so an applied date from a\nprior year read ambiguously (e.g. \"Jun 12\"); add year:'numeric' when the\ndate's year differs from today's.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: guard applied auto-check against stale in-flight responses\n\nA disconnect->reconnect re-enters connected and fires a fresh\nappliedCheck while a previous one may still be in flight; without a\ngeneration guard the stale response (or its catch) could resolve\nafter the newer check and overwrite its rendered state. Add a\nmodule-level generation counter that bails before any DOM mutation\nin both the success and catch paths when a newer check has since\nstarted.\n\nAlso documents the consent-gate boundary (read-only own-metadata\nlookups need no desktop opt-in vs. fresh-PII/billable verbs that do)\nin extension-protocol-constants.ts, and notes the wire-error\nsentinel-text discipline on applied_result_reply's Err arm in the\nbridge (comment-only, no behavior change).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-14T06:34:20+02:00",
+          "tree_id": "595d022d7a5219d09f16225e19c3a195a703d556",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/63994473b965ebeeb351474862737e769441dc38"
+        },
+        "date": 1784004245300,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2060526,
+            "range": "± 70065",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2423789,
+            "range": "± 74433",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 225259,
+            "range": "± 7935",
             "unit": "ns/iter"
           }
         ]
