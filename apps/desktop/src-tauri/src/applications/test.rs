@@ -604,6 +604,141 @@ fn set_status_bumps_updated_at_and_appends_event() {
     assert_eq!(last_event.note, "moved to screening");
 }
 
+/// `transition_status_if` (the CAS the extension bridge's `status.update`
+/// guard relies on): a matching `from` transitions the row, appends exactly
+/// one status event, and sets `applied_at` — same field semantics as
+/// `set_status`.
+#[test]
+fn transition_status_if_matches_from_transitions_and_appends_event() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .upsert_for_origin(
+            "https://x.com/1",
+            "b",
+            &meta("C", "T"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+    let events_before = store.events(&id).len();
+
+    let ok = store
+        .transition_status_if(
+            &id,
+            ApplicationStatus::Saved,
+            ApplicationStatus::Applied,
+            Some("via extension"),
+        )
+        .unwrap();
+    assert!(ok, "a matching `from` must transition and return true");
+
+    let app = store.get(&id).unwrap();
+    assert_eq!(app.status, ApplicationStatus::Applied);
+    assert!(
+        app.applied_at.is_some(),
+        "applied_at must be set on saved -> applied"
+    );
+
+    let events_after = store.events(&id);
+    assert_eq!(
+        events_after.len(),
+        events_before + 1,
+        "exactly one event appended"
+    );
+    let last = events_after.last().unwrap();
+    assert_eq!(last.from_status, "saved");
+    assert_eq!(last.to_status, "applied");
+    assert_eq!(last.note, "via extension");
+}
+
+/// A `from` that does NOT match the row's current status is refused
+/// (`Ok(false)`) — no write, no event appended. This is the compare-and-set
+/// guard itself: it must never transition an unexpected starting status.
+#[test]
+fn transition_status_if_refuses_when_from_does_not_match_current_status() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store.track_manual("", "", &meta("C", "T")).unwrap(); // starts `applied`
+    let events_before = store.events(&id).len();
+
+    let ok = store
+        .transition_status_if(
+            &id,
+            ApplicationStatus::Saved,
+            ApplicationStatus::Applied,
+            Some("via extension"),
+        )
+        .unwrap();
+    assert!(!ok, "a from mismatch must refuse (Ok(false)), never write");
+
+    let app = store.get(&id).unwrap();
+    assert_eq!(
+        app.status,
+        ApplicationStatus::Applied,
+        "status must be unchanged"
+    );
+    assert_eq!(
+        store.events(&id).len(),
+        events_before,
+        "no event appended on refusal"
+    );
+}
+
+/// The lost-race scenario the review flagged: two callers race the same
+/// saved->applied transition. Only the FIRST succeeds; the SECOND must see
+/// `Ok(false)` (the guard lost the race) — never a second event, never a
+/// re-bumped `applied_at`.
+#[test]
+fn transition_status_if_second_racing_call_loses_and_appends_nothing() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .upsert_for_origin(
+            "https://race.example/1",
+            "b",
+            &meta("C", "T"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    let first = store
+        .transition_status_if(
+            &id,
+            ApplicationStatus::Saved,
+            ApplicationStatus::Applied,
+            Some("via extension"),
+        )
+        .unwrap();
+    assert!(first, "the first call wins the race");
+    let applied_at_after_first = store.get(&id).unwrap().applied_at;
+    let events_after_first = store.events(&id).len();
+
+    // Simulate the lost race: a second concurrent caller attempts the exact
+    // same saved -> applied transition after the first already committed.
+    let second = store
+        .transition_status_if(
+            &id,
+            ApplicationStatus::Saved,
+            ApplicationStatus::Applied,
+            Some("via extension"),
+        )
+        .unwrap();
+    assert!(!second, "the second call must lose the race (Ok(false))");
+
+    assert_eq!(
+        store.events(&id).len(),
+        events_after_first,
+        "the losing call must not append a second status event"
+    );
+    assert_eq!(
+        store.get(&id).unwrap().applied_at,
+        applied_at_after_first,
+        "the losing call must not bump applied_at again"
+    );
+}
+
 /// Parity guard: the Rust stage registry order/ids must match the shared-TS
 /// `APPLICATION_STAGES`. The expected list is HARD-CODED from the TS `as const`
 /// so any drift on either side fails the build (see

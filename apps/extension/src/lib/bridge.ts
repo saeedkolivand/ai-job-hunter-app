@@ -35,6 +35,7 @@ import {
   type ExtensionImportRequest,
   type ExtensionImportResult,
   type ExtensionProfileResult,
+  type ExtensionStatusUpdateResult,
 } from '@ajh/shared/extension-protocol';
 
 import { computeProof, constantTimeHexEqual, isValidNonceHex, randomNonceHex } from './handshake';
@@ -69,6 +70,7 @@ const READY_TIMEOUT_MS = 1_500;
 type PendingResolver = (result: ExtensionImportResult) => void;
 type ProfileResolver = (result: ExtensionProfileResult) => void;
 type AppliedResolver = (result: ExtensionAppliedCheckResult) => void;
+type StatusResolver = (result: ExtensionStatusUpdateResult) => void;
 
 export type BridgePhase = 'searching' | 'connected' | 'app_not_running' | 'outdated' | 'bad_token';
 
@@ -185,6 +187,36 @@ function normalizeAppliedCheckResult(payload: unknown): ExtensionAppliedCheckRes
   if (src.status !== undefined) out.status = src.status;
   if (src.title !== undefined) out.title = src.title;
   if (src.appliedAt !== undefined) out.appliedAt = src.appliedAt;
+  if (src.error !== undefined) out.error = src.error;
+  return out;
+}
+
+/**
+ * Hand-written guard for a `status.update` payload (extension stays
+ * zod-free). Mirrors `ExtensionStatusUpdateResultSchema`: `ok` must be a
+ * boolean; every other field is an optional string.
+ */
+function isExtensionStatusUpdateResult(v: unknown): v is ExtensionStatusUpdateResult {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  const optStr = (x: unknown): boolean => x === undefined || typeof x === 'string';
+  return (
+    typeof o.ok === 'boolean' && optStr(o.applicationId) && optStr(o.status) && optStr(o.error)
+  );
+}
+
+/** Rebuild an {@link ExtensionStatusUpdateResult} from only the known,
+ *  defined keys — mirrors `normalizeAppliedCheckResult`. UNLIKE that
+ *  malformed-reply fallback, this verb's errors are surfaced to the user, so
+ *  the fallback text is written the same way: `ok:false` + a plain `error`. */
+function normalizeStatusUpdateResult(payload: unknown): ExtensionStatusUpdateResult {
+  if (!isExtensionStatusUpdateResult(payload)) {
+    return { ok: false, error: 'The desktop app sent a malformed status-update result.' };
+  }
+  const src = payload;
+  const out: ExtensionStatusUpdateResult = { ok: src.ok };
+  if (src.applicationId !== undefined) out.applicationId = src.applicationId;
+  if (src.status !== undefined) out.status = src.status;
   if (src.error !== undefined) out.error = src.error;
   return out;
 }
@@ -340,6 +372,9 @@ export class BridgeClient {
   /** In-flight `applied.check` resolvers, correlated by `reqId`. Kept separate
    *  from {@link pending} for the same reason as {@link pendingProfile}. */
   private readonly pendingApplied = new Map<string, AppliedResolver>();
+  /** In-flight `status.update` resolvers, correlated by `reqId`. Kept separate
+   *  from {@link pending} for the same reason as {@link pendingProfile}. */
+  private readonly pendingStatus = new Map<string, StatusResolver>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private backoffIndex = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -481,6 +516,7 @@ export class BridgeClient {
     this.pending.clear();
     this.pendingProfile.clear();
     this.pendingApplied.clear();
+    this.pendingStatus.clear();
     this.transport?.close();
     this.transport = null;
   }
@@ -612,6 +648,48 @@ export class BridgeClient {
         clearTimeout(timer);
         this.timers.delete(reqId);
         this.pendingApplied.delete(reqId);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
+  /**
+   * Send a `status.update { url, to: 'applied' }` and resolve with the
+   * validated `status.update` payload. Rejects only on no connection /
+   * timeout / send failure — UNLIKE `checkApplied`, a well-formed `ok:false`
+   * reply is NOT folded away here: this is a deliberate click action, so the
+   * caller (background.ts) must pass the `error` straight through to the
+   * popup instead of swallowing it.
+   */
+  async updateStatus(url: string): Promise<ExtensionStatusUpdateResult> {
+    await this.ensureConnected();
+    if (this.phase !== 'connected' || !this.transport) {
+      throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
+    }
+    const transport = this.transport;
+
+    const reqId = newReqId();
+    const envelope: ExtensionEnvelope = {
+      type: EXTENSION_MESSAGE_TYPES.statusUpdate,
+      reqId,
+      payload: { url, to: 'applied' },
+    };
+
+    return new Promise<ExtensionStatusUpdateResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingStatus.delete(reqId);
+        this.timers.delete(reqId);
+        reject(new Error('Timed out waiting for the desktop app to respond.'));
+      }, REQUEST_TIMEOUT_MS);
+      this.timers.set(reqId, timer);
+      this.pendingStatus.set(reqId, resolve);
+
+      try {
+        transport.send(envelope);
+      } catch (err) {
+        clearTimeout(timer);
+        this.timers.delete(reqId);
+        this.pendingStatus.delete(reqId);
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     });
@@ -894,6 +972,16 @@ export class BridgeClient {
       return;
     }
 
+    // status.result → the "mark as applied" outcome (separate map).
+    if (env.type === EXTENSION_MESSAGE_TYPES.statusResult) {
+      const resolveStatus = this.pendingStatus.get(reqId);
+      if (typeof resolveStatus !== 'function') return;
+      this.pendingStatus.delete(reqId);
+      this.clearTimer(reqId);
+      resolveStatus(normalizeStatusUpdateResult(env.payload));
+      return;
+    }
+
     if (env.type !== EXTENSION_MESSAGE_TYPES.importResult) return;
     const resolve = this.pending.get(reqId);
     if (typeof resolve !== 'function') return;
@@ -938,9 +1026,15 @@ export class BridgeClient {
       if (timer) clearTimeout(timer);
       resolve({ found: false, error: reason });
     }
+    for (const [reqId, resolve] of this.pendingStatus.entries()) {
+      const timer = this.timers.get(reqId);
+      if (timer) clearTimeout(timer);
+      resolve({ ok: false, error: reason });
+    }
     this.pending.clear();
     this.pendingProfile.clear();
     this.pendingApplied.clear();
+    this.pendingStatus.clear();
     this.timers.clear();
   }
 

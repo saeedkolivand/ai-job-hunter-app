@@ -31,6 +31,8 @@ import {
   type ExtensionImportResult,
   type ExtensionMessageType,
   type ExtensionProfileResult,
+  type ExtensionStatusUpdateRequest,
+  type ExtensionStatusUpdateResult,
   HANDSHAKE_DOMAIN,
   HANDSHAKE_TEST_VECTOR,
   handshakeMessage,
@@ -51,6 +53,8 @@ export {
   type ExtensionImportResult,
   type ExtensionMessageType,
   type ExtensionProfileResult,
+  type ExtensionStatusUpdateRequest,
+  type ExtensionStatusUpdateResult,
   HANDSHAKE_DOMAIN,
   HANDSHAKE_TEST_VECTOR,
   handshakeMessage,
@@ -70,6 +74,8 @@ export const ExtensionMessageTypeSchema = z.enum([
   EXTENSION_MESSAGE_TYPES.matchLive,
   EXTENSION_MESSAGE_TYPES.appliedCheck,
   EXTENSION_MESSAGE_TYPES.appliedResult,
+  EXTENSION_MESSAGE_TYPES.statusUpdate,
+  EXTENSION_MESSAGE_TYPES.statusResult,
 ]) satisfies z.ZodType<ExtensionMessageType>;
 
 /** `hello` payload (handshake step 1). No token — the proof authenticates later. */
@@ -157,6 +163,28 @@ export const ExtensionAppliedCheckResultSchema = z.object({
   appliedAt: z.number().optional(),
   error: z.string().optional(),
 }) satisfies z.ZodType<ExtensionAppliedCheckResult>;
+
+/**
+ * `status.update` payload — the url to mark applied. `to` is a literal, not a
+ * free string: the allowlist is visible in the contract itself, not just the
+ * Rust re-validation. Mirrors {@link ExtensionStatusUpdateRequest}.
+ */
+export const ExtensionStatusUpdateRequestSchema = z.object({
+  url: z.string().min(1),
+  to: z.literal('applied'),
+}) satisfies z.ZodType<ExtensionStatusUpdateRequest>;
+
+/**
+ * `status.update` payload. Mirrors {@link ExtensionStatusUpdateResult} —
+ * `ok` is required; the rest are optional (success carries
+ * `applicationId`/`status`, failure carries `error`).
+ */
+export const ExtensionStatusUpdateResultSchema = z.object({
+  ok: z.boolean(),
+  applicationId: z.string().optional(),
+  status: z.string().optional(),
+  error: z.string().optional(),
+}) satisfies z.ZodType<ExtensionStatusUpdateResult>;
 
 /**
  * The transport envelope every frame is wrapped in. `payload` is left as

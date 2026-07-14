@@ -746,6 +746,55 @@ impl ApplicationStore {
         Ok(())
     }
 
+    /// Atomic compare-and-set: transition an Application's status ONLY if its
+    /// CURRENT status is exactly `from` — the read-check-write happens under
+    /// ONE lock/transaction (`UPDATE ... WHERE id=? AND status=?`), unlike a
+    /// caller doing its own `.get()` status check and then calling
+    /// [`Self::set_status`] (which re-locks separately and writes
+    /// unconditionally) — that pattern can lose a race between the check and
+    /// the write. `pub(crate)`: the extension bridge's `status.update` guard is
+    /// the first caller (`extension_bridge::status_update::resolve_status_update`).
+    ///
+    /// Returns `Ok(true)` iff exactly one row matched `from` and was
+    /// transitioned (with its status event appended, same transaction);
+    /// `Ok(false)` when zero rows matched (no such id, or its status had
+    /// already moved off `from` since the caller last checked — never a
+    /// partial write). Mirrors `set_status`'s field semantics for the matched
+    /// row: `updated_at` always bumps; `applied_at` is set to now only when
+    /// `to == Applied` (this method's only caller today is the narrow
+    /// `saved -> applied` transition, where the row can never already carry an
+    /// `applied_at`); the event's `note` defaults to `""` when `None`.
+    pub(crate) fn transition_status_if(
+        &self,
+        id: &str,
+        from: ApplicationStatus,
+        to: ApplicationStatus,
+        note: Option<&str>,
+    ) -> AppResult<bool> {
+        let now = now_ms();
+        let mut guard = self.conn.lock();
+        let tx = guard.transaction()?;
+        let rows = if to == ApplicationStatus::Applied {
+            tx.execute(
+                "UPDATE applications SET status = ?2, applied_at = ?3, updated_at = ?4
+                 WHERE id = ?1 AND status = ?5",
+                params![id, to.as_id(), ts_to_db(now), ts_to_db(now), from.as_id()],
+            )?
+        } else {
+            tx.execute(
+                "UPDATE applications SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4",
+                params![id, to.as_id(), ts_to_db(now), from.as_id()],
+            )?
+        };
+        if rows == 0 {
+            tx.commit()?;
+            return Ok(false);
+        }
+        Self::append_event_conn(&tx, id, from.as_id(), to.as_id(), note.unwrap_or(""), now);
+        tx.commit()?;
+        Ok(true)
+    }
+
     /// Patch the user-editable tracking fields. Each `None` leaves its field
     /// unchanged; bumps `updated_at` whenever called.
     #[allow(clippy::too_many_arguments)]

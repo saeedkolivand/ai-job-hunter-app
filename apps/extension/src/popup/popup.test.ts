@@ -45,6 +45,7 @@ function buildPopupDom(): void {
     <div id="view-searching"></div>
     <button id="btn-import"></button>
     <button id="btn-fill"></button>
+    <button id="btn-mark-applied" hidden></button>
     <p id="applied-status" hidden></p>
     <input id="chk-applied" type="checkbox" />
     <p id="import-msg"></p>
@@ -73,6 +74,8 @@ const {
   resolveFillResponse,
   resolveAppliedStatusLine,
   resolveImportButtonLabel,
+  resolveShowMarkAppliedButton,
+  resolveMarkAppliedResponse,
 } = await import('./popup');
 
 const sendMessageMock = vi.mocked(browser.runtime.sendMessage);
@@ -444,6 +447,113 @@ describe('resolveImportButtonLabel', () => {
       result: { found: true, status: 'saved' },
     };
     expect(resolveImportButtonLabel(res)).toBe('Re-import / update');
+  });
+});
+
+// ── resolveShowMarkAppliedButton ───────────────────────────────────────────────
+
+describe('resolveShowMarkAppliedButton', () => {
+  it('returns false for a non-appliedCheck response', () => {
+    const res = { ok: true as const, kind: 'token' as const };
+    expect(resolveShowMarkAppliedButton(res)).toBe(false);
+  });
+
+  it('returns false when ok is false', () => {
+    const res = { ok: false as const, error: 'boom' };
+    expect(resolveShowMarkAppliedButton(res)).toBe(false);
+  });
+
+  it('returns false when not found', () => {
+    const res = { ok: true as const, kind: 'appliedCheck' as const, result: { found: false } };
+    expect(resolveShowMarkAppliedButton(res)).toBe(false);
+  });
+
+  it('returns false when the result carries an error', () => {
+    const res = {
+      ok: true as const,
+      kind: 'appliedCheck' as const,
+      result: { found: false, error: 'malformed' },
+    };
+    expect(resolveShowMarkAppliedButton(res)).toBe(false);
+  });
+
+  it('returns true for a found + saved result', () => {
+    const res = {
+      ok: true as const,
+      kind: 'appliedCheck' as const,
+      result: { found: true, status: 'saved' },
+    };
+    expect(resolveShowMarkAppliedButton(res)).toBe(true);
+  });
+
+  it('returns true for a found result with no status (treated as saved)', () => {
+    const res = { ok: true as const, kind: 'appliedCheck' as const, result: { found: true } };
+    expect(resolveShowMarkAppliedButton(res)).toBe(true);
+  });
+
+  it('returns false for a found + already-applied result', () => {
+    const res = {
+      ok: true as const,
+      kind: 'appliedCheck' as const,
+      result: { found: true, status: 'applied' },
+    };
+    expect(resolveShowMarkAppliedButton(res)).toBe(false);
+  });
+
+  it('returns false for a found + mid-pipeline result', () => {
+    const res = {
+      ok: true as const,
+      kind: 'appliedCheck' as const,
+      result: { found: true, status: 'interviewing' },
+    };
+    expect(resolveShowMarkAppliedButton(res)).toBe(false);
+  });
+});
+
+// ── resolveMarkAppliedResponse ─────────────────────────────────────────────────
+
+describe('resolveMarkAppliedResponse', () => {
+  it('surfaces a transport-level error (unlike the passive appliedCheck fold)', () => {
+    const res = { ok: false as const, error: 'Desktop app not reachable.' };
+    const { text, tone } = resolveMarkAppliedResponse(res);
+    expect(tone).toBe('err');
+    expect(text).toBe('Desktop app not reachable.');
+  });
+
+  it('returns the unexpected-response error when kind is not statusUpdate', () => {
+    const res = { ok: true as const, kind: 'token' as const };
+    const { text, tone } = resolveMarkAppliedResponse(res);
+    expect(tone).toBe('err');
+    expect(text).toBe('Unexpected response — please retry.');
+  });
+
+  it('surfaces the desktop refusal text when result.ok is false', () => {
+    const res = {
+      ok: true as const,
+      kind: 'statusUpdate' as const,
+      result: { ok: false, error: "couldn't find a saved job for this page" },
+    };
+    const { text, tone } = resolveMarkAppliedResponse(res);
+    expect(tone).toBe('err');
+    expect(text).toBe("couldn't find a saved job for this page");
+  });
+
+  it('falls back to a generic refusal message when result.ok is false with no error text', () => {
+    const res = { ok: true as const, kind: 'statusUpdate' as const, result: { ok: false } };
+    const { text, tone } = resolveMarkAppliedResponse(res);
+    expect(tone).toBe('err');
+    expect(text).toBe('Could not mark this job as applied.');
+  });
+
+  it('reports success when result.ok is true', () => {
+    const res = {
+      ok: true as const,
+      kind: 'statusUpdate' as const,
+      result: { ok: true, applicationId: 'app-1', status: 'applied' },
+    };
+    const { text, tone } = resolveMarkAppliedResponse(res);
+    expect(tone).toBe('ok');
+    expect(text).toBe('Marked as applied.');
   });
 });
 
@@ -820,6 +930,21 @@ describe('appliedCheck auto-check', () => {
     expect(status.hidden).toBe(false);
     expect(status.textContent).toContain('Already in your pipeline');
     expect(byId<HTMLButtonElement>('btn-import').textContent).toBe('Re-import / update');
+    // Already applied — the mark-applied button has nothing left to do.
+    expect(byId<HTMLButtonElement>('btn-mark-applied').hidden).toBe(true);
+  });
+
+  it('shows the mark-applied button for a found+saved result', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'appliedCheck',
+      result: { found: true, status: 'saved' },
+    });
+
+    push('connected');
+    await flush();
+
+    expect(byId<HTMLButtonElement>('btn-mark-applied').hidden).toBe(false);
   });
 
   it('renders nothing and keeps the default button label when not found', async () => {
@@ -876,14 +1001,17 @@ describe('appliedCheck auto-check', () => {
 
     const status = byId<HTMLParagraphElement>('applied-status');
     const btnImport = byId<HTMLButtonElement>('btn-import');
+    const btnMarkApplied = byId<HTMLButtonElement>('btn-mark-applied');
     expect(status.hidden).toBe(false);
     expect(btnImport.textContent).toBe('Re-import / update');
+    expect(btnMarkApplied.hidden).toBe(true); // job A is already applied
 
     // Desktop drops the connection — job A's stale line/label must not survive.
     push('app_not_running');
     expect(status.hidden).toBe(true);
     expect(status.textContent).toBe('');
     expect(btnImport.textContent).toBe('Import this job');
+    expect(btnMarkApplied.hidden).toBe(true);
 
     // Reconnect for job B — before its own check resolves, the pre-resolve
     // state must already be clean (no lingering job-A text while it's in flight).
@@ -896,6 +1024,10 @@ describe('appliedCheck auto-check', () => {
     expect(status.hidden).toBe(true);
     expect(status.textContent).toBe('');
     expect(btnImport.textContent).toBe('Import this job');
+    expect(btnMarkApplied.hidden).toBe(true);
+    await flush();
+    // Job B's check resolves as found+saved — the button appears for it.
+    expect(btnMarkApplied.hidden).toBe(false);
   });
 
   it('ignores a stale in-flight response that resolves after a newer check has already rendered', async () => {
@@ -931,5 +1063,81 @@ describe('appliedCheck auto-check', () => {
 
     expect(status.textContent).toBe('“Job B” is saved in your pipeline.');
     expect(btnImport.textContent).toBe('Re-import / update');
+  });
+});
+
+// ── doMarkApplied (#btn-mark-applied) ─────────────────────────────────────────
+
+describe('doMarkApplied (#btn-mark-applied)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  beforeEach(() => {
+    sendMessageMock.mockReset();
+    byId<HTMLButtonElement>('btn-mark-applied').hidden = false;
+    byId<HTMLButtonElement>('btn-mark-applied').disabled = false;
+    byId<HTMLParagraphElement>('import-msg').textContent = '';
+  });
+
+  it('shows "Marking as applied…" then re-fires the auto-check on success, hiding the button', async () => {
+    sendMessageMock
+      .mockResolvedValueOnce({
+        ok: true,
+        kind: 'statusUpdate',
+        result: { ok: true, applicationId: 'app-1', status: 'applied' },
+      })
+      // The success-path re-fire of runAppliedAutoCheck sends a SECOND
+      // request — the same generation-guarded path every other render goes
+      // through, never a hand-rolled DOM update.
+      .mockResolvedValueOnce({
+        ok: true,
+        kind: 'appliedCheck',
+        result: { found: true, status: 'applied' },
+      });
+
+    const btn = byId<HTMLButtonElement>('btn-mark-applied');
+    btn.click();
+    expect(btn.disabled).toBe(true);
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe('Marking as applied…');
+
+    await flush();
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe('Marked as applied.');
+    expect(sendMessageMock).toHaveBeenNthCalledWith(1, { kind: 'statusUpdate' });
+    expect(sendMessageMock).toHaveBeenNthCalledWith(2, { kind: 'appliedCheck' });
+    // The re-fired auto-check's found+applied result hides the button.
+    expect(btn.hidden).toBe(true);
+  });
+
+  it('surfaces the desktop refusal text and re-enables the button (errors ARE shown, unlike the passive check)', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'statusUpdate',
+      result: { ok: false, error: "couldn't find a saved job for this page" },
+    });
+
+    const btn = byId<HTMLButtonElement>('btn-mark-applied');
+    btn.click();
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      "couldn't find a saved job for this page"
+    );
+    expect(btn.disabled).toBe(false);
+    // No auto-check re-fire on failure — only one request went out.
+    expect(sendMessageMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a retry message and re-enables the button when sendMessage rejects', async () => {
+    sendMessageMock.mockRejectedValueOnce(new Error('message channel closed'));
+
+    const btn = byId<HTMLButtonElement>('btn-mark-applied');
+    btn.click();
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Could not mark this job as applied. Please retry.'
+    );
+    expect(btn.disabled).toBe(false);
   });
 });

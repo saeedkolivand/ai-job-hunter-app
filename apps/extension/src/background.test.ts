@@ -34,6 +34,7 @@ const mockClient = vi.hoisted(() => ({
   importJob: vi.fn(),
   getProfile: vi.fn(),
   checkApplied: vi.fn(),
+  updateStatus: vi.fn(),
 }));
 
 vi.mock('@wxt-dev/browser', () => ({
@@ -93,6 +94,7 @@ beforeEach(() => {
   mockClient.getProfile.mockReset();
   mockClient.importJob.mockReset();
   mockClient.checkApplied.mockReset();
+  mockClient.updateStatus.mockReset();
 });
 
 // ── not-paired short-circuit ────────────────────────────────────────────────
@@ -250,5 +252,72 @@ describe('appliedCheck request', () => {
 
     expect(res).toEqual({ ok: true, kind: 'appliedCheck', result: { found: false } });
     expect(mockClient.checkApplied).not.toHaveBeenCalled();
+  });
+});
+
+// ── statusUpdate request — errors are NOT folded (unlike appliedCheck) ────────
+
+describe('statusUpdate request', () => {
+  it('returns the updateStatus success result', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.updateStatus.mockResolvedValue({
+      ok: true,
+      applicationId: 'app-1',
+      status: 'applied',
+    });
+
+    const res = await send({ kind: 'statusUpdate' });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'statusUpdate',
+      result: { ok: true, applicationId: 'app-1', status: 'applied' },
+    });
+    expect(mockClient.updateStatus).toHaveBeenCalledWith('https://jobs.example.com/posting/9');
+  });
+
+  it('passes a desktop-side refusal straight through as result (never folds it, unlike appliedCheck)', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/none' } as never,
+    ]);
+    mockClient.updateStatus.mockResolvedValue({
+      ok: false,
+      error: "couldn't find a saved job for this page",
+    });
+
+    const res = await send({ kind: 'statusUpdate' });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'statusUpdate',
+      result: { ok: false, error: "couldn't find a saved job for this page" },
+    });
+  });
+
+  it('surfaces a transport-level rejection as ok:false at the OUTER level (UNLIKE appliedCheck, which folds every rejection)', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.updateStatus.mockRejectedValue(
+      new Error('Desktop app not reachable. Is AI Job Hunter running?')
+    );
+
+    const res = await send({ kind: 'statusUpdate' });
+
+    expect(res).toEqual({
+      ok: false,
+      error: 'Desktop app not reachable. Is AI Job Hunter running?',
+    });
+  });
+
+  it('surfaces "Could not read the current tab URL." when there is no active tab, without calling updateStatus', async () => {
+    tabsQueryMock.mockResolvedValue([]);
+
+    const res = await send({ kind: 'statusUpdate' });
+
+    expect(res).toEqual({ ok: false, error: 'Could not read the current tab URL.' });
+    expect(mockClient.updateStatus).not.toHaveBeenCalled();
   });
 });

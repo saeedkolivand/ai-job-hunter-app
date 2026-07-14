@@ -223,6 +223,21 @@ async function runAppliedCheck(): Promise<PopupResponse> {
   }
 }
 
+/**
+ * User-clicked "Mark as applied" for the active tab's URL. UNLIKE
+ * `runAppliedCheck`, failures are NOT folded away here: a transport-level
+ * rejection (not paired, bridge unreachable, timeout) propagates up to
+ * `handleRequest`'s outer catch as `{ ok: false, error }`, and a resolved
+ * desktop-side refusal (`{ ok: false, error }` — no match / wrong starting
+ * status / unsupported transition) still passes straight through as `result`
+ * — this is a deliberate click action, so the user must see why it failed.
+ */
+async function runStatusUpdate(): Promise<PopupResponse> {
+  const url = await activeTabUrl();
+  const result = await getClient().updateStatus(url);
+  return { ok: true, kind: 'statusUpdate', result };
+}
+
 /** Central popup-request dispatcher. Never throws — maps errors to `ok:false`. */
 async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
   try {
@@ -263,6 +278,8 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
         return await runFill();
       case 'appliedCheck':
         return await runAppliedCheck();
+      case 'statusUpdate':
+        return await runStatusUpdate();
       default: {
         // Exhaustiveness guard — a new PopupRequest variant must be handled.
         const _never: never = req;

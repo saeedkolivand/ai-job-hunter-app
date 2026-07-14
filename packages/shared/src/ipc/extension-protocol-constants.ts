@@ -40,14 +40,18 @@ export const EXTENSION_PROTOCOL_VERSION = 2;
  * is the force-cutover reply the desktop sends when a connection's first frame
  * is not a valid v2 `hello` (a legacy token `auth`, a missing/older protocol).
  * `import.request` / `import.result` / `profile.get` / `profile.result` /
- * `applied.check` / `applied.result` are the post-auth application frames;
- * `match.live` is **reserved** (fixed now so a future build can add a handler
- * without a protocol bump).
+ * `applied.check` / `applied.result` / `status.update` / `status.result` are
+ * the post-auth application frames; `match.live` is **reserved** (fixed now
+ * so a future build can add a handler without a protocol bump).
  *
- * **Consent-gate boundary** (the rule the next 9 post-auth verbs copy): a
+ * **Consent-gate boundary** (the rule the remaining post-auth verbs copy): a
  * read-only lookup over the user's own device-local metadata (`applied.check`)
- * needs no desktop opt-in gate; anything returning fresh PII (`profile.get`)
- * or doing billable/egress work requires a desktop-enforced opt-in.
+ * needs no desktop opt-in gate; a user-gestured WRITE to the user's own local
+ * store on an exact match (`status.update`) needs no gate either — it is a
+ * deliberate click, not a passive/background write, exactly like the
+ * existing ungated `import.request{applied:true}`; anything returning fresh
+ * PII (`profile.get`) or doing billable/egress work requires a
+ * desktop-enforced opt-in.
  */
 export const EXTENSION_MESSAGE_TYPES = {
   /** Extension → desktop: handshake step 1 — `{ protocol, clientNonce }`, no token. */
@@ -90,6 +94,21 @@ export const EXTENSION_MESSAGE_TYPES = {
   appliedCheck: 'applied.check',
   /** Desktop → extension: the `applied.check` outcome (or an `error`). */
   appliedResult: 'applied.result',
+  /**
+   * Extension → desktop: "mark this URL applied" — a user-gestured WRITE,
+   * structurally restricted to the single `saved → applied` transition on an
+   * EXACT normalized-url match (see {@link ExtensionStatusUpdateRequest}). No
+   * consent gate: a deliberate click writing to the user's own local store,
+   * strictly narrower than the already-ungated `import.request{applied:true}`.
+   */
+  statusUpdate: 'status.update',
+  /**
+   * Desktop → extension: the `status.update` outcome. UNLIKE
+   * `applied.result`, this verb's errors are user-facing — the popup must
+   * render `error`, never fold it into a silent no-op (it answers a
+   * deliberate click, not a passive background check).
+   */
+  statusResult: 'status.result',
 } as const;
 
 /** Union of all wire `type` strings. */
@@ -242,6 +261,31 @@ export interface ExtensionAppliedCheckResult {
   status?: string;
   title?: string;
   appliedAt?: number;
+  error?: string;
+}
+
+/**
+ * `status.update` payload — mark a `saved` Application `applied` on an exact
+ * URL-key match. `to` is narrowed to the literal `'applied'` in both this
+ * schema and the Rust re-validation: the verb is structurally incapable of
+ * any other transition (no allowlist to bypass — there is only one value).
+ */
+export interface ExtensionStatusUpdateRequest {
+  url: string;
+  to: 'applied';
+}
+
+/**
+ * `status.update` payload. `ok:true` carries the updated `applicationId` +
+ * `status` (always `"applied"`); `ok:false` carries a user-facing `error`
+ * (no match / the row's status was not `saved` / a malformed request).
+ * UNLIKE {@link ExtensionAppliedCheckResult}, this verb's errors ARE shown to
+ * the user — it answers a deliberate click, not a passive background check.
+ */
+export interface ExtensionStatusUpdateResult {
+  ok: boolean;
+  applicationId?: string;
+  status?: string;
   error?: string;
 }
 
