@@ -175,16 +175,15 @@ export const ExtensionStatusUpdateRequestSchema = z.object({
 }) satisfies z.ZodType<ExtensionStatusUpdateRequest>;
 
 /**
- * `status.update` payload. Mirrors {@link ExtensionStatusUpdateResult} —
- * `ok` is required; the rest are optional (success carries
- * `applicationId`/`status`, failure carries `error`).
+ * `status.update` payload. Mirrors {@link ExtensionStatusUpdateResult} — a
+ * discriminated union on `ok` so success/failure fields can never mix:
+ * `ok:true` requires `applicationId` + the literal `status: 'applied'`;
+ * `ok:false` requires `error`.
  */
-export const ExtensionStatusUpdateResultSchema = z.object({
-  ok: z.boolean(),
-  applicationId: z.string().optional(),
-  status: z.string().optional(),
-  error: z.string().optional(),
-}) satisfies z.ZodType<ExtensionStatusUpdateResult>;
+export const ExtensionStatusUpdateResultSchema = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true), applicationId: z.string(), status: z.literal('applied') }),
+  z.object({ ok: z.literal(false), error: z.string() }),
+]) satisfies z.ZodType<ExtensionStatusUpdateResult>;
 
 /**
  * The transport envelope every frame is wrapped in. `payload` is left as

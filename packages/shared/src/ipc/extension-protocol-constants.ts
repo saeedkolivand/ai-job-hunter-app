@@ -276,18 +276,16 @@ export interface ExtensionStatusUpdateRequest {
 }
 
 /**
- * `status.update` payload. `ok:true` carries the updated `applicationId` +
- * `status` (always `"applied"`); `ok:false` carries a user-facing `error`
- * (no match / the row's status was not `saved` / a malformed request).
- * UNLIKE {@link ExtensionAppliedCheckResult}, this verb's errors ARE shown to
- * the user — it answers a deliberate click, not a passive background check.
+ * `status.update` payload — a discriminated union so a reply can never mix
+ * success and failure fields: `ok:true` always carries the updated
+ * `applicationId` + `status` (the literal `'applied'`); `ok:false` always
+ * carries a user-facing `error` (no match / the row's status was not `saved`
+ * / a malformed request). UNLIKE {@link ExtensionAppliedCheckResult}, this
+ * verb's errors ARE shown to the user — it answers a deliberate click, not a
+ * passive background check.
  */
-export interface ExtensionStatusUpdateResult {
-  ok: boolean;
-  applicationId?: string;
-  status?: string;
-  error?: string;
-}
+export type ExtensionStatusUpdateResult =
+  { ok: true; applicationId: string; status: 'applied' } | { ok: false; error: string };
 
 /**
  * The transport envelope every frame is wrapped in. `payload` is left as

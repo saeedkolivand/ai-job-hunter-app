@@ -193,16 +193,17 @@ function normalizeAppliedCheckResult(payload: unknown): ExtensionAppliedCheckRes
 
 /**
  * Hand-written guard for a `status.update` payload (extension stays
- * zod-free). Mirrors `ExtensionStatusUpdateResultSchema`: `ok` must be a
- * boolean; every other field is an optional string.
+ * zod-free). Mirrors `ExtensionStatusUpdateResultSchema`'s discriminated
+ * union: `ok:true` requires a string `applicationId` + the literal
+ * `status: 'applied'`; `ok:false` requires a string `error`. Success and
+ * failure fields can never mix.
  */
 function isExtensionStatusUpdateResult(v: unknown): v is ExtensionStatusUpdateResult {
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Record<string, unknown>;
-  const optStr = (x: unknown): boolean => x === undefined || typeof x === 'string';
-  return (
-    typeof o.ok === 'boolean' && optStr(o.applicationId) && optStr(o.status) && optStr(o.error)
-  );
+  if (o.ok === true) return typeof o.applicationId === 'string' && o.status === 'applied';
+  if (o.ok === false) return typeof o.error === 'string';
+  return false;
 }
 
 /** Rebuild an {@link ExtensionStatusUpdateResult} from only the known,
@@ -213,12 +214,9 @@ function normalizeStatusUpdateResult(payload: unknown): ExtensionStatusUpdateRes
   if (!isExtensionStatusUpdateResult(payload)) {
     return { ok: false, error: 'The desktop app sent a malformed status-update result.' };
   }
-  const src = payload;
-  const out: ExtensionStatusUpdateResult = { ok: src.ok };
-  if (src.applicationId !== undefined) out.applicationId = src.applicationId;
-  if (src.status !== undefined) out.status = src.status;
-  if (src.error !== undefined) out.error = src.error;
-  return out;
+  return payload.ok
+    ? { ok: true, applicationId: payload.applicationId, status: payload.status }
+    : { ok: false, error: payload.error };
 }
 
 // ── transport seam ──────────────────────────────────────────────────────────

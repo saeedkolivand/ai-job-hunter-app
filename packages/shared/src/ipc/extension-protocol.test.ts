@@ -313,6 +313,32 @@ describe('ExtensionStatusUpdateResultSchema', () => {
     expect(() => ExtensionStatusUpdateResultSchema.parse({ ok: 'yes' })).toThrow();
   });
 
+  it('rejects an incomplete ok:true payload missing applicationId and status', () => {
+    expect(() => ExtensionStatusUpdateResultSchema.parse({ ok: true })).toThrow();
+  });
+
+  it('rejects an ok:true payload missing status', () => {
+    expect(() =>
+      ExtensionStatusUpdateResultSchema.parse({ ok: true, applicationId: 'app-1' })
+    ).toThrow();
+  });
+
+  it('rejects an ok:true payload missing applicationId', () => {
+    expect(() =>
+      ExtensionStatusUpdateResultSchema.parse({ ok: true, status: 'applied' })
+    ).toThrow();
+  });
+
+  it('rejects a contradictory ok:false payload carrying success fields but no error', () => {
+    expect(() =>
+      ExtensionStatusUpdateResultSchema.parse({
+        ok: false,
+        applicationId: 'app-1',
+        status: 'applied',
+      })
+    ).toThrow();
+  });
+
   it('carries status.update / status.result through a valid envelope', () => {
     expect(() =>
       ExtensionEnvelopeSchema.parse({

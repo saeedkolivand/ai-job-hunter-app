@@ -148,11 +148,13 @@ export function resolveImportButtonLabel(res: PopupResponse): string {
 
 /**
  * Whether the "Mark as applied" button should show: only for a found
- * Application whose status is exactly `saved` (or absent, treated the same
- * as {@link resolveAppliedStatusLine}'s "saved" bucket) — the ONLY status
- * this write can ever transition FROM. Any other status (already applied,
- * mid-pipeline, or not found/error) keeps the button hidden; those cases use
- * the existing "I already applied" import checkbox, not this button.
+ * Application whose status is EXPLICITLY `saved` — the ONLY status this
+ * write's CAS precondition can ever transition FROM (the bridge's
+ * `saved → applied` compare-and-set requires the current status to already
+ * be `saved`; an absent/unknown status is not the same guarantee). Any other
+ * status (already applied, mid-pipeline, missing, or not found/error) keeps
+ * the button hidden; those cases use the existing "I already applied" import
+ * checkbox, not this button.
  *
  * Pure: no DOM access, no side effects.
  */
@@ -160,7 +162,7 @@ export function resolveShowMarkAppliedButton(res: PopupResponse): boolean {
   if (!res.ok || res.kind !== 'appliedCheck') return false;
   const { result } = res;
   if (result.error || !result.found) return false;
-  return !result.status || result.status === 'saved';
+  return result.status === 'saved';
 }
 
 /**

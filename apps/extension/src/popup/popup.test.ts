@@ -486,9 +486,9 @@ describe('resolveShowMarkAppliedButton', () => {
     expect(resolveShowMarkAppliedButton(res)).toBe(true);
   });
 
-  it('returns true for a found result with no status (treated as saved)', () => {
+  it('returns false for a found result with no status (CAS precondition requires an explicit saved status)', () => {
     const res = { ok: true as const, kind: 'appliedCheck' as const, result: { found: true } };
-    expect(resolveShowMarkAppliedButton(res)).toBe(true);
+    expect(resolveShowMarkAppliedButton(res)).toBe(false);
   });
 
   it('returns false for a found + already-applied result', () => {
