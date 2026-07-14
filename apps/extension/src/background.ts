@@ -388,14 +388,16 @@ async function runAnswersSuggest(): Promise<PopupResponse> {
 
 /**
  * Inject the single-field filler into the active tab and run it against
- * `(question, index)` with `answer`. Two-step like `injectFill`: the answer
- * text (the user's own past answer) is passed in transiently via the second
- * `executeScript({ func, args })` rather than baked into the `files`
- * injection.
+ * `(question, index)` — refusing unless the CURRENT count of same-question
+ * fields still equals scan-time `count` — with `answer`. Two-step like
+ * `injectFill`: the answer text (the user's own past answer) is passed in
+ * transiently via the second `executeScript({ func, args })` rather than
+ * baked into the `files` injection.
  */
 async function injectAnswerFill(
   question: string,
   index: number,
+  count: number,
   answer: string
 ): Promise<FillAnswerResult> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
@@ -406,12 +408,12 @@ async function injectAnswerFill(
 
   const results = await browser.scripting.executeScript({
     target: { tabId },
-    func: (q: string, i: number, a: string, key: string): FillAnswerResult | null => {
+    func: (q: string, i: number, c: number, a: string, key: string): FillAnswerResult | null => {
       const runner = (globalThis as Record<string, unknown>)[key] as
-        ((q: string, i: number, a: string) => FillAnswerResult) | undefined;
-      return runner ? runner(q, i, a) : null;
+        ((q: string, i: number, c: number, a: string) => FillAnswerResult) | undefined;
+      return runner ? runner(q, i, c, a) : null;
     },
-    args: [question, index, answer, ANSWER_FILL_GLOBAL],
+    args: [question, index, count, answer, ANSWER_FILL_GLOBAL],
   });
 
   const result = results[0]?.result;
@@ -425,11 +427,14 @@ async function injectAnswerFill(
  * Per-row "Fill this field" click. Like `runStatusUpdate`, failures are NOT
  * folded away (a deliberate click) and this NEVER fills a different field
  * than the one that was scanned — `injectAnswerFill`/`fillAnswerField` fail
- * safe (`{filled:false, error}`) on any page mutation since the scan.
+ * safe (`{filled:false, error}`) on any page mutation since the scan,
+ * including a same-labelled field inserted elsewhere since then (`count`
+ * mismatch).
  */
 async function runAnswerFill(
   question: string,
   index: number,
+  count: number,
   answer: string
 ): Promise<PopupResponse> {
   const token = await getToken();
@@ -437,7 +442,7 @@ async function runAnswerFill(
     return { ok: false, error: 'Not paired. Paste your pairing token first.' };
   }
 
-  const result = await injectAnswerFill(question, index, answer);
+  const result = await injectAnswerFill(question, index, count, answer);
   return { ok: true, kind: 'answerFill', result };
 }
 
@@ -488,7 +493,7 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
       case 'answersSuggest':
         return await runAnswersSuggest();
       case 'answerFill':
-        return await runAnswerFill(req.question, req.index, req.answer);
+        return await runAnswerFill(req.question, req.index, req.count, req.answer);
       default: {
         // Exhaustiveness guard — a new PopupRequest variant must be handled.
         const _never: never = req;

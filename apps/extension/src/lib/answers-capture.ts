@@ -189,23 +189,28 @@ export function collectQuestions(doc: Document): ScannedQuestion[] {
 /**
  * Re-scan `doc`'s CURRENT empty candidates (the identical predicate
  * {@link collectQuestions} used) and return the field at the `index`-th
- * occurrence of `question`, or `null` when no such occurrence exists anymore
- * — a page mutation since the scan (the field was filled in the meantime,
- * removed, or its label changed) naturally shrinks/reorders the occurrence
- * count, so this fails safe instead of ever returning a DIFFERENT field.
+ * occurrence of `question` — but ONLY when the CURRENT total number of
+ * fields sharing that exact question text still equals `expectedCount` (the
+ * count {@link collectQuestions} saw at scan time). Otherwise `null`.
+ *
+ * The count check matters beyond the obvious "field removed/filled" case: a
+ * NEW same-labelled field inserted EARLIER in DOM order since the scan would
+ * still leave occurrence `index` "in range" (there's still something at that
+ * position), but it would now be a DIFFERENT field than the one scanned —
+ * silently filling the wrong one. Requiring the total count to match closes
+ * that gap: any insertion, removal, or relabeling changes the count and this
+ * fails safe instead of ever returning a field the scan didn't see.
+ *
  * Exported so `answer-fill.ts` (the classic-script injection entry) and its
  * tests can call it directly.
  */
 export function locateQuestionField(
   doc: Document,
   question: string,
-  index: number
+  index: number,
+  expectedCount: number
 ): HTMLElement | null {
-  let seen = 0;
-  for (const el of emptyCandidateFields(doc)) {
-    if (labelText(el).trim() !== question) continue;
-    if (seen === index) return el;
-    seen += 1;
-  }
-  return null;
+  const matches = emptyCandidateFields(doc).filter((el) => labelText(el).trim() === question);
+  if (matches.length !== expectedCount) return null;
+  return matches[index] ?? null;
 }

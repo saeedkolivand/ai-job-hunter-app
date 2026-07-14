@@ -255,6 +255,12 @@ export interface RenderedSuggestion {
    *  question text — the row shows a "fill manually" hint instead of a
    *  (necessarily ambiguous) Fill button. */
   multipleMatches: boolean;
+  /** Total live fields sharing this exact question text AT SCAN TIME (always
+   *  `1` whenever `fieldIndex` is non-null). Sent alongside `fieldIndex` on a
+   *  Fill click so the fill-time re-scan can refuse if the CURRENT count
+   *  differs — a same-labelled field inserted earlier in DOM order between
+   *  scan and click must never silently receive the fill. */
+  scanCount: number;
 }
 
 export function correlateSuggestions(
@@ -267,6 +273,7 @@ export function correlateSuggestions(
       suggestion,
       fieldIndex: matches === 1 ? 0 : null,
       multipleMatches: matches > 1,
+      scanCount: matches,
     };
   });
 }
@@ -732,20 +739,29 @@ async function doCopySuggestion(text: string, btn: HTMLButtonElement): Promise<v
 
 /**
  * Click handler for a suggestion row's "Fill this field" button. `question`/
- * `fieldIndex` are the SAME scan-time correlation the collector produced —
- * the filler re-locates that exact field and fails safe (never a different
- * field) if the page changed since the scan.
+ * `fieldIndex`/`expectedCount` are the SAME scan-time correlation the
+ * collector produced — the filler re-locates that exact field and fails safe
+ * (never a different field) if the page changed since the scan, INCLUDING a
+ * same-labelled field inserted/removed elsewhere on the page (a count change,
+ * not just an out-of-range index).
  */
 async function doFillSuggestion(
   question: string,
   fieldIndex: number,
+  expectedCount: number,
   answer: string,
   btn: HTMLButtonElement
 ): Promise<void> {
   btn.disabled = true;
   const original = btn.textContent;
   try {
-    const res = await send({ kind: 'answerFill', question, index: fieldIndex, answer });
+    const res = await send({
+      kind: 'answerFill',
+      question,
+      index: fieldIndex,
+      count: expectedCount,
+      answer,
+    });
     if (res.ok && res.kind === 'answerFill' && res.result.filled) {
       btn.textContent = '✓ Filled';
       return;
@@ -772,7 +788,7 @@ async function doFillSuggestion(
  *  one to fill is ambiguous — a short hint replaces Fill instead of guessing.
  *  `textContent` only — no `innerHTML` with page/desktop-derived text. */
 function buildSuggestionRow(item: RenderedSuggestion): HTMLElement {
-  const { suggestion, fieldIndex, multipleMatches } = item;
+  const { suggestion, fieldIndex, multipleMatches, scanCount } = item;
   const row = document.createElement('div');
   row.className = 'suggestion';
 
@@ -818,7 +834,14 @@ function buildSuggestionRow(item: RenderedSuggestion): HTMLElement {
     fillBtn.textContent = 'Fill this field';
     fillBtn.addEventListener(
       'click',
-      () => void doFillSuggestion(suggestion.question, fieldIndex, suggestion.answer, fillBtn)
+      () =>
+        void doFillSuggestion(
+          suggestion.question,
+          fieldIndex,
+          scanCount,
+          suggestion.answer,
+          fillBtn
+        )
     );
     actions.append(fillBtn);
   } else if (!suggestion.salary && multipleMatches) {

@@ -578,6 +578,7 @@ describe('answerFill request — not-paired short-circuit', () => {
       kind: 'answerFill',
       question: 'Why this role?',
       index: 0,
+      count: 1,
       answer: 'Because I love it.',
     });
 
@@ -599,6 +600,7 @@ describe('answerFill request', () => {
       kind: 'answerFill',
       question: 'Why this role?',
       index: 0,
+      count: 1,
       answer: 'Because I love it.',
     });
 
@@ -610,7 +612,7 @@ describe('answerFill request', () => {
       2,
       expect.objectContaining({
         target: { tabId: 7 },
-        args: ['Why this role?', 0, 'Because I love it.', '__ajhRunAnswerFill'],
+        args: ['Why this role?', 0, 1, 'Because I love it.', '__ajhRunAnswerFill'],
       })
     );
     expect(res).toEqual({ ok: true, kind: 'answerFill', result: { filled: true } });
@@ -632,6 +634,7 @@ describe('answerFill request', () => {
       kind: 'answerFill',
       question: 'Why this role?',
       index: 0,
+      count: 1,
       answer: 'Because I love it.',
     });
 
@@ -654,6 +657,7 @@ describe('answerFill request', () => {
       kind: 'answerFill',
       question: 'Why this role?',
       index: 0,
+      count: 1,
       answer: 'Because I love it.',
     });
 

@@ -82,11 +82,14 @@ export type PopupRequest =
   /**
    * Per-row "Fill this field" click on one suggested answer. `question` +
    * `index` are the SAME scan-time correlation `answersSuggest` returned
-   * (see `ScannedQuestion`) — the filler re-locates the exact field they
-   * name and fails safe if it can no longer find it. Never bulk, never
-   * submits the form.
+   * (see `ScannedQuestion`); `count` is the total number of live fields that
+   * shared this exact question text AT SCAN TIME. The filler re-locates the
+   * exact field they name and fails safe if it can no longer find it OR if
+   * the CURRENT same-question field count no longer matches `count` (e.g. a
+   * same-labelled field inserted earlier in DOM order since the scan). Never
+   * bulk, never submits the form.
    */
-  | { kind: 'answerFill'; question: string; index: number; answer: string };
+  | { kind: 'answerFill'; question: string; index: number; count: number; answer: string };
 
 /** background → popup responses (discriminated by the originating request). */
 export type PopupResponse =

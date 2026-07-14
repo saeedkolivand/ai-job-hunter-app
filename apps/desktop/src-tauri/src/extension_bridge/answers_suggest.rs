@@ -98,9 +98,26 @@ fn clamp_bytes(mut s: String, max: usize) -> String {
     s
 }
 
-/// True when `normalized` (already lowercased) contains a salary-ish keyword.
+/// Order-preserving counterpart of [`tokenize`], used ONLY by
+/// [`is_salary_question`]'s multi-word phrase check: `tokenize`'s `HashSet`
+/// can't tell you "day" was immediately followed by "rate", so it can't back
+/// a substring check like `"day rate"`. Same split boundary (any
+/// non-alphanumeric char), kept in sequence.
+fn tokenize_ordered(s: &str) -> Vec<&str> {
+    s.split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
+/// True when `normalized` (already `normalize_question`-lowercased/
+/// whitespace-collapsed) contains a salary-ish keyword. Re-tokenized on any
+/// non-alphanumeric boundary and rejoined with single spaces before the
+/// check — `normalize_question` only collapses WHITESPACE, so a hyphen/slash
+/// question like "Day-rate"/"day/rate" would otherwise still carry the
+/// literal punctuation and silently miss the "day rate" phrase.
 fn is_salary_question(normalized: &str) -> bool {
-    SALARY_KEYWORDS.iter().any(|kw| normalized.contains(kw))
+    let rejoined = tokenize_ordered(normalized).join(" ");
+    SALARY_KEYWORDS.iter().any(|kw| rejoined.contains(kw))
 }
 
 /// Matcher-LOCAL tokenizer (NOT `normalize_question` — that stays untouched

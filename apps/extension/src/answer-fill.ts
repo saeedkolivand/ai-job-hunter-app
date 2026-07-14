@@ -12,7 +12,7 @@
  *
  * It only exposes the filler on the page's isolated-world global under
  * {@link ANSWER_FILL_GLOBAL}; the background then calls it with the
- * question/index correlation + the answer text via that second
+ * question/index/count correlation + the answer text via that second
  * `executeScript`.
  */
 
@@ -21,10 +21,10 @@ import { ANSWER_FILL_GLOBAL, fillAnswerField, type FillAnswerResult } from './li
 (
   globalThis as unknown as Record<
     string,
-    (question: string, index: number, answer: string) => FillAnswerResult
+    (question: string, index: number, count: number, answer: string) => FillAnswerResult
   >
-)[ANSWER_FILL_GLOBAL] = (question, index, answer) =>
-  fillAnswerField(document, question, index, answer);
+)[ANSWER_FILL_GLOBAL] = (question, index, count, answer) =>
+  fillAnswerField(document, question, index, count, answer);
 
 // Ensure this file is treated as an ES module.
 export {};

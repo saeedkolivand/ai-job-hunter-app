@@ -282,10 +282,10 @@ describe('collectQuestions — scans EMPTY candidate fields, the mirror of colle
 
 // ── locateQuestionField — the fill-target re-scan (fail-safe correlation) ──────
 
-describe('locateQuestionField — re-scans the CURRENT empty candidates by (question, index)', () => {
-  it('locates the exact element a matching scan would have produced', () => {
+describe('locateQuestionField — re-scans the CURRENT empty candidates by (question, index, expectedCount)', () => {
+  it('locates the exact element a matching scan would have produced (unchanged page still fills)', () => {
     setForm(`<label for="q1">Why this role?</label><input id="q1" type="text" value="" />`);
-    const el = locateQuestionField(document, 'Why this role?', 0);
+    const el = locateQuestionField(document, 'Why this role?', 0, 1);
     expect(el?.id).toBe('q1');
   });
 
@@ -294,25 +294,42 @@ describe('locateQuestionField — re-scans the CURRENT empty candidates by (ques
       <label for="q1">Comments</label><input id="q1" type="text" value="" />
       <label for="q2">Comments</label><input id="q2" type="text" value="" />
     `);
-    expect(locateQuestionField(document, 'Comments', 0)?.id).toBe('q1');
-    expect(locateQuestionField(document, 'Comments', 1)?.id).toBe('q2');
+    expect(locateQuestionField(document, 'Comments', 0, 2)?.id).toBe('q1');
+    expect(locateQuestionField(document, 'Comments', 1, 2)?.id).toBe('q2');
   });
 
   it('fails safe (returns null) when the field was filled since the scan', () => {
     setForm(`<label for="q1">Why this role?</label><input id="q1" type="text" value="" />`);
-    expect(locateQuestionField(document, 'Why this role?', 0)).not.toBeNull();
+    expect(locateQuestionField(document, 'Why this role?', 0, 1)).not.toBeNull();
     // The user (or the page) filled it in the meantime.
     (document.getElementById('q1') as HTMLInputElement).value = 'Already answered';
-    expect(locateQuestionField(document, 'Why this role?', 0)).toBeNull();
+    expect(locateQuestionField(document, 'Why this role?', 0, 1)).toBeNull();
   });
 
   it('fails safe (returns null) when the occurrence no longer exists', () => {
     setForm(`<label for="q1">Comments</label><input id="q1" type="text" value="" />`);
-    expect(locateQuestionField(document, 'Comments', 1)).toBeNull();
+    expect(locateQuestionField(document, 'Comments', 1, 1)).toBeNull();
   });
 
   it('fails safe (returns null) for a question that was never scanned', () => {
     setForm(`<label for="q1">Why this role?</label><input id="q1" type="text" value="" />`);
-    expect(locateQuestionField(document, 'A different question?', 0)).toBeNull();
+    expect(locateQuestionField(document, 'A different question?', 0, 1)).toBeNull();
+  });
+
+  it('fails safe (returns null) when the CURRENT occurrence count no longer matches the scan-time count, even though the requested index still resolves to SOME element', () => {
+    // Scan time: exactly one "Comments" field, at index 0.
+    setForm(`<label for="q1">Comments</label><input id="q1" type="text" value="" />`);
+    expect(locateQuestionField(document, 'Comments', 0, 1)?.id).toBe('q1');
+
+    // A new same-labelled field is inserted EARLIER in DOM order before the
+    // fill click — the requested index (0) still "resolves" to an element,
+    // but it is now the WRONG one (never the one the scan saw).
+    const wrapper = document.querySelector('form')!;
+    wrapper.insertAdjacentHTML(
+      'afterbegin',
+      `<label for="q0">Comments</label><input id="q0" type="text" value="" />`
+    );
+
+    expect(locateQuestionField(document, 'Comments', 0, 1)).toBeNull();
   });
 });

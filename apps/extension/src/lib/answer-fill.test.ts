@@ -41,7 +41,7 @@ describe('fillAnswerField — happy path', () => {
       changeFired = true;
     });
 
-    const result = fillAnswerField(document, 'Why this role?', 0, 'Because I love it.');
+    const result = fillAnswerField(document, 'Why this role?', 0, 1, 'Because I love it.');
 
     expect(result).toEqual({ filled: true });
     expect(el.value).toBe('Because I love it.');
@@ -51,7 +51,7 @@ describe('fillAnswerField — happy path', () => {
 
   it('fills a labelled empty textarea', () => {
     setForm(`<label for="cl">Cover letter</label><textarea id="cl"></textarea>`);
-    const result = fillAnswerField(document, 'Cover letter', 0, 'I would love to join.');
+    const result = fillAnswerField(document, 'Cover letter', 0, 1, 'I would love to join.');
     expect(result).toEqual({ filled: true });
     expect((document.getElementById('cl') as HTMLTextAreaElement).value).toBe(
       'I would love to join.'
@@ -66,7 +66,7 @@ describe('fillAnswerField — happy path', () => {
         <option value="1">5-10 years</option>
       </select>
     `);
-    const result = fillAnswerField(document, 'Years of experience', 0, '  5-10 YEARS  ');
+    const result = fillAnswerField(document, 'Years of experience', 0, 1, '  5-10 YEARS  ');
     expect(result).toEqual({ filled: true });
     expect((document.getElementById('yrs') as HTMLSelectElement).value).toBe('1');
   });
@@ -76,7 +76,7 @@ describe('fillAnswerField — happy path', () => {
       <label for="q1">Comments</label><input id="q1" type="text" value="" />
       <label for="q2">Comments</label><input id="q2" type="text" value="" />
     `);
-    fillAnswerField(document, 'Comments', 1, 'Second field answer');
+    fillAnswerField(document, 'Comments', 1, 2, 'Second field answer');
     expect((document.getElementById('q1') as HTMLInputElement).value).toBe('');
     expect((document.getElementById('q2') as HTMLInputElement).value).toBe('Second field answer');
   });
@@ -87,7 +87,7 @@ describe('fillAnswerField — fail-safe on any mutation since the scan', () => {
     setForm(`<label for="q1">Why this role?</label><input id="q1" type="text" value="" />`);
     (document.getElementById('q1') as HTMLInputElement).value = 'Already answered';
 
-    const result = fillAnswerField(document, 'Why this role?', 0, 'A different answer');
+    const result = fillAnswerField(document, 'Why this role?', 0, 1, 'A different answer');
 
     expect(result.filled).toBe(false);
     expect(result.error).toMatch(/page may have changed/i);
@@ -97,13 +97,13 @@ describe('fillAnswerField — fail-safe on any mutation since the scan', () => {
 
   it('returns a not-found error when the occurrence no longer exists', () => {
     setForm(`<label for="q1">Comments</label><input id="q1" type="text" value="" />`);
-    const result = fillAnswerField(document, 'Comments', 1, 'An answer');
+    const result = fillAnswerField(document, 'Comments', 1, 1, 'An answer');
     expect(result.filled).toBe(false);
   });
 
   it('returns a not-found error for a question that has no scanned field at all', () => {
     setForm(`<label for="q1">Why this role?</label><input id="q1" type="text" value="" />`);
-    const result = fillAnswerField(document, 'A different question?', 0, 'An answer');
+    const result = fillAnswerField(document, 'A different question?', 0, 1, 'An answer');
     expect(result.filled).toBe(false);
   });
 
@@ -115,10 +115,30 @@ describe('fillAnswerField — fail-safe on any mutation since the scan', () => {
         <option value="1">5-10 years</option>
       </select>
     `);
-    const result = fillAnswerField(document, 'Years of experience', 0, 'Twenty years');
+    const result = fillAnswerField(document, 'Years of experience', 0, 1, 'Twenty years');
     expect(result.filled).toBe(false);
     expect(result.error).toMatch(/options/i);
     // The select must be left untouched, not coerced to a wrong option.
     expect((document.getElementById('yrs') as HTMLSelectElement).value).toBe('');
+  });
+
+  it('fails safe (never fills) when a same-labelled field is inserted EARLIER in DOM order since the scan', () => {
+    // Scan time: exactly one "Comments" field (occurrence 0, count 1).
+    setForm(`<label for="q1">Comments</label><input id="q1" type="text" value="" />`);
+
+    // A new same-labelled field is inserted before it — the requested index
+    // (0) still resolves to SOME element, but it is now the wrong one.
+    const wrapper = document.querySelector('form')!;
+    wrapper.insertAdjacentHTML(
+      'afterbegin',
+      `<label for="q0">Comments</label><input id="q0" type="text" value="" />`
+    );
+
+    const result = fillAnswerField(document, 'Comments', 0, 1, 'An answer');
+
+    expect(result.filled).toBe(false);
+    // Neither field was touched — the fail-safe never guesses.
+    expect((document.getElementById('q0') as HTMLInputElement).value).toBe('');
+    expect((document.getElementById('q1') as HTMLInputElement).value).toBe('');
   });
 });

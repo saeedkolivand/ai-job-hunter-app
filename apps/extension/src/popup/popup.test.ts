@@ -1194,8 +1194,32 @@ describe('correlateSuggestions', () => {
       [{ question: 'Why this role?', index: 0 }]
     );
     expect(out).toEqual([
-      { suggestion: suggestion('Why this role?'), fieldIndex: 0, multipleMatches: false },
+      {
+        suggestion: suggestion('Why this role?'),
+        fieldIndex: 0,
+        multipleMatches: false,
+        scanCount: 1,
+      },
     ]);
+  });
+
+  it('assigns scanCount 0 when no scanned field matches', () => {
+    const out = correlateSuggestions(
+      [suggestion('Why this role?')],
+      [{ question: 'A different question?', index: 0 }]
+    );
+    expect(out[0]?.scanCount).toBe(0);
+  });
+
+  it('assigns scanCount 2 when 2+ live fields share the exact label', () => {
+    const out = correlateSuggestions(
+      [suggestion('Why this role?')],
+      [
+        { question: 'Why this role?', index: 0 },
+        { question: 'Why this role?', index: 1 },
+      ]
+    );
+    expect(out[0]?.scanCount).toBe(2);
   });
 
   it('assigns fieldIndex null when no scanned field matches — never a guess', () => {
@@ -1582,6 +1606,7 @@ describe('doSuggestAnswers (#btn-suggest-answers)', () => {
       kind: 'answerFill',
       question: 'Why this role?',
       index: 0,
+      count: 1,
       answer: 'Because I love it.',
     });
     expect(fillBtn.textContent).toBe('✓ Filled');

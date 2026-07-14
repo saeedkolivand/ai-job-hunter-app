@@ -67,17 +67,21 @@ function setSelectValue(el: HTMLSelectElement, value: string): boolean {
 
 /**
  * Locate the field at `(question, index)` among the CURRENT empty candidates
- * (via {@link locateQuestionField}) and fill it with `answer`. Fails safe —
- * {@link NOT_FOUND} — on any mutation since the scan, or when the located
- * field is a `<select>` whose options don't include `answer`'s exact text.
+ * (via {@link locateQuestionField}) — refusing when the CURRENT count of
+ * fields sharing `question` no longer equals `expectedCount` (the scan-time
+ * count) — and fill it with `answer`. Fails safe — {@link NOT_FOUND} — on any
+ * mutation since the scan (including a same-labelled field inserted
+ * elsewhere on the page), or when the located field is a `<select>` whose
+ * options don't include `answer`'s exact text.
  */
 export function fillAnswerField(
   doc: Document,
   question: string,
   index: number,
+  expectedCount: number,
   answer: string
 ): FillAnswerResult {
-  const el = locateQuestionField(doc, question, index);
+  const el = locateQuestionField(doc, question, index, expectedCount);
   if (!el) return NOT_FOUND;
 
   if (el instanceof HTMLSelectElement) {

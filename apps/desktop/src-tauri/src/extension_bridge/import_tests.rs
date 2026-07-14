@@ -2583,6 +2583,26 @@ fn match_questions_does_not_match_unrelated_salary_and_license_questions() {
     );
 }
 
+/// Near-miss negative regression: a partial-overlap pair that shares 3 of 8
+/// tokens ("what","is","your" out of {what,is,your,desired,start,date,
+/// favorite,color}) — 3/8 = 0.375, just below `MIN_SCORE` (0.4) — must never
+/// match despite sharing a common question-stem.
+#[test]
+fn match_questions_does_not_match_near_miss_partial_overlap() {
+    let candidates = vec![candidate(
+        "What is your desired start date?",
+        "Immediately",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["What is your favorite color?".to_string()], &candidates);
+    assert!(
+        out.is_empty(),
+        "3/8 = 0.375 overlap must fall below MIN_SCORE and never match"
+    );
+}
+
 /// Broadened salary keywords (critic finding): "how much ... paid" flags
 /// Copy-only without a literal "salary"/"compensation" token.
 #[test]
@@ -2646,6 +2666,55 @@ fn match_questions_does_not_flag_rate_your_skills_as_salary() {
     let out = match_questions(&["Rate your TypeScript skills".to_string()], &candidates);
     assert_eq!(out.len(), 1);
     assert!(!out[0].salary);
+}
+
+/// Hyphen-proof salary check (critic finding): `normalize_question` only
+/// collapses whitespace, so "Day-rate" still carries the literal hyphen and
+/// would silently miss the "day rate" phrase without the matcher's
+/// non-alphanumeric re-tokenization.
+#[test]
+fn match_questions_flags_hyphenated_day_rate_as_salary() {
+    let candidates = vec![candidate(
+        "Day-rate",
+        "£500",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["Day-rate".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert!(out[0].salary);
+}
+
+/// Same as above with a slash instead of a hyphen.
+#[test]
+fn match_questions_flags_slash_day_rate_as_salary() {
+    let candidates = vec![candidate(
+        "day/rate",
+        "£500",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["day/rate".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert!(out[0].salary);
+}
+
+/// Hyphenated "How-much" must still flag Copy-only, same as the
+/// space-separated "How much" case above.
+#[test]
+fn match_questions_flags_hyphenated_how_much_as_salary() {
+    let candidates = vec![candidate(
+        "How-much do you expect?",
+        "$120,000",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["How-much do you expect?".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert!(out[0].salary);
 }
 
 /// Pure property: the SAME inputs always produce the SAME output — no AI, no
