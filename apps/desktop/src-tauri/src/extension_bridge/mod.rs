@@ -847,6 +847,45 @@ struct AutofillProfile {
     github: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     website: Option<String>,
+    /// Additional labelled links (Portfolio, Dribbble, Stack Overflow, …) beyond
+    /// the named platform fields — see [`clean_extra_links`] for the projection
+    /// rules. Additive/optional on the wire: an old extension ignores the key,
+    /// and it is omitted entirely (not `[]`) when there is nothing to send, so
+    /// an old desktop's replies (which never carry it) parse identically.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    extra_links: Vec<crate::contact_profile::ContactLink>,
+}
+
+/// Cap on the number of extra links projected to the extension — a form has no
+/// use for an unbounded list, and this bounds the reply size.
+const MAX_EXTRA_LINKS: usize = 10;
+
+/// Filter + cap the stored extra links for the wire: drop an entry with an empty
+/// label, drop a url that (after trimming) is empty or not `http(s)`, then keep
+/// at most [`MAX_EXTRA_LINKS`] of what remains, in order. `photo` is never
+/// projected at all — unrelated to this list and always dropped.
+fn clean_extra_links(
+    links: &[crate::contact_profile::ContactLink],
+) -> Vec<crate::contact_profile::ContactLink> {
+    links
+        .iter()
+        .filter_map(|link| {
+            let label = link.label.trim();
+            let url = link.url.trim();
+            if label.is_empty() {
+                return None;
+            }
+            let lower = url.to_ascii_lowercase();
+            if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+                return None;
+            }
+            Some(crate::contact_profile::ContactLink {
+                label: label.to_string(),
+                url: url.to_string(),
+            })
+        })
+        .take(MAX_EXTRA_LINKS)
+        .collect()
 }
 
 impl AutofillProfile {
@@ -873,6 +912,7 @@ impl AutofillProfile {
             linkedin: clean(&p.linkedin),
             github: clean(&p.github),
             website: clean(&p.website),
+            extra_links: clean_extra_links(&p.extra_links),
         }
     }
 }

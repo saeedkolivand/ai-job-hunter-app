@@ -177,6 +177,41 @@ describe('ExtensionProfileResultSchema', () => {
     expect(() => ExtensionProfileResultSchema.parse({ email: 42 })).toThrow();
   });
 
+  it('accepts a profile with extraLinks', () => {
+    const payload = {
+      email: 'x@y.z',
+      extraLinks: [
+        { label: 'Portfolio', url: 'https://saeed.dev' },
+        { label: 'Dribbble', url: 'https://dribbble.com/saeed' },
+      ],
+    };
+    expect(ExtensionProfileResultSchema.parse(payload)).toEqual(payload);
+  });
+
+  it('accepts a profile with no extraLinks field (additive — old replies omit it)', () => {
+    expect(() => ExtensionProfileResultSchema.parse({ email: 'x@y.z' })).not.toThrow();
+    const parsed = ExtensionProfileResultSchema.parse({ email: 'x@y.z' });
+    expect(parsed.extraLinks).toBeUndefined();
+  });
+
+  it('rejects a malformed extraLinks entry (missing url)', () => {
+    expect(() =>
+      ExtensionProfileResultSchema.parse({ extraLinks: [{ label: 'Portfolio' }] })
+    ).toThrow();
+  });
+
+  it('rejects a malformed extraLinks entry (non-string label)', () => {
+    expect(() =>
+      ExtensionProfileResultSchema.parse({
+        extraLinks: [{ label: 42, url: 'https://saeed.dev' }],
+      })
+    ).toThrow();
+  });
+
+  it('rejects a non-array extraLinks', () => {
+    expect(() => ExtensionProfileResultSchema.parse({ extraLinks: 'https://saeed.dev' })).toThrow();
+  });
+
   it('carries profile.result through a valid envelope', () => {
     expect(() =>
       ExtensionEnvelopeSchema.parse({

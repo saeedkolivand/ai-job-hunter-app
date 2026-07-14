@@ -117,9 +117,26 @@ function isExtensionImportResult(v: unknown): v is ExtensionImportResult {
   );
 }
 
+/** True when `x` is a plain `{label: string, url: string}` link entry — `url`
+ *  must additionally be `http(s)://`. This is defense-in-depth against a
+ *  buggy/older desktop sending a malformed scheme (e.g. `javascript:`): the
+ *  bridge's own auth/allowlist model doesn't cover payload content, and a URL
+ *  is the one field here that gets set into a form's `value` and dispatched
+ *  as an event, so it self-defends rather than trusting the server. */
+function isLinkEntry(x: unknown): x is { label: string; url: string } {
+  if (typeof x !== 'object' || x === null) return false;
+  const o = x as Record<string, unknown>;
+  return typeof o.label === 'string' && typeof o.url === 'string' && /^https?:\/\//i.test(o.url);
+}
+
 /**
  * Hand-written guard for a `profile.result` payload (extension stays zod-free).
- * Mirrors `ExtensionProfileResultSchema`: every field is an optional string.
+ * Mirrors `ExtensionProfileResultSchema`: every field is an optional string,
+ * except `extraLinks` — an optional array, additive to the payload (an old
+ * desktop's reply simply never carries the key). Only the array shape is
+ * gated here; individual entries are validated/dropped one-by-one in
+ * {@link normalizeProfileResult} via {@link isLinkEntry} so one malformed
+ * link (e.g. a `javascript:` scheme) never rejects the whole profile.
  */
 function isExtensionProfileResult(v: unknown): v is ExtensionProfileResult {
   if (typeof v !== 'object' || v === null) return false;
@@ -133,11 +150,14 @@ function isExtensionProfileResult(v: unknown): v is ExtensionProfileResult {
     optStr(o.linkedin) &&
     optStr(o.github) &&
     optStr(o.website) &&
+    (o.extraLinks === undefined || Array.isArray(o.extraLinks)) &&
     optStr(o.error)
   );
 }
 
-/** Rebuild an {@link ExtensionProfileResult} from only the known, defined keys. */
+/** Rebuild an {@link ExtensionProfileResult} from only the known, defined keys.
+ *  `extraLinks` is filtered (not `.every`-gated) so a single malformed entry
+ *  is dropped rather than failing the entire profile. */
 function normalizeProfileResult(payload: unknown): ExtensionProfileResult {
   if (!isExtensionProfileResult(payload)) {
     return { error: 'The desktop app sent a malformed profile result.' };
@@ -151,6 +171,7 @@ function normalizeProfileResult(payload: unknown): ExtensionProfileResult {
   if (src.linkedin !== undefined) out.linkedin = src.linkedin;
   if (src.github !== undefined) out.github = src.github;
   if (src.website !== undefined) out.website = src.website;
+  if (src.extraLinks !== undefined) out.extraLinks = src.extraLinks.filter(isLinkEntry);
   if (src.error !== undefined) out.error = src.error;
   return out;
 }
