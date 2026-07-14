@@ -507,8 +507,10 @@ impl ApplicationStore {
     }
 
     /// Most-recent Application for a normalized url, if any — the row a per-job
-    /// upsert merges into so one job keeps a single aggregate.
-    fn find_by_job_url(&self, normalized: &str) -> Option<Application> {
+    /// upsert merges into so one job keeps a single aggregate. `pub(crate)` so
+    /// `extension_bridge`'s `applied.check` handler can run the same read-only
+    /// lookup (it never fetches or writes — see `resolve_applied_check`).
+    pub(crate) fn find_by_job_url(&self, normalized: &str) -> Option<Application> {
         if normalized.is_empty() {
             return None;
         }

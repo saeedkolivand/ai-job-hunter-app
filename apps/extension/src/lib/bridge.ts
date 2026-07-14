@@ -30,6 +30,7 @@ import { type Browser, browser } from '@wxt-dev/browser';
 import {
   EXTENSION_MESSAGE_TYPES,
   EXTENSION_PROTOCOL_VERSION,
+  type ExtensionAppliedCheckResult,
   type ExtensionEnvelope,
   type ExtensionImportRequest,
   type ExtensionImportResult,
@@ -67,6 +68,7 @@ const READY_TIMEOUT_MS = 1_500;
 
 type PendingResolver = (result: ExtensionImportResult) => void;
 type ProfileResolver = (result: ExtensionProfileResult) => void;
+type AppliedResolver = (result: ExtensionAppliedCheckResult) => void;
 
 export type BridgePhase = 'searching' | 'connected' | 'app_not_running' | 'outdated' | 'bad_token';
 
@@ -147,6 +149,42 @@ function normalizeProfileResult(payload: unknown): ExtensionProfileResult {
   if (src.linkedin !== undefined) out.linkedin = src.linkedin;
   if (src.github !== undefined) out.github = src.github;
   if (src.website !== undefined) out.website = src.website;
+  if (src.error !== undefined) out.error = src.error;
+  return out;
+}
+
+/**
+ * Hand-written guard for an `applied.result` payload (extension stays
+ * zod-free). Mirrors `ExtensionAppliedCheckResultSchema`: `found` must be a
+ * boolean; every other field is an optional string, except `appliedAt` (an
+ * optional number, epoch ms).
+ */
+function isExtensionAppliedCheckResult(v: unknown): v is ExtensionAppliedCheckResult {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  const optStr = (x: unknown): boolean => x === undefined || typeof x === 'string';
+  return (
+    typeof o.found === 'boolean' &&
+    optStr(o.applicationId) &&
+    optStr(o.status) &&
+    optStr(o.title) &&
+    (o.appliedAt === undefined || typeof o.appliedAt === 'number') &&
+    optStr(o.error)
+  );
+}
+
+/** Rebuild an {@link ExtensionAppliedCheckResult} from only the known, defined
+ *  keys — mirrors `normalizeProfileResult`. */
+function normalizeAppliedCheckResult(payload: unknown): ExtensionAppliedCheckResult {
+  if (!isExtensionAppliedCheckResult(payload)) {
+    return { found: false, error: 'The desktop app sent a malformed applied-check result.' };
+  }
+  const src = payload;
+  const out: ExtensionAppliedCheckResult = { found: src.found };
+  if (src.applicationId !== undefined) out.applicationId = src.applicationId;
+  if (src.status !== undefined) out.status = src.status;
+  if (src.title !== undefined) out.title = src.title;
+  if (src.appliedAt !== undefined) out.appliedAt = src.appliedAt;
   if (src.error !== undefined) out.error = src.error;
   return out;
 }
@@ -299,6 +337,9 @@ export class BridgeClient {
    *  separate from {@link pending} so the battle-tested import/auth path is
    *  untouched; both share the {@link timers} map (reqIds are unique UUIDs). */
   private readonly pendingProfile = new Map<string, ProfileResolver>();
+  /** In-flight `applied.check` resolvers, correlated by `reqId`. Kept separate
+   *  from {@link pending} for the same reason as {@link pendingProfile}. */
+  private readonly pendingApplied = new Map<string, AppliedResolver>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private backoffIndex = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -439,6 +480,7 @@ export class BridgeClient {
     this.timers.clear();
     this.pending.clear();
     this.pendingProfile.clear();
+    this.pendingApplied.clear();
     this.transport?.close();
     this.transport = null;
   }
@@ -528,6 +570,48 @@ export class BridgeClient {
         clearTimeout(timer);
         this.timers.delete(reqId);
         this.pendingProfile.delete(reqId);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
+  /**
+   * Send an `applied.check` for `url` and resolve with the validated
+   * `applied.result` payload — whether an Application already exists for it,
+   * or `{ found: false, error }` when the reply is malformed. Rejects only on
+   * no connection / timeout / send failure; the popup's fire-and-forget auto
+   * check swallows every rejection into a silent no-render (read-only, never
+   * blocks the import controls — see `popup.ts`).
+   */
+  async checkApplied(url: string): Promise<ExtensionAppliedCheckResult> {
+    await this.ensureConnected();
+    if (this.phase !== 'connected' || !this.transport) {
+      throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
+    }
+    const transport = this.transport;
+
+    const reqId = newReqId();
+    const envelope: ExtensionEnvelope = {
+      type: EXTENSION_MESSAGE_TYPES.appliedCheck,
+      reqId,
+      payload: { url },
+    };
+
+    return new Promise<ExtensionAppliedCheckResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingApplied.delete(reqId);
+        this.timers.delete(reqId);
+        reject(new Error('Timed out waiting for the desktop app to respond.'));
+      }, REQUEST_TIMEOUT_MS);
+      this.timers.set(reqId, timer);
+      this.pendingApplied.set(reqId, resolve);
+
+      try {
+        transport.send(envelope);
+      } catch (err) {
+        clearTimeout(timer);
+        this.timers.delete(reqId);
+        this.pendingApplied.delete(reqId);
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     });
@@ -800,6 +884,16 @@ export class BridgeClient {
       return;
     }
 
+    // applied.result → the "have I already applied?" outcome (separate map).
+    if (env.type === EXTENSION_MESSAGE_TYPES.appliedResult) {
+      const resolveApplied = this.pendingApplied.get(reqId);
+      if (typeof resolveApplied !== 'function') return;
+      this.pendingApplied.delete(reqId);
+      this.clearTimer(reqId);
+      resolveApplied(normalizeAppliedCheckResult(env.payload));
+      return;
+    }
+
     if (env.type !== EXTENSION_MESSAGE_TYPES.importResult) return;
     const resolve = this.pending.get(reqId);
     if (typeof resolve !== 'function') return;
@@ -839,8 +933,14 @@ export class BridgeClient {
       if (timer) clearTimeout(timer);
       resolve({ error: reason });
     }
+    for (const [reqId, resolve] of this.pendingApplied.entries()) {
+      const timer = this.timers.get(reqId);
+      if (timer) clearTimeout(timer);
+      resolve({ found: false, error: reason });
+    }
     this.pending.clear();
     this.pendingProfile.clear();
+    this.pendingApplied.clear();
     this.timers.clear();
   }
 

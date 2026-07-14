@@ -1199,3 +1199,112 @@ describe('BridgeClient – getProfile (assisted autofill)', () => {
     client.dispose();
   });
 });
+
+// ── "have I already applied?" applied.check ↔ applied.result ──────────────────
+
+describe('BridgeClient – checkApplied', () => {
+  let latestSocket: FakeWebSocket | undefined;
+  let restoreWS: () => void;
+
+  beforeEach(() => {
+    latestSocket = undefined;
+    restoreWS = installFakeWS((ws) => {
+      latestSocket = ws;
+    });
+  });
+
+  afterEach(() => {
+    restoreWS();
+  });
+
+  async function connectedClient(): Promise<{ client: BridgeClient; socket: FakeWebSocket }> {
+    const client = new BridgeClient(vi.fn());
+    const p = client.ensureConnected();
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+    await p;
+    return { client, socket };
+  }
+
+  function makeAppliedEnvelope(reqId: string, payload: unknown): string {
+    return JSON.stringify({
+      type: EXTENSION_MESSAGE_TYPES.appliedResult,
+      reqId,
+      payload,
+    });
+  }
+
+  /** Start a checkApplied and wait until the outgoing frame is sent; return the reqId. */
+  async function startAppliedCheck(
+    client: BridgeClient,
+    socket: FakeWebSocket,
+    url: string
+  ): Promise<{ resultPromise: Promise<unknown>; reqId: string }> {
+    const resultPromise = client.checkApplied(url);
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const frame = JSON.parse(raw) as { type: string; reqId: string; payload: unknown };
+    expect(frame.type).toBe(EXTENSION_MESSAGE_TYPES.appliedCheck);
+    expect(frame.payload).toEqual({ url });
+    return { resultPromise, reqId: frame.reqId };
+  }
+
+  it('round-trips a found+applied result into the resolved payload', async () => {
+    const { client, socket } = await connectedClient();
+    const url = 'https://jobs.example.com/posting/9';
+    const { resultPromise, reqId } = await startAppliedCheck(client, socket, url);
+
+    const payload = {
+      found: true,
+      applicationId: 'app-1',
+      status: 'applied',
+      title: 'Senior Rust Engineer',
+      appliedAt: 1_718_000_000_000,
+    };
+    socket.simulateMessage(makeAppliedEnvelope(reqId, payload));
+
+    const result = await resultPromise;
+    expect(result).toEqual(payload);
+
+    client.dispose();
+  });
+
+  it('round-trips a not-found result', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startAppliedCheck(
+      client,
+      socket,
+      'https://jobs.example.com/posting/none'
+    );
+
+    socket.simulateMessage(makeAppliedEnvelope(reqId, { found: false }));
+
+    const result = await resultPromise;
+    expect(result).toEqual({ found: false });
+
+    client.dispose();
+  });
+
+  it('resolves with a malformed error (never throws) when the payload is bad', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startAppliedCheck(
+      client,
+      socket,
+      'https://jobs.example.com/posting/bad'
+    );
+
+    // found must be a boolean; a string breaks the guard.
+    socket.simulateMessage(makeAppliedEnvelope(reqId, { found: 'yes' }));
+
+    const result = (await resultPromise) as { found: boolean; error?: string };
+    expect(result.found).toBe(false);
+    expect(result.error).toMatch(/malformed/i);
+
+    client.dispose();
+  });
+});

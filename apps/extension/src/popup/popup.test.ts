@@ -45,6 +45,7 @@ function buildPopupDom(): void {
     <div id="view-searching"></div>
     <button id="btn-import"></button>
     <button id="btn-fill"></button>
+    <p id="applied-status" hidden></p>
     <input id="chk-applied" type="checkbox" />
     <p id="import-msg"></p>
     <button id="btn-unpair"></button>
@@ -66,8 +67,13 @@ buildPopupDom();
 // Dynamic import AFTER DOM + mocks are in place. The module wires its DOM event
 // listeners at load (wire()), so the behavioral tests below drive the controller
 // by dispatching real clicks on the wired buttons and asserting DOM state.
-const { resolveStatusResponse, resolveImportResponse, resolveFillResponse } =
-  await import('./popup');
+const {
+  resolveStatusResponse,
+  resolveImportResponse,
+  resolveFillResponse,
+  resolveAppliedStatusLine,
+  resolveImportButtonLabel,
+} = await import('./popup');
 
 const sendMessageMock = vi.mocked(browser.runtime.sendMessage);
 const looksLikeTokenMock = vi.mocked(looksLikeToken);
@@ -308,6 +314,136 @@ describe('resolveFillResponse', () => {
     const { text, tone } = resolveFillResponse(res);
     expect(tone).toBe('ok');
     expect(text).toBe('Filled 1 field — review them on the page (name split is a guess — verify).');
+  });
+});
+
+// ── resolveAppliedStatusLine / resolveImportButtonLabel ───────────────────────
+
+describe('resolveAppliedStatusLine', () => {
+  it('returns null when the response is not an appliedCheck response', () => {
+    const res = { ok: true as const, kind: 'token' as const };
+    expect(resolveAppliedStatusLine(res)).toBeNull();
+  });
+
+  it('returns null when ok is false', () => {
+    const res = { ok: false as const, error: 'boom' };
+    expect(resolveAppliedStatusLine(res)).toBeNull();
+  });
+
+  it('returns null when the result carries an error (soft-fail)', () => {
+    const res = {
+      ok: true as const,
+      kind: 'appliedCheck' as const,
+      result: { found: false, error: 'malformed' },
+    };
+    expect(resolveAppliedStatusLine(res)).toBeNull();
+  });
+
+  it('returns null when not found', () => {
+    const res = {
+      ok: true as const,
+      kind: 'appliedCheck' as const,
+      result: { found: false },
+    };
+    expect(resolveAppliedStatusLine(res)).toBeNull();
+  });
+
+  it('reports "Saved in your pipeline" for a found saved status with no title', () => {
+    const res = {
+      ok: true as const,
+      kind: 'appliedCheck' as const,
+      result: { found: true, status: 'saved' },
+    };
+    expect(resolveAppliedStatusLine(res)).toBe('Saved in your pipeline.');
+  });
+
+  it('names the job when a title is present for a found saved status', () => {
+    const res = {
+      ok: true as const,
+      kind: 'appliedCheck' as const,
+      result: { found: true, status: 'saved', title: 'Senior Rust Engineer' },
+    };
+    expect(resolveAppliedStatusLine(res)).toBe('“Senior Rust Engineer” is saved in your pipeline.');
+  });
+
+  it('reports the applied date for a found non-saved status with appliedAt', () => {
+    const appliedAt = Date.UTC(2026, 5, 12); // Jun 12, 2026 (UTC)
+    const res = {
+      ok: true as const,
+      kind: 'appliedCheck' as const,
+      result: { found: true, status: 'applied', appliedAt },
+    };
+    expect(resolveAppliedStatusLine(res)).toMatch(/^Already in your pipeline — applied .+\.$/);
+  });
+
+  it('names the job + date together when both a title and appliedAt are present', () => {
+    const appliedAt = Date.UTC(2026, 5, 12);
+    const res = {
+      ok: true as const,
+      kind: 'appliedCheck' as const,
+      result: { found: true, status: 'interviewing', title: 'Backend Engineer', appliedAt },
+    };
+    expect(resolveAppliedStatusLine(res)).toMatch(
+      /^“Backend Engineer” is already in your pipeline — applied .+\.$/
+    );
+  });
+
+  it('falls back to a dateless message when a non-saved status carries no appliedAt', () => {
+    const res = {
+      ok: true as const,
+      kind: 'appliedCheck' as const,
+      result: { found: true, status: 'applied' },
+    };
+    expect(resolveAppliedStatusLine(res)).toBe('Already in your pipeline.');
+  });
+
+  it('includes the year in the applied date when it differs from the current year', () => {
+    // Relative to the current year so this never rots — June avoids any
+    // UTC/local timezone day-boundary rollover into a different year.
+    const priorYear = new Date().getFullYear() - 1;
+    const appliedAt = Date.UTC(priorYear, 5, 12);
+    const res = {
+      ok: true as const,
+      kind: 'appliedCheck' as const,
+      result: { found: true, status: 'applied', appliedAt },
+    };
+    expect(resolveAppliedStatusLine(res)).toMatch(
+      new RegExp(`^Already in your pipeline — applied .+\\b${priorYear}\\.$`)
+    );
+  });
+});
+
+describe('resolveImportButtonLabel', () => {
+  it('returns the default label when not found', () => {
+    const res = {
+      ok: true as const,
+      kind: 'appliedCheck' as const,
+      result: { found: false },
+    };
+    expect(resolveImportButtonLabel(res)).toBe('Import this job');
+  });
+
+  it('returns the default label when the result carries an error', () => {
+    const res = {
+      ok: true as const,
+      kind: 'appliedCheck' as const,
+      result: { found: true, error: 'malformed' },
+    };
+    expect(resolveImportButtonLabel(res)).toBe('Import this job');
+  });
+
+  it('returns the default label for a non-appliedCheck response', () => {
+    const res = { ok: true as const, kind: 'token' as const };
+    expect(resolveImportButtonLabel(res)).toBe('Import this job');
+  });
+
+  it('returns the relabeled action when found', () => {
+    const res = {
+      ok: true as const,
+      kind: 'appliedCheck' as const,
+      result: { found: true, status: 'saved' },
+    };
+    expect(resolveImportButtonLabel(res)).toBe('Re-import / update');
   });
 });
 
@@ -647,5 +783,153 @@ describe('outdated-desktop view', () => {
     expect(pill.textContent).toBe('⟳ Update the app');
     // Retry is available so the user can re-probe after updating the app.
     expect(retry.hidden).toBe(false);
+  });
+});
+
+// ── appliedCheck auto-check (fire-and-forget on entering `connected`) ──────────
+
+describe('appliedCheck auto-check', () => {
+  const statusListener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
+    ((message: unknown) => void) | undefined;
+  if (!statusListener) throw new Error('onMessage status listener not registered');
+  const push = (phase: ConnectionStatus['phase']) =>
+    statusListener({ ok: true, kind: 'status', status: { phase, port: null, hasToken: true } });
+
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  beforeEach(() => {
+    sendMessageMock.mockReset();
+    // Force a non-connected phase first so the next `push('connected')` below is
+    // a genuine transition regardless of what an earlier test left behind — the
+    // auto-check only fires on ENTERING `connected`, not on a repeated push.
+    push('searching');
+  });
+
+  it('sends an appliedCheck request and renders the found+applied status line with the relabeled button', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'appliedCheck',
+      result: { found: true, status: 'applied', appliedAt: Date.UTC(2026, 5, 12) },
+    });
+
+    push('connected');
+    await flush();
+
+    expect(sendMessageMock).toHaveBeenCalledWith({ kind: 'appliedCheck' });
+    const status = byId<HTMLParagraphElement>('applied-status');
+    expect(status.hidden).toBe(false);
+    expect(status.textContent).toContain('Already in your pipeline');
+    expect(byId<HTMLButtonElement>('btn-import').textContent).toBe('Re-import / update');
+  });
+
+  it('renders nothing and keeps the default button label when not found', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'appliedCheck',
+      result: { found: false },
+    });
+
+    push('connected');
+    await flush();
+
+    const status = byId<HTMLParagraphElement>('applied-status');
+    expect(status.hidden).toBe(true);
+    expect(byId<HTMLButtonElement>('btn-import').textContent).toBe('Import this job');
+  });
+
+  it('soft-fails silently (no status line, default label, no thrown error) when the request rejects', async () => {
+    sendMessageMock.mockRejectedValueOnce(new Error('message channel closed'));
+
+    push('connected');
+    await flush();
+
+    const status = byId<HTMLParagraphElement>('applied-status');
+    expect(status.hidden).toBe(true);
+    expect(byId<HTMLButtonElement>('btn-import').textContent).toBe('Import this job');
+  });
+
+  it('does not re-fire the check on a repeated connected push with no intervening phase change', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'appliedCheck',
+      result: { found: true, status: 'saved' },
+    });
+    push('connected');
+    await flush();
+    expect(sendMessageMock).toHaveBeenCalledTimes(1);
+
+    sendMessageMock.mockClear();
+    push('connected'); // same phase again — not a transition
+    await flush();
+    expect(sendMessageMock).not.toHaveBeenCalled();
+  });
+
+  it('clears the stale status line + button label on leaving connected, with no flash before the next check resolves', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'appliedCheck',
+      result: { found: true, status: 'applied', appliedAt: Date.UTC(2026, 5, 12) },
+    });
+
+    push('connected');
+    await flush();
+
+    const status = byId<HTMLParagraphElement>('applied-status');
+    const btnImport = byId<HTMLButtonElement>('btn-import');
+    expect(status.hidden).toBe(false);
+    expect(btnImport.textContent).toBe('Re-import / update');
+
+    // Desktop drops the connection — job A's stale line/label must not survive.
+    push('app_not_running');
+    expect(status.hidden).toBe(true);
+    expect(status.textContent).toBe('');
+    expect(btnImport.textContent).toBe('Import this job');
+
+    // Reconnect for job B — before its own check resolves, the pre-resolve
+    // state must already be clean (no lingering job-A text while it's in flight).
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'appliedCheck',
+      result: { found: true, status: 'saved' },
+    });
+    push('connected');
+    expect(status.hidden).toBe(true);
+    expect(status.textContent).toBe('');
+    expect(btnImport.textContent).toBe('Import this job');
+  });
+
+  it('ignores a stale in-flight response that resolves after a newer check has already rendered', async () => {
+    // Check A starts on entering `connected` for job A, but its response never
+    // resolves yet (simulates it still being in flight when a reconnect fires).
+    let resolveA: ((res: unknown) => void) | undefined;
+    const pendingA = new Promise((resolve) => {
+      resolveA = resolve;
+    });
+    sendMessageMock.mockReturnValueOnce(pendingA);
+    push('connected');
+
+    // Disconnect → reconnect: a fresh, edge-triggered check B starts for job B
+    // and resolves before A does.
+    push('app_not_running');
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'appliedCheck',
+      result: { found: true, status: 'saved', title: 'Job B' },
+    });
+    push('connected');
+    await flush();
+
+    const status = byId<HTMLParagraphElement>('applied-status');
+    const btnImport = byId<HTMLButtonElement>('btn-import');
+    expect(status.textContent).toBe('“Job B” is saved in your pipeline.');
+    expect(btnImport.textContent).toBe('Re-import / update');
+
+    // Check A finally resolves late (found:false for job A) — it must NOT
+    // overwrite the already-rendered job B result.
+    resolveA?.({ ok: true, kind: 'appliedCheck', result: { found: false } });
+    await flush();
+
+    expect(status.textContent).toBe('“Job B” is saved in your pipeline.');
+    expect(btnImport.textContent).toBe('Re-import / update');
   });
 });
