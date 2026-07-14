@@ -246,7 +246,11 @@ fn parse_changelog(raw: &str) -> Vec<ChangelogEntry> {
 }
 
 /// Parses one `## [x.y.z](...) (YYYY-MM-DD)` version heading line. `None` for any
-/// other line (subsection headings like `### Features`, prose, blank lines).
+/// other line (subsection headings like `### Features`, prose, blank lines). This
+/// also deliberately excludes `@semantic-release/changelog`'s first-ever-release
+/// heading shape `## x.y.z` (no `[...]` link, since there's no prior tag to
+/// compare against) — harmless in practice, since `CHANGELOG_LIMIT` means the
+/// capped, newest-first list never reaches that far back.
 fn parse_heading(line: &str) -> Option<(String, Option<String>)> {
     let rest = line.trim_end().strip_prefix("## [")?;
     let (version, rest) = rest.split_once(']')?;
