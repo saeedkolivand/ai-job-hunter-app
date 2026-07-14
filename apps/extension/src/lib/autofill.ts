@@ -23,6 +23,14 @@
  */
 export const AUTOFILL_GLOBAL = '__ajhRunAutofill';
 
+/** One additional labelled link beyond the named platform fields (e.g.
+ *  Portfolio, Dribbble, Behance, Stack Overflow). Matched by Tier 2 only —
+ *  see {@link matchExtraLink}. */
+export interface AutofillLink {
+  label: string;
+  url: string;
+}
+
 /** The flat contact-profile projection sent by the desktop for autofill. */
 export interface AutofillProfile {
   fullName?: string;
@@ -32,13 +40,17 @@ export interface AutofillProfile {
   linkedin?: string;
   github?: string;
   website?: string;
+  extraLinks?: AutofillLink[];
 }
 
-/** One profile field that was written, with how many form fields received it. */
+/** One profile field that was written, with how many form fields received it.
+ *  An extra-link fill uses the synthetic key `extraLink:<label>` (its `label`
+ *  is the link's own label, e.g. "Portfolio") so it never collides with a
+ *  named key. */
 export interface AutofillFilledField {
-  /** Logical key: email | phone | fullName | firstName | lastName | location | linkedin | github | website. */
+  /** Logical key: email | phone | fullName | firstName | lastName | location | linkedin | github | website | extraLink:<label>. */
   key: string;
-  /** Human label shown in the summary (e.g. "Email"). */
+  /** Human label shown in the summary (e.g. "Email", or the extra link's own label). */
   label: string;
   /** How many form fields received this value. */
   count: number;
@@ -54,6 +66,14 @@ export interface AutofillSummary {
   nameSplit: { first: string; last: string } | null;
   /** True when no field matched — surfaced so a no-op reads as intentional. */
   filledNothing: boolean;
+  /**
+   * Count of otherwise-fillable fields skipped because their signal matched
+   * MORE THAN ONE extra link — under-fill over guessing which one is right.
+   * Optional (not just `0`) so every pre-existing `AutofillSummary` literal
+   * (tests, the popup) stays valid without this field; `planAndFill` always
+   * sets it.
+   */
+  skippedAmbiguous?: number;
 }
 
 /** DOM id of the injected summary overlay (also used to clear a prior pass). */
@@ -117,6 +137,9 @@ const KEY_LABELS: Record<string, string> = {
   github: 'GitHub',
   website: 'Website',
 };
+
+/** `AutofillFilledField.key` prefix for an extra-link fill (see {@link matchExtraLink}). */
+const EXTRA_LINK_PREFIX = 'extraLink:';
 
 /** Split a full name into first token + remainder (a flagged guess). */
 export function splitName(fullName: string): { first: string; last: string } {
@@ -214,6 +237,26 @@ function autocompleteField(el: HTMLInputElement): string {
 }
 
 /**
+ * The baseline gate shared by every fill tier: a fillable input TYPE, visible,
+ * empty, not a card/password autocomplete token, and not matching the
+ * {@link AMBIGUOUS} denylist. Extracted so the extra-link matcher (Tier 2)
+ * applies the exact same discipline as the named-key matcher below.
+ */
+function isCandidateField(el: HTMLInputElement): boolean {
+  if (!FILLABLE_TYPES.has(el.type)) return false;
+  if (isHidden(el)) return false;
+  if (el.value.trim() !== '') return false; // never overwrite
+
+  const ac = autocompleteField(el);
+  if (ac.startsWith('cc-') || ac === 'current-password' || ac === 'new-password') return false;
+
+  const signal = textSignal(el);
+  if (AMBIGUOUS.some((w) => signal.includes(w))) return false;
+
+  return true;
+}
+
+/**
  * Decide which logical profile key an input should receive, or `null` to skip.
  * Tier 1 = the standard `autocomplete` token (always fill). Tier 2 = an
  * unambiguous label/name/id/placeholder signal. Social/website under-fill: they
@@ -221,16 +264,10 @@ function autocompleteField(el: HTMLInputElement): string {
  * "Website"/"URL" is ambiguous and skipped.
  */
 export function matchFieldKey(el: HTMLInputElement): string | null {
-  const type = el.type;
-  if (!FILLABLE_TYPES.has(type)) return null;
-  if (isHidden(el)) return null;
-  if (el.value.trim() !== '') return null; // never overwrite
+  if (!isCandidateField(el)) return null;
 
   const ac = autocompleteField(el);
-  if (ac.startsWith('cc-') || ac === 'current-password' || ac === 'new-password') return null;
-
   const signal = textSignal(el);
-  if (AMBIGUOUS.some((w) => signal.includes(w))) return null;
 
   // ── Tier 1: standard autocomplete tokens ──────────────────────────────────
   switch (ac) {
@@ -323,27 +360,150 @@ function setValue(el: HTMLInputElement, value: string): void {
 }
 
 /**
+ * Extra-link labels too generic to ever safely match a field: a bare
+ * "Website"/"Link" field either already resolves via the named `website` key
+ * (Tier 1/2 above) or is genuinely ambiguous — it must never receive an
+ * arbitrary secondary link, even in the edge case where the user themselves
+ * labelled an extra link this generically.
+ */
+const GENERIC_LINK_LABELS = new Set([
+  'website',
+  'web site',
+  'site',
+  'link',
+  'url',
+  'web',
+  'homepage',
+  'home page',
+  'personal site',
+  'personal website',
+  'profile',
+  'portal',
+]);
+
+/** Lowercase, diacritic-stripped, trimmed normalization for label matching.
+ *  NFD-decomposes (é → e + ´) then strips every combining mark via the
+ *  `\p{Diacritic}` Unicode property escape. */
+function normalizeLabel(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .trim();
+}
+
+/** A normalized label split into whole-word tokens (e.g. "Stack Overflow" → ["stack", "overflow"]). */
+function labelTokens(label: string): string[] {
+  return normalizeLabel(label)
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+/** Input types the extra-link matcher will fill — narrower than the baseline
+ *  {@link FILLABLE_TYPES}: `email`/`tel` pass the named-key gate (a same-shaped
+ *  value can go there), but a URL is syntactically invalid in either, so
+ *  Tier-2 link matching never fires on them even if the label otherwise
+ *  matches. */
+const EXTRA_LINK_FILLABLE_TYPES = new Set(['text', 'url', '']);
+
+/**
+ * Tier-2 extra-link matcher: does this field's free-text signal contain EVERY
+ * token of an extra link's label as a whole word (diacritic/case-insensitive)?
+ * Conservative by construction — a partial/coincidental substring hit never
+ * counts, and a link whose own label is one of {@link GENERIC_LINK_LABELS} is
+ * excluded entirely. A field whose signal matches MORE THAN ONE distinct link
+ * is ambiguous (`ambiguous: true`) — never guess which one is right.
+ *
+ * A single-token label (e.g. a link labelled just "Profile" or "Portal") is
+ * the highest false-positive-risk case: a common English word is likely to
+ * appear by coincidence in an unrelated field's name/id/placeholder/label.
+ * {@link GENERIC_LINK_LABELS} is the mitigation — every label that is itself
+ * a bare generic noun is excluded from matching entirely, no matter how the
+ * rest of the form reads.
+ */
+function matchExtraLink(
+  el: HTMLInputElement,
+  links: readonly AutofillLink[]
+): { link: AutofillLink | null; ambiguous: boolean } {
+  if (!EXTRA_LINK_FILLABLE_TYPES.has(el.type)) return { link: null, ambiguous: false };
+
+  // Normalize the signal the SAME way as the label (diacritic-strip first) —
+  // otherwise a non-ASCII char in the field's own text would fracture a token
+  // (e.g. "Stäck" splitting into "st"/"ck") before the comparison ever runs.
+  const signalTokens = new Set(
+    normalizeLabel(textSignal(el))
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean)
+  );
+  const matches = links.filter((link) => {
+    const norm = normalizeLabel(link.label);
+    if (!norm || GENERIC_LINK_LABELS.has(norm)) return false;
+    const tokens = labelTokens(link.label);
+    return tokens.length > 0 && tokens.every((t) => signalTokens.has(t));
+  });
+  if (matches.length === 0) return { link: null, ambiguous: false };
+  if (matches.length > 1) return { link: null, ambiguous: true };
+  return { link: matches[0] ?? null, ambiguous: false };
+}
+
+/**
  * Scan `doc` for fillable inputs, fill each matching EMPTY field from `profile`,
  * and return a summary. Pure w.r.t. profile persistence — nothing is stored.
+ *
+ * A field a named key (Tier 1/2) matches WITH a value is filled from that key
+ * exclusively — never additionally reconsidered against `extraLinks`. The ONE
+ * exception is the `website` key: a field mapped to it but with NOTHING in
+ * the profile (e.g. a "Portfolio" field maps to the generic `website` key,
+ * but the profile's `website` is empty) falls through to the extra-link
+ * matcher instead of being given up on — a specific "Portfolio" extra link is
+ * a better answer than an empty guess. Every OTHER named key (email, phone,
+ * linkedin, github, …) claims its field exclusively regardless of value — an
+ * empty profile value there is a legitimate "nothing to fill", not a signal
+ * to try the extra-link matcher, so those fields stay strictly additive.
  */
 export function planAndFill(doc: Document, profile: AutofillProfile): AutofillSummary {
   const split = splitName(profile.fullName ?? '');
+  const links = profile.extraLinks ?? [];
   const counts = new Map<string, number>();
   let usedSplit = false;
+  let skippedAmbiguous = 0;
 
   for (const el of Array.from(doc.querySelectorAll('input'))) {
+    if (!isCandidateField(el)) continue;
+
     const key = matchFieldKey(el);
-    if (!key) continue;
-    const value = valueForKey(key, profile, split);
-    if (!value) continue; // profile has nothing for this field → leave it empty
-    setValue(el, value);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-    if (key === 'firstName' || key === 'lastName') usedSplit = true;
+    if (key) {
+      const value = valueForKey(key, profile, split);
+      if (value) {
+        setValue(el, value);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+        if (key === 'firstName' || key === 'lastName') usedSplit = true;
+        continue;
+      }
+      // Named slot matched but empty — only `website` falls through to the
+      // extra-link matcher (the portfolio→website heuristic collision this
+      // was built for); every other named key claims the field regardless of
+      // value, so it stays skipped rather than reconsidered.
+      if (key !== 'website') continue;
+    }
+
+    if (links.length === 0) continue;
+    const { link, ambiguous } = matchExtraLink(el, links);
+    if (ambiguous) {
+      skippedAmbiguous += 1;
+      continue;
+    }
+    if (!link) continue;
+    setValue(el, link.url);
+    const linkKey = `${EXTRA_LINK_PREFIX}${link.label}`;
+    counts.set(linkKey, (counts.get(linkKey) ?? 0) + 1);
   }
 
   const filled: AutofillFilledField[] = Array.from(counts.entries()).map(([key, count]) => ({
     key,
-    label: KEY_LABELS[key] ?? key,
+    label: key.startsWith(EXTRA_LINK_PREFIX)
+      ? key.slice(EXTRA_LINK_PREFIX.length)
+      : (KEY_LABELS[key] ?? key),
     count,
   }));
 
@@ -351,6 +511,7 @@ export function planAndFill(doc: Document, profile: AutofillProfile): AutofillSu
     filled,
     nameSplit: usedSplit ? split : null,
     filledNothing: filled.length === 0,
+    skippedAmbiguous,
   };
 }
 
@@ -406,6 +567,13 @@ export function renderSummaryOverlay(doc: Document, summary: AutofillSummary): v
     verify.textContent = 'Review the filled fields, then submit yourself.';
     list.appendChild(verify);
     box.appendChild(list);
+  }
+
+  if (summary.skippedAmbiguous) {
+    const ambiguous = doc.createElement('div');
+    ambiguous.style.cssText = 'margin-top:6px;color:#fbbf24';
+    ambiguous.textContent = `${summary.skippedAmbiguous} field${summary.skippedAmbiguous === 1 ? '' : 's'} skipped — matched more than one saved link, so nothing was guessed.`;
+    box.appendChild(ambiguous);
   }
 
   const close = doc.createElement('button');

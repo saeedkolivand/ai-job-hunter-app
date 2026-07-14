@@ -1173,6 +1173,80 @@ describe('BridgeClient – getProfile (assisted autofill)', () => {
     client.dispose();
   });
 
+  it('round-trips extraLinks (additive/optional field) into the resolved profile', async () => {
+    const { client, socket } = await connectedClient();
+    const { profilePromise, reqId } = await startProfile(client, socket);
+
+    const payload = {
+      email: 'saeed@example.com',
+      extraLinks: [
+        { label: 'Portfolio', url: 'https://saeed.dev' },
+        { label: 'Dribbble', url: 'https://dribbble.com/saeed' },
+      ],
+    };
+    socket.simulateMessage(makeProfileEnvelope(reqId, payload));
+
+    const result = await profilePromise;
+    expect(result).toEqual(payload);
+
+    client.dispose();
+  });
+
+  it('tolerates the absence of extraLinks (old desktop reply, additive field)', async () => {
+    const { client, socket } = await connectedClient();
+    const { profilePromise, reqId } = await startProfile(client, socket);
+
+    socket.simulateMessage(makeProfileEnvelope(reqId, { email: 'saeed@example.com' }));
+
+    const result = (await profilePromise) as { email?: string; extraLinks?: unknown };
+    expect(result.email).toBe('saeed@example.com');
+    expect(result.extraLinks).toBeUndefined();
+
+    client.dispose();
+  });
+
+  it('resolves with a malformed error (never throws) when an extraLinks entry is missing url', async () => {
+    const { client, socket } = await connectedClient();
+    const { profilePromise, reqId } = await startProfile(client, socket);
+
+    socket.simulateMessage(makeProfileEnvelope(reqId, { extraLinks: [{ label: 'Portfolio' }] }));
+
+    const result = (await profilePromise) as { error?: string; extraLinks?: unknown };
+    expect(result.error).toMatch(/malformed/i);
+    expect(result.extraLinks).toBeUndefined();
+
+    client.dispose();
+  });
+
+  it('resolves with a malformed error (never throws) when extraLinks is not an array', async () => {
+    const { client, socket } = await connectedClient();
+    const { profilePromise, reqId } = await startProfile(client, socket);
+
+    socket.simulateMessage(makeProfileEnvelope(reqId, { extraLinks: 'https://saeed.dev' }));
+
+    const result = (await profilePromise) as { error?: string };
+    expect(result.error).toMatch(/malformed/i);
+
+    client.dispose();
+  });
+
+  it('resolves with a malformed error (never throws) when an extraLinks entry has a non-http(s) url', async () => {
+    const { client, socket } = await connectedClient();
+    const { profilePromise, reqId } = await startProfile(client, socket);
+
+    socket.simulateMessage(
+      makeProfileEnvelope(reqId, {
+        extraLinks: [{ label: 'Portfolio', url: 'javascript:alert(1)' }],
+      })
+    );
+
+    const result = (await profilePromise) as { error?: string; extraLinks?: unknown };
+    expect(result.error).toMatch(/malformed/i);
+    expect(result.extraLinks).toBeUndefined();
+
+    client.dispose();
+  });
+
   it('resolves with the refusal error when autofill is opted out on the desktop', async () => {
     const { client, socket } = await connectedClient();
     const { profilePromise, reqId } = await startProfile(client, socket);

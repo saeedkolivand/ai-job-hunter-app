@@ -51,7 +51,10 @@ export const EXTENSION_PROTOCOL_VERSION = 2;
  * deliberate click, not a passive/background write, exactly like the
  * existing ungated `import.request{applied:true}`; anything returning fresh
  * PII (`profile.get`) or doing billable/egress work requires a
- * desktop-enforced opt-in.
+ * desktop-enforced opt-in. `profile.result.extraLinks` (additional labelled
+ * link URLs) is fresh PII of exactly the same class as the rest of that
+ * payload (`linkedin`/`github`/`website`, …), so it rides the SAME `profile.get`
+ * opt-in gate — no separate consent surface, no protocol bump.
  */
 export const EXTENSION_MESSAGE_TYPES = {
   /** Extension → desktop: handshake step 1 — `{ protocol, clientNonce }`, no token. */
@@ -225,6 +228,14 @@ export interface ExtensionImportResult {
  * `ContactProfile.location.default`). On refusal (autofill opt-in off) or failure
  * carries `error`. These fields are transient: the extension uses them for the one
  * fill and never writes them to `chrome.storage`.
+ *
+ * `extraLinks` is fresh PII-over-the-wire exactly like the rest of this payload
+ * (a link URL, same as `linkedin`/`github`/`website`) — it rides the SAME
+ * autofill opt-in gate; there is no separate consent surface for it. Additive
+ * and optional: an old extension that has never heard of the key ignores it,
+ * and an old desktop simply never sends it, so there is no protocol bump. The
+ * desktop caps it at 10 entries and drops any entry with an empty label or a
+ * non-`http(s)` url before it is ever sent.
  */
 export interface ExtensionProfileResult {
   fullName?: string;
@@ -234,6 +245,7 @@ export interface ExtensionProfileResult {
   linkedin?: string;
   github?: string;
   website?: string;
+  extraLinks?: { label: string; url: string }[];
   /** Refusal (autofill disabled) or failure reason; present ⇒ no fields were sent. */
   error?: string;
 }
