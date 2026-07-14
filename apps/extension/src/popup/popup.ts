@@ -96,10 +96,14 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/** Format an epoch-ms timestamp as a short local date (e.g. "Jun 12") — no
- *  year, popup-local formatting, no date library. */
+/** Format an epoch-ms timestamp as a short local date (e.g. "Jun 12", or
+ *  "Jun 12, 2025" when the date's year differs from the current year) —
+ *  popup-local formatting, no date library. */
 function formatShortDate(epochMs: number): string {
-  return new Date(epochMs).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const date = new Date(epochMs);
+  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+  if (date.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return date.toLocaleDateString(undefined, opts);
 }
 
 /**

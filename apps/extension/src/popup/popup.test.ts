@@ -396,6 +396,21 @@ describe('resolveAppliedStatusLine', () => {
     };
     expect(resolveAppliedStatusLine(res)).toBe('Already in your pipeline.');
   });
+
+  it('includes the year in the applied date when it differs from the current year', () => {
+    // Relative to the current year so this never rots — June avoids any
+    // UTC/local timezone day-boundary rollover into a different year.
+    const priorYear = new Date().getFullYear() - 1;
+    const appliedAt = Date.UTC(priorYear, 5, 12);
+    const res = {
+      ok: true as const,
+      kind: 'appliedCheck' as const,
+      result: { found: true, status: 'applied', appliedAt },
+    };
+    expect(resolveAppliedStatusLine(res)).toMatch(
+      new RegExp(`^Already in your pipeline — applied .+\\b${priorYear}\\.$`)
+    );
+  });
 });
 
 describe('resolveImportButtonLabel', () => {
