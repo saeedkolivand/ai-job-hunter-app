@@ -340,15 +340,14 @@ describe('JobAdView — ModelSelector visibility', () => {
   // intrinsic width while its wrapper row lacked `min-w-0`. jsdom can't measure
   // layout, so this asserts the structural fix (the classes that make it
   // shrink/truncate inside its row) rather than pixels.
-  it('passes containment classes (min-w-0 flex-1) to ModelSelector so it shrinks inside the toolbar row', () => {
+  it('passes the containment class (min-w-0) to ModelSelector so it shrinks inside the toolbar row, without stretching it', () => {
     render(<JobAdView {...makeProps({ jobDesc: 'Normal full description.', hasDesc: true })} />);
     const stub = screen.getByTestId('model-selector-stub');
-    expect(stub.className).toContain('min-w-0');
-    expect(stub.className).toContain('flex-1');
-    expect(stub.className).not.toContain('shrink-0');
+    expect(stub).toHaveClass('min-w-0');
+    expect(stub).not.toHaveClass('shrink-0', 'flex-1');
     // Its immediate row wrapper must also allow shrinking, or the fix on
     // ModelSelector alone can't stop the row itself from overflowing.
-    expect(stub.parentElement?.className).toContain('min-w-0');
+    expect(stub.parentElement).toHaveClass('min-w-0');
   });
 });
 

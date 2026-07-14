@@ -112,9 +112,9 @@ export function JobAdView({
               size="sm"
             />
             {/* `min-w-0` lets it shrink below its content (model label + guidance
-                line) instead of pushing past the card edge; `flex-1` gives it the
-                remaining row space so the language dropdown stays compact. */}
-            <ModelSelector className="min-w-0 flex-1" />
+                line) instead of pushing past the card edge; no `flex-1` — that would
+                also stretch it to fill the row on wide cards, beyond this bug fix. */}
+            <ModelSelector className="min-w-0" />
           </div>
         )}
       </div>
