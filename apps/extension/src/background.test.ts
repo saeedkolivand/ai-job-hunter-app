@@ -201,6 +201,29 @@ describe('fill request — success path', () => {
 
     expect(res).toEqual({ ok: true, kind: 'fill', summary });
   });
+
+  it('forwards extraLinks from the profile.result reply into the injected fill fields', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    mockClient.getProfile.mockResolvedValue({
+      email: 'saeed@example.com',
+      extraLinks: [{ label: 'Portfolio', url: 'https://saeed.dev' }],
+    });
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://example.com/apply' } as never]);
+    const summary: AutofillSummary = {
+      filled: [{ key: 'extraLink:Portfolio', label: 'Portfolio', count: 1 }],
+      nameSplit: null,
+      filledNothing: false,
+    };
+    executeScriptMock
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce([{ result: summary }] as never);
+
+    await send({ kind: 'fill' });
+
+    const secondCallArgs = executeScriptMock.mock.calls[1]?.[0] as { args?: unknown[] };
+    const [fields] = secondCallArgs.args as [{ extraLinks?: unknown }];
+    expect(fields.extraLinks).toEqual([{ label: 'Portfolio', url: 'https://saeed.dev' }]);
+  });
 });
 
 // ── appliedCheck request — always ok:true, every failure folds into found:false ─
