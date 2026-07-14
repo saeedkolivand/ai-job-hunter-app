@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784055038570,
+  "lastUpdate": 1784057580626,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4445,6 +4445,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 251473,
             "range": "± 1642",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c4f4b2c93ea19da2a7358bedbefdd59c2bfdb91b",
+          "message": "test: pin xing and stepstone list urls as already canonical (#639)\n\n* test: pin xing and stepstone list urls as already canonical\n\nLive verification (public sessions) found both boards navigate to\npath-canonical urls at selection time, so no canonicalizer arms are\nneeded; regression tests guard the captured shapes and the tracking\nquery drop. Glassdoor stays open (cloudflare-blocked site-wide) and\nstepstone keeps a residual todo for its unprobed login-gated inline\nview, since this resolver's real caller is the authenticated import.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test: carry captured tracking params in canonical url guards\n\nXing/StepStone detail-URL guards now carry the actually-captured\ntracking query params (ijt/rltr), matching the doc comment above them.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-14T21:23:53+02:00",
+          "tree_id": "915175fa31fe291cfff28a33f43e3b9d263bfe5e",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/c4f4b2c93ea19da2a7358bedbefdd59c2bfdb91b"
+        },
+        "date": 1784057579949,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2143167,
+            "range": "± 48912",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2580419,
+            "range": "± 40964",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 303289,
+            "range": "± 9153",
             "unit": "ns/iter"
           }
         ]
