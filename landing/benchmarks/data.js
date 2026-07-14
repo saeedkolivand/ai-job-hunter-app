@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784057580626,
+  "lastUpdate": 1784061351060,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4487,6 +4487,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 303289,
             "range": "± 9153",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "abf8f2bdbe5b161ceb35530319107922fe25e842",
+          "message": "feat: source the settings changelog from the bundled changelog file (#640)\n\n* feat: source the settings changelog from the bundled changelog file\n\nupdater_changelog previously fetched api.github.com/.../releases on every\nSettings changelog view. It now parses the repo's own CHANGELOG.md, bundled\ninto the binary at compile time via include_str! (Cargo tracks it for\nrebuilds like any other source dependency, no build.rs needed).\n\nThe changelog works fully offline now and removes a per-release GitHub API\ncall the app was making beyond the single on-launch version check that\ndocs/adr/0005-network-egress-privacy-boundary.md already accounts for.\n\nRelease-ordering check: the release job's semantic-release run commits\nCHANGELOG.md and tags vX.Y.Z in one step (.releaserc.json); the separate\nbuild-installers job later checks out that exact tag (.github/workflows/release.yml),\nso the shipped binary's bundled changelog always includes its own version's\nentry with no lag.\n\nThe IPC response shape (ChangelogResult/ChangelogRelease) is unchanged, so\nthe renderer (update-section, useChangelog) needed no changes.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: render changelog dates as local calendar dates\n\nDate-only publishedAt parsed as UTC midnight, showing the previous day west of UTC.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-14T22:26:49+02:00",
+          "tree_id": "5e923fd0b1b8aee6b0b99e8417a386e0b741b6c8",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/abf8f2bdbe5b161ceb35530319107922fe25e842"
+        },
+        "date": 1784061350405,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2139936,
+            "range": "± 22016",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2590873,
+            "range": "± 76866",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 287621,
+            "range": "± 5254",
             "unit": "ns/iter"
           }
         ]
