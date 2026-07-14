@@ -13,6 +13,7 @@ import { compareSemver } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, MarkdownMessage, RefreshButton, SettingsSection } from '@ajh/ui';
 
+import { parseCalendarOrIsoDate } from '@/lib/time';
 import { useAppVersion, useOpenExternal } from '@/services';
 import { useChangelog, useUpdater } from '@/services/use-updater';
 
@@ -233,7 +234,7 @@ export function UpdateSection() {
                     )}
                     {release.publishedAt && (
                       <span className="text-[10px] text-foreground/30">
-                        {new Date(release.publishedAt).toLocaleDateString()}
+                        {parseCalendarOrIsoDate(release.publishedAt).toLocaleDateString()}
                       </span>
                     )}
                   </div>
