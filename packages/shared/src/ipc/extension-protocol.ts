@@ -256,6 +256,7 @@ export const ExtensionAnswerSuggestionSchema = z.object({
   answer: z.string(),
   sourceCompany: z.string().optional(),
   sourceTitle: z.string().optional(),
+  sourceQuestion: z.string(),
   score: z.number(),
   salary: z.boolean(),
 }) satisfies z.ZodType<ExtensionAnswerSuggestion>;

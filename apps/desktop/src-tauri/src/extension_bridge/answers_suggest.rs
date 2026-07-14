@@ -54,13 +54,27 @@ const MAX_SUGGESTIONS: usize = 20;
 /// do you want this role?" (score 0.44 — {why,do,you,want} over a 9-token
 /// union), while unrelated questions like "What is your salary expectation?"
 /// vs "Do you have a driver's license?" still score 0.0 and never match.
+///
+/// **Chosen mitigation for the cross-question footgun (review fix), NOT
+/// stopword filtering or a lower/higher threshold**: two structurally
+/// unrelated questions can still share enough filler words ("what is your")
+/// to cross this threshold (e.g. "What is your current location?" vs "What
+/// is your current salary?"). Stopword-stripping the tokenizer risks
+/// silently breaking the short-paraphrase matches this value was tuned
+/// against, so instead: (1) [`Suggestion::source_question`] always carries
+/// the matched candidate's ORIGINAL question text so a cross-question match
+/// is visually self-evident to the user, and (2) [`match_questions`] flags
+/// `salary` when EITHER side of the match is salary-shaped (see there) — a
+/// stored salary answer can never slip out as fillable just because it
+/// happened to match on filler words.
 const MIN_SCORE: f64 = 0.4;
 
 /// Salary-ish keyword denylist for the Copy-only rule: a suggestion whose
-/// (normalized) INPUT question contains any of these must never offer "Fill
-/// this field" — pasting a stored salary figure into the wrong context on a
-/// live form is exactly the kind of silent mistake this feature must never
-/// make. Checked against the scanned question text, not the stored answer.
+/// (normalized) INPUT question OR matched candidate's SOURCE question
+/// contains any of these must never offer "Fill this field" — pasting a
+/// stored salary figure into the wrong context on a live form is exactly the
+/// kind of silent mistake this feature must never make. Checked against
+/// question text on both sides of the match, never the stored answer.
 /// "rate" is deliberately NEVER listed bare — only as a salary-shaped
 /// multi-token phrase ("day rate"/"hourly rate"/"pay rate") — because a bare
 /// "rate" would false-positive an unrelated "Rate your TypeScript skills"
@@ -172,6 +186,11 @@ fn jaccard(a: &HashSet<String>, b: &HashSet<String>) -> f64 {
 /// candidates) — [`match_questions`] tokenizes its side of the pair the same
 /// way, once per question, so [`jaccard`] only ever does set-vs-set scoring.
 pub(super) struct AnswerCandidate<'a> {
+    /// The RAW (un-normalized) question text this answer was originally
+    /// stored under — kept so a match can surface it verbatim as
+    /// [`Suggestion::source_question`] and so the salary guard can check it
+    /// independently of the scanned input question (see `MIN_SCORE`'s doc).
+    question: &'a str,
     answer: &'a str,
     tokens: HashSet<String>,
     company: &'a str,
@@ -188,6 +207,7 @@ impl<'a> AnswerCandidate<'a> {
         updated_at: u64,
     ) -> Self {
         Self {
+            question,
             answer,
             tokens: tokenize(&normalize_question(question)),
             company,
@@ -204,8 +224,18 @@ pub(super) struct Suggestion {
     pub(super) answer: String,
     pub(super) source_company: Option<String>,
     pub(super) source_title: Option<String>,
+    /// The matched candidate's ORIGINAL (raw, un-normalized) question text —
+    /// always present, never the scanned `question` above. Surfaced by the
+    /// popup as "answered as: '…'" so a cross-question match (two questions
+    /// similar enough on filler words to cross [`MIN_SCORE`] but about
+    /// different things) is visually self-evident rather than silent.
+    pub(super) source_question: String,
     pub(super) score: f64,
-    /// Copy-only when true — see [`SALARY_KEYWORDS`].
+    /// Copy-only when true — see [`SALARY_KEYWORDS`]. True when EITHER the
+    /// scanned input question OR the matched candidate's own
+    /// `source_question` is salary-shaped, so a stored salary answer can
+    /// never surface as fillable just because it matched under an unrelated
+    /// label (see the mitigation note on [`MIN_SCORE`]).
     pub(super) salary: bool,
 }
 
@@ -251,13 +281,19 @@ pub(super) fn match_questions(
         }
 
         if let Some((c, score)) = best {
+            // Either side salary-shaped forces Copy-only — a stored salary
+            // answer must never surface as fillable just because it matched
+            // under an unrelated scanned label (see MIN_SCORE's doc).
+            let salary =
+                is_salary_question(&norm_q) || is_salary_question(&normalize_question(c.question));
             out.push(Suggestion {
                 question: q.clone(),
                 answer: c.answer.to_string(),
                 source_company: (!c.company.trim().is_empty()).then(|| c.company.to_string()),
                 source_title: (!c.title.trim().is_empty()).then(|| c.title.to_string()),
+                source_question: c.question.to_string(),
                 score,
-                salary: is_salary_question(&norm_q),
+                salary,
             });
         }
     }
@@ -341,6 +377,7 @@ pub(super) fn answers_suggest_reply(req_id: &str, outcome: AppResult<Vec<Suggest
                     if let Some(t) = s.source_title {
                         obj.insert("sourceTitle".to_string(), json!(t));
                     }
+                    obj.insert("sourceQuestion".to_string(), json!(s.source_question));
                     obj.insert("score".to_string(), json!(s.score));
                     obj.insert("salary".to_string(), json!(s.salary));
                     Value::Object(obj)

@@ -1184,6 +1184,7 @@ describe('correlateSuggestions', () => {
   const suggestion = (question: string) => ({
     question,
     answer: 'An answer.',
+    sourceQuestion: question,
     score: 0.8,
     salary: false,
   });
@@ -1310,7 +1311,13 @@ describe('resolveAnswersSuggestResponse', () => {
       result: {
         ok: true as const,
         suggestions: [
-          { question: 'Why this role?', answer: 'Because.', score: 0.7, salary: false },
+          {
+            question: 'Why this role?',
+            answer: 'Because.',
+            sourceQuestion: 'Why this role?',
+            score: 0.7,
+            salary: false,
+          },
         ],
       },
       scanned: [],
@@ -1327,8 +1334,20 @@ describe('resolveAnswersSuggestResponse', () => {
       result: {
         ok: true as const,
         suggestions: [
-          { question: 'Why this role?', answer: 'Because.', score: 0.7, salary: false },
-          { question: 'Notice period?', answer: 'Two weeks.', score: 0.9, salary: false },
+          {
+            question: 'Why this role?',
+            answer: 'Because.',
+            sourceQuestion: 'Why this role?',
+            score: 0.7,
+            salary: false,
+          },
+          {
+            question: 'Notice period?',
+            answer: 'Two weeks.',
+            sourceQuestion: 'Notice period?',
+            score: 0.9,
+            salary: false,
+          },
         ],
       },
       scanned: [],
@@ -1440,6 +1459,7 @@ describe('doSuggestAnswers (#btn-suggest-answers)', () => {
             answer: 'Because I love it.',
             sourceCompany: 'Acme',
             sourceTitle: 'Backend Engineer',
+            sourceQuestion: 'Why this role?',
             score: 0.8,
             salary: false,
           },
@@ -1455,8 +1475,36 @@ describe('doSuggestAnswers (#btn-suggest-answers)', () => {
     expect(list.hidden).toBe(false);
     expect(list.textContent).toContain('Why this role?');
     expect(list.textContent).toContain('Because I love it.');
-    expect(list.textContent).toContain('from your Backend Engineer @ Acme application');
+    expect(list.textContent).toContain(
+      'answered as: "Why this role?" — from your Backend Engineer @ Acme application'
+    );
     expect(list.querySelector('button')?.textContent).toBe('Copy');
+  });
+
+  it('renders the sourceQuestion as a secondary line even when it differs from the scanned question — makes a cross-question match self-evident', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answersSuggest',
+      result: {
+        ok: true,
+        suggestions: [
+          {
+            question: 'What is your current location?',
+            answer: '$120,000',
+            sourceQuestion: 'What is your current salary?',
+            score: 0.67,
+            salary: true,
+          },
+        ],
+      },
+      scanned: [{ question: 'What is your current location?', index: 0 }],
+    });
+
+    byId<HTMLButtonElement>('btn-suggest-answers').click();
+    await flush();
+
+    const list = byId<HTMLDivElement>('suggestions-list');
+    expect(list.textContent).toContain('answered as: "What is your current salary?"');
   });
 
   it('renders no Fill button for a salary-flagged suggestion (Copy-only rule)', async () => {
@@ -1469,6 +1517,7 @@ describe('doSuggestAnswers (#btn-suggest-answers)', () => {
           {
             question: 'What is your expected salary?',
             answer: '$120,000',
+            sourceQuestion: 'What is your expected salary?',
             score: 0.9,
             salary: true,
           },
@@ -1491,7 +1540,13 @@ describe('doSuggestAnswers (#btn-suggest-answers)', () => {
       result: {
         ok: true,
         suggestions: [
-          { question: 'Why this role?', answer: 'Because.', score: 0.7, salary: false },
+          {
+            question: 'Why this role?',
+            answer: 'Because.',
+            sourceQuestion: 'Why this role?',
+            score: 0.7,
+            salary: false,
+          },
         ],
       },
       // No scanned entry for this question — no live target.
@@ -1512,7 +1567,13 @@ describe('doSuggestAnswers (#btn-suggest-answers)', () => {
       result: {
         ok: true,
         suggestions: [
-          { question: 'Why this role?', answer: 'Because.', score: 0.7, salary: false },
+          {
+            question: 'Why this role?',
+            answer: 'Because.',
+            sourceQuestion: 'Why this role?',
+            score: 0.7,
+            salary: false,
+          },
         ],
       },
       // Two form fields share the exact same label — which one to fill is
@@ -1539,7 +1600,13 @@ describe('doSuggestAnswers (#btn-suggest-answers)', () => {
       result: {
         ok: true,
         suggestions: [
-          { question: 'Why this role?', answer: 'Because.', score: 0.7, salary: false },
+          {
+            question: 'Why this role?',
+            answer: 'Because.',
+            sourceQuestion: 'Why this role?',
+            score: 0.7,
+            salary: false,
+          },
         ],
       },
       scanned: [{ question: 'Why this role?', index: 0 }],
@@ -1559,7 +1626,13 @@ describe('doSuggestAnswers (#btn-suggest-answers)', () => {
       result: {
         ok: true,
         suggestions: [
-          { question: 'Why this role?', answer: 'Because I love it.', score: 0.8, salary: false },
+          {
+            question: 'Why this role?',
+            answer: 'Because I love it.',
+            sourceQuestion: 'Why this role?',
+            score: 0.8,
+            salary: false,
+          },
         ],
       },
       scanned: [],
@@ -1583,7 +1656,13 @@ describe('doSuggestAnswers (#btn-suggest-answers)', () => {
       result: {
         ok: true,
         suggestions: [
-          { question: 'Why this role?', answer: 'Because I love it.', score: 0.8, salary: false },
+          {
+            question: 'Why this role?',
+            answer: 'Because I love it.',
+            sourceQuestion: 'Why this role?',
+            score: 0.8,
+            salary: false,
+          },
         ],
       },
       scanned: [{ question: 'Why this role?', index: 0 }],
@@ -1619,7 +1698,13 @@ describe('doSuggestAnswers (#btn-suggest-answers)', () => {
       result: {
         ok: true,
         suggestions: [
-          { question: 'Why this role?', answer: 'Because I love it.', score: 0.8, salary: false },
+          {
+            question: 'Why this role?',
+            answer: 'Because I love it.',
+            sourceQuestion: 'Why this role?',
+            score: 0.8,
+            salary: false,
+          },
         ],
       },
       scanned: [{ question: 'Why this role?', index: 0 }],

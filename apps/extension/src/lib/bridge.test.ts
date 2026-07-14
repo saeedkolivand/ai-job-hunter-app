@@ -1813,6 +1813,7 @@ describe('BridgeClient – suggestAnswers', () => {
           answer: 'Because I love it.',
           sourceCompany: 'Acme',
           sourceTitle: 'Backend Engineer',
+          sourceQuestion: 'Why this role?',
           score: 0.8,
           salary: false,
         },

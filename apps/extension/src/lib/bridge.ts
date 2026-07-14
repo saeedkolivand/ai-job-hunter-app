@@ -301,6 +301,7 @@ function isExtensionAnswerSuggestion(v: unknown): v is ExtensionAnswerSuggestion
     typeof o.answer === 'string' &&
     optStr(o.sourceCompany) &&
     optStr(o.sourceTitle) &&
+    typeof o.sourceQuestion === 'string' &&
     typeof o.score === 'number' &&
     typeof o.salary === 'boolean'
   );
@@ -335,6 +336,7 @@ function normalizeAnswersSuggestResult(payload: unknown): ExtensionAnswersSugges
     const out: ExtensionAnswerSuggestion = {
       question: s.question,
       answer: s.answer,
+      sourceQuestion: s.sourceQuestion,
       score: s.score,
       salary: s.salary,
     };

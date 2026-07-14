@@ -393,16 +393,22 @@ export interface ExtensionAnswersSuggestRequest {
 
 /**
  * One matched suggestion — `sourceCompany`/`sourceTitle` name the Application
- * the answer came from (omitted when blank); `score` is the matcher's
- * token-Jaccard similarity (0–1, diagnostic only). `salary` is true when the
- * (scanned) question matched a salary keyword — the popup MUST NOT offer
- * "Fill this field" for such a suggestion, only Copy.
+ * the answer came from (omitted when blank); `sourceQuestion` is the matched
+ * candidate's ORIGINAL (raw) question text, always present — the popup shows
+ * it as "answered as: '…'" so a cross-question match (two questions similar
+ * enough on filler words to cross the matcher's threshold but about
+ * different things) is visually self-evident rather than silent; `score` is
+ * the matcher's token-Jaccard similarity (0–1, diagnostic only). `salary` is
+ * true when EITHER the scanned `question` OR `sourceQuestion` matched a
+ * salary keyword — the popup MUST NOT offer "Fill this field" for such a
+ * suggestion, only Copy.
  */
 export interface ExtensionAnswerSuggestion {
   question: string;
   answer: string;
   sourceCompany?: string;
   sourceTitle?: string;
+  sourceQuestion: string;
   score: number;
   salary: boolean;
 }

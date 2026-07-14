@@ -561,6 +561,7 @@ describe('ExtensionAnswersSuggestResultSchema', () => {
           answer: 'Because I love it.',
           sourceCompany: 'Acme',
           sourceTitle: 'Backend Engineer',
+          sourceQuestion: 'Why this role?',
           score: 0.8,
           salary: false,
         },
@@ -579,10 +580,27 @@ describe('ExtensionAnswersSuggestResultSchema', () => {
       ExtensionAnswersSuggestResultSchema.parse({
         ok: true,
         suggestions: [
-          { question: 'Why this role?', answer: 'Because I love it.', score: 0.6, salary: false },
+          {
+            question: 'Why this role?',
+            answer: 'Because I love it.',
+            sourceQuestion: 'Why this role?',
+            score: 0.6,
+            salary: false,
+          },
         ],
       })
     ).not.toThrow();
+  });
+
+  it('rejects a suggestion missing the required sourceQuestion field', () => {
+    expect(() =>
+      ExtensionAnswersSuggestResultSchema.parse({
+        ok: true,
+        suggestions: [
+          { question: 'Why this role?', answer: 'Because I love it.', score: 0.6, salary: false },
+        ],
+      })
+    ).toThrow();
   });
 
   it("accepts a user-facing failure payload (this verb's errors are shown, unlike applied.check)", () => {

@@ -2316,6 +2316,7 @@ fn answers_suggest_reply_carries_type_and_req_id_on_success() {
             answer: "Because I love it.".to_string(),
             source_company: Some("Acme".to_string()),
             source_title: Some("Backend Engineer".to_string()),
+            source_question: "Why do you want to work here?".to_string(),
             score: 0.8,
             salary: false,
         }]),
@@ -2326,6 +2327,10 @@ fn answers_suggest_reply_carries_type_and_req_id_on_success() {
     assert_eq!(v["payload"]["ok"], true);
     assert_eq!(v["payload"]["suggestions"][0]["question"], "Why this role?");
     assert_eq!(v["payload"]["suggestions"][0]["sourceCompany"], "Acme");
+    assert_eq!(
+        v["payload"]["suggestions"][0]["sourceQuestion"],
+        "Why do you want to work here?"
+    );
     assert_eq!(v["payload"]["suggestions"][0]["salary"], false);
 }
 
@@ -2516,6 +2521,48 @@ fn match_questions_does_not_flag_non_salary_questions() {
         1_000,
     )];
     let out = match_questions(&["Why do you want to work here?".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert!(!out[0].salary);
+}
+
+/// Cross-question footgun (review fix): "What is your current location?" and
+/// "What is your current salary?" share {what, is, your, current} = 4 of a
+/// 6-token union = 0.67, comfortably above MIN_SCORE, even though the two
+/// questions are about completely different things. The scanned INPUT
+/// question carries no salary keyword, but the matched candidate's own
+/// (stored) question does — the salary Copy-only guard must catch this via
+/// the candidate side, not just the input side.
+#[test]
+fn match_questions_flags_salary_when_matched_candidates_source_question_is_salary() {
+    let candidates = vec![candidate(
+        "What is your current salary?",
+        "$120,000",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["What is your current location?".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert!(
+        out[0].salary,
+        "a stored salary answer must stay Copy-only no matter which label it matched"
+    );
+    assert_eq!(out[0].source_question, "What is your current salary?");
+}
+
+/// The flip side of the above: when NEITHER the scanned input nor the
+/// matched candidate's own question is salary-shaped, the suggestion stays
+/// fillable — the OR'd guard must never over-flag an unrelated match.
+#[test]
+fn match_questions_stays_fillable_when_neither_side_is_salary() {
+    let candidates = vec![candidate(
+        "What is your notice period?",
+        "Two weeks.",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["What is your notice period?".to_string()], &candidates);
     assert_eq!(out.len(), 1);
     assert!(!out[0].salary);
 }

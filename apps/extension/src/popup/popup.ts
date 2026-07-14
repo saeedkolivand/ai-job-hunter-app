@@ -782,10 +782,12 @@ async function doFillSuggestion(
   }
 }
 
-/** Build one suggestion row: question / answer preview / source, plus Copy
- *  and (when a live target exists and the question is not salary-like) Fill.
- *  When the scan found more than one field sharing this exact question — which
- *  one to fill is ambiguous — a short hint replaces Fill instead of guessing.
+/** Build one suggestion row: question / answer preview / source (always
+ *  including the matched candidate's original `sourceQuestion`, so a
+ *  cross-question match is visible, not silent), plus Copy and (when a live
+ *  target exists and the question is not salary-like) Fill. When the scan
+ *  found more than one field sharing this exact question — which one to fill
+ *  is ambiguous — a short hint replaces Fill instead of guessing.
  *  `textContent` only — no `innerHTML` with page/desktop-derived text. */
 function buildSuggestionRow(item: RenderedSuggestion): HTMLElement {
   const { suggestion, fieldIndex, multipleMatches, scanCount } = item;
@@ -804,14 +806,22 @@ function buildSuggestionRow(item: RenderedSuggestion): HTMLElement {
 
   const sourceTitle = suggestion.sourceTitle?.trim();
   const sourceCompany = suggestion.sourceCompany?.trim();
-  if (sourceTitle || sourceCompany) {
+  const sourceQuestion = suggestion.sourceQuestion.trim();
+  if (sourceTitle || sourceCompany || sourceQuestion) {
     const name =
       sourceTitle && sourceCompany
         ? `${sourceTitle} @ ${sourceCompany}`
         : (sourceTitle ?? sourceCompany);
     const src = document.createElement('p');
     src.className = 'suggestion__source';
-    src.textContent = `from your ${name} application`;
+    // Always shows the matched candidate's ORIGINAL question text — makes a
+    // cross-question match (two questions similar enough on filler words to
+    // score above the matcher's threshold but about different things)
+    // self-evident rather than silent, whether or not it names an
+    // application below.
+    const bits = [`answered as: "${sourceQuestion}"`];
+    if (name) bits.push(`from your ${name} application`);
+    src.textContent = bits.join(' — ');
     row.append(src);
   }
 
