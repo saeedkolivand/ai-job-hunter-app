@@ -50,8 +50,9 @@ const IMPORT_PARTIAL_HINT = 'Open AI Job Hunter → Applications to paste it.';
  * Application's status OUT of `saved` — it never demotes an existing
  * applied-or-further row. So when the checkbox was NOT ticked and the matched
  * row's status is already past `saved`, a bare "Imported" success would read
- * like a fresh/changed import when nothing was actually touched — surface that
- * explicitly instead.
+ * like the status had changed when only the status was left untouched (the
+ * desktop meta merge still refreshes title/company/description/answers) —
+ * surface that explicitly instead.
  *
  * Pure: no DOM access, no side effects.
  */
