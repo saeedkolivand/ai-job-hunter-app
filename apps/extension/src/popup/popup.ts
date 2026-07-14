@@ -280,11 +280,20 @@ function showView(phase: ConnectionStatus['phase']): void {
 function render(status: ConnectionStatus): void {
   lastKnownHasToken = status.hasToken;
 
-  // Fire-and-forget, on each transition INTO connected (never on a repeated
-  // push while already connected) — never awaited here, so it can never delay
-  // this render.
-  if (status.phase === 'connected' && lastRenderedPhase !== 'connected') {
-    void runAppliedAutoCheck();
+  if (status.phase === 'connected') {
+    // Fire-and-forget, on each transition INTO connected (never on a repeated
+    // push while already connected) — never awaited here, so it can never delay
+    // this render.
+    if (lastRenderedPhase !== 'connected') {
+      void runAppliedAutoCheck();
+    }
+  } else {
+    // Left (or never entered) `connected` — clear any status line/button label
+    // left over from a previous page so it can't flash stale for the next one
+    // before its own check resolves.
+    els.appliedStatus.hidden = true;
+    els.appliedStatus.textContent = '';
+    els.btnImport.textContent = IMPORT_LABEL_DEFAULT;
   }
   lastRenderedPhase = status.phase;
 
@@ -407,6 +416,13 @@ async function refreshUntilSettled(attempts = 5, gapMs = 600): Promise<void> {
  * ever shown but "no line, default label".
  */
 async function runAppliedAutoCheck(): Promise<void> {
+  // Clear synchronously before the request goes out (belt-and-suspenders): if
+  // render() re-enters `connected` for a new page while a previous check is
+  // still in flight, the previous page's line/label must not linger while
+  // this fresh one resolves.
+  els.appliedStatus.hidden = true;
+  els.appliedStatus.textContent = '';
+  els.btnImport.textContent = IMPORT_LABEL_DEFAULT;
   try {
     const res = await send({ kind: 'appliedCheck' });
     const line = resolveAppliedStatusLine(res);

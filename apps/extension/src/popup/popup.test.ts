@@ -848,4 +848,38 @@ describe('appliedCheck auto-check', () => {
     await flush();
     expect(sendMessageMock).not.toHaveBeenCalled();
   });
+
+  it('clears the stale status line + button label on leaving connected, with no flash before the next check resolves', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'appliedCheck',
+      result: { found: true, status: 'applied', appliedAt: Date.UTC(2026, 5, 12) },
+    });
+
+    push('connected');
+    await flush();
+
+    const status = byId<HTMLParagraphElement>('applied-status');
+    const btnImport = byId<HTMLButtonElement>('btn-import');
+    expect(status.hidden).toBe(false);
+    expect(btnImport.textContent).toBe('Re-import / update');
+
+    // Desktop drops the connection — job A's stale line/label must not survive.
+    push('app_not_running');
+    expect(status.hidden).toBe(true);
+    expect(status.textContent).toBe('');
+    expect(btnImport.textContent).toBe('Import this job');
+
+    // Reconnect for job B — before its own check resolves, the pre-resolve
+    // state must already be clean (no lingering job-A text while it's in flight).
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'appliedCheck',
+      result: { found: true, status: 'saved' },
+    });
+    push('connected');
+    expect(status.hidden).toBe(true);
+    expect(status.textContent).toBe('');
+    expect(btnImport.textContent).toBe('Import this job');
+  });
 });
