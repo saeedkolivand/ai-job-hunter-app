@@ -418,14 +418,39 @@ async fn try_ashby(url: &str) -> Result<Option<JobPosting>> {
 /// redirect chain and exhausted the named-board re-dispatch.
 ///
 /// Prefers JSON-LD `JobPosting` fields (title/description/location/company) when
-/// the page ships them, falling back to the generic `<title>`/`<h1>` + meta
-/// description and the `parse_generic_company` employer-name heuristic. Always
-/// returns `Some` for a successfully-parsed document — the title may be an empty
-/// string (e.g. a page with only a meta description) so the description-on-demand
-/// flow still surfaces the page. (The fetch half short-circuits earlier on a
-/// non-success status / rejected host.)
+/// the page ships them — structured data always wins over any DOM guess. Below
+/// that, the base pass is the generic `<title>`/`<h1>` + meta description parse,
+/// with the extension's `[data-ajh-job-root="true"]` hint (when present)
+/// overriding title/description FIELD BY FIELD rather than wholesale — see the
+/// per-field merge note below. `parse_generic_company` supplies the employer
+/// name. Always returns `Some` for a successfully-parsed document — the title
+/// may be an empty string (e.g. a page with only a meta description) so the
+/// description-on-demand flow still surfaces the page. (The fetch half
+/// short-circuits earlier on a non-success status / rejected host.)
 pub fn parse_from_html(url: &str, html: &str) -> Option<JobPosting> {
+    // Base: whole-document <title>/first-<h1> + meta description (today's floor).
     let (mut title, mut description) = parse_generic_html(html);
+
+    // Prefer the extension's `[data-ajh-job-root="true"]` hint (Scan-mode's
+    // best-effort "main job content" mark — see `markLikelyJobNode` in
+    // `apps/extension/src/content.ts`) over the base pass above, but FIELD BY
+    // FIELD rather than wholesale: override `title` only when the hinted
+    // subtree found a non-empty one, override `description` only when it found
+    // one. A wholesale swap would be wrong on a thin-body page (e.g. an ATS
+    // embeds the real description in an iframe and the hinted node is just an
+    // `<h1>`) — it would clobber a good document-level meta description with
+    // nothing useful. A mis-marked/hostile hint (wrong element, script/
+    // whitespace-only) yields (empty, `None`) for both fields, so it overrides
+    // neither — the per-field fallback is the guarantee that a bad hint can
+    // never make results worse than before.
+    if let Some((hint_title, hint_description)) = job_root_generic_html(html) {
+        if !hint_title.is_empty() {
+            title = hint_title;
+        }
+        if hint_description.is_some() {
+            description = hint_description;
+        }
+    }
     let mut location = None;
 
     // JSON-LD `JobPosting` is the richest source when present — let it override
@@ -485,6 +510,68 @@ pub fn parse_from_html(url: &str, html: &str) -> Option<JobPosting> {
         extra: HashMap::new(),
     })
 }
+
+/// Extraction from the extension's best-effort `[data-ajh-job-root="true"]`
+/// hint (pinned to the contract value — `markLikelyJobNode` in
+/// `apps/extension/src/content.ts` only ever sets `"true"`). Title is the first
+/// `h1` inside the hinted subtree; description is the subtree's own rendered
+/// text, EXCLUDING that title heading's own markup (see the `JOB_ROOT_TITLE_RE`
+/// strip below) so a hinted node that is just a heading — the real body
+/// rendered elsewhere, e.g. an ATS iframe the outerHTML capture can't see —
+/// yields no description at all rather than a title-redundant stub. Scoping to
+/// the hinted node — rather than re-running the largest-`main`/`article`-block
+/// guess ([`main_content_text`]) over the whole document — lets a page with
+/// several `main`/`article`-shaped blocks (e.g. a related-jobs sidebar bigger
+/// than the actual posting) resolve to the right one. Returns `None` when no
+/// hinted node exists in the document at all, so the no-hint path (including
+/// every server-fetch resolve where the hint can never be present) is
+/// untouched. The caller (`parse_from_html`) applies title and description
+/// independently, so either field alone may come back empty/`None`.
+// ponytail: single-node lookup + a couple of child selectors, no depth cap
+// needed (unlike the JSON-LD/NEXT_DATA walks) — scoped to whatever the
+// extension already marked.
+fn job_root_generic_html(html: &str) -> Option<(String, Option<String>)> {
+    let doc = Html::parse_document(html);
+    let root_sel = Selector::parse(r#"[data-ajh-job-root="true"]"#).ok()?;
+    let root = doc.select(&root_sel).next()?;
+
+    // Unlike this crate's own `html_to_text`, `html_to_markdown`'s `htmd` backend
+    // does not treat `<script>`/`<style>` as non-rendered — it leaks their raw
+    // contents into the output. A hostile/mis-marked hint node containing only a
+    // tracking script must not read as a "real" title or description, so strip
+    // them first — before extracting EITHER field, not just the description.
+    let inner_html = root.inner_html();
+    let cleaned = JOB_ROOT_SCRIPT_STYLE_RE.replace_all(&inner_html, " ");
+    let cleaned_doc = Html::parse_fragment(&cleaned);
+
+    let title_sel = Selector::parse("h1").ok()?;
+    let title = cleaned_doc
+        .select(&title_sel)
+        .next()
+        .map(|e| e.text().collect::<String>().trim().to_string())
+        .unwrap_or_default();
+
+    // Exclude the title heading(s) from the description source: an h1-only
+    // hinted subtree must not turn its own title into a redundant description
+    // stub that would then clobber a real document-level meta description in
+    // the caller's per-field merge.
+    let body_html = JOB_ROOT_TITLE_RE.replace_all(&cleaned, " ");
+    let description = crate::scraping::http::html_to_markdown(&body_html);
+    let description = (!description.trim().is_empty()).then_some(description);
+
+    Some((title, description))
+}
+
+static JOB_ROOT_SCRIPT_STYLE_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?is)<(script|style)[\s\S]*?</(script|style)>").unwrap()
+    });
+
+/// Strips `<h1>` elements out of the hinted subtree's (already script/style-
+/// cleaned) HTML before it becomes the description source — see the "exclude
+/// the title" note on [`job_root_generic_html`] above.
+static JOB_ROOT_TITLE_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"(?is)<h1[\s\S]*?</h1>").unwrap());
 
 /// The subset of JSON-LD `JobPosting` fields the generic parse path consumes.
 struct JsonLdJob {
