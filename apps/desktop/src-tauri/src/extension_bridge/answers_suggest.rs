@@ -111,13 +111,24 @@ fn tokenize_ordered(s: &str) -> Vec<&str> {
 
 /// True when `normalized` (already `normalize_question`-lowercased/
 /// whitespace-collapsed) contains a salary-ish keyword. Re-tokenized on any
-/// non-alphanumeric boundary and rejoined with single spaces before the
-/// check — `normalize_question` only collapses WHITESPACE, so a hyphen/slash
-/// question like "Day-rate"/"day/rate" would otherwise still carry the
-/// literal punctuation and silently miss the "day rate" phrase.
+/// non-alphanumeric boundary before the check — `normalize_question` only
+/// collapses WHITESPACE, so a hyphen/slash question like "Day-rate"/
+/// "day/rate" would otherwise still carry the literal punctuation and
+/// silently miss the "day rate" phrase. A single-word keyword (e.g. "paid")
+/// must match a WHOLE token — a substring check would false-positive inside
+/// an unrelated word ("unpaid"); a multi-word keyword (e.g. "day rate") has
+/// no single token to match against, so it stays a substring-of-rejoined
+/// check on the already space-normalized token stream.
 fn is_salary_question(normalized: &str) -> bool {
-    let rejoined = tokenize_ordered(normalized).join(" ");
-    SALARY_KEYWORDS.iter().any(|kw| rejoined.contains(kw))
+    let tokens = tokenize_ordered(normalized);
+    let rejoined = tokens.join(" ");
+    SALARY_KEYWORDS.iter().any(|kw| {
+        if kw.contains(' ') {
+            rejoined.contains(kw)
+        } else {
+            tokens.contains(kw)
+        }
+    })
 }
 
 /// Matcher-LOCAL tokenizer (NOT `normalize_question` — that stays untouched
@@ -126,38 +137,43 @@ fn is_salary_question(normalized: &str) -> bool {
 /// punctuation never fractures a token from its bare form elsewhere — "notice
 /// period?" tokenizes to the SAME `"period"` token as "notice period", where a
 /// naive whitespace split would leave a dangling `"period?"` that can never
-/// match. Empty splits (consecutive punctuation) are dropped.
-fn tokenize(s: &str) -> HashSet<&str> {
+/// match. Empty splits (consecutive punctuation) are dropped. Returns OWNED
+/// strings (not `&str` borrows) so the result can be cached on
+/// [`AnswerCandidate`] past the lifetime of the `String` it was tokenized
+/// from — see the perf note on that struct.
+fn tokenize(s: &str) -> HashSet<String> {
     s.split(|c: char| !c.is_alphanumeric())
         .filter(|t| !t.is_empty())
+        .map(str::to_string)
         .collect()
 }
 
-/// Token-Jaccard similarity between two ALREADY-NORMALIZED strings (see
+/// Token-Jaccard similarity between two ALREADY-TOKENIZED sets (see
 /// [`tokenize`]): the size of their token-set intersection over their union.
 /// `0.0` when either side is empty (no tokens) or they share no token; `1.0`
-/// for two token-identical non-empty strings.
-fn jaccard(a: &str, b: &str) -> f64 {
-    let ta = tokenize(a);
-    let tb = tokenize(b);
-    if ta.is_empty() || tb.is_empty() {
+/// for two token-identical non-empty strings. Takes sets rather than raw
+/// strings so a batch of questions scored against many candidates tokenizes
+/// each side exactly once, not once per (question, candidate) pair.
+fn jaccard(a: &HashSet<String>, b: &HashSet<String>) -> f64 {
+    if a.is_empty() || b.is_empty() {
         return 0.0;
     }
-    let inter = ta.intersection(&tb).count();
-    let union = ta.union(&tb).count();
+    let inter = a.intersection(b).count();
+    let union = a.union(b).count();
     inter as f64 / union as f64
 }
 
 /// One matchable candidate — the flat projection this module needs from a
 /// stored `Application` + `ApplicationAnswer`, decoupled from both so
 /// [`match_questions`] is unit-testable with plain literals (no SQLite store,
-/// no `updated_at` timing race). `normalized_question` is computed once here
-/// (not per comparison) so matching a batch of questions against many
-/// candidates stays O(candidates) normalizations, not O(questions ×
-/// candidates).
+/// no `updated_at` timing race). `tokens` is normalized + tokenized ONCE here
+/// (not per comparison), so matching a batch of questions against many
+/// candidates tokenizes each candidate O(candidates) times, not O(questions ×
+/// candidates) — [`match_questions`] tokenizes its side of the pair the same
+/// way, once per question, so [`jaccard`] only ever does set-vs-set scoring.
 pub(super) struct AnswerCandidate<'a> {
     answer: &'a str,
-    normalized_question: String,
+    tokens: HashSet<String>,
     company: &'a str,
     title: &'a str,
     updated_at: u64,
@@ -173,7 +189,7 @@ impl<'a> AnswerCandidate<'a> {
     ) -> Self {
         Self {
             answer,
-            normalized_question: normalize_question(question),
+            tokens: tokenize(&normalize_question(question)),
             company,
             title,
             updated_at,
@@ -214,10 +230,11 @@ pub(super) fn match_questions(
         if norm_q.is_empty() || !seen_normalized.insert(norm_q.clone()) {
             continue; // blank, or an effective duplicate of an earlier question
         }
+        let q_tokens = tokenize(&norm_q);
 
         let mut best: Option<(&AnswerCandidate, f64)> = None;
         for c in candidates {
-            let score = jaccard(&norm_q, &c.normalized_question);
+            let score = jaccard(&q_tokens, &c.tokens);
             if score < MIN_SCORE {
                 continue;
             }

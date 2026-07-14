@@ -2717,6 +2717,45 @@ fn match_questions_flags_hyphenated_how_much_as_salary() {
     assert!(out[0].salary);
 }
 
+/// CodeRabbit finding: a single-word keyword ("paid") must match a WHOLE
+/// token, never a substring inside an unrelated word — "unpaid" must never
+/// trip the salary denylist.
+#[test]
+fn match_questions_does_not_flag_unpaid_leave_as_salary() {
+    let candidates = vec![candidate(
+        "Unpaid leave policy acknowledgment",
+        "Acknowledged.",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(
+        &["Unpaid leave policy acknowledgment".to_string()],
+        &candidates,
+    );
+    assert_eq!(out.len(), 1);
+    assert!(
+        !out[0].salary,
+        "\"paid\" must not substring-match inside \"unpaid\""
+    );
+}
+
+/// The single-word exact-token fix must not regress the genuine "paid"
+/// salary question it was narrowed from.
+#[test]
+fn match_questions_still_flags_how_much_will_i_be_paid_as_salary() {
+    let candidates = vec![candidate(
+        "How much will I be paid?",
+        "$120,000",
+        "Acme",
+        "Backend Engineer",
+        1_000,
+    )];
+    let out = match_questions(&["How much will I be paid?".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert!(out[0].salary);
+}
+
 /// Pure property: the SAME inputs always produce the SAME output — no AI, no
 /// egress, no randomness (the PR-6 handoff's binding determinism property).
 #[test]
