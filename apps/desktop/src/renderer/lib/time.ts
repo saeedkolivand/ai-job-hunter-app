@@ -51,3 +51,14 @@ export function timeAgo(
   }
   return '';
 }
+
+/**
+ * Parses a date that may be a date-only `YYYY-MM-DD` string (as the bundled
+ * changelog's `publishedAt` uses — see `updater/mod.rs`) or a full ISO
+ * timestamp. `new Date('YYYY-MM-DD')` parses as UTC midnight, which renders as
+ * the previous day for anyone west of UTC — treat a date-only string as a
+ * local calendar date instead. Full timestamps are passed through unchanged.
+ */
+export function parseCalendarOrIsoDate(value: string): Date {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : new Date(value);
+}
