@@ -448,6 +448,41 @@ describe('doFill (#btn-fill)', () => {
   });
 });
 
+describe('doImport (#btn-import)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  beforeEach(() => {
+    sendMessageMock.mockReset();
+    byId<HTMLButtonElement>('btn-import').disabled = false;
+    byId<HTMLParagraphElement>('import-msg').textContent = '';
+    byId<HTMLInputElement>('chk-applied').checked = false;
+  });
+
+  it('shows "Importing…" then the already-tracked transparency message, sends applied: false, and re-enables the button', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'import',
+      result: { applicationId: 'app-existing', status: 'applied', title: 'Backend Engineer' },
+    });
+
+    const btn = byId<HTMLButtonElement>('btn-import');
+    btn.click();
+    // The click handler disables the button and sets "Importing…" synchronously,
+    // before the (mocked) sendMessage promise resolves.
+    expect(btn.disabled).toBe(true);
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe('Importing…');
+
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      '“Backend Engineer” is already tracked as Applied — status unchanged. Open AI Job Hunter → Applications to view it.'
+    );
+    expect(btn.disabled).toBe(false);
+    // The checkbox was unticked — the outgoing request must carry applied: false.
+    expect(sendMessageMock).toHaveBeenCalledWith({ kind: 'import', applied: false });
+  });
+});
+
 describe('get the app (#btn-get-app)', () => {
   const flush = () => new Promise((r) => setTimeout(r, 0));
   const tabsCreateMock = vi.mocked(browser.tabs.create);
