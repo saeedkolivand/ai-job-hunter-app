@@ -288,9 +288,16 @@ async function captureActiveTabAnswers(): Promise<CapturedAnswer[]> {
  * `runStatusUpdate` — so a capture/transport failure propagates up to
  * `handleRequest`'s outer catch as `{ ok: false, error }`, and a resolved
  * desktop-side refusal (`{ ok: false, error }` — autofill off / no match /
- * malformed) still passes straight through as `result`.
+ * malformed) still passes straight through as `result`. Mirrors `runFill`'s
+ * not-paired short-circuit: the token check runs BEFORE the capture injection,
+ * so an unpaired browser never reads the page.
  */
 async function runAnswersSave(): Promise<PopupResponse> {
+  const token = await getToken();
+  if (!token) {
+    return { ok: false, error: 'Not paired. Paste your pairing token first.' };
+  }
+
   const url = await activeTabUrl();
   const answers = await captureActiveTabAnswers();
   const result = await getClient().saveAnswers(url, answers);

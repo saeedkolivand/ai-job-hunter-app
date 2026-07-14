@@ -349,8 +349,21 @@ describe('statusUpdate request', () => {
 
 // ── answersSave request — capture then send; errors are NOT folded ──────────
 
+describe('answersSave request — not-paired short-circuit', () => {
+  it('surfaces "Not paired" and never reaches the tab capture or saveAnswers when no token is stored', async () => {
+    getTokenMock.mockResolvedValue(null);
+
+    const res = await send({ kind: 'answersSave' });
+
+    expect(res).toEqual({ ok: false, error: 'Not paired. Paste your pairing token first.' });
+    expect(executeScriptMock).not.toHaveBeenCalled();
+    expect(mockClient.saveAnswers).not.toHaveBeenCalled();
+  });
+});
+
 describe('answersSave request', () => {
   it('injects capture.js, sends the captured answers, and returns the success result', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
     tabsQueryMock.mockResolvedValue([
       { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
     ]);
@@ -389,6 +402,7 @@ describe('answersSave request', () => {
   });
 
   it('passes a desktop-side refusal straight through as result (never folds it, unlike appliedCheck)', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
     tabsQueryMock.mockResolvedValue([
       { id: 7, url: 'https://jobs.example.com/posting/none' } as never,
     ]);
@@ -408,6 +422,7 @@ describe('answersSave request', () => {
   });
 
   it('surfaces "Could not read the answers on this page." when the injected script returns a non-array', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
     tabsQueryMock.mockResolvedValue([
       { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
     ]);
@@ -421,6 +436,7 @@ describe('answersSave request', () => {
 
   it('surfaces "Could not read the current tab URL." when there is no active tab, without calling saveAnswers', async () => {
     // activeTabUrl() runs BEFORE the capture injection (mirrors runStatusUpdate).
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
     tabsQueryMock.mockResolvedValue([]);
 
     const res = await send({ kind: 'answersSave' });
@@ -431,6 +447,7 @@ describe('answersSave request', () => {
   });
 
   it('surfaces a transport-level rejection as ok:false (UNLIKE appliedCheck, which folds every rejection)', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
     tabsQueryMock.mockResolvedValue([
       { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
     ]);

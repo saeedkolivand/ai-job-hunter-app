@@ -1111,7 +1111,7 @@ describe('resolveAnswersSaveResponse', () => {
     };
     const { text, tone } = resolveAnswersSaveResponse(res);
     expect(tone).toBe('ok');
-    expect(text).toBe('Saved 7 answers to Backend Engineer @ Acme.');
+    expect(text).toBe('Saved 7 answers to Backend Engineer @ Acme — 2 already recorded.');
   });
 
   it('singularizes the count for exactly one saved answer', () => {
@@ -1125,7 +1125,18 @@ describe('resolveAnswersSaveResponse', () => {
     expect(text).toBe('Saved 1 answer.');
   });
 
-  it('falls back to a generic "no new answers" message when saved is 0', () => {
+  it('falls back to a generic "no new answers" message when saved and skipped are both 0', () => {
+    const res = {
+      ok: true as const,
+      kind: 'answersSave' as const,
+      result: { ok: true as const, applicationId: 'app-1', saved: 0, skipped: 0 },
+    };
+    const { text, tone } = resolveAnswersSaveResponse(res);
+    expect(tone).toBe('ok');
+    expect(text).toBe('No new answers to save from this page.');
+  });
+
+  it('shows a distinct "already recorded" message when saved is 0 but skipped is not', () => {
     const res = {
       ok: true as const,
       kind: 'answersSave' as const,
@@ -1133,7 +1144,17 @@ describe('resolveAnswersSaveResponse', () => {
     };
     const { text, tone } = resolveAnswersSaveResponse(res);
     expect(tone).toBe('ok');
-    expect(text).toBe('No new answers to save from this page.');
+    expect(text).toBe('All 3 answers were already recorded.');
+  });
+
+  it('singularizes the "already recorded" message for exactly one skipped answer', () => {
+    const res = {
+      ok: true as const,
+      kind: 'answersSave' as const,
+      result: { ok: true as const, applicationId: 'app-1', saved: 0, skipped: 1 },
+    };
+    const { text } = resolveAnswersSaveResponse(res);
+    expect(text).toBe('All 1 answer was already recorded.');
   });
 
   it('names the job with only a title when company is absent', () => {

@@ -198,7 +198,9 @@ export function resolveMarkAppliedResponse(res: PopupResponse): {
  * `title`/`company` (the smaller change vs. threading the separately-fetched
  * `appliedCheck` state through this confirmation — see the PR-5 handoff) and
  * reports the saved count; a re-capture with nothing new to add reads as a
- * benign "no new answers", never an error.
+ * benign "no new answers", never an error. When the desktop dedupes/caps some
+ * answers, `skipped` is folded into the copy too — `saved === 0` gets a
+ * distinct "already recorded" message instead of the generic no-new-answers one.
  *
  * Pure: no DOM access, no side effects.
  */
@@ -218,10 +220,17 @@ export function resolveAnswersSaveResponse(res: PopupResponse): {
   const name = title && company ? `${title} @ ${company}` : (title ?? company);
 
   if (result.saved === 0) {
+    if (result.skipped > 0) {
+      const was = result.skipped === 1 ? 'was' : 'were';
+      const noun = `answer${result.skipped === 1 ? '' : 's'}`;
+      return { text: `All ${result.skipped} ${noun} ${was} already recorded.`, tone: 'ok' };
+    }
     return { text: 'No new answers to save from this page.', tone: 'ok' };
   }
   const count = `${result.saved} answer${result.saved === 1 ? '' : 's'}`;
-  return { text: name ? `Saved ${count} to ${name}.` : `Saved ${count}.`, tone: 'ok' };
+  const base = name ? `Saved ${count} to ${name}` : `Saved ${count}`;
+  const suffix = result.skipped > 0 ? ` — ${result.skipped} already recorded.` : '.';
+  return { text: `${base}${suffix}`, tone: 'ok' };
 }
 
 /**
