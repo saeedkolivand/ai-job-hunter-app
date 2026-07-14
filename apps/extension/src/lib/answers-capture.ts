@@ -37,6 +37,21 @@ export interface CapturedAnswer {
   answer: string;
 }
 
+/**
+ * One scanned EMPTY candidate field for "questions mode" (`answers.suggest`'s
+ * collector — {@link collectQuestions} below). `index` is this field's
+ * OCCURRENCE among every candidate sharing the EXACT SAME `question` text
+ * (0-based) — the stable fill-target correlation: {@link locateQuestionField}
+ * re-scans with the IDENTICAL predicate and picks the field at
+ * `(question, index)`, so a page mutation between scan and fill (a different
+ * count/order of same-labelled fields) fails safe (no match at that index)
+ * instead of ever filling a DIFFERENT field than the one that was scanned.
+ */
+export interface ScannedQuestion {
+  question: string;
+  index: number;
+}
+
 /** `<input>` types this collector reads. Narrower than autofill's
  *  `FILLABLE_TYPES` (no `email`/`tel`/`url`): a free-text application-form
  *  answer lives in a plain text input, and the omission avoids re-capturing
@@ -78,6 +93,44 @@ function selectAnswer(el: HTMLSelectElement): string {
   return opt.text.trim();
 }
 
+/** `true` when `el`'s current value counts as "empty" for questions-mode
+ *  (the mirror check of `collectAnswers`'s "has a value" gate): a blank
+ *  text/textarea, or a `<select>` with nothing meaningfully chosen (see
+ *  {@link selectAnswer}). */
+function isEmptyValue(el: HTMLElement): boolean {
+  if (el instanceof HTMLInputElement) return el.value.trim() === '';
+  if (el instanceof HTMLTextAreaElement) return el.value.trim() === '';
+  if (el instanceof HTMLSelectElement) return selectAnswer(el) === '';
+  return false;
+}
+
+/**
+ * Every EMPTY, visible, labelled, non-ambiguous/non-identity candidate field
+ * — `input[type=text]` / `textarea` / `select`, same gates as
+ * {@link collectAnswers} (visibility/denylist/identity-exclusion via
+ * {@link isCapturable}) but flipped to EMPTY instead of filled — in DOM
+ * order. Shared by {@link collectQuestions} (produce the scan-time
+ * correlation) and {@link locateQuestionField} (re-scan to fill), so the two
+ * can never see a different candidate set.
+ */
+function emptyCandidateFields(doc: Document): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  const fields = doc.querySelectorAll<HTMLElement>('input, textarea, select');
+
+  for (const el of Array.from(fields)) {
+    if (el instanceof HTMLInputElement) {
+      if (!CAPTURABLE_INPUT_TYPES.has(el.type)) continue;
+    } else if (!(el instanceof HTMLTextAreaElement) && !(el instanceof HTMLSelectElement)) {
+      continue;
+    }
+    if (!isEmptyValue(el)) continue;
+    if (!isCapturable(el)) continue;
+    out.push(el);
+  }
+
+  return out;
+}
+
 /**
  * Scan `doc` for filled, visible, labelled `input[type=text]` / `textarea` /
  * `select` fields (skipping the ambiguous/sensitive denylist and any
@@ -110,4 +163,54 @@ export function collectAnswers(doc: Document): CapturedAnswer[] {
   }
 
   return out;
+}
+
+/**
+ * "Questions mode" for `answers.suggest`: scan `doc` for every EMPTY
+ * candidate field (see {@link emptyCandidateFields}) and return its label
+ * text plus the OCCURRENCE index among fields sharing that exact text — see
+ * {@link ScannedQuestion}. Pure — no side effects.
+ */
+export function collectQuestions(doc: Document): ScannedQuestion[] {
+  const out: ScannedQuestion[] = [];
+  const counts = new Map<string, number>();
+
+  for (const el of emptyCandidateFields(doc)) {
+    const question = labelText(el).trim();
+    if (!question) continue;
+    const index = counts.get(question) ?? 0;
+    counts.set(question, index + 1);
+    out.push({ question, index });
+  }
+
+  return out;
+}
+
+/**
+ * Re-scan `doc`'s CURRENT empty candidates (the identical predicate
+ * {@link collectQuestions} used) and return the field at the `index`-th
+ * occurrence of `question` — but ONLY when the CURRENT total number of
+ * fields sharing that exact question text still equals `expectedCount` (the
+ * count {@link collectQuestions} saw at scan time). Otherwise `null`.
+ *
+ * The count check matters beyond the obvious "field removed/filled" case: a
+ * NEW same-labelled field inserted EARLIER in DOM order since the scan would
+ * still leave occurrence `index` "in range" (there's still something at that
+ * position), but it would now be a DIFFERENT field than the one scanned —
+ * silently filling the wrong one. Requiring the total count to match closes
+ * that gap: any insertion, removal, or relabeling changes the count and this
+ * fails safe instead of ever returning a field the scan didn't see.
+ *
+ * Exported so `answer-fill.ts` (the classic-script injection entry) and its
+ * tests can call it directly.
+ */
+export function locateQuestionField(
+  doc: Document,
+  question: string,
+  index: number,
+  expectedCount: number
+): HTMLElement | null {
+  const matches = emptyCandidateFields(doc).filter((el) => labelText(el).trim() === question);
+  if (matches.length !== expectedCount) return null;
+  return matches[index] ?? null;
 }

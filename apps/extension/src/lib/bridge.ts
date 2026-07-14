@@ -32,6 +32,8 @@ import {
   EXTENSION_PROTOCOL_VERSION,
   type ExtensionAnswerPair,
   type ExtensionAnswersSaveResult,
+  type ExtensionAnswersSuggestResult,
+  type ExtensionAnswerSuggestion,
   type ExtensionAppliedCheckResult,
   type ExtensionEnvelope,
   type ExtensionImportRequest,
@@ -74,6 +76,7 @@ type ProfileResolver = (result: ExtensionProfileResult) => void;
 type AppliedResolver = (result: ExtensionAppliedCheckResult) => void;
 type StatusResolver = (result: ExtensionStatusUpdateResult) => void;
 type AnswersResolver = (result: ExtensionAnswersSaveResult) => void;
+type SuggestResolver = (result: ExtensionAnswersSuggestResult) => void;
 
 export type BridgePhase = 'searching' | 'connected' | 'app_not_running' | 'outdated' | 'bad_token';
 
@@ -287,6 +290,63 @@ function normalizeAnswersSaveResult(payload: unknown): ExtensionAnswersSaveResul
   return out;
 }
 
+/** Hand-written guard for one `answers.suggest` suggestion entry (extension
+ *  stays zod-free). Mirrors `ExtensionAnswerSuggestionSchema`. */
+function isExtensionAnswerSuggestion(v: unknown): v is ExtensionAnswerSuggestion {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  const optStr = (x: unknown): boolean => x === undefined || typeof x === 'string';
+  return (
+    typeof o.question === 'string' &&
+    typeof o.answer === 'string' &&
+    optStr(o.sourceCompany) &&
+    optStr(o.sourceTitle) &&
+    typeof o.sourceQuestion === 'string' &&
+    typeof o.score === 'number' &&
+    typeof o.salary === 'boolean'
+  );
+}
+
+/**
+ * Hand-written guard for an `answers.suggest` payload (extension stays
+ * zod-free). Mirrors `ExtensionAnswersSuggestResultSchema`'s discriminated
+ * union: `ok:true` requires a `suggestions` array of well-formed entries;
+ * `ok:false` requires a string `error`.
+ */
+function isExtensionAnswersSuggestResult(v: unknown): v is ExtensionAnswersSuggestResult {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  if (o.ok === true) {
+    return Array.isArray(o.suggestions) && o.suggestions.every(isExtensionAnswerSuggestion);
+  }
+  if (o.ok === false) return typeof o.error === 'string';
+  return false;
+}
+
+/** Rebuild an {@link ExtensionAnswersSuggestResult} from only the known,
+ *  defined keys — mirrors `normalizeAnswersSaveResult`. This verb's errors
+ *  are surfaced to the user (like `answers.save`), so the fallback text is
+ *  written the same way: `ok:false` + a plain `error`. */
+function normalizeAnswersSuggestResult(payload: unknown): ExtensionAnswersSuggestResult {
+  if (!isExtensionAnswersSuggestResult(payload)) {
+    return { ok: false, error: 'The desktop app sent a malformed suggestions result.' };
+  }
+  if (!payload.ok) return { ok: false, error: payload.error };
+  const suggestions: ExtensionAnswerSuggestion[] = payload.suggestions.map((s) => {
+    const out: ExtensionAnswerSuggestion = {
+      question: s.question,
+      answer: s.answer,
+      sourceQuestion: s.sourceQuestion,
+      score: s.score,
+      salary: s.salary,
+    };
+    if (s.sourceCompany !== undefined) out.sourceCompany = s.sourceCompany;
+    if (s.sourceTitle !== undefined) out.sourceTitle = s.sourceTitle;
+    return out;
+  });
+  return { ok: true, suggestions };
+}
+
 // ── transport seam ──────────────────────────────────────────────────────────
 
 /**
@@ -444,6 +504,9 @@ export class BridgeClient {
   /** In-flight `answers.save` resolvers, correlated by `reqId`. Kept separate
    *  from {@link pending} for the same reason as {@link pendingProfile}. */
   private readonly pendingAnswers = new Map<string, AnswersResolver>();
+  /** In-flight `answers.suggest` resolvers, correlated by `reqId`. Kept
+   *  separate from {@link pending} for the same reason as {@link pendingProfile}. */
+  private readonly pendingSuggest = new Map<string, SuggestResolver>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private backoffIndex = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -587,6 +650,7 @@ export class BridgeClient {
     this.pendingApplied.clear();
     this.pendingStatus.clear();
     this.pendingAnswers.clear();
+    this.pendingSuggest.clear();
     this.transport?.close();
     this.transport = null;
   }
@@ -805,6 +869,48 @@ export class BridgeClient {
         clearTimeout(timer);
         this.timers.delete(reqId);
         this.pendingAnswers.delete(reqId);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
+  /**
+   * Send an `answers.suggest { questions }` and resolve with the validated
+   * `answers.suggest.result` payload — the desktop's fuzzy-matched
+   * suggestions (or a refusal). Rejects only on no connection / timeout /
+   * send failure — like `saveAnswers`, a well-formed `ok:false` reply is NOT
+   * folded away here: this answers a deliberate click, so the caller
+   * (background.ts) must pass the `error` straight through to the popup.
+   */
+  async suggestAnswers(questions: string[]): Promise<ExtensionAnswersSuggestResult> {
+    await this.ensureConnected();
+    if (this.phase !== 'connected' || !this.transport) {
+      throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
+    }
+    const transport = this.transport;
+
+    const reqId = newReqId();
+    const envelope: ExtensionEnvelope = {
+      type: EXTENSION_MESSAGE_TYPES.answersSuggest,
+      reqId,
+      payload: { questions },
+    };
+
+    return new Promise<ExtensionAnswersSuggestResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingSuggest.delete(reqId);
+        this.timers.delete(reqId);
+        reject(new Error('Timed out waiting for the desktop app to respond.'));
+      }, REQUEST_TIMEOUT_MS);
+      this.timers.set(reqId, timer);
+      this.pendingSuggest.set(reqId, resolve);
+
+      try {
+        transport.send(envelope);
+      } catch (err) {
+        clearTimeout(timer);
+        this.timers.delete(reqId);
+        this.pendingSuggest.delete(reqId);
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     });
@@ -1107,6 +1213,16 @@ export class BridgeClient {
       return;
     }
 
+    // answers.suggest.result → the "suggest answers" outcome (separate map).
+    if (env.type === EXTENSION_MESSAGE_TYPES.answersSuggestResult) {
+      const resolveSuggest = this.pendingSuggest.get(reqId);
+      if (typeof resolveSuggest !== 'function') return;
+      this.pendingSuggest.delete(reqId);
+      this.clearTimer(reqId);
+      resolveSuggest(normalizeAnswersSuggestResult(env.payload));
+      return;
+    }
+
     if (env.type !== EXTENSION_MESSAGE_TYPES.importResult) return;
     const resolve = this.pending.get(reqId);
     if (typeof resolve !== 'function') return;
@@ -1161,11 +1277,17 @@ export class BridgeClient {
       if (timer) clearTimeout(timer);
       resolve({ ok: false, error: reason });
     }
+    for (const [reqId, resolve] of this.pendingSuggest.entries()) {
+      const timer = this.timers.get(reqId);
+      if (timer) clearTimeout(timer);
+      resolve({ ok: false, error: reason });
+    }
     this.pending.clear();
     this.pendingProfile.clear();
     this.pendingApplied.clear();
     this.pendingStatus.clear();
     this.pendingAnswers.clear();
+    this.pendingSuggest.clear();
     this.timers.clear();
   }
 

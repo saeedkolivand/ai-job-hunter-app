@@ -1742,3 +1742,167 @@ describe('BridgeClient – saveAnswers', () => {
     client.dispose();
   });
 });
+
+// ── "suggest answers for this form" answers.suggest ↔ answers.suggest.result ──
+
+describe('BridgeClient – suggestAnswers', () => {
+  let latestSocket: FakeWebSocket | undefined;
+  let createdSockets: FakeWebSocket[] = [];
+  let restoreWS: () => void;
+
+  beforeEach(() => {
+    latestSocket = undefined;
+    createdSockets = [];
+    restoreWS = installFakeWS((ws) => {
+      latestSocket = ws;
+      createdSockets.push(ws);
+    });
+  });
+
+  afterEach(() => {
+    restoreWS();
+    vi.useRealTimers();
+  });
+
+  async function connectedClient(): Promise<{ client: BridgeClient; socket: FakeWebSocket }> {
+    const client = new BridgeClient(vi.fn());
+    const p = client.ensureConnected();
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+    await p;
+    return { client, socket };
+  }
+
+  function makeSuggestEnvelope(reqId: string, payload: unknown): string {
+    return JSON.stringify({
+      type: EXTENSION_MESSAGE_TYPES.answersSuggestResult,
+      reqId,
+      payload,
+    });
+  }
+
+  /** Start a suggestAnswers and wait until the outgoing frame is sent; return the reqId. */
+  async function startSuggestAnswers(
+    client: BridgeClient,
+    socket: FakeWebSocket,
+    questions: string[]
+  ): Promise<{ resultPromise: Promise<unknown>; reqId: string }> {
+    const resultPromise = client.suggestAnswers(questions);
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const frame = JSON.parse(raw) as { type: string; reqId: string; payload: unknown };
+    expect(frame.type).toBe(EXTENSION_MESSAGE_TYPES.answersSuggest);
+    expect(frame.payload).toEqual({ questions });
+    return { resultPromise, reqId: frame.reqId };
+  }
+
+  it('round-trips a success result with a full suggestion into the resolved payload', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startSuggestAnswers(client, socket, ['Why this role?']);
+
+    const payload = {
+      ok: true,
+      suggestions: [
+        {
+          question: 'Why this role?',
+          answer: 'Because I love it.',
+          sourceCompany: 'Acme',
+          sourceTitle: 'Backend Engineer',
+          sourceQuestion: 'Why this role?',
+          score: 0.8,
+          salary: false,
+        },
+      ],
+    };
+    socket.simulateMessage(makeSuggestEnvelope(reqId, payload));
+
+    const result = await resultPromise;
+    expect(result).toEqual(payload);
+
+    client.dispose();
+  });
+
+  it('round-trips a success result with an empty suggestions array', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startSuggestAnswers(client, socket, []);
+
+    socket.simulateMessage(makeSuggestEnvelope(reqId, { ok: true, suggestions: [] }));
+
+    const result = await resultPromise;
+    expect(result).toEqual({ ok: true, suggestions: [] });
+
+    client.dispose();
+  });
+
+  it('round-trips a desktop-side refusal (ok:false + error) into the resolved payload — never rejects', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startSuggestAnswers(client, socket, ['Why this role?']);
+
+    socket.simulateMessage(makeSuggestEnvelope(reqId, { ok: false, error: 'Autofill is off.' }));
+
+    const result = await resultPromise;
+    expect(result).toEqual({ ok: false, error: 'Autofill is off.' });
+
+    client.dispose();
+  });
+
+  it('resolves with a malformed error (never throws) when the payload is bad', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startSuggestAnswers(client, socket, ['Why this role?']);
+
+    // score must be a number; a string breaks the guard.
+    socket.simulateMessage(
+      makeSuggestEnvelope(reqId, {
+        ok: true,
+        suggestions: [
+          {
+            question: 'Why this role?',
+            answer: 'Because I love it.',
+            score: 'high',
+            salary: false,
+          },
+        ],
+      })
+    );
+
+    const result = (await resultPromise) as { ok: boolean; error?: string };
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/malformed/i);
+
+    client.dispose();
+  });
+
+  it('rejects when not connected — every port fails and the ws probe exhausts', async () => {
+    vi.useFakeTimers();
+
+    const client = new BridgeClient(vi.fn());
+    const suggestPromise = client.suggestAnswers(['Why this role?']);
+    const outcomePromise = suggestPromise.then(
+      () => ({ ok: true as const }),
+      (e: unknown) => ({ ok: false as const, error: e })
+    );
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const idx = attempt;
+      await vi.waitFor(() => {
+        expect(createdSockets.length).toBeGreaterThanOrEqual(idx + 1);
+      });
+      createdSockets[idx]!.simulateClose();
+    }
+
+    const outcome = await outcomePromise;
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toBeInstanceOf(Error);
+      expect((outcome.error as Error).message).toMatch(/not reachable/i);
+    }
+    expect(client.status().phase).toBe('app_not_running');
+
+    client.dispose();
+  });
+});

@@ -6,11 +6,14 @@
 
 import type {
   ExtensionAnswersSaveResult,
+  ExtensionAnswersSuggestResult,
   ExtensionAppliedCheckResult,
   ExtensionImportResult,
   ExtensionStatusUpdateResult,
 } from '@ajh/shared';
 
+import type { FillAnswerResult } from './answer-fill';
+import type { ScannedQuestion } from './answers-capture';
 import type { AutofillSummary } from './autofill';
 
 /** Coarse connection state the popup renders. */
@@ -68,7 +71,25 @@ export type PopupRequest =
    * `statusUpdate`, this is a deliberate WRITE action — its failures are
    * surfaced to the user, never folded away.
    */
-  | { kind: 'answersSave' };
+  | { kind: 'answersSave' }
+  /**
+   * User-clicked "Suggest answers for this form": scan the active tab's
+   * EMPTY candidate fields (questions mode) and send their labels on as
+   * `answers.suggest`. Like `statusUpdate`, this is a deliberate action —
+   * its failures are surfaced to the user, never folded away.
+   */
+  | { kind: 'answersSuggest' }
+  /**
+   * Per-row "Fill this field" click on one suggested answer. `question` +
+   * `index` are the SAME scan-time correlation `answersSuggest` returned
+   * (see `ScannedQuestion`); `count` is the total number of live fields that
+   * shared this exact question text AT SCAN TIME. The filler re-locates the
+   * exact field they name and fails safe if it can no longer find it OR if
+   * the CURRENT same-question field count no longer matches `count` (e.g. a
+   * same-labelled field inserted earlier in DOM order since the scan). Never
+   * bulk, never submits the form.
+   */
+  | { kind: 'answerFill'; question: string; index: number; count: number; answer: string };
 
 /** background → popup responses (discriminated by the originating request). */
 export type PopupResponse =
@@ -96,4 +117,18 @@ export type PopupResponse =
    * failures are NOT folded away.
    */
   | { ok: true; kind: 'answersSave'; result: ExtensionAnswersSaveResult }
+  /**
+   * `ok:true` at the transport level; like `answersSave`, the desktop's own
+   * `ok`/`error` on `result` is what the popup renders. `scanned` is the
+   * CLIENT-SIDE scan-time correlation list (see `ScannedQuestion`) the popup
+   * needs to know which suggestions have a live, fillable target field.
+   */
+  | {
+      ok: true;
+      kind: 'answersSuggest';
+      result: ExtensionAnswersSuggestResult;
+      scanned: ScannedQuestion[];
+    }
+  /** The per-row "Fill this field" outcome (fail-safe on any page mutation). */
+  | { ok: true; kind: 'answerFill'; result: FillAnswerResult }
   | { ok: false; error: string };

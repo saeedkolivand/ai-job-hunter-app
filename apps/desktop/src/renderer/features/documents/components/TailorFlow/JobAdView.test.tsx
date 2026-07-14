@@ -344,7 +344,8 @@ describe('JobAdView — ModelSelector visibility', () => {
     render(<JobAdView {...makeProps({ jobDesc: 'Normal full description.', hasDesc: true })} />);
     const stub = screen.getByTestId('model-selector-stub');
     expect(stub).toHaveClass('min-w-0');
-    expect(stub).not.toHaveClass('shrink-0', 'flex-1');
+    expect(stub).not.toHaveClass('shrink-0');
+    expect(stub).not.toHaveClass('flex-1');
     // Its immediate row wrapper must also allow shrinking, or the fix on
     // ModelSelector alone can't stop the row itself from overflowing.
     expect(stub.parentElement).toHaveClass('min-w-0');
