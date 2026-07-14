@@ -76,7 +76,7 @@ export function resolveImportResponse(
     const lead = title
       ? `“${title}” is already tracked as ${label}`
       : `This job is already tracked as ${label}`;
-    return { text: `${lead} — nothing was changed. ${IMPORT_LANDING_HINT}`, tone: 'ok' };
+    return { text: `${lead} — status unchanged. ${IMPORT_LANDING_HINT}`, tone: 'ok' };
   }
   const lead = title ? `Imported “${title}”.` : 'Imported.';
   return { text: `${lead} ${IMPORT_LANDING_HINT}`, tone: 'ok' };

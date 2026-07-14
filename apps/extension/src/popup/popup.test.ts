@@ -191,7 +191,7 @@ describe('resolveImportResponse', () => {
     const { text, tone } = resolveImportResponse(res, false);
     expect(tone).toBe('ok');
     expect(text).toBe(
-      '“Backend Engineer” is already tracked as Applied — nothing was changed. Open AI Job Hunter → Applications to view it.'
+      '“Backend Engineer” is already tracked as Applied — status unchanged. Open AI Job Hunter → Applications to view it.'
     );
   });
 
@@ -204,7 +204,7 @@ describe('resolveImportResponse', () => {
     const { text, tone } = resolveImportResponse(res, false);
     expect(tone).toBe('ok');
     expect(text).toBe(
-      'This job is already tracked as Interviewing — nothing was changed. Open AI Job Hunter → Applications to view it.'
+      'This job is already tracked as Interviewing — status unchanged. Open AI Job Hunter → Applications to view it.'
     );
   });
 
