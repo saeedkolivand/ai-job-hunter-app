@@ -20,6 +20,8 @@ import { z } from 'zod';
 import {
   EXTENSION_MESSAGE_TYPES,
   EXTENSION_PROTOCOL_VERSION,
+  type ExtensionAppliedCheckRequest,
+  type ExtensionAppliedCheckResult,
   type ExtensionAuthOkPayload,
   type ExtensionAuthPayload,
   type ExtensionChallengePayload,
@@ -38,6 +40,8 @@ import {
 export {
   EXTENSION_MESSAGE_TYPES,
   EXTENSION_PROTOCOL_VERSION,
+  type ExtensionAppliedCheckRequest,
+  type ExtensionAppliedCheckResult,
   type ExtensionAuthOkPayload,
   type ExtensionAuthPayload,
   type ExtensionChallengePayload,
@@ -65,6 +69,7 @@ export const ExtensionMessageTypeSchema = z.enum([
   EXTENSION_MESSAGE_TYPES.profileResult,
   EXTENSION_MESSAGE_TYPES.matchLive,
   EXTENSION_MESSAGE_TYPES.appliedCheck,
+  EXTENSION_MESSAGE_TYPES.appliedResult,
 ]) satisfies z.ZodType<ExtensionMessageType>;
 
 /** `hello` payload (handshake step 1). No token — the proof authenticates later. */
@@ -130,6 +135,28 @@ export const ExtensionProfileResultSchema = z.object({
   website: z.string().optional(),
   error: z.string().optional(),
 }) satisfies z.ZodType<ExtensionProfileResult>;
+
+/**
+ * `applied.check` payload — the active tab's URL to look up. Mirrors
+ * {@link ExtensionAppliedCheckRequest}.
+ */
+export const ExtensionAppliedCheckRequestSchema = z.object({
+  url: z.string().min(1),
+}) satisfies z.ZodType<ExtensionAppliedCheckRequest>;
+
+/**
+ * `applied.result` payload. `found` is required; every other field is
+ * optional (populated only when an Application was found, or `error` on a
+ * malformed/empty url). Mirrors {@link ExtensionAppliedCheckResult}.
+ */
+export const ExtensionAppliedCheckResultSchema = z.object({
+  found: z.boolean(),
+  applicationId: z.string().optional(),
+  status: z.string().optional(),
+  title: z.string().optional(),
+  appliedAt: z.number().optional(),
+  error: z.string().optional(),
+}) satisfies z.ZodType<ExtensionAppliedCheckResult>;
 
 /**
  * The transport envelope every frame is wrapped in. `payload` is left as

@@ -887,6 +887,66 @@ fn authenticated_reserved_type_replies_with_error() {
     }
 }
 
+/// An authenticated `applied.check` classifies as `AppliedCheck`, carrying the
+/// payload verbatim (mirrors the `Import`/`Profile` classify tests above).
+#[test]
+fn authenticated_applied_check_classifies_as_applied_check() {
+    let (_dir, state) = bridge_state();
+    let frame = json!({
+        "type": super::msg::APPLIED_CHECK,
+        "reqId": "r-applied",
+        "payload": { "url": "https://jobs.example.com/posting/9" }
+    })
+    .to_string();
+
+    match advance_frame(&state, &ConnState::Authenticated, &frame) {
+        FrameDecision::AppliedCheck { req_id, payload } => {
+            assert_eq!(req_id, "r-applied");
+            assert_eq!(
+                payload.get("url").and_then(|u| u.as_str()),
+                Some("https://jobs.example.com/posting/9")
+            );
+        }
+        other => panic!("an authenticated applied.check must be AppliedCheck, got {other:?}"),
+    }
+}
+
+/// An `applied.check` before the handshake completes is NEVER dispatched — same
+/// invariant as `import_before_handshake_is_not_dispatched`: only a hello may
+/// be the first frame.
+#[test]
+fn applied_check_before_handshake_is_not_dispatched() {
+    let (_dir, state) = bridge_state();
+    let frame = json!({
+        "type": super::msg::APPLIED_CHECK,
+        "reqId": "r-early",
+        "payload": { "url": "https://jobs.example.com/posting/early" },
+    })
+    .to_string();
+    match advance_frame(&state, &ConnState::AwaitingHello, &frame) {
+        FrameDecision::Outdated(_) => {}
+        other => panic!("an applied.check before hello must NOT be AppliedCheck, got {other:?}"),
+    }
+}
+
+/// Same mid-handshake bypass guard as `non_auth_frame_mid_handshake_is_unauthorized`
+/// — an `applied.check` cannot skip the proof step either.
+#[test]
+fn applied_check_mid_handshake_is_unauthorized() {
+    let (_dir, state) = bridge_state();
+    let (conn, _correct) = awaiting_auth(&state);
+    let frame = json!({
+        "type": super::msg::APPLIED_CHECK,
+        "reqId": "r-skip",
+        "payload": { "url": "https://jobs.example.com/posting/skip" },
+    })
+    .to_string();
+    match advance_frame(&state, &conn, &frame) {
+        FrameDecision::Unauthorized => {}
+        other => panic!("an applied.check mid-handshake must be Unauthorized, got {other:?}"),
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // B2. Oversize-frame rejection (HIGH 2)
 //
@@ -1027,6 +1087,131 @@ fn normalize_job_url_neutralizes_non_http_schemes_to_empty() {
     assert_eq!(normalize_job_url("ftp://acme.example/x"), "");
     // Empty input → empty.
     assert_eq!(normalize_job_url("   "), "");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C. applied.check — pure store lookup (found saved / found applied / not
+// found / malformed url). `resolve_applied_check` is a private, synchronous fn
+// (no `AppHandle`), so unlike `handle_import` it IS directly unit-testable —
+// these tests exercise the exact boundary `handle_applied_check` calls.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// No Application exists yet for the url → `found: false`, everything else
+/// `None`, never an error.
+#[test]
+fn resolve_applied_check_not_found_when_no_application() {
+    let (_dir, store) = open_store();
+    let payload = json!({ "url": "https://jobs.example.com/posting/none" });
+    let out = super::resolve_applied_check(&store, &payload).unwrap();
+    assert!(!out.found);
+    assert!(out.application_id.is_none());
+    assert!(out.status.is_none());
+    assert!(out.applied_at.is_none());
+}
+
+/// A `saved` Application (not yet applied) is found with status "saved", the
+/// posting's title, and NO `appliedAt` (it hasn't left `saved`).
+#[test]
+fn resolve_applied_check_found_saved_has_no_applied_at() {
+    let (_dir, store) = open_store();
+    let url = "https://jobs.example.com/posting/saved-1";
+    store
+        .upsert_for_origin(
+            url,
+            "linkedin",
+            &app_meta("Acme", "Backend Engineer"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    let out = super::resolve_applied_check(&store, &json!({ "url": url })).unwrap();
+    assert!(out.found);
+    assert_eq!(out.status.as_deref(), Some("saved"));
+    assert_eq!(out.title.as_deref(), Some("Backend Engineer"));
+    assert!(out.applied_at.is_none());
+}
+
+/// An `applied` Application is found with status "applied" and a non-null
+/// `appliedAt` (epoch ms) — the field the popup formats into a date.
+#[test]
+fn resolve_applied_check_found_applied_carries_applied_at() {
+    let (_dir, store) = open_store();
+    let url = "https://jobs.example.com/posting/applied-1";
+    store
+        .upsert_for_origin(
+            url,
+            "linkedin",
+            &app_meta("Acme", "Staff Engineer"),
+            ApplicationOrigin::Saved,
+            Some(true),
+        )
+        .unwrap();
+
+    let out = super::resolve_applied_check(&store, &json!({ "url": url })).unwrap();
+    assert!(out.found);
+    assert_eq!(out.status.as_deref(), Some("applied"));
+    assert!(
+        out.applied_at.is_some(),
+        "an applied row must carry applied_at"
+    );
+}
+
+/// An empty url is a Validation error — never a panic, never a false `found`.
+#[test]
+fn resolve_applied_check_rejects_empty_url() {
+    let (_dir, store) = open_store();
+    let err = super::resolve_applied_check(&store, &json!({ "url": "" })).unwrap_err();
+    assert!(err.to_string().contains("required"));
+}
+
+/// A non-http(s) url normalizes to empty and is rejected the same way
+/// `handle_import` rejects it (dangerous explicit schemes never round-trip).
+#[test]
+fn resolve_applied_check_rejects_non_http_scheme() {
+    let (_dir, store) = open_store();
+    let err =
+        super::resolve_applied_check(&store, &json!({ "url": "javascript:alert(1)" })).unwrap_err();
+    assert!(err.to_string().contains("not a valid"));
+}
+
+/// `applied_result_reply` builds a well-formed `applied.result` envelope
+/// carrying `found`/`status`/`appliedAt` on success (mirrors
+/// `profile_result_reply_carries_type_and_req_id`).
+#[test]
+fn applied_result_reply_carries_type_and_found_flag() {
+    let (_dir, store) = open_store();
+    let url = "https://jobs.example.com/posting/reply-1";
+    store
+        .upsert_for_origin(
+            url,
+            "linkedin",
+            &app_meta("Acme", "QA Engineer"),
+            ApplicationOrigin::Saved,
+            Some(true),
+        )
+        .unwrap();
+    let outcome = super::resolve_applied_check(&store, &json!({ "url": url }));
+    let reply = super::applied_result_reply("req-9", outcome);
+    let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(v["type"], super::msg::APPLIED_RESULT);
+    assert_eq!(v["reqId"], "req-9");
+    assert_eq!(v["payload"]["found"], true);
+    assert_eq!(v["payload"]["status"], "applied");
+    assert!(v["payload"]["appliedAt"].is_number());
+}
+
+/// A malformed (empty) url produces `{ found: false, error }` — never a panic,
+/// never a bare `{error}` without `found` (the extension's guard requires it).
+#[test]
+fn applied_result_reply_carries_error_on_malformed_url() {
+    let (_dir, store) = open_store();
+    let outcome = super::resolve_applied_check(&store, &json!({ "url": "" }));
+    let reply = super::applied_result_reply("req-10", outcome);
+    let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(v["type"], super::msg::APPLIED_RESULT);
+    assert_eq!(v["payload"]["found"], false);
+    assert!(v["payload"]["error"].as_str().unwrap().contains("required"));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
