@@ -372,41 +372,57 @@ pub(super) async fn score_import_posting(
 /// path's typical cost — it exists as a hard backstop, not a normal-path limit.
 const IMPORT_SCORE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
-/// Generic wall-clock cap: run `fut` and return `None` if it doesn't finish
-/// within `cap` — a timeout is just another "couldn't score it" outcome,
-/// identical to every other failure branch [`score_import_posting`] already
-/// collapses to `None`. Isolated as its own generic helper because
-/// `score_import_posting` has no injectable delay seam (it reaches into
-/// `AppHandle`/`DocumentStore` end to end), so THIS is the testable boundary
-/// for the timeout mechanism itself (see the tests below).
-async fn bounded<F, T>(cap: std::time::Duration, fut: F) -> Option<T>
+/// Race `fut` against `cap`, returning tokio's raw timeout `Result` so a
+/// caller can tell "genuinely timed out" (`Err`) apart from "finished in time
+/// but yielded `None`" (`Ok(None)`) — [`score_import_posting_bounded`] logs
+/// the two cases at different levels. Isolated as its own generic helper
+/// because `score_import_posting` has no injectable delay seam (it reaches
+/// into `AppHandle`/`DocumentStore` end to end), so THIS is the testable
+/// boundary for the timeout mechanism itself (see the tests below).
+async fn timed<F, T>(
+    cap: std::time::Duration,
+    fut: F,
+) -> Result<Option<T>, tokio::time::error::Elapsed>
 where
     F: std::future::Future<Output = Option<T>>,
 {
-    tokio::time::timeout(cap, fut).await.ok().flatten()
+    tokio::time::timeout(cap, fut).await
 }
 
 /// [`score_import_posting`] bounded by [`IMPORT_SCORE_TIMEOUT`] — the function
-/// `handle_import` actually calls. A timeout is logged (for observability)
-/// and treated exactly like any other scoring failure: `None`, `matchScore`
-/// omitted; the import above has ALREADY succeeded by the time this runs.
+/// `handle_import` actually calls. Logs at a level that matches how actionable
+/// the outcome is: a genuine timeout (a slow/degraded scorer) is worth a
+/// `warn`; an ordinary `None` — no résumé saved yet (the normal state for a
+/// new user), unusable posting text, or a scoring failure — is expected noise
+/// on plenty of imports and only worth a `debug`. Either way `matchScore` is
+/// simply omitted; the import above has ALREADY succeeded by the time this runs.
 pub(super) async fn score_import_posting_bounded(
     app: &AppHandle,
     posting: &JobPosting,
     normalized_url: &str,
 ) -> Option<f64> {
-    let out = bounded(
+    match timed(
         IMPORT_SCORE_TIMEOUT,
         score_import_posting(app, posting, normalized_url),
     )
-    .await;
-    if out.is_none() {
-        log::warn!(
-            "[extension_bridge] import-time match score exceeded {:?} or failed; omitting matchScore",
-            IMPORT_SCORE_TIMEOUT
-        );
+    .await
+    {
+        Err(_) => {
+            log::warn!(
+                "[extension_bridge] import-time match score exceeded {:?}; omitting matchScore",
+                IMPORT_SCORE_TIMEOUT
+            );
+            None
+        }
+        Ok(None) => {
+            log::debug!(
+                "[extension_bridge] import-time match score unavailable (no résumé / unusable \
+                 posting text / scoring failure); omitting matchScore"
+            );
+            None
+        }
+        Ok(Some(score)) => Some(score),
     }
-    out
 }
 
 /// Minimal per-connection token-bucket throttle for `match.live`. A
@@ -620,6 +636,15 @@ mod tests {
             adhoc_job_id(&canonicalized_normalized_url(already_normalized)),
             "raw and pre-normalized url variants must hit the same ad-hoc cache key"
         );
+
+        // A #fragment variant (e.g. a same-page anchor like #apply) must also
+        // collapse to the same cache key — normalize_job_url strips fragments too.
+        let with_fragment = "https://www.acme.example/jobs/42/#apply";
+        assert_eq!(
+            adhoc_job_id(&canonicalized_normalized_url(with_fragment)),
+            adhoc_job_id(&canonicalized_normalized_url(already_normalized)),
+            "a #fragment url variant must hit the same ad-hoc cache key"
+        );
     }
 
     #[test]
@@ -732,45 +757,48 @@ mod tests {
         assert!(ok.gaps.is_empty());
     }
 
-    // ── bounded (the import-reply-scoring timeout mechanism) ─────────────────
+    // ── timed (the import-reply-scoring timeout mechanism) ───────────────────
     // `score_import_posting` has no injectable delay seam (it reaches into a
     // real AppHandle/DocumentStore end to end), so these exercise the generic
     // timeout wrapper directly — the HIGH "bound the import-reply scoring"
     // fix's actual testable boundary, per the task's own fallback note.
 
     #[tokio::test(start_paused = true)]
-    async fn bounded_returns_none_when_the_future_exceeds_the_cap() {
+    async fn timed_returns_err_when_the_future_exceeds_the_cap() {
         let cap = std::time::Duration::from_millis(100);
-        let out = bounded(cap, async {
+        let out = timed(cap, async {
             tokio::time::sleep(cap * 2).await;
             Some(42.0_f64)
         })
         .await;
         assert!(
-            out.is_none(),
-            "a future that exceeds the cap must yield None, not the eventual value"
+            out.is_err(),
+            "a future that exceeds the cap must yield the raw timeout Err, not the eventual value"
         );
     }
 
     #[tokio::test]
-    async fn bounded_returns_the_value_when_within_the_cap() {
-        let out = bounded(std::time::Duration::from_millis(50), async {
+    async fn timed_returns_the_value_when_within_the_cap() {
+        let out = timed(std::time::Duration::from_millis(50), async {
             Some(7.0_f64)
         })
         .await;
         assert_eq!(
-            out,
+            out.unwrap(),
             Some(7.0),
             "a fast future must pass its value through unchanged"
         );
     }
 
     #[tokio::test]
-    async fn bounded_propagates_none_from_a_fast_but_failed_future() {
-        // A None that resolves WELL within the cap must still be None — the
-        // wrapper must not turn a genuine scoring failure into a false success.
-        let out: Option<f64> = bounded(std::time::Duration::from_millis(50), async { None }).await;
-        assert!(out.is_none());
+    async fn timed_distinguishes_a_fast_none_from_a_timeout() {
+        // A None that resolves WELL within the cap must be `Ok(None)` — NOT
+        // the `Err` a genuine timeout produces. This is exactly the
+        // distinction `score_import_posting_bounded` logs at different levels
+        // (a fast None must never be misreported as a timeout).
+        let out: Result<Option<f64>, _> =
+            timed(std::time::Duration::from_millis(50), async { None }).await;
+        assert_eq!(out.unwrap(), None);
     }
 
     // ── MatchLiveThrottle (per-connection compute-verb throttle) ─────────────

@@ -134,8 +134,13 @@ export const ExtensionImportRequestSchema = z.object({
 /**
  * `import.result` payload. On success carries the created/merged
  * `applicationId` + its `status`, plus the parsed `title`/`company` so the
- * popup can confirm WHICH job was imported; `matchScore` is reserved for the
- * future live-match reply. On failure carries `error`.
+ * popup can confirm WHICH job was imported. `matchScore` is a best-effort
+ * keyword-only ATS score (0–100) against the user's default/most-recent
+ * résumé — see {@link ExtensionMatchLiveResult}'s doc for why it is always
+ * keyword-only; it is OMITTED (not `0`/`null`) whenever scoring failed for any
+ * reason (no résumé saved yet, unusable posting text, a scoring timeout) — the
+ * import itself always succeeds regardless of whether this field is present.
+ * On failure carries `error`.
  */
 export const ExtensionImportResultSchema = z.object({
   applicationId: z.string().optional(),

@@ -248,6 +248,55 @@ describe('resolveImportResponse', () => {
     expect(text).toBe('Imported “DevOps Engineer”. Open AI Job Hunter → Applications to view it.');
   });
 
+  // ── matchScore percent-fit suffix (best-effort, omitted on failure) ─────────
+
+  it('appends the percent-fit suffix to a plain success when matchScore is present', () => {
+    const res = {
+      ok: true as const,
+      kind: 'import' as const,
+      result: {
+        applicationId: 'app-score',
+        status: 'saved',
+        title: 'Rust Engineer',
+        matchScore: 71.6,
+      },
+    };
+    const { text, tone } = resolveImportResponse(res, false);
+    expect(tone).toBe('ok');
+    expect(text).toBe(
+      'Imported “Rust Engineer”. Open AI Job Hunter → Applications to view it. — 72% fit.'
+    );
+  });
+
+  it('leaves the success copy unchanged when matchScore is absent', () => {
+    const res = {
+      ok: true as const,
+      kind: 'import' as const,
+      result: { applicationId: 'app-noscore', status: 'saved', title: 'QA Engineer' },
+    };
+    const { text } = resolveImportResponse(res, false);
+    expect(text).toBe('Imported “QA Engineer”. Open AI Job Hunter → Applications to view it.');
+  });
+
+  it('appends the percent-fit suffix to the already-tracked/status-unchanged line too', () => {
+    const res = {
+      ok: true as const,
+      kind: 'import' as const,
+      result: {
+        applicationId: 'app-existing-score',
+        status: 'applied',
+        title: 'Backend Engineer',
+        matchScore: 55,
+      },
+    };
+    const { text, tone } = resolveImportResponse(res, false);
+    expect(tone).toBe('ok');
+    expect(text).toBe(
+      '“Backend Engineer” is already tracked as Applied — status unchanged. ' +
+        'Open AI Job Hunter → Applications to view it. — 55% fit.'
+    );
+  });
+
   it('prefers the partial message over the transparency message (partial stub → unchanged)', () => {
     const res = {
       ok: true as const,
@@ -1880,6 +1929,23 @@ describe('doCheckFit (#btn-check-fit)', () => {
     expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
       'Could not check fit for this page. Please retry.'
     );
+  });
+
+  it('surfaces the per-connection throttle refusal and re-enables the button', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'matchLive',
+      result: { ok: false, error: 'Too many requests — try again shortly.' },
+    });
+
+    byId<HTMLButtonElement>('btn-check-fit').click();
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Too many requests — try again shortly.'
+    );
+    expect(byId<HTMLDivElement>('match-result').hidden).toBe(true);
+    expect(byId<HTMLButtonElement>('btn-check-fit').disabled).toBe(false);
   });
 });
 

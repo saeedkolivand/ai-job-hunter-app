@@ -299,15 +299,15 @@ fn sample_posting(url: &str, company: &str, title: &str) -> crate::scraping::typ
 fn usable_requires_a_non_blank_title() {
     let url = "https://acme.example/jobs/1";
     assert!(
-        super::usable(&sample_posting(url, "Co", "Title")),
+        super::import_flow::usable(&sample_posting(url, "Co", "Title")),
         "a titled posting is usable"
     );
     assert!(
-        !super::usable(&sample_posting(url, "Co", "")),
+        !super::import_flow::usable(&sample_posting(url, "Co", "")),
         "an empty-title posting is not usable"
     );
     assert!(
-        !super::usable(&sample_posting(url, "Co", "   ")),
+        !super::import_flow::usable(&sample_posting(url, "Co", "   ")),
         "a whitespace-only title is not usable"
     );
 }
@@ -325,9 +325,13 @@ fn import_persists_one_saved_application_from_posting() {
     let (_dir, store) = open_store();
     let posting = sample_posting("https://acme.example/jobs/77", "Acme", "Staff Engineer");
 
-    let (id, status) =
-        super::persist_import_application(&store, "https://acme.example/jobs/77", &posting, None)
-            .unwrap();
+    let (id, status) = super::import_flow::persist_import_application(
+        &store,
+        "https://acme.example/jobs/77",
+        &posting,
+        None,
+    )
+    .unwrap();
 
     assert_eq!(
         status, "saved",
@@ -351,7 +355,7 @@ fn import_applied_flag_advances_status() {
     let (_dir, store) = open_store();
     let posting = sample_posting("https://acme.example/jobs/78", "Beta", "SRE");
 
-    let (_id, status) = super::persist_import_application(
+    let (_id, status) = super::import_flow::persist_import_application(
         &store,
         "https://acme.example/jobs/78",
         &posting,

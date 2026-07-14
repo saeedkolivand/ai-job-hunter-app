@@ -43,6 +43,16 @@ const IMPORT_LANDING_HINT = 'Open AI Job Hunter → Applications to view it.';
 /** Shown when the job was saved but the description couldn't be read. */
 const IMPORT_PARTIAL_HINT = 'Open AI Job Hunter → Applications to paste it.';
 
+/** Percent-fit suffix appended to the import success/status-unchanged lines
+ *  when the desktop populated `matchScore` (a best-effort keyword-only score,
+ *  omitted on failure — see `ExtensionImportResult`'s doc) — mirrors the
+ *  "Check fit" card's percent treatment (`resolveMatchLiveResponse`) without
+ *  the résumé name the import reply doesn't carry. Absent field → empty
+ *  string, so the message is byte-identical to before this field existed. */
+function matchScoreSuffix(matchScore: number | undefined): string {
+  return typeof matchScore === 'number' ? ` — ${Math.round(matchScore)}% fit.` : '';
+}
+
 /**
  * Given an `import` response, return the message text and tone to display. On
  * success it names the imported job (when the desktop parsed a title) and points
@@ -75,15 +85,19 @@ export function resolveImportResponse(
       tone: 'ok',
     };
   }
+  const scoreSuffix = matchScoreSuffix(result.matchScore);
   if (!requestedApplied && result.status && result.status !== 'saved') {
     const label = capitalize(result.status);
     const lead = title
       ? `“${title}” is already tracked as ${label}`
       : `This job is already tracked as ${label}`;
-    return { text: `${lead} — status unchanged. ${IMPORT_LANDING_HINT}`, tone: 'ok' };
+    return {
+      text: `${lead} — status unchanged. ${IMPORT_LANDING_HINT}${scoreSuffix}`,
+      tone: 'ok',
+    };
   }
   const lead = title ? `Imported “${title}”.` : 'Imported.';
-  return { text: `${lead} ${IMPORT_LANDING_HINT}`, tone: 'ok' };
+  return { text: `${lead} ${IMPORT_LANDING_HINT}${scoreSuffix}`, tone: 'ok' };
 }
 
 /** Default/found labels for the import button — adaptive per the applied.check
