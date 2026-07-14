@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784016454393,
+  "lastUpdate": 1784021953100,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4277,6 +4277,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 298332,
             "range": "± 4545",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "27a5d732ae9625a6b50dce537d90005ff4db2ecc",
+          "message": "feat: prefer extension job-root hint in generic page parsing (#633)\n\n* feat: prefer extension job-root hint in generic page parsing\n\nScan-mode imports stamp data-ajh-job-root on the likely job node; the\ngeneric-fallback parser now merges that subtree per field (title and\ndescription each override only when non-empty) over the whole-document\nheuristics, with script/style stripped locally and the no-hint path\npinned byte-identical by test. Fewer partial imports on cluttered pages.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: scope hint fallback and preserve section headings in job root parsing\n\nSkip the whole-document main_content_text last resort once the extension\nhint supplied a real title (thin-hint decoy risk), and strip only the\ntitle h1 (not every h1) from the hinted subtree's description source so\nlegitimate section headings survive. Adds precedence/regression pin tests.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* perf: skip job root reparse when no hint attribute present\n\nAdd an early substring check before the full-document reparse, skipping the no-hint path (every server-fetch resolve call).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-14T11:30:31+02:00",
+          "tree_id": "25d9ad9143435dbd3c30fdffa013584ee8bce2f6",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/27a5d732ae9625a6b50dce537d90005ff4db2ecc"
+        },
+        "date": 1784021953018,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2115739,
+            "range": "± 21638",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2512577,
+            "range": "± 20314",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 282082,
+            "range": "± 8091",
             "unit": "ns/iter"
           }
         ]
