@@ -85,6 +85,9 @@
              popup opens (background auto-check). Empty/hidden until (and unless)
              an existing Application is found — never shown on a failure/timeout. -->
         <p id="applied-status" class="msg msg--ok" role="status" aria-live="polite" hidden></p>
+        <!-- Shown only for a found+saved applied.check result; hides itself once
+             the job is marked applied (re-fires the same auto-check). -->
+        <button id="btn-mark-applied" class="btn" type="button" hidden>Mark as applied</button>
         <div class="actions">
           <button id="btn-import" class="btn btn--primary" type="button">Import this job</button>
           <button
