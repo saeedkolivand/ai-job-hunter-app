@@ -739,6 +739,78 @@ fn transition_status_if_second_racing_call_loses_and_appends_nothing() {
     );
 }
 
+/// A `saved` row CAN already carry a prior `applied_at` — from an earlier
+/// `applied -> saved` demotion via the stage picker (`set_status` never clears
+/// `applied_at` on a demotion to a pre-apply status). Re-transitioning that row
+/// back to `applied` through `transition_status_if` (the extension bridge's
+/// guard) must preserve the ORIGINAL `applied_at`, not stamp a fresh `now()` —
+/// first-applied-wins, same semantics as `set_status`.
+#[test]
+fn transition_status_if_preserves_prior_applied_at_after_demotion_round_trip() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .upsert_for_origin(
+            "https://demote.example/1",
+            "b",
+            &meta("C", "T"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    // Simulate the applied -> saved round-trip via `set_status` (the stage
+    // picker's path): leaving saved sets applied_at, then demoting back to
+    // saved must NOT clear it.
+    store
+        .set_status(&id, ApplicationStatus::Applied, "applied")
+        .unwrap();
+    let original_applied_at = store.get(&id).unwrap().applied_at;
+    assert!(
+        original_applied_at.is_some(),
+        "leaving saved must set applied_at"
+    );
+
+    store
+        .set_status(&id, ApplicationStatus::Saved, "demoted back to saved")
+        .unwrap();
+    assert_eq!(
+        store.get(&id).unwrap().applied_at,
+        original_applied_at,
+        "a saved demotion must not clear the prior applied_at"
+    );
+
+    // Pin an unmistakably distinct sentinel directly on the row so the final
+    // assertion can't pass by clock-resolution coincidence with `now()` — it
+    // must come from a genuine COALESCE preservation, not a lucky same-ms read.
+    {
+        let conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        conn.execute(
+            "UPDATE applications SET applied_at = 12345 WHERE id = ?1",
+            rusqlite::params![id],
+        )
+        .unwrap();
+    }
+
+    let ok = store
+        .transition_status_if(
+            &id,
+            ApplicationStatus::Saved,
+            ApplicationStatus::Applied,
+            Some("via extension"),
+        )
+        .unwrap();
+    assert!(ok, "saved -> applied must still transition");
+
+    let app = store.get(&id).unwrap();
+    assert_eq!(app.status, ApplicationStatus::Applied);
+    assert_eq!(
+        app.applied_at,
+        Some(12345),
+        "transition_status_if must preserve the prior applied_at (first-applied-wins), not stamp a fresh now()"
+    );
+}
+
 /// Parity guard: the Rust stage registry order/ids must match the shared-TS
 /// `APPLICATION_STAGES`. The expected list is HARD-CODED from the TS `as const`
 /// so any drift on either side fails the build (see

@@ -760,10 +760,12 @@ impl ApplicationStore {
     /// `Ok(false)` when zero rows matched (no such id, or its status had
     /// already moved off `from` since the caller last checked — never a
     /// partial write). Mirrors `set_status`'s field semantics for the matched
-    /// row: `updated_at` always bumps; `applied_at` is set to now only when
-    /// `to == Applied` (this method's only caller today is the narrow
-    /// `saved -> applied` transition, where the row can never already carry an
-    /// `applied_at`); the event's `note` defaults to `""` when `None`.
+    /// row: `updated_at` always bumps; `applied_at` is first-applied-wins (only
+    /// set when currently `NULL`) when `to == Applied` — a `saved` row CAN
+    /// already carry a prior `applied_at` from an earlier applied -> saved
+    /// demotion via the stage picker, and that timestamp must survive a
+    /// re-transition back to `applied`; the event's `note` defaults to `""`
+    /// when `None`.
     pub(crate) fn transition_status_if(
         &self,
         id: &str,
@@ -776,7 +778,7 @@ impl ApplicationStore {
         let tx = guard.transaction()?;
         let rows = if to == ApplicationStatus::Applied {
             tx.execute(
-                "UPDATE applications SET status = ?2, applied_at = ?3, updated_at = ?4
+                "UPDATE applications SET status = ?2, applied_at = COALESCE(applied_at, ?3), updated_at = ?4
                  WHERE id = ?1 AND status = ?5",
                 params![id, to.as_id(), ts_to_db(now), ts_to_db(now), from.as_id()],
             )?
