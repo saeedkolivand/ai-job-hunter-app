@@ -69,6 +69,7 @@ pub mod handshake;
 mod import_tests;
 pub mod native_host;
 pub mod register;
+mod status_update;
 #[cfg(test)]
 mod test;
 
@@ -121,6 +122,18 @@ pub mod msg {
     /// application id/status/title/appliedAt), or `{ found: false, error }` on
     /// a malformed/empty url.
     pub const APPLIED_RESULT: &str = "applied.result";
+    /// Extension → desktop: "mark this URL applied" — a user-gestured WRITE,
+    /// structurally restricted to the single `saved → applied` transition on
+    /// an EXACT normalized-URL-key match. Never any other transition, never a
+    /// fuzzy match; see [`super::status_update::resolve_status_update`] for
+    /// the allowlist.
+    pub const STATUS_UPDATE: &str = "status.update";
+    /// Desktop → extension: the `status.update` outcome — `{ ok: true,
+    /// applicationId, status }` on success, `{ ok: false, error }` on a
+    /// refusal (no match / wrong starting status / unsupported transition) or
+    /// a malformed request. UNLIKE `applied.result`, this verb's errors ARE
+    /// user-facing (it answers a deliberate click, not a passive check).
+    pub const STATUS_RESULT: &str = "status.result";
 }
 
 /// Handshake protocol version carried in the `hello` frame. MUST match the TS
@@ -531,6 +544,9 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
             FrameDecision::AppliedCheck { req_id, payload } => {
                 Some(handle_applied_check(&app, &req_id, &payload))
             }
+            FrameDecision::StatusUpdate { req_id, payload } => {
+                Some(status_update::handle_status_update(&app, &req_id, &payload))
+            }
         };
         if let Some(reply) = reply {
             if writer.send(Message::text(reply)).await.is_err() {
@@ -600,6 +616,13 @@ enum FrameDecision {
     /// read `url`. Read-only by construction: resolved from the local
     /// `ApplicationStore` only — never the network.
     AppliedCheck { req_id: String, payload: Value },
+    /// An authenticated `status.update` to answer through
+    /// [`status_update::handle_status_update`]. Carries the payload verbatim so
+    /// the handler can read `url` + `to`. The ONLY write this dispatch can
+    /// route to besides `Import`;
+    /// [`status_update::resolve_status_update`] is what actually restricts it
+    /// to `saved → applied` on an exact match.
+    StatusUpdate { req_id: String, payload: Value },
 }
 
 /// The per-message handshake gate + dispatch routing (size cap → JSON parse →
@@ -695,8 +718,9 @@ fn advance_auth(
 }
 
 /// Post-auth dispatch: the socket is session-authenticated, so frames carry no
-/// token. Routes `import.request` / `profile.get` / `applied.check`; reserved /
-/// unknown types get an `import.result` error reply (never a panic).
+/// token. Routes `import.request` / `profile.get` / `applied.check` /
+/// `status.update`; reserved / unknown types get an `import.result` error
+/// reply (never a panic).
 fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameDecision {
     match kind {
         msg::IMPORT_REQUEST => {
@@ -709,6 +733,12 @@ fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameD
         msg::APPLIED_CHECK => {
             let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
             FrameDecision::AppliedCheck { req_id, payload }
+        }
+        // "Mark this URL applied" — the narrowest possible write (saved → applied
+        // on an exact URL-key match only).
+        msg::STATUS_UPDATE => {
+            let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
+            FrameDecision::StatusUpdate { req_id, payload }
         }
         // Reserved message types — acknowledged as unimplemented, never panic.
         msg::MATCH_LIVE => FrameDecision::Reply(result_reply(

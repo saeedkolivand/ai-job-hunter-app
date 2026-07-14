@@ -6,6 +6,8 @@ import {
   ExtensionEnvelopeSchema,
   ExtensionImportRequestSchema,
   ExtensionProfileResultSchema,
+  ExtensionStatusUpdateRequestSchema,
+  ExtensionStatusUpdateResultSchema,
 } from './extension-protocol.js';
 import {
   EXTENSION_MESSAGE_TYPES,
@@ -242,6 +244,114 @@ describe('ExtensionAppliedCheckResultSchema', () => {
         type: EXTENSION_MESSAGE_TYPES.appliedResult,
         reqId: 'req-003',
         payload: { found: false },
+      })
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ExtensionStatusUpdateRequestSchema / ExtensionStatusUpdateResultSchema
+// ---------------------------------------------------------------------------
+
+describe('ExtensionStatusUpdateRequestSchema', () => {
+  it('accepts a valid request', () => {
+    expect(() =>
+      ExtensionStatusUpdateRequestSchema.parse({
+        url: 'https://example.com/job/123',
+        to: 'applied',
+      })
+    ).not.toThrow();
+  });
+
+  it('rejects an empty url', () => {
+    expect(() => ExtensionStatusUpdateRequestSchema.parse({ url: '', to: 'applied' })).toThrow();
+  });
+
+  it('rejects a request with no url field', () => {
+    expect(() => ExtensionStatusUpdateRequestSchema.parse({ to: 'applied' })).toThrow();
+  });
+
+  it('rejects any `to` value other than the literal "applied" — the allowlist is visible in the contract itself', () => {
+    expect(() =>
+      ExtensionStatusUpdateRequestSchema.parse({ url: 'https://example.com/job/123', to: 'saved' })
+    ).toThrow();
+    expect(() =>
+      ExtensionStatusUpdateRequestSchema.parse({
+        url: 'https://example.com/job/123',
+        to: 'interviewing',
+      })
+    ).toThrow();
+  });
+
+  it('rejects a request with no `to` field', () => {
+    expect(() =>
+      ExtensionStatusUpdateRequestSchema.parse({ url: 'https://example.com/job/123' })
+    ).toThrow();
+  });
+});
+
+describe('ExtensionStatusUpdateResultSchema', () => {
+  it('round-trips a success payload', () => {
+    const payload = { ok: true, applicationId: 'app-1', status: 'applied' };
+    expect(ExtensionStatusUpdateResultSchema.parse(payload)).toEqual(payload);
+  });
+
+  it("accepts a user-facing failure payload (this verb's errors are shown, unlike applied.check)", () => {
+    expect(() =>
+      ExtensionStatusUpdateResultSchema.parse({
+        ok: false,
+        error: "couldn't find a saved job for this page",
+      })
+    ).not.toThrow();
+  });
+
+  it('rejects a missing ok field', () => {
+    expect(() => ExtensionStatusUpdateResultSchema.parse({})).toThrow();
+  });
+
+  it('rejects a non-boolean ok field', () => {
+    expect(() => ExtensionStatusUpdateResultSchema.parse({ ok: 'yes' })).toThrow();
+  });
+
+  it('rejects an incomplete ok:true payload missing applicationId and status', () => {
+    expect(() => ExtensionStatusUpdateResultSchema.parse({ ok: true })).toThrow();
+  });
+
+  it('rejects an ok:true payload missing status', () => {
+    expect(() =>
+      ExtensionStatusUpdateResultSchema.parse({ ok: true, applicationId: 'app-1' })
+    ).toThrow();
+  });
+
+  it('rejects an ok:true payload missing applicationId', () => {
+    expect(() =>
+      ExtensionStatusUpdateResultSchema.parse({ ok: true, status: 'applied' })
+    ).toThrow();
+  });
+
+  it('rejects a contradictory ok:false payload carrying success fields but no error', () => {
+    expect(() =>
+      ExtensionStatusUpdateResultSchema.parse({
+        ok: false,
+        applicationId: 'app-1',
+        status: 'applied',
+      })
+    ).toThrow();
+  });
+
+  it('carries status.update / status.result through a valid envelope', () => {
+    expect(() =>
+      ExtensionEnvelopeSchema.parse({
+        type: EXTENSION_MESSAGE_TYPES.statusUpdate,
+        reqId: 'req-004',
+        payload: { url: 'https://example.com/job/123', to: 'applied' },
+      })
+    ).not.toThrow();
+    expect(() =>
+      ExtensionEnvelopeSchema.parse({
+        type: EXTENSION_MESSAGE_TYPES.statusResult,
+        reqId: 'req-005',
+        payload: { ok: true, applicationId: 'app-1', status: 'applied' },
       })
     ).not.toThrow();
   });

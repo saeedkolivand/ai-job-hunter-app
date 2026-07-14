@@ -147,6 +147,51 @@ export function resolveImportButtonLabel(res: PopupResponse): string {
 }
 
 /**
+ * Whether the "Mark as applied" button should show: only for a found
+ * Application whose status is EXPLICITLY `saved` — the ONLY status this
+ * write's CAS precondition can ever transition FROM (the bridge's
+ * `saved → applied` compare-and-set requires the current status to already
+ * be `saved`; an absent/unknown status is not the same guarantee). Any other
+ * status (already applied, mid-pipeline, missing, or not found/error) keeps
+ * the button hidden; those cases use the existing "I already applied" import
+ * checkbox, not this button.
+ *
+ * Pure: no DOM access, no side effects.
+ */
+export function resolveShowMarkAppliedButton(res: PopupResponse): boolean {
+  if (!res.ok || res.kind !== 'appliedCheck') return false;
+  const { result } = res;
+  if (result.error || !result.found) return false;
+  return result.status === 'saved';
+}
+
+/**
+ * Given a `statusUpdate` response, return the message text + tone. UNLIKE
+ * `resolveAppliedStatusLine`/`resolveImportButtonLabel` (which fold every
+ * failure into "render nothing" — this is a passive, best-effort check),
+ * this verb's errors ARE shown: it answers a deliberate click. A
+ * transport-level `ok:false` surfaces its `error`; a resolved
+ * `result.ok === false` (the desktop's own refusal — no match / wrong
+ * starting status) surfaces `result.error`.
+ *
+ * Pure: no DOM access, no side effects.
+ */
+export function resolveMarkAppliedResponse(res: PopupResponse): {
+  text: string;
+  tone: 'ok' | 'err';
+} {
+  if (!res.ok) return { text: res.error, tone: 'err' };
+  if (res.kind !== 'statusUpdate') {
+    return { text: 'Unexpected response — please retry.', tone: 'err' };
+  }
+  const { result } = res;
+  if (!result.ok) {
+    return { text: result.error ?? 'Could not mark this job as applied.', tone: 'err' };
+  }
+  return { text: 'Marked as applied.', tone: 'ok' };
+}
+
+/**
  * Given a `fill` response, return the popup message + tone. The detailed summary
  * lives in the in-page overlay; the popup shows a short confirmation (or the
  * desktop's refusal when autofill is opted out). Handles the "nothing matched"
@@ -186,6 +231,7 @@ const els = {
   },
   btnImport: byId<HTMLButtonElement>('btn-import'),
   btnFill: byId<HTMLButtonElement>('btn-fill'),
+  btnMarkApplied: byId<HTMLButtonElement>('btn-mark-applied'),
   appliedStatus: byId<HTMLParagraphElement>('applied-status'),
   chkApplied: byId<HTMLInputElement>('chk-applied'),
   importMsg: byId<HTMLParagraphElement>('import-msg'),
@@ -298,6 +344,8 @@ function render(status: ConnectionStatus): void {
     els.appliedStatus.hidden = true;
     els.appliedStatus.textContent = '';
     els.btnImport.textContent = IMPORT_LABEL_DEFAULT;
+    els.btnMarkApplied.hidden = true;
+    els.btnMarkApplied.disabled = false;
   }
   lastRenderedPhase = status.phase;
 
@@ -438,6 +486,8 @@ async function runAppliedAutoCheck(): Promise<void> {
   els.appliedStatus.hidden = true;
   els.appliedStatus.textContent = '';
   els.btnImport.textContent = IMPORT_LABEL_DEFAULT;
+  els.btnMarkApplied.hidden = true;
+  els.btnMarkApplied.disabled = false;
   try {
     const res = await send({ kind: 'appliedCheck' });
     // A newer check started while this one was in flight — its result (or the
@@ -448,11 +498,46 @@ async function runAppliedAutoCheck(): Promise<void> {
     els.appliedStatus.hidden = line === null;
     els.appliedStatus.textContent = line ?? '';
     els.btnImport.textContent = resolveImportButtonLabel(res);
+    // Only a found+saved result shows the button — reset disabled here too,
+    // so a re-fire after a successful "Mark as applied" click (which left the
+    // button disabled) ends re-enabled for whatever this fresh check renders.
+    els.btnMarkApplied.hidden = !resolveShowMarkAppliedButton(res);
+    els.btnMarkApplied.disabled = false;
   } catch {
     if (myGeneration !== appliedCheckGeneration) return;
     els.appliedStatus.hidden = true;
     els.appliedStatus.textContent = '';
     els.btnImport.textContent = IMPORT_LABEL_DEFAULT;
+    els.btnMarkApplied.hidden = true;
+    els.btnMarkApplied.disabled = false;
+  }
+}
+
+/**
+ * Click handler for "Mark as applied". Sends `status.update` and shows the
+ * result in the existing message area — UNLIKE the passive auto-check,
+ * failures ARE shown here (this is a deliberate click action). On success it
+ * re-fires {@link runAppliedAutoCheck} (the SAME generation-guarded path
+ * every other applied.check render goes through) instead of hand-rolling a
+ * DOM update, so the status line flips to the applied wording and this
+ * button hides itself once the fresh check confirms it.
+ */
+async function doMarkApplied(): Promise<void> {
+  els.btnMarkApplied.disabled = true;
+  setMsg(els.importMsg, 'Marking as applied…', 'muted');
+  try {
+    const res = await send({ kind: 'statusUpdate' });
+    const { text, tone } = resolveMarkAppliedResponse(res);
+    setMsg(els.importMsg, text, tone);
+    if (tone === 'ok') {
+      void runAppliedAutoCheck();
+    } else {
+      els.btnMarkApplied.disabled = false;
+    }
+  } catch {
+    // A transport/messaging rejection must not strand the button disabled.
+    setMsg(els.importMsg, 'Could not mark this job as applied. Please retry.', 'err');
+    els.btnMarkApplied.disabled = false;
   }
 }
 
@@ -575,6 +660,7 @@ async function getApp(): Promise<void> {
 function wire(): void {
   els.btnImport.addEventListener('click', () => void doImport());
   els.btnFill.addEventListener('click', () => void doFill());
+  els.btnMarkApplied.addEventListener('click', () => void doMarkApplied());
   els.btnSaveToken.addEventListener('click', () => void savePairing());
   els.tokenInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') void savePairing();
