@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784042954149,
+  "lastUpdate": 1784055038570,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4403,6 +4403,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 289801,
             "range": "± 11826",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d888929429b677e7d25c06ecdc26aabfec883fc7",
+          "message": "feat: suggest saved answers for application form questions (#637)\n\n* feat: suggest saved answers for application form questions\n\nNew answers.suggest verb: the popup scans empty labeled fields and the\ndesktop matches them against all stored application answers with a pure\nlocal token-jaccard matcher (punctuation-stripping tokenizer, threshold\n0.4, one suggestion per question, capped). Suggestions render with copy\nand a fail-safe single-field fill; salary-like and duplicate-labeled\nquestions are copy-only. Gated on the autofill opt-in; the settings\ndisclosure now spells out the answers flow in both locales.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: harden salary detection and fill correlation against page variance\n\nRe-tokenize on non-alphanumeric boundaries before the salary-keyword\nsubstring check so hyphen/slash questions (\"Day-rate\", \"day/rate\") are\nno longer missed and wrongly offered a Fill button. Thread the\nscan-time same-question occurrence count through the answer-fill\nrequest/message/injected-arg chain so the fill-time re-scan refuses\nwhen a same-labelled field was inserted/removed since the scan,\ninstead of silently filling whatever now sits at that index. Add a\nnear-miss (0.375 < 0.4) negative regression pair for the suggest\nmatcher.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: match salary tokens exactly and pretokenize suggestion candidates\n\nSingle-word salary keywords now require a whole-token match instead of a\nsubstring one (fixes \"paid\" false-positiving inside \"unpaid\"); candidate and\nquestion tokenization is cached once instead of redone per jaccard pair.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: surface source question and extend salary rule to matched answers\n\nCloses the stopword footgun where an unrelated question (e.g. \"What is\nyour current location?\") can still cross the matcher's threshold on\nfiller words shared with a stored question (e.g. \"What is your current\nsalary?\"). Rather than stopword-filter the tokenizer or retune\nMIN_SCORE (both risk breaking the short-paraphrase matches it was tuned\nagainst), the popup now always shows the matched candidate's original\nquestion (\"answered as: ...\") so a cross-question match is visually\nself-evident, and the salary Copy-only guard checks BOTH the scanned\ninput question and the matched candidate's own question.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-14T20:31:16+02:00",
+          "tree_id": "c1614c010084440310d12953b3fda5744beb97db",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/d888929429b677e7d25c06ecdc26aabfec883fc7"
+        },
+        "date": 1784055038508,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2243374,
+            "range": "± 41123",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2687158,
+            "range": "± 46550",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 251473,
+            "range": "± 1642",
             "unit": "ns/iter"
           }
         ]
