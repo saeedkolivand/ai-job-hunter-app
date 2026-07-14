@@ -39,9 +39,10 @@ export const EXTENSION_PROTOCOL_VERSION = 2;
  * `auth` (now carrying `{ proof }`, NOT a token) / `auth.ok`; `update.required`
  * is the force-cutover reply the desktop sends when a connection's first frame
  * is not a valid v2 `hello` (a legacy token `auth`, a missing/older protocol).
- * `import.request` / `import.result` / `profile.get` / `profile.result` are the
- * post-auth application frames; `match.live` and `applied.check` are **reserved**
- * (fixed now so a future build can add handlers without a protocol bump).
+ * `import.request` / `import.result` / `profile.get` / `profile.result` /
+ * `applied.check` / `applied.result` are the post-auth application frames;
+ * `match.live` is **reserved** (fixed now so a future build can add a handler
+ * without a protocol bump).
  */
 export const EXTENSION_MESSAGE_TYPES = {
   /** Extension → desktop: handshake step 1 — `{ protocol, clientNonce }`, no token. */
@@ -75,8 +76,15 @@ export const EXTENSION_MESSAGE_TYPES = {
   profileResult: 'profile.result',
   /** RESERVED — live ATS match for the open posting (not yet handled). */
   matchLive: 'match.live',
-  /** RESERVED — "have I already applied to this URL?" (not yet handled). */
+  /**
+   * Extension → desktop: "have I already applied to this URL?" — a pure,
+   * read-only lookup keyed by the normalized job url (no fetch, never
+   * mutates). No consent gate: this is the user's own metadata, device-local,
+   * loopback only.
+   */
   appliedCheck: 'applied.check',
+  /** Desktop → extension: the `applied.check` outcome (or an `error`). */
+  appliedResult: 'applied.result',
 } as const;
 
 /** Union of all wire `type` strings. */
@@ -203,6 +211,32 @@ export interface ExtensionProfileResult {
   github?: string;
   website?: string;
   /** Refusal (autofill disabled) or failure reason; present ⇒ no fields were sent. */
+  error?: string;
+}
+
+/**
+ * `applied.check` payload — the active tab's URL to look up. Read-only: this
+ * never fetches or creates anything, it only asks "does an Application already
+ * exist for this url?".
+ */
+export interface ExtensionAppliedCheckRequest {
+  url: string;
+}
+
+/**
+ * `applied.result` payload. `found` is always present; the rest are populated
+ * only when an Application already exists for the (canonicalized + normalized)
+ * url. `status` is the lowercase `ApplicationStatus` id (`saved`, `applied`,
+ * …). `appliedAt` is epoch ms (matches `Application.applied_at`) — the popup
+ * formats it locally. `error` carries a malformed-request or lookup failure;
+ * the popup treats ANY error the same as "not found" (renders nothing).
+ */
+export interface ExtensionAppliedCheckResult {
+  found: boolean;
+  applicationId?: string;
+  status?: string;
+  title?: string;
+  appliedAt?: number;
   error?: string;
 }
 
