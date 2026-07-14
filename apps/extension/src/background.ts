@@ -12,6 +12,11 @@ import { browser } from '@wxt-dev/browser';
 
 import type { ExtensionImportRequest } from '@ajh/shared';
 
+// Same type-only rationale as the autofill.ts import above — capture.js is
+// ALSO a classic-script injection target (see vite.config.ts's
+// `injectedEntries`), so this import must stay type-only (erased at build)
+// to keep answers-capture.ts's runtime code out of the background's bundle.
+import type { CapturedAnswer } from './lib/answers-capture';
 // TYPE-ONLY import from the autofill module. This is deliberate: `fill.js` is
 // injected via `executeScript({ files })`, which runs as a CLASSIC script (no ES
 // modules) — so `fill.js` must bundle with ZERO `import` statements. If the
@@ -38,6 +43,21 @@ function isFillSummary(v: unknown): v is AutofillSummary {
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Record<string, unknown>;
   return Array.isArray(o.filled) && typeof o.filledNothing === 'boolean';
+}
+
+/** Minimal guard for the `{question, answer}[]` array that crossed the
+ *  `executeScript` boundary (capture.js's completion value). */
+function isCapturedAnswers(v: unknown): v is CapturedAnswer[] {
+  return (
+    Array.isArray(v) &&
+    v.every(
+      (e) =>
+        typeof e === 'object' &&
+        e !== null &&
+        typeof (e as Record<string, unknown>).question === 'string' &&
+        typeof (e as Record<string, unknown>).answer === 'string'
+    )
+  );
 }
 
 /** Lazily-built, worker-lifetime-scoped client. Recreated after eviction. */
@@ -239,6 +259,51 @@ async function runStatusUpdate(): Promise<PopupResponse> {
   return { ok: true, kind: 'statusUpdate', result };
 }
 
+/**
+ * Inject the answers-capture collector into the active tab and return its
+ * `{question, answer}[]`. Single-step injection (unlike `injectFill`'s
+ * files+func two-step): the collector takes no PII input to pass in
+ * transiently, it only reads the page and returns data — same pattern as
+ * `captureActiveTabHtml`.
+ */
+async function captureActiveTabAnswers(): Promise<CapturedAnswer[]> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tabId = tab?.id;
+  if (typeof tabId !== 'number') throw new Error('No active tab to capture.');
+
+  const results = await browser.scripting.executeScript({
+    target: { tabId },
+    files: ['capture.js'],
+  });
+  const answers = results[0]?.result;
+  if (!isCapturedAnswers(answers)) {
+    throw new Error('Could not read the answers on this page.');
+  }
+  return answers;
+}
+
+/**
+ * User-clicked "Save my answers from this page". UNLIKE `runAppliedCheck`,
+ * failures are NOT folded away — a deliberate click action, like
+ * `runStatusUpdate` — so a capture/transport failure propagates up to
+ * `handleRequest`'s outer catch as `{ ok: false, error }`, and a resolved
+ * desktop-side refusal (`{ ok: false, error }` — autofill off / no match /
+ * malformed) still passes straight through as `result`. Mirrors `runFill`'s
+ * not-paired short-circuit: the token check runs BEFORE the capture injection,
+ * so an unpaired browser never reads the page.
+ */
+async function runAnswersSave(): Promise<PopupResponse> {
+  const token = await getToken();
+  if (!token) {
+    return { ok: false, error: 'Not paired. Paste your pairing token first.' };
+  }
+
+  const url = await activeTabUrl();
+  const answers = await captureActiveTabAnswers();
+  const result = await getClient().saveAnswers(url, answers);
+  return { ok: true, kind: 'answersSave', result };
+}
+
 /** Central popup-request dispatcher. Never throws — maps errors to `ok:false`. */
 async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
   try {
@@ -281,6 +346,8 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
         return await runAppliedCheck();
       case 'statusUpdate':
         return await runStatusUpdate();
+      case 'answersSave':
+        return await runAnswersSave();
       default: {
         // Exhaustiveness guard — a new PopupRequest variant must be handled.
         const _never: never = req;

@@ -40,9 +40,10 @@ export const EXTENSION_PROTOCOL_VERSION = 2;
  * is the force-cutover reply the desktop sends when a connection's first frame
  * is not a valid v2 `hello` (a legacy token `auth`, a missing/older protocol).
  * `import.request` / `import.result` / `profile.get` / `profile.result` /
- * `applied.check` / `applied.result` / `status.update` / `status.result` are
- * the post-auth application frames; `match.live` is **reserved** (fixed now
- * so a future build can add a handler without a protocol bump).
+ * `applied.check` / `applied.result` / `status.update` / `status.result` /
+ * `answers.save` / `answers.result` are the post-auth application frames;
+ * `match.live` is **reserved** (fixed now so a future build can add a
+ * handler without a protocol bump).
  *
  * **Consent-gate boundary** (the rule the remaining post-auth verbs copy): a
  * read-only lookup over the user's own device-local metadata (`applied.check`)
@@ -54,7 +55,12 @@ export const EXTENSION_PROTOCOL_VERSION = 2;
  * desktop-enforced opt-in. `profile.result.extraLinks` (additional labelled
  * link URLs) is fresh PII of exactly the same class as the rest of that
  * payload (`linkedin`/`github`/`website`, …), so it rides the SAME `profile.get`
- * opt-in gate — no separate consent surface, no protocol bump.
+ * opt-in gate — no separate consent surface, no protocol bump. `answers.save`
+ * WRITES freshly-captured page-derived text into the local store — the
+ * mirror direction of `profile.get`'s fill (capture vs. fill are the two
+ * directions of the one PII-adjacent gesture) — so it rides that SAME
+ * assisted-autofill opt-in too, not the read-only/exact-match-write carve-out
+ * `applied.check`/`status.update` get.
  */
 export const EXTENSION_MESSAGE_TYPES = {
   /** Extension → desktop: handshake step 1 — `{ protocol, clientNonce }`, no token. */
@@ -112,6 +118,22 @@ export const EXTENSION_MESSAGE_TYPES = {
    * deliberate click, not a passive background check).
    */
   statusResult: 'status.result',
+  /**
+   * Extension → desktop: "save my answers from this page" — append the
+   * captured `{question, answer}` pairs from the active tab's filled form
+   * fields onto the Application matched by (canonicalized + normalized)
+   * `url`. No match → a refusal telling the user to import the job first
+   * (see {@link ExtensionAnswersSaveResult}); NEVER auto-creates. Rides the
+   * assisted-autofill opt-in (same gate as `profile.get`/`fill` — capture is
+   * the mirror direction of fill).
+   */
+  answersSave: 'answers.save',
+  /**
+   * Desktop → extension: the `answers.save` outcome. Like `status.update`,
+   * this verb's errors are user-facing — the popup must render `error`,
+   * never fold it into a silent no-op (it answers a deliberate click).
+   */
+  answersResult: 'answers.result',
 } as const;
 
 /** Union of all wire `type` strings. */
@@ -298,6 +320,50 @@ export interface ExtensionStatusUpdateRequest {
  */
 export type ExtensionStatusUpdateResult =
   { ok: true; applicationId: string; status: 'applied' } | { ok: false; error: string };
+
+/** One captured application-form question/answer pair (page-derived, UNTRUSTED
+ *  text) — see {@link ExtensionAnswersSaveRequest}. */
+export interface ExtensionAnswerPair {
+  question: string;
+  answer: string;
+}
+
+/**
+ * `answers.save` payload — the active tab's url plus the captured
+ * `{question, answer}` pairs to append onto the matched Application. Untrusted
+ * page-derived content: the desktop clamps each field's byte length and the
+ * array's entry count at the store boundary (client-side validation here is
+ * shape-only).
+ */
+export interface ExtensionAnswersSaveRequest {
+  url: string;
+  answers: ExtensionAnswerPair[];
+}
+
+/**
+ * `answers.save` payload — a discriminated union so a reply can never mix
+ * success and failure fields: `ok:true` carries the matched `applicationId`,
+ * `saved` (newly-added count) and `skipped` (dedup-dropped count), plus the
+ * OPTIONAL `title`/`company` of the matched Application — included on the
+ * wire (unlike {@link ExtensionStatusUpdateResult}, which keeps them
+ * notification-only) because the handler already loaded the Application row
+ * for this verb, so surfacing them here is the smaller change than threading
+ * the popup's separately-fetched `applied.check` state through to this
+ * confirmation. `ok:false` always carries a user-facing `error` (autofill
+ * opt-in off / no match — import the job first / a malformed request).
+ * UNLIKE {@link ExtensionAppliedCheckResult}, this verb's errors ARE shown to
+ * the user — it answers a deliberate click, not a passive background check.
+ */
+export type ExtensionAnswersSaveResult =
+  | {
+      ok: true;
+      applicationId: string;
+      saved: number;
+      skipped: number;
+      title?: string;
+      company?: string;
+    }
+  | { ok: false; error: string };
 
 /**
  * The transport envelope every frame is wrapped in. `payload` is left as

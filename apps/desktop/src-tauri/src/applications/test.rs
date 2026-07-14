@@ -2047,3 +2047,590 @@ fn salary_fields_persist_merge_and_export_import_round_trip() {
     assert_eq!(imported.salary_max, Some(90_000.0));
     assert_eq!(imported.salary_currency, Some("EUR".to_string()));
 }
+
+// ── merge_answers (extension bridge `answers.save`'s store-write boundary) ────
+// APPEND-only dedup merge — deliberately NOT `upsert_internal`'s meta path
+// (which REPLACES `answers` wholesale). See `extension_bridge::answers_save`
+// for the caller.
+
+#[test]
+fn merge_answers_adds_new_answers_and_returns_count() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .upsert_for_origin(
+            "https://acme.com/job/merge/1",
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    let added = store
+        .merge_answers(
+            &id,
+            vec![
+                ApplicationAnswer {
+                    id: String::new(),
+                    question: "Why this role?".to_string(),
+                    answer: "Because I love it.".to_string(),
+                },
+                ApplicationAnswer {
+                    id: String::new(),
+                    question: "Salary expectation?".to_string(),
+                    answer: "100k".to_string(),
+                },
+            ],
+        )
+        .unwrap();
+    assert_eq!(added, 2);
+
+    let app = store.get(&id).unwrap();
+    assert_eq!(app.answers.len(), 2);
+    // Each merged answer gets a fresh, non-empty generated id.
+    assert!(app.answers.iter().all(|a| !a.id.is_empty()));
+}
+
+#[test]
+fn merge_answers_dedups_by_normalized_question_and_never_overwrites() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let mut m = meta("Acme", "Engineer");
+    m.answers = vec![ApplicationAnswer {
+        id: "seed-1".to_string(),
+        question: "Why this role?".to_string(),
+        answer: "Original".to_string(),
+    }];
+    let id = store
+        .upsert_for_origin(
+            "https://acme.com/job/merge/2",
+            "linkedin",
+            &m,
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    // A re-capture with different whitespace/case for the SAME question, plus
+    // one genuinely new question.
+    let added = store
+        .merge_answers(
+            &id,
+            vec![
+                ApplicationAnswer {
+                    id: String::new(),
+                    question: "  WHY this   role?".to_string(),
+                    answer: "A newer answer that must be dropped".to_string(),
+                },
+                ApplicationAnswer {
+                    id: String::new(),
+                    question: "New question?".to_string(),
+                    answer: "New answer".to_string(),
+                },
+            ],
+        )
+        .unwrap();
+    assert_eq!(added, 1, "only the genuinely new question is added");
+
+    let app = store.get(&id).unwrap();
+    assert_eq!(app.answers.len(), 2);
+    let original = app
+        .answers
+        .iter()
+        .find(|a| a.question == "Why this role?")
+        .unwrap();
+    assert_eq!(
+        original.answer, "Original",
+        "existing answer never overwritten"
+    );
+    assert_eq!(
+        original.id, "seed-1",
+        "existing answer's id is untouched too"
+    );
+}
+
+#[test]
+fn merge_answers_dedups_within_the_same_incoming_batch() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .upsert_for_origin(
+            "https://acme.com/job/merge/3",
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    // Two entries in ONE call that normalize to the same question — only the
+    // first should be added.
+    let added = store
+        .merge_answers(
+            &id,
+            vec![
+                ApplicationAnswer {
+                    id: String::new(),
+                    question: "Why this role?".to_string(),
+                    answer: "First".to_string(),
+                },
+                ApplicationAnswer {
+                    id: String::new(),
+                    question: "why THIS role?".to_string(),
+                    answer: "Second (dropped)".to_string(),
+                },
+            ],
+        )
+        .unwrap();
+    assert_eq!(added, 1);
+    let app = store.get(&id).unwrap();
+    assert_eq!(app.answers.len(), 1);
+    assert_eq!(app.answers[0].answer, "First");
+}
+
+#[test]
+fn merge_answers_leaves_updated_at_unchanged_when_nothing_new_added() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let mut m = meta("Acme", "Engineer");
+    m.answers = vec![ApplicationAnswer {
+        id: "seed-1".to_string(),
+        question: "Why this role?".to_string(),
+        answer: "Original".to_string(),
+    }];
+    let id = store
+        .upsert_for_origin(
+            "https://acme.com/job/merge/4",
+            "linkedin",
+            &m,
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+    let before = store.get(&id).unwrap().updated_at;
+
+    let added = store
+        .merge_answers(
+            &id,
+            vec![ApplicationAnswer {
+                id: String::new(),
+                question: "Why this role?".to_string(),
+                answer: "Ignored".to_string(),
+            }],
+        )
+        .unwrap();
+    assert_eq!(added, 0);
+    assert_eq!(
+        store.get(&id).unwrap().updated_at,
+        before,
+        "an all-dedup merge (nothing added) must not touch updated_at"
+    );
+}
+
+#[test]
+fn merge_answers_returns_error_for_unknown_id() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let err = store.merge_answers("does-not-exist", vec![]).unwrap_err();
+    assert!(err.to_string().contains("not found"));
+}
+
+#[test]
+fn merge_answers_caps_total_stored_answers_and_drops_the_rest() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let mut m = meta("Acme", "Engineer");
+    // Seed to exactly (cap - 2) existing distinct answers.
+    m.answers = (0..MAX_TOTAL_ANSWERS - 2)
+        .map(|i| ApplicationAnswer {
+            id: format!("seed-{i}"),
+            question: format!("Existing question {i}?"),
+            answer: format!("Existing answer {i}"),
+        })
+        .collect();
+    let id = store
+        .upsert_for_origin(
+            "https://acme.com/job/merge/cap",
+            "linkedin",
+            &m,
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    // 5 new distinct questions incoming — only 2 fit under the cap; the rest
+    // are dropped (the caller derives `skipped` from `incoming_len - added`).
+    let incoming: Vec<ApplicationAnswer> = (0..5)
+        .map(|i| ApplicationAnswer {
+            id: String::new(),
+            question: format!("New question {i}?"),
+            answer: format!("New answer {i}"),
+        })
+        .collect();
+
+    let added = store.merge_answers(&id, incoming).unwrap();
+    assert_eq!(added, 2, "only enough to reach the cap are added");
+
+    let app = store.get(&id).unwrap();
+    assert_eq!(
+        app.answers.len(),
+        MAX_TOTAL_ANSWERS,
+        "total stored answers never exceeds the per-application cap"
+    );
+    // A seeded answer (by content, not just count) must survive the cap
+    // untouched — the cap drops INCOMING overflow, never existing rows.
+    let seeded = app
+        .answers
+        .iter()
+        .find(|a| a.id == "seed-0")
+        .expect("a seeded answer must survive the cap by id");
+    assert_eq!(seeded.question, "Existing question 0?");
+    assert_eq!(seeded.answer, "Existing answer 0");
+}
+
+/// HIGH regression: when `existing.answers` already sits AT or OVER
+/// `MAX_TOTAL_ANSWERS` (a legacy row seeded before the on-creation cap
+/// shipped), `merge_answers_by_question` used to remove the matching existing
+/// answer from `merged` to make room for the incoming replacement, then the
+/// cap check unconditionally blocked that same replacement from ever being
+/// pushed back in — the question vanished entirely instead of being
+/// rewritten. Seed a row with `MAX_TOTAL_ANSWERS + 1` answers via a raw SQL
+/// UPDATE (bypassing the store's own cap enforcement, simulating a legacy
+/// row), then upsert one incoming answer matching an existing question: it
+/// must survive with the incoming text, and the total must not grow.
+#[test]
+fn merge_answers_by_question_swaps_a_replacement_even_when_existing_is_already_over_cap() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let url = "https://acme.com/job/merge/over-cap-swap";
+    let id = store
+        .upsert_for_origin(
+            url,
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    // Seed MAX_TOTAL_ANSWERS + 1 distinct answers directly via raw SQL — a
+    // legacy shape the on-creation cap (which runs on every upsert today)
+    // would never itself produce, but a pre-existing over-cap row must still
+    // be handled safely.
+    let seeded: Vec<ApplicationAnswer> = (0..MAX_TOTAL_ANSWERS + 1)
+        .map(|i| ApplicationAnswer {
+            id: format!("seed-{i}"),
+            question: format!("Existing question {i}?"),
+            answer: format!("Existing answer {i}"),
+        })
+        .collect();
+    {
+        let conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        conn.execute(
+            "UPDATE applications SET answers = ?1 WHERE id = ?2",
+            rusqlite::params![serde_json::to_string(&seeded).unwrap(), id],
+        )
+        .unwrap();
+    }
+
+    // Re-upsert with one incoming answer matching an existing question (a
+    // rewrite) — no genuinely new question, so this exercises the swap path
+    // alone.
+    let mut m = meta("Acme", "Engineer");
+    m.answers = vec![ApplicationAnswer {
+        id: String::new(),
+        question: "Existing question 0?".to_string(),
+        answer: "Rewritten answer".to_string(),
+    }];
+    let id2 = store
+        .upsert_for_origin(url, "linkedin", &m, ApplicationOrigin::Saved, None)
+        .unwrap();
+    assert_eq!(id, id2, "same url merges into the same Application");
+
+    let app = store.get(&id).unwrap();
+    assert_eq!(
+        app.answers.len(),
+        MAX_TOTAL_ANSWERS + 1,
+        "a same-question swap must not grow (or shrink) an already over-cap row"
+    );
+    let swapped = app
+        .answers
+        .iter()
+        .find(|a| a.question == "Existing question 0?")
+        .expect("the matching question must survive the swap, not vanish");
+    assert_eq!(
+        swapped.answer, "Rewritten answer",
+        "the incoming replacement must win, not silently disappear"
+    );
+    assert_eq!(
+        app.answers
+            .iter()
+            .filter(|a| a.question != "Existing question 0?")
+            .count(),
+        MAX_TOTAL_ANSWERS,
+        "every other seeded answer must be untouched"
+    );
+}
+
+/// MEDIUM fix: `upsert_internal`'s NEW-ROW branch used to store `meta.answers`
+/// verbatim, bypassing `MAX_TOTAL_ANSWERS` entirely (only the existing-row merge
+/// branch enforced it). Creating a brand-new Application (no prior row for the
+/// url) with an oversized, duplicate-question `meta.answers` must still come out
+/// deduped-by-question and capped at `MAX_TOTAL_ANSWERS`.
+#[test]
+fn upsert_for_origin_caps_and_dedupes_answers_on_new_row_creation() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+
+    // MAX_TOTAL_ANSWERS + 2 distinct questions, plus one duplicate (different
+    // case/whitespace of question 0) inserted right after it — still over the
+    // cap even after the duplicate is dropped.
+    let mut answers: Vec<ApplicationAnswer> = (0..MAX_TOTAL_ANSWERS + 2)
+        .map(|i| ApplicationAnswer {
+            id: String::new(),
+            question: format!("Question {i}?"),
+            answer: format!("Answer {i}"),
+        })
+        .collect();
+    answers.insert(
+        1,
+        ApplicationAnswer {
+            id: String::new(),
+            question: "  question 0?  ".to_string(),
+            answer: "Duplicate (dropped)".to_string(),
+        },
+    );
+
+    let mut m = meta("Acme", "Engineer");
+    m.answers = answers;
+
+    let id = store
+        .upsert_for_origin(
+            "https://acme.com/job/new-row-cap",
+            "linkedin",
+            &m,
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    let app = store.get(&id).unwrap();
+    assert_eq!(
+        app.answers.len(),
+        MAX_TOTAL_ANSWERS,
+        "a brand-new Application's answers are capped on creation, not just on merge"
+    );
+    // The genuine duplicate must never reach the stored row at all (dropped as a
+    // within-batch dupe, not merely truncated by the cap).
+    assert_eq!(
+        app.answers
+            .iter()
+            .filter(|a| a.answer == "Duplicate (dropped)")
+            .count(),
+        0,
+        "a duplicate-question answer must be deduped, not stored twice"
+    );
+    let first = app
+        .answers
+        .iter()
+        .find(|a| a.question == "Question 0?")
+        .expect("the first-seen answer for the duplicated question must survive");
+    assert_eq!(first.answer, "Answer 0");
+}
+
+/// Regression for the HIGH cross-feature data-loss hazard: `upsert_internal`'s
+/// meta-merge path used to REPLACE `answers` wholesale, so an
+/// `ai_generations_save`-shaped upsert (a non-empty `meta.answers`) silently
+/// wiped every answer the extension's `answers.save` had appended in
+/// between. Seed extension-captured answers via `merge_answers`, then run an
+/// `upsert_for_origin` carrying a DIFFERENT non-empty answer set (one
+/// matching an existing question, one genuinely new) and assert: the
+/// extension-only answer survives, the matching question's text is updated
+/// to the incoming (AI) text, and the new AI answer is added.
+#[test]
+fn upsert_for_origin_merges_answers_by_question_instead_of_replacing() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let url = "https://acme.com/job/merge/cross-feature";
+    let id = store
+        .upsert_for_origin(
+            url,
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    // Extension-captured answers land first, via the append-only path.
+    store
+        .merge_answers(
+            &id,
+            vec![
+                ApplicationAnswer {
+                    id: String::new(),
+                    question: "Why this role?".to_string(),
+                    answer: "Extension-captured original".to_string(),
+                },
+                ApplicationAnswer {
+                    id: String::new(),
+                    question: "Are you willing to relocate?".to_string(),
+                    answer: "Extension-only, no AI equivalent".to_string(),
+                },
+            ],
+        )
+        .unwrap();
+
+    // Simulates `ai_generations_save`: a full generated answer set, one
+    // question matching an existing extension answer (an in-app rewrite),
+    // one genuinely new.
+    let mut ai_meta = meta("Acme", "Engineer");
+    ai_meta.answers = vec![
+        ApplicationAnswer {
+            id: String::new(),
+            question: "Why this role?".to_string(),
+            answer: "AI-rewritten answer".to_string(),
+        },
+        ApplicationAnswer {
+            id: String::new(),
+            question: "What's your expected salary?".to_string(),
+            answer: "100k".to_string(),
+        },
+    ];
+    store
+        .upsert_for_origin(url, "linkedin", &ai_meta, ApplicationOrigin::Generate, None)
+        .unwrap();
+
+    let app = store.get(&id).unwrap();
+    assert_eq!(
+        app.answers.len(),
+        3,
+        "all 3 distinct questions must be present"
+    );
+
+    let relocate = app
+        .answers
+        .iter()
+        .find(|a| a.question == "Are you willing to relocate?")
+        .expect("the extension-only answer must survive the AI upsert");
+    assert_eq!(relocate.answer, "Extension-only, no AI equivalent");
+
+    let rewritten = app
+        .answers
+        .iter()
+        .find(|a| a.question == "Why this role?")
+        .expect("the matching question must still be present");
+    assert_eq!(
+        rewritten.answer, "AI-rewritten answer",
+        "a matching question must be updated to the incoming text"
+    );
+
+    assert!(
+        app.answers
+            .iter()
+            .any(|a| a.question == "What's your expected salary?" && a.answer == "100k"),
+        "a genuinely new AI answer must be added"
+    );
+}
+
+/// Regression proxy for the upsert/`merge_answers` TOCTOU fix:
+/// `upsert_internal` used to look up the existing row via the self-locking
+/// `find_by_job_url` (its own lock acquired and released BEFORE the write
+/// transaction re-acquired the lock), leaving a gap where a concurrent
+/// `merge_answers` commit could be silently overwritten by the upsert's
+/// stale pre-gap snapshot. The fix folds both into one lock/transaction via
+/// `row_by_job_url_conn`.
+///
+/// A deterministic reproduction of the OLD race isn't feasible here: its
+/// window was the interval between two `Mutex` acquisitions inside a single
+/// call, on the order of nanoseconds, and hitting it reliably would need a
+/// test-only pause hook inside `upsert_internal` — production-code scope
+/// creep beyond this fix. As an honest proxy, this test instead hammers the
+/// SAME Application from two real threads — one repeatedly appending via
+/// `merge_answers`, the other repeatedly upserting via `upsert_for_origin` —
+/// each iteration contributing one distinct, individually-traceable
+/// question, and asserts every single one survives. With the fix, the
+/// lookup+write critical section is atomic under the shared lock, so no
+/// interleaving can lose an update; this test would be flaky (and could
+/// fail) against the old two-lock structure under real contention.
+#[test]
+fn upsert_and_merge_answers_race_never_loses_an_update() {
+    let dir = TempDir::new().unwrap();
+    let store = std::sync::Arc::new(ApplicationStore::open(dir.path()).unwrap());
+    let url = "https://acme.com/job/race";
+    let id = store
+        .upsert_for_origin(
+            url,
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    const ITERS: usize = 40;
+
+    let merge_store = store.clone();
+    let merge_id = id.clone();
+    let merge_thread = std::thread::spawn(move || {
+        for i in 0..ITERS {
+            merge_store
+                .merge_answers(
+                    &merge_id,
+                    vec![ApplicationAnswer {
+                        id: String::new(),
+                        question: format!("merge-question-{i}"),
+                        answer: format!("merge-answer-{i}"),
+                    }],
+                )
+                .unwrap();
+        }
+    });
+
+    let upsert_store = store.clone();
+    let upsert_url = url.to_string();
+    let upsert_thread = std::thread::spawn(move || {
+        for i in 0..ITERS {
+            let mut m = meta("Acme", "Engineer");
+            m.answers = vec![ApplicationAnswer {
+                id: String::new(),
+                question: format!("upsert-question-{i}"),
+                answer: format!("upsert-answer-{i}"),
+            }];
+            upsert_store
+                .upsert_for_origin(
+                    &upsert_url,
+                    "linkedin",
+                    &m,
+                    ApplicationOrigin::Generate,
+                    None,
+                )
+                .unwrap();
+        }
+    });
+
+    merge_thread.join().unwrap();
+    upsert_thread.join().unwrap();
+
+    let app = store.get(&id).unwrap();
+    for i in 0..ITERS {
+        assert!(
+            app.answers
+                .iter()
+                .any(|a| a.question == format!("merge-question-{i}")),
+            "merge_answers entry {i} was lost to a concurrent upsert"
+        );
+        assert!(
+            app.answers
+                .iter()
+                .any(|a| a.question == format!("upsert-question-{i}")),
+            "upsert entry {i} was lost to a concurrent merge_answers"
+        );
+    }
+    assert_eq!(
+        app.answers.len(),
+        ITERS * 2,
+        "no answer from either concurrent writer may be dropped"
+    );
+}

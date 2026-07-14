@@ -46,12 +46,60 @@ function webExtensionAssets(): Plugin {
   };
 }
 
+/**
+ * `fill.ts` (assisted autofill) and `capture.ts` (answers capture) are BOTH
+ * injected via `chrome.scripting.executeScript({ files: [...] })`, which runs
+ * as a CLASSIC script (no ES modules) — so each compiled bundle must carry
+ * ZERO `import` statements. Since PR 5 of the extension roadmap, they
+ * genuinely share runtime code (`lib/field-signal.ts`, via `lib/autofill.ts`
+ * and `lib/answers-capture.ts` respectively): if built together with the main
+ * multi-entry pass above, Rollup's default cross-entry chunking would hoist
+ * that shared module into a `chunks/*.js` file that BOTH `fill.js` and
+ * `capture.js` would then `import` — breaking classic-script injection
+ * (verified empirically: two entries sharing a static import always get
+ * split into a shared chunk in one Rollup pass, even with no other config).
+ *
+ * The fix: build each in its OWN isolated single-entry Rollup pass (this
+ * plugin's `closeBundle`, which runs after the main bundle above has already
+ * written background/content/popup + the manifest/icons). A single-entry
+ * pass has nothing to hoist against, so the shared helpers are INLINED into
+ * each file instead. `emptyOutDir: false` so neither pass wipes what the
+ * other (or the main build) already wrote.
+ */
+function injectedEntries(): Plugin {
+  return {
+    name: 'ajh-injected-classic-scripts',
+    apply: 'build',
+    async closeBundle() {
+      const { build } = await import('vite');
+      for (const name of ['fill', 'capture']) {
+        await build({
+          configFile: false,
+          root: srcDir,
+          logLevel: 'warn',
+          build: {
+            outDir,
+            emptyOutDir: false,
+            target: 'es2022',
+            modulePreload: false,
+            rollupOptions: {
+              input: { [name]: resolve(srcDir, `${name}.ts`) },
+              output: { entryFileNames: '[name].js', format: 'es' },
+            },
+          },
+          esbuild: { legalComments: 'none' },
+        });
+      }
+    },
+  };
+}
+
 export default defineConfig({
   root: srcDir,
   // Relative base so the popup HTML references ./popup.js / ./popup.css from the
   // extension root rather than an absolute path the packaged extension can't use.
   base: './',
-  plugins: [webExtensionAssets()],
+  plugins: [webExtensionAssets(), injectedEntries()],
   build: {
     outDir,
     emptyOutDir: true,
@@ -61,8 +109,6 @@ export default defineConfig({
       input: {
         background: resolve(srcDir, 'background.ts'),
         content: resolve(srcDir, 'content.ts'),
-        // Assisted-autofill injected script (executeScript files: ['fill.js']).
-        fill: resolve(srcDir, 'fill.ts'),
         popup: resolve(srcDir, 'popup.html'),
       },
       output: {

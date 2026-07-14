@@ -254,6 +254,14 @@ describe('planAndFill – skips ambiguous / sensitive / hidden / filled', () => 
     expect(val('dob')).toBe('');
   });
 
+  it('skips a "Driver\'s license number" field even though the matcher never targets it', () => {
+    setForm(
+      `<label for="dl">Driver's license number</label><input id="dl" type="text" autocomplete="email" />`
+    );
+    planAndFill(document, PROFILE);
+    expect(val('dl')).toBe('');
+  });
+
   it('does not map structured address sub-parts (street) from a single location string', () => {
     setForm(`<input id="street" autocomplete="street-address" />`);
     planAndFill(document, PROFILE);
