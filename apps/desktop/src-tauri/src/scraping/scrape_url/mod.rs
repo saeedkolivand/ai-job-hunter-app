@@ -443,9 +443,16 @@ pub fn parse_from_html(url: &str, html: &str) -> Option<JobPosting> {
     // whitespace-only) yields (empty, `None`) for both fields, so it overrides
     // neither — the per-field fallback is the guarantee that a bad hint can
     // never make results worse than before.
+    //
+    // `hint_title_used` tracks whether the hint actually supplied a usable
+    // title — the signal the last-resort fallback below uses to tell "thin
+    // hint" (real signal, just no body) apart from "hostile/mis-marked hint"
+    // (no signal at all, treat as if there were no hint).
+    let mut hint_title_used = false;
     if let Some((hint_title, hint_description)) = job_root_generic_html(html) {
         if !hint_title.is_empty() {
             title = hint_title;
+            hint_title_used = true;
         }
         if hint_description.is_some() {
             description = hint_description;
@@ -483,8 +490,18 @@ pub fn parse_from_html(url: &str, html: &str) -> Option<JobPosting> {
         }
     }
 
-    // Main-content text as a last-resort description.
-    if description.is_none() {
+    // Main-content text as a last-resort description — SKIPPED when the hint
+    // already supplied a real title. `job_root_generic_html` scopes its own
+    // description search to that same hinted subtree, so if it honestly found
+    // no body text there (a title-only hint — e.g. the real description
+    // renders client-side in an ATS iframe the outerHTML capture can't see),
+    // escalating to a whole-DOCUMENT largest-block guess risks landing on an
+    // unrelated block (e.g. a bigger related-jobs sidebar) instead of just
+    // admitting there's no description to show. A hint that yielded NOTHING
+    // (no title either — hostile/mis-marked) carries no signal, so the
+    // whole-document heuristic chain still runs exactly as if there were no
+    // hint at all.
+    if description.is_none() && !hint_title_used {
         description = main_content_text(html);
     }
 
@@ -551,11 +568,13 @@ fn job_root_generic_html(html: &str) -> Option<(String, Option<String>)> {
         .map(|e| e.text().collect::<String>().trim().to_string())
         .unwrap_or_default();
 
-    // Exclude the title heading(s) from the description source: an h1-only
-    // hinted subtree must not turn its own title into a redundant description
-    // stub that would then clobber a real document-level meta description in
-    // the caller's per-field merge.
-    let body_html = JOB_ROOT_TITLE_RE.replace_all(&cleaned, " ");
+    // Exclude ONLY the title heading (the first <h1>) from the description
+    // source: an h1-only hinted subtree must not turn its own title into a
+    // redundant description stub that would then clobber a real document-level
+    // meta description in the caller's per-field merge. `replacen(.., 1, ..)`
+    // rather than `replace_all` — a later `<h1>` is a legitimate section
+    // heading (e.g. "Responsibilities") and must survive into the description.
+    let body_html = JOB_ROOT_TITLE_RE.replacen(&cleaned, 1, " ");
     let description = crate::scraping::http::html_to_markdown(&body_html);
     let description = (!description.trim().is_empty()).then_some(description);
 
@@ -567,9 +586,10 @@ static JOB_ROOT_SCRIPT_STYLE_RE: std::sync::LazyLock<regex::Regex> =
         regex::Regex::new(r"(?is)<(script|style)[\s\S]*?</(script|style)>").unwrap()
     });
 
-/// Strips `<h1>` elements out of the hinted subtree's (already script/style-
-/// cleaned) HTML before it becomes the description source — see the "exclude
-/// the title" note on [`job_root_generic_html`] above.
+/// Matches an `<h1>` element in the hinted subtree's (already script/style-
+/// cleaned) HTML; the caller only ever strips the FIRST match (`replacen`, not
+/// `replace_all`) — see the "exclude the title" note on [`job_root_generic_html`]
+/// above. A later `<h1>` is a legitimate section heading, not the title.
 static JOB_ROOT_TITLE_RE: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r"(?is)<h1[\s\S]*?</h1>").unwrap());
 

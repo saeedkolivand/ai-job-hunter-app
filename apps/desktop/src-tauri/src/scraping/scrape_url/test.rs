@@ -1187,6 +1187,153 @@ fn test_job_root_script_style_re_strips_case_variant_and_nested_tags() {
     assert!(cleaned.contains("Also keep me"));
 }
 
+#[test]
+fn test_parse_from_html_thin_hint_last_resort_does_not_scan_whole_document() {
+    // Regression for a HIGH ensemble-review finding: a thin hint (title-only,
+    // no body) on a page with no <meta name="description"> anywhere left
+    // `description` `None` after the per-field merge, so the OLD code ran
+    // `main_content_text` over the WHOLE document as a last resort — which
+    // can land on an unrelated decoy block bigger than the actual posting.
+    // Once the hint supplied a real title, that whole-document last resort
+    // must not run at all; description stays `None` rather than risk the
+    // decoy text.
+    let padded = "Totally unrelated marketing copy about our great company culture. ".repeat(20);
+    let html = format!(
+        r#"<html><body>
+            <article><p>{padded}</p></article>
+            <div data-ajh-job-root="true"><h1>Backend Engineer</h1></div>
+        </body></html>"#
+    );
+    let posting = parse_from_html("https://acme.example/j/thin-hint-no-scan", &html)
+        .expect("a hinted title alone still yields a posting");
+    assert_eq!(posting.title, "Backend Engineer");
+    assert_eq!(
+        posting.description, None,
+        "a thin hint's last resort must stay None, not the unrelated decoy article, got: {:?}",
+        posting.description
+    );
+}
+
+#[test]
+fn test_job_root_generic_html_keeps_non_title_h1_headings() {
+    // JOB_ROOT_TITLE_RE previously stripped EVERY <h1> in the hinted subtree,
+    // not just the title's — a job page that styles section headings (e.g.
+    // "Responsibilities") as <h1> would silently lose them from the
+    // description. Only the FIRST <h1> (the title) is excluded now.
+    let html = r#"
+        <html><body>
+            <div data-ajh-job-root="true">
+                <h1>Backend Engineer</h1>
+                <p>We build distributed systems.</p>
+                <h1>Responsibilities</h1>
+                <ul><li>Design APIs</li></ul>
+            </div>
+        </body></html>
+    "#;
+    let (title, description) = job_root_generic_html(html).expect("hint node present");
+    assert_eq!(title, "Backend Engineer");
+    let desc = description.unwrap_or_default();
+    assert!(
+        desc.contains("Responsibilities"),
+        "a non-title h1 section heading must survive in the description, got: {desc}"
+    );
+}
+
+#[test]
+fn test_parse_from_html_job_root_hint_description_only_leaves_title_alone() {
+    // Mirror of the thin-body test above: the hinted node has body text but no
+    // <h1>. job_root_generic_html() yields ("", Some(desc)), so the per-field
+    // merge must take the hint's description while leaving the document's own
+    // <title> untouched.
+    let html = r#"
+        <html>
+            <head><title>Careers at Acme</title></head>
+            <body>
+                <div data-ajh-job-root="true"><p>We are hiring a backend engineer to build resilient distributed systems.</p></div>
+            </body>
+        </html>
+    "#;
+    let posting = parse_from_html("https://acme.example/j/hint-desc-only", html)
+        .expect("a title is present, so a posting is built");
+    assert_eq!(
+        posting.title, "Careers at Acme",
+        "no h1 in the hinted node → title must stay the document's own <title>"
+    );
+    let desc = posting.description.as_deref().unwrap_or_default();
+    assert!(
+        desc.contains("resilient distributed systems"),
+        "hint's body text must override the (absent) base description, got: {desc}"
+    );
+}
+
+#[test]
+fn test_parse_from_html_hint_description_beats_meta_description() {
+    // Precedence pin: when the hinted subtree has its own body text, it wins
+    // over a real document-level <meta name="description"> — the per-field
+    // merge overrides `description` whenever the hint found ANY text, not
+    // only when the base pass came back empty.
+    let html = r#"
+        <html>
+            <head>
+                <title>Careers at Acme</title>
+                <meta name="description" content="Acme is a great place to work, join our team today.">
+            </head>
+            <body>
+                <div data-ajh-job-root="true">
+                    <h1>Backend Engineer</h1>
+                    <p>We are hiring a backend engineer to own resilient distributed systems end to end.</p>
+                </div>
+            </body>
+        </html>
+    "#;
+    let posting = parse_from_html("https://acme.example/j/hint-vs-meta", html)
+        .expect("a title is present, so a posting is built");
+    let desc = posting.description.as_deref().unwrap_or_default();
+    assert!(
+        desc.contains("own resilient distributed systems"),
+        "hint body text must win over the real meta description, got: {desc}"
+    );
+    assert!(
+        !desc.contains("great place to work"),
+        "the meta description must be overridden, not merged, got: {desc}"
+    );
+}
+
+#[test]
+fn test_parse_from_html_json_ld_beats_hint() {
+    // Precedence pin: JSON-LD JobPosting is applied AFTER the hint merge in
+    // parse_from_html and unconditionally overrides both fields when present —
+    // structured data always wins over the DOM hint, even when the hint itself
+    // found usable text.
+    let html = r#"
+        <html>
+            <head>
+                <title>Careers at Acme</title>
+                <script type="application/ld+json">
+                {
+                    "@type": "JobPosting",
+                    "title": "Senior Backend Engineer",
+                    "description": "The structured JSON-LD description wins."
+                }
+                </script>
+            </head>
+            <body>
+                <div data-ajh-job-root="true">
+                    <h1>Backend Engineer</h1>
+                    <p>The hinted DOM description must lose to JSON-LD.</p>
+                </div>
+            </body>
+        </html>
+    "#;
+    let posting = parse_from_html("https://acme.example/j/hint-vs-jsonld", html)
+        .expect("a title is present, so a posting is built");
+    assert_eq!(posting.title, "Senior Backend Engineer");
+    assert_eq!(
+        posting.description.as_deref(),
+        Some("The structured JSON-LD description wins.")
+    );
+}
+
 // ── resolve Pass 3 — redirect→final-URL board re-dispatch ────────────────────
 //
 // Pass 3 of resolve(): after named boards miss on the ORIGINAL url, follow the
