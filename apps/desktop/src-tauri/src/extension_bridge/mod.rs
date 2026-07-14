@@ -218,6 +218,11 @@ pub struct BridgeState {
     /// the desktop replies with a clear refusal (never silently). This is the
     /// consent gate for sending the user's saved contact details into a page.
     autofill_enabled: AtomicBool,
+    /// `match.live` token-bucket throttle — shared across EVERY connection for
+    /// this pairing, not per-connection, so a loopback reconnect (a cheap,
+    /// near-instant handshake) can never reset the burst allowance. See
+    /// [`match_live::MatchLiveThrottle`]'s doc.
+    match_live_limiter: Mutex<match_live::MatchLiveThrottle>,
     /// App data dir — where the token file lives.
     data_dir: PathBuf,
 }
@@ -233,6 +238,7 @@ impl BridgeState {
             token: Mutex::new(token),
             connected: AtomicBool::new(false),
             autofill_enabled: AtomicBool::new(load_autofill_optin(data_dir)),
+            match_live_limiter: Mutex::new(match_live::MatchLiveThrottle::new()),
             data_dir: data_dir.to_path_buf(),
         }
     }
@@ -278,6 +284,15 @@ impl BridgeState {
         if let Err(e) = persist_autofill_optin(&self.data_dir, enabled) {
             log::warn!("[extension_bridge] failed to persist autofill opt-in (non-fatal): {e}");
         }
+    }
+
+    /// Try to consume one `match.live` token from the throttle shared across
+    /// every connection for this pairing — see
+    /// [`match_live::MatchLiveThrottle`]'s doc for why this lives on
+    /// `BridgeState` instead of per-connection (a reconnect must not refresh
+    /// the burst).
+    pub fn try_acquire_match_live(&self) -> bool {
+        self.match_live_limiter.lock().try_acquire()
     }
 
     fn set_port(&self, port: Option<u16>) {
@@ -512,8 +527,9 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     let (mut writer, mut reader) = ws.split();
     // Per-connection handshake state; every socket starts by expecting `hello`.
     let mut conn = ConnState::AwaitingHello;
-    // Per-connection compute-verb throttle (currently `match.live` only — see its doc).
-    let mut match_live_limiter = match_live::MatchLiveThrottle::new();
+    // The `match.live` throttle lives on `BridgeState` (shared across every
+    // connection for this pairing, reconnect-proof) — consulted below via
+    // `state.try_acquire_match_live()`, not a per-connection instance.
 
     while let Some(frame) = reader.next().await {
         let msg = match frame {
@@ -592,7 +608,7 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
             FrameDecision::AnswersSuggest { req_id, payload } => Some(
                 answers_suggest::handle_answers_suggest(&app, &req_id, &payload),
             ),
-            FrameDecision::MatchLive { req_id, payload } if match_live_limiter.try_acquire() => {
+            FrameDecision::MatchLive { req_id, payload } if state.try_acquire_match_live() => {
                 Some(match_live::handle_match_live(&app, &req_id, &payload).await)
             }
             FrameDecision::MatchLive { req_id, .. } => Some(match_live::throttled_reply(&req_id)),

@@ -175,6 +175,59 @@ fn autofill_optin_defaults_off_and_persists() {
     assert!(!BridgeState::load(dir.path()).autofill_enabled());
 }
 
+// ── match.live throttle (MEDIUM: reconnect-proof, lives on BridgeState) ──────
+
+#[test]
+fn match_live_throttle_survives_reconnect() {
+    // A per-connection instance (the pre-fix design) would hand a brand-new,
+    // full bucket to every socket — including a reconnect, which on a
+    // loopback WS is a cheap, near-instant handshake an automated client can
+    // trivially repeat. The bucket must live on BridgeState instead, so it
+    // survives across connections.
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+
+    for _ in 0..3 {
+        assert!(
+            s.try_acquire_match_live(),
+            "burst allowance on the first connection"
+        );
+    }
+    assert!(
+        !s.try_acquire_match_live(),
+        "burst exhausted on the first connection"
+    );
+
+    // Simulate a reconnect: a fresh socket/task against the SAME BridgeState
+    // (the one Tauri manages for the app's whole lifetime) — must NOT see a
+    // refreshed bucket.
+    assert!(
+        !s.try_acquire_match_live(),
+        "a reconnect must not reset the match.live token bucket"
+    );
+}
+
+#[test]
+fn match_live_throttle_shared_across_sequential_connections() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+
+    // "Connection 1" spends part of the shared burst.
+    assert!(s.try_acquire_match_live());
+    assert!(s.try_acquire_match_live());
+
+    // "Connection 2" (a later socket against the same BridgeState) only gets
+    // what's LEFT of the shared budget, not a fresh burst of its own.
+    assert!(
+        s.try_acquire_match_live(),
+        "one token remains in the shared budget"
+    );
+    assert!(
+        !s.try_acquire_match_live(),
+        "the shared budget is exhausted — connection 2 does not get its own fresh burst"
+    );
+}
+
 #[test]
 fn reset_disables_autofill_optin() {
     use crate::data_store::Resettable;

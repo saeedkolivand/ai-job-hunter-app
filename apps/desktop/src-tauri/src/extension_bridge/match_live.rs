@@ -66,6 +66,17 @@
 //! gate — see [`resolve_match_live`]. The import-time `matchScore` fill
 //! ([`score_import_posting`]) stays ungated: it rides the already-consented
 //! import gesture and reveals only a single number, never `gaps`.
+//!
+//! **Threat-model note (the ungated import score):** a single `matchScore`
+//! number IS technically a coarse résumé-membership signal — one bit per
+//! import of "did this posting score well against my résumé" — that a
+//! scripted client could in principle harvest without ever opting into
+//! autofill. This is accepted NOT because the number is too coarse to
+//! matter, but because every probe that produces it must first go through
+//! `handle_import`, which always persists a visible `Application` row and
+//! fires a toast/OS notification (see `import_flow.rs`'s `matchScore` fill
+//! site) — probing this signal is loud by construction, never silent.
+//! Visibility of the act is the safeguard here, not the score's precision.
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
@@ -82,6 +93,12 @@ const NO_RESUME_MESSAGE: &str = "Add a resume in AI Job Hunter first, then try C
 
 /// Fixed sentinel — the captured page couldn't be parsed into job text.
 const NO_JOB_TEXT_MESSAGE: &str = "Could not read this job posting. Reload the page and try again.";
+
+/// Fixed sentinel — scoring failed with an unexpected internal shape OR
+/// exceeded [`SCORE_TIMEOUT`]. One constant (not two call-site copies) so a
+/// genuine hang and an internal failure are indistinguishable on the wire —
+/// see [`score_or_timeout`].
+const SCORE_FAILED_MESSAGE: &str = "Could not score this posting. Please retry.";
 
 /// Cap on the gap keywords sent over the wire — a JD can carry far more misses
 /// than are useful in a popup chip list.
@@ -230,12 +247,32 @@ fn check_autofill_gate(autofill_enabled: bool) -> AppResult<()> {
     }
 }
 
-/// Core `match.live`: gate on the assisted-autofill opt-in (same fixed
-/// sentinel as `profile.get`/`answers.save`/`answers.suggest` — see the module
-/// doc and [`super::AUTOFILL_OFF_MESSAGE`]), then parse the captured DOM,
-/// resolve the résumé to score (a fixed sentinel when none exists), and score
-/// keyword-only via [`score_keyword_only`], shaping the reply via
-/// [`build_match_ok`].
+/// Validate `match.live`'s two structural preconditions IN ORDER: the
+/// assisted-autofill opt-in gate, THEN url/html emptiness — the "gate-first
+/// ordering" fix. An opted-out client must always see
+/// [`super::AUTOFILL_OFF_MESSAGE`], even when the request is ALSO malformed,
+/// mirroring `resolve_answers_save`/`resolve_answers_suggest` (both gate
+/// before parsing their own payload fields). Pure (no `AppHandle`, no I/O) so
+/// the ORDERING itself is directly unit-testable even though the rest of
+/// [`resolve_match_live`] is not.
+fn validate_match_live_request(autofill_enabled: bool, url: &str, html: &str) -> AppResult<()> {
+    check_autofill_gate(autofill_enabled)?;
+    if url.is_empty() || html.is_empty() {
+        return Err(AppError::Validation(
+            "url and html are required".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Core `match.live`: validate the request in gate-first order
+/// ([`validate_match_live_request`] — the assisted-autofill opt-in, same
+/// fixed sentinel as `profile.get`/`answers.save`/`answers.suggest`, THEN
+/// url/html emptiness), parse the captured DOM, resolve the résumé to score
+/// (a fixed sentinel when none exists), and score keyword-only via
+/// [`score_keyword_only`] bounded by [`SCORE_TIMEOUT`] ([`score_or_timeout`])
+/// so a hung/slow scorer can never block this connection's serial frame loop
+/// indefinitely — shaping the reply via [`build_match_ok`].
 pub(super) async fn resolve_match_live(
     app: &AppHandle,
     store: &DocumentStore,
@@ -243,7 +280,7 @@ pub(super) async fn resolve_match_live(
     url: &str,
     html: &str,
 ) -> AppResult<MatchLiveOk> {
-    check_autofill_gate(autofill_enabled)?;
+    validate_match_live_request(autofill_enabled, url, html)?;
 
     let job_text = parse_job_text(url, html)
         .ok_or_else(|| AppError::Validation(NO_JOB_TEXT_MESSAGE.to_string()))?;
@@ -258,18 +295,8 @@ pub(super) async fn resolve_match_live(
     // `canonicalized_normalized_url`'s doc). `parse_job_text` above still
     // parses the DOM against the RAW url — only the cache key changes here.
     let job_id = adhoc_job_id(&canonicalized_normalized_url(url));
-    let result = score_keyword_only(app, store, resume, &job_id, job_text).await;
-
-    // `score_adhoc_keyword_only`'s only error branch is "job not found" (see
-    // `score_one`), which is unreachable here since `job_text` is always
-    // `Some` — but never let an internal string reach the wire regardless of
-    // how it triggered.
-    if result.get("error").is_some() {
-        log::warn!("[extension_bridge] match.live scoring returned an unexpected error shape");
-        return Err(AppError::Validation(
-            "Could not score this posting. Please retry.".to_string(),
-        ));
-    }
+    let result =
+        score_or_timeout(score_keyword_only(app, store, resume, &job_id, job_text)).await?;
 
     Ok(build_match_ok(&result, resume.title.clone()))
 }
@@ -323,17 +350,11 @@ pub(super) async fn handle_match_live(app: &AppHandle, req_id: &str, payload: &V
         .to_string();
     let html = payload.get("html").and_then(|v| v.as_str()).unwrap_or("");
 
-    let outcome = if url.is_empty() || html.is_empty() {
-        Err(AppError::Validation(
-            "url and html are required".to_string(),
-        ))
-    } else {
-        match app.try_state::<DocumentStore>() {
-            Some(store) => {
-                resolve_match_live(app, store.inner(), autofill_enabled, &url, html).await
-            }
-            None => Err(AppError::Config("document store unavailable".to_string())),
-        }
+    // Validation order (gate before url/html emptiness) lives inside
+    // `resolve_match_live` — see `validate_match_live_request`'s doc.
+    let outcome = match app.try_state::<DocumentStore>() {
+        Some(store) => resolve_match_live(app, store.inner(), autofill_enabled, &url, html).await,
+        None => Err(AppError::Config("document store unavailable".to_string())),
     };
 
     match_result_reply(req_id, outcome)
@@ -364,13 +385,16 @@ pub(super) async fn score_import_posting(
     result.get("combined").and_then(Value::as_f64)
 }
 
-/// Wall-clock cap on [`score_import_posting`] — the import's own WS reply
-/// budget the extension enforces client-side is ~30s (`bridge.ts`'s import
-/// timeout); scoring must never eat meaningfully into that regardless of how
-/// the scorer's cost profile changes later (a future embedding call, provider
-/// latency, …). This is deliberately generous relative to the keyword-only
-/// path's typical cost — it exists as a hard backstop, not a normal-path limit.
-const IMPORT_SCORE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+/// Wall-clock cap on the keyword-only scorer — shared by
+/// [`score_import_posting`] (the import's own WS reply budget the extension
+/// enforces client-side is ~30s, `bridge.ts`'s import timeout; scoring must
+/// never eat meaningfully into that) AND [`score_or_timeout`] (the
+/// interactive "Check fit" path — a hung/slow scorer must never block
+/// `handle_connection`'s single-socket serial frame loop, which awaits each
+/// verb synchronously, so a hang here would stall every subsequent frame on
+/// that connection). Deliberately generous relative to the keyword-only
+/// path's typical cost — a hard backstop, not a normal-path limit.
+const SCORE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Race `fut` against `cap`, returning tokio's raw timeout `Result` so a
 /// caller can tell "genuinely timed out" (`Err`) apart from "finished in time
@@ -389,7 +413,40 @@ where
     tokio::time::timeout(cap, fut).await
 }
 
-/// [`score_import_posting`] bounded by [`IMPORT_SCORE_TIMEOUT`] — the function
+/// Await `scoring` (a [`score_keyword_only`]-shaped future) bounded by
+/// [`SCORE_TIMEOUT`] — the HIGH "bound interactive scoring" fix.
+/// [`resolve_match_live`] used to await [`score_keyword_only`] unbounded, and
+/// `handle_connection`'s frame loop awaits each verb synchronously, so a
+/// hang/slowdown there would block every subsequent frame on that socket, not
+/// just this request. Collapses BOTH a genuine timeout AND
+/// `score_adhoc_keyword_only`'s only error branch ("job not found" —
+/// unreachable here since `job_text` is always `Some`, but never let an
+/// internal string reach the wire regardless of how it triggered) onto the
+/// SAME fixed [`SCORE_FAILED_MESSAGE`] sentinel. Isolated as its own generic
+/// helper (mirrors [`timed`]'s own isolation) because `resolve_match_live` has
+/// no injectable delay seam (a real `AppHandle`/`DocumentStore` end to end) —
+/// THIS is the testable boundary (see the tests below).
+async fn score_or_timeout<F>(scoring: F) -> AppResult<Value>
+where
+    F: std::future::Future<Output = Value>,
+{
+    match timed(SCORE_TIMEOUT, async { Some(scoring.await) }).await {
+        Ok(Some(result)) if result.get("error").is_none() => Ok(result),
+        Ok(Some(_)) => {
+            log::warn!("[extension_bridge] match.live scoring returned an unexpected error shape");
+            Err(AppError::Validation(SCORE_FAILED_MESSAGE.to_string()))
+        }
+        _ => {
+            log::warn!(
+                "[extension_bridge] match.live scoring exceeded {:?}; refusing with the fixed sentinel",
+                SCORE_TIMEOUT
+            );
+            Err(AppError::Validation(SCORE_FAILED_MESSAGE.to_string()))
+        }
+    }
+}
+
+/// [`score_import_posting`] bounded by [`SCORE_TIMEOUT`] — the function
 /// `handle_import` actually calls. Logs at a level that matches how actionable
 /// the outcome is: a genuine timeout (a slow/degraded scorer) is worth a
 /// `warn`; an ordinary `None` — no résumé saved yet (the normal state for a
@@ -402,7 +459,7 @@ pub(super) async fn score_import_posting_bounded(
     normalized_url: &str,
 ) -> Option<f64> {
     match timed(
-        IMPORT_SCORE_TIMEOUT,
+        SCORE_TIMEOUT,
         score_import_posting(app, posting, normalized_url),
     )
     .await
@@ -410,7 +467,7 @@ pub(super) async fn score_import_posting_bounded(
         Err(_) => {
             log::warn!(
                 "[extension_bridge] import-time match score exceeded {:?}; omitting matchScore",
-                IMPORT_SCORE_TIMEOUT
+                SCORE_TIMEOUT
             );
             None
         }
@@ -425,18 +482,24 @@ pub(super) async fn score_import_posting_bounded(
     }
 }
 
-/// Minimal per-connection token-bucket throttle for `match.live`. A
-/// deliberate "Check fit" click can legitimately fire a few times in quick
-/// succession (a double-click, a retry after fixing the résumé), but an
-/// unbounded stream of clicks/automation should not be free to keep
-/// re-running the scorer. Burst [`MATCH_LIVE_BURST`] requests, refilling one
-/// token every [`MATCH_LIVE_REFILL_SECS`] (~1 req/2s sustained). Lives
-/// entirely on the connection's own async task in `handle_connection` (no
-/// shared/global state, no `Mutex` — this codebase assumes one extension/one
-/// loopback socket at a time, see `BridgeState::connected`'s doc). Scoped to
-/// `match.live` only this round: a future compute-heavy verb would give
-/// itself its own throttle instance with its own constants (each verb's cost
-/// profile differs) rather than share this one, so this struct is
+/// Minimal token-bucket throttle for `match.live`. A deliberate "Check fit"
+/// click can legitimately fire a few times in quick succession (a
+/// double-click, a retry after fixing the résumé), but an unbounded stream of
+/// clicks/automation should not be free to keep re-running the scorer. Burst
+/// [`MATCH_LIVE_BURST`] requests, refilling one token every
+/// [`MATCH_LIVE_REFILL_SECS`] (~1 req/2s sustained).
+///
+/// Lives on [`super::BridgeState`] (behind a `Mutex`, shared across EVERY
+/// connection for this pairing) rather than per-connection — the MEDIUM
+/// "reconnect-proof throttle" fix. A loopback reconnect is a cheap,
+/// near-instant handshake (see `handle_connection`'s doc); a per-connection
+/// instance would hand a fresh full burst to every reconnect, so an automated
+/// client could trivially bypass the throttle just by reconnecting. The
+/// bucket must outlive any single socket.
+///
+/// Scoped to `match.live` only this round: a future compute-heavy verb would
+/// give itself its own throttle instance with its own constants (each verb's
+/// cost profile differs) rather than share this one, so this struct is
 /// deliberately NOT made generic/shared across verbs.
 pub(super) struct MatchLiveThrottle {
     tokens: f64,
@@ -674,6 +737,34 @@ mod tests {
         assert!(check_autofill_gate(true).is_ok());
     }
 
+    // ── validate_match_live_request (LOW: gate-first ordering) ───────────────
+
+    #[test]
+    fn validate_match_live_request_prefers_the_autofill_gate_over_emptiness() {
+        // Both preconditions fail (opt-in off AND url/html blank) — the gate
+        // must win, so an opted-out client ALWAYS sees AUTOFILL_OFF_MESSAGE,
+        // consistent with resolve_answers_save/resolve_answers_suggest (both
+        // gate before parsing their own payload fields).
+        let err = validate_match_live_request(false, "", "").unwrap_err();
+        assert!(
+            err.to_string().contains("Autofill is off"),
+            "the gate failure must win over the emptiness check; got {err}"
+        );
+    }
+
+    #[test]
+    fn validate_match_live_request_reports_emptiness_once_the_gate_passes() {
+        let err = validate_match_live_request(true, "", "").unwrap_err();
+        assert_eq!(err.to_string(), "url and html are required");
+    }
+
+    #[test]
+    fn validate_match_live_request_ok_when_both_pass() {
+        assert!(
+            validate_match_live_request(true, "https://example.com/job/1", "<html></html>").is_ok()
+        );
+    }
+
     // ── match_result_reply ───────────────────────────────────────────────────
 
     #[test]
@@ -801,6 +892,43 @@ mod tests {
         assert_eq!(out.unwrap(), None);
     }
 
+    // ── score_or_timeout (the HIGH "bound interactive scoring" fix) ──────────
+    // `resolve_match_live` has no injectable delay seam either (real
+    // AppHandle/DocumentStore end to end) — same fallback boundary as `timed`
+    // above: exercise the wrapper directly with a synthetic scoring future.
+
+    #[tokio::test(start_paused = true)]
+    async fn score_or_timeout_yields_the_sentinel_on_a_genuine_hang() {
+        let out = score_or_timeout(async {
+            tokio::time::sleep(SCORE_TIMEOUT * 2).await;
+            json!({ "combined": 99.0 })
+        })
+        .await;
+        let err = out.expect_err("a hang must never block the resolve path — must refuse");
+        assert_eq!(
+            err.to_string(),
+            SCORE_FAILED_MESSAGE,
+            "a timeout must yield the fixed sentinel, not the eventual value nor a raw timeout error"
+        );
+    }
+
+    #[tokio::test]
+    async fn score_or_timeout_passes_through_a_fast_result() {
+        let out = score_or_timeout(async { json!({ "combined": 42.0, "ats": 30.0 }) }).await;
+        let result = out.expect("a fast result within the cap must pass through");
+        assert_eq!(result["combined"], 42.0);
+    }
+
+    #[tokio::test]
+    async fn score_or_timeout_refuses_an_unexpected_error_shape() {
+        let out = score_or_timeout(async { json!({ "error": "job not found" }) }).await;
+        assert_eq!(
+            out.unwrap_err().to_string(),
+            SCORE_FAILED_MESSAGE,
+            "an internal error shape must never leak onto the wire — same fixed sentinel as a timeout"
+        );
+    }
+
     // ── MatchLiveThrottle (per-connection compute-verb throttle) ─────────────
 
     #[test]
@@ -838,12 +966,12 @@ mod tests {
 
     #[test]
     fn throttle_state_is_isolated_per_instance() {
-        // The mechanism that guarantees "other verbs unaffected" (and "other
-        // connections unaffected"): a throttle carries NO shared/global state,
-        // so exhausting one instance can never affect a separate instance —
-        // exactly how the dispatch loop uses it (one instance per connection,
-        // consulted ONLY for `match.live`; every other `FrameDecision` arm in
-        // `handle_connection` never touches it at all).
+        // Two throttle INSTANCES never share tokens — this is what would
+        // guarantee a future distinct-throttle verb stays unaffected by this
+        // one's exhaustion. In production there is exactly ONE instance
+        // (owned by `BridgeState`, shared across every connection for a
+        // pairing — see this struct's doc); this test only pins that the
+        // struct itself carries no hidden global state.
         let mut a = MatchLiveThrottle::new();
         let mut b = MatchLiveThrottle::new();
         let now = std::time::Instant::now();

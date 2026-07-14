@@ -287,6 +287,16 @@ pub(super) async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<
     // Best-effort, TIME-BOUNDED keyword-only score for `matchScore` — the
     // Application above already persisted, so a failure OR a timeout only
     // omits the field. See `match_live::score_import_posting_bounded`'s doc.
+    //
+    // Threat-model note: this score is ungated (unlike `match.live`, no
+    // autofill opt-in check), so it is technically a coarse
+    // résumé-membership signal — one bit per import of "did this posting
+    // score well against my résumé". Accepted because every probe that
+    // produces it MUST first persist the visible `Application` row above and
+    // fire the toast/OS notification above — probing is loud by
+    // construction, not silent; that forced visibility (not the score's
+    // coarseness) is the rationale. See `match_live`'s module doc for the
+    // full note.
     let match_score = match_live::score_import_posting_bounded(app, &posting, &normalized).await;
 
     Ok(ImportOk {
