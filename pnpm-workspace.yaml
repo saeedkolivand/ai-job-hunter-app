@@ -1,6 +1,16 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+
+# typescript per-importer split (temporary): workspace packages (apps/*, packages/*)
+# declare typescript ^7.0.2 and typecheck with the TS 7 native compiler. The ROOT
+# manifest keeps typescript ^6.0.3 ONLY for the eslint stack — typescript-eslint 8.x
+# caps its typescript peer at <6.1.0 and typescript-estree crashes under TS 7. pnpm
+# resolves peers per importer, so the lint chain gets 6.0.3 while builds use 7.
+# Remove when typescript-eslint supports TS 7: bump root to ^7 and unify all manifests.
+# (Peer pinning via overrides/packageExtensions cannot do this: an ancestor-provided
+# peer always wins resolution, verified on pnpm 11.10.0.)
+
 # Security overrides — pin transitive deps to patched ranges.
 # esbuild <0.28.1: GHSA-gv7w-rqvm-qjhr (RCE via NPM_CONFIG_REGISTRY); transitive dev-only (vitest/vite/storybook chains).
 overrides:
