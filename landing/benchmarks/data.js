@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784004247784,
+  "lastUpdate": 1784016454393,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4235,6 +4235,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 225259,
             "range": "± 7935",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4580e112e58075ad5614654024d0bb18aa343848",
+          "message": "feat: add status.update bridge verb for one-click mark as applied (#632)\n\n* feat: add status.update bridge verb for one-click mark as applied\n\nThe popup shows a mark-as-applied button when the checked page maps to\na saved application. The desktop enforces the transition with an atomic\ncompare-and-set (transition_status_if: update guarded on current status\nplus status event in one transaction) so only saved to applied can ever\nbe written, even under concurrent writers. Errors are user-facing fixed\nsentinels; untracked pages keep using import with the applied checkbox.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: preserve first applied timestamp in status transition cas\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: require explicit saved status and discriminate status result contract\n\nCodeRabbit fixes: resolveShowMarkAppliedButton now requires an explicit\n`status === 'saved'` (the CAS precondition), no longer defaulting a missing\nstatus to true. ExtensionStatusUpdateResult becomes a discriminated union\n(`ok:true` requires applicationId + status:'applied'; `ok:false` requires\nerror) mirrored in the zod schema and the extension's hand-written guard;\nthe Rust status_update.rs replies already satisfied the union.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: roll back status transition when event insert fails\n\nappend_event_conn now returns AppResult<()> and every call site\npropagates with `?`, so a failed status-event insert rolls back the\nwhole transaction instead of committing an orphan status flip.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-14T09:58:22+02:00",
+          "tree_id": "33c34e90fa3c72c9805ab61632937f581e7123c7",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/4580e112e58075ad5614654024d0bb18aa343848"
+        },
+        "date": 1784016453897,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2224767,
+            "range": "± 31687",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2737129,
+            "range": "± 105296",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 298332,
+            "range": "± 4545",
             "unit": "ns/iter"
           }
         ]
