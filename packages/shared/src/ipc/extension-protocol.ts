@@ -23,6 +23,9 @@ import {
   type ExtensionAnswerPair,
   type ExtensionAnswersSaveRequest,
   type ExtensionAnswersSaveResult,
+  type ExtensionAnswersSuggestRequest,
+  type ExtensionAnswersSuggestResult,
+  type ExtensionAnswerSuggestion,
   type ExtensionAppliedCheckRequest,
   type ExtensionAppliedCheckResult,
   type ExtensionAuthOkPayload,
@@ -48,6 +51,9 @@ export {
   type ExtensionAnswerPair,
   type ExtensionAnswersSaveRequest,
   type ExtensionAnswersSaveResult,
+  type ExtensionAnswersSuggestRequest,
+  type ExtensionAnswersSuggestResult,
+  type ExtensionAnswerSuggestion,
   type ExtensionAppliedCheckRequest,
   type ExtensionAppliedCheckResult,
   type ExtensionAuthOkPayload,
@@ -84,6 +90,8 @@ export const ExtensionMessageTypeSchema = z.enum([
   EXTENSION_MESSAGE_TYPES.statusResult,
   EXTENSION_MESSAGE_TYPES.answersSave,
   EXTENSION_MESSAGE_TYPES.answersResult,
+  EXTENSION_MESSAGE_TYPES.answersSuggest,
+  EXTENSION_MESSAGE_TYPES.answersSuggestResult,
 ]) satisfies z.ZodType<ExtensionMessageType>;
 
 /** `hello` payload (handshake step 1). No token — the proof authenticates later. */
@@ -231,6 +239,36 @@ export const ExtensionAnswersSaveResultSchema = z.discriminatedUnion('ok', [
   }),
   z.object({ ok: z.literal(false), error: z.string() }),
 ]) satisfies z.ZodType<ExtensionAnswersSaveResult>;
+
+/**
+ * `answers.suggest` payload — the (client-capped) labels to fuzzy-match.
+ * Mirrors {@link ExtensionAnswersSuggestRequest}. Shape-only (no byte/entry
+ * caps): the desktop matcher boundary is the real clamp, matching the sibling
+ * request schemas above.
+ */
+export const ExtensionAnswersSuggestRequestSchema = z.object({
+  questions: z.array(z.string()),
+}) satisfies z.ZodType<ExtensionAnswersSuggestRequest>;
+
+/** One matched suggestion. Mirrors {@link ExtensionAnswerSuggestion}. */
+export const ExtensionAnswerSuggestionSchema = z.object({
+  question: z.string(),
+  answer: z.string(),
+  sourceCompany: z.string().optional(),
+  sourceTitle: z.string().optional(),
+  score: z.number(),
+  salary: z.boolean(),
+}) satisfies z.ZodType<ExtensionAnswerSuggestion>;
+
+/**
+ * `answers.suggest` payload. Mirrors {@link ExtensionAnswersSuggestResult} —
+ * a discriminated union on `ok`: `ok:true` requires a `suggestions` array;
+ * `ok:false` requires `error`.
+ */
+export const ExtensionAnswersSuggestResultSchema = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true), suggestions: z.array(ExtensionAnswerSuggestionSchema) }),
+  z.object({ ok: z.literal(false), error: z.string() }),
+]) satisfies z.ZodType<ExtensionAnswersSuggestResult>;
 
 /**
  * The transport envelope every frame is wrapped in. `payload` is left as

@@ -36,6 +36,7 @@ const mockClient = vi.hoisted(() => ({
   checkApplied: vi.fn(),
   updateStatus: vi.fn(),
   saveAnswers: vi.fn(),
+  suggestAnswers: vi.fn(),
 }));
 
 vi.mock('@wxt-dev/browser', () => ({
@@ -97,6 +98,7 @@ beforeEach(() => {
   mockClient.checkApplied.mockReset();
   mockClient.updateStatus.mockReset();
   mockClient.saveAnswers.mockReset();
+  mockClient.suggestAnswers.mockReset();
 });
 
 // ── not-paired short-circuit ────────────────────────────────────────────────
@@ -462,5 +464,199 @@ describe('answersSave request', () => {
       ok: false,
       error: 'Desktop app not reachable. Is AI Job Hunter running?',
     });
+  });
+});
+
+// ── answersSuggest request — scan then send; errors are NOT folded ─────────
+
+describe('answersSuggest request — not-paired short-circuit', () => {
+  it('surfaces "Not paired" and never reaches the tab scan or suggestAnswers when no token is stored', async () => {
+    getTokenMock.mockResolvedValue(null);
+
+    const res = await send({ kind: 'answersSuggest' });
+
+    expect(res).toEqual({ ok: false, error: 'Not paired. Paste your pairing token first.' });
+    expect(executeScriptMock).not.toHaveBeenCalled();
+    expect(mockClient.suggestAnswers).not.toHaveBeenCalled();
+  });
+});
+
+describe('answersSuggest request', () => {
+  it('injects capture-questions.js, sends deduped labels, and returns the success result + scanned list', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    const scanned = [
+      { question: 'Why this role?', index: 0 },
+      { question: 'Why this role?', index: 0 }, // duplicate label text — deduped before send
+    ];
+    executeScriptMock.mockResolvedValueOnce([{ result: scanned }] as never);
+    mockClient.suggestAnswers.mockResolvedValue({
+      ok: true,
+      suggestions: [
+        { question: 'Why this role?', answer: 'Because I love it.', score: 0.8, salary: false },
+      ],
+    });
+
+    const res = await send({ kind: 'answersSuggest' });
+
+    expect(executeScriptMock).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { tabId: 7 }, files: ['capture-questions.js'] })
+    );
+    expect(mockClient.suggestAnswers).toHaveBeenCalledWith(['Why this role?']);
+    expect(res).toEqual({
+      ok: true,
+      kind: 'answersSuggest',
+      result: {
+        ok: true,
+        suggestions: [
+          { question: 'Why this role?', answer: 'Because I love it.', score: 0.8, salary: false },
+        ],
+      },
+      scanned,
+    });
+  });
+
+  it('passes a desktop-side refusal straight through as result (never folds it, unlike appliedCheck)', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: [] }] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'Autofill is off.' });
+
+    const res = await send({ kind: 'answersSuggest' });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'answersSuggest',
+      result: { ok: false, error: 'Autofill is off.' },
+      scanned: [],
+    });
+  });
+
+  it('surfaces "Could not read the questions on this page." when the injected script returns a non-array', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: null }] as never);
+
+    const res = await send({ kind: 'answersSuggest' });
+
+    expect(res).toEqual({ ok: false, error: 'Could not read the questions on this page.' });
+    expect(mockClient.suggestAnswers).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a transport-level rejection as ok:false', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: [] }] as never);
+    mockClient.suggestAnswers.mockRejectedValue(
+      new Error('Desktop app not reachable. Is AI Job Hunter running?')
+    );
+
+    const res = await send({ kind: 'answersSuggest' });
+
+    expect(res).toEqual({
+      ok: false,
+      error: 'Desktop app not reachable. Is AI Job Hunter running?',
+    });
+  });
+});
+
+// ── answerFill request — per-row fill, NEVER a different field ─────────────
+
+describe('answerFill request — not-paired short-circuit', () => {
+  it('surfaces "Not paired" and never reaches executeScript when no token is stored', async () => {
+    getTokenMock.mockResolvedValue(null);
+
+    const res = await send({
+      kind: 'answerFill',
+      question: 'Why this role?',
+      index: 0,
+      answer: 'Because I love it.',
+    });
+
+    expect(res).toEqual({ ok: false, error: 'Not paired. Paste your pairing token first.' });
+    expect(executeScriptMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('answerFill request', () => {
+  it('injects answer-fill.js then invokes it with the correlation + answer, returning the outcome', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{}] as never); // files-only registration step
+    executeScriptMock.mockResolvedValueOnce([{ result: { filled: true } }] as never);
+
+    const res = await send({
+      kind: 'answerFill',
+      question: 'Why this role?',
+      index: 0,
+      answer: 'Because I love it.',
+    });
+
+    expect(executeScriptMock).toHaveBeenNthCalledWith(1, {
+      target: { tabId: 7 },
+      files: ['answer-fill.js'],
+    });
+    expect(executeScriptMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        target: { tabId: 7 },
+        args: ['Why this role?', 0, 'Because I love it.', '__ajhRunAnswerFill'],
+      })
+    );
+    expect(res).toEqual({ ok: true, kind: 'answerFill', result: { filled: true } });
+  });
+
+  it('surfaces the fail-safe not-found result straight through — never a different field', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{}] as never);
+    executeScriptMock.mockResolvedValueOnce([
+      {
+        result: { filled: false, error: 'Could not find this field — the page may have changed.' },
+      },
+    ] as never);
+
+    const res = await send({
+      kind: 'answerFill',
+      question: 'Why this role?',
+      index: 0,
+      answer: 'Because I love it.',
+    });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'answerFill',
+      result: { filled: false, error: 'Could not find this field — the page may have changed.' },
+    });
+  });
+
+  it('surfaces "Could not fill this field." when the injected script returns a malformed result', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{}] as never);
+    executeScriptMock.mockResolvedValueOnce([{ result: null }] as never);
+
+    const res = await send({
+      kind: 'answerFill',
+      question: 'Why this role?',
+      index: 0,
+      answer: 'Because I love it.',
+    });
+
+    expect(res).toEqual({ ok: false, error: 'Could not fill this field.' });
   });
 });

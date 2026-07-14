@@ -134,6 +134,22 @@ export const EXTENSION_MESSAGE_TYPES = {
    * never fold it into a silent no-op (it answers a deliberate click).
    */
   answersResult: 'answers.result',
+  /**
+   * Extension → desktop: "suggest answers for this form" — the labels of the
+   * active tab's EMPTY candidate fields (questions-mode collector), fuzzy-
+   * matched against every stored `ApplicationAnswer` across ALL applications.
+   * Pure local Rust (token-Jaccard, no AI, no egress). Rides the SAME
+   * assisted-autofill opt-in as `profile.get`/`answers.save`: a suggestion
+   * carries the user's own past answer text, the same consent class as
+   * profile data.
+   */
+  answersSuggest: 'answers.suggest',
+  /**
+   * Desktop → extension: the `answers.suggest` outcome. Like `status.update`,
+   * this verb's errors are user-facing — the popup must render `error`,
+   * never fold it into a silent no-op (it answers a deliberate click).
+   */
+  answersSuggestResult: 'answers.suggest.result',
 } as const;
 
 /** Union of all wire `type` strings. */
@@ -364,6 +380,44 @@ export type ExtensionAnswersSaveResult =
       company?: string;
     }
   | { ok: false; error: string };
+
+/**
+ * `answers.suggest` payload — the (client-capped) labels of the active tab's
+ * EMPTY candidate fields to fuzzy-match. Untrusted page-derived content: the
+ * desktop clamps each entry's byte length and the array's entry count at the
+ * matcher boundary (client-side validation here is shape-only).
+ */
+export interface ExtensionAnswersSuggestRequest {
+  questions: string[];
+}
+
+/**
+ * One matched suggestion — `sourceCompany`/`sourceTitle` name the Application
+ * the answer came from (omitted when blank); `score` is the matcher's
+ * token-Jaccard similarity (0–1, diagnostic only). `salary` is true when the
+ * (scanned) question matched a salary keyword — the popup MUST NOT offer
+ * "Fill this field" for such a suggestion, only Copy.
+ */
+export interface ExtensionAnswerSuggestion {
+  question: string;
+  answer: string;
+  sourceCompany?: string;
+  sourceTitle?: string;
+  score: number;
+  salary: boolean;
+}
+
+/**
+ * `answers.suggest` payload — a discriminated union so a reply can never mix
+ * success and failure fields: `ok:true` carries at most 20
+ * {@link ExtensionAnswerSuggestion} entries (one per matched question);
+ * `ok:false` always carries a user-facing `error` (autofill opt-in off / a
+ * malformed request). UNLIKE {@link ExtensionAppliedCheckResult}, this verb's
+ * errors ARE shown to the user — it answers a deliberate click, not a
+ * passive background check.
+ */
+export type ExtensionAnswersSuggestResult =
+  { ok: true; suggestions: ExtensionAnswerSuggestion[] } | { ok: false; error: string };
 
 /**
  * The transport envelope every frame is wrapped in. `payload` is left as

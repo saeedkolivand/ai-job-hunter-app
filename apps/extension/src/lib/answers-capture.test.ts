@@ -9,7 +9,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { collectAnswers } from './answers-capture';
+import { collectAnswers, collectQuestions, locateQuestionField } from './answers-capture';
 
 function setForm(html: string): void {
   document.body.innerHTML = `<form>${html}</form>`;
@@ -218,5 +218,101 @@ describe('collectAnswers — visibility (computed-style-only, jsdom-safe)', () =
       <label for="q">Question</label><input id="q" type="text" value="A" />
     `);
     expect(collectAnswers(document)).toEqual([{ question: 'Question', answer: 'A' }]);
+  });
+});
+
+// ── collectQuestions — the "questions mode" collector (answers.suggest) ────────
+
+describe('collectQuestions — scans EMPTY candidate fields, the mirror of collectAnswers', () => {
+  it('scans an empty, labelled text input at index 0', () => {
+    setForm(`<label for="q1">Why this role?</label><input id="q1" type="text" value="" />`);
+    expect(collectQuestions(document)).toEqual([{ question: 'Why this role?', index: 0 }]);
+  });
+
+  it('skips a FILLED field — the mirror of collectAnswers skipping empty ones', () => {
+    setForm(
+      `<label for="q1">Why this role?</label><input id="q1" type="text" value="Already answered" />`
+    );
+    expect(collectQuestions(document)).toEqual([]);
+  });
+
+  it('assigns increasing occurrence indices to fields sharing the exact same label', () => {
+    setForm(`
+      <label for="q1">Comments</label><input id="q1" type="text" value="" />
+      <label for="q2">Comments</label><textarea id="q2"></textarea>
+    `);
+    expect(collectQuestions(document)).toEqual([
+      { question: 'Comments', index: 0 },
+      { question: 'Comments', index: 1 },
+    ]);
+  });
+
+  it('applies the SAME visibility/denylist/identity gates as collectAnswers', () => {
+    setForm(`
+      <div style="display:none"><label for="hp">Trap</label><input id="hp" type="text" value="" /></div>
+      <label for="ssn">SSN</label><input id="ssn" type="text" value="" />
+      <label for="fn">Full Name</label><input id="fn" type="text" value="" />
+      <label for="q">Why this role?</label><input id="q" type="text" value="" />
+    `);
+    expect(collectQuestions(document)).toEqual([{ question: 'Why this role?', index: 0 }]);
+  });
+
+  it('scans an empty select whose selected option has an empty value (placeholder)', () => {
+    setForm(`
+      <label for="yrs">Years of experience</label>
+      <select id="yrs">
+        <option value="" selected>Choose one</option>
+        <option value="1">5-10 years</option>
+      </select>
+    `);
+    expect(collectQuestions(document)).toEqual([{ question: 'Years of experience', index: 0 }]);
+  });
+
+  it('skips a select that already has a meaningful selection', () => {
+    setForm(`
+      <label for="yrs">Years of experience</label>
+      <select id="yrs">
+        <option value="0">Choose one</option>
+        <option value="1" selected>5-10 years</option>
+      </select>
+    `);
+    expect(collectQuestions(document)).toEqual([]);
+  });
+});
+
+// ── locateQuestionField — the fill-target re-scan (fail-safe correlation) ──────
+
+describe('locateQuestionField — re-scans the CURRENT empty candidates by (question, index)', () => {
+  it('locates the exact element a matching scan would have produced', () => {
+    setForm(`<label for="q1">Why this role?</label><input id="q1" type="text" value="" />`);
+    const el = locateQuestionField(document, 'Why this role?', 0);
+    expect(el?.id).toBe('q1');
+  });
+
+  it('disambiguates same-labelled fields by occurrence index', () => {
+    setForm(`
+      <label for="q1">Comments</label><input id="q1" type="text" value="" />
+      <label for="q2">Comments</label><input id="q2" type="text" value="" />
+    `);
+    expect(locateQuestionField(document, 'Comments', 0)?.id).toBe('q1');
+    expect(locateQuestionField(document, 'Comments', 1)?.id).toBe('q2');
+  });
+
+  it('fails safe (returns null) when the field was filled since the scan', () => {
+    setForm(`<label for="q1">Why this role?</label><input id="q1" type="text" value="" />`);
+    expect(locateQuestionField(document, 'Why this role?', 0)).not.toBeNull();
+    // The user (or the page) filled it in the meantime.
+    (document.getElementById('q1') as HTMLInputElement).value = 'Already answered';
+    expect(locateQuestionField(document, 'Why this role?', 0)).toBeNull();
+  });
+
+  it('fails safe (returns null) when the occurrence no longer exists', () => {
+    setForm(`<label for="q1">Comments</label><input id="q1" type="text" value="" />`);
+    expect(locateQuestionField(document, 'Comments', 1)).toBeNull();
+  });
+
+  it('fails safe (returns null) for a question that was never scanned', () => {
+    setForm(`<label for="q1">Why this role?</label><input id="q1" type="text" value="" />`);
+    expect(locateQuestionField(document, 'A different question?', 0)).toBeNull();
   });
 });
