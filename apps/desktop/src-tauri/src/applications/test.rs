@@ -183,6 +183,32 @@ fn retains_per_host_identifying_query_params_for_dedup() {
     );
 }
 
+/// Companion to the `canonical_xing_*`/`canonical_stepstone_*` tests in
+/// `scraping::scrape_url::test` (PR 7): both hosts put the job id in the PATH, so
+/// neither has an entry in `identifying_query_params` — the whole query must be
+/// dropped, not just the tracking param, via `retain_identifying_params` seeing an
+/// empty allowlist for the host. Pinned against the real detail-URL shapes
+/// (including their tracking params, Xing `?ijt=`/StepStone `?rltr=`) captured
+/// live during PR 7's browser probe, so this fails if either host ever gains a
+/// query-param allowlist entry without an accompanying deliberate decision, or if
+/// `retain_identifying_params`/`identifying_query_params` regress to leaking an
+/// unlisted host's query through.
+#[test]
+fn xing_and_stepstone_tracking_query_is_dropped_entirely() {
+    assert_eq!(
+        normalize_job_url(
+            "https://www.xing.com/jobs/berlin-senior-software-engineer-155853218?ijt=jb_55"
+        ),
+        "https://xing.com/jobs/berlin-senior-software-engineer-155853218"
+    );
+    assert_eq!(
+        normalize_job_url(
+            "https://www.stepstone.de/stellenangebote--Software-Engineer-m-w-d-Distribution-Berlin-GEMA-Gesellschaft-fuer-musik-Auffuehrungs-und-mechan-Vervielfaeltigungsrechte--14009455-inline.html?rltr=1_1_25_seorl_m_0_0_0_0_0_0"
+        ),
+        "https://stepstone.de/stellenangebote--software-engineer-m-w-d-distribution-berlin-gema-gesellschaft-fuer-musik-auffuehrungs-und-mechan-vervielfaeltigungsrechte--14009455-inline.html"
+    );
+}
+
 #[test]
 fn status_from_id_is_relaxed_and_round_trips() {
     for &s in ApplicationStatus::ALL {

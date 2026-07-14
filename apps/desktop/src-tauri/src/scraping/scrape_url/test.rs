@@ -808,6 +808,55 @@ fn canonical_unknown_host_is_none() {
     );
 }
 
+// PR 7 verify-live gate: Xing and StepStone were live-probed via browser
+// automation (public, no-login search); in those sessions neither host left the
+// current tab on a list-shell URL with the selected job only in a query param —
+// clicking a job title fully navigated straight to the canonical detail URL (id
+// already in the path). These four tests are regression guards against a
+// careless future match arm "fixing" a shape that was never broken: they pin
+// `canonical_job_url` returning `None` for the exact captured list-search and
+// detail URL shapes (tracking query params included, to prove the function
+// ignores them) for both hosts. See the TODO above `canonical_job_url` for the
+// StepStone login-gated caveat this observation doesn't cover.
+
+#[test]
+fn canonical_xing_list_search_url_is_none() {
+    assert_eq!(
+        super::canonical_job_url(
+            "https://www.xing.com/jobs/search?keywords=software+engineer&location=Berlin"
+        ),
+        None
+    );
+}
+
+#[test]
+fn canonical_xing_detail_url_is_none() {
+    assert_eq!(
+        super::canonical_job_url(
+            "https://www.xing.com/jobs/berlin-senior-software-engineer-155853218"
+        ),
+        None
+    );
+}
+
+#[test]
+fn canonical_stepstone_list_search_url_is_none() {
+    assert_eq!(
+        super::canonical_job_url("https://www.stepstone.de/jobs/software-engineer/in-berlin"),
+        None
+    );
+}
+
+#[test]
+fn canonical_stepstone_detail_url_is_none() {
+    assert_eq!(
+        super::canonical_job_url(
+            "https://www.stepstone.de/stellenangebote--Software-Engineer-m-w-d-Distribution-Berlin-GEMA-Gesellschaft-fuer-musik-Auffuehrungs-und-mechan-Vervielfaeltigungsrechte--14009455-inline.html"
+        ),
+        None
+    );
+}
+
 // ── Hardened JSON-LD / __NEXT_DATA__ / multi-location / main-content ──────────
 
 #[test]
