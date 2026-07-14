@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784027436648,
+  "lastUpdate": 1784042954149,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4361,6 +4361,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 289650,
             "range": "± 4936",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c25c2b813ab2fa78badcda3562b236c5c74e7d2a",
+          "message": "feat: capture filled application answers from the extension (#636)\n\n* feat: capture filled application answers from the extension\n\nNew answers.save verb: an explicit popup gesture collects filled,\nvisible, labeled form fields (identity fields and sensitive signals\nexcluded, select placeholders ignored) and appends them to the matched\napplication via the new merge_answers store method — single\ntransaction, normalized-question dedup, existing answers always win,\nper-field and per-application caps at the store boundary. Gated on the\nautofill opt-in; injected capture bundle stays a classic script with a\npackaging-time import-free assertion.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: merge answers by question on upsert instead of replacing\n\nupsert_internal's meta-merge path replaced Application.answers wholesale\nwhenever meta.answers was non-empty, so ai_generations_save silently wiped\nout any answers the extension's separate answers.save capture had appended\nonto the same application. Merge by normalized question instead: incoming\ntext wins for matching questions (needed for in-app answer edits), and\nexisting answers for untouched questions are preserved.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: surface skipped answer count and gate capture on pairing\n\nPopup now shows the desktop's skipped/dedup count on the answers-save\nconfirmation, with a distinct \"already recorded\" message when nothing\nnew was saved. Background now short-circuits on a missing pairing\ntoken before injecting the page-answer collector, mirroring the fill\nflow's not-paired gate.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: cap answers on creation and exclude autocomplete identity fields\n\nRoute upsert_internal's new-row branch through merge_answers_by_question\n(against an empty existing list) so MAX_TOTAL_ANSWERS and dedup apply on\napplication creation, not just merge. Extend isCapturable to also consult\nan input's autocomplete token via the shared Tier-1 mapping so a field\nautofill would treat as identity (e.g. autocomplete=\"name\") is excluded\nfrom answers capture even under a non-identity-looking label.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: swap capped answer replacements and harden classic script guard\n\nSame-question answer replacements in merge_answers_by_question now always\napply as a swap regardless of MAX_TOTAL_ANSWERS, so a legacy over-cap row\nno longer silently drops the replaced question; only brand-new questions\nare still subject to the cap. The extension packaging guard now strips\nstrings/comments and scans for import/export as tokens anywhere in the\nfile, instead of a line-anchored regex, so minified mid-line ES module\nsyntax can no longer slip past the classic-script assertion.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: look up existing application inside the upsert transaction\n\nupsert_internal released its lookup lock before re-acquiring it to write,\nletting a concurrent merge_answers commit land in the gap and be silently\noverwritten by the upsert's stale pre-gap snapshot.\n\nAlso extend the extension's AMBIGUOUS denylist with national-id, driver's\nlicense, bank/IBAN, and visa-status tokens.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-14T17:20:27+02:00",
+          "tree_id": "b7b8c5f03f52650f79b4b31bcb213b2528fccd96",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/c25c2b813ab2fa78badcda3562b236c5c74e7d2a"
+        },
+        "date": 1784042953636,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2140867,
+            "range": "± 20898",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2534100,
+            "range": "± 22803",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 289801,
+            "range": "± 11826",
             "unit": "ns/iter"
           }
         ]
