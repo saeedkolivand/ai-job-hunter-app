@@ -1906,3 +1906,162 @@ describe('BridgeClient – suggestAnswers', () => {
     client.dispose();
   });
 });
+
+// ── "Check fit" match.live ↔ match.result ─────────────────────────────────────
+
+describe('BridgeClient – matchLive', () => {
+  let latestSocket: FakeWebSocket | undefined;
+  let createdSockets: FakeWebSocket[] = [];
+  let restoreWS: () => void;
+
+  beforeEach(() => {
+    latestSocket = undefined;
+    createdSockets = [];
+    restoreWS = installFakeWS((ws) => {
+      latestSocket = ws;
+      createdSockets.push(ws);
+    });
+  });
+
+  afterEach(() => {
+    restoreWS();
+    vi.useRealTimers();
+  });
+
+  async function connectedClient(): Promise<{ client: BridgeClient; socket: FakeWebSocket }> {
+    const client = new BridgeClient(vi.fn());
+    const p = client.ensureConnected();
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+    await p;
+    return { client, socket };
+  }
+
+  function makeMatchEnvelope(reqId: string, payload: unknown): string {
+    return JSON.stringify({
+      type: EXTENSION_MESSAGE_TYPES.matchResult,
+      reqId,
+      payload,
+    });
+  }
+
+  /** Start a matchLive and wait until the outgoing frame is sent; return the reqId. */
+  async function startMatchLive(
+    client: BridgeClient,
+    socket: FakeWebSocket
+  ): Promise<{ resultPromise: Promise<unknown>; reqId: string }> {
+    const resultPromise = client.matchLive({
+      url: 'https://jobs.example.com/posting/1',
+      html: '<html>job</html>',
+    });
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const frame = JSON.parse(raw) as { type: string; reqId: string; payload: unknown };
+    expect(frame.type).toBe(EXTENSION_MESSAGE_TYPES.matchLive);
+    expect(frame.payload).toEqual({
+      url: 'https://jobs.example.com/posting/1',
+      html: '<html>job</html>',
+    });
+    return { resultPromise, reqId: frame.reqId };
+  }
+
+  it('round-trips a success result into the resolved payload', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startMatchLive(client, socket);
+
+    const payload = {
+      ok: true,
+      combined: 72,
+      ats: 60,
+      gaps: ['kubernetes', 'terraform'],
+      resumeName: 'My Resume',
+      scoreSource: 'keyword',
+    };
+    socket.simulateMessage(makeMatchEnvelope(reqId, payload));
+
+    const result = await resultPromise;
+    expect(result).toEqual(payload);
+
+    client.dispose();
+  });
+
+  it('round-trips a desktop-side refusal (ok:false + error) into the resolved payload — never rejects', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startMatchLive(client, socket);
+
+    socket.simulateMessage(
+      makeMatchEnvelope(reqId, {
+        ok: false,
+        error: 'Add a resume in AI Job Hunter first, then try Check fit again.',
+      })
+    );
+
+    const result = await resultPromise;
+    expect(result).toEqual({
+      ok: false,
+      error: 'Add a resume in AI Job Hunter first, then try Check fit again.',
+    });
+
+    client.dispose();
+  });
+
+  it('resolves with a malformed error (never throws) when the payload is bad', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startMatchLive(client, socket);
+
+    // combined must be a number; a string breaks the guard.
+    socket.simulateMessage(
+      makeMatchEnvelope(reqId, {
+        ok: true,
+        combined: 'high',
+        ats: 60,
+        gaps: [],
+        resumeName: 'My Resume',
+        scoreSource: 'keyword',
+      })
+    );
+
+    const result = (await resultPromise) as { ok: boolean; error?: string };
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/malformed/i);
+
+    client.dispose();
+  });
+
+  it('rejects when not connected — every port fails and the ws probe exhausts', async () => {
+    vi.useFakeTimers();
+
+    const client = new BridgeClient(vi.fn());
+    const matchPromise = client.matchLive({
+      url: 'https://jobs.example.com/posting/1',
+      html: '<html>job</html>',
+    });
+    const outcomePromise = matchPromise.then(
+      () => ({ ok: true as const }),
+      (e: unknown) => ({ ok: false as const, error: e })
+    );
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const idx = attempt;
+      await vi.waitFor(() => {
+        expect(createdSockets.length).toBeGreaterThanOrEqual(idx + 1);
+      });
+      createdSockets[idx]!.simulateClose();
+    }
+
+    const outcome = await outcomePromise;
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toBeInstanceOf(Error);
+      expect((outcome.error as Error).message).toMatch(/not reachable/i);
+    }
+    expect(client.status().phase).toBe('app_not_running');
+
+    client.dispose();
+  });
+});

@@ -69,6 +69,7 @@ pub mod auth;
 pub mod handshake;
 #[cfg(test)]
 mod import_tests;
+mod match_live;
 pub mod native_host;
 pub mod register;
 mod status_update;
@@ -121,8 +122,13 @@ pub mod msg {
     pub const PROFILE_GET: &str = "profile.get";
     /// Desktop → extension: the contact-profile fields for autofill (or an `error`).
     pub const PROFILE_RESULT: &str = "profile.result";
-    /// RESERVED (not handled yet) — live ATS match for the open posting.
+    /// Extension → desktop: "Check fit" (Scan mode only; no URL-mode fetch).
+    /// Keyword-only ALWAYS, opt-in-gated (same class as `profile.get`), and
+    /// per-connection throttled — see [`super::match_live`]'s module doc.
     pub const MATCH_LIVE: &str = "match.live";
+    /// Desktop → extension: the `match.live` outcome. Like `status.update`,
+    /// this verb's errors ARE user-facing (a deliberate click).
+    pub const MATCH_RESULT: &str = "match.result";
     /// Extension → desktop: "have I already applied to this URL?" — a pure,
     /// read-only lookup against the local `ApplicationStore` keyed by the
     /// normalized job url (no fetch, never mutates, no consent gate — this is
@@ -508,6 +514,8 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     let (mut writer, mut reader) = ws.split();
     // Per-connection handshake state; every socket starts by expecting `hello`.
     let mut conn = ConnState::AwaitingHello;
+    // Per-connection compute-verb throttle (currently `match.live` only — see its doc).
+    let mut match_live_limiter = match_live::MatchLiveThrottle::new();
 
     while let Some(frame) = reader.next().await {
         let msg = match frame {
@@ -586,6 +594,10 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
             FrameDecision::AnswersSuggest { req_id, payload } => Some(
                 answers_suggest::handle_answers_suggest(&app, &req_id, &payload),
             ),
+            FrameDecision::MatchLive { req_id, payload } if match_live_limiter.try_acquire() => {
+                Some(match_live::handle_match_live(&app, &req_id, &payload).await)
+            }
+            FrameDecision::MatchLive { req_id, .. } => Some(match_live::throttled_reply(&req_id)),
         };
         if let Some(reply) = reply {
             if writer.send(Message::text(reply)).await.is_err() {
@@ -642,8 +654,8 @@ enum FrameDecision {
     /// The client proof VERIFIED (constant-time): send this `auth.ok` reply, mark
     /// the socket connected, and advance to `Authenticated`.
     AuthOk(String),
-    /// A ready-to-send reply from an authenticated frame (a reserved / unknown
-    /// message type acknowledged as an error). Stays `Authenticated`.
+    /// A ready-to-send reply from an authenticated frame (an unknown message
+    /// type acknowledged as an error). Stays `Authenticated`.
     Reply(String),
     /// An authenticated `import.request` to dispatch through [`handle_import`].
     Import { req_id: String, payload: Value },
@@ -670,6 +682,10 @@ enum FrameDecision {
     /// [`answers_suggest::handle_answers_suggest`]. Carries the payload
     /// verbatim so the handler can read `questions`.
     AnswersSuggest { req_id: String, payload: Value },
+    /// An authenticated `match.live` to answer through
+    /// [`match_live::handle_match_live`]. Carries the payload verbatim so the
+    /// handler can read `url` + `html`.
+    MatchLive { req_id: String, payload: Value },
 }
 
 /// The per-message handshake gate + dispatch routing (size cap → JSON parse →
@@ -766,8 +782,8 @@ fn advance_auth(
 
 /// Post-auth dispatch: the socket is session-authenticated, so frames carry no
 /// token. Routes `import.request` / `profile.get` / `applied.check` /
-/// `status.update` / `answers.save` / `answers.suggest`; reserved / unknown
-/// types get an `import.result` error reply (never a panic).
+/// `status.update` / `answers.save` / `answers.suggest` / `match.live`; an
+/// unknown type gets an `import.result` error reply (never a panic).
 fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameDecision {
     match kind {
         msg::IMPORT_REQUEST => {
@@ -797,13 +813,12 @@ fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameD
             let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
             FrameDecision::AnswersSuggest { req_id, payload }
         }
-        // Reserved message types — acknowledged as unimplemented, never panic.
-        msg::MATCH_LIVE => FrameDecision::Reply(result_reply(
-            &req_id,
-            Err(AppError::Validation(format!(
-                "message type '{kind}' is not implemented"
-            ))),
-        )),
+        // "Check fit" — score the résumé against the captured DOM.
+        msg::MATCH_LIVE => {
+            let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
+            FrameDecision::MatchLive { req_id, payload }
+        }
+        // Unknown message types — acknowledged as an error, never panic.
         other => FrameDecision::Reply(result_reply(
             &req_id,
             Err(AppError::Validation(format!(
@@ -856,19 +871,30 @@ struct ImportOk {
     /// True when nothing usable parsed and a stub was persisted (empty title) —
     /// the extension surfaces this so the user knows to complete the row.
     partial: bool,
+    /// Best-effort keyword-only score (0–100) — see
+    /// [`match_live::score_import_posting_bounded`]. `None` on any failure OR
+    /// a timeout; the import above has already succeeded regardless.
+    match_score: Option<f64>,
 }
 
 /// Build a canonical `import.result` envelope (success or error). The error's
 /// `to_string()` becomes the `error` field the extension surfaces.
 fn result_reply(req_id: &str, outcome: AppResult<ImportOk>) -> String {
     let payload = match outcome {
-        Ok(ok) => json!({
-            "applicationId": ok.application_id,
-            "status": ok.status,
-            "title": ok.title,
-            "company": ok.company,
-            "partial": ok.partial,
-        }),
+        Ok(ok) => {
+            let mut obj = serde_json::Map::new();
+            obj.insert("applicationId".to_string(), json!(ok.application_id));
+            obj.insert("status".to_string(), json!(ok.status));
+            obj.insert("title".to_string(), json!(ok.title));
+            obj.insert("company".to_string(), json!(ok.company));
+            obj.insert("partial".to_string(), json!(ok.partial));
+            // Omit the key entirely when absent (mirrors `profile.result`'s
+            // `extraLinks` discipline), not `null`.
+            if let Some(score) = ok.match_score {
+                obj.insert("matchScore".to_string(), json!(score));
+            }
+            Value::Object(obj)
+        }
         Err(e) => json!({ "error": e.to_string() }),
     };
     json!({
@@ -1340,11 +1366,17 @@ async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<ImportOk> {
         crate::commands::notifications::OsBanner::WhenUnfocused,
     );
 
+    // Best-effort, TIME-BOUNDED keyword-only score for `matchScore` — the
+    // Application above already persisted, so a failure OR a timeout only
+    // omits the field. See `match_live::score_import_posting_bounded`'s doc.
+    let match_score = match_live::score_import_posting_bounded(app, &posting, &normalized).await;
+
     Ok(ImportOk {
         application_id: id,
         status,
         title: posting.title,
         company: posting.company,
+        match_score,
         partial,
     })
 }

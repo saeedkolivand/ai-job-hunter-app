@@ -49,6 +49,8 @@ function buildPopupDom(): void {
     <button id="btn-save-answers"></button>
     <button id="btn-suggest-answers"></button>
     <div id="suggestions-list" hidden></div>
+    <button id="btn-check-fit"></button>
+    <div id="match-result" hidden></div>
     <p id="applied-status" hidden></p>
     <input id="chk-applied" type="checkbox" />
     <p id="import-msg"></p>
@@ -82,6 +84,7 @@ const {
   resolveAnswersSaveResponse,
   correlateSuggestions,
   resolveAnswersSuggestResponse,
+  resolveMatchLiveResponse,
 } = await import('./popup');
 
 const sendMessageMock = vi.mocked(browser.runtime.sendMessage);
@@ -1357,6 +1360,64 @@ describe('resolveAnswersSuggestResponse', () => {
   });
 });
 
+// ── resolveMatchLiveResponse ─────────────────────────────────────────────────
+
+describe('resolveMatchLiveResponse', () => {
+  it('surfaces a transport-level error with null score fields', () => {
+    const res = { ok: false as const, error: 'Desktop app not reachable.' };
+    const view = resolveMatchLiveResponse(res);
+    expect(view.tone).toBe('err');
+    expect(view.text).toBe('Desktop app not reachable.');
+    expect(view.score).toBeNull();
+    expect(view.gaps).toEqual([]);
+  });
+
+  it('returns the unexpected-response error when kind is not matchLive', () => {
+    const res = { ok: true as const, kind: 'token' as const };
+    const view = resolveMatchLiveResponse(res);
+    expect(view.tone).toBe('err');
+    expect(view.text).toBe('Unexpected response — please retry.');
+    expect(view.score).toBeNull();
+  });
+
+  it('surfaces the desktop refusal text when result.ok is false', () => {
+    const res = {
+      ok: true as const,
+      kind: 'matchLive' as const,
+      result: {
+        ok: false as const,
+        error: 'Add a resume in AI Job Hunter first, then try Check fit again.',
+      },
+    };
+    const view = resolveMatchLiveResponse(res);
+    expect(view.tone).toBe('err');
+    expect(view.text).toBe('Add a resume in AI Job Hunter first, then try Check fit again.');
+    expect(view.score).toBeNull();
+  });
+
+  it('renders the rounded score, source label, résumé name, and gaps on success', () => {
+    const res = {
+      ok: true as const,
+      kind: 'matchLive' as const,
+      result: {
+        ok: true as const,
+        combined: 71.6,
+        ats: 60,
+        gaps: ['kubernetes', 'terraform'],
+        resumeName: 'My Resume',
+        scoreSource: 'keyword' as const,
+      },
+    };
+    const view = resolveMatchLiveResponse(res);
+    expect(view.tone).toBe('ok');
+    expect(view.score).toBe(72);
+    expect(view.scoreLabel).toBe('keyword coverage');
+    expect(view.resumeName).toBe('My Resume');
+    expect(view.gaps).toEqual(['kubernetes', 'terraform']);
+    expect(view.text).toBe('72% fit against “My Resume”.');
+  });
+});
+
 // ── doSaveAnswers (#btn-save-answers) ─────────────────────────────────────────
 
 describe('doSaveAnswers (#btn-save-answers)', () => {
@@ -1745,6 +1806,80 @@ describe('doSuggestAnswers (#btn-suggest-answers)', () => {
       'No matching past answers found for this form.'
     );
     expect(byId<HTMLDivElement>('suggestions-list').hidden).toBe(true);
+  });
+});
+
+// ── doCheckFit (#btn-check-fit) ───────────────────────────────────────────────
+
+describe('doCheckFit (#btn-check-fit)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  beforeEach(() => {
+    sendMessageMock.mockReset();
+    byId<HTMLButtonElement>('btn-check-fit').disabled = false;
+    byId<HTMLParagraphElement>('import-msg').textContent = '';
+    byId<HTMLDivElement>('match-result').textContent = '';
+    byId<HTMLDivElement>('match-result').hidden = true;
+  });
+
+  it('renders the score card (score / source+résumé / gap chips) on success', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'matchLive',
+      result: {
+        ok: true,
+        combined: 72,
+        ats: 60,
+        gaps: ['kubernetes', 'terraform'],
+        resumeName: 'My Resume',
+        scoreSource: 'keyword',
+      },
+    });
+
+    byId<HTMLButtonElement>('btn-check-fit').click();
+    await flush();
+
+    const card = byId<HTMLDivElement>('match-result');
+    expect(card.hidden).toBe(false);
+    expect(card.textContent).toContain('72% fit');
+    expect(card.textContent).toContain('keyword coverage');
+    expect(card.textContent).toContain('My Resume');
+    expect(card.textContent).toContain('kubernetes');
+    expect(card.textContent).toContain('terraform');
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      '72% fit against “My Resume”.'
+    );
+  });
+
+  it('surfaces the desktop refusal and hides the score card (no résumé saved yet)', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'matchLive',
+      result: {
+        ok: false,
+        error: 'Add a resume in AI Job Hunter first, then try Check fit again.',
+      },
+    });
+
+    byId<HTMLButtonElement>('btn-check-fit').click();
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Add a resume in AI Job Hunter first, then try Check fit again.'
+    );
+    expect(byId<HTMLDivElement>('match-result').hidden).toBe(true);
+  });
+
+  it('re-enables the button and surfaces a retry message on a transport rejection', async () => {
+    sendMessageMock.mockRejectedValueOnce(new Error('boom'));
+
+    byId<HTMLButtonElement>('btn-check-fit').click();
+    await flush();
+
+    expect(byId<HTMLButtonElement>('btn-check-fit').disabled).toBe(false);
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Could not check fit for this page. Please retry.'
+    );
   });
 });
 

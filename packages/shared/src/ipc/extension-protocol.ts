@@ -35,6 +35,8 @@ import {
   type ExtensionHelloPayload,
   type ExtensionImportRequest,
   type ExtensionImportResult,
+  type ExtensionMatchLiveRequest,
+  type ExtensionMatchLiveResult,
   type ExtensionMessageType,
   type ExtensionProfileResult,
   type ExtensionStatusUpdateRequest,
@@ -63,6 +65,8 @@ export {
   type ExtensionHelloPayload,
   type ExtensionImportRequest,
   type ExtensionImportResult,
+  type ExtensionMatchLiveRequest,
+  type ExtensionMatchLiveResult,
   type ExtensionMessageType,
   type ExtensionProfileResult,
   type ExtensionStatusUpdateRequest,
@@ -84,6 +88,7 @@ export const ExtensionMessageTypeSchema = z.enum([
   EXTENSION_MESSAGE_TYPES.profileGet,
   EXTENSION_MESSAGE_TYPES.profileResult,
   EXTENSION_MESSAGE_TYPES.matchLive,
+  EXTENSION_MESSAGE_TYPES.matchResult,
   EXTENSION_MESSAGE_TYPES.appliedCheck,
   EXTENSION_MESSAGE_TYPES.appliedResult,
   EXTENSION_MESSAGE_TYPES.statusUpdate,
@@ -270,6 +275,36 @@ export const ExtensionAnswersSuggestResultSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true), suggestions: z.array(ExtensionAnswerSuggestionSchema) }),
   z.object({ ok: z.literal(false), error: z.string() }),
 ]) satisfies z.ZodType<ExtensionAnswersSuggestResult>;
+
+/**
+ * `match.live` payload — the Scan-mode capture to score. Mirrors
+ * {@link ExtensionMatchLiveRequest}. `html` is required (not optional, unlike
+ * `import.request`'s) — there is no URL-mode fallback for this verb.
+ */
+export const ExtensionMatchLiveRequestSchema = z.object({
+  url: z.string().min(1),
+  html: z.string().min(1),
+}) satisfies z.ZodType<ExtensionMatchLiveRequest>;
+
+/**
+ * `match.live` payload. Mirrors {@link ExtensionMatchLiveResult} — a
+ * discriminated union on `ok`: `ok:true` requires `combined`/`ats`/`gaps`/
+ * `resumeName`/`scoreSource` (the optional `semantic` is wire-reserved, never
+ * populated by the current desktop implementation — see that type's doc);
+ * `ok:false` requires `error`.
+ */
+export const ExtensionMatchLiveResultSchema = z.discriminatedUnion('ok', [
+  z.object({
+    ok: z.literal(true),
+    combined: z.number(),
+    ats: z.number(),
+    semantic: z.number().optional(),
+    gaps: z.array(z.string()),
+    resumeName: z.string(),
+    scoreSource: z.enum(['keyword', 'combined']),
+  }),
+  z.object({ ok: z.literal(false), error: z.string() }),
+]) satisfies z.ZodType<ExtensionMatchLiveResult>;
 
 /**
  * The transport envelope every frame is wrapped in. `payload` is left as
