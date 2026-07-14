@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784061351060,
+  "lastUpdate": 1784068013716,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4529,6 +4529,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 287621,
             "range": "± 5254",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bd87ac06333cfb34e49fca2735ba9b5ec352cc33",
+          "message": "feat: add match.live check fit scoring and import match scores (#641)\n\n* feat: add match.live check fit scoring and import match scores\n\nThe last reserved verb: an explicit popup check-fit click scores the\ncaptured page keyword-only against the default resume via a purpose\nbuilt score entry that structurally cannot embed or translate (cli\nagent providers egress despite the local label), gated on the autofill\nopt-in since gap keywords form a resume-membership oracle, throttled\nper connection, and sharing the import path's normalized cache key.\nImports now carry a best-effort match score bounded to three seconds.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: show import match score and split the import flow module\n\n- popup: render import.result matchScore as a \"— NN% fit.\" suffix on the\n  success/status-unchanged lines (was dead-ends client-side)\n- align extension-protocol.ts's stale matchScore docblock with the\n  constants-file doc (best-effort keyword-only, omitted on failure)\n- match_live: split score_import_posting_bounded's logging so a genuine\n  timeout warns while an ordinary no-resume/no-text/scoring-failure None\n  only debugs; add a #fragment cache-key parity variant\n- popup: add a doCheckFit test covering the per-connection throttle reply\n- extension_bridge: move the import.request flow (ImportOk/result_reply/\n  persist_import_application/usable/handle_import) into a new\n  import_flow.rs sibling module so mod.rs clears the R8 LOC cap\n  (1399 -> 1121), behavior-identical relocation\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: bound live scoring and make the match throttle survive reconnects\n\nWrap resolve_match_live's keyword-only scoring in the shared timed()\nhelper (3s cap, same as the import-time score) so a hung/slow scorer\ncan't block the connection's serial frame loop indefinitely, folding a\ngenuine timeout and an unexpected internal error shape onto the same\nfixed sentinel. Move MatchLiveThrottle off the per-connection stack\nonto BridgeState (behind a Mutex, shared across connections) so a\nloopback reconnect no longer refreshes the burst allowance. Reorder\nresolve_match_live's validation so the autofill opt-in gate runs\nbefore url/html emptiness checks, matching sibling verbs. Document the\nthreat model for the ungated import-time match score.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-15T00:17:32+02:00",
+          "tree_id": "851eebf12379f4728e3bb7cd117969a68d92378a",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/bd87ac06333cfb34e49fca2735ba9b5ec352cc33"
+        },
+        "date": 1784068013092,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2139416,
+            "range": "± 29842",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2548427,
+            "range": "± 22600",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 283763,
+            "range": "± 4440",
             "unit": "ns/iter"
           }
         ]
