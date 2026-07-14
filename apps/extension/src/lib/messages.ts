@@ -9,6 +9,7 @@ import type {
   ExtensionAnswersSuggestResult,
   ExtensionAppliedCheckResult,
   ExtensionImportResult,
+  ExtensionMatchLiveResult,
   ExtensionStatusUpdateResult,
 } from '@ajh/shared';
 
@@ -89,7 +90,14 @@ export type PopupRequest =
    * same-labelled field inserted earlier in DOM order since the scan). Never
    * bulk, never submits the form.
    */
-  | { kind: 'answerFill'; question: string; index: number; count: number; answer: string };
+  | { kind: 'answerFill'; question: string; index: number; count: number; answer: string }
+  /**
+   * User-clicked "Check fit": capture the active tab's DOM (same Scan-mode
+   * capture the import button uses) and send it as `match.live`. Explicit —
+   * never runs automatically. Like `statusUpdate`, this is a deliberate
+   * action — its failures are surfaced to the user, never folded away.
+   */
+  | { kind: 'matchLive' };
 
 /** background → popup responses (discriminated by the originating request). */
 export type PopupResponse =
@@ -131,4 +139,10 @@ export type PopupResponse =
     }
   /** The per-row "Fill this field" outcome (fail-safe on any page mutation). */
   | { ok: true; kind: 'answerFill'; result: FillAnswerResult }
+  /**
+   * `ok:true` at the transport level; like `statusUpdate`, the desktop's own
+   * `ok`/`error` on `result` is what the popup renders — this verb's
+   * failures are NOT folded away.
+   */
+  | { ok: true; kind: 'matchLive'; result: ExtensionMatchLiveResult }
   | { ok: false; error: string };

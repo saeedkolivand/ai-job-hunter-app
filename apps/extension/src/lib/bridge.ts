@@ -38,6 +38,8 @@ import {
   type ExtensionEnvelope,
   type ExtensionImportRequest,
   type ExtensionImportResult,
+  type ExtensionMatchLiveRequest,
+  type ExtensionMatchLiveResult,
   type ExtensionProfileResult,
   type ExtensionStatusUpdateResult,
 } from '@ajh/shared/extension-protocol';
@@ -77,6 +79,7 @@ type AppliedResolver = (result: ExtensionAppliedCheckResult) => void;
 type StatusResolver = (result: ExtensionStatusUpdateResult) => void;
 type AnswersResolver = (result: ExtensionAnswersSaveResult) => void;
 type SuggestResolver = (result: ExtensionAnswersSuggestResult) => void;
+type MatchResolver = (result: ExtensionMatchLiveResult) => void;
 
 export type BridgePhase = 'searching' | 'connected' | 'app_not_running' | 'outdated' | 'bad_token';
 
@@ -347,6 +350,54 @@ function normalizeAnswersSuggestResult(payload: unknown): ExtensionAnswersSugges
   return { ok: true, suggestions };
 }
 
+/**
+ * Hand-written guard for a `match.live` payload (extension stays zod-free).
+ * Mirrors `ExtensionMatchLiveResultSchema`'s discriminated union: `ok:true`
+ * requires numeric `combined`/`ats`, a string-array `gaps`, a string
+ * `resumeName`, and a `scoreSource` literal (the optional `semantic` is
+ * wire-reserved — never sent by the current desktop, but validated as
+ * numeric-or-absent so a future desktop's value round-trips); `ok:false`
+ * requires a string `error`.
+ */
+function isExtensionMatchLiveResult(v: unknown): v is ExtensionMatchLiveResult {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  if (o.ok === true) {
+    return (
+      typeof o.combined === 'number' &&
+      typeof o.ats === 'number' &&
+      (o.semantic === undefined || typeof o.semantic === 'number') &&
+      Array.isArray(o.gaps) &&
+      o.gaps.every((g) => typeof g === 'string') &&
+      typeof o.resumeName === 'string' &&
+      (o.scoreSource === 'keyword' || o.scoreSource === 'combined')
+    );
+  }
+  if (o.ok === false) return typeof o.error === 'string';
+  return false;
+}
+
+/** Rebuild an {@link ExtensionMatchLiveResult} from only the known, defined
+ *  keys — mirrors `normalizeAnswersSuggestResult`. This verb's errors are
+ *  surfaced to the user (like `status.update`), so the fallback text is
+ *  written the same way: `ok:false` + a plain `error`. */
+function normalizeMatchLiveResult(payload: unknown): ExtensionMatchLiveResult {
+  if (!isExtensionMatchLiveResult(payload)) {
+    return { ok: false, error: 'The desktop app sent a malformed match result.' };
+  }
+  if (!payload.ok) return { ok: false, error: payload.error };
+  const out: ExtensionMatchLiveResult = {
+    ok: true,
+    combined: payload.combined,
+    ats: payload.ats,
+    gaps: payload.gaps,
+    resumeName: payload.resumeName,
+    scoreSource: payload.scoreSource,
+  };
+  if (payload.semantic !== undefined) out.semantic = payload.semantic;
+  return out;
+}
+
 // ── transport seam ──────────────────────────────────────────────────────────
 
 /**
@@ -507,6 +558,9 @@ export class BridgeClient {
   /** In-flight `answers.suggest` resolvers, correlated by `reqId`. Kept
    *  separate from {@link pending} for the same reason as {@link pendingProfile}. */
   private readonly pendingSuggest = new Map<string, SuggestResolver>();
+  /** In-flight `match.live` resolvers, correlated by `reqId`. Kept separate
+   *  from {@link pending} for the same reason as {@link pendingProfile}. */
+  private readonly pendingMatch = new Map<string, MatchResolver>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private backoffIndex = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -651,6 +705,7 @@ export class BridgeClient {
     this.pendingStatus.clear();
     this.pendingAnswers.clear();
     this.pendingSuggest.clear();
+    this.pendingMatch.clear();
     this.transport?.close();
     this.transport = null;
   }
@@ -911,6 +966,48 @@ export class BridgeClient {
         clearTimeout(timer);
         this.timers.delete(reqId);
         this.pendingSuggest.delete(reqId);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
+  /**
+   * Send a `match.live { url, html }` (the user-clicked "Check fit") and
+   * resolve with the validated `match.result` payload. Rejects only on no
+   * connection / timeout / send failure — like `suggestAnswers`, a
+   * well-formed `ok:false` reply is NOT folded away here: this answers a
+   * deliberate click, so the caller (background.ts) must pass the `error`
+   * straight through to the popup.
+   */
+  async matchLive(payload: ExtensionMatchLiveRequest): Promise<ExtensionMatchLiveResult> {
+    await this.ensureConnected();
+    if (this.phase !== 'connected' || !this.transport) {
+      throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
+    }
+    const transport = this.transport;
+
+    const reqId = newReqId();
+    const envelope: ExtensionEnvelope = {
+      type: EXTENSION_MESSAGE_TYPES.matchLive,
+      reqId,
+      payload,
+    };
+
+    return new Promise<ExtensionMatchLiveResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingMatch.delete(reqId);
+        this.timers.delete(reqId);
+        reject(new Error('Timed out waiting for the desktop app to respond.'));
+      }, REQUEST_TIMEOUT_MS);
+      this.timers.set(reqId, timer);
+      this.pendingMatch.set(reqId, resolve);
+
+      try {
+        transport.send(envelope);
+      } catch (err) {
+        clearTimeout(timer);
+        this.timers.delete(reqId);
+        this.pendingMatch.delete(reqId);
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     });
@@ -1223,6 +1320,16 @@ export class BridgeClient {
       return;
     }
 
+    // match.result → the "Check fit" outcome (separate map).
+    if (env.type === EXTENSION_MESSAGE_TYPES.matchResult) {
+      const resolveMatch = this.pendingMatch.get(reqId);
+      if (typeof resolveMatch !== 'function') return;
+      this.pendingMatch.delete(reqId);
+      this.clearTimer(reqId);
+      resolveMatch(normalizeMatchLiveResult(env.payload));
+      return;
+    }
+
     if (env.type !== EXTENSION_MESSAGE_TYPES.importResult) return;
     const resolve = this.pending.get(reqId);
     if (typeof resolve !== 'function') return;
@@ -1282,12 +1389,18 @@ export class BridgeClient {
       if (timer) clearTimeout(timer);
       resolve({ ok: false, error: reason });
     }
+    for (const [reqId, resolve] of this.pendingMatch.entries()) {
+      const timer = this.timers.get(reqId);
+      if (timer) clearTimeout(timer);
+      resolve({ ok: false, error: reason });
+    }
     this.pending.clear();
     this.pendingProfile.clear();
     this.pendingApplied.clear();
     this.pendingStatus.clear();
     this.pendingAnswers.clear();
     this.pendingSuggest.clear();
+    this.pendingMatch.clear();
     this.timers.clear();
   }
 
