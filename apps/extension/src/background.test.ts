@@ -37,6 +37,7 @@ const mockClient = vi.hoisted(() => ({
   updateStatus: vi.fn(),
   saveAnswers: vi.fn(),
   suggestAnswers: vi.fn(),
+  matchLive: vi.fn(),
 }));
 
 vi.mock('@wxt-dev/browser', () => ({
@@ -99,6 +100,7 @@ beforeEach(() => {
   mockClient.updateStatus.mockReset();
   mockClient.saveAnswers.mockReset();
   mockClient.suggestAnswers.mockReset();
+  mockClient.matchLive.mockReset();
 });
 
 // ── not-paired short-circuit ────────────────────────────────────────────────
@@ -560,6 +562,118 @@ describe('answersSuggest request', () => {
     );
 
     const res = await send({ kind: 'answersSuggest' });
+
+    expect(res).toEqual({
+      ok: false,
+      error: 'Desktop app not reachable. Is AI Job Hunter running?',
+    });
+  });
+});
+
+// ── matchLive request — capture then send; errors are NOT folded ───────────
+
+describe('matchLive request — not-paired short-circuit', () => {
+  it('surfaces "Not paired" and never reaches the tab capture or matchLive when no token is stored', async () => {
+    getTokenMock.mockResolvedValue(null);
+
+    const res = await send({ kind: 'matchLive' });
+
+    expect(res).toEqual({ ok: false, error: 'Not paired. Paste your pairing token first.' });
+    expect(executeScriptMock).not.toHaveBeenCalled();
+    expect(mockClient.matchLive).not.toHaveBeenCalled();
+  });
+});
+
+describe('matchLive request', () => {
+  it('captures content.js, sends { url, html }, and returns the success result', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: '<html>job</html>' }] as never);
+    mockClient.matchLive.mockResolvedValue({
+      ok: true,
+      combined: 72,
+      ats: 60,
+      gaps: ['kubernetes'],
+      resumeName: 'My Resume',
+      scoreSource: 'keyword',
+    });
+
+    const res = await send({ kind: 'matchLive' });
+
+    expect(executeScriptMock).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { tabId: 7 }, files: ['content.js'] })
+    );
+    expect(mockClient.matchLive).toHaveBeenCalledWith({
+      url: 'https://jobs.example.com/posting/9',
+      html: '<html>job</html>',
+    });
+    expect(res).toEqual({
+      ok: true,
+      kind: 'matchLive',
+      result: {
+        ok: true,
+        combined: 72,
+        ats: 60,
+        gaps: ['kubernetes'],
+        resumeName: 'My Resume',
+        scoreSource: 'keyword',
+      },
+    });
+  });
+
+  it('passes a desktop-side refusal straight through as result (never folds it, unlike appliedCheck)', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: '<html>job</html>' }] as never);
+    mockClient.matchLive.mockResolvedValue({
+      ok: false,
+      error: 'Add a resume in AI Job Hunter first, then try Check fit again.',
+    });
+
+    const res = await send({ kind: 'matchLive' });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'matchLive',
+      result: {
+        ok: false,
+        error: 'Add a resume in AI Job Hunter first, then try Check fit again.',
+      },
+    });
+  });
+
+  it('surfaces a fixed capture-failure message when the page DOM could not be captured — no URL-mode fallback', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    // Non-string / empty result → captureActiveTabHtml throws.
+    executeScriptMock.mockResolvedValueOnce([{ result: null }] as never);
+
+    const res = await send({ kind: 'matchLive' });
+
+    expect(res).toEqual({
+      ok: false,
+      error: 'Could not read this page. Reload the job page and try again.',
+    });
+    expect(mockClient.matchLive).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a transport-level rejection as ok:false', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: '<html>job</html>' }] as never);
+    mockClient.matchLive.mockRejectedValue(
+      new Error('Desktop app not reachable. Is AI Job Hunter running?')
+    );
+
+    const res = await send({ kind: 'matchLive' });
 
     expect(res).toEqual({
       ok: false,

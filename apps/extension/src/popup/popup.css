@@ -459,6 +459,48 @@ body {
   color: var(--ink-soft);
 }
 
+/* match.live reply — "Check fit" score card (score / source+resume line /
+ * missing-keyword chips). */
+.match-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--card-border);
+  border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
+  background: var(--card);
+}
+
+.match-result__score {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.match-result__meta {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.match-result__gaps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.match-result__gap {
+  font-family: var(--sans);
+  font-size: 11px;
+  padding: 2px 7px;
+  border: 1px solid var(--card-border);
+  border-radius: 9px 6px 9px 6px / 6px 9px 6px 9px;
+  color: var(--ink-soft);
+}
+
 .btn--small {
   flex: none;
   padding: 5px 9px;

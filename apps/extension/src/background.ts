@@ -10,7 +10,7 @@
 
 import { browser } from '@wxt-dev/browser';
 
-import type { ExtensionImportRequest } from '@ajh/shared';
+import type { ExtensionImportRequest, ExtensionMatchLiveRequest } from '@ajh/shared';
 
 // TYPE-ONLY import from the answer-fill module — same rationale as the
 // autofill.ts import below: `answer-fill.js` is a classic-script injection
@@ -387,6 +387,35 @@ async function runAnswersSuggest(): Promise<PopupResponse> {
 }
 
 /**
+ * User-clicked "Check fit". Mirrors `runAnswersSuggest`'s not-paired
+ * short-circuit (token checked BEFORE the capture injection) and its
+ * never-fold-errors discipline — a deliberate click, so failures propagate to
+ * `handleRequest`'s outer catch. UNLIKE `runImport`, there is no URL-only
+ * fallback: `match.live` requires the captured DOM (no URL-mode network fetch
+ * on the desktop side — see `extension_bridge::match_live`'s doc), so a
+ * capture failure (restricted page, scripting permission denied) surfaces as
+ * a user-facing error instead of silently degrading.
+ */
+async function runMatchLive(): Promise<PopupResponse> {
+  const token = await getToken();
+  if (!token) {
+    return { ok: false, error: 'Not paired. Paste your pairing token first.' };
+  }
+
+  const url = await activeTabUrl();
+  let html: string;
+  try {
+    html = await captureActiveTabHtml();
+  } catch {
+    return { ok: false, error: 'Could not read this page. Reload the job page and try again.' };
+  }
+
+  const payload: ExtensionMatchLiveRequest = { url, html };
+  const result = await getClient().matchLive(payload);
+  return { ok: true, kind: 'matchLive', result };
+}
+
+/**
  * Inject the single-field filler into the active tab and run it against
  * `(question, index)` — refusing unless the CURRENT count of same-question
  * fields still equals scan-time `count` — with `answer`. Two-step like
@@ -494,6 +523,8 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
         return await runAnswersSuggest();
       case 'answerFill':
         return await runAnswerFill(req.question, req.index, req.count, req.answer);
+      case 'matchLive':
+        return await runMatchLive();
       default: {
         // Exhaustiveness guard — a new PopupRequest variant must be handled.
         const _never: never = req;

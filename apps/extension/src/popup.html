@@ -111,6 +111,18 @@
           Suggest answers for this form
         </button>
         <div id="suggestions-list" class="suggestions" hidden></div>
+        <!-- Explicit, never automatic: scores the default/most-recent resume against
+             this page's posting (keyword coverage only — a local computation; only
+             the score + a few missing keywords ever leave the device). -->
+        <button
+          id="btn-check-fit"
+          class="btn"
+          type="button"
+          title="Score your resume against this page's job posting"
+        >
+          Check fit
+        </button>
+        <div id="match-result" class="match-result" hidden></div>
         <div class="actions">
           <button id="btn-import" class="btn btn--primary" type="button">Import this job</button>
           <button

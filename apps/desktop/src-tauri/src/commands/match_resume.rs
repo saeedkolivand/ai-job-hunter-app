@@ -57,6 +57,14 @@ fn semantic_enabled_bit(flag: Option<bool>) -> i64 {
 /// Errors-never-cached invariant: the only error return (job-not-found) happens
 /// before any `get_match_score`/`upsert_match_score`, so an error path can never
 /// read or pollute the result cache.
+///
+/// `translate` gates the optional local-only translation step below: `true`
+/// (the in-app `match_resume` path, unchanged) may call `translate_if_needed`;
+/// `false` (the extension's [`score_adhoc_keyword_only`] path) skips the call
+/// entirely — not just short-circuits its effect — so that entry point can
+/// never reach the AI provider layer at all, structurally guaranteeing zero
+/// egress regardless of what provider is configured.
+#[allow(clippy::too_many_arguments)] // house convention (see clippy.toml threshold=8) — this fn legitimately threads every cache-key input plus the new translate gate
 async fn score_one(
     app: &AppHandle,
     store: &DocumentStore,
@@ -66,6 +74,7 @@ async fn score_one(
     job_id: &str,
     job_text: Option<String>,
     semantic_enabled: i64,
+    translate: bool,
 ) -> Value {
     let Some(job_text) = job_text else {
         return json!({ "error": format!("job not found in cache: {}", job_id) });
@@ -75,12 +84,14 @@ async fn score_one(
     // resume locale and a local provider is configured, translate before keyword
     // extraction (and embedding) so matching happens in the resume language.
     // Always falls back to the original text on any failure. Cloud providers are
-    // excluded, so this never incurs an unexpected API cost.
-    let target_lang = resume.locale.as_deref().unwrap_or("en");
-    let translated =
-        crate::commands::translation::translate_if_needed(app, job_id, &job_text, target_lang)
-            .await;
-    let job_text = translated; // shadow with the owned String; downstream code unchanged
+    // excluded, so this never incurs an unexpected API cost. Skipped entirely
+    // (no call at all, not just a no-op) when `translate` is false.
+    let job_text = if translate {
+        let target_lang = resume.locale.as_deref().unwrap_or("en");
+        crate::commands::translation::translate_if_needed(app, job_id, &job_text, target_lang).await
+    } else {
+        job_text
+    };
 
     // `semantic_enabled` is the cache-key bit; `skip_semantic` is its inverse.
     let skip_semantic = semantic_enabled == 0;
@@ -255,10 +266,58 @@ async fn score_one(
     result
 }
 
+/// Ad-hoc, KEYWORD-ONLY scoring entry point for `extension_bridge::match_live`
+/// (the browser extension's "Check fit" button + its `import.result.matchScore`
+/// fill) — a thin forwarding wrapper around [`score_one`], NOT a new scoring
+/// path: every existing `match_resume` caller is untouched, and this adds no
+/// new branch to `score_one` itself. `job_id` here is a synthetic per-URL cache
+/// key (not a real `PostingsCache` id) — the caller is responsible for
+/// deriving it (e.g. a hash of the normalized job url) so repeat calls for the
+/// same page hit the SAME self-invalidating `match_scores` row `score_one`
+/// already maintains (formula version / semantic bit / job-text hash — see
+/// its cache-key doc). `job_text` is required (not `Option`) because the
+/// caller always has JD text in hand by construction (a browser DOM parse,
+/// never a `PostingsCache` miss).
+///
+/// Deliberately NO `semantic_enabled` parameter (unlike the removed
+/// `score_adhoc`): semantic scoring is hardcoded OFF below, not
+/// caller-configurable, and this NEVER translates (`translate: false` to
+/// [`score_one`]) — the extension bridge has no channel to the app's
+/// semantic-scoring setting (see `extension_bridge::match_live`'s module doc)
+/// and a CLI-agent provider configured as "local" still performs cloud egress
+/// despite `ProviderId::is_local()`, so the zero-egress guarantee for this
+/// entry point must be structural (no flag to flip), not a default. Trade-off:
+/// a foreign-language job posting is scored keyword-only against its RAW
+/// (untranslated) text — an accepted accuracy cost for that guarantee.
+pub(crate) async fn score_adhoc_keyword_only(
+    app: &AppHandle,
+    store: &DocumentStore,
+    resume: &DocumentRecord,
+    resume_raw_keywords: Option<&[String]>,
+    active: &EmbeddingConfig,
+    job_id: &str,
+    job_text: String,
+) -> Value {
+    score_one(
+        app,
+        store,
+        resume,
+        resume_raw_keywords,
+        active,
+        job_id,
+        Some(job_text),
+        0,     // semantic_enabled hardcoded OFF — never caller-configurable
+        false, // translate hardcoded OFF — this entry point never calls translate_if_needed
+    )
+    .await
+}
+
 /// Parse the résumé's cached normalized keywords (`keywords_json`) into a token
 /// list. Absent OR corrupt JSON → `None`, which makes [`score_one`] fall back to
-/// live extraction from `resume.text` (the legacy behaviour).
-fn parse_resume_keywords(resume: &DocumentRecord) -> Option<Vec<String>> {
+/// live extraction from `resume.text` (the legacy behaviour). `pub(crate)` so
+/// `extension_bridge::match_live` reuses the SAME fallback rule instead of
+/// re-deriving it.
+pub(crate) fn parse_resume_keywords(resume: &DocumentRecord) -> Option<Vec<String>> {
     resume
         .keywords_json
         .as_deref()
@@ -295,6 +354,7 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
         &req.job_id,
         job_text,
         semantic_enabled,
+        true, // in-app path: translation stays on, exactly as before this refactor
     )
     .await
 }

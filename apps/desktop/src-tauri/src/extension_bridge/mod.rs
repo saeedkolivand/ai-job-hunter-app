@@ -57,18 +57,17 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::applications::{
-    normalize_job_url, ApplicationMeta, ApplicationOrigin, ApplicationStore,
-};
+use crate::applications::{normalize_job_url, ApplicationStore};
 use crate::error::{AppError, AppResult};
-use crate::events::{emit_event, APPLICATIONS_CHANGED};
 
 mod answers_save;
 mod answers_suggest;
 pub mod auth;
 pub mod handshake;
+mod import_flow;
 #[cfg(test)]
 mod import_tests;
+mod match_live;
 pub mod native_host;
 pub mod register;
 mod status_update;
@@ -121,8 +120,13 @@ pub mod msg {
     pub const PROFILE_GET: &str = "profile.get";
     /// Desktop → extension: the contact-profile fields for autofill (or an `error`).
     pub const PROFILE_RESULT: &str = "profile.result";
-    /// RESERVED (not handled yet) — live ATS match for the open posting.
+    /// Extension → desktop: "Check fit" (Scan mode only; no URL-mode fetch).
+    /// Keyword-only ALWAYS, opt-in-gated (same class as `profile.get`), and
+    /// per-connection throttled — see [`super::match_live`]'s module doc.
     pub const MATCH_LIVE: &str = "match.live";
+    /// Desktop → extension: the `match.live` outcome. Like `status.update`,
+    /// this verb's errors ARE user-facing (a deliberate click).
+    pub const MATCH_RESULT: &str = "match.result";
     /// Extension → desktop: "have I already applied to this URL?" — a pure,
     /// read-only lookup against the local `ApplicationStore` keyed by the
     /// normalized job url (no fetch, never mutates, no consent gate — this is
@@ -214,6 +218,11 @@ pub struct BridgeState {
     /// the desktop replies with a clear refusal (never silently). This is the
     /// consent gate for sending the user's saved contact details into a page.
     autofill_enabled: AtomicBool,
+    /// `match.live` token-bucket throttle — shared across EVERY connection for
+    /// this pairing, not per-connection, so a loopback reconnect (a cheap,
+    /// near-instant handshake) can never reset the burst allowance. See
+    /// [`match_live::MatchLiveThrottle`]'s doc.
+    match_live_limiter: Mutex<match_live::MatchLiveThrottle>,
     /// App data dir — where the token file lives.
     data_dir: PathBuf,
 }
@@ -229,6 +238,7 @@ impl BridgeState {
             token: Mutex::new(token),
             connected: AtomicBool::new(false),
             autofill_enabled: AtomicBool::new(load_autofill_optin(data_dir)),
+            match_live_limiter: Mutex::new(match_live::MatchLiveThrottle::new()),
             data_dir: data_dir.to_path_buf(),
         }
     }
@@ -274,6 +284,15 @@ impl BridgeState {
         if let Err(e) = persist_autofill_optin(&self.data_dir, enabled) {
             log::warn!("[extension_bridge] failed to persist autofill opt-in (non-fatal): {e}");
         }
+    }
+
+    /// Try to consume one `match.live` token from the throttle shared across
+    /// every connection for this pairing — see
+    /// [`match_live::MatchLiveThrottle`]'s doc for why this lives on
+    /// `BridgeState` instead of per-connection (a reconnect must not refresh
+    /// the burst).
+    pub fn try_acquire_match_live(&self) -> bool {
+        self.match_live_limiter.lock().try_acquire()
     }
 
     fn set_port(&self, port: Option<u16>) {
@@ -508,6 +527,9 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     let (mut writer, mut reader) = ws.split();
     // Per-connection handshake state; every socket starts by expecting `hello`.
     let mut conn = ConnState::AwaitingHello;
+    // The `match.live` throttle lives on `BridgeState` (shared across every
+    // connection for this pairing, reconnect-proof) — consulted below via
+    // `state.try_acquire_match_live()`, not a per-connection instance.
 
     while let Some(frame) = reader.next().await {
         let msg = match frame {
@@ -570,8 +592,8 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
             }
             FrameDecision::Reply(text) => Some(text),
             FrameDecision::Import { req_id, payload } => {
-                let outcome = handle_import(&app, payload).await;
-                Some(result_reply(&req_id, outcome))
+                let outcome = import_flow::handle_import(&app, payload).await;
+                Some(import_flow::result_reply(&req_id, outcome))
             }
             FrameDecision::Profile { req_id } => Some(handle_profile(&app, &req_id)),
             FrameDecision::AppliedCheck { req_id, payload } => {
@@ -586,6 +608,10 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
             FrameDecision::AnswersSuggest { req_id, payload } => Some(
                 answers_suggest::handle_answers_suggest(&app, &req_id, &payload),
             ),
+            FrameDecision::MatchLive { req_id, payload } if state.try_acquire_match_live() => {
+                Some(match_live::handle_match_live(&app, &req_id, &payload).await)
+            }
+            FrameDecision::MatchLive { req_id, .. } => Some(match_live::throttled_reply(&req_id)),
         };
         if let Some(reply) = reply {
             if writer.send(Message::text(reply)).await.is_err() {
@@ -642,10 +668,11 @@ enum FrameDecision {
     /// The client proof VERIFIED (constant-time): send this `auth.ok` reply, mark
     /// the socket connected, and advance to `Authenticated`.
     AuthOk(String),
-    /// A ready-to-send reply from an authenticated frame (a reserved / unknown
-    /// message type acknowledged as an error). Stays `Authenticated`.
+    /// A ready-to-send reply from an authenticated frame (an unknown message
+    /// type acknowledged as an error). Stays `Authenticated`.
     Reply(String),
-    /// An authenticated `import.request` to dispatch through [`handle_import`].
+    /// An authenticated `import.request` to dispatch through
+    /// [`import_flow::handle_import`].
     Import { req_id: String, payload: Value },
     /// An authenticated `profile.get` to answer through [`handle_profile`]. Carries
     /// no payload — the reply is gated on the autofill opt-in, not on any input.
@@ -670,6 +697,10 @@ enum FrameDecision {
     /// [`answers_suggest::handle_answers_suggest`]. Carries the payload
     /// verbatim so the handler can read `questions`.
     AnswersSuggest { req_id: String, payload: Value },
+    /// An authenticated `match.live` to answer through
+    /// [`match_live::handle_match_live`]. Carries the payload verbatim so the
+    /// handler can read `url` + `html`.
+    MatchLive { req_id: String, payload: Value },
 }
 
 /// The per-message handshake gate + dispatch routing (size cap → JSON parse →
@@ -766,8 +797,8 @@ fn advance_auth(
 
 /// Post-auth dispatch: the socket is session-authenticated, so frames carry no
 /// token. Routes `import.request` / `profile.get` / `applied.check` /
-/// `status.update` / `answers.save` / `answers.suggest`; reserved / unknown
-/// types get an `import.result` error reply (never a panic).
+/// `status.update` / `answers.save` / `answers.suggest` / `match.live`; an
+/// unknown type gets an `import.result` error reply (never a panic).
 fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameDecision {
     match kind {
         msg::IMPORT_REQUEST => {
@@ -797,14 +828,13 @@ fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameD
             let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
             FrameDecision::AnswersSuggest { req_id, payload }
         }
-        // Reserved message types — acknowledged as unimplemented, never panic.
-        msg::MATCH_LIVE => FrameDecision::Reply(result_reply(
-            &req_id,
-            Err(AppError::Validation(format!(
-                "message type '{kind}' is not implemented"
-            ))),
-        )),
-        other => FrameDecision::Reply(result_reply(
+        // "Check fit" — score the résumé against the captured DOM.
+        msg::MATCH_LIVE => {
+            let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
+            FrameDecision::MatchLive { req_id, payload }
+        }
+        // Unknown message types — acknowledged as an error, never panic.
+        other => FrameDecision::Reply(import_flow::result_reply(
             &req_id,
             Err(AppError::Validation(format!(
                 "unknown message type '{other}'"
@@ -842,39 +872,6 @@ fn update_required_reply(req_id: &str) -> String {
         "payload": {
             "error": "Update the AI Job Hunter browser extension to reconnect (bridge protocol v2)."
         },
-    })
-    .to_string()
-}
-
-/// The successful import outcome: the created/merged application id, its status,
-/// and the parsed title/company (so the popup can name the imported job).
-struct ImportOk {
-    application_id: String,
-    status: String,
-    title: String,
-    company: String,
-    /// True when nothing usable parsed and a stub was persisted (empty title) —
-    /// the extension surfaces this so the user knows to complete the row.
-    partial: bool,
-}
-
-/// Build a canonical `import.result` envelope (success or error). The error's
-/// `to_string()` becomes the `error` field the extension surfaces.
-fn result_reply(req_id: &str, outcome: AppResult<ImportOk>) -> String {
-    let payload = match outcome {
-        Ok(ok) => json!({
-            "applicationId": ok.application_id,
-            "status": ok.status,
-            "title": ok.title,
-            "company": ok.company,
-            "partial": ok.partial,
-        }),
-        Err(e) => json!({ "error": e.to_string() }),
-    };
-    json!({
-        "type": msg::IMPORT_RESULT,
-        "reqId": req_id,
-        "payload": payload,
     })
     .to_string()
 }
@@ -990,7 +987,8 @@ fn resolve_profile(
 }
 
 /// Build a `profile.result` envelope (success carries the flat profile; refusal /
-/// failure carries `error`). Mirrors [`result_reply`] for the import path.
+/// failure carries `error`). Mirrors [`import_flow::result_reply`] for the
+/// import path.
 fn profile_result_reply(req_id: &str, outcome: AppResult<AutofillProfile>) -> String {
     let payload = match outcome {
         Ok(p) => serde_json::to_value(&p).unwrap_or_else(|_| json!({})),
@@ -1033,7 +1031,7 @@ struct AppliedCheckOk {
 }
 
 /// Build the `applied.result` envelope (success or error). Mirrors
-/// [`profile_result_reply`]/[`result_reply`] for the sibling verbs.
+/// [`profile_result_reply`]/[`import_flow::result_reply`] for the sibling verbs.
 fn applied_result_reply(req_id: &str, outcome: AppResult<AppliedCheckOk>) -> String {
     let payload = match outcome {
         Ok(ok) => {
@@ -1119,234 +1117,6 @@ fn handle_applied_check(app: &AppHandle, req_id: &str, payload: &Value) -> Strin
         .ok_or_else(|| AppError::Config("applications store unavailable".to_string()))
         .and_then(|store| resolve_applied_check(store.inner(), payload));
     applied_result_reply(req_id, outcome)
-}
-
-/// Persist a parsed [`JobPosting`] from an import as a Saved Application and
-/// return `(application_id, status_id)`. This is the *entire* persistence side
-/// effect of an import: it touches the [`ApplicationStore`] only and has **no
-/// access to the `PostingsCache`**, so an import can never enter the
-/// Jobs/discovery feed. Split out of [`handle_import`] (which needs an
-/// `AppHandle` for event/notification plumbing) so the import → Application
-/// contract is unit-testable without a Tauri app — see `import_tests.rs`.
-fn persist_import_application(
-    store: &ApplicationStore,
-    normalized_url: &str,
-    posting: &crate::scraping::types::JobPosting,
-    applied: Option<bool>,
-) -> AppResult<(String, String)> {
-    let meta = ApplicationMeta {
-        company: posting.company.clone(),
-        title: posting.title.clone(),
-        job_description: posting.description.clone().unwrap_or_default(),
-        ..Default::default()
-    };
-    let id = store.upsert_for_origin(
-        normalized_url,
-        &posting.source,
-        &meta,
-        ApplicationOrigin::Saved,
-        applied,
-    )?;
-    let status = store
-        .get(&id)
-        .map(|a| a.status.as_id().to_string())
-        .unwrap_or_else(|| "saved".to_string());
-    Ok((id, status))
-}
-
-/// A posting is usable for an import only if it carries a real title; an
-/// empty-title parse means the extractor degraded (blocked fetch / unknown page).
-fn usable(p: &crate::scraping::types::JobPosting) -> bool {
-    !p.title.trim().is_empty()
-}
-
-/// Core import: parse the posting (Scan mode from provided HTML, else URL mode
-/// via the resolver), upsert the Applications aggregate from it (Application
-/// only — not the postings cache), emit the change event, and return the
-/// application id + status.
-async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<ImportOk> {
-    let url = payload
-        .get("url")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let html = payload
-        .get("html")
-        .and_then(|v| v.as_str())
-        .map(str::to_string);
-    let applied = payload.get("applied").and_then(|v| v.as_bool());
-
-    if url.is_empty() {
-        return Err(AppError::Validation("url is required".to_string()));
-    }
-
-    // Centralized SPA/list-view normalization: if the user imported from a board's
-    // search/SPA view (selected job id in a query param), rewrite to the canonical
-    // single-job URL so BOTH import modes resolve the SELECTED job, not the list
-    // shell. `None` → already a direct page / unknown host (use the URL as-is).
-    let canonical = crate::scraping::scrape_url::canonical_job_url(&url);
-    let effective_url = canonical.as_deref().unwrap_or(url.as_str());
-
-    // URL / SSRF safety on whatever we will actually fetch + store (the canonical
-    // link when rewritten, else the original). Normalize (http(s) only) then guard
-    // the host against loopback/private/link-local/`*.local`.
-    let normalized = normalize_job_url(effective_url);
-    if normalized.is_empty() {
-        return Err(AppError::Validation(
-            "url is not a valid http(s) URL".to_string(),
-        ));
-    }
-    if !auth::is_safe_import_url(effective_url) {
-        return Err(AppError::Validation(
-            "url host is not allowed (private/loopback)".to_string(),
-        ));
-    }
-
-    // Shared rate + concurrency budget with the scrape_resolve_url IPC command.
-    // resolve() now follows up to 2 redirect hops per call (up to 3 outbound
-    // fetches), so every resolve() call must hold a limiter slot — the same
-    // "scrape_url" key and constants the command uses. `try_state` gracefully
-    // handles the (startup-failure) case where Limiter was never managed.
-    let limiter = app
-        .try_state::<std::sync::Arc<crate::limits::Limiter>>()
-        .map(|s| s.inner().clone());
-    let acquire_slot = || -> AppResult<Option<crate::limits::ConcurrencyGuard>> {
-        match &limiter {
-            Some(l) => l
-                .acquire(
-                    "scrape_url",
-                    crate::limits::SCRAPE_RATE_MAX,
-                    crate::limits::SCRAPE_CONCURRENCY_MAX,
-                )
-                .map(Some),
-            None => Ok(None), // Limiter not managed (startup failure) — allow through
-        }
-    };
-
-    // At most one network fetch. The captured DOM is parsed ONLY for a direct page
-    // (no canonical rewrite) — for a SPA/list view the DOM is the list shell, not the
-    // selected job, so we resolve the canonical URL instead and never parse the shell.
-    let mut posting: Option<crate::scraping::types::JobPosting> =
-        if let Some(c) = canonical.as_deref() {
-            let _guard = acquire_slot()?;
-            crate::scraping::scrape_url::resolve(c).await? // SPA/list view → selected job's canonical URL
-        } else if let Some(h) = html.as_deref() {
-            crate::scraping::scrape_url::parse_from_html(&url, h) // direct page → captured authenticated DOM
-        } else {
-            let _guard = acquire_slot()?;
-            crate::scraping::scrape_url::resolve(effective_url).await? // URL mode, no DOM → server fetch
-        };
-
-    // Single server-fetch fallback: only the direct-page DOM path that came up unusable
-    // (a board API may resolve the same URL where the DOM parse missed). Skipped for the
-    // canonical and URL-mode branches because they already fetched `effective_url`.
-    if !posting.as_ref().is_some_and(usable) && canonical.is_none() && html.is_some() {
-        let _guard = acquire_slot()?;
-        if let Some(p) = crate::scraping::scrape_url::resolve(effective_url).await? {
-            if usable(&p) || posting.is_none() {
-                posting = Some(p);
-            }
-        }
-    }
-
-    // Never lose an import click: if nothing usable parsed, persist a stub the user
-    // can complete later (title empty → flagged partial), instead of erroring out.
-    let (posting, partial) = if posting.as_ref().is_some_and(usable) {
-        (posting.unwrap(), false)
-    } else {
-        let host = reqwest::Url::parse(effective_url)
-            .ok()
-            .and_then(|u| u.host_str().map(str::to_string))
-            .unwrap_or_default();
-        let stub = crate::scraping::types::JobPosting {
-            id: format!("url:{effective_url}"),
-            external_id: None,
-            title: String::new(),
-            company: host,
-            location: None,
-            url: effective_url.to_string(),
-            source: "url".to_string(),
-            description: None,
-            requirements: None,
-            posted_at: None,
-            captured_at: chrono::Utc::now().timestamp_millis(),
-            extra: std::collections::HashMap::new(),
-        };
-        (stub, true)
-    };
-
-    // An import is a deliberate pursuit, NOT a discovery: it creates only the
-    // status-bearing Application below. It is intentionally NOT added to the
-    // in-memory postings cache (the Jobs/discovery feed via
-    // `commands::scrape::scrape_list_postings`), so an imported job shows up
-    // under Applications only — never in the Jobs page. The Application carries
-    // the title/company the detail-page tailoring needs; the JD is re-resolved
-    // there if required.
-
-    // Upsert the status-bearing Application (Saved origin → `saved` unless the
-    // request flags it applied). Merges onto any existing row for this URL.
-    let store = app
-        .try_state::<ApplicationStore>()
-        .ok_or_else(|| AppError::Config("applications store unavailable".to_string()))?;
-    let (id, status) = persist_import_application(store.inner(), &normalized, &posting, applied)?;
-
-    // A partial stub has an empty title — fall back to the company (host) so the
-    // event payload and toast still name something the user recognizes.
-    let title_is_blank = posting.title.trim().is_empty();
-    let display_name = if title_is_blank {
-        posting.company.clone()
-    } else {
-        posting.title.clone()
-    };
-    let body = if title_is_blank {
-        posting.company.clone()
-    } else {
-        format!("{} · {}", posting.title, posting.company)
-    };
-
-    // Tell the renderer to refresh (Applications + Jobs views) and surface a
-    // live toast. Carry the title/company/status so the toast can name the job
-    // without a refetch race.
-    emit_event(
-        app,
-        APPLICATIONS_CHANGED,
-        json!({
-            "applicationId": id.clone(),
-            "title": display_name.clone(),
-            "company": posting.company.clone(),
-            "status": status.clone(),
-        }),
-    );
-
-    // Also drop a Notification Center record. Best-effort and additive — the
-    // lists still refresh via the `applications:changed` emit above; this only
-    // adds the inbox entry + a focused-window toast, with an OS banner only when
-    // the window is unfocused (the import UX intent). Route → the Applications
-    // view, highlighting the just-imported row.
-    let mut search = serde_json::Map::new();
-    search.insert("highlight".to_string(), Value::String(id.clone()));
-    crate::commands::notifications::push_and_notify(
-        app,
-        crate::notifications::NewNotification {
-            kind: "import.result".to_string(),
-            title: format!("Imported {display_name}"),
-            body,
-            route: Some(crate::notifications::NotificationRoute {
-                to: "/applications".to_string(),
-                search: Some(search),
-            }),
-        },
-        crate::commands::notifications::OsBanner::WhenUnfocused,
-    );
-
-    Ok(ImportOk {
-        application_id: id,
-        status,
-        title: posting.title,
-        company: posting.company,
-        partial,
-    })
 }
 
 /// Manage the bridge state and register its factory-reset hook. Returns the

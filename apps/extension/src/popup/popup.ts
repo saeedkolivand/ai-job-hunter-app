@@ -43,6 +43,16 @@ const IMPORT_LANDING_HINT = 'Open AI Job Hunter → Applications to view it.';
 /** Shown when the job was saved but the description couldn't be read. */
 const IMPORT_PARTIAL_HINT = 'Open AI Job Hunter → Applications to paste it.';
 
+/** Percent-fit suffix appended to the import success/status-unchanged lines
+ *  when the desktop populated `matchScore` (a best-effort keyword-only score,
+ *  omitted on failure — see `ExtensionImportResult`'s doc) — mirrors the
+ *  "Check fit" card's percent treatment (`resolveMatchLiveResponse`) without
+ *  the résumé name the import reply doesn't carry. Absent field → empty
+ *  string, so the message is byte-identical to before this field existed. */
+function matchScoreSuffix(matchScore: number | undefined): string {
+  return typeof matchScore === 'number' ? ` — ${Math.round(matchScore)}% fit.` : '';
+}
+
 /**
  * Given an `import` response, return the message text and tone to display. On
  * success it names the imported job (when the desktop parsed a title) and points
@@ -75,15 +85,19 @@ export function resolveImportResponse(
       tone: 'ok',
     };
   }
+  const scoreSuffix = matchScoreSuffix(result.matchScore);
   if (!requestedApplied && result.status && result.status !== 'saved') {
     const label = capitalize(result.status);
     const lead = title
       ? `“${title}” is already tracked as ${label}`
       : `This job is already tracked as ${label}`;
-    return { text: `${lead} — status unchanged. ${IMPORT_LANDING_HINT}`, tone: 'ok' };
+    return {
+      text: `${lead} — status unchanged. ${IMPORT_LANDING_HINT}${scoreSuffix}`,
+      tone: 'ok',
+    };
   }
   const lead = title ? `Imported “${title}”.` : 'Imported.';
-  return { text: `${lead} ${IMPORT_LANDING_HINT}`, tone: 'ok' };
+  return { text: `${lead} ${IMPORT_LANDING_HINT}${scoreSuffix}`, tone: 'ok' };
 }
 
 /** Default/found labels for the import button — adaptive per the applied.check
@@ -343,6 +357,60 @@ export function resolveFillResponse(res: PopupResponse): { text: string; tone: '
   };
 }
 
+/** Human-readable label for `scoreSource` — `'combined'` is wire-reserved and
+ *  never sent by the current desktop (keyword-only always), but the label
+ *  exists so a future desktop's value renders sensibly without a popup change. */
+const SCORE_SOURCE_LABEL: Record<'keyword' | 'combined', string> = {
+  keyword: 'keyword coverage',
+  combined: 'combined (keyword + semantic)',
+};
+
+/** The "Check fit" score to render, or `null` fields when there is nothing to show. */
+export interface MatchLiveView {
+  text: string;
+  tone: 'ok' | 'err';
+  score: number | null;
+  scoreLabel: string | null;
+  resumeName: string | null;
+  gaps: string[];
+}
+
+const NO_MATCH_VIEW = (text: string, tone: 'ok' | 'err'): MatchLiveView => ({
+  text,
+  tone,
+  score: null,
+  scoreLabel: null,
+  resumeName: null,
+  gaps: [],
+});
+
+/**
+ * Given a `matchLive` response, return the message text + tone plus the score
+ * to render (percent, source label, résumé name, missing-keyword gaps).
+ * Mirrors `resolveAnswersSuggestResponse` — this verb's errors ARE shown (a
+ * deliberate click, not a passive check).
+ *
+ * Pure: no DOM access, no side effects.
+ */
+export function resolveMatchLiveResponse(res: PopupResponse): MatchLiveView {
+  if (!res.ok) return NO_MATCH_VIEW(res.error, 'err');
+  if (res.kind !== 'matchLive') {
+    return NO_MATCH_VIEW('Unexpected response — please retry.', 'err');
+  }
+  const { result } = res;
+  if (!result.ok) return NO_MATCH_VIEW(result.error, 'err');
+
+  const score = Math.round(result.combined);
+  return {
+    text: `${score}% fit against “${result.resumeName}”.`,
+    tone: 'ok',
+    score,
+    scoreLabel: SCORE_SOURCE_LABEL[result.scoreSource],
+    resumeName: result.resumeName,
+    gaps: result.gaps,
+  };
+}
+
 function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`missing element #${id}`);
@@ -364,6 +432,8 @@ const els = {
   btnSaveAnswers: byId<HTMLButtonElement>('btn-save-answers'),
   btnSuggestAnswers: byId<HTMLButtonElement>('btn-suggest-answers'),
   suggestionsList: byId<HTMLDivElement>('suggestions-list'),
+  btnCheckFit: byId<HTMLButtonElement>('btn-check-fit'),
+  matchResult: byId<HTMLDivElement>('match-result'),
   appliedStatus: byId<HTMLParagraphElement>('applied-status'),
   chkApplied: byId<HTMLInputElement>('chk-applied'),
   importMsg: byId<HTMLParagraphElement>('import-msg'),
@@ -492,6 +562,9 @@ function render(status: ConnectionStatus): void {
     els.suggestionsList.hidden = true;
     els.suggestionsList.textContent = '';
     lastScannedQuestions = [];
+    // A stale "Check fit" score from a previous page must never linger either.
+    els.matchResult.hidden = true;
+    els.matchResult.textContent = '';
   }
   lastRenderedPhase = status.phase;
 
@@ -902,6 +975,76 @@ async function doSuggestAnswers(): Promise<void> {
   }
 }
 
+/** Build the "Check fit" score card — score / source+résumé line / gap chips.
+ *  `textContent` only — no `innerHTML` with page/desktop-derived text. */
+function buildMatchResultCard(view: MatchLiveView): HTMLElement {
+  const card = document.createElement('div');
+
+  const score = document.createElement('p');
+  score.className = 'match-result__score';
+  score.textContent = `${view.score}% fit`;
+  card.append(score);
+
+  const meta = document.createElement('p');
+  meta.className = 'match-result__meta';
+  const bits: string[] = [];
+  if (view.scoreLabel) bits.push(view.scoreLabel);
+  if (view.resumeName) bits.push(`against “${view.resumeName}”`);
+  meta.textContent = bits.join(' — ');
+  card.append(meta);
+
+  if (view.gaps.length > 0) {
+    const gapsWrap = document.createElement('div');
+    gapsWrap.className = 'match-result__gaps';
+    for (const gap of view.gaps) {
+      const chip = document.createElement('span');
+      chip.className = 'match-result__gap';
+      chip.textContent = gap;
+      gapsWrap.append(chip);
+    }
+    card.append(gapsWrap);
+  }
+
+  return card;
+}
+
+/** Render the "Check fit" score card — clears any prior card first (no stale
+ *  DOM from a previous click). Hidden when there is no score to show (an
+ *  error response). */
+function renderMatchResult(view: MatchLiveView): void {
+  els.matchResult.textContent = '';
+  if (view.score === null) {
+    els.matchResult.hidden = true;
+    return;
+  }
+  els.matchResult.append(buildMatchResultCard(view));
+  els.matchResult.hidden = false;
+}
+
+/**
+ * Click handler for "Check fit". Scores the default/most-recent résumé
+ * against this page's captured posting (keyword coverage only — a local
+ * computation; only the score + a few missing keywords ever leave the
+ * device). Errors ARE shown (a deliberate click, not a passive check).
+ */
+async function doCheckFit(): Promise<void> {
+  els.btnCheckFit.disabled = true;
+  els.matchResult.hidden = true;
+  els.matchResult.textContent = '';
+  setMsg(els.importMsg, 'Checking fit…', 'muted');
+  try {
+    const res = await send({ kind: 'matchLive' });
+    const view = resolveMatchLiveResponse(res);
+    setMsg(els.importMsg, view.text, view.tone);
+    renderMatchResult(view);
+  } catch {
+    // A transport/messaging rejection must not strand the status on "Checking…".
+    setMsg(els.importMsg, 'Could not check fit for this page. Please retry.', 'err');
+  } finally {
+    els.btnCheckFit.disabled = false;
+  }
+}
+
 async function doImport(): Promise<void> {
   els.btnImport.disabled = true;
   setMsg(els.importMsg, 'Importing…', 'muted');
@@ -1024,6 +1167,7 @@ function wire(): void {
   els.btnMarkApplied.addEventListener('click', () => void doMarkApplied());
   els.btnSaveAnswers.addEventListener('click', () => void doSaveAnswers());
   els.btnSuggestAnswers.addEventListener('click', () => void doSuggestAnswers());
+  els.btnCheckFit.addEventListener('click', () => void doCheckFit());
   els.btnSaveToken.addEventListener('click', () => void savePairing());
   els.tokenInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') void savePairing();
