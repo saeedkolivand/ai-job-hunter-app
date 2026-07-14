@@ -382,17 +382,18 @@ const GENERIC_LINK_LABELS = new Set([
 ]);
 
 /**
- * {@link GENERIC_LINK_LABELS}, but run through {@link labelTokens} and
- * re-joined with a single space — the same normalization the label/field
- * matcher itself uses below. `matchExtraLink` matching is TOKEN-based (case,
- * diacritics, and punctuation all stripped before comparison), so gating on
- * the raw strings above would let a link labelled "Website!"/"Web-Site" slip
- * past the denylist (its exact string isn't in the set) while still
- * token-matching a bare "Website" field. Comparing tokenized-vs-tokenized
- * keeps the two checks in lockstep.
+ * {@link GENERIC_LINK_LABELS}, but run through {@link labelTokens}, sorted,
+ * and re-joined with a single space — the same normalization the label/field
+ * matcher itself uses below. `matchExtraLink` matching is TOKEN-based and
+ * order-insensitive (case, diacritics, punctuation, and word order are all
+ * ignored before comparison), so gating on the raw strings above — or on
+ * tokens joined in their original order — would let a link labelled
+ * "Website!"/"Web-Site"/"Site Web" slip past the denylist while still
+ * token-matching a bare "Website" field. Comparing sorted-tokenized-vs-
+ * sorted-tokenized keeps the two checks in lockstep regardless of word order.
  */
 const GENERIC_LINK_LABEL_TOKENS = new Set(
-  Array.from(GENERIC_LINK_LABELS, (label) => labelTokens(label).join(' '))
+  Array.from(GENERIC_LINK_LABELS, (label) => [...labelTokens(label)].sort().join(' '))
 );
 
 /** Lowercase, diacritic-stripped, trimmed normalization for label matching.
@@ -451,7 +452,8 @@ function matchExtraLink(
   );
   const matches = links.filter((link) => {
     const tokens = labelTokens(link.label);
-    if (tokens.length === 0 || GENERIC_LINK_LABEL_TOKENS.has(tokens.join(' '))) return false;
+    const sortedTokenKey = [...tokens].sort().join(' ');
+    if (tokens.length === 0 || GENERIC_LINK_LABEL_TOKENS.has(sortedTokenKey)) return false;
     return tokens.every((t) => signalTokens.has(t));
   });
   if (matches.length === 0) return { link: null, ambiguous: false };

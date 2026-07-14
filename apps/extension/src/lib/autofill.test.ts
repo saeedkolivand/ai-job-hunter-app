@@ -443,6 +443,18 @@ describe('planAndFill – Tier-2 extra-link matching', () => {
     }
   });
 
+  it('token-normalizes the generic-label denylist independent of word order (e.g. "Site Web" vs "Website")', () => {
+    // The denylist comparison must be order-insensitive since the field
+    // matcher itself is (tokens.every) — otherwise "Site Web" would bypass
+    // the denylisted "web site" while still token-matching a "Website" field.
+    setForm(`<label for="f">Website</label><input id="f" type="url" />`);
+    const summary = planAndFill(document, {
+      extraLinks: [{ label: 'Site Web', url: 'https://example.com/x' }],
+    });
+    expect(val('f')).toBe('');
+    expect(summary.filledNothing).toBe(true);
+  });
+
   it('fills BOTH fields when two fields share one label and one matching link exists', () => {
     setForm(`
       <label for="p1">Portfolio</label><input id="p1" type="url" />

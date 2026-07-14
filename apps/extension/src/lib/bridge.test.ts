@@ -1205,15 +1205,25 @@ describe('BridgeClient – getProfile (assisted autofill)', () => {
     client.dispose();
   });
 
-  it('resolves with a malformed error (never throws) when an extraLinks entry is missing url', async () => {
+  it('drops an extraLinks entry missing url, keeping the rest of the profile', async () => {
     const { client, socket } = await connectedClient();
     const { profilePromise, reqId } = await startProfile(client, socket);
 
-    socket.simulateMessage(makeProfileEnvelope(reqId, { extraLinks: [{ label: 'Portfolio' }] }));
+    socket.simulateMessage(
+      makeProfileEnvelope(reqId, {
+        email: 'saeed@example.com',
+        extraLinks: [{ label: 'Portfolio' }],
+      })
+    );
 
-    const result = (await profilePromise) as { error?: string; extraLinks?: unknown };
-    expect(result.error).toMatch(/malformed/i);
-    expect(result.extraLinks).toBeUndefined();
+    const result = (await profilePromise) as {
+      error?: string;
+      email?: string;
+      extraLinks?: unknown;
+    };
+    expect(result.error).toBeUndefined();
+    expect(result.email).toBe('saeed@example.com');
+    expect(result.extraLinks).toEqual([]);
 
     client.dispose();
   });
@@ -1230,19 +1240,53 @@ describe('BridgeClient – getProfile (assisted autofill)', () => {
     client.dispose();
   });
 
-  it('resolves with a malformed error (never throws) when an extraLinks entry has a non-http(s) url', async () => {
+  it('drops an extraLinks entry with a non-http(s) url, keeping the rest of the profile (never a payload-level malformed error)', async () => {
     const { client, socket } = await connectedClient();
     const { profilePromise, reqId } = await startProfile(client, socket);
 
     socket.simulateMessage(
       makeProfileEnvelope(reqId, {
+        email: 'saeed@example.com',
         extraLinks: [{ label: 'Portfolio', url: 'javascript:alert(1)' }],
       })
     );
 
-    const result = (await profilePromise) as { error?: string; extraLinks?: unknown };
-    expect(result.error).toMatch(/malformed/i);
-    expect(result.extraLinks).toBeUndefined();
+    const result = (await profilePromise) as {
+      error?: string;
+      email?: string;
+      extraLinks?: unknown;
+    };
+    expect(result.error).toBeUndefined();
+    expect(result.email).toBe('saeed@example.com');
+    expect(result.extraLinks).toEqual([]);
+
+    client.dispose();
+  });
+
+  it('filters a mixed valid/invalid extraLinks array down to only the valid entries', async () => {
+    const { client, socket } = await connectedClient();
+    const { profilePromise, reqId } = await startProfile(client, socket);
+
+    socket.simulateMessage(
+      makeProfileEnvelope(reqId, {
+        extraLinks: [
+          { label: 'Portfolio', url: 'https://saeed.dev' },
+          { label: 'Bad Scheme', url: 'javascript:alert(1)' },
+          { label: 'Missing Url' },
+          { label: 'Dribbble', url: 'https://dribbble.com/saeed' },
+        ],
+      })
+    );
+
+    const result = (await profilePromise) as {
+      error?: string;
+      extraLinks?: { label: string; url: string }[];
+    };
+    expect(result.error).toBeUndefined();
+    expect(result.extraLinks).toEqual([
+      { label: 'Portfolio', url: 'https://saeed.dev' },
+      { label: 'Dribbble', url: 'https://dribbble.com/saeed' },
+    ]);
 
     client.dispose();
   });

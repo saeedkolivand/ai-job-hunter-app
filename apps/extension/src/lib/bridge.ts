@@ -132,8 +132,11 @@ function isLinkEntry(x: unknown): x is { label: string; url: string } {
 /**
  * Hand-written guard for a `profile.result` payload (extension stays zod-free).
  * Mirrors `ExtensionProfileResultSchema`: every field is an optional string,
- * except `extraLinks` — an optional array of `{label, url}` entries, additive
- * to the payload (an old desktop's reply simply never carries the key).
+ * except `extraLinks` — an optional array, additive to the payload (an old
+ * desktop's reply simply never carries the key). Only the array shape is
+ * gated here; individual entries are validated/dropped one-by-one in
+ * {@link normalizeProfileResult} via {@link isLinkEntry} so one malformed
+ * link (e.g. a `javascript:` scheme) never rejects the whole profile.
  */
 function isExtensionProfileResult(v: unknown): v is ExtensionProfileResult {
   if (typeof v !== 'object' || v === null) return false;
@@ -147,13 +150,14 @@ function isExtensionProfileResult(v: unknown): v is ExtensionProfileResult {
     optStr(o.linkedin) &&
     optStr(o.github) &&
     optStr(o.website) &&
-    (o.extraLinks === undefined ||
-      (Array.isArray(o.extraLinks) && o.extraLinks.every(isLinkEntry))) &&
+    (o.extraLinks === undefined || Array.isArray(o.extraLinks)) &&
     optStr(o.error)
   );
 }
 
-/** Rebuild an {@link ExtensionProfileResult} from only the known, defined keys. */
+/** Rebuild an {@link ExtensionProfileResult} from only the known, defined keys.
+ *  `extraLinks` is filtered (not `.every`-gated) so a single malformed entry
+ *  is dropped rather than failing the entire profile. */
 function normalizeProfileResult(payload: unknown): ExtensionProfileResult {
   if (!isExtensionProfileResult(payload)) {
     return { error: 'The desktop app sent a malformed profile result.' };
@@ -167,7 +171,7 @@ function normalizeProfileResult(payload: unknown): ExtensionProfileResult {
   if (src.linkedin !== undefined) out.linkedin = src.linkedin;
   if (src.github !== undefined) out.github = src.github;
   if (src.website !== undefined) out.website = src.website;
-  if (src.extraLinks !== undefined) out.extraLinks = src.extraLinks;
+  if (src.extraLinks !== undefined) out.extraLinks = src.extraLinks.filter(isLinkEntry);
   if (src.error !== undefined) out.error = src.error;
   return out;
 }
