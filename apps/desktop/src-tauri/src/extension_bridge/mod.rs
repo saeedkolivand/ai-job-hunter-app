@@ -929,6 +929,8 @@ fn applied_result_reply(req_id: &str, outcome: AppResult<AppliedCheckOk>) -> Str
             }
             Value::Object(obj)
         }
+        // Wire-error discipline: this must stay fixed sentinel text (no dynamic/path/PII
+        // content) — detailed context belongs in the desktop log, not on the wire.
         Err(e) => json!({ "found": false, "error": e.to_string() }),
     };
     json!({

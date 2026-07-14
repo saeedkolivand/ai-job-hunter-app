@@ -43,6 +43,11 @@ export const EXTENSION_PROTOCOL_VERSION = 2;
  * `applied.check` / `applied.result` are the post-auth application frames;
  * `match.live` is **reserved** (fixed now so a future build can add a handler
  * without a protocol bump).
+ *
+ * **Consent-gate boundary** (the rule the next 9 post-auth verbs copy): a
+ * read-only lookup over the user's own device-local metadata (`applied.check`)
+ * needs no desktop opt-in gate; anything returning fresh PII (`profile.get`)
+ * or doing billable/egress work requires a desktop-enforced opt-in.
  */
 export const EXTENSION_MESSAGE_TYPES = {
   /** Extension → desktop: handshake step 1 — `{ protocol, clientNonce }`, no token. */

@@ -897,4 +897,39 @@ describe('appliedCheck auto-check', () => {
     expect(status.textContent).toBe('');
     expect(btnImport.textContent).toBe('Import this job');
   });
+
+  it('ignores a stale in-flight response that resolves after a newer check has already rendered', async () => {
+    // Check A starts on entering `connected` for job A, but its response never
+    // resolves yet (simulates it still being in flight when a reconnect fires).
+    let resolveA: ((res: unknown) => void) | undefined;
+    const pendingA = new Promise((resolve) => {
+      resolveA = resolve;
+    });
+    sendMessageMock.mockReturnValueOnce(pendingA);
+    push('connected');
+
+    // Disconnect → reconnect: a fresh, edge-triggered check B starts for job B
+    // and resolves before A does.
+    push('app_not_running');
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'appliedCheck',
+      result: { found: true, status: 'saved', title: 'Job B' },
+    });
+    push('connected');
+    await flush();
+
+    const status = byId<HTMLParagraphElement>('applied-status');
+    const btnImport = byId<HTMLButtonElement>('btn-import');
+    expect(status.textContent).toBe('“Job B” is saved in your pipeline.');
+    expect(btnImport.textContent).toBe('Re-import / update');
+
+    // Check A finally resolves late (found:false for job A) — it must NOT
+    // overwrite the already-rendered job B result.
+    resolveA?.({ ok: true, kind: 'appliedCheck', result: { found: false } });
+    await flush();
+
+    expect(status.textContent).toBe('“Job B” is saved in your pipeline.');
+    expect(btnImport.textContent).toBe('Re-import / update');
+  });
 });

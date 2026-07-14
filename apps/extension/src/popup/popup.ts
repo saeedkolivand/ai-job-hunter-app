@@ -412,6 +412,15 @@ async function refreshUntilSettled(attempts = 5, gapMs = 600): Promise<void> {
 }
 
 /**
+ * Generation counter guarding {@link runAppliedAutoCheck} against a stale
+ * in-flight response. A disconnect→reconnect re-enters `connected` and fires
+ * a fresh check while the previous one may still be awaiting `send()`; if the
+ * stale one resolves (or rejects) AFTER the newer check has started, it must
+ * not overwrite the newer result.
+ */
+let appliedCheckGeneration = 0;
+
+/**
  * Run the fire-and-forget `appliedCheck` and render its outcome: the status
  * line above the import controls, plus the adaptive import-button label.
  * `runAppliedCheck` in background.ts already folds every failure mode into
@@ -420,6 +429,8 @@ async function refreshUntilSettled(attempts = 5, gapMs = 600): Promise<void> {
  * ever shown but "no line, default label".
  */
 async function runAppliedAutoCheck(): Promise<void> {
+  appliedCheckGeneration += 1;
+  const myGeneration = appliedCheckGeneration;
   // Clear synchronously before the request goes out (belt-and-suspenders): if
   // render() re-enters `connected` for a new page while a previous check is
   // still in flight, the previous page's line/label must not linger while
@@ -429,11 +440,16 @@ async function runAppliedAutoCheck(): Promise<void> {
   els.btnImport.textContent = IMPORT_LABEL_DEFAULT;
   try {
     const res = await send({ kind: 'appliedCheck' });
+    // A newer check started while this one was in flight — its result (or the
+    // DOM state the newer check already wrote) must win; bail before touching
+    // the DOM.
+    if (myGeneration !== appliedCheckGeneration) return;
     const line = resolveAppliedStatusLine(res);
     els.appliedStatus.hidden = line === null;
     els.appliedStatus.textContent = line ?? '';
     els.btnImport.textContent = resolveImportButtonLabel(res);
   } catch {
+    if (myGeneration !== appliedCheckGeneration) return;
     els.appliedStatus.hidden = true;
     els.appliedStatus.textContent = '';
     els.btnImport.textContent = IMPORT_LABEL_DEFAULT;
