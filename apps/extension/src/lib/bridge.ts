@@ -30,6 +30,8 @@ import { type Browser, browser } from '@wxt-dev/browser';
 import {
   EXTENSION_MESSAGE_TYPES,
   EXTENSION_PROTOCOL_VERSION,
+  type ExtensionAnswerPair,
+  type ExtensionAnswersSaveResult,
   type ExtensionAppliedCheckResult,
   type ExtensionEnvelope,
   type ExtensionImportRequest,
@@ -71,6 +73,7 @@ type PendingResolver = (result: ExtensionImportResult) => void;
 type ProfileResolver = (result: ExtensionProfileResult) => void;
 type AppliedResolver = (result: ExtensionAppliedCheckResult) => void;
 type StatusResolver = (result: ExtensionStatusUpdateResult) => void;
+type AnswersResolver = (result: ExtensionAnswersSaveResult) => void;
 
 export type BridgePhase = 'searching' | 'connected' | 'app_not_running' | 'outdated' | 'bad_token';
 
@@ -240,6 +243,50 @@ function normalizeStatusUpdateResult(payload: unknown): ExtensionStatusUpdateRes
     : { ok: false, error: payload.error };
 }
 
+/**
+ * Hand-written guard for an `answers.save` payload (extension stays
+ * zod-free). Mirrors `ExtensionAnswersSaveResultSchema`'s discriminated
+ * union: `ok:true` requires a string `applicationId` + numeric
+ * `saved`/`skipped` (title/company optional strings); `ok:false` requires a
+ * string `error`.
+ */
+function isExtensionAnswersSaveResult(v: unknown): v is ExtensionAnswersSaveResult {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  const optStr = (x: unknown): boolean => x === undefined || typeof x === 'string';
+  if (o.ok === true) {
+    return (
+      typeof o.applicationId === 'string' &&
+      typeof o.saved === 'number' &&
+      typeof o.skipped === 'number' &&
+      optStr(o.title) &&
+      optStr(o.company)
+    );
+  }
+  if (o.ok === false) return typeof o.error === 'string';
+  return false;
+}
+
+/** Rebuild an {@link ExtensionAnswersSaveResult} from only the known, defined
+ *  keys — mirrors `normalizeStatusUpdateResult`. This verb's errors are
+ *  surfaced to the user (like `status.update`), so the fallback text is
+ *  written the same way: `ok:false` + a plain `error`. */
+function normalizeAnswersSaveResult(payload: unknown): ExtensionAnswersSaveResult {
+  if (!isExtensionAnswersSaveResult(payload)) {
+    return { ok: false, error: 'The desktop app sent a malformed answers-save result.' };
+  }
+  if (!payload.ok) return { ok: false, error: payload.error };
+  const out: ExtensionAnswersSaveResult = {
+    ok: true,
+    applicationId: payload.applicationId,
+    saved: payload.saved,
+    skipped: payload.skipped,
+  };
+  if (payload.title !== undefined) out.title = payload.title;
+  if (payload.company !== undefined) out.company = payload.company;
+  return out;
+}
+
 // ── transport seam ──────────────────────────────────────────────────────────
 
 /**
@@ -394,6 +441,9 @@ export class BridgeClient {
   /** In-flight `status.update` resolvers, correlated by `reqId`. Kept separate
    *  from {@link pending} for the same reason as {@link pendingProfile}. */
   private readonly pendingStatus = new Map<string, StatusResolver>();
+  /** In-flight `answers.save` resolvers, correlated by `reqId`. Kept separate
+   *  from {@link pending} for the same reason as {@link pendingProfile}. */
+  private readonly pendingAnswers = new Map<string, AnswersResolver>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private backoffIndex = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -536,6 +586,7 @@ export class BridgeClient {
     this.pendingProfile.clear();
     this.pendingApplied.clear();
     this.pendingStatus.clear();
+    this.pendingAnswers.clear();
     this.transport?.close();
     this.transport = null;
   }
@@ -709,6 +760,51 @@ export class BridgeClient {
         clearTimeout(timer);
         this.timers.delete(reqId);
         this.pendingStatus.delete(reqId);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
+  /**
+   * Send an `answers.save { url, answers }` and resolve with the validated
+   * `answers.result` payload. Rejects only on no connection / timeout / send
+   * failure — like `updateStatus`, a well-formed `ok:false` reply is NOT
+   * folded away here: this is a deliberate click action, so the caller
+   * (background.ts) must pass the `error` straight through to the popup
+   * instead of swallowing it.
+   */
+  async saveAnswers(
+    url: string,
+    answers: ExtensionAnswerPair[]
+  ): Promise<ExtensionAnswersSaveResult> {
+    await this.ensureConnected();
+    if (this.phase !== 'connected' || !this.transport) {
+      throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
+    }
+    const transport = this.transport;
+
+    const reqId = newReqId();
+    const envelope: ExtensionEnvelope = {
+      type: EXTENSION_MESSAGE_TYPES.answersSave,
+      reqId,
+      payload: { url, answers },
+    };
+
+    return new Promise<ExtensionAnswersSaveResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingAnswers.delete(reqId);
+        this.timers.delete(reqId);
+        reject(new Error('Timed out waiting for the desktop app to respond.'));
+      }, REQUEST_TIMEOUT_MS);
+      this.timers.set(reqId, timer);
+      this.pendingAnswers.set(reqId, resolve);
+
+      try {
+        transport.send(envelope);
+      } catch (err) {
+        clearTimeout(timer);
+        this.timers.delete(reqId);
+        this.pendingAnswers.delete(reqId);
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     });
@@ -1001,6 +1097,16 @@ export class BridgeClient {
       return;
     }
 
+    // answers.result → the "save my answers" outcome (separate map).
+    if (env.type === EXTENSION_MESSAGE_TYPES.answersResult) {
+      const resolveAnswers = this.pendingAnswers.get(reqId);
+      if (typeof resolveAnswers !== 'function') return;
+      this.pendingAnswers.delete(reqId);
+      this.clearTimer(reqId);
+      resolveAnswers(normalizeAnswersSaveResult(env.payload));
+      return;
+    }
+
     if (env.type !== EXTENSION_MESSAGE_TYPES.importResult) return;
     const resolve = this.pending.get(reqId);
     if (typeof resolve !== 'function') return;
@@ -1050,10 +1156,16 @@ export class BridgeClient {
       if (timer) clearTimeout(timer);
       resolve({ ok: false, error: reason });
     }
+    for (const [reqId, resolve] of this.pendingAnswers.entries()) {
+      const timer = this.timers.get(reqId);
+      if (timer) clearTimeout(timer);
+      resolve({ ok: false, error: reason });
+    }
     this.pending.clear();
     this.pendingProfile.clear();
     this.pendingApplied.clear();
     this.pendingStatus.clear();
+    this.pendingAnswers.clear();
     this.timers.clear();
   }
 

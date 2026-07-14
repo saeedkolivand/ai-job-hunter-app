@@ -88,6 +88,17 @@
         <!-- Shown only for a found+saved applied.check result; hides itself once
              the job is marked applied (re-fires the same auto-check). -->
         <button id="btn-mark-applied" class="btn" type="button" hidden>Mark as applied</button>
+        <!-- Always offered alongside the mark-as-applied flow — the post-submit
+             one-stop gesture. No match for this page → the desktop refuses with
+             a message to import the job first (never auto-creates). -->
+        <button
+          id="btn-save-answers"
+          class="btn"
+          type="button"
+          title="Save the answers you typed on this page's application form"
+        >
+          Save my answers from this page
+        </button>
         <div class="actions">
           <button id="btn-import" class="btn btn--primary" type="button">Import this job</button>
           <button

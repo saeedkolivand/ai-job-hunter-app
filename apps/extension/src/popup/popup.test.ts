@@ -46,6 +46,7 @@ function buildPopupDom(): void {
     <button id="btn-import"></button>
     <button id="btn-fill"></button>
     <button id="btn-mark-applied" hidden></button>
+    <button id="btn-save-answers"></button>
     <p id="applied-status" hidden></p>
     <input id="chk-applied" type="checkbox" />
     <p id="import-msg"></p>
@@ -76,6 +77,7 @@ const {
   resolveImportButtonLabel,
   resolveShowMarkAppliedButton,
   resolveMarkAppliedResponse,
+  resolveAnswersSaveResponse,
 } = await import('./popup');
 
 const sendMessageMock = vi.mocked(browser.runtime.sendMessage);
@@ -1063,6 +1065,182 @@ describe('appliedCheck auto-check', () => {
 
     expect(status.textContent).toBe('“Job B” is saved in your pipeline.');
     expect(btnImport.textContent).toBe('Re-import / update');
+  });
+});
+
+// ── resolveAnswersSaveResponse ─────────────────────────────────────────────────
+
+describe('resolveAnswersSaveResponse', () => {
+  it('surfaces a transport-level error (unlike the passive appliedCheck fold)', () => {
+    const res = { ok: false as const, error: 'Desktop app not reachable.' };
+    const { text, tone } = resolveAnswersSaveResponse(res);
+    expect(tone).toBe('err');
+    expect(text).toBe('Desktop app not reachable.');
+  });
+
+  it('returns the unexpected-response error when kind is not answersSave', () => {
+    const res = { ok: true as const, kind: 'token' as const };
+    const { text, tone } = resolveAnswersSaveResponse(res);
+    expect(tone).toBe('err');
+    expect(text).toBe('Unexpected response — please retry.');
+  });
+
+  it('surfaces the desktop refusal text when result.ok is false', () => {
+    const res = {
+      ok: true as const,
+      kind: 'answersSave' as const,
+      result: { ok: false as const, error: "couldn't find a saved job for this page" },
+    };
+    const { text, tone } = resolveAnswersSaveResponse(res);
+    expect(tone).toBe('err');
+    expect(text).toBe("couldn't find a saved job for this page");
+  });
+
+  it('names the job with title @ company and the saved count on success', () => {
+    const res = {
+      ok: true as const,
+      kind: 'answersSave' as const,
+      result: {
+        ok: true as const,
+        applicationId: 'app-1',
+        saved: 7,
+        skipped: 2,
+        title: 'Backend Engineer',
+        company: 'Acme',
+      },
+    };
+    const { text, tone } = resolveAnswersSaveResponse(res);
+    expect(tone).toBe('ok');
+    expect(text).toBe('Saved 7 answers to Backend Engineer @ Acme — 2 already recorded.');
+  });
+
+  it('singularizes the count for exactly one saved answer', () => {
+    const res = {
+      ok: true as const,
+      kind: 'answersSave' as const,
+      result: { ok: true as const, applicationId: 'app-1', saved: 1, skipped: 0 },
+    };
+    const { text, tone } = resolveAnswersSaveResponse(res);
+    expect(tone).toBe('ok');
+    expect(text).toBe('Saved 1 answer.');
+  });
+
+  it('falls back to a generic "no new answers" message when saved and skipped are both 0', () => {
+    const res = {
+      ok: true as const,
+      kind: 'answersSave' as const,
+      result: { ok: true as const, applicationId: 'app-1', saved: 0, skipped: 0 },
+    };
+    const { text, tone } = resolveAnswersSaveResponse(res);
+    expect(tone).toBe('ok');
+    expect(text).toBe('No new answers to save from this page.');
+  });
+
+  it('shows a distinct "already recorded" message when saved is 0 but skipped is not', () => {
+    const res = {
+      ok: true as const,
+      kind: 'answersSave' as const,
+      result: { ok: true as const, applicationId: 'app-1', saved: 0, skipped: 3 },
+    };
+    const { text, tone } = resolveAnswersSaveResponse(res);
+    expect(tone).toBe('ok');
+    expect(text).toBe('All 3 answers were already recorded.');
+  });
+
+  it('singularizes the "already recorded" message for exactly one skipped answer', () => {
+    const res = {
+      ok: true as const,
+      kind: 'answersSave' as const,
+      result: { ok: true as const, applicationId: 'app-1', saved: 0, skipped: 1 },
+    };
+    const { text } = resolveAnswersSaveResponse(res);
+    expect(text).toBe('All 1 answer was already recorded.');
+  });
+
+  it('names the job with only a title when company is absent', () => {
+    const res = {
+      ok: true as const,
+      kind: 'answersSave' as const,
+      result: {
+        ok: true as const,
+        applicationId: 'app-1',
+        saved: 2,
+        skipped: 0,
+        title: 'QA Engineer',
+      },
+    };
+    const { text } = resolveAnswersSaveResponse(res);
+    expect(text).toBe('Saved 2 answers to QA Engineer.');
+  });
+});
+
+// ── doSaveAnswers (#btn-save-answers) ─────────────────────────────────────────
+
+describe('doSaveAnswers (#btn-save-answers)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  beforeEach(() => {
+    sendMessageMock.mockReset();
+    byId<HTMLButtonElement>('btn-save-answers').disabled = false;
+    byId<HTMLParagraphElement>('import-msg').textContent = '';
+  });
+
+  it('shows "Saving your answers…" then the success confirmation, and re-enables the button', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answersSave',
+      result: {
+        ok: true,
+        applicationId: 'app-1',
+        saved: 7,
+        skipped: 0,
+        title: 'Backend Engineer',
+        company: 'Acme',
+      },
+    });
+
+    const btn = byId<HTMLButtonElement>('btn-save-answers');
+    btn.click();
+    expect(btn.disabled).toBe(true);
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe('Saving your answers…');
+
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Saved 7 answers to Backend Engineer @ Acme.'
+    );
+    expect(btn.disabled).toBe(false);
+    expect(sendMessageMock).toHaveBeenCalledWith({ kind: 'answersSave' });
+  });
+
+  it('surfaces the desktop refusal text and re-enables the button (errors ARE shown)', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answersSave',
+      result: { ok: false, error: "couldn't find a saved job for this page — import it first" },
+    });
+
+    const btn = byId<HTMLButtonElement>('btn-save-answers');
+    btn.click();
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      "couldn't find a saved job for this page — import it first"
+    );
+    expect(btn.disabled).toBe(false);
+  });
+
+  it('shows a retry message and re-enables the button when sendMessage rejects', async () => {
+    sendMessageMock.mockRejectedValueOnce(new Error('message channel closed'));
+
+    const btn = byId<HTMLButtonElement>('btn-save-answers');
+    btn.click();
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Could not save your answers. Please retry.'
+    );
+    expect(btn.disabled).toBe(false);
   });
 });
 
