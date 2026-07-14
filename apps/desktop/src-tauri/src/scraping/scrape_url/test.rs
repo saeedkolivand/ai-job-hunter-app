@@ -833,7 +833,7 @@ fn canonical_xing_list_search_url_is_none() {
 fn canonical_xing_detail_url_is_none() {
     assert_eq!(
         super::canonical_job_url(
-            "https://www.xing.com/jobs/berlin-senior-software-engineer-155853218"
+            "https://www.xing.com/jobs/berlin-senior-software-engineer-155853218?ijt=jb_55"
         ),
         None
     );
@@ -851,7 +851,7 @@ fn canonical_stepstone_list_search_url_is_none() {
 fn canonical_stepstone_detail_url_is_none() {
     assert_eq!(
         super::canonical_job_url(
-            "https://www.stepstone.de/stellenangebote--Software-Engineer-m-w-d-Distribution-Berlin-GEMA-Gesellschaft-fuer-musik-Auffuehrungs-und-mechan-Vervielfaeltigungsrechte--14009455-inline.html"
+            "https://www.stepstone.de/stellenangebote--Software-Engineer-m-w-d-Distribution-Berlin-GEMA-Gesellschaft-fuer-musik-Auffuehrungs-und-mechan-Vervielfaeltigungsrechte--14009455-inline.html?rltr=1_1_25_seorl_m_0_0_0_0_0_0"
         ),
         None
     );
