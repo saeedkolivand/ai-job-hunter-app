@@ -811,6 +811,52 @@ fn transition_status_if_preserves_prior_applied_at_after_demotion_round_trip() {
     );
 }
 
+/// If the status-event INSERT fails, the whole transaction must roll back —
+/// no status flip with a missing history row. Forces the failure by dropping
+/// `status_events` out from under the store via a second raw connection to
+/// the same db file (same trick the demotion round-trip test above uses to
+/// poke the row directly), then asserts the row is UNCHANGED afterward.
+#[test]
+fn transition_status_if_rolls_back_status_when_event_insert_fails() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .upsert_for_origin(
+            "https://rollback.example/1",
+            "b",
+            &meta("C", "T"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    {
+        let conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        conn.execute("DROP TABLE status_events", []).unwrap();
+    }
+
+    let err = store
+        .transition_status_if(
+            &id,
+            ApplicationStatus::Saved,
+            ApplicationStatus::Applied,
+            Some("via extension"),
+        )
+        .expect_err("the event insert must fail (no such table) and propagate");
+    let _ = err; // exact AppError variant isn't the contract here, only that it's Err
+
+    let app = store.get(&id).unwrap();
+    assert_eq!(
+        app.status,
+        ApplicationStatus::Saved,
+        "the status UPDATE must roll back together with the failed event insert"
+    );
+    assert!(
+        app.applied_at.is_none(),
+        "applied_at must not be stamped when the whole transaction rolled back"
+    );
+}
+
 /// Parity guard: the Rust stage registry order/ids must match the shared-TS
 /// `APPLICATION_STAGES`. The expected list is HARD-CODED from the TS `as const`
 /// so any drift on either side fails the build (see

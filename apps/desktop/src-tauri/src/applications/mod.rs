@@ -657,7 +657,7 @@ impl ApplicationStore {
                     status.as_id(),
                     "",
                     now,
-                );
+                )?;
             }
             tx.commit()?;
             return Ok(app.id);
@@ -699,7 +699,7 @@ impl ApplicationStore {
         let mut guard = self.conn.lock();
         let tx = guard.transaction()?;
         Self::write_row_conn(&tx, &app)?;
-        Self::append_event_conn(&tx, &app.id, "", status.as_id(), "", now);
+        Self::append_event_conn(&tx, &app.id, "", status.as_id(), "", now)?;
         tx.commit()?;
         Ok(app.id)
     }
@@ -756,16 +756,18 @@ impl ApplicationStore {
     /// the first caller (`extension_bridge::status_update::resolve_status_update`).
     ///
     /// Returns `Ok(true)` iff exactly one row matched `from` and was
-    /// transitioned (with its status event appended, same transaction);
-    /// `Ok(false)` when zero rows matched (no such id, or its status had
-    /// already moved off `from` since the caller last checked — never a
-    /// partial write). Mirrors `set_status`'s field semantics for the matched
-    /// row: `updated_at` always bumps; `applied_at` is first-applied-wins (only
-    /// set when currently `NULL`) when `to == Applied` — a `saved` row CAN
-    /// already carry a prior `applied_at` from an earlier applied -> saved
-    /// demotion via the stage picker, and that timestamp must survive a
-    /// re-transition back to `applied`; the event's `note` defaults to `""`
-    /// when `None`.
+    /// transitioned (with its status event appended, same transaction — an
+    /// event-insert failure propagates and rolls the whole transaction back,
+    /// so the status flip and its history row always commit or roll back
+    /// together); `Ok(false)` when zero rows matched (no such id, or its
+    /// status had already moved off `from` since the caller last checked —
+    /// never a partial write). Mirrors `set_status`'s field semantics for the
+    /// matched row: `updated_at` always bumps; `applied_at` is
+    /// first-applied-wins (only set when currently `NULL`) whenever `to` is
+    /// not pre-apply — a `saved` row CAN already carry a prior `applied_at`
+    /// from an earlier applied -> saved demotion via the stage picker, and
+    /// that timestamp must survive a re-transition back to `applied`; the
+    /// event's `note` defaults to `""` when `None`.
     pub(crate) fn transition_status_if(
         &self,
         id: &str,
@@ -776,7 +778,7 @@ impl ApplicationStore {
         let now = now_ms();
         let mut guard = self.conn.lock();
         let tx = guard.transaction()?;
-        let rows = if to == ApplicationStatus::Applied {
+        let rows = if !to.is_pre_apply() {
             tx.execute(
                 "UPDATE applications SET status = ?2, applied_at = COALESCE(applied_at, ?3), updated_at = ?4
                  WHERE id = ?1 AND status = ?5",
@@ -792,7 +794,7 @@ impl ApplicationStore {
             tx.commit()?;
             return Ok(false);
         }
-        Self::append_event_conn(&tx, id, from.as_id(), to.as_id(), note.unwrap_or(""), now);
+        Self::append_event_conn(&tx, id, from.as_id(), to.as_id(), note.unwrap_or(""), now)?;
         tx.commit()?;
         Ok(true)
     }
@@ -923,12 +925,24 @@ impl ApplicationStore {
     }
 
     /// Connection-scoped status-event append, callable inside a transaction.
-    fn append_event_conn(conn: &Connection, id: &str, from: &str, to: &str, note: &str, at: u64) {
-        let _ = conn.execute(
+    /// Propagates an insert failure (`?`) rather than swallowing it — every
+    /// caller runs this inside the SAME transaction as its row write, so an
+    /// event-insert error rolls the whole transaction back on drop instead of
+    /// leaving a status flip with no history row.
+    fn append_event_conn(
+        conn: &Connection,
+        id: &str,
+        from: &str,
+        to: &str,
+        note: &str,
+        at: u64,
+    ) -> AppResult<()> {
+        conn.execute(
             "INSERT INTO status_events (application_id, from_status, to_status, at, note)
              VALUES (?1,?2,?3,?4,?5)",
             params![id, from, to, ts_to_db(at), note],
-        );
+        )?;
+        Ok(())
     }
 }
 
@@ -1159,7 +1173,7 @@ impl DataStore for ApplicationStore {
                 app.status.as_id(),
                 "imported",
                 app.updated_at,
-            );
+            )?;
         }
         tx.commit()?;
         Ok(apps.len())
