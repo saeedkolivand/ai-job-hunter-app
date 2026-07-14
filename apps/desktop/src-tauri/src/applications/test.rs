@@ -2289,6 +2289,90 @@ fn merge_answers_caps_total_stored_answers_and_drops_the_rest() {
     assert_eq!(seeded.answer, "Existing answer 0");
 }
 
+/// HIGH regression: when `existing.answers` already sits AT or OVER
+/// `MAX_TOTAL_ANSWERS` (a legacy row seeded before the on-creation cap
+/// shipped), `merge_answers_by_question` used to remove the matching existing
+/// answer from `merged` to make room for the incoming replacement, then the
+/// cap check unconditionally blocked that same replacement from ever being
+/// pushed back in — the question vanished entirely instead of being
+/// rewritten. Seed a row with `MAX_TOTAL_ANSWERS + 1` answers via a raw SQL
+/// UPDATE (bypassing the store's own cap enforcement, simulating a legacy
+/// row), then upsert one incoming answer matching an existing question: it
+/// must survive with the incoming text, and the total must not grow.
+#[test]
+fn merge_answers_by_question_swaps_a_replacement_even_when_existing_is_already_over_cap() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let url = "https://acme.com/job/merge/over-cap-swap";
+    let id = store
+        .upsert_for_origin(
+            url,
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    // Seed MAX_TOTAL_ANSWERS + 1 distinct answers directly via raw SQL — a
+    // legacy shape the on-creation cap (which runs on every upsert today)
+    // would never itself produce, but a pre-existing over-cap row must still
+    // be handled safely.
+    let seeded: Vec<ApplicationAnswer> = (0..MAX_TOTAL_ANSWERS + 1)
+        .map(|i| ApplicationAnswer {
+            id: format!("seed-{i}"),
+            question: format!("Existing question {i}?"),
+            answer: format!("Existing answer {i}"),
+        })
+        .collect();
+    {
+        let conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        conn.execute(
+            "UPDATE applications SET answers = ?1 WHERE id = ?2",
+            rusqlite::params![serde_json::to_string(&seeded).unwrap(), id],
+        )
+        .unwrap();
+    }
+
+    // Re-upsert with one incoming answer matching an existing question (a
+    // rewrite) — no genuinely new question, so this exercises the swap path
+    // alone.
+    let mut m = meta("Acme", "Engineer");
+    m.answers = vec![ApplicationAnswer {
+        id: String::new(),
+        question: "Existing question 0?".to_string(),
+        answer: "Rewritten answer".to_string(),
+    }];
+    let id2 = store
+        .upsert_for_origin(url, "linkedin", &m, ApplicationOrigin::Saved, None)
+        .unwrap();
+    assert_eq!(id, id2, "same url merges into the same Application");
+
+    let app = store.get(&id).unwrap();
+    assert_eq!(
+        app.answers.len(),
+        MAX_TOTAL_ANSWERS + 1,
+        "a same-question swap must not grow (or shrink) an already over-cap row"
+    );
+    let swapped = app
+        .answers
+        .iter()
+        .find(|a| a.question == "Existing question 0?")
+        .expect("the matching question must survive the swap, not vanish");
+    assert_eq!(
+        swapped.answer, "Rewritten answer",
+        "the incoming replacement must win, not silently disappear"
+    );
+    assert_eq!(
+        app.answers
+            .iter()
+            .filter(|a| a.question != "Existing question 0?")
+            .count(),
+        MAX_TOTAL_ANSWERS,
+        "every other seeded answer must be untouched"
+    );
+}
+
 /// MEDIUM fix: `upsert_internal`'s NEW-ROW branch used to store `meta.answers`
 /// verbatim, bypassing `MAX_TOTAL_ANSWERS` entirely (only the existing-row merge
 /// branch enforced it). Creating a brand-new Application (no prior row for the

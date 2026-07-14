@@ -32,7 +32,22 @@ const TARGETS = ['chrome', 'firefox'];
 // statement ever leaks in (see field-signal.ts's header comment); this is the
 // automated guard that invariant doesn't silently regress.
 const INJECTED_CLASSIC_SCRIPTS = ['fill.js', 'capture.js'];
-const IMPORT_EXPORT_RE = /^\s*(?:import|export)\b/m;
+const IMPORT_EXPORT_TOKEN_RE = /\b(?:import|export)\b/;
+// A minifier can emit `import`/`export` mid-line (e.g. `...;import{x}from"y";...`),
+// so a line-anchored `^\s*` check misses it. Strip string/template literals and
+// comments first (so the bare word "import"/"export" inside quoted text or a
+// comment doesn't false-positive), then look for the token anywhere in what's
+// left — that also catches a dynamic `import(...)`, which is equally illegal in
+// a classic `executeScript` bundle.
+function containsImportOrExportStatement(src) {
+  const stripped = src
+    .replace(/\/\*[\s\S]*?\*\//g, ' ') // block comments
+    .replace(/\/\/[^\n]*/g, ' ') // line comments
+    .replace(/`(?:\\.|[^`\\])*`/g, ' ') // template literals
+    .replace(/"(?:\\.|[^"\\])*"/g, ' ') // double-quoted strings
+    .replace(/'(?:\\.|[^'\\])*'/g, ' '); // single-quoted strings
+  return IMPORT_EXPORT_TOKEN_RE.test(stripped);
+}
 
 // `zip` present? (CI/macOS/Linux). Detect via a cheap version probe.
 const HAS_ZIP = spawnSync('zip', ['-v'], { stdio: 'ignore' }).status === 0;
@@ -47,7 +62,7 @@ function assertClassicScripts(srcDir) {
       );
       process.exit(1);
     }
-    if (IMPORT_EXPORT_RE.test(readFileSync(filePath, 'utf8'))) {
+    if (containsImportOrExportStatement(readFileSync(filePath, 'utf8'))) {
       console.error(
         `error: ${rel(filePath)} contains an import/export statement — it must be a classic ` +
           `script (chrome.scripting.executeScript({ files: [...] }) can't load ES modules). ` +

@@ -921,8 +921,14 @@ impl ApplicationStore {
     /// `meta.answers` simply became the whole stored list, dropping every
     /// answer another writer (e.g. the extension's `answers.save`) had
     /// appended in between. An empty `incoming` is a no-op. Same
-    /// [`MAX_TOTAL_ANSWERS`] cap as `merge_answers`; entries beyond the cap
-    /// are dropped.
+    /// [`MAX_TOTAL_ANSWERS`] cap as `merge_answers`, but the cap only ever
+    /// blocks a genuinely NEW question: a same-question replacement is a
+    /// swap for an entry already removed from `merged` below, so it is
+    /// always applied regardless of the cap — otherwise a legacy row that
+    /// already sits at/over the cap (seeded before this cap existed) would
+    /// have the matching existing answer removed to make room, then the cap
+    /// check block the incoming replacement from ever being pushed back in,
+    /// making the question vanish entirely instead of being rewritten.
     fn merge_answers_by_question(
         existing: Vec<ApplicationAnswer>,
         incoming: Vec<ApplicationAnswer>,
@@ -930,6 +936,10 @@ impl ApplicationStore {
         if incoming.is_empty() {
             return existing;
         }
+        let existing_keys: std::collections::HashSet<String> = existing
+            .iter()
+            .map(|a| normalize_question(&a.question))
+            .collect();
         let incoming_keys: std::collections::HashSet<String> = incoming
             .iter()
             .map(|a| normalize_question(&a.question))
@@ -945,12 +955,16 @@ impl ApplicationStore {
 
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         for ans in incoming {
-            if merged.len() >= MAX_TOTAL_ANSWERS {
-                break; // per-application cap — remaining incoming entries are dropped
-            }
             let key = normalize_question(&ans.question);
-            if key.is_empty() || !seen.insert(key) {
+            if key.is_empty() || !seen.insert(key.clone()) {
                 continue; // blank question, or a duplicate within this same incoming batch
+            }
+            // A same-question replacement always wins (see doc comment above);
+            // only a brand-new question is subject to the cap. `continue`
+            // (not `break`) so a later replacement in this same batch still
+            // gets applied even after a run of new-question entries hit it.
+            if !existing_keys.contains(&key) && merged.len() >= MAX_TOTAL_ANSWERS {
+                continue; // per-application cap — this new-question entry is dropped
             }
             merged.push(ans);
         }
