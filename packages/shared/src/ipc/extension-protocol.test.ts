@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ExtensionAnswerAssistRequestSchema,
+  ExtensionAnswerAssistResultSchema,
   ExtensionAnswersSaveRequestSchema,
   ExtensionAnswersSaveResultSchema,
   ExtensionAnswersSuggestRequestSchema,
@@ -647,6 +649,103 @@ describe('ExtensionAnswersSuggestResultSchema', () => {
         type: EXTENSION_MESSAGE_TYPES.answersSuggestResult,
         reqId: 'req-009',
         payload: { ok: true, suggestions: [] },
+      })
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ExtensionAnswerAssistRequestSchema / ExtensionAnswerAssistResultSchema
+// ---------------------------------------------------------------------------
+
+describe('ExtensionAnswerAssistRequestSchema', () => {
+  it('accepts a minimal request (question only)', () => {
+    expect(() =>
+      ExtensionAnswerAssistRequestSchema.parse({ question: 'Why do you want this role?' })
+    ).not.toThrow();
+  });
+
+  it('accepts a full request with url and searchWeb', () => {
+    expect(() =>
+      ExtensionAnswerAssistRequestSchema.parse({
+        question: 'What are your salary expectations?',
+        url: 'https://example.com/job/123',
+        searchWeb: true,
+      })
+    ).not.toThrow();
+  });
+
+  it('rejects an empty question', () => {
+    expect(() => ExtensionAnswerAssistRequestSchema.parse({ question: '' })).toThrow();
+  });
+
+  it('rejects a request with no question field', () => {
+    expect(() => ExtensionAnswerAssistRequestSchema.parse({})).toThrow();
+  });
+});
+
+describe('ExtensionAnswerAssistResultSchema', () => {
+  it('round-trips a success payload', () => {
+    const payload = {
+      ok: true,
+      question: 'Why do you want this role?',
+      draft: 'I am drawn to this role because…',
+      sourced: { web: false, brief: true, salary: false },
+    };
+    expect(ExtensionAnswerAssistResultSchema.parse(payload)).toEqual(payload);
+  });
+
+  it('accepts an ok:true payload with an empty sourced object (no optional context used)', () => {
+    expect(() =>
+      ExtensionAnswerAssistResultSchema.parse({
+        ok: true,
+        question: 'Why this role?',
+        draft: 'Because…',
+        sourced: {},
+      })
+    ).not.toThrow();
+  });
+
+  it("accepts a user-facing failure payload (this verb's errors are shown, like status.update)", () => {
+    expect(() =>
+      ExtensionAnswerAssistResultSchema.parse({
+        ok: false,
+        error: 'AI answer drafting is off.',
+      })
+    ).not.toThrow();
+  });
+
+  it('rejects a missing ok field', () => {
+    expect(() => ExtensionAnswerAssistResultSchema.parse({})).toThrow();
+  });
+
+  it('rejects an incomplete ok:true payload missing draft', () => {
+    expect(() =>
+      ExtensionAnswerAssistResultSchema.parse({
+        ok: true,
+        question: 'Why this role?',
+        sourced: {},
+      })
+    ).toThrow();
+  });
+
+  it('rejects a contradictory ok:false payload carrying success fields but no error', () => {
+    expect(() => ExtensionAnswerAssistResultSchema.parse({ ok: false, draft: 'x' })).toThrow();
+  });
+
+  it('carries answer.assist / answer.assist.result through a valid envelope', () => {
+    expect(() =>
+      ExtensionEnvelopeSchema.parse({
+        type: EXTENSION_MESSAGE_TYPES.answerAssist,
+        reqId: 'req-012',
+        payload: { question: 'Why this role?' },
+      })
+    ).not.toThrow();
+    expect(() =>
+      ExtensionEnvelopeSchema.parse({
+        type: EXTENSION_MESSAGE_TYPES.answerAssistResult,
+        reqId: 'req-013',
+        payload: { ok: true, question: 'Why this role?', draft: 'Because…', sourced: {} },
       })
     ).not.toThrow();
   });

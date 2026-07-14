@@ -5,6 +5,7 @@
  */
 
 import type {
+  ExtensionAnswerAssistResult,
   ExtensionAnswersSaveResult,
   ExtensionAnswersSuggestResult,
   ExtensionAppliedCheckResult,
@@ -97,7 +98,16 @@ export type PopupRequest =
    * never runs automatically. Like `statusUpdate`, this is a deliberate
    * action — its failures are surfaced to the user, never folded away.
    */
-  | { kind: 'matchLive' };
+  | { kind: 'matchLive' }
+  /**
+   * User-clicked "Help me answer…": draft a paste-ready answer for a pasted
+   * or picked application question — the first BILLABLE-AI verb on the
+   * bridge, gated on the SEPARATE AI-assist opt-in (never the assisted-
+   * autofill one). `searchWeb` mirrors the in-app toggle (default OFF).
+   * Like `statusUpdate`, this is a deliberate action — its failures are
+   * surfaced to the user, never folded away.
+   */
+  | { kind: 'answerAssist'; question: string; searchWeb: boolean };
 
 /** background → popup responses (discriminated by the originating request). */
 export type PopupResponse =
@@ -145,4 +155,10 @@ export type PopupResponse =
    * failures are NOT folded away.
    */
   | { ok: true; kind: 'matchLive'; result: ExtensionMatchLiveResult }
+  /**
+   * `ok:true` at the transport level; like `matchLive`, the desktop's own
+   * `ok`/`error` on `result` is what the popup renders — this verb's
+   * failures are NOT folded away.
+   */
+  | { ok: true; kind: 'answerAssist'; result: ExtensionAnswerAssistResult }
   | { ok: false; error: string };

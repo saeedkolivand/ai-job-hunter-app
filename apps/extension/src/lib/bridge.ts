@@ -30,6 +30,8 @@ import { type Browser, browser } from '@wxt-dev/browser';
 import {
   EXTENSION_MESSAGE_TYPES,
   EXTENSION_PROTOCOL_VERSION,
+  type ExtensionAnswerAssistRequest,
+  type ExtensionAnswerAssistResult,
   type ExtensionAnswerPair,
   type ExtensionAnswersSaveResult,
   type ExtensionAnswersSuggestResult,
@@ -80,6 +82,7 @@ type StatusResolver = (result: ExtensionStatusUpdateResult) => void;
 type AnswersResolver = (result: ExtensionAnswersSaveResult) => void;
 type SuggestResolver = (result: ExtensionAnswersSuggestResult) => void;
 type MatchResolver = (result: ExtensionMatchLiveResult) => void;
+type AssistResolver = (result: ExtensionAnswerAssistResult) => void;
 
 export type BridgePhase = 'searching' | 'connected' | 'app_not_running' | 'outdated' | 'bad_token';
 
@@ -398,6 +401,42 @@ function normalizeMatchLiveResult(payload: unknown): ExtensionMatchLiveResult {
   return out;
 }
 
+/** Hand-written guard for an `answer.assist` payload (extension stays
+ *  zod-free). Mirrors `ExtensionAnswerAssistResultSchema`'s discriminated
+ *  union: `ok:true` requires string `question`/`draft` + a `sourced` object
+ *  whose fields (all optional) must be booleans when present; `ok:false`
+ *  requires a string `error`. */
+function isExtensionAnswerAssistResult(v: unknown): v is ExtensionAnswerAssistResult {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  if (o.ok === true) {
+    if (typeof o.question !== 'string' || typeof o.draft !== 'string') return false;
+    if (typeof o.sourced !== 'object' || o.sourced === null) return false;
+    const s = o.sourced as Record<string, unknown>;
+    const optBool = (x: unknown): boolean => x === undefined || typeof x === 'boolean';
+    return optBool(s.web) && optBool(s.brief) && optBool(s.salary);
+  }
+  if (o.ok === false) return typeof o.error === 'string';
+  return false;
+}
+
+/** Rebuild an {@link ExtensionAnswerAssistResult} from only the known,
+ *  defined keys — mirrors `normalizeMatchLiveResult`. This verb's errors are
+ *  surfaced to the user (like `match.live`), so the fallback text is written
+ *  the same way: `ok:false` + a plain `error`. */
+function normalizeAnswerAssistResult(payload: unknown): ExtensionAnswerAssistResult {
+  if (!isExtensionAnswerAssistResult(payload)) {
+    return { ok: false, error: 'The desktop app sent a malformed answer-assist result.' };
+  }
+  if (!payload.ok) return { ok: false, error: payload.error };
+  return {
+    ok: true,
+    question: payload.question,
+    draft: payload.draft,
+    sourced: payload.sourced,
+  };
+}
+
 // ── transport seam ──────────────────────────────────────────────────────────
 
 /**
@@ -561,6 +600,10 @@ export class BridgeClient {
   /** In-flight `match.live` resolvers, correlated by `reqId`. Kept separate
    *  from {@link pending} for the same reason as {@link pendingProfile}. */
   private readonly pendingMatch = new Map<string, MatchResolver>();
+  /** In-flight `answer.assist` resolvers, correlated by `reqId`. Kept
+   *  separate from {@link pending} for the same reason as
+   *  {@link pendingProfile}. */
+  private readonly pendingAssist = new Map<string, AssistResolver>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private backoffIndex = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -706,6 +749,7 @@ export class BridgeClient {
     this.pendingAnswers.clear();
     this.pendingSuggest.clear();
     this.pendingMatch.clear();
+    this.pendingAssist.clear();
     this.transport?.close();
     this.transport = null;
   }
@@ -1008,6 +1052,49 @@ export class BridgeClient {
         clearTimeout(timer);
         this.timers.delete(reqId);
         this.pendingMatch.delete(reqId);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
+  /**
+   * Send an `answer.assist { question, url?, searchWeb? }` (the user-clicked
+   * "Help me answer…") and resolve with the validated `answer.assist.result`
+   * payload — the first BILLABLE-AI verb on the bridge. Rejects only on no
+   * connection / timeout / send failure; like `matchLive`, a well-formed
+   * `ok:false` reply is NOT folded away here: this answers a deliberate
+   * click, so the caller (background.ts) must pass the `error` straight
+   * through to the popup.
+   */
+  async answerAssist(payload: ExtensionAnswerAssistRequest): Promise<ExtensionAnswerAssistResult> {
+    await this.ensureConnected();
+    if (this.phase !== 'connected' || !this.transport) {
+      throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
+    }
+    const transport = this.transport;
+
+    const reqId = newReqId();
+    const envelope: ExtensionEnvelope = {
+      type: EXTENSION_MESSAGE_TYPES.answerAssist,
+      reqId,
+      payload,
+    };
+
+    return new Promise<ExtensionAnswerAssistResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingAssist.delete(reqId);
+        this.timers.delete(reqId);
+        reject(new Error('Timed out waiting for the desktop app to respond.'));
+      }, REQUEST_TIMEOUT_MS);
+      this.timers.set(reqId, timer);
+      this.pendingAssist.set(reqId, resolve);
+
+      try {
+        transport.send(envelope);
+      } catch (err) {
+        clearTimeout(timer);
+        this.timers.delete(reqId);
+        this.pendingAssist.delete(reqId);
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     });
@@ -1330,6 +1417,16 @@ export class BridgeClient {
       return;
     }
 
+    // answer.assist.result → the "Help me answer…" outcome (separate map).
+    if (env.type === EXTENSION_MESSAGE_TYPES.answerAssistResult) {
+      const resolveAssist = this.pendingAssist.get(reqId);
+      if (typeof resolveAssist !== 'function') return;
+      this.pendingAssist.delete(reqId);
+      this.clearTimer(reqId);
+      resolveAssist(normalizeAnswerAssistResult(env.payload));
+      return;
+    }
+
     if (env.type !== EXTENSION_MESSAGE_TYPES.importResult) return;
     const resolve = this.pending.get(reqId);
     if (typeof resolve !== 'function') return;
@@ -1394,6 +1491,11 @@ export class BridgeClient {
       if (timer) clearTimeout(timer);
       resolve({ ok: false, error: reason });
     }
+    for (const [reqId, resolve] of this.pendingAssist.entries()) {
+      const timer = this.timers.get(reqId);
+      if (timer) clearTimeout(timer);
+      resolve({ ok: false, error: reason });
+    }
     this.pending.clear();
     this.pendingProfile.clear();
     this.pendingApplied.clear();
@@ -1401,6 +1503,7 @@ export class BridgeClient {
     this.pendingAnswers.clear();
     this.pendingSuggest.clear();
     this.pendingMatch.clear();
+    this.pendingAssist.clear();
     this.timers.clear();
   }
 

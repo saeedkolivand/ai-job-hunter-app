@@ -133,7 +133,12 @@ fn tokenize_ordered(s: &str) -> Vec<&str> {
 /// an unrelated word ("unpaid"); a multi-word keyword (e.g. "day rate") has
 /// no single token to match against, so it stays a substring-of-rejoined
 /// check on the already space-normalized token stream.
-fn is_salary_question(normalized: &str) -> bool {
+///
+/// `pub(super)` — shared with [`super::answer_assist`], which routes a
+/// salary-shaped `answer.assist` question through the salary machinery
+/// instead of a generic grounded draft (rather than duplicating this
+/// keyword/tokenization logic a second time).
+pub(super) fn is_salary_question(normalized: &str) -> bool {
     let tokens = tokenize_ordered(normalized);
     let rejoined = tokens.join(" ");
     SALARY_KEYWORDS.iter().any(|kw| {

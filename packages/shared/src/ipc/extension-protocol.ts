@@ -20,6 +20,8 @@ import { z } from 'zod';
 import {
   EXTENSION_MESSAGE_TYPES,
   EXTENSION_PROTOCOL_VERSION,
+  type ExtensionAnswerAssistRequest,
+  type ExtensionAnswerAssistResult,
   type ExtensionAnswerPair,
   type ExtensionAnswersSaveRequest,
   type ExtensionAnswersSaveResult,
@@ -50,6 +52,8 @@ import {
 export {
   EXTENSION_MESSAGE_TYPES,
   EXTENSION_PROTOCOL_VERSION,
+  type ExtensionAnswerAssistRequest,
+  type ExtensionAnswerAssistResult,
   type ExtensionAnswerPair,
   type ExtensionAnswersSaveRequest,
   type ExtensionAnswersSaveResult,
@@ -97,6 +101,8 @@ export const ExtensionMessageTypeSchema = z.enum([
   EXTENSION_MESSAGE_TYPES.answersResult,
   EXTENSION_MESSAGE_TYPES.answersSuggest,
   EXTENSION_MESSAGE_TYPES.answersSuggestResult,
+  EXTENSION_MESSAGE_TYPES.answerAssist,
+  EXTENSION_MESSAGE_TYPES.answerAssistResult,
 ]) satisfies z.ZodType<ExtensionMessageType>;
 
 /** `hello` payload (handshake step 1). No token — the proof authenticates later. */
@@ -280,6 +286,38 @@ export const ExtensionAnswersSuggestResultSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true), suggestions: z.array(ExtensionAnswerSuggestionSchema) }),
   z.object({ ok: z.literal(false), error: z.string() }),
 ]) satisfies z.ZodType<ExtensionAnswersSuggestResult>;
+
+/**
+ * `answer.assist` payload — the question to draft an answer for. Mirrors
+ * {@link ExtensionAnswerAssistRequest}. Shape-only (no byte cap): the desktop
+ * clamps the question at the resolve boundary, matching the sibling request
+ * schemas above.
+ */
+export const ExtensionAnswerAssistRequestSchema = z.object({
+  question: z.string().min(1),
+  url: z.string().optional(),
+  searchWeb: z.boolean().optional(),
+}) satisfies z.ZodType<ExtensionAnswerAssistRequest>;
+
+/**
+ * `answer.assist` payload. Mirrors {@link ExtensionAnswerAssistResult} — a
+ * discriminated union on `ok`: `ok:true` requires the echoed `question` +
+ * the finished `draft` + a `sourced` flags object; `ok:false` requires
+ * `error`.
+ */
+export const ExtensionAnswerAssistResultSchema = z.discriminatedUnion('ok', [
+  z.object({
+    ok: z.literal(true),
+    question: z.string(),
+    draft: z.string(),
+    sourced: z.object({
+      web: z.boolean().optional(),
+      brief: z.boolean().optional(),
+      salary: z.boolean().optional(),
+    }),
+  }),
+  z.object({ ok: z.literal(false), error: z.string() }),
+]) satisfies z.ZodType<ExtensionAnswerAssistResult>;
 
 /**
  * `match.live` payload — the Scan-mode capture to score. Mirrors

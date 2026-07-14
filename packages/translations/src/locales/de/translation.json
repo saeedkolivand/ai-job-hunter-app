@@ -778,6 +778,14 @@
           "description": "Erlaubt der Schaltfläche „Ausfüllen“ der Erweiterung, Kontaktdaten auszufüllen und Ihre bisherigen Antworten auf einem Seitenformular anzubieten.",
           "disclosure": "Wenn aktiviert, sendet ein Klick auf „Ausfüllen“ in der Erweiterung Ihre gespeicherten Kontaktdaten in das Formular der aktuellen Seite. Das Vorschlagen von Antworten für ein Formular zeigt außerdem Ihren gespeicherten bisherigen Antworttext im Popup der Erweiterung an, zum Kopieren oder Ausfüllen, auf Seiten, die Sie selbst auswählen. Ihre Daten verlassen Ihren Computer nur in Seiten, die Sie selbst auswählen.",
           "toggleFailed": "Die Autofill-Einstellung konnte nicht aktualisiert werden."
+        },
+        "aiAssist": {
+          "label": "KI-Antwortentwurf",
+          "description": "Lässt die Erweiterung einen einfügefertigen Antwortentwurf für eine Bewerbungsfrage erstellen, mit Ihrem Lebenslauf und diesem KI-Anbieter.",
+          "using": "Verwendet: {{value}}",
+          "noProvider": "Wählen Sie zuerst einen KI-Anbieter unter Einstellungen → KI, dann aktivieren Sie dies.",
+          "disclosure": "Wenn aktiviert, sendet „Hilf mir zu antworten…“ in der Erweiterung die von Ihnen eingefügte oder ausgewählte Frage, Ihren Lebenslauf, die Beschreibung der zugehörigen Stelle, eine zwischengespeicherte Kurzrecherche zum Unternehmen sowie — falls relevant — eine Gehaltsspanne an Ihren konfigurierten KI-Anbieter, um einen einfügefertigen Antwortentwurf zu erstellen — dies ist kostenpflichtige KI-Nutzung, anders als das kostenlose Ausfüllen oben. Wenn Sie „Web durchsuchen“ in der Erweiterung aktivieren, wird die Frage zusätzlich an die Websuche Ihres Anbieters gesendet. Entwürfe sind nur zum Kopieren gedacht — es wird nie automatisch etwas in eine Seite eingefügt.",
+          "toggleFailed": "Die Einstellung für den KI-Antwortentwurf konnte nicht aktualisiert werden."
         }
       },
       "connectedViaBrowser": "{{board}} über Browser-Erweiterung verbunden",

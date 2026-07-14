@@ -49,6 +49,14 @@ function buildPopupDom(): void {
     <button id="btn-save-answers"></button>
     <button id="btn-suggest-answers"></button>
     <div id="suggestions-list" hidden></div>
+    <select id="assist-picker"><option value=""></option></select>
+    <textarea id="assist-question"></textarea>
+    <input id="chk-search-web" type="checkbox" />
+    <button id="btn-assist"></button>
+    <div id="assist-result" hidden>
+      <p id="assist-draft"></p>
+      <button id="btn-copy-assist"></button>
+    </div>
     <button id="btn-check-fit"></button>
     <div id="match-result" hidden></div>
     <p id="applied-status" hidden></p>
@@ -85,6 +93,8 @@ const {
   correlateSuggestions,
   resolveAnswersSuggestResponse,
   resolveMatchLiveResponse,
+  resolveAnswerAssistResponse,
+  buildAssistPickerOptions,
 } = await import('./popup');
 
 const sendMessageMock = vi.mocked(browser.runtime.sendMessage);
@@ -1464,6 +1474,153 @@ describe('resolveMatchLiveResponse', () => {
     expect(view.resumeName).toBe('My Resume');
     expect(view.gaps).toEqual(['kubernetes', 'terraform']);
     expect(view.text).toBe('72% fit against “My Resume”.');
+  });
+});
+
+// ── resolveAnswerAssistResponse ────────────────────────────────────────────────
+
+describe('resolveAnswerAssistResponse', () => {
+  it('surfaces a transport-level error with a null draft', () => {
+    const res = { ok: false as const, error: 'Desktop app not reachable.' };
+    const view = resolveAnswerAssistResponse(res);
+    expect(view.tone).toBe('err');
+    expect(view.text).toBe('Desktop app not reachable.');
+    expect(view.draft).toBeNull();
+  });
+
+  it('returns the unexpected-response error when kind is not answerAssist', () => {
+    const res = { ok: true as const, kind: 'token' as const };
+    const view = resolveAnswerAssistResponse(res);
+    expect(view.tone).toBe('err');
+    expect(view.text).toBe('Unexpected response — please retry.');
+    expect(view.draft).toBeNull();
+  });
+
+  it('surfaces the desktop refusal text when result.ok is false', () => {
+    const res = {
+      ok: true as const,
+      kind: 'answerAssist' as const,
+      result: { ok: false as const, error: 'AI answer drafting is off.' },
+    };
+    const view = resolveAnswerAssistResponse(res);
+    expect(view.tone).toBe('err');
+    expect(view.text).toBe('AI answer drafting is off.');
+    expect(view.draft).toBeNull();
+  });
+
+  it('returns the draft on success', () => {
+    const res = {
+      ok: true as const,
+      kind: 'answerAssist' as const,
+      result: {
+        ok: true as const,
+        question: 'Why this role?',
+        draft: 'Because…',
+        sourced: {},
+      },
+    };
+    const view = resolveAnswerAssistResponse(res);
+    expect(view.tone).toBe('ok');
+    expect(view.draft).toBe('Because…');
+  });
+});
+
+// ── buildAssistPickerOptions ───────────────────────────────────────────────────
+
+describe('buildAssistPickerOptions', () => {
+  it('dedups by exact question text, preserving scan order', () => {
+    const scanned = [
+      { question: 'Why this role?' },
+      { question: 'Notice period?' },
+      { question: 'Why this role?' },
+    ];
+    expect(buildAssistPickerOptions(scanned)).toEqual(['Why this role?', 'Notice period?']);
+  });
+
+  it('drops blank/whitespace-only questions', () => {
+    expect(buildAssistPickerOptions([{ question: '   ' }, { question: 'Notice period?' }])).toEqual(
+      ['Notice period?']
+    );
+  });
+
+  it('returns an empty list when nothing was scanned', () => {
+    expect(buildAssistPickerOptions([])).toEqual([]);
+  });
+});
+
+// ── doAssist (#btn-assist) ──────────────────────────────────────────────────────
+
+describe('doAssist (#btn-assist)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  beforeEach(() => {
+    sendMessageMock.mockReset();
+    byId<HTMLButtonElement>('btn-assist').disabled = false;
+    byId<HTMLParagraphElement>('import-msg').textContent = '';
+    byId<HTMLTextAreaElement>('assist-question').value = '';
+    byId<HTMLInputElement>('chk-search-web').checked = false;
+    byId<HTMLDivElement>('assist-result').hidden = true;
+    byId<HTMLParagraphElement>('assist-draft').textContent = '';
+  });
+
+  it('surfaces a validation error and never sends when the question is blank', async () => {
+    byId<HTMLButtonElement>('btn-assist').click();
+    await flush();
+
+    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Type or pick a question first.'
+    );
+  });
+
+  it('sends the trimmed question + searchWeb toggle and renders the draft as textContent on success', async () => {
+    byId<HTMLTextAreaElement>('assist-question').value = '  Why this role?  ';
+    byId<HTMLInputElement>('chk-search-web').checked = true;
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerAssist',
+      result: { ok: true, question: 'Why this role?', draft: 'Because I love it.', sourced: {} },
+    });
+
+    byId<HTMLButtonElement>('btn-assist').click();
+    await flush();
+
+    expect(sendMessageMock).toHaveBeenCalledWith({
+      kind: 'answerAssist',
+      question: 'Why this role?',
+      searchWeb: true,
+    });
+    const result = byId<HTMLDivElement>('assist-result');
+    expect(result.hidden).toBe(false);
+    expect(byId<HTMLParagraphElement>('assist-draft').textContent).toBe('Because I love it.');
+  });
+
+  it('surfaces the desktop refusal and keeps the draft card hidden', async () => {
+    byId<HTMLTextAreaElement>('assist-question').value = 'Why this role?';
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerAssist',
+      result: { ok: false, error: 'AI answer drafting is off.' },
+    });
+
+    byId<HTMLButtonElement>('btn-assist').click();
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe('AI answer drafting is off.');
+    expect(byId<HTMLDivElement>('assist-result').hidden).toBe(true);
+  });
+
+  it('re-enables the button and surfaces a retry message on a transport rejection', async () => {
+    byId<HTMLTextAreaElement>('assist-question').value = 'Why this role?';
+    sendMessageMock.mockRejectedValueOnce(new Error('boom'));
+
+    byId<HTMLButtonElement>('btn-assist').click();
+    await flush();
+
+    expect(byId<HTMLButtonElement>('btn-assist').disabled).toBe(false);
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Could not draft an answer. Please retry.'
+    );
   });
 });
 
