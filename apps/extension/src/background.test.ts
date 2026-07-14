@@ -33,6 +33,7 @@ const mockClient = vi.hoisted(() => ({
   resetForNewToken: vi.fn(),
   importJob: vi.fn(),
   getProfile: vi.fn(),
+  checkApplied: vi.fn(),
 }));
 
 vi.mock('@wxt-dev/browser', () => ({
@@ -91,6 +92,7 @@ beforeEach(() => {
   executeScriptMock.mockReset();
   mockClient.getProfile.mockReset();
   mockClient.importJob.mockReset();
+  mockClient.checkApplied.mockReset();
 });
 
 // ── not-paired short-circuit ────────────────────────────────────────────────
@@ -196,5 +198,57 @@ describe('fill request — success path', () => {
     const res = await send({ kind: 'fill' });
 
     expect(res).toEqual({ ok: true, kind: 'fill', summary });
+  });
+});
+
+// ── appliedCheck request — always ok:true, every failure folds into found:false ─
+
+describe('appliedCheck request', () => {
+  it('returns the checkApplied result on success', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.checkApplied.mockResolvedValue({
+      found: true,
+      applicationId: 'app-1',
+      status: 'applied',
+      appliedAt: 1_718_000_000_000,
+    });
+
+    const res = await send({ kind: 'appliedCheck' });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'appliedCheck',
+      result: {
+        found: true,
+        applicationId: 'app-1',
+        status: 'applied',
+        appliedAt: 1_718_000_000_000,
+      },
+    });
+    expect(mockClient.checkApplied).toHaveBeenCalledWith('https://jobs.example.com/posting/9');
+  });
+
+  it('folds a checkApplied REJECTION (e.g. old-desktop unknown message type) into found:false, never ok:false', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.checkApplied.mockRejectedValue(
+      new Error("The desktop app sent an error: unknown message type 'applied.check'")
+    );
+
+    const res = await send({ kind: 'appliedCheck' });
+
+    expect(res).toEqual({ ok: true, kind: 'appliedCheck', result: { found: false } });
+  });
+
+  it('folds a missing active tab into found:false, never ok:false', async () => {
+    tabsQueryMock.mockResolvedValue([]);
+
+    const res = await send({ kind: 'appliedCheck' });
+
+    expect(res).toEqual({ ok: true, kind: 'appliedCheck', result: { found: false } });
+    expect(mockClient.checkApplied).not.toHaveBeenCalled();
   });
 });

@@ -4,7 +4,7 @@
  * `browser.runtime.sendMessage` inside the extension only.
  */
 
-import type { ExtensionImportResult } from '@ajh/shared';
+import type { ExtensionAppliedCheckResult, ExtensionImportResult } from '@ajh/shared';
 
 import type { AutofillSummary } from './autofill';
 
@@ -44,7 +44,13 @@ export type PopupRequest =
   | { kind: 'reconnect' }
   | { kind: 'import'; applied: boolean }
   /** Assisted autofill: fetch the profile fresh + inject the filler on this tab. */
-  | { kind: 'fill' };
+  | { kind: 'fill' }
+  /**
+   * Fire-and-forget "have I already applied to this URL?" check for the
+   * active tab, run once when the popup shows the connected view. Read-only;
+   * never blocks the import controls.
+   */
+  | { kind: 'appliedCheck' };
 
 /** background → popup responses (discriminated by the originating request). */
 export type PopupResponse =
@@ -52,4 +58,11 @@ export type PopupResponse =
   | { ok: true; kind: 'token' }
   | { ok: true; kind: 'import'; result: ExtensionImportResult }
   | { ok: true; kind: 'fill'; summary: AutofillSummary }
+  /**
+   * Always `ok:true` — every failure mode (not paired, bridge down, malformed
+   * reply, an old desktop's unrecognized message type) is folded into
+   * `result.found === false` by the background, so the popup never has to
+   * special-case an error path for this passive, best-effort check.
+   */
+  | { ok: true; kind: 'appliedCheck'; result: ExtensionAppliedCheckResult }
   | { ok: false; error: string };

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ExtensionAppliedCheckRequestSchema,
+  ExtensionAppliedCheckResultSchema,
   ExtensionEnvelopeSchema,
   ExtensionImportRequestSchema,
   ExtensionProfileResultSchema,
@@ -179,6 +181,67 @@ describe('ExtensionProfileResultSchema', () => {
         type: EXTENSION_MESSAGE_TYPES.profileResult,
         reqId: 'req-002',
         payload: { email: 'x@y.z' },
+      })
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ExtensionAppliedCheckRequestSchema / ExtensionAppliedCheckResultSchema
+// ---------------------------------------------------------------------------
+
+describe('ExtensionAppliedCheckRequestSchema', () => {
+  it('accepts a minimal request', () => {
+    expect(() =>
+      ExtensionAppliedCheckRequestSchema.parse({ url: 'https://example.com/job/123' })
+    ).not.toThrow();
+  });
+
+  it('rejects an empty url', () => {
+    expect(() => ExtensionAppliedCheckRequestSchema.parse({ url: '' })).toThrow();
+  });
+
+  it('rejects a request with no url field', () => {
+    expect(() => ExtensionAppliedCheckRequestSchema.parse({})).toThrow();
+  });
+});
+
+describe('ExtensionAppliedCheckResultSchema', () => {
+  it('accepts a not-found result (found only)', () => {
+    expect(() => ExtensionAppliedCheckResultSchema.parse({ found: false })).not.toThrow();
+  });
+
+  it('round-trips a found+applied result with appliedAt', () => {
+    const payload = {
+      found: true,
+      applicationId: 'app-1',
+      status: 'applied',
+      title: 'Senior Rust Engineer',
+      appliedAt: 1_718_000_000_000,
+    };
+    expect(ExtensionAppliedCheckResultSchema.parse(payload)).toEqual(payload);
+  });
+
+  it('accepts an error payload (malformed/empty url on the desktop side)', () => {
+    expect(() =>
+      ExtensionAppliedCheckResultSchema.parse({ found: false, error: 'url is required' })
+    ).not.toThrow();
+  });
+
+  it('rejects a missing found field', () => {
+    expect(() => ExtensionAppliedCheckResultSchema.parse({})).toThrow();
+  });
+
+  it('rejects a non-boolean found field', () => {
+    expect(() => ExtensionAppliedCheckResultSchema.parse({ found: 'yes' })).toThrow();
+  });
+
+  it('carries applied.result through a valid envelope', () => {
+    expect(() =>
+      ExtensionEnvelopeSchema.parse({
+        type: EXTENSION_MESSAGE_TYPES.appliedResult,
+        reqId: 'req-003',
+        payload: { found: false },
       })
     ).not.toThrow();
   });

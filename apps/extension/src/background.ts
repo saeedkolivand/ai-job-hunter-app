@@ -206,6 +206,23 @@ async function runFill(): Promise<PopupResponse> {
   return { ok: true, kind: 'fill', summary };
 }
 
+/**
+ * Fire-and-forget "have I already applied?" check for the active tab's URL —
+ * a read-only, best-effort enhancement over the import view. NEVER surfaces
+ * `ok:false`: any failure (not paired, bridge unreachable, an old desktop's
+ * unrecognized message type, a malformed reply) folds into `{ found: false }`
+ * so the popup renders nothing rather than an error.
+ */
+async function runAppliedCheck(): Promise<PopupResponse> {
+  try {
+    const url = await activeTabUrl();
+    const result = await getClient().checkApplied(url);
+    return { ok: true, kind: 'appliedCheck', result };
+  } catch {
+    return { ok: true, kind: 'appliedCheck', result: { found: false } };
+  }
+}
+
 /** Central popup-request dispatcher. Never throws — maps errors to `ok:false`. */
 async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
   try {
@@ -244,6 +261,8 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
         return await runImport(req.applied);
       case 'fill':
         return await runFill();
+      case 'appliedCheck':
+        return await runAppliedCheck();
       default: {
         // Exhaustiveness guard — a new PopupRequest variant must be handled.
         const _never: never = req;

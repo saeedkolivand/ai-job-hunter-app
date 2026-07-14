@@ -73,7 +73,7 @@ export function resolveImportResponse(
     };
   }
   if (!requestedApplied && result.status && result.status !== 'saved') {
-    const label = result.status.charAt(0).toUpperCase() + result.status.slice(1);
+    const label = capitalize(result.status);
     const lead = title
       ? `“${title}” is already tracked as ${label}`
       : `This job is already tracked as ${label}`;
@@ -81,6 +81,69 @@ export function resolveImportResponse(
   }
   const lead = title ? `Imported “${title}”.` : 'Imported.';
   return { text: `${lead} ${IMPORT_LANDING_HINT}`, tone: 'ok' };
+}
+
+/** Default/found labels for the import button — adaptive per the applied.check
+ *  outcome (same click action either way; the desktop always dedup-merges by
+ *  url, so "re-import" is just the honest label when a row already exists). */
+const IMPORT_LABEL_DEFAULT = 'Import this job';
+const IMPORT_LABEL_FOUND = 'Re-import / update';
+
+/** Capitalize a single-word lowercase id (e.g. an `ApplicationStatus` wire id)
+ *  for display — reused by both the import transparency message and the
+ *  applied-check status line. */
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Format an epoch-ms timestamp as a short local date (e.g. "Jun 12", or
+ *  "Jun 12, 2025" when the date's year differs from the current year) —
+ *  popup-local formatting, no date library. */
+function formatShortDate(epochMs: number): string {
+  const date = new Date(epochMs);
+  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+  if (date.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return date.toLocaleDateString(undefined, opts);
+}
+
+/**
+ * Given an `appliedCheck` response, return the status line to render above the
+ * import controls, or `null` when nothing should be shown — not found, or ANY
+ * error (the check is a silent best-effort enhancement, never a blocker; see
+ * `runAppliedCheck` in background.ts, which already folds every failure mode
+ * into `result.found === false`).
+ *
+ * Pure: no DOM access, no side effects.
+ */
+export function resolveAppliedStatusLine(res: PopupResponse): string | null {
+  if (!res.ok || res.kind !== 'appliedCheck') return null;
+  const { result } = res;
+  if (result.error || !result.found) return null;
+
+  const title = result.title?.trim();
+  const lead = title ? `“${title}”` : null;
+  if (!result.status || result.status === 'saved') {
+    return lead ? `${lead} is saved in your pipeline.` : 'Saved in your pipeline.';
+  }
+  const when = typeof result.appliedAt === 'number' ? formatShortDate(result.appliedAt) : null;
+  if (lead && when) return `${lead} is already in your pipeline — applied ${when}.`;
+  if (lead) return `${lead} is already in your pipeline.`;
+  if (when) return `Already in your pipeline — applied ${when}.`;
+  return 'Already in your pipeline.';
+}
+
+/**
+ * The import button's label: unchanged when no existing Application was found
+ * for the active tab's url, {@link IMPORT_LABEL_FOUND} when one was. Any
+ * non-found/error outcome (including one still in flight) keeps the default.
+ *
+ * Pure: no DOM access, no side effects.
+ */
+export function resolveImportButtonLabel(res: PopupResponse): string {
+  if (res.ok && res.kind === 'appliedCheck' && !res.result.error && res.result.found) {
+    return IMPORT_LABEL_FOUND;
+  }
+  return IMPORT_LABEL_DEFAULT;
 }
 
 /**
@@ -123,6 +186,7 @@ const els = {
   },
   btnImport: byId<HTMLButtonElement>('btn-import'),
   btnFill: byId<HTMLButtonElement>('btn-fill'),
+  appliedStatus: byId<HTMLParagraphElement>('applied-status'),
   chkApplied: byId<HTMLInputElement>('chk-applied'),
   importMsg: byId<HTMLParagraphElement>('import-msg'),
   btnUnpair: byId<HTMLButtonElement>('btn-unpair'),
@@ -188,6 +252,16 @@ let lastKnownHasToken = false;
  */
 let hasShownOffline = false;
 
+/**
+ * The phase from the previous `render()` call. Used to fire the
+ * fire-and-forget `appliedCheck` auto-check exactly once per TRANSITION into
+ * `connected` — not on every status push while already connected (a repeated
+ * live-status push during a stable connection must not re-fire it), but a
+ * genuine reconnect after a drop naturally re-checks, since that is a fresh
+ * transition too.
+ */
+let lastRenderedPhase: ConnectionStatus['phase'] | null = null;
+
 /** Send a typed request to the background and return its typed response. */
 async function send(req: PopupRequest): Promise<PopupResponse> {
   const res = (await browser.runtime.sendMessage(req)) as PopupResponse | undefined;
@@ -209,6 +283,23 @@ function showView(phase: ConnectionStatus['phase']): void {
 
 function render(status: ConnectionStatus): void {
   lastKnownHasToken = status.hasToken;
+
+  if (status.phase === 'connected') {
+    // Fire-and-forget, on each transition INTO connected (never on a repeated
+    // push while already connected) — never awaited here, so it can never delay
+    // this render.
+    if (lastRenderedPhase !== 'connected') {
+      void runAppliedAutoCheck();
+    }
+  } else {
+    // Left (or never entered) `connected` — clear any status line/button label
+    // left over from a previous page so it can't flash stale for the next one
+    // before its own check resolves.
+    els.appliedStatus.hidden = true;
+    els.appliedStatus.textContent = '';
+    els.btnImport.textContent = IMPORT_LABEL_DEFAULT;
+  }
+  lastRenderedPhase = status.phase;
 
   // Track whether the offline view has been shown so we can suppress the
   // flickering "Connecting…" spinner during background reconnect attempts.
@@ -317,6 +408,51 @@ async function refreshUntilSettled(attempts = 5, gapMs = 600): Promise<void> {
       return;
     }
     if (i < attempts - 1) await delay(gapMs);
+  }
+}
+
+/**
+ * Generation counter guarding {@link runAppliedAutoCheck} against a stale
+ * in-flight response. A disconnect→reconnect re-enters `connected` and fires
+ * a fresh check while the previous one may still be awaiting `send()`; if the
+ * stale one resolves (or rejects) AFTER the newer check has started, it must
+ * not overwrite the newer result.
+ */
+let appliedCheckGeneration = 0;
+
+/**
+ * Run the fire-and-forget `appliedCheck` and render its outcome: the status
+ * line above the import controls, plus the adaptive import-button label.
+ * `runAppliedCheck` in background.ts already folds every failure mode into
+ * `ok:true, result:{found:false}`, so the try/catch here only guards a
+ * transport-level rejection (message-channel closed) — either way nothing is
+ * ever shown but "no line, default label".
+ */
+async function runAppliedAutoCheck(): Promise<void> {
+  appliedCheckGeneration += 1;
+  const myGeneration = appliedCheckGeneration;
+  // Clear synchronously before the request goes out (belt-and-suspenders): if
+  // render() re-enters `connected` for a new page while a previous check is
+  // still in flight, the previous page's line/label must not linger while
+  // this fresh one resolves.
+  els.appliedStatus.hidden = true;
+  els.appliedStatus.textContent = '';
+  els.btnImport.textContent = IMPORT_LABEL_DEFAULT;
+  try {
+    const res = await send({ kind: 'appliedCheck' });
+    // A newer check started while this one was in flight — its result (or the
+    // DOM state the newer check already wrote) must win; bail before touching
+    // the DOM.
+    if (myGeneration !== appliedCheckGeneration) return;
+    const line = resolveAppliedStatusLine(res);
+    els.appliedStatus.hidden = line === null;
+    els.appliedStatus.textContent = line ?? '';
+    els.btnImport.textContent = resolveImportButtonLabel(res);
+  } catch {
+    if (myGeneration !== appliedCheckGeneration) return;
+    els.appliedStatus.hidden = true;
+    els.appliedStatus.textContent = '';
+    els.btnImport.textContent = IMPORT_LABEL_DEFAULT;
   }
 }
 
