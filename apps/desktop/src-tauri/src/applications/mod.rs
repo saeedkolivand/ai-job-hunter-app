@@ -139,6 +139,13 @@ pub struct ApplicationMeta {
     pub candidate: String,
     pub brief: String,
     pub job_description: String,
+    /// Merged by QUESTION rather than wholesale-replaced like the scalar
+    /// fields above — see [`ApplicationStore::merge_answers_by_question`]
+    /// (this struct's merge path, used by every in-app writer) vs
+    /// [`ApplicationStore::merge_answers`] (the extension's separate
+    /// append-only capture path). A non-empty `answers` here (re)writes
+    /// matching questions and adds new ones; it never drops an existing
+    /// answer for a question this call doesn't mention.
     pub answers: Vec<ApplicationAnswer>,
     pub job_summary: String,
     /// Scraped salary range (Adzuna only, today) — grounds the salary application
@@ -160,12 +167,15 @@ pub struct ApplicationMeta {
 pub(crate) const MAX_JOB_DESCRIPTION_BYTES: usize = 200_000;
 
 /// Hard cap on the total number of `answers` entries [`ApplicationStore::merge_answers`]
-/// will store per application. `answers.save`'s per-call cap
+/// / [`ApplicationStore::merge_answers_by_question`] will store per
+/// application. `answers.save`'s per-call cap
 /// (`extension_bridge::answers_save::MAX_ANSWERS_PER_CALL`) only bounds one
 /// capture; this bounds the CUMULATIVE total across every capture on the same
 /// application, so repeated captures (or a hostile/buggy collector called many
-/// times) can't grow the stored list unboundedly.
-const MAX_TOTAL_ANSWERS: usize = 500;
+/// times) can't grow the stored list unboundedly. `pub(crate)` so
+/// `extension_bridge`'s tests can seed right up to the cap without
+/// duplicating the literal.
+pub(crate) const MAX_TOTAL_ANSWERS: usize = 500;
 
 /// Clamp a job description to at most `MAX_JOB_DESCRIPTION_BYTES` bytes, cutting on
 /// a UTF-8 char boundary so the stored text is always valid UTF-8. Truncate (never
@@ -583,7 +593,8 @@ impl ApplicationStore {
     /// Core upsert: `normalized` is already normalized; `applied_at` Some marks the
     /// Application `applied`, None keeps it `saved`. Merges into an existing row
     /// when the (non-empty) url already has an Application; only ever advances OUT
-    /// of `saved`, never demotes an applied+ row.
+    /// of `saved`, never demotes an applied+ row. `answers` merge by QUESTION via
+    /// [`Self::merge_answers_by_question`] — not a wholesale replace.
     fn upsert_internal(
         &self,
         normalized: &str,
@@ -614,11 +625,8 @@ impl ApplicationStore {
             } else {
                 (existing.status, existing.applied_at)
             };
-            let answers = if meta.answers.is_empty() {
-                existing.answers.clone()
-            } else {
-                meta.answers.clone()
-            };
+            let answers =
+                Self::merge_answers_by_question(existing.answers.clone(), meta.answers.clone());
             let app = Application {
                 id: existing.id.clone(),
                 status,
@@ -811,11 +819,16 @@ impl ApplicationStore {
     /// list — an APPEND-only dedup merge, `pub(crate)` so the extension
     /// bridge's `answers.save` handler
     /// (`extension_bridge::answers_save::resolve_answers_save`) is the first
-    /// caller. Deliberately independent of `upsert_internal`'s meta-merge
-    /// path — that path REPLACES `answers` wholesale
-    /// (`meta.answers.is_empty() ? existing : meta.answers`), which would
-    /// silently drop every prior answer the first time an answers-bearing
-    /// upsert ran again; this method only ever ADDS.
+    /// caller. Deliberately independent of
+    /// [`Self::merge_answers_by_question`] (`upsert_internal`'s meta-merge
+    /// path, used by every in-app writer — `ai_generations_save`, manual
+    /// edits, legacy-generation backfill): that path lets `incoming` win for
+    /// a matching question, because those writers legitimately re-save
+    /// EDITED text for a question the user already answered. THIS method
+    /// must never do that — a stray/duplicate extension re-capture of the
+    /// same page must never clobber an answer the user already reviewed —
+    /// so here the EXISTING answer always wins and only genuinely new
+    /// questions are appended.
     ///
     /// Dedup key: the NORMALIZED question text (trim + lowercase + collapse
     /// internal whitespace runs) compared against the CURRENT answers — an
@@ -886,6 +899,57 @@ impl ApplicationStore {
         }
         tx.commit()?;
         Ok(added)
+    }
+
+    /// Merge `incoming` onto `existing` by NORMALIZED question text —
+    /// `upsert_internal`'s `answers` merge path, used on every in-app
+    /// writer's re-upsert (`ai_generations_save`'s AI-generated answer set,
+    /// `track_manual`, the legacy-generation backfill). Unlike
+    /// [`Self::merge_answers`] (the extension's separate append-only
+    /// capture path, where an EXISTING answer always wins), here `incoming`
+    /// wins for a matching question: `ai_generations_save` re-saves the
+    /// CURRENT full answer set on every call, including in-app edits to a
+    /// question the user already answered, and "existing wins" would
+    /// silently discard that edit. Existing answers for a question NOT
+    /// present in `incoming` are preserved untouched — this is what fixes
+    /// the previous wholesale-replace data-loss hazard, where a non-empty
+    /// `meta.answers` simply became the whole stored list, dropping every
+    /// answer another writer (e.g. the extension's `answers.save`) had
+    /// appended in between. An empty `incoming` is a no-op. Same
+    /// [`MAX_TOTAL_ANSWERS`] cap as `merge_answers`; entries beyond the cap
+    /// are dropped.
+    fn merge_answers_by_question(
+        existing: Vec<ApplicationAnswer>,
+        incoming: Vec<ApplicationAnswer>,
+    ) -> Vec<ApplicationAnswer> {
+        if incoming.is_empty() {
+            return existing;
+        }
+        let incoming_keys: std::collections::HashSet<String> = incoming
+            .iter()
+            .map(|a| normalize_question(&a.question))
+            .filter(|k| !k.is_empty())
+            .collect();
+        // Existing answers survive as-is unless `incoming` carries a
+        // (re)answer for the same question — those are dropped here and
+        // replaced below.
+        let mut merged: Vec<ApplicationAnswer> = existing
+            .into_iter()
+            .filter(|a| !incoming_keys.contains(&normalize_question(&a.question)))
+            .collect();
+
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for ans in incoming {
+            if merged.len() >= MAX_TOTAL_ANSWERS {
+                break; // per-application cap — remaining incoming entries are dropped
+            }
+            let key = normalize_question(&ans.question);
+            if key.is_empty() || !seen.insert(key) {
+                continue; // blank question, or a duplicate within this same incoming batch
+            }
+            merged.push(ans);
+        }
+        merged
     }
 
     /// Patch the user-editable tracking fields. Each `None` leaves its field

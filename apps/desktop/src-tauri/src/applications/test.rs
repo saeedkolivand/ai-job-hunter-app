@@ -2278,4 +2278,108 @@ fn merge_answers_caps_total_stored_answers_and_drops_the_rest() {
         MAX_TOTAL_ANSWERS,
         "total stored answers never exceeds the per-application cap"
     );
+    // A seeded answer (by content, not just count) must survive the cap
+    // untouched — the cap drops INCOMING overflow, never existing rows.
+    let seeded = app
+        .answers
+        .iter()
+        .find(|a| a.id == "seed-0")
+        .expect("a seeded answer must survive the cap by id");
+    assert_eq!(seeded.question, "Existing question 0?");
+    assert_eq!(seeded.answer, "Existing answer 0");
+}
+
+/// Regression for the HIGH cross-feature data-loss hazard: `upsert_internal`'s
+/// meta-merge path used to REPLACE `answers` wholesale, so an
+/// `ai_generations_save`-shaped upsert (a non-empty `meta.answers`) silently
+/// wiped every answer the extension's `answers.save` had appended in
+/// between. Seed extension-captured answers via `merge_answers`, then run an
+/// `upsert_for_origin` carrying a DIFFERENT non-empty answer set (one
+/// matching an existing question, one genuinely new) and assert: the
+/// extension-only answer survives, the matching question's text is updated
+/// to the incoming (AI) text, and the new AI answer is added.
+#[test]
+fn upsert_for_origin_merges_answers_by_question_instead_of_replacing() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let url = "https://acme.com/job/merge/cross-feature";
+    let id = store
+        .upsert_for_origin(
+            url,
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    // Extension-captured answers land first, via the append-only path.
+    store
+        .merge_answers(
+            &id,
+            vec![
+                ApplicationAnswer {
+                    id: String::new(),
+                    question: "Why this role?".to_string(),
+                    answer: "Extension-captured original".to_string(),
+                },
+                ApplicationAnswer {
+                    id: String::new(),
+                    question: "Are you willing to relocate?".to_string(),
+                    answer: "Extension-only, no AI equivalent".to_string(),
+                },
+            ],
+        )
+        .unwrap();
+
+    // Simulates `ai_generations_save`: a full generated answer set, one
+    // question matching an existing extension answer (an in-app rewrite),
+    // one genuinely new.
+    let mut ai_meta = meta("Acme", "Engineer");
+    ai_meta.answers = vec![
+        ApplicationAnswer {
+            id: String::new(),
+            question: "Why this role?".to_string(),
+            answer: "AI-rewritten answer".to_string(),
+        },
+        ApplicationAnswer {
+            id: String::new(),
+            question: "What's your expected salary?".to_string(),
+            answer: "100k".to_string(),
+        },
+    ];
+    store
+        .upsert_for_origin(url, "linkedin", &ai_meta, ApplicationOrigin::Generate, None)
+        .unwrap();
+
+    let app = store.get(&id).unwrap();
+    assert_eq!(
+        app.answers.len(),
+        3,
+        "all 3 distinct questions must be present"
+    );
+
+    let relocate = app
+        .answers
+        .iter()
+        .find(|a| a.question == "Are you willing to relocate?")
+        .expect("the extension-only answer must survive the AI upsert");
+    assert_eq!(relocate.answer, "Extension-only, no AI equivalent");
+
+    let rewritten = app
+        .answers
+        .iter()
+        .find(|a| a.question == "Why this role?")
+        .expect("the matching question must still be present");
+    assert_eq!(
+        rewritten.answer, "AI-rewritten answer",
+        "a matching question must be updated to the incoming text"
+    );
+
+    assert!(
+        app.answers
+            .iter()
+            .any(|a| a.question == "What's your expected salary?" && a.answer == "100k"),
+        "a genuinely new AI answer must be added"
+    );
 }

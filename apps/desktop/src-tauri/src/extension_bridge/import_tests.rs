@@ -1821,7 +1821,8 @@ fn resolve_answers_save_clamps_oversized_question_and_answer_bytes() {
 }
 
 /// More than 50 entries in one call are capped — extras are silently
-/// dropped, never rejected outright.
+/// dropped, never rejected outright, and MUST still be reflected in
+/// `skipped` (not silently vanish from both counts).
 #[test]
 fn resolve_answers_save_caps_at_max_answers_per_call() {
     let (_dir, store) = open_store();
@@ -1846,6 +1847,55 @@ fn resolve_answers_save_caps_at_max_answers_per_call() {
     )
     .unwrap();
     assert_eq!(out.saved, 50, "extras beyond the 50-entry cap are dropped");
+    assert_eq!(
+        out.skipped, 25,
+        "the 25 entries beyond the per-call cap must reconcile into skipped, not vanish"
+    );
+}
+
+/// The STORE-level 500-answer cap (not the 50-per-call cap above) is what
+/// limits this call: a well-under-50 batch still can't push the total past
+/// [`crate::applications::MAX_TOTAL_ANSWERS`], and the overflow must land in
+/// `skipped` exactly like the per-call cap does.
+#[test]
+fn resolve_answers_save_reflects_store_level_total_cap_in_skipped() {
+    use crate::applications::MAX_TOTAL_ANSWERS;
+
+    let (_dir, store) = open_store();
+    let url = "https://jobs.example.com/posting/answers-store-cap";
+    let mut meta = app_meta("Acme", "Cap Test Engineer");
+    // Seed to exactly (cap - 2) existing distinct answers via the store
+    // directly — bypassing the 50-per-call wire cap entirely.
+    meta.answers = (0..MAX_TOTAL_ANSWERS - 2)
+        .map(|i| ApplicationAnswer {
+            id: format!("seed-{i}"),
+            question: format!("Existing question {i}?"),
+            answer: format!("Existing answer {i}"),
+        })
+        .collect();
+    store
+        .upsert_for_origin(url, "linkedin", &meta, ApplicationOrigin::Saved, None)
+        .unwrap();
+
+    // 5 new distinct questions — well under MAX_ANSWERS_PER_CALL (50), so the
+    // per-call cap never triggers; only the store's cumulative 500 cap does.
+    let answers: Vec<serde_json::Value> = (0..5)
+        .map(|i| json!({ "question": format!("New question {i}?"), "answer": format!("New answer {i}") }))
+        .collect();
+    let out = super::answers_save::resolve_answers_save(
+        &store,
+        true,
+        &json!({ "url": url, "answers": answers }),
+    )
+    .unwrap();
+    assert_eq!(
+        out.saved, 2,
+        "only enough new answers to reach the store cap are saved"
+    );
+    assert_eq!(
+        out.skipped, 3,
+        "the 3 answers that didn't fit under the store's total cap must show up as skipped"
+    );
 }
 
 /// `answers_result_reply` builds a well-formed success envelope carrying the

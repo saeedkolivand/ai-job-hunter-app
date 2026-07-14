@@ -106,20 +106,25 @@ pub(super) fn answers_result_reply(req_id: &str, outcome: AppResult<AnswersSaveO
     .to_string()
 }
 
-/// Parse + clamp the incoming `answers` array off the payload: caps at
-/// [`MAX_ANSWERS_PER_CALL`] entries, and clamps each question/answer at its
-/// byte cap (char-boundary safe). A malformed entry (missing/non-string
-/// `question`/`answer`) is skipped, not rejected — a blank question or
-/// answer (after trimming) is dropped too, since the collector should never
-/// send one but the store boundary re-validates independently rather than
-/// trusting the page-derived input.
-fn parse_answers(payload: &Value) -> Vec<ApplicationAnswer> {
-    payload
+/// Parse + clamp the incoming `answers` array off the payload, then cap at
+/// [`MAX_ANSWERS_PER_CALL`] entries. Returns `(capped_list, raw_len)` where
+/// `raw_len` is the count of well-formed entries BEFORE the per-call cap —
+/// the caller derives `skipped` from it so an overflow past
+/// `MAX_ANSWERS_PER_CALL` is counted as skipped instead of vanishing
+/// silently (the cap used to apply via `.take()` before this count was
+/// taken, so entries beyond it appeared in neither `saved` nor `skipped`).
+/// A malformed entry (missing/non-string `question`/`answer`) is dropped,
+/// not rejected — a blank question or answer (after trimming) is dropped
+/// too, since the collector should never send one but the store boundary
+/// re-validates independently rather than trusting the page-derived input.
+/// Neither of these drops counts toward `raw_len`/`skipped`: they were never
+/// well-formed captures to begin with.
+fn parse_answers(payload: &Value) -> (Vec<ApplicationAnswer>, usize) {
+    let well_formed: Vec<ApplicationAnswer> = payload
         .get("answers")
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter()
-                .take(MAX_ANSWERS_PER_CALL)
                 .filter_map(|entry| {
                     let question = entry.get("question")?.as_str()?.trim();
                     let answer = entry.get("answer")?.as_str()?.trim();
@@ -136,7 +141,11 @@ fn parse_answers(payload: &Value) -> Vec<ApplicationAnswer> {
                 })
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    let raw_len = well_formed.len();
+    let mut capped = well_formed;
+    capped.truncate(MAX_ANSWERS_PER_CALL);
+    (capped, raw_len)
 }
 
 /// Core `answers.save`: gate on the autofill opt-in (refusal mirrors
@@ -144,9 +153,12 @@ fn parse_answers(payload: &Value) -> Vec<ApplicationAnswer> {
 /// normalize + match `url` the SAME way `resolve_applied_check`/
 /// `resolve_status_update` do, then merge the (clamped, capped) captured
 /// answers onto the matched Application via
-/// [`ApplicationStore::merge_answers`] — NEVER `upsert_internal` (whose meta
-/// path replaces `answers` wholesale). No match → a fixed sentinel telling
-/// the user to import the job first; this verb never auto-creates.
+/// [`ApplicationStore::merge_answers`] — NEVER `upsert_internal`'s meta path
+/// (`ApplicationStore::merge_answers_by_question`), which lets `incoming`
+/// win for a matching question; that's right for an in-app rewrite but wrong
+/// here, where a stray re-capture must never clobber an answer the user
+/// already reviewed. No match → a fixed sentinel telling the user to import
+/// the job first; this verb never auto-creates.
 pub(super) fn resolve_answers_save(
     store: &ApplicationStore,
     autofill_enabled: bool,
@@ -183,8 +195,7 @@ pub(super) fn resolve_answers_save(
         )
     })?;
 
-    let incoming = parse_answers(payload);
-    let incoming_len = incoming.len();
+    let (incoming, raw_len) = parse_answers(payload);
     let saved = store.merge_answers(&app.id, incoming).map_err(|e| {
         // Wire-error discipline: never let a raw store error (path/SQL detail)
         // reach `answers_result_reply` — log it, reply a fixed sentinel.
@@ -195,7 +206,10 @@ pub(super) fn resolve_answers_save(
     Ok(AnswersSaveOk {
         application_id: app.id,
         saved,
-        skipped: incoming_len.saturating_sub(saved),
+        // `raw_len` (well-formed entries BEFORE the per-call cap) so an
+        // over-cap capture and a dedup-drop both land in `skipped` — see
+        // `parse_answers`.
+        skipped: raw_len.saturating_sub(saved),
         title: (!app.title.trim().is_empty()).then_some(app.title),
         company: (!app.company.trim().is_empty()).then_some(app.company),
     })
