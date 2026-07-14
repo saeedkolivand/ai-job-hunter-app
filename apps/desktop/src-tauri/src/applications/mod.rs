@@ -139,6 +139,13 @@ pub struct ApplicationMeta {
     pub candidate: String,
     pub brief: String,
     pub job_description: String,
+    /// Merged by QUESTION rather than wholesale-replaced like the scalar
+    /// fields above — see [`ApplicationStore::merge_answers_by_question`]
+    /// (this struct's merge path, used by every in-app writer) vs
+    /// [`ApplicationStore::merge_answers`] (the extension's separate
+    /// append-only capture path). A non-empty `answers` here (re)writes
+    /// matching questions and adds new ones; it never drops an existing
+    /// answer for a question this call doesn't mention.
     pub answers: Vec<ApplicationAnswer>,
     pub job_summary: String,
     /// Scraped salary range (Adzuna only, today) — grounds the salary application
@@ -158,6 +165,17 @@ pub struct ApplicationMeta {
 // oversized description up-front against the SAME cap the store clamps to, instead
 // of hardcoding a second literal.
 pub(crate) const MAX_JOB_DESCRIPTION_BYTES: usize = 200_000;
+
+/// Hard cap on the total number of `answers` entries [`ApplicationStore::merge_answers`]
+/// / [`ApplicationStore::merge_answers_by_question`] will store per
+/// application. `answers.save`'s per-call cap
+/// (`extension_bridge::answers_save::MAX_ANSWERS_PER_CALL`) only bounds one
+/// capture; this bounds the CUMULATIVE total across every capture on the same
+/// application, so repeated captures (or a hostile/buggy collector called many
+/// times) can't grow the stored list unboundedly. `pub(crate)` so
+/// `extension_bridge`'s tests can seed right up to the cap without
+/// duplicating the literal.
+pub(crate) const MAX_TOTAL_ANSWERS: usize = 500;
 
 /// Clamp a job description to at most `MAX_JOB_DESCRIPTION_BYTES` bytes, cutting on
 /// a UTF-8 char boundary so the stored text is always valid UTF-8. Truncate (never
@@ -575,7 +593,8 @@ impl ApplicationStore {
     /// Core upsert: `normalized` is already normalized; `applied_at` Some marks the
     /// Application `applied`, None keeps it `saved`. Merges into an existing row
     /// when the (non-empty) url already has an Application; only ever advances OUT
-    /// of `saved`, never demotes an applied+ row.
+    /// of `saved`, never demotes an applied+ row. `answers` merge by QUESTION via
+    /// [`Self::merge_answers_by_question`] — not a wholesale replace.
     fn upsert_internal(
         &self,
         normalized: &str,
@@ -595,7 +614,13 @@ impl ApplicationStore {
             }
         };
 
-        if let Some(existing) = self.find_by_job_url(normalized) {
+        // Lookup + write share ONE lock/transaction (`row_by_job_url_conn`, not
+        // self-locking `find_by_job_url`) — the old separately-released lookup
+        // lock left a gap where a concurrent `merge_answers` commit got clobbered.
+        let mut guard = self.conn.lock();
+        let tx = guard.transaction()?;
+
+        if let Some(existing) = Self::row_by_job_url_conn(&tx, normalized)? {
             let now = now_ms();
             let (status, new_applied_at) = if existing.status.is_pre_apply() && applied_at.is_some()
             {
@@ -606,11 +631,8 @@ impl ApplicationStore {
             } else {
                 (existing.status, existing.applied_at)
             };
-            let answers = if meta.answers.is_empty() {
-                existing.answers.clone()
-            } else {
-                meta.answers.clone()
-            };
+            let answers =
+                Self::merge_answers_by_question(existing.answers.clone(), meta.answers.clone());
             let app = Application {
                 id: existing.id.clone(),
                 status,
@@ -643,11 +665,7 @@ impl ApplicationStore {
                     .clone()
                     .or_else(|| existing.salary_currency.clone()),
             };
-            // Row write + the (conditional) status event in ONE transaction so an
-            // upsert that changes status can never persist the row without its
-            // history event. `.transaction()` needs `&mut Connection`.
-            let mut guard = self.conn.lock();
-            let tx = guard.transaction()?;
+            // Row write + status event share the transaction opened above.
             Self::write_row_conn(&tx, &app)?;
             if status != existing.status {
                 Self::append_event_conn(
@@ -680,7 +698,12 @@ impl ApplicationStore {
             company: meta.company.clone(),
             title: meta.title.clone(),
             candidate: meta.candidate.clone(),
-            answers: meta.answers.clone(),
+            // Route the new-row branch through the same capped+deduped merge as an
+            // existing-row update (against an empty existing list) so a caller
+            // handing `upsert_for_origin` an oversized/duplicate-question
+            // `meta.answers` on FIRST creation can't bypass `MAX_TOTAL_ANSWERS` the
+            // way storing `meta.answers` verbatim did.
+            answers: Self::merge_answers_by_question(Vec::new(), meta.answers.clone()),
             brief: meta.brief.clone(),
             job_description: clamped_jd.to_string(),
             notes: String::new(),
@@ -695,9 +718,7 @@ impl ApplicationStore {
             salary_max: meta.salary_max,
             salary_currency: meta.salary_currency.clone(),
         };
-        // New Application: the row + its seed status event in ONE transaction.
-        let mut guard = self.conn.lock();
-        let tx = guard.transaction()?;
+        // New row: its seed status event shares the same transaction.
         Self::write_row_conn(&tx, &app)?;
         Self::append_event_conn(&tx, &app.id, "", status.as_id(), "", now)?;
         tx.commit()?;
@@ -797,6 +818,157 @@ impl ApplicationStore {
         Self::append_event_conn(&tx, id, from.as_id(), to.as_id(), note.unwrap_or(""), now)?;
         tx.commit()?;
         Ok(true)
+    }
+
+    /// Append newly-captured extension answers onto Application `id`'s answer
+    /// list — an APPEND-only dedup merge, `pub(crate)` so the extension
+    /// bridge's `answers.save` handler
+    /// (`extension_bridge::answers_save::resolve_answers_save`) is the first
+    /// caller. Deliberately independent of
+    /// [`Self::merge_answers_by_question`] (`upsert_internal`'s meta-merge
+    /// path, used by every in-app writer — `ai_generations_save`, manual
+    /// edits, legacy-generation backfill): that path lets `incoming` win for
+    /// a matching question, because those writers legitimately re-save
+    /// EDITED text for a question the user already answered. THIS method
+    /// must never do that — a stray/duplicate extension re-capture of the
+    /// same page must never clobber an answer the user already reviewed —
+    /// so here the EXISTING answer always wins and only genuinely new
+    /// questions are appended.
+    ///
+    /// Dedup key: the NORMALIZED question text (trim + lowercase + collapse
+    /// internal whitespace runs) compared against the CURRENT answers — an
+    /// existing answer for a given question always wins and is NEVER
+    /// overwritten, so a re-capture of the same page only ever adds
+    /// genuinely new questions. The dedup set also accumulates across
+    /// `incoming` itself, so two same-normalized entries in one call collapse
+    /// to a single added answer rather than two. A blank (post-trim) question
+    /// is dropped.
+    ///
+    /// The dedup READ and the WRITE happen in the SAME transaction (via
+    /// [`Self::row_by_id_conn`], not the self-locking [`Self::get`] — calling
+    /// `get` here would deadlock the non-reentrant `parking_lot::Mutex`), so
+    /// there is no earlier separate read a concurrent caller could race
+    /// against; only `answers` + `updated_at` are touched. Returns the count
+    /// of NEWLY ADDED answers (`0` when every captured question was already
+    /// present or blank).
+    ///
+    /// Capped at [`MAX_TOTAL_ANSWERS`] merged answers per application: once
+    /// that many are stored, further incoming entries are dropped rather than
+    /// appended (they count toward the caller's `skipped`, same as a dedup
+    /// hit — never rejected outright).
+    pub(crate) fn merge_answers(
+        &self,
+        id: &str,
+        incoming: Vec<ApplicationAnswer>,
+    ) -> AppResult<usize> {
+        let mut guard = self.conn.lock();
+        let tx = guard.transaction()?;
+
+        let existing = Self::row_by_id_conn(&tx, id)?
+            .ok_or_else(|| AppError::Validation(format!("application not found: {id}")))?;
+
+        let mut seen: std::collections::HashSet<String> = existing
+            .answers
+            .iter()
+            .map(|a| normalize_question(&a.question))
+            .collect();
+
+        let mut merged = existing.answers;
+        let mut added = 0usize;
+        for ans in incoming {
+            if merged.len() >= MAX_TOTAL_ANSWERS {
+                break; // per-application cap hit — remaining entries count as skipped
+            }
+            let key = normalize_question(&ans.question);
+            if key.is_empty() || !seen.insert(key) {
+                continue; // blank question, or an existing answer already wins
+            }
+            merged.push(ApplicationAnswer {
+                id: make_answer_id(),
+                question: ans.question,
+                answer: ans.answer,
+            });
+            added += 1;
+        }
+
+        if added > 0 {
+            // `?` (not `.unwrap_or_else(|_| "[]".into())`): a serialize failure
+            // must abort the transaction (never committed, so the existing
+            // `answers` column is untouched) rather than writing an empty `[]`
+            // that would silently wipe every previously-stored answer.
+            let answers_json = serde_json::to_string(&merged)?;
+            tx.execute(
+                "UPDATE applications SET answers = ?2, updated_at = ?3 WHERE id = ?1",
+                params![id, answers_json, ts_to_db(now_ms())],
+            )?;
+        }
+        tx.commit()?;
+        Ok(added)
+    }
+
+    /// Merge `incoming` onto `existing` by NORMALIZED question text —
+    /// `upsert_internal`'s `answers` merge path, used on every in-app
+    /// writer's re-upsert (`ai_generations_save`'s AI-generated answer set,
+    /// `track_manual`, the legacy-generation backfill). Unlike
+    /// [`Self::merge_answers`] (the extension's separate append-only
+    /// capture path, where an EXISTING answer always wins), here `incoming`
+    /// wins for a matching question: `ai_generations_save` re-saves the
+    /// CURRENT full answer set on every call, including in-app edits to a
+    /// question the user already answered, and "existing wins" would
+    /// silently discard that edit. Existing answers for a question NOT
+    /// present in `incoming` are preserved untouched — this is what fixes
+    /// the previous wholesale-replace data-loss hazard, where a non-empty
+    /// `meta.answers` simply became the whole stored list, dropping every
+    /// answer another writer (e.g. the extension's `answers.save`) had
+    /// appended in between. An empty `incoming` is a no-op. Same
+    /// [`MAX_TOTAL_ANSWERS`] cap as `merge_answers`, but the cap only ever
+    /// blocks a genuinely NEW question: a same-question replacement is a
+    /// swap for an entry already removed from `merged` below, so it is
+    /// always applied regardless of the cap — otherwise a legacy row that
+    /// already sits at/over the cap (seeded before this cap existed) would
+    /// have the matching existing answer removed to make room, then the cap
+    /// check block the incoming replacement from ever being pushed back in,
+    /// making the question vanish entirely instead of being rewritten.
+    fn merge_answers_by_question(
+        existing: Vec<ApplicationAnswer>,
+        incoming: Vec<ApplicationAnswer>,
+    ) -> Vec<ApplicationAnswer> {
+        if incoming.is_empty() {
+            return existing;
+        }
+        let existing_keys: std::collections::HashSet<String> = existing
+            .iter()
+            .map(|a| normalize_question(&a.question))
+            .collect();
+        let incoming_keys: std::collections::HashSet<String> = incoming
+            .iter()
+            .map(|a| normalize_question(&a.question))
+            .filter(|k| !k.is_empty())
+            .collect();
+        // Existing answers survive as-is unless `incoming` carries a
+        // (re)answer for the same question — those are dropped here and
+        // replaced below.
+        let mut merged: Vec<ApplicationAnswer> = existing
+            .into_iter()
+            .filter(|a| !incoming_keys.contains(&normalize_question(&a.question)))
+            .collect();
+
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for ans in incoming {
+            let key = normalize_question(&ans.question);
+            if key.is_empty() || !seen.insert(key.clone()) {
+                continue; // blank question, or a duplicate within this same incoming batch
+            }
+            // A same-question replacement always wins (see doc comment above);
+            // only a brand-new question is subject to the cap. `continue`
+            // (not `break`) so a later replacement in this same batch still
+            // gets applied even after a run of new-question entries hit it.
+            if !existing_keys.contains(&key) && merged.len() >= MAX_TOTAL_ANSWERS {
+                continue; // per-application cap — this new-question entry is dropped
+            }
+            merged.push(ans);
+        }
+        merged
     }
 
     /// Patch the user-editable tracking fields. Each `None` leaves its field
@@ -922,6 +1094,31 @@ impl ApplicationStore {
             ],
         )?;
         Ok(())
+    }
+
+    /// Connection-scoped single-row read by id, callable inside an existing
+    /// lock/transaction — unlike [`Self::get`] (which takes its OWN lock;
+    /// calling `get` while already holding `self.conn.lock()` would deadlock
+    /// the non-reentrant `parking_lot::Mutex`). Used by
+    /// [`Self::merge_answers`] so its dedup read and its write land in the
+    /// exact same transaction.
+    fn row_by_id_conn(conn: &Connection, id: &str) -> AppResult<Option<Application>> {
+        use rusqlite::OptionalExtension;
+        let mut stmt = conn.prepare(&format!("{SELECT_COLS} WHERE id = ?1"))?;
+        Ok(stmt.query_row(params![id], row_to_application).optional()?)
+    }
+
+    /// `find_by_job_url` sibling for [`Self::upsert_internal`] (self-locking here would deadlock).
+    fn row_by_job_url_conn(conn: &Connection, normalized: &str) -> AppResult<Option<Application>> {
+        use rusqlite::OptionalExtension;
+        if normalized.is_empty() {
+            return Ok(None);
+        }
+        let sql = format!("{SELECT_COLS} WHERE job_url = ?1 ORDER BY created_at DESC LIMIT 1");
+        let mut stmt = conn.prepare(&sql)?;
+        Ok(stmt
+            .query_row(params![normalized], row_to_application)
+            .optional()?)
     }
 
     /// Connection-scoped status-event append, callable inside a transaction.
@@ -1132,6 +1329,25 @@ fn truncate_on_char_boundary(s: &str, max_bytes: usize) -> String {
 
 pub fn make_application_id() -> String {
     format!("app-{}-{}", now_ms(), &Uuid::new_v4().to_string()[..8])
+}
+
+/// Fresh id for an answer merged in by [`ApplicationStore::merge_answers`] —
+/// same shape as [`make_application_id`].
+fn make_answer_id() -> String {
+    format!("ans-{}-{}", now_ms(), &Uuid::new_v4().to_string()[..8])
+}
+
+/// Normalize a question for dedup comparison in
+/// [`ApplicationStore::merge_answers`]: trim, lowercase, and collapse
+/// internal whitespace runs to a single space — so "Why  this role?" and
+/// "why this role?" (a different capture pass / incidental whitespace) dedup
+/// to the same key.
+fn normalize_question(q: &str) -> String {
+    q.trim()
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 impl DataStore for ApplicationStore {
