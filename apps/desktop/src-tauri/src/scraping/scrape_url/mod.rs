@@ -548,8 +548,18 @@ pub fn parse_from_html(url: &str, html: &str) -> Option<JobPosting> {
 // needed (unlike the JSON-LD/NEXT_DATA walks) — scoped to whatever the
 // extension already marked.
 fn job_root_generic_html(html: &str) -> Option<(String, Option<String>)> {
+    // Cheap substring check before the full-document reparse below: every
+    // server-fetch resolve call hits this with no hint attribute present at
+    // all, so skip `Html::parse_document` entirely on that (overwhelmingly
+    // common) path.
+    if !html.contains("data-ajh-job-root") {
+        return None;
+    }
+
     let doc = Html::parse_document(html);
     let root_sel = Selector::parse(r#"[data-ajh-job-root="true"]"#).ok()?;
+    // First-in-DOM-order match is the intended tie-break if a page ever
+    // contains several hinted nodes.
     let root = doc.select(&root_sel).next()?;
 
     // Unlike this crate's own `html_to_text`, `html_to_markdown`'s `htmd` backend
