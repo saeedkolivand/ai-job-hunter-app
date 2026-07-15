@@ -48,3 +48,23 @@ all flipped. The `agent_run` ("prep this application") agent-loop path (`command
 and threads the same renderer-supplied `req.base_url` into `agent::tools::ToolContext` for tool calls
 (e.g. `research_company`). Flip this path onto `Completer::from_active` + a store-resolved
 `ToolContext` so no generation command anywhere still accepts a request base_url.
+
+## 6. [LOW] Drop the dead autopilot `assistant_provider/model/base_url` fields
+
+Task #16 moved autopilot's assistant-notes provider resolution onto the backend
+`AiConfigStore` (`Completer::from_active`); the renderer wizard now always sends
+`assistantProvider`/`assistantModel`/`assistantBaseUrl` as `undefined` (left vestigial
+per the "leave the rest intact" call at the time). Remove the now-dead fields from the
+renderer `WizardState`/schema (`apps/desktop/src/renderer/features/autopilot/types.ts`,
+`lib/schema.ts`, `lib/wizard-state.ts`) and the corresponding struct/deserialize/update
+fields on the Rust `Autopilot` record, once nothing reads them.
+
+## 7. [LOW] Write-path mutate-arg assertions for the new AI-provider setter hooks
+
+`apps/desktop/src/renderer/services/use-ai-provider/use-ai-provider.test.ts` (task #16)
+only has one generic smoke test (`exerciseServiceHooks` — renders every exported hook
+without crashing). None of `useSetActiveProvider`/`useSetProviderSettings`/
+`useConfigureActiveProvider` has a test asserting the exact mutate-argument shape sent
+to `tauri-client` (provider/model/baseUrl) or that `keys.ai.activeConfig` is invalidated
+on success. Pre-existing test gap — same class of assertion the extension-bridge boolean
+mutation test (`use-extension-bridge.test.ts`) already has for its own setter.
