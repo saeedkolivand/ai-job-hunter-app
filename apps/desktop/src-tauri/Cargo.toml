@@ -174,7 +174,7 @@ aes-gcm = "0.11"
 # guard: posting_vectors.text_hash and match_scores.job_text_hash use a
 # deterministic, restart-stable hash so a stale or wrong-language cache row is a
 # natural miss. Resolves to 0.10.9 already in the tree (lopdf/tauri-codegen).
-sha2 = "0.10"
+sha2 = "0.11"
 # HMAC-SHA256 for the extension-bridge v2 mutual challenge-response handshake
 # (extension_bridge/handshake.rs): constant-time `Mac::verify_slice` of the
 # client proof, keyed by the pairing token's UTF-8 bytes. Cross-platform (the
