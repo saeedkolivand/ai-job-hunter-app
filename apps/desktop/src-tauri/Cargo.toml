@@ -107,7 +107,7 @@ tokio-util = "0.7"
 # Pinned to 0.28 so its `tungstenite 0.28` matches the one chromiumoxide already
 # pulls transitively (via async-tungstenite 0.32) — no duplicate tungstenite major
 # is added to the tree.
-tokio-tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 
 chromiumoxide = { version = "0.9", features = ["fetcher", "zip8"] }
 
