@@ -788,6 +788,15 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
         }
     }
 
+    // The socket is gone (closed, errored, or an over-cap/outdated/failed
+    // handshake broke the loop) — cancel every stream still registered for
+    // THIS connection, not just the one an explicit `assist.cancel` might
+    // have named. Otherwise a client disconnect mid-`answer.assist` leaves
+    // the billable generation running to completion with no consumer ever
+    // reading it. Per-connection by construction (`assist_streams` is this
+    // socket's own registry — see `stream`'s module doc for why that's
+    // never a global `BridgeState` field).
+    assist_streams.cancel_all(&app);
     state.set_connected(false);
 }
 

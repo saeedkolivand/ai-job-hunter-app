@@ -167,8 +167,11 @@ enum StreamSink {
     /// "record once, at completion" behavior).
     Complete(Usage),
     /// Cancelled mid-stream — fail with `"Job cancelled"`, no terminal event
-    /// and (mirroring production) no spend recorded.
-    Cancelled,
+    /// (mirroring production: no `job_complete`), but STILL carrying
+    /// whatever [`Usage`] was last seen before the cancel, so it can be
+    /// recorded — mirrors `stream_response`'s own cancellation branch
+    /// (never estimated, zero when none was ever seen).
+    Cancelled(Usage),
     /// Transport read error — no terminal event and no spend recorded.
     Error(AppError),
 }
@@ -181,10 +184,11 @@ enum StreamSink {
 /// piece, cancellation, an error, or end-of-body is reached. End-of-body without a
 /// sentinel still yields a trailing [`StreamSink::Complete`] (graceful close).
 /// Tracks the LATEST [`StreamPiece::usage`] seen (mirroring `stream_response`'s
-/// "last write wins") and carries it on [`StreamSink::Complete`] — cancellation
-/// and a transport error never reach that branch, so (mirroring production)
-/// nothing is ever recorded on those paths. [`stream_response`] mirrors this
-/// loop against a real `reqwest::Response`.
+/// "last write wins") and carries it on both [`StreamSink::Complete`] AND
+/// [`StreamSink::Cancelled`] (mirroring production: a cancellation still
+/// records whatever was seen) — only a transport error never reaches either
+/// branch, so (mirroring production) nothing is ever recorded on THAT path.
+/// [`stream_response`] mirrors this loop against a real `reqwest::Response`.
 #[cfg(test)]
 async fn drive_stream<Cancel, Next, Fut, B, P>(
     mut cancelled: Cancel,
@@ -202,7 +206,7 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
     let mut usage = Usage::default();
     loop {
         if cancelled() {
-            on(StreamSink::Cancelled);
+            on(StreamSink::Cancelled(usage));
             return;
         }
         match next_chunk().await {
@@ -244,9 +248,17 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
 /// decoded from the bytes it consumed this call.
 ///
 /// On cancellation the response is dropped and the job fails with `"Job cancelled"`
-/// (no terminal completion is emitted). On a transport read error the trace is
-/// closed and a [`AppError::Network`] is returned. Either way a provider that
-/// passes a correct `parse` closure can never forget the cancellation check.
+/// (no terminal completion/`job_complete` is emitted) — but whatever REAL usage
+/// the provider had already reported (e.g. the extension bridge's `answer.assist`
+/// live `DRAFT_CAP`, or a user-initiated cancel mid-stream) is still recorded
+/// against today's spend before returning, so a cost-capped or cancelled stream
+/// is never invisible to spend tracking (never estimated, never fabricated —
+/// zero when none was ever seen). On a transport read error the trace is
+/// closed and a [`AppError::Network`] is returned; usage recording is left
+/// untouched on that path (out of scope for this fix — a read failure is a
+/// separate, rarer case than the cancellation this was written for). Either
+/// way a provider that passes a correct `parse` closure can never forget the
+/// cancellation check.
 ///
 /// The body mirrors [`drive_stream`] (the tested control-flow core), kept as a
 /// direct loop here so the returned `Future` stays `Send` (an async-trait
@@ -255,8 +267,11 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
 /// `provider`/`model`/`base_url` identify the call for spend recording only —
 /// every [`StreamPiece::usage`] seen is remembered (last write wins, since
 /// Anthropic reports usage incrementally and Gemini/Ollama repeat a running
-/// total), and [`finish`] records whatever was last seen (zero if the
-/// provider never reported any) against today's AI spend.
+/// total). [`finish`] records whatever was last seen (zero if the provider
+/// never reported any) against today's AI spend on the normal completion
+/// path; the cancellation branch below records that SAME accumulated value
+/// directly (never through `finish`, which would also wrongly emit a
+/// terminal `job_complete`).
 #[allow(clippy::too_many_arguments)]
 pub async fn stream_response<F>(
     app: &AppHandle,
@@ -278,6 +293,19 @@ where
         if is_cancelled(app, job_id) {
             drop(response);
             trace.end(Some(status), false);
+            // Record whatever REAL usage the provider had already reported
+            // before the cancel was observed — never estimated, zero when
+            // none was ever seen. See the doc above: this is what makes a
+            // cost-capped (or user-cancelled) generation visible to spend
+            // tracking instead of silently recording nothing.
+            super::record_usage(
+                app,
+                provider.as_str(),
+                model,
+                usage.input_tokens,
+                usage.output_tokens,
+                Some(base_url),
+            );
             return Err(AppError::Message("Job cancelled".to_string()));
         }
 
@@ -337,7 +365,7 @@ mod tests {
     enum Act {
         Emit(String, bool),
         Complete(Usage),
-        Cancelled,
+        Cancelled(Usage),
         Error(String),
     }
 
@@ -369,7 +397,7 @@ mod tests {
                 let act = match sink {
                     StreamSink::Emit { delta, thinking } => Act::Emit(delta, thinking),
                     StreamSink::Complete(usage) => Act::Complete(usage),
-                    StreamSink::Cancelled => Act::Cancelled,
+                    StreamSink::Cancelled(usage) => Act::Cancelled(usage),
                     StreamSink::Error(e) => Act::Error(e.to_string()),
                 };
                 acts.borrow_mut().push(act);
@@ -436,13 +464,14 @@ mod tests {
 
     #[test]
     fn cancellation_short_circuits_before_reading() {
-        // Cancelled on the first check → no chunk is read, no completion emitted.
+        // Cancelled on the first check → no chunk is read, no completion
+        // emitted, and no usage was ever seen (zero, not fabricated).
         let acts = run(
             vec![Ok(Some(b"hello\nEND\n".to_vec()))],
             Some(0),
             line_parser,
         );
-        assert_eq!(acts, vec![Act::Cancelled]);
+        assert_eq!(acts, vec![Act::Cancelled(Usage::default())]);
     }
 
     #[test]
@@ -455,7 +484,10 @@ mod tests {
         );
         assert_eq!(
             acts,
-            vec![Act::Emit("hello".to_string(), false), Act::Cancelled]
+            vec![
+                Act::Emit("hello".to_string(), false),
+                Act::Cancelled(Usage::default())
+            ]
         );
     }
 
@@ -546,9 +578,13 @@ mod tests {
     }
 
     #[test]
-    fn cancellation_after_a_usage_piece_records_nothing() {
-        // A usage piece arrives, then cancellation — production only records
-        // spend on the `Complete` sink, which cancellation never reaches.
+    fn cancellation_after_a_usage_piece_still_carries_the_partial_usage() {
+        // A usage piece arrives, then cancellation (e.g. `answer.assist`'s
+        // live DRAFT_CAP calling `job_cancel`) — production now records
+        // whatever REAL usage was already seen even on the `Cancelled` sink
+        // (never through `Complete`/`finish`, which would also wrongly emit
+        // a terminal `job_complete`), so a cost-capped generation is never
+        // invisible to spend tracking.
         let parser = |buf: &mut String| -> Vec<StreamPiece> {
             let mut out = Vec::new();
             while let Some(nl) = buf.find('\n') {
@@ -567,8 +603,11 @@ mod tests {
         );
         assert_eq!(
             acts,
-            vec![Act::Cancelled],
-            "cancellation must never emit Complete, so no spend is ever recorded"
+            vec![Act::Cancelled(Usage {
+                input_tokens: 50,
+                output_tokens: 50,
+            })],
+            "cancellation must still carry the REAL usage already seen, never fabricated but never silently dropped either"
         );
     }
 
