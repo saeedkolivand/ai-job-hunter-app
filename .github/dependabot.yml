@@ -25,6 +25,16 @@ updates:
     labels:
       - dependencies
 
+    # typescript-eslint peers `typescript <6.1` — no TS 7 support yet (latest
+    # 8.64 still caps there). The ROOT typescript stays on 6 so eslint's parser
+    # works; apps/packages pin 7 themselves (real TS 7). Block major bumps so a
+    # dependabot PR can't re-collapse that split by bumping root 6 -> 7 (#660).
+    # Drop this once typescript-eslint supports TS 7.
+    ignore:
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
+
     commit-message:
       prefix: chore
 

@@ -43,7 +43,7 @@
 <p align="center">
   <a href="https://tauri.app"><img alt="Tauri" src="https://img.shields.io/badge/Tauri-2.x-24C8DB?logo=tauri&logoColor=white"></a>
   <a href="https://www.rust-lang.org/"><img alt="Rust" src="https://img.shields.io/badge/Rust-stable-000000?logo=rust&logoColor=white"></a>
-  <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white"></a>
+  <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-7.0-3178C6?logo=typescript&logoColor=white"></a>
   <a href="https://react.dev/"><img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black"></a>
   <a href="https://tailwindcss.com/"><img alt="TailwindCSS" src="https://img.shields.io/badge/Tailwind-v4-06B6D4?logo=tailwindcss&logoColor=white"></a>
   <a href="https://ollama.com/"><img alt="Ollama" src="https://img.shields.io/badge/Ollama-local-000000?logo=ollama&logoColor=white"></a>
@@ -328,7 +328,7 @@ The app uses the OS keychain for secrets — no `.env` files. Keys and credentia
 | Layer               | Technology                                                                |
 | ------------------- | ------------------------------------------------------------------------- |
 | Desktop shell       | [Tauri][tauri] 2.x — [Rust][rust] core + [React][react] renderer          |
-| UI framework        | [React][react] 19, [TypeScript][typescript] 6                             |
+| UI framework        | [React][react] 19, [TypeScript][typescript] 7                             |
 | Routing             | [TanStack Router][tanstack-router] 1.x (file-based)                       |
 | Server state        | [TanStack Query][tanstack-query] 5.x                                      |
 | Client state        | [Zustand][zustand] 5                                                      |
