@@ -29,7 +29,7 @@
 
 use futures::{SinkExt, StreamExt};
 use serde_json::json;
-use tokio::io::{stdin, stdout, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{stdin, stdout, AsyncReadExt, AsyncWriteExt, Stdin, Stdout};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::{ClientRequestBuilder, Message};
@@ -54,26 +54,37 @@ pub fn run() {
     rt.block_on(relay());
 }
 
-/// Connect to the first live bridge port, announce readiness, then pump frames
-/// concurrently in BOTH directions between stdin and the ws until either side
+/// Connect to the first live bridge port, announce readiness, then relay
+/// frames in BOTH directions between stdin and the ws until either side
 /// closes.
 ///
-/// ## Upgrade from the old serial single-in-flight relay
-/// This used to be a strict "read one stdin frame → forward → wait for
-/// EXACTLY ONE ws reply → repeat" cycle (fine for one request/one reply, but
-/// it could only ever relay a single ws frame per stdin frame). Extension
-/// roadmap PR 10 needs a stream's multiple `assist.chunk`/`assist.done`
-/// frames to ALL reach stdout for one `answer.assist` request, so this is now
-/// a `tokio::select!` duplex pump: each loop iteration races "a stdin frame
-/// arrived" against "a ws frame arrived" and forwards whichever fires,
-/// independently. Two consequences, both intentional: (1) any number of ws
-/// frames for one request now relay through, not just the first; (2) a NEW
-/// stdin frame (e.g. an `assist.cancel` for an in-flight stream) is forwarded
-/// the instant it arrives, never blocked behind a still-streaming reply. This
-/// host still understands nothing about `reqId` correlation or multiple
-/// concurrent requests — that multiplexing lives in `bridge.ts` and the
-/// desktop's own connection loop; the host stays a dumb byte relay in both
-/// directions.
+/// ## Two independent tasks, not a `select!` duplex pump
+/// This used to race a stdin-read branch against a ws-read branch in one
+/// `tokio::select!` loop (needed since extension roadmap PR 10 added a
+/// stream's multiple `assist.chunk`/`assist.done` frames — a single
+/// request/reply cycle was no longer enough). That raced
+/// [`read_stdin_frame`]'s `read_exact` calls against ws activity:
+/// `AsyncReadExt::read_exact` is NOT cancellation-safe — when the ws branch
+/// became ready first, `select!` dropped the still-in-flight stdin read,
+/// discarding whatever bytes it had already pulled off stdin (already
+/// consumed from the pipe, but never forwarded). That desyncs the
+/// length-prefixed native-messaging frame stream for every read after it —
+/// the next 4-byte length prefix gets read from the middle of the dropped
+/// frame's body.
+///
+/// The fix: each direction now owns its stdio handle and its ws half
+/// EXCLUSIVELY, on its OWN task ([`pump_stdin_to_ws`] / [`pump_ws_to_stdout`])
+/// — nothing ever races (`select!`s) against either task's `read_exact`, so
+/// neither is ever dropped mid-read. `relay` itself only races the two
+/// tasks' `JoinHandle`s (waiting for whichever direction closes first);
+/// dropping a `JoinHandle` future detaches rather than aborts the task, so
+/// the other direction's in-flight read (if any) just keeps running,
+/// harmlessly, until the process exits right after this function returns
+/// (native-host mode never falls through to booting Tauri — see
+/// `run_native_host_if_invoked`). This host still understands nothing about
+/// `reqId` correlation or multiple concurrent requests — that multiplexing
+/// lives in `bridge.ts` and the desktop's own connection loop; the host
+/// stays a dumb byte relay in both directions.
 async fn relay() {
     let ws = match connect_bridge().await {
         Some(ws) => ws,
@@ -87,46 +98,53 @@ async fn relay() {
     };
     write_ready(true).await;
 
-    let mut input = stdin();
-    let mut output = stdout();
-    let (mut ws_write, mut ws_read) = ws.split();
+    let (ws_write, ws_read) = ws.split();
+    let stdin_to_ws = tokio::spawn(pump_stdin_to_ws(stdin(), ws_write));
+    let ws_to_stdout = tokio::spawn(pump_ws_to_stdout(ws_read, stdout()));
 
-    loop {
-        tokio::select! {
-            // Browser → host → bridge.
-            frame = read_stdin_frame(&mut input) => {
-                let bytes = match frame {
-                    Ok(Some(bytes)) => bytes,
-                    Ok(None) => break, // clean EOF — Port closed
-                    Err(_) => break,   // malformed / over-cap length
-                };
-                let text = match String::from_utf8(bytes) {
-                    Ok(t) => t,
-                    Err(_) => continue, // not UTF-8 JSON — drop, keep the Port alive
-                };
-                if ws_write.send(Message::text(text)).await.is_err() {
-                    break;
-                }
-            }
-            // Bridge → host → browser.
-            payload = next_ws_payload(&mut ws_read) => {
-                match payload {
-                    Some(reply) => {
-                        if write_stdout_frame(&mut output, reply.as_bytes())
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    None => break, // ws closed/errored
-                }
-            }
-        }
+    // Wait for whichever direction ends first (EOF, malformed frame, or a
+    // send/write failure) — see the doc above for why racing the
+    // `JoinHandle`s here, unlike racing the reads themselves, is safe.
+    tokio::select! {
+        _ = stdin_to_ws => {}
+        _ = ws_to_stdout => {}
     }
 
     // On any exit (stdin EOF or ws closed) flip the extension to app_not_running.
     write_ready(false).await;
+}
+
+/// Browser → host → bridge. Owns stdin and the ws write half exclusively for
+/// its whole lifetime, so its `read_exact` (inside [`read_stdin_frame`]) is
+/// never raced against anything — see [`relay`]'s doc.
+async fn pump_stdin_to_ws(mut input: Stdin, mut ws_write: WsWrite) {
+    loop {
+        let bytes = match read_stdin_frame(&mut input).await {
+            Ok(Some(bytes)) => bytes,
+            Ok(None) => break, // clean EOF — Port closed
+            Err(_) => break,   // malformed / over-cap length
+        };
+        let text = match String::from_utf8(bytes) {
+            Ok(t) => t,
+            Err(_) => continue, // not UTF-8 JSON — drop, keep the Port alive
+        };
+        if ws_write.send(Message::text(text)).await.is_err() {
+            break;
+        }
+    }
+}
+
+/// Bridge → host → browser. Owns the ws read half and stdout exclusively for
+/// its whole lifetime — see [`relay`]'s doc.
+async fn pump_ws_to_stdout(mut ws_read: WsRead, mut output: Stdout) {
+    while let Some(reply) = next_ws_payload(&mut ws_read).await {
+        if write_stdout_frame(&mut output, reply.as_bytes())
+            .await
+            .is_err()
+        {
+            break;
+        }
+    }
 }
 
 /// Probe [`PORT_RANGE`] in order; the first port whose TCP connect + ws handshake
@@ -157,7 +175,11 @@ async fn connect_bridge() -> Option<WsStream> {
 }
 
 type WsStream = tokio_tungstenite::WebSocketStream<TcpStream>;
-/// The read half of a split [`WsStream`] — see [`relay`]'s duplex pump.
+/// The write half of a split [`WsStream`] — owned exclusively by
+/// [`pump_stdin_to_ws`]; see [`relay`]'s doc.
+type WsWrite = futures::stream::SplitSink<WsStream, Message>;
+/// The read half of a split [`WsStream`] — owned exclusively by
+/// [`pump_ws_to_stdout`]; see [`relay`]'s doc.
 type WsRead = futures::stream::SplitStream<WsStream>;
 
 /// Read ws frames until the next Text/Binary payload (skipping Ping/Pong, which
@@ -260,5 +282,53 @@ mod tests {
         let over = (MAX_FRAME_BYTES as u32 + 1).to_ne_bytes().to_vec();
         let mut cursor = std::io::Cursor::new(over);
         assert!(read_stdin_frame(&mut cursor).await.is_err());
+    }
+
+    // Regression coverage for the cancellation-safety bug `relay`'s doc
+    // describes: a length-prefixed frame delivered across MANY small
+    // physical reads (a slow/chunked native-messaging pipe — the realistic
+    // shape the old `select!` duplex pump could truncate) must reassemble
+    // whole even while unrelated work is concurrently scheduled on the same
+    // runtime. `pump_stdin_to_ws`/`pump_ws_to_stdout` themselves can't be
+    // driven here without a live ws (see the module doc on `next_ws_payload`
+    // — that half needs a real bridge server); this pins the one piece that
+    // both of them — and the fix — depend on: `read_stdin_frame` correctly
+    // resuming a partial `read_exact` across many polls, never losing bytes,
+    // regardless of what else the executor is doing meanwhile.
+    #[tokio::test]
+    async fn read_stdin_frame_survives_fragmented_delivery_under_concurrent_activity() {
+        let body = json!({
+            "type": "import.request",
+            "reqId": "1",
+            "payload": { "note": "x".repeat(5_000) },
+        })
+        .to_string();
+        let mut encoded = (body.len() as u32).to_ne_bytes().to_vec();
+        encoded.extend_from_slice(body.as_bytes());
+
+        // A small duplex buffer forces `read_exact` to resume across many
+        // separate polls instead of completing in one.
+        let (mut writer, mut reader) = tokio::io::duplex(64);
+
+        // Unrelated concurrent activity on the SAME runtime, interleaved with
+        // the frame delivery below — proves the read isn't corrupted by
+        // whatever else gets scheduled around it.
+        let busy = tokio::spawn(async {
+            for _ in 0..200 {
+                tokio::task::yield_now().await;
+            }
+        });
+        let feeder = tokio::spawn(async move {
+            for chunk in encoded.chunks(7) {
+                writer.write_all(chunk).await.unwrap();
+                tokio::task::yield_now().await;
+            }
+        });
+
+        let decoded = read_stdin_frame(&mut reader).await.unwrap().unwrap();
+        assert_eq!(decoded, body.as_bytes());
+
+        feeder.await.unwrap();
+        busy.await.unwrap();
     }
 }
