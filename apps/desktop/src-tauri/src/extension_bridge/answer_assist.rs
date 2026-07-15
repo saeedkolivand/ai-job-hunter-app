@@ -123,8 +123,10 @@ const DRAFT_FAILED_MESSAGE: &str = "Could not draft an answer. Please retry.";
 /// Fixed sentinel — `req_id` already names an ACTIVE (`Pending`/`Running`)
 /// stream on this connection (see [`super::stream::AssistStreamRegistry::begin`]).
 /// A client reusing an in-flight reqId is rejected outright rather than
-/// silently orphaning the original job.
-const DUPLICATE_REQUEST_MESSAGE: &str = "This request is already in progress.";
+/// silently orphaning the original job. `pub(super)` — `stream::
+/// spawn_answer_assist` (which now calls `begin` synchronously, before ever
+/// spawning — see its own doc for why) is this constant's only reader.
+pub(super) const DUPLICATE_REQUEST_MESSAGE: &str = "This request is already in progress.";
 
 /// Collapse a downstream error that MAY carry dynamic content (see
 /// [`DRAFT_FAILED_MESSAGE`]) to that one fixed sentinel, logging the real
@@ -479,18 +481,15 @@ pub(super) async fn resolve_answer_assist(
     let is_salary = super::answers_suggest::is_salary_question(&normalize_question(&question));
     let provider_id = completer.provider_id().as_str();
 
-    // Mark this reqId pending BEFORE the salary/web-notes awaits below — the
-    // realistic window (network round-trips) an `assist.cancel` could race
-    // ahead of `compose_draft_stream`'s own `register()` call. See
-    // `AssistStreamRegistry::begin`'s doc (the pre-registration cancel race
-    // fix): a cancel landing in this window is recorded here instead of
-    // being silently swallowed (nothing was registered yet to `take()`).
-    // A reqId already ACTIVE on this connection (a client reusing an
-    // in-flight reqId) is rejected outright rather than silently orphaning
-    // the original job — see `begin`'s doc.
-    if !registry.begin(req_id) {
-        return Err(AppError::Validation(DUPLICATE_REQUEST_MESSAGE.to_string()));
-    }
+    // `registry.begin(req_id)` already ran, SYNCHRONOUSLY, before this
+    // function was ever called — see `stream::spawn_answer_assist`'s doc for
+    // why it moved there (a same-connection `assist.cancel` for this `reqId`
+    // must never be able to race ahead of `begin` through `tokio::spawn`'s
+    // scheduling gap). The `Pending` entry it left behind is guaranteed to
+    // exist by this point; a duplicate `reqId` is already rejected before
+    // this task is even spawned. `register` below still handles the
+    // pre-compose cancel race exactly as before — a `CancelledEarly` marker
+    // is consumed and reported back as `false`.
 
     let salary_range = if is_salary {
         resolve_salary_range(&completer, &limiter, provider_id, app_ctx.as_ref()).await
@@ -521,12 +520,13 @@ pub(super) async fn resolve_answer_assist(
     );
 
     // One more charge for the compose call itself — the LAST fallible step
-    // between `registry.begin` above and entering `compose_draft_stream`
-    // (which owns the normal register/unregister pair). A rejected charge
-    // must `unregister` the `Pending` entry `begin` recorded, or it leaks in
-    // this connection's registry until the connection closes or the reqId is
-    // reused — `compose_draft_stream` is never reached on this early-return
-    // path to clean it up itself.
+    // between the Pending entry `spawn_answer_assist`'s synchronous `begin`
+    // already recorded (before this whole function was ever called) and
+    // entering `compose_draft_stream` (which owns the normal
+    // register/unregister pair). A rejected charge must `unregister` that
+    // `Pending` entry, or it leaks in this connection's registry until the
+    // connection closes or the reqId is reused — `compose_draft_stream` is
+    // never reached on this early-return path to clean it up itself.
     charge_compose_budget(&limiter, completer.provider_id().as_str(), registry, req_id)?;
     let draft = clamp_chars(
         super::stream::compose_draft_stream(app, &completer, req_id, registry, &user, sink)
@@ -545,12 +545,12 @@ pub(super) async fn resolve_answer_assist(
 }
 
 /// Charge the daily provider budget for the compose call — see the call
-/// site's comment for why this is the LAST fallible step between
-/// `registry.begin(req_id)` and `compose_draft_stream` (which owns the
-/// normal register/unregister pair). On a rejected charge, `unregister`s the
-/// `Pending` entry `begin` recorded FIRST, so a charge failure never leaks a
-/// registry entry. Takes a plain `&Limiter` (no `AppHandle`), so this is
-/// directly unit-testable.
+/// site's comment for why this is the LAST fallible step between the
+/// pre-existing `Pending` entry (from `spawn_answer_assist`'s synchronous
+/// `begin`) and `compose_draft_stream` (which owns the normal
+/// register/unregister pair). On a rejected charge, `unregister`s that
+/// `Pending` entry, so a charge failure never leaks a registry entry. Takes a
+/// plain `&Limiter` (no `AppHandle`), so this is directly unit-testable.
 fn charge_compose_budget(
     limiter: &crate::limits::Limiter,
     provider_id: &str,
@@ -681,7 +681,48 @@ pub(super) async fn handle_answer_assist(
         )),
     };
 
+    unregister_on_err(registry, req_id, &outcome);
     answer_assist_reply(req_id, outcome)
+}
+
+/// The one cleanup point every one of `resolve_answer_assist`'s early gates
+/// (and `handle_answer_assist`'s own store-unavailable branch) relies on.
+///
+/// `spawn_answer_assist`'s synchronous `begin_or_reject_duplicate` always ran
+/// before `handle_answer_assist` was ever called (see its doc), so a
+/// `Pending` entry for `req_id` always exists by the time this runs — even on
+/// every one of `resolve_answer_assist`'s early gates (the ai-assist opt-in
+/// off, an empty question, no provider/résumé, the `ai_research` limiter
+/// rejecting) and the store-unavailable branch, ALL of which `return
+/// Err(...)` without ever reaching `compose_draft_stream` (the thing that
+/// would otherwise `register`/`unregister` it). Left alone, EVERY one of
+/// those common failures would leak a `Pending` entry for the rest of this
+/// connection's lifetime — and a client retrying the SAME `req_id` after a
+/// failed attempt would be wrongly rejected as "already in progress" forever
+/// after. Unregistering here on any `Err` is the one idempotent cleanup point
+/// that covers all of them; it is a safe no-op against the two paths that
+/// already clean up themselves on success (`charge_compose_budget` on a
+/// rejected charge, `compose_draft_stream`'s own end-of-stream `unregister`)
+/// since `unregister` on an already-gone `req_id` is a no-op by design. A
+/// duplicate `reqId` never reaches `handle_answer_assist` at all (rejected
+/// earlier by `begin_or_reject_duplicate`), so this can never remove an
+/// ORIGINAL in-flight entry out from under it.
+///
+/// Factored into its own tiny, pure(-ish — one `Mutex` lock, no `AppHandle`)
+/// function so it's directly unit-testable without a live `AppHandle` — this
+/// crate has no `tauri::test` mock-app harness. `handle_answer_assist`'s own
+/// end-to-end wiring (this helper actually being called with the right
+/// `registry`/`req_id`) is covered by inspection plus the existing gate
+/// tests (`check_ai_assist_gate_refuses_when_opt_in_off`, etc.) — those
+/// exercise the exact `Err` values this cleans up after.
+fn unregister_on_err(
+    registry: &super::stream::AssistStreamRegistry,
+    req_id: &str,
+    outcome: &AppResult<AnswerAssistOk>,
+) {
+    if outcome.is_err() {
+        registry.unregister(req_id);
+    }
 }
 
 #[cfg(test)]
@@ -1120,5 +1161,71 @@ mod tests {
             "a rejected charge must unregister the Pending entry, not leak it until the \
              connection closes or the reqId is reused"
         );
+    }
+
+    // ── unregister_on_err (HIGH fix: registry leak on handle_answer_assist's
+    // early gates — a Pending entry that never reaches compose_draft_stream
+    // must still be cleaned up) ────────────────────────────────────────────
+
+    #[test]
+    fn unregister_on_err_removes_a_pending_entry_left_by_an_early_gate_failure() {
+        // Mirrors EVERY one of `resolve_answer_assist`'s early gates (ai-assist
+        // off, empty question, no provider/résumé, limiter rejection) and
+        // `handle_answer_assist`'s own store-unavailable branch: `begin`
+        // already ran (via `spawn_answer_assist`'s synchronous
+        // `begin_or_reject_duplicate`, simulated here directly), then the
+        // call fails before ever reaching `compose_draft_stream` — nothing
+        // else would ever clean up this entry.
+        let registry = crate::extension_bridge::stream::AssistStreamRegistry::default();
+        registry.begin("req-1");
+
+        let outcome: AppResult<AnswerAssistOk> =
+            Err(AppError::Validation(AI_ASSIST_OFF_MESSAGE.to_string()));
+        unregister_on_err(&registry, "req-1", &outcome);
+
+        assert!(
+            !registry.contains("req-1"),
+            "an early-gate Err must unregister the Pending entry, not leak it for the \
+             rest of this connection's lifetime"
+        );
+        assert!(
+            registry.begin("req-1"),
+            "a client retrying the SAME reqId after a failed attempt must not be \
+             wrongly rejected as \"already in progress\" forever after"
+        );
+    }
+
+    #[test]
+    fn unregister_on_err_leaves_a_successful_outcomes_running_entry_untouched() {
+        let registry = crate::extension_bridge::stream::AssistStreamRegistry::default();
+        registry.register("req-1", "job-1"); // the normal Pending -> Running move
+
+        let outcome: AppResult<AnswerAssistOk> = Ok(AnswerAssistOk {
+            question: "Why this role?".to_string(),
+            draft: "Because…".to_string(),
+            sourced_web: false,
+            sourced_brief: false,
+            sourced_salary: false,
+        });
+        unregister_on_err(&registry, "req-1", &outcome);
+
+        assert!(
+            registry.contains("req-1"),
+            "a successful outcome must never touch the registry — compose_draft_stream \
+             already owns its own register/unregister pair"
+        );
+    }
+
+    #[test]
+    fn unregister_on_err_is_a_no_op_when_already_unregistered() {
+        // Double-unregister safety: the two EXISTING cleanup sites
+        // (`charge_compose_budget` on a rejected charge, `compose_draft_stream`'s
+        // own end-of-stream `unregister`) may already have removed the entry
+        // by the time `handle_answer_assist` reaches this call — must never panic.
+        let registry = crate::extension_bridge::stream::AssistStreamRegistry::default();
+        let outcome: AppResult<AnswerAssistOk> =
+            Err(AppError::Validation(AI_ASSIST_OFF_MESSAGE.to_string()));
+        unregister_on_err(&registry, "never-registered", &outcome); // must not panic
+        assert!(!registry.contains("never-registered"));
     }
 }

@@ -765,8 +765,12 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                 // so a multi-second stream never blocks THIS loop's
                 // `reader.next()` — the HIGH fix: an `assist.cancel` for this
                 // very stream (or any other frame) must still be read while it
-                // is in flight. No reply here — the spawned task sends its own
-                // `assist.chunk`/`assist.done`/terminal reply through `out_tx`.
+                // is in flight. No reply here for the normal path — the
+                // spawned task sends its own `assist.chunk`/`assist.done`/
+                // terminal reply through `out_tx`. A duplicate `reqId` is
+                // rejected SYNCHRONOUSLY inside `spawn_answer_assist` (before
+                // it ever spawns) with its own `answer.assist.result` error
+                // reply, also via `out_tx` — see that function's doc.
                 stream::spawn_answer_assist(
                     app.clone(),
                     req_id,

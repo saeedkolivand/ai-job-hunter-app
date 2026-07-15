@@ -47,7 +47,9 @@
 //!    (the connection's outbound channel is closed), and
 //!    [`compose_draft_stream`] cancels immediately: no consumer is left, so
 //!    waiting for the cap or a natural finish only burns more provider spend
-//!    for nobody.
+//!    for nobody. This also catches a peer that never explicitly closes —
+//!    [`run_writer`]'s `WRITE_STALL` timeout closes the channel after a
+//!    stalled write, so the NEXT `send_frame` reports gone the same way.
 //! 3. **The whole connection drops mid-stream** — `handle_connection` calls
 //!    [`AssistStreamRegistry::cancel_all`] once its read loop exits, so
 //!    every stream still registered for that connection is cancelled too,
@@ -57,9 +59,13 @@
 //!    BEFORE [`compose_draft_stream`] ever calls [`AssistStreamRegistry::register`];
 //!    a cancel arriving in that window used to be silently swallowed (there
 //!    was nothing yet to `take()`). [`AssistStreamRegistry::begin`] records a
-//!    `Pending` placeholder before those awaits so a racing cancel is
-//!    captured as [`StreamEntry::CancelledEarly`], and `register` reports
-//!    that back so the caller never starts the billable job at all.
+//!    `Pending` placeholder — called SYNCHRONOUSLY in `spawn_answer_assist`,
+//!    before `tokio::spawn` even schedules the task that runs those awaits —
+//!    so a racing cancel is captured as [`StreamEntry::CancelledEarly`], and
+//!    `register` reports that back so the caller never starts the billable
+//!    job at all; [`compose_draft_stream`] itself now starts that job
+//!    (`start_and_register`) BEFORE registering it, so a cancel racing that
+//!    exact gap still finds `Pending`, never a not-yet-existing `Running` job.
 //!
 //! Whichever of these fires, [`compose_draft_stream`]'s own error-path fix
 //! (item 2 of this pass) still only calls `job_fail` for a GENUINE failure —
@@ -73,10 +79,8 @@ use futures::SinkExt;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Listener, Manager};
-use tokio::net::TcpStream;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::WebSocketStream;
 
 use super::msg;
 use crate::error::{AppError, AppResult};
@@ -112,22 +116,71 @@ impl FrameSink for ChannelFrameSink {
     }
 }
 
+/// How long a single `writer.send(msg).await` inside [`run_writer`] may take
+/// before that peer is treated as stalled and the write loop breaks — see
+/// `run_writer`'s doc for the exact failure this closes. Chosen generously so
+/// a merely-slow-but-alive client is never killed (25s is well past any
+/// realistic Wi-Fi/mobile round-trip hiccup).
+///
+/// **Verified before picking this** — no existing redundant layer to lean on
+/// instead: `handle_connection`'s `WebSocketConfig` only sets
+/// `max_message_size`/`max_frame_size`; nothing in `extension_bridge`
+/// configures a periodic keepalive ping or any other read/write deadline on
+/// this socket. tungstenite auto-replies to a received `Ping` with a `Pong`,
+/// but neither tungstenite nor this module ever ORIGINATES its own periodic
+/// ping to notice a peer that has simply stopped reading without closing —
+/// so this timeout is the ONLY thing that ever detects that case, not a
+/// belt-and-braces duplicate of something else already watching for it.
+const WRITE_STALL: std::time::Duration = std::time::Duration::from_secs(25);
+
 /// The ONE task that ever writes to the live WS sink for a connection. Every
 /// outbound frame — handshake replies, synchronous verb replies, and every
 /// streaming `assist.chunk`/`assist.done`/terminal reply from a
 /// concurrently-running [`spawn_answer_assist`] task — funnels through `rx`,
 /// so `handle_connection`'s read loop never itself awaits a socket write.
+///
 /// Exits once every sender clone is dropped (the read loop's own sender AND
-/// every spawned streaming task's clone). Fire-and-forget, like every other
-/// spawn in this module — never explicitly joined, so a streaming task that
-/// never finishes can never hang the connection's own cleanup.
-pub(super) async fn run_writer(
-    mut writer: futures::stream::SplitSink<WebSocketStream<TcpStream>, Message>,
-    mut rx: UnboundedReceiver<Message>,
-) {
+/// every spawned streaming task's clone), OR once a single write stalls past
+/// [`WRITE_STALL`]. The latter closes a real hole: a peer that keeps the TCP
+/// connection open but stops reading parks a plain `writer.send(msg).await`
+/// forever with nothing else ever erroring — the channel's receiver stays
+/// alive, so `ChannelFrameSink::send_frame` keeps reporting success and
+/// `forward_chunk` keeps enqueueing `assist.chunk` frames into the unbounded
+/// channel for a consumer that will never read them (unbounded memory growth,
+/// plus a billable generation left running all the way to its cap for
+/// nobody). On timeout this loop breaks exactly like a closed-receiver error
+/// would: `writer`/`rx` are dropped, so the NEXT `send_frame` on this
+/// connection's channel returns `false` and the EXISTING `SinkGone` →
+/// `job_cancel` path (see [`compose_draft_stream`]) fires unchanged — no new
+/// cancellation mechanism, just an upper bound on how long a stalled write
+/// can go undetected.
+///
+/// Generic over `S` (rather than the concrete
+/// `SplitSink<WebSocketStream<TcpStream>, Message>`) purely so this is
+/// unit-testable against a fake sink whose `poll_ready` never resolves,
+/// without a live socket. Fire-and-forget, like every other spawn in this
+/// module — never explicitly joined, so a streaming task that never finishes
+/// can never hang the connection's own cleanup.
+pub(super) async fn run_writer<S>(mut writer: S, mut rx: UnboundedReceiver<Message>)
+where
+    S: SinkExt<Message> + Unpin,
+{
     while let Some(msg) = rx.recv().await {
-        if writer.send(msg).await.is_err() {
-            break;
+        match tokio::time::timeout(WRITE_STALL, writer.send(msg)).await {
+            Ok(Ok(())) => continue,
+            Ok(Err(_)) => break,
+            Err(_) => {
+                // Distinct from a genuine socket send error (the arm above) —
+                // this is a peer that never errored at all, just stopped
+                // reading. Worth its own log line so a stalled-peer teardown
+                // is diagnosable in the field, not indistinguishable from a
+                // normal disconnect.
+                log::debug!(
+                    "[extension_bridge] run_writer: write stalled past {WRITE_STALL:?} — \
+                     treating the peer as gone and closing this connection's writer"
+                );
+                break;
+            }
         }
     }
 }
@@ -135,10 +188,28 @@ pub(super) async fn run_writer(
 /// Drive a streaming `answer.assist` request on its OWN task, decoupled from
 /// the connection's read loop — see the module doc. The read loop's dispatch
 /// for `FrameDecision::AnswerAssist` calls this and moves on immediately (no
-/// reply is returned inline); the terminal `answer.assist.result` is sent
-/// from INSIDE this task once `handle_answer_assist` resolves, through the
-/// SAME channel as every `assist.chunk`/`assist.done` it already sent, so
-/// per-`reqId` ordering (chunks, then done, then result) holds.
+/// reply is returned inline for the normal path); the terminal
+/// `answer.assist.result` is sent from INSIDE the spawned task once
+/// `handle_answer_assist` resolves, through the SAME channel as every
+/// `assist.chunk`/`assist.done` it already sent, so per-`reqId` ordering
+/// (chunks, then done, then result) holds.
+///
+/// [`AssistStreamRegistry::begin`] is called HERE, synchronously, on the read
+/// loop's own thread — BEFORE `tokio::spawn` — rather than inside the spawned
+/// task (where it used to live, in `resolve_answer_assist`). `tokio::spawn`
+/// only SCHEDULES the task; it does not run it. Left inside the task, the
+/// single-threaded read loop could immediately read the NEXT frame — an
+/// `assist.cancel` for this very `reqId` — and dispatch it to
+/// `AssistStreamRegistry::cancel` (also synchronous) before the spawned task
+/// ever got scheduled to run its own `begin`. `cancel` would then find no
+/// entry at all, silently drop the cancel, and the task would go on to run
+/// `begin`→register→`job_start` regardless, billing a request the client
+/// already gave up on. Calling `begin` here closes that scheduling gap: the
+/// `Pending` marker exists before this function returns, so a same-connection
+/// `assist.cancel` dispatched anywhere after this call is guaranteed to see
+/// it. A duplicate `reqId` (one already `Pending`/`Running`/`CancelledEarly`
+/// on this connection) is rejected right here with its own
+/// `answer.assist.result` error reply — the task is never spawned at all.
 pub(super) fn spawn_answer_assist(
     app: AppHandle,
     req_id: String,
@@ -146,6 +217,9 @@ pub(super) fn spawn_answer_assist(
     out_tx: UnboundedSender<Message>,
     registry: Arc<AssistStreamRegistry>,
 ) {
+    if !begin_or_reject_duplicate(&registry, &req_id, &out_tx) {
+        return;
+    }
     tokio::spawn(async move {
         let mut sink = ChannelFrameSink(out_tx.clone());
         let reply = super::answer_assist::handle_answer_assist(
@@ -154,6 +228,34 @@ pub(super) fn spawn_answer_assist(
         .await;
         let _ = out_tx.send(Message::text(reply));
     });
+}
+
+/// The synchronous half of [`spawn_answer_assist`] — factored out so it is
+/// directly unit-testable WITHOUT a live `AppHandle` (this crate has no
+/// `tauri::test` mock-app harness). A plain (non-`async`) function, so a
+/// caller observing `true` returned — or `registry.contains(req_id)` true
+/// right after — has proof `begin` ran on ITS OWN thread, not deferred into
+/// whatever thread `tokio::spawn`'s task eventually runs on. Returns `true`
+/// when `req_id` was free (the caller should go on to spawn the actual
+/// task); `false` when it already named an active entry — in which case this
+/// function has ALREADY enqueued the `DUPLICATE_REQUEST_MESSAGE` reply
+/// through `out_tx` itself, so the caller has nothing left to do but return.
+fn begin_or_reject_duplicate(
+    registry: &AssistStreamRegistry,
+    req_id: &str,
+    out_tx: &UnboundedSender<Message>,
+) -> bool {
+    if registry.begin(req_id) {
+        return true;
+    }
+    let reply = super::answer_assist::answer_assist_reply(
+        req_id,
+        Err(AppError::Validation(
+            super::answer_assist::DUPLICATE_REQUEST_MESSAGE.to_string(),
+        )),
+    );
+    let _ = out_tx.send(Message::text(reply));
+    false
 }
 
 // ── Per-connection stream registry (register / cancel / pre-registration race) ──
@@ -173,6 +275,58 @@ impl JobCanceller for AppHandle {
     fn cancel_job(&self, job_id: &str) {
         crate::commands::jobs::job_cancel(self, job_id);
     }
+}
+
+/// Abstracts "start a job by id" so [`start_and_register`]'s
+/// start-before-register ordering is unit-testable against a fake recorder,
+/// without a live `AppHandle` — mirrors [`JobCanceller`]'s existing seam. The
+/// sole production implementor forwards to [`crate::commands::jobs::job_start`]
+/// with this module's one fixed job kind (every job this registry ever tracks
+/// is an `"extension.answer_assist"` job).
+pub(super) trait JobStarter {
+    fn start_job(&self, job_id: &str);
+}
+
+impl JobStarter for AppHandle {
+    fn start_job(&self, job_id: &str) {
+        crate::commands::jobs::job_start(self, job_id, "extension.answer_assist");
+    }
+}
+
+/// Start a fresh job for `req_id` and register it with `registry` —
+/// deliberately `start` BEFORE `register`, the reverse of this module's
+/// original order. The original order had a TOCTOU: `register` published a
+/// `Running(job_id)` entry before the job existed, so an `assist.cancel`
+/// landing in that exact gap found `Running`, removed the entry, and called
+/// `cancel_job` on an id nothing had started yet (a no-op) — the job then
+/// started anyway, Running, with no cancel path left. Starting first closes
+/// it: a cancel racing this same gap instead finds the `Pending` marker
+/// [`AssistStreamRegistry::begin`] already left behind (set synchronously in
+/// `spawn_answer_assist`, before this task was even spawned), so `register`
+/// below correctly observes [`StreamEntry::CancelledEarly`] and this function
+/// cancels the very job it just started before reporting failure. `None` on
+/// that race (the caller should treat it as `"Job cancelled"`); `Some(job_id)`
+/// otherwise. Safe to cancel unconditionally on the race path — `job_id` is a
+/// fresh UUID ([`crate::db::new_job_id`]), so it can never collide with a
+/// later, unrelated `start_job` call.
+///
+/// Generic over a combined [`JobStarter`] + [`JobCanceller`] recorder (not
+/// the concrete `AppHandle`) so this ordering is directly unit-testable
+/// without a live `AppHandle` — this crate has no `tauri::test` mock-app
+/// harness. The sole production caller ([`compose_draft_stream`]) passes a
+/// real `&AppHandle` (which implements both).
+pub(super) fn start_and_register<T: JobStarter + JobCanceller>(
+    starter: &T,
+    registry: &AssistStreamRegistry,
+    req_id: &str,
+) -> Option<String> {
+    let job_id = crate::db::new_job_id();
+    starter.start_job(&job_id);
+    if !registry.register(req_id, &job_id) {
+        starter.cancel_job(&job_id);
+        return None;
+    }
+    Some(job_id)
 }
 
 /// One `reqId`'s lifecycle in the per-connection registry — from the moment
@@ -430,14 +584,14 @@ pub(super) async fn compose_draft_stream(
     user: &str,
     sink: &mut dyn FrameSink,
 ) -> AppResult<String> {
-    let job_id = crate::db::new_job_id();
-    if !registry.register(req_id, &job_id) {
-        // An `assist.cancel` raced ahead of this call during the pre-compose
-        // window (see `AssistStreamRegistry::register`'s `CancelledEarly`
-        // arm) — the client already gave up; never start the billable job.
+    // `start_and_register` starts the job BEFORE registering it — see its own
+    // doc for the TOCTOU this order closes. `None` means an `assist.cancel`
+    // raced ahead of this call during the pre-compose window and the job
+    // `start_and_register` itself just started has already been cancelled —
+    // the client already gave up, so never proceed into the stream loop.
+    let Some(job_id) = start_and_register(app, registry, req_id) else {
         return Err(AppError::Message("Job cancelled".to_string()));
-    }
-    crate::commands::jobs::job_start(app, &job_id, "extension.answer_assist");
+    };
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AiStreamChunk>();
     let listen_job_id = job_id.clone();
@@ -901,6 +1055,150 @@ mod tests {
         );
     }
 
+    // ── begin_or_reject_duplicate (HIGH fix: pre-begin cancel-drop —
+    // `begin` must run synchronously, on the read loop's own thread, BEFORE
+    // `tokio::spawn` ever schedules the streaming task) ────────────────────
+
+    #[test]
+    fn begin_or_reject_duplicate_marks_pending_synchronously_before_any_task_runs() {
+        // This whole test has no `.await` at all — `begin_or_reject_duplicate`
+        // is a plain, non-async fn — so a `true` return, and `contains`
+        // reporting `true` immediately after, already proves `begin` ran on
+        // the CALLER's thread, not deferred into whatever thread a spawned
+        // task eventually runs on.
+        let registry = AssistStreamRegistry::default();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+
+        assert!(begin_or_reject_duplicate(&registry, "req-1", &out_tx));
+        assert!(
+            registry.contains("req-1"),
+            "begin must have run synchronously — before any spawn, before any await"
+        );
+
+        // The exact race this fix closes: a same-connection `assist.cancel`
+        // dispatched right after `spawn_answer_assist` returns (before the
+        // spawned task has run AT ALL) must still find the Pending marker,
+        // never nothing.
+        let canceller = RecordingCanceller::default();
+        registry.cancel(&canceller, "req-1");
+        assert!(
+            canceller.cancelled.borrow().is_empty(),
+            "no job exists yet — Pending just becomes CancelledEarly, nothing to job_cancel"
+        );
+        assert!(
+            !registry.register("req-1", "job-1"),
+            "the cancel that raced ahead of the spawned task's own register call must still win"
+        );
+    }
+
+    #[test]
+    fn begin_or_reject_duplicate_rejects_an_already_active_req_id_via_out_tx() {
+        let registry = AssistStreamRegistry::default();
+        registry.begin("req-1"); // the original request is already in flight
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+
+        assert!(!begin_or_reject_duplicate(&registry, "req-1", &out_tx));
+
+        let frame = out_rx
+            .try_recv()
+            .expect("a duplicate-rejection reply must be enqueued through out_tx directly");
+        let v: Value = serde_json::from_str(&as_text(frame)).unwrap();
+        assert_eq!(v["payload"]["ok"], false);
+        assert_eq!(
+            v["payload"]["error"],
+            super::super::answer_assist::DUPLICATE_REQUEST_MESSAGE
+        );
+        assert!(
+            registry.contains("req-1"),
+            "the ORIGINAL request's entry must be left untouched by the rejected duplicate"
+        );
+    }
+
+    // ── start_and_register (HIGH fix: job_start-before-register TOCTOU —
+    // starting the job before registering it means a cancel racing the gap
+    // finds Pending, not a not-yet-existing Running job) ───────────────────
+
+    #[derive(Default)]
+    struct RecordingStarterCanceller {
+        started: std::cell::RefCell<Vec<String>>,
+        cancelled: std::cell::RefCell<Vec<String>>,
+    }
+
+    impl JobStarter for RecordingStarterCanceller {
+        fn start_job(&self, job_id: &str) {
+            self.started.borrow_mut().push(job_id.to_string());
+        }
+    }
+
+    impl JobCanceller for RecordingStarterCanceller {
+        fn cancel_job(&self, job_id: &str) {
+            self.cancelled.borrow_mut().push(job_id.to_string());
+        }
+    }
+
+    #[test]
+    fn start_and_register_starts_the_job_then_registers_it_on_the_happy_path() {
+        let registry = AssistStreamRegistry::default();
+        let recorder = RecordingStarterCanceller::default();
+
+        let job_id = start_and_register(&recorder, &registry, "req-1")
+            .expect("a fresh reqId with no prior cancel must register successfully");
+
+        assert_eq!(
+            recorder.started.into_inner(),
+            vec![job_id.clone()],
+            "job_start must have run, unconditionally, before register was ever consulted"
+        );
+        assert!(
+            recorder.cancelled.borrow().is_empty(),
+            "a successful register must never cancel the job it just started"
+        );
+        assert_eq!(
+            registry.take("req-1"),
+            Some(job_id),
+            "register must have recorded the Running entry"
+        );
+    }
+
+    #[test]
+    fn start_and_register_cancels_the_just_started_job_when_a_cancel_already_raced_ahead() {
+        // The exact TOCTOU this reorder closes: an `assist.cancel` that
+        // arrived during the pre-compose window (captured here as a
+        // pre-seeded `CancelledEarly` marker — see `AssistStreamRegistry::
+        // begin`/`cancel`) must never leave a job that's Running but neither
+        // cancelled nor cancellable. `job_start` still runs — unconditionally,
+        // BEFORE `register` is ever consulted, proving the new order — but
+        // `register` then reports the race, and this function must cancel
+        // the very job it just started rather than leaving it orphaned.
+        let registry = AssistStreamRegistry::default();
+        let canceller = RecordingCanceller::default();
+        registry.begin("req-1");
+        registry.cancel(&canceller, "req-1"); // -> CancelledEarly, no job existed yet
+
+        let recorder = RecordingStarterCanceller::default();
+        let result = start_and_register(&recorder, &registry, "req-1");
+
+        assert!(
+            result.is_none(),
+            "a raced-ahead cancel must make start_and_register report failure"
+        );
+        assert_eq!(
+            recorder.started.borrow().len(),
+            1,
+            "job_start must still have run — it happens BEFORE register is ever consulted"
+        );
+        let started_id = recorder.started.borrow()[0].clone();
+        assert_eq!(
+            recorder.cancelled.into_inner(),
+            vec![started_id],
+            "the job just started must be job-cancelled immediately — no leaked Running job"
+        );
+        assert!(
+            !registry.contains("req-1"),
+            "the CancelledEarly marker must be consumed, not left behind"
+        );
+    }
+
     // ── ChannelFrameSink / channel multiplexing (HIGH fix mechanism) ───────
 
     #[tokio::test]
@@ -942,6 +1240,78 @@ mod tests {
             assert_eq!(as_text(msg), format!("chunk-{i}"));
         }
         assert_eq!(as_text(rx.recv().await.unwrap()), "done");
+    }
+
+    // ── run_writer (HIGH fix: write-backpressure / stalled-peer runaway) ───
+
+    /// A sink whose `poll_ready` never resolves `Ready` — mirrors a
+    /// TCP-open-but-not-reading peer: the OS write buffer stays full
+    /// forever, so a plain `writer.send(msg).await` would otherwise hang
+    /// this task indefinitely, with nothing ever erroring. Zero fields, so
+    /// it is `Unpin` automatically.
+    struct StalledSink;
+
+    impl futures::Sink<Message> for StalledSink {
+        type Error = std::io::Error;
+
+        fn poll_ready(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Result<(), Self::Error>> {
+            std::task::Poll::Pending
+        }
+
+        fn start_send(self: std::pin::Pin<&mut Self>, _item: Message) -> Result<(), Self::Error> {
+            unreachable!("poll_ready never resolves Ready, so start_send is never reached")
+        }
+
+        fn poll_flush(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Result<(), Self::Error>> {
+            std::task::Poll::Pending
+        }
+
+        fn poll_close(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Result<(), Self::Error>> {
+            std::task::Poll::Pending
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn run_writer_breaks_the_loop_once_a_write_stalls_past_write_stall() {
+        // Mirrors the HIGH fix this closes: before, an unbounded channel plus
+        // a peer that keeps the socket open but never reads meant
+        // `writer.send(msg).await` parked forever — nothing ever errored, so
+        // the receiver never dropped, `send_frame` kept reporting success,
+        // and `forward_chunk` kept enqueueing frames for a consumer that
+        // would never read them.
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        tx.send(Message::text("hello")).unwrap();
+
+        let writer_task = tokio::spawn(run_writer(StalledSink, rx));
+
+        // Let the spawned task actually run once, so its `WRITE_STALL`
+        // timer registers with the (paused) clock before we advance past it.
+        tokio::task::yield_now().await;
+        tokio::time::advance(WRITE_STALL + std::time::Duration::from_millis(1)).await;
+
+        writer_task
+            .await
+            .expect("run_writer must return, not panic, once its write stalls out");
+
+        // The receiver `run_writer` owned is dropped once its loop breaks —
+        // the NEXT `send_frame` on this same channel must now report the
+        // sink gone, funneling into the EXISTING `SinkGone` → `job_cancel`
+        // path unchanged (no new cancellation mechanism).
+        assert!(
+            !ChannelFrameSink(tx)
+                .send_frame("after-stall".to_string())
+                .await,
+            "a subsequent send_frame must return false once run_writer's receiver is dropped"
+        );
     }
 
     // ── streaming: forwardable_delta / assist frame builders ────────────────
