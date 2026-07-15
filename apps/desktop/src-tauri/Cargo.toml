@@ -168,7 +168,7 @@ whatlang = "0.18"
 # (libsqlite3-sys 0.28) which collides with our `rusqlite 0.40` (libsqlite3-sys
 # 0.38) on the `links = "sqlite3"` native lib. So we hand-roll the v10 path and
 # reuse our existing `rusqlite` to read the (copied, unlocked) Cookies DB.
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 
 # SHA-256 over the (post-translation) job text, backing the match-cache text-hash
 # guard: posting_vectors.text_hash and match_scores.job_text_hash use a
