@@ -1,0 +1,81 @@
+name: 📥 Downloads Badge
+
+# ──────────────────────────────────────────────────────────────────────
+# Accurate installer-downloads badge
+# ──────────────────────────────────────────────────────────────────────
+# Purpose: Recompute the "real installer downloads" count and publish a
+#   Shields endpoint-badge JSON. The stock github/downloads/<repo>/total badge
+#   is updater-inflated — it sums latest.json polling, .sig fetches and Tauri
+#   update payloads. scripts/compute-downloads-badge.mjs keeps only OS
+#   installers (.dmg/.exe/.msi/.AppImage/.deb/.rpm).
+# Triggers:
+#   - schedule: once daily, off-peak (04:17 UTC — deliberately off the hour to
+#       dodge GitHub's top-of-hour cron congestion)
+#   - workflow_dispatch: manual refresh
+#   - release published: refresh immediately after a new release ships
+# Publish target: the orphan `badges` branch, single file downloads.json at root
+#   (raw URL consumed by the README shields endpoint badge).
+# ──────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+  release:
+    types: [published]
+
+# Only write access — needed to push the recomputed badge to the badges branch.
+permissions:
+  contents: write
+
+# Don't cancel an in-flight publish; queue overlapping runs (schedule + release).
+concurrency:
+  group: downloads-badge
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Compute & publish badge
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: 🔢 Compute installer downloads
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/compute-downloads-badge.mjs
+
+      - name: 📤 Publish downloads.json to the badges branch
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Idempotent: skip when the badge already on `badges` is byte-identical
+          # (no empty commit, no branch churn). The fetch also no-ops cleanly on
+          # the first run, before the branch exists.
+          if git fetch --quiet origin badges 2>/dev/null; then
+            if git show FETCH_HEAD:downloads.json > prev-downloads.json 2>/dev/null \
+               && cmp -s prev-downloads.json badge-out/downloads.json; then
+              echo "Downloads badge unchanged — skipping publish."
+              exit 0
+            fi
+          fi
+
+          # Publish as a parentless (orphan) single-file commit so `badges` stays
+          # a 1-file branch with zero main-history noise, then force-update the ref.
+          blob="$(git hash-object -w badge-out/downloads.json)"
+          tree="$(printf '100644 blob %s\tdownloads.json\n' "$blob" | git mktree)"
+          commit="$(git commit-tree "$tree" -m 'chore: update installer downloads badge [skip ci]')"
+          git push --force origin "$commit:refs/heads/badges"
+          echo "Published downloads badge to the badges branch."
