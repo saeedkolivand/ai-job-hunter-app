@@ -141,10 +141,22 @@ export type PopupRequest =
    * shape exactly: `question`/`index`/`count` are the picked field's OWN
    * scan-time correlation (from the SAME filled-fields scan
    * `answersSave`'s `filled` list carries — see `PopupResponse`), never
-   * anything the background remembers on its own. Locates + replaces via the
-   * same fail-safe re-scan `answerFill` uses; never submits.
+   * anything the background remembers on its own. `expectedValue` is what
+   * the popup believes the field CURRENTLY holds (the frozen original at
+   * pick time, or whatever a prior successful Accept/Restore wrote) —
+   * `replaceFilledField` refuses (never clobbers) when the field's ACTUAL
+   * current text no longer matches, i.e. the user edited it manually since
+   * the pick. Locates + replaces via the same fail-safe re-scan `answerFill`
+   * uses; never submits.
    */
-  | { kind: 'answerReplace'; question: string; index: number; count: number; text: string };
+  | {
+      kind: 'answerReplace';
+      question: string;
+      index: number;
+      count: number;
+      text: string;
+      expectedValue: string;
+    };
 
 /** background → popup responses (discriminated by the originating request). */
 export type PopupResponse =

@@ -313,6 +313,50 @@ fn resolve_rewrite_instruction(preset: Option<&str>, instruction: &str) -> AppRe
     Ok(instruction.to_string())
 }
 
+/// The system prompt + max-token cap [`resolve_answer_assist`] passes to
+/// [`super::stream::compose_draft_stream`] for `mode` — draft always selects
+/// [`ANSWER_ASSIST_SYSTEM`]/[`ANSWER_ASSIST_MAX_TOKENS`], rewrite always
+/// selects [`super::answer_rewrite::REWRITE_SYSTEM`] (same token cap — no
+/// in-app precedent to size a distinct one for rewrite, see
+/// `ANSWER_ASSIST_MAX_TOKENS`'s own doc). A PURE function (no
+/// `AppHandle`/`Limiter`/`Completer`) so this MODE → PROMPT mapping is
+/// directly unit-testable even though `resolve_answer_assist` itself cannot
+/// be driven end-to-end in this crate (no `tauri::test` mock-app harness) —
+/// the grounding differences (the `user` message / salary / web-notes) are
+/// covered separately by `build_user_message`'s and
+/// `answer_rewrite::build_rewrite_user_message`'s own tests, which already
+/// prove rewrite mode fences no résumé/job/company/salary block.
+fn assist_prompt_for_mode(mode: AssistMode) -> (&'static str, u32) {
+    match mode {
+        AssistMode::Draft => (ANSWER_ASSIST_SYSTEM, ANSWER_ASSIST_MAX_TOKENS),
+        AssistMode::Rewrite => (
+            super::answer_rewrite::REWRITE_SYSTEM,
+            ANSWER_ASSIST_MAX_TOKENS,
+        ),
+    }
+}
+
+/// Validate rewrite mode's required fields — `existingAnswer` non-empty and
+/// a usable preset-or-instruction (via [`resolve_rewrite_instruction`]) —
+/// and return `(existing_answer, instruction)` on success. A PURE function:
+/// it takes only `payload`, no `Limiter`/`AppHandle`/`Completer`, so it is
+/// structurally INCAPABLE of touching the `ai_research` limiter — calling it
+/// before `resolve_answer_assist` ever acquires that limiter is what closes
+/// the "malformed rewrite frame burns a rate-window slot at zero provider
+/// spend" gap (`limits::Limiter` never releases a slot early on a guard
+/// drop, so a rejection AFTER acquire would otherwise still cost one).
+fn validate_rewrite_fields(payload: &Value) -> AppResult<(String, String)> {
+    let existing_answer = parse_existing_answer(payload);
+    if existing_answer.trim().is_empty() {
+        return Err(AppError::Validation(
+            "existingAnswer is required".to_string(),
+        ));
+    }
+    let preset = parse_preset(payload);
+    let instruction = resolve_rewrite_instruction(preset.as_deref(), &parse_instruction(payload))?;
+    Ok((existing_answer, instruction))
+}
+
 // ── Consent gate ──────────────────────────────────────────────────────────────
 
 /// The `answer.assist` consent gate in isolation: refuse with the fixed
@@ -495,10 +539,18 @@ pub(super) fn answer_assist_reply(req_id: &str, outcome: AppResult<AnswerAssistO
 /// Core `answer.assist`: gate on the ai-assist opt-in FIRST (fixed sentinel,
 /// before any parsing/spend), clamp the question, resolve a provider from the
 /// persisted snapshot (fixed sentinel when unusable), resolve the default
-/// résumé (fixed sentinel when none), THEN acquire the shared `"ai_research"`
-/// limiter bucket for the rest of the call. Routes salary-shaped questions
-/// through the salary machinery (scraped range → market lookup) and every
-/// other question through a grounded draft — see the module doc.
+/// résumé (fixed sentinel when none, draft mode only), validate rewrite
+/// mode's required fields (`existingAnswer` non-empty, a usable
+/// preset-or-instruction — see [`resolve_rewrite_instruction`]), THEN acquire
+/// the shared `"ai_research"` limiter bucket for the rest of the call. Every
+/// one of those checks — the `question` gate, provider/résumé resolution,
+/// AND the rewrite-field validation — runs BEFORE the limiter acquire: per
+/// `limits::Limiter`'s own doc, a rate-window slot is consumed on ACQUIRE and
+/// never released early on a guard drop, so a validation failure at this
+/// point is free to return `Err` without spending one of a legitimate
+/// caller's limited slots. Routes salary-shaped questions through the salary
+/// machinery (scraped range → market lookup) and every other question
+/// through a grounded draft — see the module doc.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn resolve_answer_assist(
     app: &AppHandle,
@@ -545,6 +597,20 @@ pub(super) async fn resolve_answer_assist(
         AssistMode::Rewrite => String::new(),
     };
 
+    // Rewrite mode's required-field validation — moved here (BEFORE the
+    // limiter acquire below), mirroring the `question` gate above: a
+    // malformed rewrite frame (empty `existingAnswer`, or neither a
+    // recognized `preset` nor a usable free-text `instruction`) must never
+    // consume an `ai_research` rate-window slot at zero provider spend.
+    // `validate_rewrite_fields` is a PURE function (no `Limiter`/`AppHandle`
+    // reachable from it at all) — computed once here; the
+    // `AssistMode::Rewrite` arm further down consumes the result directly
+    // instead of re-parsing/re-validating.
+    let rewrite_fields = match mode {
+        AssistMode::Rewrite => Some(validate_rewrite_fields(payload)?),
+        AssistMode::Draft => None,
+    };
+
     // Bound spend for the rest of this call — the SAME bucket
     // `ai_lookup_salary`/`ai_research_company`/`ai_research_answer` share.
     let limiter = app
@@ -571,11 +637,17 @@ pub(super) async fn resolve_answer_assist(
     // pre-compose cancel race exactly as before — a `CancelledEarly` marker
     // is consumed and reported back as `false`.
 
-    // Job/company/salary/web-search grounding, the rewrite user message, and
-    // the system prompt/token cap for the compose call — ALL diverge by mode
-    // right here; everything below this match is shared again (the one
-    // `compose_draft_stream` call and the reply shaping).
-    let (user, system, max_tokens, company_brief, web_notes, salary_range) = match mode {
+    // The system prompt + token cap for the compose call — a small, pure
+    // (no `AppHandle`) MODE → PROMPT mapping, factored into its own function
+    // so it's directly unit-testable in isolation (this crate has no
+    // `tauri::test` mock-app harness to drive `resolve_answer_assist` itself
+    // end-to-end — see `assist_prompt_for_mode`'s own doc).
+    let (system, max_tokens) = assist_prompt_for_mode(mode);
+
+    // Job/company/salary/web-search grounding + the rewrite user message —
+    // diverge by mode right here; everything below this match is shared
+    // again (the one `compose_draft_stream` call and the reply shaping).
+    let (user, company_brief, web_notes, salary_range) = match mode {
         AssistMode::Draft => {
             let app_ctx = resolve_context(app_store, url.as_deref());
             let job_description = app_ctx
@@ -616,35 +688,18 @@ pub(super) async fn resolve_answer_assist(
                 &web_notes,
                 salary_range.as_ref(),
             );
-            (
-                user,
-                ANSWER_ASSIST_SYSTEM,
-                ANSWER_ASSIST_MAX_TOKENS,
-                company_brief,
-                web_notes,
-                salary_range,
-            )
+            (user, company_brief, web_notes, salary_range)
         }
         AssistMode::Rewrite => {
-            let existing_answer = parse_existing_answer(payload);
-            if existing_answer.trim().is_empty() {
-                return Err(AppError::Validation(
-                    "existingAnswer is required".to_string(),
-                ));
-            }
-            let preset = parse_preset(payload);
-            let instruction =
-                resolve_rewrite_instruction(preset.as_deref(), &parse_instruction(payload))?;
+            // Already validated above, BEFORE the limiter acquire — see
+            // `rewrite_fields`'s own comment for why. `AssistMode::Rewrite`
+            // here guarantees `Some` (the match above is exhaustive over the
+            // SAME `mode`), so this never actually panics.
+            let (existing_answer, instruction) =
+                rewrite_fields.expect("validated before the limiter acquire, above");
             let user =
                 super::answer_rewrite::build_rewrite_user_message(&existing_answer, &instruction);
-            (
-                user,
-                super::answer_rewrite::REWRITE_SYSTEM,
-                ANSWER_ASSIST_MAX_TOKENS,
-                String::new(),
-                String::new(),
-                None,
-            )
+            (user, String::new(), String::new(), None)
         }
     };
 

@@ -692,17 +692,20 @@ async function runAnswerFill(
 /**
  * Inject the single-field REPLACER into the active tab and run it against
  * `(question, index)` — refusing unless the CURRENT count of same-question
- * FILLED fields still equals pick-time `count` — with `text`. Two-step like
- * `injectAnswerFill`: the replacement text (the AI-rewritten draft, or the
- * frozen original answer on Restore) is passed in transiently via the
- * second `executeScript({ func, args })` rather than baked into the `files`
- * injection.
+ * FILLED fields still equals pick-time `count`, AND unless the field's
+ * CURRENT text still equals `expectedValue` (never overwrite a manual edit
+ * made since the pick — see `replaceFilledField`'s doc) — with `text`.
+ * Two-step like `injectAnswerFill`: the replacement text (the AI-rewritten
+ * draft, or the frozen original answer on Restore) is passed in transiently
+ * via the second `executeScript({ func, args })` rather than baked into the
+ * `files` injection.
  */
 async function injectAnswerReplace(
   question: string,
   index: number,
   count: number,
-  text: string
+  text: string,
+  expectedValue: string
 ): Promise<FillAnswerResult> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   const tabId = tab?.id;
@@ -712,12 +715,19 @@ async function injectAnswerReplace(
 
   const results = await browser.scripting.executeScript({
     target: { tabId },
-    func: (q: string, i: number, c: number, t: string, key: string): FillAnswerResult | null => {
+    func: (
+      q: string,
+      i: number,
+      c: number,
+      t: string,
+      ev: string,
+      key: string
+    ): FillAnswerResult | null => {
       const runner = (globalThis as Record<string, unknown>)[key] as
-        ((q: string, i: number, c: number, t: string) => FillAnswerResult) | undefined;
-      return runner ? runner(q, i, c, t) : null;
+        ((q: string, i: number, c: number, t: string, ev: string) => FillAnswerResult) | undefined;
+      return runner ? runner(q, i, c, t, ev) : null;
     },
-    args: [question, index, count, text, ANSWER_REPLACE_GLOBAL],
+    args: [question, index, count, text, expectedValue, ANSWER_REPLACE_GLOBAL],
   });
 
   const result = results[0]?.result;
@@ -730,22 +740,24 @@ async function injectAnswerReplace(
 /**
  * Rewrite mode's Accept/Restore click (PR 11) — SAME request kind, only
  * `text` differs. Like `runAnswerFill`, failures are NOT folded away and
- * this NEVER replaces a different field than the one that was picked —
- * `injectAnswerReplace`/`replaceFilledField` fail safe (`{filled:false,
- * error}`) on any page mutation since the pick. Never submits the form.
+ * this NEVER replaces a different field than the one that was picked, NOR a
+ * field whose CURRENT text no longer matches `expectedValue` (a manual edit
+ * since the pick) — `injectAnswerReplace`/`replaceFilledField` fail safe
+ * (`{filled:false, error}`) on either. Never submits the form.
  */
 async function runAnswerReplace(
   question: string,
   index: number,
   count: number,
-  text: string
+  text: string,
+  expectedValue: string
 ): Promise<PopupResponse> {
   const token = await getToken();
   if (!token) {
     return { ok: false, error: 'Not paired. Paste your pairing token first.' };
   }
 
-  const result = await injectAnswerReplace(question, index, count, text);
+  const result = await injectAnswerReplace(question, index, count, text, expectedValue);
   return { ok: true, kind: 'answerReplace', result };
 }
 
@@ -811,7 +823,13 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
       case 'answerAssistProgress':
         return { ok: true, kind: 'answerAssistProgress', ...assistBuffer };
       case 'answerReplace':
-        return await runAnswerReplace(req.question, req.index, req.count, req.text);
+        return await runAnswerReplace(
+          req.question,
+          req.index,
+          req.count,
+          req.text,
+          req.expectedValue
+        );
       default: {
         // Exhaustiveness guard — a new PopupRequest variant must be handled.
         const _never: never = req;
