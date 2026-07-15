@@ -19,9 +19,8 @@ Never output absolute paths, usernames, home dirs, drive letters, or temp/IDE pa
 
 ## Shell & tooling
 
-- Use the **Bash tool** (never PowerShell). Prefix **every** command with `rtk` (`rtk pnpm …`, `rtk git …`).
-- `rtk rg` not `grep` · `rtk fd` not `find` · `rtk bat` not `cat` · `rtk pnpm` not `npm`/`yarn`. Never `find -exec`.
-- Meta: `rtk gain` (savings) · `rtk discover` (missed opportunities).
+- Use the **Bash tool** (never PowerShell).
+- `rg` not `grep` · `fd` not `find` · `bat` not `cat` · `pnpm` not `npm`/`yarn`. Never `find -exec`.
 
 ---
 
@@ -51,13 +50,13 @@ Renderer → shell only via `AppClient` (`createTauriInvokeClient()` in `apps/de
 4. **No inline transition objects.** `import { transition } from '@ajh/ui'` (`.fast`/`.normal`/`.spring`/…).
 5. **Always `@ajh/ui` primitives** — Button, Input, TextArea, NumberField, SelectDropdown, Switch, ModalShell, ConfirmModal, EmptyState, ErrorState, RowSkeleton/CardSkeleton, GlassCard, SettingsSection, OptionTile, StreamingText. Raw `<button>`/`<select>`/`<textarea>` error (except `<input type=range|file|checkbox|radio|hidden>`). `PageShell` from `@/components/layout/PageShell`; `UpdateBanner` from `@/components/ui/UpdateBanner`.
 6. **Package entrypoints, not deep paths.** `@ajh/ui` directly; prefer `React.ComponentProps<typeof X>`.
-7. **Import order** (blank line between): `node:*` → external → `@ajh/*` → `@/*` → relative. `rtk pnpm lint:fix`.
+7. **Import order** (blank line between): `node:*` → external → `@ajh/*` → `@/*` → relative. `pnpm lint:fix`.
 8. **`import type` for pure types** (auto-fixed; never suppress).
 9. **File placement** under `renderer/`: `features/` (one route), `components/ui/` (re-exports), `components/layout/` (chrome), `services/` (IPC hooks), `lib/` (pure utils + `machines/`), `hooks/`, `providers/`, `store/`. Never import across feature dirs.
 10. **State machines** for 3+ states → `lib/machines/` + `useMachine` from `@/hooks/use-machine`.
 11. **Remote data via React Query service hooks** — no `useState + useEffect` fetching.
 12. **Package boundaries:** `shared` no React/Node · `ui` no Zustand/IPC/routing · `prompts` no UI/`window` · `translations` no app/IPC imports.
-13. **Stale-branch check before work:** `rtk git fetch origin && rtk git branch -r | grep $(git branch --show-current)`.
+13. **Stale-branch check before work:** `git fetch origin && git branch -r | grep $(git branch --show-current)`.
 14. **New IPC capability** (5 steps): `contracts.ts` → `commands.rs` → `tauri-client.ts` → a `services/` hook → query key in `services/query-client.ts`.
 15. **Never bypass ESLint** — no `// eslint-disable`, no `@ts-ignore`. Scoped override in `eslint.config.mjs` with a reason. CI runs `lint:strict --max-warnings 0`.
 
