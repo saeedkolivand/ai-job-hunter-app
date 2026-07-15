@@ -49,14 +49,14 @@
 
 ### 🔎 Advisory — never blocks
 
-| Workflow                                  | Triggers         | What it does                                                                                                                                                   |
-| ----------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [📥 Downloads Badge](downloads-badge.yml) | daily, manual    | Recompute the "real installer downloads" count and publish a Shields endpoint-badge JSON. The stock github/downloads/<repo>/total badge is updater-inflated —… |
-| [🎨 Format Guard](format-guard.yml)       | push, manual     | Format Guard (push to main only) The main CI Pipeline runs on pull_request only — push to main is intentionally excluded there.                                |
-| [🏷️ PR Labeler](labeler.yml)              | PR               | Applies area/type labels to pull requests from their changed paths (config: .github/labeler.yml).                                                              |
-| [🔎 Quality](quality.yml)                 | PR, push, manual | Advisory quality + perf (consolidated from quality/rust-quality/benchmark).                                                                                    |
-| [🖥️ UI Checks](ui-checks.yml)             | PR, manual       | Advisory renderer/UI checks (consolidated from e2e/lighthouse/visual).                                                                                         |
-| [🧹 Workflow Lint](workflow-lint.yml)     | PR, manual       | Security-audits the GitHub Actions workflows & composite actions, and keeps the workflow catalog honest.                                                       |
+| Workflow                                  | Triggers               | What it does                                                                                                                                                   |
+| ----------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [📥 Downloads Badge](downloads-badge.yml) | release, daily, manual | Recompute the "real installer downloads" count and publish a Shields endpoint-badge JSON. The stock github/downloads/<repo>/total badge is updater-inflated —… |
+| [🎨 Format Guard](format-guard.yml)       | push, manual           | Format Guard (push to main only) The main CI Pipeline runs on pull_request only — push to main is intentionally excluded there.                                |
+| [🏷️ PR Labeler](labeler.yml)              | PR                     | Applies area/type labels to pull requests from their changed paths (config: .github/labeler.yml).                                                              |
+| [🔎 Quality](quality.yml)                 | PR, push, manual       | Advisory quality + perf (consolidated from quality/rust-quality/benchmark).                                                                                    |
+| [🖥️ UI Checks](ui-checks.yml)             | PR, manual             | Advisory renderer/UI checks (consolidated from e2e/lighthouse/visual).                                                                                         |
+| [🧹 Workflow Lint](workflow-lint.yml)     | PR, manual             | Security-audits the GitHub Actions workflows & composite actions, and keeps the workflow catalog honest.                                                       |
 
 ### 🚀 Deploy — publishes on push to main
 

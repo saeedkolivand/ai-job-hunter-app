@@ -20,7 +20,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const REPO = 'saeedkolivand/ai-job-hunter-app';
+const REPO = process.env.GITHUB_REPOSITORY || 'saeedkolivand/ai-job-hunter-app';
 
 // Real OS installers only (case-insensitive). Excludes .sig, .json (latest.json),
 // .app.tar.gz / .nsis.zip / any .zip / any .tar.gz — those are updater or
