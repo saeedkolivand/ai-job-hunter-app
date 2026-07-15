@@ -17,6 +17,9 @@ apps/extension/store-packages/
 .vite/
 .turbo/
 storybook-static/
+# Generated Shields endpoint-badge payload — published to the `badges` branch by
+# CI, never committed to main. (scripts/compute-downloads-badge.mjs)
+badge-out/
 
 # ── TypeScript ─────────────────────────────────────────────────────────────────
 *.tsbuildinfo
