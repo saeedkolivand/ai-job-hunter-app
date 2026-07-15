@@ -143,7 +143,7 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 pdf-extract = "0.12"
 zip = "8"
 docx-rs = "0.4.20"
-lopdf = "0.43"
+lopdf = "0.44"
 typst = "=0.15.0"
 typst-pdf = "=0.15.0"
 # `PagedDocument` moved out of `typst-library` into the `typst-layout` crate in
