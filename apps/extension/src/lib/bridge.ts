@@ -1095,12 +1095,19 @@ export class BridgeClient {
 
   /**
    * Send an `answer.assist { question, url?, searchWeb? }` (the user-clicked
-   * "Help me answer…") and resolve with the validated `answer.assist.result`
-   * payload — the first BILLABLE-AI verb on the bridge. Rejects only on no
-   * connection / timeout / send failure; like `matchLive`, a well-formed
-   * `ok:false` reply is NOT folded away here: this answers a deliberate
-   * click, so the caller (background.ts) must pass the `error` straight
-   * through to the popup.
+   * "Help me answer…") — OR (PR 11) `{ question, mode: 'rewrite',
+   * existingAnswer, preset?, instruction? }` for a rewrite — and resolve with
+   * the validated `answer.assist.result` payload — the first BILLABLE-AI
+   * verb on the bridge. `payload` is forwarded VERBATIM (this client adds no
+   * runtime guard on the outbound request: every field is already typed by
+   * {@link ExtensionAnswerAssistRequest} at every call site in this
+   * extension, and an unrecognized `preset`/malformed field is harmless —
+   * the desktop resolves/validates it server-side, falling back to the
+   * free-text `instruction` or refusing with a user-facing error). Rejects
+   * only on no connection / timeout / send failure; like `matchLive`, a
+   * well-formed `ok:false` reply is NOT folded away here: this answers a
+   * deliberate click, so the caller (background.ts) must pass the `error`
+   * straight through to the popup.
    *
    * The desktop now STREAMS the answer: zero or more `assist.chunk { delta }`
    * frames arrive before the terminal `answer.assist.result` resolves this

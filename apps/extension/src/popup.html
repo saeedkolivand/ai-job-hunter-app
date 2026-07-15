@@ -145,6 +145,52 @@
             <button id="btn-copy-assist" class="btn btn--small" type="button">Copy</button>
           </div>
         </div>
+        <!-- AI answer REWRITE ("Rewrite an answer", extension PR 11) — the SAME
+             billable opt-in as drafting above (never the autofill one). The
+             picker is fed by the SAME filled-fields scan "Save my answers from
+             this page" already ran (no separate scan injection). Pure text
+             transform: never pulls résumé/job grounding, only transforms the
+             picked field's existing text per a preset or free-text instruction. -->
+        <div class="assist">
+          <label class="assist__label" for="rewrite-picker">Pick a filled answer to rewrite</label>
+          <select id="rewrite-picker" class="assist__picker">
+            <option value="">— Save my answers first to scan this page —</option>
+          </select>
+          <div class="rewrite-presets" role="group" aria-label="Quick rewrite presets">
+            <button type="button" class="btn btn--small" data-preset="shorten">Shorten</button>
+            <button type="button" class="btn btn--small" data-preset="expand">Expand</button>
+            <button type="button" class="btn btn--small" data-preset="rephrase">Rephrase</button>
+            <button type="button" class="btn btn--small" data-preset="impact">More impact</button>
+            <button type="button" class="btn btn--small" data-preset="grammar">Fix grammar</button>
+          </div>
+          <input
+            id="rewrite-instruction"
+            class="assist__question"
+            type="text"
+            placeholder="Or type your own instruction…"
+            aria-label="Rewrite instruction"
+          />
+          <button
+            id="btn-rewrite"
+            class="btn"
+            type="button"
+            title="Rewrite the picked answer using your typed instruction"
+          >
+            Rewrite this answer
+          </button>
+          <div id="rewrite-result" class="assist-result" hidden>
+            <p id="rewrite-draft" class="assist-result__draft"></p>
+            <div class="rewrite-result__actions">
+              <button id="btn-copy-rewrite" class="btn btn--small" type="button">Copy</button>
+              <button id="btn-accept-rewrite" class="btn btn--small btn--primary" type="button">
+                Accept
+              </button>
+              <button id="btn-restore-rewrite" class="btn btn--small" type="button">
+                Restore original
+              </button>
+            </div>
+          </div>
+        </div>
         <!-- Explicit, never automatic: scores the default/most-recent resume against
              this page's posting (keyword coverage only — a local computation; only
              the score + a few missing keywords ever leave the device). -->

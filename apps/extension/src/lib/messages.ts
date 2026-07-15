@@ -11,11 +11,12 @@ import type {
   ExtensionAppliedCheckResult,
   ExtensionImportResult,
   ExtensionMatchLiveResult,
+  ExtensionRewritePreset,
   ExtensionStatusUpdateResult,
 } from '@ajh/shared';
 
 import type { FillAnswerResult } from './answer-fill';
-import type { ScannedQuestion } from './answers-capture';
+import type { FilledField, ScannedQuestion } from './answers-capture';
 import type { AutofillSummary } from './autofill';
 
 /** Coarse connection state the popup renders. */
@@ -100,14 +101,29 @@ export type PopupRequest =
    */
   | { kind: 'matchLive' }
   /**
-   * User-clicked "Help me answer…": draft a paste-ready answer for a pasted
-   * or picked application question — the first BILLABLE-AI verb on the
-   * bridge, gated on the SEPARATE AI-assist opt-in (never the assisted-
-   * autofill one). `searchWeb` mirrors the in-app toggle (default OFF).
-   * Like `statusUpdate`, this is a deliberate action — its failures are
+   * User-clicked "Help me answer…" (`mode` omitted/`'draft'`): draft a
+   * paste-ready answer for a pasted or picked application question — the
+   * first BILLABLE-AI verb on the bridge, gated on the SEPARATE AI-assist
+   * opt-in (never the assisted-autofill one). `searchWeb` mirrors the in-app
+   * toggle (default OFF).
+   *
+   * OR (extension PR 11) user-clicked a rewrite preset/submit
+   * (`mode: 'rewrite'`): transform `existingAnswer` (the picked FILLED
+   * field's current text) per `preset` or a free-text `instruction` — the
+   * SAME billable opt-in, the SAME streaming path, but a PURE TEXT TRANSFORM
+   * (never résumé/job/company-grounded, `searchWeb` is ignored). Like
+   * `statusUpdate`, both modes are a deliberate action — failures are
    * surfaced to the user, never folded away.
    */
-  | { kind: 'answerAssist'; question: string; searchWeb: boolean }
+  | {
+      kind: 'answerAssist';
+      question: string;
+      searchWeb: boolean;
+      mode?: 'draft' | 'rewrite';
+      existingAnswer?: string;
+      preset?: ExtensionRewritePreset;
+      instruction?: string;
+    }
   /**
    * Popup-open reattach: "what's the current/last streamed `answer.assist`
    * text?" — the background OWNS the accumulation buffer (see
@@ -117,7 +133,18 @@ export type PopupRequest =
    * pattern as the `status` push) while a stream is running, live-updating
    * an OPEN popup.
    */
-  | { kind: 'answerAssistProgress' };
+  | { kind: 'answerAssistProgress' }
+  /**
+   * Rewrite mode's Accept (write the AI-rewritten draft) / Restore original
+   * (write the frozen pre-rewrite text) — SAME request, just a different
+   * `text`; there is no separate "restore" kind. Mirrors `answerFill`'s
+   * shape exactly: `question`/`index`/`count` are the picked field's OWN
+   * scan-time correlation (from the SAME filled-fields scan
+   * `answersSave`'s `filled` list carries — see `PopupResponse`), never
+   * anything the background remembers on its own. Locates + replaces via the
+   * same fail-safe re-scan `answerFill` uses; never submits.
+   */
+  | { kind: 'answerReplace'; question: string; index: number; count: number; text: string };
 
 /** background → popup responses (discriminated by the originating request). */
 export type PopupResponse =
@@ -142,9 +169,13 @@ export type PopupResponse =
   /**
    * `ok:true` at the transport level; like `statusUpdate`, the desktop's own
    * `ok`/`error` on `result` is what the popup renders — this verb's
-   * failures are NOT folded away.
+   * failures are NOT folded away. `filled` (PR 11) is the CLIENT-SIDE
+   * scan-time correlation for the rewrite picker — the SAME injection this
+   * scan already ran (see `capture.ts`) — mirroring `answersSuggest`'s
+   * `scanned`; an Accept/Restore later correlates back to a live field via
+   * this exact `question`/`index`/count.
    */
-  | { ok: true; kind: 'answersSave'; result: ExtensionAnswersSaveResult }
+  | { ok: true; kind: 'answersSave'; result: ExtensionAnswersSaveResult; filled: FilledField[] }
   /**
    * `ok:true` at the transport level; like `answersSave`, the desktop's own
    * `ok`/`error` on `result` is what the popup renders. `scanned` is the
@@ -186,4 +217,7 @@ export type PopupResponse =
    * session.
    */
   | { ok: true; kind: 'answerAssistProgress'; text: string; done: boolean; interrupted: boolean }
+  /** The rewrite Accept/Restore outcome (fail-safe on any page mutation) —
+   *  mirrors `answerFill`'s response shape exactly. */
+  | { ok: true; kind: 'answerReplace'; result: FillAnswerResult }
   | { ok: false; error: string };

@@ -61,6 +61,7 @@ use crate::applications::{normalize_job_url, ApplicationStore};
 use crate::error::{AppError, AppResult};
 
 mod answer_assist;
+mod answer_rewrite;
 mod answers_save;
 mod answers_suggest;
 mod assist_registry;

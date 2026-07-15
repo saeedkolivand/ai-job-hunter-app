@@ -345,6 +345,13 @@ fn is_job_cancelled(app: &AppHandle, job_id: &str) -> bool {
 /// error) for the caller to shape into the (unchanged) `answer.assist.result`
 /// terminal reply.
 ///
+/// `system`/`max_tokens` are CALLER-supplied (PR 11) rather than hardcoded to
+/// [`super::answer_assist::ANSWER_ASSIST_SYSTEM`]/`ANSWER_ASSIST_MAX_TOKENS`
+/// so a second prompt (rewrite mode's
+/// [`super::answer_rewrite::REWRITE_SYSTEM`]) can reuse this SAME streaming
+/// compose path instead of a parallel one — the draft caller passes the
+/// draft system/cap unchanged, the rewrite caller passes its own.
+///
 /// Mechanism: `chat_stream` emits `ai:stream` Tauri events as it drives the
 /// HTTP stream — the SAME channel the renderer's own provider hook listens
 /// to. This registers a SECOND, Rust-side listener for this exact `job_id`
@@ -372,6 +379,8 @@ pub(super) async fn compose_draft_stream(
     completer: &Completer,
     req_id: &str,
     registry: &AssistStreamRegistry,
+    system: &str,
+    max_tokens: u32,
     user: &str,
     sink: &mut dyn FrameSink,
 ) -> AppResult<String> {
@@ -399,13 +408,8 @@ pub(super) async fn compose_draft_stream(
     let mut sink_gone = false;
     let result: AppResult<()>;
     {
-        let mut stream_fut = Box::pin(completer.stream_complete(
-            &job_id,
-            super::answer_assist::ANSWER_ASSIST_SYSTEM,
-            user,
-            Some(0.5),
-            Some(super::answer_assist::ANSWER_ASSIST_MAX_TOKENS),
-        ));
+        let mut stream_fut =
+            Box::pin(completer.stream_complete(&job_id, system, user, Some(0.5), Some(max_tokens)));
         loop {
             tokio::select! {
                 maybe = rx.recv() => {

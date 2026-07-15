@@ -10,7 +10,12 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { ANSWER_FILL_GLOBAL, fillAnswerField } from './answer-fill';
+import {
+  ANSWER_FILL_GLOBAL,
+  ANSWER_REPLACE_GLOBAL,
+  fillAnswerField,
+  replaceFilledField,
+} from './answer-fill';
 
 function setForm(html: string): void {
   document.body.innerHTML = `<form>${html}</form>`;
@@ -140,5 +145,107 @@ describe('fillAnswerField — fail-safe on any mutation since the scan', () => {
     // Neither field was touched — the fail-safe never guesses.
     expect((document.getElementById('q0') as HTMLInputElement).value).toBe('');
     expect((document.getElementById('q1') as HTMLInputElement).value).toBe('');
+  });
+});
+
+describe('ANSWER_REPLACE_GLOBAL', () => {
+  it('is the fixed key background.ts duplicates as a local literal', () => {
+    // Pinned so a rename here can never silently desync from background.ts's
+    // duplicated literal (same discipline as ANSWER_FILL_GLOBAL's own pin).
+    expect(ANSWER_REPLACE_GLOBAL).toBe('__ajhRunAnswerReplace');
+  });
+});
+
+describe('replaceFilledField — happy path (Accept and Restore both go through this)', () => {
+  it('replaces the exact labelled text input and dispatches input/change', () => {
+    setForm(
+      `<label for="q1">Why this role?</label><input id="q1" type="text" value="Because I love it." />`
+    );
+    let inputFired = false;
+    let changeFired = false;
+    const el = document.getElementById('q1') as HTMLInputElement;
+    el.addEventListener('input', () => {
+      inputFired = true;
+    });
+    el.addEventListener('change', () => {
+      changeFired = true;
+    });
+
+    const result = replaceFilledField(document, 'Why this role?', 0, 1, 'Rewritten answer.');
+
+    expect(result).toEqual({ filled: true });
+    expect(el.value).toBe('Rewritten answer.');
+    expect(inputFired).toBe(true);
+    expect(changeFired).toBe(true);
+  });
+
+  it('replaces a filled textarea', () => {
+    setForm(`<label for="cl">Cover letter</label><textarea id="cl">Original text.</textarea>`);
+    const result = replaceFilledField(document, 'Cover letter', 0, 1, 'Rewritten text.');
+    expect(result).toEqual({ filled: true });
+    expect((document.getElementById('cl') as HTMLTextAreaElement).value).toBe('Rewritten text.');
+  });
+
+  it('disambiguates same-labelled fields by occurrence index — never replaces the wrong one', () => {
+    setForm(`
+      <label for="q1">Comments</label><input id="q1" type="text" value="First" />
+      <label for="q2">Comments</label><input id="q2" type="text" value="Second" />
+    `);
+    replaceFilledField(document, 'Comments', 1, 2, 'Rewritten second');
+    expect((document.getElementById('q1') as HTMLInputElement).value).toBe('First');
+    expect((document.getElementById('q2') as HTMLInputElement).value).toBe('Rewritten second');
+  });
+
+  it('restores the frozen original the SAME way Accept writes the rewrite — it is just a different `text`', () => {
+    setForm(
+      `<label for="q1">Why this role?</label><input id="q1" type="text" value="Original." />`
+    );
+    replaceFilledField(document, 'Why this role?', 0, 1, 'Rewritten.');
+    expect((document.getElementById('q1') as HTMLInputElement).value).toBe('Rewritten.');
+
+    // Restore original: the SAME function, the frozen pre-rewrite text.
+    replaceFilledField(document, 'Why this role?', 0, 1, 'Original.');
+    expect((document.getElementById('q1') as HTMLInputElement).value).toBe('Original.');
+  });
+});
+
+describe('replaceFilledField — fail-safe on any mutation since the pick', () => {
+  it('returns a not-found error when the field was cleared in the meantime', () => {
+    setForm(`<label for="q1">Why this role?</label><input id="q1" type="text" value="Kept." />`);
+    (document.getElementById('q1') as HTMLInputElement).value = '';
+
+    const result = replaceFilledField(document, 'Why this role?', 0, 1, 'A different answer');
+
+    expect(result.filled).toBe(false);
+    expect(result.error).toMatch(/page may have changed/i);
+    expect((document.getElementById('q1') as HTMLInputElement).value).toBe('');
+  });
+
+  it('returns a not-found error for a <select> — rewrite mode never targets one', () => {
+    setForm(`
+      <label for="yrs">Years of experience</label>
+      <select id="yrs">
+        <option value="0">Choose one</option>
+        <option value="1" selected>5-10 years</option>
+      </select>
+    `);
+    const result = replaceFilledField(document, 'Years of experience', 0, 1, 'Twenty years');
+    expect(result.filled).toBe(false);
+  });
+
+  it('fails safe (never replaces) when a same-labelled field is inserted EARLIER in DOM order since the pick', () => {
+    setForm(`<label for="q1">Comments</label><input id="q1" type="text" value="Kept." />`);
+
+    const wrapper = document.querySelector('form')!;
+    wrapper.insertAdjacentHTML(
+      'afterbegin',
+      `<label for="q0">Comments</label><input id="q0" type="text" value="New." />`
+    );
+
+    const result = replaceFilledField(document, 'Comments', 0, 1, 'An answer');
+
+    expect(result.filled).toBe(false);
+    expect((document.getElementById('q0') as HTMLInputElement).value).toBe('New.');
+    expect((document.getElementById('q1') as HTMLInputElement).value).toBe('Kept.');
   });
 });

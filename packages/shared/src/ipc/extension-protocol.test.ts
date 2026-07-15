@@ -683,6 +683,45 @@ describe('ExtensionAnswerAssistRequestSchema', () => {
   it('rejects a request with no question field', () => {
     expect(() => ExtensionAnswerAssistRequestSchema.parse({})).toThrow();
   });
+
+  it('accepts a rewrite-mode request (existingAnswer + preset)', () => {
+    expect(() =>
+      ExtensionAnswerAssistRequestSchema.parse({
+        question: 'Why this role?',
+        mode: 'rewrite',
+        existingAnswer: 'Because I like it.',
+        preset: 'shorten',
+      })
+    ).not.toThrow();
+  });
+
+  it('accepts a rewrite-mode request with a free-text instruction instead of a preset', () => {
+    expect(() =>
+      ExtensionAnswerAssistRequestSchema.parse({
+        question: 'Why this role?',
+        mode: 'rewrite',
+        existingAnswer: 'Because I like it.',
+        instruction: 'Make this sound more confident.',
+      })
+    ).not.toThrow();
+  });
+
+  it('rejects an unknown preset id', () => {
+    expect(() =>
+      ExtensionAnswerAssistRequestSchema.parse({
+        question: 'Why this role?',
+        mode: 'rewrite',
+        existingAnswer: 'x',
+        preset: 'summarize',
+      })
+    ).toThrow();
+  });
+
+  it('rejects an unknown mode', () => {
+    expect(() =>
+      ExtensionAnswerAssistRequestSchema.parse({ question: 'Why this role?', mode: 'edit' })
+    ).toThrow();
+  });
 });
 
 describe('ExtensionAnswerAssistResultSchema', () => {
