@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784141401982,
+  "lastUpdate": 1784142300053,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4739,6 +4739,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 286497,
             "range": "± 6262",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9bf24aa0e11dca454dcbe8bf3715d289a44fc349",
+          "message": "fix: restore rewrite-mode review fixes lost in #649 (#675)\n\n* fix: address rewrite-mode review findings\n\n- Refuse a field replace when its value changed after pick (data integrity):\n  thread the field's expected current value through answerReplace end-to-end;\n  replaceFilledField returns CHANGED_SINCE_PICK and never overwrites a manual\n  edit made between pick and Accept/Restore. The expected baseline updates to\n  whatever a successful Accept/Restore wrote.\n- Fix the rewrite picker reset: Number('') is 0, so resetting the picker to\n  its placeholder silently re-picked index 0 instead of clearing the target;\n  guard the empty value before coercion.\n- Validate rewrite required fields BEFORE acquiring the ai_research limiter,\n  via a pure validate_rewrite_fields (which structurally can't touch the\n  limiter), so malformed rewrite frames can't burn rate-limiter slots.\n- Extract assist_prompt_for_mode (pure mode->prompt) and test it directly;\n  the remaining resolve_answer_assist end-to-end slice has no mock-app harness\n  in this crate (pre-existing, same as draft mode).\n\nKeeps the rewrite prompt policy in extension_bridge to mirror the shipped\ndraft path (ANSWER_ASSIST_SYSTEM + build_user_message live there too) —\nconfirmed a CodeRabbit false positive by the independent review.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: capture rewrite target before await to prevent mid-flight repick clobber\n\nsendRewriteReplace re-read the module-level rewriteTarget after the await to\nstamp expectedValue; a re-pick to a different field mid-flight would corrupt\nthe new target's baseline. Capture the target by reference before the send so\nthe in-flight request only ever touches the object it captured.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
+          "timestamp": "2026-07-15T20:55:09+02:00",
+          "tree_id": "f664653d52db8502373b47995508f57dad47405f",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/9bf24aa0e11dca454dcbe8bf3715d289a44fc349"
+        },
+        "date": 1784142299517,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2171479,
+            "range": "± 34243",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2571794,
+            "range": "± 67562",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 292767,
+            "range": "± 15215",
             "unit": "ns/iter"
           }
         ]
