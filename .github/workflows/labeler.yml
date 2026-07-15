@@ -2,11 +2,15 @@ name: 🏷️ PR Labeler
 
 # ──────────────────────────────────────────────────────────────────────
 # Applies area/type labels to pull requests from their changed paths
-# (config: .github/labeler.yml). Uses the `pull_request` trigger — branches
-# are in-repo, so the job gets a write token WITHOUT the pull_request_target
-# untrusted-checkout footgun; actions/labeler reads the diff via the API and
-# never checks out or runs PR code. sync-labels:false → never strips a label
-# a maintainer added by hand.
+# (config: .github/labeler.yml). Uses the `pull_request` trigger (not
+# pull_request_target) — no untrusted checkout; actions/labeler reads the diff
+# via the API and never checks out or runs PR code. sync-labels:false → never
+# strips a label a maintainer added by hand.
+#
+# Fork PRs are SKIPPED (job `if:` gate): GitHub caps the GITHUB_TOKEN to
+# read-only for `pull_request` events on forks regardless of the declared
+# `permissions:`, so actions/labeler's set-labels call would 403. Skipping
+# leaves a neutral status instead of a red X; a maintainer labels manually.
 # ──────────────────────────────────────────────────────────────────────
 
 on:
@@ -23,6 +27,8 @@ concurrency:
 jobs:
   label:
     name: 🏷️ Apply labels
+    # Same-repo PRs only — fork PRs get a read-only token that can't set labels.
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
