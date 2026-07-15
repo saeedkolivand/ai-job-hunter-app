@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784079846702,
+  "lastUpdate": 1784105253668,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4613,6 +4613,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 303201,
             "range": "± 21346",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9985ff6136dd01afa52417b6b4a97fa376e19369",
+          "message": "feat: stream extension answer drafts over the bridge (#646)\n\n* feat: stream extension answer drafts over the bridge\n\nAdds an additive streaming frame family (assist.chunk/done/cancel) keyed\non the existing reqId and upgrades answer.assist draft mode from one-shot\nto live streaming, reusing the in-app provider stream fenced by a server\nminted job id and a per-connection sink so no stream can cross\nconnections. The per-connection read loop no longer blocks on an\nin-flight stream, so a cancel is actually reachable; drafts are capped\nlive, the client timeout resets on activity and cancels on stall, and\nthe cancel registry is per-connection. Rewrite mode is a follow-up.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: cancel orphaned answer streams and record partial spend\n\nCloses the ensemble findings on the streaming transport: a dead sink or\na dropped connection now cancels the in-flight generation immediately\n(cancel_all on disconnect, ForwardOutcome::SinkGone on a gone writer)\ninstead of billing to completion for no listener; provider errors fail\nthe job instead of leaving it stuck running; hitting the draft cap now\nrecords the partial provider usage in the spend store; and the compose\ninternals moved into stream.rs for R8 headroom. Cancel is now\ntrait-tested, and a check-before-remove bug in the registry was fixed.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: preserve early-cancel marker across disconnect and make cancel atomic\n\ncancel_all's drain-and-reinsert dropped an already-CancelledEarly entry\ninstead of reinserting it, so a cancel-then-disconnect during the\npre-compose window let a later register() start a full billable\ngeneration for a request the user had already cancelled. cancel() also\nsplit its Running/Pending decision across two separate lock\nacquisitions (a TOCTOU a concurrent register() could win); both are now\none exhaustive match under a single lock. Also fixes the module doc's\nstale \"Three ways\" count and adds ai_provider/stream.rs comments\ndocumenting the cancel-branch record_usage provider caveat and its\nmirror test.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: make the native messaging relay reads cancellation safe\n\nThe duplex select! loop raced a stdin read_exact branch against a ws\nread branch; read_exact is not cancellation-safe, so select! dropping\nthe losing branch mid-read discarded already-consumed stdin bytes and\ndesynced the length-prefixed frame stream. Split the relay into two\nindependent tasks (stdin->ws, ws->stdout), each owning its reader and\nwriter half exclusively, so no read_exact future is ever raced or\ndropped mid-frame; relay() only selects on the tasks' JoinHandles,\nwhich is safe (dropping one detaches rather than aborts it).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: join the losing relay pump before shutdown so last frames flush\n\n`relay()` selected on the two pump tasks' JoinHandles and dropped the\nloser, but `Runtime::drop` in `run()` cancels still-incomplete spawned\ntasks rather than letting them finish — so a `pump_ws_to_stdout` task\nmid-write of the last `assist.chunk`/`assist.done` frame could be axed\nbefore the write/flush landed. Now the loser is `.await`ed with a\nbounded 200ms timeout before `write_ready(false)`, which also fixes the\n`write_ready` stdout race by sequencing it after the join. Renamed the\nfragmented-delivery test to reflect what it actually covers and\ndocumented why a genuine select!-cancellation test against\n`read_stdin_frame` isn't included (read_exact is inherently not\ncancel-safe; the architecture never races it in production).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: harden assist stream registry, spend accounting, and interruption ux\n\n- unregister the pre-compose registry entry on a rejected daily-budget\n  charge, closing a Pending-entry leak between registry.begin and\n  compose_draft_stream\n- reject a reused in-flight reqId in AssistStreamRegistry::begin instead of\n  silently orphaning the original job\n- record accumulated provider usage on a transport read error too, mirroring\n  the existing cancellation-branch spend accounting\n- render the interrupted state (not just the partial draft) when a live-push\n  answerAssistProgress update reports a later stream failure\n- settle a superseded answerAssist request's promise and drop its stale\n  chunk listener when a newer request starts, so it can no longer mutate the\n  new request's shared draft buffer\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: guard answer-assist stream buffer against overlapping requests\n\nThe background service worker holds a single-slot assistBuffer for the\nstreaming answer.assist draft. MV3 popups are torn down on close, and the\nreattach path re-rendered an in-flight stream without re-disabling the\nbutton, so a second overlapping request could reset the shared buffer\nwhile the first was still streaming — the first run's late chunk and\nterminal writes then stomped the second's buffer, rendering a garbled or\nprematurely-\"done\" draft as if coherent.\n\nAdd a monotonic assistGeneration guard: each runAnswerAssist captures its\ngeneration and (a) early-bails after setup once a newer run has superseded\nit, before resetting the buffer or issuing the billable request, and\n(b) drops its onChunk and terminal writes when superseded mid-stream. The\npopup now reflects an in-flight reattached stream by disabling the button\nuntil terminal. Adds two overlapping-call regression tests (both proven to\nfail without the guard).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: reject a reused reqid until its cancelled-early marker is consumed\n\nAssistStreamRegistry::begin rejected only Pending/Running entries, so a\nreused reqId could overwrite a CancelledEarly marker with a fresh Pending.\nThat marker exists to be consumed by the original pre-compose run's later\nregister() call (which removes it and returns false, aborting before any\nbillable job starts); overwriting it made register() see Pending instead,\ninsert Running, and start a billable generation for a request the user had\nalready cancelled.\n\nbegin now rejects any occupied entry (contains_key), mirroring the existing\ncancel_all hardening that re-inserts rather than drops CancelledEarly. The\nmarker is always cleared within the original run's lifecycle (register\nconsumes it, charge failure unregisters, or cancel_all on disconnect), so a\nreqId is never permanently locked out; a well-behaved client uses a fresh\nuuid anyway.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-15T10:27:18+02:00",
+          "tree_id": "dda0a6590012fdea0c928551aa74c43270f24227",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/9985ff6136dd01afa52417b6b4a97fa376e19369"
+        },
+        "date": 1784105253046,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2159718,
+            "range": "± 84895",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2606729,
+            "range": "± 63745",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 287897,
+            "range": "± 5212",
             "unit": "ns/iter"
           }
         ]
