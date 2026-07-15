@@ -18,7 +18,9 @@
 
 import { getModelTier } from '@ajh/prompts/context-manager';
 import type { PromptTier, ProviderKind, ProviderProfile } from '@ajh/prompts/provider';
+import type { ActiveAiConfig } from '@ajh/shared';
 
+import { keys, queryClient } from '@/services/query-client';
 import type { AiProvider, PerProviderSettings } from '@/store/preferences-schema';
 import { usePreferencesStore } from '@/store/preferences-store';
 
@@ -51,17 +53,28 @@ export interface ActiveProviderContext {
 }
 
 /**
- * Read the active provider config from the preferences store and resolve the
- * effective model name.
+ * Resolve the active provider + effective model name for imperative prompt
+ * shaping (called from async, non-component generation code).
  *
- * @param fallbackModel - The model name passed by the caller; used when no
- *   provider-specific model is configured.
+ * Routing (`activeProvider` + `model`) is now BACKEND-owned (task #16), read via
+ * React Query's synchronous escape hatch `getQueryData` — never a fresh fetch, so
+ * this stays sync. It is boot-prefetched (`AiConfigBoot`) and re-invalidated after
+ * onboarding, so the read is warm; a cold read defaults to `ollama` (matching the
+ * historical default) rather than blocking.
+ *
+ * Per-provider TUNING knobs — `modelLimits` (num_ctx sizing) and `effort` — STAY
+ * renderer-side (RESOLVED-Q1) and are still read from Zustand here; the backend
+ * store owns only routing/egress, never these prompt-shaping knobs.
+ *
+ * @param fallbackModel - The model name passed by the caller; used when the store
+ *   has no model for the active provider yet.
  */
 export function resolveActiveProvider(fallbackModel = ''): ActiveProviderContext {
-  const providerConfig = usePreferencesStore.getState().aiProviderConfig;
-  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
-  const providerSettings = providerConfig?.providers?.[activeProvider];
-  const activeModel = providerSettings?.model || fallbackModel;
+  const routing = queryClient.getQueryData<ActiveAiConfig>(keys.ai.activeConfig);
+  const activeProvider = (routing?.activeProvider ?? 'ollama') as AiProvider;
+  const activeModel = routing?.model || fallbackModel;
+  const providerSettings =
+    usePreferencesStore.getState().aiProviderConfig?.providers?.[activeProvider];
   return { activeProvider, providerSettings, activeModel };
 }
 

@@ -199,9 +199,7 @@ export function useApplicationAnswers({
     setError(null);
     try {
       const detected = meta ?? (await extractMetadata(resume, jobDesc, model));
-      const brief = researchCompany
-        ? await fetchCompanyBrief(jobDesc, model, detected.companyName)
-        : '';
+      const brief = researchCompany ? await fetchCompanyBrief(jobDesc, detected.companyName) : '';
       const chosen = [...APPLICATION_QUESTIONS.filter((q) => selected.has(q.id)), ...custom];
       if (searchWeb && chosen.length > WEB_SEARCH_MAX_PER_RUN) {
         // `console.warn` (not `.info`) — this repo's `no-console` lint rule
@@ -231,7 +229,6 @@ export function useApplicationAnswers({
                 detected.jobTitle,
                 detected.companyName,
                 detected.jobLocation || detected.jobCountry || '',
-                model,
                 detected.jobCountry,
                 countryToCurrency(detected.jobCountry)
               );
@@ -255,8 +252,7 @@ export function useApplicationAnswers({
             webSearchNotes = await fetchAnswerWebNotes(
               q.question,
               detected.jobTitle,
-              detected.companyName,
-              model
+              detected.companyName
             );
           } catch {
             webSearchNotes = '';

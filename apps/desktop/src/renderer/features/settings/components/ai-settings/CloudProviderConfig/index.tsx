@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown, Input } from '@ajh/ui';
 
+import { useSetProviderSettings } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
-import { usePreferencesStore } from '@/store/preferences-store';
 
 interface ProviderMeta {
   label: string;
@@ -59,7 +59,7 @@ export function CloudProviderConfig({
   onOpenDocs,
 }: Props) {
   const { t } = useTranslation();
-  const setProviderSettings = usePreferencesStore((s) => s.setProviderSettings);
+  const setProviderSettings = useSetProviderSettings();
   const [changing, setChanging] = useState(false);
 
   // Collapse the editor only after a save cycle COMPLETES (isSaving true→false)
@@ -213,7 +213,8 @@ export function CloudProviderConfig({
               variant="ghost"
               className="shrink-0"
               onClick={() =>
-                setProviderSettings('openai-compatible', {
+                setProviderSettings.mutate({
+                  provider: 'openai-compatible',
                   baseUrl: baseUrlInput || undefined,
                 })
               }

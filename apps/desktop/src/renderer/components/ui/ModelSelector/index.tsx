@@ -7,10 +7,15 @@ import { Dropdown } from '@ajh/ui';
 import { getModelGuidance } from '@/lib/ai-providers/model-guidance';
 import { PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { useAppClient } from '@/providers/AppClientProvider';
-import { useAIModels, useHasProviderKey, useSystemHealth } from '@/services';
+import {
+  useActiveConfig,
+  useAIModels,
+  useConfigureActiveProvider,
+  useHasProviderKey,
+  useSystemHealth,
+} from '@/services';
 import { keys } from '@/services/query-client';
 import type { AiProvider } from '@/store/preferences-schema';
-import { useAIModel, useAiProviderConfig, usePreferencesStore } from '@/store/preferences-store';
 import type { Model } from '@/types';
 
 import { buildModelOptions } from './build-options';
@@ -30,12 +35,11 @@ export function ModelSelector({ className }: ModelSelectorProps) {
   const api = useAppClient();
   const { data: modelList = [], isLoading: ollamaLoading } = useAIModels();
   const ollamaModels = modelList as Model[];
-  const aiModel = useAIModel();
-  const setAIModel = usePreferencesStore((s) => s.setAIModel);
-  const setProviderSettings = usePreferencesStore((s) => s.setProviderSettings);
-  const setActiveProvider = usePreferencesStore((s) => s.setActiveProvider);
-  const providerConfig = useAiProviderConfig();
-  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
+  // Routing is backend-owned (task #16); writes go through the setters, reads
+  // through the boot-prefetched active-config query.
+  const configureProvider = useConfigureActiveProvider();
+  const { data: providerConfig } = useActiveConfig();
+  const activeProvider = (providerConfig?.activeProvider ?? 'ollama') as AiProvider;
   const activeProviderModel = providerConfig?.providers?.[activeProvider]?.model ?? '';
 
   // Cloud key + model status, driven off the registry (no hardcoded provider
@@ -84,15 +88,9 @@ export function ModelSelector({ className }: ModelSelectorProps) {
     cloudModels: (p) => cloudModelNames.get(p) ?? [],
   });
 
-  // Current selection as "provider||model" (Ollama keeps its own defaultModel).
-  const selectedValue =
-    activeProvider === 'ollama'
-      ? aiModel?.defaultModel
-        ? `ollama||${aiModel.defaultModel}`
-        : ''
-      : activeProviderModel
-        ? `${activeProvider}||${activeProviderModel}`
-        : '';
+  // Current selection as "provider||model" — every provider (Ollama included) now
+  // stores its model in the backend per-provider config.
+  const selectedValue = activeProviderModel ? `${activeProvider}||${activeProviderModel}` : '';
 
   // Warn whenever the dropdown can't show a real, selectable model for the current
   // selection — i.e. the stored value isn't a visible option (no model picked,
@@ -131,12 +129,8 @@ export function ModelSelector({ className }: ModelSelectorProps) {
   const handleModelChange = (value: string) => {
     const [provider, model] = value.split('||');
     if (!provider || !model) return;
-    const p = provider as AiProvider;
-    setProviderSettings(p, { model });
-    if (p === 'ollama') {
-      setAIModel({ defaultModel: model, temperature: 0.7, maxTokens: 2000 });
-    }
-    setActiveProvider(p);
+    // Set the provider's model AND make it active in one backend write.
+    configureProvider.mutate({ provider, model });
   };
 
   const dropdown = (
@@ -184,33 +178,32 @@ export function ModelSelector({ className }: ModelSelectorProps) {
 }
 
 export function useSelectedModel(): string {
-  const aiModel = useAIModel();
-  const providerConfig = useAiProviderConfig();
-  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
-  const activeProviderModel = providerConfig?.providers?.[activeProvider]?.model ?? '';
-
-  // Ollama uses its own defaultModel; every other provider stores its model in the
-  // per-provider config (CLI agents may leave it empty → the tool's own default).
-  const model = activeProvider === 'ollama' ? (aiModel?.defaultModel ?? '') : activeProviderModel;
+  // The active provider's model is backend-resolved (task #16); `data.model` is
+  // the active provider's own model (empty for a not-yet-configured provider).
+  const { data } = useActiveConfig();
+  const model = data?.model ?? '';
   // Strip a provider prefix if one slipped in (e.g. "ollama||gpt-oss" -> "gpt-oss").
   return model.includes('||') ? (model.split('||')[1] ?? model) : model;
 }
 
 export function useSelectedProvider(): string {
-  const providerConfig = useAiProviderConfig();
-  return providerConfig?.activeProvider ?? 'ollama';
+  return useActiveConfig().data?.activeProvider ?? 'ollama';
 }
 
 export function useCanUseAI(): { canUse: boolean; reason?: string } {
-  const aiModel = useAIModel();
-  const providerConfig = useAiProviderConfig();
-  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
+  const { data: providerConfig, isPending } = useActiveConfig();
+  const activeProvider = (providerConfig?.activeProvider ?? 'ollama') as AiProvider;
   const kind = PROVIDERS[activeProvider]?.kind ?? 'local-server';
   const activeProviderModel = providerConfig?.providers?.[activeProvider]?.model ?? '';
 
   // Hooks must run unconditionally regardless of which branch applies below.
   const providerKeyQuery = useHasProviderKey(activeProvider);
   const { data: health } = useSystemHealth();
+
+  // Cold boot: while the backend config is first loading, block WITHOUT a concrete
+  // reason so the button stays disabled but no scary "no provider" hint flashes
+  // (boot-prefetched, so this window is sub-frame in practice).
+  if (isPending) return { canUse: false };
 
   if (kind === 'cloud') {
     if (!(providerKeyQuery.data?.has ?? false)) return { canUse: false, reason: 'addApiKey' };
@@ -223,7 +216,7 @@ export function useCanUseAI(): { canUse: boolean; reason?: string } {
     const detected = health?.cliAgents?.[activeProvider]?.detected ?? false;
     return detected ? { canUse: true } : { canUse: false, reason: 'installCli' };
   }
-  // local-server (Ollama)
-  if (!aiModel?.defaultModel) return { canUse: false, reason: 'selectModel' };
+  // local-server (Ollama) — the model now lives in the per-provider config.
+  if (!activeProviderModel) return { canUse: false, reason: 'selectModel' };
   return { canUse: true };
 }

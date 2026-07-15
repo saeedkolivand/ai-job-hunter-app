@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  AIModelPreferenceSchema,
   AiProviderConfigSchema,
   LocalModelLimitsSchema,
   OutputToneSchema,
@@ -26,19 +25,6 @@ describe('PreferencesSchema', () => {
     expect(() => PerformanceModeSchema.parse('turbo')).toThrow();
     expect(() => OutputToneSchema.parse('snarky')).toThrow();
     expect(() => PromptQualitySchema.parse('medium')).toThrow();
-  });
-});
-
-describe('AIModelPreferenceSchema', () => {
-  it('defaults temperature and maxTokens', () => {
-    const parsed = AIModelPreferenceSchema.parse({});
-    expect(parsed.temperature).toBeCloseTo(0.7);
-    expect(parsed.maxTokens).toBe(2048);
-  });
-
-  it('clamps temperature to 0–2 and maxTokens to 1–8192', () => {
-    expect(() => AIModelPreferenceSchema.parse({ temperature: 2.5 })).toThrow();
-    expect(() => AIModelPreferenceSchema.parse({ maxTokens: 9000 })).toThrow();
   });
 });
 

@@ -10,7 +10,7 @@
  *    accidental removal of the label in future refactors.
  *
  * No QueryClient / AppClientProvider needed — the component's only hooks are
- * useTranslation (stubbed) and usePreferencesStore (stubbed).
+ * useTranslation (stubbed) and useSetProviderSettings (stubbed).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -22,11 +22,10 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 
-// ── Preferences store stub ─────────────────────────────────────────────────
+// ── Service stub — the base_url save now writes via the backend setter (task #16)
 
-vi.mock('@/store/preferences-store', () => ({
-  usePreferencesStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ setProviderSettings: vi.fn() }),
+vi.mock('@/services', () => ({
+  useSetProviderSettings: () => ({ mutate: vi.fn() }),
 }));
 
 // ── component under test ───────────────────────────────────────────────────

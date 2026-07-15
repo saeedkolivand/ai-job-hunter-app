@@ -98,7 +98,7 @@ describe('StepAction — AI notes toggle', () => {
     expect(probe.assistantProvider).toBeUndefined();
   });
 
-  it('enabling the switch sets assistant: true and snapshots the current active provider', async () => {
+  it('enabling the switch sets assistant: true WITHOUT snapshotting the provider (task #16)', async () => {
     stubbedActiveProvider = {
       provider: 'openai',
       model: 'gpt-4o',
@@ -111,14 +111,18 @@ describe('StepAction — AI notes toggle', () => {
 
     const probe = readProbe();
     expect(probe.assistant).toBe(true);
-    expect(probe.assistantProvider).toBe('openai');
-    expect(probe.assistantModel).toBe('gpt-4o');
-    expect(probe.assistantBaseUrl).toBe('https://api.example.com');
+    // A scheduled headless run now resolves the CURRENTLY-active provider from the
+    // backend store at run time, so the wizard captures nothing.
+    expect(probe.assistantProvider).toBeUndefined();
+    expect(probe.assistantModel).toBeUndefined();
+    expect(probe.assistantBaseUrl).toBeUndefined();
   });
 
-  it('re-snapshots on mount when editing an autopilot whose stored snapshot has gone stale', () => {
+  it('leaves a stored (now-vestigial) snapshot untouched — the backend resolves the provider at run time', () => {
     // The autopilot was saved while "openai" was active; the user has since
-    // switched the active provider to "anthropic" in Settings.
+    // switched the active provider to "anthropic" in Settings. The wizard no
+    // longer re-snapshots — whatever was stored simply stays as-is (and is ignored
+    // by the backend, which reads the live store).
     stubbedActiveProvider = { provider: 'anthropic', model: 'claude', baseUrl: undefined };
     renderStep({
       assistant: true,
@@ -128,8 +132,8 @@ describe('StepAction — AI notes toggle', () => {
     });
 
     const probe = readProbe();
-    expect(probe.assistantProvider).toBe('anthropic');
-    expect(probe.assistantModel).toBe('claude');
+    expect(probe.assistantProvider).toBe('openai');
+    expect(probe.assistantModel).toBe('gpt-4o');
   });
 
   it('does NOT touch the snapshot while the toggle is off, even if it looks stale', () => {

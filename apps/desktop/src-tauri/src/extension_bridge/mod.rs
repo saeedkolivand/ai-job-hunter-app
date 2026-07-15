@@ -232,11 +232,14 @@ const TOKEN_FILE: &str = "extension_token";
 /// the contact profile for a `profile.get` only when this is on.
 const AUTOFILL_OPTIN_FILE: &str = "extension_autofill_optin";
 
-/// File under the app data dir holding the AI-answer-assist opt-in + its
-/// provider/model/base_url snapshot, as one small JSON blob (never a "1"/"0"
-/// flag like [`AUTOFILL_OPTIN_FILE`] — this opt-in also carries the snapshot
-/// [`answer_assist`] needs to resolve a provider with no renderer in scope).
-/// Default OFF, absent/corrupt file → OFF with no snapshot (the safe state).
+/// File under the app data dir holding the AI-answer-assist opt-in, as one
+/// small JSON blob (`{"enabled":bool}`). It USED to also carry a
+/// provider/model/base_url snapshot; that snapshot is gone (task #16 — a draft
+/// resolves the active provider from the backend-owned
+/// [`crate::ai_config::AiConfigStore`] at answer-time), so only `enabled` is
+/// read/written now. An OLD file that still has the extra fields is read back
+/// fine — the extras are ignored. Default OFF, absent/corrupt file → OFF (the
+/// safe state).
 const AI_ASSIST_OPTIN_FILE: &str = "extension_ai_assist_optin";
 
 /// Managed Tauri state for the bridge. Commands read the bound port + token off
@@ -263,13 +266,14 @@ pub struct BridgeState {
     /// consent gate for sending the user's saved contact details into a page.
     autofill_enabled: AtomicBool,
     /// AI-answer-assist opt-in (default OFF, persisted to
-    /// [`AI_ASSIST_OPTIN_FILE`] alongside its provider snapshot). A SEPARATE
-    /// gate from `autofill_enabled` — `answer.assist` is billable provider
-    /// spend, a materially different consent class from the local/free
-    /// autofill verbs. Guarded by a `Mutex` (not an `AtomicBool`) because it
-    /// travels together with the provider/model/base_url snapshot below —
-    /// see [`answer_assist`].
-    ai_assist: Mutex<AiAssistConfig>,
+    /// [`AI_ASSIST_OPTIN_FILE`]). A SEPARATE gate from `autofill_enabled` —
+    /// `answer.assist` is billable provider spend, a materially different
+    /// consent class from the local/free autofill verbs. A bare `AtomicBool`
+    /// like `autofill_enabled` now that it no longer carries a provider
+    /// snapshot: a draft resolves the active provider from the backend-owned
+    /// [`crate::ai_config::AiConfigStore`] at answer-time (task #16) via
+    /// [`crate::pipeline::Completer::from_active`], never a renderer snapshot.
+    ai_assist_enabled: AtomicBool,
     /// `match.live` token-bucket throttle — shared across EVERY connection for
     /// this pairing, not per-connection, so a loopback reconnect (a cheap,
     /// near-instant handshake) can never reset the burst allowance. See
@@ -290,7 +294,7 @@ impl BridgeState {
             token: Mutex::new(token),
             connected: AtomicBool::new(false),
             autofill_enabled: AtomicBool::new(load_autofill_optin(data_dir)),
-            ai_assist: Mutex::new(load_ai_assist_optin(data_dir)),
+            ai_assist_enabled: AtomicBool::new(load_ai_assist_optin(data_dir)),
             match_live_limiter: Mutex::new(match_live::MatchLiveThrottle::new()),
             data_dir: data_dir.to_path_buf(),
         }
@@ -340,46 +344,21 @@ impl BridgeState {
     }
 
     /// Whether AI-answer-assist is opted in (the `answer.assist` consent gate
-    /// — SEPARATE from `autofill_enabled`).
+    /// — SEPARATE from `autofill_enabled`). This is the billable-AI consent
+    /// boundary (ADR-0011): `answer.assist` is refused unless it is on.
     pub fn ai_assist_enabled(&self) -> bool {
-        self.ai_assist.lock().enabled
+        self.ai_assist_enabled.load(Ordering::Relaxed)
     }
 
-    /// The FULL AI-answer-assist state — `enabled` plus its provider/model/
-    /// base_url snapshot — in ONE lock acquisition. `pub(crate)` so
-    /// [`answer_assist`]/`commands::extension_bridge` can resolve a
-    /// [`crate::pipeline::Completer`] from it (mirrors
-    /// `Autopilot::assistant_provider` et al.: this is a headless context with
-    /// no renderer to read the active provider from at answer-time) and read
-    /// the gate + snapshot together. Prefer this over reading
-    /// [`Self::ai_assist_enabled`] and this separately when a caller needs
-    /// both: two separate locks can observe a toggle mid-flight (a benign
-    /// TOCTOU — nothing unsafe, just a possible enabled/snapshot mismatch for
-    /// one call).
-    pub(crate) fn ai_assist_snapshot(&self) -> AiAssistConfig {
-        self.ai_assist.lock().clone()
-    }
-
-    /// Set (and persist) the AI-answer-assist opt-in + its provider snapshot.
-    /// Turning it OFF clears the snapshot (mirrors `Autopilot::update`'s
-    /// clear-on-disable — a stale provider pick must never silently replay
-    /// once the opt-in is re-enabled without a fresh snapshot). A persist
-    /// failure is non-fatal but leaves the in-memory value authoritative.
-    pub fn set_ai_assist(
-        &self,
-        enabled: bool,
-        provider: Option<String>,
-        model: Option<String>,
-        base_url: Option<String>,
-    ) {
-        let cfg = AiAssistConfig {
-            enabled,
-            provider: enabled.then_some(provider).flatten(),
-            model: enabled.then_some(model).flatten(),
-            base_url: enabled.then_some(base_url).flatten(),
-        };
-        *self.ai_assist.lock() = cfg.clone();
-        if let Err(e) = persist_ai_assist_optin(&self.data_dir, &cfg) {
+    /// Set (and persist) the AI-answer-assist opt-in. A persist failure is
+    /// non-fatal but leaves the in-memory value authoritative for this run.
+    /// The opt-in no longer carries a provider snapshot: a draft resolves the
+    /// active provider from the backend-owned
+    /// [`crate::ai_config::AiConfigStore`] at answer-time (task #16), so this
+    /// is a bare boolean gate — the exact shape of `set_autofill_enabled`.
+    pub fn set_ai_assist(&self, enabled: bool) {
+        self.ai_assist_enabled.store(enabled, Ordering::Relaxed);
+        if let Err(e) = persist_ai_assist_optin(&self.data_dir, enabled) {
             log::warn!("[extension_bridge] failed to persist ai-assist opt-in (non-fatal): {e}");
         }
     }
@@ -408,7 +387,7 @@ impl crate::data_store::Resettable for BridgeState {
     fn reset(&self) {
         self.regenerate_token();
         self.set_autofill_enabled(false);
-        self.set_ai_assist(false, None, None, None);
+        self.set_ai_assist(false);
     }
 }
 
@@ -453,34 +432,28 @@ fn persist_autofill_optin(data_dir: &Path, enabled: bool) -> std::io::Result<()>
     )
 }
 
-/// The AI-answer-assist opt-in + its provider/model/base_url snapshot,
-/// persisted as one JSON blob to [`AI_ASSIST_OPTIN_FILE`]. `pub(crate)` so
-/// [`answer_assist`] can read the snapshot straight off [`BridgeState`].
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub(crate) struct AiAssistConfig {
-    pub(crate) enabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) provider: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) model: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) base_url: Option<String>,
-}
-
-/// Read the persisted AI-answer-assist opt-in + snapshot. Absent file / parse
-/// failure → the default (OFF, no snapshot) — the safe state, mirrors
-/// [`load_autofill_optin`]'s degrade-to-off discipline.
-fn load_ai_assist_optin(data_dir: &Path) -> AiAssistConfig {
+/// Read the persisted AI-answer-assist opt-in. Absent file / parse failure →
+/// OFF (the safe state), mirroring [`load_autofill_optin`]'s degrade-to-off
+/// discipline. Only the `enabled` flag is honored: an OLD file that also
+/// carried a `provider`/`model`/`base_url` snapshot is still read fine — the
+/// extra fields are ignored, so a user who opted in before task #16 stays
+/// opted in (the active provider is resolved from the backend
+/// [`crate::ai_config::AiConfigStore`] at answer-time, never that stale
+/// snapshot).
+fn load_ai_assist_optin(data_dir: &Path) -> bool {
     std::fs::read_to_string(data_dir.join(AI_ASSIST_OPTIN_FILE))
         .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|v| v.get("enabled").and_then(Value::as_bool))
+        .unwrap_or(false)
 }
 
-fn persist_ai_assist_optin(data_dir: &Path, cfg: &AiAssistConfig) -> std::io::Result<()> {
+fn persist_ai_assist_optin(data_dir: &Path, enabled: bool) -> std::io::Result<()> {
     std::fs::create_dir_all(data_dir)?;
-    let json = serde_json::to_string(cfg).unwrap_or_else(|_| "{\"enabled\":false}".to_string());
-    std::fs::write(data_dir.join(AI_ASSIST_OPTIN_FILE), json)
+    std::fs::write(
+        data_dir.join(AI_ASSIST_OPTIN_FILE),
+        json!({ "enabled": enabled }).to_string(),
+    )
 }
 
 fn persist_token(data_dir: &Path, token: &str) -> std::io::Result<()> {

@@ -5,8 +5,13 @@
 //! `localhost` targets. Lives in `net` (L0) so both the extension-bridge host
 //! guard (L3) and the IP-pinned guarded fetch ([`crate::net::http::get_guarded`])
 //! can share one classifier without an upward dependency.
+//!
+//! Also home to [`validate_provider_base_url`] — the AI-provider egress guard,
+//! which is deliberately NOT a wholesale IP filter (local gateways are legit).
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+use crate::error::{AppError, AppResult};
 
 /// The host-only SSRF guard. `host` is a bare hostname or IP literal (no
 /// scheme/port). Rejects: `localhost`, any `*.localhost`, `local`, any
@@ -87,6 +92,54 @@ pub fn is_safe_ipv6(ip: Ipv6Addr) -> bool {
     true
 }
 
+/// The cloud-metadata service address — the credential-theft pivot an SSRF
+/// attacker aims for. Blocked in every base-URL notation (`url` canonicalizes
+/// IPv4 hosts to dotted-decimal, so hex/octal/decimal forms normalize here too).
+const CLOUD_METADATA_IPV4: Ipv4Addr = Ipv4Addr::new(169, 254, 169, 254);
+
+/// Validate a user-supplied AI-provider base URL for the *generation egress*
+/// path (the endpoint that receives the stored API key + full prompt).
+///
+/// Unlike [`is_safe_public_host`], this deliberately does **not** reject
+/// loopback / LAN addresses: local gateways — Ollama (`http://127.0.0.1:11434`),
+/// LM Studio, an on-prem vLLM — are legitimate OpenAI-compatible endpoints. It is
+/// a *provenance* guard against the key-exfiltration SSRF (an XSS'd renderer
+/// pointing the base URL at an attacker), not a wholesale IP filter. It blocks
+/// only:
+///  1. a non-`http(s)` scheme, and
+///  2. the cloud-metadata address `169.254.169.254` (in any URL notation).
+///
+/// Uses the same `reqwest::Url` parser as [`crate::net::http::get_guarded`] —
+/// never hand-rolled URL parsing.
+pub fn validate_provider_base_url(base_url: &str) -> AppResult<()> {
+    let url = reqwest::Url::parse(base_url)
+        .map_err(|e| AppError::Validation(format!("Invalid provider base URL: {e}")))?;
+    match url.scheme() {
+        "http" | "https" => {}
+        other => {
+            return Err(AppError::Validation(format!(
+                "Provider base URL scheme '{other}' is not allowed; use http or https."
+            )))
+        }
+    }
+    match url.host_str() {
+        Some(host) => {
+            if matches!(host.parse::<Ipv4Addr>(), Ok(ip) if ip == CLOUD_METADATA_IPV4) {
+                return Err(AppError::Validation(
+                    "Provider base URL 169.254.169.254 (cloud metadata) is not allowed."
+                        .to_string(),
+                ));
+            }
+        }
+        None => {
+            return Err(AppError::Validation(
+                "Provider base URL has no host.".to_string(),
+            ))
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,5 +204,50 @@ mod tests {
         assert!(is_safe_ip("1.1.1.1".parse().unwrap()));
         assert!(is_safe_ip("8.8.8.8".parse().unwrap()));
         assert!(is_safe_ip("2606:4700:4700::1111".parse().unwrap()));
+    }
+
+    // ── validate_provider_base_url: provenance guard, NOT an IP filter ─────────
+
+    #[test]
+    fn base_url_rejects_non_http_schemes() {
+        for u in ["ftp://host/v1", "file:///etc/passwd", "ws://host/v1"] {
+            assert!(
+                validate_provider_base_url(u).is_err(),
+                "{u} must be rejected (scheme)"
+            );
+        }
+    }
+
+    #[test]
+    fn base_url_rejects_garbage() {
+        assert!(validate_provider_base_url("not a url").is_err());
+        assert!(validate_provider_base_url("").is_err());
+    }
+
+    #[test]
+    fn base_url_blocks_cloud_metadata() {
+        assert!(validate_provider_base_url("http://169.254.169.254/").is_err());
+        assert!(
+            validate_provider_base_url("http://169.254.169.254/latest/meta-data/").is_err(),
+            "the metadata host must be blocked regardless of path"
+        );
+    }
+
+    #[test]
+    fn base_url_allows_local_gateways_and_public() {
+        // The load-bearing exception: loopback/LAN gateways are legitimate AI
+        // endpoints and must NOT be filtered — only the metadata addr + bad schemes.
+        for u in [
+            "http://127.0.0.1:11434",       // Ollama
+            "http://localhost:1234/v1",     // LM Studio
+            "http://192.168.1.50:8000/v1",  // on-prem LAN vLLM
+            "https://openrouter.ai/api/v1", // public gateway
+            "https://api.openai.com/v1",
+        ] {
+            assert!(
+                validate_provider_base_url(u).is_ok(),
+                "{u} must be allowed (provenance guard, not IP filter)"
+            );
+        }
     }
 }

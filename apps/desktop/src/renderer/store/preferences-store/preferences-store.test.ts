@@ -42,14 +42,14 @@ describe('usePreferencesStore', () => {
     expect(next.lastUpdated).toBeTruthy();
   });
 
-  it('sets the active provider while preserving existing provider settings', () => {
+  // Routing (activeProvider) moved to the backend store (task #16); the surviving
+  // renderer-side write is the per-provider `effort` CLI tuning knob.
+  it('stores a per-provider effort (the surviving renderer-side tuning knob)', () => {
     const s = usePreferencesStore.getState();
-    s.setProviderSettings('openai', { model: 'gpt-4o' });
-    s.setActiveProvider('openai');
+    s.setProviderSettings('codex', { effort: 'high' });
 
     const cfg = usePreferencesStore.getState().aiProviderConfig;
-    expect(cfg?.activeProvider).toBe('openai');
-    expect(cfg?.providers?.openai?.model).toBe('gpt-4o');
+    expect(cfg?.providers?.codex?.effort).toBe('high');
   });
 
   it('merges per-provider settings', () => {

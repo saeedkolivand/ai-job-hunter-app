@@ -12,6 +12,7 @@ import { createRouter, RouterProvider } from '@tanstack/react-router';
 import { restoreTheme } from '@ajh/ui';
 
 import { registerWindowControls } from '@/lib/window-controls-registry';
+import { AiConfigBoot } from '@/providers/AiConfigBoot';
 import { AppClientProvider } from '@/providers/AppClientProvider';
 import { PerformanceModeProvider } from '@/providers/PerformanceModeProvider';
 import { routeTree } from '@/routeTree.gen';
@@ -51,6 +52,7 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <AppClientProvider client={tauriClient}>
       <PerformanceModeProvider>
         <QueryClientProvider client={queryClient}>
+          <AiConfigBoot />
           <RouterProvider router={router} />
         </QueryClientProvider>
       </PerformanceModeProvider>

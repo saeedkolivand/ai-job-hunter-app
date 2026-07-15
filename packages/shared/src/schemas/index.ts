@@ -71,13 +71,12 @@ export const AiGenerateRequestSchema = z.object({
    * silently truncated without this. Ignored by cloud/CLI providers.
    */
   contextWindow: z.number().int().min(512).max(131072).optional(),
-  /**
-   * AI backend — 'ollama' (default), 'openai', 'openai-compatible', 'anthropic',
-   * 'gemini', or a CLI agent ('claude-code', …). Validated server-side.
-   */
-  provider: z.string().optional(),
-  /** Base URL override for openai-compatible providers. */
-  baseUrl: z.string().optional(),
+  // NOTE: `provider` + `baseUrl` were REMOVED from this request (task #16). The
+  // active generation provider/model/base_url is now backend-owned
+  // (`AiConfigStore`, read via `ai_active_config`); the renderer can no longer
+  // point generation at an arbitrary endpoint (key-exfiltration SSRF). The Rust
+  // side resolves routing from the store and overwrites `model` before streaming
+  // — `model` stays on the wire only because every `chat_stream` impl reads it.
   /** Reasoning effort for CLI agents that support it (e.g. Codex: low/medium/high). */
   effort: z.string().optional(),
 });

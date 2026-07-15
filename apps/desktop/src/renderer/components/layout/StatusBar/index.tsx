@@ -7,8 +7,7 @@ import { Button, cn, HoverPopover } from '@ajh/ui';
 import { ROUTES } from '@/constants/routes';
 import { useKindLabelMap } from '@/hooks/use-kind-label-map';
 import { useCapabilities } from '@/providers/CapabilityProvider';
-import { useWorkerActivity } from '@/services';
-import { useAIModel, useAiProviderConfig } from '@/store/preferences-store';
+import { useActiveConfig, useWorkerActivity } from '@/services';
 import { useSessionStore } from '@/store/session-store';
 
 export function StatusBar() {
@@ -17,16 +16,12 @@ export function StatusBar() {
   const { ai, data } = useCapabilities();
   const kindLabelMap = useKindLabelMap();
   const activity = useWorkerActivity(kindLabelMap);
-  const aiModel = useAIModel();
-  const providerConfig = useAiProviderConfig();
+  // Active provider/model is backend-owned (task #16); `data.model` is the active
+  // provider's own resolved model.
+  const { data: providerConfig } = useActiveConfig();
   const setSettings = useSessionStore((s) => s.setSettings);
 
-  // Get current model name from active provider
-  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
-  const currentModel =
-    activeProvider === 'ollama'
-      ? aiModel?.defaultModel
-      : providerConfig?.providers?.[activeProvider]?.model;
+  const currentModel = providerConfig?.model;
 
   const statusColor = () => {
     if (!ai.ready) return 'text-red-400';

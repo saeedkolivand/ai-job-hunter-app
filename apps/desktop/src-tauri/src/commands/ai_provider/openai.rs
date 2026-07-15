@@ -855,8 +855,6 @@ mod tests {
             repeat_penalty: None,
             max_tokens: None,
             context_window: None,
-            provider: None,
-            base_url: None,
             effort: None,
         }
     }

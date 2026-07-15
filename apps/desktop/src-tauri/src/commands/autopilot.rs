@@ -355,44 +355,31 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         .map(|j| j.url.as_str())
         .collect();
 
-    // Resolve the provider SNAPSHOT persisted on the record through the SAME
-    // centralized provider layer `ai_generate` uses. Missing/unknown/invalid →
-    // `generate_assistant_notes` skips gracefully (the discovery run still
-    // completes normally). Resolved HERE (the L3 command, which already holds
-    // the `AppHandle`) and passed down already-resolved so `autopilot_helpers`
-    // (L2) never reaches up into `crate::commands`.
+    // Resolve the active provider from the BACKEND-OWNED store (task #16) through
+    // the SAME centralized layer `ai_generate` uses — no longer from the per-record
+    // `assistant_provider/model/base_url` snapshot. Missing/unknown/invalid →
+    // `generate_assistant_notes` skips gracefully (the discovery run still completes
+    // normally). Resolved HERE (the L3 command, which already holds the `AppHandle`)
+    // and passed down already-resolved so `autopilot_helpers` (L2) never reaches up
+    // into `crate::commands`.
     //
-    // SECURITY (MEDIUM-4): `assistant_base_url` is renderer-provenance — there is
-    // NO backend-side store to re-derive a custom OpenAI-compatible endpoint from
-    // at run time. The only persisted provider+base_url on the backend today is
-    // the UNRELATED embeddings config (`documents::mod.rs`'s `embedding_config`
-    // table) — a different provider slot (a user can embed on one provider and
-    // chat on another), so reusing it here would silently target the wrong
-    // endpoint, not fix the trust boundary. Trusting this snapshot every scheduled
-    // tick does mean a one-time renderer compromise / bad IPC write becomes a
-    // DURABLE, unattended egress target, wider than the interactive `ai_generate`
-    // path (there, a compromised renderer has the same capability, but only for as
-    // long as it stays compromised AND the app is running that request).
-    // `Completer::resolve`/`ProviderId::parse` still validate provider+model are
-    // known/well-formed; neither can validate a custom base_url is genuinely the
-    // user's endpoint. Accepted for now — never breaks a custom OpenAI-compatible
-    // endpoint, and the blast radius (an already-configured provider call) is the
-    // same class the user already trusts interactively. The durable fix is a
-    // backend-owned active-provider store the renderer syncs into (deferred —
-    // would also retire the embeddings config above as the only backend-side slot).
+    // SECURITY (MEDIUM-4 fix): the old renderer-provenance `assistant_base_url`
+    // snapshot is gone — it was a DURABLE, unattended egress target (a one-time
+    // renderer compromise persisted a custom endpoint every scheduled tick). Routing
+    // now comes from `AiConfigStore`, whose base_url was write-validated (scheme +
+    // cloud-metadata block) and is defensively re-validated in `from_active`.
+    //
+    // ACCEPTED SEMANTICS CHANGE (owner signed off): a scheduled run follows the
+    // CURRENTLY-active provider, not the one pinned when the schedule was created.
+    //
     // Gated on the opt-in flag itself (not the fuller `notes_enabled`, which also
     // needs a résumé) so the vast majority of autopilots — AI notes OFF — never pay
     // for a resolve attempt or its log line; only an assistant-enabled autopilot with
     // a bad/missing provider logs the reason a user needs to debug "notes never run".
     let completer = if autopilot.assistant {
-        crate::pipeline::Completer::resolve(
-            &app,
-            autopilot.assistant_provider.as_deref(),
-            autopilot.assistant_model.as_deref(),
-            autopilot.assistant_base_url.clone(),
-        )
-        .inspect_err(|e| log::info!("[autopilot] AI notes skipped: no usable provider ({e})"))
-        .ok()
+        crate::pipeline::Completer::from_active(&app)
+            .inspect_err(|e| log::info!("[autopilot] AI notes skipped: no usable provider ({e})"))
+            .ok()
     } else {
         None
     };
