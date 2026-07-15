@@ -116,7 +116,16 @@ export function validateAndRepair(raw: string): AnalysisResult | null {
     detectedLanguages: {
       resume: ensureString(langs.resume, 'unknown'),
       jobAd: ensureString(langs.jobAd, 'unknown'),
-      mismatch: langs.mismatch === true || langs.resume !== langs.jobAd,
+      // Only flag mismatch when both languages are actually known — matches
+      // detectLanguages() in @ajh/shared. Otherwise an 'unknown' or missing
+      // side would falsely trip the mismatch warning.
+      mismatch:
+        langs.mismatch === true ||
+        (typeof langs.resume === 'string' &&
+          typeof langs.jobAd === 'string' &&
+          langs.resume !== 'unknown' &&
+          langs.jobAd !== 'unknown' &&
+          langs.resume !== langs.jobAd),
     },
     scores: {
       ats: clampScore(scores.ats),
