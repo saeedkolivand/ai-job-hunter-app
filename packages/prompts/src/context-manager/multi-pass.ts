@@ -74,7 +74,10 @@ export function getResumeStats(resume: string) {
   const pages = estimatePages(resume);
   const sections = detectSections(resume);
   const chars = resume.length;
-  const words = resume.split(/\s+/).length;
+  // `.split(/\s+/)` yields `['']` for empty input and empty tokens for
+  // leading/trailing whitespace, so trim first and bail out on empty.
+  const trimmed = resume.trim();
+  const words = trimmed ? trimmed.split(/\s+/).length : 0;
 
   return {
     characters: chars,
