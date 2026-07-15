@@ -150,30 +150,45 @@ export const useActiveConfig = () => {
   });
 };
 
-/** Switch the active generation provider (backend-owned "switch" half). */
+/** Switch the active generation provider (backend-owned "switch" half).
+ *  `setActiveProvider` resolves (never rejects) an `{ error }` union on an invalid
+ *  id — narrow it here and throw so React Query's `onError`/the caller's `catch`
+ *  fire instead of a false `onSuccess`. */
 export const useSetActiveProvider = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (provider: string) => api.ai.setActiveProvider({ provider }),
+    mutationFn: async (provider: string) => {
+      const result = await api.ai.setActiveProvider({ provider });
+      if ('error' in result) throw new Error(result.error);
+      return result;
+    },
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.ai.activeConfig }),
   });
 };
 
 /** Edit a provider's model/base_url WITHOUT flipping the active provider (the
- *  backend-owned "edit" half). */
+ *  backend-owned "edit" half). Same `{ error }`-union narrowing as
+ *  `useSetActiveProvider` — a server-side rejection (e.g. base_url provenance)
+ *  must reject the mutation, not silently resolve. */
 export const useSetProviderSettings = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: { provider: string; model?: string; baseUrl?: string }) =>
-      api.ai.setProviderSettings(req),
+    mutationFn: async (req: { provider: string; model?: string; baseUrl?: string }) => {
+      const result = await api.ai.setProviderSettings(req);
+      if ('error' in result) throw new Error(result.error);
+      return result;
+    },
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.ai.activeConfig }),
   });
 };
 
 /** Set a provider's model (+ optional base_url) AND make it active in one step —
- *  the old Zustand `setAiProviderConfig` full-object semantics used by onboarding. */
+ *  the old Zustand `setAiProviderConfig` full-object semantics used by onboarding.
+ *  If `setProviderSettings` rejects (an `{ error }` result), STOP — do not proceed
+ *  to `setActiveProvider`, so a rejected save never silently flips the active
+ *  provider. */
 export const useConfigureActiveProvider = () => {
   const api = useAppClient();
   const qc = useQueryClient();
@@ -187,8 +202,11 @@ export const useConfigureActiveProvider = () => {
       model?: string;
       baseUrl?: string;
     }) => {
-      await api.ai.setProviderSettings({ provider, model, baseUrl });
-      return api.ai.setActiveProvider({ provider });
+      const settingsResult = await api.ai.setProviderSettings({ provider, model, baseUrl });
+      if ('error' in settingsResult) throw new Error(settingsResult.error);
+      const activeResult = await api.ai.setActiveProvider({ provider });
+      if ('error' in activeResult) throw new Error(activeResult.error);
+      return activeResult;
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.ai.activeConfig }),
   });

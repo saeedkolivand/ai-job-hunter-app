@@ -2,7 +2,7 @@ import { Eye, EyeOff, Key, Loader2, PenLine, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, Dropdown, Input } from '@ajh/ui';
+import { Button, Dropdown, Input, useNotification } from '@ajh/ui';
 
 import { useSetProviderSettings } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
@@ -59,6 +59,7 @@ export function CloudProviderConfig({
   onOpenDocs,
 }: Props) {
   const { t } = useTranslation();
+  const notify = useNotification();
   const setProviderSettings = useSetProviderSettings();
   const [changing, setChanging] = useState(false);
 
@@ -213,10 +214,16 @@ export function CloudProviderConfig({
               variant="ghost"
               className="shrink-0"
               onClick={() =>
-                setProviderSettings.mutate({
-                  provider: 'openai-compatible',
-                  baseUrl: baseUrlInput || undefined,
-                })
+                setProviderSettings.mutate(
+                  {
+                    provider: 'openai-compatible',
+                    baseUrl: baseUrlInput || undefined,
+                  },
+                  {
+                    onError: () =>
+                      notify.error({ message: t('settings.aiProvider.saveUrlFailed') }),
+                  }
+                )
               }
             >
               {t('settings.aiProvider.saveUrl')}

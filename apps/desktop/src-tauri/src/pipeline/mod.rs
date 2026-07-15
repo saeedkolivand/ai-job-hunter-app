@@ -51,6 +51,25 @@ impl Completer {
         model: Option<&str>,
         base_url: Option<String>,
     ) -> AppResult<Self> {
+        let (provider, model, base_url) = Self::resolve_parts(provider, model, base_url)?;
+        Ok(Self {
+            app: app.clone(),
+            provider,
+            model,
+            base_url,
+        })
+    }
+
+    /// The `AppHandle`-free core of [`resolve`](Self::resolve): provider present →
+    /// parse → model rule → `validate_model` → construct the boxed provider client
+    /// (`base_url` only honored for `OpenAiCompatible`). Extracted so both `resolve`
+    /// and the store-driven [`from_config`](Self::from_config) share one
+    /// implementation and so it's directly unit-testable without an `AppHandle`.
+    fn resolve_parts(
+        provider: Option<&str>,
+        model: Option<&str>,
+        base_url: Option<String>,
+    ) -> AppResult<(Box<dyn AiProvider>, String, Option<String>)> {
         let provider_str = provider
             .map(str::trim)
             .filter(|s| !s.is_empty())
@@ -70,12 +89,7 @@ impl Completer {
             }
         };
         provider_id.validate_model(&model)?;
-        Ok(Self {
-            app: app.clone(),
-            provider: resolve(provider_id, base_url.clone()),
-            model,
-            base_url,
-        })
+        Ok((resolve(provider_id, base_url.clone()), model, base_url))
     }
 
     /// Resolve a `Completer` from the **backend-owned** active provider store
@@ -93,14 +107,30 @@ impl Completer {
         let cfg = app
             .state::<crate::ai_config::AiConfigStore>()
             .active_config();
-        // Defensive re-validate of the stored base_url on the egress path: the
-        // writer/seed/import all validate it, so this only ever fires on a tampered
-        // store — fail closed (never silently fall back to the default endpoint).
+        let (provider, model, base_url) = Self::from_config(cfg)?;
+        Ok(Self {
+            app: app.clone(),
+            provider,
+            model,
+            base_url,
+        })
+    }
+
+    /// The `AppHandle`-free validated-resolve seam behind
+    /// [`from_active`](Self::from_active): the defensive re-validate of the
+    /// stored `base_url` on the egress path (the writer/seed/import all validate
+    /// it, so this only ever fires on a tampered store — fail closed, never
+    /// silently fall back to the default endpoint), then the same
+    /// [`resolve_parts`](Self::resolve_parts) steps 1-5 `resolve` uses. Takes an
+    /// already-read owned [`ActiveAiConfig`](crate::ai_config::ActiveAiConfig) —
+    /// no store lock, no `AppHandle` — so it's directly unit-testable.
+    fn from_config(
+        cfg: crate::ai_config::ActiveAiConfig,
+    ) -> AppResult<(Box<dyn AiProvider>, String, Option<String>)> {
         if let Some(url) = cfg.base_url.as_deref() {
             crate::net::ssrf::validate_provider_base_url(url)?;
         }
-        Self::resolve(
-            app,
+        Self::resolve_parts(
             cfg.active_provider.as_deref(),
             cfg.model.as_deref(),
             cfg.base_url,
