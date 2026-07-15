@@ -107,7 +107,17 @@ export type PopupRequest =
    * Like `statusUpdate`, this is a deliberate action — its failures are
    * surfaced to the user, never folded away.
    */
-  | { kind: 'answerAssist'; question: string; searchWeb: boolean };
+  | { kind: 'answerAssist'; question: string; searchWeb: boolean }
+  /**
+   * Popup-open reattach: "what's the current/last streamed `answer.assist`
+   * text?" — the background OWNS the accumulation buffer (see
+   * `PopupResponse`'s `answerAssistProgress` doc) so a popup that closed
+   * mid-stream and reopens can immediately show what already arrived
+   * instead of a blank view. Also pushed proactively (unsolicited, same
+   * pattern as the `status` push) while a stream is running, live-updating
+   * an OPEN popup.
+   */
+  | { kind: 'answerAssistProgress' };
 
 /** background → popup responses (discriminated by the originating request). */
 export type PopupResponse =
@@ -161,4 +171,19 @@ export type PopupResponse =
    * failures are NOT folded away.
    */
   | { ok: true; kind: 'answerAssist'; result: ExtensionAnswerAssistResult }
+  /**
+   * The CURRENT streaming `answer.assist` buffer, owned by the background
+   * (not the popup) so it survives a popup close/reopen mid-stream —
+   * `text` is the accumulated draft so far, `done` is true once the stream's
+   * terminal reply arrived (success or failure), and `interrupted` is true
+   * when the connection dropped (or the desktop returned an error)
+   * mid-stream with SOME text already accumulated — the popup renders that
+   * distinctly ("interrupted — here's what arrived") rather than a silent
+   * hang or an empty error. Pushed proactively while a stream is running
+   * (unsolicited, same pattern as the `status` push) AND returned on-demand
+   * for the reattach case (`{ kind: 'answerAssistProgress' }`). `text` is
+   * `''`/`done: true`/`interrupted: false` when no stream has ever run this
+   * session.
+   */
+  | { ok: true; kind: 'answerAssistProgress'; text: string; done: boolean; interrupted: boolean }
   | { ok: false; error: string };

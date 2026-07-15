@@ -205,6 +205,37 @@ export const EXTENSION_MESSAGE_TYPES = {
    * deliberate click.
    */
   answerAssistResult: 'answer.assist.result',
+  /**
+   * Desktop → extension: one incremental delta of a streaming reply —
+   * `{ delta }`. The envelope's own `reqId` correlates it to the original
+   * request (currently only `answer.assist`; additive so a future streaming
+   * verb rides the SAME frame family). Zero or more of these precede the
+   * verb's own terminal reply (e.g. `answer.assist.result`); accumulate
+   * `delta` by `reqId` — a chunk alone is never a complete answer.
+   */
+  assistChunk: 'assist.chunk',
+  /**
+   * Desktop → extension: `{ reqId }`-only (no payload) — the stream named by
+   * the envelope's `reqId` has ended, success OR failure. A generic,
+   * verb-agnostic mux signal: the verb's own terminal reply carries the
+   * actual outcome, so a background accumulator can retire its buffer for
+   * `reqId` on this frame without parsing every verb's own reply shape. Also
+   * the definitive "stop waiting for more chunks" signal for the resilience
+   * case (a dropped connection mid-stream never sends this — the client's
+   * own transport-close handling is what surfaces "interrupted" in that
+   * case, not this frame).
+   */
+  assistDone: 'assist.done',
+  /**
+   * Extension → desktop: `{ reqId }`-only — cancel the in-flight stream
+   * named by the envelope's `reqId` (e.g. starting a new draft/rewrite
+   * supersedes the previous one, mirroring an in-app `AbortController`).
+   * Best-effort: the desktop stops driving the provider call early; the
+   * per-provider daily-budget charge already made for that call is NOT
+   * refunded. No reply is ever sent for a cancelled `reqId` — the caller
+   * already stopped listening for it.
+   */
+  assistCancel: 'assist.cancel',
 } as const;
 
 /** Union of all wire `type` strings. */
@@ -572,6 +603,15 @@ export type ExtensionMatchLiveResult =
       scoreSource: 'keyword' | 'combined';
     }
   | { ok: false; error: string };
+
+/**
+ * `assist.chunk` payload — one incremental delta of a streaming reply. The
+ * envelope's `reqId` names which in-flight request this chunk belongs to;
+ * this payload carries only the text itself.
+ */
+export interface ExtensionAssistChunkPayload {
+  delta: string;
+}
 
 /**
  * The transport envelope every frame is wrapped in. `payload` is left as

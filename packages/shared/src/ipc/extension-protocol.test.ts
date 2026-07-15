@@ -9,6 +9,7 @@ import {
   ExtensionAnswersSuggestResultSchema,
   ExtensionAppliedCheckRequestSchema,
   ExtensionAppliedCheckResultSchema,
+  ExtensionAssistChunkPayloadSchema,
   ExtensionEnvelopeSchema,
   ExtensionImportRequestSchema,
   ExtensionMatchLiveRequestSchema,
@@ -746,6 +747,57 @@ describe('ExtensionAnswerAssistResultSchema', () => {
         type: EXTENSION_MESSAGE_TYPES.answerAssistResult,
         reqId: 'req-013',
         payload: { ok: true, question: 'Why this role?', draft: 'Because…', sourced: {} },
+      })
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ExtensionAssistChunkPayloadSchema / assist.chunk / assist.done / assist.cancel
+// ---------------------------------------------------------------------------
+
+describe('ExtensionAssistChunkPayloadSchema', () => {
+  it('accepts a delta string', () => {
+    expect(() => ExtensionAssistChunkPayloadSchema.parse({ delta: 'Because I ' })).not.toThrow();
+  });
+
+  it('accepts an empty delta', () => {
+    expect(() => ExtensionAssistChunkPayloadSchema.parse({ delta: '' })).not.toThrow();
+  });
+
+  it('rejects a missing delta', () => {
+    expect(() => ExtensionAssistChunkPayloadSchema.parse({})).toThrow();
+  });
+
+  it('rejects a non-string delta', () => {
+    expect(() => ExtensionAssistChunkPayloadSchema.parse({ delta: 42 })).toThrow();
+  });
+});
+
+describe('assist.chunk / assist.done / assist.cancel envelopes', () => {
+  it('carries assist.chunk through a valid envelope, correlated by reqId', () => {
+    expect(() =>
+      ExtensionEnvelopeSchema.parse({
+        type: EXTENSION_MESSAGE_TYPES.assistChunk,
+        reqId: 'req-020',
+        payload: { delta: 'Because I ' },
+      })
+    ).not.toThrow();
+  });
+
+  it('carries assist.done / assist.cancel with a null (no-op) payload', () => {
+    expect(() =>
+      ExtensionEnvelopeSchema.parse({
+        type: EXTENSION_MESSAGE_TYPES.assistDone,
+        reqId: 'req-020',
+        payload: null,
+      })
+    ).not.toThrow();
+    expect(() =>
+      ExtensionEnvelopeSchema.parse({
+        type: EXTENSION_MESSAGE_TYPES.assistCancel,
+        reqId: 'req-020',
+        payload: null,
       })
     ).not.toThrow();
   });

@@ -22,7 +22,15 @@
  * time, tearing down this client. The background entry re-creates it on wake
  * and when the popup opens, so this class assumes it may be short-lived and
  * keeps no cross-eviction state beyond the in-flight `reqId` map (which dies
- * with the worker — callers re-issue on the fresh instance).
+ * with the worker — callers re-issue on the fresh instance). An OPEN native-
+ * messaging port (or ws socket) is itself a sanctioned reason the SW may
+ * outlive Chrome's normal idle-eviction timer — this now covers a whole
+ * streaming `answer.assist` exchange, not just a quick import/profile
+ * round-trip, so a multi-second draft has the same lifecycle guarantee an
+ * import always had. If the worker IS evicted mid-stream anyway (a hard
+ * kill, not just idle eviction), `background.ts`'s `assistBuffer` is lost
+ * with it — the popup's reattach query then simply finds nothing, same as
+ * a session that never streamed.
  */
 
 import { type Browser, browser } from '@wxt-dev/browser';
@@ -37,6 +45,7 @@ import {
   type ExtensionAnswersSuggestResult,
   type ExtensionAnswerSuggestion,
   type ExtensionAppliedCheckResult,
+  type ExtensionAssistChunkPayload,
   type ExtensionEnvelope,
   type ExtensionImportRequest,
   type ExtensionImportResult,
@@ -57,6 +66,16 @@ const HOST_NAME = 'app.aijobhunter.bridge';
 
 /** Per-request timeout (ms) — the desktop fetch+parse for URL mode can be slow. */
 const REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Stall timeout (ms) for a streaming {@link BridgeClient.answerAssist} call —
+ * RESET on every `assist.chunk`, unlike the flat {@link REQUEST_TIMEOUT_MS}
+ * every other verb uses. A multi-second draft is normal (the desktop is
+ * mid-generation, still emitting deltas), so the promise must stay alive as
+ * long as chunks keep arriving; only genuine SILENCE — no chunk, no terminal
+ * reply — for this long is a stall.
+ */
+const ASSIST_STALL_TIMEOUT_MS = 60_000;
 
 /** Backoff schedule (ms) for reconnect attempts; the last value repeats. */
 const BACKOFF_MS = [500, 1_000, 2_000, 5_000, 10_000];
@@ -437,6 +456,14 @@ function normalizeAnswerAssistResult(payload: unknown): ExtensionAnswerAssistRes
   };
 }
 
+/** Hand-written guard for an `assist.chunk` payload (extension stays
+ *  zod-free). Mirrors `ExtensionAssistChunkPayloadSchema`: `delta` must be a
+ *  string. */
+function isAssistChunkPayload(v: unknown): v is ExtensionAssistChunkPayload {
+  if (typeof v !== 'object' || v === null) return false;
+  return typeof (v as Record<string, unknown>).delta === 'string';
+}
+
 // ── transport seam ──────────────────────────────────────────────────────────
 
 /**
@@ -604,6 +631,14 @@ export class BridgeClient {
    *  separate from {@link pending} for the same reason as
    *  {@link pendingProfile}. */
   private readonly pendingAssist = new Map<string, AssistResolver>();
+  /** In-flight `answer.assist` streaming-preview callbacks, correlated by
+   *  `reqId` — registered by {@link answerAssist} for EVERY call (even with
+   *  no caller-supplied `onChunk`), because a chunk's arrival also resets the
+   *  stall timeout; a caller that passed no `onChunk` just gets a listener
+   *  that only does that bookkeeping. Delivered zero or more `assist.chunk`
+   *  frames before the terminal `answer.assist.result` resolves
+   *  {@link pendingAssist}. */
+  private readonly assistChunkListeners = new Map<string, (delta: string) => void>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private backoffIndex = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -750,6 +785,7 @@ export class BridgeClient {
     this.pendingSuggest.clear();
     this.pendingMatch.clear();
     this.pendingAssist.clear();
+    this.assistChunkListeners.clear();
     this.transport?.close();
     this.transport = null;
   }
@@ -1065,8 +1101,41 @@ export class BridgeClient {
    * `ok:false` reply is NOT folded away here: this answers a deliberate
    * click, so the caller (background.ts) must pass the `error` straight
    * through to the popup.
+   *
+   * The desktop now STREAMS the answer: zero or more `assist.chunk { delta }`
+   * frames arrive before the terminal `answer.assist.result` resolves this
+   * promise. When `onChunk` is passed, each delta is forwarded to it as it
+   * arrives (best-effort live preview) — the caller (background.ts) is what
+   * ACCUMULATES the running text so a popup that closes mid-stream and
+   * reopens can still show the final answer; this client only correlates
+   * frames by `reqId`, it holds no cross-eviction buffer of its own.
+   *
+   * Unlike every other verb's flat {@link REQUEST_TIMEOUT_MS}, this promise is
+   * guarded by a STALL timer ({@link ASSIST_STALL_TIMEOUT_MS}) reset on every
+   * chunk — a long-running generation must never time out just because it's
+   * still producing text. Only genuine silence for that long fires the
+   * timeout, which also sends `assist.cancel` (so the desktop actually stops
+   * streaming/charging, not just this client giving up) before rejecting.
+   *
+   * At most ONE `answerAssist` stream is ever active client-side (mirrors
+   * the popup's own "one assist request at a time" UI — see background.ts's
+   * `assistBuffer` doc). A call made while a PRIOR one is still pending
+   * (e.g. the popup closed mid-stream and reopened to ask a new question
+   * before the first settled) retires that older request FIRST: its chunk
+   * listener is dropped (so a late `assist.chunk` for its `reqId` can never
+   * fire again — `onChunk` only ever receives a bare `delta`, with no
+   * `reqId` of its own to guard against this) and its promise is settled
+   * with a `{ok:false}` result rather than left dangling until the stall
+   * timeout. This is what actually happens when a still-streaming request is
+   * superseded (the reqId itself is never exposed to the caller, so nothing
+   * outside this class could otherwise even name it to cancel).
    */
-  async answerAssist(payload: ExtensionAnswerAssistRequest): Promise<ExtensionAnswerAssistResult> {
+  async answerAssist(
+    payload: ExtensionAnswerAssistRequest,
+    onChunk?: (delta: string) => void
+  ): Promise<ExtensionAnswerAssistResult> {
+    this.supersedeAnyPendingAssist();
+
     await this.ensureConnected();
     if (this.phase !== 'connected' || !this.transport) {
       throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
@@ -1081,23 +1150,98 @@ export class BridgeClient {
     };
 
     return new Promise<ExtensionAnswerAssistResult>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pendingAssist.delete(reqId);
+      const clearStallTimer = (): void => {
+        const timer = this.timers.get(reqId);
+        if (timer) clearTimeout(timer);
         this.timers.delete(reqId);
-        reject(new Error('Timed out waiting for the desktop app to respond.'));
-      }, REQUEST_TIMEOUT_MS);
-      this.timers.set(reqId, timer);
-      this.pendingAssist.set(reqId, resolve);
+      };
+      // Re-armed on every chunk (see `assistChunkListeners` below) — a stall
+      // is "no activity at all for ASSIST_STALL_TIMEOUT_MS", not "the whole
+      // request took longer than it".
+      const armStallTimer = (): void => {
+        clearStallTimer();
+        this.timers.set(
+          reqId,
+          setTimeout(() => {
+            this.pendingAssist.delete(reqId);
+            this.assistChunkListeners.delete(reqId);
+            this.timers.delete(reqId);
+            // Stop the desktop's stream (and its provider spend) too — a
+            // stalled client-side promise must not leave an orphaned,
+            // still-billing generation running server-side.
+            this.cancelAssist(reqId);
+            reject(new Error('Timed out waiting for the desktop app to respond.'));
+          }, ASSIST_STALL_TIMEOUT_MS)
+        );
+      };
+
+      // Always registered (even with no caller-supplied `onChunk`) — every
+      // chunk must reset the stall clock regardless of whether the caller
+      // wants the live preview.
+      this.assistChunkListeners.set(reqId, (delta) => {
+        armStallTimer();
+        onChunk?.(delta);
+      });
+      armStallTimer();
+
+      this.pendingAssist.set(reqId, (result) => {
+        clearStallTimer();
+        this.assistChunkListeners.delete(reqId);
+        resolve(result);
+      });
 
       try {
         transport.send(envelope);
       } catch (err) {
-        clearTimeout(timer);
-        this.timers.delete(reqId);
+        clearStallTimer();
         this.pendingAssist.delete(reqId);
+        this.assistChunkListeners.delete(reqId);
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     });
+  }
+
+  /**
+   * Retire every still-pending `answerAssist` call — see that method's doc
+   * for why at most one stream is ever active client-side. A no-op when
+   * nothing is pending (the common case: the prior call already settled).
+   * Drops the stale reqId's chunk listener + stall timer, best-effort sends
+   * its `assist.cancel` (via {@link cancelAssist}), and — unlike a bare
+   * `cancelAssist` call — also SETTLES its promise (`{ok:false}`, mirroring
+   * `failAllPending`'s settle shape) rather than leaving it to dangle until
+   * the stall timeout: without this, a superseded request's own `onChunk`
+   * closure stays registered and would keep mutating whatever shared buffer
+   * its caller accumulates into (the caller only ever sees a bare `delta`,
+   * with no `reqId` of its own to guard against this itself).
+   */
+  private supersedeAnyPendingAssist(): void {
+    for (const [staleReqId, settle] of [...this.pendingAssist.entries()]) {
+      this.pendingAssist.delete(staleReqId);
+      const timer = this.timers.get(staleReqId);
+      if (timer) clearTimeout(timer);
+      this.timers.delete(staleReqId);
+      this.cancelAssist(staleReqId);
+      settle({ ok: false, error: 'Superseded by a newer request.' });
+    }
+  }
+
+  /**
+   * Send an `assist.cancel` for a still-streaming `answer.assist` `reqId`
+   * (e.g. a new draft/rewrite superseding this one, mirroring an in-app
+   * `AbortController`). Best-effort — a send failure or no connection is
+   * silently ignored (there is no reply to correlate anyway; the caller
+   * already stopped listening for `reqId`). Also drops the local chunk
+   * listener immediately so no further preview updates fire for a request
+   * the caller has moved on from.
+   */
+  cancelAssist(reqId: string): void {
+    this.assistChunkListeners.delete(reqId);
+    if (!this.transport || this.phase !== 'connected') return;
+    try {
+      this.transport.send({ type: EXTENSION_MESSAGE_TYPES.assistCancel, reqId, payload: null });
+    } catch {
+      // Best-effort — the transport may already be closing.
+    }
   }
 
   // ── internals ─────────────────────────────────────────────────────────────
@@ -1417,6 +1561,26 @@ export class BridgeClient {
       return;
     }
 
+    // assist.chunk → one incremental delta of a streaming reply (currently
+    // only `answer.assist`). Best-effort: silently dropped when there is no
+    // registered listener for this `reqId` (no `onChunk` was passed, or the
+    // request already settled/timed out) — a chunk is never itself a
+    // complete answer, so there's nothing to fall back to here.
+    if (env.type === EXTENSION_MESSAGE_TYPES.assistChunk) {
+      const onChunk = this.assistChunkListeners.get(reqId);
+      if (onChunk && isAssistChunkPayload(env.payload)) onChunk(env.payload.delta);
+      return;
+    }
+
+    // assist.done → the stream for `reqId` has ended (success or failure);
+    // the verb's own terminal reply (e.g. answer.assist.result, handled
+    // below) carries the actual outcome. Nothing to do here beyond retiring
+    // the chunk listener, so a stray late chunk after this can never fire.
+    if (env.type === EXTENSION_MESSAGE_TYPES.assistDone) {
+      this.assistChunkListeners.delete(reqId);
+      return;
+    }
+
     // answer.assist.result → the "Help me answer…" outcome (separate map).
     if (env.type === EXTENSION_MESSAGE_TYPES.answerAssistResult) {
       const resolveAssist = this.pendingAssist.get(reqId);
@@ -1504,6 +1668,11 @@ export class BridgeClient {
     this.pendingSuggest.clear();
     this.pendingMatch.clear();
     this.pendingAssist.clear();
+    // A dropped connection mid-stream never sends `assist.done` — this is
+    // the "interrupted" case: no more chunks are coming, so retire every
+    // listener now rather than leaving it to fire on a transport that no
+    // longer exists.
+    this.assistChunkListeners.clear();
     this.timers.clear();
   }
 

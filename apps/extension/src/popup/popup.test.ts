@@ -94,6 +94,7 @@ const {
   resolveAnswersSuggestResponse,
   resolveMatchLiveResponse,
   resolveAnswerAssistResponse,
+  resolveAssistProgressView,
   buildAssistPickerOptions,
 } = await import('./popup');
 
@@ -1525,6 +1526,48 @@ describe('resolveAnswerAssistResponse', () => {
   });
 });
 
+// ── resolveAssistProgressView ──────────────────────────────────────────────────
+
+describe('resolveAssistProgressView', () => {
+  it('returns a null draft when no stream has ever run this session', () => {
+    const view = resolveAssistProgressView({ text: '', done: true, interrupted: false });
+    expect(view.draft).toBeNull();
+  });
+
+  it('shows the accumulating text while a stream is still in flight', () => {
+    const view = resolveAssistProgressView({
+      text: 'Because I ',
+      done: false,
+      interrupted: false,
+    });
+    expect(view.draft).toBe('Because I ');
+    expect(view.text).toBe('Drafting an answer…');
+    expect(view.tone).toBe('ok');
+  });
+
+  it('shows the interrupted message + partial text distinctly from a clean finish', () => {
+    const view = resolveAssistProgressView({
+      text: 'Because I ',
+      done: true,
+      interrupted: true,
+    });
+    expect(view.draft).toBe('Because I ');
+    expect(view.tone).toBe('err');
+    expect(view.text).toMatch(/interrupted/i);
+  });
+
+  it('shows the ready message once the stream finished cleanly', () => {
+    const view = resolveAssistProgressView({
+      text: 'Because I am drawn to it.',
+      done: true,
+      interrupted: false,
+    });
+    expect(view.draft).toBe('Because I am drawn to it.');
+    expect(view.tone).toBe('ok');
+    expect(view.text).toMatch(/ready/i);
+  });
+});
+
 // ── buildAssistPickerOptions ───────────────────────────────────────────────────
 
 describe('buildAssistPickerOptions', () => {
@@ -1621,6 +1664,66 @@ describe('doAssist (#btn-assist)', () => {
     expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
       'Could not draft an answer. Please retry.'
     );
+  });
+});
+
+// ── live-push answerAssistProgress (wire()'s single onMessage listener) ─────
+// A popup reopened mid-stream has no `doAssist` await of its own — it relies
+// entirely on this listener for updates, including a later failure. Verifies
+// the fix: the interrupted case must render the indicator, not just leave
+// the partial draft looking complete.
+
+describe('live-push answerAssistProgress (background push while popup stays open)', () => {
+  const listener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
+    ((message: unknown) => void) | undefined;
+  if (!listener) throw new Error('onMessage listener not registered');
+
+  beforeEach(() => {
+    byId<HTMLParagraphElement>('import-msg').textContent = '';
+    byId<HTMLDivElement>('assist-result').hidden = true;
+    byId<HTMLParagraphElement>('assist-draft').textContent = '';
+  });
+
+  it('renders only the accumulating draft while the stream is still in flight, never importMsg', () => {
+    listener({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: 'Because I ',
+      done: false,
+      interrupted: false,
+    });
+
+    expect(byId<HTMLParagraphElement>('assist-draft').textContent).toBe('Because I ');
+    expect(byId<HTMLDivElement>('assist-result').hidden).toBe(false);
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe('');
+  });
+
+  it('shows the interruption indicator (not just the partial draft) when the stream later fails', () => {
+    listener({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: 'Because I ',
+      done: true,
+      interrupted: true,
+    });
+
+    expect(byId<HTMLParagraphElement>('assist-draft').textContent).toBe('Because I ');
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toMatch(/interrupted/i);
+  });
+
+  it('does not touch importMsg on a clean finish', () => {
+    listener({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: 'Because I am drawn to it.',
+      done: true,
+      interrupted: false,
+    });
+
+    expect(byId<HTMLParagraphElement>('assist-draft').textContent).toBe(
+      'Because I am drawn to it.'
+    );
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe('');
   });
 });
 

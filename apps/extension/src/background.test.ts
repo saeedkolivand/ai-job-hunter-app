@@ -713,11 +713,14 @@ describe('answerAssist request', () => {
 
     const res = await send({ kind: 'answerAssist', question: 'Why this role?', searchWeb: true });
 
-    expect(mockClient.answerAssist).toHaveBeenCalledWith({
-      question: 'Why this role?',
-      searchWeb: true,
-      url: 'https://jobs.example.com/posting/9',
-    });
+    expect(mockClient.answerAssist).toHaveBeenCalledWith(
+      {
+        question: 'Why this role?',
+        searchWeb: true,
+        url: 'https://jobs.example.com/posting/9',
+      },
+      expect.any(Function)
+    );
     expect(res).toEqual({
       ok: true,
       kind: 'answerAssist',
@@ -742,10 +745,10 @@ describe('answerAssist request', () => {
 
     await send({ kind: 'answerAssist', question: 'Why this role?', searchWeb: false });
 
-    expect(mockClient.answerAssist).toHaveBeenCalledWith({
-      question: 'Why this role?',
-      searchWeb: false,
-    });
+    expect(mockClient.answerAssist).toHaveBeenCalledWith(
+      { question: 'Why this role?', searchWeb: false },
+      expect.any(Function)
+    );
   });
 
   it('passes a desktop-side refusal straight through as result (never folds it, unlike appliedCheck)', async () => {
@@ -781,6 +784,265 @@ describe('answerAssist request', () => {
     expect(res).toEqual({
       ok: false,
       error: 'Desktop app not reachable. Is AI Job Hunter running?',
+    });
+  });
+});
+
+// ── answerAssist streaming buffer — background OWNS the accumulation so a
+// popup that closes mid-stream and reopens can reattach ────────────────────
+
+describe('answerAssist streaming buffer', () => {
+  it('accumulates onChunk deltas, broadcasts progress, and answerAssistProgress reflects the final done state', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    const sendMessageMock = vi.mocked(browser.runtime.sendMessage);
+    sendMessageMock.mockClear();
+    mockClient.answerAssist.mockImplementation(async (_payload, onChunk?: (d: string) => void) => {
+      onChunk?.('Because I ');
+      onChunk?.('am drawn to it.');
+      return {
+        ok: true,
+        question: 'Why this role?',
+        draft: 'Because I am drawn to it.',
+        sourced: {},
+      };
+    });
+
+    await send({ kind: 'answerAssist', question: 'Why this role?', searchWeb: false });
+
+    // At least one live progress push happened per chunk (best-effort, so we
+    // only assert the FINAL broadcast carried the fully-accumulated text).
+    const pushes = sendMessageMock.mock.calls
+      .map((call) => call[0] as PopupResponse)
+      .filter((m) => m.ok && m.kind === 'answerAssistProgress');
+    expect(pushes.length).toBeGreaterThan(0);
+    expect(pushes.at(-1)).toEqual({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: 'Because I am drawn to it.',
+      done: true,
+      interrupted: false,
+    });
+
+    const progress = await send({ kind: 'answerAssistProgress' });
+    expect(progress).toEqual({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: 'Because I am drawn to it.',
+      done: true,
+      interrupted: false,
+    });
+  });
+
+  it('marks the buffer interrupted when the stream fails after some text already accumulated', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.answerAssist.mockImplementation(async (_payload, onChunk?: (d: string) => void) => {
+      onChunk?.('Because I ');
+      throw new Error('Connection to the desktop app closed.');
+    });
+
+    await expect(
+      send({ kind: 'answerAssist', question: 'Why this role?', searchWeb: false })
+    ).resolves.toEqual({
+      ok: false,
+      error: 'Connection to the desktop app closed.',
+    });
+
+    const progress = await send({ kind: 'answerAssistProgress' });
+    expect(progress).toEqual({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: 'Because I ',
+      done: true,
+      interrupted: true,
+    });
+  });
+
+  it('a fresh answerAssist call resets the buffer, even after a prior interrupted stream', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.answerAssist.mockImplementationOnce(
+      async (_payload, onChunk?: (d: string) => void) => {
+        onChunk?.('stale partial text');
+        throw new Error('boom');
+      }
+    );
+    await send({ kind: 'answerAssist', question: 'Q1', searchWeb: false });
+    const interrupted = await send({ kind: 'answerAssistProgress' });
+    expect(interrupted).toMatchObject({ text: 'stale partial text', interrupted: true });
+
+    // A NEW call must reset the buffer — the stale interrupted text/flag from
+    // the prior request must never leak into this one, even before the first
+    // chunk of the new stream arrives.
+    mockClient.answerAssist.mockImplementationOnce(
+      async (_payload, onChunk?: (d: string) => void) => {
+        const midStream = await send({ kind: 'answerAssistProgress' });
+        expect(midStream).toEqual({
+          ok: true,
+          kind: 'answerAssistProgress',
+          text: '',
+          done: false,
+          interrupted: false,
+        });
+        onChunk?.('fresh answer');
+        return { ok: true, question: 'Q2', draft: 'fresh answer', sourced: {} };
+      }
+    );
+    await send({ kind: 'answerAssist', question: 'Q2', searchWeb: false });
+  });
+
+  it('caps assistBuffer growth at 4000 chars even across many chunks, so the interrupted path never shows unbounded text', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    const bigChunk = 'x'.repeat(3_000);
+    mockClient.answerAssist.mockImplementation(async (_payload, onChunk?: (d: string) => void) => {
+      onChunk?.(bigChunk); // 3,000
+      onChunk?.(bigChunk); // 6,000 — over the 4,000 cap
+      throw new Error('stream interrupted');
+    });
+
+    await send({ kind: 'answerAssist', question: 'Why this role?', searchWeb: false });
+
+    const progress = (await send({ kind: 'answerAssistProgress' })) as {
+      text: string;
+      done: boolean;
+      interrupted: boolean;
+    };
+    expect(progress.done).toBe(true);
+    expect(progress.interrupted).toBe(true);
+    expect(progress.text.length).toBe(4_000);
+  });
+
+  // Reachable in production: MV3 tears down the popup on close, and
+  // `reattachAssistProgress` re-renders an in-flight stream without
+  // re-disabling `btnAssist` — closing the popup mid-stream and reopening it
+  // lets the user re-click "Help me answer…" while the first call is still
+  // in flight. Without the `assistGeneration` single-flight guard, run A's
+  // late chunk and terminal write clobber run B's buffer once A settles.
+  it("a superseded run's late chunk and terminal write never corrupt a newer overlapping run's buffer", async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+
+    let chunkA: ((d: string) => void) | undefined;
+    let resolveA: ((value: unknown) => void) | undefined;
+    const pendingA = new Promise((resolve) => {
+      resolveA = resolve;
+    });
+    mockClient.answerAssist.mockImplementationOnce(
+      async (_payload, onChunk?: (d: string) => void) => {
+        chunkA = onChunk;
+        return pendingA;
+      }
+    );
+
+    // Start run A (mirrors a stream left running when the popup closed) but
+    // don't await it yet — it stays in flight. Flush a macrotask (not just a
+    // microtask) so A's OWN setup awaits (getToken + activeTabUrl) fully
+    // resolve and it reaches the actual streaming call (registering chunkA)
+    // BEFORE run B ever starts — otherwise B's synchronous generation bump
+    // would supersede A during its own setup, which is a different case
+    // (covered by the "superseded before its own reset" test below).
+    const runA = send({ kind: 'answerAssist', question: 'Q1', searchWeb: false });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Run B (mirrors the reopened popup's re-click) starts and fully
+    // completes while A is still pending.
+    mockClient.answerAssist.mockImplementationOnce(
+      async (_payload, onChunk?: (d: string) => void) => {
+        onChunk?.('B chunk');
+        return { ok: true, question: 'Q2', draft: 'B chunk', sourced: {} };
+      }
+    );
+    await send({ kind: 'answerAssist', question: 'Q2', searchWeb: false });
+
+    // A's late chunk arrives after B already owns the buffer — must be dropped.
+    chunkA?.('A late chunk');
+
+    // A finally settles — its terminal write must not clobber B's buffer.
+    resolveA?.({ ok: true, question: 'Q1', draft: 'A full answer', sourced: {} });
+    await runA;
+
+    const progress = await send({ kind: 'answerAssistProgress' });
+    expect(progress).toEqual({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: 'B chunk',
+      done: true,
+      interrupted: false,
+    });
+  });
+
+  // Narrower variant of the race above: run A is held BEFORE it ever resets
+  // the buffer (its own `getToken()` await still pending) while run B starts
+  // AND fully completes a whole round trip (reset -> chunk -> terminal
+  // done:true). When A's await finally resolves, A must recognize it has
+  // been superseded and bail out WITHOUT resetting the buffer B just
+  // finished and WITHOUT ever calling the billable streaming client a
+  // second time.
+  it('a run superseded before its own reset never resets the buffer or calls the streaming client', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+
+    let resolveTokenA: ((value: string) => void) | undefined;
+    const pendingTokenA = new Promise<string>((resolve) => {
+      resolveTokenA = resolve;
+    });
+    getTokenMock.mockReturnValueOnce(pendingTokenA); // run A's getToken()
+    getTokenMock.mockResolvedValue(FAKE_TOKEN); // run B's (and any later) getToken()
+
+    // Start run A but don't await it — its getToken() await stays pending.
+    const runA = send({ kind: 'answerAssist', question: 'Q1', searchWeb: false });
+
+    // Run B starts and fully completes while A is still stuck before its
+    // own reset.
+    mockClient.answerAssist.mockImplementationOnce(
+      async (_payload, onChunk?: (d: string) => void) => {
+        onChunk?.('B chunk');
+        return { ok: true, question: 'Q2', draft: 'B chunk', sourced: {} };
+      }
+    );
+    await send({ kind: 'answerAssist', question: 'Q2', searchWeb: false });
+
+    const afterB = await send({ kind: 'answerAssistProgress' });
+    expect(afterB).toEqual({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: 'B chunk',
+      done: true,
+      interrupted: false,
+    });
+
+    // A's getToken() finally resolves — A must bail out as superseded before
+    // resetting the buffer, and must never call the streaming client again.
+    resolveTokenA?.(FAKE_TOKEN);
+    const resA = await runA;
+
+    expect(resA).toEqual({ ok: false, error: 'Superseded by a newer request.' });
+    expect(mockClient.answerAssist).toHaveBeenCalledTimes(1); // only B's call
+    expect(mockClient.answerAssist).toHaveBeenCalledWith(
+      expect.objectContaining({ question: 'Q2' }),
+      expect.any(Function)
+    );
+
+    const finalProgress = await send({ kind: 'answerAssistProgress' });
+    expect(finalProgress).toEqual({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: 'B chunk',
+      done: true,
+      interrupted: false,
     });
   });
 });

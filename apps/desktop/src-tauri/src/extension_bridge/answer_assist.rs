@@ -70,16 +70,17 @@
 //! optional web-search-notes fetch, the optional salary-market lookup, and
 //! the final compose) — never more than three per call, and typically one.
 //!
-//! ## Seams for PR 10 (streaming + a rewrite mode)
-//! [`compose_draft`] is the single call site that would grow a
-//! token-callback/chunking parameter — [`resolve_answer_assist`] already
-//! separates "resolve all grounding" from "one compose call", so PR 10 can
-//! swap this one `Completer::complete` for a streamed variant (emitting
-//! incremental `answer.assist.chunk`-shaped frames) without touching the gate,
-//! context-resolution, or reply-shaping code above/below it. A rewrite mode
-//! would add a `previousDraft`/`instruction` field to the request and fold
-//! into the SAME [`build_user_message`] as one more optional fenced block,
-//! not a new resolve path.
+//! ## Streaming (PR 10) — compose internals now live in `stream`
+//! The one compose call streams via [`super::stream::compose_draft_stream`]
+//! (moved out of this file in the R8 line-budget split; see its own doc for
+//! the full mechanism — the `ai:stream` listener bridging, `assist.chunk`/
+//! `assist.done` framing, and the per-connection cancellation registration
+//! against [`super::stream::AssistStreamRegistry`]). [`DRAFT_CAP`] (this
+//! file) is enforced LIVE mid-stream by [`super::stream::forward_chunk`],
+//! not just clamped on the terminal string. Every other seam here (the
+//! gate, context resolution, reply shaping) is untouched; a future rewrite
+//! mode would add a `previousDraft`/`instruction` field and fold into the
+//! SAME [`build_user_message`], reusing the same streaming compose path.
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
@@ -119,6 +120,12 @@ const NO_RESUME_MESSAGE: &str = "Add a resume in AI Job Hunter first, then try a
 /// act on directly) — this one is a generic "something downstream failed".
 const DRAFT_FAILED_MESSAGE: &str = "Could not draft an answer. Please retry.";
 
+/// Fixed sentinel — `req_id` already names an ACTIVE (`Pending`/`Running`)
+/// stream on this connection (see [`super::stream::AssistStreamRegistry::begin`]).
+/// A client reusing an in-flight reqId is rejected outright rather than
+/// silently orphaning the original job.
+const DUPLICATE_REQUEST_MESSAGE: &str = "This request is already in progress.";
+
 /// Collapse a downstream error that MAY carry dynamic content (see
 /// [`DRAFT_FAILED_MESSAGE`]) to that one fixed sentinel, logging the real
 /// cause desktop-side only (`context` + the error's `Display` — provider ids
@@ -148,7 +155,25 @@ const SALARY_CONTEXT_CAP: usize = 200;
 
 /// Char cap on the produced draft — a coarse guard so a runaway response can't
 /// bloat the wire reply; clamped char-boundary safe like every other cap here.
-const DRAFT_CAP: usize = 4_000;
+/// Enforced LIVE during streaming (see [`super::stream::forward_chunk`]), not
+/// just clamped on the terminal string. `pub(super)` — `stream` (which owns
+/// the streaming compose internals after the R8 split) reads this too.
+pub(super) const DRAFT_CAP: usize = 4_000;
+
+/// Explicit `max_tokens` for the streaming compose call — bounds the
+/// provider's own generation length, consistent with [`ANSWER_ASSIST_SYSTEM`]'s
+/// "60-120 words" target and [`DRAFT_CAP`]. Derived from this codebase's
+/// existing chars≈tokens×4 heuristic (`@ajh/prompts`' truncation strategies
+/// use the same ratio): `DRAFT_CAP / 4`. There is no in-app precedent to
+/// mirror for THIS exact verb — the renderer's own answer-generation path
+/// (`generation.ts::streamGenerate`) never sets an explicit `maxTokens` for
+/// answers either (only Ollama's user-configured local limits do) — so this
+/// is a fresh, deliberately generous cap: enough headroom for a wordier
+/// model to still land near the target, while bounding a runaway response's
+/// cost/latency instead of relying solely on the client-visible char clamp.
+/// `pub(super)` — `stream::compose_draft_stream` (after the R8 split) is now
+/// this constant's only reader.
+pub(super) const ANSWER_ASSIST_MAX_TOKENS: u32 = (DRAFT_CAP / 4) as u32;
 
 /// Clamp `s` to at most `max` BYTES, cutting on a UTF-8 char boundary — same
 /// discipline as `answers_save::clamp_bytes`/`answers_suggest::clamp_bytes`
@@ -258,8 +283,10 @@ fn scraped_salary_range(app_ctx: Option<&Application>) -> Option<SalaryRange> {
 /// `RESUME_SYSTEM`/`COVER_LETTER_SYSTEM`): every factual claim traceable to
 /// the résumé, the untrusted question/brief/web-notes blocks are answered
 /// from — never obeyed as instructions — and a salary figure is only ever
-/// stated when a `<salary_context>` reference range is present.
-const ANSWER_ASSIST_SYSTEM: &str = "\
+/// stated when a `<salary_context>` reference range is present. `pub(super)`
+/// — `stream::compose_draft_stream` (after the R8 split) is now its only
+/// reader.
+pub(super) const ANSWER_ASSIST_SYSTEM: &str = "\
 You are helping a job candidate answer ONE application-form question truthfully and specifically. \
 HONESTY overrides everything — every factual claim about the candidate MUST be traceable to \
 <candidate_resume>; never invent a skill, employer, title, metric, or experience it does not show. \
@@ -332,14 +359,6 @@ fn build_user_message(
     msg
 }
 
-/// Run the ONE compose call — see the module doc's "Seams for PR 10" note for
-/// where a streamed variant of this exact call would slot in.
-async fn compose_draft(completer: &Completer, user: &str) -> AppResult<String> {
-    completer
-        .complete(ANSWER_ASSIST_SYSTEM, user, Some(0.5))
-        .await
-}
-
 // ── Reply shaping ─────────────────────────────────────────────────────────────
 
 /// The `answer.assist` success outcome — see [`msg::ANSWER_ASSIST_RESULT`] docs.
@@ -396,13 +415,17 @@ pub(super) fn answer_assist_reply(req_id: &str, outcome: AppResult<AnswerAssistO
 /// limiter bucket for the rest of the call. Routes salary-shaped questions
 /// through the salary machinery (scraped range → market lookup) and every
 /// other question through a grounded draft — see the module doc.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn resolve_answer_assist(
     app: &AppHandle,
+    req_id: &str,
     ai_assist_enabled: bool,
     ai_assist_cfg: &super::AiAssistConfig,
     app_store: &ApplicationStore,
     doc_store: &DocumentStore,
     payload: &Value,
+    registry: &super::stream::AssistStreamRegistry,
+    sink: &mut dyn super::FrameSink,
 ) -> AppResult<AnswerAssistOk> {
     check_ai_assist_gate(ai_assist_enabled)?;
 
@@ -456,6 +479,19 @@ pub(super) async fn resolve_answer_assist(
     let is_salary = super::answers_suggest::is_salary_question(&normalize_question(&question));
     let provider_id = completer.provider_id().as_str();
 
+    // Mark this reqId pending BEFORE the salary/web-notes awaits below — the
+    // realistic window (network round-trips) an `assist.cancel` could race
+    // ahead of `compose_draft_stream`'s own `register()` call. See
+    // `AssistStreamRegistry::begin`'s doc (the pre-registration cancel race
+    // fix): a cancel landing in this window is recorded here instead of
+    // being silently swallowed (nothing was registered yet to `take()`).
+    // A reqId already ACTIVE on this connection (a client reusing an
+    // in-flight reqId) is rejected outright rather than silently orphaning
+    // the original job — see `begin`'s doc.
+    if !registry.begin(req_id) {
+        return Err(AppError::Validation(DUPLICATE_REQUEST_MESSAGE.to_string()));
+    }
+
     let salary_range = if is_salary {
         resolve_salary_range(&completer, &limiter, provider_id, app_ctx.as_ref()).await
     } else {
@@ -484,15 +520,16 @@ pub(super) async fn resolve_answer_assist(
         salary_range.as_ref(),
     );
 
-    // One more charge for the compose call itself.
-    limiter
-        .charge_provider_daily(
-            completer.provider_id().as_str(),
-            crate::limits::PROVIDER_DAILY_MAX,
-        )
-        .map_err(|e| to_draft_failed("daily budget exceeded before compose", e))?;
+    // One more charge for the compose call itself — the LAST fallible step
+    // between `registry.begin` above and entering `compose_draft_stream`
+    // (which owns the normal register/unregister pair). A rejected charge
+    // must `unregister` the `Pending` entry `begin` recorded, or it leaks in
+    // this connection's registry until the connection closes or the reqId is
+    // reused — `compose_draft_stream` is never reached on this early-return
+    // path to clean it up itself.
+    charge_compose_budget(&limiter, completer.provider_id().as_str(), registry, req_id)?;
     let draft = clamp_chars(
-        compose_draft(&completer, &user)
+        super::stream::compose_draft_stream(app, &completer, req_id, registry, &user, sink)
             .await
             .map_err(|e| to_draft_failed("compose failed", e))?,
         DRAFT_CAP,
@@ -505,6 +542,27 @@ pub(super) async fn resolve_answer_assist(
         sourced_brief: !company_brief.is_empty(),
         sourced_salary: salary_range.is_some(),
     })
+}
+
+/// Charge the daily provider budget for the compose call — see the call
+/// site's comment for why this is the LAST fallible step between
+/// `registry.begin(req_id)` and `compose_draft_stream` (which owns the
+/// normal register/unregister pair). On a rejected charge, `unregister`s the
+/// `Pending` entry `begin` recorded FIRST, so a charge failure never leaks a
+/// registry entry. Takes a plain `&Limiter` (no `AppHandle`), so this is
+/// directly unit-testable.
+fn charge_compose_budget(
+    limiter: &crate::limits::Limiter,
+    provider_id: &str,
+    registry: &super::stream::AssistStreamRegistry,
+    req_id: &str,
+) -> AppResult<()> {
+    limiter
+        .charge_provider_daily(provider_id, crate::limits::PROVIDER_DAILY_MAX)
+        .map_err(|e| {
+            registry.unregister(req_id);
+            to_draft_failed("daily budget exceeded before compose", e)
+        })
 }
 
 /// Resolve the salary reference range: the matched Application's own scraped
@@ -581,8 +639,16 @@ async fn fetch_web_notes<S: crate::commands::ai::AnswerSearcher>(
 /// Answer an authenticated `answer.assist`: resolve the ai-assist opt-in +
 /// its provider snapshot off [`super::BridgeState`], resolve against the
 /// local `ApplicationStore`/`DocumentStore`, and return a ready-to-send
-/// `answer.assist.result` reply.
-pub(super) async fn handle_answer_assist(app: &AppHandle, req_id: &str, payload: &Value) -> String {
+/// `answer.assist.result` reply. `registry` is the CALLER's (this
+/// connection's) [`super::stream::AssistStreamRegistry`] — see that type's
+/// doc for why it is per-connection rather than resolved off `BridgeState`.
+pub(super) async fn handle_answer_assist(
+    app: &AppHandle,
+    req_id: &str,
+    payload: &Value,
+    registry: &super::stream::AssistStreamRegistry,
+    sink: &mut dyn super::FrameSink,
+) -> String {
     // ONE lock acquisition for both the gate and the snapshot — see
     // `BridgeState::ai_assist_snapshot`'s doc for why two separate reads
     // (`ai_assist_enabled()` + a second lock for the config) would be a
@@ -599,11 +665,14 @@ pub(super) async fn handle_answer_assist(app: &AppHandle, req_id: &str, payload:
         (Some(app_store), Some(doc_store)) => {
             resolve_answer_assist(
                 app,
+                req_id,
                 cfg.enabled,
                 &cfg,
                 app_store.inner(),
                 doc_store.inner(),
                 payload,
+                registry,
+                sink,
             )
             .await
         }
@@ -1011,6 +1080,45 @@ mod tests {
             searcher.calls.load(std::sync::atomic::Ordering::SeqCst),
             0,
             "the market lookup must never run once the daily budget is exhausted"
+        );
+    }
+
+    // ── charge_compose_budget (registry-leak fix: unregister on charge failure) ─
+
+    #[test]
+    fn charge_compose_budget_succeeds_and_leaves_the_registry_entry_in_place() {
+        let limiter = crate::limits::Limiter::new();
+        let registry = crate::extension_bridge::stream::AssistStreamRegistry::default();
+        registry.begin("req-1");
+
+        let result = charge_compose_budget(&limiter, "openai", &registry, "req-1");
+
+        assert!(result.is_ok());
+        assert!(
+            registry.contains("req-1"),
+            "a successful charge must leave the Pending entry for compose_draft_stream to register"
+        );
+    }
+
+    #[test]
+    fn charge_compose_budget_unregisters_the_pending_entry_on_a_rejected_charge() {
+        let limiter = crate::limits::Limiter::new();
+        // Exhaust the SAME per-provider daily ceiling this call charges against.
+        for _ in 0..crate::limits::PROVIDER_DAILY_MAX {
+            limiter
+                .charge_provider_daily("openai", crate::limits::PROVIDER_DAILY_MAX)
+                .expect("charge within the daily ceiling");
+        }
+        let registry = crate::extension_bridge::stream::AssistStreamRegistry::default();
+        registry.begin("req-1");
+
+        let result = charge_compose_budget(&limiter, "openai", &registry, "req-1");
+
+        assert!(result.is_err());
+        assert!(
+            !registry.contains("req-1"),
+            "a rejected charge must unregister the Pending entry, not leak it until the \
+             connection closes or the reqId is reused"
         );
     }
 }
