@@ -2,7 +2,7 @@
 status: accepted
 ---
 
-# Assisted autofill — user-initiated, generic-matcher, transparent, no-persistence
+# Assisted autofill + answers capture — user-initiated, transparent, no-persistence
 
 ## Context
 
@@ -14,7 +14,7 @@ The design was stress-tested in a grill-with-docs session against the bridge pro
 
 ## Decision
 
-Ship **assisted autofill**: a user-initiated, click-to-fill action in the published MV3 extension that fills empty form fields on the current page from the Contact Profile, reviews-and-submits by the human, and never persists PII in the browser.
+Ship **assisted autofill + answers capture**: a user-initiated, click-to-fill action in the published MV3 extension that (1) fills empty form fields on the current page from the Contact Profile, reviews-and-submits by the human, and (2) captures any application-form text answers the user entered, replays them as suggestions on future applications, and never persists PII in the browser.
 
 1. **User-initiated, per-invocation, no broad host access.** Fill runs only when the user clicks "Fill this form", via `activeTab` + `chrome.scripting.executeScript` on the current tab. There are **no broad `host_permissions`** — the extension gains no standing access to any site; each fill is a one-shot, user-gestured injection. This is what lets it work on _any_ site the user is on while keeping the AMO `data_collection_permissions: ["none"]` posture and a minimal Chrome permission set.
 
@@ -24,7 +24,7 @@ Ship **assisted autofill**: a user-initiated, click-to-fill action in the publis
 
 4. **PII travels over the existing authenticated bridge, fetch-fresh.** The content script requests the profile from the desktop app over the existing loopback WebSocket using one new message pair (`profile.get` → `profile.result`), authenticated by the same per-frame pairing token as import. The profile is **fetched fresh at fill time and never written to `chrome.storage`** — nothing PII-bearing persists in the browser, so an extension compromise or an uninstall leaks nothing at rest.
 
-5. **Opt-in, default OFF, enforced desktop-side.** Autofill is gated by a desktop setting (default OFF, reset-to-OFF on data reset). The **desktop refuses `profile.get` when the toggle is off** — the gate lives on the data owner, not in the extension, so disabling it actually stops PII from leaving the device (the ADR 0005 rule for egress carrying user data). With the toggle off, the profile never crosses the bridge.
+5. **Opt-in, default OFF, enforced desktop-side.** Autofill is gated by a desktop setting (default OFF, reset-to-OFF on data reset). The **desktop refuses `profile.get` when the toggle is off** — the gate lives on the data owner, not in the extension, so disabling it actually stops PII from leaving the device (the ADR 0005 rule for egress carrying user data). With the toggle off, the profile never crosses the bridge. Answers capture (reading form inputs back into the app) operates within the same opt-in gate; the toggle is in Settings under a broadened label reflecting both autofill (fill empty fields only in _bulk_ operations) and answers capture scopes.
 
 6. **Transparent about what it did and honest about limits.** After a fill the extension shows an in-page summary of which fields it set. The disclosed, non-negotiable limits: a **résumé FILE cannot be uploaded** from a content script (browsers forbid programmatic file-input population), and **complex custom ATS** (Workday shadow DOM, multi-step wizards) fill **partially at best**. These are documented in the extension README and the privacy page, not papered over.
 
@@ -38,17 +38,18 @@ Ship **assisted autofill**: a user-initiated, click-to-fill action in the publis
 
 ## Consequences
 
-- **A new bridge message pair (`profile.get`/`profile.result`) enters the protocol** and must stay in TS↔Rust lockstep like every other bridge message; the profile projection is flat (the seven contact keys only), never the full Contact Profile record.
-- **The pairing token's blast radius grows.** A harvested token could previously import jobs; with autofill enabled it can also **read the Contact Profile** via `profile.get`. This is disclosed in the extension threat-model note and README, and bounded by the opt-in gate (token reads nothing when autofill is OFF).
+- **Two new bridge message pairs enter the protocol**: `profile.get`/`profile.result` (read contact), and `answers.save`/`answers.suggest` (write/read application answers). Both must stay in TS↔Rust lockstep like every other bridge message; the profile projection is flat (seven contact keys only), never the full Contact Profile record; answers are deduplicated by question text and stored per-Application (never globally).
+- **The pairing token's blast radius grows.** A harvested token could previously import jobs; with autofill enabled it can also **read the Contact Profile** via `profile.get` and **read/write stored answers** via `answers.*`. This is disclosed in the extension threat-model note and README, and bounded by the opt-in gate (token reads/writes nothing when autofill is OFF).
 - **The desktop toggle is the enforcement point**, not extension UI — reviewers and future authors must keep the refusal on the desktop handler; moving the gate into the extension would silently break the guarantee.
-- **Autofill is now the sanctioned "write user data out" template**, the mirror of Extension import's "read job in": user-gestured, authenticated, fetch-fresh, opt-in, never-submit. Future outbound-to-page features follow this shape.
-- **The honest-limits disclosure (no file upload, partial complex-ATS)** is a documentation obligation, not optional polish — hiding it would violate the no-silent-behavior posture.
+- **Autofill + answers capture is now the sanctioned "read/write user data" template**, the mirror of Extension import's "read job in": user-gestured, authenticated, fetch-fresh, opt-in, never-submit. Future outbound-to-page features follow this shape.
+- **The honest-limits disclosure (no file upload, partial complex-ATS, no rewrite-mode replace)** is a documentation obligation, not optional polish — hiding it would violate the no-silent-behavior posture. Rewrite-mode (one-click replace of a field value) is deferred to a follow-up; the current shipped version captures and suggests answers but never programmatically replaces filled text.
+- **Per-Application answer storage** decouples suggestions across jobs — a "Why this role?" answer saved for Company A does not pollute the suggestion pool for Company B, respecting the human's intent to tailor each application.
 
 ## References
 
-- Protocol: `packages/shared/src/ipc/extension-protocol.ts` + `extension-protocol-constants.ts` (`profile.get`/`profile.result`, `ExtensionProfileResult`).
-- Desktop handler + gate: `apps/desktop/src-tauri/src/extension_bridge/mod.rs` (`handle_profile`, `resolve_profile`, `autofill_enabled`).
+- Protocol: `packages/shared/src/ipc/extension-protocol.ts` + `extension-protocol-constants.ts` (`profile.get`/`profile.result`, `answers.save`/`answers.suggest`, `ExtensionProfileResult`, `ExtensionAnswersSaveRequest`, `ExtensionAnswersSuggestResult`).
+- Desktop handlers + gate: `apps/desktop/src-tauri/src/extension_bridge/mod.rs` (`handle_profile`, `resolve_profile`, `autofill_enabled`); `answers_save.rs` (dedup, merge, storage); `answers_suggest.rs` (Jaccard-based replay).
 - Matcher + fill: `apps/extension/src/lib/autofill.ts` (tiered matcher, ambiguous denylist, `isHidden`), `apps/extension/src/fill.ts` (import-free injected script), `apps/extension/src/background.ts`.
 - Opt-in setting: `apps/desktop/src/renderer/features/settings/components/accounts/ExtensionBridgeSection`.
 - Disclosure: `apps/extension/README.md`, `landing/privacy.html`.
-- Related: [ADR 0005](0005-network-egress-privacy-boundary.md) (egress boundary), Extension import + Pairing token in `docs/CONTEXT.md`.
+- Related: [ADR 0005](0005-network-egress-privacy-boundary.md) (egress boundary), [ADR 0010](0010-bridge-hmac-handshake.md) (hardened auth), [ADR 0011](0011-extension-ai-assist-optin.md) (separate billable AI assist tier), Extension import + Pairing token in `docs/CONTEXT.md`.
