@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784105253668,
+  "lastUpdate": 1784125773479,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4655,6 +4655,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 287897,
             "range": "± 5212",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1adfc4286e42f90cfa810c50e226f12fcd95fcc3",
+          "message": "fix: harden the extension bridge answer-assist streaming transport (#648)\n\n* fix: harden the extension bridge answer-assist streaming transport\n\nThree concurrency/lifecycle fixes on the billable answer.assist stream:\n\n- run_writer now wraps each write in a 25s timeout so a stalled-but-open\n  peer (which parked the unbounded outbound channel forever) becomes a\n  dropped receiver, tripping the existing SinkGone -> job_cancel path;\n  bounds channel memory and wasted spend. Kept the unbounded channel (a\n  bounded one would re-couple the read loop or drop reply frames).\n- hoist registry.begin into the synchronous read-loop dispatch (before\n  tokio::spawn) so an assist.cancel racing the spawn always finds the\n  Pending marker instead of being silently dropped and billing a\n  cancelled request; unregister the Pending entry on any early-gate Err\n  so hoisting begin ahead of the gates does not leak registry entries.\n- reorder job_start before register in compose_draft_stream, cancelling\n  the just-started job if a cancel raced ahead, so a cancel in the gap\n  always targets a real, cancellable job (no orphaned Running generation).\n\nThe 0/0 spend-row recording on cancel/error for end-of-stream-only\nproviders is intentional convention (matches cli_agent and finish: \"a\ncall happened at $0\") and is left unchanged.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* refactor: extract the assist stream registry into its own module\n\nPure behavior-preserving move to keep stream.rs under the R8 hard LOC cap\nafter the hardening additions (stream.rs 1483 -> 896; new assist_registry.rs\n643). The reqId state machine (StreamEntry, AssistStreamRegistry, the\nJobCanceller/JobStarter traits, start_and_register) and its tests move out;\na re-export keeps every existing super::stream::AssistStreamRegistry path\nunchanged. Test count unchanged (259).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: propagate writer-timeout teardown and generation-scope registry cleanup\n\nAddress the two review findings on the hardening PR:\n\n- The detached run_writer task's write-stall/error exit went unnoticed by\n  handle_connection's read loop, so cancel_all/set_connected(false) ran only\n  after the next inbound frame — a stalled/idle peer lingered \"connected\".\n  The read loop now races reader.next() against the kept writer JoinHandle\n  (via a generic, unit-testable next_step seam); a WriterEnded result breaks\n  the loop straight into the existing teardown.\n- reqId-keyed unregister across multiple sites let a request's late cleanup\n  clobber a reused-reqId successor's fresh entry (stranding a billable job\n  as uncancellable). Consolidated cleanup to a single owner AND made removal\n  generation-scoped: AssistStreamRegistry mints a strictly-monotonic gen at\n  begin, carries it on every StreamEntry, and unregister_gen removes only a\n  matching-gen entry — so a stale request can never remove a successor's\n  entry, while cancel/cancel_all stay reqId-targeted (current holder).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
+          "timestamp": "2026-07-15T16:19:37+02:00",
+          "tree_id": "092268f244e9b4512739ace7c2d65fb30ee7afbd",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/1adfc4286e42f90cfa810c50e226f12fcd95fcc3"
+        },
+        "date": 1784125772948,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2244340,
+            "range": "± 53699",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2647340,
+            "range": "± 18705",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 287167,
+            "range": "± 11172",
             "unit": "ns/iter"
           }
         ]
