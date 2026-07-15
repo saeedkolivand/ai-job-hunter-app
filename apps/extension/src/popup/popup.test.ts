@@ -94,6 +94,7 @@ const {
   resolveAnswersSuggestResponse,
   resolveMatchLiveResponse,
   resolveAnswerAssistResponse,
+  resolveAssistProgressView,
   buildAssistPickerOptions,
 } = await import('./popup');
 
@@ -1522,6 +1523,48 @@ describe('resolveAnswerAssistResponse', () => {
     const view = resolveAnswerAssistResponse(res);
     expect(view.tone).toBe('ok');
     expect(view.draft).toBe('Because…');
+  });
+});
+
+// ── resolveAssistProgressView ──────────────────────────────────────────────────
+
+describe('resolveAssistProgressView', () => {
+  it('returns a null draft when no stream has ever run this session', () => {
+    const view = resolveAssistProgressView({ text: '', done: true, interrupted: false });
+    expect(view.draft).toBeNull();
+  });
+
+  it('shows the accumulating text while a stream is still in flight', () => {
+    const view = resolveAssistProgressView({
+      text: 'Because I ',
+      done: false,
+      interrupted: false,
+    });
+    expect(view.draft).toBe('Because I ');
+    expect(view.text).toBe('Drafting an answer…');
+    expect(view.tone).toBe('ok');
+  });
+
+  it('shows the interrupted message + partial text distinctly from a clean finish', () => {
+    const view = resolveAssistProgressView({
+      text: 'Because I ',
+      done: true,
+      interrupted: true,
+    });
+    expect(view.draft).toBe('Because I ');
+    expect(view.tone).toBe('err');
+    expect(view.text).toMatch(/interrupted/i);
+  });
+
+  it('shows the ready message once the stream finished cleanly', () => {
+    const view = resolveAssistProgressView({
+      text: 'Because I am drawn to it.',
+      done: true,
+      interrupted: false,
+    });
+    expect(view.draft).toBe('Because I am drawn to it.');
+    expect(view.tone).toBe('ok');
+    expect(view.text).toMatch(/ready/i);
   });
 });
 

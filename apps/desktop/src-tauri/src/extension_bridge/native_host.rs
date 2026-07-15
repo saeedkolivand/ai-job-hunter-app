@@ -55,9 +55,27 @@ pub fn run() {
 }
 
 /// Connect to the first live bridge port, announce readiness, then pump frames
-/// 1:1 between stdin and the ws until either side closes.
+/// concurrently in BOTH directions between stdin and the ws until either side
+/// closes.
+///
+/// ## Upgrade from the old serial single-in-flight relay
+/// This used to be a strict "read one stdin frame → forward → wait for
+/// EXACTLY ONE ws reply → repeat" cycle (fine for one request/one reply, but
+/// it could only ever relay a single ws frame per stdin frame). Extension
+/// roadmap PR 10 needs a stream's multiple `assist.chunk`/`assist.done`
+/// frames to ALL reach stdout for one `answer.assist` request, so this is now
+/// a `tokio::select!` duplex pump: each loop iteration races "a stdin frame
+/// arrived" against "a ws frame arrived" and forwards whichever fires,
+/// independently. Two consequences, both intentional: (1) any number of ws
+/// frames for one request now relay through, not just the first; (2) a NEW
+/// stdin frame (e.g. an `assist.cancel` for an in-flight stream) is forwarded
+/// the instant it arrives, never blocked behind a still-streaming reply. This
+/// host still understands nothing about `reqId` correlation or multiple
+/// concurrent requests — that multiplexing lives in `bridge.ts` and the
+/// desktop's own connection loop; the host stays a dumb byte relay in both
+/// directions.
 async fn relay() {
-    let mut ws = match connect_bridge().await {
+    let ws = match connect_bridge().await {
         Some(ws) => ws,
         None => {
             // App not running / no bridge port answered. Tell the extension, then
@@ -71,38 +89,39 @@ async fn relay() {
 
     let mut input = stdin();
     let mut output = stdout();
+    let (mut ws_write, mut ws_read) = ws.split();
 
-    // ponytail: serial single-in-flight relay — the popup imports one job at a
-    // time; add reqId multiplexing only if concurrent requests ever ship.
     loop {
-        // 1. Read one stdin frame (browser → host). EOF = Port closed → exit.
-        let frame = match read_stdin_frame(&mut input).await {
-            Ok(Some(bytes)) => bytes,
-            Ok(None) => break, // clean EOF
-            Err(_) => break,   // malformed / over-cap length → exit
-        };
-
-        // 2. Forward it verbatim to the bridge as a Text frame.
-        let text = match String::from_utf8(frame) {
-            Ok(t) => t,
-            Err(_) => continue, // not UTF-8 JSON — drop, keep the Port alive
-        };
-        if ws.send(Message::text(text)).await.is_err() {
-            break;
-        }
-
-        // 3. Read ws frames until the next Text/Binary reply, then frame it back
-        //    to stdout. A ws close/error ends the session.
-        match next_ws_payload(&mut ws).await {
-            Some(reply) => {
-                if write_stdout_frame(&mut output, reply.as_bytes())
-                    .await
-                    .is_err()
-                {
+        tokio::select! {
+            // Browser → host → bridge.
+            frame = read_stdin_frame(&mut input) => {
+                let bytes = match frame {
+                    Ok(Some(bytes)) => bytes,
+                    Ok(None) => break, // clean EOF — Port closed
+                    Err(_) => break,   // malformed / over-cap length
+                };
+                let text = match String::from_utf8(bytes) {
+                    Ok(t) => t,
+                    Err(_) => continue, // not UTF-8 JSON — drop, keep the Port alive
+                };
+                if ws_write.send(Message::text(text)).await.is_err() {
                     break;
                 }
             }
-            None => break, // ws closed/errored
+            // Bridge → host → browser.
+            payload = next_ws_payload(&mut ws_read) => {
+                match payload {
+                    Some(reply) => {
+                        if write_stdout_frame(&mut output, reply.as_bytes())
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    None => break, // ws closed/errored
+                }
+            }
         }
     }
 
@@ -138,11 +157,13 @@ async fn connect_bridge() -> Option<WsStream> {
 }
 
 type WsStream = tokio_tungstenite::WebSocketStream<TcpStream>;
+/// The read half of a split [`WsStream`] — see [`relay`]'s duplex pump.
+type WsRead = futures::stream::SplitStream<WsStream>;
 
 /// Read ws frames until the next Text/Binary payload (skipping Ping/Pong, which
 /// tungstenite auto-answers); `None` on close/error. NOTE: the ws round-trip
 /// can't be unit-tested here — it needs a live bridge server.
-async fn next_ws_payload(ws: &mut WsStream) -> Option<String> {
+async fn next_ws_payload(ws: &mut WsRead) -> Option<String> {
     while let Some(frame) = ws.next().await {
         match frame {
             Ok(Message::Text(t)) => return Some(t.to_string()),

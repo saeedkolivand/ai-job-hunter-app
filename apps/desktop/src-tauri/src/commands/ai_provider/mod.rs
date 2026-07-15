@@ -16,7 +16,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, AiStreamChunk, AiStreamChunkError, AI_STREAM};
-pub use crate::ipc_contracts::ai::AiGenerateRequest;
+pub use crate::ipc_contracts::ai::{AiGenerateRequest, AiGenerateRequestMessage};
 
 mod anthropic;
 pub mod cli_agent; // pub: its registry/detection back the CLI-agent health probe

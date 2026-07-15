@@ -30,6 +30,7 @@ import {
   type ExtensionAnswerSuggestion,
   type ExtensionAppliedCheckRequest,
   type ExtensionAppliedCheckResult,
+  type ExtensionAssistChunkPayload,
   type ExtensionAuthOkPayload,
   type ExtensionAuthPayload,
   type ExtensionChallengePayload,
@@ -62,6 +63,7 @@ export {
   type ExtensionAnswerSuggestion,
   type ExtensionAppliedCheckRequest,
   type ExtensionAppliedCheckResult,
+  type ExtensionAssistChunkPayload,
   type ExtensionAuthOkPayload,
   type ExtensionAuthPayload,
   type ExtensionChallengePayload,
@@ -103,6 +105,9 @@ export const ExtensionMessageTypeSchema = z.enum([
   EXTENSION_MESSAGE_TYPES.answersSuggestResult,
   EXTENSION_MESSAGE_TYPES.answerAssist,
   EXTENSION_MESSAGE_TYPES.answerAssistResult,
+  EXTENSION_MESSAGE_TYPES.assistChunk,
+  EXTENSION_MESSAGE_TYPES.assistDone,
+  EXTENSION_MESSAGE_TYPES.assistCancel,
 ]) satisfies z.ZodType<ExtensionMessageType>;
 
 /** `hello` payload (handshake step 1). No token — the proof authenticates later. */
@@ -318,6 +323,17 @@ export const ExtensionAnswerAssistResultSchema = z.discriminatedUnion('ok', [
   }),
   z.object({ ok: z.literal(false), error: z.string() }),
 ]) satisfies z.ZodType<ExtensionAnswerAssistResult>;
+
+/**
+ * `assist.chunk` payload — one incremental delta of a streaming reply.
+ * Mirrors {@link ExtensionAssistChunkPayload}. `assist.done`/`assist.cancel`
+ * carry no payload (the envelope's own `reqId` is the whole message), so
+ * they have no dedicated schema — `ExtensionEnvelopeSchema`'s `payload:
+ * z.unknown()` already accepts anything, including `null`.
+ */
+export const ExtensionAssistChunkPayloadSchema = z.object({
+  delta: z.string(),
+}) satisfies z.ZodType<ExtensionAssistChunkPayload>;
 
 /**
  * `match.live` payload — the Scan-mode capture to score. Mirrors

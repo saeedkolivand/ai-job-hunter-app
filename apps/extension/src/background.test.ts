@@ -713,11 +713,14 @@ describe('answerAssist request', () => {
 
     const res = await send({ kind: 'answerAssist', question: 'Why this role?', searchWeb: true });
 
-    expect(mockClient.answerAssist).toHaveBeenCalledWith({
-      question: 'Why this role?',
-      searchWeb: true,
-      url: 'https://jobs.example.com/posting/9',
-    });
+    expect(mockClient.answerAssist).toHaveBeenCalledWith(
+      {
+        question: 'Why this role?',
+        searchWeb: true,
+        url: 'https://jobs.example.com/posting/9',
+      },
+      expect.any(Function)
+    );
     expect(res).toEqual({
       ok: true,
       kind: 'answerAssist',
@@ -742,10 +745,10 @@ describe('answerAssist request', () => {
 
     await send({ kind: 'answerAssist', question: 'Why this role?', searchWeb: false });
 
-    expect(mockClient.answerAssist).toHaveBeenCalledWith({
-      question: 'Why this role?',
-      searchWeb: false,
-    });
+    expect(mockClient.answerAssist).toHaveBeenCalledWith(
+      { question: 'Why this role?', searchWeb: false },
+      expect.any(Function)
+    );
   });
 
   it('passes a desktop-side refusal straight through as result (never folds it, unlike appliedCheck)', async () => {
@@ -782,6 +785,141 @@ describe('answerAssist request', () => {
       ok: false,
       error: 'Desktop app not reachable. Is AI Job Hunter running?',
     });
+  });
+});
+
+// ── answerAssist streaming buffer — background OWNS the accumulation so a
+// popup that closes mid-stream and reopens can reattach ────────────────────
+
+describe('answerAssist streaming buffer', () => {
+  it('accumulates onChunk deltas, broadcasts progress, and answerAssistProgress reflects the final done state', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    const sendMessageMock = vi.mocked(browser.runtime.sendMessage);
+    sendMessageMock.mockClear();
+    mockClient.answerAssist.mockImplementation(async (_payload, onChunk?: (d: string) => void) => {
+      onChunk?.('Because I ');
+      onChunk?.('am drawn to it.');
+      return {
+        ok: true,
+        question: 'Why this role?',
+        draft: 'Because I am drawn to it.',
+        sourced: {},
+      };
+    });
+
+    await send({ kind: 'answerAssist', question: 'Why this role?', searchWeb: false });
+
+    // At least one live progress push happened per chunk (best-effort, so we
+    // only assert the FINAL broadcast carried the fully-accumulated text).
+    const pushes = sendMessageMock.mock.calls
+      .map((call) => call[0] as PopupResponse)
+      .filter((m) => m.ok && m.kind === 'answerAssistProgress');
+    expect(pushes.length).toBeGreaterThan(0);
+    expect(pushes.at(-1)).toEqual({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: 'Because I am drawn to it.',
+      done: true,
+      interrupted: false,
+    });
+
+    const progress = await send({ kind: 'answerAssistProgress' });
+    expect(progress).toEqual({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: 'Because I am drawn to it.',
+      done: true,
+      interrupted: false,
+    });
+  });
+
+  it('marks the buffer interrupted when the stream fails after some text already accumulated', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.answerAssist.mockImplementation(async (_payload, onChunk?: (d: string) => void) => {
+      onChunk?.('Because I ');
+      throw new Error('Connection to the desktop app closed.');
+    });
+
+    await expect(
+      send({ kind: 'answerAssist', question: 'Why this role?', searchWeb: false })
+    ).resolves.toEqual({
+      ok: false,
+      error: 'Connection to the desktop app closed.',
+    });
+
+    const progress = await send({ kind: 'answerAssistProgress' });
+    expect(progress).toEqual({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: 'Because I ',
+      done: true,
+      interrupted: true,
+    });
+  });
+
+  it('a fresh answerAssist call resets the buffer, even after a prior interrupted stream', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.answerAssist.mockImplementationOnce(
+      async (_payload, onChunk?: (d: string) => void) => {
+        onChunk?.('stale partial text');
+        throw new Error('boom');
+      }
+    );
+    await send({ kind: 'answerAssist', question: 'Q1', searchWeb: false });
+    const interrupted = await send({ kind: 'answerAssistProgress' });
+    expect(interrupted).toMatchObject({ text: 'stale partial text', interrupted: true });
+
+    // A NEW call must reset the buffer — the stale interrupted text/flag from
+    // the prior request must never leak into this one, even before the first
+    // chunk of the new stream arrives.
+    mockClient.answerAssist.mockImplementationOnce(
+      async (_payload, onChunk?: (d: string) => void) => {
+        const midStream = await send({ kind: 'answerAssistProgress' });
+        expect(midStream).toEqual({
+          ok: true,
+          kind: 'answerAssistProgress',
+          text: '',
+          done: false,
+          interrupted: false,
+        });
+        onChunk?.('fresh answer');
+        return { ok: true, question: 'Q2', draft: 'fresh answer', sourced: {} };
+      }
+    );
+    await send({ kind: 'answerAssist', question: 'Q2', searchWeb: false });
+  });
+
+  it('caps assistBuffer growth at 4000 chars even across many chunks, so the interrupted path never shows unbounded text', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    const bigChunk = 'x'.repeat(3_000);
+    mockClient.answerAssist.mockImplementation(async (_payload, onChunk?: (d: string) => void) => {
+      onChunk?.(bigChunk); // 3,000
+      onChunk?.(bigChunk); // 6,000 — over the 4,000 cap
+      throw new Error('stream interrupted');
+    });
+
+    await send({ kind: 'answerAssist', question: 'Why this role?', searchWeb: false });
+
+    const progress = (await send({ kind: 'answerAssistProgress' })) as {
+      text: string;
+      done: boolean;
+      interrupted: boolean;
+    };
+    expect(progress.done).toBe(true);
+    expect(progress.interrupted).toBe(true);
+    expect(progress.text.length).toBe(4_000);
   });
 });
 

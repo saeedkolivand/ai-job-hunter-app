@@ -436,6 +436,35 @@ export function resolveAnswerAssistResponse(res: PopupResponse): AnswerAssistVie
 }
 
 /**
+ * Given the background's current/last streamed `answer.assist` snapshot
+ * (`{text, done, interrupted}` — see `PopupResponse`'s `answerAssistProgress`
+ * doc), return what the popup should render. Used for BOTH the live push
+ * while a stream is running and the popup-open reattach query.
+ * `draft === null` means there is nothing to show at all (no stream has run
+ * this session) — the caller should leave the draft box untouched.
+ *
+ * Pure: no DOM access, no side effects.
+ */
+export function resolveAssistProgressView(progress: {
+  text: string;
+  done: boolean;
+  interrupted: boolean;
+}): AnswerAssistView {
+  if (!progress.text) return { text: '', tone: 'ok', draft: null };
+  if (progress.interrupted) {
+    return {
+      text: 'Connection interrupted — here is what arrived so far.',
+      tone: 'err',
+      draft: progress.text,
+    };
+  }
+  if (!progress.done) {
+    return { text: 'Drafting an answer…', tone: 'ok', draft: progress.text };
+  }
+  return { text: 'Draft ready — review before using it.', tone: 'ok', draft: progress.text };
+}
+
+/**
  * Populate the "pick a scanned question" `<select>` from the most recent
  * questions-mode scan (deduped by exact text, in scan order). Pure DOM
  * projection so it's straightforward to re-derive whenever
@@ -1307,8 +1336,42 @@ function wire(): void {
   browser.runtime.onMessage.addListener((message: unknown) => {
     const res = message as PopupResponse;
     if (res && res.ok && res.kind === 'status') render(res.status);
+    // Live streaming preview: the background pushes one of these per
+    // `assist.chunk` (and once more on settle) while a draft is in flight —
+    // update only the dedicated draft box, never the shared `importMsg`
+    // status line `doAssist` itself owns for this same request.
+    if (res && res.ok && res.kind === 'answerAssistProgress') {
+      const view = resolveAssistProgressView(res);
+      if (view.draft !== null) {
+        els.assistDraft.textContent = view.draft;
+        els.assistResult.hidden = false;
+      }
+    }
   });
+}
+
+/**
+ * On popup open, reattach to any in-flight/just-finished streaming
+ * `answer.assist` the background is holding — so closing the popup
+ * mid-stream and reopening shows what already arrived instead of a blank
+ * view. No-op when no stream has run this session. Runs BEFORE any user
+ * click, so setting the shared `importMsg` line on the interrupted case is
+ * safe (nothing else has written to it yet in this fresh popup instance).
+ */
+async function reattachAssistProgress(): Promise<void> {
+  try {
+    const res = await send({ kind: 'answerAssistProgress' });
+    if (!res.ok || res.kind !== 'answerAssistProgress') return;
+    const view = resolveAssistProgressView(res);
+    if (view.draft === null) return;
+    els.assistDraft.textContent = view.draft;
+    els.assistResult.hidden = false;
+    if (view.tone === 'err') setMsg(els.importMsg, view.text, 'err');
+  } catch {
+    // Best-effort — a transport hiccup on open just means no reattach.
+  }
 }
 
 wire();
 void refreshStatusWithTimeout();
+void reattachAssistProgress();

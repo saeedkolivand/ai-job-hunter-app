@@ -70,25 +70,44 @@
 //! optional web-search-notes fetch, the optional salary-market lookup, and
 //! the final compose) — never more than three per call, and typically one.
 //!
-//! ## Seams for PR 10 (streaming + a rewrite mode)
-//! [`compose_draft`] is the single call site that would grow a
-//! token-callback/chunking parameter — [`resolve_answer_assist`] already
-//! separates "resolve all grounding" from "one compose call", so PR 10 can
-//! swap this one `Completer::complete` for a streamed variant (emitting
-//! incremental `answer.assist.chunk`-shaped frames) without touching the gate,
-//! context-resolution, or reply-shaping code above/below it. A rewrite mode
+//! ## Streaming (PR 10)
+//! The one compose call streams: [`compose_draft_stream`] replaces the old
+//! one-shot `Completer::complete` with [`crate::pipeline::Completer::stream_complete`]
+//! (the SAME `ai:stream`/job-tracked mechanism `agent_run`/`generate_pipeline`
+//! already drive in-app — no second streaming mechanism). It emits
+//! `assist.chunk { delta }` frames through a [`super::FrameSink`] as text
+//! arrives, then a terminal `assist.done` frame, and returns the full
+//! accumulated text for [`answer_assist_reply`] to shape into the unchanged
+//! `answer.assist.result` terminal reply — every other seam here (the gate,
+//! context resolution, reply shaping) is untouched. A future rewrite mode
 //! would add a `previousDraft`/`instruction` field to the request and fold
 //! into the SAME [`build_user_message`] as one more optional fenced block,
-//! not a new resolve path.
+//! reusing this same streaming compose path — not a new resolve or transport.
+//!
+//! The `reqId -> jobId` cancellation registration
+//! ([`compose_draft_stream`]'s `register`/`unregister` calls) is against the
+//! CALLER's per-connection [`super::stream::AssistStreamRegistry`], passed in
+//! rather than resolved off a global `BridgeState` field — see that type's
+//! doc for why (a second connection must never be able to name, let alone
+//! cancel, a stream it didn't start).
+//!
+//! [`DRAFT_CAP`] is enforced LIVE during streaming, not just clamped on the
+//! terminal string: [`forward_chunk`] stops forwarding/accumulating once the
+//! running total reaches the cap, and [`compose_draft_stream`] then cancels
+//! the job itself (the SAME mechanism an external `assist.cancel` drives) so
+//! a runaway generation is bounded in cost/latency, not merely truncated
+//! after the fact. [`ANSWER_ASSIST_MAX_TOKENS`] bounds the SAME thing from
+//! the provider's side of the wire.
 
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Listener, Manager};
 
 use super::msg;
 use crate::agent::tools::{fenced, JOB_CAP, RESUME_CAP};
 use crate::applications::{normalize_job_url, normalize_question, Application, ApplicationStore};
 use crate::documents::DocumentStore;
 use crate::error::{AppError, AppResult};
+use crate::events::{AiStreamChunk, AI_STREAM};
 use crate::pipeline::Completer;
 use crate::salary_research::SalaryRange;
 
@@ -148,7 +167,22 @@ const SALARY_CONTEXT_CAP: usize = 200;
 
 /// Char cap on the produced draft — a coarse guard so a runaway response can't
 /// bloat the wire reply; clamped char-boundary safe like every other cap here.
+/// Enforced LIVE during streaming (see [`forward_chunk`]), not just clamped
+/// on the terminal string.
 const DRAFT_CAP: usize = 4_000;
+
+/// Explicit `max_tokens` for the streaming compose call — bounds the
+/// provider's own generation length, consistent with [`ANSWER_ASSIST_SYSTEM`]'s
+/// "60-120 words" target and [`DRAFT_CAP`]. Derived from this codebase's
+/// existing chars≈tokens×4 heuristic (`@ajh/prompts`' truncation strategies
+/// use the same ratio): `DRAFT_CAP / 4`. There is no in-app precedent to
+/// mirror for THIS exact verb — the renderer's own answer-generation path
+/// (`generation.ts::streamGenerate`) never sets an explicit `maxTokens` for
+/// answers either (only Ollama's user-configured local limits do) — so this
+/// is a fresh, deliberately generous cap: enough headroom for a wordier
+/// model to still land near the target, while bounding a runaway response's
+/// cost/latency instead of relying solely on the client-visible char clamp.
+const ANSWER_ASSIST_MAX_TOKENS: u32 = (DRAFT_CAP / 4) as u32;
 
 /// Clamp `s` to at most `max` BYTES, cutting on a UTF-8 char boundary — same
 /// discipline as `answers_save::clamp_bytes`/`answers_suggest::clamp_bytes`
@@ -332,12 +366,178 @@ fn build_user_message(
     msg
 }
 
-/// Run the ONE compose call — see the module doc's "Seams for PR 10" note for
-/// where a streamed variant of this exact call would slot in.
-async fn compose_draft(completer: &Completer, user: &str) -> AppResult<String> {
-    completer
-        .complete(ANSWER_ASSIST_SYSTEM, user, Some(0.5))
-        .await
+/// Stream the ONE compose call — see the module doc's "Streaming" section for
+/// the reuse rationale. Registers a fresh job under `req_id` on `registry`
+/// (THIS connection's own [`super::stream::AssistStreamRegistry`] — so a
+/// client `assist.cancel` can stop it early), drives
+/// [`Completer::stream_complete`], forwards every visible-text delta through
+/// `sink` as a cap-clamped `assist.chunk` frame (see [`forward_chunk`]),
+/// sends a terminal `assist.done` frame once the stream ends (success,
+/// failure, an external cancel, or [`DRAFT_CAP`] being reached), and returns
+/// the full accumulated text (or the provider's error) for the caller to
+/// shape into the (unchanged) `answer.assist.result` terminal reply.
+///
+/// Mechanism: `chat_stream` emits `ai:stream` Tauri events as it drives the
+/// HTTP stream — the SAME channel the renderer's own provider hook listens
+/// to. This registers a SECOND, Rust-side listener for this exact `job_id`
+/// (`tauri::Listener`) and forwards each piece through `sink` instead of into
+/// a webview. A synchronous listener callback can't itself `.await` a socket
+/// write, so it pushes each event onto an unbounded channel that this
+/// function drains CONCURRENTLY with the `stream_complete` future
+/// (`tokio::select!`). Several deltas — including the terminal one — can be
+/// emitted synchronously in one burst right before `stream_complete`
+/// resolves, so a final `try_recv` drain AFTER the select loop breaks is
+/// what guarantees every already-buffered delta is still forwarded, never
+/// just the ones the loop happened to poll before the future won the race.
+///
+/// Reaching [`DRAFT_CAP`] mid-stream cancels the job THE SAME WAY an
+/// external `assist.cancel` would (`job_cancel`, polled by `chat_stream`'s
+/// own `is_cancelled` check) — so `stream_complete` resolves with the SAME
+/// `Err("Job cancelled")` either cause produces. A cap-triggered
+/// cancellation is a SUCCESSFUL truncation, not a failure, so it is NOT
+/// propagated as an error here; only a cap-unrelated error still is.
+async fn compose_draft_stream(
+    app: &AppHandle,
+    completer: &Completer,
+    req_id: &str,
+    registry: &super::stream::AssistStreamRegistry,
+    user: &str,
+    sink: &mut dyn super::FrameSink,
+) -> AppResult<String> {
+    let job_id = crate::db::new_job_id();
+    registry.register(req_id, &job_id);
+    crate::commands::jobs::job_start(app, &job_id, "extension.answer_assist");
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AiStreamChunk>();
+    let listen_job_id = job_id.clone();
+    let listener_id = app.listen(AI_STREAM, move |event| {
+        if let Ok(chunk) = serde_json::from_str::<AiStreamChunk>(event.payload()) {
+            if chunk.job_id == listen_job_id {
+                let _ = tx.send(chunk);
+            }
+        }
+    });
+
+    let mut accumulated = String::new();
+    let mut cap_reached = false;
+    let result: AppResult<()>;
+    {
+        let mut stream_fut = Box::pin(completer.stream_complete(
+            &job_id,
+            ANSWER_ASSIST_SYSTEM,
+            user,
+            Some(0.5),
+            Some(ANSWER_ASSIST_MAX_TOKENS),
+        ));
+        loop {
+            tokio::select! {
+                maybe = rx.recv() => {
+                    if let Some(chunk) = maybe {
+                        if forward_chunk(&chunk, req_id, sink, &mut accumulated).await
+                            && !cap_reached
+                        {
+                            cap_reached = true;
+                            // Bound cost/latency live, not just the wire text —
+                            // the SAME cancellation path `assist.cancel` drives.
+                            crate::commands::jobs::job_cancel(app, &job_id);
+                        }
+                    }
+                }
+                res = &mut stream_fut => {
+                    result = res;
+                    break;
+                }
+            }
+        }
+    }
+    // Flush anything emitted in the same synchronous burst as the terminal
+    // piece — see the doc above. Skipped once the cap already closed the
+    // frame stream (nothing left to usefully forward).
+    while !cap_reached {
+        match rx.try_recv() {
+            Ok(chunk) => {
+                if forward_chunk(&chunk, req_id, sink, &mut accumulated).await {
+                    cap_reached = true;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+
+    app.unlisten(listener_id);
+    registry.unregister(req_id);
+    sink.send_frame(assist_done_frame(req_id)).await;
+
+    if cap_reached {
+        return Ok(accumulated);
+    }
+    result?;
+    Ok(accumulated)
+}
+
+/// Whether `chunk` (an `ai:stream` event for the job [`compose_draft_stream`]
+/// is driving) carries visible answer text to forward as an `assist.chunk`
+/// frame — `None` for the terminal `done` piece, a reasoning/`thinking`
+/// piece (the popup streams only the visible answer, never chain-of-thought),
+/// or an already-empty delta. Pure — directly unit-tested without a live
+/// `AppHandle`/event.
+fn forwardable_delta(chunk: &AiStreamChunk) -> Option<&str> {
+    if chunk.done || chunk.thinking == Some(true) || chunk.delta.is_empty() {
+        None
+    } else {
+        Some(chunk.delta.as_str())
+    }
+}
+
+/// Forward one delta (if any, per [`forwardable_delta`]) through `sink`,
+/// clamped so `accumulated` never grows past [`DRAFT_CAP`] chars — the LIVE,
+/// mid-stream sibling of [`resolve_answer_assist`]'s own terminal
+/// `clamp_chars` safety net (see the module doc's "Streaming" section).
+/// Returns `true` once the cap is reached (whether by this delta or already
+/// before it), so the caller knows to stop the provider call itself.
+async fn forward_chunk(
+    chunk: &AiStreamChunk,
+    req_id: &str,
+    sink: &mut dyn super::FrameSink,
+    accumulated: &mut String,
+) -> bool {
+    let Some(delta) = forwardable_delta(chunk) else {
+        return accumulated.chars().count() >= DRAFT_CAP;
+    };
+    let remaining = DRAFT_CAP.saturating_sub(accumulated.chars().count());
+    if remaining == 0 {
+        return true;
+    }
+    let piece: std::borrow::Cow<'_, str> = if delta.chars().count() > remaining {
+        delta.chars().take(remaining).collect::<String>().into()
+    } else {
+        delta.into()
+    };
+    if !piece.is_empty() {
+        accumulated.push_str(&piece);
+        sink.send_frame(assist_chunk_frame(req_id, &piece)).await;
+    }
+    accumulated.chars().count() >= DRAFT_CAP
+}
+
+/// Build an `assist.chunk { delta }` frame.
+fn assist_chunk_frame(req_id: &str, delta: &str) -> String {
+    json!({
+        "type": msg::ASSIST_CHUNK,
+        "reqId": req_id,
+        "payload": { "delta": delta },
+    })
+    .to_string()
+}
+
+/// Build the terminal, no-payload `assist.done` frame for `req_id`.
+fn assist_done_frame(req_id: &str) -> String {
+    json!({
+        "type": msg::ASSIST_DONE,
+        "reqId": req_id,
+        "payload": Value::Null,
+    })
+    .to_string()
 }
 
 // ── Reply shaping ─────────────────────────────────────────────────────────────
@@ -396,13 +596,17 @@ pub(super) fn answer_assist_reply(req_id: &str, outcome: AppResult<AnswerAssistO
 /// limiter bucket for the rest of the call. Routes salary-shaped questions
 /// through the salary machinery (scraped range → market lookup) and every
 /// other question through a grounded draft — see the module doc.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn resolve_answer_assist(
     app: &AppHandle,
+    req_id: &str,
     ai_assist_enabled: bool,
     ai_assist_cfg: &super::AiAssistConfig,
     app_store: &ApplicationStore,
     doc_store: &DocumentStore,
     payload: &Value,
+    registry: &super::stream::AssistStreamRegistry,
+    sink: &mut dyn super::FrameSink,
 ) -> AppResult<AnswerAssistOk> {
     check_ai_assist_gate(ai_assist_enabled)?;
 
@@ -492,7 +696,7 @@ pub(super) async fn resolve_answer_assist(
         )
         .map_err(|e| to_draft_failed("daily budget exceeded before compose", e))?;
     let draft = clamp_chars(
-        compose_draft(&completer, &user)
+        compose_draft_stream(app, &completer, req_id, registry, &user, sink)
             .await
             .map_err(|e| to_draft_failed("compose failed", e))?,
         DRAFT_CAP,
@@ -581,8 +785,16 @@ async fn fetch_web_notes<S: crate::commands::ai::AnswerSearcher>(
 /// Answer an authenticated `answer.assist`: resolve the ai-assist opt-in +
 /// its provider snapshot off [`super::BridgeState`], resolve against the
 /// local `ApplicationStore`/`DocumentStore`, and return a ready-to-send
-/// `answer.assist.result` reply.
-pub(super) async fn handle_answer_assist(app: &AppHandle, req_id: &str, payload: &Value) -> String {
+/// `answer.assist.result` reply. `registry` is the CALLER's (this
+/// connection's) [`super::stream::AssistStreamRegistry`] — see that type's
+/// doc for why it is per-connection rather than resolved off `BridgeState`.
+pub(super) async fn handle_answer_assist(
+    app: &AppHandle,
+    req_id: &str,
+    payload: &Value,
+    registry: &super::stream::AssistStreamRegistry,
+    sink: &mut dyn super::FrameSink,
+) -> String {
     // ONE lock acquisition for both the gate and the snapshot — see
     // `BridgeState::ai_assist_snapshot`'s doc for why two separate reads
     // (`ai_assist_enabled()` + a second lock for the config) would be a
@@ -599,11 +811,14 @@ pub(super) async fn handle_answer_assist(app: &AppHandle, req_id: &str, payload:
         (Some(app_store), Some(doc_store)) => {
             resolve_answer_assist(
                 app,
+                req_id,
                 cfg.enabled,
                 &cfg,
                 app_store.inner(),
                 doc_store.inner(),
                 payload,
+                registry,
+                sink,
             )
             .await
         }
@@ -831,6 +1046,133 @@ mod tests {
         assert_eq!(v["payload"]["ok"], false);
         assert_eq!(v["payload"]["error"], AI_ASSIST_OFF_MESSAGE);
         assert!(v["payload"].get("draft").is_none());
+    }
+
+    // ── streaming: forwardable_delta / assist frame builders ────────────────
+
+    fn stream_chunk(delta: &str, done: bool, thinking: Option<bool>) -> AiStreamChunk {
+        AiStreamChunk {
+            job_id: "job-1".to_string(),
+            delta: delta.to_string(),
+            done,
+            error: None,
+            thinking,
+        }
+    }
+
+    #[test]
+    fn forwardable_delta_forwards_a_plain_text_delta() {
+        let chunk = stream_chunk("Because I ", false, None);
+        assert_eq!(forwardable_delta(&chunk), Some("Because I "));
+    }
+
+    #[test]
+    fn forwardable_delta_skips_the_terminal_done_piece() {
+        let chunk = stream_chunk("", true, None);
+        assert_eq!(forwardable_delta(&chunk), None);
+    }
+
+    #[test]
+    fn forwardable_delta_skips_a_thinking_piece() {
+        // A reasoning/thinking delta must never leak into the popup's
+        // streaming preview — only the visible answer streams.
+        let chunk = stream_chunk("pondering…", false, Some(true));
+        assert_eq!(forwardable_delta(&chunk), None);
+    }
+
+    #[test]
+    fn forwardable_delta_skips_an_empty_delta() {
+        let chunk = stream_chunk("", false, Some(false));
+        assert_eq!(forwardable_delta(&chunk), None);
+    }
+
+    // ── forward_chunk (MEDIUM fix: live DRAFT_CAP enforcement) ──────────────
+
+    #[derive(Default)]
+    struct RecordingSink {
+        sent: Vec<String>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::extension_bridge::FrameSink for RecordingSink {
+        async fn send_frame(&mut self, text: String) -> bool {
+            self.sent.push(text);
+            true
+        }
+    }
+
+    #[tokio::test]
+    async fn forward_chunk_stops_growing_accumulated_once_the_draft_cap_is_reached() {
+        let mut sink = RecordingSink::default();
+        let mut accumulated = String::new();
+
+        // A single delta that exactly fills the cap.
+        let first = stream_chunk(&"a".repeat(DRAFT_CAP), false, None);
+        let capped = forward_chunk(&first, "req-1", &mut sink, &mut accumulated).await;
+        assert!(capped);
+        assert_eq!(accumulated.chars().count(), DRAFT_CAP);
+
+        // A second delta arriving after the cap must never grow the buffer
+        // or send another frame.
+        let second = stream_chunk("more text", false, None);
+        let capped_again = forward_chunk(&second, "req-1", &mut sink, &mut accumulated).await;
+        assert!(capped_again);
+        assert_eq!(
+            accumulated.chars().count(),
+            DRAFT_CAP,
+            "must never exceed the cap"
+        );
+        assert_eq!(
+            sink.sent.len(),
+            1,
+            "the second delta must never be forwarded on the wire"
+        );
+    }
+
+    #[tokio::test]
+    async fn forward_chunk_clamps_a_delta_that_would_cross_the_cap_mid_chunk() {
+        let mut sink = RecordingSink::default();
+        let mut accumulated = "x".repeat(DRAFT_CAP - 5);
+
+        // 10 chars incoming, only 5 fit before the cap.
+        let chunk = stream_chunk("0123456789", false, None);
+        let capped = forward_chunk(&chunk, "req-1", &mut sink, &mut accumulated).await;
+
+        assert!(capped);
+        assert_eq!(accumulated.chars().count(), DRAFT_CAP);
+        assert_eq!(
+            sink.sent.last().unwrap(),
+            &assist_chunk_frame("req-1", "01234")
+        );
+    }
+
+    #[tokio::test]
+    async fn forward_chunk_reports_uncapped_while_under_the_limit() {
+        let mut sink = RecordingSink::default();
+        let mut accumulated = String::new();
+        let chunk = stream_chunk("short delta", false, None);
+        let capped = forward_chunk(&chunk, "req-1", &mut sink, &mut accumulated).await;
+        assert!(!capped);
+        assert_eq!(accumulated, "short delta");
+        assert_eq!(sink.sent, vec![assist_chunk_frame("req-1", "short delta")]);
+    }
+
+    #[test]
+    fn assist_chunk_frame_carries_the_delta_under_the_reqs_id() {
+        let frame = assist_chunk_frame("req-9", "Because I ");
+        let v: Value = serde_json::from_str(&frame).unwrap();
+        assert_eq!(v["type"], msg::ASSIST_CHUNK);
+        assert_eq!(v["reqId"], "req-9");
+        assert_eq!(v["payload"]["delta"], "Because I ");
+    }
+
+    #[test]
+    fn assist_done_frame_carries_no_payload() {
+        let frame = assist_done_frame("req-9");
+        let v: Value = serde_json::from_str(&frame).unwrap();
+        assert_eq!(v["type"], msg::ASSIST_DONE);
+        assert_eq!(v["reqId"], "req-9");
+        assert!(v["payload"].is_null());
     }
 
     // ── to_draft_failed (wire-error sentinel collapse — HIGH finding) ───────

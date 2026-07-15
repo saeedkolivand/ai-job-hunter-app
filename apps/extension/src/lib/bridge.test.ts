@@ -2213,4 +2213,173 @@ describe('BridgeClient – answerAssist', () => {
 
     client.dispose();
   });
+
+  function makeChunkEnvelope(reqId: string, delta: string): string {
+    return JSON.stringify({
+      type: EXTENSION_MESSAGE_TYPES.assistChunk,
+      reqId,
+      payload: { delta },
+    });
+  }
+
+  function makeDoneEnvelope(reqId: string): string {
+    return JSON.stringify({ type: EXTENSION_MESSAGE_TYPES.assistDone, reqId, payload: null });
+  }
+
+  it('forwards assist.chunk deltas to onChunk, correlated by reqId, before the terminal result', async () => {
+    const { client, socket } = await connectedClient();
+    const deltas: string[] = [];
+    const resultPromise = client.answerAssist({ question: 'Why this role?' }, (delta) =>
+      deltas.push(delta)
+    );
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const { reqId } = JSON.parse(raw) as { reqId: string };
+
+    socket.simulateMessage(makeChunkEnvelope(reqId, 'Because I '));
+    socket.simulateMessage(makeChunkEnvelope(reqId, 'am drawn to it.'));
+    expect(deltas).toEqual(['Because I ', 'am drawn to it.']);
+
+    socket.simulateMessage(makeDoneEnvelope(reqId));
+    socket.simulateMessage(
+      makeAssistEnvelope(reqId, {
+        ok: true,
+        question: 'Why this role?',
+        draft: 'Because I am drawn to it.',
+        sourced: {},
+      })
+    );
+
+    const result = await resultPromise;
+    expect(result).toEqual({
+      ok: true,
+      question: 'Why this role?',
+      draft: 'Because I am drawn to it.',
+      sourced: {},
+    });
+
+    client.dispose();
+  });
+
+  it('never forwards a chunk once the request has already settled', async () => {
+    const { client, socket } = await connectedClient();
+    const deltas: string[] = [];
+    const resultPromise = client.answerAssist({ question: 'Why this role?' }, (delta) =>
+      deltas.push(delta)
+    );
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const { reqId } = JSON.parse(raw) as { reqId: string };
+
+    socket.simulateMessage(
+      makeAssistEnvelope(reqId, {
+        ok: true,
+        question: 'Why this role?',
+        draft: 'Because I am drawn to it.',
+        sourced: {},
+      })
+    );
+    await resultPromise;
+
+    // A stray late chunk after settle must never fire the (already-forgotten) callback.
+    socket.simulateMessage(makeChunkEnvelope(reqId, 'too late'));
+    expect(deltas).toEqual([]);
+
+    client.dispose();
+  });
+
+  it('cancelAssist sends assist.cancel for the given reqId and stops further chunk delivery', async () => {
+    const { client, socket } = await connectedClient();
+    const deltas: string[] = [];
+    const resultPromise = client.answerAssist({ question: 'Why this role?' }, (delta) =>
+      deltas.push(delta)
+    );
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const { reqId } = JSON.parse(raw) as { reqId: string };
+
+    client.cancelAssist(reqId);
+    const cancelRaw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const cancelFrame = JSON.parse(cancelRaw) as {
+      type: string;
+      reqId: string;
+      payload: unknown;
+    };
+    expect(cancelFrame.type).toBe(EXTENSION_MESSAGE_TYPES.assistCancel);
+    expect(cancelFrame.reqId).toBe(reqId);
+    expect(cancelFrame.payload).toBeNull();
+
+    // A chunk arriving after the cancel must no longer reach the callback.
+    socket.simulateMessage(makeChunkEnvelope(reqId, 'ignored'));
+    expect(deltas).toEqual([]);
+
+    // Settle the still-pending promise so it doesn't dangle across tests.
+    socket.simulateMessage(makeAssistEnvelope(reqId, { ok: false, error: 'cancelled' }));
+    await resultPromise;
+    client.dispose();
+  });
+
+  // ── stall timeout (MEDIUM fix): reset on activity, cancels on a true stall ──
+
+  it('a chunk resets the stall timer — activity past the old flat 30s window keeps the promise alive', async () => {
+    vi.useFakeTimers();
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startAnswerAssist(client, socket);
+
+    // Two 40s hops (80s total, well past the OLD flat 30s timeout), each
+    // under the NEW 60s stall window, with a chunk resetting the clock
+    // between them — the promise must still be alive throughout.
+    await vi.advanceTimersByTimeAsync(40_000);
+    socket.simulateMessage(makeChunkEnvelope(reqId, 'still going'));
+    await vi.advanceTimersByTimeAsync(40_000);
+
+    socket.simulateMessage(makeDoneEnvelope(reqId));
+    socket.simulateMessage(
+      makeAssistEnvelope(reqId, {
+        ok: true,
+        question: 'Why do you want this role?',
+        draft: 'final answer',
+        sourced: {},
+      })
+    );
+
+    const result = await resultPromise;
+    expect(result).toEqual({
+      ok: true,
+      question: 'Why do you want this role?',
+      draft: 'final answer',
+      sourced: {},
+    });
+
+    client.dispose();
+  });
+
+  it('a true stall — no chunk, no reply — for the full window sends assist.cancel and rejects', async () => {
+    vi.useFakeTimers();
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startAnswerAssist(client, socket);
+
+    const outcomePromise = resultPromise.then(
+      () => ({ ok: true as const }),
+      (e: unknown) => ({ ok: false as const, error: e })
+    );
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    const outcome = await outcomePromise;
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toBeInstanceOf(Error);
+      expect((outcome.error as Error).message).toMatch(/timed out/i);
+    }
+
+    // The stall must cancel the desktop's stream too (stop streaming/charging),
+    // not just give up client-side.
+    const lastRaw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const lastFrame = JSON.parse(lastRaw) as { type: string; reqId: string };
+    expect(lastFrame.type).toBe(EXTENSION_MESSAGE_TYPES.assistCancel);
+    expect(lastFrame.reqId).toBe(reqId);
+
+    client.dispose();
+  });
 });

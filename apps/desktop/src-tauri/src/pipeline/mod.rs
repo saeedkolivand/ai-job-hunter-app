@@ -19,7 +19,8 @@ use async_trait::async_trait;
 use tauri::AppHandle;
 
 use crate::commands::ai_provider::{
-    record_usage, resolve, AgentTurn, AiProvider, ChatMsg, ModelCapabilities, ProviderId, ToolSpec,
+    record_usage, resolve, AgentTurn, AiGenerateRequest, AiGenerateRequestMessage, AiProvider,
+    ChatMsg, ModelCapabilities, ProviderId, ToolSpec,
 };
 use crate::error::AppResult;
 
@@ -183,6 +184,60 @@ impl Completer {
             self.base_url.as_deref(),
         );
         Ok(text)
+    }
+
+    /// Stream a completion through the active provider — the streaming
+    /// analogue of [`complete`](Self::complete). Emits incremental deltas
+    /// via the SAME `ai:stream` event channel
+    /// [`AiProvider::chat_stream`](crate::commands::ai_provider::AiProvider::chat_stream)
+    /// already drives in-app (job-tracked by `job_id`, cancellable through
+    /// `commands::jobs::job_cancel`/the stream loop's own `is_cancelled`
+    /// poll — see `commands::ai_provider::stream`), so a caller with no
+    /// renderer in scope (the extension bridge's streaming `answer.assist`,
+    /// see `extension_bridge::answer_assist`) can subscribe to those SAME
+    /// events itself rather than a second, bespoke streaming mechanism.
+    /// `chat_stream`'s own `finish()` records usage/spend on success — this
+    /// wrapper never records again, mirroring how [`complete`](Self::complete)
+    /// is the only place non-streaming usage is recorded.
+    ///
+    /// `max_tokens` is caller-supplied (not a fixed default here) — mirrors
+    /// `temperature`'s own per-caller flexibility; a caller with a short,
+    /// bounded-length target (e.g. the extension bridge's `answer.assist`,
+    /// ~60-120 words) passes an explicit cap instead of relying on each
+    /// provider's own generous default.
+    pub async fn stream_complete(
+        &self,
+        job_id: &str,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+        max_tokens: Option<u32>,
+    ) -> AppResult<()> {
+        let req = AiGenerateRequest {
+            model: self.model.clone(),
+            messages: vec![
+                AiGenerateRequestMessage {
+                    role: "system".to_string(),
+                    content: system.to_string(),
+                },
+                AiGenerateRequestMessage {
+                    role: "user".to_string(),
+                    content: user.to_string(),
+                },
+            ],
+            locale: String::new(),
+            temperature,
+            top_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            repeat_penalty: None,
+            max_tokens,
+            context_window: None,
+            provider: Some(self.provider.id().as_str().to_string()),
+            base_url: self.base_url.clone(),
+            effort: None,
+        };
+        self.provider.chat_stream(&self.app, job_id, &req).await
     }
 
     /// One agentic tool-calling turn through the active provider — the multi-turn
