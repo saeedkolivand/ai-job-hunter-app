@@ -63,6 +63,7 @@ use crate::error::{AppError, AppResult};
 mod answer_assist;
 mod answers_save;
 mod answers_suggest;
+mod assist_registry;
 pub mod auth;
 pub mod handshake;
 mod import_flow;
