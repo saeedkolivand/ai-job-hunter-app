@@ -1817,6 +1817,25 @@ describe('rewrite mode (#rewrite-picker, #btn-rewrite, Accept/Restore/Copy)', ()
     );
   });
 
+  it('resetting the picker back to its placeholder clears the target — never silently re-picks index 0 (Number("") === 0, not NaN)', async () => {
+    await pickFilledField();
+
+    // Change the picker back to its placeholder (value '').
+    const picker = byId<HTMLSelectElement>('rewrite-picker');
+    picker.value = '';
+    picker.dispatchEvent(new Event('change'));
+
+    byId<HTMLButtonElement>('btn-rewrite').click();
+    await flush();
+
+    // Must refuse exactly like "nothing ever picked" — not silently reuse
+    // whatever field happens to be first in the last scan.
+    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Pick a filled answer first.'
+    );
+  });
+
   it('refuses to rewrite with neither a preset nor a typed instruction', async () => {
     await pickFilledField();
 
@@ -1889,7 +1908,7 @@ describe('rewrite mode (#rewrite-picker, #btn-rewrite, Accept/Restore/Copy)', ()
     expect(byId<HTMLDivElement>('rewrite-result').hidden).toBe(true);
   });
 
-  it('Accept sends answerReplace with the rewritten draft and the picked field correlation', async () => {
+  it('Accept sends answerReplace with the rewritten draft, the picked field correlation, and the expected current value', async () => {
     await pickFilledField();
     byId<HTMLParagraphElement>('rewrite-draft').textContent = 'Shorter answer.';
     sendMessageMock.mockResolvedValueOnce({
@@ -1907,6 +1926,7 @@ describe('rewrite mode (#rewrite-picker, #btn-rewrite, Accept/Restore/Copy)', ()
       index: 0,
       count: 1,
       text: 'Shorter answer.',
+      expectedValue: 'Because I like it.',
     });
     expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
       'Replaced the field on the page.'
@@ -1933,10 +1953,104 @@ describe('rewrite mode (#rewrite-picker, #btn-rewrite, Accept/Restore/Copy)', ()
       index: 0,
       count: 1,
       text: 'Because I like it.',
+      expectedValue: 'Because I like it.',
     });
     expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
       'Restored the original answer.'
     );
+  });
+
+  it('after a successful Accept, a following Restore compares against the JUST-WRITTEN text, not the stale original', async () => {
+    await pickFilledField();
+    byId<HTMLParagraphElement>('rewrite-draft').textContent = 'Shorter answer.';
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerReplace',
+      result: { filled: true },
+    });
+
+    byId<HTMLButtonElement>('btn-accept-rewrite').click();
+    await flush();
+
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerReplace',
+      result: { filled: true },
+    });
+    byId<HTMLButtonElement>('btn-restore-rewrite').click();
+    await flush();
+
+    // The SECOND call (Restore) must expect "Shorter answer." — what Accept
+    // just wrote — never the pick-time original as the expected CURRENT value.
+    expect(sendMessageMock).toHaveBeenLastCalledWith({
+      kind: 'answerReplace',
+      question: 'Why this role?',
+      index: 0,
+      count: 1,
+      text: 'Because I like it.',
+      expectedValue: 'Shorter answer.',
+    });
+  });
+
+  it('a mid-flight re-pick to a different field does not corrupt the new field’s expectedValue baseline', async () => {
+    // Scan with TWO distinct filled fields so there is a different field to
+    // re-pick mid-flight.
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answersSave',
+      result: { ok: true, applicationId: 'app-1', saved: 2, skipped: 0 },
+      filled: [
+        { question: 'Why this role?', index: 0, answer: 'Because I like it.' },
+        { question: 'Salary expectation?', index: 0, answer: '80000' },
+      ],
+    });
+    byId<HTMLButtonElement>('btn-save-answers').click();
+    await flush();
+    sendMessageMock.mockReset();
+
+    const picker = byId<HTMLSelectElement>('rewrite-picker');
+    picker.value = '0';
+    picker.dispatchEvent(new Event('change'));
+    byId<HTMLParagraphElement>('rewrite-draft').textContent = 'Shorter answer.';
+
+    // Accept for field 0 starts but does not resolve yet (simulates it still
+    // being in flight when the user re-picks).
+    let resolveAccept: ((res: unknown) => void) | undefined;
+    sendMessageMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveAccept = resolve;
+      })
+    );
+    byId<HTMLButtonElement>('btn-accept-rewrite').click();
+
+    // RACE: while that Accept is still in flight, the user re-picks a
+    // DIFFERENT field.
+    picker.value = '1';
+    picker.dispatchEvent(new Event('change'));
+
+    // The in-flight Accept now resolves successfully.
+    resolveAccept?.({ ok: true, kind: 'answerReplace', result: { filled: true } });
+    await flush();
+
+    // Restore on the NEWLY picked field must still expect ITS OWN original
+    // value ("80000") — never "Shorter answer." bled in from the stale
+    // Accept that belonged to the field picked before it.
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerReplace',
+      result: { filled: true },
+    });
+    byId<HTMLButtonElement>('btn-restore-rewrite').click();
+    await flush();
+
+    expect(sendMessageMock).toHaveBeenLastCalledWith({
+      kind: 'answerReplace',
+      question: 'Salary expectation?',
+      index: 0,
+      count: 1,
+      text: '80000',
+      expectedValue: '80000',
+    });
   });
 
   it('surfaces the fail-safe not-found error on Accept without folding it away', async () => {
@@ -1953,6 +2067,26 @@ describe('rewrite mode (#rewrite-picker, #btn-rewrite, Accept/Restore/Copy)', ()
 
     expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
       'Could not find this field — the page may have changed.'
+    );
+  });
+
+  it('surfaces the changed-since-pick refusal on Accept without folding it away or clobbering', async () => {
+    await pickFilledField();
+    byId<HTMLParagraphElement>('rewrite-draft').textContent = 'Shorter answer.';
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerReplace',
+      result: {
+        filled: false,
+        error: 'This field changed since you picked it — re-pick it to rewrite.',
+      },
+    });
+
+    byId<HTMLButtonElement>('btn-accept-rewrite').click();
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'This field changed since you picked it — re-pick it to rewrite.'
     );
   });
 
