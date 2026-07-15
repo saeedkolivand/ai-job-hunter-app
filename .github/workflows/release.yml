@@ -404,7 +404,7 @@ jobs:
 
       - name: Upload Release Assets
         if: success()
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: ${{ steps.resolve.outputs.version }}
           # Tauri only emits .sig files for NSIS, AppImage, and macOS .app.tar.gz
@@ -556,7 +556,7 @@ jobs:
           echo "::endgroup::"
 
       - name: 📤 Upload Extension to Release
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: ${{ steps.resolve.outputs.version }}
           files: |
@@ -710,7 +710,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📤 Upload latest.json to Release
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: ${{ steps.version.outputs.version }}
           files: latest.json
