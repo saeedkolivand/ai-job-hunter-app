@@ -179,12 +179,27 @@ function growAssistDraft(text: string, delta: string): string {
  * is set only when the stream ended in failure AFTER some text had already
  * accumulated (a clean "opt-in off"/"no provider" refusal before any text
  * arrives is a normal error, not an interruption).
+ *
+ * The "button disabled while in flight" UI invariant alone is NOT enough to
+ * keep this single slot safe: an MV3 popup is torn down on close, so a popup
+ * that closes mid-stream and reopens shows a fresh, enabled button and can
+ * re-trigger `runAnswerAssist` while the first run is still in flight.
+ * {@link assistGeneration} is what makes overlap safe — see `runAnswerAssist`.
  */
 let assistBuffer: { text: string; done: boolean; interrupted: boolean } = {
   text: '',
   done: true,
   interrupted: false,
 };
+
+/**
+ * Single-flight generation counter for {@link assistBuffer}. `runAnswerAssist`
+ * captures its own value on entry, superseding any prior run; a run whose
+ * captured value no longer matches this counter has been superseded by a
+ * newer overlapping call and must skip every `assistBuffer` write (chunks
+ * and the terminal write alike) — see `runAnswerAssist`.
+ */
+let assistGeneration = 0;
 
 /** Push the current assist buffer to any listening popup — mirrors
  *  `broadcastStatus` (no-op, silently, if none is open). */
@@ -480,8 +495,28 @@ async function runMatchLive(): Promise<PopupResponse> {
  * already accumulated before the failure (a clean upfront refusal is not an
  * interruption — `resolveAnswerAssistResponse`'s `result.error` already
  * covers that case).
+ *
+ * Single-flight via {@link assistGeneration}: a popup closing mid-stream and
+ * reopening can re-trigger this while the first run is still in flight (its
+ * button isn't re-disabled on reattach). The `gen` captured on entry
+ * supersedes any prior run. Two separate guards cover the two windows a
+ * superseded run could otherwise clobber {@link assistBuffer} in:
+ *   - BEFORE the reset (this function's own `getToken`/`activeTabUrl` awaits
+ *     can still be pending after a newer call has already reset AND finished
+ *     the buffer) — the early-bail right after those awaits and before the
+ *     reset means a superseded run never resets the buffer a newer run
+ *     already owns, and never issues its own (billable) streaming request.
+ *   - DURING the stream — each chunk AND the terminal write on both the
+ *     success and the error path re-check `gen` still matches
+ *     {@link assistGeneration} and are a no-op when it doesn't
+ *     (result/rethrow still happen normally so this run's own caller settles
+ *     correctly).
+ * Together these mean a superseded run can never clobber the buffer a newer
+ * run owns, at any point in its lifetime.
  */
 async function runAnswerAssist(question: string, searchWeb: boolean): Promise<PopupResponse> {
+  const gen = ++assistGeneration;
+
   const token = await getToken();
   if (!token) {
     return { ok: false, error: 'Not paired. Paste your pairing token first.' };
@@ -494,6 +529,15 @@ async function runAnswerAssist(question: string, searchWeb: boolean): Promise<Po
     url = undefined;
   }
 
+  // A newer overlapping call already reset (and may have already finished)
+  // the buffer while the awaits above were pending — this run must not reset
+  // it back to `done:false`, must not broadcast, and must not make its own
+  // (billable) streaming request. No await separates this check from the
+  // reset below, so no third run can interleave between them.
+  if (gen !== assistGeneration) {
+    return { ok: false, error: 'Superseded by a newer request.' };
+  }
+
   assistBuffer = { text: '', done: false, interrupted: false };
   void broadcastAssistProgress();
 
@@ -501,6 +545,7 @@ async function runAnswerAssist(question: string, searchWeb: boolean): Promise<Po
   if (url) payload.url = url;
   try {
     const result = await getClient().answerAssist(payload, (delta) => {
+      if (gen !== assistGeneration) return; // superseded — drop this late chunk
       assistBuffer = {
         text: growAssistDraft(assistBuffer.text, delta),
         done: false,
@@ -508,20 +553,24 @@ async function runAnswerAssist(question: string, searchWeb: boolean): Promise<Po
       };
       void broadcastAssistProgress();
     });
-    assistBuffer = {
-      text: result.ok ? result.draft : assistBuffer.text,
-      done: true,
-      interrupted: !result.ok && assistBuffer.text.length > 0,
-    };
-    void broadcastAssistProgress();
+    if (gen === assistGeneration) {
+      assistBuffer = {
+        text: result.ok ? result.draft : assistBuffer.text,
+        done: true,
+        interrupted: !result.ok && assistBuffer.text.length > 0,
+      };
+      void broadcastAssistProgress();
+    }
     return { ok: true, kind: 'answerAssist', result };
   } catch (err) {
-    assistBuffer = {
-      text: assistBuffer.text,
-      done: true,
-      interrupted: assistBuffer.text.length > 0,
-    };
-    void broadcastAssistProgress();
+    if (gen === assistGeneration) {
+      assistBuffer = {
+        text: assistBuffer.text,
+        done: true,
+        interrupted: assistBuffer.text.length > 0,
+      };
+      void broadcastAssistProgress();
+    }
     throw err;
   }
 }

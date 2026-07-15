@@ -1347,6 +1347,13 @@ function wire(): void {
     // showing the last partial draft with no indication it's incomplete.
     // Mirrors `reattachAssistProgress`'s own interruption rendering.
     if (res && res.ok && res.kind === 'answerAssistProgress') {
+      // Reflect in-flight state on THIS popup instance too — a popup reattached
+      // to a still-running stream (see `reattachAssistProgress`) keeps learning
+      // about it here, and must stay disabled until the stream is terminal
+      // (never a silent re-trigger that would race/corrupt the shared buffer —
+      // see `assistGeneration` in background.ts). Always re-enables once done,
+      // so a terminal push never leaves the button stuck disabled.
+      els.btnAssist.disabled = !res.done;
       const view = resolveAssistProgressView(res);
       if (view.draft !== null) {
         els.assistDraft.textContent = view.draft;
@@ -1364,11 +1371,19 @@ function wire(): void {
  * view. No-op when no stream has run this session. Runs BEFORE any user
  * click, so setting the shared `importMsg` line on the interrupted case is
  * safe (nothing else has written to it yet in this fresh popup instance).
+ *
+ * Also disables `btnAssist` when the reattached stream is still in flight —
+ * a freshly-opened popup's button defaults to enabled, and clicking it while
+ * the prior run is still streaming would start a second overlapping
+ * `runAnswerAssist` (see `assistGeneration` in background.ts). Re-enabled
+ * once the reattached stream is terminal, and by the live-push listener
+ * above if it finishes while this popup stays open.
  */
 async function reattachAssistProgress(): Promise<void> {
   try {
     const res = await send({ kind: 'answerAssistProgress' });
     if (!res.ok || res.kind !== 'answerAssistProgress') return;
+    els.btnAssist.disabled = !res.done;
     const view = resolveAssistProgressView(res);
     if (view.draft === null) return;
     els.assistDraft.textContent = view.draft;
