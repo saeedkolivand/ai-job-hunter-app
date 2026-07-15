@@ -111,6 +111,40 @@
           Suggest answers for this form
         </button>
         <div id="suggestions-list" class="suggestions" hidden></div>
+        <!-- AI answer drafting ("Help me answer…") — billable, gated on a
+             SEPARATE desktop opt-in from autofill/suggestions above. The
+             picker is fed by the SAME questions-mode scan "Suggest answers
+             for this form" already ran (no separate scan injection); a
+             pasted/typed question always works too. -->
+        <div class="assist">
+          <label class="assist__label" for="assist-picker">Or pick a scanned question</label>
+          <select id="assist-picker" class="assist__picker">
+            <option value="">— Paste or type a question below —</option>
+          </select>
+          <textarea
+            id="assist-question"
+            class="assist__question"
+            placeholder="Paste or type an application question…"
+            aria-label="Application question"
+            rows="2"
+          ></textarea>
+          <label class="check">
+            <input id="chk-search-web" type="checkbox" />
+            <span>Search the web for this answer</span>
+          </label>
+          <button
+            id="btn-assist"
+            class="btn"
+            type="button"
+            title="Draft a paste-ready answer using your resume and this page's context"
+          >
+            Help me answer…
+          </button>
+          <div id="assist-result" class="assist-result" hidden>
+            <p id="assist-draft" class="assist-result__draft"></p>
+            <button id="btn-copy-assist" class="btn btn--small" type="button">Copy</button>
+          </div>
+        </div>
         <!-- Explicit, never automatic: scores the default/most-recent resume against
              this page's posting (keyword coverage only — a local computation; only
              the score + a few missing keywords ever leave the device). -->

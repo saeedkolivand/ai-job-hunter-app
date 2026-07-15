@@ -411,6 +411,44 @@ export function resolveMatchLiveResponse(res: PopupResponse): MatchLiveView {
   };
 }
 
+/**
+ * Given an `answerAssist` response, return the message text + tone plus the
+ * draft to render (`null` when there is nothing to show — an error).
+ * Mirrors `resolveMatchLiveResponse` — this verb's errors ARE shown (a
+ * deliberate click, not a passive check).
+ *
+ * Pure: no DOM access, no side effects.
+ */
+export interface AnswerAssistView {
+  text: string;
+  tone: 'ok' | 'err';
+  draft: string | null;
+}
+
+export function resolveAnswerAssistResponse(res: PopupResponse): AnswerAssistView {
+  if (!res.ok) return { text: res.error, tone: 'err', draft: null };
+  if (res.kind !== 'answerAssist') {
+    return { text: 'Unexpected response — please retry.', tone: 'err', draft: null };
+  }
+  const { result } = res;
+  if (!result.ok) return { text: result.error, tone: 'err', draft: null };
+  return { text: 'Draft ready — review before using it.', tone: 'ok', draft: result.draft };
+}
+
+/**
+ * Populate the "pick a scanned question" `<select>` from the most recent
+ * questions-mode scan (deduped by exact text, in scan order). Pure DOM
+ * projection so it's straightforward to re-derive whenever
+ * `lastScannedQuestions` changes — no separate scan injection for this
+ * feature, it reuses whatever "Suggest answers for this form" last scanned.
+ *
+ * Pure: no side effects beyond the returned option list (the caller writes it
+ * into the DOM).
+ */
+export function buildAssistPickerOptions(scanned: { question: string }[]): string[] {
+  return [...new Set(scanned.map((q) => q.question).filter((q) => q.trim().length > 0))];
+}
+
 function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`missing element #${id}`);
@@ -434,6 +472,13 @@ const els = {
   suggestionsList: byId<HTMLDivElement>('suggestions-list'),
   btnCheckFit: byId<HTMLButtonElement>('btn-check-fit'),
   matchResult: byId<HTMLDivElement>('match-result'),
+  assistPicker: byId<HTMLSelectElement>('assist-picker'),
+  assistQuestion: byId<HTMLTextAreaElement>('assist-question'),
+  chkSearchWeb: byId<HTMLInputElement>('chk-search-web'),
+  btnAssist: byId<HTMLButtonElement>('btn-assist'),
+  assistResult: byId<HTMLDivElement>('assist-result'),
+  assistDraft: byId<HTMLParagraphElement>('assist-draft'),
+  btnCopyAssist: byId<HTMLButtonElement>('btn-copy-assist'),
   appliedStatus: byId<HTMLParagraphElement>('applied-status'),
   chkApplied: byId<HTMLInputElement>('chk-applied'),
   importMsg: byId<HTMLParagraphElement>('import-msg'),
@@ -565,6 +610,13 @@ function render(status: ConnectionStatus): void {
     // A stale "Check fit" score from a previous page must never linger either.
     els.matchResult.hidden = true;
     els.matchResult.textContent = '';
+    // A stale AI-answer draft (and the picker it was scanned against) must
+    // never linger into a different page's connected view either.
+    els.assistResult.hidden = true;
+    els.assistDraft.textContent = '';
+    els.assistQuestion.value = '';
+    els.chkSearchWeb.checked = false;
+    renderAssistPicker([]);
   }
   lastRenderedPhase = status.phase;
 
@@ -967,12 +1019,77 @@ async function doSuggestAnswers(): Promise<void> {
     lastScannedQuestions = scanned;
     setMsg(els.importMsg, text, tone);
     renderSuggestions(suggestions);
+    // "Help me answer…"'s picker reuses this SAME scan — no separate
+    // injection for that feature.
+    renderAssistPicker(scanned);
   } catch {
     // A transport/messaging rejection must not strand the status on "Looking…".
     setMsg(els.importMsg, 'Could not suggest answers for this page. Please retry.', 'err');
   } finally {
     els.btnSuggestAnswers.disabled = false;
   }
+}
+
+/** Rebuild the "pick a scanned question" `<select>` options from the most
+ *  recent questions-mode scan — clears any prior options first (no stale
+ *  entries from a previous page/scan). A change back to the picker's
+ *  placeholder value is a no-op (the textarea is left as the user typed it). */
+function renderAssistPicker(scanned: { question: string }[]): void {
+  const placeholder = els.assistPicker.options[0];
+  els.assistPicker.textContent = '';
+  if (placeholder) els.assistPicker.append(placeholder);
+  for (const question of buildAssistPickerOptions(scanned)) {
+    const opt = document.createElement('option');
+    opt.value = question;
+    opt.textContent = question;
+    els.assistPicker.append(opt);
+  }
+  els.assistPicker.value = '';
+}
+
+/**
+ * Click handler for "Help me answer…" — the first BILLABLE-AI verb on the
+ * bridge. Sends the textarea's (trimmed) text plus the "Search the web"
+ * toggle. Errors ARE shown (a deliberate click, not a passive check) —
+ * mirrors `doCheckFit`.
+ */
+async function doAssist(): Promise<void> {
+  const question = els.assistQuestion.value.trim();
+  if (!question) {
+    setMsg(els.importMsg, 'Type or pick a question first.', 'err');
+    return;
+  }
+  els.btnAssist.disabled = true;
+  els.assistResult.hidden = true;
+  els.assistDraft.textContent = '';
+  setMsg(els.importMsg, 'Drafting an answer…', 'muted');
+  try {
+    const res = await send({ kind: 'answerAssist', question, searchWeb: els.chkSearchWeb.checked });
+    const view = resolveAnswerAssistResponse(res);
+    setMsg(els.importMsg, view.text, view.tone);
+    if (view.draft !== null) {
+      // textContent only — this is AI-generated text, never rendered as HTML.
+      els.assistDraft.textContent = view.draft;
+      els.assistResult.hidden = false;
+    }
+  } catch {
+    // A transport/messaging rejection must not strand the status on "Drafting…".
+    setMsg(els.importMsg, 'Could not draft an answer. Please retry.', 'err');
+  } finally {
+    els.btnAssist.disabled = false;
+  }
+}
+
+/** Click handler for the draft's Copy button — mirrors `doCopySuggestion`
+ *  (briefly confirms on the button itself, never touches the shared message
+ *  area). Copy-only: there is no fill path for AI-generated text. */
+async function doCopyAssistDraft(): Promise<void> {
+  const original = els.btnCopyAssist.textContent;
+  const ok = await copyText(els.assistDraft.textContent ?? '');
+  els.btnCopyAssist.textContent = ok ? '✓ Copied' : 'Copy failed';
+  setTimeout(() => {
+    els.btnCopyAssist.textContent = original;
+  }, 1200);
 }
 
 /** Build the "Check fit" score card — score / source+résumé line / gap chips.
@@ -1168,6 +1285,11 @@ function wire(): void {
   els.btnSaveAnswers.addEventListener('click', () => void doSaveAnswers());
   els.btnSuggestAnswers.addEventListener('click', () => void doSuggestAnswers());
   els.btnCheckFit.addEventListener('click', () => void doCheckFit());
+  els.assistPicker.addEventListener('change', () => {
+    if (els.assistPicker.value) els.assistQuestion.value = els.assistPicker.value;
+  });
+  els.btnAssist.addEventListener('click', () => void doAssist());
+  els.btnCopyAssist.addEventListener('click', () => void doCopyAssistDraft());
   els.btnSaveToken.addEventListener('click', () => void savePairing());
   els.tokenInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') void savePairing();

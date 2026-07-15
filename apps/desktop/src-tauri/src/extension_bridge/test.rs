@@ -45,6 +45,8 @@ fn message_type_constants_match_ts() {
         msg::ANSWERS_RESULT,
         msg::ANSWERS_SUGGEST,
         msg::ANSWERS_SUGGEST_RESULT,
+        msg::ANSWER_ASSIST,
+        msg::ANSWER_ASSIST_RESULT,
     ] {
         let needle = format!("'{literal}'");
         assert!(
@@ -97,6 +99,8 @@ fn reserved_types_are_distinct() {
         msg::ANSWERS_RESULT,
         msg::ANSWERS_SUGGEST,
         msg::ANSWERS_SUGGEST_RESULT,
+        msg::ANSWER_ASSIST,
+        msg::ANSWER_ASSIST_RESULT,
     ];
     let set: std::collections::HashSet<_> = all.iter().collect();
     assert_eq!(set.len(), all.len(), "wire type constants must be unique");
@@ -239,6 +243,118 @@ fn reset_disables_autofill_optin() {
         !s.autofill_enabled(),
         "factory reset returns the autofill opt-in to its default OFF"
     );
+}
+
+// ── AI-answer-assist opt-in (SEPARATE gate, default OFF, persisted) ──────────
+
+#[test]
+fn ai_assist_optin_defaults_off_and_persists_with_its_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+    assert!(!s.ai_assist_enabled(), "ai-assist opt-in defaults OFF");
+    assert_eq!(s.ai_assist_snapshot().provider, None);
+
+    s.set_ai_assist(
+        true,
+        Some("openai".to_string()),
+        Some("gpt-4o".to_string()),
+        None,
+    );
+    assert!(s.ai_assist_enabled());
+    let cfg = s.ai_assist_snapshot();
+    assert_eq!(cfg.provider.as_deref(), Some("openai"));
+    assert_eq!(cfg.model.as_deref(), Some("gpt-4o"));
+
+    // A fresh load from the same dir reads back the persisted opt-in + snapshot.
+    let reloaded = BridgeState::load(dir.path());
+    assert!(reloaded.ai_assist_enabled(), "opt-in persists across loads");
+    assert_eq!(
+        reloaded.ai_assist_snapshot().provider.as_deref(),
+        Some("openai")
+    );
+}
+
+/// `base_url` (the opt-in OpenAI-compatible/self-hosted endpoint field) must
+/// round-trip the same way `provider`/`model` do above — a prior test only
+/// ever passed `None` for it, so a `set_ai_assist` → disk →
+/// `BridgeState::load` → `ai_assist_snapshot()` regression on this one field
+/// specifically would have gone unnoticed.
+#[test]
+fn ai_assist_optin_persists_the_base_url_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+    s.set_ai_assist(
+        true,
+        Some("openai-compatible".to_string()),
+        Some("local-model".to_string()),
+        Some("https://api.example.com/v1".to_string()),
+    );
+    assert_eq!(
+        s.ai_assist_snapshot().base_url.as_deref(),
+        Some("https://api.example.com/v1")
+    );
+
+    // A fresh load from the same dir reads back the persisted base_url too.
+    let reloaded = BridgeState::load(dir.path());
+    assert_eq!(
+        reloaded.ai_assist_snapshot().base_url.as_deref(),
+        Some("https://api.example.com/v1"),
+        "base_url survives set_ai_assist -> disk -> BridgeState::load -> ai_assist_snapshot"
+    );
+}
+
+#[test]
+fn ai_assist_optin_is_independent_of_the_autofill_optin() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+    s.set_autofill_enabled(true);
+    assert!(
+        !s.ai_assist_enabled(),
+        "turning autofill on must never turn ai-assist on too — separate gates"
+    );
+}
+
+#[test]
+fn ai_assist_disabling_clears_the_provider_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+    s.set_ai_assist(
+        true,
+        Some("openai".to_string()),
+        Some("gpt-4o".to_string()),
+        None,
+    );
+    s.set_ai_assist(
+        false,
+        Some("openai".to_string()),
+        Some("gpt-4o".to_string()),
+        None,
+    );
+    let cfg = s.ai_assist_snapshot();
+    assert!(!cfg.enabled);
+    assert_eq!(
+        cfg.provider, None,
+        "turning the opt-in off must clear a stale provider snapshot, even if the caller still passed one"
+    );
+}
+
+#[test]
+fn reset_disables_ai_assist_optin_and_clears_its_snapshot() {
+    use crate::data_store::Resettable;
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+    s.set_ai_assist(
+        true,
+        Some("openai".to_string()),
+        Some("gpt-4o".to_string()),
+        None,
+    );
+    s.reset();
+    assert!(
+        !s.ai_assist_enabled(),
+        "factory reset returns the ai-assist opt-in to its default OFF"
+    );
+    assert_eq!(s.ai_assist_snapshot().provider, None);
 }
 
 // ── profile.get consent gate (resolve_profile) ────────────────────────────────

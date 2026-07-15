@@ -778,6 +778,14 @@
           "description": "Let the extension's Fill button fill contact details and offer your past answers on a page's form.",
           "disclosure": "When on, clicking Fill in the extension sends your saved contact details into the current page's form. Suggesting answers for a form also surfaces your saved past answer text in the extension popup, for Copy or Fill, on pages you choose. Your details never leave your computer except into pages you choose.",
           "toggleFailed": "Could not update the autofill setting."
+        },
+        "aiAssist": {
+          "label": "AI answer drafting",
+          "description": "Let the extension draft a paste-ready answer to an application question, using your resume and this AI provider.",
+          "using": "Using: {{value}}",
+          "noProvider": "Choose an AI provider in Settings → AI first, then turn this on.",
+          "disclosure": "When on, the extension's \"Help me answer…\" sends the question you paste or pick, your resume, the matched job's description, any cached company research brief, and a salary reference range (when relevant), to your configured AI provider to draft a paste-ready answer — this is billable AI usage, unlike the free autofill above. Turning \"Search the web\" on in the extension also sends the question to your provider's web search. Drafts are copy-only; nothing is ever filled into a page automatically.",
+          "toggleFailed": "Could not update the AI answer-drafting setting."
         }
       },
       "connectedViaBrowser": "{{board}} connected via browser extension",

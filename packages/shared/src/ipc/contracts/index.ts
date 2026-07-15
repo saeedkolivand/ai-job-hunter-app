@@ -208,6 +208,7 @@ export {
 } from './documents.js';
 export {
   EXTENSION_BRIDGE_CHANNELS,
+  type ExtensionAiAssistSetting,
   type ExtensionAutofillSetting,
   type ExtensionBridgeContract,
   type ExtensionBridgeStatus,

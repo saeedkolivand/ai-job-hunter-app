@@ -508,6 +508,66 @@ body {
   box-shadow: 2px 2px 0 var(--shadow);
 }
 
+/* answer.assist ("Help me answer…") — question picker + textarea + draft
+ * result card. Mirrors .token's dashed-border input styling and
+ * .match-result's card treatment. */
+.assist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.assist__label {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.assist__picker,
+.assist__question {
+  width: 100%;
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
+  border: 2px dashed var(--ink);
+  background: var(--token-bg);
+  color: var(--ink);
+}
+
+.assist__question {
+  resize: vertical;
+}
+
+.assist__question::placeholder {
+  color: var(--placeholder);
+}
+
+.assist__picker:focus,
+.assist__question:focus {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-style: solid;
+}
+
+.assist-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--card-border);
+  border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
+  background: var(--card);
+}
+
+.assist-result__draft {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
 .empty__body {
   margin: 0;
   font-family: var(--sans);
