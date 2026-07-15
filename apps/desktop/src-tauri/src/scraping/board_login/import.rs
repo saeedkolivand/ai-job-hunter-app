@@ -446,7 +446,11 @@ fn decrypt_v10_aes_gcm(enc: &[u8], key: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     let cipher = Aes256Gcm::new_from_slice(key).ok()?;
-    let nonce = Nonce::from_slice(&enc[3..15]);
+    // `enc.len() >= 3 + 12 + 16` was checked above, so this 12-byte slice always
+    // matches `Nonce`'s fixed size — a mismatch here would mean the guard above
+    // is broken, so a hard panic (not a silent `None`) is the correct failure mode.
+    let nonce = <&Nonce<_>>::try_from(&enc[3..15])
+        .expect("AES-256-GCM nonce slice enc[3..15] must be exactly 12 bytes");
     cipher.decrypt(nonce, &enc[15..]).ok()
 }
 

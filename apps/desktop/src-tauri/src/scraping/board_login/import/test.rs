@@ -163,7 +163,7 @@ fn decrypt_v10_aes_gcm_round_trip_exact_bytes() {
 
     // Encrypt with the same algorithm the production code decrypts.
     let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce = <&Nonce<_>>::try_from(&nonce_bytes[..]).unwrap();
     let ct_with_tag = cipher.encrypt(nonce, plaintext.as_ref()).unwrap();
 
     // Assemble the Chromium-style blob.
@@ -192,7 +192,10 @@ fn decrypt_value_v10_full_pipeline_returns_plaintext() {
 
     let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
     let ct_with_tag = cipher
-        .encrypt(Nonce::from_slice(&nonce_bytes), plaintext.as_ref())
+        .encrypt(
+            <&Nonce<_>>::try_from(&nonce_bytes[..]).unwrap(),
+            plaintext.as_ref(),
+        )
         .unwrap();
 
     let mut blob = b"v10".to_vec();
@@ -219,7 +222,10 @@ fn decrypt_v10_aes_gcm_wrong_key_is_none() {
 
     let cipher = Aes256Gcm::new_from_slice(&encrypt_key).unwrap();
     let ct = cipher
-        .encrypt(Nonce::from_slice(&nonce_bytes), b"secret".as_ref())
+        .encrypt(
+            <&Nonce<_>>::try_from(&nonce_bytes[..]).unwrap(),
+            b"secret".as_ref(),
+        )
         .unwrap();
 
     let mut blob = b"v10".to_vec();
@@ -261,7 +267,10 @@ fn decrypt_value_v10_strips_32_byte_hash_prefix() {
 
     let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
     let ct = cipher
-        .encrypt(Nonce::from_slice(&nonce_bytes), prefixed.as_ref())
+        .encrypt(
+            <&Nonce<_>>::try_from(&nonce_bytes[..]).unwrap(),
+            prefixed.as_ref(),
+        )
         .unwrap();
 
     let mut blob = b"v10".to_vec();
@@ -550,7 +559,10 @@ fn decrypt_value_v11_round_trip_returns_plaintext() {
 
     let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
     let ct_with_tag = cipher
-        .encrypt(Nonce::from_slice(&nonce_bytes), plaintext.as_ref())
+        .encrypt(
+            <&Nonce<_>>::try_from(&nonce_bytes[..]).unwrap(),
+            plaintext.as_ref(),
+        )
         .unwrap();
 
     // Assemble a v11-prefixed blob (identical layout to v10).
