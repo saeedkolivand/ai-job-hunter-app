@@ -298,6 +298,20 @@ where
             // none was ever seen. See the doc above: this is what makes a
             // cost-capped (or user-cancelled) generation visible to spend
             // tracking instead of silently recording nothing.
+            //
+            // This is only ever non-zero for providers that report usage
+            // INCREMENTALLY mid-stream (Anthropic's `message_delta`,
+            // Gemini's `usageMetadata`) — a cap/early cancel for
+            // OpenAI/Ollama (which only attach usage to their end-of-stream
+            // piece, never seen if cancelled first) legitimately records
+            // zero here. That is the honest never-estimate behavior working
+            // as intended, not a gap to "fix" by estimating from tokens
+            // seen so far.
+            //
+            // Mirrored (and asserted) by
+            // `cancellation_after_a_usage_piece_still_carries_the_partial_usage`
+            // in `drive_stream`'s test-only core below — that test is where
+            // the assertion for this exact call site lives.
             super::record_usage(
                 app,
                 provider.as_str(),

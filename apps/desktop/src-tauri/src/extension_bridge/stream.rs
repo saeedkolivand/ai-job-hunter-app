@@ -36,8 +36,8 @@
 //! `reqId`, the prior design's bug: the registry lived globally on
 //! `BridgeState`, shared by every socket).
 //!
-//! ## Three ways a stream ends early, none of them a "failure"
-//! Besides a genuine provider/network error, a stream can end for THREE
+//! ## Four ways a stream ends early, none of them a "failure"
+//! Besides a genuine provider/network error, a stream can end for FOUR
 //! reasons that must never be mislabeled `Failed` in the job tracker:
 //! 1. **[`DRAFT_CAP`](super::answer_assist::DRAFT_CAP) reached** — enforced
 //!    live by [`forward_chunk`]; [`compose_draft_stream`] then cancels the
@@ -241,8 +241,14 @@ impl AssistStreamRegistry {
     /// registry — `None` when never registered here, already finished,
     /// still `Pending` (no job yet), or belonging to a DIFFERENT
     /// connection's registry (the CWE-639 case this type exists to close).
-    /// Pure (no `AppHandle`), so this security-relevant property is
-    /// directly unit-testable.
+    /// Pure (no `AppHandle`, no [`JobCanceller`]), so this security-relevant
+    /// property is directly unit-testable. Test-only: [`Self::cancel`] used
+    /// to call this (a separate `lock()` acquisition), but that shape was a
+    /// TOCTOU (a concurrent `register` could flip `Pending` -> `Running` in
+    /// the gap between this method's lock and `cancel`'s own); `cancel` now
+    /// inlines the same decision under ONE lock instead, leaving this method
+    /// only as a test seam.
+    #[cfg(test)]
     pub(super) fn take(&self, req_id: &str) -> Option<String> {
         let mut guard = self.0.lock();
         // Checked BEFORE removing — a naive unconditional `remove` would
@@ -271,17 +277,30 @@ impl AssistStreamRegistry {
     /// unit-testable against a fake recorder — the sole production caller
     /// passes a real `&AppHandle` (which implements it).
     pub(super) fn cancel<C: JobCanceller>(&self, canceller: &C, req_id: &str) {
-        // `take` handles the `Running` (and "absent") cases in one step.
-        if let Some(job_id) = self.take(req_id) {
+        // The whole "is it Running, or still Pending, or neither" decision
+        // happens under ONE lock acquisition — splitting it into `take`
+        // (its own lock) followed by a second, separate `self.0.lock()` (the
+        // original shape) leaves a gap between the two where a concurrent
+        // `register` can flip `Pending` -> `Running` on the multi-threaded
+        // runtime, so this call would see neither case and silently miss
+        // the cancel (TOCTOU). Same per-variant behavior as before, just
+        // decided in one critical section.
+        let job_id = {
+            let mut guard = self.0.lock();
+            match guard.get(req_id) {
+                Some(StreamEntry::Running(_)) => match guard.remove(req_id) {
+                    Some(StreamEntry::Running(job_id)) => Some(job_id),
+                    _ => None,
+                },
+                Some(StreamEntry::Pending) => {
+                    guard.insert(req_id.to_string(), StreamEntry::CancelledEarly);
+                    None
+                }
+                _ => None,
+            }
+        };
+        if let Some(job_id) = job_id {
             canceller.cancel_job(&job_id);
-            return;
-        }
-        // Not `Running` — if still `Pending`, mark it cancelled-early so
-        // `register` short-circuits the pre-compose caller once it gets
-        // there; anything else (already gone) is a no-op.
-        let mut guard = self.0.lock();
-        if matches!(guard.get(req_id), Some(StreamEntry::Pending)) {
-            guard.insert(req_id.to_string(), StreamEntry::CancelledEarly);
         }
     }
 
@@ -303,10 +322,17 @@ impl AssistStreamRegistry {
         for (req_id, entry) in drained {
             match entry {
                 StreamEntry::Running(job_id) => running.push(job_id),
-                StreamEntry::Pending => {
+                // Exhaustive on purpose: BOTH still-pending AND
+                // already-cancelled-early entries must be reinserted as
+                // `CancelledEarly`. Dropping the latter (the original bug)
+                // loses the guard marker on a cancel-then-disconnect during
+                // the pre-compose window — the entry vanishes from the map,
+                // so the later `register` call for that `req_id` finds
+                // nothing, returns `true`, and starts a full billable
+                // generation for a request the user already cancelled.
+                StreamEntry::Pending | StreamEntry::CancelledEarly => {
                     guard.insert(req_id, StreamEntry::CancelledEarly);
                 }
-                StreamEntry::CancelledEarly => {}
             }
         }
         drop(guard);
@@ -703,6 +729,30 @@ mod tests {
         let canceller = RecordingCanceller::default();
         r.cancel_all(&canceller);
         assert!(canceller.cancelled.into_inner().is_empty());
+    }
+
+    #[test]
+    fn cancel_all_preserves_an_already_cancelled_early_entry() {
+        // HIGH regression: cancel-then-disconnect during the pre-compose
+        // window. `begin` + `cancel` leaves `req-1` as `CancelledEarly`
+        // BEFORE `cancel_all` ever runs; `cancel_all` must reinsert it
+        // (not drop it on the floor), or the later `register` call for the
+        // same `req_id` finds nothing, returns `true`, and starts a full
+        // billable generation for a request the user already cancelled.
+        let r = AssistStreamRegistry::default();
+        let canceller = RecordingCanceller::default();
+        r.begin("req-1");
+        r.cancel(&canceller, "req-1"); // -> CancelledEarly, no job existed yet
+        r.cancel_all(&canceller);
+
+        assert!(
+            canceller.cancelled.borrow().is_empty(),
+            "no Running job existed at any point — nothing to job_cancel"
+        );
+        assert!(
+            !r.register("req-1", "job-1"),
+            "the CancelledEarly guard must survive cancel_all's drain-and-reinsert"
+        );
     }
 
     // ── Pre-registration cancel race (LOW fix): begin() + register()'s bool ─
