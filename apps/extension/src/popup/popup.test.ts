@@ -1992,6 +1992,67 @@ describe('rewrite mode (#rewrite-picker, #btn-rewrite, Accept/Restore/Copy)', ()
     });
   });
 
+  it('a mid-flight re-pick to a different field does not corrupt the new field’s expectedValue baseline', async () => {
+    // Scan with TWO distinct filled fields so there is a different field to
+    // re-pick mid-flight.
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answersSave',
+      result: { ok: true, applicationId: 'app-1', saved: 2, skipped: 0 },
+      filled: [
+        { question: 'Why this role?', index: 0, answer: 'Because I like it.' },
+        { question: 'Salary expectation?', index: 0, answer: '80000' },
+      ],
+    });
+    byId<HTMLButtonElement>('btn-save-answers').click();
+    await flush();
+    sendMessageMock.mockReset();
+
+    const picker = byId<HTMLSelectElement>('rewrite-picker');
+    picker.value = '0';
+    picker.dispatchEvent(new Event('change'));
+    byId<HTMLParagraphElement>('rewrite-draft').textContent = 'Shorter answer.';
+
+    // Accept for field 0 starts but does not resolve yet (simulates it still
+    // being in flight when the user re-picks).
+    let resolveAccept: ((res: unknown) => void) | undefined;
+    sendMessageMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveAccept = resolve;
+      })
+    );
+    byId<HTMLButtonElement>('btn-accept-rewrite').click();
+
+    // RACE: while that Accept is still in flight, the user re-picks a
+    // DIFFERENT field.
+    picker.value = '1';
+    picker.dispatchEvent(new Event('change'));
+
+    // The in-flight Accept now resolves successfully.
+    resolveAccept?.({ ok: true, kind: 'answerReplace', result: { filled: true } });
+    await flush();
+
+    // Restore on the NEWLY picked field must still expect ITS OWN original
+    // value ("80000") — never "Shorter answer." bled in from the stale
+    // Accept that belonged to the field picked before it.
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerReplace',
+      result: { filled: true },
+    });
+    byId<HTMLButtonElement>('btn-restore-rewrite').click();
+    await flush();
+
+    expect(sendMessageMock).toHaveBeenLastCalledWith({
+      kind: 'answerReplace',
+      question: 'Salary expectation?',
+      index: 0,
+      count: 1,
+      text: '80000',
+      expectedValue: '80000',
+    });
+  });
+
   it('surfaces the fail-safe not-found error on Accept without folding it away', async () => {
     await pickFilledField();
     byId<HTMLParagraphElement>('rewrite-draft').textContent = 'Shorter answer.';

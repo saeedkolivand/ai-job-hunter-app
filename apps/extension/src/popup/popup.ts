@@ -1328,18 +1328,20 @@ async function sendRewriteReplace(
   failureFallback: string
 ): Promise<void> {
   if (!rewriteTarget || !text) return;
+  // capture before await: a mid-flight re-pick must not corrupt a different target's expectedValue
+  const target = rewriteTarget;
   btn.disabled = true;
   try {
     const res = await send({
       kind: 'answerReplace',
-      question: rewriteTarget.question,
-      index: rewriteTarget.index,
-      count: rewriteTarget.expectedCount,
+      question: target.question,
+      index: target.index,
+      count: target.expectedCount,
       text,
-      expectedValue: rewriteTarget.expectedValue,
+      expectedValue: target.expectedValue,
     });
     if (res.ok && res.kind === 'answerReplace' && res.result.filled) {
-      if (rewriteTarget) rewriteTarget.expectedValue = text;
+      target.expectedValue = text;
       setMsg(els.importMsg, successMsg, 'ok');
     } else {
       const msg =
