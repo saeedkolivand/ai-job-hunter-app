@@ -432,6 +432,66 @@ describe('ExtensionBridgeSection', () => {
     stubbedGenerateConfig = { provider: 'openai', model: 'gpt-4o', baseUrl: undefined };
   });
 
+  // HIGH fix: `disabled` must only ever gate the ON direction. Once the
+  // opt-in is already enabled, the user must always be able to turn it back
+  // off — even if the live provider config becomes unconfigured afterward
+  // (e.g. the active provider/model was cleared elsewhere in Settings).
+  it('lets an already-enabled ai-assist switch be turned off even if the provider becomes unconfigured', async () => {
+    stubbedGenerateConfig = { provider: 'ollama', model: '', baseUrl: undefined };
+    const client = createMockClient({
+      'extensionBridge.status': vi
+        .fn()
+        .mockResolvedValue({ port: 9712, connected: true, token: 'tok-abc123' }),
+      'extensionBridge.aiAssistEnabled': vi
+        .fn()
+        .mockResolvedValue({ enabled: true, provider: 'openai', model: 'gpt-4o' }),
+    });
+    const queryClient = makeQueryClient();
+    render(<ExtensionBridgeSection />, {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={queryClient}>
+          <AppClientProvider client={client}>
+            <NotificationProvider>{children}</NotificationProvider>
+          </AppClientProvider>
+        </QueryClientProvider>
+      ),
+    });
+
+    await waitFor(() => {
+      const sw = screen.getByRole('switch', { name: /ai answer drafting/i });
+      expect(sw).toHaveAttribute('aria-checked', 'true');
+      expect(sw).not.toBeDisabled();
+    });
+    // Restore the default for later tests in this file.
+    stubbedGenerateConfig = { provider: 'openai', model: 'gpt-4o', baseUrl: undefined };
+  });
+
+  it('does not disable the ai-assist switch when it is enabled and the provider is configured', async () => {
+    const client = createMockClient({
+      'extensionBridge.status': vi
+        .fn()
+        .mockResolvedValue({ port: 9712, connected: true, token: 'tok-abc123' }),
+      'extensionBridge.aiAssistEnabled': vi
+        .fn()
+        .mockResolvedValue({ enabled: true, provider: 'openai', model: 'gpt-4o' }),
+    });
+    const queryClient = makeQueryClient();
+    render(<ExtensionBridgeSection />, {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={queryClient}>
+          <AppClientProvider client={client}>
+            <NotificationProvider>{children}</NotificationProvider>
+          </AppClientProvider>
+        </QueryClientProvider>
+      ),
+    });
+
+    await waitFor(() => {
+      const sw = screen.getByRole('switch', { name: /ai answer drafting/i });
+      expect(sw).not.toBeDisabled();
+    });
+  });
+
   it('shows the pinned provider/model snapshot in the description while the opt-in is on', async () => {
     const client = createMockClient({
       'extensionBridge.status': vi

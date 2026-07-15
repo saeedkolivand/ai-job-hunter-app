@@ -419,7 +419,10 @@ pub(super) async fn resolve_answer_assist(
         ai_assist_cfg.model.as_deref(),
         ai_assist_cfg.base_url.clone(),
     )
-    .map_err(|_| AppError::Config(NO_PROVIDER_MESSAGE.to_string()))?;
+    .map_err(|e| {
+        tracing::debug!("answer_assist: provider resolution failed: {e}");
+        AppError::Config(NO_PROVIDER_MESSAGE.to_string())
+    })?;
 
     let docs = doc_store.list();
     let resume = super::match_live::resolve_resume(&docs)

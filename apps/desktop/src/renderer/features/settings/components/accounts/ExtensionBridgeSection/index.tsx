@@ -214,7 +214,7 @@ export function ExtensionBridgeSection() {
             <Switch
               checked={aiAssistEnabled}
               onCheckedChange={(next) => void handleToggleAiAssist(next)}
-              disabled={setAiAssist.isPending || !providerConfigured}
+              disabled={setAiAssist.isPending || (!aiAssistEnabled && !providerConfigured)}
               label={t('settings.accounts.extension.aiAssist.label')}
               description={
                 providerConfigured
