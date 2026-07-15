@@ -16,7 +16,7 @@
 //! a shared known-answer vector pins both so the two canonicalizations can never
 //! silently drift. Pure functions, no I/O, no app state — fully unit-testable.
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
