@@ -203,22 +203,31 @@ impl AssistStreamRegistry {
     /// resume/limiter/salary/web-notes lookups in `resolve_answer_assist`) —
     /// the realistic window (network round-trips) an `assist.cancel` could
     /// race ahead of [`Self::register`]. Returns `false` (leaving the
-    /// existing entry untouched) when `req_id` already names an ACTIVE
-    /// stream on this connection (`Pending` or `Running`) — a client reusing
-    /// an in-flight reqId must be rejected outright, never silently
-    /// overwrite the existing entry with a fresh `Pending`: overwriting a
+    /// existing entry untouched) when `req_id` already names ANY entry on
+    /// this connection — `Pending`, `Running`, OR `CancelledEarly` — never
+    /// silently overwriting it with a fresh `Pending`. Overwriting a
     /// `Running` entry would orphan its job (still running server-side, but
     /// no longer reachable from this registry, so a later `assist.cancel`
-    /// for that reqId could never reach it again). Returns `true` — and
-    /// (re-)inserts `Pending` — for a fresh `req_id`, one that already
-    /// settled, or one left `CancelledEarly` by a prior cancel; reusing a
-    /// reqId once it has settled is fine.
+    /// for that reqId could never reach it again). Overwriting a
+    /// `CancelledEarly` entry reopens the SAME hole from the other
+    /// direction: that marker is NOT settled — it is awaiting consumption by
+    /// [`Self::register`] (which sees it, removes it, and reports `false` so
+    /// the run that raced the cancel never starts a billable job) or removal
+    /// by [`Self::unregister`]/[`Self::cancel_all`]. Allowing a reuse before
+    /// that consumption would let a second run's fresh `Pending` slip in
+    /// under the same `req_id`; the FIRST (already-cancelled) run's later
+    /// `register` call would then see that second run's `Pending` instead of
+    /// its own `CancelledEarly` marker and register a billable job anyway —
+    /// the cancel guarantee lost. It is always cleared within the original
+    /// run's own lifecycle (consumed by `register`, or removed by an
+    /// `unregister`/`cancel_all`), so a `req_id` can never get stuck rejected
+    /// forever; a well-behaved client uses a fresh reqId per request anyway.
+    /// Returns `true` — and inserts `Pending` — only when `req_id` names no
+    /// entry at all: a fresh `req_id`, or one that already fully settled and
+    /// was removed.
     pub(super) fn begin(&self, req_id: &str) -> bool {
         let mut guard = self.0.lock();
-        if matches!(
-            guard.get(req_id),
-            Some(StreamEntry::Pending) | Some(StreamEntry::Running(_))
-        ) {
+        if guard.contains_key(req_id) {
             return false;
         }
         guard.insert(req_id.to_string(), StreamEntry::Pending);
@@ -851,15 +860,44 @@ mod tests {
     }
 
     #[test]
-    fn begin_after_the_reqid_already_settled_cancelled_early_succeeds() {
+    fn begin_on_a_cancelled_early_req_id_is_rejected() {
         let r = AssistStreamRegistry::default();
         let canceller = RecordingCanceller::default();
         r.begin("req-1");
         r.cancel(&canceller, "req-1"); // -> CancelledEarly, no job existed yet
 
         assert!(
+            !r.begin("req-1"),
+            "a CancelledEarly marker is not settled — reuse must be rejected \
+             until register (or unregister/cancel_all) consumes it"
+        );
+    }
+
+    #[test]
+    fn begin_on_a_cancelled_early_req_id_is_rejected_until_register_consumes_it() {
+        // Full spend/cancel-integrity guarantee: a run that reused req-1
+        // before the CancelledEarly marker was consumed used to be able to
+        // slip a fresh Pending in, which let the FIRST (already-cancelled)
+        // run's later `register` call see that Pending instead of its own
+        // marker and start a billable job anyway — the exact hole this fix
+        // closes.
+        let r = AssistStreamRegistry::default();
+        let canceller = RecordingCanceller::default();
+        r.begin("req-1"); // run A's pre-compose window opens
+        r.cancel(&canceller, "req-1"); // -> CancelledEarly, run A has no job yet
+
+        assert!(
+            !r.begin("req-1"),
+            "a second run reusing req-1 must be rejected while the marker is un-consumed"
+        );
+        assert!(
+            !r.register("req-1", "job-a"),
+            "register consumes the CancelledEarly marker and reports false — \
+             run A never starts a billable job"
+        );
+        assert!(
             r.begin("req-1"),
-            "reusing a reqId that already settled (CancelledEarly) must be allowed"
+            "once consumed, req-1 names no entry at all — reuse is allowed again"
         );
     }
 
