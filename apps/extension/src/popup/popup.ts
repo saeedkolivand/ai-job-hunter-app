@@ -613,15 +613,22 @@ let lastScannedFilled: FilledField[] = [];
 /**
  * The currently-picked rewrite target — the field's scan-time correlation
  * (`question`/`index`/`expectedCount`, mirroring `answerFill`'s own
- * correlation shape) plus the FROZEN original text at pick time (what
- * "Restore original" re-injects). `null` until the picker selects a field;
- * reset whenever the picker changes or a fresh scan re-renders it.
+ * correlation shape), the FROZEN original text at pick time (what "Restore
+ * original" re-injects, NEVER updated), and `expectedValue` — what THIS
+ * popup instance believes the field currently holds, sent on every
+ * Accept/Restore so `replaceFilledField` can refuse (never clobber) a
+ * manual edit made since. Starts equal to `originalAnswer` and is updated to
+ * whatever text a successful Accept/Restore just wrote, so the NEXT
+ * Accept/Restore compares against the right baseline — see
+ * `sendRewriteReplace`. `null` until the picker selects a field; reset
+ * whenever the picker changes or a fresh scan re-renders it.
  */
 let rewriteTarget: {
   question: string;
   index: number;
   expectedCount: number;
   originalAnswer: string;
+  expectedValue: string;
 } | null = null;
 
 /**
@@ -1208,10 +1215,17 @@ function renderRewritePicker(filled: FilledField[]): void {
  *  {@link rewriteTarget}, so Accept/Restore always act on exactly the field
  *  the user picked, never a moving target. `expectedCount` is the total
  *  number of scanned fields sharing this exact question text — the same
- *  fail-safe correlation `locateFilledField` re-checks on Accept/Restore. */
+ *  fail-safe correlation `locateFilledField` re-checks on Accept/Restore.
+ *
+ *  `raw` is checked for emptiness BEFORE the `Number()` coercion —
+ *  `Number('')` is `0`, not `NaN`, so a naive `Number.isInteger(Number(raw))`
+ *  guard would treat the picker's OWN placeholder (value `''`, selected when
+ *  the user picks it back, or on a fresh render) as if index 0 had been
+ *  picked, silently re-freezing whatever field happens to be first in
+ *  `lastScannedFilled` instead of correctly clearing {@link rewriteTarget}. */
 function onRewritePickerChange(): void {
-  const i = Number(els.rewritePicker.value);
-  const picked = Number.isInteger(i) ? lastScannedFilled[i] : undefined;
+  const raw = els.rewritePicker.value;
+  const picked = raw ? lastScannedFilled[Number(raw)] : undefined;
   els.rewriteResult.hidden = true;
   els.rewriteDraft.textContent = '';
   els.rewriteInstruction.value = '';
@@ -1225,6 +1239,7 @@ function onRewritePickerChange(): void {
     index: picked.index,
     expectedCount,
     originalAnswer: picked.answer,
+    expectedValue: picked.answer,
   };
 }
 
@@ -1288,12 +1303,24 @@ async function doCopyRewriteDraft(): Promise<void> {
   }, 1200);
 }
 
-/** Send an `answerReplace` for {@link rewriteTarget} with `text`, showing the
- *  outcome in the shared message area — shared by Accept (the rewritten
- *  draft) and Restore original (the frozen `originalAnswer`); the ONLY
- *  difference between the two is which `text` is passed. Fails safe on any
- *  page mutation since the pick (never a different field) — see
- *  `replaceFilledField`. Never submits the form. */
+/**
+ * Send an `answerReplace` for {@link rewriteTarget} with `text`, showing the
+ * outcome in the shared message area — shared by Accept (the rewritten
+ * draft) and Restore original (the frozen `originalAnswer`); the ONLY
+ * difference between the two is which `text` is passed. Sends the tracked
+ * `expectedValue` too, so `replaceFilledField` can refuse (a distinct
+ * error, surfaced verbatim below) rather than clobber a manual edit the
+ * user made to the field since the pick.
+ * Fails safe on any page mutation since the pick (never a different field)
+ * — see `replaceFilledField`. Never submits the form.
+ *
+ * On a SUCCESSFUL write, updates `rewriteTarget.expectedValue` to `text` —
+ * the field now holds `text`, not whatever it held before — so the NEXT
+ * Accept/Restore compares against the CURRENT baseline instead of a stale
+ * one (without this, a successful Accept would make an immediately
+ * following Restore wrongly refuse, since the field no longer holds the
+ * value this same popup last believed was there).
+ */
 async function sendRewriteReplace(
   text: string,
   btn: HTMLButtonElement,
@@ -1309,8 +1336,10 @@ async function sendRewriteReplace(
       index: rewriteTarget.index,
       count: rewriteTarget.expectedCount,
       text,
+      expectedValue: rewriteTarget.expectedValue,
     });
     if (res.ok && res.kind === 'answerReplace' && res.result.filled) {
+      if (rewriteTarget) rewriteTarget.expectedValue = text;
       setMsg(els.importMsg, successMsg, 'ok');
     } else {
       const msg =

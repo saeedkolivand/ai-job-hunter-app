@@ -1223,6 +1223,7 @@ describe('answerReplace request — not-paired short-circuit', () => {
       index: 0,
       count: 1,
       text: 'A rewritten answer.',
+      expectedValue: 'Because I like it.',
     });
 
     expect(res).toEqual({ ok: false, error: 'Not paired. Paste your pairing token first.' });
@@ -1231,7 +1232,7 @@ describe('answerReplace request — not-paired short-circuit', () => {
 });
 
 describe('answerReplace request', () => {
-  it('injects answer-replace.js then invokes it with the correlation + text, returning the outcome', async () => {
+  it('injects answer-replace.js then invokes it with the correlation + text + expectedValue, returning the outcome', async () => {
     getTokenMock.mockResolvedValue(FAKE_TOKEN);
     tabsQueryMock.mockResolvedValue([
       { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
@@ -1245,6 +1246,7 @@ describe('answerReplace request', () => {
       index: 0,
       count: 1,
       text: 'A rewritten answer.',
+      expectedValue: 'Because I like it.',
     });
 
     expect(executeScriptMock).toHaveBeenNthCalledWith(1, {
@@ -1255,7 +1257,14 @@ describe('answerReplace request', () => {
       2,
       expect.objectContaining({
         target: { tabId: 7 },
-        args: ['Why this role?', 0, 1, 'A rewritten answer.', '__ajhRunAnswerReplace'],
+        args: [
+          'Why this role?',
+          0,
+          1,
+          'A rewritten answer.',
+          'Because I like it.',
+          '__ajhRunAnswerReplace',
+        ],
       })
     );
     expect(res).toEqual({ ok: true, kind: 'answerReplace', result: { filled: true } });
@@ -1279,12 +1288,47 @@ describe('answerReplace request', () => {
       index: 0,
       count: 1,
       text: 'A rewritten answer.',
+      expectedValue: 'Because I like it.',
     });
 
     expect(res).toEqual({
       ok: true,
       kind: 'answerReplace',
       result: { filled: false, error: 'Could not find this field — the page may have changed.' },
+    });
+  });
+
+  it('surfaces the changed-since-pick refusal straight through — never overwrites a manual edit', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{}] as never);
+    executeScriptMock.mockResolvedValueOnce([
+      {
+        result: {
+          filled: false,
+          error: 'This field changed since you picked it — re-pick it to rewrite.',
+        },
+      },
+    ] as never);
+
+    const res = await send({
+      kind: 'answerReplace',
+      question: 'Why this role?',
+      index: 0,
+      count: 1,
+      text: 'A rewritten answer.',
+      expectedValue: 'Because I like it.',
+    });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'answerReplace',
+      result: {
+        filled: false,
+        error: 'This field changed since you picked it — re-pick it to rewrite.',
+      },
     });
   });
 
@@ -1302,6 +1346,7 @@ describe('answerReplace request', () => {
       index: 0,
       count: 1,
       text: 'A rewritten answer.',
+      expectedValue: 'Because I like it.',
     });
 
     expect(res).toEqual({ ok: false, error: 'Could not replace this field.' });
