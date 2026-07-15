@@ -37,9 +37,7 @@ Active automatically every session; invoke via the Skill tool without waiting fo
 ## Shell
 
 Always use Bash (never PowerShell).
-**Prefix EVERY command with `rtk`** — `rtk pnpm build`, `rtk git status`, `rtk rg foo`, `rtk fd src`, `rtk bat file.ts`
-Meta commands: `rtk gain` (savings stats) · `rtk discover` (missed opportunities).
-Use `rtk rg` not `grep` · `rtk fd` not `find` · `rtk bat` not `cat` · `rtk pnpm` not `npm`/`yarn`.
+Use `rg` not `grep` · `fd` not `find` · `bat` not `cat` · `pnpm` not `npm`/`yarn`.
 Never `find -exec`, never PowerShell syntax. Git Bash paths: `/c/Users/...`
 
 ---
@@ -76,7 +74,7 @@ IPC contract: `packages/shared/src/ipc/contracts.ts`.
 
 **6. Imports** — `@ajh/ui` directly, not `@/components/ui/*`. Prefer `React.ComponentProps<typeof X>`.
 
-**7. Import order** — `node:*` → external → `@ajh/*` → `@/*` → relative. Run `rtk pnpm lint:fix`.
+**7. Import order** — `node:*` → external → `@ajh/*` → `@/*` → relative. Run `pnpm lint:fix`.
 
 **8. Type imports** — always `import type` for pure types. ESLint auto-fixes.
 
@@ -92,9 +90,9 @@ IPC contract: `packages/shared/src/ipc/contracts.ts`.
 
 ## PR workflow
 
-Never push to `main`. Always: `rtk git checkout -b feat/name` → commit → `rtk git push -u origin <branch>` → `rtk gh pr create` → wait for approval.
-Before starting: `rtk git fetch origin && rtk git branch -r | grep $(git branch --show-current)`.
-If branch is gone: `rtk git checkout main && rtk git pull origin main`.
+Never push to `main`. Always: `git checkout -b feat/name` → commit → `git push -u origin <branch>` → `gh pr create` → wait for approval.
+Before starting: `git fetch origin && git branch -r | grep $(git branch --show-current)`.
+If branch is gone: `git checkout main && git pull origin main`.
 
 ## New IPC capability (5 steps)
 
