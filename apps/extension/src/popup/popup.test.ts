@@ -57,6 +57,22 @@ function buildPopupDom(): void {
       <p id="assist-draft"></p>
       <button id="btn-copy-assist"></button>
     </div>
+    <select id="rewrite-picker"><option value=""></option></select>
+    <div class="rewrite-presets">
+      <button type="button" data-preset="shorten"></button>
+      <button type="button" data-preset="expand"></button>
+      <button type="button" data-preset="rephrase"></button>
+      <button type="button" data-preset="impact"></button>
+      <button type="button" data-preset="grammar"></button>
+    </div>
+    <input id="rewrite-instruction" type="text" />
+    <button id="btn-rewrite"></button>
+    <div id="rewrite-result" hidden>
+      <p id="rewrite-draft"></p>
+      <button id="btn-copy-rewrite"></button>
+      <button id="btn-accept-rewrite"></button>
+      <button id="btn-restore-rewrite"></button>
+    </div>
     <button id="btn-check-fit"></button>
     <div id="match-result" hidden></div>
     <p id="applied-status" hidden></p>
@@ -1756,6 +1772,206 @@ describe('doCopyAssistDraft (#btn-copy-assist)', () => {
   });
 });
 
+// ── Rewrite mode (extension PR 11) ──────────────────────────────────────────
+// The picker is populated from the SAME `answersSave` response `doSaveAnswers`
+// already handles (see `renderRewritePicker`'s doc) — so these tests drive it
+// through that click, exactly like `doSuggestAnswers` feeds `renderAssistPicker`.
+
+describe('rewrite mode (#rewrite-picker, #btn-rewrite, Accept/Restore/Copy)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  /** Populate the rewrite picker via the SAME `answersSave` scan the popup uses. */
+  async function pickFilledField(question = 'Why this role?'): Promise<void> {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answersSave',
+      result: { ok: true, applicationId: 'app-1', saved: 1, skipped: 0 },
+      filled: [{ question, index: 0, answer: 'Because I like it.' }],
+    });
+    byId<HTMLButtonElement>('btn-save-answers').click();
+    await flush();
+    sendMessageMock.mockReset();
+
+    const picker = byId<HTMLSelectElement>('rewrite-picker');
+    picker.value = '0';
+    picker.dispatchEvent(new Event('change'));
+  }
+
+  beforeEach(() => {
+    sendMessageMock.mockReset();
+    byId<HTMLButtonElement>('btn-save-answers').disabled = false;
+    byId<HTMLParagraphElement>('import-msg').textContent = '';
+    byId<HTMLInputElement>('rewrite-instruction').value = '';
+    byId<HTMLDivElement>('rewrite-result').hidden = true;
+    byId<HTMLParagraphElement>('rewrite-draft').textContent = '';
+    byId<HTMLButtonElement>('btn-rewrite').disabled = false;
+  });
+
+  it('refuses to rewrite when no field has been picked yet', async () => {
+    byId<HTMLButtonElement>('btn-rewrite').click();
+    await flush();
+
+    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Pick a filled answer first.'
+    );
+  });
+
+  it('refuses to rewrite with neither a preset nor a typed instruction', async () => {
+    await pickFilledField();
+
+    byId<HTMLButtonElement>('btn-rewrite').click();
+    await flush();
+
+    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Pick a preset or type an instruction.'
+    );
+  });
+
+  it('a preset button click sends mode:rewrite + existingAnswer + preset and renders the streamed draft', async () => {
+    await pickFilledField();
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerAssist',
+      result: { ok: true, question: 'Why this role?', draft: 'Shorter answer.', sourced: {} },
+    });
+
+    document.querySelector<HTMLButtonElement>('[data-preset="shorten"]')!.click();
+    await flush();
+
+    expect(sendMessageMock).toHaveBeenCalledWith({
+      kind: 'answerAssist',
+      question: 'Why this role?',
+      searchWeb: false,
+      mode: 'rewrite',
+      existingAnswer: 'Because I like it.',
+      preset: 'shorten',
+    });
+    expect(byId<HTMLDivElement>('rewrite-result').hidden).toBe(false);
+    expect(byId<HTMLParagraphElement>('rewrite-draft').textContent).toBe('Shorter answer.');
+  });
+
+  it('the free-text submit button sends the typed instruction instead of a preset', async () => {
+    await pickFilledField();
+    byId<HTMLInputElement>('rewrite-instruction').value = 'Make this sound more confident.';
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerAssist',
+      result: { ok: true, question: 'Why this role?', draft: 'A confident answer.', sourced: {} },
+    });
+
+    byId<HTMLButtonElement>('btn-rewrite').click();
+    await flush();
+
+    expect(sendMessageMock).toHaveBeenCalledWith({
+      kind: 'answerAssist',
+      question: 'Why this role?',
+      searchWeb: false,
+      mode: 'rewrite',
+      existingAnswer: 'Because I like it.',
+      instruction: 'Make this sound more confident.',
+    });
+  });
+
+  it('surfaces the desktop refusal and keeps the draft card hidden', async () => {
+    await pickFilledField();
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerAssist',
+      result: { ok: false, error: 'AI answer drafting is off.' },
+    });
+
+    document.querySelector<HTMLButtonElement>('[data-preset="shorten"]')!.click();
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe('AI answer drafting is off.');
+    expect(byId<HTMLDivElement>('rewrite-result').hidden).toBe(true);
+  });
+
+  it('Accept sends answerReplace with the rewritten draft and the picked field correlation', async () => {
+    await pickFilledField();
+    byId<HTMLParagraphElement>('rewrite-draft').textContent = 'Shorter answer.';
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerReplace',
+      result: { filled: true },
+    });
+
+    byId<HTMLButtonElement>('btn-accept-rewrite').click();
+    await flush();
+
+    expect(sendMessageMock).toHaveBeenCalledWith({
+      kind: 'answerReplace',
+      question: 'Why this role?',
+      index: 0,
+      count: 1,
+      text: 'Shorter answer.',
+    });
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Replaced the field on the page.'
+    );
+  });
+
+  it('Restore original sends answerReplace with the FROZEN original text, not the current draft box', async () => {
+    await pickFilledField();
+    // The draft box shows a rewrite, but Restore must send the ORIGINAL text
+    // frozen at pick time ("Because I like it."), never this rewritten one.
+    byId<HTMLParagraphElement>('rewrite-draft').textContent = 'Shorter answer.';
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerReplace',
+      result: { filled: true },
+    });
+
+    byId<HTMLButtonElement>('btn-restore-rewrite').click();
+    await flush();
+
+    expect(sendMessageMock).toHaveBeenCalledWith({
+      kind: 'answerReplace',
+      question: 'Why this role?',
+      index: 0,
+      count: 1,
+      text: 'Because I like it.',
+    });
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Restored the original answer.'
+    );
+  });
+
+  it('surfaces the fail-safe not-found error on Accept without folding it away', async () => {
+    await pickFilledField();
+    byId<HTMLParagraphElement>('rewrite-draft').textContent = 'Shorter answer.';
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerReplace',
+      result: { filled: false, error: 'Could not find this field — the page may have changed.' },
+    });
+
+    byId<HTMLButtonElement>('btn-accept-rewrite').click();
+    await flush();
+
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(
+      'Could not find this field — the page may have changed.'
+    );
+  });
+
+  it('copies the rewrite draft to the clipboard and briefly confirms on the button', async () => {
+    const writeTextMock = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: writeTextMock },
+      configurable: true,
+    });
+    byId<HTMLParagraphElement>('rewrite-draft').textContent = 'Shorter answer.';
+
+    byId<HTMLButtonElement>('btn-copy-rewrite').click();
+    await flush();
+
+    expect(writeTextMock).toHaveBeenCalledWith('Shorter answer.');
+    expect(byId<HTMLButtonElement>('btn-copy-rewrite').textContent).toBe('✓ Copied');
+  });
+});
+
 // ── doSaveAnswers (#btn-save-answers) ─────────────────────────────────────────
 
 describe('doSaveAnswers (#btn-save-answers)', () => {
@@ -1779,6 +1995,7 @@ describe('doSaveAnswers (#btn-save-answers)', () => {
         title: 'Backend Engineer',
         company: 'Acme',
       },
+      filled: [],
     });
 
     const btn = byId<HTMLButtonElement>('btn-save-answers');
@@ -1800,6 +2017,7 @@ describe('doSaveAnswers (#btn-save-answers)', () => {
       ok: true,
       kind: 'answersSave',
       result: { ok: false, error: "couldn't find a saved job for this page — import it first" },
+      filled: [],
     });
 
     const btn = byId<HTMLButtonElement>('btn-save-answers');

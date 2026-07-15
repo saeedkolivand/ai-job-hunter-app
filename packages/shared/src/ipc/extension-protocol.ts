@@ -42,6 +42,7 @@ import {
   type ExtensionMatchLiveResult,
   type ExtensionMessageType,
   type ExtensionProfileResult,
+  type ExtensionRewritePreset,
   type ExtensionStatusUpdateRequest,
   type ExtensionStatusUpdateResult,
   HANDSHAKE_DOMAIN,
@@ -75,6 +76,7 @@ export {
   type ExtensionMatchLiveResult,
   type ExtensionMessageType,
   type ExtensionProfileResult,
+  type ExtensionRewritePreset,
   type ExtensionStatusUpdateRequest,
   type ExtensionStatusUpdateResult,
   HANDSHAKE_DOMAIN,
@@ -293,15 +295,21 @@ export const ExtensionAnswersSuggestResultSchema = z.discriminatedUnion('ok', [
 ]) satisfies z.ZodType<ExtensionAnswersSuggestResult>;
 
 /**
- * `answer.assist` payload — the question to draft an answer for. Mirrors
- * {@link ExtensionAnswerAssistRequest}. Shape-only (no byte cap): the desktop
- * clamps the question at the resolve boundary, matching the sibling request
- * schemas above.
+ * `answer.assist` payload — the question to draft an answer for (`mode`
+ * omitted/`'draft'`), or (PR 11) an existing answer to rewrite (`mode:
+ * 'rewrite'` — `existingAnswer`/`preset`/`instruction`). Mirrors
+ * {@link ExtensionAnswerAssistRequest}. Shape-only (no byte caps): the
+ * desktop clamps every field at the resolve boundary, matching the sibling
+ * request schemas above.
  */
 export const ExtensionAnswerAssistRequestSchema = z.object({
   question: z.string().min(1),
   url: z.string().optional(),
   searchWeb: z.boolean().optional(),
+  mode: z.enum(['draft', 'rewrite']).optional(),
+  existingAnswer: z.string().optional(),
+  preset: z.enum(['shorten', 'expand', 'rephrase', 'impact', 'grammar']).optional(),
+  instruction: z.string().optional(),
 }) satisfies z.ZodType<ExtensionAnswerAssistRequest>;
 
 /**

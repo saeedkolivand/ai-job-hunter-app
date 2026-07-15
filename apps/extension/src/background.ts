@@ -14,18 +14,20 @@ import type {
   ExtensionAnswerAssistRequest,
   ExtensionImportRequest,
   ExtensionMatchLiveRequest,
+  ExtensionRewritePreset,
 } from '@ajh/shared';
 
 // TYPE-ONLY import from the answer-fill module — same rationale as the
-// autofill.ts import below: `answer-fill.js` is a classic-script injection
-// target, so its runtime code must be imported ONLY by `answer-fill.ts`.
+// autofill.ts import below: `answer-fill.js`/`answer-replace.js` are
+// classic-script injection targets, so their runtime code must be imported
+// ONLY by `answer-fill.ts`/`answer-replace.ts`.
 import type { FillAnswerResult } from './lib/answer-fill';
 // Same type-only rationale as the autofill.ts import above — capture.js /
 // capture-questions.js are ALSO classic-script injection targets (see
 // vite.config.ts's `injectedEntries`), so this import must stay type-only
 // (erased at build) to keep answers-capture.ts's runtime code out of the
 // background's bundle.
-import type { CapturedAnswer, ScannedQuestion } from './lib/answers-capture';
+import type { CapturedAnswer, FilledField, ScannedQuestion } from './lib/answers-capture';
 // TYPE-ONLY import from the autofill module. This is deliberate: `fill.js` is
 // injected via `executeScript({ files })`, which runs as a CLASSIC script (no ES
 // modules) — so `fill.js` must bundle with ZERO `import` statements. If the
@@ -52,6 +54,13 @@ const AUTOFILL_GLOBAL = '__ajhRunAutofill';
  *  there). Duplicated as a local literal for the same reason as
  *  `AUTOFILL_GLOBAL` above. */
 const ANSWER_FILL_GLOBAL = '__ajhRunAnswerFill';
+
+/** Isolated-world global key under which `answer-replace.js` exposes the
+ *  replacer (PR 11's rewrite Accept/Restore). MUST match
+ *  `ANSWER_REPLACE_GLOBAL` in `lib/answer-fill.ts` (pinned by a test there).
+ *  Duplicated as a local literal for the same reason as `AUTOFILL_GLOBAL`
+ *  above. */
+const ANSWER_REPLACE_GLOBAL = '__ajhRunAnswerReplace';
 
 /** Client-side cap on the number of scanned question labels sent in one
  *  `answers.suggest` call — the desktop re-clamps independently (untrusted
@@ -88,7 +97,7 @@ function isFillSummary(v: unknown): v is AutofillSummary {
 }
 
 /** Minimal guard for the `{question, answer}[]` array that crossed the
- *  `executeScript` boundary (capture.js's completion value). */
+ *  `executeScript` boundary (capture.js's `answers` completion field). */
 function isCapturedAnswers(v: unknown): v is CapturedAnswer[] {
   return (
     Array.isArray(v) &&
@@ -100,6 +109,31 @@ function isCapturedAnswers(v: unknown): v is CapturedAnswer[] {
         typeof (e as Record<string, unknown>).answer === 'string'
     )
   );
+}
+
+/** Minimal guard for the `{question, index, answer}[]` array that crossed
+ *  the `executeScript` boundary (capture.js's `filled` completion field —
+ *  PR 11's rewrite-mode picker source). */
+function isFilledFields(v: unknown): v is FilledField[] {
+  return (
+    Array.isArray(v) &&
+    v.every(
+      (e) =>
+        typeof e === 'object' &&
+        e !== null &&
+        typeof (e as Record<string, unknown>).question === 'string' &&
+        typeof (e as Record<string, unknown>).index === 'number' &&
+        typeof (e as Record<string, unknown>).answer === 'string'
+    )
+  );
+}
+
+/** Minimal guard for `capture.js`'s full completion value — `{answers,
+ *  filled}` (see `capture.ts`'s doc for why both ride the SAME injection). */
+function isCaptureResult(v: unknown): v is { answers: CapturedAnswer[]; filled: FilledField[] } {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return isCapturedAnswers(o.answers) && isFilledFields(o.filled);
 }
 
 /** Lazily-built, worker-lifetime-scoped client. Recreated after eviction. */
@@ -360,12 +394,15 @@ async function runStatusUpdate(): Promise<PopupResponse> {
 
 /**
  * Inject the answers-capture collector into the active tab and return its
- * `{question, answer}[]`. Single-step injection (unlike `injectFill`'s
- * files+func two-step): the collector takes no PII input to pass in
- * transiently, it only reads the page and returns data — same pattern as
- * `captureActiveTabHtml`.
+ * `{answers, filled}` (see `capture.ts`'s doc). Single-step injection (unlike
+ * `injectFill`'s files+func two-step): the collector takes no PII input to
+ * pass in transiently, it only reads the page and returns data — same
+ * pattern as `captureActiveTabHtml`.
  */
-async function captureActiveTabAnswers(): Promise<CapturedAnswer[]> {
+async function captureActiveTabFormData(): Promise<{
+  answers: CapturedAnswer[];
+  filled: FilledField[];
+}> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   const tabId = tab?.id;
   if (typeof tabId !== 'number') throw new Error('No active tab to capture.');
@@ -374,11 +411,11 @@ async function captureActiveTabAnswers(): Promise<CapturedAnswer[]> {
     target: { tabId },
     files: ['capture.js'],
   });
-  const answers = results[0]?.result;
-  if (!isCapturedAnswers(answers)) {
+  const captured = results[0]?.result;
+  if (!isCaptureResult(captured)) {
     throw new Error('Could not read the answers on this page.');
   }
-  return answers;
+  return captured;
 }
 
 /**
@@ -389,7 +426,9 @@ async function captureActiveTabAnswers(): Promise<CapturedAnswer[]> {
  * desktop-side refusal (`{ ok: false, error }` — autofill off / no match /
  * malformed) still passes straight through as `result`. Mirrors `runFill`'s
  * not-paired short-circuit: the token check runs BEFORE the capture injection,
- * so an unpaired browser never reads the page.
+ * so an unpaired browser never reads the page. `filled` (PR 11) rides the
+ * SAME capture so the popup can source its rewrite picker without a second
+ * scan/injection.
  */
 async function runAnswersSave(): Promise<PopupResponse> {
   const token = await getToken();
@@ -398,9 +437,9 @@ async function runAnswersSave(): Promise<PopupResponse> {
   }
 
   const url = await activeTabUrl();
-  const answers = await captureActiveTabAnswers();
+  const { answers, filled } = await captureActiveTabFormData();
   const result = await getClient().saveAnswers(url, answers);
-  return { ok: true, kind: 'answersSave', result };
+  return { ok: true, kind: 'answersSave', result, filled };
 }
 
 /**
@@ -477,12 +516,16 @@ async function runMatchLive(): Promise<PopupResponse> {
 }
 
 /**
- * User-clicked "Help me answer…" — the first BILLABLE-AI verb on the bridge.
- * Mirrors `runMatchLive`'s not-paired short-circuit and never-fold-errors
- * discipline — a deliberate click, so failures propagate to
- * `handleRequest`'s outer catch. Sends the active tab's url too (when
- * readable) so the desktop can resolve grounding context from a matched
- * Application; a url-read failure degrades to generic grounding rather than
+ * User-clicked "Help me answer…" (draft, `mode` omitted) — the first
+ * BILLABLE-AI verb on the bridge — OR (PR 11) a rewrite preset/submit
+ * (`mode: 'rewrite'`, `existingAnswer`/`preset`/`instruction`). Both ride the
+ * SAME opt-in, streaming path, and single-flight buffer below; only the
+ * payload fields forwarded to the desktop differ. Mirrors `runMatchLive`'s
+ * not-paired short-circuit and never-fold-errors discipline — a deliberate
+ * click, so failures propagate to `handleRequest`'s outer catch. Sends the
+ * active tab's url too (when readable) so the desktop can resolve grounding
+ * context from a matched Application (draft mode only — rewrite mode never
+ * uses it); a url-read failure degrades to generic grounding rather than
  * blocking the request (unlike `runMatchLive`, this verb has no DOM
  * dependency of its own).
  *
@@ -514,7 +557,14 @@ async function runMatchLive(): Promise<PopupResponse> {
  * Together these mean a superseded run can never clobber the buffer a newer
  * run owns, at any point in its lifetime.
  */
-async function runAnswerAssist(question: string, searchWeb: boolean): Promise<PopupResponse> {
+async function runAnswerAssist(
+  question: string,
+  searchWeb: boolean,
+  mode?: 'draft' | 'rewrite',
+  existingAnswer?: string,
+  preset?: ExtensionRewritePreset,
+  instruction?: string
+): Promise<PopupResponse> {
   const gen = ++assistGeneration;
 
   const token = await getToken();
@@ -543,6 +593,10 @@ async function runAnswerAssist(question: string, searchWeb: boolean): Promise<Po
 
   const payload: ExtensionAnswerAssistRequest = { question, searchWeb };
   if (url) payload.url = url;
+  if (mode) payload.mode = mode;
+  if (existingAnswer !== undefined) payload.existingAnswer = existingAnswer;
+  if (preset) payload.preset = preset;
+  if (instruction) payload.instruction = instruction;
   try {
     const result = await getClient().answerAssist(payload, (delta) => {
       if (gen !== assistGeneration) return; // superseded — drop this late chunk
@@ -635,6 +689,66 @@ async function runAnswerFill(
   return { ok: true, kind: 'answerFill', result };
 }
 
+/**
+ * Inject the single-field REPLACER into the active tab and run it against
+ * `(question, index)` — refusing unless the CURRENT count of same-question
+ * FILLED fields still equals pick-time `count` — with `text`. Two-step like
+ * `injectAnswerFill`: the replacement text (the AI-rewritten draft, or the
+ * frozen original answer on Restore) is passed in transiently via the
+ * second `executeScript({ func, args })` rather than baked into the `files`
+ * injection.
+ */
+async function injectAnswerReplace(
+  question: string,
+  index: number,
+  count: number,
+  text: string
+): Promise<FillAnswerResult> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tabId = tab?.id;
+  if (typeof tabId !== 'number') throw new Error('No active tab to fill.');
+
+  await browser.scripting.executeScript({ target: { tabId }, files: ['answer-replace.js'] });
+
+  const results = await browser.scripting.executeScript({
+    target: { tabId },
+    func: (q: string, i: number, c: number, t: string, key: string): FillAnswerResult | null => {
+      const runner = (globalThis as Record<string, unknown>)[key] as
+        ((q: string, i: number, c: number, t: string) => FillAnswerResult) | undefined;
+      return runner ? runner(q, i, c, t) : null;
+    },
+    args: [question, index, count, text, ANSWER_REPLACE_GLOBAL],
+  });
+
+  const result = results[0]?.result;
+  if (!isFillAnswerResult(result)) {
+    throw new Error('Could not replace this field.');
+  }
+  return result;
+}
+
+/**
+ * Rewrite mode's Accept/Restore click (PR 11) — SAME request kind, only
+ * `text` differs. Like `runAnswerFill`, failures are NOT folded away and
+ * this NEVER replaces a different field than the one that was picked —
+ * `injectAnswerReplace`/`replaceFilledField` fail safe (`{filled:false,
+ * error}`) on any page mutation since the pick. Never submits the form.
+ */
+async function runAnswerReplace(
+  question: string,
+  index: number,
+  count: number,
+  text: string
+): Promise<PopupResponse> {
+  const token = await getToken();
+  if (!token) {
+    return { ok: false, error: 'Not paired. Paste your pairing token first.' };
+  }
+
+  const result = await injectAnswerReplace(question, index, count, text);
+  return { ok: true, kind: 'answerReplace', result };
+}
+
 /** Central popup-request dispatcher. Never throws — maps errors to `ok:false`. */
 async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
   try {
@@ -686,9 +800,18 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
       case 'matchLive':
         return await runMatchLive();
       case 'answerAssist':
-        return await runAnswerAssist(req.question, req.searchWeb);
+        return await runAnswerAssist(
+          req.question,
+          req.searchWeb,
+          req.mode,
+          req.existingAnswer,
+          req.preset,
+          req.instruction
+        );
       case 'answerAssistProgress':
         return { ok: true, kind: 'answerAssistProgress', ...assistBuffer };
+      case 'answerReplace':
+        return await runAnswerReplace(req.question, req.index, req.count, req.text);
       default: {
         // Exhaustiveness guard — a new PopupRequest variant must be handled.
         const _never: never = req;

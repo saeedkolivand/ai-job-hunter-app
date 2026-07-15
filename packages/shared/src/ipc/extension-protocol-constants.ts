@@ -520,21 +520,50 @@ export type ExtensionAnswersSuggestResult =
   { ok: true; suggestions: ExtensionAnswerSuggestion[] } | { ok: false; error: string };
 
 /**
+ * The 5 quick-action rewrite presets (extension PR 11) — mirrors the in-app
+ * `RewritePopover`'s `PRESETS` ids exactly (`shorten`/`expand`/`rephrase`/
+ * `impact`/`grammar`); the instruction TEXT each maps to is ported to Rust
+ * (see `extension_bridge::answer_rewrite`'s preset map — source of truth:
+ * `packages/prompts/src/generate/rewrite/rewrite.ts` + `RewritePopover.tsx`).
+ */
+export type ExtensionRewritePreset = 'shorten' | 'expand' | 'rephrase' | 'impact' | 'grammar';
+
+/**
  * `answer.assist` payload — a pasted/picked application question to draft an
- * answer for. `question` is page/user-derived and UNTRUSTED (fenced by the
- * desktop's prompt layer, never treated as an instruction). `url` (the active
- * tab's url, when known) lets the desktop resolve grounding context from the
+ * answer for, OR (PR 11, `mode: 'rewrite'`) an existing answer to rewrite.
+ *
+ * **Draft mode** (`mode` omitted or `'draft'` — back-compat default):
+ * `question` is page/user-derived and UNTRUSTED (fenced by the desktop's
+ * prompt layer, never treated as an instruction). `url` (the active tab's
+ * url, when known) lets the desktop resolve grounding context from the
  * matching Application (job description / company brief / scraped salary) —
  * absent or unmatched falls back to generic grounding (résumé only).
  * `searchWeb` (default OFF, mirrors the in-app toggle) opts into fetching
  * web-search reference notes for the question BEFORE drafting; the answer
  * still generates (without web grounding) if that lookup is unavailable or
  * fails — this can never block the draft.
+ *
+ * **Rewrite mode** (`mode: 'rewrite'`): a PURE TEXT TRANSFORM of
+ * `existingAnswer` (the text already typed into a picked form field) per
+ * `preset` (one of {@link ExtensionRewritePreset}, server-resolved to its
+ * instruction) or a free-text `instruction` — mirrors the in-app
+ * `RewritePopover`, which transforms a selection, not a document-grounded
+ * generation. Unlike draft mode, this NEVER pulls résumé/job/company/salary
+ * grounding and NEVER routes through the web-search lookup (`searchWeb` is
+ * ignored). `existingAnswer`/`instruction` are page/user-derived and
+ * UNTRUSTED (fenced the same way as `question`) — `existingAnswer` is
+ * additionally PII-adjacent (the user's own past answer): sent transiently,
+ * never persisted. `question` is still required/echoed for reply
+ * correlation but is NOT fed into the rewrite prompt itself.
  */
 export interface ExtensionAnswerAssistRequest {
   question: string;
   url?: string;
   searchWeb?: boolean;
+  mode?: 'draft' | 'rewrite';
+  existingAnswer?: string;
+  preset?: ExtensionRewritePreset;
+  instruction?: string;
 }
 
 /**
@@ -546,10 +575,13 @@ export interface ExtensionAnswerAssistRequest {
  * optional context actually grounded it (`web` — the opt-in search notes were
  * fetched and non-empty; `brief` — a cached company brief from the matched
  * Application was used; `salary` — this question routed the salary-shaped
- * path). `ok:false` always carries a user-facing `error` (the ai-assist
- * opt-in is off / no usable AI provider is configured / a malformed
- * request) — like {@link ExtensionStatusUpdateResult}, this verb's errors ARE
- * shown to the user, it answers a deliberate click.
+ * path). Unchanged by rewrite mode (PR 11) — the rewritten text rides the
+ * SAME `draft` field, and every `sourced` flag is always `false` (rewrite is
+ * a pure text transform, never grounded in résumé/job/company/salary).
+ * `ok:false` always carries a user-facing `error` (the ai-assist opt-in is
+ * off / no usable AI provider is configured / a malformed request) — like
+ * {@link ExtensionStatusUpdateResult}, this verb's errors ARE shown to the
+ * user, it answers a deliberate click.
  */
 export type ExtensionAnswerAssistResult =
   | {
