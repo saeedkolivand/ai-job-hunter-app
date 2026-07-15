@@ -4,7 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import type { ExtensionBridgeStatus } from '@ajh/shared';
+import type { ExtensionAiAssistSetting, ExtensionBridgeStatus } from '@ajh/shared';
 import { NotificationProvider } from '@ajh/ui';
 
 import { AppClientProvider } from '@/providers/AppClientProvider';
@@ -17,7 +17,9 @@ import { ExtensionBridgeSection } from './index';
 // controlled per-test (mirrors StepAction.test.tsx's pattern) so the ai-assist
 // toggle's "snapshot the current provider on enable" behavior is testable
 // without a real Zustand `preferences-store`. Partial mock — every OTHER
-// `@/services` hook stays real (backed by `createMockClient`).
+// `@/services` hook stays real (backed by `createMockClient`). Reset to this
+// default in `beforeEach` below — never a trailing manual-restore line, which
+// leaks into later tests the moment an assertion throws before reaching it.
 let stubbedGenerateConfig: { provider: string; model: string; baseUrl: string | undefined } = {
   provider: 'openai',
   model: 'gpt-4o',
@@ -37,13 +39,19 @@ function renderSection(
   statusPayload: ExtensionBridgeStatus = { port: 9712, connected: true, token: 'tok-abc123' },
   regenerateImpl: () => Promise<unknown> = () => Promise.resolve({ token: 'tok-new' }),
   autofillEnabled = false,
-  setAutofill = vi.fn().mockImplementation((enabled: boolean) => Promise.resolve({ enabled }))
+  setAutofill = vi.fn().mockImplementation((enabled: boolean) => Promise.resolve({ enabled })),
+  aiAssist: ExtensionAiAssistSetting = { enabled: false },
+  setAiAssistEnabled = vi
+    .fn()
+    .mockImplementation((enabled: boolean) => Promise.resolve({ enabled }))
 ) {
   const client = createMockClient({
     'extensionBridge.status': vi.fn().mockResolvedValue(statusPayload),
     'extensionBridge.regenerateToken': vi.fn().mockImplementation(regenerateImpl),
     'extensionBridge.autofillEnabled': vi.fn().mockResolvedValue({ enabled: autofillEnabled }),
     'extensionBridge.setAutofillEnabled': setAutofill,
+    'extensionBridge.aiAssistEnabled': vi.fn().mockResolvedValue(aiAssist),
+    'extensionBridge.setAiAssistEnabled': setAiAssistEnabled,
   });
   const queryClient = makeQueryClient();
 
@@ -62,10 +70,11 @@ function renderSection(
 }
 
 // ---------------------------------------------------------------------------
-// clipboard stub
+// clipboard stub + shared-mutable-state reset
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
+  stubbedGenerateConfig = { provider: 'openai', model: 'gpt-4o', baseUrl: undefined };
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
     value: { writeText: vi.fn().mockResolvedValue(undefined) },
@@ -298,22 +307,7 @@ describe('ExtensionBridgeSection', () => {
   // -------------------------------------------------------------------------
 
   it('renders the ai-assist switch reflecting the persisted opt-in (default off)', async () => {
-    const client = createMockClient({
-      'extensionBridge.status': vi
-        .fn()
-        .mockResolvedValue({ port: 9712, connected: true, token: 'tok-abc123' }),
-      'extensionBridge.aiAssistEnabled': vi.fn().mockResolvedValue({ enabled: false }),
-    });
-    const queryClient = makeQueryClient();
-    render(<ExtensionBridgeSection />, {
-      wrapper: ({ children }) => (
-        <QueryClientProvider client={queryClient}>
-          <AppClientProvider client={client}>
-            <NotificationProvider>{children}</NotificationProvider>
-          </AppClientProvider>
-        </QueryClientProvider>
-      ),
-    });
+    renderSection(undefined, undefined, undefined, undefined, { enabled: false });
 
     await waitFor(() => {
       const sw = screen.getByRole('switch', { name: /ai answer drafting/i });
@@ -322,25 +316,8 @@ describe('ExtensionBridgeSection', () => {
   });
 
   it('snapshots the current active provider/model when the ai-assist switch is turned on', async () => {
-    stubbedGenerateConfig = { provider: 'openai', model: 'gpt-4o', baseUrl: undefined };
     const setAiAssist = vi.fn().mockResolvedValue({ enabled: true });
-    const client = createMockClient({
-      'extensionBridge.status': vi
-        .fn()
-        .mockResolvedValue({ port: 9712, connected: true, token: 'tok-abc123' }),
-      'extensionBridge.aiAssistEnabled': vi.fn().mockResolvedValue({ enabled: false }),
-      'extensionBridge.setAiAssistEnabled': setAiAssist,
-    });
-    const queryClient = makeQueryClient();
-    render(<ExtensionBridgeSection />, {
-      wrapper: ({ children }) => (
-        <QueryClientProvider client={queryClient}>
-          <AppClientProvider client={client}>
-            <NotificationProvider>{children}</NotificationProvider>
-          </AppClientProvider>
-        </QueryClientProvider>
-      ),
-    });
+    renderSection(undefined, undefined, undefined, undefined, { enabled: false }, setAiAssist);
 
     const sw = await screen.findByRole('switch', { name: /ai answer drafting/i });
     await userEvent.click(sw);
@@ -352,23 +329,7 @@ describe('ExtensionBridgeSection', () => {
 
   it('sends no provider fields when the ai-assist switch is turned off', async () => {
     const setAiAssist = vi.fn().mockResolvedValue({ enabled: false });
-    const client = createMockClient({
-      'extensionBridge.status': vi
-        .fn()
-        .mockResolvedValue({ port: 9712, connected: true, token: 'tok-abc123' }),
-      'extensionBridge.aiAssistEnabled': vi.fn().mockResolvedValue({ enabled: true }),
-      'extensionBridge.setAiAssistEnabled': setAiAssist,
-    });
-    const queryClient = makeQueryClient();
-    render(<ExtensionBridgeSection />, {
-      wrapper: ({ children }) => (
-        <QueryClientProvider client={queryClient}>
-          <AppClientProvider client={client}>
-            <NotificationProvider>{children}</NotificationProvider>
-          </AppClientProvider>
-        </QueryClientProvider>
-      ),
-    });
+    renderSection(undefined, undefined, undefined, undefined, { enabled: true }, setAiAssist);
 
     const sw = await screen.findByRole('switch', { name: /ai answer drafting/i });
     await userEvent.click(sw);
@@ -380,56 +341,27 @@ describe('ExtensionBridgeSection', () => {
 
   it('disables the ai-assist switch when no AI provider/model is configured', async () => {
     stubbedGenerateConfig = { provider: 'ollama', model: '', baseUrl: undefined };
-    const client = createMockClient({
-      'extensionBridge.status': vi
-        .fn()
-        .mockResolvedValue({ port: 9712, connected: true, token: 'tok-abc123' }),
-      'extensionBridge.aiAssistEnabled': vi.fn().mockResolvedValue({ enabled: false }),
-    });
-    const queryClient = makeQueryClient();
-    render(<ExtensionBridgeSection />, {
-      wrapper: ({ children }) => (
-        <QueryClientProvider client={queryClient}>
-          <AppClientProvider client={client}>
-            <NotificationProvider>{children}</NotificationProvider>
-          </AppClientProvider>
-        </QueryClientProvider>
-      ),
-    });
+    renderSection(undefined, undefined, undefined, undefined, { enabled: false });
 
     await waitFor(() => {
       const sw = screen.getByRole('switch', { name: /ai answer drafting/i });
       expect(sw).toBeDisabled();
     });
-    // Restore the default for later tests in this file.
-    stubbedGenerateConfig = { provider: 'openai', model: 'gpt-4o', baseUrl: undefined };
+    // (c) providerConfigured === false must show the noProvider description —
+    // regardless of the opt-in's own enabled state (see index.tsx's `description`).
+    expect(
+      screen.getByText('Choose an AI provider in Settings → AI first, then turn this on.')
+    ).toBeInTheDocument();
   });
 
   it('keeps the ai-assist switch enabled for a CLI-agent provider with no model selected (Completer::resolve allows it)', async () => {
     stubbedGenerateConfig = { provider: 'claude-code', model: '', baseUrl: undefined };
-    const client = createMockClient({
-      'extensionBridge.status': vi
-        .fn()
-        .mockResolvedValue({ port: 9712, connected: true, token: 'tok-abc123' }),
-      'extensionBridge.aiAssistEnabled': vi.fn().mockResolvedValue({ enabled: false }),
-    });
-    const queryClient = makeQueryClient();
-    render(<ExtensionBridgeSection />, {
-      wrapper: ({ children }) => (
-        <QueryClientProvider client={queryClient}>
-          <AppClientProvider client={client}>
-            <NotificationProvider>{children}</NotificationProvider>
-          </AppClientProvider>
-        </QueryClientProvider>
-      ),
-    });
+    renderSection(undefined, undefined, undefined, undefined, { enabled: false });
 
     await waitFor(() => {
       const sw = screen.getByRole('switch', { name: /ai answer drafting/i });
       expect(sw).not.toBeDisabled();
     });
-    // Restore the default for later tests in this file.
-    stubbedGenerateConfig = { provider: 'openai', model: 'gpt-4o', baseUrl: undefined };
   });
 
   // HIGH fix: `disabled` must only ever gate the ON direction. Once the
@@ -438,23 +370,10 @@ describe('ExtensionBridgeSection', () => {
   // (e.g. the active provider/model was cleared elsewhere in Settings).
   it('lets an already-enabled ai-assist switch be turned off even if the provider becomes unconfigured', async () => {
     stubbedGenerateConfig = { provider: 'ollama', model: '', baseUrl: undefined };
-    const client = createMockClient({
-      'extensionBridge.status': vi
-        .fn()
-        .mockResolvedValue({ port: 9712, connected: true, token: 'tok-abc123' }),
-      'extensionBridge.aiAssistEnabled': vi
-        .fn()
-        .mockResolvedValue({ enabled: true, provider: 'openai', model: 'gpt-4o' }),
-    });
-    const queryClient = makeQueryClient();
-    render(<ExtensionBridgeSection />, {
-      wrapper: ({ children }) => (
-        <QueryClientProvider client={queryClient}>
-          <AppClientProvider client={client}>
-            <NotificationProvider>{children}</NotificationProvider>
-          </AppClientProvider>
-        </QueryClientProvider>
-      ),
+    renderSection(undefined, undefined, undefined, undefined, {
+      enabled: true,
+      provider: 'openai',
+      model: 'gpt-4o',
     });
 
     await waitFor(() => {
@@ -462,28 +381,13 @@ describe('ExtensionBridgeSection', () => {
       expect(sw).toHaveAttribute('aria-checked', 'true');
       expect(sw).not.toBeDisabled();
     });
-    // Restore the default for later tests in this file.
-    stubbedGenerateConfig = { provider: 'openai', model: 'gpt-4o', baseUrl: undefined };
   });
 
   it('does not disable the ai-assist switch when it is enabled and the provider is configured', async () => {
-    const client = createMockClient({
-      'extensionBridge.status': vi
-        .fn()
-        .mockResolvedValue({ port: 9712, connected: true, token: 'tok-abc123' }),
-      'extensionBridge.aiAssistEnabled': vi
-        .fn()
-        .mockResolvedValue({ enabled: true, provider: 'openai', model: 'gpt-4o' }),
-    });
-    const queryClient = makeQueryClient();
-    render(<ExtensionBridgeSection />, {
-      wrapper: ({ children }) => (
-        <QueryClientProvider client={queryClient}>
-          <AppClientProvider client={client}>
-            <NotificationProvider>{children}</NotificationProvider>
-          </AppClientProvider>
-        </QueryClientProvider>
-      ),
+    renderSection(undefined, undefined, undefined, undefined, {
+      enabled: true,
+      provider: 'openai',
+      model: 'gpt-4o',
     });
 
     await waitFor(() => {
@@ -493,23 +397,10 @@ describe('ExtensionBridgeSection', () => {
   });
 
   it('shows the pinned provider/model snapshot in the description while the opt-in is on', async () => {
-    const client = createMockClient({
-      'extensionBridge.status': vi
-        .fn()
-        .mockResolvedValue({ port: 9712, connected: true, token: 'tok-abc123' }),
-      'extensionBridge.aiAssistEnabled': vi
-        .fn()
-        .mockResolvedValue({ enabled: true, provider: 'openai', model: 'gpt-4o' }),
-    });
-    const queryClient = makeQueryClient();
-    render(<ExtensionBridgeSection />, {
-      wrapper: ({ children }) => (
-        <QueryClientProvider client={queryClient}>
-          <AppClientProvider client={client}>
-            <NotificationProvider>{children}</NotificationProvider>
-          </AppClientProvider>
-        </QueryClientProvider>
-      ),
+    renderSection(undefined, undefined, undefined, undefined, {
+      enabled: true,
+      provider: 'openai',
+      model: 'gpt-4o',
     });
 
     await waitFor(() => {
@@ -518,22 +409,7 @@ describe('ExtensionBridgeSection', () => {
   });
 
   it('omits the pinned-snapshot line while the opt-in is off', async () => {
-    const client = createMockClient({
-      'extensionBridge.status': vi
-        .fn()
-        .mockResolvedValue({ port: 9712, connected: true, token: 'tok-abc123' }),
-      'extensionBridge.aiAssistEnabled': vi.fn().mockResolvedValue({ enabled: false }),
-    });
-    const queryClient = makeQueryClient();
-    render(<ExtensionBridgeSection />, {
-      wrapper: ({ children }) => (
-        <QueryClientProvider client={queryClient}>
-          <AppClientProvider client={client}>
-            <NotificationProvider>{children}</NotificationProvider>
-          </AppClientProvider>
-        </QueryClientProvider>
-      ),
-    });
+    renderSection(undefined, undefined, undefined, undefined, { enabled: false });
 
     await waitFor(() => screen.getByRole('switch', { name: /ai answer drafting/i }));
     expect(screen.queryByText(/Using:/)).not.toBeInTheDocument();
@@ -541,23 +417,7 @@ describe('ExtensionBridgeSection', () => {
 
   it('shows the toggleFailed notification when setAiAssistEnabled rejects', async () => {
     const setAiAssist = vi.fn().mockRejectedValue(new Error('store write failed'));
-    const client = createMockClient({
-      'extensionBridge.status': vi
-        .fn()
-        .mockResolvedValue({ port: 9712, connected: true, token: 'tok-abc123' }),
-      'extensionBridge.aiAssistEnabled': vi.fn().mockResolvedValue({ enabled: false }),
-      'extensionBridge.setAiAssistEnabled': setAiAssist,
-    });
-    const queryClient = makeQueryClient();
-    render(<ExtensionBridgeSection />, {
-      wrapper: ({ children }) => (
-        <QueryClientProvider client={queryClient}>
-          <AppClientProvider client={client}>
-            <NotificationProvider>{children}</NotificationProvider>
-          </AppClientProvider>
-        </QueryClientProvider>
-      ),
-    });
+    renderSection(undefined, undefined, undefined, undefined, { enabled: false }, setAiAssist);
 
     const sw = await screen.findByRole('switch', { name: /ai answer drafting/i });
     await userEvent.click(sw);

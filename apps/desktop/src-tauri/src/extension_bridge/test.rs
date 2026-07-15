@@ -274,6 +274,35 @@ fn ai_assist_optin_defaults_off_and_persists_with_its_snapshot() {
     );
 }
 
+/// `base_url` (the opt-in OpenAI-compatible/self-hosted endpoint field) must
+/// round-trip the same way `provider`/`model` do above — a prior test only
+/// ever passed `None` for it, so a `set_ai_assist` → disk →
+/// `BridgeState::load` → `ai_assist_snapshot()` regression on this one field
+/// specifically would have gone unnoticed.
+#[test]
+fn ai_assist_optin_persists_the_base_url_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+    s.set_ai_assist(
+        true,
+        Some("openai-compatible".to_string()),
+        Some("local-model".to_string()),
+        Some("https://api.example.com/v1".to_string()),
+    );
+    assert_eq!(
+        s.ai_assist_snapshot().base_url.as_deref(),
+        Some("https://api.example.com/v1")
+    );
+
+    // A fresh load from the same dir reads back the persisted base_url too.
+    let reloaded = BridgeState::load(dir.path());
+    assert_eq!(
+        reloaded.ai_assist_snapshot().base_url.as_deref(),
+        Some("https://api.example.com/v1"),
+        "base_url survives set_ai_assist -> disk -> BridgeState::load -> ai_assist_snapshot"
+    );
+}
+
 #[test]
 fn ai_assist_optin_is_independent_of_the_autofill_optin() {
     let dir = tempfile::tempdir().unwrap();

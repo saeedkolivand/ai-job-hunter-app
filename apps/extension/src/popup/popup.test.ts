@@ -1624,6 +1624,35 @@ describe('doAssist (#btn-assist)', () => {
   });
 });
 
+// ── doCopyAssistDraft (#btn-copy-assist) ────────────────────────────────────
+// Mirrors the doSuggestAnswers "Copy button writes the full answer to the
+// clipboard" test below — same clipboard-mock pattern, applied to the AI
+// draft's own Copy button.
+
+describe('doCopyAssistDraft (#btn-copy-assist)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const writeTextMock = vi.fn().mockResolvedValue(undefined);
+
+  beforeEach(() => {
+    writeTextMock.mockReset().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: writeTextMock },
+      configurable: true,
+    });
+    byId<HTMLParagraphElement>('assist-draft').textContent = '';
+  });
+
+  it('writes the drafted answer to the clipboard and briefly confirms on the button', async () => {
+    byId<HTMLParagraphElement>('assist-draft').textContent = 'Because I love it.';
+
+    byId<HTMLButtonElement>('btn-copy-assist').click();
+    await flush();
+
+    expect(writeTextMock).toHaveBeenCalledWith('Because I love it.');
+    expect(byId<HTMLButtonElement>('btn-copy-assist').textContent).toBe('✓ Copied');
+  });
+});
+
 // ── doSaveAnswers (#btn-save-answers) ─────────────────────────────────────────
 
 describe('doSaveAnswers (#btn-save-answers)', () => {

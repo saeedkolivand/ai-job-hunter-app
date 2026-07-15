@@ -14,7 +14,28 @@
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-use crate::extension_bridge::BridgeState;
+use crate::extension_bridge::{AiAssistConfig, BridgeState};
+
+/// Render an `AiAssistConfig` snapshot as `{ enabled, provider?, model? }` for
+/// the two commands below (deliberately never `base_url` — that field is
+/// only consumed server-side when resolving an `answer.assist` provider, not
+/// surfaced to the renderer). `provider`/`model` are OMITTED, not JSON `null`,
+/// when absent — matching the TS contract's `provider?`/`model?: string`
+/// (never `string | null`), so a future zod `.optional()` parse never has to
+/// reject a null. Pulling `cfg.provider`/`cfg.model` straight into `json!()`
+/// would instead serialize `None` as `null` (the struct's own
+/// `skip_serializing_if` only applies when the struct is serialized as a
+/// whole, not when a field is read out and re-embedded manually).
+fn ai_assist_snapshot_json(cfg: &AiAssistConfig) -> Value {
+    let mut payload = json!({ "enabled": cfg.enabled });
+    if let Some(provider) = &cfg.provider {
+        payload["provider"] = json!(provider);
+    }
+    if let Some(model) = &cfg.model {
+        payload["model"] = json!(model);
+    }
+    payload
+}
 
 /// `{ port, connected, token }`. `port` is `null` when the bridge failed to bind
 /// (disabled). When `BridgeState` isn't managed at all (start-up failure before
@@ -75,10 +96,7 @@ pub async fn extension_bridge_set_autofill_enabled(app: AppHandle, enabled: bool
 #[tauri::command]
 pub async fn extension_bridge_ai_assist_enabled(app: AppHandle) -> Value {
     match app.try_state::<BridgeState>() {
-        Some(state) => {
-            let cfg = state.ai_assist_snapshot();
-            json!({ "enabled": cfg.enabled, "provider": cfg.provider, "model": cfg.model })
-        }
+        Some(state) => ai_assist_snapshot_json(&state.ai_assist_snapshot()),
         None => json!({ "enabled": false }),
     }
 }
@@ -103,9 +121,51 @@ pub async fn extension_bridge_set_ai_assist_enabled(
     match app.try_state::<BridgeState>() {
         Some(state) => {
             state.set_ai_assist(enabled, provider, model, base_url);
-            let cfg = state.ai_assist_snapshot();
-            json!({ "enabled": cfg.enabled, "provider": cfg.provider, "model": cfg.model })
+            ai_assist_snapshot_json(&state.ai_assist_snapshot())
         }
         None => json!({ "enabled": false }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ai_assist_snapshot_json_omits_absent_provider_and_model() {
+        let cfg = AiAssistConfig {
+            enabled: false,
+            provider: None,
+            model: None,
+            base_url: None,
+        };
+        let v = ai_assist_snapshot_json(&cfg);
+        assert_eq!(v["enabled"], false);
+        assert!(
+            v.get("provider").is_none(),
+            "absent provider is OMITTED, not serialized as null"
+        );
+        assert!(
+            v.get("model").is_none(),
+            "absent model is OMITTED, not serialized as null"
+        );
+    }
+
+    #[test]
+    fn ai_assist_snapshot_json_includes_the_pinned_snapshot_when_present() {
+        let cfg = AiAssistConfig {
+            enabled: true,
+            provider: Some("openai".to_string()),
+            model: Some("gpt-4o".to_string()),
+            base_url: Some("https://example.com".to_string()),
+        };
+        let v = ai_assist_snapshot_json(&cfg);
+        assert_eq!(v["enabled"], true);
+        assert_eq!(v["provider"], "openai");
+        assert_eq!(v["model"], "gpt-4o");
+        assert!(
+            v.get("base_url").is_none(),
+            "base_url is never surfaced to the renderer, even when set"
+        );
     }
 }
