@@ -75,16 +75,21 @@ pub fn run() {
 /// The fix: each direction now owns its stdio handle and its ws half
 /// EXCLUSIVELY, on its OWN task ([`pump_stdin_to_ws`] / [`pump_ws_to_stdout`])
 /// — nothing ever races (`select!`s) against either task's `read_exact`, so
-/// neither is ever dropped mid-read. `relay` itself only races the two
-/// tasks' `JoinHandle`s (waiting for whichever direction closes first);
-/// dropping a `JoinHandle` future detaches rather than aborts the task, so
-/// the other direction's in-flight read (if any) just keeps running,
-/// harmlessly, until the process exits right after this function returns
-/// (native-host mode never falls through to booting Tauri — see
-/// `run_native_host_if_invoked`). This host still understands nothing about
-/// `reqId` correlation or multiple concurrent requests — that multiplexing
-/// lives in `bridge.ts` and the desktop's own connection loop; the host
-/// stays a dumb byte relay in both directions.
+/// neither is ever dropped mid-read. `relay` races only the two tasks'
+/// `JoinHandle`s (waiting for whichever direction closes first) — but it
+/// does NOT just drop the loser's handle afterwards. [`run`] drops its
+/// `Runtime` right after `relay` returns, and `Runtime::drop` CANCELS any
+/// spawned task that is still incomplete (it does not let it finish in the
+/// background) — so a bare `select!` here would risk axing the losing
+/// direction mid-write, e.g. `pump_ws_to_stdout` mid-flush of the LAST
+/// `assist.chunk`/`assist.done` frame the extension is waiting on. So after
+/// the race, `relay` also `.await`s the losing `JoinHandle`, bounded by a
+/// short timeout (best-effort: a stalled loser is abandoned, not blocked on
+/// forever) — giving any in-flight write a real chance to land before the
+/// process exits. This host still understands nothing about `reqId`
+/// correlation or multiple concurrent requests — that multiplexing lives in
+/// `bridge.ts` and the desktop's own connection loop; the host stays a dumb
+/// byte relay in both directions.
 async fn relay() {
     let ws = match connect_bridge().await {
         Some(ws) => ws,
@@ -99,18 +104,31 @@ async fn relay() {
     write_ready(true).await;
 
     let (ws_write, ws_read) = ws.split();
-    let stdin_to_ws = tokio::spawn(pump_stdin_to_ws(stdin(), ws_write));
-    let ws_to_stdout = tokio::spawn(pump_ws_to_stdout(ws_read, stdout()));
+    let mut stdin_to_ws = tokio::spawn(pump_stdin_to_ws(stdin(), ws_write));
+    let mut ws_to_stdout = tokio::spawn(pump_ws_to_stdout(ws_read, stdout()));
 
     // Wait for whichever direction ends first (EOF, malformed frame, or a
     // send/write failure) — see the doc above for why racing the
     // `JoinHandle`s here, unlike racing the reads themselves, is safe.
-    tokio::select! {
-        _ = stdin_to_ws => {}
-        _ = ws_to_stdout => {}
-    }
+    // Select on `&mut` so the LOSING handle is merely borrowed, not
+    // consumed — it's still ours to join below.
+    let loser = tokio::select! {
+        _ = &mut stdin_to_ws => ws_to_stdout,
+        _ = &mut ws_to_stdout => stdin_to_ws,
+    };
 
-    // On any exit (stdin EOF or ws closed) flip the extension to app_not_running.
+    // Give the losing direction a bounded window to finish any in-flight
+    // write (e.g. the last `assist.chunk`/`assist.done` frame) instead of
+    // letting `Runtime::drop` cancel it mid-write when `run` tears the
+    // runtime down right after this function returns — see the doc above.
+    // Best-effort: a timeout or join error just means the loser is
+    // abandoned, same as before; we're exiting either way.
+    let _ = tokio::time::timeout(std::time::Duration::from_millis(200), loser).await;
+
+    // On any exit (stdin EOF or ws closed) flip the extension to
+    // app_not_running. Sequenced AFTER the join above so this control frame
+    // can never race a still-flushing reply frame onto stdout through a
+    // second, concurrently-opened `stdout()` handle.
     write_ready(false).await;
 }
 
@@ -284,19 +302,37 @@ mod tests {
         assert!(read_stdin_frame(&mut cursor).await.is_err());
     }
 
-    // Regression coverage for the cancellation-safety bug `relay`'s doc
-    // describes: a length-prefixed frame delivered across MANY small
-    // physical reads (a slow/chunked native-messaging pipe — the realistic
-    // shape the old `select!` duplex pump could truncate) must reassemble
-    // whole even while unrelated work is concurrently scheduled on the same
-    // runtime. `pump_stdin_to_ws`/`pump_ws_to_stdout` themselves can't be
-    // driven here without a live ws (see the module doc on `next_ws_payload`
-    // — that half needs a real bridge server); this pins the one piece that
-    // both of them — and the fix — depend on: `read_stdin_frame` correctly
-    // resuming a partial `read_exact` across many polls, never losing bytes,
-    // regardless of what else the executor is doing meanwhile.
+    // This test does NOT exercise cancellation — see the note below for why
+    // a genuine "cancel `read_stdin_frame` mid-frame, then read again" test
+    // isn't included here. What IS pinned: a length-prefixed frame delivered
+    // across MANY small physical reads (a slow/chunked native-messaging pipe
+    // — the realistic shape the old `select!` duplex pump could truncate)
+    // must reassemble whole even while unrelated work is concurrently
+    // scheduled on the same runtime. `pump_stdin_to_ws`/`pump_ws_to_stdout`
+    // themselves can't be driven here without a live ws (see the module doc
+    // on `next_ws_payload` — that half needs a real bridge server); this
+    // pins the one piece both of them depend on: `read_stdin_frame`
+    // correctly resuming a partial `read_exact` across many polls, never
+    // losing bytes, regardless of what else the executor is doing meanwhile.
+    //
+    // Why no cancellation test: `read_exact` (and therefore
+    // `read_stdin_frame`) is NOT cancellation-safe by design — an in-flight
+    // call, if dropped (e.g. by losing a `select!` race), silently loses
+    // whatever bytes it already pulled off the reader. That's the ORIGINAL
+    // bug `relay`'s module doc describes. A test that races a live
+    // `read_stdin_frame` call inside a `select!` against an
+    // immediately-ready future would be flaky — whether bytes are lost
+    // depends on `select!`'s branch-poll order, which tokio deliberately
+    // leaves unspecified — and would only re-demonstrate
+    // `AsyncReadExt::read_exact`'s own documented limitation, not anything
+    // about this codebase. The guarantee we actually rely on is
+    // architectural, not a property of this helper: `relay` gives each
+    // direction (`pump_stdin_to_ws` / `pump_ws_to_stdout`) EXCLUSIVE,
+    // never-raced ownership of its reader for its whole lifetime (see
+    // `relay`'s doc), so `read_stdin_frame` is never called from inside a
+    // `select!` in production.
     #[tokio::test]
-    async fn read_stdin_frame_survives_fragmented_delivery_under_concurrent_activity() {
+    async fn read_stdin_frame_reassembles_fragmented_delivery_under_concurrent_scheduling() {
         let body = json!({
             "type": "import.request",
             "reqId": "1",
