@@ -143,6 +143,86 @@ fn resolve_rewrite_instruction_refuses_when_neither_preset_nor_instruction_is_us
         .contains("preset or instruction is required"));
 }
 
+// ── assist_prompt_for_mode (thread 1 — the smallest testable seam over
+// resolve_answer_assist's MODE -> PROMPT selection; the crate has no
+// tauri::test mock-app harness to drive resolve_answer_assist itself
+// end-to-end, so this pure mapping is what's directly unit-tested) ────────
+
+#[test]
+fn assist_prompt_for_mode_selects_answer_assist_system_for_draft() {
+    let (system, max_tokens) = assist_prompt_for_mode(AssistMode::Draft);
+    assert_eq!(system, ANSWER_ASSIST_SYSTEM);
+    assert_eq!(max_tokens, ANSWER_ASSIST_MAX_TOKENS);
+}
+
+#[test]
+fn assist_prompt_for_mode_selects_rewrite_system_for_rewrite() {
+    let (system, max_tokens) = assist_prompt_for_mode(AssistMode::Rewrite);
+    assert_eq!(system, super::super::answer_rewrite::REWRITE_SYSTEM);
+    // Same token cap as draft today — no in-app precedent to size a distinct
+    // one for rewrite (see the function's own doc).
+    assert_eq!(max_tokens, ANSWER_ASSIST_MAX_TOKENS);
+    // The two modes must never select the SAME system prompt.
+    assert_ne!(system, ANSWER_ASSIST_SYSTEM);
+}
+
+// ── validate_rewrite_fields (limiter-ordering fix — a PURE function, no
+// Limiter/AppHandle reachable from it at all, so calling it BEFORE
+// `resolve_answer_assist` acquires the `ai_research` limiter structurally
+// guarantees a malformed rewrite frame never consumes a rate-window slot) ──
+
+#[test]
+fn validate_rewrite_fields_rejects_an_empty_existing_answer() {
+    let err = validate_rewrite_fields(&json!({ "mode": "rewrite", "existingAnswer": "   " }))
+        .unwrap_err();
+    assert!(err.to_string().contains("existingAnswer is required"));
+}
+
+#[test]
+fn validate_rewrite_fields_rejects_a_missing_existing_answer() {
+    let err = validate_rewrite_fields(&json!({ "mode": "rewrite" })).unwrap_err();
+    assert!(err.to_string().contains("existingAnswer is required"));
+}
+
+#[test]
+fn validate_rewrite_fields_rejects_neither_a_preset_nor_an_instruction() {
+    let err = validate_rewrite_fields(&json!({
+        "mode": "rewrite",
+        "existingAnswer": "Because I like it."
+    }))
+    .unwrap_err();
+    assert!(err
+        .to_string()
+        .contains("preset or instruction is required"));
+}
+
+#[test]
+fn validate_rewrite_fields_resolves_a_recognized_preset() {
+    let (existing_answer, instruction) = validate_rewrite_fields(&json!({
+        "mode": "rewrite",
+        "existingAnswer": "Because I like it.",
+        "preset": "shorten"
+    }))
+    .unwrap();
+    assert_eq!(existing_answer, "Because I like it.");
+    assert_eq!(
+        instruction,
+        super::super::answer_rewrite::preset_instruction("shorten").unwrap()
+    );
+}
+
+#[test]
+fn validate_rewrite_fields_falls_back_to_free_text_instruction() {
+    let (existing_answer, instruction) = validate_rewrite_fields(&json!({
+        "mode": "rewrite",
+        "existingAnswer": "Because I like it.",
+        "instruction": "Make it punchier."
+    }))
+    .unwrap();
+    assert_eq!(existing_answer, "Because I like it.");
+    assert_eq!(instruction, "Make it punchier.");
+}
+
 // ── clamp helpers ─────────────────────────────────────────────────────
 
 #[test]

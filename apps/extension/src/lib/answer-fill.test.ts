@@ -171,7 +171,14 @@ describe('replaceFilledField — happy path (Accept and Restore both go through 
       changeFired = true;
     });
 
-    const result = replaceFilledField(document, 'Why this role?', 0, 1, 'Rewritten answer.');
+    const result = replaceFilledField(
+      document,
+      'Why this role?',
+      0,
+      1,
+      'Rewritten answer.',
+      'Because I love it.'
+    );
 
     expect(result).toEqual({ filled: true });
     expect(el.value).toBe('Rewritten answer.');
@@ -181,7 +188,14 @@ describe('replaceFilledField — happy path (Accept and Restore both go through 
 
   it('replaces a filled textarea', () => {
     setForm(`<label for="cl">Cover letter</label><textarea id="cl">Original text.</textarea>`);
-    const result = replaceFilledField(document, 'Cover letter', 0, 1, 'Rewritten text.');
+    const result = replaceFilledField(
+      document,
+      'Cover letter',
+      0,
+      1,
+      'Rewritten text.',
+      'Original text.'
+    );
     expect(result).toEqual({ filled: true });
     expect((document.getElementById('cl') as HTMLTextAreaElement).value).toBe('Rewritten text.');
   });
@@ -191,7 +205,7 @@ describe('replaceFilledField — happy path (Accept and Restore both go through 
       <label for="q1">Comments</label><input id="q1" type="text" value="First" />
       <label for="q2">Comments</label><input id="q2" type="text" value="Second" />
     `);
-    replaceFilledField(document, 'Comments', 1, 2, 'Rewritten second');
+    replaceFilledField(document, 'Comments', 1, 2, 'Rewritten second', 'Second');
     expect((document.getElementById('q1') as HTMLInputElement).value).toBe('First');
     expect((document.getElementById('q2') as HTMLInputElement).value).toBe('Rewritten second');
   });
@@ -200,12 +214,56 @@ describe('replaceFilledField — happy path (Accept and Restore both go through 
     setForm(
       `<label for="q1">Why this role?</label><input id="q1" type="text" value="Original." />`
     );
-    replaceFilledField(document, 'Why this role?', 0, 1, 'Rewritten.');
+    replaceFilledField(document, 'Why this role?', 0, 1, 'Rewritten.', 'Original.');
     expect((document.getElementById('q1') as HTMLInputElement).value).toBe('Rewritten.');
 
-    // Restore original: the SAME function, the frozen pre-rewrite text.
-    replaceFilledField(document, 'Why this role?', 0, 1, 'Original.');
+    // Restore original: the SAME function, the frozen pre-rewrite text — the
+    // caller must pass the UPDATED expected value ("Rewritten.", what the
+    // field holds now), not the original, mirroring how popup.ts tracks
+    // `rewriteTarget.expectedValue` across a successful Accept.
+    replaceFilledField(document, 'Why this role?', 0, 1, 'Original.', 'Rewritten.');
     expect((document.getElementById('q1') as HTMLInputElement).value).toBe('Original.');
+  });
+});
+
+describe('replaceFilledField — refuses (never clobbers) when the field changed since the pick', () => {
+  it('refuses when the field holds a DIFFERENT non-empty value than expected — a manual edit since the pick', () => {
+    setForm(
+      `<label for="q1">Why this role?</label><input id="q1" type="text" value="A manual edit the user made." />`
+    );
+
+    // The popup still believes the field holds the ORIGINAL text it picked —
+    // it has no idea the user retyped it since.
+    const result = replaceFilledField(
+      document,
+      'Why this role?',
+      0,
+      1,
+      'A rewritten draft.',
+      'Because I love it.'
+    );
+
+    expect(result.filled).toBe(false);
+    expect(result.error).toMatch(/changed since you picked it/i);
+    // The user's manual edit is NEVER overwritten.
+    expect((document.getElementById('q1') as HTMLInputElement).value).toBe(
+      'A manual edit the user made.'
+    );
+  });
+
+  it('accepts when the CURRENT value matches expected exactly (the common, unmodified case)', () => {
+    setForm(`<label for="q1">Why this role?</label><input id="q1" type="text" value="Kept." />`);
+    const result = replaceFilledField(document, 'Why this role?', 0, 1, 'Rewritten.', 'Kept.');
+    expect(result).toEqual({ filled: true });
+    expect((document.getElementById('q1') as HTMLInputElement).value).toBe('Rewritten.');
+  });
+
+  it('tolerates only whitespace differences (the value is captured/compared trimmed, like the scan itself)', () => {
+    setForm(
+      `<label for="q1">Why this role?</label><input id="q1" type="text" value="  Kept.  " />`
+    );
+    const result = replaceFilledField(document, 'Why this role?', 0, 1, 'Rewritten.', 'Kept.');
+    expect(result).toEqual({ filled: true });
   });
 });
 
@@ -214,7 +272,14 @@ describe('replaceFilledField — fail-safe on any mutation since the pick', () =
     setForm(`<label for="q1">Why this role?</label><input id="q1" type="text" value="Kept." />`);
     (document.getElementById('q1') as HTMLInputElement).value = '';
 
-    const result = replaceFilledField(document, 'Why this role?', 0, 1, 'A different answer');
+    const result = replaceFilledField(
+      document,
+      'Why this role?',
+      0,
+      1,
+      'A different answer',
+      'Kept.'
+    );
 
     expect(result.filled).toBe(false);
     expect(result.error).toMatch(/page may have changed/i);
@@ -229,7 +294,14 @@ describe('replaceFilledField — fail-safe on any mutation since the pick', () =
         <option value="1" selected>5-10 years</option>
       </select>
     `);
-    const result = replaceFilledField(document, 'Years of experience', 0, 1, 'Twenty years');
+    const result = replaceFilledField(
+      document,
+      'Years of experience',
+      0,
+      1,
+      'Twenty years',
+      '5-10 years'
+    );
     expect(result.filled).toBe(false);
   });
 
@@ -242,7 +314,7 @@ describe('replaceFilledField — fail-safe on any mutation since the pick', () =
       `<label for="q0">Comments</label><input id="q0" type="text" value="New." />`
     );
 
-    const result = replaceFilledField(document, 'Comments', 0, 1, 'An answer');
+    const result = replaceFilledField(document, 'Comments', 0, 1, 'An answer', 'Kept.');
 
     expect(result.filled).toBe(false);
     expect((document.getElementById('q0') as HTMLInputElement).value).toBe('New.');

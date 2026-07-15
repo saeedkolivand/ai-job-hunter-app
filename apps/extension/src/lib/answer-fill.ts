@@ -46,6 +46,15 @@ const NOT_FOUND: FillAnswerResult = {
   error: 'Could not find this field — the page may have changed.',
 };
 
+/** Fixed fail-safe result: the located field's CURRENT text no longer
+ *  matches what the caller expected at pick time (see
+ *  {@link replaceFilledField}) — the user edited it manually since then.
+ *  Never overwrite a newer manual edit the user hasn't seen rewritten. */
+const CHANGED_SINCE_PICK: FillAnswerResult = {
+  filled: false,
+  error: 'This field changed since you picked it — re-pick it to rewrite.',
+};
+
 /** Set a value the way a framework-controlled input notices (native setter +
  *  events) — mirrors `autofill.ts`'s private `setValue`. */
 function setInputValue(el: HTMLInputElement | HTMLTextAreaElement, value: string): void {
@@ -105,27 +114,45 @@ export function fillAnswerField(
  * Locate the FILLED field at `(question, index)` among the CURRENT filled
  * candidates (via {@link locateFilledField}) — refusing when the CURRENT
  * count of fields sharing `question` no longer equals `expectedCount` (the
- * pick-time count) — and overwrite it with `text` (reusing
- * {@link setInputValue}'s native-setter + bubbling-events discipline).
+ * pick-time count), AND refusing ({@link CHANGED_SINCE_PICK}) when the
+ * located field's CURRENT text no longer matches `expectedValue` (the text
+ * the caller believes is still there — the frozen original at pick time, or
+ * whatever this same function last wrote) — only then overwrites it with
+ * `text` (reusing {@link setInputValue}'s native-setter + bubbling-events
+ * discipline).
+ *
+ * `locateFilledField`'s own correlation (label/index/count) answers "is this
+ * the RIGHT field?" but says nothing about its CONTENT — a user who manually
+ * edits the picked field between pick and Accept/Restore would otherwise
+ * have that edit silently clobbered by a rewrite of stale text. This
+ * extends the extension's "never write an unexpected field" discipline to
+ * "never overwrite unexpected content" too.
  *
  * Backs BOTH extension PR 11 flows: Accept writes the rewritten draft,
  * Restore-original writes the SAME frozen text the field held at pick time —
- * the caller (background.ts) just passes a different `text`, there is no
- * separate "restore" code path. Text inputs/textarea ONLY (never `<select>`,
- * matching {@link locateFilledField}'s own scope) — fails safe
- * ({@link NOT_FOUND}) on any page mutation since the pick, exactly like
- * {@link fillAnswerField}. Never dispatches a submit.
+ * the caller (background.ts) just passes a different `text`/`expectedValue`,
+ * there is no separate "restore" code path. The caller (popup.ts) MUST
+ * update its own tracked `expectedValue` to `text` after a successful call,
+ * so the NEXT Accept/Restore compares against the right baseline (otherwise
+ * a successful Accept would make an immediately-following Restore refuse,
+ * since the field no longer holds the ORIGINAL text this function itself
+ * just replaced). Text inputs/textarea ONLY (never `<select>`, matching
+ * {@link locateFilledField}'s own scope) — fails safe ({@link NOT_FOUND}) on
+ * any page mutation since the pick, exactly like {@link fillAnswerField}.
+ * Never dispatches a submit.
  */
 export function replaceFilledField(
   doc: Document,
   question: string,
   index: number,
   expectedCount: number,
-  text: string
+  text: string,
+  expectedValue: string
 ): FillAnswerResult {
   const el = locateFilledField(doc, question, index, expectedCount);
   if (!el) return NOT_FOUND;
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    if (el.value.trim() !== expectedValue.trim()) return CHANGED_SINCE_PICK;
     setInputValue(el, text);
     return { filled: true };
   }

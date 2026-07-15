@@ -25,10 +25,16 @@ import {
 (
   globalThis as unknown as Record<
     string,
-    (question: string, index: number, count: number, text: string) => FillAnswerResult
+    (
+      question: string,
+      index: number,
+      count: number,
+      text: string,
+      expectedValue: string
+    ) => FillAnswerResult
   >
-)[ANSWER_REPLACE_GLOBAL] = (question, index, count, text) =>
-  replaceFilledField(document, question, index, count, text);
+)[ANSWER_REPLACE_GLOBAL] = (question, index, count, text, expectedValue) =>
+  replaceFilledField(document, question, index, count, text, expectedValue);
 
 // Ensure this file is treated as an ES module.
 export {};
