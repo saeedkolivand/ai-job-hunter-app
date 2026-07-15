@@ -63,6 +63,7 @@ use crate::error::{AppError, AppResult};
 mod answer_assist;
 mod answers_save;
 mod answers_suggest;
+mod assist_registry;
 pub mod auth;
 pub mod handshake;
 mod import_flow;
@@ -603,6 +604,16 @@ async fn probe_ports(range: std::ops::RangeInclusive<u16>) -> Option<(TcpListene
 /// live WS sink; this loop only ever enqueues (never awaits a socket write),
 /// so it keeps polling `reader.next()` — including a same-connection
 /// `assist.cancel` — while a stream is in flight.
+///
+/// The read loop also observes [`stream::run_writer`]'s own `JoinHandle` (via
+/// [`stream::next_step`]), not just `reader.next()` — [`stream::run_writer`] is
+/// spawned DETACHED, so if nothing else raced it, this loop would never learn
+/// it ended (a `WRITE_STALL` timeout, or a genuine send error) until its OWN
+/// next inbound frame — which, for a stalled-but-open peer or a quiet/idle
+/// connection, may never arrive, leaving `cancel_all`/`set_connected(false)`
+/// below delayed indefinitely while the app still believes the extension is
+/// connected. Racing the writer handle alongside `reader.next()` means a
+/// writer-task end tears the connection down immediately instead.
 async fn handle_connection(app: AppHandle, stream: TcpStream) {
     use tokio_tungstenite::tungstenite::handshake::server::ErrorResponse;
     use tokio_tungstenite::tungstenite::http::StatusCode;
@@ -667,7 +678,9 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     // spawned streaming task never blocks this loop from polling
     // `reader.next()` again.
     let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
-    tokio::spawn(stream::run_writer(writer, out_rx));
+    // Kept (not fire-and-forget-dropped) so the read loop below can race it
+    // via [`next_step`] — see `handle_connection`'s own doc for why.
+    let mut writer_task = tokio::spawn(stream::run_writer(writer, out_rx));
 
     // Per-connection handshake state; every socket starts by expecting `hello`.
     let mut conn = ConnState::AwaitingHello;
@@ -679,7 +692,27 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     // rather than a field on the global `BridgeState`.
     let assist_streams = std::sync::Arc::new(stream::AssistStreamRegistry::default());
 
-    while let Some(frame) = reader.next().await {
+    loop {
+        let frame = match stream::next_step(reader.next(), &mut writer_task).await {
+            stream::NextStep::Frame(frame) => frame,
+            stream::NextStep::WriterEnded => {
+                // See `next_step`'s doc + `handle_connection`'s own doc: the
+                // writer task ending (a `WRITE_STALL` timeout or a send error)
+                // must tear this connection down immediately, not wait for
+                // this loop's own next inbound frame — which, for a
+                // stalled-but-open or quiet/idle connection, may never come.
+                // Falls through to the SAME cancel_all + set_connected(false)
+                // cleanup below as every other exit path.
+                log::warn!(
+                    "[extension_bridge] writer task ended (write-stall timeout or a \
+                     send error) — tearing down the connection"
+                );
+                break;
+            }
+        };
+        let Some(frame) = frame else {
+            break;
+        };
         let msg = match frame {
             Ok(m) => m,
             Err(e) => {
@@ -765,8 +798,12 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                 // so a multi-second stream never blocks THIS loop's
                 // `reader.next()` — the HIGH fix: an `assist.cancel` for this
                 // very stream (or any other frame) must still be read while it
-                // is in flight. No reply here — the spawned task sends its own
-                // `assist.chunk`/`assist.done`/terminal reply through `out_tx`.
+                // is in flight. No reply here for the normal path — the
+                // spawned task sends its own `assist.chunk`/`assist.done`/
+                // terminal reply through `out_tx`. A duplicate `reqId` is
+                // rejected SYNCHRONOUSLY inside `spawn_answer_assist` (before
+                // it ever spawns) with its own `answer.assist.result` error
+                // reply, also via `out_tx` — see that function's doc.
                 stream::spawn_answer_assist(
                     app.clone(),
                     req_id,
