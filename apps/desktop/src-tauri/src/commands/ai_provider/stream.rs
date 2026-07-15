@@ -172,8 +172,12 @@ enum StreamSink {
     /// recorded — mirrors `stream_response`'s own cancellation branch
     /// (never estimated, zero when none was ever seen).
     Cancelled(Usage),
-    /// Transport read error — no terminal event and no spend recorded.
-    Error(AppError),
+    /// Transport read error — no terminal event, but STILL carrying whatever
+    /// [`Usage`] was last seen before the read failed (mirrors
+    /// [`Self::Cancelled`]) — `stream_response`'s error branch is where the
+    /// actual `record_usage` call for this sink lives, so a transport
+    /// failure mid-stream no longer undercounts real, already-reported spend.
+    Error(AppError, Usage),
 }
 
 /// Pure control-flow core, factored out so the loop (cancel / emit / done /
@@ -184,11 +188,12 @@ enum StreamSink {
 /// piece, cancellation, an error, or end-of-body is reached. End-of-body without a
 /// sentinel still yields a trailing [`StreamSink::Complete`] (graceful close).
 /// Tracks the LATEST [`StreamPiece::usage`] seen (mirroring `stream_response`'s
-/// "last write wins") and carries it on both [`StreamSink::Complete`] AND
-/// [`StreamSink::Cancelled`] (mirroring production: a cancellation still
-/// records whatever was seen) — only a transport error never reaches either
-/// branch, so (mirroring production) nothing is ever recorded on THAT path.
-/// [`stream_response`] mirrors this loop against a real `reqwest::Response`.
+/// "last write wins") and carries it on [`StreamSink::Complete`],
+/// [`StreamSink::Cancelled`], AND [`StreamSink::Error`] alike (mirroring
+/// production: a cancellation OR a transport error still records whatever
+/// REAL usage was already seen before it happened — never fabricated, never
+/// silently dropped). [`stream_response`] mirrors this loop against a real
+/// `reqwest::Response`.
 #[cfg(test)]
 async fn drive_stream<Cancel, Next, Fut, B, P>(
     mut cancelled: Cancel,
@@ -230,7 +235,7 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
             }
             Ok(None) => break,
             Err(e) => {
-                on(StreamSink::Error(e));
+                on(StreamSink::Error(e, usage));
                 return;
             }
         }
@@ -253,12 +258,15 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
 /// live `DRAFT_CAP`, or a user-initiated cancel mid-stream) is still recorded
 /// against today's spend before returning, so a cost-capped or cancelled stream
 /// is never invisible to spend tracking (never estimated, never fabricated —
-/// zero when none was ever seen). On a transport read error the trace is
-/// closed and a [`AppError::Network`] is returned; usage recording is left
-/// untouched on that path (out of scope for this fix — a read failure is a
-/// separate, rarer case than the cancellation this was written for). Either
-/// way a provider that passes a correct `parse` closure can never forget the
-/// cancellation check.
+/// zero when none was ever seen). A transport read error records that SAME
+/// accumulated usage too, before the trace is closed and a [`AppError::Network`]
+/// is returned — a provider that reports usage incrementally (Anthropic's
+/// `message_delta`, Gemini's `usageMetadata`) may hold real, billable usage
+/// even though the read itself then failed, and that must not be discarded
+/// either. The two branches can never double-record: the cancellation check
+/// runs BEFORE each read, the transport error is only ever seen INSIDE one.
+/// Either way a provider that passes a correct `parse` closure can never
+/// forget the cancellation check.
 ///
 /// The body mirrors [`drive_stream`] (the tested control-flow core), kept as a
 /// direct loop here so the returned `Future` stays `Send` (an async-trait
@@ -342,6 +350,20 @@ where
             Ok(None) => break,
             Err(e) => {
                 trace.end(Some(status), false);
+                // Record whatever REAL usage the provider had already
+                // reported before the read failed — mirrors the
+                // cancellation branch above; mutually exclusive with it
+                // (this only runs INSIDE a read, that only runs BEFORE
+                // one), so a single stream can never double-record. Never
+                // estimated, zero when none was ever seen.
+                super::record_usage(
+                    app,
+                    provider.as_str(),
+                    model,
+                    usage.input_tokens,
+                    usage.output_tokens,
+                    Some(base_url),
+                );
                 return Err(AppError::Network(format!("Stream error: {e}")));
             }
         }
@@ -380,7 +402,7 @@ mod tests {
         Emit(String, bool),
         Complete(Usage),
         Cancelled(Usage),
-        Error(String),
+        Error(String, Usage),
     }
 
     fn run(
@@ -412,7 +434,7 @@ mod tests {
                     StreamSink::Emit { delta, thinking } => Act::Emit(delta, thinking),
                     StreamSink::Complete(usage) => Act::Complete(usage),
                     StreamSink::Cancelled(usage) => Act::Cancelled(usage),
-                    StreamSink::Error(e) => Act::Error(e.to_string()),
+                    StreamSink::Error(e, usage) => Act::Error(e.to_string(), usage),
                 };
                 acts.borrow_mut().push(act);
             },
@@ -519,7 +541,7 @@ mod tests {
             acts,
             vec![
                 Act::Emit("a".to_string(), false),
-                Act::Error("boom".to_string()),
+                Act::Error("boom".to_string(), Usage::default()),
             ]
         );
     }
@@ -626,10 +648,12 @@ mod tests {
     }
 
     #[test]
-    fn transport_error_after_a_usage_piece_records_nothing() {
-        // Same shape, but the stream fails with a read error instead of a
-        // cancellation — production only records spend on the `Complete` sink,
-        // which a transport error never reaches either.
+    fn transport_error_after_a_usage_piece_still_carries_the_partial_usage() {
+        // Same shape as the cancellation test above, but the stream fails
+        // with a read error instead — production now records whatever REAL
+        // usage was already seen on this path too (see `stream_response`'s
+        // error branch), so a transport failure mid-stream no longer
+        // undercounts spend the provider already reported.
         let parser = |buf: &mut String| -> Vec<StreamPiece> {
             let mut out = Vec::new();
             while let Some(nl) = buf.find('\n') {
@@ -651,8 +675,15 @@ mod tests {
         );
         assert_eq!(
             acts,
-            vec![Act::Error("boom".to_string())],
-            "a transport error must never emit Complete, so no spend is ever recorded"
+            vec![Act::Error(
+                "boom".to_string(),
+                Usage {
+                    input_tokens: 50,
+                    output_tokens: 50,
+                }
+            )],
+            "a transport error must still carry the REAL usage already seen, never fabricated \
+             but never silently dropped either"
         );
     }
 }

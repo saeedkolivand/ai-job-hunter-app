@@ -1116,11 +1116,26 @@ export class BridgeClient {
    * still producing text. Only genuine silence for that long fires the
    * timeout, which also sends `assist.cancel` (so the desktop actually stops
    * streaming/charging, not just this client giving up) before rejecting.
+   *
+   * At most ONE `answerAssist` stream is ever active client-side (mirrors
+   * the popup's own "one assist request at a time" UI — see background.ts's
+   * `assistBuffer` doc). A call made while a PRIOR one is still pending
+   * (e.g. the popup closed mid-stream and reopened to ask a new question
+   * before the first settled) retires that older request FIRST: its chunk
+   * listener is dropped (so a late `assist.chunk` for its `reqId` can never
+   * fire again — `onChunk` only ever receives a bare `delta`, with no
+   * `reqId` of its own to guard against this) and its promise is settled
+   * with a `{ok:false}` result rather than left dangling until the stall
+   * timeout. This is what actually happens when a still-streaming request is
+   * superseded (the reqId itself is never exposed to the caller, so nothing
+   * outside this class could otherwise even name it to cancel).
    */
   async answerAssist(
     payload: ExtensionAnswerAssistRequest,
     onChunk?: (delta: string) => void
   ): Promise<ExtensionAnswerAssistResult> {
+    this.supersedeAnyPendingAssist();
+
     await this.ensureConnected();
     if (this.phase !== 'connected' || !this.transport) {
       throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
@@ -1184,6 +1199,30 @@ export class BridgeClient {
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     });
+  }
+
+  /**
+   * Retire every still-pending `answerAssist` call — see that method's doc
+   * for why at most one stream is ever active client-side. A no-op when
+   * nothing is pending (the common case: the prior call already settled).
+   * Drops the stale reqId's chunk listener + stall timer, best-effort sends
+   * its `assist.cancel` (via {@link cancelAssist}), and — unlike a bare
+   * `cancelAssist` call — also SETTLES its promise (`{ok:false}`, mirroring
+   * `failAllPending`'s settle shape) rather than leaving it to dangle until
+   * the stall timeout: without this, a superseded request's own `onChunk`
+   * closure stays registered and would keep mutating whatever shared buffer
+   * its caller accumulates into (the caller only ever sees a bare `delta`,
+   * with no `reqId` of its own to guard against this itself).
+   */
+  private supersedeAnyPendingAssist(): void {
+    for (const [staleReqId, settle] of [...this.pendingAssist.entries()]) {
+      this.pendingAssist.delete(staleReqId);
+      const timer = this.timers.get(staleReqId);
+      if (timer) clearTimeout(timer);
+      this.timers.delete(staleReqId);
+      this.cancelAssist(staleReqId);
+      settle({ ok: false, error: 'Superseded by a newer request.' });
+    }
   }
 
   /**

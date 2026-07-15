@@ -120,6 +120,12 @@ const NO_RESUME_MESSAGE: &str = "Add a resume in AI Job Hunter first, then try a
 /// act on directly) — this one is a generic "something downstream failed".
 const DRAFT_FAILED_MESSAGE: &str = "Could not draft an answer. Please retry.";
 
+/// Fixed sentinel — `req_id` already names an ACTIVE (`Pending`/`Running`)
+/// stream on this connection (see [`super::stream::AssistStreamRegistry::begin`]).
+/// A client reusing an in-flight reqId is rejected outright rather than
+/// silently orphaning the original job.
+const DUPLICATE_REQUEST_MESSAGE: &str = "This request is already in progress.";
+
 /// Collapse a downstream error that MAY carry dynamic content (see
 /// [`DRAFT_FAILED_MESSAGE`]) to that one fixed sentinel, logging the real
 /// cause desktop-side only (`context` + the error's `Display` — provider ids
@@ -479,7 +485,12 @@ pub(super) async fn resolve_answer_assist(
     // `AssistStreamRegistry::begin`'s doc (the pre-registration cancel race
     // fix): a cancel landing in this window is recorded here instead of
     // being silently swallowed (nothing was registered yet to `take()`).
-    registry.begin(req_id);
+    // A reqId already ACTIVE on this connection (a client reusing an
+    // in-flight reqId) is rejected outright rather than silently orphaning
+    // the original job — see `begin`'s doc.
+    if !registry.begin(req_id) {
+        return Err(AppError::Validation(DUPLICATE_REQUEST_MESSAGE.to_string()));
+    }
 
     let salary_range = if is_salary {
         resolve_salary_range(&completer, &limiter, provider_id, app_ctx.as_ref()).await
@@ -509,13 +520,14 @@ pub(super) async fn resolve_answer_assist(
         salary_range.as_ref(),
     );
 
-    // One more charge for the compose call itself.
-    limiter
-        .charge_provider_daily(
-            completer.provider_id().as_str(),
-            crate::limits::PROVIDER_DAILY_MAX,
-        )
-        .map_err(|e| to_draft_failed("daily budget exceeded before compose", e))?;
+    // One more charge for the compose call itself — the LAST fallible step
+    // between `registry.begin` above and entering `compose_draft_stream`
+    // (which owns the normal register/unregister pair). A rejected charge
+    // must `unregister` the `Pending` entry `begin` recorded, or it leaks in
+    // this connection's registry until the connection closes or the reqId is
+    // reused — `compose_draft_stream` is never reached on this early-return
+    // path to clean it up itself.
+    charge_compose_budget(&limiter, completer.provider_id().as_str(), registry, req_id)?;
     let draft = clamp_chars(
         super::stream::compose_draft_stream(app, &completer, req_id, registry, &user, sink)
             .await
@@ -530,6 +542,27 @@ pub(super) async fn resolve_answer_assist(
         sourced_brief: !company_brief.is_empty(),
         sourced_salary: salary_range.is_some(),
     })
+}
+
+/// Charge the daily provider budget for the compose call — see the call
+/// site's comment for why this is the LAST fallible step between
+/// `registry.begin(req_id)` and `compose_draft_stream` (which owns the
+/// normal register/unregister pair). On a rejected charge, `unregister`s the
+/// `Pending` entry `begin` recorded FIRST, so a charge failure never leaks a
+/// registry entry. Takes a plain `&Limiter` (no `AppHandle`), so this is
+/// directly unit-testable.
+fn charge_compose_budget(
+    limiter: &crate::limits::Limiter,
+    provider_id: &str,
+    registry: &super::stream::AssistStreamRegistry,
+    req_id: &str,
+) -> AppResult<()> {
+    limiter
+        .charge_provider_daily(provider_id, crate::limits::PROVIDER_DAILY_MAX)
+        .map_err(|e| {
+            registry.unregister(req_id);
+            to_draft_failed("daily budget exceeded before compose", e)
+        })
 }
 
 /// Resolve the salary reference range: the matched Application's own scraped
@@ -1047,6 +1080,45 @@ mod tests {
             searcher.calls.load(std::sync::atomic::Ordering::SeqCst),
             0,
             "the market lookup must never run once the daily budget is exhausted"
+        );
+    }
+
+    // ── charge_compose_budget (registry-leak fix: unregister on charge failure) ─
+
+    #[test]
+    fn charge_compose_budget_succeeds_and_leaves_the_registry_entry_in_place() {
+        let limiter = crate::limits::Limiter::new();
+        let registry = crate::extension_bridge::stream::AssistStreamRegistry::default();
+        registry.begin("req-1");
+
+        let result = charge_compose_budget(&limiter, "openai", &registry, "req-1");
+
+        assert!(result.is_ok());
+        assert!(
+            registry.contains("req-1"),
+            "a successful charge must leave the Pending entry for compose_draft_stream to register"
+        );
+    }
+
+    #[test]
+    fn charge_compose_budget_unregisters_the_pending_entry_on_a_rejected_charge() {
+        let limiter = crate::limits::Limiter::new();
+        // Exhaust the SAME per-provider daily ceiling this call charges against.
+        for _ in 0..crate::limits::PROVIDER_DAILY_MAX {
+            limiter
+                .charge_provider_daily("openai", crate::limits::PROVIDER_DAILY_MAX)
+                .expect("charge within the daily ceiling");
+        }
+        let registry = crate::extension_bridge::stream::AssistStreamRegistry::default();
+        registry.begin("req-1");
+
+        let result = charge_compose_budget(&limiter, "openai", &registry, "req-1");
+
+        assert!(result.is_err());
+        assert!(
+            !registry.contains("req-1"),
+            "a rejected charge must unregister the Pending entry, not leak it until the \
+             connection closes or the reqId is reused"
         );
     }
 }

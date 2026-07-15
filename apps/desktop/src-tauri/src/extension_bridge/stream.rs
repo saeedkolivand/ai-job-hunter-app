@@ -202,14 +202,27 @@ impl AssistStreamRegistry {
     /// Mark `req_id` as `Pending` BEFORE any pre-compose await (the gate/
     /// resume/limiter/salary/web-notes lookups in `resolve_answer_assist`) —
     /// the realistic window (network round-trips) an `assist.cancel` could
-    /// race ahead of [`Self::register`]. A no-op-safe (re-)insert: calling
-    /// this more than once for the same `req_id` just resets it to
-    /// `Pending` — there is exactly one production caller, at the top of
-    /// that window, so this never actually re-fires in practice.
-    pub(super) fn begin(&self, req_id: &str) {
-        self.0
-            .lock()
-            .insert(req_id.to_string(), StreamEntry::Pending);
+    /// race ahead of [`Self::register`]. Returns `false` (leaving the
+    /// existing entry untouched) when `req_id` already names an ACTIVE
+    /// stream on this connection (`Pending` or `Running`) — a client reusing
+    /// an in-flight reqId must be rejected outright, never silently
+    /// overwrite the existing entry with a fresh `Pending`: overwriting a
+    /// `Running` entry would orphan its job (still running server-side, but
+    /// no longer reachable from this registry, so a later `assist.cancel`
+    /// for that reqId could never reach it again). Returns `true` — and
+    /// (re-)inserts `Pending` — for a fresh `req_id`, one that already
+    /// settled, or one left `CancelledEarly` by a prior cancel; reusing a
+    /// reqId once it has settled is fine.
+    pub(super) fn begin(&self, req_id: &str) -> bool {
+        let mut guard = self.0.lock();
+        if matches!(
+            guard.get(req_id),
+            Some(StreamEntry::Pending) | Some(StreamEntry::Running(_))
+        ) {
+            return false;
+        }
+        guard.insert(req_id.to_string(), StreamEntry::Pending);
+        true
     }
 
     /// Register an in-flight stream's `reqId -> jobId`, UNLESS `req_id` was
@@ -263,6 +276,16 @@ impl AssistStreamRegistry {
             },
             _ => None,
         }
+    }
+
+    /// Test-only seam: whether ANY entry (`Pending`, `Running`, or
+    /// `CancelledEarly`) exists for `req_id` — unlike [`Self::take`] (which
+    /// only ever observes a `Running` job), this is what a leak-detection
+    /// test needs to assert a `Pending` entry was actually `unregister`ed,
+    /// not just left un-taken.
+    #[cfg(test)]
+    pub(super) fn contains(&self, req_id: &str) -> bool {
+        self.0.lock().contains_key(req_id)
     }
 
     /// Cancel the stream named by `req_id` on THIS registry, if any. A
@@ -785,6 +808,59 @@ mod tests {
         r.begin("req-1");
         assert!(r.register("req-1", "job-1"));
         assert_eq!(r.take("req-1"), Some("job-1".to_string()));
+    }
+
+    // ── Duplicate reqId rejection (MEDIUM fix): begin() on an already-active
+    // entry must never orphan the original job ─────────────────────────────
+
+    #[test]
+    fn begin_on_a_fresh_req_id_succeeds() {
+        let r = AssistStreamRegistry::default();
+        assert!(r.begin("req-1"));
+    }
+
+    #[test]
+    fn begin_on_an_already_pending_req_id_is_rejected() {
+        let r = AssistStreamRegistry::default();
+        r.begin("req-1"); // first request's pre-compose window is in flight
+
+        assert!(
+            !r.begin("req-1"),
+            "a second begin for the same still-Pending reqId must be rejected"
+        );
+    }
+
+    #[test]
+    fn begin_on_an_already_running_req_id_is_rejected_and_the_original_stays_cancellable() {
+        let r = AssistStreamRegistry::default();
+        let canceller = RecordingCanceller::default();
+        assert!(r.register("req-1", "job-1")); // the original request is now Running
+
+        // A client reusing the SAME reqId while the original is still
+        // running must be rejected — never silently overwrite the Running
+        // entry with a fresh Pending, which would orphan job-1 (still
+        // running server-side, but no longer reachable to cancel).
+        assert!(!r.begin("req-1"));
+
+        r.cancel(&canceller, "req-1");
+        assert_eq!(
+            canceller.cancelled.into_inner(),
+            vec!["job-1".to_string()],
+            "the original job must still be there and cancellable after the rejected begin"
+        );
+    }
+
+    #[test]
+    fn begin_after_the_reqid_already_settled_cancelled_early_succeeds() {
+        let r = AssistStreamRegistry::default();
+        let canceller = RecordingCanceller::default();
+        r.begin("req-1");
+        r.cancel(&canceller, "req-1"); // -> CancelledEarly, no job existed yet
+
+        assert!(
+            r.begin("req-1"),
+            "reusing a reqId that already settled (CancelledEarly) must be allowed"
+        );
     }
 
     // ── ChannelFrameSink / channel multiplexing (HIGH fix mechanism) ───────

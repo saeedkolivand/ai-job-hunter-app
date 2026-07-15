@@ -2319,6 +2319,69 @@ describe('BridgeClient – answerAssist', () => {
     client.dispose();
   });
 
+  // ── supersede (MEDIUM fix): a newer call must retire a still-pending older
+  // one, not leave its promise dangling or its stale chunks able to fire ────
+
+  it('a newer answerAssist call settles a still-pending older one and ignores its stale chunks', async () => {
+    const { client, socket } = await connectedClient();
+
+    const deltasA: string[] = [];
+    const resultA = client.answerAssist({ question: 'First question?' }, (d) => deltasA.push(d));
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalledTimes(1));
+    const frameA = JSON.parse(socket.send.mock.calls[0]?.[0] as string) as { reqId: string };
+
+    const deltasB: string[] = [];
+    const resultB = client.answerAssist({ question: 'Second question?' }, (d) => deltasB.push(d));
+
+    // The OLDER request must settle immediately — never dangle until the
+    // stall timeout — with a fixed `{ok:false}` result.
+    const outcomeA = await resultA;
+    expect(outcomeA).toEqual({ ok: false, error: 'Superseded by a newer request.' });
+
+    // Superseding must also best-effort cancel the OLD reqId server-side, so
+    // the desktop actually stops streaming/charging it too.
+    const sent = socket.send.mock.calls.map(
+      (call) => JSON.parse(call[0] as string) as { type: string; reqId: string }
+    );
+    expect(
+      sent.some((f) => f.type === EXTENSION_MESSAGE_TYPES.assistCancel && f.reqId === frameA.reqId)
+    ).toBe(true);
+
+    // A late chunk for the retired OLD reqId must never reach its callback —
+    // it can no longer mutate whatever shared buffer the caller accumulates
+    // into.
+    socket.simulateMessage(makeChunkEnvelope(frameA.reqId, 'stale, must be ignored'));
+    expect(deltasA).toEqual([]);
+
+    // The NEW request must still work completely normally.
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalledTimes(3));
+    const frameB = JSON.parse(
+      socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string
+    ) as { reqId: string; type: string };
+    expect(frameB.type).toBe(EXTENSION_MESSAGE_TYPES.answerAssist);
+
+    socket.simulateMessage(makeChunkEnvelope(frameB.reqId, 'fresh'));
+    expect(deltasB).toEqual(['fresh']);
+
+    socket.simulateMessage(
+      makeAssistEnvelope(frameB.reqId, {
+        ok: true,
+        question: 'Second question?',
+        draft: 'final answer',
+        sourced: {},
+      })
+    );
+    const outcomeB = await resultB;
+    expect(outcomeB).toEqual({
+      ok: true,
+      question: 'Second question?',
+      draft: 'final answer',
+      sourced: {},
+    });
+
+    client.dispose();
+  });
+
   // ── stall timeout (MEDIUM fix): reset on activity, cancels on a true stall ──
 
   it('a chunk resets the stall timer — activity past the old flat 30s window keeps the promise alive', async () => {

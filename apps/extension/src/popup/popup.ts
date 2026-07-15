@@ -1338,14 +1338,21 @@ function wire(): void {
     if (res && res.ok && res.kind === 'status') render(res.status);
     // Live streaming preview: the background pushes one of these per
     // `assist.chunk` (and once more on settle) while a draft is in flight —
-    // update only the dedicated draft box, never the shared `importMsg`
-    // status line `doAssist` itself owns for this same request.
+    // update only the dedicated draft box for ongoing chunks, never the
+    // shared `importMsg` status line `doAssist` itself owns for this same
+    // request. The one exception is the terminal interrupted case: a popup
+    // reopened mid-stream has no `doAssist` await of its own to fall back on
+    // (see `reattachAssistProgress`), so THIS listener is the only place it
+    // ever learns the stream later failed — without this, it would keep
+    // showing the last partial draft with no indication it's incomplete.
+    // Mirrors `reattachAssistProgress`'s own interruption rendering.
     if (res && res.ok && res.kind === 'answerAssistProgress') {
       const view = resolveAssistProgressView(res);
       if (view.draft !== null) {
         els.assistDraft.textContent = view.draft;
         els.assistResult.hidden = false;
       }
+      if (view.tone === 'err') setMsg(els.importMsg, view.text, 'err');
     }
   });
 }

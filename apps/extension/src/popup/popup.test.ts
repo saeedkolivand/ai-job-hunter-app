@@ -1667,6 +1667,66 @@ describe('doAssist (#btn-assist)', () => {
   });
 });
 
+// ── live-push answerAssistProgress (wire()'s single onMessage listener) ─────
+// A popup reopened mid-stream has no `doAssist` await of its own — it relies
+// entirely on this listener for updates, including a later failure. Verifies
+// the fix: the interrupted case must render the indicator, not just leave
+// the partial draft looking complete.
+
+describe('live-push answerAssistProgress (background push while popup stays open)', () => {
+  const listener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
+    ((message: unknown) => void) | undefined;
+  if (!listener) throw new Error('onMessage listener not registered');
+
+  beforeEach(() => {
+    byId<HTMLParagraphElement>('import-msg').textContent = '';
+    byId<HTMLDivElement>('assist-result').hidden = true;
+    byId<HTMLParagraphElement>('assist-draft').textContent = '';
+  });
+
+  it('renders only the accumulating draft while the stream is still in flight, never importMsg', () => {
+    listener({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: 'Because I ',
+      done: false,
+      interrupted: false,
+    });
+
+    expect(byId<HTMLParagraphElement>('assist-draft').textContent).toBe('Because I ');
+    expect(byId<HTMLDivElement>('assist-result').hidden).toBe(false);
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe('');
+  });
+
+  it('shows the interruption indicator (not just the partial draft) when the stream later fails', () => {
+    listener({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: 'Because I ',
+      done: true,
+      interrupted: true,
+    });
+
+    expect(byId<HTMLParagraphElement>('assist-draft').textContent).toBe('Because I ');
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toMatch(/interrupted/i);
+  });
+
+  it('does not touch importMsg on a clean finish', () => {
+    listener({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: 'Because I am drawn to it.',
+      done: true,
+      interrupted: false,
+    });
+
+    expect(byId<HTMLParagraphElement>('assist-draft').textContent).toBe(
+      'Because I am drawn to it.'
+    );
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe('');
+  });
+});
+
 // ── doCopyAssistDraft (#btn-copy-assist) ────────────────────────────────────
 // Mirrors the doSuggestAnswers "Copy button writes the full answer to the
 // clipboard" test below — same clipboard-mock pattern, applied to the AI
