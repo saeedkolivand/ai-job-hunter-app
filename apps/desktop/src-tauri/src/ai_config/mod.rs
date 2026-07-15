@@ -2,10 +2,17 @@
 //!
 //! Single source of truth for which provider the app generates with, and each
 //! provider's model + (OpenAI-compatible) base URL. Mirrors the backend-owned
-//! [`crate::documents::EmbeddingConfig`] pattern but for chat/generation, and
-//! exists so the renderer can NEVER hand the generation egress a `base_url` (the
-//! key-exfiltration SSRF closed by task #16) — routing comes from *here*, not the
-//! request.
+//! [`crate::documents::EmbeddingConfig`] pattern but for chat/generation. This
+//! store is the `base_url` source for the generation commands task #16 flipped
+//! onto it — `ai_generate`, `generate_pipeline`, research/salary, the extension
+//! bridge's `resolve_answer_assist`, and autopilot — so those paths no longer
+//! accept a renderer-supplied `base_url`; routing comes from *here*, not the
+//! request. **Not yet flipped:** the `agent_run` ("prep this application")
+//! agent-loop path (`commands/agent.rs` → `run_agent_live`) still resolves via
+//! `Completer::resolve` with a renderer-supplied `req.base_url` threaded into
+//! `agent::tools::ToolContext` — a tracked follow-up (see
+//! `docs/NEXT_ISSUES.md`) to flip next; the SSRF is NOT closed for that path
+//! today.
 //!
 //! Shape maps 1:1 to the renderer's old Zustand slice:
 //! `{ activeProvider, providers: { [id]: { model, baseUrl } } }`.
@@ -331,9 +338,18 @@ impl AiConfigStore {
         if let Some(ref m) = model {
             provider_id.validate_model(m)?;
         }
-        let base_url = base_url
-            .map(|u| u.trim().to_string())
-            .filter(|u| !u.is_empty());
+        // `base_url` is only meaningful for `OpenAiCompatible` — `resolve()`
+        // ignores it for every other provider. It's inert for egress there, but
+        // a stored value still reaches `record_usage`'s free/paid cost gate, so
+        // drop it to NULL for any other provider rather than persist dead data
+        // that could nudge cost classification.
+        let base_url = if matches!(provider_id, ProviderId::OpenAiCompatible) {
+            base_url
+                .map(|u| u.trim().to_string())
+                .filter(|u| !u.is_empty())
+        } else {
+            None
+        };
         if let Some(ref u) = base_url {
             crate::net::ssrf::validate_provider_base_url(u)?;
         }
@@ -352,10 +368,18 @@ impl AiConfigStore {
             .map(|m| m.trim().to_string())
             .filter(|m| !m.is_empty())
             .filter(|m| provider_id.validate_model(m).is_ok());
-        let base_url = base_url
-            .map(|u| u.trim().to_string())
-            .filter(|u| !u.is_empty())
-            .filter(|u| crate::net::ssrf::validate_provider_base_url(u).is_ok());
+        // Same non-`OpenAiCompatible` guard as `validate_settings` — a
+        // native-provider base_url from a first-run renderer seed or a restored
+        // backup bundle is inert for egress but still reaches `record_usage`'s
+        // free/paid cost gate, so drop it to NULL rather than persist it.
+        let base_url = if matches!(provider_id, ProviderId::OpenAiCompatible) {
+            base_url
+                .map(|u| u.trim().to_string())
+                .filter(|u| !u.is_empty())
+                .filter(|u| crate::net::ssrf::validate_provider_base_url(u).is_ok())
+        } else {
+            None
+        };
         (model, base_url)
     }
 }

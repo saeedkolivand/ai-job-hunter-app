@@ -130,6 +130,50 @@ fn writer_rejects_cloud_metadata_base_url() {
 }
 
 #[test]
+fn writer_drops_base_url_to_null_for_a_native_provider() {
+    // `resolve()` only honors base_url for `openai-compatible`; a value stored
+    // against a native provider (e.g. openai) is inert for egress but still
+    // reaches `record_usage`'s free/paid cost gate, so it must be dropped to
+    // NULL rather than persisted.
+    let (_dir, store) = new_store();
+    store
+        .set_provider_settings(
+            "openai",
+            Some("gpt-4o".to_string()),
+            Some("https://sneaky.example/v1".to_string()),
+        )
+        .expect("edit settings");
+    assert_eq!(
+        store
+            .active_config()
+            .providers
+            .get("openai")
+            .and_then(|c| c.base_url.clone()),
+        None,
+        "a native provider's base_url must be dropped to NULL",
+    );
+
+    // An openai-compatible base_url is the one kind that must survive.
+    store
+        .set_provider_settings(
+            "openai-compatible",
+            None,
+            Some("http://localhost:1234/v1".to_string()),
+        )
+        .expect("edit settings");
+    assert_eq!(
+        store
+            .active_config()
+            .providers
+            .get("openai-compatible")
+            .and_then(|c| c.base_url.clone())
+            .as_deref(),
+        Some("http://localhost:1234/v1"),
+        "an openai-compatible base_url must be retained",
+    );
+}
+
+#[test]
 fn writer_accepts_localhost_lan_and_public_base_urls() {
     let (_dir, store) = new_store();
     // The whole point of provenance-not-IP-filtering: local gateways stay legal.
@@ -202,6 +246,72 @@ fn seed_scrubs_a_malicious_base_url() {
             .and_then(|c| c.base_url.clone()),
         None,
         "the cloud-metadata base_url must be scrubbed on seed",
+    );
+}
+
+#[test]
+fn seed_and_import_drop_base_url_for_a_native_provider() {
+    // Mirrors `writer_drops_base_url_to_null_for_a_native_provider` but for the
+    // lenient `scrub_settings` path (seed + import) — the first-run-XSS seed
+    // vector and the restored-backup vector the security review called out.
+    let (_dir, store) = new_store();
+    let mut providers = std::collections::BTreeMap::new();
+    providers.insert(
+        "openai".to_string(),
+        provider_cfg(Some("gpt-4o"), Some("https://sneaky.example/v1")),
+    );
+    providers.insert(
+        "openai-compatible".to_string(),
+        provider_cfg(None, Some("http://localhost:1234/v1")),
+    );
+    let snapshot = AiConfigSnapshot {
+        active_provider: Some("openai".to_string()),
+        providers,
+    };
+
+    assert!(store.seed_if_empty(&snapshot).unwrap());
+    let cfg = store.active_config();
+    assert_eq!(
+        cfg.providers.get("openai").and_then(|c| c.base_url.clone()),
+        None,
+        "a native provider's base_url must be dropped to NULL on seed",
+    );
+    assert_eq!(
+        cfg.providers
+            .get("openai-compatible")
+            .and_then(|c| c.base_url.clone())
+            .as_deref(),
+        Some("http://localhost:1234/v1"),
+        "an openai-compatible base_url must be retained on seed",
+    );
+
+    // Same guard on the import (restored-backup) path, via a fresh store.
+    let (_dir2, restored) = new_store();
+    let bundle = serde_json::json!({
+        "activeProvider": "openai",
+        "providers": {
+            "openai": { "model": "gpt-4o", "baseUrl": "https://sneaky.example/v1" },
+            "openai-compatible": { "baseUrl": "http://localhost:1234/v1" },
+        }
+    });
+    restored.import(&bundle).expect("import");
+    let restored_cfg = restored.active_config();
+    assert_eq!(
+        restored_cfg
+            .providers
+            .get("openai")
+            .and_then(|c| c.base_url.clone()),
+        None,
+        "a native provider's base_url must be dropped to NULL on import",
+    );
+    assert_eq!(
+        restored_cfg
+            .providers
+            .get("openai-compatible")
+            .and_then(|c| c.base_url.clone())
+            .as_deref(),
+        Some("http://localhost:1234/v1"),
+        "an openai-compatible base_url must be retained on import",
     );
 }
 

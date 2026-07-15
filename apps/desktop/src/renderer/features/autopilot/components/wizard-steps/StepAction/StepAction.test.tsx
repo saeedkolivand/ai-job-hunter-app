@@ -22,6 +22,7 @@ let stubbedActiveProvider = {
   provider: 'ollama',
   model: 'llama3',
   baseUrl: undefined as string | undefined,
+  isPending: false,
 };
 
 vi.mock('@/services', () => ({
@@ -91,7 +92,12 @@ function readProbe(): Pick<
 
 describe('StepAction — AI notes toggle', () => {
   it('renders unchecked and writes no snapshot by default', () => {
-    stubbedActiveProvider = { provider: 'ollama', model: 'llama3', baseUrl: undefined };
+    stubbedActiveProvider = {
+      provider: 'ollama',
+      model: 'llama3',
+      baseUrl: undefined,
+      isPending: false,
+    };
     renderStep();
     const probe = readProbe();
     expect(probe.assistant).toBe(false);
@@ -103,6 +109,7 @@ describe('StepAction — AI notes toggle', () => {
       provider: 'openai',
       model: 'gpt-4o',
       baseUrl: 'https://api.example.com',
+      isPending: false,
     };
     const user = userEvent.setup();
     renderStep();
@@ -123,7 +130,12 @@ describe('StepAction — AI notes toggle', () => {
     // switched the active provider to "anthropic" in Settings. The wizard no
     // longer re-snapshots — whatever was stored simply stays as-is (and is ignored
     // by the backend, which reads the live store).
-    stubbedActiveProvider = { provider: 'anthropic', model: 'claude', baseUrl: undefined };
+    stubbedActiveProvider = {
+      provider: 'anthropic',
+      model: 'claude',
+      baseUrl: undefined,
+      isPending: false,
+    };
     renderStep({
       assistant: true,
       assistantProvider: 'openai',
@@ -137,7 +149,12 @@ describe('StepAction — AI notes toggle', () => {
   });
 
   it('does NOT touch the snapshot while the toggle is off, even if it looks stale', () => {
-    stubbedActiveProvider = { provider: 'anthropic', model: 'claude', baseUrl: undefined };
+    stubbedActiveProvider = {
+      provider: 'anthropic',
+      model: 'claude',
+      baseUrl: undefined,
+      isPending: false,
+    };
     renderStep({
       assistant: false,
       assistantProvider: 'openai',
@@ -154,7 +171,12 @@ describe('StepAction — AI notes toggle', () => {
 
 describe('StepAction — disclosure copy + provider hint (a11y/UX fix)', () => {
   it('renders the disclosure caption as its own element, not the Switch description slot', () => {
-    stubbedActiveProvider = { provider: 'ollama', model: 'llama3', baseUrl: undefined };
+    stubbedActiveProvider = {
+      provider: 'ollama',
+      model: 'llama3',
+      baseUrl: undefined,
+      isPending: false,
+    };
     renderStep();
 
     // The caption text must be present in the document regardless of toggle state...
@@ -173,7 +195,12 @@ describe('StepAction — disclosure copy + provider hint (a11y/UX fix)', () => {
   });
 
   it('renders the provider hint once the toggle is on', async () => {
-    stubbedActiveProvider = { provider: 'openai', model: 'gpt-4o', baseUrl: undefined };
+    stubbedActiveProvider = {
+      provider: 'openai',
+      model: 'gpt-4o',
+      baseUrl: undefined,
+      isPending: false,
+    };
     const user = userEvent.setup();
     renderStep();
 
@@ -185,7 +212,7 @@ describe('StepAction — disclosure copy + provider hint (a11y/UX fix)', () => {
 
 describe('StepAction — no usable provider configured', () => {
   it('disables the switch and shows the no-provider caption when model is empty', () => {
-    stubbedActiveProvider = { provider: 'ollama', model: '', baseUrl: undefined };
+    stubbedActiveProvider = { provider: 'ollama', model: '', baseUrl: undefined, isPending: false };
     renderStep();
 
     expect(screen.getByRole('switch')).toBeDisabled();
@@ -194,7 +221,7 @@ describe('StepAction — no usable provider configured', () => {
   });
 
   it('never writes a snapshot while disabled, even if toggled on programmatically', async () => {
-    stubbedActiveProvider = { provider: 'ollama', model: '', baseUrl: undefined };
+    stubbedActiveProvider = { provider: 'ollama', model: '', baseUrl: undefined, isPending: false };
     const user = userEvent.setup();
     renderStep({ assistant: true });
 
@@ -209,11 +236,30 @@ describe('StepAction — no usable provider configured', () => {
   });
 
   it('does NOT render the dangling provider hint when model is empty', () => {
-    stubbedActiveProvider = { provider: 'ollama', model: '', baseUrl: undefined };
+    stubbedActiveProvider = { provider: 'ollama', model: '', baseUrl: undefined, isPending: false };
     renderStep({ assistant: true });
 
     expect(
       screen.queryByText('autopilot.wizard.action.assistantProviderHint')
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('StepAction — cold-boot caption flash (isPending guard)', () => {
+  it('renders neither caption while the active config is still loading', () => {
+    stubbedActiveProvider = { provider: 'ollama', model: '', baseUrl: undefined, isPending: true };
+    renderStep();
+
+    expect(
+      screen.queryByText('autopilot.wizard.action.assistantNoProvider')
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('autopilot.wizard.action.assistantCaption')).not.toBeInTheDocument();
+  });
+
+  it('shows the real no-provider caption once loading resolves with no provider configured', () => {
+    stubbedActiveProvider = { provider: 'ollama', model: '', baseUrl: undefined, isPending: false };
+    renderStep();
+
+    expect(screen.getByText('autopilot.wizard.action.assistantNoProvider')).toBeInTheDocument();
   });
 });

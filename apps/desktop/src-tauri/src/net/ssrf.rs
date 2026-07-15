@@ -93,8 +93,10 @@ pub fn is_safe_ipv6(ip: Ipv6Addr) -> bool {
 }
 
 /// The cloud-metadata service address — the credential-theft pivot an SSRF
-/// attacker aims for. Blocked in every base-URL notation (`url` canonicalizes
-/// IPv4 hosts to dotted-decimal, so hex/octal/decimal forms normalize here too).
+/// attacker aims for. Blocked in any IPv4 notation (`url` canonicalizes IPv4
+/// hosts to dotted-decimal, so hex/octal/decimal forms normalize here too);
+/// an IPv6-mapped/ULA form of this address is not covered by this check (see
+/// [`validate_provider_base_url`]).
 const CLOUD_METADATA_IPV4: Ipv4Addr = Ipv4Addr::new(169, 254, 169, 254);
 
 /// Validate a user-supplied AI-provider base URL for the *generation egress*
@@ -107,7 +109,13 @@ const CLOUD_METADATA_IPV4: Ipv4Addr = Ipv4Addr::new(169, 254, 169, 254);
 /// pointing the base URL at an attacker), not a wholesale IP filter. It blocks
 /// only:
 ///  1. a non-`http(s)` scheme, and
-///  2. the cloud-metadata address `169.254.169.254` (in any URL notation).
+///  2. the cloud-metadata address `169.254.169.254` in any IPv4 notation
+///     (hex/octal/decimal all normalize to dotted-decimal via `url`'s
+///     parser). An IPv6-mapped/ULA metadata form is not blocked here — this
+///     check is defense-in-depth only; the real boundary is provenance
+///     (the renderer never controls this value for the flipped commands, see
+///     `crate::ai_config`), and IMDS is a GET-only credential source, not a
+///     POST sink.
 ///
 /// Uses the same `reqwest::Url` parser as [`crate::net::http::get_guarded`] —
 /// never hand-rolled URL parsing.

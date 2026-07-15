@@ -37,3 +37,14 @@ supports CLI-based providers (e.g. Claude Code CLI). Investigate the CLI provide
 detection, invocation, arg/format differences per CLI, and error surfacing. Determine per-CLI
 what fails (not found? wrong invocation? unsupported output mode?) and either fix the adapters
 or clearly report which are supported.
+
+## 5. Flip `agent_run` off a request-supplied `base_url`
+
+Task #16 moved the active AI provider config to a backend-owned store (`ai_config::AiConfigStore`)
+so the generation commands resolve routing from _there_ instead of trusting the renderer: `ai_generate`,
+`generate_pipeline`, research/salary, the extension bridge's `resolve_answer_assist`, and autopilot are
+all flipped. The `agent_run` ("prep this application") agent-loop path (`commands/agent.rs` →
+`run_agent_live`) is **not** flipped yet — it still resolves via `Completer::resolve(..., req.base_url)`
+and threads the same renderer-supplied `req.base_url` into `agent::tools::ToolContext` for tool calls
+(e.g. `research_company`). Flip this path onto `Completer::from_active` + a store-resolved
+`ToolContext` so no generation command anywhere still accepts a request base_url.

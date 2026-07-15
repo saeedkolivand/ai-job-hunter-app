@@ -15,7 +15,16 @@ export function StepAction() {
   // resolves the CURRENTLY-active provider from the backend store at run time, so
   // there is nothing to capture here. `provider`/`model` are still read to gate
   // the toggle (no provider configured → disabled) and label the hint.
-  const { provider, model } = useGenerateConfig();
+  const { provider, model, isPending } = useGenerateConfig();
+  // Cold boot: while the backend config is first loading, `model` defaults to
+  // '' — indistinguishable from a real "no provider configured" state. Show
+  // nothing rather than falsely flashing the no-provider caption (mirrors
+  // `useCanUseAI`'s isPending guard in ModelSelector).
+  const caption = isPending
+    ? null
+    : model
+      ? t('autopilot.wizard.action.assistantCaption')
+      : t('autopilot.wizard.action.assistantNoProvider');
 
   // Autopilot is a discovery assistant: it finds & ranks matching jobs and
   // notifies you, then you apply with the tailoring assistant on the dedicated
@@ -61,11 +70,7 @@ export function StepAction() {
             feature's disclosure copy is its own properly-contrasted element
             instead of passing it through `description`, so the honesty copy
             this feature depends on stays legible. */}
-        <p className="text-caption text-foreground/70">
-          {model
-            ? t('autopilot.wizard.action.assistantCaption')
-            : t('autopilot.wizard.action.assistantNoProvider')}
-        </p>
+        {caption && <p className="text-caption text-foreground/70">{caption}</p>}
         {assistant && provider && model && (
           <p className="text-caption text-foreground/70">
             {t('autopilot.wizard.action.assistantProviderHint', { provider, model })}
