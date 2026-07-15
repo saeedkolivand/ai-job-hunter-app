@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784068013716,
+  "lastUpdate": 1784079846702,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4571,6 +4571,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 283763,
             "range": "± 4440",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d6d820f01f7c2f7dc82cdbdf95868e24c15ada92",
+          "message": "feat: draft application answers from the extension behind a new opt-in (#643)\n\n* feat: draft application answers from the extension behind a new opt-in\n\nNew answer.assist verb, the bridge's first billable one: behind its own\ndefault-off opt-in (provider snapshot pinned at enable time and shown\nin settings), the desktop drafts a grounded paste-ready answer for a\npage question — salary questions ride the shipped no-fabrication\nmachinery, others get a compact rust port of the answer prompt with\nevery untrusted block fenced and neutralized. Optional web research\nrides the existing daily limiter through the tested charge ordering;\nonly fixed sentinels ever reach the wire. Copy-only in the popup.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: keep the ai assist opt-in toggle reversible and harden fence tests\n\nOnly gate the Switch's disabled state on the ON direction, so a live\nprovider-config change can never trap the billable opt-in in the ON\nstate. Adds forged-opening-tag and close-then-reopen fence tests,\na11y label on the assist textarea, debug-logs the provider resolution\ncause on answer-assist failure, and caches the fence-tag regex per\nfixed tag instead of recompiling it on every fenced() call.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: neutralize cross tag fence tokens and tidy ai assist tests\n\nNeutralize every known fence tag (not just the wrapping one) inside each\nfenced prompt block, since answer_assist composes six blocks in one\nmessage and an untrusted question could forge a sibling tag like\njob_posting; documented divergence from @ajh/prompts' same-tag-only\nneutralizeFenceTag. Also: base_url round-trip test for the ai-assist\nopt-in snapshot, omit-not-null serialization for its provider/model\nreply fields, a copy-assist popup test, and ExtensionBridgeSection test\nhygiene (shared stub reset via beforeEach, extended renderSection helper,\nnoProvider description assertion).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-15T03:34:36+02:00",
+          "tree_id": "c17bbbc68bbdc28d2c27110426c74fcaa02df7d2",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/d6d820f01f7c2f7dc82cdbdf95868e24c15ada92"
+        },
+        "date": 1784079846320,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2163954,
+            "range": "± 57454",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2669830,
+            "range": "± 50095",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 303201,
+            "range": "± 21346",
             "unit": "ns/iter"
           }
         ]
