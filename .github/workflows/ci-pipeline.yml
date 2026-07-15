@@ -93,7 +93,7 @@ jobs:
 
       - name: 🧭 Path filter
         id: filter
-        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
         with:
           filters: |
             frontend:
@@ -516,7 +516,7 @@ jobs:
       - name: 📊 JS Coverage PR Comment
         if: github.event_name == 'pull_request'
         continue-on-error: true
-        uses: davelosert/vitest-coverage-report-action@3c054a2d2e2ca45446417ad5d6d5eb33092af8f1 # v2.12.1
+        uses: davelosert/vitest-coverage-report-action@8b157684c6a6b259b97d45e72b44242865c0f6a5 # v2.12.2
 
       # cargo-llvm-cov collects coverage; cargo-nextest is the test runner
       # (parallel, flaky-retry, faster, clearer output). `cargo llvm-cov nextest`
