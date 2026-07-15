@@ -214,3 +214,94 @@ export function locateQuestionField(
   if (matches.length !== expectedCount) return null;
   return matches[index] ?? null;
 }
+
+/**
+ * One scanned FILLED candidate field for "rewrite mode" (extension PR 11's
+ * `answer.assist { mode: 'rewrite' }`) — the mirror of {@link ScannedQuestion}
+ * (same occurrence-index correlation), plus the field's CURRENT text so the
+ * popup can seed `existingAnswer` and offer "Restore original" without a
+ * second scan. `answer` is page/user-derived and PII-adjacent (the user's
+ * own past answer) — held only in memory for this popup session, never
+ * written to `chrome.storage`.
+ */
+export interface FilledField {
+  question: string;
+  index: number;
+  answer: string;
+}
+
+/**
+ * Every FILLED, visible, labelled, non-ambiguous/non-identity candidate
+ * field — TEXT INPUTS AND TEXTAREA ONLY (never `<select>`: a rewritten
+ * free-text answer can't map onto a select's fixed options) — in DOM order.
+ * Shares {@link isCapturable}'s visibility/denylist/identity gates with
+ * {@link emptyCandidateFields}, flipped to FILLED. Shared by
+ * {@link collectFilledFields} (produce the scan-time correlation) and
+ * {@link locateFilledField} (re-scan to replace), so the two can never see a
+ * different candidate set — same discipline
+ * {@link collectQuestions}/{@link locateQuestionField} share.
+ */
+function filledCandidateFields(doc: Document): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  const fields = doc.querySelectorAll<HTMLElement>('input, textarea');
+
+  for (const el of Array.from(fields)) {
+    if (el instanceof HTMLInputElement) {
+      if (!CAPTURABLE_INPUT_TYPES.has(el.type)) continue;
+    } else if (!(el instanceof HTMLTextAreaElement)) {
+      continue;
+    }
+    if (isEmptyValue(el)) continue;
+    if (!isCapturable(el)) continue;
+    out.push(el);
+  }
+
+  return out;
+}
+
+/**
+ * "Rewrite mode" scan: every FILLED candidate field (see
+ * {@link filledCandidateFields}) with its current text and the OCCURRENCE
+ * index among fields sharing that exact question text — see
+ * {@link FilledField}. Pure — no side effects.
+ */
+export function collectFilledFields(doc: Document): FilledField[] {
+  const out: FilledField[] = [];
+  const counts = new Map<string, number>();
+
+  for (const el of filledCandidateFields(doc)) {
+    const question = labelText(el).trim();
+    if (!question) continue;
+    const answer =
+      el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement ? el.value.trim() : '';
+    if (!answer) continue;
+    const index = counts.get(question) ?? 0;
+    counts.set(question, index + 1);
+    out.push({ question, index, answer });
+  }
+
+  return out;
+}
+
+/**
+ * Re-scan `doc`'s CURRENT filled candidates (the identical predicate
+ * {@link collectFilledFields} used) and return the field at the `index`-th
+ * occurrence of `question` — but ONLY when the CURRENT total number of
+ * fields sharing that exact question text still equals `expectedCount`.
+ * Otherwise `null`. Mirrors {@link locateQuestionField}'s fail-safe
+ * correlation exactly (same occurrence-index + expectedCount discipline),
+ * over the FILLED candidate set instead of the empty one.
+ *
+ * Exported so `answer-fill.ts` (the classic-script injection entry) and its
+ * tests can call it directly.
+ */
+export function locateFilledField(
+  doc: Document,
+  question: string,
+  index: number,
+  expectedCount: number
+): HTMLElement | null {
+  const matches = filledCandidateFields(doc).filter((el) => labelText(el).trim() === question);
+  if (matches.length !== expectedCount) return null;
+  return matches[index] ?? null;
+}

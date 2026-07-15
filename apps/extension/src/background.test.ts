@@ -374,7 +374,8 @@ describe('answersSave request', () => {
       { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
     ]);
     const captured = [{ question: 'Why this role?', answer: 'Because I love it.' }];
-    executeScriptMock.mockResolvedValueOnce([{ result: captured }] as never);
+    const filled = [{ question: 'Why this role?', index: 0, answer: 'Because I love it.' }];
+    executeScriptMock.mockResolvedValueOnce([{ result: { answers: captured, filled } }] as never);
     mockClient.saveAnswers.mockResolvedValue({
       ok: true,
       applicationId: 'app-1',
@@ -404,6 +405,7 @@ describe('answersSave request', () => {
         title: 'Backend Engineer',
         company: 'Acme',
       },
+      filled,
     });
   });
 
@@ -412,7 +414,7 @@ describe('answersSave request', () => {
     tabsQueryMock.mockResolvedValue([
       { id: 7, url: 'https://jobs.example.com/posting/none' } as never,
     ]);
-    executeScriptMock.mockResolvedValueOnce([{ result: [] }] as never);
+    executeScriptMock.mockResolvedValueOnce([{ result: { answers: [], filled: [] } }] as never);
     mockClient.saveAnswers.mockResolvedValue({
       ok: false,
       error: "couldn't find a saved job for this page — import it first",
@@ -424,6 +426,7 @@ describe('answersSave request', () => {
       ok: true,
       kind: 'answersSave',
       result: { ok: false, error: "couldn't find a saved job for this page — import it first" },
+      filled: [],
     });
   });
 
@@ -457,7 +460,7 @@ describe('answersSave request', () => {
     tabsQueryMock.mockResolvedValue([
       { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
     ]);
-    executeScriptMock.mockResolvedValueOnce([{ result: [] }] as never);
+    executeScriptMock.mockResolvedValueOnce([{ result: { answers: [], filled: [] } }] as never);
     mockClient.saveAnswers.mockRejectedValue(
       new Error('Desktop app not reachable. Is AI Job Hunter running?')
     );
@@ -747,6 +750,70 @@ describe('answerAssist request', () => {
 
     expect(mockClient.answerAssist).toHaveBeenCalledWith(
       { question: 'Why this role?', searchWeb: false },
+      expect.any(Function)
+    );
+  });
+
+  it('forwards mode/existingAnswer/preset/instruction for a rewrite request (PR 11)', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.answerAssist.mockResolvedValue({
+      ok: true,
+      question: 'Why this role?',
+      draft: 'A shorter answer.',
+      sourced: {},
+    });
+
+    await send({
+      kind: 'answerAssist',
+      question: 'Why this role?',
+      searchWeb: false,
+      mode: 'rewrite',
+      existingAnswer: 'Because I really love it and want to work here.',
+      preset: 'shorten',
+    });
+
+    expect(mockClient.answerAssist).toHaveBeenCalledWith(
+      {
+        question: 'Why this role?',
+        searchWeb: false,
+        url: 'https://jobs.example.com/posting/9',
+        mode: 'rewrite',
+        existingAnswer: 'Because I really love it and want to work here.',
+        preset: 'shorten',
+      },
+      expect.any(Function)
+    );
+  });
+
+  it('forwards a free-text instruction instead of a preset', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.answerAssist.mockResolvedValue({
+      ok: true,
+      question: 'Why this role?',
+      draft: 'A more confident answer.',
+      sourced: {},
+    });
+
+    await send({
+      kind: 'answerAssist',
+      question: 'Why this role?',
+      searchWeb: false,
+      mode: 'rewrite',
+      existingAnswer: 'Because I like it.',
+      instruction: 'Make this sound more confident.',
+    });
+
+    expect(mockClient.answerAssist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'rewrite',
+        instruction: 'Make this sound more confident.',
+      }),
       expect.any(Function)
     );
   });
@@ -1141,5 +1208,102 @@ describe('answerFill request', () => {
     });
 
     expect(res).toEqual({ ok: false, error: 'Could not fill this field.' });
+  });
+});
+
+// ── answerReplace request — rewrite Accept/Restore, NEVER a different field ─
+
+describe('answerReplace request — not-paired short-circuit', () => {
+  it('surfaces "Not paired" and never reaches executeScript when no token is stored', async () => {
+    getTokenMock.mockResolvedValue(null);
+
+    const res = await send({
+      kind: 'answerReplace',
+      question: 'Why this role?',
+      index: 0,
+      count: 1,
+      text: 'A rewritten answer.',
+    });
+
+    expect(res).toEqual({ ok: false, error: 'Not paired. Paste your pairing token first.' });
+    expect(executeScriptMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('answerReplace request', () => {
+  it('injects answer-replace.js then invokes it with the correlation + text, returning the outcome', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{}] as never); // files-only registration step
+    executeScriptMock.mockResolvedValueOnce([{ result: { filled: true } }] as never);
+
+    const res = await send({
+      kind: 'answerReplace',
+      question: 'Why this role?',
+      index: 0,
+      count: 1,
+      text: 'A rewritten answer.',
+    });
+
+    expect(executeScriptMock).toHaveBeenNthCalledWith(1, {
+      target: { tabId: 7 },
+      files: ['answer-replace.js'],
+    });
+    expect(executeScriptMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        target: { tabId: 7 },
+        args: ['Why this role?', 0, 1, 'A rewritten answer.', '__ajhRunAnswerReplace'],
+      })
+    );
+    expect(res).toEqual({ ok: true, kind: 'answerReplace', result: { filled: true } });
+  });
+
+  it('surfaces the fail-safe not-found result straight through — never a different field', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{}] as never);
+    executeScriptMock.mockResolvedValueOnce([
+      {
+        result: { filled: false, error: 'Could not find this field — the page may have changed.' },
+      },
+    ] as never);
+
+    const res = await send({
+      kind: 'answerReplace',
+      question: 'Why this role?',
+      index: 0,
+      count: 1,
+      text: 'A rewritten answer.',
+    });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'answerReplace',
+      result: { filled: false, error: 'Could not find this field — the page may have changed.' },
+    });
+  });
+
+  it('surfaces "Could not replace this field." when the injected script returns a malformed result', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{}] as never);
+    executeScriptMock.mockResolvedValueOnce([{ result: null }] as never);
+
+    const res = await send({
+      kind: 'answerReplace',
+      question: 'Why this role?',
+      index: 0,
+      count: 1,
+      text: 'A rewritten answer.',
+    });
+
+    expect(res).toEqual({ ok: false, error: 'Could not replace this field.' });
   });
 });

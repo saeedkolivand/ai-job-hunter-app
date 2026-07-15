@@ -20,13 +20,18 @@
  * jsdom document.
  */
 
-import { locateQuestionField } from './answers-capture';
+import { locateFilledField, locateQuestionField } from './answers-capture';
 
 /** Isolated-world global key `answer-fill.ts` exposes the filler under. MUST
  *  match the literal duplicated in `background.ts` (kept a plain literal
  *  there, not imported, so this module's runtime code never bundles into the
  *  background — same discipline as `autofill.ts`'s `AUTOFILL_GLOBAL`). */
 export const ANSWER_FILL_GLOBAL = '__ajhRunAnswerFill';
+
+/** Isolated-world global key `answer-replace.ts` exposes the replacer under
+ *  — same discipline as {@link ANSWER_FILL_GLOBAL} (duplicated as a plain
+ *  literal in `background.ts`, never imported there). */
+export const ANSWER_REPLACE_GLOBAL = '__ajhRunAnswerReplace';
 
 /** The fill outcome — see `answers.suggest`'s per-row Fill contract. */
 export interface FillAnswerResult {
@@ -91,6 +96,37 @@ export function fillAnswerField(
   }
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
     setInputValue(el, answer);
+    return { filled: true };
+  }
+  return NOT_FOUND;
+}
+
+/**
+ * Locate the FILLED field at `(question, index)` among the CURRENT filled
+ * candidates (via {@link locateFilledField}) — refusing when the CURRENT
+ * count of fields sharing `question` no longer equals `expectedCount` (the
+ * pick-time count) — and overwrite it with `text` (reusing
+ * {@link setInputValue}'s native-setter + bubbling-events discipline).
+ *
+ * Backs BOTH extension PR 11 flows: Accept writes the rewritten draft,
+ * Restore-original writes the SAME frozen text the field held at pick time —
+ * the caller (background.ts) just passes a different `text`, there is no
+ * separate "restore" code path. Text inputs/textarea ONLY (never `<select>`,
+ * matching {@link locateFilledField}'s own scope) — fails safe
+ * ({@link NOT_FOUND}) on any page mutation since the pick, exactly like
+ * {@link fillAnswerField}. Never dispatches a submit.
+ */
+export function replaceFilledField(
+  doc: Document,
+  question: string,
+  index: number,
+  expectedCount: number,
+  text: string
+): FillAnswerResult {
+  const el = locateFilledField(doc, question, index, expectedCount);
+  if (!el) return NOT_FOUND;
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    setInputValue(el, text);
     return { filled: true };
   }
   return NOT_FOUND;

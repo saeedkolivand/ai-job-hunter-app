@@ -8,6 +8,12 @@
  * only reads the page and returns data, so there is nothing to keep off a
  * stored/registered surface.
  *
+ * Returns BOTH `answers` (for `answers.save`, unchanged) AND `filled` (PR 11:
+ * the rewrite-mode picker's scan-time correlation, via
+ * {@link collectFilledFields}) from this SAME injection — no separate scan
+ * trigger for rewrite mode, mirroring how `answers.suggest`'s existing scan
+ * already doubles as the draft-mode picker's source.
+ *
  * Bundled with ZERO `import` statements: `./lib/answers-capture` (and the
  * `./lib/field-signal` helpers it shares with `autofill.ts`) is inlined here
  * because this file is built by its OWN isolated Rollup pass — see the
@@ -15,10 +21,10 @@
  * with `fill.js`.
  */
 
-import { collectAnswers } from './lib/answers-capture';
+import { collectAnswers, collectFilledFields } from './lib/answers-capture';
 
 // ── injected-execution entry-point ────────────────────────────────────────────
 // Completion value returned to executeScript → background (mirrors content.ts:
 // the IIFE's return value is the last statement's value, which is what
 // `executeScript` hands back).
-(() => collectAnswers(document))();
+(() => ({ answers: collectAnswers(document), filled: collectFilledFields(document) }))();

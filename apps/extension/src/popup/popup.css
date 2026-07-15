@@ -568,6 +568,20 @@ body {
   white-space: pre-wrap;
 }
 
+/* Rewrite mode (PR 11) — quick-preset row + Accept/Restore/Copy action row.
+ * Mirrors .suggestion__actions's flex-row treatment. */
+.rewrite-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rewrite-result__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .empty__body {
   margin: 0;
   font-family: var(--sans);

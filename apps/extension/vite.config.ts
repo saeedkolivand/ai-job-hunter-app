@@ -48,19 +48,22 @@ function webExtensionAssets(): Plugin {
 
 /**
  * `fill.ts` (assisted autofill), `capture.ts` (answers capture),
- * `capture-questions.ts` (questions-mode collector), and `answer-fill.ts`
- * (single-field answer fill) are ALL injected via
+ * `capture-questions.ts` (questions-mode collector), `answer-fill.ts`
+ * (single-field answer fill), and `answer-replace.ts` (single-field answer
+ * REPLACE, extension PR 11's rewrite Accept/Restore) are ALL injected via
  * `chrome.scripting.executeScript({ files: [...] })`, which runs as a CLASSIC
  * script (no ES modules) — so each compiled bundle must carry ZERO `import`
  * statements. Since PR 5 of the extension roadmap, they genuinely share
  * runtime code (`lib/field-signal.ts`, via `lib/autofill.ts` and
  * `lib/answers-capture.ts`; PR 6 adds `lib/answer-fill.ts`, which itself
- * imports `lib/answers-capture.ts`'s `locateQuestionField`): if built
- * together with the main multi-entry pass above, Rollup's default cross-entry
- * chunking would hoist shared modules into a `chunks/*.js` file that multiple
- * of these would then `import` — breaking classic-script injection (verified
- * empirically: entries sharing a static import always get split into a
- * shared chunk in one Rollup pass, even with no other config).
+ * imports `lib/answers-capture.ts`'s `locateQuestionField`; PR 11 adds
+ * `lib/answer-fill.ts`'s `replaceFilledField`, which `answer-replace.ts`
+ * imports the same way): if built together with the main multi-entry pass
+ * above, Rollup's default cross-entry chunking would hoist shared modules
+ * into a `chunks/*.js` file that multiple of these would then `import` —
+ * breaking classic-script injection (verified empirically: entries sharing a
+ * static import always get split into a shared chunk in one Rollup pass,
+ * even with no other config).
  *
  * The fix: build EACH in its OWN isolated single-entry Rollup pass (this
  * plugin's `closeBundle`, which runs after the main bundle above has already
@@ -75,7 +78,13 @@ function injectedEntries(): Plugin {
     apply: 'build',
     async closeBundle() {
       const { build } = await import('vite');
-      for (const name of ['fill', 'capture', 'capture-questions', 'answer-fill']) {
+      for (const name of [
+        'fill',
+        'capture',
+        'capture-questions',
+        'answer-fill',
+        'answer-replace',
+      ]) {
         await build({
           configFile: false,
           root: srcDir,
