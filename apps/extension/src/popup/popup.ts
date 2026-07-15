@@ -436,6 +436,35 @@ export function resolveAnswerAssistResponse(res: PopupResponse): AnswerAssistVie
 }
 
 /**
+ * Given the background's current/last streamed `answer.assist` snapshot
+ * (`{text, done, interrupted}` — see `PopupResponse`'s `answerAssistProgress`
+ * doc), return what the popup should render. Used for BOTH the live push
+ * while a stream is running and the popup-open reattach query.
+ * `draft === null` means there is nothing to show at all (no stream has run
+ * this session) — the caller should leave the draft box untouched.
+ *
+ * Pure: no DOM access, no side effects.
+ */
+export function resolveAssistProgressView(progress: {
+  text: string;
+  done: boolean;
+  interrupted: boolean;
+}): AnswerAssistView {
+  if (!progress.text) return { text: '', tone: 'ok', draft: null };
+  if (progress.interrupted) {
+    return {
+      text: 'Connection interrupted — here is what arrived so far.',
+      tone: 'err',
+      draft: progress.text,
+    };
+  }
+  if (!progress.done) {
+    return { text: 'Drafting an answer…', tone: 'ok', draft: progress.text };
+  }
+  return { text: 'Draft ready — review before using it.', tone: 'ok', draft: progress.text };
+}
+
+/**
  * Populate the "pick a scanned question" `<select>` from the most recent
  * questions-mode scan (deduped by exact text, in scan order). Pure DOM
  * projection so it's straightforward to re-derive whenever
@@ -1307,8 +1336,64 @@ function wire(): void {
   browser.runtime.onMessage.addListener((message: unknown) => {
     const res = message as PopupResponse;
     if (res && res.ok && res.kind === 'status') render(res.status);
+    // Live streaming preview: the background pushes one of these per
+    // `assist.chunk` (and once more on settle) while a draft is in flight —
+    // update only the dedicated draft box for ongoing chunks, never the
+    // shared `importMsg` status line `doAssist` itself owns for this same
+    // request. The one exception is the terminal interrupted case: a popup
+    // reopened mid-stream has no `doAssist` await of its own to fall back on
+    // (see `reattachAssistProgress`), so THIS listener is the only place it
+    // ever learns the stream later failed — without this, it would keep
+    // showing the last partial draft with no indication it's incomplete.
+    // Mirrors `reattachAssistProgress`'s own interruption rendering.
+    if (res && res.ok && res.kind === 'answerAssistProgress') {
+      // Reflect in-flight state on THIS popup instance too — a popup reattached
+      // to a still-running stream (see `reattachAssistProgress`) keeps learning
+      // about it here, and must stay disabled until the stream is terminal
+      // (never a silent re-trigger that would race/corrupt the shared buffer —
+      // see `assistGeneration` in background.ts). Always re-enables once done,
+      // so a terminal push never leaves the button stuck disabled.
+      els.btnAssist.disabled = !res.done;
+      const view = resolveAssistProgressView(res);
+      if (view.draft !== null) {
+        els.assistDraft.textContent = view.draft;
+        els.assistResult.hidden = false;
+      }
+      if (view.tone === 'err') setMsg(els.importMsg, view.text, 'err');
+    }
   });
+}
+
+/**
+ * On popup open, reattach to any in-flight/just-finished streaming
+ * `answer.assist` the background is holding — so closing the popup
+ * mid-stream and reopening shows what already arrived instead of a blank
+ * view. No-op when no stream has run this session. Runs BEFORE any user
+ * click, so setting the shared `importMsg` line on the interrupted case is
+ * safe (nothing else has written to it yet in this fresh popup instance).
+ *
+ * Also disables `btnAssist` when the reattached stream is still in flight —
+ * a freshly-opened popup's button defaults to enabled, and clicking it while
+ * the prior run is still streaming would start a second overlapping
+ * `runAnswerAssist` (see `assistGeneration` in background.ts). Re-enabled
+ * once the reattached stream is terminal, and by the live-push listener
+ * above if it finishes while this popup stays open.
+ */
+async function reattachAssistProgress(): Promise<void> {
+  try {
+    const res = await send({ kind: 'answerAssistProgress' });
+    if (!res.ok || res.kind !== 'answerAssistProgress') return;
+    els.btnAssist.disabled = !res.done;
+    const view = resolveAssistProgressView(res);
+    if (view.draft === null) return;
+    els.assistDraft.textContent = view.draft;
+    els.assistResult.hidden = false;
+    if (view.tone === 'err') setMsg(els.importMsg, view.text, 'err');
+  } catch {
+    // Best-effort — a transport hiccup on open just means no reattach.
+  }
 }
 
 wire();
 void refreshStatusWithTimeout();
+void reattachAssistProgress();

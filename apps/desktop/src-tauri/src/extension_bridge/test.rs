@@ -47,6 +47,9 @@ fn message_type_constants_match_ts() {
         msg::ANSWERS_SUGGEST_RESULT,
         msg::ANSWER_ASSIST,
         msg::ANSWER_ASSIST_RESULT,
+        msg::ASSIST_CHUNK,
+        msg::ASSIST_DONE,
+        msg::ASSIST_CANCEL,
     ] {
         let needle = format!("'{literal}'");
         assert!(
@@ -101,6 +104,9 @@ fn reserved_types_are_distinct() {
         msg::ANSWERS_SUGGEST_RESULT,
         msg::ANSWER_ASSIST,
         msg::ANSWER_ASSIST_RESULT,
+        msg::ASSIST_CHUNK,
+        msg::ASSIST_DONE,
+        msg::ASSIST_CANCEL,
     ];
     let set: std::collections::HashSet<_> = all.iter().collect();
     assert_eq!(set.len(), all.len(), "wire type constants must be unique");
@@ -355,6 +361,27 @@ fn reset_disables_ai_assist_optin_and_clears_its_snapshot() {
         "factory reset returns the ai-assist opt-in to its default OFF"
     );
     assert_eq!(s.ai_assist_snapshot().provider, None);
+}
+
+// ── streaming answer_assist: reqId -> jobId registry now lives PER-CONNECTION
+// in `stream::AssistStreamRegistry` (not a `BridgeState` field) — see that
+// type's own `#[cfg(test)]` module in `stream.rs` for its unit tests,
+// including the CWE-639 cross-connection isolation regression. ────────────
+
+// ── FrameDecision::AssistCancel dispatch ──────────────────────────────────────
+
+#[test]
+fn advance_authenticated_routes_assist_cancel_by_req_id() {
+    let envelope = serde_json::json!({
+        "type": msg::ASSIST_CANCEL,
+        "reqId": "req-7",
+        "payload": Value::Null,
+    });
+    let decision = advance_authenticated(msg::ASSIST_CANCEL, "req-7".to_string(), &envelope);
+    match decision {
+        FrameDecision::AssistCancel { req_id } => assert_eq!(req_id, "req-7"),
+        other => panic!("expected FrameDecision::AssistCancel, got {other:?}"),
+    }
 }
 
 // ── profile.get consent gate (resolve_profile) ────────────────────────────────
