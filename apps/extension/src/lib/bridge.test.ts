@@ -2065,3 +2065,152 @@ describe('BridgeClient – matchLive', () => {
     client.dispose();
   });
 });
+
+// ── "Help me answer…" answer.assist ↔ answer.assist.result ───────────────────
+// The first BILLABLE-AI verb on the bridge — mirrors the matchLive suite above.
+
+describe('BridgeClient – answerAssist', () => {
+  let latestSocket: FakeWebSocket | undefined;
+  let createdSockets: FakeWebSocket[] = [];
+  let restoreWS: () => void;
+
+  beforeEach(() => {
+    latestSocket = undefined;
+    createdSockets = [];
+    restoreWS = installFakeWS((ws) => {
+      latestSocket = ws;
+      createdSockets.push(ws);
+    });
+  });
+
+  afterEach(() => {
+    restoreWS();
+    vi.useRealTimers();
+  });
+
+  async function connectedClient(): Promise<{ client: BridgeClient; socket: FakeWebSocket }> {
+    const client = new BridgeClient(vi.fn());
+    const p = client.ensureConnected();
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+    await p;
+    return { client, socket };
+  }
+
+  function makeAssistEnvelope(reqId: string, payload: unknown): string {
+    return JSON.stringify({
+      type: EXTENSION_MESSAGE_TYPES.answerAssistResult,
+      reqId,
+      payload,
+    });
+  }
+
+  /** Start an answerAssist and wait until the outgoing frame is sent; return the reqId. */
+  async function startAnswerAssist(
+    client: BridgeClient,
+    socket: FakeWebSocket
+  ): Promise<{ resultPromise: Promise<unknown>; reqId: string }> {
+    const resultPromise = client.answerAssist({
+      question: 'Why do you want this role?',
+      url: 'https://jobs.example.com/posting/1',
+      searchWeb: false,
+    });
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const frame = JSON.parse(raw) as { type: string; reqId: string; payload: unknown };
+    expect(frame.type).toBe(EXTENSION_MESSAGE_TYPES.answerAssist);
+    expect(frame.payload).toEqual({
+      question: 'Why do you want this role?',
+      url: 'https://jobs.example.com/posting/1',
+      searchWeb: false,
+    });
+    return { resultPromise, reqId: frame.reqId };
+  }
+
+  it('round-trips a success result into the resolved payload', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startAnswerAssist(client, socket);
+
+    const payload = {
+      ok: true,
+      question: 'Why do you want this role?',
+      draft: 'I am drawn to this role because…',
+      sourced: { web: false, brief: true, salary: false },
+    };
+    socket.simulateMessage(makeAssistEnvelope(reqId, payload));
+
+    const result = await resultPromise;
+    expect(result).toEqual(payload);
+
+    client.dispose();
+  });
+
+  it('round-trips a desktop-side refusal (ok:false + error) into the resolved payload — never rejects', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startAnswerAssist(client, socket);
+
+    socket.simulateMessage(
+      makeAssistEnvelope(reqId, { ok: false, error: 'AI answer drafting is off.' })
+    );
+
+    const result = await resultPromise;
+    expect(result).toEqual({ ok: false, error: 'AI answer drafting is off.' });
+
+    client.dispose();
+  });
+
+  it('resolves with a malformed error (never throws) when the payload is bad', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startAnswerAssist(client, socket);
+
+    // draft must be a string; a number breaks the guard.
+    socket.simulateMessage(
+      makeAssistEnvelope(reqId, {
+        ok: true,
+        question: 'Why do you want this role?',
+        draft: 42,
+        sourced: {},
+      })
+    );
+
+    const result = (await resultPromise) as { ok: boolean; error?: string };
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/malformed/i);
+
+    client.dispose();
+  });
+
+  it('rejects when not connected — every port fails and the ws probe exhausts', async () => {
+    vi.useFakeTimers();
+
+    const client = new BridgeClient(vi.fn());
+    const assistPromise = client.answerAssist({ question: 'Why this role?' });
+    const outcomePromise = assistPromise.then(
+      () => ({ ok: true as const }),
+      (e: unknown) => ({ ok: false as const, error: e })
+    );
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const idx = attempt;
+      await vi.waitFor(() => {
+        expect(createdSockets.length).toBeGreaterThanOrEqual(idx + 1);
+      });
+      createdSockets[idx]!.simulateClose();
+    }
+
+    const outcome = await outcomePromise;
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toBeInstanceOf(Error);
+      expect((outcome.error as Error).message).toMatch(/not reachable/i);
+    }
+    expect(client.status().phase).toBe('app_not_running');
+
+    client.dispose();
+  });
+});

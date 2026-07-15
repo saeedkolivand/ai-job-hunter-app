@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import type {
+  ExtensionAiAssistSetting,
   ExtensionAutofillSetting,
   ExtensionBridgeStatus,
   ExtensionBridgeTokenResult,
@@ -12,4 +13,12 @@ export const extensionBridge = {
   autofillEnabled: () => invoke<ExtensionAutofillSetting>('extension_bridge_autofill_enabled'),
   setAutofillEnabled: (enabled: boolean) =>
     invoke<ExtensionAutofillSetting>('extension_bridge_set_autofill_enabled', { enabled }),
+  aiAssistEnabled: () => invoke<ExtensionAiAssistSetting>('extension_bridge_ai_assist_enabled'),
+  setAiAssistEnabled: (enabled: boolean, provider?: string, model?: string, baseUrl?: string) =>
+    invoke<ExtensionAiAssistSetting>('extension_bridge_set_ai_assist_enabled', {
+      enabled,
+      provider,
+      model,
+      baseUrl,
+    }),
 };

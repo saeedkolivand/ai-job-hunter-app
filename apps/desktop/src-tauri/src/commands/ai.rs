@@ -279,8 +279,11 @@ pub async fn ai_research_company(
 /// [`research_answer_core`]'s capability-check-BEFORE-daily-charge ordering
 /// without a live `AppHandle`. [`Completer`](crate::pipeline::Completer) is
 /// the sole production implementation (both methods are thin forwards to its
-/// own).
-trait AnswerSearcher {
+/// own). `pub(crate)` — `extension_bridge::answer_assist::fetch_web_notes`
+/// delegates to [`research_answer_core`] over this SAME trait rather than
+/// re-implementing its capability-check-before-charging order, so the two
+/// call sites can never drift.
+pub(crate) trait AnswerSearcher {
     fn capabilities(&self) -> ModelCapabilities;
     fn research_answer(
         &self,
@@ -331,7 +334,11 @@ fn truncate_question(s: &str) -> String {
 /// the provider can't search (e.g. Ollama with no account key), the daily
 /// budget is exhausted, or the search fails, so answer generation always
 /// proceeds exactly as without web search.
-async fn research_answer_core<S: AnswerSearcher>(
+///
+/// `pub(crate)` — `extension_bridge::answer_assist::fetch_web_notes` is the
+/// one other caller (the opt-in web-search notes for `answer.assist`), reusing
+/// this exact function rather than a second hand-copy of its ordering.
+pub(crate) async fn research_answer_core<S: AnswerSearcher>(
     searcher: &S,
     limiter: &crate::limits::Limiter,
     provider: &str,
