@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784125773479,
+  "lastUpdate": 1784141401982,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4697,6 +4697,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 287167,
             "range": "± 11172",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2ec7a8cfcbe3851283bcd3f2d1b157c94afd2c74",
+          "message": "fix: bring hmac keyinit trait into scope for the 0.13 api (#674)\n\nhmac 0.13 (#672) moved `Hmac::new_from_slice` from an inherent method to\nthe `KeyInit` trait, so `main` stopped compiling in the extension_bridge\npairing handshake. Bring the trait into scope — one import, zero logic\nchange (same MAC key/message/constant-time verify; KAT + tamper/reject\ntests pass unchanged). sha2 0.11 (#669) and tokio-tungstenite 0.30 (#670)\nneeded no changes — their use sites were already API-compatible.\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
+          "timestamp": "2026-07-15T20:29:49+02:00",
+          "tree_id": "f629211681e22a344a7c39542378c5f635786d70",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/2ec7a8cfcbe3851283bcd3f2d1b157c94afd2c74"
+        },
+        "date": 1784141401391,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2148024,
+            "range": "± 87238",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2561153,
+            "range": "± 43679",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 286497,
+            "range": "± 6262",
             "unit": "ns/iter"
           }
         ]
