@@ -158,9 +158,12 @@ const WRITE_STALL: std::time::Duration = std::time::Duration::from_secs(25);
 /// Generic over `S` (rather than the concrete
 /// `SplitSink<WebSocketStream<TcpStream>, Message>`) purely so this is
 /// unit-testable against a fake sink whose `poll_ready` never resolves,
-/// without a live socket. Fire-and-forget, like every other spawn in this
-/// module — never explicitly joined, so a streaming task that never finishes
-/// can never hang the connection's own cleanup.
+/// without a live socket. Its OWN generation logic is still fire-and-forget
+/// (a streaming task that never finishes can never hang the connection's own
+/// cleanup) — but this function's `JoinHandle` itself is no longer purely
+/// dropped: `handle_connection`'s read loop keeps it and races it via
+/// [`next_step`], so this task ending (either `break` above) tears the
+/// connection down immediately instead of going unnoticed.
 pub(super) async fn run_writer<S>(mut writer: S, mut rx: UnboundedReceiver<Message>)
 where
     S: SinkExt<Message> + Unpin,
@@ -182,6 +185,50 @@ where
                 break;
             }
         }
+    }
+}
+
+/// Outcome of one [`next_step`] race — see its doc.
+pub(super) enum NextStep<T> {
+    /// A frame arrived off the read side (`None` = the stream ended naturally,
+    /// same as `reader.next()`'s own `None`).
+    Frame(T),
+    /// The writer task ended FIRST — a [`WRITE_STALL`] timeout, or a genuine
+    /// socket send error (see [`run_writer`]). Nothing can ever reach this
+    /// client again; the caller should tear its connection down immediately
+    /// rather than keep waiting for a next inbound frame that may never
+    /// arrive.
+    WriterEnded,
+}
+
+/// The exact `tokio::select!` race `handle_connection`'s read loop runs every
+/// iteration: `reader_next` (in production, `reader.next()`) against
+/// `writer_done` (in production, `&mut writer_task`, [`run_writer`]'s own
+/// `JoinHandle`) — whichever resolves first wins. CodeRabbit finding: a
+/// DETACHED `run_writer` task ending (its [`WRITE_STALL`] timeout, or a send
+/// error) used to go unnoticed by the read loop until ITS OWN next inbound
+/// frame — which, for a stalled-but-open peer or a quiet/idle connection, may
+/// never come — so `cancel_all`/`set_connected(false)` stayed delayed
+/// indefinitely. Racing the writer handle here closes that: the writer ending
+/// now tears the connection down immediately, the SAME way a read error does.
+///
+/// Generic over both futures (not the concrete `WebSocketStream`/`JoinHandle`
+/// types) so this race's OUTCOME is unit-testable without a live socket/
+/// `AppHandle` (this crate has no `tauri::test` mock-app harness): a fake
+/// "never resolves" reader racing an already-resolved writer proves the
+/// `WriterEnded` arm wins without ever blocking on the reader, and vice
+/// versa. Both real-world arms are cancel-safe (`futures::StreamExt::next`
+/// and `tokio::task::JoinHandle` both are — `tokio::select!` may drop either
+/// branch on any iteration without losing a frame or a writer-task
+/// completion), so re-entering this fresh every loop iteration is safe.
+pub(super) async fn next_step<R, W>(reader_next: R, writer_done: W) -> NextStep<R::Output>
+where
+    R: std::future::Future,
+    W: std::future::Future,
+{
+    tokio::select! {
+        frame = reader_next => NextStep::Frame(frame),
+        _ = writer_done => NextStep::WriterEnded,
     }
 }
 
@@ -217,13 +264,13 @@ pub(super) fn spawn_answer_assist(
     out_tx: UnboundedSender<Message>,
     registry: Arc<AssistStreamRegistry>,
 ) {
-    if !begin_or_reject_duplicate(&registry, &req_id, &out_tx) {
+    let Some(gen) = begin_or_reject_duplicate(&registry, &req_id, &out_tx) else {
         return;
-    }
+    };
     tokio::spawn(async move {
         let mut sink = ChannelFrameSink(out_tx.clone());
         let reply = super::answer_assist::handle_answer_assist(
-            &app, &req_id, &payload, &registry, &mut sink,
+            &app, &req_id, gen, &payload, &registry, &mut sink,
         )
         .await;
         let _ = out_tx.send(Message::text(reply));
@@ -233,20 +280,24 @@ pub(super) fn spawn_answer_assist(
 /// The synchronous half of [`spawn_answer_assist`] — factored out so it is
 /// directly unit-testable WITHOUT a live `AppHandle` (this crate has no
 /// `tauri::test` mock-app harness). A plain (non-`async`) function, so a
-/// caller observing `true` returned — or `registry.contains(req_id)` true
+/// caller observing `Some(_)` returned — or `registry.contains(req_id)` true
 /// right after — has proof `begin` ran on ITS OWN thread, not deferred into
-/// whatever thread `tokio::spawn`'s task eventually runs on. Returns `true`
-/// when `req_id` was free (the caller should go on to spawn the actual
-/// task); `false` when it already named an active entry — in which case this
-/// function has ALREADY enqueued the `DUPLICATE_REQUEST_MESSAGE` reply
-/// through `out_tx` itself, so the caller has nothing left to do but return.
+/// whatever thread `tokio::spawn`'s task eventually runs on. Returns
+/// `Some(gen)` — the generation `begin` minted for this reqId, which the
+/// caller MUST thread all the way to `handle_answer_assist`'s end-of-request
+/// `unregister_gen` call (see [`super::assist_registry::StreamEntry`]'s doc
+/// for the reused-reqId clobber this generation closes) — when `req_id` was
+/// free (the caller should go on to spawn the actual task); `None` when it
+/// already named an active entry — in which case this function has ALREADY
+/// enqueued the `DUPLICATE_REQUEST_MESSAGE` reply through `out_tx` itself, so
+/// the caller has nothing left to do but return.
 fn begin_or_reject_duplicate(
     registry: &AssistStreamRegistry,
     req_id: &str,
     out_tx: &UnboundedSender<Message>,
-) -> bool {
-    if registry.begin(req_id) {
-        return true;
+) -> Option<u64> {
+    if let Some(gen) = registry.begin(req_id) {
+        return Some(gen);
     }
     let reply = super::answer_assist::answer_assist_reply(
         req_id,
@@ -255,7 +306,7 @@ fn begin_or_reject_duplicate(
         )),
     );
     let _ = out_tx.send(Message::text(reply));
-    false
+    None
 }
 
 // ── Per-connection stream registry — the state machine itself now lives in
@@ -283,7 +334,11 @@ fn is_job_cancelled(app: &AppHandle, job_id: &str) -> bool {
 /// "Three ways a stream ends early" section for the full picture. Registers
 /// a fresh job under `req_id` on `registry` (THIS connection's own
 /// [`AssistStreamRegistry`] — so a client `assist.cancel` can stop it
-/// early), drives [`Completer::stream_complete`], forwards every
+/// early; does NOT `unregister` it on any path out of this function —
+/// `handle_answer_assist` (in `answer_assist`) is the SOLE unregister owner,
+/// once per request, at its single return point, so `req_id` can never be
+/// clobbered by two cleanup sites racing over the same key. See its doc),
+/// drives [`Completer::stream_complete`], forwards every
 /// visible-text delta through `sink` as a cap-clamped `assist.chunk` frame
 /// (see [`forward_chunk`]), sends a terminal `assist.done` frame once the
 /// stream ends, and returns the full accumulated text (or the provider's
@@ -399,7 +454,9 @@ pub(super) async fn compose_draft_stream(
     }
 
     app.unlisten(listener_id);
-    registry.unregister(req_id);
+    // No `registry.unregister(req_id)` here — see this function's doc:
+    // `handle_answer_assist` is the SOLE unregister owner (one call, at its
+    // single return point, covering every outcome of this function too).
     sink.send_frame(assist_done_frame(req_id)).await;
 
     if cap_reached {
@@ -557,14 +614,14 @@ mod tests {
     #[test]
     fn begin_or_reject_duplicate_marks_pending_synchronously_before_any_task_runs() {
         // This whole test has no `.await` at all — `begin_or_reject_duplicate`
-        // is a plain, non-async fn — so a `true` return, and `contains`
+        // is a plain, non-async fn — so a `Some(gen)` return, and `contains`
         // reporting `true` immediately after, already proves `begin` ran on
         // the CALLER's thread, not deferred into whatever thread a spawned
         // task eventually runs on.
         let registry = AssistStreamRegistry::default();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
 
-        assert!(begin_or_reject_duplicate(&registry, "req-1", &out_tx));
+        assert!(begin_or_reject_duplicate(&registry, "req-1", &out_tx).is_some());
         assert!(
             registry.contains("req-1"),
             "begin must have run synchronously — before any spawn, before any await"
@@ -592,7 +649,7 @@ mod tests {
         registry.begin("req-1"); // the original request is already in flight
         let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
 
-        assert!(!begin_or_reject_duplicate(&registry, "req-1", &out_tx));
+        assert!(begin_or_reject_duplicate(&registry, "req-1", &out_tx).is_none());
 
         let frame = out_rx
             .try_recv()
@@ -725,6 +782,50 @@ mod tests {
                 .await,
             "a subsequent send_frame must return false once run_writer's receiver is dropped"
         );
+    }
+
+    // ── next_step (CodeRabbit fix: propagate the writer-timeout into
+    // connection teardown — a DETACHED `run_writer` ending must not go
+    // unnoticed by the read loop until its own next inbound frame, which may
+    // never arrive) ─────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn next_step_reports_writer_ended_without_waiting_on_a_never_resolving_reader() {
+        // Mirrors a stalled-but-open (or quiet/idle) connection: `reader_next`
+        // here NEVER resolves — a real `reader.next()` on such a connection
+        // would behave identically (no frame ever arrives). The writer future
+        // resolves IMMEDIATELY (mirrors `run_writer`'s `JoinHandle` completing
+        // once its `WRITE_STALL` timeout fires). This test completing at all
+        // — rather than hanging forever — is the proof: `next_step` did not
+        // block on the never-resolving reader, so the connection tears down
+        // immediately instead of waiting indefinitely for a frame that may
+        // never come.
+        let reader_next = std::future::pending::<Option<i32>>();
+        let writer_done = std::future::ready(());
+
+        let outcome = next_step(reader_next, writer_done).await;
+
+        assert!(
+            matches!(outcome, NextStep::WriterEnded),
+            "the writer ending must win the race even though the reader never resolves"
+        );
+    }
+
+    #[tokio::test]
+    async fn next_step_still_reports_a_frame_when_the_writer_is_still_alive() {
+        // The normal case, unaffected by this fix: the writer task is still
+        // running (never resolves in this test), so a frame arriving must
+        // still be reported through — the writer race must never swallow or
+        // delay a normal inbound frame while the writer is healthy.
+        let reader_next = std::future::ready(Some(7));
+        let writer_done = std::future::pending::<()>();
+
+        let outcome = next_step(reader_next, writer_done).await;
+
+        let NextStep::Frame(value) = outcome else {
+            panic!("expected NextStep::Frame — the writer must never win while a frame is ready");
+        };
+        assert_eq!(value, Some(7));
     }
 
     // ── streaming: forwardable_delta / assist frame builders ────────────────

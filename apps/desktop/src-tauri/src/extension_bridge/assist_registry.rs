@@ -67,7 +67,8 @@ impl JobStarter for AppHandle {
 /// that race (the caller should treat it as `"Job cancelled"`); `Some(job_id)`
 /// otherwise. Safe to cancel unconditionally on the race path — `job_id` is a
 /// fresh UUID ([`crate::db::new_job_id`]), so it can never collide with a
-/// later, unrelated `start_job` call.
+/// later, unrelated `start_job` call. Does NOT need the reqId's generation —
+/// `register` reads and preserves whatever generation `begin` already minted.
 ///
 /// Generic over a combined [`JobStarter`] + [`JobCanceller`] recorder (not
 /// the concrete `AppHandle`) so this ordering is directly unit-testable
@@ -93,17 +94,57 @@ pub(super) fn start_and_register<T: JobStarter + JobCanceller>(
 /// spend) through to either a registered running job or an early
 /// cancellation. See [`super::stream`]'s module doc's "An `assist.cancel`
 /// races the pre-compose window" case.
+///
+/// Every variant carries the `reqId`'s **generation** — a per-registry
+/// monotonic counter [`AssistStreamRegistry::begin`] mints a fresh value from
+/// on every successful call. This is the generation-scoped-removal fix (a
+/// security-review + CodeRabbit finding): a client can reuse a `reqId` once
+/// its ORIGINAL entry is gone (job cancelled, or the request completed), and
+/// without a generation, a delayed cleanup call keyed by `reqId` ALONE could
+/// remove the REUSED request's fresh entry instead of the stale one it meant
+/// to clean up (e.g. A registers Running, `assist.cancel` removes it, a
+/// client reuses the same `reqId` for a brand-new request B which `begin`s +
+/// `register`s successfully, and only THEN does A's own tail cleanup run —
+/// keyed by `reqId` alone, it would clobber B's entry, leaving B's billable
+/// job unreachable/uncancellable). [`AssistStreamRegistry::unregister_gen`]
+/// is the fix: it only ever removes an entry whose STORED generation matches
+/// the one the caller was handed back by ITS OWN `begin` — B's entry always
+/// carries a strictly higher generation than A's, so A's stale cleanup is
+/// safely a no-op against it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum StreamEntry {
     /// Pre-compose work (gate/resume/limiter/salary/web-notes) is in
     /// flight — no job exists yet.
-    Pending,
+    Pending(u64),
     /// [`AssistStreamRegistry::register`] recorded its job id.
-    Running(String),
+    Running(u64, String),
     /// An `assist.cancel` arrived while still `Pending` — the pre-compose
     /// caller must short-circuit rather than proceed to the billable
     /// compose call. See [`AssistStreamRegistry::register`]'s return value.
-    CancelledEarly,
+    CancelledEarly(u64),
+}
+
+impl StreamEntry {
+    /// This entry's generation, regardless of which variant it currently is
+    /// — used by [`AssistStreamRegistry::unregister_gen`]'s match-the-caller
+    /// check.
+    fn gen(&self) -> u64 {
+        match self {
+            StreamEntry::Pending(g)
+            | StreamEntry::Running(g, _)
+            | StreamEntry::CancelledEarly(g) => *g,
+        }
+    }
+}
+
+/// The map plus its generation counter, under ONE lock — kept together
+/// (rather than a separate `AtomicU64` field) so `begin` mints a fresh
+/// generation and inserts `Pending` under the SAME critical section, with no
+/// TOCTOU between "read the next generation" and "insert the entry".
+#[derive(Default)]
+struct RegistryState {
+    entries: HashMap<String, StreamEntry>,
+    next_gen: u64,
 }
 
 /// Per-connection registry of in-flight/pending streaming `answer.assist`
@@ -111,15 +152,15 @@ enum StreamEntry {
 /// connection. See [`super::stream`]'s module doc's "Cancellation is
 /// per-connection" section.
 #[derive(Default)]
-pub(super) struct AssistStreamRegistry(Mutex<HashMap<String, StreamEntry>>);
+pub(super) struct AssistStreamRegistry(Mutex<RegistryState>);
 
 impl AssistStreamRegistry {
     /// Mark `req_id` as `Pending` BEFORE any pre-compose await (the gate/
     /// resume/limiter/salary/web-notes lookups in `resolve_answer_assist`) —
     /// the realistic window (network round-trips) an `assist.cancel` could
-    /// race ahead of [`Self::register`]. Returns `false` (leaving the
-    /// existing entry untouched) when `req_id` already names ANY entry on
-    /// this connection — `Pending`, `Running`, OR `CancelledEarly` — never
+    /// race ahead of [`Self::register`]. Returns `None` (leaving the existing
+    /// entry untouched) when `req_id` already names ANY entry on this
+    /// connection — `Pending`, `Running`, OR `CancelledEarly` — never
     /// silently overwriting it with a fresh `Pending`. Overwriting a
     /// `Running` entry would orphan its job (still running server-side, but
     /// no longer reachable from this registry, so a later `assist.cancel`
@@ -128,25 +169,34 @@ impl AssistStreamRegistry {
     /// direction: that marker is NOT settled — it is awaiting consumption by
     /// [`Self::register`] (which sees it, removes it, and reports `false` so
     /// the run that raced the cancel never starts a billable job) or removal
-    /// by [`Self::unregister`]/[`Self::cancel_all`]. Allowing a reuse before
-    /// that consumption would let a second run's fresh `Pending` slip in
-    /// under the same `req_id`; the FIRST (already-cancelled) run's later
+    /// by [`Self::unregister_gen`]/[`Self::cancel_all`]. Allowing a reuse
+    /// before that consumption would let a second run's fresh `Pending` slip
+    /// in under the same `req_id`; the FIRST (already-cancelled) run's later
     /// `register` call would then see that second run's `Pending` instead of
     /// its own `CancelledEarly` marker and register a billable job anyway —
     /// the cancel guarantee lost. It is always cleared within the original
     /// run's own lifecycle (consumed by `register`, or removed by an
-    /// `unregister`/`cancel_all`), so a `req_id` can never get stuck rejected
-    /// forever; a well-behaved client uses a fresh reqId per request anyway.
-    /// Returns `true` — and inserts `Pending` — only when `req_id` names no
+    /// `unregister_gen`/`cancel_all`), so a `req_id` can never get stuck
+    /// rejected forever; a well-behaved client uses a fresh reqId per request
+    /// anyway.
+    ///
+    /// Returns `Some(gen)` — a fresh, strictly-monotonic-per-registry
+    /// generation, and inserts `Pending(gen)` — only when `req_id` names no
     /// entry at all: a fresh `req_id`, or one that already fully settled and
-    /// was removed.
-    pub(super) fn begin(&self, req_id: &str) -> bool {
+    /// was removed. The caller MUST hold onto this `gen` and pass it to
+    /// [`Self::unregister_gen`] at the end of its own request — see
+    /// [`StreamEntry`]'s doc for the clobber this generation exists to close.
+    pub(super) fn begin(&self, req_id: &str) -> Option<u64> {
         let mut guard = self.0.lock();
-        if guard.contains_key(req_id) {
-            return false;
+        if guard.entries.contains_key(req_id) {
+            return None;
         }
-        guard.insert(req_id.to_string(), StreamEntry::Pending);
-        true
+        let gen = guard.next_gen;
+        guard.next_gen += 1;
+        guard
+            .entries
+            .insert(req_id.to_string(), StreamEntry::Pending(gen));
+        Some(gen)
     }
 
     /// Register an in-flight stream's `reqId -> jobId`, UNLESS `req_id` was
@@ -156,22 +206,50 @@ impl AssistStreamRegistry {
     /// billable job, rather than registering (and thus only becoming
     /// cancellable from this point forward) a stream the client already
     /// gave up on. Returns `true` otherwise: the normal `Pending` →
-    /// `Running` move, or a caller that never `begin`s at all.
+    /// `Running` move (preserving the SAME generation `begin` minted — no gen
+    /// parameter needed here, it's read off the existing entry), or a caller
+    /// that never `begin`s at all (mints a fresh generation on the spot, same
+    /// as `begin` would — this only ever happens in tests; every production
+    /// caller always `begin`s first).
     pub(super) fn register(&self, req_id: &str, job_id: &str) -> bool {
         let mut guard = self.0.lock();
-        if matches!(guard.get(req_id), Some(StreamEntry::CancelledEarly)) {
-            guard.remove(req_id);
+        if matches!(
+            guard.entries.get(req_id),
+            Some(StreamEntry::CancelledEarly(_))
+        ) {
+            guard.entries.remove(req_id);
             return false;
         }
-        guard.insert(req_id.to_string(), StreamEntry::Running(job_id.to_string()));
+        let gen = match guard.entries.get(req_id) {
+            Some(StreamEntry::Pending(gen)) => *gen,
+            _ => {
+                let gen = guard.next_gen;
+                guard.next_gen += 1;
+                gen
+            }
+        };
+        guard.entries.insert(
+            req_id.to_string(),
+            StreamEntry::Running(gen, job_id.to_string()),
+        );
         true
     }
 
-    /// Forget a stream's registration once it ends (success, failure, or an
-    /// already-raced cancel). A no-op when `req_id` is already gone — never
-    /// an error.
-    pub(super) fn unregister(&self, req_id: &str) {
-        self.0.lock().remove(req_id);
+    /// Remove `req_id`'s entry ONLY IF its stored generation equals `gen` —
+    /// generation-scoped removal, the SOLE way any "end of request" cleanup
+    /// may free an entry (see [`StreamEntry`]'s doc for the clobber this
+    /// closes). A no-op — never an error — when `req_id` names no entry at
+    /// all, OR names one whose generation has already moved on: either
+    /// [`Self::cancel`]/[`Self::cancel_all`] already consumed THIS caller's
+    /// own entry (a `Running` job cancelled + removed, or a `Pending` →
+    /// `CancelledEarly` → later consumed by `register`), or a LATER `begin`
+    /// for the same reused `req_id` minted a strictly higher generation — in
+    /// either case this call must never remove what it doesn't own.
+    pub(super) fn unregister_gen(&self, req_id: &str, gen: u64) {
+        let mut guard = self.0.lock();
+        if guard.entries.get(req_id).is_some_and(|e| e.gen() == gen) {
+            guard.entries.remove(req_id);
+        }
     }
 
     /// Remove + return the RUNNING job registered under `req_id` on THIS
@@ -193,9 +271,9 @@ impl AssistStreamRegistry {
         // returning, silently losing that state for anyone who checks
         // `req_id` afterward (this was a real bug caught by this file's own
         // pre-registration-race test).
-        match guard.get(req_id) {
-            Some(StreamEntry::Running(_)) => match guard.remove(req_id) {
-                Some(StreamEntry::Running(job_id)) => Some(job_id),
+        match guard.entries.get(req_id) {
+            Some(StreamEntry::Running(..)) => match guard.entries.remove(req_id) {
+                Some(StreamEntry::Running(_, job_id)) => Some(job_id),
                 _ => None,
             },
             _ => None,
@@ -205,11 +283,11 @@ impl AssistStreamRegistry {
     /// Test-only seam: whether ANY entry (`Pending`, `Running`, or
     /// `CancelledEarly`) exists for `req_id` — unlike [`Self::take`] (which
     /// only ever observes a `Running` job), this is what a leak-detection
-    /// test needs to assert a `Pending` entry was actually `unregister`ed,
-    /// not just left un-taken.
+    /// test needs to assert a `Pending` entry was actually removed, not just
+    /// left un-taken.
     #[cfg(test)]
     pub(super) fn contains(&self, req_id: &str) -> bool {
-        self.0.lock().contains_key(req_id)
+        self.0.lock().entries.contains_key(req_id)
     }
 
     /// Cancel the stream named by `req_id` on THIS registry, if any. A
@@ -217,9 +295,13 @@ impl AssistStreamRegistry {
     /// `chat_stream`'s `is_cancelled` polls every chunk, so the provider
     /// call itself stops on its next read) and forgotten. A still-`Pending`
     /// entry (no job yet — the pre-compose window) is marked
-    /// [`StreamEntry::CancelledEarly`] instead, so [`Self::register`]
-    /// reports `false` once the pre-compose caller reaches it. A no-op when
-    /// `req_id` names nothing on this connection at all. Generic over
+    /// [`StreamEntry::CancelledEarly`] instead (preserving its generation),
+    /// so [`Self::register`] reports `false` once the pre-compose caller
+    /// reaches it. A no-op when `req_id` names nothing on this connection at
+    /// all. Always removes/cancels whatever CURRENTLY holds `req_id`
+    /// regardless of generation — a cancel targets the current holder, not a
+    /// specific generation (only the end-of-request cleanup path,
+    /// [`Self::unregister_gen`], is generation-scoped). Generic over
     /// [`JobCanceller`] (not the concrete `AppHandle`) so this is
     /// unit-testable against a fake recorder — the sole production caller
     /// passes a real `&AppHandle` (which implements it).
@@ -234,13 +316,16 @@ impl AssistStreamRegistry {
         // decided in one critical section.
         let job_id = {
             let mut guard = self.0.lock();
-            match guard.get(req_id) {
-                Some(StreamEntry::Running(_)) => match guard.remove(req_id) {
-                    Some(StreamEntry::Running(job_id)) => Some(job_id),
+            match guard.entries.get(req_id) {
+                Some(StreamEntry::Running(..)) => match guard.entries.remove(req_id) {
+                    Some(StreamEntry::Running(_, job_id)) => Some(job_id),
                     _ => None,
                 },
-                Some(StreamEntry::Pending) => {
-                    guard.insert(req_id.to_string(), StreamEntry::CancelledEarly);
+                Some(StreamEntry::Pending(gen)) => {
+                    let gen = *gen;
+                    guard
+                        .entries
+                        .insert(req_id.to_string(), StreamEntry::CancelledEarly(gen));
                     None
                 }
                 _ => None,
@@ -258,27 +343,30 @@ impl AssistStreamRegistry {
     /// `assist.cancel` might have named (the CWE-639 fix stays: this only
     /// ever touches THIS connection's own map). A `Running` entry is
     /// cancelled via `canceller`; a still-`Pending` entry is marked
-    /// `CancelledEarly` (mirrors [`Self::cancel`]'s `Pending` arm) so
-    /// in-flight pre-compose work also short-circuits instead of reaching a
-    /// now-pointless billable compose call. Generic over [`JobCanceller`] —
-    /// see [`Self::cancel`]'s doc.
+    /// `CancelledEarly` (mirrors [`Self::cancel`]'s `Pending` arm, preserving
+    /// its generation) so in-flight pre-compose work also short-circuits
+    /// instead of reaching a now-pointless billable compose call. Generic
+    /// over [`JobCanceller`] — see [`Self::cancel`]'s doc.
     pub(super) fn cancel_all<C: JobCanceller>(&self, canceller: &C) {
         let mut guard = self.0.lock();
-        let drained: Vec<(String, StreamEntry)> = guard.drain().collect();
+        let drained: Vec<(String, StreamEntry)> = guard.entries.drain().collect();
         let mut running = Vec::new();
         for (req_id, entry) in drained {
             match entry {
-                StreamEntry::Running(job_id) => running.push(job_id),
+                StreamEntry::Running(_, job_id) => running.push(job_id),
                 // Exhaustive on purpose: BOTH still-pending AND
                 // already-cancelled-early entries must be reinserted as
-                // `CancelledEarly`. Dropping the latter (the original bug)
-                // loses the guard marker on a cancel-then-disconnect during
-                // the pre-compose window — the entry vanishes from the map,
-                // so the later `register` call for that `req_id` finds
-                // nothing, returns `true`, and starts a full billable
-                // generation for a request the user already cancelled.
-                StreamEntry::Pending | StreamEntry::CancelledEarly => {
-                    guard.insert(req_id, StreamEntry::CancelledEarly);
+                // `CancelledEarly` (preserving their generation). Dropping
+                // the latter (the original bug) loses the guard marker on a
+                // cancel-then-disconnect during the pre-compose window — the
+                // entry vanishes from the map, so the later `register` call
+                // for that `req_id` finds nothing, returns `true`, and starts
+                // a full billable generation for a request the user already
+                // cancelled.
+                StreamEntry::Pending(gen) | StreamEntry::CancelledEarly(gen) => {
+                    guard
+                        .entries
+                        .insert(req_id, StreamEntry::CancelledEarly(gen));
                 }
             }
         }
@@ -293,7 +381,7 @@ impl AssistStreamRegistry {
 mod tests {
     use super::*;
 
-    // ── AssistStreamRegistry: register / take / unregister ─────────────────
+    // ── AssistStreamRegistry: register / take / unregister_gen ──────────────
 
     #[test]
     fn register_then_take_returns_and_forgets_it() {
@@ -304,9 +392,9 @@ mod tests {
     }
 
     #[test]
-    fn unregister_on_an_unknown_req_id_is_a_no_op() {
+    fn unregister_gen_on_an_unknown_req_id_is_a_no_op() {
         let r = AssistStreamRegistry::default();
-        r.unregister("never-registered"); // must not panic
+        r.unregister_gen("never-registered", 0); // must not panic
         assert_eq!(r.take("never-registered"), None);
     }
 
@@ -323,10 +411,11 @@ mod tests {
     }
 
     #[test]
-    fn unregister_then_register_again_reflects_the_new_mapping() {
+    fn unregister_gen_then_register_again_reflects_the_new_mapping() {
         let r = AssistStreamRegistry::default();
+        let gen = r.begin("req-1").expect("a fresh reqId");
         assert!(r.register("req-1", "job-1"));
-        r.unregister("req-1");
+        r.unregister_gen("req-1", gen);
         assert!(r.register("req-1", "job-2"));
         assert_eq!(r.take("req-1"), Some("job-2".to_string()));
     }
@@ -442,7 +531,7 @@ mod tests {
         );
     }
 
-    // ── Pre-registration cancel race (LOW fix): begin() + register()'s bool ─
+    // ── Pre-registration cancel race (LOW fix): begin()'s Option<u64> + register()'s bool ─
 
     #[test]
     fn cancel_during_the_pending_window_prevents_the_later_register_call() {
@@ -480,7 +569,7 @@ mod tests {
     #[test]
     fn begin_on_a_fresh_req_id_succeeds() {
         let r = AssistStreamRegistry::default();
-        assert!(r.begin("req-1"));
+        assert!(r.begin("req-1").is_some());
     }
 
     #[test]
@@ -489,7 +578,7 @@ mod tests {
         r.begin("req-1"); // first request's pre-compose window is in flight
 
         assert!(
-            !r.begin("req-1"),
+            r.begin("req-1").is_none(),
             "a second begin for the same still-Pending reqId must be rejected"
         );
     }
@@ -504,7 +593,7 @@ mod tests {
         // running must be rejected — never silently overwrite the Running
         // entry with a fresh Pending, which would orphan job-1 (still
         // running server-side, but no longer reachable to cancel).
-        assert!(!r.begin("req-1"));
+        assert!(r.begin("req-1").is_none());
 
         r.cancel(&canceller, "req-1");
         assert_eq!(
@@ -522,9 +611,9 @@ mod tests {
         r.cancel(&canceller, "req-1"); // -> CancelledEarly, no job existed yet
 
         assert!(
-            !r.begin("req-1"),
+            r.begin("req-1").is_none(),
             "a CancelledEarly marker is not settled — reuse must be rejected \
-             until register (or unregister/cancel_all) consumes it"
+             until register (or cancel_all) consumes it"
         );
     }
 
@@ -542,7 +631,7 @@ mod tests {
         r.cancel(&canceller, "req-1"); // -> CancelledEarly, run A has no job yet
 
         assert!(
-            !r.begin("req-1"),
+            r.begin("req-1").is_none(),
             "a second run reusing req-1 must be rejected while the marker is un-consumed"
         );
         assert!(
@@ -551,8 +640,74 @@ mod tests {
              run A never starts a billable job"
         );
         assert!(
-            r.begin("req-1"),
+            r.begin("req-1").is_some(),
             "once consumed, req-1 names no entry at all — reuse is allowed again"
+        );
+    }
+
+    // ── Generation-scoped removal (security-review + CodeRabbit fix):
+    // unregister_gen must never clobber a reused reqId's successor entry ────
+
+    #[test]
+    fn unregister_gen_never_clobbers_a_reused_req_ids_successor_entry() {
+        // The exact clobber this generation token closes: A registers
+        // Running, an `assist.cancel` removes A's entry (cancelling job-a),
+        // then a client reuses the SAME reqId for a brand-new request B —
+        // B's `begin`/`register` succeed with a STRICTLY HIGHER generation.
+        // A's own end-of-request cleanup then arrives LATE (after B has
+        // already registered) — keyed by reqId alone, the old unconditional
+        // `unregister` would have clobbered B's fresh entry here.
+        let r = AssistStreamRegistry::default();
+        let canceller = RecordingCanceller::default();
+
+        let gen_a = r
+            .begin("req-x")
+            .expect("A's begin succeeds on a fresh reqId");
+        assert!(r.register("req-x", "job-a"));
+        r.cancel(&canceller, "req-x"); // removes A's Running entry, cancels job-a
+
+        let gen_b = r
+            .begin("req-x")
+            .expect("B may reuse req-x once A's entry is gone");
+        assert!(
+            gen_b > gen_a,
+            "B's generation must be strictly higher than A's"
+        );
+        assert!(r.register("req-x", "job-b"));
+
+        // A's tail cleanup arrives LATE — after B has already begun and
+        // registered — the exact race the generation token exists to close.
+        r.unregister_gen("req-x", gen_a);
+
+        assert!(
+            r.contains("req-x"),
+            "A's stale, lower-generation cleanup must never remove B's fresh entry"
+        );
+
+        // B's job is still fully reachable AND cancellable — never clobbered.
+        r.cancel(&canceller, "req-x");
+        assert_eq!(
+            canceller.cancelled.into_inner(),
+            vec!["job-a".to_string(), "job-b".to_string()],
+            "B's job must still be cancellable after A's stale cleanup ran"
+        );
+    }
+
+    #[test]
+    fn unregister_gen_removes_the_entry_when_the_generation_still_matches() {
+        // The normal (non-reused-reqId) case: the caller's own gen still
+        // names the SAME entry it was handed for, so unregister_gen must
+        // actually remove it — this is the "one owner cleans up its own
+        // request" path every non-race request takes.
+        let r = AssistStreamRegistry::default();
+        let gen = r.begin("req-1").expect("a fresh reqId");
+        assert!(r.register("req-1", "job-1"));
+
+        r.unregister_gen("req-1", gen);
+
+        assert!(
+            !r.contains("req-1"),
+            "the matching generation must remove the entry"
         );
     }
 
