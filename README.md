@@ -24,7 +24,7 @@
 
 <p align="center">
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><img alt="Release" src="https://img.shields.io/github/v/release/saeedkolivand/ai-job-hunter-app?color=e24b4a&label=release"></a>
-  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/saeedkolivand/ai-job-hunter-app/total?color=e24b4a&label=downloads"></a>
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><img alt="Downloads" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/saeedkolivand/ai-job-hunter-app/badges/downloads.json"></a>
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/saeedkolivand/ai-job-hunter-app/ci-pipeline.yml?branch=main&label=CI"></a>
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/saeedkolivand/ai-job-hunter-app"></a>
   <a href="LICENSE"><img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-orange.svg"></a>
@@ -471,6 +471,7 @@ at-a-glance status of every workflow, grouped by role, fetched live from the Act
 
 ### 🔎 Advisory — never blocks
 
+[![📥 Downloads Badge](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/downloads-badge.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/downloads-badge.yml)
 [![🎨 Format Guard](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/format-guard.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/format-guard.yml)
 [![🏷️ PR Labeler](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/labeler.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/labeler.yml)
 [![🔎 Quality](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/quality.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/quality.yml)
