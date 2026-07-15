@@ -60,6 +60,7 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::applications::{normalize_job_url, ApplicationStore};
 use crate::error::{AppError, AppResult};
 
+mod answer_assist;
 mod answers_save;
 mod answers_suggest;
 pub mod auth;
@@ -171,6 +172,17 @@ pub mod msg {
     /// (opt-in off / malformed request). Like `status.update`, this verb's
     /// errors ARE user-facing.
     pub const ANSWERS_SUGGEST_RESULT: &str = "answers.suggest.result";
+    /// Extension → desktop: "help me answer this question" — the first
+    /// BILLABLE-AI verb on the bridge. `{ question, url?, searchWeb? }`.
+    /// Gated on the SEPARATE `ai_assist_enabled` opt-in (never the
+    /// assisted-autofill one) — see [`super::answer_assist`].
+    pub const ANSWER_ASSIST: &str = "answer.assist";
+    /// Desktop → extension: the `answer.assist` outcome — `{ ok: true,
+    /// question, draft, sourced: {web?, brief?, salary?} }` on success,
+    /// `{ ok: false, error }` on a refusal (opt-in off / no usable AI
+    /// provider configured / malformed request). Like `status.update`, this
+    /// verb's errors ARE user-facing.
+    pub const ANSWER_ASSIST_RESULT: &str = "answer.assist.result";
 }
 
 /// Handshake protocol version carried in the `hello` frame. MUST match the TS
@@ -195,6 +207,13 @@ const TOKEN_FILE: &str = "extension_token";
 /// the contact profile for a `profile.get` only when this is on.
 const AUTOFILL_OPTIN_FILE: &str = "extension_autofill_optin";
 
+/// File under the app data dir holding the AI-answer-assist opt-in + its
+/// provider/model/base_url snapshot, as one small JSON blob (never a "1"/"0"
+/// flag like [`AUTOFILL_OPTIN_FILE`] — this opt-in also carries the snapshot
+/// [`answer_assist`] needs to resolve a provider with no renderer in scope).
+/// Default OFF, absent/corrupt file → OFF with no snapshot (the safe state).
+const AI_ASSIST_OPTIN_FILE: &str = "extension_ai_assist_optin";
+
 /// Managed Tauri state for the bridge. Commands read the bound port + token off
 /// this; the server flips `connected` while a socket is paired.
 pub struct BridgeState {
@@ -218,6 +237,14 @@ pub struct BridgeState {
     /// the desktop replies with a clear refusal (never silently). This is the
     /// consent gate for sending the user's saved contact details into a page.
     autofill_enabled: AtomicBool,
+    /// AI-answer-assist opt-in (default OFF, persisted to
+    /// [`AI_ASSIST_OPTIN_FILE`] alongside its provider snapshot). A SEPARATE
+    /// gate from `autofill_enabled` — `answer.assist` is billable provider
+    /// spend, a materially different consent class from the local/free
+    /// autofill verbs. Guarded by a `Mutex` (not an `AtomicBool`) because it
+    /// travels together with the provider/model/base_url snapshot below —
+    /// see [`answer_assist`].
+    ai_assist: Mutex<AiAssistConfig>,
     /// `match.live` token-bucket throttle — shared across EVERY connection for
     /// this pairing, not per-connection, so a loopback reconnect (a cheap,
     /// near-instant handshake) can never reset the burst allowance. See
@@ -238,6 +265,7 @@ impl BridgeState {
             token: Mutex::new(token),
             connected: AtomicBool::new(false),
             autofill_enabled: AtomicBool::new(load_autofill_optin(data_dir)),
+            ai_assist: Mutex::new(load_ai_assist_optin(data_dir)),
             match_live_limiter: Mutex::new(match_live::MatchLiveThrottle::new()),
             data_dir: data_dir.to_path_buf(),
         }
@@ -286,6 +314,51 @@ impl BridgeState {
         }
     }
 
+    /// Whether AI-answer-assist is opted in (the `answer.assist` consent gate
+    /// — SEPARATE from `autofill_enabled`).
+    pub fn ai_assist_enabled(&self) -> bool {
+        self.ai_assist.lock().enabled
+    }
+
+    /// The FULL AI-answer-assist state — `enabled` plus its provider/model/
+    /// base_url snapshot — in ONE lock acquisition. `pub(crate)` so
+    /// [`answer_assist`]/`commands::extension_bridge` can resolve a
+    /// [`crate::pipeline::Completer`] from it (mirrors
+    /// `Autopilot::assistant_provider` et al.: this is a headless context with
+    /// no renderer to read the active provider from at answer-time) and read
+    /// the gate + snapshot together. Prefer this over reading
+    /// [`Self::ai_assist_enabled`] and this separately when a caller needs
+    /// both: two separate locks can observe a toggle mid-flight (a benign
+    /// TOCTOU — nothing unsafe, just a possible enabled/snapshot mismatch for
+    /// one call).
+    pub(crate) fn ai_assist_snapshot(&self) -> AiAssistConfig {
+        self.ai_assist.lock().clone()
+    }
+
+    /// Set (and persist) the AI-answer-assist opt-in + its provider snapshot.
+    /// Turning it OFF clears the snapshot (mirrors `Autopilot::update`'s
+    /// clear-on-disable — a stale provider pick must never silently replay
+    /// once the opt-in is re-enabled without a fresh snapshot). A persist
+    /// failure is non-fatal but leaves the in-memory value authoritative.
+    pub fn set_ai_assist(
+        &self,
+        enabled: bool,
+        provider: Option<String>,
+        model: Option<String>,
+        base_url: Option<String>,
+    ) {
+        let cfg = AiAssistConfig {
+            enabled,
+            provider: enabled.then_some(provider).flatten(),
+            model: enabled.then_some(model).flatten(),
+            base_url: enabled.then_some(base_url).flatten(),
+        };
+        *self.ai_assist.lock() = cfg.clone();
+        if let Err(e) = persist_ai_assist_optin(&self.data_dir, &cfg) {
+            log::warn!("[extension_bridge] failed to persist ai-assist opt-in (non-fatal): {e}");
+        }
+    }
+
     /// Try to consume one `match.live` token from the throttle shared across
     /// every connection for this pairing — see
     /// [`match_live::MatchLiveThrottle`]'s doc for why this lives on
@@ -305,11 +378,12 @@ impl BridgeState {
 }
 
 /// Factory-reset hook: rotate the token so a wiped install re-pairs from scratch,
-/// and return the autofill opt-in to its default OFF (consent must be re-granted).
+/// and return both opt-ins to their default OFF (consent must be re-granted).
 impl crate::data_store::Resettable for BridgeState {
     fn reset(&self) {
         self.regenerate_token();
         self.set_autofill_enabled(false);
+        self.set_ai_assist(false, None, None, None);
     }
 }
 
@@ -352,6 +426,36 @@ fn persist_autofill_optin(data_dir: &Path, enabled: bool) -> std::io::Result<()>
         data_dir.join(AUTOFILL_OPTIN_FILE),
         if enabled { "1" } else { "0" },
     )
+}
+
+/// The AI-answer-assist opt-in + its provider/model/base_url snapshot,
+/// persisted as one JSON blob to [`AI_ASSIST_OPTIN_FILE`]. `pub(crate)` so
+/// [`answer_assist`] can read the snapshot straight off [`BridgeState`].
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AiAssistConfig {
+    pub(crate) enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) base_url: Option<String>,
+}
+
+/// Read the persisted AI-answer-assist opt-in + snapshot. Absent file / parse
+/// failure → the default (OFF, no snapshot) — the safe state, mirrors
+/// [`load_autofill_optin`]'s degrade-to-off discipline.
+fn load_ai_assist_optin(data_dir: &Path) -> AiAssistConfig {
+    std::fs::read_to_string(data_dir.join(AI_ASSIST_OPTIN_FILE))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn persist_ai_assist_optin(data_dir: &Path, cfg: &AiAssistConfig) -> std::io::Result<()> {
+    std::fs::create_dir_all(data_dir)?;
+    let json = serde_json::to_string(cfg).unwrap_or_else(|_| "{\"enabled\":false}".to_string());
+    std::fs::write(data_dir.join(AI_ASSIST_OPTIN_FILE), json)
 }
 
 fn persist_token(data_dir: &Path, token: &str) -> std::io::Result<()> {
@@ -612,6 +716,9 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                 Some(match_live::handle_match_live(&app, &req_id, &payload).await)
             }
             FrameDecision::MatchLive { req_id, .. } => Some(match_live::throttled_reply(&req_id)),
+            FrameDecision::AnswerAssist { req_id, payload } => {
+                Some(answer_assist::handle_answer_assist(&app, &req_id, &payload).await)
+            }
         };
         if let Some(reply) = reply {
             if writer.send(Message::text(reply)).await.is_err() {
@@ -701,6 +808,10 @@ enum FrameDecision {
     /// [`match_live::handle_match_live`]. Carries the payload verbatim so the
     /// handler can read `url` + `html`.
     MatchLive { req_id: String, payload: Value },
+    /// An authenticated `answer.assist` to answer through
+    /// [`answer_assist::handle_answer_assist`]. Carries the payload verbatim
+    /// so the handler can read `question` + `url` + `searchWeb`.
+    AnswerAssist { req_id: String, payload: Value },
 }
 
 /// The per-message handshake gate + dispatch routing (size cap → JSON parse →
@@ -797,8 +908,9 @@ fn advance_auth(
 
 /// Post-auth dispatch: the socket is session-authenticated, so frames carry no
 /// token. Routes `import.request` / `profile.get` / `applied.check` /
-/// `status.update` / `answers.save` / `answers.suggest` / `match.live`; an
-/// unknown type gets an `import.result` error reply (never a panic).
+/// `status.update` / `answers.save` / `answers.suggest` / `match.live` /
+/// `answer.assist`; an unknown type gets an `import.result` error reply
+/// (never a panic).
 fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameDecision {
     match kind {
         msg::IMPORT_REQUEST => {
@@ -832,6 +944,11 @@ fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameD
         msg::MATCH_LIVE => {
             let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
             FrameDecision::MatchLive { req_id, payload }
+        }
+        // "Help me answer this question" — the first billable-AI bridge verb.
+        msg::ANSWER_ASSIST => {
+            let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
+            FrameDecision::AnswerAssist { req_id, payload }
         }
         // Unknown message types — acknowledged as an error, never panic.
         other => FrameDecision::Reply(import_flow::result_reply(

@@ -41,8 +41,9 @@ export const EXTENSION_PROTOCOL_VERSION = 2;
  * is not a valid v2 `hello` (a legacy token `auth`, a missing/older protocol).
  * `import.request` / `import.result` / `profile.get` / `profile.result` /
  * `applied.check` / `applied.result` / `status.update` / `status.result` /
- * `answers.save` / `answers.result` / `match.live` / `match.result` are the
- * post-auth application frames.
+ * `answers.save` / `answers.result` / `match.live` / `match.result` /
+ * `answer.assist` / `answer.assist.result` are the post-auth application
+ * frames.
  *
  * **Consent-gate boundary** (the rule the remaining post-auth verbs copy): a
  * read-only lookup over the user's own device-local metadata (`applied.check`)
@@ -67,6 +68,13 @@ export const EXTENSION_PROTOCOL_VERSION = 2;
  * itself a reason to skip the gate. The import-time `matchScore` fill
  * (`import.result.matchScore`) stays ungated: it rides the already-consented
  * import gesture and reveals only a single number, never `gaps`.
+ *
+ * `answer.assist` gets its OWN, SEPARATE opt-in bucket
+ * (`extension_ai_assist_optin`) rather than riding the assisted-autofill one
+ * above: it is the first BILLABLE-AI verb on the bridge — real provider
+ * spend, not just a local computation or a PII-adjacent local read — a
+ * materially different consent class that needs its own desktop-enforced
+ * gate, checked before any of the question/context is touched.
  */
 export const EXTENSION_MESSAGE_TYPES = {
   /** Extension → desktop: handshake step 1 — `{ protocol, clientNonce }`, no token. */
@@ -170,6 +178,33 @@ export const EXTENSION_MESSAGE_TYPES = {
    * never fold it into a silent no-op (it answers a deliberate click).
    */
   answersSuggestResult: 'answers.suggest.result',
+  /**
+   * Extension → desktop: "help me answer this question" — the first
+   * BILLABLE-AI verb on the bridge (extension roadmap PR 9). `question` is
+   * page/user-derived and UNTRUSTED; the desktop fences it in the prompt. A
+   * salary-shaped question routes through the shared salary machinery
+   * (scraped Application salary + a web-researched market range); any other
+   * question gets a grounded, paste-ready draft (job/company context + the
+   * default résumé). Rides a SEPARATE opt-in from `profile.get`/
+   * `answers.save` (`extension_ai_assist_optin`, default OFF) — this is
+   * billable provider spend, a materially different consent class from the
+   * local/free verbs above. `searchWeb` (default OFF, mirrors the in-app
+   * toggle) additionally fetches web-search reference notes for the question
+   * first; the answer generates identically (just without web grounding) if
+   * that lookup is unavailable or fails.
+   */
+  answerAssist: 'answer.assist',
+  /**
+   * Desktop → extension: the `answer.assist` outcome — a discriminated union
+   * so success/failure fields can never mix. `ok:true` carries the finished
+   * `draft` (paste-ready prose, copy-only — there is no fill path for AI
+   * text) plus `sourced` flags naming which optional context actually
+   * grounded it. `ok:false` carries a user-facing `error` (opt-in off / no
+   * usable AI provider configured / a malformed request) — like
+   * `status.update`, this verb's errors ARE shown to the user, it answers a
+   * deliberate click.
+   */
+  answerAssistResult: 'answer.assist.result',
 } as const;
 
 /** Union of all wire `type` strings. */
@@ -452,6 +487,47 @@ export interface ExtensionAnswerSuggestion {
  */
 export type ExtensionAnswersSuggestResult =
   { ok: true; suggestions: ExtensionAnswerSuggestion[] } | { ok: false; error: string };
+
+/**
+ * `answer.assist` payload — a pasted/picked application question to draft an
+ * answer for. `question` is page/user-derived and UNTRUSTED (fenced by the
+ * desktop's prompt layer, never treated as an instruction). `url` (the active
+ * tab's url, when known) lets the desktop resolve grounding context from the
+ * matching Application (job description / company brief / scraped salary) —
+ * absent or unmatched falls back to generic grounding (résumé only).
+ * `searchWeb` (default OFF, mirrors the in-app toggle) opts into fetching
+ * web-search reference notes for the question BEFORE drafting; the answer
+ * still generates (without web grounding) if that lookup is unavailable or
+ * fails — this can never block the draft.
+ */
+export interface ExtensionAnswerAssistRequest {
+  question: string;
+  url?: string;
+  searchWeb?: boolean;
+}
+
+/**
+ * `answer.assist` payload — a discriminated union so a reply can never mix
+ * success and failure fields: `ok:true` carries the original `question`
+ * (echoed so the popup can confirm which draft this is, in case of a fast
+ * follow-up submit) and the finished `draft` (paste-ready prose — COPY ONLY,
+ * there is no fill path for AI-generated text), plus `sourced` naming which
+ * optional context actually grounded it (`web` — the opt-in search notes were
+ * fetched and non-empty; `brief` — a cached company brief from the matched
+ * Application was used; `salary` — this question routed the salary-shaped
+ * path). `ok:false` always carries a user-facing `error` (the ai-assist
+ * opt-in is off / no usable AI provider is configured / a malformed
+ * request) — like {@link ExtensionStatusUpdateResult}, this verb's errors ARE
+ * shown to the user, it answers a deliberate click.
+ */
+export type ExtensionAnswerAssistResult =
+  | {
+      ok: true;
+      question: string;
+      draft: string;
+      sourced: { web?: boolean; brief?: boolean; salary?: boolean };
+    }
+  | { ok: false; error: string };
 
 /**
  * `match.live` payload — the user-clicked "Check fit". `html` is the SAME

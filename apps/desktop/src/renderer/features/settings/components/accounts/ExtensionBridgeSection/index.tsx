@@ -4,13 +4,26 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, ConfirmModal, Input, SettingsSection, Switch, useNotification } from '@ajh/ui';
 
+import { PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import {
+  useExtensionAiAssistSetting,
   useExtensionAutofillSetting,
   useExtensionBridgeStatus,
+  useGenerateConfig,
   useRegenerateExtensionToken,
+  useSetExtensionAiAssistSetting,
   useSetExtensionAutofillSetting,
 } from '@/services';
+import type { AiProvider } from '@/store/preferences-schema';
 import { useUiStore } from '@/store/ui-store';
+
+/** Friendly "Using: <provider> · <model>" label for the pinned ai-assist
+ * snapshot — falls back to the raw provider id for an unrecognized value
+ * (never crashes on a snapshot from a future provider). */
+function providerModelLabel(provider: string, model?: string): string {
+  const label = PROVIDERS[provider as AiProvider]?.label ?? provider;
+  return model ? `${label} · ${model}` : label;
+}
 
 export function ExtensionBridgeSection() {
   const { t } = useTranslation();
@@ -29,6 +42,43 @@ export function ExtensionBridgeSection() {
       await setAutofill.mutateAsync(next);
     } catch {
       notify.error({ message: t('settings.accounts.extension.autofill.toggleFailed') });
+    }
+  };
+
+  // AI answer-assist: a SEPARATE opt-in from autofill above (billable provider
+  // spend). Turning it ON snapshots the CURRENT active AI provider/model —
+  // the bridge has no renderer to read it from at answer-time (mirrors the
+  // Autopilot "assistant notes" provider snapshot) — turning it OFF sends no
+  // provider fields, so the desktop clears the stale snapshot.
+  const { data: aiAssist } = useExtensionAiAssistSetting();
+  const setAiAssist = useSetExtensionAiAssistSetting();
+  const aiAssistEnabled = aiAssist?.enabled ?? false;
+  const generateConfig = useGenerateConfig();
+  // CLI-agent providers (Claude Code, Codex, …) may legitimately run with no
+  // explicit model (`Completer::resolve` falls back to the CLI's own
+  // default) — only a cloud/local-server provider actually needs a model
+  // selected before the opt-in can ever resolve a provider.
+  const isCliAgentProvider = PROVIDERS[generateConfig.provider]?.kind === 'cli-agent';
+  const providerConfigured = isCliAgentProvider || Boolean(generateConfig.model);
+  const usingLabel =
+    aiAssistEnabled && aiAssist?.provider
+      ? providerModelLabel(aiAssist.provider, aiAssist.model)
+      : null;
+
+  const handleToggleAiAssist = async (next: boolean) => {
+    try {
+      await setAiAssist.mutateAsync(
+        next
+          ? {
+              enabled: true,
+              provider: generateConfig.provider,
+              model: generateConfig.model,
+              baseUrl: generateConfig.baseUrl,
+            }
+          : { enabled: false }
+      );
+    } catch {
+      notify.error({ message: t('settings.accounts.extension.aiAssist.toggleFailed') });
     }
   };
 
@@ -155,6 +205,27 @@ export function ExtensionBridgeSection() {
             />
             <p className="text-[11px] leading-snug text-foreground/40">
               {t('settings.accounts.extension.autofill.disclosure')}
+            </p>
+          </div>
+
+          {/* AI answer-assist opt-in (default OFF) — a SEPARATE gate from
+              autofill above: billable AI provider spend, not local/free. */}
+          <div className="space-y-2 border-t border-foreground/10 pt-3">
+            <Switch
+              checked={aiAssistEnabled}
+              onCheckedChange={(next) => void handleToggleAiAssist(next)}
+              disabled={setAiAssist.isPending || (!aiAssistEnabled && !providerConfigured)}
+              label={t('settings.accounts.extension.aiAssist.label')}
+              description={
+                providerConfigured
+                  ? usingLabel
+                    ? `${t('settings.accounts.extension.aiAssist.description')} ${t('settings.accounts.extension.aiAssist.using', { value: usingLabel })}`
+                    : t('settings.accounts.extension.aiAssist.description')
+                  : t('settings.accounts.extension.aiAssist.noProvider')
+              }
+            />
+            <p className="text-[11px] leading-snug text-foreground/40">
+              {t('settings.accounts.extension.aiAssist.disclosure')}
             </p>
           </div>
 

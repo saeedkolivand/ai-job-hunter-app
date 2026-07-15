@@ -38,6 +38,7 @@ const mockClient = vi.hoisted(() => ({
   saveAnswers: vi.fn(),
   suggestAnswers: vi.fn(),
   matchLive: vi.fn(),
+  answerAssist: vi.fn(),
 }));
 
 vi.mock('@wxt-dev/browser', () => ({
@@ -101,6 +102,7 @@ beforeEach(() => {
   mockClient.saveAnswers.mockReset();
   mockClient.suggestAnswers.mockReset();
   mockClient.matchLive.mockReset();
+  mockClient.answerAssist.mockReset();
 });
 
 // ── not-paired short-circuit ────────────────────────────────────────────────
@@ -674,6 +676,107 @@ describe('matchLive request', () => {
     );
 
     const res = await send({ kind: 'matchLive' });
+
+    expect(res).toEqual({
+      ok: false,
+      error: 'Desktop app not reachable. Is AI Job Hunter running?',
+    });
+  });
+});
+
+// ── answerAssist request — first billable-AI verb; errors NOT folded ───────
+
+describe('answerAssist request — not-paired short-circuit', () => {
+  it('surfaces "Not paired" and never reaches the tab lookup or answerAssist when no token is stored', async () => {
+    getTokenMock.mockResolvedValue(null);
+
+    const res = await send({ kind: 'answerAssist', question: 'Why this role?', searchWeb: false });
+
+    expect(res).toEqual({ ok: false, error: 'Not paired. Paste your pairing token first.' });
+    expect(tabsQueryMock).not.toHaveBeenCalled();
+    expect(mockClient.answerAssist).not.toHaveBeenCalled();
+  });
+});
+
+describe('answerAssist request', () => {
+  it('sends { question, url, searchWeb } and returns the success result', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.answerAssist.mockResolvedValue({
+      ok: true,
+      question: 'Why this role?',
+      draft: 'Because…',
+      sourced: { brief: true },
+    });
+
+    const res = await send({ kind: 'answerAssist', question: 'Why this role?', searchWeb: true });
+
+    expect(mockClient.answerAssist).toHaveBeenCalledWith({
+      question: 'Why this role?',
+      searchWeb: true,
+      url: 'https://jobs.example.com/posting/9',
+    });
+    expect(res).toEqual({
+      ok: true,
+      kind: 'answerAssist',
+      result: {
+        ok: true,
+        question: 'Why this role?',
+        draft: 'Because…',
+        sourced: { brief: true },
+      },
+    });
+  });
+
+  it('still sends the request without a url when the active tab url cannot be read (generic grounding)', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: '' } as never]);
+    mockClient.answerAssist.mockResolvedValue({
+      ok: true,
+      question: 'Why this role?',
+      draft: 'Because…',
+      sourced: {},
+    });
+
+    await send({ kind: 'answerAssist', question: 'Why this role?', searchWeb: false });
+
+    expect(mockClient.answerAssist).toHaveBeenCalledWith({
+      question: 'Why this role?',
+      searchWeb: false,
+    });
+  });
+
+  it('passes a desktop-side refusal straight through as result (never folds it, unlike appliedCheck)', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.answerAssist.mockResolvedValue({
+      ok: false,
+      error: 'AI answer drafting is off.',
+    });
+
+    const res = await send({ kind: 'answerAssist', question: 'Why this role?', searchWeb: false });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'answerAssist',
+      result: { ok: false, error: 'AI answer drafting is off.' },
+    });
+  });
+
+  it('surfaces a transport-level rejection as ok:false', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.answerAssist.mockRejectedValue(
+      new Error('Desktop app not reachable. Is AI Job Hunter running?')
+    );
+
+    const res = await send({ kind: 'answerAssist', question: 'Why this role?', searchWeb: false });
 
     expect(res).toEqual({
       ok: false,

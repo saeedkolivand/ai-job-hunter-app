@@ -10,7 +10,11 @@
 
 import { browser } from '@wxt-dev/browser';
 
-import type { ExtensionImportRequest, ExtensionMatchLiveRequest } from '@ajh/shared';
+import type {
+  ExtensionAnswerAssistRequest,
+  ExtensionImportRequest,
+  ExtensionMatchLiveRequest,
+} from '@ajh/shared';
 
 // TYPE-ONLY import from the answer-fill module — same rationale as the
 // autofill.ts import below: `answer-fill.js` is a classic-script injection
@@ -416,6 +420,35 @@ async function runMatchLive(): Promise<PopupResponse> {
 }
 
 /**
+ * User-clicked "Help me answer…" — the first BILLABLE-AI verb on the bridge.
+ * Mirrors `runMatchLive`'s not-paired short-circuit and never-fold-errors
+ * discipline — a deliberate click, so failures propagate to
+ * `handleRequest`'s outer catch. Sends the active tab's url too (when
+ * readable) so the desktop can resolve grounding context from a matched
+ * Application; a url-read failure degrades to generic grounding rather than
+ * blocking the request (unlike `runMatchLive`, this verb has no DOM
+ * dependency of its own).
+ */
+async function runAnswerAssist(question: string, searchWeb: boolean): Promise<PopupResponse> {
+  const token = await getToken();
+  if (!token) {
+    return { ok: false, error: 'Not paired. Paste your pairing token first.' };
+  }
+
+  let url: string | undefined;
+  try {
+    url = await activeTabUrl();
+  } catch {
+    url = undefined;
+  }
+
+  const payload: ExtensionAnswerAssistRequest = { question, searchWeb };
+  if (url) payload.url = url;
+  const result = await getClient().answerAssist(payload);
+  return { ok: true, kind: 'answerAssist', result };
+}
+
+/**
  * Inject the single-field filler into the active tab and run it against
  * `(question, index)` — refusing unless the CURRENT count of same-question
  * fields still equals scan-time `count` — with `answer`. Two-step like
@@ -525,6 +558,8 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
         return await runAnswerFill(req.question, req.index, req.count, req.answer);
       case 'matchLive':
         return await runMatchLive();
+      case 'answerAssist':
+        return await runAnswerAssist(req.question, req.searchWeb);
       default: {
         // Exhaustiveness guard — a new PopupRequest variant must be handled.
         const _never: never = req;
