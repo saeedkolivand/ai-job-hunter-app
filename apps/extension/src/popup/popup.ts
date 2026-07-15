@@ -10,9 +10,9 @@
 
 import { browser } from '@wxt-dev/browser';
 
-import type { ExtensionAnswerSuggestion } from '@ajh/shared';
+import type { ExtensionAnswerSuggestion, ExtensionRewritePreset } from '@ajh/shared';
 
-import type { ScannedQuestion } from '../lib/answers-capture';
+import type { FilledField, ScannedQuestion } from '../lib/answers-capture';
 import type { ConnectionStatus, PopupRequest, PopupResponse } from '../lib/messages';
 import { looksLikeToken } from '../lib/storage';
 
@@ -508,6 +508,14 @@ const els = {
   assistResult: byId<HTMLDivElement>('assist-result'),
   assistDraft: byId<HTMLParagraphElement>('assist-draft'),
   btnCopyAssist: byId<HTMLButtonElement>('btn-copy-assist'),
+  rewritePicker: byId<HTMLSelectElement>('rewrite-picker'),
+  rewriteInstruction: byId<HTMLInputElement>('rewrite-instruction'),
+  btnRewrite: byId<HTMLButtonElement>('btn-rewrite'),
+  rewriteResult: byId<HTMLDivElement>('rewrite-result'),
+  rewriteDraft: byId<HTMLParagraphElement>('rewrite-draft'),
+  btnCopyRewrite: byId<HTMLButtonElement>('btn-copy-rewrite'),
+  btnAcceptRewrite: byId<HTMLButtonElement>('btn-accept-rewrite'),
+  btnRestoreRewrite: byId<HTMLButtonElement>('btn-restore-rewrite'),
   appliedStatus: byId<HTMLParagraphElement>('applied-status'),
   chkApplied: byId<HTMLInputElement>('chk-applied'),
   importMsg: byId<HTMLParagraphElement>('import-msg'),
@@ -593,6 +601,44 @@ let lastRenderedPhase: ConnectionStatus['phase'] | null = null;
  */
 let lastScannedQuestions: ScannedQuestion[] = [];
 
+/**
+ * The most recent filled-fields scan (`{question, index, answer}[]`, PR 11)
+ * — the rewrite picker's option list. Populated by the SAME "Save my answers
+ * from this page" scan `answersSave` already runs (see `capture.ts`), no
+ * separate injection. Cleared on leaving `connected` — same discipline as
+ * {@link lastScannedQuestions}.
+ */
+let lastScannedFilled: FilledField[] = [];
+
+/**
+ * The currently-picked rewrite target — the field's scan-time correlation
+ * (`question`/`index`/`expectedCount`, mirroring `answerFill`'s own
+ * correlation shape) plus the FROZEN original text at pick time (what
+ * "Restore original" re-injects). `null` until the picker selects a field;
+ * reset whenever the picker changes or a fresh scan re-renders it.
+ */
+let rewriteTarget: {
+  question: string;
+  index: number;
+  expectedCount: number;
+  originalAnswer: string;
+} | null = null;
+
+/**
+ * Which draft box the CURRENT (or most recently started, in THIS popup
+ * instance) `answer.assist` stream feeds — draft's `assistDraft` or
+ * rewrite's `rewriteDraft`. Both modes share the SAME background-owned
+ * streaming buffer/generation guard (see `background.ts`'s `assistBuffer`
+ * doc) — this local flag is only about which of the two boxes a live
+ * `answerAssistProgress` push (or the popup-open reattach) should update; it
+ * does not affect which request is actually in flight. Set right before
+ * `doAssist`/`doRewrite` sends its request. Defaults to `'draft'` — a popup
+ * reopened mid-stream (this flag reset to its default by the fresh
+ * instance) falls back to the draft box, a documented, minor limitation
+ * (PR 11 does not thread mode through the reattach path).
+ */
+let activeAssistKind: 'draft' | 'rewrite' = 'draft';
+
 /** Send a typed request to the background and return its typed response. */
 async function send(req: PopupRequest): Promise<PopupResponse> {
   const res = (await browser.runtime.sendMessage(req)) as PopupResponse | undefined;
@@ -646,6 +692,11 @@ function render(status: ConnectionStatus): void {
     els.assistQuestion.value = '';
     els.chkSearchWeb.checked = false;
     renderAssistPicker([]);
+    // A stale rewrite draft/target must never linger either (PR 11).
+    renderRewritePicker([]);
+    els.rewriteResult.hidden = true;
+    els.rewriteDraft.textContent = '';
+    els.rewriteInstruction.value = '';
   }
   lastRenderedPhase = status.phase;
 
@@ -845,6 +896,9 @@ async function doMarkApplied(): Promise<void> {
  * Click handler for "Save my answers from this page". Sends `answersSave`
  * and shows the result in the existing message area — UNLIKE the passive
  * auto-check, failures ARE shown here (this is a deliberate click action).
+ * Also renders the rewrite picker (PR 11) from the SAME response's `filled`
+ * scan — no separate scan injection for that feature, mirroring how
+ * `doSuggestAnswers` feeds the draft-mode picker from its own scan.
  */
 async function doSaveAnswers(): Promise<void> {
   els.btnSaveAnswers.disabled = true;
@@ -853,6 +907,7 @@ async function doSaveAnswers(): Promise<void> {
     const res = await send({ kind: 'answersSave' });
     const { text, tone } = resolveAnswersSaveResponse(res);
     setMsg(els.importMsg, text, tone);
+    renderRewritePicker(res.ok && res.kind === 'answersSave' ? res.filled : []);
   } catch {
     // A transport/messaging rejection must not strand the status on "Saving…".
     setMsg(els.importMsg, 'Could not save your answers. Please retry.', 'err');
@@ -1088,6 +1143,7 @@ async function doAssist(): Promise<void> {
     setMsg(els.importMsg, 'Type or pick a question first.', 'err');
     return;
   }
+  activeAssistKind = 'draft';
   els.btnAssist.disabled = true;
   els.assistResult.hidden = true;
   els.assistDraft.textContent = '';
@@ -1119,6 +1175,180 @@ async function doCopyAssistDraft(): Promise<void> {
   setTimeout(() => {
     els.btnCopyAssist.textContent = original;
   }, 1200);
+}
+
+// ── Rewrite mode (extension PR 11) ──────────────────────────────────────────
+
+/** Rebuild the "pick a filled answer" `<select>` options from the most
+ *  recent filled-fields scan (see `lastScannedFilled`) — clears any prior
+ *  options first (no stale entries from a previous page/scan). Options are
+ *  keyed by array index (not question text — the same question can appear
+ *  more than once) and labelled with an occurrence suffix when a question
+ *  repeats. Mirrors `renderAssistPicker`. */
+function renderRewritePicker(filled: FilledField[]): void {
+  lastScannedFilled = filled;
+  const placeholder = els.rewritePicker.options[0];
+  els.rewritePicker.textContent = '';
+  if (placeholder) els.rewritePicker.append(placeholder);
+  filled.forEach((f, i) => {
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = f.index > 0 ? `${f.question} (${f.index + 1})` : f.question;
+    els.rewritePicker.append(opt);
+  });
+  els.rewritePicker.value = '';
+  rewriteTarget = null;
+  els.rewriteResult.hidden = true;
+  els.rewriteDraft.textContent = '';
+}
+
+/** Change handler for the rewrite picker — freezes the picked field's
+ *  scan-time correlation (`question`/`index`/`expectedCount`, the SAME
+ *  shape `answerFill`/`answerReplace` use) plus its CURRENT text as
+ *  {@link rewriteTarget}, so Accept/Restore always act on exactly the field
+ *  the user picked, never a moving target. `expectedCount` is the total
+ *  number of scanned fields sharing this exact question text — the same
+ *  fail-safe correlation `locateFilledField` re-checks on Accept/Restore. */
+function onRewritePickerChange(): void {
+  const i = Number(els.rewritePicker.value);
+  const picked = Number.isInteger(i) ? lastScannedFilled[i] : undefined;
+  els.rewriteResult.hidden = true;
+  els.rewriteDraft.textContent = '';
+  els.rewriteInstruction.value = '';
+  if (!picked) {
+    rewriteTarget = null;
+    return;
+  }
+  const expectedCount = lastScannedFilled.filter((f) => f.question === picked.question).length;
+  rewriteTarget = {
+    question: picked.question,
+    index: picked.index,
+    expectedCount,
+    originalAnswer: picked.answer,
+  };
+}
+
+/**
+ * Run a rewrite — preset button click (`preset` set, runs immediately,
+ * mirrors the in-app `RewritePopover`'s `onPreset`) or the free-text submit
+ * button (`preset` omitted, uses the typed instruction). Streams into its
+ * own draft box (never `assistDraft`), reusing the SAME `answer.assist`
+ * request/streaming buffer as draft mode — `mode: 'rewrite'` plus the picked
+ * field's frozen `originalAnswer` as `existingAnswer`. Errors ARE shown (a
+ * deliberate click) — mirrors `doAssist`.
+ */
+async function doRewrite(preset?: ExtensionRewritePreset): Promise<void> {
+  if (!rewriteTarget) {
+    setMsg(els.importMsg, 'Pick a filled answer first.', 'err');
+    return;
+  }
+  const instruction = els.rewriteInstruction.value.trim();
+  if (!preset && !instruction) {
+    setMsg(els.importMsg, 'Pick a preset or type an instruction.', 'err');
+    return;
+  }
+  activeAssistKind = 'rewrite';
+  els.btnRewrite.disabled = true;
+  els.rewriteResult.hidden = true;
+  els.rewriteDraft.textContent = '';
+  setMsg(els.importMsg, 'Rewriting…', 'muted');
+  try {
+    const res = await send({
+      kind: 'answerAssist',
+      question: rewriteTarget.question,
+      searchWeb: false,
+      mode: 'rewrite',
+      existingAnswer: rewriteTarget.originalAnswer,
+      ...(preset ? { preset } : {}),
+      ...(instruction ? { instruction } : {}),
+    });
+    const view = resolveAnswerAssistResponse(res);
+    setMsg(els.importMsg, view.text, view.tone);
+    if (view.draft !== null) {
+      // textContent only — this is AI-generated text, never rendered as HTML.
+      els.rewriteDraft.textContent = view.draft;
+      els.rewriteResult.hidden = false;
+    }
+  } catch {
+    // A transport/messaging rejection must not strand the status on "Rewriting…".
+    setMsg(els.importMsg, 'Could not rewrite this answer. Please retry.', 'err');
+  } finally {
+    els.btnRewrite.disabled = false;
+  }
+}
+
+/** Click handler for the rewrite draft's Copy button — mirrors
+ *  `doCopyAssistDraft` exactly. */
+async function doCopyRewriteDraft(): Promise<void> {
+  const original = els.btnCopyRewrite.textContent;
+  const ok = await copyText(els.rewriteDraft.textContent ?? '');
+  els.btnCopyRewrite.textContent = ok ? '✓ Copied' : 'Copy failed';
+  setTimeout(() => {
+    els.btnCopyRewrite.textContent = original;
+  }, 1200);
+}
+
+/** Send an `answerReplace` for {@link rewriteTarget} with `text`, showing the
+ *  outcome in the shared message area — shared by Accept (the rewritten
+ *  draft) and Restore original (the frozen `originalAnswer`); the ONLY
+ *  difference between the two is which `text` is passed. Fails safe on any
+ *  page mutation since the pick (never a different field) — see
+ *  `replaceFilledField`. Never submits the form. */
+async function sendRewriteReplace(
+  text: string,
+  btn: HTMLButtonElement,
+  successMsg: string,
+  failureFallback: string
+): Promise<void> {
+  if (!rewriteTarget || !text) return;
+  btn.disabled = true;
+  try {
+    const res = await send({
+      kind: 'answerReplace',
+      question: rewriteTarget.question,
+      index: rewriteTarget.index,
+      count: rewriteTarget.expectedCount,
+      text,
+    });
+    if (res.ok && res.kind === 'answerReplace' && res.result.filled) {
+      setMsg(els.importMsg, successMsg, 'ok');
+    } else {
+      const msg =
+        res.ok && res.kind === 'answerReplace'
+          ? (res.result.error ?? failureFallback)
+          : !res.ok
+            ? res.error
+            : failureFallback;
+      setMsg(els.importMsg, msg, 'err');
+    }
+  } catch {
+    setMsg(els.importMsg, `${failureFallback} Please retry.`, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/** Click handler for "Accept" — writes the rewritten draft onto the picked
+ *  field. */
+async function doAcceptRewrite(): Promise<void> {
+  await sendRewriteReplace(
+    els.rewriteDraft.textContent ?? '',
+    els.btnAcceptRewrite,
+    'Replaced the field on the page.',
+    'Could not replace this field.'
+  );
+}
+
+/** Click handler for "Restore original" — re-injects the FROZEN pre-rewrite
+ *  text (never the current draft box), the SAME replace path Accept uses. */
+async function doRestoreRewrite(): Promise<void> {
+  if (!rewriteTarget) return;
+  await sendRewriteReplace(
+    rewriteTarget.originalAnswer,
+    els.btnRestoreRewrite,
+    'Restored the original answer.',
+    'Could not restore this field.'
+  );
 }
 
 /** Build the "Check fit" score card — score / source+résumé line / gap chips.
@@ -1319,6 +1549,17 @@ function wire(): void {
   });
   els.btnAssist.addEventListener('click', () => void doAssist());
   els.btnCopyAssist.addEventListener('click', () => void doCopyAssistDraft());
+  els.rewritePicker.addEventListener('change', onRewritePickerChange);
+  document.querySelectorAll<HTMLButtonElement>('.rewrite-presets [data-preset]').forEach((btn) => {
+    btn.addEventListener(
+      'click',
+      () => void doRewrite(btn.dataset.preset as ExtensionRewritePreset)
+    );
+  });
+  els.btnRewrite.addEventListener('click', () => void doRewrite());
+  els.btnCopyRewrite.addEventListener('click', () => void doCopyRewriteDraft());
+  els.btnAcceptRewrite.addEventListener('click', () => void doAcceptRewrite());
+  els.btnRestoreRewrite.addEventListener('click', () => void doRestoreRewrite());
   els.btnSaveToken.addEventListener('click', () => void savePairing());
   els.tokenInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') void savePairing();
@@ -1352,12 +1593,20 @@ function wire(): void {
       // about it here, and must stay disabled until the stream is terminal
       // (never a silent re-trigger that would race/corrupt the shared buffer —
       // see `assistGeneration` in background.ts). Always re-enables once done,
-      // so a terminal push never leaves the button stuck disabled.
-      els.btnAssist.disabled = !res.done;
+      // so a terminal push never leaves the button stuck disabled. Routed by
+      // `activeAssistKind` (draft vs. rewrite, PR 11) to the matching box/button
+      // — both modes share the SAME background buffer.
+      const btn = activeAssistKind === 'rewrite' ? els.btnRewrite : els.btnAssist;
+      btn.disabled = !res.done;
       const view = resolveAssistProgressView(res);
       if (view.draft !== null) {
-        els.assistDraft.textContent = view.draft;
-        els.assistResult.hidden = false;
+        if (activeAssistKind === 'rewrite') {
+          els.rewriteDraft.textContent = view.draft;
+          els.rewriteResult.hidden = false;
+        } else {
+          els.assistDraft.textContent = view.draft;
+          els.assistResult.hidden = false;
+        }
       }
       if (view.tone === 'err') setMsg(els.importMsg, view.text, 'err');
     }
