@@ -103,6 +103,7 @@ function triggers(on) {
   const labels = [];
   if (keys.includes('pull_request') || keys.includes('pull_request_target')) labels.push('PR');
   if (keys.includes('push')) labels.push('push');
+  if (keys.includes('release')) labels.push('release');
   if (keys.includes('schedule')) labels.push(scheduleLabel(on?.schedule));
   if (keys.includes('issue_comment') || keys.includes('pull_request_review_comment'))
     labels.push('comment');
