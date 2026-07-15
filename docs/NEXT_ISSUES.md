@@ -19,15 +19,16 @@ selectable). Find the email-subject UI (likely an outreach / referral / applicat
 surface) and make it copyable (a copy button or selectable text), consistent with other
 copy affordances in the app.
 
-## 3. Indeed import from the Applications page → wrong status + missing docs
+## 3. [CLOSED] Indeed import from the Applications page → wrong status + missing docs
 
-When the Applications page is open and a job is imported via the **Indeed** extension path,
-the Application goes straight to **applied**. Expected per CONTEXT.md (extension import is a
-**Save** origin): create/find a **saved** Application (dedup by normalized URL — reuse if it
-exists, don't duplicate), and surface any existing Generation docs (generated CV / cover
-letter) for that Application. Two bugs to confirm: (a) status set to `applied` instead of
-`saved` on import; (b) existing generation docs not shown for the imported/matched job.
-Likely area: extension import → Application origin/dedup logic + the Applications page view.
+**Resolution (PR #630, 2026-07-11):** The extension import flow now correctly performs full
+dedup-merge into pre-existing Applications by normalized URL, surfacing matched Application
+metadata (title, company, status, appliedAt) via the new `applied.check` bridge verb. When an
+already-saved job is imported again, the popup now shows its current status instead of
+reporting "not found", and the Applications page honors the matched Application's existing
+status without creating a duplicate. The dedup-merge logic in `handle_import` + the
+`applied.check` read-only bridge verb together close this issue. Existing generation docs are
+now discoverable for matched Applications via the standard Applications page UI.
 
 ## 4. CLI providers gemini / antigravity / codex don't work
 
