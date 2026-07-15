@@ -49,7 +49,7 @@ use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use futures::{SinkExt, StreamExt};
+use futures::StreamExt;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
@@ -72,8 +72,14 @@ mod match_live;
 pub mod native_host;
 pub mod register;
 mod status_update;
+mod stream;
 #[cfg(test)]
 mod test;
+
+/// Re-exported so `answer_assist` (a sibling of [`stream`]) can keep
+/// referring to it as `super::FrameSink` — see [`stream`]'s module doc for
+/// the streaming relay this abstracts over.
+pub(crate) use stream::FrameSink;
 
 /// Refusal text for the assisted-autofill opt-in gate — shared verbatim by
 /// [`resolve_profile`] (`profile.get`) and
@@ -183,6 +189,23 @@ pub mod msg {
     /// provider configured / malformed request). Like `status.update`, this
     /// verb's errors ARE user-facing.
     pub const ANSWER_ASSIST_RESULT: &str = "answer.assist.result";
+    /// Desktop → extension: one incremental delta of a streaming reply —
+    /// `{ delta }`. The envelope's own `reqId` correlates it to the original
+    /// request; additive so a future streaming verb rides the same family —
+    /// see [`super::answer_assist`]'s streaming doc.
+    pub const ASSIST_CHUNK: &str = "assist.chunk";
+    /// Desktop → extension: no payload — the stream named by the envelope's
+    /// `reqId` has ended (success or failure); the verb's own terminal reply
+    /// (e.g. `ANSWER_ASSIST_RESULT`) carries the actual outcome. A generic,
+    /// verb-agnostic mux signal so a background accumulator can retire its
+    /// buffer for `reqId` without parsing every verb's reply shape.
+    pub const ASSIST_DONE: &str = "assist.done";
+    /// Extension → desktop: no payload — cancel the in-flight stream named
+    /// by the envelope's `reqId` (starting a new draft/rewrite supersedes
+    /// the previous one). Best-effort, no reply — dispatched against THIS
+    /// connection's own [`stream::AssistStreamRegistry`], never a global
+    /// registry (see [`stream`]'s module doc).
+    pub const ASSIST_CANCEL: &str = "assist.cancel";
 }
 
 /// Handshake protocol version carried in the `hello` frame. MUST match the TS
@@ -571,6 +594,15 @@ async fn probe_ports(range: std::ops::RangeInclusive<u16>) -> Option<(TcpListene
 /// secret. A first frame that isn't a valid protocol-2 `hello` (a legacy
 /// plaintext-token `auth` frame, a lower protocol) gets `update.required` and
 /// closes — the v1→v2 force cutover, no dual-support path.
+///
+/// A multi-second streaming `answer.assist` handler runs on its OWN spawned
+/// task, never awaited inline here — see [`stream`]'s module doc. Every
+/// outbound frame (handshake replies, synchronous verb replies, and a
+/// streaming task's own `assist.chunk`/`assist.done`/terminal reply) funnels
+/// through one channel into [`stream::run_writer`], the sole writer of the
+/// live WS sink; this loop only ever enqueues (never awaits a socket write),
+/// so it keeps polling `reader.next()` — including a same-connection
+/// `assist.cancel` — while a stream is in flight.
 async fn handle_connection(app: AppHandle, stream: TcpStream) {
     use tokio_tungstenite::tungstenite::handshake::server::ErrorResponse;
     use tokio_tungstenite::tungstenite::http::StatusCode;
@@ -628,12 +660,24 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     // flips true only once the extension's client proof verifies (an `AuthOk`
     // decision), so an unauthenticated socket is never reported as connected.
 
-    let (mut writer, mut reader) = ws.split();
+    let (writer, mut reader) = ws.split();
+    // The ONE task that ever writes to the live WS sink — see `stream`'s
+    // module doc. Every reply below is enqueued (a synchronous, non-blocking
+    // channel `send`), never awaited directly against the socket, so a
+    // spawned streaming task never blocks this loop from polling
+    // `reader.next()` again.
+    let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+    tokio::spawn(stream::run_writer(writer, out_rx));
+
     // Per-connection handshake state; every socket starts by expecting `hello`.
     let mut conn = ConnState::AwaitingHello;
     // The `match.live` throttle lives on `BridgeState` (shared across every
     // connection for this pairing, reconnect-proof) — consulted below via
     // `state.try_acquire_match_live()`, not a per-connection instance.
+    // In-flight streaming `answer.assist` jobs for THIS connection only — see
+    // `stream::AssistStreamRegistry`'s doc for why this is per-connection
+    // rather than a field on the global `BridgeState`.
+    let assist_streams = std::sync::Arc::new(stream::AssistStreamRegistry::default());
 
     while let Some(frame) = reader.next().await {
         let msg = match frame {
@@ -672,7 +716,7 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                     "[extension_bridge] rejected outdated/legacy first frame — \
                      sending update_required and closing"
                 );
-                let _ = writer.send(Message::text(reply)).await;
+                let _ = out_tx.send(Message::text(reply));
                 break;
             }
             FrameDecision::Unauthorized => {
@@ -717,16 +761,42 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
             }
             FrameDecision::MatchLive { req_id, .. } => Some(match_live::throttled_reply(&req_id)),
             FrameDecision::AnswerAssist { req_id, payload } => {
-                Some(answer_assist::handle_answer_assist(&app, &req_id, &payload).await)
+                // Spawned onto its OWN task (see `stream::spawn_answer_assist`)
+                // so a multi-second stream never blocks THIS loop's
+                // `reader.next()` — the HIGH fix: an `assist.cancel` for this
+                // very stream (or any other frame) must still be read while it
+                // is in flight. No reply here — the spawned task sends its own
+                // `assist.chunk`/`assist.done`/terminal reply through `out_tx`.
+                stream::spawn_answer_assist(
+                    app.clone(),
+                    req_id,
+                    payload,
+                    out_tx.clone(),
+                    std::sync::Arc::clone(&assist_streams),
+                );
+                None
+            }
+            FrameDecision::AssistCancel { req_id } => {
+                assist_streams.cancel(&app, &req_id);
+                None
             }
         };
         if let Some(reply) = reply {
-            if writer.send(Message::text(reply)).await.is_err() {
+            if out_tx.send(Message::text(reply)).is_err() {
                 break;
             }
         }
     }
 
+    // The socket is gone (closed, errored, or an over-cap/outdated/failed
+    // handshake broke the loop) — cancel every stream still registered for
+    // THIS connection, not just the one an explicit `assist.cancel` might
+    // have named. Otherwise a client disconnect mid-`answer.assist` leaves
+    // the billable generation running to completion with no consumer ever
+    // reading it. Per-connection by construction (`assist_streams` is this
+    // socket's own registry — see `stream`'s module doc for why that's
+    // never a global `BridgeState` field).
+    assist_streams.cancel_all(&app);
     state.set_connected(false);
 }
 
@@ -812,6 +882,10 @@ enum FrameDecision {
     /// [`answer_assist::handle_answer_assist`]. Carries the payload verbatim
     /// so the handler can read `question` + `url` + `searchWeb`.
     AnswerAssist { req_id: String, payload: Value },
+    /// An authenticated `assist.cancel` — cancel the in-flight stream named
+    /// by `req_id` on THIS connection's own
+    /// [`stream::AssistStreamRegistry`]. No reply is ever sent for this frame.
+    AssistCancel { req_id: String },
 }
 
 /// The per-message handshake gate + dispatch routing (size cap → JSON parse →
@@ -909,8 +983,8 @@ fn advance_auth(
 /// Post-auth dispatch: the socket is session-authenticated, so frames carry no
 /// token. Routes `import.request` / `profile.get` / `applied.check` /
 /// `status.update` / `answers.save` / `answers.suggest` / `match.live` /
-/// `answer.assist`; an unknown type gets an `import.result` error reply
-/// (never a panic).
+/// `answer.assist` / `assist.cancel`; an unknown type gets an `import.result`
+/// error reply (never a panic).
 fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameDecision {
     match kind {
         msg::IMPORT_REQUEST => {
@@ -950,6 +1024,9 @@ fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameD
             let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
             FrameDecision::AnswerAssist { req_id, payload }
         }
+        // Cancel an in-flight stream — no payload to read, `req_id` names the
+        // target (see `msg::ASSIST_CANCEL`'s doc).
+        msg::ASSIST_CANCEL => FrameDecision::AssistCancel { req_id },
         // Unknown message types — acknowledged as an error, never panic.
         other => FrameDecision::Reply(import_flow::result_reply(
             &req_id,
