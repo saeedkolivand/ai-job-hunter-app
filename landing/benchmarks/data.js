@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784177380028,
+  "lastUpdate": 1784220886418,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4907,6 +4907,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 284161,
             "range": "± 3635",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7de160e10f457b19a83d89575ac61733ee985299",
+          "message": "feat: connect gmail for email-confirmation watching (auto-track layer c, foundation) (#689)\n\n* feat: add the email-watch foundation (store, imap connect, ipc)\n\nBackend half of auto-track Layer C (task #23): EmailWatchStore (email_watch.db,\naccount singleton + seen dedupe, Resettable, excluded from backups), a thin\nIMAP validate_connection seam (native-tls; imap's rustls-tls bridge pins a\nrustls-webpki with 4 live RUSTSEC advisories and no update path), the\nemail-imap keychain slot, and the 5 email_watch_* commands with contracts,\ntauri-client namespace, and mock parity. No poller/parser yet — that is PR B.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* feat: add the email-watch settings section and service hooks\n\nFrontend half of PR A (task #23): use-email-watch hooks (status query + 4\nmutations seeding the status cache), the accounts EmailWatchSection\n(connect form, connected view with enable switch and check-now, honest\nconsent disclosure), settings-search entry, and en/de translations.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: harden the email-watch foundation per critic review + add adr-0013\n\nReview round (security PASS, rust-arch PASS, frontend 1 HIGH — all resolved):\nexact-pin the alpha imap dep, try_state in the mutating commands instead of a\npanicking state(), fresh-account semantics on an address switch (clears the\nuid watermark and seen table, +test), sentinel the spawn_blocking join error,\nlog imap error kinds only, keep text labels on the pending check-now and\ndisconnect buttons (a11y HIGH, +2 regression tests, en/de keys).\n\nDocs: ADR-0013 (imap-over-oauth economics, notify-dont-write, zero content\negress), the new imap egress class enumerated in README and SECURITY, and\nthree lessons persisted.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: guard email-watch writes against a racing disconnect and strip password paste-spaces\n\nCloses the /review ensemble's verified advisories: set_enabled/record_check\nnow no-op once the account row is cleared (WHERE id = 1 AND address IS NOT\nNULL, row-affected result + 3 interleaving tests), so a disconnect landing\nduring the multi-second imap round trip can never leave enabled=1 on an\nempty row; the gmail app password is stripped of ascii whitespace before\nvalidation (google displays it space-grouped and pastes keep the spaces);\nadr-0005 gains egress class 7 so adr-0013's citation resolves.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: address the verified coderabbit findings on the email-watch foundation\n\nSeven of eleven bot findings verified real against head and fixed: imap\nvalidation gets explicit connect/read/write timeouts via a manual socket path\n(the pinned crate's builder exposes none, so a black-holing server pinned a\nblocking worker forever); connect()/clear() multi-statement writes are now\ntransactional (a landed update + failed seen-delete could permanently skip the\nstale-mailbox cleanup); the app password clears from component state on a\nfailed connect too; adr-0005's stale six-classes count, adr-0013's overstated\nrevocation and read-only claims, and the readme/security sqlite-credentials\nconflation are corrected. The other four were verified already-fixed, false\npositives, or an advisory metric - in-thread replies document each.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
+          "timestamp": "2026-07-16T18:33:40+02:00",
+          "tree_id": "a5f70f8188977487bfdeeb19f36744a7ae6b381a",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/7de160e10f457b19a83d89575ac61733ee985299"
+        },
+        "date": 1784220885752,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2212912,
+            "range": "± 41236",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2596431,
+            "range": "± 23527",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 297890,
+            "range": "± 9966",
             "unit": "ns/iter"
           }
         ]
