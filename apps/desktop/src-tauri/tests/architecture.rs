@@ -1,6 +1,6 @@
 //! Architecture boundary tests — the machine-enforced contract for the Rust core.
 //!
-//! Derived from `docs/architecture-analysis.md` (discovery) and codified in
+//! Derived from the June 2026 architecture discovery analysis (in git history) and codified in
 //! `docs/architecture-rules.md` (the layer model + rule IDs R1–R8). This is a
 //! **standalone integration test**: it uses only `std` and scans the source tree
 //! under `CARGO_MANIFEST_DIR/src` as text — it does not link the crate's internals

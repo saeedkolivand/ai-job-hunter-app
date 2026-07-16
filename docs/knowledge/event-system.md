@@ -6,7 +6,7 @@ Centralized, one-way event channels — the complement to IPC request/response (
 
 **Registry definition:** `packages/shared/src/events/index.ts`
 
-- `EVENT_CHANNELS` — namespace → { key → wire-name } map; combined view of all 11 namespaces (ai, applications, autopilot, boards, jobs, menu, notifications, scrape, shortcuts, updater)
+- `EVENT_CHANNELS` — namespace → { key → wire-name } map; combined view of all 11 namespaces (agent, ai, applications, autopilot, boards, jobs, menu, notifications, scrape, system, updater)
 - `AppEvents` — union type keyed by wire name → payload type; kept in 1:1 sync by the lock test `events.test.ts`
 - **Lock test:** `packages/shared/src/events/events.test.ts` — asserts uniqueness, wire-name collision-free, and `AppEvents ↔ EVENT_CHANNELS` sync; run on every build
 
@@ -16,7 +16,7 @@ Centralized, one-way event channels — the complement to IPC request/response (
 
 - Emits screaming-snake const names (e.g. `pub const MENU_NAVIGATE: &str = "menu:navigate"`)
 - Wire namespace derived from colon prefix; key from registry key
-- Regenerate: `pnpm gen:ipc` (enforced in CI: `pnpm gen:ipc --check`)
+- Regenerate: `pnpm gen:ipc` (enforced in CI: `pnpm gen:ipc:check`)
 
 **Rust credential-slot constants:** same codegen script → `apps/desktop/src-tauri/src/ipc_contracts/provider_slots.rs` (source: `packages/shared/src/provider-slots.ts`)
 
@@ -60,9 +60,9 @@ Examples: `menu.takePending()` (menu + action intents), `autopilot.takePendingFo
 - Types imported from `@ajh/shared` (via barrel `@ajh/shared/src/index.ts` → `EVENT_CHANNELS`, `AppEvents`)
 - Example: `menu.ts` imports `MenuNavigateEvent`, `MenuActionEvent`, `PendingMenuIntent` from contracts, calls `listen<T>(EVENT_CHANNELS.menu.navigate, handler)`
 
-## Planned phases
+## Completed & Planned phases
 
-- **Phase 4:** Typed payload structs in Rust (currently `serde_json::Value` fallbacks)
+- **Phase 4:** Typed payload structs in Rust (shipped — `apps/desktop/src-tauri/src/ipc_contracts/event_payloads.rs`, codegen'd from `packages/shared/src/schemas/index.ts`; tray dispatch_menu still passes `serde_json::Value`)
 - **Phase 6:** Jobs namespace collapse (merge `jobs:event` with autopilot stream)
 
 ## References

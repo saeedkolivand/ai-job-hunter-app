@@ -6,8 +6,8 @@ Describes the job-scraping subsystem: board registry (23 active scrapers), compa
 
 ## Board registry & catalog
 
-- **`Scraper` trait** — `apps/desktop/src-tauri/src/scraping/boards/mod.rs`. Every board implements `Scraper: Clone + Send + Sync + Debug`.
-- **`SCRAPERS`** — registry of all enabled scrapers (built at compile time, no runtime plugin system).
+- **`Scraper` trait** — `apps/desktop/src-tauri/src/scraping/types/mod.rs` (bounds: `Send + Sync`). Every board implements it.
+- **`SCRAPERS`** — registry in `scraping/boards/mod.rs` of all enabled scrapers (built at compile time, no runtime plugin system).
 - **`BOARD_IDS`** — const array in `packages/shared/src/schemas/index.ts`; lists all scrapeable boards (23 total, `aggregator` counted once among them). `AGGREGATOR_BOARD_ID = 'aggregator'` is the stable catalog id for the Adzuna/JSearch provider.
 - **Catalog** — `ScraperEngine::catalog()` (Rust) → `boards.catalog()` IPC → `useBoardsCatalog()` hook. Exposes per-board metadata:
   - `id` (slug)
@@ -81,20 +81,20 @@ Two more boards, bringing the registry to 23. Neither is career-ops-ported — s
 
 These five boards were retired as direct scrapers (ADR-026, 2026-06-21). Their Rust modules are deleted; the registry went from 21 → 16 boards. Coverage is now provided by the Aggregator. The single-job import resolvers (`scrape_url::canonical_job_url` for Indeed, `scrape_url::try_workday`) and the dormant `board_login`/credential machinery are **deliberately kept** — see ADR-026 for the full keep-list and rationale.
 
-## Aggregator board (Adzuna + JSearch + Jooble)
+## Aggregator board (Adzuna + JSearch + Jooble + Apify)
 
-**Purpose:** Cover anti-bot sites (Indeed, Glassdoor, Xing, Workday, StepStone) that return empty results or errors when self-scraped. Uses a provider registry pattern: Adzuna (primary, free), JSearch (paid fallback, invoked only on Adzuna errors), Jooble (third-tier BYO-key fallback, ~67-country coverage).
+**Purpose:** Cover anti-bot sites (Indeed, Glassdoor, Xing, Workday, StepStone) that return empty results or errors when self-scraped. Uses a provider registry pattern: Adzuna (primary, free) → JSearch (paid fallback) → Jooble (third-tier BYO-key, ~67-country coverage) → ApifyLinkedInProvider (opt-in, token + autofill-gate gated).
 
 **Full-description resolution:** Aggregator sources return short snippets; the detail pane auto-fetches full descriptions on open by following redirect chains and re-dispatching to named-board handlers. See `html_to_markdown()` in `apps/desktop/src-tauri/src/scraping/http/mod.rs` and `scraping/boards/aggregator/mod.rs` for fetch logic, IP-guarding, and snippet-vs-resolved floor semantics.
 
 **Keys and configuration:**
 
-- Adzuna, JSearch, and Jooble API keys are stored in the OS keyring and never logged (encrypted at rest, decrypted only in Rust).
-- Settings → Jobs exposes UI to enter/remove credentials (four `AggregatorKeyField` controls: two for Adzuna's app-id and app-key pair, one each for JSearch and Jooble).
-- Keys are read on-demand via `credentials::read_credential` (module at `apps/desktop/src-tauri/src/credentials/mod.rs`) into the respective slots: `ai:adzuna-app-id`, `ai:adzuna-app-key`, `ai:jsearch-key`, `ai:jooble-key`.
+- Adzuna, JSearch, Jooble, and Apify API keys are stored in the OS keyring and never logged (encrypted at rest, decrypted only in Rust).
+- Settings → Jobs exposes UI to enter/remove credentials (seven `AggregatorKeyField` controls: two for Adzuna's app-id/app-key, one each for JSearch/Jooble/Apify token, plus Comeet company UID and API token).
+- Keys are read on-demand via `credentials::read_credential` (module at `apps/desktop/src-tauri/src/credentials/mod.rs`) into the respective slots: `ai:adzuna-app-id`, `ai:adzuna-app-key`, `ai:jsearch-key`, `ai:jooble-key`, `ai:apify-token`, `ai:comeet-company-uid`, `ai:comeet-api-token`.
 - **Path-embedded-key redaction (PR #618):** Jooble embeds its API key in the URL path (`POST https://jooble.org/api/{key}`), unlike Adzuna/JSearch which use query params. New `FetchOptions.redact_path` boolean + `safe_log_url(url, redact_path)` in `apps/desktop/src-tauri/src/scraping/http/mod.rs` redact the entire path when `true`, keeping logs safe. Providers using path-embedded keys must pass `redact_path: true` in their `FetchOptions`.
 
-**Provider details, endpoints, and fallback logic:** see `apps/desktop/src-tauri/src/scraping/boards/aggregator/mod.rs` (AdzunaProvider, JSearchProvider, and JobProvider trait).
+**Provider details, endpoints, and fallback logic:** see `apps/desktop/src-tauri/src/scraping/boards/aggregator/providers.rs` (AdzunaProvider, JSearchProvider, JoobleProvider, ApifyLinkedInProvider, and JobProvider trait).
 
 **Adzuna country-code limitation (PR #483):**
 
@@ -112,7 +112,7 @@ Adzuna's API is country-scoped with a fixed market allowlist; see `ADZUNA_SUPPOR
 
 Location input policy is now visible via per-board summary notes. When a search input lacks explicit country but specifies a city/region, the aggregator may broaden to country-level results or guess a market (fallback when Adzuna is sparse).
 
-- **Floor guard:** `ADZUNA_BROADEN_FLOOR = 3` at `aggregator/mod.rs:44`. Broaden is triggered only when Adzuna returns fewer than 3 results for a location query AND `!country_guessed` (i.e. the user didn't supply a country). Guessed-market fallback to JSearch happens only when guessed Adzuna also returns `< 3` results.
+- **Floor guard:** `ADZUNA_BROADEN_FLOOR = 3` at `aggregator/mod.rs:52`. Broaden is triggered only when Adzuna returns fewer than 3 results for a location query AND `!country_guessed` (i.e. the user didn't supply a country). Guessed-market fallback to JSearch happens only when guessed Adzuna also returns `< 3` results.
 - **Note tokens:** `BoardScrapeSummary.note: Option<String>` records the location policy decision as a machine token:
   - `broadened:<cc>` — Adzuna results exist but sparse (`< 3`); broadened from city to country-level (e.g., "few local results in Berlin — showing Germany-wide").
   - `guessed-market:<cc>` — No explicit country provided; market was guessed and Adzuna returned >= 3 results (authoritative guess). Never emitted for sub-floor guesses that fall through to JSearch global fallback.
@@ -137,7 +137,7 @@ Location input is now canonical: resolved once from user-supplied city/region/co
   - **Aggregator** (Adzuna `where` param + country-scoped market routing; JSearch fallback)
   - **LinkedIn** (`geoId` typeahead + `distance` radius)
   - **Arbeitsagentur** (`wo` param)
-- **20 non-supporting boards:** Remote feeds (remotive/remoteok/wwr), regional feeds (berlinstartupjobs/germantechjobs), ycombinator/arbeitnow, themuse+comeet, all 10 company-slug ATS (greenhouse/lever/ashby/smartrecruiters/personio/recruitee/pinpoint/rippling/breezy/bamboohr/workable).
+- **20 non-supporting boards:** Remote feeds (remotive/remoteok/wwr), regional feeds (berlinstartupjobs/germantechjobs), ycombinator/arbeitnow, themuse+comeet, all 11 company-slug ATS (greenhouse/lever/ashby/smartrecruiters/personio/recruitee/pinpoint/rippling/breezy/bamboohr/workable).
 - **IPC contract:** `BoardCatalogEntry.supportsLocation?` boolean flag in `packages/shared/src/ipc/contracts/boards.ts` (flows to renderer picker).
 
 **Central conservative filter:**
@@ -296,8 +296,8 @@ Per-board scrape outcomes are now visible via a shared `BoardSummaryChips` compo
 
 **Aggregator short snippets → full descriptions:** Adzuna search API returns snippets (~200–500 chars). Detail pane auto-fetches on open when aggregator source + description < 700 chars, following the redirect chain and re-dispatching named-board handlers on the final URL. If the resolved text is meaningfully longer, it replaces the snippet; otherwise the snippet floor is kept. Redirect following is IP-guarded per-hop (closes DNS-rebinding TOCTOU); 429/login-wall/error returns Ok(None) and the snippet is retained.
 
-- **Resolver:** `apps/desktop/src-tauri/src/commands/scrape.rs: scrape_resolve_url(req)` — public command invoked by detail pane
-- **Re-dispatch:** `apps/desktop/src-tauri/src/scraping/scrape_url/mod.rs: resolve_full_description()` — follows redirect and re-dispatches handlers per final URL
+- **Resolver:** `apps/desktop/src-tauri/src/commands/scrape.rs: scrape_resolve_url(app, url)` — public command invoked by detail pane
+- **Re-dispatch:** `apps/desktop/src-tauri/src/scraping/scrape_url/mod.rs: resolve()` — follows redirect and re-dispatches handlers per final URL
 - **Pane gate:** `apps/desktop/src/renderer/features/jobs/components/JobDetailPane/index.tsx` — on-open resolve if (isAggregatorSource && descLength < 700); keep-longer merge logic
 - **Description mutation & re-score:** Backend command `scrape_update_description(id, text)` writes resolved text to the live `PostingsCache`. The frontend's `MatchScoresProvider` holds a reactive `requested` set; when the description is updated, the per-job match score is re-computed on-demand via `useJobMatchScore` (single-job scoring, not batch). See IPC contract in `packages/shared/src/ipc/contracts/scrape.ts`.
 
@@ -323,8 +323,8 @@ Per-board scrape outcomes are now visible via a shared `BoardSummaryChips` compo
 - **Keyword aggregators (client-side filter, no server-side search):**
   - The Muse: `apps/desktop/src-tauri/src/scraping/boards/themuse/mod.rs`
 - **Aggregator:**
-  - Registry: `apps/desktop/src-tauri/src/scraping/boards/aggregator/`
-  - Providers (Adzuna, JSearch, Apify): `apps/desktop/src-tauri/src/scraping/boards/aggregator/providers.rs` (JobProvider trait + implementations)
+  - Registry: `apps/desktop/src-tauri/src/scraping/boards/aggregator/mod.rs`
+  - Providers (Adzuna, JSearch, Jooble, Apify LinkedIn): `apps/desktop/src-tauri/src/scraping/boards/aggregator/providers.rs` (JobProvider trait + implementations)
 
 ## Error representability (PR A, 2026-07-10)
 
@@ -367,7 +367,8 @@ New `ats_finish_search(signal, out, board_id, successful_fetches, rejected_slugs
 **Source pointers:**
 
 - Breezy row-drift recovery: `apps/desktop/src-tauri/src/scraping/boards/breezy/mod.rs` (capture `raw_row_count`, check emptiness post-`rows_to_jobs`)
-- LinkedIn soft-block + geoId cache: `apps/desktop/src-tauri/src/scraping/boards/linkedin/mod.rs` (`page0_is_soft_block`, `GEO_ID_CACHE`, `select_geo_id`, `country_aliases`)
+- LinkedIn soft-block detector: `apps/desktop/src-tauri/src/scraping/linkedin/api_client/mod.rs` (`page0_is_soft_block`)
+- LinkedIn geoId cache: `apps/desktop/src-tauri/src/scraping/boards/linkedin/mod.rs` (`GEO_ID_CACHE`, `select_geo_id`, `country_aliases`)
 - Rejected-slug finalization: `apps/desktop/src-tauri/src/scraping/boards/common.rs` (`ats_finish_search`, `ats_all_slugs_invalid_message`)
 - Tests: breezy `rows_to_jobs_all_rows_undeserializable_returns_empty` · linkedin `page0_is_soft_block`, `select_geo_id` · common `finish_search_*` truth table + personio inline cancel-after-reject seam
 
@@ -390,7 +391,7 @@ When a board achieves partial success (some companies reached, some invalid slug
 | `broadened`/`guessed`                          | aggregator location heuristic             | aggregator-only   | note (blue) | broadened from city to country |
 | error                                          | fatal (all-fail, all-reject)              | error not note    | error (red) | all hosts failed               |
 
-**Implementation:** `location-filtered` uses `note.get_or_insert_with()` (fills empty slot only). `ats_partial_note(successful_fetches, rejected_slugs, rows_dropped)` returns `Option<String>` (None for clean runs) via sequential if checks: `successful_fetches==0` → None (all-fail is an error); `rejected_slugs>0` → `"slugs-invalid:{n}"` (preferred, wins); else `rows_dropped>0` → `"rows-dropped:{n}"`. Source: `apps/desktop/src-tauri/src/scraping/boards/common.rs:210-222` + `scraping/engine/mod.rs:733-741`.
+**Implementation:** `location-filtered` uses `note.get_or_insert_with()` (fills empty slot only). `ats_partial_note(successful_fetches, rejected_slugs, rows_dropped)` returns `Option<String>` (None for clean runs) via sequential if checks: `successful_fetches==0` → None (all-fail is an error); `rejected_slugs>0` → `"slugs-invalid:{n}"` (preferred, wins); else `rows_dropped>0` → `"rows-dropped:{n}"`. Source: `apps/desktop/src-tauri/src/scraping/boards/common.rs:210-222` + `scraping/engine/mod.rs:791-800`.
 
 ## Job-search trust program — COMPLETE (PRs A–H, 2026-07-10/11)
 

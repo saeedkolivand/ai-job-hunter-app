@@ -17,7 +17,7 @@ Implement one-click CLI agent install via:
    - Decouples the IPC interface from platform-specific shell invocation
 
 2. **Static capability allowlist** in `apps/desktop/src-tauri/capabilities/default.json`
-   - Exactly 3 fixed-arg commands (one per agent)
+   - Exactly 4 fixed-arg commands (one per agent)
    - No dynamic argument injection; the agent registry must **match the capability list exactly**
    - A Rust test asserts the invariant (no extras, no missing)
 
@@ -52,7 +52,7 @@ Implement one-click CLI agent install via:
 - **Service hooks**: `apps/desktop/src/renderer/services/use-cli-agents/use-cli-agents.ts` — `useCliAgents()`, `useInstallCliAgent()`
 - **UI**: `features/settings/components/ai-settings/CliAgentInstall` (consent modal, streamed console, guide)
 - **Session slice**: Integrated into Settings; agent status cached + re-probed after install
-- **Capability allowlist**: `apps/desktop/src-tauri/capabilities/default.json` — 3 shell:allow-execute entries
+- **Capability allowlist**: `apps/desktop/src-tauri/capabilities/default.json` — 4 shell:allow-execute entries
 - **Invariant test**: `apps/desktop/src-tauri/tests/` asserts registry ↔ capability parity
 
 See:

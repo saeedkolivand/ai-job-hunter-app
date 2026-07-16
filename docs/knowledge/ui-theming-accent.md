@@ -18,7 +18,7 @@ The **runtime theme engine** applies color scheme (light/dark/system), accessibi
 **Single-source collapse:** `--color-brand` in `packages/ui/src/css/tokens.css` is the ONE accent. All derived colors (`brand-soft`, `brand-dim`, `action-primary`, `ring-brand`, glows) compute from it deterministically:
 
 - **CSS-first:** `brand-dim` + glows use `color-mix()` — no JS, robust scaling.
-- **Runtime:** `brand-soft` (lightened per-scheme by 28% dark / 16% light) + `action-foreground` (auto-contrasted WCAG label color) computed by `applyAccent()` and written to `<html>.style` before paint.
+- **Runtime:** `applyAccent()` (packages/ui/src/lib/theme.ts:75-112) computes and writes `brand-soft` (lightened per-scheme by 28% dark / 16% light), `action-foreground` (auto-contrasted WCAG label color), plus optional gradient mid/end vars (`brand-mid`, `brand-2` + soft steps) from `ThemePrefs.accentColor2` (secondary hue for two-tone gradients; system accents auto-rotated via `rotateHueHex`).
 
 **Color math:** `packages/ui/src/lib/color.ts` (`parseHex`, `luminance`, `lightenHex`, `readableForeground`). Used by the applier to ensure custom/system accents stay legible and cohesive.
 
