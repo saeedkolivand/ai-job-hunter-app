@@ -1,6 +1,6 @@
 # ADR-001: Rust-first business logic
 
-Last updated: 2026-06-01
+Last updated: 2026-07-16
 
 **Status:** Accepted · See also [`docs/DESIGN_DECISIONS.md`](../../DESIGN_DECISIONS.md)
 

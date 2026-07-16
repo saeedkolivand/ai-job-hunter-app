@@ -1,6 +1,6 @@
 # ADR-016: Centralized Notification Center
 
-Last updated: 2026-06-12
+Last updated: 2026-07-16
 
 **Status:** Accepted
 

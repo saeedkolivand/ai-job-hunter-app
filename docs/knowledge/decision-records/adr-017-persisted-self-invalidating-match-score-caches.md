@@ -1,6 +1,6 @@
 # ADR-017: Persisted, self-invalidating match-score & posting-vector caches
 
-Last updated: 2026-06-14
+Last updated: 2026-07-16
 
 **Status:** Accepted
 

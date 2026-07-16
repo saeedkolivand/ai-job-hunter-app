@@ -23,6 +23,17 @@ Describe **shape and contracts**; **never copy drift-prone literals** (scoring w
 
 Run `graphify update .` (AST-only, no API cost) so the graph stays current.
 
+## Last-updated header maintenance
+
+Most docs carry a `Last updated: YYYY-MM-DD` header (line ~3). **The auto-bump hook updates the date automatically** when files are staged for commit via `lint-staged`, so no manual date updates are needed.
+
+If a doc's header includes a trailing annotation like `Last updated: YYYY-MM-DD (v0.116.0)` or `(task #16: ...)`, **refresh the annotation to describe the current change** whenever you edit that doc — the hook preserves it. Example:
+
+- Before: `Last updated: 2026-07-16 (v0.116.0)`
+- After edit for new feature: `Last updated: 2026-07-16 (v0.117.0: new feature)` or just `(v0.117.0)` if the versioning scheme is simple.
+
+This makes commit history and blame queries meaningful — the annotation documents _why_ the doc was touched, not just _when_.
+
 ## Lessons graduation
 
 When an **Architecture-decision** lesson becomes an ADR, **remove it from `lessons.jsonl`** — the ADR is then its single source.

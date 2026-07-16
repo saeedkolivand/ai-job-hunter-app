@@ -1,6 +1,6 @@
 # ADR-010: Untrusted-input fencing for web-sourced company research
 
-Last updated: 2026-06-01
+Last updated: 2026-07-16
 
 **Status:** Accepted
 

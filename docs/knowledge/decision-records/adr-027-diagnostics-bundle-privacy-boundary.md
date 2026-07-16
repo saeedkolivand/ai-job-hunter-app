@@ -1,6 +1,6 @@
 # ADR-027: Diagnostics-bundle privacy boundary
 
-Last updated: 2026-06-30
+Last updated: 2026-07-16
 
 **Status:** Accepted
 

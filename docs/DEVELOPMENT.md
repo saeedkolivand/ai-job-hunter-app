@@ -1,6 +1,6 @@
 # Development Setup — AI Job Hunter
 
-Last updated: 2026-06-01
+Last updated: 2026-07-16
 
 This guide gets you from zero to a running dev environment.
 

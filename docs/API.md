@@ -1,6 +1,6 @@
 # IPC API Reference — AI Job Hunter
 
-Last updated: 2026-07-05
+Last updated: 2026-07-16
 
 All renderer ↔ Rust communication is defined as typed contracts in `packages/shared/src/ipc/contracts/`. The renderer accesses them exclusively through `AppClient` service hooks.
 
