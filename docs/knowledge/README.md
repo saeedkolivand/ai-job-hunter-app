@@ -25,6 +25,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [domain-model.md](domain-model.md)                               | Core types/traits + registries (DocumentModel, JobPosting, ExportRequest/Result, Scraper/SCRAPERS)                         |
 | [resume-domain.md](resume-domain.md)                             | Resume + ATS + export: sections, templates, country standards, ATS scoring model, PDF/DOCX contract                        |
 | [automation-domain.md](automation-domain.md)                     | Scraping + AI-provider: registries, resilience, provider abstraction, embeddings, streaming, prompts                       |
+| [scraping-domain.md](scraping-domain.md)                         | Board/aggregator scraping: registries, aggregator-first routing (Adzuna/JSearch/Jooble), curated ATS seeds                 |
 | [../SCRAPING_ENDPOINTS.md](../SCRAPING_ENDPOINTS.md)             | Per-board scraping endpoint reconnaissance (external snapshot — see the doc)                                               |
 | [extension-domain.md](extension-domain.md)                       | Browser extension (MV3) + desktop bridge: auth model, transport, protocol lockstep, store policy                           |
 | [github-projects-import.md](github-projects-import.md)           | GitHub repository import for resume builder Projects step: Rust fetch + SSRF guard, AI bullet generation, modal UI         |
@@ -54,7 +55,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-009](decision-records/adr-009-resettable-reset-registry.md)                             | Full factory reset via a `Resettable` registry                                            |
 | [ADR-010](decision-records/adr-010-untrusted-input-fencing.md)                               | Untrusted-input fencing for web-sourced company research                                  |
 | [ADR-011](decision-records/adr-011-referral-helper-manual-only.md)                           | Referral helper is manual-only; no LinkedIn profile scraping                              |
-| [ADR-012](decision-records/adr-012-html-preview-approximate.md)                              | AI-Generate live preview renders the real exported PDF                                    |
+| [ADR-012](decision-records/adr-012-html-preview-approximate.md)                              | Live preview renders the real exported document via SVG; templates stay single-source     |
 | [ADR-013](decision-records/adr-013-resume-builder-base-plus-handoff.md)                      | Resume Builder: job-agnostic base + in-memory tailor handoff                              |
 | [ADR-014](decision-records/adr-014-cli-agent-shell-plugin-static-allowlist.md)               | In-app agent install via shell plugin with a static allowlist                             |
 | [ADR-015](decision-records/adr-015-extension-bridge-websocket-save-origin.md)                | Extension bridge: WebSocket server with origin validation and token gate                  |
@@ -72,12 +73,14 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-027](decision-records/adr-027-diagnostics-bundle-privacy-boundary.md)                   | Diagnostics-bundle privacy boundary (strict allowlist + redaction before public artifact) |
 | [ADR-028](decision-records/adr-028-additive-aggregator-merge-paid-provider-cost-controls.md) | Additive aggregator merge and paid-provider cost controls                                 |
 
+**Newer numbered ADRs** live in `docs/adr/0001-0013` — see per-domain docs for cross-references (e.g., extension-domain.md for ADR-0009/0010, automation-domain.md for ADR-0013).
+
 Every ADR carries a `Status` field documenting its lifecycle: `Accepted | Superseded by ADR-NNN | Deprecated`. Retired decisions are visibly retired and linked to their successor, preventing confusion.
 
 ## Canonical docs (do not duplicate — link)
 
 `docs/ARCHITECTURE.md`, `docs/architecture-rules.md`, `docs/PATTERNS.md`, `docs/DESIGN_SYSTEM.md`, `docs/EXPORT_TEMPLATES.md`, `docs/API.md`, `docs/DESIGN_DECISIONS.md`, and the graphify graph (`graphify-out/`).
 
-**Agent system:** interactive explainer at `landing/agent-system.html` documents the 23-agent fleet, pairing structure, and command routing.
+**Agent system:** interactive explainer at `landing/agent-system.html` documents the agent fleet, pairing structure, and command routing.
 
-> Maintained **only** by `project-steward`. Keep each file ≤ ~150 lines. After code/doc changes: `graphify update .`.
+> Maintained **only** by `project-steward`. Per-domain knowledge docs may exceed ~150 lines (e.g., scraping-domain.md, extension-domain.md). After code/doc changes: `graphify update .`.

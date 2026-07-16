@@ -30,6 +30,7 @@ import { CapabilityProvider } from '@/providers/CapabilityProvider';
 import {
   useAccentEvents,
   useApplicationEvents,
+  useExtensionBridgeEvents,
   useNotificationEvents,
   useSyncCloseToTray,
   useSyncSalaryExpectation,
@@ -60,6 +61,16 @@ function ApplicationEventsBridge() {
  *  Rendered once inside `NotificationProvider`; the listeners attach a single time. */
 function NotificationEventsBridge() {
   useNotificationEvents();
+  return null;
+}
+
+/** Keeps the extension-bridge connection pill live: invalidates the status
+ *  query on the bridge's `extensionBridge:changed` push (a 0→1 / →0
+ *  live-connection transition), so Settings flips instantly on pair/unpair
+ *  instead of waiting on its 30s poll. Mounted once; the listener attaches a
+ *  single time. */
+function ExtensionBridgeEventsBridge() {
+  useExtensionBridgeEvents();
   return null;
 }
 
@@ -201,6 +212,7 @@ function RootLayout() {
       <MenuNavigationBridge />
       <ApplicationEventsBridge />
       <NotificationEventsBridge />
+      <ExtensionBridgeEventsBridge />
       <AccentEventsBridge />
       <NotificationToastBridge />
       <ProtocolVersionGate>

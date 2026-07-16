@@ -126,6 +126,15 @@ fn applications_changed_event_name_is_stable() {
     assert_eq!(crate::events::APPLICATIONS_CHANGED, "applications:changed");
 }
 
+#[test]
+fn extension_bridge_changed_event_name_is_stable() {
+    // Pinned so the renderer's `onChanged` subscription string can rely on it.
+    assert_eq!(
+        crate::events::EXTENSION_BRIDGE_CHANGED,
+        "extensionBridge:changed"
+    );
+}
+
 // ── Token lifecycle ──────────────────────────────────────────────────────────
 
 #[test]
@@ -161,6 +170,62 @@ fn fresh_state_has_no_port_and_is_disconnected() {
     let s = BridgeState::load(dir.path());
     assert_eq!(s.port(), None);
     assert!(!s.is_connected());
+}
+
+// ── Live-connection COUNT (multiple browsers share one token) ────────────────
+//
+// `connected` is a refcount, not a last-writer-wins flag, so pairing a second
+// browser and then closing ONE of them must not report "disconnected" while
+// the other socket is still open (the bug this fixes: whichever socket closed
+// LAST used to decide connectivity for every other still-open one).
+
+#[test]
+fn two_authenticated_sockets_one_closing_stays_connected() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+    assert!(!s.is_connected());
+
+    assert!(s.inc_connected(), "first auth is the 0→1 transition");
+    assert!(s.is_connected());
+    assert!(
+        !s.inc_connected(),
+        "second browser pairing with the same token is 1→2, not a transition"
+    );
+    assert!(s.is_connected());
+
+    assert!(
+        !s.dec_connected(),
+        "one socket closing (2→1) must not report the last-connection transition"
+    );
+    assert!(
+        s.is_connected(),
+        "the other browser is still paired — must still read connected"
+    );
+
+    assert!(
+        s.dec_connected(),
+        "the second socket closing is the real 1→0 transition"
+    );
+    assert!(!s.is_connected());
+}
+
+#[test]
+fn dec_connected_without_a_prior_increment_saturates_at_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+    assert!(!s.is_connected());
+
+    // Mirrors an unauthenticated socket's teardown (rejected origin, failed
+    // proof, over-cap/outdated first frame): `handle_connection` never calls
+    // `inc_connected` for it, so this must be a no-op. Also proves the
+    // saturating decrement itself: an `AtomicUsize::fetch_sub` on a zero count
+    // would otherwise wrap to `usize::MAX`, which `is_connected` (`count > 0`)
+    // would misreport as connected.
+    assert!(!s.dec_connected());
+    assert!(
+        !s.is_connected(),
+        "an unmatched decrement must never wrap below zero"
+    );
 }
 
 #[test]

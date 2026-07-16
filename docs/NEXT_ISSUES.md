@@ -68,3 +68,9 @@ without crashing). None of `useSetActiveProvider`/`useSetProviderSettings`/
 to `tauri-client` (provider/model/baseUrl) or that `keys.ai.activeConfig` is invalidated
 on success. Pre-existing test gap — same class of assertion the extension-bridge boolean
 mutation test (`use-extension-bridge.test.ts`) already has for its own setter.
+
+## 8. [CLOSED] REQ-16240 "keep /resumes" clause — superseded
+
+**Resolution:** annotated in the `AUDIT_REPORT.md` requirements ledger — REQ-16240's
+route-path clause is superseded_by REQ-09023; `/documents` is the canonical route (zero
+`/resumes` references remain), no redirect needed.

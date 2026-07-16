@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784220886418,
+  "lastUpdate": 1784239053820,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4949,6 +4949,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 297890,
             "range": "± 9966",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b6281d6d84d9f36b24f4de514961799ac43232e0",
+          "message": "fix: track bridge connections with a refcount and push status changes to settings (#693)\n\n* fix(shared): add a bridge live-connection-changed push event\n\nWire-protocol lockstep for the bridge's live-connection change push: a new\nEVENT_CHANNELS.extensionBridge.changed constant, its ExtensionBridgeChangedEvent\npayload type, and the matching onChanged subscription method on the\nExtensionBridgeContract, plus the generated Rust EXTENSION_BRIDGE_CHANGED\nconstant (pnpm gen:ipc).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix(bridge): count live connections instead of one shared flag\n\nBridgeState.connected was a single AtomicBool set true on every AuthOk and\nfalse on ANY socket close. With two browsers paired on the same token,\nwhichever socket closed last decided is_connected() for every other\nstill-open one — Chrome's MV3 service worker idling its socket closed the\nflag while Firefox was still connected, so the Settings pill went stale.\n\nReplace it with an AtomicUsize refcount: inc_connected on AuthOk,\ndec_connected on that same connection's teardown (gated by a per-connection\n`authenticated` flag so an unauthenticated close never decrements), and\nemit `EXTENSION_BRIDGE_CHANGED` only on the 0->1 / ->0 transitions. Saturating\ndecrement so an unmatched call can never wrap the count below zero.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix(desktop): subscribe the renderer to the bridge connection event\n\nWire the client, the app-global root layout, and a new\nuseExtensionBridgeEvents hook to the bridge's live-connection push:\ninvalidates the extension-bridge status query on a 0->1 / ->0 transition so\nthe Settings pill flips immediately on pair/unpair, instead of only on the\nexisting 30s poll (kept as a fallback for a missed/dropped event).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix(desktop): add a manual refresh button to the extension-bridge status\n\nBeside the connection pill in Settings, a RefreshButton that calls\nrefetch() on the status query — its label stays visible and only the icon\nspins while pending, matching this section's other pending-button pattern.\nAlso documents (en+de) that multiple browsers can pair with the same token\nand that Regenerate token disconnects all of them, not just the current one.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* refactor: extract the applied-check read path from the bridge module\n\nextension_bridge/mod.rs grew past the R8 hard LOC cap (tests/architecture.rs)\nonce the live-connection refcount landed. Move the self-contained\napplied.check machinery (AppliedCheckOk, resolve_applied_check,\napplied_result_reply, handle_applied_check) into a sibling applied_check.rs,\nmirroring the existing status_update.rs / autotrack.rs split. Pure move: no\nbehavior change, pub(super) visibility so import_tests.rs keeps direct\naccess, call sites updated to applied_check::handle_applied_check.\n\nmod.rs: 1419 -> 1316 LOC (cap is 1400).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
+          "timestamp": "2026-07-16T23:47:23+02:00",
+          "tree_id": "4de6d3ccb74077e51b2ec7775ce9c558f1ca3d2d",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/b6281d6d84d9f36b24f4de514961799ac43232e0"
+        },
+        "date": 1784239053154,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2125104,
+            "range": "± 49147",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2525684,
+            "range": "± 25692",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 287334,
+            "range": "± 13954",
             "unit": "ns/iter"
           }
         ]

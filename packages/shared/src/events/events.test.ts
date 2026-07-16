@@ -30,6 +30,7 @@ describe('EVENT_CHANNELS', () => {
       'applications',
       'autopilot',
       'boards',
+      'extensionBridge',
       'jobs',
       'menu',
       'notifications',
@@ -85,6 +86,7 @@ describe('EVENT_CHANNELS', () => {
       'boards:login-status',
       // Windows accent-change push (WinRT UISettings::ColorValuesChanged).
       'system:accentChanged',
+      'extensionBridge:changed',
     ];
     const eventChannels = flattenEventChannels().sort();
     expect((appEventKeys as string[]).slice().sort()).toEqual(eventChannels);
