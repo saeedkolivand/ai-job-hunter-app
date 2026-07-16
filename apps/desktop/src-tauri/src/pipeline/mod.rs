@@ -28,8 +28,9 @@ use crate::error::AppResult;
 
 /// Binds the active provider + model + app handle so any pipeline stage can run a
 /// non-streaming completion through the *centralized* provider layer — same
-/// `resolve()`, keychain auth, capabilities, and request tracing as chat. Shared
-/// platform infrastructure, not a per-feature detail.
+/// [`from_active`](Self::from_active) resolution, keychain auth, capabilities,
+/// and request tracing as chat. Shared platform infrastructure, not a
+/// per-feature detail.
 pub struct Completer {
     app: AppHandle,
     provider: Box<dyn AiProvider>,
@@ -42,29 +43,10 @@ pub struct Completer {
 }
 
 impl Completer {
-    /// Resolve a request's provider/model into a `Completer`. The provider is
-    /// **required and validated** — unknown/missing providers and model/provider
-    /// mismatches are hard errors, never a silent fallback.
-    pub fn resolve(
-        app: &AppHandle,
-        provider: Option<&str>,
-        model: Option<&str>,
-        base_url: Option<String>,
-    ) -> AppResult<Self> {
-        let (provider, model, base_url) = Self::resolve_parts(provider, model, base_url)?;
-        Ok(Self {
-            app: app.clone(),
-            provider,
-            model,
-            base_url,
-        })
-    }
-
-    /// The `AppHandle`-free core of [`resolve`](Self::resolve): provider present →
-    /// parse → model rule → `validate_model` → construct the boxed provider client
-    /// (`base_url` only honored for `OpenAiCompatible`). Extracted so both `resolve`
-    /// and the store-driven [`from_config`](Self::from_config) share one
-    /// implementation and so it's directly unit-testable without an `AppHandle`.
+    /// The `AppHandle`-free core of the store-driven [`from_config`](Self::from_config):
+    /// provider present → parse → model rule → `validate_model` → construct the
+    /// boxed provider client (`base_url` only honored for `OpenAiCompatible`).
+    /// Extracted so it's directly unit-testable without an `AppHandle`.
     fn resolve_parts(
         provider: Option<&str>,
         model: Option<&str>,
@@ -93,13 +75,10 @@ impl Completer {
     }
 
     /// Resolve a `Completer` from the **backend-owned** active provider store
-    /// ([`crate::ai_config::AiConfigStore`]) — the trust-boundary replacement for
-    /// [`resolve`](Self::resolve)'s request-supplied provider/model/base_url. The
-    /// renderer can no longer point generation at an attacker endpoint: routing
-    /// comes entirely from the persisted store, which validated every value at
-    /// write time. Reproduces `resolve`'s steps 1–5 verbatim (provider present →
-    /// parse → model rule → `validate_model` → OpenAiCompatible-only base_url),
-    /// differing ONLY in the source of the three values.
+    /// ([`crate::ai_config::AiConfigStore`]) — the ONLY provider/model/base_url
+    /// resolution path. The renderer can no longer point generation at an
+    /// attacker endpoint: routing comes entirely from the persisted store, which
+    /// validated every value at write time.
     ///
     /// The store's config is snapshotted (owned) before this returns, so no DB lock
     /// is held across any later `.await`.
@@ -121,9 +100,9 @@ impl Completer {
     /// stored `base_url` on the egress path (the writer/seed/import all validate
     /// it, so this only ever fires on a tampered store — fail closed, never
     /// silently fall back to the default endpoint), then the same
-    /// [`resolve_parts`](Self::resolve_parts) steps 1-5 `resolve` uses. Takes an
-    /// already-read owned [`ActiveAiConfig`](crate::ai_config::ActiveAiConfig) —
-    /// no store lock, no `AppHandle` — so it's directly unit-testable.
+    /// [`resolve_parts`](Self::resolve_parts) steps. Takes an already-read owned
+    /// [`ActiveAiConfig`](crate::ai_config::ActiveAiConfig) — no store lock, no
+    /// `AppHandle` — so it's directly unit-testable.
     fn from_config(
         cfg: crate::ai_config::ActiveAiConfig,
     ) -> AppResult<(Box<dyn AiProvider>, String, Option<String>)> {
