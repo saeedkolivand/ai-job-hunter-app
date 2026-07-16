@@ -162,6 +162,25 @@ export function matchFieldKey(el: HTMLInputElement): string | null {
   return matchNamedKey(signal);
 }
 
+/**
+ * Passive "does this page have at least one autofill-supported identity
+ * field?" probe — the SAME gates {@link planAndFill} uses ({@link matchFieldKey}
+ * returning a matched key, which already requires {@link isCandidateField}),
+ * but stops at the first match and never writes anything. Answers-capture's
+ * own candidate lists deliberately EXCLUDE identity fields (they're
+ * profile-sourced, not "application questions" — see `answers-capture.ts`'s
+ * `isCapturable`), so a page with ONLY name/email/phone fields would
+ * otherwise look answer-capture-empty even though "Fill this form" has
+ * plenty to do. This is the other half of the popup's fields-probe union —
+ * see `probe-fields.ts`.
+ */
+export function hasAutofillableFields(doc: Document): boolean {
+  for (const el of Array.from(doc.querySelectorAll('input'))) {
+    if (matchFieldKey(el) !== null) return true;
+  }
+  return false;
+}
+
 /** The value for a logical key from the profile (+ split for first/last). */
 function valueForKey(
   key: string,
