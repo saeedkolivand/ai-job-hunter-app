@@ -11,7 +11,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { browser } from '@wxt-dev/browser';
 
-import { clearToken, getToken, looksLikeToken, setToken } from './storage';
+import {
+  clearToken,
+  getAnswerToolsExpanded,
+  getToken,
+  looksLikeToken,
+  setAnswerToolsExpanded,
+  setToken,
+} from './storage';
 
 // ── Hoisted store (must be created before vi.mock factory executes) ───────────
 
@@ -120,6 +127,30 @@ describe('storage – malformed / missing stored value shape check', () => {
     getStorageLocalMock().get.mockResolvedValueOnce({});
     const result = await getToken();
     expect(result).toBeNull();
+  });
+});
+
+describe('storage – answer-tools expand/collapse preference (UI boolean, not PII/job data)', () => {
+  beforeEach(resetStorage);
+
+  it('defaults to false (collapsed) when nothing has been stored', async () => {
+    expect(await getAnswerToolsExpanded()).toBe(false);
+  });
+
+  it('round-trips true', async () => {
+    await setAnswerToolsExpanded(true);
+    expect(await getAnswerToolsExpanded()).toBe(true);
+  });
+
+  it('round-trips back to false after being set true', async () => {
+    await setAnswerToolsExpanded(true);
+    await setAnswerToolsExpanded(false);
+    expect(await getAnswerToolsExpanded()).toBe(false);
+  });
+
+  it('defaults to false (does not throw) for a malformed stored value', async () => {
+    getStorageLocalMock().get.mockResolvedValueOnce({ answerToolsExpanded: 'yes' });
+    expect(await getAnswerToolsExpanded()).toBe(false);
   });
 });
 
