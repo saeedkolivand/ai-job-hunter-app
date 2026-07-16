@@ -182,18 +182,35 @@ export function resolveShowMarkAppliedButton(res: PopupResponse): boolean {
   return result.status === 'saved';
 }
 
+/** Whether the Form group + the Answer-tools disclosure should each be
+ *  shown — see {@link resolveFieldsProbeResponse}. */
+export interface FieldsProbeView {
+  showFormGroup: boolean;
+  showAnswerTools: boolean;
+}
+
 /**
- * Given a `fieldsProbe` response, whether the Form group + Answer-tools
- * disclosure should be shown. Fails OPEN (`true`) on a transport-level
- * `ok:false` or an unexpected `kind` — mirrors the background's own
- * fail-open fold (`runFieldsProbe`) so a probe bug can never hide those
- * features; only a CONFIRMED `hasFields:false` hides them.
+ * Given a `fieldsProbe` response, whether the Form group and the
+ * Answer-tools disclosure should each be shown. Fails OPEN (`true` for both)
+ * on a transport-level `ok:false` or an unexpected `kind` — mirrors the
+ * background's own fail-open fold (`runFieldsProbe`) so a probe bug can
+ * never hide either feature; only a CONFIRMED `false` signal hides one.
+ *
+ * The two booleans are NOT the same gate: `hasFormFields` is the union of
+ * autofill-supported identity fields and answer-capturable non-identity
+ * fields (so "Fill this form" still shows on an identity-only form, e.g.
+ * name/email/phone), while `hasAnswerFields` is the narrower
+ * answer-capturable-only signal the Answer-tools disclosure uses (Suggest/
+ * rewrite have nothing to act on from identity fields alone) — see
+ * `PopupResponse`'s `fieldsProbe` doc.
  *
  * Pure: no DOM access, no side effects.
  */
-export function resolveFieldsProbeResponse(res: PopupResponse): boolean {
-  if (!res.ok || res.kind !== 'fieldsProbe') return true;
-  return res.hasFields;
+export function resolveFieldsProbeResponse(res: PopupResponse): FieldsProbeView {
+  if (!res.ok || res.kind !== 'fieldsProbe') {
+    return { showFormGroup: true, showAnswerTools: true };
+  }
+  return { showFormGroup: res.hasFormFields, showAnswerTools: res.hasAnswerFields };
 }
 
 /**
@@ -671,12 +688,12 @@ async function send(req: PopupRequest): Promise<PopupResponse> {
   return res;
 }
 
-/** Toggle the Form group + Answer-tools disclosure together — both gated on
- *  the SAME "does this page have fillable fields?" probe (see
- *  `runFieldsProbeCheck`). */
-function setToolGroupsVisible(visible: boolean): void {
-  els.groupForm.hidden = !visible;
-  els.answerTools.hidden = !visible;
+/** Toggle the Form group + Answer-tools disclosure — each on its OWN signal
+ *  (see {@link FieldsProbeView}'s doc for why they differ), driven by the
+ *  fields probe (`runFieldsProbeCheck`). */
+function setToolGroupsVisible(view: FieldsProbeView): void {
+  els.groupForm.hidden = !view.showFormGroup;
+  els.answerTools.hidden = !view.showAnswerTools;
 }
 
 function showView(phase: ConnectionStatus['phase']): void {
@@ -735,9 +752,15 @@ function render(status: ConnectionStatus): void {
     els.rewriteDraft.textContent = '';
     els.rewriteInstruction.value = '';
     els.rewritePreset.value = '';
+    // Invalidate any in-flight fieldsProbe BEFORE resetting visibility: a
+    // pending `hasFields:false` from the page just left could otherwise
+    // resolve AFTER this reset and hide the groups again in a phase that was
+    // never gated on it (e.g. after a disconnect) — bumping the generation
+    // makes runFieldsProbeCheck's own resolved-response branch a no-op.
+    fieldsProbeGeneration += 1;
     // A stale "no fields on the previous page" hide must never linger onto a
     // fresh page before its own probe resolves — default open/visible again.
-    setToolGroupsVisible(true);
+    setToolGroupsVisible({ showFormGroup: true, showAnswerTools: true });
   }
   lastRenderedPhase = status.phase;
 
@@ -915,11 +938,12 @@ let fieldsProbeGeneration = 0;
 /**
  * Run the fire-and-forget "does this page have fillable form fields?" probe
  * on entering `connected` and gate the Form group + Answer-tools disclosure
- * on the result. `runFieldsProbe` in background.ts already folds every
- * failure (no active tab, restricted page, scripting denied) into
- * `hasFields:true` (fail OPEN), so the catch here only guards a
- * transport-level rejection (message-channel closed) — either way this never
- * hides the groups on a probe bug, only on a confirmed empty scan.
+ * on the result (each on its own signal — see {@link resolveFieldsProbeResponse}).
+ * `runFieldsProbe` in background.ts already folds every failure (no active
+ * tab, restricted page, scripting denied) into both signals `true` (fail
+ * OPEN), so the catch here only guards a transport-level rejection
+ * (message-channel closed) — either way this never hides a group on a probe
+ * bug, only on a confirmed empty scan.
  */
 async function runFieldsProbeCheck(): Promise<void> {
   fieldsProbeGeneration += 1;
@@ -930,7 +954,7 @@ async function runFieldsProbeCheck(): Promise<void> {
     setToolGroupsVisible(resolveFieldsProbeResponse(res));
   } catch {
     if (myGeneration !== fieldsProbeGeneration) return;
-    setToolGroupsVisible(true);
+    setToolGroupsVisible({ showFormGroup: true, showAnswerTools: true });
   }
 }
 

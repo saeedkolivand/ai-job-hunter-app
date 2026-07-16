@@ -68,6 +68,8 @@ export type PopupRequest =
    * and the Answer-tools disclosure (a page with no form, e.g. a plain job
    * listing, shows only the Job group). Read-only (counts candidate fields,
    * reads no values); like `appliedCheck`, never blocks the import controls.
+   * Two independent signals come back — see `PopupResponse`'s `fieldsProbe`
+   * doc for why they can't be one boolean.
    */
   | { kind: 'fieldsProbe' }
   /**
@@ -181,11 +183,22 @@ export type PopupResponse =
   | { ok: true; kind: 'appliedCheck'; result: ExtensionAppliedCheckResult }
   /**
    * Always `ok:true` — like `appliedCheck`, EVERY failure (no active tab, a
-   * restricted page, scripting permission denied) folds into `hasFields:true`
-   * (fail OPEN) so a probe bug can never hide the Form group / Answer-tools
-   * disclosure — only a CONFIRMED empty scan (`hasFields:false`) hides them.
+   * restricted page, scripting permission denied) folds into `{hasFormFields:
+   * true, hasAnswerFields: true}` (fail OPEN) so a probe bug can never hide
+   * either feature — only a CONFIRMED empty scan hides them.
+   *
+   * TWO signals, not one: `hasFormFields` (gates the Form group — "Fill this
+   * form" / "Save my answers") is the UNION of autofill-supported identity
+   * fields (name/email/phone/…) and answer-capturable non-identity fields —
+   * those two candidate sets are DISJOINT BY DESIGN (answers-capture
+   * excludes identity fields, see `hasAnswerCapturableFields`'s doc), so a
+   * single narrower boolean would wrongly hide "Fill this form" on a page
+   * with ONLY identity fields. `hasAnswerFields` (gates the Answer-tools
+   * disclosure — Suggest/rewrite) is the narrower answer-capturable-only
+   * signal, since those tools have nothing to act on from identity fields
+   * alone. See `probe-fields.ts` for where both are computed.
    */
-  | { ok: true; kind: 'fieldsProbe'; hasFields: boolean }
+  | { ok: true; kind: 'fieldsProbe'; hasFormFields: boolean; hasAnswerFields: boolean }
   /**
    * `ok:true` at the transport level; the desktop's own `ok`/`error` on
    * `result` is what the popup renders — this verb's failures are NOT

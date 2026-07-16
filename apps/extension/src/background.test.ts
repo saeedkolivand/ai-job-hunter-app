@@ -319,13 +319,20 @@ describe('appliedCheck request', () => {
 // appliedCheck, which fails CLOSED into found:false) ────────────────────────
 
 describe('fieldsProbe request', () => {
-  it('returns the injected probe result on success (fields found)', async () => {
+  it('returns the injected probe result on success (both signals true)', async () => {
     tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://jobs.example.com/apply' } as never]);
-    executeScriptMock.mockResolvedValueOnce([{ result: true }] as never);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: { hasFormFields: true, hasAnswerFields: true } },
+    ] as never);
 
     const res = await send({ kind: 'fieldsProbe' });
 
-    expect(res).toEqual({ ok: true, kind: 'fieldsProbe', hasFields: true });
+    expect(res).toEqual({
+      ok: true,
+      kind: 'fieldsProbe',
+      hasFormFields: true,
+      hasAnswerFields: true,
+    });
     expect(executeScriptMock).toHaveBeenCalledWith({
       target: { tabId: 7 },
       files: ['probe-fields.js'],
@@ -334,40 +341,78 @@ describe('fieldsProbe request', () => {
     expect(getTokenMock).not.toHaveBeenCalled();
   });
 
-  it('returns the injected probe result on success (no fields)', async () => {
-    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://jobs.example.com/listing' } as never]);
-    executeScriptMock.mockResolvedValueOnce([{ result: false }] as never);
+  it('passes through an identity-only-form result (hasFormFields true, hasAnswerFields false — the union split)', async () => {
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://jobs.example.com/apply' } as never]);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: { hasFormFields: true, hasAnswerFields: false } },
+    ] as never);
 
     const res = await send({ kind: 'fieldsProbe' });
 
-    expect(res).toEqual({ ok: true, kind: 'fieldsProbe', hasFields: false });
+    expect(res).toEqual({
+      ok: true,
+      kind: 'fieldsProbe',
+      hasFormFields: true,
+      hasAnswerFields: false,
+    });
   });
 
-  it('fails OPEN (hasFields:true) when there is no active tab', async () => {
+  it('returns the injected probe result on success (no fields at all)', async () => {
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://jobs.example.com/listing' } as never]);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: { hasFormFields: false, hasAnswerFields: false } },
+    ] as never);
+
+    const res = await send({ kind: 'fieldsProbe' });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'fieldsProbe',
+      hasFormFields: false,
+      hasAnswerFields: false,
+    });
+  });
+
+  it('fails OPEN (both signals true) when there is no active tab', async () => {
     tabsQueryMock.mockResolvedValue([]);
 
     const res = await send({ kind: 'fieldsProbe' });
 
-    expect(res).toEqual({ ok: true, kind: 'fieldsProbe', hasFields: true });
+    expect(res).toEqual({
+      ok: true,
+      kind: 'fieldsProbe',
+      hasFormFields: true,
+      hasAnswerFields: true,
+    });
     expect(executeScriptMock).not.toHaveBeenCalled();
   });
 
-  it('fails OPEN (hasFields:true) when the injected result is not a boolean (malformed/blocked page)', async () => {
+  it('fails OPEN (both signals true) when the injected result is malformed (missing/non-boolean fields)', async () => {
     tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://jobs.example.com/apply' } as never]);
-    executeScriptMock.mockResolvedValueOnce([{ result: null }] as never);
+    executeScriptMock.mockResolvedValueOnce([{ result: { hasFormFields: true } }] as never);
 
     const res = await send({ kind: 'fieldsProbe' });
 
-    expect(res).toEqual({ ok: true, kind: 'fieldsProbe', hasFields: true });
+    expect(res).toEqual({
+      ok: true,
+      kind: 'fieldsProbe',
+      hasFormFields: true,
+      hasAnswerFields: true,
+    });
   });
 
-  it('fails OPEN (hasFields:true) when executeScript REJECTS (restricted page/scripting denied)', async () => {
+  it('fails OPEN (both signals true) when executeScript REJECTS (restricted page/scripting denied)', async () => {
     tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://jobs.example.com/apply' } as never]);
     executeScriptMock.mockRejectedValueOnce(new Error('Cannot access a chrome:// URL'));
 
     const res = await send({ kind: 'fieldsProbe' });
 
-    expect(res).toEqual({ ok: true, kind: 'fieldsProbe', hasFields: true });
+    expect(res).toEqual({
+      ok: true,
+      kind: 'fieldsProbe',
+      hasFormFields: true,
+      hasAnswerFields: true,
+    });
   });
 });
 
@@ -1529,7 +1574,9 @@ describe('arming the submit watcher after a gesture request (Task #22 review clo
   it('a fieldsProbe request never arms the watcher (a passive scan, not a user gesture)', async () => {
     mockClient.autotrackEnabled.mockResolvedValue(true);
     tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://example.com/apply' } as never]);
-    executeScriptMock.mockResolvedValueOnce([{ result: true }] as never);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: { hasFormFields: true, hasAnswerFields: true } },
+    ] as never);
 
     await send({ kind: 'fieldsProbe' });
     await flush();

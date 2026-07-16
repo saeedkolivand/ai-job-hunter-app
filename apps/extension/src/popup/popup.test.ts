@@ -614,24 +614,59 @@ describe('resolveShowMarkAppliedButton', () => {
 // ── resolveFieldsProbeResponse ──────────────────────────────────────────────────
 
 describe('resolveFieldsProbeResponse', () => {
-  it('returns the probe result when ok with kind=fieldsProbe (fields found)', () => {
-    const res = { ok: true as const, kind: 'fieldsProbe' as const, hasFields: true };
-    expect(resolveFieldsProbeResponse(res)).toBe(true);
+  it('returns both signals when ok with kind=fieldsProbe (fields found)', () => {
+    const res = {
+      ok: true as const,
+      kind: 'fieldsProbe' as const,
+      hasFormFields: true,
+      hasAnswerFields: true,
+    };
+    expect(resolveFieldsProbeResponse(res)).toEqual({
+      showFormGroup: true,
+      showAnswerTools: true,
+    });
   });
 
-  it('returns the probe result when ok with kind=fieldsProbe (no fields)', () => {
-    const res = { ok: true as const, kind: 'fieldsProbe' as const, hasFields: false };
-    expect(resolveFieldsProbeResponse(res)).toBe(false);
+  it('returns both signals when ok with kind=fieldsProbe (no fields at all)', () => {
+    const res = {
+      ok: true as const,
+      kind: 'fieldsProbe' as const,
+      hasFormFields: false,
+      hasAnswerFields: false,
+    };
+    expect(resolveFieldsProbeResponse(res)).toEqual({
+      showFormGroup: false,
+      showAnswerTools: false,
+    });
   });
 
-  it('fails OPEN (true) on a transport-level ok:false', () => {
+  it('splits the two signals independently (identity-only form: Form group visible, Answer tools hidden)', () => {
+    const res = {
+      ok: true as const,
+      kind: 'fieldsProbe' as const,
+      hasFormFields: true,
+      hasAnswerFields: false,
+    };
+    expect(resolveFieldsProbeResponse(res)).toEqual({
+      showFormGroup: true,
+      showAnswerTools: false,
+    });
+  });
+
+  it('fails OPEN (both true) on a transport-level ok:false', () => {
     const res = { ok: false as const, error: 'message channel closed' };
-    expect(resolveFieldsProbeResponse(res)).toBe(true);
+    expect(resolveFieldsProbeResponse(res)).toEqual({
+      showFormGroup: true,
+      showAnswerTools: true,
+    });
   });
 
-  it('fails OPEN (true) for an unexpected response kind', () => {
+  it('fails OPEN (both true) for an unexpected response kind', () => {
     const res = { ok: true as const, kind: 'token' as const };
-    expect(resolveFieldsProbeResponse(res)).toBe(true);
+    expect(resolveFieldsProbeResponse(res)).toEqual({
+      showFormGroup: true,
+      showAnswerTools: true,
+    });
   });
 });
 
@@ -1223,9 +1258,12 @@ describe('fieldsProbe auto-check (Form group + Answer-tools gating)', () => {
   });
 
   it('shows the Form group + Answer-tools disclosure when the probe finds fillable fields', async () => {
-    sendMessageMock
-      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
-      .mockResolvedValueOnce({ ok: true, kind: 'fieldsProbe', hasFields: true });
+    sendMessageMock.mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK).mockResolvedValueOnce({
+      ok: true,
+      kind: 'fieldsProbe',
+      hasFormFields: true,
+      hasAnswerFields: true,
+    });
 
     push('connected');
     await flush();
@@ -1234,15 +1272,33 @@ describe('fieldsProbe auto-check (Form group + Answer-tools gating)', () => {
     expect(byId<HTMLDetailsElement>('answer-tools').hidden).toBe(false);
   });
 
-  it('hides the Form group + Answer-tools disclosure when the probe finds no fillable fields', async () => {
-    sendMessageMock
-      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
-      .mockResolvedValueOnce({ ok: true, kind: 'fieldsProbe', hasFields: false });
+  it('hides the Form group + Answer-tools disclosure when the probe finds no fillable fields at all', async () => {
+    sendMessageMock.mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK).mockResolvedValueOnce({
+      ok: true,
+      kind: 'fieldsProbe',
+      hasFormFields: false,
+      hasAnswerFields: false,
+    });
 
     push('connected');
     await flush();
 
     expect(byId<HTMLElement>('group-form').hidden).toBe(true);
+    expect(byId<HTMLDetailsElement>('answer-tools').hidden).toBe(true);
+  });
+
+  it('shows the Form group but hides Answer tools for an IDENTITY-ONLY form (name/email/phone) — the union vs. narrower-signal split', async () => {
+    sendMessageMock.mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK).mockResolvedValueOnce({
+      ok: true,
+      kind: 'fieldsProbe',
+      hasFormFields: true, // hasAutofillableFields matched name/email/phone
+      hasAnswerFields: false, // hasAnswerCapturableFields excludes identity fields
+    });
+
+    push('connected');
+    await flush();
+
+    expect(byId<HTMLElement>('group-form').hidden).toBe(false);
     expect(byId<HTMLDetailsElement>('answer-tools').hidden).toBe(true);
   });
 
@@ -1259,9 +1315,12 @@ describe('fieldsProbe auto-check (Form group + Answer-tools gating)', () => {
   });
 
   it('re-shows both groups on a fresh page after a previous page hid them (no stale hide across a reconnect)', async () => {
-    sendMessageMock
-      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
-      .mockResolvedValueOnce({ ok: true, kind: 'fieldsProbe', hasFields: false });
+    sendMessageMock.mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK).mockResolvedValueOnce({
+      ok: true,
+      kind: 'fieldsProbe',
+      hasFormFields: false,
+      hasAnswerFields: false,
+    });
     push('connected');
     await flush();
     expect(byId<HTMLElement>('group-form').hidden).toBe(true);
@@ -1271,12 +1330,46 @@ describe('fieldsProbe auto-check (Form group + Answer-tools gating)', () => {
     push('app_not_running');
     expect(byId<HTMLElement>('group-form').hidden).toBe(false);
 
-    sendMessageMock
-      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
-      .mockResolvedValueOnce({ ok: true, kind: 'fieldsProbe', hasFields: true });
+    sendMessageMock.mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK).mockResolvedValueOnce({
+      ok: true,
+      kind: 'fieldsProbe',
+      hasFormFields: true,
+      hasAnswerFields: true,
+    });
     push('connected');
     await flush();
     expect(byId<HTMLElement>('group-form').hidden).toBe(false);
+  });
+
+  it('a stale hasFields:false response that resolves AFTER leaving connected must not hide the groups again (generation invalidated on disconnect)', async () => {
+    // The probe starts on entering `connected` but its response never
+    // resolves yet (simulates it still being in flight when the user
+    // disconnects before it settles).
+    let resolveProbe: ((res: unknown) => void) | undefined;
+    const pendingProbe = new Promise((resolve) => {
+      resolveProbe = resolve;
+    });
+    sendMessageMock.mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK).mockReturnValueOnce(pendingProbe);
+    push('connected');
+    await flush();
+    expect(byId<HTMLElement>('group-form').hidden).toBe(false);
+
+    // Leave `connected` BEFORE the probe resolves — this must invalidate it.
+    push('app_not_running');
+    expect(byId<HTMLElement>('group-form').hidden).toBe(false);
+    expect(byId<HTMLDetailsElement>('answer-tools').hidden).toBe(false);
+
+    // The stale probe finally resolves as "no fields" — must be a no-op now.
+    resolveProbe?.({
+      ok: true,
+      kind: 'fieldsProbe',
+      hasFormFields: false,
+      hasAnswerFields: false,
+    });
+    await flush();
+
+    expect(byId<HTMLElement>('group-form').hidden).toBe(false);
+    expect(byId<HTMLDetailsElement>('answer-tools').hidden).toBe(false);
   });
 });
 
