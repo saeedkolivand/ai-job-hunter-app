@@ -1,6 +1,6 @@
 # ADR-009: Full factory reset via a `Resettable` registry
 
-Last updated: 2026-06-01
+Last updated: 2026-07-16
 
 **Status:** Accepted (supersedes the original "explicit lockstep list" form of this ADR)
 

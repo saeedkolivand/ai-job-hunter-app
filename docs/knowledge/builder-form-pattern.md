@@ -1,6 +1,6 @@
 # Resume Builder form pattern
 
-Last updated: 2026-06-09
+Last updated: 2026-07-16
 
 The Resume Builder uses **react-hook-form (RHF)** as the editing layer with a **one-way debounced sync to Zustand** as the persistence + generation boundary. This pattern avoids tight coupling between form state and the generation source.
 

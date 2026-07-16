@@ -1,6 +1,6 @@
 # AI Job Hunter — Design Decisions
 
-Last updated: 2026-06-01
+Last updated: 2026-07-16
 
 This document records the major architectural decisions in the project — the reasoning behind the technology choices, the patterns used, and the trade-offs considered. It is a reference for contributors and reviewers who want to understand the _why_ behind the codebase.
 
