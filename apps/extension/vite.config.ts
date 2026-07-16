@@ -49,8 +49,9 @@ function webExtensionAssets(): Plugin {
 /**
  * `fill.ts` (assisted autofill), `capture.ts` (answers capture),
  * `capture-questions.ts` (questions-mode collector), `answer-fill.ts`
- * (single-field answer fill), and `answer-replace.ts` (single-field answer
- * REPLACE, extension PR 11's rewrite Accept/Restore) are ALL injected via
+ * (single-field answer fill), `answer-replace.ts` (single-field answer
+ * REPLACE, extension PR 11's rewrite Accept/Restore), and `probe-fields.ts`
+ * (the popup's fillable-fields probe) are ALL injected via
  * `chrome.scripting.executeScript({ files: [...] })`, which runs as a CLASSIC
  * script (no ES modules) — so each compiled bundle must carry ZERO `import`
  * statements. Since PR 5 of the extension roadmap, they genuinely share
@@ -85,6 +86,7 @@ function injectedEntries(): Plugin {
         'answer-fill',
         'answer-replace',
         'submit-watch',
+        'probe-fields',
       ]) {
         await build({
           configFile: false,

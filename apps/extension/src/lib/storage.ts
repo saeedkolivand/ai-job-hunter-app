@@ -11,6 +11,10 @@ import { browser } from '@wxt-dev/browser';
 
 const TOKEN_KEY = 'pairingToken';
 
+/** Popup UI preference — NOT PII/job data, just whether the "Answer tools"
+ *  disclosure should render pre-expanded. */
+const ANSWER_TOOLS_EXPANDED_KEY = 'answerToolsExpanded';
+
 /** The desktop token is 32 random bytes as lowercase hex → 64 chars. */
 const TOKEN_HEX_LENGTH = 64;
 
@@ -43,4 +47,16 @@ export async function clearToken(): Promise<void> {
  */
 export function looksLikeToken(value: string): boolean {
   return TOKEN_REGEX.test(value.trim());
+}
+
+/** Whether the popup's "Answer tools" disclosure should render pre-expanded.
+ *  Defaults to `false` (collapsed) when never set. */
+export async function getAnswerToolsExpanded(): Promise<boolean> {
+  const stored = await browser.storage.local.get(ANSWER_TOOLS_EXPANDED_KEY);
+  return stored[ANSWER_TOOLS_EXPANDED_KEY] === true;
+}
+
+/** Persist the Answer-tools disclosure's current expanded/collapsed state. */
+export async function setAnswerToolsExpanded(expanded: boolean): Promise<void> {
+  await browser.storage.local.set({ [ANSWER_TOOLS_EXPANDED_KEY]: expanded });
 }
