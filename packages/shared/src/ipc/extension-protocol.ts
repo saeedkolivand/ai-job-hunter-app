@@ -33,6 +33,7 @@ import {
   type ExtensionAssistChunkPayload,
   type ExtensionAuthOkPayload,
   type ExtensionAuthPayload,
+  type ExtensionAutofillResult,
   type ExtensionAutotrackResult,
   type ExtensionChallengePayload,
   type ExtensionEnvelope,
@@ -68,6 +69,7 @@ export {
   type ExtensionAssistChunkPayload,
   type ExtensionAuthOkPayload,
   type ExtensionAuthPayload,
+  type ExtensionAutofillResult,
   type ExtensionAutotrackResult,
   type ExtensionChallengePayload,
   type ExtensionEnvelope,
@@ -105,6 +107,8 @@ export const ExtensionMessageTypeSchema = z.enum([
   EXTENSION_MESSAGE_TYPES.statusResult,
   EXTENSION_MESSAGE_TYPES.autotrackCheck,
   EXTENSION_MESSAGE_TYPES.autotrackResult,
+  EXTENSION_MESSAGE_TYPES.autofillCheck,
+  EXTENSION_MESSAGE_TYPES.autofillResult,
   EXTENSION_MESSAGE_TYPES.answersSave,
   EXTENSION_MESSAGE_TYPES.answersResult,
   EXTENSION_MESSAGE_TYPES.answersSuggest,
@@ -235,6 +239,16 @@ export const ExtensionStatusUpdateRequestSchema = z.object({
 export const ExtensionAutotrackResultSchema = z.object({
   enabled: z.boolean(),
 }) satisfies z.ZodType<ExtensionAutotrackResult>;
+
+/**
+ * `autofill.result` payload — the desktop-enforced assisted-autofill opt-in
+ * state (Task #30). Mirrors {@link ExtensionAutofillResult} exactly (same
+ * shape as {@link ExtensionAutotrackResultSchema}). A malformed reply is
+ * treated as `false` (OFF) client-side.
+ */
+export const ExtensionAutofillResultSchema = z.object({
+  enabled: z.boolean(),
+}) satisfies z.ZodType<ExtensionAutofillResult>;
 
 /**
  * `status.update` payload. Mirrors {@link ExtensionStatusUpdateResult} — a

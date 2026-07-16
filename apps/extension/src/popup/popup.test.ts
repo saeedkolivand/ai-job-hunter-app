@@ -12,7 +12,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { browser } from '@wxt-dev/browser';
 
 import type { ConnectionStatus } from '../lib/messages';
-import { getAnswerToolsExpanded, looksLikeToken, setAnswerToolsExpanded } from '../lib/storage';
+import {
+  getAnswerToolsExpanded,
+  hasAnswerToolsPreference,
+  looksLikeToken,
+  setAnswerToolsExpanded,
+} from '../lib/storage';
 
 // vi.mock must come before the import that triggers the module side-effects.
 // popup.ts imports @wxt-dev/browser; stub it out so the module-level
@@ -35,6 +40,9 @@ vi.mock('../lib/storage', () => ({
   // yet) — individual tests override via mockResolvedValueOnce as needed.
   getAnswerToolsExpanded: vi.fn(() => Promise.resolve(false)),
   setAnswerToolsExpanded: vi.fn(() => Promise.resolve(undefined)),
+  // Default: a preference already exists (no fresh-install auto-expand) —
+  // the auto-suggest tests below override via mockResolvedValueOnce as needed.
+  hasAnswerToolsPreference: vi.fn(() => Promise.resolve(true)),
 }));
 
 // Build the minimal DOM that popup.ts queries at module load (byId calls).
@@ -54,7 +62,7 @@ function buildPopupDom(): void {
       <button id="btn-save-answers"></button>
     </section>
     <details id="answer-tools">
-      <summary>Answer tools</summary>
+      <summary id="answer-tools-summary">Answer tools</summary>
       <button id="btn-suggest-answers"></button>
       <div id="suggestions-list" hidden></div>
       <select id="assist-picker"><option value=""></option></select>
@@ -132,6 +140,7 @@ const sendMessageMock = vi.mocked(browser.runtime.sendMessage);
 const looksLikeTokenMock = vi.mocked(looksLikeToken);
 const getAnswerToolsExpandedMock = vi.mocked(getAnswerToolsExpanded);
 const setAnswerToolsExpandedMock = vi.mocked(setAnswerToolsExpanded);
+const hasAnswerToolsPreferenceMock = vi.mocked(hasAnswerToolsPreference);
 const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 // ── resolveStatusResponse ─────────────────────────────────────────────────────
@@ -1370,6 +1379,192 @@ describe('fieldsProbe auto-check (Form group + Answer-tools gating)', () => {
 
     expect(byId<HTMLElement>('group-form').hidden).toBe(false);
     expect(byId<HTMLDetailsElement>('answer-tools').hidden).toBe(false);
+  });
+});
+
+// ── auto-suggest on popup open (fire-and-forget, Task #30) ───────────────────
+// Chained off the SAME fieldsProbe check above: appliedCheck, fieldsProbe,
+// then (only when hasAnswerFields:true) autofill.check, then (only when
+// enabled:true) answers.suggest — 4 sendMessage calls in that fixed order.
+
+describe('auto-suggest on popup open (Task #30)', () => {
+  const statusListener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
+    ((message: unknown) => void) | undefined;
+  if (!statusListener) throw new Error('onMessage status listener not registered');
+  const push = (phase: ConnectionStatus['phase']) =>
+    statusListener({ ok: true, kind: 'status', status: { phase, port: null, hasToken: true } });
+
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  const NEUTRAL_APPLIED_CHECK = {
+    ok: true as const,
+    kind: 'appliedCheck' as const,
+    result: { found: false },
+  };
+  const HAS_ANSWER_FIELDS = {
+    ok: true as const,
+    kind: 'fieldsProbe' as const,
+    hasFormFields: true,
+    hasAnswerFields: true,
+  };
+  const NO_ANSWER_FIELDS = {
+    ok: true as const,
+    kind: 'fieldsProbe' as const,
+    hasFormFields: false,
+    hasAnswerFields: false,
+  };
+  const AUTOFILL_ON = { ok: true as const, kind: 'autofillCheck' as const, enabled: true };
+  const AUTOFILL_OFF = { ok: true as const, kind: 'autofillCheck' as const, enabled: false };
+  const ONE_SUGGESTION = {
+    ok: true as const,
+    kind: 'answersSuggest' as const,
+    result: {
+      ok: true as const,
+      suggestions: [
+        {
+          question: 'Why this role?',
+          answer: 'Because I love it.',
+          sourceQuestion: 'Why this role?',
+          score: 0.8,
+          salary: false,
+        },
+      ],
+    },
+    scanned: [{ question: 'Why this role?', index: 0 }],
+  };
+  const NO_SUGGESTIONS = {
+    ok: true as const,
+    kind: 'answersSuggest' as const,
+    result: { ok: true as const, suggestions: [] },
+    scanned: [],
+  };
+
+  beforeEach(() => {
+    sendMessageMock.mockReset();
+    hasAnswerToolsPreferenceMock.mockReset();
+    hasAnswerToolsPreferenceMock.mockResolvedValue(true);
+    // Reset the shared <details> open state — a prior test in this describe
+    // (or the module-level `answerTools` toggle listener) may have left it
+    // open; each test here starts from a known collapsed baseline.
+    byId<HTMLDetailsElement>('answer-tools').open = false;
+    // Force a genuine transition for the next push('connected') below.
+    push('searching');
+  });
+
+  it('auto-fires Suggest + renders results when the probe finds answer fields AND autofill is on', async () => {
+    const msgBefore = byId<HTMLParagraphElement>('import-msg').textContent;
+    sendMessageMock
+      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
+      .mockResolvedValueOnce(HAS_ANSWER_FIELDS)
+      .mockResolvedValueOnce(AUTOFILL_ON)
+      .mockResolvedValueOnce(ONE_SUGGESTION);
+
+    push('connected');
+    await flush();
+
+    expect(byId<HTMLDivElement>('suggestions-list').hidden).toBe(false);
+    expect(byId<HTMLElement>('answer-tools-summary').textContent).toBe('Answer tools (1)');
+    // Silent auto-run: the shared status line is never touched by this path
+    // (compared to its own pre-test value — this file shares one DOM across
+    // describe blocks, so asserting a literal '' would be order-dependent).
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(msgBefore);
+  });
+
+  it('does not auto-run at all when the probe finds no answer-capturable fields', async () => {
+    sendMessageMock
+      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
+      .mockResolvedValueOnce(NO_ANSWER_FIELDS);
+
+    push('connected');
+    await flush();
+
+    expect(sendMessageMock).toHaveBeenCalledTimes(2);
+    expect(byId<HTMLDivElement>('suggestions-list').hidden).toBe(true);
+  });
+
+  it('reads autofill.check but never fires answers.suggest when autofill is off', async () => {
+    sendMessageMock
+      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
+      .mockResolvedValueOnce(HAS_ANSWER_FIELDS)
+      .mockResolvedValueOnce(AUTOFILL_OFF);
+
+    push('connected');
+    await flush();
+
+    expect(sendMessageMock).toHaveBeenCalledTimes(3);
+    expect(sendMessageMock).toHaveBeenCalledWith({ kind: 'autofillCheck' });
+    expect(byId<HTMLDivElement>('suggestions-list').hidden).toBe(true);
+  });
+
+  it('stays silent on zero results — no suggestions rendered, no message, no count', async () => {
+    const msgBefore = byId<HTMLParagraphElement>('import-msg').textContent;
+    sendMessageMock
+      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
+      .mockResolvedValueOnce(HAS_ANSWER_FIELDS)
+      .mockResolvedValueOnce(AUTOFILL_ON)
+      .mockResolvedValueOnce(NO_SUGGESTIONS);
+
+    push('connected');
+    await flush();
+
+    expect(byId<HTMLDivElement>('suggestions-list').hidden).toBe(true);
+    expect(byId<HTMLElement>('answer-tools-summary').textContent).toBe('Answer tools');
+    expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(msgBefore);
+  });
+
+  it('auto-expands the Answer-tools disclosure when the user has no persisted preference', async () => {
+    hasAnswerToolsPreferenceMock.mockResolvedValueOnce(false);
+    sendMessageMock
+      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
+      .mockResolvedValueOnce(HAS_ANSWER_FIELDS)
+      .mockResolvedValueOnce(AUTOFILL_ON)
+      .mockResolvedValueOnce(ONE_SUGGESTION);
+
+    push('connected');
+    await flush();
+
+    expect(byId<HTMLDetailsElement>('answer-tools').open).toBe(true);
+  });
+
+  it('does NOT auto-expand when the user already has a persisted preference (respects an explicit collapse)', async () => {
+    hasAnswerToolsPreferenceMock.mockResolvedValueOnce(true);
+    sendMessageMock
+      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
+      .mockResolvedValueOnce(HAS_ANSWER_FIELDS)
+      .mockResolvedValueOnce(AUTOFILL_ON)
+      .mockResolvedValueOnce(ONE_SUGGESTION);
+
+    push('connected');
+    await flush();
+
+    expect(byId<HTMLDetailsElement>('answer-tools').open).toBe(false);
+  });
+
+  it('invalidates a stale in-flight auto-suggest chain that resolves AFTER leaving connected', async () => {
+    let resolveSuggest: ((res: unknown) => void) | undefined;
+    const pendingSuggest = new Promise((resolve) => {
+      resolveSuggest = resolve;
+    });
+    sendMessageMock
+      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
+      .mockResolvedValueOnce(HAS_ANSWER_FIELDS)
+      .mockResolvedValueOnce(AUTOFILL_ON)
+      .mockReturnValueOnce(pendingSuggest);
+
+    push('connected');
+    await flush();
+    expect(byId<HTMLDivElement>('suggestions-list').hidden).toBe(true); // still in flight
+
+    // Leave `connected` BEFORE the suggest call resolves.
+    push('app_not_running');
+
+    resolveSuggest?.(ONE_SUGGESTION);
+    await flush();
+
+    expect(
+      byId<HTMLDivElement>('suggestions-list').hidden,
+      'a stale auto-suggest result must never render onto a page the popup already left'
+    ).toBe(true);
   });
 });
 
