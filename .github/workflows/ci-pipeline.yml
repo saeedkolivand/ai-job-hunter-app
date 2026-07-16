@@ -66,7 +66,9 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────────────
   # Detect which areas changed so the heavy jobs can skip on unrelated PRs.
-  # Any change under .github/** forces BOTH filters true (full CI on CI edits).
+  # A change under .github/workflows/** or .github/actions/** forces all filters
+  # true (full CI validates workflow/action edits). Other .github files (docs,
+  # issue/PR templates, dependabot/labeler config) skip the heavy jobs like any doc.
   # ──────────────────────────────────────────────────────────────────────
   changes:
     name: 🧭 Detect Changes
@@ -105,16 +107,19 @@ jobs:
               - 'eslint.config.mjs'
               - 'vitest.config.ts'
               - 'turbo.json'
-              - '.github/**'
+              - '.github/workflows/**'
+              - '.github/actions/**'
             rust:
               - 'apps/desktop/src-tauri/**'
-              - '.github/**'
+              - '.github/workflows/**'
+              - '.github/actions/**'
             extension:
               - 'apps/extension/**'
               - 'packages/shared/**'
               - 'pnpm-lock.yaml'
               - 'tsconfig*.json'
-              - '.github/**'
+              - '.github/workflows/**'
+              - '.github/actions/**'
 
   dependencies:
     name: 📦 Dependencies
