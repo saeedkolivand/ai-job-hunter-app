@@ -254,58 +254,50 @@ fn reset_disables_autofill_optin() {
 // ── AI-answer-assist opt-in (SEPARATE gate, default OFF, persisted) ──────────
 
 #[test]
-fn ai_assist_optin_defaults_off_and_persists_with_its_snapshot() {
+fn ai_assist_optin_defaults_off_and_persists_the_flag() {
     let dir = tempfile::tempdir().unwrap();
     let s = BridgeState::load(dir.path());
     assert!(!s.ai_assist_enabled(), "ai-assist opt-in defaults OFF");
-    assert_eq!(s.ai_assist_snapshot().provider, None);
 
-    s.set_ai_assist(
-        true,
-        Some("openai".to_string()),
-        Some("gpt-4o".to_string()),
-        None,
-    );
+    s.set_ai_assist(true);
     assert!(s.ai_assist_enabled());
-    let cfg = s.ai_assist_snapshot();
-    assert_eq!(cfg.provider.as_deref(), Some("openai"));
-    assert_eq!(cfg.model.as_deref(), Some("gpt-4o"));
 
-    // A fresh load from the same dir reads back the persisted opt-in + snapshot.
+    // A fresh load from the same dir reads back the persisted opt-in flag.
     let reloaded = BridgeState::load(dir.path());
     assert!(reloaded.ai_assist_enabled(), "opt-in persists across loads");
-    assert_eq!(
-        reloaded.ai_assist_snapshot().provider.as_deref(),
-        Some("openai")
-    );
+
+    // Turning it back off persists the OFF flag too.
+    reloaded.set_ai_assist(false);
+    assert!(!BridgeState::load(dir.path()).ai_assist_enabled());
 }
 
-/// `base_url` (the opt-in OpenAI-compatible/self-hosted endpoint field) must
-/// round-trip the same way `provider`/`model` do above — a prior test only
-/// ever passed `None` for it, so a `set_ai_assist` → disk →
-/// `BridgeState::load` → `ai_assist_snapshot()` regression on this one field
-/// specifically would have gone unnoticed.
+/// Back-compat: an OLD opt-in file (pre-task-#16) also carried a
+/// `provider`/`model`/`base_url` snapshot alongside `enabled`. Loading it must
+/// still honor the persisted `enabled` flag and simply ignore the extra fields
+/// — a user who opted in before the store landed stays opted in (the active
+/// provider now resolves from the backend `AiConfigStore`, never that stale
+/// snapshot), so no silent forced re-consent on upgrade.
 #[test]
-fn ai_assist_optin_persists_the_base_url_snapshot() {
+fn ai_assist_optin_reads_an_old_snapshot_file_and_ignores_the_extra_fields() {
     let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join(AI_ASSIST_OPTIN_FILE),
+        r#"{"enabled":true,"provider":"openai","model":"gpt-4o","base_url":"https://attacker.example/v1"}"#,
+    )
+    .unwrap();
+
     let s = BridgeState::load(dir.path());
-    s.set_ai_assist(
-        true,
-        Some("openai-compatible".to_string()),
-        Some("local-model".to_string()),
-        Some("https://api.example.com/v1".to_string()),
-    );
-    assert_eq!(
-        s.ai_assist_snapshot().base_url.as_deref(),
-        Some("https://api.example.com/v1")
+    assert!(
+        s.ai_assist_enabled(),
+        "an old snapshot file's `enabled` flag is still honored on load"
     );
 
-    // A fresh load from the same dir reads back the persisted base_url too.
-    let reloaded = BridgeState::load(dir.path());
-    assert_eq!(
-        reloaded.ai_assist_snapshot().base_url.as_deref(),
-        Some("https://api.example.com/v1"),
-        "base_url survives set_ai_assist -> disk -> BridgeState::load -> ai_assist_snapshot"
+    // Rewriting drops the stale snapshot: the persisted file is now the bare flag.
+    s.set_ai_assist(true);
+    let persisted = std::fs::read_to_string(dir.path().join(AI_ASSIST_OPTIN_FILE)).unwrap();
+    assert!(
+        !persisted.contains("attacker"),
+        "the stale attacker base_url snapshot is dropped on the next write"
     );
 }
 
@@ -321,46 +313,16 @@ fn ai_assist_optin_is_independent_of_the_autofill_optin() {
 }
 
 #[test]
-fn ai_assist_disabling_clears_the_provider_snapshot() {
-    let dir = tempfile::tempdir().unwrap();
-    let s = BridgeState::load(dir.path());
-    s.set_ai_assist(
-        true,
-        Some("openai".to_string()),
-        Some("gpt-4o".to_string()),
-        None,
-    );
-    s.set_ai_assist(
-        false,
-        Some("openai".to_string()),
-        Some("gpt-4o".to_string()),
-        None,
-    );
-    let cfg = s.ai_assist_snapshot();
-    assert!(!cfg.enabled);
-    assert_eq!(
-        cfg.provider, None,
-        "turning the opt-in off must clear a stale provider snapshot, even if the caller still passed one"
-    );
-}
-
-#[test]
-fn reset_disables_ai_assist_optin_and_clears_its_snapshot() {
+fn reset_disables_ai_assist_optin() {
     use crate::data_store::Resettable;
     let dir = tempfile::tempdir().unwrap();
     let s = BridgeState::load(dir.path());
-    s.set_ai_assist(
-        true,
-        Some("openai".to_string()),
-        Some("gpt-4o".to_string()),
-        None,
-    );
+    s.set_ai_assist(true);
     s.reset();
     assert!(
         !s.ai_assist_enabled(),
         "factory reset returns the ai-assist opt-in to its default OFF"
     );
-    assert_eq!(s.ai_assist_snapshot().provider, None);
 }
 
 // ── streaming answer_assist: reqId -> jobId registry now lives PER-CONNECTION

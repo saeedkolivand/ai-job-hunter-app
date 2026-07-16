@@ -84,9 +84,11 @@ const defaultPreferences: Preferences = {
 interface PreferencesActions {
   setUserName: (userName: string) => void;
   setLanguage: (language: string) => void;
-  setAIModel: (aiModel: Preferences['aiModel']) => void;
-  setAiProviderConfig: (config: Preferences['aiProviderConfig']) => void;
-  setActiveProvider: (provider: AiProvider) => void;
+  // Routing (activeProvider / per-provider model+baseUrl) is now backend-owned
+  // (task #16); the renderer switches/edits it via the `ai_set_*` service hooks.
+  // Only the renderer-side TUNING knobs survive here: `setProviderSettings` still
+  // writes `effort` (CLI reasoning) and `setLocalModelLimits` writes `modelLimits`
+  // (num_ctx / temperature) onto `aiProviderConfig`.
   setProviderSettings: (provider: AiProvider, settings: Partial<PerProviderSettings>) => void;
   setLocalModelLimits: (model: string, limits: Partial<LocalModelLimits>) => void;
   setOutputTone: (outputTone: Preferences['outputTone']) => void;
@@ -131,30 +133,6 @@ export const usePreferencesStore = create<PreferencesStore>()(
         set((state) => ({
           ...state,
           language,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      setAIModel: (aiModel: Preferences['aiModel']) =>
-        set((state) => ({
-          ...state,
-          aiModel,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      setAiProviderConfig: (aiProviderConfig: Preferences['aiProviderConfig']) =>
-        set((state) => ({
-          ...state,
-          aiProviderConfig,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      setActiveProvider: (provider: AiProvider) =>
-        set((state) => ({
-          ...state,
-          aiProviderConfig: {
-            activeProvider: provider,
-            providers: state.aiProviderConfig?.providers ?? {},
-          },
           lastUpdated: new Date().toISOString(),
         })),
 
@@ -343,7 +321,6 @@ export const usePreferencesStore = create<PreferencesStore>()(
 
 // Selectors for common use cases
 export const useUserName = () => usePreferencesStore((state) => state.userName);
-export const useAIModel = () => usePreferencesStore((state) => state.aiModel);
 export const useAiProviderConfig = () => usePreferencesStore((state) => state.aiProviderConfig);
 export const useOutputTone = () => usePreferencesStore((state) => state.outputTone);
 export const useOnboardingCompleted = () =>

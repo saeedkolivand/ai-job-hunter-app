@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { GitHubRepo } from '@ajh/shared';
 
+import { keys, queryClient } from '@/services/query-client';
 import { usePreferencesStore } from '@/store/preferences-store';
 
 import { _registerClient } from '../../app-client';
@@ -38,6 +39,17 @@ async function flushUntilStreaming() {
   for (let i = 0; i < 6 && !streamHandler; i++) await Promise.resolve();
 }
 
+// The active provider/model are backend-owned (task #16) and read imperatively via
+// the singleton React Query cache; seed it directly. `modelLimits`/`effort` (tuning
+// knobs) still come from Zustand `aiProviderConfig` (set via setState below).
+function setActive(activeProvider: string, model: string) {
+  queryClient.setQueryData(keys.ai.activeConfig, {
+    activeProvider,
+    model,
+    providers: { [activeProvider]: { model } },
+  });
+}
+
 function emit(delta: string) {
   streamHandler?.({ jobId: 'gen-1', delta, done: false });
 }
@@ -53,6 +65,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   usePreferencesStore.setState({ aiProviderConfig: undefined, outputTone: 'professional' });
+  queryClient.removeQueries({ queryKey: keys.ai.activeConfig });
 });
 
 describe('extractMetadata', () => {
@@ -236,7 +249,7 @@ describe('generateCoverLetter', () => {
 
   it('researchCompany degrades to an empty brief when the backend fails', async () => {
     registerWithResearch(vi.fn().mockRejectedValue(new Error('provider cannot search')));
-    expect(await researchCompany('Job ad', 'llama3')).toBe('');
+    expect(await researchCompany('Job ad')).toBe('');
   });
 });
 
@@ -261,7 +274,7 @@ describe('lookupSalaryRange (C2)', () => {
     const lookupSalary = vi.fn().mockResolvedValue({ min: 65000, max: 80000, currency: 'EUR' });
     const client = registerWithLookup(lookupSalary);
 
-    const range = await lookupSalaryRange('Backend Engineer', 'Acme', 'Berlin, Germany', 'llama3');
+    const range = await lookupSalaryRange('Backend Engineer', 'Acme', 'Berlin, Germany');
 
     expect(range).toEqual({ min: 65000, max: 80000, currency: 'EUR' });
     expect(client.ai.lookupSalary).toHaveBeenCalledWith(
@@ -275,15 +288,13 @@ describe('lookupSalaryRange (C2)', () => {
 
   it('degrades to undefined when the backend finds nothing reliable', async () => {
     registerWithLookup(vi.fn().mockResolvedValue(null));
-    const range = await lookupSalaryRange('Backend Engineer', 'Acme', 'Berlin', 'llama3');
+    const range = await lookupSalaryRange('Backend Engineer', 'Acme', 'Berlin');
     expect(range).toBeUndefined();
   });
 
   it('degrades to undefined (never throws) when the backend fails', async () => {
     registerWithLookup(vi.fn().mockRejectedValue(new Error('provider unavailable')));
-    await expect(
-      lookupSalaryRange('Backend Engineer', 'Acme', 'Berlin', 'llama3')
-    ).resolves.toBeUndefined();
+    await expect(lookupSalaryRange('Backend Engineer', 'Acme', 'Berlin')).resolves.toBeUndefined();
   });
 });
 
@@ -308,12 +319,7 @@ describe('researchAnswer', () => {
     const answerSearch = vi.fn().mockResolvedValue('Acme raised a Series B in 2026.');
     const client = registerWithAnswerSearch(answerSearch);
 
-    const notes = await researchAnswer(
-      'Why do you want to work here?',
-      'Backend Engineer',
-      'Acme',
-      'llama3'
-    );
+    const notes = await researchAnswer('Why do you want to work here?', 'Backend Engineer', 'Acme');
 
     expect(notes).toBe('Acme raised a Series B in 2026.');
     expect(client.ai.researchAnswer).toHaveBeenCalledWith(
@@ -327,13 +333,13 @@ describe('researchAnswer', () => {
 
   it('degrades to an empty string when the backend finds nothing', async () => {
     registerWithAnswerSearch(vi.fn().mockResolvedValue(''));
-    const notes = await researchAnswer('Why this role?', 'Engineer', 'Acme', 'llama3');
+    const notes = await researchAnswer('Why this role?', 'Engineer', 'Acme');
     expect(notes).toBe('');
   });
 
   it('degrades to an empty string (never throws) when the backend fails', async () => {
     registerWithAnswerSearch(vi.fn().mockRejectedValue(new Error('provider unavailable')));
-    await expect(researchAnswer('Why this role?', 'Engineer', 'Acme', 'llama3')).resolves.toBe('');
+    await expect(researchAnswer('Why this role?', 'Engineer', 'Acme')).resolves.toBe('');
   });
 });
 
@@ -720,6 +726,7 @@ describe('generateGitHubProjects', () => {
 
 describe('local model limits wiring', () => {
   it('sends the per-model contextWindow + maxTokens on the ollama path', async () => {
+    setActive('ollama', 'llama3');
     usePreferencesStore.setState({
       aiProviderConfig: {
         activeProvider: 'ollama',
@@ -738,18 +745,22 @@ describe('local model limits wiring', () => {
     done();
     await p;
 
+    // `provider` is no longer on the wire (backend-owned, task #16); only the local
+    // tuning knobs (contextWindow/maxTokens) are sent.
     expect(client.ai.generatePipeline).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'ollama', contextWindow: 16384, maxTokens: 4096 })
+      expect.objectContaining({ contextWindow: 16384, maxTokens: 4096 })
     );
   });
 
   it('omits the local context window for cloud providers', async () => {
+    // Active provider is the backend store; the ollama limits below must NOT leak
+    // into a cloud generation.
+    setActive('openai', 'gpt-4o');
     usePreferencesStore.setState({
       aiProviderConfig: {
         activeProvider: 'openai',
         providers: {
           openai: { model: 'gpt-4o' },
-          // Even with ollama limits stored, the cloud path must not send them.
           ollama: {
             model: 'llama3',
             modelLimits: { llama3: { contextWindow: 16384, maxTokens: 4096 } },
@@ -766,8 +777,9 @@ describe('local model limits wiring', () => {
 
     const call = (client.ai.generatePipeline as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(call).toBeDefined();
-    const arg = call?.[0] as { provider: string; contextWindow?: number };
-    expect(arg.provider).toBe('openai');
+    const arg = call?.[0] as { provider?: string; contextWindow?: number };
+    // Routing no longer crosses the wire, and the cloud path sends no local ctx.
+    expect(arg.provider).toBeUndefined();
     expect(arg.contextWindow).toBeUndefined();
   });
 });
@@ -791,13 +803,15 @@ describe('per-step temperature override', () => {
     return (call?.[0] as { temperature: number }).temperature;
   };
 
-  const setOllama = (temperature?: Record<string, number>) =>
+  const setOllama = (temperature?: Record<string, number>) => {
+    setActive('ollama', 'llama3');
     usePreferencesStore.setState({
       aiProviderConfig: {
         activeProvider: 'ollama',
         providers: { ollama: { model: 'llama3', modelLimits: { llama3: { temperature } } } },
       },
     });
+  };
 
   it('applies the per-step override to its own step only (cover set, resume default)', async () => {
     setOllama({ cover: 0.85 });
@@ -825,6 +839,7 @@ describe('per-step temperature override', () => {
 
   it('ignores the override for non-ollama providers (always the step default)', async () => {
     // Cloud provider active, but ollama still carries a cover override: must be ignored.
+    setActive('openai', 'gpt-4o');
     usePreferencesStore.setState({
       aiProviderConfig: {
         activeProvider: 'openai',
@@ -893,6 +908,7 @@ describe('prose detector-resistance sampling params', () => {
   });
 
   it('cover letter (large-tier cloud model) keeps the shared topP default', async () => {
+    setActive('openai', 'gpt-4o');
     usePreferencesStore.setState({
       aiProviderConfig: { activeProvider: 'openai', providers: { openai: { model: 'gpt-4o' } } },
     });

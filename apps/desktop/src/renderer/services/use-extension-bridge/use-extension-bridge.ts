@@ -74,9 +74,9 @@ export const useSetExtensionAutofillSetting = () => {
  * AI-answer-assist opt-in (default OFF) — a SEPARATE gate from
  * {@link useExtensionAutofillSetting}: billable provider spend, a
  * materially different consent class from the local/free autofill verbs.
- * The result's `provider`/`model` are the pinned snapshot (present only
- * while `enabled`) — read here so a Settings row can show which
- * provider/model answer drafts will actually use.
+ * A bare boolean: which provider/model a draft uses is the backend active
+ * config (`useActiveConfig`), resolved at answer-time (task #16), so a
+ * Settings row reads that store for its "Using: X · Y" label.
  */
 export const useExtensionAiAssistSetting = () => {
   const api = useAppClient();
@@ -88,23 +88,15 @@ export const useExtensionAiAssistSetting = () => {
 
 /**
  * Toggle + persist the AI-answer-assist opt-in; refreshes the cached setting.
- * The mutation's `provider`/`model`/`baseUrl` args snapshot the renderer's
- * CURRENT active AI provider (see `useGenerateConfig`) at the moment the
- * toggle turns ON — the bridge has no renderer to read it from at
- * answer-time (mirrors `Autopilot.assistantProvider`'s pattern). The caller
- * (`ExtensionBridgeSection`) passes `undefined` for all three when turning it
- * OFF, so the desktop clears the stale snapshot.
+ * A bare `{ enabled }` — the opt-in no longer snapshots a provider: a draft
+ * resolves the active provider from the backend active config at answer-time
+ * (task #16), so nothing more needs capturing here.
  */
 export const useSetExtensionAiAssistSetting = () => {
   const api = useAppClient();
   const qc = useQueryClient();
-  return useMutation<
-    ExtensionAiAssistSetting,
-    Error,
-    { enabled: boolean; provider?: string; model?: string; baseUrl?: string }
-  >({
-    mutationFn: ({ enabled, provider, model, baseUrl }) =>
-      api.extensionBridge.setAiAssistEnabled(enabled, provider, model, baseUrl),
+  return useMutation<ExtensionAiAssistSetting, Error, { enabled: boolean }>({
+    mutationFn: ({ enabled }) => api.extensionBridge.setAiAssistEnabled(enabled),
     onSuccess: (data) => {
       qc.setQueryData(keys.extensionBridge.aiAssist, data);
     },

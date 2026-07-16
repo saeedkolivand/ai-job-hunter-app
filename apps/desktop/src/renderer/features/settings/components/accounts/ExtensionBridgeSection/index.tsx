@@ -6,6 +6,7 @@ import { Button, cn, ConfirmModal, Input, SettingsSection, Switch, useNotificati
 
 import { PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import {
+  useActiveConfig,
   useExtensionAiAssistSetting,
   useExtensionAutofillSetting,
   useExtensionBridgeStatus,
@@ -17,9 +18,9 @@ import {
 import type { AiProvider } from '@/store/preferences-schema';
 import { useUiStore } from '@/store/ui-store';
 
-/** Friendly "Using: <provider> · <model>" label for the pinned ai-assist
- * snapshot — falls back to the raw provider id for an unrecognized value
- * (never crashes on a snapshot from a future provider). */
+/** Friendly "Using: <provider> · <model>" label for the active ai-assist
+ * provider — falls back to the raw provider id for an unrecognized value
+ * (never crashes on a value from a future provider). */
 function providerModelLabel(provider: string, model?: string): string {
   const label = PROVIDERS[provider as AiProvider]?.label ?? provider;
   return model ? `${label} · ${model}` : label;
@@ -46,14 +47,18 @@ export function ExtensionBridgeSection() {
   };
 
   // AI answer-assist: a SEPARATE opt-in from autofill above (billable provider
-  // spend). Turning it ON snapshots the CURRENT active AI provider/model —
-  // the bridge has no renderer to read it from at answer-time (mirrors the
-  // Autopilot "assistant notes" provider snapshot) — turning it OFF sends no
-  // provider fields, so the desktop clears the stale snapshot.
+  // spend). A bare on/off toggle — a draft resolves the active provider from
+  // the backend `AiConfigStore` (`Completer::from_active`) at answer-time
+  // (task #16), so there is nothing to snapshot here.
   const { data: aiAssist } = useExtensionAiAssistSetting();
   const setAiAssist = useSetExtensionAiAssistSetting();
   const aiAssistEnabled = aiAssist?.enabled ?? false;
   const generateConfig = useGenerateConfig();
+  // The active generation config is the SINGLE source of truth for which
+  // provider/model a bridge draft will actually use, so the "Using:" label
+  // reads it live rather than a pinned bridge-response field (which no longer
+  // exists). `activeProvider` is undefined until a provider is selected.
+  const { data: activeConfig } = useActiveConfig();
   // CLI-agent providers (Claude Code, Codex, …) may legitimately run with no
   // explicit model (`Completer::resolve` falls back to the CLI's own
   // default) — only a cloud/local-server provider actually needs a model
@@ -61,22 +66,13 @@ export function ExtensionBridgeSection() {
   const isCliAgentProvider = PROVIDERS[generateConfig.provider]?.kind === 'cli-agent';
   const providerConfigured = isCliAgentProvider || Boolean(generateConfig.model);
   const usingLabel =
-    aiAssistEnabled && aiAssist?.provider
-      ? providerModelLabel(aiAssist.provider, aiAssist.model)
+    aiAssistEnabled && activeConfig?.activeProvider
+      ? providerModelLabel(activeConfig.activeProvider, activeConfig.model)
       : null;
 
   const handleToggleAiAssist = async (next: boolean) => {
     try {
-      await setAiAssist.mutateAsync(
-        next
-          ? {
-              enabled: true,
-              provider: generateConfig.provider,
-              model: generateConfig.model,
-              baseUrl: generateConfig.baseUrl,
-            }
-          : { enabled: false }
-      );
+      await setAiAssist.mutateAsync({ enabled: next });
     } catch {
       notify.error({ message: t('settings.accounts.extension.aiAssist.toggleFailed') });
     }

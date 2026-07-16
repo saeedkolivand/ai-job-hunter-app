@@ -6,19 +6,21 @@ import { useNotification } from '@ajh/ui';
 import { PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { useAppClient } from '@/providers/AppClientProvider';
 import {
+  useActiveConfig,
   useAIModels,
   useListProviderModels,
   useListProviderModelsLazy,
   useOpenExternal,
   usePullModel,
   useRemoveProviderKey,
+  useSetActiveProvider,
   useSetProviderKey,
+  useSetProviderSettings,
   useSystemHealth,
   useTestProviderKey,
 } from '@/services';
 import { keys } from '@/services/query-client';
 import type { AiProvider } from '@/store/preferences-schema';
-import { useAIModel, useAiProviderConfig, usePreferencesStore } from '@/store/preferences-store';
 import type { Model } from '@/types';
 
 /** Provider key/model management for AISettingsTab: status, editing state, handlers. */
@@ -27,13 +29,16 @@ export function useProviderKeys() {
   const api = useAppClient();
   const notify = useNotification();
 
-  const providerConfig = useAiProviderConfig();
-  const setActiveProvider = usePreferencesStore((s) => s.setActiveProvider);
-  const setProviderSettings = usePreferencesStore((s) => s.setProviderSettings);
-  const setAIModel = usePreferencesStore((s) => s.setAIModel);
-  const aiModel = useAIModel();
+  // Routing is backend-owned (task #16): reads via the active-config query, writes
+  // via the switch/edit setters.
+  const { data: providerConfig } = useActiveConfig();
+  const setActiveProviderMut = useSetActiveProvider();
+  const setProviderSettingsMut = useSetProviderSettings();
+  const setActiveProvider = (provider: AiProvider) => setActiveProviderMut.mutate(provider);
+  const setProviderSettings = (provider: AiProvider, model: string) =>
+    setProviderSettingsMut.mutate({ provider, model });
 
-  const activeProvider: AiProvider = providerConfig?.activeProvider ?? 'ollama';
+  const activeProvider: AiProvider = (providerConfig?.activeProvider ?? 'ollama') as AiProvider;
 
   // Ollama (local server) + CLI-agent detection both come from the health probe.
   const { data: health } = useSystemHealth();
@@ -45,7 +50,7 @@ export function useProviderKeys() {
   const openExternal = useOpenExternal();
   const [pulling, setPulling] = useState<string | null>(null);
 
-  const selectedOllamaModel = providerConfig?.providers?.ollama?.model || aiModel?.defaultModel;
+  const selectedOllamaModel = providerConfig?.providers?.ollama?.model;
 
   // Cloud providers authenticate with a stored key — query each one's presence.
   // Driven off the registry so adding a cloud provider needs no new hook line.
@@ -107,14 +112,9 @@ export function useProviderKeys() {
   const expandedModels = expandedModelsRaw as Array<{ name: string }>;
 
   const handleSelectModel = (provider: AiProvider, model: string) => {
-    setProviderSettings(provider, { model });
-    if (provider === 'ollama') {
-      setAIModel({
-        defaultModel: model,
-        temperature: aiModel?.temperature ?? 0.7,
-        maxTokens: aiModel?.maxTokens ?? 2048,
-      });
-    }
+    // Edits the provider's model without flipping the active provider (the
+    // switch-vs-edit split); the dead `aiModel` Ollama mirror is gone (task #16).
+    setProviderSettings(provider, model);
   };
 
   const handleSaveKey = async (provider: AiProvider) => {

@@ -48,48 +48,36 @@ pub async fn ai_generate(app: AppHandle, req: AiGenerateRequest) -> Value {
         Err(e) => return fail(&app, &job_id, e.to_string()),
     };
 
-    // 1. Provider must be present.
-    let provider_str = match req.provider.as_deref() {
-        Some(p) if !p.trim().is_empty() => p.to_string(),
-        _ => {
-            return fail(
-                &app,
-                &job_id,
-                "No AI provider selected. Choose a provider in Settings → AI.".to_string(),
-            );
-        }
-    };
-    // 2. Provider must be known.
-    let provider_id = match ProviderId::parse(&provider_str) {
-        Ok(id) => id,
+    // 1–3. Resolve the active provider from the BACKEND store (not the request):
+    // provider present → known → model belongs to it, all validated inside
+    // `from_active`. `base_url` can no longer be supplied by the renderer — routing
+    // comes from the persisted store, closing the key-exfiltration SSRF (#16).
+    let completer = match crate::pipeline::Completer::from_active(&app) {
+        Ok(c) => c,
         Err(e) => return fail(&app, &job_id, e.to_string()),
     };
-    // 3. Model must belong to the active provider.
-    if let Err(e) = provider_id.validate_model(&req.model) {
-        return fail(&app, &job_id, e.to_string());
-    }
 
     // 4. Per-provider daily request ceiling — a coarse runaway-cost backstop.
-    if let Err(e) =
-        limiter.charge_provider_daily(provider_id.as_str(), crate::limits::PROVIDER_DAILY_MAX)
-    {
+    if let Err(e) = limiter.charge_provider_daily(
+        completer.provider_id().as_str(),
+        crate::limits::PROVIDER_DAILY_MAX,
+    ) {
         return fail(&app, &job_id, e.to_string());
     }
 
     log::info!(
-        "[ai] dispatch provider={} model={}",
-        provider_id.as_str(),
-        req.model
+        "[ai] dispatch provider={}",
+        completer.provider_id().as_str()
     );
 
     let job_id_clone = job_id.clone();
     let app_clone = app.clone();
-    let base_url = req.base_url.clone();
     tauri::async_runtime::spawn(async move {
         // Hold the concurrency guard for the whole stream; dropped here on completion.
         let _guard = guard;
-        let provider = resolve(provider_id, base_url);
-        if let Err(e) = provider.chat_stream(&app_clone, &job_id_clone, &req).await {
+        // `stream` overwrites `req.model` with the resolved active model, so the
+        // provider/model/base_url all come from the store, never the request.
+        if let Err(e) = completer.stream(&job_id_clone, req).await {
             let msg = e.to_string();
             emit_stream_error(&app_clone, &job_id_clone, &msg);
             crate::commands::jobs::job_fail(&app_clone, &job_id_clone, msg);
@@ -213,14 +201,7 @@ pub async fn ai_inspect_model(model: String) -> Value {
 /// Returns `{ company, brief }`. The brief is reference context only; the prompt
 /// layer treats it as untrusted and never as a source of candidate facts.
 #[tauri::command]
-pub async fn ai_research_company(
-    app: AppHandle,
-    job_ad: String,
-    company: Option<String>,
-    provider: Option<String>,
-    model: Option<String>,
-    base_url: Option<String>,
-) -> Value {
+pub async fn ai_research_company(app: AppHandle, job_ad: String, company: Option<String>) -> Value {
     use crate::cover_letter::research::CompanyResearch;
     use crate::pipeline::Completer;
 
@@ -244,8 +225,9 @@ pub async fn ai_research_company(
         }
     };
 
-    let completer = match Completer::resolve(&app, provider.as_deref(), model.as_deref(), base_url)
-    {
+    // Routing is backend-owned (task #16): resolve the active provider from the
+    // store, never from renderer-supplied provider/base_url (SSRF close).
+    let completer = match Completer::from_active(&app) {
         Ok(c) => c,
         Err(e) => {
             tracing::debug!("research_company: provider resolution failed: {e}");
@@ -400,9 +382,6 @@ pub async fn ai_research_answer(
     question: String,
     role: Option<String>,
     company: Option<String>,
-    provider: Option<String>,
-    model: Option<String>,
-    base_url: Option<String>,
 ) -> String {
     use crate::pipeline::Completer;
 
@@ -426,8 +405,8 @@ pub async fn ai_research_answer(
         }
     };
 
-    let completer = match Completer::resolve(&app, provider.as_deref(), model.as_deref(), base_url)
-    {
+    // Backend-owned routing (task #16): the active provider comes from the store.
+    let completer = match Completer::from_active(&app) {
         Ok(c) => c,
         Err(e) => {
             tracing::debug!("research_answer: provider resolution failed: {e}");
@@ -460,7 +439,6 @@ pub async fn ai_research_answer(
 /// model default to USD or hallucinate a currency — see
 /// `crate::salary_research::SalaryResearch::enrich`.
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub async fn ai_lookup_salary(
     app: AppHandle,
     role: String,
@@ -473,9 +451,6 @@ pub async fn ai_lookup_salary(
     // preserves the unconstrained "local currency for that location"
     // behavior.
     currency: Option<String>,
-    provider: Option<String>,
-    model: Option<String>,
-    base_url: Option<String>,
 ) -> Option<crate::salary_research::SalaryRange> {
     use crate::pipeline::cache::KvCache;
     use crate::pipeline::Completer;
@@ -503,8 +478,8 @@ pub async fn ai_lookup_salary(
         }
     };
 
-    let completer = match Completer::resolve(&app, provider.as_deref(), model.as_deref(), base_url)
-    {
+    // Backend-owned routing (task #16): the active provider comes from the store.
+    let completer = match Completer::from_active(&app) {
         Ok(c) => c,
         Err(e) => {
             tracing::debug!("lookup_salary: provider resolution failed: {e}");
@@ -583,6 +558,68 @@ pub async fn ai_embed(app: AppHandle, req: AiEmbedRequest) -> Value {
             "model": ev.space.model,
         }),
         None => json!(null),
+    }
+}
+
+// ── Active generation provider (backend-owned; task #16) ─────────────────────────
+
+/// Read the active generation provider config: the active provider's resolved
+/// `model`/`baseUrl` (what `useGenerateConfig` reads) plus the `providers` map
+/// for the Settings AI tab. Unseeded → `activeProvider` absent (generation errors
+/// "No AI provider selected", never a silent fallback). Values are returned as the
+/// writer validated them; the generation egress (`Completer::from_active`)
+/// defensively re-validates the base_url before use.
+#[tauri::command]
+pub fn ai_active_config(app: AppHandle) -> Value {
+    serde_json::to_value(
+        app.state::<crate::ai_config::AiConfigStore>()
+            .active_config(),
+    )
+    .unwrap_or_else(|_| json!({ "providers": {} }))
+}
+
+/// Switch the active provider (the "switch" half of the switch-vs-edit split —
+/// deliberately separate from `ai_set_provider_settings` so editing a provider's
+/// settings can never silently flip which provider is active). Validates the id
+/// server-side. Returns the fresh active config, or `{ error }`.
+#[tauri::command]
+pub fn ai_set_active_provider(app: AppHandle, provider: String) -> Value {
+    let store = app.state::<crate::ai_config::AiConfigStore>();
+    match store.set_active_provider(&provider) {
+        Ok(()) => serde_json::to_value(store.active_config()).unwrap_or_else(|_| json!({})),
+        Err(e) => json!({ "error": e.to_string() }),
+    }
+}
+
+/// Edit a provider's model/base_url (the "edit" half — never flips the active
+/// provider). Server-side validation: known id, cross-family model check, and
+/// base_url provenance (scheme + cloud-metadata block; loopback/LAN gateways stay
+/// allowed). Returns the fresh active config, or `{ error }`.
+#[tauri::command]
+pub fn ai_set_provider_settings(
+    app: AppHandle,
+    provider: String,
+    model: Option<String>,
+    base_url: Option<String>,
+) -> Value {
+    let store = app.state::<crate::ai_config::AiConfigStore>();
+    match store.set_provider_settings(&provider, model, base_url) {
+        Ok(()) => serde_json::to_value(store.active_config()).unwrap_or_else(|_| json!({})),
+        Err(e) => json!({ "error": e.to_string() }),
+    }
+}
+
+/// One-time first-run seed from the renderer's migrated Zustand `aiProviderConfig`
+/// (`{ activeProvider, providers: { [id]: { model, baseUrl } } }`). Row-presence
+/// gated SERVER-side: a no-op once anything has been set, so it can never clobber a
+/// later explicit change (the renderer also gates on `persist.hasHydrated()`). Bad
+/// values are scrubbed, never rejected. Returns `{ seeded: bool }` or `{ error }`.
+#[tauri::command]
+pub fn ai_seed_active_config(app: AppHandle, config: crate::ai_config::AiConfigSnapshot) -> Value {
+    let store = app.state::<crate::ai_config::AiConfigStore>();
+    match store.seed_if_empty(&config) {
+        Ok(seeded) => json!({ "seeded": seeded }),
+        Err(e) => json!({ "error": e.to_string() }),
     }
 }
 

@@ -35,16 +35,13 @@ export interface ExtensionAutofillSetting {
  * spend (a materially different consent class from the local/free autofill
  * verbs), so it gets its own desktop-enforced gate, default OFF.
  *
- * `provider`/`model` are the pinned snapshot captured when the opt-in was
- * turned on (see `setAiAssistEnabled`) — present only while `enabled`, so a
- * Settings row can show which provider/model answer drafts will actually
- * use without a separate read. A stale value never lingers: `enabled: false`
- * always carries no snapshot (the desktop clears it on disable).
+ * A bare boolean flag: no provider/model snapshot. A draft resolves the active
+ * provider from the backend-owned active-provider store at answer-time (task
+ * #16), so a Settings row reads that store (`aiActiveConfig`) for its
+ * "Using: X · Y" label rather than a field echoed back here.
  */
 export interface ExtensionAiAssistSetting {
   enabled: boolean;
-  provider?: string;
-  model?: string;
 }
 
 export interface ExtensionBridgeContract {
@@ -57,21 +54,12 @@ export interface ExtensionBridgeContract {
   /** Read the AI-answer-assist opt-in (default OFF). */
   aiAssistEnabled(): Promise<ExtensionAiAssistSetting>;
   /**
-   * Set + persist the AI-answer-assist opt-in; echoes the stored value.
-   * `provider`/`model`/`baseUrl` snapshot the renderer's CURRENT active AI
-   * provider (see `useGenerateConfig`) at the moment the toggle is turned
-   * on — mirrors `Autopilot.assistant_provider`'s pattern: the bridge is a
-   * headless background context with no renderer to read the active
-   * provider from at answer-time, so the toggle must snapshot it up front.
-   * Turning the opt-in OFF clears the snapshot (re-enabling later re-snapshots
-   * fresh, never replays a stale provider pick).
+   * Set + persist the AI-answer-assist opt-in; echoes the stored value. A bare
+   * boolean — the billable-AI consent gate. It no longer snapshots a provider:
+   * a draft resolves the active provider from the backend active-provider store
+   * at answer-time (task #16), so nothing more needs capturing here.
    */
-  setAiAssistEnabled(
-    enabled: boolean,
-    provider?: string,
-    model?: string,
-    baseUrl?: string
-  ): Promise<ExtensionAiAssistSetting>;
+  setAiAssistEnabled(enabled: boolean): Promise<ExtensionAiAssistSetting>;
 }
 
 export const EXTENSION_BRIDGE_CHANNELS = {

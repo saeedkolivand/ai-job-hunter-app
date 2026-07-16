@@ -6,10 +6,15 @@ import { getRecommended } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Alert, Button, FloatingIcon, withDelay } from '@ajh/ui';
 
-import { useAIModels, useSystemHealth, useSystemResources } from '@/services';
+import {
+  useActiveConfig,
+  useAIModels,
+  useConfigureActiveProvider,
+  useSystemHealth,
+  useSystemResources,
+} from '@/services';
 import { keys, queryClient } from '@/services/query-client';
 import type { AiProvider } from '@/store/preferences-schema';
-import { useAIModel, usePreferencesStore } from '@/store/preferences-store';
 
 import { OnboardingStepWrapper } from '../../components/OnboardingStepWrapper';
 import { CliAgentPanel } from '../ollama/CliAgentPanel';
@@ -37,9 +42,10 @@ interface Props {
 
 export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSteps }: Props) {
   const { t } = useTranslation();
-  const setAIModel = usePreferencesStore((s) => s.setAIModel);
-  const setAiProviderConfig = usePreferencesStore((s) => s.setAiProviderConfig);
-  const currentAIModel = useAIModel();
+  // Provider selection is backend-owned (task #16) — one write sets the provider's
+  // model and makes it active.
+  const configureProvider = useConfigureActiveProvider();
+  const currentOllamaModel = useActiveConfig().data?.providers?.ollama?.model;
 
   const [mode, setMode] = useState<TabMode>('local');
   const [cloudProvider, setCloudProvider] = useState<AiProvider>('openai');
@@ -54,7 +60,7 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
   const cliDetected = health?.cliAgents?.[cliProvider]?.detected ?? false;
 
   const [selectedModel, setSelectedModel] = useState<string>(
-    currentAIModel?.defaultModel ?? getRecommended(8).name
+    currentOllamaModel ?? getRecommended(8).name
   );
 
   const { resources, modelUsage } = useSystemResources(selectedModel);
@@ -73,34 +79,27 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
 
   // Auto-select a model when models load
   useEffect(() => {
-    if (models.length > 0 && !currentAIModel?.defaultModel) {
+    if (models.length > 0 && !currentOllamaModel) {
       const found = models.find((m) => m.name === recommended.name);
       setSelectedModel(found?.name ?? models[0]?.name ?? recommended.name);
     }
-  }, [models, currentAIModel?.defaultModel, recommended.name]);
+  }, [models, currentOllamaModel, recommended.name]);
 
   const installedNames = new Set(models.map((m) => m.name));
   const selectedInstalled = installedNames.has(selectedModel);
 
   const handleContinue = () => {
     if (mode === 'cloud') {
-      setAiProviderConfig({
-        activeProvider: cloudProvider,
-        providers: { [cloudProvider]: { model: CLOUD_DEFAULT_MODELS[cloudProvider] ?? '' } },
+      configureProvider.mutate({
+        provider: cloudProvider,
+        model: CLOUD_DEFAULT_MODELS[cloudProvider] ?? '',
       });
     } else if (mode === 'cli') {
       // CLI agents are keyless; model selection is deferred to Settings, so an
       // empty model here uses the tool's own default until the user picks one.
-      setAiProviderConfig({
-        activeProvider: cliProvider,
-        providers: { [cliProvider]: { model: '' } },
-      });
+      configureProvider.mutate({ provider: cliProvider, model: '' });
     } else if (selectedModel) {
-      setAIModel({ defaultModel: selectedModel, temperature: 0.7, maxTokens: 2048 });
-      setAiProviderConfig({
-        activeProvider: 'ollama',
-        providers: { ollama: { model: selectedModel } },
-      });
+      configureProvider.mutate({ provider: 'ollama', model: selectedModel });
     }
     onNext();
   };

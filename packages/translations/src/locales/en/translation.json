@@ -638,6 +638,7 @@
       "saveKey": "Save",
       "baseUrl": "Base URL",
       "saveUrl": "Save",
+      "saveUrlFailed": "Couldn't save the base URL.",
       "activeProvider": "Active Provider",
       "reasoningEffort": "Reasoning Effort",
       "effortDefault": "Default"

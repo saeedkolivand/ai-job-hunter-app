@@ -34,6 +34,28 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 
+// ── Active provider — backend-owned (task #16), read via useActiveConfig. Back
+// it with the Zustand store here so the existing tests keep driving the provider
+// via `usePreferencesStore.setState({ aiProviderConfig })` (synchronous + reactive,
+// so the mid-test clamp flip re-renders in place).
+
+vi.mock('@/services', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  const { usePreferencesStore: store } = await import('@/store/preferences-store');
+  return {
+    ...(actual as object),
+    useActiveConfig: () => {
+      const cfg = store((s) => s.aiProviderConfig);
+      return {
+        data: cfg
+          ? { activeProvider: cfg.activeProvider, providers: cfg.providers ?? {} }
+          : { providers: {} },
+        isPending: false,
+      };
+    },
+  };
+});
+
 // ── Step component stubs ──────────────────────────────────────────────────────
 // Each stub renders a root element carrying data-testid so tests can assert
 // which step is visible, plus buttons that forward onNext/onBack. The step id
@@ -570,7 +592,8 @@ describe('OnboardingWizard — clamp on provider flip', () => {
     expect(totalStepsOf(screen.getByTestId(TEST_IDS.onboarding.stepAppearance))).toBe(8);
 
     // Flip provider to openai — array shrinks to 7 steps (max valid index = 6).
-    // The clamp effect must land the wizard on step 6 = appearance.
+    // The clamp effect must land the wizard on step 6 = appearance. `useActiveConfig`
+    // is backed by the Zustand store in this test, so the flip is a plain setState.
     act(() => {
       usePreferencesStore.setState({
         aiProviderConfig: { activeProvider: 'openai', providers: {} },

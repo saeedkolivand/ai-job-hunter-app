@@ -8,6 +8,7 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+use crate::ai_config::AiConfigStore;
 use crate::ai_generations::AiGenerationStore;
 use crate::applications::ApplicationStore;
 use crate::autopilot::AutopilotStore;
@@ -62,7 +63,7 @@ fn validate_sections(stores: &Value) -> crate::error::AppResult<()> {
         "spend",
     ];
     // Sections whose export is a single JSON object (single-row settings stores).
-    const OBJECT_SECTIONS: &[&str] = &["jobPreferences", "contactProfile"];
+    const OBJECT_SECTIONS: &[&str] = &["jobPreferences", "contactProfile", "aiProviderConfig"];
 
     for key in ARRAY_SECTIONS {
         if let Some(section) = stores.get(*key) {
@@ -102,6 +103,11 @@ fn build_bundle(app: &AppHandle) -> Value {
         stores.insert(s.key().to_string(), s.export());
     }
     if let Some(s) = app.try_state::<ContactProfileStore>() {
+        stores.insert(s.key().to_string(), s.export());
+    }
+    // Active AI provider config (task #16). Holds NO secrets — API keys stay in the
+    // OS keychain — so backing it up is safe; a factory reset clears it separately.
+    if let Some(s) = app.try_state::<AiConfigStore>() {
         stores.insert(s.key().to_string(), s.export());
     }
     if let Some(s) = app.try_state::<ReferralStore>() {
@@ -241,6 +247,9 @@ pub async fn data_import(app: AppHandle) -> Value {
     }
     if let Some(s) = app.try_state::<ContactProfileStore>() {
         import_into("contactProfile", s.inner());
+    }
+    if let Some(s) = app.try_state::<AiConfigStore>() {
+        import_into("aiProviderConfig", s.inner());
     }
     if let Some(s) = app.try_state::<ReferralStore>() {
         import_into("referrals", s.inner());

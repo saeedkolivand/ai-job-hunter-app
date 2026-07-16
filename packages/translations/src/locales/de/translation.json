@@ -638,6 +638,7 @@
       "saveKey": "Speichern",
       "baseUrl": "Basis-URL",
       "saveUrl": "Speichern",
+      "saveUrlFailed": "Die Basis-URL konnte nicht gespeichert werden.",
       "activeProvider": "Aktiver Anbieter",
       "reasoningEffort": "Denkaufwand",
       "effortDefault": "Standard"

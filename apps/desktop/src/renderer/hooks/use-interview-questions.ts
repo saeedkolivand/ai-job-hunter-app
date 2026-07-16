@@ -87,7 +87,7 @@ export function useInterviewQuestions({
       const detected = meta ?? (await extractMetadata(resume, jobDesc, model));
       // Always gather company/role research — interview questions are only as good
       // as the intel behind them (server-cached, so it dedupes with other flows).
-      const brief = await fetchCompanyBrief(jobDesc, model, detected.companyName);
+      const brief = await fetchCompanyBrief(jobDesc, detected.companyName);
       const seeds = seedTopics
         .split(/[\n,]/)
         .map((s) => s.trim())

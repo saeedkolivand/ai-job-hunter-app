@@ -12,13 +12,9 @@ import {
   letterConventions,
   MODES,
 } from '@/lib/generate';
-import { useHasProviderKey } from '@/services';
-import type { PromptQuality } from '@/store/preferences-schema';
-import {
-  useAiProviderConfig,
-  usePreferencesStore,
-  usePromptQuality,
-} from '@/store/preferences-store';
+import { useActiveConfig, useHasProviderKey } from '@/services';
+import type { AiProvider, PromptQuality } from '@/store/preferences-schema';
+import { usePreferencesStore, usePromptQuality } from '@/store/preferences-store';
 
 interface StepFineTuneProps {
   mode: GenerationMode;
@@ -77,10 +73,14 @@ export function StepFineTune({
   const promptQuality = usePromptQuality();
   const setPromptQuality = usePreferencesStore((s) => s.setPromptQuality);
 
-  const providerConfig = useAiProviderConfig();
-  const activeProvider = providerConfig?.activeProvider ?? 'ollama';
+  const { data: providerConfig, isPending: configPending } = useActiveConfig();
+  const activeProvider = (providerConfig?.activeProvider ?? 'ollama') as AiProvider;
   const { data: ollamaKey } = useHasProviderKey('ollama-cloud');
-  const showOllamaResearchHint = isOllamaFamily(activeProvider) && !(ollamaKey?.has ?? false);
+  // Cold boot: `activeProvider` defaults to 'ollama' before the config resolves,
+  // which would flash the Ollama research hint even for a non-Ollama provider —
+  // suppress it during that window (mirrors `useCanUseAI`'s isPending guard).
+  const showOllamaResearchHint =
+    !configPending && isOllamaFamily(activeProvider) && !(ollamaKey?.has ?? false);
 
   const showCoverOptions = target === 'cover' || target === 'both';
 
