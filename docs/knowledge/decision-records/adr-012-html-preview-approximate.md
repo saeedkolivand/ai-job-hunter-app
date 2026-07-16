@@ -28,7 +28,7 @@ validation — but stop at vector SVG instead of PDF bytes.
 - **Frontend:** `renderDocumentPreview()` in `apps/desktop/src/renderer/lib/generate/export/export.ts`
   calls the backend, XML-escapes stray `&` in SVG hrefs (Typst leaves them raw), wraps each SVG
   string in a `Blob([svg], { type: 'image/svg+xml' })`, and returns `<img src=blob:>` URLs.
-- **UI:** `PdfPreview` in `apps/desktop/src/renderer/features/ai-generate/components/PdfPreview/`
+- **UI:** `PdfPreview` in `apps/desktop/src/renderer/components/generation/PdfPreview/`
   renders a scrollable stack of `<img>` elements, with 500ms debounce on same-doc edits and
   zero-debounce on doc switches (résumé ↔ cover letter).
 
@@ -67,7 +67,7 @@ validation — but stop at vector SVG instead of PDF bytes.
 ## Implementation pointers
 
 - `renderDocumentPreview()` – `apps/desktop/src/renderer/lib/generate/export/export.ts`
-- `PdfPreview` – `apps/desktop/src/renderer/features/ai-generate/components/PdfPreview/`
+- `PdfPreview` – `apps/desktop/src/renderer/components/generation/PdfPreview/`
 - `useDebouncedCommit()` – `apps/desktop/src/renderer/hooks/use-debounced-commit/use-debounced-commit.ts` (debounced local-edit commit)
 - `OutputPanelDone` – `apps/desktop/src/renderer/features/ai-generate/components/OutputPanelDone/index.tsx` (integration point)
 - `documents_render_preview_images` – `apps/desktop/src-tauri/src/export/commands/mod.rs`

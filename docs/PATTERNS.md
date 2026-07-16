@@ -17,7 +17,7 @@ React Component
     ↓
 Service Hook (React Query)       apps/desktop/src/renderer/services/
     ↓
-AppClient method                 apps/desktop/src/renderer/lib/app-client.ts
+AppClient method                 apps/desktop/src/renderer/lib/app-client/app-client.ts
     ↓
 IPC Contract                     packages/shared/src/ipc/contracts/
     ↓
@@ -48,7 +48,7 @@ pub async fn my_feature_get_data(id: String, state: State<'_, AppState>) -> Resu
 }
 ```
 
-**3. Wire the invoke call** (`apps/desktop/src/tauri-client.ts`):
+**3. Wire the invoke call** (`apps/desktop/src/tauri-client/index.ts`):
 
 ```typescript
 myFeature: {
@@ -500,7 +500,7 @@ it; `std::env::var` only in `platform/**`; `reqwest::Client::new/builder` only i
 
 All multi-step SQLite operations must be wrapped in transactions to prevent partial writes and corruption on crash.
 
-**Open connections via `db::open(path)` (defined in `src/db.rs`), never `Connection::open()`:**
+**Open connections via `db::open(path)` (defined in `db.rs`), never `Connection::open()`:**
 
 ```rust
 // ✅ correct
@@ -686,26 +686,26 @@ Define a `Record<Union, () => ReactNode>` keyed by the discriminated-union varia
 
 ## Anti-Patterns to Avoid
 
-| Anti-Pattern                                                     | Correct Approach                                                                                                                             |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `useState + useEffect` for IPC data                              | React Query service hook                                                                                                                     |
-| `window.__TAURI_INVOKE__` directly                               | `useAppClient()` service hook                                                                                                                |
-| `import { useTranslation } from "react-i18next"`                 | `import { useTranslation } from "@ajh/translations"`                                                                                         |
-| Cross-feature imports                                            | Only import from `@ajh/ui`, `services/`, `lib/`                                                                                              |
-| `// eslint-disable` comment                                      | Fix the underlying issue or add a scoped `eslint.config.mjs` override                                                                        |
-| Inline `{ duration: 0.2, ease: "easeOut" }`                      | `transition.fast` from `@ajh/ui`                                                                                                             |
-| Hardcoded colors in className                                    | `text-brand`, `bg-brand`, etc.                                                                                                               |
-| Storing credentials in SQLite                                    | OS keychain (AI keys via `credentials` module; board sessions via `boards.*`/`linkedin.*`)                                                   |
-| Reading `AJH_DATA_DIR` / rebuilding `~/.ajh`                     | `platform::config::data_dir()`                                                                                                               |
-| Per-page `?` that aborts a partial scrape                        | First-page error propagates as `Err`; a later page logs + `break`s, keeping the partial (P10)                                                |
-| `reqwest::Client::new()` / `::builder()`                         | `net::http::shared()` or `net::http::build_client()`                                                                                         |
-| `Result<_, String>` for fallible internals                       | `AppResult<_>` / `AppError` from `crate::error`                                                                                              |
-| Folding web-fetched content directly into prompts                | Wrap in an untrusted-content fence (see `packages/prompts/src/emphasis.ts`); label the block so the model treats it as untrusted input       |
-| Per-provider `thinking` handling in the renderer                 | Normalize at the adapter boundary; consume the unified `chunk.thinking` field everywhere                                                     |
-| Raw `<a target="_blank">` or `window.open`                       | `<ExternalLink href={url}>` for hyperlinks; `useOpenExternal()` directly for button/actions with side effects (`components/ui/ExternalLink`) |
-| `import { os } from "@tauri-apps/plugin-os"` in features/routes  | `useWindowControls()` service hook; exports OS platform checks (e.g. `isMacos`) alongside window actions                                     |
-| `import { Store } from "@tauri-apps/plugin-store"` in features   | Dedicated store wrapper that allowlists keys via module-level constants (example: `renderer/lib/onboarding-mirror.ts`); never user input     |
-| `section === 'foo' && <Foo /> \|\| section === 'bar' && <Bar />` | Render registry: `Record<SectionId, () => ReactNode>` with lazy thunks (§16)                                                                 |
+| Anti-Pattern                                                     | Correct Approach                                                                                                                                         |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `useState + useEffect` for IPC data                              | React Query service hook                                                                                                                                 |
+| `window.__TAURI_INVOKE__` directly                               | `useAppClient()` service hook                                                                                                                            |
+| `import { useTranslation } from "react-i18next"`                 | `import { useTranslation } from "@ajh/translations"`                                                                                                     |
+| Cross-feature imports                                            | Only import from `@ajh/ui`, `services/`, `lib/`                                                                                                          |
+| `// eslint-disable` comment                                      | Fix the underlying issue or add a scoped `eslint.config.mjs` override                                                                                    |
+| Inline `{ duration: 0.2, ease: "easeOut" }`                      | `transition.fast` from `@ajh/ui`                                                                                                                         |
+| Hardcoded colors in className                                    | `text-brand`, `bg-brand`, etc.                                                                                                                           |
+| Storing credentials in SQLite                                    | OS keychain (AI keys via `credentials` module; board sessions via `boards.*`/`linkedin.*`)                                                               |
+| Reading `AJH_DATA_DIR` / rebuilding `~/.ajh`                     | `platform::config::data_dir()`                                                                                                                           |
+| Per-page `?` that aborts a partial scrape                        | First-page error propagates as `Err`; a later page logs + `break`s, keeping the partial (P10)                                                            |
+| `reqwest::Client::new()` / `::builder()`                         | `net::http::shared()` or `net::http::build_client()`                                                                                                     |
+| `Result<_, String>` for fallible internals                       | `AppResult<_>` / `AppError` from `crate::error`                                                                                                          |
+| Folding web-fetched content directly into prompts                | Wrap in an untrusted-content fence (see `packages/prompts/src/generate/emphasis/emphasis.ts`); label the block so the model treats it as untrusted input |
+| Per-provider `thinking` handling in the renderer                 | Normalize at the adapter boundary; consume the unified `chunk.thinking` field everywhere                                                                 |
+| Raw `<a target="_blank">` or `window.open`                       | `<ExternalLink href={url}>` for hyperlinks; `useOpenExternal()` directly for button/actions with side effects (`components/ui/ExternalLink`)             |
+| `import { os } from "@tauri-apps/plugin-os"` in features/routes  | `useWindowControls()` service hook; exports OS platform checks (e.g. `isMacos`) alongside window actions                                                 |
+| `import { Store } from "@tauri-apps/plugin-store"` in features   | Dedicated store wrapper that allowlists keys via module-level constants (example: `renderer/lib/onboarding-mirror.ts`); never user input                 |
+| `section === 'foo' && <Foo /> \|\| section === 'bar' && <Bar />` | Render registry: `Record<SectionId, () => ReactNode>` with lazy thunks (§16)                                                                             |
 
 ---
 

@@ -115,6 +115,10 @@ The Tauri app is split into two processes:
 | `hooks/`             | Shared React hooks (`useMachine`, `useMouseParallax`)                    |
 | `components/layout/` | Sidebar, Titlebar, StatusBar, PageShell, AppSplash (in-app boot overlay) |
 
+### `apps/extension` — Browser Extension
+
+MV3 extension (Chrome Web Store + Firefox AMO) for one-click job import: captures the current tab's job posting and sends it to the desktop app over a private loopback WebSocket (mutual HMAC handshake, no account, no remote backend). Also offers opt-in **assisted autofill** (off by default) that fills matching empty form fields from the user's saved Contact Profile, fetched fresh over the same loopback connection and never persisted in the browser. The desktop half (bridge server, parser, Applications store) lives in `apps/desktop/src-tauri/src/extension_bridge/`; the wire protocol is shared via `packages/shared/src/ipc/extension-protocol.ts`. See `apps/extension/README.md`.
+
 ---
 
 ### `packages/shared` — Contract Layer
@@ -282,7 +286,7 @@ export interface AiContract {
 The renderer accesses contracts exclusively through `AppClient`:
 
 ```typescript
-// apps/desktop/src/renderer/lib/app-client.ts
+// apps/desktop/src/renderer/lib/app-client/app-client.ts
 const client = useAppClient();
 const result = await client.ai.generate(req);
 ```

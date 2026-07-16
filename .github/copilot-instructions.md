@@ -14,12 +14,12 @@ ESLint `--max-warnings 0` in CI — every warning fails the build.
 - Never output absolute Windows, macOS, or Linux paths
 - Always use repository-relative paths
 
-❌ `C:\Users\username\project\apps\desktop\src\main.rs`
-❌ `/home/username/project/apps/api/src/server.ts`
+❌ `C:\Users\username\project\apps\desktop\src-tauri\src\main.rs`
+❌ `/home/username/project/packages/shared/src/ipc/contracts/ai.ts`
 ❌ `~/Projects/app/src/index.ts`
 
-✅ `apps/desktop/src/main.rs`
-✅ `apps/api/src/server.ts`
+✅ `apps/desktop/src-tauri/src/main.rs`
+✅ `packages/shared/src/ipc/contracts/ai.ts`
 
 - Never expose usernames, home directories, drive letters, workspace roots, temp paths, or IDE-specific paths
 - Sanitize absolute paths in logs, stack traces, screenshots, terminal output, PRs, commits, comments, and markdown
@@ -75,9 +75,9 @@ If branch gone: `rtk git checkout main && rtk git pull origin main`.
 
 ## New IPC capability
 
-1. `packages/shared/src/ipc/contracts.ts` — add signature
-2. `apps/desktop/src-tauri/src/commands.rs` — implement Tauri command
-3. `apps/desktop/src/tauri-client.ts` — wire invoke call
+1. `packages/shared/src/ipc/contracts/` — add signature (new contract file per feature)
+2. `apps/desktop/src-tauri/src/commands/` — implement Tauri command
+3. `apps/desktop/src/tauri-client/index.ts` — wire invoke call
 4. `apps/desktop/src/renderer/services/` — create hook
 5. `services/query-client.ts` — add query key
 

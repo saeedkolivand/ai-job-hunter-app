@@ -109,7 +109,7 @@ Follow the 5-step checklist in [docs/PATTERNS.md](docs/PATTERNS.md#1-ipc-pattern
 
 1. Contract in `packages/shared/src/ipc/contracts/`
 2. Rust command in `apps/desktop/src-tauri/src/commands/`
-3. Tauri client wiring in `apps/desktop/src/tauri-client.ts`
+3. Tauri client wiring in `apps/desktop/src/tauri-client/index.ts`
 4. Service hook in `apps/desktop/src/renderer/services/`
 5. Query keys in `services/query-client.ts`
 
