@@ -119,11 +119,38 @@ async fn tick(app: &AppHandle, consecutive_failures: &mut u32) {
     if !is_due(account.last_check_ms, *consecutive_failures, now_ms()) {
         return;
     }
-    match run_check(app).await {
-        Ok(_) => *consecutive_failures = 0,
+    match classify_tick_outcome(&run_check(app).await) {
+        TickOutcome::Success => *consecutive_failures = 0,
+        // A concurrent-run refusal (`RunGuard` losing to a manual
+        // `check_now` already in flight) never even attempted the IMAP round
+        // trip — it is neither a success nor a real failure, so it must not
+        // inflate the backoff. Leave `consecutive_failures` untouched; the
+        // next tick re-evaluates `is_due` against the SAME backoff state.
+        TickOutcome::RateLimited => {}
         // Failures are swallowed here (best-effort, like Layer A) — the
         // scheduler retries next tick, bounded by the backoff above.
-        Err(_) => *consecutive_failures = consecutive_failures.saturating_add(1),
+        TickOutcome::Failure => *consecutive_failures = consecutive_failures.saturating_add(1),
+    }
+}
+
+/// How a completed [`run_check`] call should affect `consecutive_failures` —
+/// factored out of [`tick`] as a pure classification so it's directly
+/// unit-testable without a live `AppHandle`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TickOutcome {
+    Success,
+    /// A concurrent-run refusal (`RunGuard`/the 60 s min-gap guard) — no
+    /// real attempt was made, so this must be treated as neither success nor
+    /// failure.
+    RateLimited,
+    Failure,
+}
+
+fn classify_tick_outcome(result: &AppResult<EmailWatchStatus>) -> TickOutcome {
+    match result {
+        Ok(_) => TickOutcome::Success,
+        Err(AppError::RateLimited(_)) => TickOutcome::RateLimited,
+        Err(_) => TickOutcome::Failure,
     }
 }
 
@@ -249,6 +276,19 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
         }
     };
 
+    // Re-check the account is STILL connected right before writing/notifying
+    // anything — a Disconnect or a factory reset landing during the
+    // multi-second `spawn_blocking` IMAP round trip above must suppress BOTH
+    // the writes (already guarded at the DB layer above — this store method
+    // resolved just now, so a race after this point is vanishingly narrow)
+    // AND the notification, which has NO DB awareness of its own and would
+    // otherwise fire a "Possible application confirmation" card sourced from
+    // a mailbox the user just disconnected. Bail silently — nothing to
+    // report for an account that no longer exists.
+    if store.account().address.is_none() {
+        return Ok(());
+    }
+
     if tick.uidvalidity_changed {
         store.reset_on_uidvalidity_change(tick.uidvalidity)?;
     }
@@ -317,6 +357,36 @@ fn notify_match(app: &AppHandle, matched: &Application) {
 mod tests {
     use super::*;
 
+    // ── RATE_LIMITED_MESSAGE ↔ renderer sentinel parity ─────────────────────
+    //
+    // `RATE_LIMITED_MESSAGE` and the renderer's `CHECK_NOW_RATE_LIMIT_MESSAGE`
+    // (`EmailWatchSection/index.tsx`) are independent literals linked only by
+    // a comment on each side — an `AppError` serializes as plain text over
+    // IPC, so the renderer discriminates the friendly-copy case by an EXACT
+    // string match. Editing either alone would pass every test while
+    // silently breaking that match. Mirrors `extension_bridge::test::
+    // message_type_constants_match_ts`'s TS-source-as-text parity approach.
+
+    /// Path from this crate's manifest dir (`apps/desktop/src-tauri`) to the
+    /// renderer file hard-coding the same sentinel text.
+    const RATE_LIMIT_RENDERER_SOURCE: &str =
+        "../src/renderer/features/settings/components/accounts/EmailWatchSection/index.tsx";
+
+    #[test]
+    fn rate_limited_message_matches_the_renderer_sentinel() {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(RATE_LIMIT_RENDERER_SOURCE);
+        let ts = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("could not read {}: {e}", path.display()));
+        let needle = format!("CHECK_NOW_RATE_LIMIT_MESSAGE = '{RATE_LIMITED_MESSAGE}';");
+        assert!(
+            ts.contains(&needle),
+            "Rust RATE_LIMITED_MESSAGE ({RATE_LIMITED_MESSAGE:?}) not found as `{needle}` \
+             in EmailWatchSection/index.tsx's CHECK_NOW_RATE_LIMIT_MESSAGE — the two \
+             sentinels are independent literals and must be edited together"
+        );
+    }
+
     #[test]
     fn backoff_doubles_per_failure_and_caps_at_max_backoff() {
         assert_eq!(backoff_interval(0), BASE_CHECK_INTERVAL);
@@ -363,6 +433,28 @@ mod tests {
             !is_due(Some(last), 1, now),
             "one failure — 30 min backoff not yet elapsed"
         );
+    }
+
+    // ── classify_tick_outcome (/review LOW) ─────────────────────────────────
+
+    #[test]
+    fn classify_tick_outcome_success_resets_and_rate_limited_is_distinct_from_failure() {
+        let ok: AppResult<EmailWatchStatus> = Ok(EmailWatchStatus::default());
+        assert_eq!(classify_tick_outcome(&ok), TickOutcome::Success);
+
+        let rate_limited: AppResult<EmailWatchStatus> = Err(AppError::RateLimited(
+            "a check already ran recently".to_string(),
+        ));
+        assert_eq!(
+            classify_tick_outcome(&rate_limited),
+            TickOutcome::RateLimited,
+            "a concurrent-run refusal must not classify as a real failure"
+        );
+
+        let real_failure: AppResult<EmailWatchStatus> = Err(AppError::Network(
+            "could not connect to the mail server".to_string(),
+        ));
+        assert_eq!(classify_tick_outcome(&real_failure), TickOutcome::Failure);
     }
 
     // ── concurrent-run guard (rust-backend-architect HIGH) ─────────────────

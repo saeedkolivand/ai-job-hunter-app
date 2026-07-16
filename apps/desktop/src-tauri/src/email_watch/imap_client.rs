@@ -159,29 +159,74 @@ pub struct HeaderFetchResult {
     pub headers: Vec<HeaderCandidate>,
 }
 
-/// How many days back `SINCE` looks, on every tick (not just the first). A
-/// uniform date bound rather than a UID-range IMAP query, so the
-/// UIDVALIDITY-changed decision (made client-side by the caller, which knows
-/// the STORED watermark this connector doesn't) never risks a stale UID bound
-/// producing wrong results against a renumbered mailbox — the caller filters
-/// the returned headers to "above `last_uid`" itself.
+/// How many days back `SINCE` looks, on every tick (not just the first) —
+/// always applied, even on a watermark-bounded search, as a defense-in-depth
+/// bound (and the only bound at all when there's no trustworthy watermark
+/// yet).
 pub const LOOKBACK_DAYS: i64 = 30;
 
-/// `UID SEARCH SINCE <date>` on `INBOX`, then `UID FETCH` ONLY the header
+/// Build the `UID SEARCH` query string. When the LIVE `uidvalidity` (just
+/// read via this tick's own `EXAMINE`) matches `stored_uidvalidity` AND a
+/// `stored_last_uid` watermark exists, the search is ALSO bounded
+/// server-side to `UID <last_uid+1>:*` (RFC 3501 §6.4.4 — search keys are
+/// implicitly ANDed) — this is the common case and the whole point: without
+/// it, every tick re-fetches headers for the entire [`LOOKBACK_DAYS`]
+/// window, not just what's new since the watermark. Falls back to the
+/// unbounded `SINCE`-only form when there's no watermark yet, OR when the
+/// live/stored `uidvalidity` disagree — a UID bound built from a STALE
+/// watermark would be meaningless (or actively wrong) against a renumbered
+/// mailbox, so this only ever bounds using a watermark just confirmed fresh
+/// against THIS tick's own live read (never a cached/older comparison).
+///
+/// Pure/network-free so the query-construction decision itself is directly
+/// unit-testable.
+fn build_search_query(
+    since: chrono::NaiveDate,
+    uidvalidity_matches_stored: bool,
+    stored_last_uid: Option<u32>,
+) -> String {
+    let since_str = since.format("%d-%b-%Y");
+    match (uidvalidity_matches_stored, stored_last_uid) {
+        (true, Some(last_uid)) => format!("UID {}:* SINCE {since_str}", last_uid.saturating_add(1)),
+        _ => format!("SINCE {since_str}"),
+    }
+}
+
+/// `UID SEARCH` (watermark-bounded when trustworthy — see
+/// [`build_search_query`]) on `INBOX`, then `UID FETCH` ONLY the header
 /// fields the parser/matcher need (From/Subject/Date/Message-ID) — never the
 /// body (see [`fetch_bodies`], called only for fingerprint-matched
 /// candidates). Every fetch uses `BODY.PEEK[...]`, which never sets `\Seen`
 /// (ADR-0013's read-only guarantee — no `APPEND`/`COPY`/`STORE` anywhere in
 /// this module).
+///
+/// `stored_uidvalidity`/`stored_last_uid` are the caller's persisted values —
+/// passed through so the bound can be built from a comparison against THIS
+/// call's own live `EXAMINE`, never a value the caller compared earlier
+/// (which could be stale by the time this call actually runs). The caller
+/// (`crate::email_watch::poller`) still independently re-filters the
+/// returned headers against its own effective watermark as a defense-in-depth
+/// safety net — this function narrowing the SERVER-side fetch is an
+/// optimization, not the only correctness gate.
 pub fn fetch_headers_since(
     host: &str,
     port: u16,
     address: &str,
     app_password: &str,
     since: chrono::NaiveDate,
+    stored_uidvalidity: Option<u32>,
+    stored_last_uid: Option<u32>,
 ) -> AppResult<HeaderFetchResult> {
     let (mut session, mailbox) = login_and_select(host, port, address, app_password)?;
-    let result = fetch_headers_inner(&mut session, host, port, &mailbox, since);
+    let result = fetch_headers_inner(
+        &mut session,
+        host,
+        port,
+        &mailbox,
+        since,
+        stored_uidvalidity,
+        stored_last_uid,
+    );
     let _ = session.logout();
     result
 }
@@ -192,13 +237,16 @@ fn fetch_headers_inner(
     port: u16,
     mailbox: &imap::types::Mailbox,
     since: chrono::NaiveDate,
+    stored_uidvalidity: Option<u32>,
+    stored_last_uid: Option<u32>,
 ) -> AppResult<HeaderFetchResult> {
     let uidvalidity = mailbox.uid_validity.ok_or_else(|| {
         log::warn!("[email_watch] EXAMINE INBOX on {host}:{port} returned no UIDVALIDITY");
         AppError::Provider("mailbox does not report a UID validity value".to_string())
     })?;
 
-    let query = format!("SINCE {}", since.format("%d-%b-%Y"));
+    let uidvalidity_matches_stored = stored_uidvalidity == Some(uidvalidity);
+    let query = build_search_query(since, uidvalidity_matches_stored, stored_last_uid);
     let uids = session.uid_search(&query).map_err(|e| {
         log::warn!(
             "[email_watch] UID SEARCH against {host}:{port} failed: {}",
@@ -431,7 +479,50 @@ fn error_kind(e: &imap::Error) -> &'static str {
 // below (and EmailWatchStore's store-level logic in `tests.rs`) IS covered.
 #[cfg(test)]
 mod tests {
-    use super::uid_sequence_set;
+    use super::{build_search_query, uid_sequence_set};
+    use chrono::NaiveDate;
+
+    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    // ── build_search_query (/review MEDIUM: watermark-scoped SEARCH) ────────
+
+    #[test]
+    fn build_search_query_bounds_by_uid_when_uidvalidity_matches_and_a_watermark_exists() {
+        assert_eq!(
+            build_search_query(date(2026, 7, 16), true, Some(100)),
+            "UID 101:* SINCE 16-Jul-2026"
+        );
+    }
+
+    #[test]
+    fn build_search_query_is_unbounded_without_a_stored_watermark() {
+        // No watermark yet (first-ever connect) — nothing to bound by, even
+        // though uidvalidity trivially "matches" (both `None`/absent).
+        assert_eq!(
+            build_search_query(date(2026, 7, 16), true, None),
+            "SINCE 16-Jul-2026"
+        );
+    }
+
+    #[test]
+    fn build_search_query_is_unbounded_when_uidvalidity_does_not_match_stored() {
+        // A stale watermark from a DIFFERENT uidvalidity generation must
+        // never be used to bound the search, even if one is stored.
+        assert_eq!(
+            build_search_query(date(2026, 7, 16), false, Some(100)),
+            "SINCE 16-Jul-2026"
+        );
+    }
+
+    #[test]
+    fn build_search_query_never_overflows_at_the_uid_ceiling() {
+        assert_eq!(
+            build_search_query(date(2026, 7, 16), true, Some(u32::MAX)),
+            format!("UID {}:* SINCE 16-Jul-2026", u32::MAX)
+        );
+    }
 
     #[test]
     fn uid_sequence_set_joins_sorted_uids_with_commas() {

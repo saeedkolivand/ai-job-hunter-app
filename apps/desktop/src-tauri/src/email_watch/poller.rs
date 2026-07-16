@@ -118,7 +118,15 @@ pub fn run_tick(
     stored_last_uid: Option<u32>,
     saved_applications: &[Application],
 ) -> AppResult<TickResult> {
-    let header_fetch = imap_client::fetch_headers_since(host, port, address, app_password, since)?;
+    let header_fetch = imap_client::fetch_headers_since(
+        host,
+        port,
+        address,
+        app_password,
+        since,
+        stored_uidvalidity,
+        stored_last_uid,
+    )?;
     let uidvalidity_changed = has_uidvalidity_changed(stored_uidvalidity, header_fetch.uidvalidity);
     let effective_last_uid = effective_last_uid(uidvalidity_changed, stored_last_uid);
 

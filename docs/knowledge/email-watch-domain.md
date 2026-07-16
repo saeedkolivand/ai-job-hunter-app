@@ -1,12 +1,12 @@
 # Email-watch domain (IMAP confirmation-email polling)
 
-Last updated: 2026-07-16 (task #23 PR B: email-watch poller, parser, matcher, and scheduler)
+Last updated: 2026-07-17 (task #23 PR B: email-watch poller, parser, matcher, and scheduler)
 
 Owned by `extension-author` (frontend settings UI) and `rust-backend-author` (IMAP polling loop); security co-reviewed by `tauri-security-reviewer`.
 
 ## Purpose
 
-Complement to extension submit-watch (Layer A, PR #687): listen for **application confirmation emails** on IMAP-enabled personal inboxes and auto-set application status to `applied` without user interaction. Polling-based, fully local (zero content egress to AI providers or external services), and v1 **notify-only** (never auto-writes; a match produces a Notification Center card the user confirms via the existing stage-picker UI).
+Complement to extension submit-watch (Layer A, PR #687): listen for **application confirmation emails** on IMAP-enabled personal inboxes and produce a Notification Center card routing to the Application for user confirmation. Polling-based, fully local (zero content egress to AI providers or external services), and v1 **notify-only** (never auto-writes — the user manually confirms the status change via the existing stage-picker UI).
 
 See [ADR-0013](../adr/0013-email-confirmation-watching.md) for the OAuth-vs-app-password economics, zero-content-egress guarantee, and why v1 is notify-only.
 
@@ -17,8 +17,8 @@ New module family: `apps/desktop/src-tauri/src/email_watch/` + `email_watch_sche
 | Module                     | LOC  | Purpose                                                                                                                                                                           |
 | -------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mod.rs`                   | 302  | `EmailWatchStore` (SQLite `email_watch.db`). Account + seen-dedupe tables. Resettable.                                                                                            |
-| `imap_client.rs`           | 250+ | TLS IMAP connector (raw socket + `rustls`). Validates credentials; fetches headers/bodies PEEK-only. No marking read.                                                             |
-| `parser.rs`                | 577  | RFC2047 subject decode, MIME text/plain extraction, confirmation-email fingerprinting (EN+DE), metadata (title/company/salary/date) extraction. Pure fns, no I/O.                 |
+| `imap_client.rs`           | 250+ | TLS IMAP connector (raw socket + `native-tls`). Validates credentials; fetches headers/bodies PEEK-only. No marking read.                                                         |
+| `parser.rs`                | 577  | RFC2047 subject decode, MIME text/plain extraction, confirmation-email fingerprinting (EN+DE), company/title candidate extraction. Pure fns, no I/O.                              |
 | `matcher.rs`               | 318  | Fuzzy company+title token-Jaccard scoring vs saved Applications. Computes best match or `None` (ambiguous). Pure fns.                                                             |
 | `poller.rs`                | 220+ | Tick orchestration: fetch headers, fingerprint, body-fetch candidates, extract, match. Returns outcomes (matched app IDs + UIDs for deduping).                                    |
 | `email_watch_scheduler.rs` | 307  | L2 module: spawns from Tauri setup. ~15 min interval, exponential backoff on failure, RunGuard concurrent-run protection, invokes parser/matcher/poller, calls `push_and_notify`. |
@@ -35,7 +35,7 @@ New module family: `apps/desktop/src-tauri/src/email_watch/` + `email_watch_sche
 ## Credential handling
 
 - **No persistent password** — IMAP app password enters via the UI, is validated by real `LOGIN` + `EXAMINE INBOX` (or returns an error immediately), and **never enters SQLite**. Validated once per `email_watch_connect()` IPC call.
-- **Keychain-only** — a successful connection stores the address + host in SQLite, the password in OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service). Keychain retrieval happens in-memory per poll cycle; on app close or logout, the keychain slot is cleared.
+- **Keychain-only** — a successful connection stores the address + host in SQLite, the password in OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service). The credential persists by design so the poller survives app restarts; it is cleared only on explicit `email_watch_disconnect` or factory reset.
 - **Host prefilled, data-driven** — v1 defaults to `imap.gmail.com:993`; host/port are stored in the account row so future provider auto-config can be data-driven (code change not needed for new providers).
 - **Honest disclosure** — an app password grants **full mailbox access** (not readonly over the wire, only our IMAP session is readonly via EXAMINE). Stored in the OS keychain, never in SQLite or app logs.
 
@@ -44,16 +44,16 @@ New module family: `apps/desktop/src-tauri/src/email_watch/` + `email_watch_sche
 IMAP mailbox identity changes (renumbering, account migration) are tracked via **UIDVALIDITY** (per-folder unique ID generation counter):
 
 - **On first connect**: store `uidvalidity` + `last_uid`.
-- **On each tick**: compare the fresh `uidvalidity` from a SELECT/EXAMINE response against the stored one.
-  - **Same**: `UID SEARCH SINCE <date> UID >last_uid` (fetch headers newer than watermark).
-  - **Different**: mailbox was renumbered. **Reset `last_uid` to `0` and clear the entire `seen` table** (old UIDs are now invalid; new range starts fresh). Fetch a rolling ~30-day window instead. Next tick will inherit the new watermark and resume incremental fetches.
+- **On each tick**: compare the fresh `uidvalidity` from an EXAMINE response against the stored one.
+  - **Same** (and watermark exists): server-side search is UID-bounded (`UID SEARCH SINCE <date> UID <last_uid+1>:*` — RFC 3501 §6.4.4 keys are ANDed) to fetch only headers newer than the watermark. Client-side filter also applied.
+  - **Different** (renumbered): mailbox was recreated/renumbered. `reset_on_uidvalidity_change` atomically resets `last_uid` to `NULL` AND clears the entire `seen` table (old UIDs are meaningless under the new UIDVALIDITY). Next tick fetches a rolling ~30-day window unbounded by UID.
 - **Watermark seed after UIDVALIDITY-change** — the post-tick `advance_last_uid` must be seeded from the **post-tick store state** (which may have been reset by `reset_on_uidvalidity_change`), not the pre-tick snapshot (a stale seed after a renumbering would silently suppress all future matches).
 
 **Critical invariant**: a stale UID bound after a UIDVALIDITY flip is a correctness hazard — UIDs are relative to the current generation, and carrying a high UID from an old generation into a new one risks permanently suppressing real future matches.
 
 ## Seen-dedupe semantics
 
-The `seen` table (`uid PK, message_id, matched_app_id, ts`) deduplicates:
+The `seen` table (`uid PK, matched_app_id, ts`) deduplicates per-mailbox:
 
 - **Per fetch**: all headers returned by `UID SEARCH` are marked `seen` (whether they fingerprint/match or not), so a re-poll after a failure never re-fetches or re-matches the same batch.
 - **Matched records**: only matched outcomes are handed to `push_and_notify`; non-matching headers are still marked seen (silently consumed).

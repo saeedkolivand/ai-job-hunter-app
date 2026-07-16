@@ -1,6 +1,6 @@
 # Extension domain (browser extension + desktop bridge)
 
-Last updated: 2026-07-16 (task #22: auto-track Layer A — gesture-armed `submit-watch` + `autotrack.check`/`autotrack.result` + `status.update`'s `auto` flag)
+Last updated: 2026-07-17 (task #22: auto-track Layer A — gesture-armed `submit-watch` + `autotrack.check`/`autotrack.result` + `status.update`'s `auto` flag; task #23 PR B: Layer C pointer now points to email-watch-domain.md)
 
 Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tauri-security-reviewer`.
 
