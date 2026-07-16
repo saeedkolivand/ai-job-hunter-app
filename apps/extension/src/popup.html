@@ -88,6 +88,21 @@
         <!-- Shown only for a found+saved applied.check result; hides itself once
              the job is marked applied (re-fires the same auto-check). -->
         <button id="btn-mark-applied" class="btn" type="button" hidden>Mark as applied</button>
+        <div class="actions">
+          <button id="btn-import" class="btn btn--primary" type="button">Import this job</button>
+          <button
+            id="btn-fill"
+            class="btn"
+            type="button"
+            title="Fill this page's form with your saved contact details (opt-in, review before submitting)"
+          >
+            Fill this form
+          </button>
+        </div>
+        <label class="check">
+          <input id="chk-applied" type="checkbox" />
+          <span>I already applied to this job</span>
+        </label>
         <!-- Always offered alongside the mark-as-applied flow — the post-submit
              one-stop gesture. No match for this page → the desktop refuses with
              a message to import the job first (never auto-creates). -->
@@ -203,21 +218,6 @@
           Check fit
         </button>
         <div id="match-result" class="match-result" hidden></div>
-        <div class="actions">
-          <button id="btn-import" class="btn btn--primary" type="button">Import this job</button>
-          <button
-            id="btn-fill"
-            class="btn"
-            type="button"
-            title="Fill this page's form with your saved contact details (opt-in, review before submitting)"
-          >
-            Fill this form
-          </button>
-        </div>
-        <label class="check">
-          <input id="chk-applied" type="checkbox" />
-          <span>I already applied to this job</span>
-        </label>
         <p id="import-msg" class="msg" role="status" aria-live="polite"></p>
         <button id="btn-unpair" class="link" type="button">Unpair this device</button>
       </section>
