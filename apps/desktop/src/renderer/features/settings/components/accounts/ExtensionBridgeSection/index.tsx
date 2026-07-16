@@ -2,7 +2,16 @@ import { Check, Copy, Puzzle, RotateCcw, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, cn, ConfirmModal, Input, SettingsSection, Switch, useNotification } from '@ajh/ui';
+import {
+  Button,
+  cn,
+  ConfirmModal,
+  Input,
+  RefreshButton,
+  SettingsSection,
+  Switch,
+  useNotification,
+} from '@ajh/ui';
 
 import { PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import {
@@ -33,7 +42,7 @@ export function ExtensionBridgeSection() {
   const notify = useNotification();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const { data: status } = useExtensionBridgeStatus();
+  const { data: status, refetch: refetchStatus } = useExtensionBridgeStatus();
   const regenerate = useRegenerateExtensionToken();
 
   const { data: autofill } = useExtensionAutofillSetting();
@@ -151,17 +160,30 @@ export function ExtensionBridgeSection() {
             <span className="text-xs text-foreground/55">
               {t('settings.accounts.extension.statusLabel')}
             </span>
-            {connected ? (
-              <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-                <Check size={9} strokeWidth={2.5} />
-                {t('settings.accounts.extension.connected')}
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 rounded-full bg-foreground/[0.06] px-2 py-0.5 text-[10px] font-medium text-foreground/45">
-                <X size={9} strokeWidth={2.5} />
-                {t('settings.accounts.extension.disconnected')}
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              <RefreshButton
+                onRefresh={async () => {
+                  await refetchStatus();
+                }}
+                variant="ghost"
+                size={10}
+                className="h-6 gap-1 px-2 text-[10px]"
+                title={t('settings.accounts.extension.refresh')}
+              >
+                {t('settings.accounts.extension.refresh')}
+              </RefreshButton>
+              {connected ? (
+                <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+                  <Check size={9} strokeWidth={2.5} />
+                  {t('settings.accounts.extension.connected')}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 rounded-full bg-foreground/[0.06] px-2 py-0.5 text-[10px] font-medium text-foreground/45">
+                  <X size={9} strokeWidth={2.5} />
+                  {t('settings.accounts.extension.disconnected')}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Pairing token */}
@@ -204,6 +226,12 @@ export function ExtensionBridgeSection() {
           {/* Help + availability (published on the Chrome Web Store and Firefox AMO). */}
           <p className="text-xs leading-snug text-foreground/40">
             {t('settings.accounts.extension.help')} {t('settings.accounts.extension.availability')}
+          </p>
+          {/* Multiple browsers may share this ONE token (a per-socket handshake
+              authenticates each independently) — and regenerating unpairs all
+              of them at once, not just the last one used. */}
+          <p className="text-xs leading-snug text-foreground/40">
+            {t('settings.accounts.extension.multiDevice')}
           </p>
 
           {/* Assisted autofill opt-in (default OFF). The disclosure spells out

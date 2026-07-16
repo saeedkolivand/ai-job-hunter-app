@@ -1171,7 +1171,7 @@ fn normalize_job_url_neutralizes_non_http_schemes_to_empty() {
 fn resolve_applied_check_not_found_when_no_application() {
     let (_dir, store) = open_store();
     let payload = json!({ "url": "https://jobs.example.com/posting/none" });
-    let out = super::resolve_applied_check(&store, &payload).unwrap();
+    let out = super::applied_check::resolve_applied_check(&store, &payload).unwrap();
     assert!(!out.found);
     assert!(out.application_id.is_none());
     assert!(out.status.is_none());
@@ -1194,7 +1194,7 @@ fn resolve_applied_check_found_saved_has_no_applied_at() {
         )
         .unwrap();
 
-    let out = super::resolve_applied_check(&store, &json!({ "url": url })).unwrap();
+    let out = super::applied_check::resolve_applied_check(&store, &json!({ "url": url })).unwrap();
     assert!(out.found);
     assert_eq!(out.status.as_deref(), Some("saved"));
     assert_eq!(out.title.as_deref(), Some("Backend Engineer"));
@@ -1217,7 +1217,7 @@ fn resolve_applied_check_found_applied_carries_applied_at() {
         )
         .unwrap();
 
-    let out = super::resolve_applied_check(&store, &json!({ "url": url })).unwrap();
+    let out = super::applied_check::resolve_applied_check(&store, &json!({ "url": url })).unwrap();
     assert!(out.found);
     assert_eq!(out.status.as_deref(), Some("applied"));
     assert!(
@@ -1230,7 +1230,8 @@ fn resolve_applied_check_found_applied_carries_applied_at() {
 #[test]
 fn resolve_applied_check_rejects_empty_url() {
     let (_dir, store) = open_store();
-    let err = super::resolve_applied_check(&store, &json!({ "url": "" })).unwrap_err();
+    let err =
+        super::applied_check::resolve_applied_check(&store, &json!({ "url": "" })).unwrap_err();
     assert!(err.to_string().contains("required"));
 }
 
@@ -1239,8 +1240,11 @@ fn resolve_applied_check_rejects_empty_url() {
 #[test]
 fn resolve_applied_check_rejects_non_http_scheme() {
     let (_dir, store) = open_store();
-    let err =
-        super::resolve_applied_check(&store, &json!({ "url": "javascript:alert(1)" })).unwrap_err();
+    let err = super::applied_check::resolve_applied_check(
+        &store,
+        &json!({ "url": "javascript:alert(1)" }),
+    )
+    .unwrap_err();
     assert!(err.to_string().contains("not a valid"));
 }
 
@@ -1260,8 +1264,8 @@ fn applied_result_reply_carries_type_and_found_flag() {
             Some(true),
         )
         .unwrap();
-    let outcome = super::resolve_applied_check(&store, &json!({ "url": url }));
-    let reply = super::applied_result_reply("req-9", outcome);
+    let outcome = super::applied_check::resolve_applied_check(&store, &json!({ "url": url }));
+    let reply = super::applied_check::applied_result_reply("req-9", outcome);
     let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(v["type"], super::msg::APPLIED_RESULT);
     assert_eq!(v["reqId"], "req-9");
@@ -1275,8 +1279,8 @@ fn applied_result_reply_carries_type_and_found_flag() {
 #[test]
 fn applied_result_reply_carries_error_on_malformed_url() {
     let (_dir, store) = open_store();
-    let outcome = super::resolve_applied_check(&store, &json!({ "url": "" }));
-    let reply = super::applied_result_reply("req-10", outcome);
+    let outcome = super::applied_check::resolve_applied_check(&store, &json!({ "url": "" }));
+    let reply = super::applied_check::applied_result_reply("req-10", outcome);
     let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(v["type"], super::msg::APPLIED_RESULT);
     assert_eq!(v["payload"]["found"], false);

@@ -208,7 +208,7 @@ pub(super) enum NextStep<T> {
 /// DETACHED `run_writer` task ending (its [`WRITE_STALL`] timeout, or a send
 /// error) used to go unnoticed by the read loop until ITS OWN next inbound
 /// frame — which, for a stalled-but-open peer or a quiet/idle connection, may
-/// never come — so `cancel_all`/`set_connected(false)` stayed delayed
+/// never come — so `cancel_all`/`dec_connected` stayed delayed
 /// indefinitely. Racing the writer handle here closes that: the writer ending
 /// now tears the connection down immediately, the SAME way a read error does.
 ///

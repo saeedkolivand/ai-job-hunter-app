@@ -223,6 +223,7 @@ export {
   type ExtensionAiAssistSetting,
   type ExtensionAutofillSetting,
   type ExtensionAutoTrackSetting,
+  type ExtensionBridgeChangedEvent,
   type ExtensionBridgeContract,
   type ExtensionBridgeStatus,
   type ExtensionBridgeTokenResult,
