@@ -1,11 +1,15 @@
 //! Email-confirmation watching (Task #23, auto-track Layer C) — the persisted
 //! account/dedupe store behind IMAP-based application-confirmation matching.
 //!
-//! **PR A scope**: this store + the connect-time IMAP validation
-//! ([`imap_client`]) only. No poller, no parser, no matcher yet — those land in
-//! PR B, which will read/write this same schema (the `seen` dedupe table and
-//! `reset_on_uidvalidity_change` exist now, unused by any command, so PR B
-//! extends this file instead of reshaping it).
+//! **PR A** shipped this store + the connect-time IMAP validation
+//! ([`imap_client`]). **PR B** adds the read path: [`imap_client`]'s header/
+//! body fetch, [`parser`] (pure RFC2047/MIME decode + fingerprint + candidate
+//! extraction), [`matcher`] (pure token-Jaccard company/title scoring), and
+//! [`poller`] (the Tauri-free tick orchestration tying the three together).
+//! The actual background schedule lives ABOVE this module family, in the
+//! top-level `email_watch_scheduler` (L2) — mirroring the `autopilot`/
+//! `autopilot_scheduler` split, so this store never needs an upward reach
+//! into `commands::notifications` itself.
 //!
 //! **Backup/reset posture**: unlike most per-domain SQLite stores in this
 //! crate, `EmailWatchStore` is **NOT** a [`crate::data_store::DataStore`] (not
@@ -38,6 +42,9 @@ use crate::db::{open, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::AppResult;
 
 pub mod imap_client;
+pub mod matcher;
+pub mod parser;
+pub mod poller;
 
 /// OS-keychain slot for the IMAP app password (never persisted in SQLite,
 /// never logged, never returned over IPC). Read/written via

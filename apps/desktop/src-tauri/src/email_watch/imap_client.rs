@@ -19,15 +19,18 @@
 //! TLS stack `net/http.rs` already depends on for `reqwest` — not a second TLS
 //! stack, just a second consumer of the one already in the tree.
 //!
-//! **PR A** exposes exactly the seam the connect/check-now commands need:
 //! [`validate_connection`] — TLS connect, `LOGIN`, `SELECT INBOX`, then log
-//! out. It proves a host/address/app-password combination actually works
-//! before anything is persisted, and is called again (unchanged) by
-//! `email_watch_check_now` to re-validate an existing connection. PR B extends
-//! this file with `UID SEARCH SINCE` + header/body fetch for the poller — the
-//! connect/select step here stays as-is; the sync `imap` crate has no async
-//! API, so a persistent session can't be held across ticks anyway (PR B opens
-//! a fresh connection per tick, same as this function does).
+//! out — proves a host/address/app-password combination actually works before
+//! anything is persisted (`email_watch_connect`).
+//!
+//! **PR B** adds the read path the poller needs, sharing the same
+//! connect/login/select prefix ([`login_and_select`]): [`fetch_headers_since`]
+//! (`UID SEARCH SINCE <date>` + a header-only `UID FETCH`, every candidate
+//! above the watermark) and [`fetch_bodies`] (a second, header+body `UID
+//! FETCH`, called ONLY for fingerprint-matched uids — see
+//! [`crate::email_watch::poller`]). The sync `imap` crate has no async API,
+//! so a persistent session can't be held across ticks anyway — every function
+//! here opens a fresh connection and logs out before returning.
 //!
 //! **Blocking**: every call here is synchronous — callers MUST run it inside
 //! `tokio::task::spawn_blocking`, never directly on an async worker.
@@ -56,11 +59,17 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// `CONNECT_TIMEOUT` alone does not cover.
 const IO_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// TLS-connect to `host:port` (with [`CONNECT_TIMEOUT`]/[`IO_TIMEOUT`]),
-/// `LOGIN` with `address`/`app_password`, and `SELECT INBOX` to prove the
-/// mailbox is reachable — then best-effort log out. Returns `Ok(())` only if
-/// every step succeeds; the caller must not persist the account/credential on
-/// `Err`.
+/// A logged-in, `INBOX`-selected session over the timeout-bounded TLS socket.
+type ImapSession = imap::Session<native_tls::TlsStream<TcpStream>>;
+
+/// TLS-connect (with [`CONNECT_TIMEOUT`]/[`IO_TIMEOUT`]), `LOGIN`, and
+/// `SELECT INBOX` — the shared prefix every connector entry point in this
+/// file needs (connect-time validation, and PR B's header/body fetches).
+///
+/// On a SELECT failure the session is best-effort logged out before
+/// returning `Err` (a logout failure must never mask the real SELECT error);
+/// on a LOGIN failure there is no session to log out. Callers own logging out
+/// the returned session on their own success/further-error paths.
 ///
 /// Blocking (the `imap` crate has no async API) — call only from
 /// `spawn_blocking`.
@@ -70,12 +79,12 @@ const IO_TIMEOUT: Duration = Duration::from_secs(30);
 /// library error's `Display`/`Debug` text, which can echo server-controlled
 /// content (some IMAP servers echo the attempted username/address back into a
 /// `NO`/`BAD` response's message).
-pub fn validate_connection(
+fn login_and_select(
     host: &str,
     port: u16,
     address: &str,
     app_password: &str,
-) -> AppResult<()> {
+) -> AppResult<(ImapSession, imap::types::Mailbox)> {
     let client = connect_with_timeout(host, port)?;
 
     let mut session = client
@@ -90,19 +99,202 @@ pub fn validate_connection(
             )
         })?;
 
-    let select_result = session.select("INBOX").map(|_| ()).map_err(|e| {
+    match session.select("INBOX").map_err(|e| {
         log::warn!(
             "[email_watch] IMAP SELECT INBOX against {host}:{port} failed: {}",
             error_kind(&e)
         );
         AppError::Provider("could not open the mailbox inbox".to_string())
-    });
+    }) {
+        Ok(mailbox) => Ok((session, mailbox)),
+        Err(e) => {
+            let _ = session.logout();
+            Err(e)
+        }
+    }
+}
 
-    // Best-effort logout regardless of the SELECT outcome — a logout failure
-    // must never mask (or be conflated with) the real result above.
+/// `LOGIN` + `SELECT INBOX`, then best-effort log out. Returns `Ok(())` only
+/// if every step succeeds; the caller must not persist the account/
+/// credential on `Err`. See [`login_and_select`] for the blocking/privacy
+/// contract.
+pub fn validate_connection(
+    host: &str,
+    port: u16,
+    address: &str,
+    app_password: &str,
+) -> AppResult<()> {
+    let (mut session, _mailbox) = login_and_select(host, port, address, app_password)?;
     let _ = session.logout();
+    Ok(())
+}
 
-    select_result
+/// One candidate message's raw header bytes, as returned by
+/// [`fetch_headers_since`]. RFC2047 decoding + field extraction happens in
+/// [`crate::email_watch::parser`], never here — this module stays a thin
+/// transport.
+#[derive(Debug)]
+pub struct HeaderCandidate {
+    pub uid: u32,
+    /// Raw `HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)` bytes for this
+    /// message (still RFC2047-encoded where applicable).
+    pub raw_header: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub struct HeaderFetchResult {
+    /// The mailbox's current `UIDVALIDITY` (from `SELECT`). The caller
+    /// compares this against the previously stored value — see
+    /// [`crate::email_watch::poller`] — since this connector has no
+    /// visibility into the store's prior watermark.
+    pub uidvalidity: u32,
+    pub headers: Vec<HeaderCandidate>,
+}
+
+/// How many days back `SINCE` looks, on every tick (not just the first). A
+/// uniform date bound rather than a UID-range IMAP query, so the
+/// UIDVALIDITY-changed decision (made client-side by the caller, which knows
+/// the STORED watermark this connector doesn't) never risks a stale UID bound
+/// producing wrong results against a renumbered mailbox — the caller filters
+/// the returned headers to "above `last_uid`" itself.
+pub const LOOKBACK_DAYS: i64 = 30;
+
+/// `UID SEARCH SINCE <date>` on `INBOX`, then `UID FETCH` ONLY the header
+/// fields the parser/matcher need (From/Subject/Date/Message-ID) — never the
+/// body (see [`fetch_bodies`], called only for fingerprint-matched
+/// candidates). Every fetch uses `BODY.PEEK[...]`, which never sets `\Seen`
+/// (ADR-0013's read-only guarantee — no `APPEND`/`COPY`/`STORE` anywhere in
+/// this module).
+pub fn fetch_headers_since(
+    host: &str,
+    port: u16,
+    address: &str,
+    app_password: &str,
+    since: chrono::NaiveDate,
+) -> AppResult<HeaderFetchResult> {
+    let (mut session, mailbox) = login_and_select(host, port, address, app_password)?;
+    let result = fetch_headers_inner(&mut session, host, port, &mailbox, since);
+    let _ = session.logout();
+    result
+}
+
+fn fetch_headers_inner(
+    session: &mut ImapSession,
+    host: &str,
+    port: u16,
+    mailbox: &imap::types::Mailbox,
+    since: chrono::NaiveDate,
+) -> AppResult<HeaderFetchResult> {
+    let uidvalidity = mailbox.uid_validity.ok_or_else(|| {
+        log::warn!("[email_watch] SELECT INBOX on {host}:{port} returned no UIDVALIDITY");
+        AppError::Provider("mailbox does not report a UID validity value".to_string())
+    })?;
+
+    let query = format!("SINCE {}", since.format("%d-%b-%Y"));
+    let uids = session.uid_search(&query).map_err(|e| {
+        log::warn!(
+            "[email_watch] UID SEARCH against {host}:{port} failed: {}",
+            error_kind(&e)
+        );
+        AppError::Provider("could not search the mailbox".to_string())
+    })?;
+    if uids.is_empty() {
+        return Ok(HeaderFetchResult {
+            uidvalidity,
+            headers: Vec::new(),
+        });
+    }
+
+    let mut sorted: Vec<u32> = uids.into_iter().collect();
+    sorted.sort_unstable();
+    let seq = uid_sequence_set(&sorted);
+    let fetches = session
+        .uid_fetch(
+            &seq,
+            "(UID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])",
+        )
+        .map_err(|e| {
+            log::warn!(
+                "[email_watch] UID FETCH (headers) against {host}:{port} failed: {}",
+                error_kind(&e)
+            );
+            AppError::Provider("could not read mailbox messages".to_string())
+        })?;
+
+    let headers = fetches
+        .iter()
+        .filter_map(|f| {
+            let uid = f.uid?;
+            let raw = f.header()?;
+            Some(HeaderCandidate {
+                uid,
+                raw_header: raw.to_vec(),
+            })
+        })
+        .collect();
+
+    Ok(HeaderFetchResult {
+        uidvalidity,
+        headers,
+    })
+}
+
+/// Fetch the full raw message (`BODY.PEEK[]` — header + body, read-only) for
+/// exactly `uids` — called ONLY for fingerprint-matched candidates (the
+/// "minimize reads" design: never fetched for every candidate, only ones
+/// [`crate::email_watch::parser::fingerprint`] already flagged). An empty
+/// `uids` short-circuits without a network round trip.
+pub fn fetch_bodies(
+    host: &str,
+    port: u16,
+    address: &str,
+    app_password: &str,
+    uids: &[u32],
+) -> AppResult<Vec<(u32, Vec<u8>)>> {
+    if uids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (mut session, _mailbox) = login_and_select(host, port, address, app_password)?;
+    let result = fetch_bodies_inner(&mut session, host, port, uids);
+    let _ = session.logout();
+    result
+}
+
+fn fetch_bodies_inner(
+    session: &mut ImapSession,
+    host: &str,
+    port: u16,
+    uids: &[u32],
+) -> AppResult<Vec<(u32, Vec<u8>)>> {
+    let mut sorted = uids.to_vec();
+    sorted.sort_unstable();
+    let seq = uid_sequence_set(&sorted);
+    let fetches = session.uid_fetch(&seq, "(UID BODY.PEEK[])").map_err(|e| {
+        log::warn!(
+            "[email_watch] UID FETCH (body) against {host}:{port} failed: {}",
+            error_kind(&e)
+        );
+        AppError::Provider("could not read mailbox messages".to_string())
+    })?;
+
+    Ok(fetches
+        .iter()
+        .filter_map(|f| {
+            let uid = f.uid?;
+            let raw = f.body()?;
+            Some((uid, raw.to_vec()))
+        })
+        .collect())
+}
+
+/// Build an IMAP sequence-set string from already-sorted uids (e.g.
+/// `"101,102,105"`). Pure + unit-testable without a network round trip.
+fn uid_sequence_set(sorted_uids: &[u32]) -> String {
+    sorted_uids
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// Manual TLS-connect with both a connect timeout and a read/write timeout on
@@ -142,17 +334,27 @@ fn connect_with_timeout(
                 continue;
             }
         };
+        // A failed `set_*_timeout` must drop this socket and move on to the
+        // next resolved address — NOT log-and-proceed — so no socket ever
+        // enters TLS/LOGIN without an I/O deadline (deferred LOW from the
+        // PR A review; the pre-fix behavior let a `set_read_timeout`/
+        // `set_write_timeout` failure fall through to `connector.connect`
+        // below with no read/write timeout applied at all).
         if let Err(e) = tcp.set_read_timeout(Some(IO_TIMEOUT)) {
             log::warn!(
                 "[email_watch] set_read_timeout for {host}:{port} failed: {}",
                 e.kind()
             );
+            last_err = AppError::Network("could not connect to the mail server".to_string());
+            continue;
         }
         if let Err(e) = tcp.set_write_timeout(Some(IO_TIMEOUT)) {
             log::warn!(
                 "[email_watch] set_write_timeout for {host}:{port} failed: {}",
                 e.kind()
             );
+            last_err = AppError::Network("could not connect to the mail server".to_string());
+            continue;
         }
 
         let tls = match connector.connect(host, tcp) {
@@ -206,9 +408,30 @@ fn error_kind(e: &imap::Error) -> &'static str {
     }
 }
 
-// No automated test here: this function's every branch is a real network
-// round-trip against an IMAP server (TLS handshake, LOGIN, SELECT) — there is
-// no fake IMAP server in this crate's test harness, and standing one up is
-// out of scope for PR A (mirrors the project's own documented gap: IMAP
-// integration is manual smoke, tracked for PR B alongside the poller/parser).
-// The store-level logic this wraps (EmailWatchStore) is covered in `tests.rs`.
+// No automated test for the network-round-trip functions above (connect,
+// login_and_select, fetch_headers_since, fetch_bodies): every branch is a
+// real TLS/LOGIN/SELECT/FETCH exchange against an IMAP server, and there is
+// no fake IMAP harness in this crate — documented gap, mirrors the project's
+// own "IMAP integration is manual smoke" note. The pure, network-free helper
+// below (and EmailWatchStore's store-level logic in `tests.rs`) IS covered.
+#[cfg(test)]
+mod tests {
+    use super::uid_sequence_set;
+
+    #[test]
+    fn uid_sequence_set_joins_sorted_uids_with_commas() {
+        assert_eq!(uid_sequence_set(&[101, 102, 105]), "101,102,105");
+    }
+
+    #[test]
+    fn uid_sequence_set_of_a_single_uid_has_no_comma() {
+        assert_eq!(uid_sequence_set(&[42]), "42");
+    }
+
+    #[test]
+    fn uid_sequence_set_of_empty_is_empty_string() {
+        // Callers (`fetch_bodies`) short-circuit before this is ever built
+        // with an empty slice, but the pure fn itself stays total.
+        assert_eq!(uid_sequence_set(&[]), "");
+    }
+}

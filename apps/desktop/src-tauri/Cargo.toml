@@ -209,6 +209,12 @@ imap = { version = "=3.0.0-alpha.15", default-features = false, features = ["nat
 # `imap`/`reqwest`'s own `native-tls` features — `cargo tree -p native-tls`
 # confirms a single 0.2.18, no new duplicate version.
 native-tls = "0.2"
+# RFC5322/MIME parser for the poller's parser.rs — RFC2047 subject decode +
+# text/plain body extraction from the raw bytes `imap_client` fetches. License
+# verified via `cargo info mail-parser` (not assumed from the crate's Stalwart-
+# relicensing news, which does NOT apply to this specific crate): "Apache-2.0
+# OR MIT" — already deny.toml-allowed, no license-allow-list change needed.
+mail-parser = "0.11.5"
 
 [target.'cfg(windows)'.dependencies]
 wmi = "0.18"

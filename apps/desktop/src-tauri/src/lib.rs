@@ -26,6 +26,7 @@ pub mod db;
 pub mod deeplink;
 pub mod documents;
 pub mod email_watch;
+pub mod email_watch_scheduler;
 pub mod error;
 pub mod events;
 pub mod export;
@@ -658,11 +659,11 @@ pub fn run() {
                 Ok(store) => manage_resettable(app, &mut reset_registry, "spend", store),
                 Err(e) => log::warn!("[setup] spend store failed to open (non-fatal): {e}"),
             }
-            // Email-confirmation watching (task #23, PR A — connect/status only,
-            // no poller yet). Holds no secrets (the app password lives in the OS
-            // keychain via CredentialStore); wiped on factory reset, NOT included
-            // in backups (machine-local mailbox bookkeeping — see
-            // `email_watch::mod` doc).
+            // Email-confirmation watching (task #23, auto-track Layer C). Holds
+            // no secrets (the app password lives in the OS keychain via
+            // CredentialStore); wiped on factory reset, NOT included in backups
+            // (machine-local mailbox bookkeeping — see `email_watch::mod` doc).
+            // The poller itself is started separately, below (`email_watch_scheduler::start`).
             match email_watch::EmailWatchStore::open(&data_dir) {
                 Ok(store) => manage_resettable(app, &mut reset_registry, "email_watch", store),
                 Err(e) => log::warn!("[setup] email watch store failed to open (non-fatal): {e}"),
@@ -756,6 +757,12 @@ pub fn run() {
 
             // Start autopilot schedule runner (checks every minute).
             autopilot_scheduler::start(handle.clone());
+
+            // Start the email-confirmation watch scheduler (task #23, auto-track
+            // Layer C) — a no-op sweep whenever the feature is disconnected/
+            // disabled/no credential; see `email_watch_scheduler` for the
+            // due/backoff logic.
+            email_watch_scheduler::start(handle.clone());
 
             // Start the browser-extension WS bridge (loopback only). Fire-and-
             // forget on the tokio runtime; a bind failure logs + disables the
