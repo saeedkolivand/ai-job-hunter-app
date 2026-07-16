@@ -3,16 +3,15 @@
 //! Single source of truth for which provider the app generates with, and each
 //! provider's model + (OpenAI-compatible) base URL. Mirrors the backend-owned
 //! [`crate::documents::EmbeddingConfig`] pattern but for chat/generation. This
-//! store is the `base_url` source for the generation commands task #16 flipped
-//! onto it — `ai_generate`, `generate_pipeline`, research/salary, the extension
-//! bridge's `resolve_answer_assist`, and autopilot — so those paths no longer
-//! accept a renderer-supplied `base_url`; routing comes from *here*, not the
-//! request. **Not yet flipped:** the `agent_run` ("prep this application")
-//! agent-loop path (`commands/agent.rs` → `run_agent_live`) still resolves via
-//! `Completer::resolve` with a renderer-supplied `req.base_url` threaded into
-//! `agent::tools::ToolContext` — a tracked follow-up (see
-//! `docs/NEXT_ISSUES.md`) to flip next; the SSRF is NOT closed for that path
-//! today.
+//! store is the `base_url` source for EVERY generation path — `ai_generate`,
+//! `generate_pipeline`, research/salary, the extension bridge's
+//! `resolve_answer_assist`, autopilot (task #16), and the `agent_run` ("prep this
+//! application") agent loop + its tools (task #25) — so none of them accept a
+//! renderer-supplied `base_url`; routing comes from *here*, not the request. The
+//! `agent_run` path now resolves via `Completer::from_active` for both the agent's
+//! own turns and every tool provider call (`agent::tools::complete_trusted`), and
+//! its `ToolContext` no longer carries provider/model/base_url — closing the last
+//! base_url-exfil path in this class (`docs/NEXT_ISSUES.md`).
 //!
 //! Shape maps 1:1 to the renderer's old Zustand slice:
 //! `{ activeProvider, providers: { [id]: { model, baseUrl } } }`.

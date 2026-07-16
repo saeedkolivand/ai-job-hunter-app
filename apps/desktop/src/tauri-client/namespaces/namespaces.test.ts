@@ -71,7 +71,7 @@ describe('tauri-client namespaces', () => {
     boards.connect({ boardId: 'indeed' });
     expect(invoke).toHaveBeenCalledWith('boards_login_with_browser', { boardId: 'indeed' });
 
-    const agentReq = { resumeId: 'res-1', jobId: 'job-1', provider: 'openai', model: 'gpt-4o' };
+    const agentReq = { resumeId: 'res-1', jobId: 'job-1' };
     agent.run(agentReq);
     expect(invoke).toHaveBeenCalledWith('agent_run', { req: agentReq });
 
