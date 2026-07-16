@@ -10,9 +10,9 @@ For `performance-profiler` (Secondary). Bias findings toward MEDIUM unless there
 
 ## Hot paths
 
-- **Scraping** (`scraping/`, `browser/`) — bounded concurrency, reuse [chromiumoxide][chromiumoxide] pages where possible, per-board rate limits, don't spawn unbounded tasks.
+- **Scraping** (`scraping/`, `platform/chrome/`) — bounded concurrency, reuse [chromiumoxide][chromiumoxide] pages where possible, per-board rate limits, don't spawn unbounded tasks. Primary hot path is aggregator-first HTTP API (Adzuna/JSearch/Jooble), not browser pages.
 - **AI / embeddings** (`commands/ai_provider/`, `documents/`) — batch sizing, streaming back-pressure, minimal token/context, cheapest viable model; avoid re-embedding unchanged content.
-- **Export / layout** (`export/`, `layout/`, `measure/`) — pre-measure before render; don't re-shape fonts per glyph; compute pagination once. PDF fonts are glyph-subset at export time (`export/pdf_renderer/fonts.rs: parse_font`); size guardrail test catches regressions. See [ADR-008](decision-records/adr-008-pdf-glyph-subsetting.md).
+- **Export / layout** (`export/`, `export/typst_engine/`) — compile once per export, avoid redundant re-renders of previews. Typst subsets fonts internally when producing PDF bytes; size guardrail test in `export/typst_engine/test.rs` catches regressions. See [ADR-008](decision-records/adr-008-pdf-glyph-subsetting.md) (superseded — historical rationale).
 - **Pipeline** (`pipeline/`, `autopilot/`) — bounded queues; backpressure; cancellation honored.
 - **Data** — no N+1 queries, no full-table scans on warm paths.
 

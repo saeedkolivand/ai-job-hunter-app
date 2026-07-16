@@ -14,7 +14,7 @@ Every domain is a **pair**: a write-capable **author** implements, an independen
 
 ## Consequences
 
-- **21 agents:** the routing table + explainer must list every one (the guard enforces it).
+- **25 agents:** the routing table + explainer must list every one (the guard enforces it).
 - **Token premium of pairing/teams:** offset by the pre-harvest handoff (no cold re-exploration).
 - **Agent Teams experimental:** Windows/VS Code runs in-process only (no tmux split panes).
 - **Visual explainer:** `landing/agent-system.html` documents the system.
@@ -22,9 +22,9 @@ Every domain is a **pair**: a write-capable **author** implements, an independen
 
 ## Related
 
-- `.claude/agents/` — 21 agent definitions (author + critic per domain)
+- `.claude/agents/` — 25 agent definitions (author + critic per domain)
 - `.claude/commands/` — 15 commands (implement-feature, fix-bug, refactor-module, add-tests, review-\* specialties, prepare-release, etc.)
 - `.claude/review-routes.json` — deterministic routing from touched files to primary + risk-justified secondary reviewers
 - `CLAUDE.md` — single source of truth for agent descriptions and routing
 - `scripts/check-agent-system.mjs` — deterministic guard (pre-push + CI) enforcing agents ⇄ routes ⇄ CLAUDE.md ⇄ AI-configs
-- `landing/agent-system.html` — interactive visual explainer of the 21-agent system
+- `landing/agent-system.html` — interactive visual explainer of the 25-agent system
