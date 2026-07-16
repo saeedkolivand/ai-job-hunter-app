@@ -315,6 +315,62 @@ describe('appliedCheck request', () => {
   });
 });
 
+// ── fieldsProbe request — always ok:true, EVERY failure fails OPEN (unlike
+// appliedCheck, which fails CLOSED into found:false) ────────────────────────
+
+describe('fieldsProbe request', () => {
+  it('returns the injected probe result on success (fields found)', async () => {
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://jobs.example.com/apply' } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: true }] as never);
+
+    const res = await send({ kind: 'fieldsProbe' });
+
+    expect(res).toEqual({ ok: true, kind: 'fieldsProbe', hasFields: true });
+    expect(executeScriptMock).toHaveBeenCalledWith({
+      target: { tabId: 7 },
+      files: ['probe-fields.js'],
+    });
+    // Never touches the token/bridge — this is a page-only, offline-safe read.
+    expect(getTokenMock).not.toHaveBeenCalled();
+  });
+
+  it('returns the injected probe result on success (no fields)', async () => {
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://jobs.example.com/listing' } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: false }] as never);
+
+    const res = await send({ kind: 'fieldsProbe' });
+
+    expect(res).toEqual({ ok: true, kind: 'fieldsProbe', hasFields: false });
+  });
+
+  it('fails OPEN (hasFields:true) when there is no active tab', async () => {
+    tabsQueryMock.mockResolvedValue([]);
+
+    const res = await send({ kind: 'fieldsProbe' });
+
+    expect(res).toEqual({ ok: true, kind: 'fieldsProbe', hasFields: true });
+    expect(executeScriptMock).not.toHaveBeenCalled();
+  });
+
+  it('fails OPEN (hasFields:true) when the injected result is not a boolean (malformed/blocked page)', async () => {
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://jobs.example.com/apply' } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: null }] as never);
+
+    const res = await send({ kind: 'fieldsProbe' });
+
+    expect(res).toEqual({ ok: true, kind: 'fieldsProbe', hasFields: true });
+  });
+
+  it('fails OPEN (hasFields:true) when executeScript REJECTS (restricted page/scripting denied)', async () => {
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://jobs.example.com/apply' } as never]);
+    executeScriptMock.mockRejectedValueOnce(new Error('Cannot access a chrome:// URL'));
+
+    const res = await send({ kind: 'fieldsProbe' });
+
+    expect(res).toEqual({ ok: true, kind: 'fieldsProbe', hasFields: true });
+  });
+});
+
 // ── statusUpdate request — errors are NOT folded (unlike appliedCheck) ────────
 
 describe('statusUpdate request', () => {
@@ -1462,6 +1518,20 @@ describe('arming the submit watcher after a gesture request (Task #22 review clo
     mockClient.autotrackEnabled.mockResolvedValue(true);
 
     await send({ kind: 'getStatus' });
+    await flush();
+
+    expect(mockClient.autotrackEnabled).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ files: ['submit-watch.js'] })
+    );
+  });
+
+  it('a fieldsProbe request never arms the watcher (a passive scan, not a user gesture)', async () => {
+    mockClient.autotrackEnabled.mockResolvedValue(true);
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://example.com/apply' } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: true }] as never);
+
+    await send({ kind: 'fieldsProbe' });
     await flush();
 
     expect(mockClient.autotrackEnabled).not.toHaveBeenCalled();

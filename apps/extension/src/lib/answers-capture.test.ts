@@ -13,6 +13,7 @@ import {
   collectAnswers,
   collectFilledFields,
   collectQuestions,
+  hasFillableFields,
   locateFilledField,
   locateQuestionField,
 } from './answers-capture';
@@ -443,5 +444,33 @@ describe('locateFilledField — re-scans the CURRENT filled candidates by (quest
       </select>
     `);
     expect(locateFilledField(document, 'Years of experience', 0, 1)).toBeNull();
+  });
+});
+
+describe('hasFillableFields — the popup fields-probe (Form group / Answer-tools gating)', () => {
+  it('returns false for a page with no form fields at all (a plain job listing)', () => {
+    setForm(`<p>Senior Rust Engineer at Acme Corp.</p>`);
+    expect(hasFillableFields(document)).toBe(false);
+  });
+
+  it('returns true when the page has an EMPTY, capturable candidate field', () => {
+    setForm(`<label for="q1">Why this role?</label><input id="q1" type="text" value="" />`);
+    expect(hasFillableFields(document)).toBe(true);
+  });
+
+  it('returns true when the page has a FILLED, capturable candidate field', () => {
+    setForm(
+      `<label for="q1">Why this role?</label><input id="q1" type="text" value="Because I love it." />`
+    );
+    expect(hasFillableFields(document)).toBe(true);
+  });
+
+  it('returns false when every candidate field is excluded (ambiguous/identity/hidden — same gates as Save/Suggest)', () => {
+    setForm(`
+      <label for="pw">Password</label><input id="pw" type="text" value="" />
+      <label for="ln">LinkedIn URL</label><input id="ln" type="text" value="https://linkedin.com/in/x" />
+      <label for="h">Honeypot</label><input id="h" type="text" value="" style="display:none" />
+    `);
+    expect(hasFillableFields(document)).toBe(false);
   });
 });

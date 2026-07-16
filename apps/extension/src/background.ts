@@ -401,6 +401,44 @@ async function runAppliedCheck(): Promise<PopupResponse> {
 }
 
 /**
+ * Inject the fillable-fields probe into the active tab and return its
+ * boolean completion value. Single-step injection — same pattern as
+ * `captureActiveTabQuestions`. UNLIKE the other capture injections, this
+ * never needs a token check first: it never touches the bridge/desktop at
+ * all, only the active tab's DOM.
+ */
+async function captureActiveTabFieldsProbe(): Promise<boolean> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tabId = tab?.id;
+  if (typeof tabId !== 'number') throw new Error('No active tab to scan.');
+
+  const results = await browser.scripting.executeScript({
+    target: { tabId },
+    files: ['probe-fields.js'],
+  });
+  const hasFields = results[0]?.result;
+  if (typeof hasFields !== 'boolean') throw new Error('Could not scan this page.');
+  return hasFields;
+}
+
+/**
+ * Passive "does this page have fillable form fields?" probe, run once when
+ * the popup shows the connected view — gates the Form group / Answer-tools
+ * disclosure. Mirrors `runAppliedCheck`'s never-surfaces-`ok:false` fold, but
+ * FAILS OPEN instead of closed: any failure (no active tab, restricted page,
+ * scripting permission denied) resolves `hasFields:true` so a probe bug can
+ * never hide those features — only a CONFIRMED empty scan hides them.
+ */
+async function runFieldsProbe(): Promise<PopupResponse> {
+  try {
+    const hasFields = await captureActiveTabFieldsProbe();
+    return { ok: true, kind: 'fieldsProbe', hasFields };
+  } catch {
+    return { ok: true, kind: 'fieldsProbe', hasFields: true };
+  }
+}
+
+/**
  * User-clicked "Mark as applied" for the active tab's URL. UNLIKE
  * `runAppliedCheck`, failures are NOT folded away here: a transport-level
  * rejection (not paired, bridge unreachable, timeout) propagates up to
@@ -884,6 +922,8 @@ async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
         return await runFill();
       case 'appliedCheck':
         return await runAppliedCheck();
+      case 'fieldsProbe':
+        return await runFieldsProbe();
       case 'statusUpdate':
         return await runStatusUpdate();
       case 'answersSave':

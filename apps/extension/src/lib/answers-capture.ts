@@ -305,3 +305,18 @@ export function locateFilledField(
   if (matches.length !== expectedCount) return null;
   return matches[index] ?? null;
 }
+
+/**
+ * Passive "does this page have at least one fillable form field?" probe —
+ * the union of {@link emptyCandidateFields} and {@link filledCandidateFields},
+ * i.e. any labelled, visible, non-ambiguous/non-identity candidate field
+ * regardless of its current EMPTY-vs-FILLED state. Reuses the SAME gates
+ * "Save my answers"/"Suggest answers" already apply (no separate notion of
+ * "fillable" is introduced) — never reads a field's VALUE beyond what those
+ * collectors already need to classify it. Used to gate the popup's Form
+ * group + Answer-tools disclosure: a plain job-listing page with no
+ * application form has neither.
+ */
+export function hasFillableFields(doc: Document): boolean {
+  return emptyCandidateFields(doc).length > 0 || filledCandidateFields(doc).length > 0;
+}

@@ -63,6 +63,14 @@ export type PopupRequest =
    */
   | { kind: 'appliedCheck' }
   /**
+   * Fire-and-forget "does this page have any fillable form fields?" probe,
+   * run once when the popup shows the connected view — gates the Form group
+   * and the Answer-tools disclosure (a page with no form, e.g. a plain job
+   * listing, shows only the Job group). Read-only (counts candidate fields,
+   * reads no values); like `appliedCheck`, never blocks the import controls.
+   */
+  | { kind: 'fieldsProbe' }
+  /**
    * User-clicked "Mark as applied" for the active tab's URL. Unlike
    * `appliedCheck`, this is a deliberate WRITE action — its failures are
    * surfaced to the user, never folded away.
@@ -171,6 +179,13 @@ export type PopupResponse =
    * special-case an error path for this passive, best-effort check.
    */
   | { ok: true; kind: 'appliedCheck'; result: ExtensionAppliedCheckResult }
+  /**
+   * Always `ok:true` — like `appliedCheck`, EVERY failure (no active tab, a
+   * restricted page, scripting permission denied) folds into `hasFields:true`
+   * (fail OPEN) so a probe bug can never hide the Form group / Answer-tools
+   * disclosure — only a CONFIRMED empty scan (`hasFields:false`) hides them.
+   */
+  | { ok: true; kind: 'fieldsProbe'; hasFields: boolean }
   /**
    * `ok:true` at the transport level; the desktop's own `ok`/`error` on
    * `result` is what the popup renders — this verb's failures are NOT
