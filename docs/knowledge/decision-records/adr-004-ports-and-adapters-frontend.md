@@ -1,6 +1,6 @@
 # ADR-004: Ports & adapters in the renderer
 
-Last updated: 2026-06-01
+Last updated: 2026-07-16
 
 **Status:** Accepted · See [`docs/PATTERNS.md`](../../PATTERNS.md), [`docs/DESIGN_SYSTEM.md`](../../DESIGN_SYSTEM.md)
 

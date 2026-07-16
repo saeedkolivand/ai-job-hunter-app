@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   AUTOFILL_GLOBAL,
   type AutofillProfile,
+  hasAutofillableFields,
   planAndFill,
   renderSummaryOverlay,
   runAutofill,
@@ -589,5 +590,42 @@ describe('AUTOFILL_GLOBAL', () => {
     // autofill.ts, or fill.js would gain an ES import and break classic injection).
     // If this value changes, update the local const in background.ts too.
     expect(AUTOFILL_GLOBAL).toBe('__ajhRunAutofill');
+  });
+});
+
+describe("hasAutofillableFields — the popup fields-probe's WIDER signal (Form group gating)", () => {
+  it('returns false for a page with no form fields at all (a plain job listing)', () => {
+    document.body.innerHTML = `<p>Senior Rust Engineer at Acme Corp.</p>`;
+    expect(hasAutofillableFields(document)).toBe(false);
+  });
+
+  it("returns true for an IDENTITY-ONLY form (name/email/phone) — the exact case answers-capture's narrower signal misses, since it excludes identity fields by design", () => {
+    setForm(`
+      <label for="name">Full name</label><input id="name" type="text" value="" />
+      <label for="email">Email</label><input id="email" type="email" value="" />
+      <label for="phone">Phone</label><input id="phone" type="tel" value="" />
+    `);
+    expect(hasAutofillableFields(document)).toBe(true);
+  });
+
+  it('returns true when only ONE identity field is present', () => {
+    setForm(`<label for="email">Email</label><input id="email" type="email" value="" />`);
+    expect(hasAutofillableFields(document)).toBe(true);
+  });
+
+  it('returns false when every input is non-identity/ambiguous/hidden (nothing autofill would ever touch)', () => {
+    setForm(`
+      <label for="q1">Why this role?</label><input id="q1" type="text" value="" />
+      <label for="pw">Password</label><input id="pw" type="password" value="" />
+      <label for="h">Honeypot email</label><input id="h" type="email" value="" style="display:none" />
+    `);
+    expect(hasAutofillableFields(document)).toBe(false);
+  });
+
+  it('returns false for an already-FILLED identity field (autofill never overwrites — nothing left for Fill to do)', () => {
+    setForm(
+      `<label for="email">Email</label><input id="email" type="email" value="already@example.com" />`
+    );
+    expect(hasAutofillableFields(document)).toBe(false);
   });
 });

@@ -305,3 +305,26 @@ export function locateFilledField(
   if (matches.length !== expectedCount) return null;
   return matches[index] ?? null;
 }
+
+/**
+ * Passive "does this page have at least one answer-capturable field?" probe
+ * — the union of {@link emptyCandidateFields} and {@link filledCandidateFields},
+ * i.e. any labelled, visible, non-ambiguous/non-identity candidate field
+ * regardless of its current EMPTY-vs-FILLED state. Reuses the SAME gates
+ * "Save my answers"/"Suggest answers" already apply (no separate notion of
+ * "capturable" is introduced) — never reads a field's VALUE beyond what those
+ * collectors already need to classify it.
+ *
+ * DELIBERATELY NARROWER than "does this page have anything Fill/Save can act
+ * on": these candidate lists EXCLUDE identity fields (name/email/phone/…,
+ * see `isCapturable`'s identity exclusion) by design — they're profile-
+ * sourced contact details, not "application questions". So this alone gates
+ * ONLY the Answer-tools disclosure (Suggest/rewrite have nothing to act on
+ * without a non-identity field); the popup's Form group ("Fill this form" /
+ * "Save my answers") is gated on the WIDER union with autofill's own
+ * `hasAutofillableFields` (`lib/autofill.ts`) instead — see `probe-fields.ts`,
+ * which combines both.
+ */
+export function hasAnswerCapturableFields(doc: Document): boolean {
+  return emptyCandidateFields(doc).length > 0 || filledCandidateFields(doc).length > 0;
+}
