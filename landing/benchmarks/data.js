@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784168817995,
+  "lastUpdate": 1784177380028,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4865,6 +4865,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 284142,
             "range": "± 15020",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "798c82fefe5ecaddabb54f5d222eb7052e078f16",
+          "message": "feat: auto-track sent applications on a detected form submit (opt-in) (#687)\n\n* feat: auto-track sent applications on a detected form submit (opt-in)\n\nAfter the user invokes the extension on an application page (an existing\ninjection gesture) and enables the new default-OFF \"Auto-track sent applications\"\nopt-in, a pure-DOM submit-watch arms a capture-phase submit + apply-button\nlistener. On a detected submit it re-checks the opt-in, runs applied.check, and\nauto status.update {to:'applied', auto:true} for a tracked saved job (silent\nno-op if already applied; an action-badge nudge to import when untracked). It\nnever blocks/alters the submit and never auto-creates.\n\nThe auto write is desktop-enforced: status.update refuses auto:true when the\nopt-in is off (the manual popup mark-as-applied is unflagged and ungated as\nbefore). No new permissions/manifest changes; Firefox data_collection stays none.\n\nLayer A of the auto-track feature; full-page-nav submits are best-effort (Layer C\nemail parsing is the complement).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: cover the auto-track background wiring, distinguish auto vs manual, harden sender check\n\nCloses the review findings (all advisory):\n- add background.ts integration tests for the submitDetected route, arm-after-\n  gesture, and badge-clear (the wiring the pure-fn tests didn't exercise)\n- pin the duplicated SUBMIT_DETECTED_MSG literal with a parity test so the\n  background/lib copies can't silently diverge\n- record \"auto-tracked via extension\" vs \"via extension\" in the status history\n  so an auto write is distinguishable later, not only in the notification body\n- assert sender.id === runtime.id before acting on submitDetected (belt-and-\n  braces; already mitigated by the absent externally_connectable)\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: amend adr-0009 and extension-domain for auto-track layer a\n\nRecords the auto-track opt-in (task #22) as a distinct sanctioned\nauto-action consent class in adr-0009: the server-side enforcement\nboundary in handle_status_update, the honest residual risk, and the\nnew autotrack.check/autotrack.result verbs plus status.update's auto\nflag. extension-domain.md gets the verb-table entries and a new\ngesture-armed submit-watch section documenting detection, routing,\ndecision branches, and honest limits.\n\n* refactor: extract auto-track opt-in machinery into an autotrack submodule for r8\n\nThe auto-track additions pushed extension_bridge/mod.rs to 1425 LOC, over the\n1400 hard cap. Move the opt-in file load/persist, the enabled accessors, and the\nautotrack result reply into a sibling autotrack.rs (mirrors status_update.rs).\nmod.rs is now 1372. No behavior change.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
+          "timestamp": "2026-07-16T06:40:45+02:00",
+          "tree_id": "11fca9a9677900043faa687330466c9f2f84bbef",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/798c82fefe5ecaddabb54f5d222eb7052e078f16"
+        },
+        "date": 1784177379383,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2131496,
+            "range": "± 56582",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2529331,
+            "range": "± 30433",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 284161,
+            "range": "± 3635",
             "unit": "ns/iter"
           }
         ]
