@@ -1,12 +1,17 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
-import type {
-  ExtensionAiAssistSetting,
-  ExtensionAutofillSetting,
-  ExtensionAutoTrackSetting,
-  ExtensionBridgeStatus,
-  ExtensionBridgeTokenResult,
+import {
+  EVENT_CHANNELS,
+  type ExtensionAiAssistSetting,
+  type ExtensionAutofillSetting,
+  type ExtensionAutoTrackSetting,
+  type ExtensionBridgeChangedEvent,
+  type ExtensionBridgeStatus,
+  type ExtensionBridgeTokenResult,
 } from '@ajh/shared';
+
+import { asyncUnsub } from '../../utils.js';
 
 export const extensionBridge = {
   status: () => invoke<ExtensionBridgeStatus>('extension_bridge_status'),
@@ -20,4 +25,12 @@ export const extensionBridge = {
   autoTrackEnabled: () => invoke<ExtensionAutoTrackSetting>('extension_bridge_auto_track_enabled'),
   setAutoTrackEnabled: (enabled: boolean) =>
     invoke<ExtensionAutoTrackSetting>('extension_bridge_set_auto_track_enabled', { enabled }),
+  // The bridge emits `extensionBridge:changed` on a 0→1 / →0 live-connection
+  // transition — see `extension_bridge::EXTENSION_BRIDGE_CHANGED`'s doc.
+  onChanged: (handler: (event: ExtensionBridgeChangedEvent) => void) =>
+    asyncUnsub(() =>
+      listen<ExtensionBridgeChangedEvent>(EVENT_CHANNELS.extensionBridge.changed, (e) =>
+        handler(e.payload)
+      )
+    ),
 };
