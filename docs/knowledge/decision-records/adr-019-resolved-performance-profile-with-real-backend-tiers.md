@@ -1,6 +1,6 @@
 # ADR-019: Resolved performance profile with real backend tiers
 
-Last updated: 2026-06-14
+Last updated: 2026-07-16
 
 **Status:** Accepted
 

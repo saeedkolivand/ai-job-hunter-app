@@ -1,6 +1,6 @@
 # Architecture Rules — Rust/Tauri Core
 
-Last updated: 2026-06-01
+Last updated: 2026-07-16
 
 > **Status:** enforceable rules (Phase 2), derived from the June 2026 architecture
 > discovery analysis (now in git history) — the **actual** structure of

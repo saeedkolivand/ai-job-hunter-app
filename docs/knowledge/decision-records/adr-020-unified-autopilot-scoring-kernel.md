@@ -1,6 +1,6 @@
 # ADR-020: Unified autopilot scoring — keyword-coverage kernel + metric relabel
 
-Last updated: 2026-06-14
+Last updated: 2026-07-16
 
 **Status:** Accepted
 

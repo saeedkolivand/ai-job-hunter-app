@@ -11,10 +11,14 @@
  * runs `eslint .` across the 200+ files in the repo (which OOM/SIGKILLs dev
  * machines). The exhaustive, non-fixing gate stays in the pre-push hook
  * (`pnpm lint:strict`, `--max-warnings 0`) and in CI.
+ *
+ * Markdown: `bump-last-updated.mjs` auto-bumps "Last updated: YYYY-MM-DD" headers
+ * BEFORE prettier formatting, so timestamps stay current without manual updates.
  */
 export default {
   '**/*.{ts,tsx}': ['eslint --cache --fix', 'prettier --write'],
   '**/*.{js,mjs,cjs}': ['eslint --cache --fix', 'prettier --write'],
-  '**/*.{json,md,yml,yaml}': ['prettier --write'],
+  '**/*.md': ['node scripts/bump-last-updated.mjs', 'prettier --write'],
+  '**/*.{json,yml,yaml}': ['prettier --write'],
   '**/*.css': ['prettier --write'],
 };
