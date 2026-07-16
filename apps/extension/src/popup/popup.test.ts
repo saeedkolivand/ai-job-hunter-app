@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { browser } from '@wxt-dev/browser';
 
 import type { ConnectionStatus } from '../lib/messages';
-import { looksLikeToken } from '../lib/storage';
+import { getAnswerToolsExpanded, looksLikeToken, setAnswerToolsExpanded } from '../lib/storage';
 
 // vi.mock must come before the import that triggers the module side-effects.
 // popup.ts imports @wxt-dev/browser; stub it out so the module-level
@@ -31,6 +31,10 @@ vi.mock('@wxt-dev/browser', () => ({
 
 vi.mock('../lib/storage', () => ({
   looksLikeToken: vi.fn(() => false),
+  // Default: collapsed, matching the fresh-install default (no stored value
+  // yet) — individual tests override via mockResolvedValueOnce as needed.
+  getAnswerToolsExpanded: vi.fn(() => Promise.resolve(false)),
+  setAnswerToolsExpanded: vi.fn(() => Promise.resolve(undefined)),
 }));
 
 // Build the minimal DOM that popup.ts queries at module load (byId calls).
@@ -46,33 +50,39 @@ function buildPopupDom(): void {
     <button id="btn-import"></button>
     <button id="btn-fill"></button>
     <button id="btn-mark-applied" hidden></button>
-    <button id="btn-save-answers"></button>
-    <button id="btn-suggest-answers"></button>
-    <div id="suggestions-list" hidden></div>
-    <select id="assist-picker"><option value=""></option></select>
-    <textarea id="assist-question"></textarea>
-    <input id="chk-search-web" type="checkbox" />
-    <button id="btn-assist"></button>
-    <div id="assist-result" hidden>
-      <p id="assist-draft"></p>
-      <button id="btn-copy-assist"></button>
-    </div>
-    <select id="rewrite-picker"><option value=""></option></select>
-    <div class="rewrite-presets">
-      <button type="button" data-preset="shorten"></button>
-      <button type="button" data-preset="expand"></button>
-      <button type="button" data-preset="rephrase"></button>
-      <button type="button" data-preset="impact"></button>
-      <button type="button" data-preset="grammar"></button>
-    </div>
-    <input id="rewrite-instruction" type="text" />
-    <button id="btn-rewrite"></button>
-    <div id="rewrite-result" hidden>
-      <p id="rewrite-draft"></p>
-      <button id="btn-copy-rewrite"></button>
-      <button id="btn-accept-rewrite"></button>
-      <button id="btn-restore-rewrite"></button>
-    </div>
+    <section id="group-form">
+      <button id="btn-save-answers"></button>
+    </section>
+    <details id="answer-tools">
+      <summary>Answer tools</summary>
+      <button id="btn-suggest-answers"></button>
+      <div id="suggestions-list" hidden></div>
+      <select id="assist-picker"><option value=""></option></select>
+      <textarea id="assist-question"></textarea>
+      <input id="chk-search-web" type="checkbox" />
+      <button id="btn-assist"></button>
+      <div id="assist-result" hidden>
+        <p id="assist-draft"></p>
+        <button id="btn-copy-assist"></button>
+      </div>
+      <select id="rewrite-picker"><option value=""></option></select>
+      <select id="rewrite-preset">
+        <option value=""></option>
+        <option value="shorten"></option>
+        <option value="expand"></option>
+        <option value="rephrase"></option>
+        <option value="impact"></option>
+        <option value="grammar"></option>
+      </select>
+      <input id="rewrite-instruction" type="text" />
+      <button id="btn-rewrite"></button>
+      <div id="rewrite-result" hidden>
+        <p id="rewrite-draft"></p>
+        <button id="btn-copy-rewrite"></button>
+        <button id="btn-accept-rewrite"></button>
+        <button id="btn-restore-rewrite"></button>
+      </div>
+    </details>
     <button id="btn-check-fit"></button>
     <div id="match-result" hidden></div>
     <p id="applied-status" hidden></p>
@@ -112,10 +122,14 @@ const {
   resolveAnswerAssistResponse,
   resolveAssistProgressView,
   buildAssistPickerOptions,
+  resolveFieldsProbeResponse,
+  bootstrapAnswerTools,
 } = await import('./popup');
 
 const sendMessageMock = vi.mocked(browser.runtime.sendMessage);
 const looksLikeTokenMock = vi.mocked(looksLikeToken);
+const getAnswerToolsExpandedMock = vi.mocked(getAnswerToolsExpanded);
+const setAnswerToolsExpandedMock = vi.mocked(setAnswerToolsExpanded);
 const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 // ── resolveStatusResponse ─────────────────────────────────────────────────────
@@ -595,6 +609,30 @@ describe('resolveShowMarkAppliedButton', () => {
   });
 });
 
+// ── resolveFieldsProbeResponse ──────────────────────────────────────────────────
+
+describe('resolveFieldsProbeResponse', () => {
+  it('returns the probe result when ok with kind=fieldsProbe (fields found)', () => {
+    const res = { ok: true as const, kind: 'fieldsProbe' as const, hasFields: true };
+    expect(resolveFieldsProbeResponse(res)).toBe(true);
+  });
+
+  it('returns the probe result when ok with kind=fieldsProbe (no fields)', () => {
+    const res = { ok: true as const, kind: 'fieldsProbe' as const, hasFields: false };
+    expect(resolveFieldsProbeResponse(res)).toBe(false);
+  });
+
+  it('fails OPEN (true) on a transport-level ok:false', () => {
+    const res = { ok: false as const, error: 'message channel closed' };
+    expect(resolveFieldsProbeResponse(res)).toBe(true);
+  });
+
+  it('fails OPEN (true) for an unexpected response kind', () => {
+    const res = { ok: true as const, kind: 'token' as const };
+    expect(resolveFieldsProbeResponse(res)).toBe(true);
+  });
+});
+
 // ── resolveMarkAppliedResponse ─────────────────────────────────────────────────
 
 describe('resolveMarkAppliedResponse', () => {
@@ -1066,7 +1104,10 @@ describe('appliedCheck auto-check', () => {
     });
     push('connected');
     await flush();
-    expect(sendMessageMock).toHaveBeenCalledTimes(1);
+    // Entering `connected` fires BOTH fire-and-forget auto-checks — appliedCheck
+    // and fieldsProbe (see the sibling `fieldsProbe auto-check` describe block).
+    expect(sendMessageMock).toHaveBeenCalledTimes(2);
+    expect(sendMessageMock).toHaveBeenCalledWith({ kind: 'fieldsProbe' });
 
     sendMessageMock.mockClear();
     push('connected'); // same phase again — not a transition
@@ -1148,6 +1189,92 @@ describe('appliedCheck auto-check', () => {
 
     expect(status.textContent).toBe('“Job B” is saved in your pipeline.');
     expect(btnImport.textContent).toBe('Re-import / update');
+  });
+});
+
+// ── fieldsProbe auto-check (fire-and-forget on entering `connected`) ──────────
+// Gates the Form group (#group-form) + the Answer-tools disclosure
+// (#answer-tools) on "does this page have fillable form fields?". Runs
+// ALONGSIDE the appliedCheck auto-check above on the SAME transition — the
+// first queued sendMessage response answers appliedCheck (code calls it
+// first), the second answers fieldsProbe.
+
+describe('fieldsProbe auto-check (Form group + Answer-tools gating)', () => {
+  const statusListener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
+    ((message: unknown) => void) | undefined;
+  if (!statusListener) throw new Error('onMessage status listener not registered');
+  const push = (phase: ConnectionStatus['phase']) =>
+    statusListener({ ok: true, kind: 'status', status: { phase, port: null, hasToken: true } });
+
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  const NEUTRAL_APPLIED_CHECK = {
+    ok: true as const,
+    kind: 'appliedCheck' as const,
+    result: { found: false },
+  };
+
+  beforeEach(() => {
+    sendMessageMock.mockReset();
+    // Force a genuine transition for the next push('connected') below.
+    push('searching');
+  });
+
+  it('shows the Form group + Answer-tools disclosure when the probe finds fillable fields', async () => {
+    sendMessageMock
+      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
+      .mockResolvedValueOnce({ ok: true, kind: 'fieldsProbe', hasFields: true });
+
+    push('connected');
+    await flush();
+
+    expect(byId<HTMLElement>('group-form').hidden).toBe(false);
+    expect(byId<HTMLDetailsElement>('answer-tools').hidden).toBe(false);
+  });
+
+  it('hides the Form group + Answer-tools disclosure when the probe finds no fillable fields', async () => {
+    sendMessageMock
+      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
+      .mockResolvedValueOnce({ ok: true, kind: 'fieldsProbe', hasFields: false });
+
+    push('connected');
+    await flush();
+
+    expect(byId<HTMLElement>('group-form').hidden).toBe(true);
+    expect(byId<HTMLDetailsElement>('answer-tools').hidden).toBe(true);
+  });
+
+  it('fails OPEN (shows both groups) when the probe request rejects', async () => {
+    sendMessageMock
+      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
+      .mockRejectedValueOnce(new Error('message channel closed'));
+
+    push('connected');
+    await flush();
+
+    expect(byId<HTMLElement>('group-form').hidden).toBe(false);
+    expect(byId<HTMLDetailsElement>('answer-tools').hidden).toBe(false);
+  });
+
+  it('re-shows both groups on a fresh page after a previous page hid them (no stale hide across a reconnect)', async () => {
+    sendMessageMock
+      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
+      .mockResolvedValueOnce({ ok: true, kind: 'fieldsProbe', hasFields: false });
+    push('connected');
+    await flush();
+    expect(byId<HTMLElement>('group-form').hidden).toBe(true);
+
+    // Disconnect (leaving `connected` resets to the fail-open default) then
+    // reconnect for a fresh page whose own probe hasn't resolved yet.
+    push('app_not_running');
+    expect(byId<HTMLElement>('group-form').hidden).toBe(false);
+
+    sendMessageMock
+      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
+      .mockResolvedValueOnce({ ok: true, kind: 'fieldsProbe', hasFields: true });
+    push('connected');
+    await flush();
+    expect(byId<HTMLElement>('group-form').hidden).toBe(false);
   });
 });
 
@@ -1797,6 +1924,14 @@ describe('rewrite mode (#rewrite-picker, #btn-rewrite, Accept/Restore/Copy)', ()
     picker.dispatchEvent(new Event('change'));
   }
 
+  /** Pick a preset from the #rewrite-preset <select> (replaces the old
+   *  per-preset button row) — mirrors picking any other option. */
+  function selectRewritePreset(preset: string): void {
+    const select = byId<HTMLSelectElement>('rewrite-preset');
+    select.value = preset;
+    select.dispatchEvent(new Event('change'));
+  }
+
   beforeEach(() => {
     sendMessageMock.mockReset();
     byId<HTMLButtonElement>('btn-save-answers').disabled = false;
@@ -1848,7 +1983,7 @@ describe('rewrite mode (#rewrite-picker, #btn-rewrite, Accept/Restore/Copy)', ()
     );
   });
 
-  it('a preset button click sends mode:rewrite + existingAnswer + preset and renders the streamed draft', async () => {
+  it('picking a preset from the select sends mode:rewrite + existingAnswer + the SAME preset id and renders the streamed draft', async () => {
     await pickFilledField();
     sendMessageMock.mockResolvedValueOnce({
       ok: true,
@@ -1856,7 +1991,7 @@ describe('rewrite mode (#rewrite-picker, #btn-rewrite, Accept/Restore/Copy)', ()
       result: { ok: true, question: 'Why this role?', draft: 'Shorter answer.', sourced: {} },
     });
 
-    document.querySelector<HTMLButtonElement>('[data-preset="shorten"]')!.click();
+    selectRewritePreset('shorten');
     await flush();
 
     expect(sendMessageMock).toHaveBeenCalledWith({
@@ -1869,6 +2004,29 @@ describe('rewrite mode (#rewrite-picker, #btn-rewrite, Accept/Restore/Copy)', ()
     });
     expect(byId<HTMLDivElement>('rewrite-result').hidden).toBe(false);
     expect(byId<HTMLParagraphElement>('rewrite-draft').textContent).toBe('Shorter answer.');
+  });
+
+  it('resets the preset select back to its placeholder after firing (so re-selecting the same preset fires again)', async () => {
+    await pickFilledField();
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerAssist',
+      result: { ok: true, question: 'Why this role?', draft: 'Shorter answer.', sourced: {} },
+    });
+
+    selectRewritePreset('shorten');
+    await flush();
+
+    expect(byId<HTMLSelectElement>('rewrite-preset').value).toBe('');
+  });
+
+  it('ignores a change back to the placeholder option (never re-fires a rewrite)', async () => {
+    await pickFilledField();
+
+    selectRewritePreset('');
+    await flush();
+
+    expect(sendMessageMock).not.toHaveBeenCalled();
   });
 
   it('the free-text submit button sends the typed instruction instead of a preset', async () => {
@@ -1901,7 +2059,7 @@ describe('rewrite mode (#rewrite-picker, #btn-rewrite, Accept/Restore/Copy)', ()
       result: { ok: false, error: 'AI answer drafting is off.' },
     });
 
-    document.querySelector<HTMLButtonElement>('[data-preset="shorten"]')!.click();
+    selectRewritePreset('shorten');
     await flush();
 
     expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe('AI answer drafting is off.');
@@ -2663,5 +2821,115 @@ describe('doMarkApplied (#btn-mark-applied)', () => {
       'Could not mark this job as applied. Please retry.'
     );
     expect(btn.disabled).toBe(false);
+  });
+});
+
+// ── Answer-tools expand/collapse (#answer-tools <details>) ──────────────────
+// Collapsed by default; the expand/collapse state persists via
+// chrome.storage.local (a UI boolean, not PII/job data); a buffered/still-
+// running stream always wins over a persisted "collapsed" preference.
+
+describe('answer-tools persistence (toggle → storage)', () => {
+  beforeEach(() => {
+    setAnswerToolsExpandedMock.mockClear();
+  });
+
+  it('persists the CURRENT open state when the disclosure is toggled', () => {
+    const details = byId<HTMLDetailsElement>('answer-tools');
+    details.open = true;
+    details.dispatchEvent(new Event('toggle'));
+
+    expect(setAnswerToolsExpandedMock).toHaveBeenCalledWith(true);
+  });
+
+  it('persists collapsed the same way', () => {
+    const details = byId<HTMLDetailsElement>('answer-tools');
+    details.open = false;
+    details.dispatchEvent(new Event('toggle'));
+
+    expect(setAnswerToolsExpandedMock).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('bootstrapAnswerTools (applies the persisted preference, reattach can override it)', () => {
+  beforeEach(() => {
+    sendMessageMock.mockReset();
+    getAnswerToolsExpandedMock.mockReset();
+    byId<HTMLDetailsElement>('answer-tools').open = false;
+    byId<HTMLButtonElement>('btn-assist').disabled = false;
+  });
+
+  it('defaults to collapsed when no preference has been stored', async () => {
+    getAnswerToolsExpandedMock.mockResolvedValueOnce(false);
+    // No buffered stream — reattach's send() resolves with nothing to reattach.
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: '',
+      done: true,
+      interrupted: false,
+    });
+    byId<HTMLDetailsElement>('answer-tools').open = true; // start non-default to prove it actually applies
+
+    await bootstrapAnswerTools();
+
+    expect(byId<HTMLDetailsElement>('answer-tools').open).toBe(false);
+  });
+
+  it('applies a persisted "expanded" preference when no stream is buffered', async () => {
+    getAnswerToolsExpandedMock.mockResolvedValueOnce(true);
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: '',
+      done: true,
+      interrupted: false,
+    });
+
+    await bootstrapAnswerTools();
+
+    expect(byId<HTMLDetailsElement>('answer-tools').open).toBe(true);
+  });
+
+  it('auto-expands even over a persisted "collapsed" preference when a stream is buffered/still running', async () => {
+    getAnswerToolsExpandedMock.mockResolvedValueOnce(false);
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: 'Because I ',
+      done: false,
+      interrupted: false,
+    });
+
+    await bootstrapAnswerTools();
+
+    expect(byId<HTMLDetailsElement>('answer-tools').open).toBe(true);
+    expect(byId<HTMLParagraphElement>('assist-draft').textContent).toBe('Because I ');
+  });
+});
+
+// ── unpair (#btn-unpair, now reachable via the "?" help popover) ────────────
+// Moved off the import view's standing row in popup.html — the click handler
+// itself is unchanged/unaffected by that relocation.
+
+describe('unpair (#btn-unpair)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it('clears the token and returns to the pairing view', async () => {
+    sendMessageMock.mockReset();
+    sendMessageMock
+      .mockResolvedValueOnce({ ok: true, kind: 'token' }) // clearToken
+      .mockResolvedValueOnce({
+        ok: true,
+        kind: 'status',
+        status: { phase: 'not_paired', port: 1, hasToken: false },
+      });
+    byId<HTMLElement>('view-pair').hidden = true;
+
+    byId<HTMLButtonElement>('btn-unpair').click();
+    await flush();
+
+    expect(sendMessageMock).toHaveBeenCalledWith({ kind: 'clearToken' });
+    expect(byId<HTMLElement>('view-pair').hidden).toBe(false);
   });
 });
