@@ -1,6 +1,6 @@
 # Development Setup — AI Job Hunter
 
-Last updated: 2026-06-01
+Last updated: 2026-07-16
 
 This guide gets you from zero to a running dev environment.
 
@@ -321,6 +321,25 @@ cp .mcp.json.example .mcp.json
 ```
 
 `.mcp.json` registers the graphify MCP server. See `.mcp.json.example` (`mcpServers.graphify` key) for the exact command and arguments. Skip this entirely if you don't use graphify — nothing else depends on it.
+
+## Code Intelligence: Codegraph
+
+[codegraph](https://github.com/seachicken/codegraph) builds a structural SQLite knowledge graph (`.codegraph/`) synced via file watcher. Queries are zero-token and answer "who calls X", "what breaks if I change Y", or "what does this impact". MCP tool `codegraph_explore` returns verbatim source + call graph; CLI tools `codegraph callers|callees|impact|query` let you explore offline.
+
+Use codegraph FIRST for structural questions (calls, dependencies, impact). Use graphify SECOND for semantic questions (rationale, why, cross-file meaning).
+
+To use it:
+
+```bash
+# codegraph auto-syncs on file changes; just query it
+codegraph callers "FunctionName"           # who calls this
+codegraph callees "FunctionName"           # what does it call
+codegraph impact apps/desktop/src/foo.rs   # what depends on this file
+codegraph query "pattern"                  # search symbols
+codegraph sync                             # manual sync if needed
+```
+
+In Claude Code: use the MCP tool `codegraph_explore` with a natural-language question or symbol names. Returns the verbatim source of relevant symbols, grouped by file, plus the call path among them.
 
 ---
 

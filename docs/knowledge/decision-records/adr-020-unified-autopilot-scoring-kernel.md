@@ -1,6 +1,6 @@
 # ADR-020: Unified autopilot scoring — keyword-coverage kernel + metric relabel
 
-Last updated: 2026-06-14
+Last updated: 2026-07-16
 
 **Status:** Accepted
 
@@ -33,4 +33,4 @@ Autopilot's `simple_similarity` was crude (failed to weight keyword importance, 
 
 - `docs/ARCHITECTURE.md` — updated to document the two scoring branches (keyword-coverage for Autopilot, combined for Jobs analysis).
 - `docs/knowledge/matching-algorithm.md` — thin pointer to `documents::keywords::coverage_score`.
-- `recommend/mod.rs` — batched keyword matching; `autopilot/ranking.rs` — sorting logic.
+- `recommend/mod.rs` — batched keyword matching; `commands/autopilot.rs::build_found_job` — sorting logic.

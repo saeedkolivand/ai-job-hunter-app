@@ -1,6 +1,6 @@
 # ADR-022: Atomic store transactions + centralized db::open
 
-Last updated: 2026-06-14
+Last updated: 2026-07-16
 
 **Status:** Accepted
 

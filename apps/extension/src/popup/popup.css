@@ -50,6 +50,16 @@
   --pill-down-border: var(--red-ink);
   --btn-text-on-red: #fff;
   --focus-ring: var(--red);
+  /* Low-opacity group divider — derived from --card-border so it adapts to
+   * the dark-mode override below without a second definition. */
+  --divider: color-mix(in srgb, var(--card-border) 22%, transparent);
+  /* Border for the quiet/flat button tier + the assist/rewrite inputs.
+   * Light mode: --card-border is already opaque ink against a near-white
+   * card (>>3:1) — safe to reuse directly. Dark mode overrides this to its
+   * own higher-alpha value below (see that block's comment) since
+   * --card-border there is a low-alpha wash tuned for thin 1.5px card
+   * outlines, not a load-bearing 1px interactive-control border. */
+  --quiet-border: var(--card-border);
 }
 
 * {
@@ -226,7 +236,9 @@ body {
   outline-offset: 2px;
 }
 
-/* Help text panel revealed under the header by #btn-help. */
+/* Help text panel revealed under the header by #btn-help. Now also hosts the
+ * "Unpair this device" link at its bottom (moved off the import view's
+ * standing row). */
 .help-popover {
   margin: -4px 0 12px;
   padding: 9px 11px;
@@ -239,10 +251,74 @@ body {
   border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
 }
 
+.help-popover p {
+  margin: 0 0 8px;
+}
+
+/* Wraps the "Unpair this device" link — hidden together as a unit when no
+ * token is stored (see popup.ts's render(), toggled from hasToken). */
+.help-popover__unpair {
+  padding-top: 8px;
+  border-top: 1px solid var(--divider);
+}
+
+/* Small sub-label distinguishing "Unpair this device" as a "Reset pairing"
+ * action from the explanatory paragraph above it. */
+.help-popover__hint {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
 .view {
   display: flex;
   flex-direction: column;
-  gap: 11px;
+  gap: 18px;
+}
+
+/* One job-to-be-done group (Job / Form / Answer tools) — tighter internal
+ * rhythm than the top-level view gap above. */
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* A group that follows another one gets a hairline divider instead of relying
+ * on the view gap alone. */
+.group--divided {
+  padding-top: 12px;
+  border-top: 1px solid var(--divider);
+}
+
+details.group {
+  /* Reset the UA default marker/indent — replaced by the ::before chevron below. */
+  margin: 0;
+}
+
+details.group > summary {
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  list-style: none;
+}
+
+details.group > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.group > summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.12s ease;
+}
+
+details.group[open] > summary::before {
+  transform: rotate(90deg);
 }
 
 .hint {
@@ -254,11 +330,6 @@ body {
 
 .hint strong {
   color: var(--ink);
-}
-
-.actions {
-  display: flex;
-  gap: 8px;
 }
 
 .btn {
@@ -305,6 +376,22 @@ body {
 
 .btn--primary:hover:not(:disabled) {
   background: var(--primary-hover);
+}
+
+/* Quiet/flat secondary tier — every button EXCEPT the one raised primary CTA
+ * per context (Import, Fill, Save & pair, Get/Update app) gets this: a
+ * hairline border and no drop shadow, so the primary CTA is the only one
+ * that visually "pops". */
+.btn--quiet {
+  border-width: 1px;
+  border-color: var(--quiet-border);
+  box-shadow: none;
+}
+
+.btn--quiet:hover:not(:disabled),
+.btn--quiet:active:not(:disabled) {
+  transform: none;
+  box-shadow: none;
 }
 
 /* Persistent "✓ Authorized" status button in the import view. Always disabled
@@ -414,7 +501,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 8px 10px;
+  padding: 6px 9px;
   border: 1.5px solid var(--card-border);
   border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
   background: var(--card);
@@ -465,7 +552,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px 10px;
+  padding: 6px 9px;
   border: 1.5px solid var(--card-border);
   border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
   background: var(--card);
@@ -508,9 +595,18 @@ body {
   box-shadow: 2px 2px 0 var(--shadow);
 }
 
+/* .btn--small's own shadow (above) would otherwise outrank .btn--quiet's
+ * (equal specificity, later in source order) — this combined selector wins
+ * on specificity regardless of declaration order, so a small quiet button
+ * (e.g. the suggestion-row Copy/Fill buttons) stays flat. */
+.btn--small.btn--quiet {
+  box-shadow: none;
+}
+
 /* answer.assist ("Help me answer…") — question picker + textarea + draft
- * result card. Mirrors .token's dashed-border input styling and
- * .match-result's card treatment. */
+ * result card. The dashed hand-drawn border accent stays ONLY on .token (the
+ * pairing input); these get a plain 1px hairline instead, so the assist/
+ * rewrite controls read as calmer, denser form controls. */
 .assist {
   display: flex;
   flex-direction: column;
@@ -530,7 +626,7 @@ body {
   font-size: 12px;
   padding: 8px 10px;
   border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
-  border: 2px dashed var(--ink);
+  border: 1px solid var(--quiet-border);
   background: var(--token-bg);
   color: var(--ink);
 }
@@ -547,14 +643,13 @@ body {
 .assist__question:focus {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
-  border-style: solid;
 }
 
 .assist-result {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px 10px;
+  padding: 6px 9px;
   border: 1.5px solid var(--card-border);
   border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
   background: var(--card);
@@ -568,14 +663,9 @@ body {
   white-space: pre-wrap;
 }
 
-/* Rewrite mode (PR 11) — quick-preset row + Accept/Restore/Copy action row.
- * Mirrors .suggestion__actions's flex-row treatment. */
-.rewrite-presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
+/* Rewrite mode (PR 11) — Accept/Restore/Copy action row (the quick-preset row
+ * is now the #rewrite-preset <select> — see .assist__picker). Mirrors
+ * .suggestion__actions's flex-row treatment. */
 .rewrite-result__actions {
   display: flex;
   align-items: center;
@@ -601,6 +691,10 @@ body {
   .btn {
     transition: none;
   }
+
+  details.group > summary::before {
+    transition: none;
+  }
 }
 
 /* Warm-dark variant — mirrors the light paper-blend identity on a dark
@@ -619,8 +713,19 @@ body {
     --warn: #e0b35a;
     --shadow: rgba(0, 0, 0, 0.45);
 
-    /* Warm light border replaces the ink border on dark surfaces. */
+    /* Warm light border replaces the ink border on dark surfaces. Kept
+     * low-alpha for the thin 1.5px card outlines (.suggestion/.match-result/
+     * .assist-result/.help-popover) it was tuned for. */
     --card-border: rgba(240, 231, 214, 0.16);
+    /* --quiet-border and --divider get their OWN higher alpha here — deriving
+     * either from --card-border above would compound its already-low alpha
+     * into an effectively invisible ~1.05:1 wash (verified: WCAG contrast
+     * against --card #241f19). 0.4 clears the ≥3:1 non-text-contrast target
+     * for the quiet button tier + assist/rewrite inputs; 0.28 is a
+     * deliberately lighter touch for the group dividers, which are
+     * decorative section separators, not interactive-control borders. */
+    --quiet-border: rgba(240, 231, 214, 0.4);
+    --divider: rgba(240, 231, 214, 0.28);
 
     --token-bg: #1f1a15;
     --placeholder: #8c826e;

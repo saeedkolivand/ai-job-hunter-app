@@ -63,6 +63,16 @@ export type PopupRequest =
    */
   | { kind: 'appliedCheck' }
   /**
+   * Fire-and-forget "does this page have any fillable form fields?" probe,
+   * run once when the popup shows the connected view — gates the Form group
+   * and the Answer-tools disclosure (a page with no form, e.g. a plain job
+   * listing, shows only the Job group). Read-only (counts candidate fields,
+   * reads no values); like `appliedCheck`, never blocks the import controls.
+   * Two independent signals come back — see `PopupResponse`'s `fieldsProbe`
+   * doc for why they can't be one boolean.
+   */
+  | { kind: 'fieldsProbe' }
+  /**
    * User-clicked "Mark as applied" for the active tab's URL. Unlike
    * `appliedCheck`, this is a deliberate WRITE action — its failures are
    * surfaced to the user, never folded away.
@@ -171,6 +181,24 @@ export type PopupResponse =
    * special-case an error path for this passive, best-effort check.
    */
   | { ok: true; kind: 'appliedCheck'; result: ExtensionAppliedCheckResult }
+  /**
+   * Always `ok:true` — like `appliedCheck`, EVERY failure (no active tab, a
+   * restricted page, scripting permission denied) folds into `{hasFormFields:
+   * true, hasAnswerFields: true}` (fail OPEN) so a probe bug can never hide
+   * either feature — only a CONFIRMED empty scan hides them.
+   *
+   * TWO signals, not one: `hasFormFields` (gates the Form group — "Fill this
+   * form" / "Save my answers") is the UNION of autofill-supported identity
+   * fields (name/email/phone/…) and answer-capturable non-identity fields —
+   * those two candidate sets are DISJOINT BY DESIGN (answers-capture
+   * excludes identity fields, see `hasAnswerCapturableFields`'s doc), so a
+   * single narrower boolean would wrongly hide "Fill this form" on a page
+   * with ONLY identity fields. `hasAnswerFields` (gates the Answer-tools
+   * disclosure — Suggest/rewrite) is the narrower answer-capturable-only
+   * signal, since those tools have nothing to act on from identity fields
+   * alone. See `probe-fields.ts` for where both are computed.
+   */
+  | { ok: true; kind: 'fieldsProbe'; hasFormFields: boolean; hasAnswerFields: boolean }
   /**
    * `ok:true` at the transport level; the desktop's own `ok`/`error` on
    * `result` is what the popup renders — this verb's failures are NOT

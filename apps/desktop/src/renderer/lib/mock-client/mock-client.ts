@@ -182,6 +182,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       setAiAssistEnabled: async (enabled: boolean) => ({ enabled }),
       autoTrackEnabled: async () => ({ enabled: false }),
       setAutoTrackEnabled: async (enabled: boolean) => ({ enabled }),
+      onChanged: unsub,
     },
 
     emailWatch: {

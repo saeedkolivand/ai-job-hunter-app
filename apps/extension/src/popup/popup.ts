@@ -14,7 +14,7 @@ import type { ExtensionAnswerSuggestion, ExtensionRewritePreset } from '@ajh/sha
 
 import type { FilledField, ScannedQuestion } from '../lib/answers-capture';
 import type { ConnectionStatus, PopupRequest, PopupResponse } from '../lib/messages';
-import { looksLikeToken } from '../lib/storage';
+import { getAnswerToolsExpanded, looksLikeToken, setAnswerToolsExpanded } from '../lib/storage';
 
 import './popup.css';
 
@@ -180,6 +180,37 @@ export function resolveShowMarkAppliedButton(res: PopupResponse): boolean {
   const { result } = res;
   if (result.error || !result.found) return false;
   return result.status === 'saved';
+}
+
+/** Whether the Form group + the Answer-tools disclosure should each be
+ *  shown — see {@link resolveFieldsProbeResponse}. */
+export interface FieldsProbeView {
+  showFormGroup: boolean;
+  showAnswerTools: boolean;
+}
+
+/**
+ * Given a `fieldsProbe` response, whether the Form group and the
+ * Answer-tools disclosure should each be shown. Fails OPEN (`true` for both)
+ * on a transport-level `ok:false` or an unexpected `kind` — mirrors the
+ * background's own fail-open fold (`runFieldsProbe`) so a probe bug can
+ * never hide either feature; only a CONFIRMED `false` signal hides one.
+ *
+ * The two booleans are NOT the same gate: `hasFormFields` is the union of
+ * autofill-supported identity fields and answer-capturable non-identity
+ * fields (so "Fill this form" still shows on an identity-only form, e.g.
+ * name/email/phone), while `hasAnswerFields` is the narrower
+ * answer-capturable-only signal the Answer-tools disclosure uses (Suggest/
+ * rewrite have nothing to act on from identity fields alone) — see
+ * `PopupResponse`'s `fieldsProbe` doc.
+ *
+ * Pure: no DOM access, no side effects.
+ */
+export function resolveFieldsProbeResponse(res: PopupResponse): FieldsProbeView {
+  if (!res.ok || res.kind !== 'fieldsProbe') {
+    return { showFormGroup: true, showAnswerTools: true };
+  }
+  return { showFormGroup: res.hasFormFields, showAnswerTools: res.hasAnswerFields };
 }
 
 /**
@@ -496,6 +527,8 @@ const els = {
   btnImport: byId<HTMLButtonElement>('btn-import'),
   btnFill: byId<HTMLButtonElement>('btn-fill'),
   btnMarkApplied: byId<HTMLButtonElement>('btn-mark-applied'),
+  groupForm: byId<HTMLElement>('group-form'),
+  answerTools: byId<HTMLDetailsElement>('answer-tools'),
   btnSaveAnswers: byId<HTMLButtonElement>('btn-save-answers'),
   btnSuggestAnswers: byId<HTMLButtonElement>('btn-suggest-answers'),
   suggestionsList: byId<HTMLDivElement>('suggestions-list'),
@@ -509,6 +542,7 @@ const els = {
   assistDraft: byId<HTMLParagraphElement>('assist-draft'),
   btnCopyAssist: byId<HTMLButtonElement>('btn-copy-assist'),
   rewritePicker: byId<HTMLSelectElement>('rewrite-picker'),
+  rewritePreset: byId<HTMLSelectElement>('rewrite-preset'),
   rewriteInstruction: byId<HTMLInputElement>('rewrite-instruction'),
   btnRewrite: byId<HTMLButtonElement>('btn-rewrite'),
   rewriteResult: byId<HTMLDivElement>('rewrite-result'),
@@ -519,6 +553,7 @@ const els = {
   appliedStatus: byId<HTMLParagraphElement>('applied-status'),
   chkApplied: byId<HTMLInputElement>('chk-applied'),
   importMsg: byId<HTMLParagraphElement>('import-msg'),
+  unpairGroup: byId<HTMLElement>('unpair-group'),
   btnUnpair: byId<HTMLButtonElement>('btn-unpair'),
   tokenInput: byId<HTMLInputElement>('token-input'),
   pairMsg: byId<HTMLParagraphElement>('pair-msg'),
@@ -653,6 +688,14 @@ async function send(req: PopupRequest): Promise<PopupResponse> {
   return res;
 }
 
+/** Toggle the Form group + Answer-tools disclosure — each on its OWN signal
+ *  (see {@link FieldsProbeView}'s doc for why they differ), driven by the
+ *  fields probe (`runFieldsProbeCheck`). */
+function setToolGroupsVisible(view: FieldsProbeView): void {
+  els.groupForm.hidden = !view.showFormGroup;
+  els.answerTools.hidden = !view.showAnswerTools;
+}
+
 function showView(phase: ConnectionStatus['phase']): void {
   els.views.import.hidden = phase !== 'connected';
   // Show the pairing view for both not_paired and bad_token — the user must
@@ -667,6 +710,9 @@ function showView(phase: ConnectionStatus['phase']): void {
 
 function render(status: ConnectionStatus): void {
   lastKnownHasToken = status.hasToken;
+  // The help popover is global (not scoped to any one view/phase) — only show
+  // "Unpair this device" while there is actually something to unpair.
+  els.unpairGroup.hidden = !status.hasToken;
 
   if (status.phase === 'connected') {
     // Fire-and-forget, on each transition INTO connected (never on a repeated
@@ -674,6 +720,7 @@ function render(status: ConnectionStatus): void {
     // this render.
     if (lastRenderedPhase !== 'connected') {
       void runAppliedAutoCheck();
+      void runFieldsProbeCheck();
     }
   } else {
     // Left (or never entered) `connected` — clear any status line/button label
@@ -704,6 +751,16 @@ function render(status: ConnectionStatus): void {
     els.rewriteResult.hidden = true;
     els.rewriteDraft.textContent = '';
     els.rewriteInstruction.value = '';
+    els.rewritePreset.value = '';
+    // Invalidate any in-flight fieldsProbe BEFORE resetting visibility: a
+    // pending `hasFields:false` from the page just left could otherwise
+    // resolve AFTER this reset and hide the groups again in a phase that was
+    // never gated on it (e.g. after a disconnect) — bumping the generation
+    // makes runFieldsProbeCheck's own resolved-response branch a no-op.
+    fieldsProbeGeneration += 1;
+    // A stale "no fields on the previous page" hide must never linger onto a
+    // fresh page before its own probe resolves — default open/visible again.
+    setToolGroupsVisible({ showFormGroup: true, showAnswerTools: true });
   }
   lastRenderedPhase = status.phase;
 
@@ -868,6 +925,36 @@ async function runAppliedAutoCheck(): Promise<void> {
     els.btnImport.textContent = IMPORT_LABEL_DEFAULT;
     els.btnMarkApplied.hidden = true;
     els.btnMarkApplied.disabled = false;
+  }
+}
+
+/**
+ * Generation guard for {@link runFieldsProbeCheck} — mirrors
+ * `appliedCheckGeneration` exactly (same stale-response race the applied
+ * auto-check already guards against).
+ */
+let fieldsProbeGeneration = 0;
+
+/**
+ * Run the fire-and-forget "does this page have fillable form fields?" probe
+ * on entering `connected` and gate the Form group + Answer-tools disclosure
+ * on the result (each on its own signal — see {@link resolveFieldsProbeResponse}).
+ * `runFieldsProbe` in background.ts already folds every failure (no active
+ * tab, restricted page, scripting denied) into both signals `true` (fail
+ * OPEN), so the catch here only guards a transport-level rejection
+ * (message-channel closed) — either way this never hides a group on a probe
+ * bug, only on a confirmed empty scan.
+ */
+async function runFieldsProbeCheck(): Promise<void> {
+  fieldsProbeGeneration += 1;
+  const myGeneration = fieldsProbeGeneration;
+  try {
+    const res = await send({ kind: 'fieldsProbe' });
+    if (myGeneration !== fieldsProbeGeneration) return;
+    setToolGroupsVisible(resolveFieldsProbeResponse(res));
+  } catch {
+    if (myGeneration !== fieldsProbeGeneration) return;
+    setToolGroupsVisible({ showFormGroup: true, showAnswerTools: true });
   }
 }
 
@@ -1046,7 +1133,7 @@ function buildSuggestionRow(item: RenderedSuggestion): HTMLElement {
 
   const copyBtn = document.createElement('button');
   copyBtn.type = 'button';
-  copyBtn.className = 'btn btn--small';
+  copyBtn.className = 'btn btn--small btn--quiet';
   copyBtn.textContent = 'Copy';
   copyBtn.addEventListener('click', () => void doCopySuggestion(suggestion.answer, copyBtn));
   actions.append(copyBtn);
@@ -1056,7 +1143,7 @@ function buildSuggestionRow(item: RenderedSuggestion): HTMLElement {
   if (!suggestion.salary && fieldIndex !== null) {
     const fillBtn = document.createElement('button');
     fillBtn.type = 'button';
-    fillBtn.className = 'btn btn--small btn--primary';
+    fillBtn.className = 'btn btn--small btn--quiet';
     fillBtn.textContent = 'Fill this field';
     fillBtn.addEventListener(
       'click',
@@ -1581,11 +1668,11 @@ function wire(): void {
   els.btnAssist.addEventListener('click', () => void doAssist());
   els.btnCopyAssist.addEventListener('click', () => void doCopyAssistDraft());
   els.rewritePicker.addEventListener('change', onRewritePickerChange);
-  document.querySelectorAll<HTMLButtonElement>('.rewrite-presets [data-preset]').forEach((btn) => {
-    btn.addEventListener(
-      'click',
-      () => void doRewrite(btn.dataset.preset as ExtensionRewritePreset)
-    );
+  els.rewritePreset.addEventListener('change', () => {
+    const preset = els.rewritePreset.value;
+    if (!preset) return;
+    void doRewrite(preset as ExtensionRewritePreset);
+    els.rewritePreset.value = '';
   });
   els.btnRewrite.addEventListener('click', () => void doRewrite());
   els.btnCopyRewrite.addEventListener('click', () => void doCopyRewriteDraft());
@@ -1603,6 +1690,14 @@ function wire(): void {
   // serves the latest build) to update their app.
   els.btnUpdateApp.addEventListener('click', () => void getApp());
   els.btnHelp.addEventListener('click', toggleHelp);
+  // Persist the Answer-tools expand/collapse preference across popup opens —
+  // a UI boolean only, not PII/job data. Fires on BOTH a user click on the
+  // <summary> and a programmatic `.open` set (e.g. the stream-reattach
+  // auto-expand), per the `toggle` event's spec — that is fine here, the
+  // stored preference is just "what state it was last left in".
+  els.answerTools.addEventListener('toggle', () => {
+    void setAnswerToolsExpanded(els.answerTools.open);
+  });
 
   // Live status pushes from the background while the popup is open.
   browser.runtime.onMessage.addListener((message: unknown) => {
@@ -1666,6 +1761,10 @@ async function reattachAssistProgress(): Promise<void> {
     els.btnAssist.disabled = !res.done;
     const view = resolveAssistProgressView(res);
     if (view.draft === null) return;
+    // A buffered/still-streaming draft exists from before this popup opened —
+    // auto-expand the Answer-tools disclosure so it's visible (never leave the
+    // user hunting for a result they already started).
+    els.answerTools.open = true;
     els.assistDraft.textContent = view.draft;
     els.assistResult.hidden = false;
     if (view.tone === 'err') setMsg(els.importMsg, view.text, 'err');
@@ -1674,6 +1773,25 @@ async function reattachAssistProgress(): Promise<void> {
   }
 }
 
+/**
+ * Apply the persisted Answer-tools expand/collapse preference, THEN check for
+ * a reattachable stream — in that order, so an active/buffered draft (which
+ * always wins) is never immediately re-collapsed by a stale "collapsed"
+ * preference applied after it.
+ *
+ * Exported (unlike the other `do*`/render helpers) because nothing wires a
+ * user click to re-run this bootstrap — it only ever runs once, automatically,
+ * at popup load — so it has no other seam for tests to drive it directly.
+ */
+export async function bootstrapAnswerTools(): Promise<void> {
+  try {
+    els.answerTools.open = await getAnswerToolsExpanded();
+  } catch {
+    // Best-effort — a storage read hiccup just keeps the collapsed default.
+  }
+  await reattachAssistProgress();
+}
+
 wire();
 void refreshStatusWithTimeout();
-void reattachAssistProgress();
+void bootstrapAnswerTools();

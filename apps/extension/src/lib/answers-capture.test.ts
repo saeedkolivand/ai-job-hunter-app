@@ -13,6 +13,7 @@ import {
   collectAnswers,
   collectFilledFields,
   collectQuestions,
+  hasAnswerCapturableFields,
   locateFilledField,
   locateQuestionField,
 } from './answers-capture';
@@ -443,5 +444,42 @@ describe('locateFilledField — re-scans the CURRENT filled candidates by (quest
       </select>
     `);
     expect(locateFilledField(document, 'Years of experience', 0, 1)).toBeNull();
+  });
+});
+
+describe("hasAnswerCapturableFields — the popup fields-probe's NARROWER signal (Answer-tools gating)", () => {
+  it('returns false for a page with no form fields at all (a plain job listing)', () => {
+    setForm(`<p>Senior Rust Engineer at Acme Corp.</p>`);
+    expect(hasAnswerCapturableFields(document)).toBe(false);
+  });
+
+  it('returns true when the page has an EMPTY, capturable candidate field', () => {
+    setForm(`<label for="q1">Why this role?</label><input id="q1" type="text" value="" />`);
+    expect(hasAnswerCapturableFields(document)).toBe(true);
+  });
+
+  it('returns true when the page has a FILLED, capturable candidate field', () => {
+    setForm(
+      `<label for="q1">Why this role?</label><input id="q1" type="text" value="Because I love it." />`
+    );
+    expect(hasAnswerCapturableFields(document)).toBe(true);
+  });
+
+  it('returns false when every candidate field is excluded (ambiguous/identity/hidden — same gates as Save/Suggest)', () => {
+    setForm(`
+      <label for="pw">Password</label><input id="pw" type="text" value="" />
+      <label for="ln">LinkedIn URL</label><input id="ln" type="text" value="https://linkedin.com/in/x" />
+      <label for="h">Honeypot</label><input id="h" type="text" value="" style="display:none" />
+    `);
+    expect(hasAnswerCapturableFields(document)).toBe(false);
+  });
+
+  it("returns false for an IDENTITY-ONLY form (name/email/phone) — the narrow signal deliberately excludes these; hasAutofillableFields (lib/autofill.ts) covers them for the Form group's wider union", () => {
+    setForm(`
+      <label for="name">Full name</label><input id="name" type="text" value="" />
+      <label for="email">Email</label><input id="email" type="email" value="" />
+      <label for="phone">Phone</label><input id="phone" type="tel" value="" />
+    `);
+    expect(hasAnswerCapturableFields(document)).toBe(false);
   });
 });

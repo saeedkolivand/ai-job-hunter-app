@@ -1,9 +1,9 @@
 # Architecture Rules — Rust/Tauri Core
 
-Last updated: 2026-06-01
+Last updated: 2026-07-16
 
-> **Status:** enforceable rules (Phase 2), derived from
-> [`architecture-analysis.md`](architecture-analysis.md) — the **actual** structure of
+> **Status:** enforceable rules (Phase 2), derived from the June 2026 architecture
+> discovery analysis (now in git history) — the **actual** structure of
 > `apps/desktop/src-tauri/`, not a generic Clean-Architecture template. These rules are
 > machine-enforced by `apps/desktop/src-tauri/tests/architecture.rs`
 > (`cargo test --test architecture`) plus `cargo fmt`/`clippy`/`deny`/`audit`/`machete`

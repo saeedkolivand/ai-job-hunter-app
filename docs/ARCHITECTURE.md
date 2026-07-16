@@ -1,6 +1,6 @@
 # Architecture — AI Job Hunter
 
-Last updated: 2026-06-13
+Last updated: 2026-07-16
 
 ## High-Level Overview
 
@@ -398,7 +398,7 @@ Every persistent store (documents, AI generations, job preferences, autopilots, 
 
 ### 9. Shared Platform Infrastructure
 
-The Rust core composes a small set of **single-owner** infrastructure modules instead of re-rolling cross-cutting logic per feature: `platform::config` (env + paths), `net::http` (one pooled rustls client; per-request timeouts), `error::AppError` / `AppResult` (typed errors that serialize to their message string), and `observability::Span` (timed `→`/`←` trace logging). Expandable subsystems use registries that derive dispatch + catalogs from one list via traits — `commands::ai_provider` (`ProviderId` → `resolve`), `scraping::boards` (`SCRAPERS`). A versioned architecture test (`apps/desktop/src-tauri/tests/architecture.rs`, run by CI) keeps ownership intact — e.g. `#[tauri::command]` only in the shell layer, `std::env::var` only in `platform/**`, `reqwest::Client::new/builder` only in `net/http.rs`, no `Result<_, String>` outside `error.rs`, and no upward cross-layer imports. Paginated scrapers isolate per-page failures (partial results instead of aborting the board). See [PATTERNS.md](PATTERNS.md) §13 for the principles and module-ownership table, [architecture-analysis.md](architecture-analysis.md) for the layered structure (L0–L3) + discovered weaknesses, and [architecture-rules.md](architecture-rules.md) for the enforced rules.
+The Rust core composes a small set of **single-owner** infrastructure modules instead of re-rolling cross-cutting logic per feature: `platform::config` (env + paths), `net::http` (one pooled rustls client; per-request timeouts), `error::AppError` / `AppResult` (typed errors that serialize to their message string), and `observability::Span` (timed `→`/`←` trace logging). Expandable subsystems use registries that derive dispatch + catalogs from one list via traits — `commands::ai_provider` (`ProviderId` → `resolve`), `scraping::boards` (`SCRAPERS`). A versioned architecture test (`apps/desktop/src-tauri/tests/architecture.rs`, run by CI) keeps ownership intact — e.g. `#[tauri::command]` only in the shell layer, `std::env::var` only in `platform/**`, `reqwest::Client::new/builder` only in `net/http.rs`, no `Result<_, String>` outside `error.rs`, and no upward cross-layer imports. Paginated scrapers isolate per-page failures (partial results instead of aborting the board). See [PATTERNS.md](PATTERNS.md) §13 for the principles and module-ownership table, and [architecture-rules.md](architecture-rules.md) for the layer model (L0–L3) and the enforced rules.
 
 ---
 

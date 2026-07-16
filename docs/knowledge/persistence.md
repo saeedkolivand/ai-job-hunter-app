@@ -1,5 +1,7 @@
 # Persistence Layer — SQLite, Transactions, Atomicity
 
+Last updated: 2026-07-16
+
 Canonical sources:
 
 - `apps/desktop/src-tauri/src/db.rs` — centralized connection + WAL setup
@@ -11,11 +13,11 @@ Canonical sources:
 Every store must open SQLite connections via **`db::open(path)`** (never `Connection::open()` directly). This ensures:
 
 ```rust
-pub fn open(path: &Path) -> Result<Connection, rusqlite::Error> {
+pub fn open(path: &Path) -> AppResult<Connection> {
     let conn = Connection::open(path)?;
     conn.set_busy_timeout(Duration::from_secs(5))?;  // 5s timeout for lock contention
-    conn.execute("PRAGMA journal_mode = WAL")?;       // Write-Ahead Logging
-    conn
+    conn.pragma_update(None, "journal_mode", "WAL")?; // Write-Ahead Logging
+    Ok(conn)
 }
 ```
 
@@ -56,61 +58,59 @@ tx.commit()?;
 **Applies to:**
 
 - **Import operations** (`ai_generations::import`, `applications::import`): clear + repopulate.
-- **Status writes** (`jobs/update_status`): update row + insert history event in one transaction.
+- **Status writes** (`applications/mod.rs`): set status + append to status_events history in one transaction.
 - **Migrations** (schema changes): run migration body + bump `PRAGMA user_version` in one transaction.
 
 On crash or error, the transaction rolls back; the database remains in its previous consistent state.
 
 ## DataStore Trait
 
-Every persistent store implements the `DataStore` trait (defined in `data_store.rs`):
+Every persistent store implements the `DataStore` trait (defined in `data_store.rs:16-26`):
 
 ```rust
-pub trait DataStore: Send + Sync {
-    fn export(&self) -> Result<serde_json::Value, Error>;
-    fn import(&self, data: serde_json::Value) -> Result<(), Error>;
+pub trait DataStore {
+    fn key(&self) -> &'static str;
+    fn export(&self) -> serde_json::Value;
+    fn import(&self, data: &Value) -> AppResult<usize>; // Returns record count imported
 }
 ```
 
 ### Implementations
 
-| Store                 | Location                 | Responsibility                      |
-| --------------------- | ------------------------ | ----------------------------------- |
-| `DocumentStore`       | `documents/mod.rs`       | Resumes, embeddings, keyword caches |
-| `ApplicationsStore`   | `applications/mod.rs`    | Applied jobs, status, activity      |
-| `AiGenerationsStore`  | `ai_generations/mod.rs`  | Generated cover letters, summaries  |
-| `JobPreferencesStore` | `job_preferences/mod.rs` | Saved filters, board preferences    |
-| `JobTrackerStore`     | `jobs/mod.rs`            | Scrape queue, run logs              |
-| `ReferralsStore`      | `referrals/mod.rs`       | Referral tracking                   |
-| `ContactProfileStore` | `contact_profile/mod.rs` | Saved address, phone, contact info  |
-| `CredentialsStore`    | `credentials/mod.rs`     | OS keychain binding                 |
+| Store                 | Location                              | Responsibility                                     |
+| --------------------- | ------------------------------------- | -------------------------------------------------- |
+| `DocumentStore`       | `documents/mod.rs:1034`               | Resumes, embeddings, keyword caches                |
+| `ApplicationStore`    | `applications/mod.rs:1351`            | Applied jobs, status, activity                     |
+| `AiGenerationStore`   | `ai_generations/mod.rs:499`           | Generated cover letters, summaries                 |
+| `JobPreferencesStore` | `job_preferences/mod.rs:161`          | Saved filters, board preferences                   |
+| `ContactProfileStore` | `contact_profile/mod.rs:700`          | Saved address, phone, contact info                 |
+| `ReferralStore`       | `referrals/mod.rs:210`                | Referral tracking                                  |
+| `AiConfigStore`       | `ai_config/mod.rs:386`                | AI provider config (base_url provenance, ADR-0012) |
+| `SpendStore`          | `spend/mod.rs:253`                    | AI spend records                                   |
+| `NotificationStore`   | `notifications/mod.rs`                | Persisted notifications + actions                  |
+| `EmailWatchStore`     | `email_watch/mod.rs:89`               | Email account + watch state (ADR-0013)             |
+| `KvCache`             | `lib/kv_cache.rs`                     | Generic key-value cache (transient)                |
+| `InteractionStore`    | Exported inline by `commands/data.rs` | Generated autopilot interactions                   |
 
 ### Backup & Restore
 
-The `commands/data.rs` module orchestrates **full backup/restore** across all stores:
+The `commands/data.rs` module orchestrates **full backup/restore** across all stores (lines 137, 170):
 
 ```rust
-pub async fn data_export(state: State<'_, AppState>) -> AppResult<ExportBundle> {
-    let bundle = ExportBundle {
-        version: 1,
-        timestamp: now(),
-        documents: state.documents.export()?,
-        applications: state.applications.export()?,
-        // ... all stores
-    };
-    Ok(bundle)
+pub async fn data_export(app: AppHandle) -> Value {
+    // Exports all DataStore impls + inline sections (autopilot interactions)
+    // Returns untyped JSON with BUNDLE_VERSION=1
 }
 
-pub async fn data_import(bundle: ExportBundle, state: State<'_, AppState>) -> AppResult<()> {
-    // Pre-validate all sections first (before touching any store)
-    // Then import each store atomically (independently)
-    state.documents.import(bundle.documents)?;
-    state.applications.import(bundle.applications)?;
-    // ... each import is atomic in isolation
+pub async fn data_import(app: AppHandle, bundle: Value) -> Value {
+    // Pre-validates all sections (validate_sections) before any mutation
+    // Then imports each store atomically (independently)
     // Known limitation: stores are in separate SQLite files, so no
     // cross-file rollback if a later store fails after earlier commits
 }
 ```
+
+Pre-validation prevents invalid data from being written to any store; each store's import is individually atomic within its SQLite file.
 
 ### Restore Atomicity
 
@@ -118,19 +118,19 @@ pub async fn data_import(bundle: ExportBundle, state: State<'_, AppState>) -> Ap
 
 ### Resettable Registry
 
-The `Resettable` trait (defined in `data_store.rs`) gate access to factory-reset. Each store implements:
+The `Resettable` trait (defined in `data_store.rs:38-41`) gates access to factory-reset:
 
 ```rust
 pub trait Resettable {
-    fn clear_all(&mut self) -> AppResult<()>;  // Wipe all data
+    fn reset(&self);  // Wipe all data (infallible by design)
 }
 ```
 
-Implemented by: `DocumentStore`, `ApplicationsStore`, `AiGenerationsStore`, `JobPreferencesStore`, `JobTrackerStore`, `ReferralsStore`, `ContactProfileStore`.
+Registered and called from `commands/privacy.rs:33-110`. Implemented by: PostingsCache, InteractionStore, JobTracker, CredentialStore, AutopilotStore, DocumentStore, AiGenerationStore, ApplicationStore, JobPreferencesStore, ContactProfileStore, AiConfigStore, ReferralStore, NotificationStore, KvCache, SpendStore, EmailWatchStore.
 
-**When adding a new persisted table to an existing store:** extend that store's `clear_all()` method to `DELETE FROM` the new table. Add a unit test to verify the table is empty after `clear_all()`.
+**When adding a new persisted table to an existing store:** extend that store's `reset()` method to `DELETE FROM` the new table. Add a unit test to verify the table is empty after `reset()`.
 
-See **ADR-009**: Resettable registry for the full design.
+See **ADR-009**: Resettable registry for the full design (or query the current registry in `commands/privacy.rs` for the canonical list).
 
 ## Performance
 
