@@ -26,6 +26,7 @@ import { credentials } from './namespaces/credentials/index.js';
 import { data } from './namespaces/data/index.js';
 import { dialog } from './namespaces/dialog/index.js';
 import { documents } from './namespaces/documents/index.js';
+import { emailWatch } from './namespaces/emailWatch/index.js';
 import { extensionBridge } from './namespaces/extensionBridge/index.js';
 import { geocode } from './namespaces/geocode/index.js';
 import { github } from './namespaces/github/index.js';
@@ -58,6 +59,7 @@ export function createTauriInvokeClient(): AppClient {
     contactProfile: contactProfile as AppClient['contactProfile'],
     github: github as AppClient['github'],
     extensionBridge: extensionBridge as AppClient['extensionBridge'],
+    emailWatch: emailWatch as AppClient['emailWatch'],
     scrape: scrape as AppClient['scrape'],
     match: match as AppClient['match'],
     geocode: geocode as AppClient['geocode'],

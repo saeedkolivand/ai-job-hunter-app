@@ -1,0 +1,145 @@
+//! Email-confirmation watching (Task #23, auto-track Layer C) — the IPC seam
+//! over [`crate::email_watch::EmailWatchStore`] + the connect-time IMAP
+//! validation ([`crate::email_watch::imap_client`]).
+//!
+//! **PR A scope only**: connect/status/enable/disconnect, plus a manual
+//! connectivity re-check. `email_watch_check_now` re-validates the stored
+//! connection (`LOGIN` + `SELECT INBOX`) — it does NOT fetch or parse any
+//! mail. That is a deliberate choice over a stub: it is honest (it does
+//! exactly what its name says) and useful for debugging a broken app
+//! password/host before the poller exists. The poller/parser/matcher land in
+//! PR B.
+//!
+//! Every IMAP call runs inside `spawn_blocking` — never directly on the async
+//! runtime (the `imap` crate is fully synchronous). Wire-error discipline
+//! mirrors `extension_bridge::status_update`: the app password is never
+//! logged or returned; a validation failure surfaces a fixed, non-credential
+//! sentinel message (the concrete IMAP detail is logged host-only in
+//! `imap_client`).
+
+use parking_lot::Mutex;
+use tauri::{AppHandle, Manager};
+
+use crate::credentials::CredentialStore;
+use crate::db::now_ms;
+use crate::email_watch::imap_client::{validate_connection, DEFAULT_IMAP_HOST, DEFAULT_IMAP_PORT};
+use crate::email_watch::{EmailWatchStatus, EmailWatchStore, CREDENTIAL_SLOT};
+use crate::error::{AppError, AppResult};
+
+fn store(app: &AppHandle) -> tauri::State<'_, EmailWatchStore> {
+    app.state::<EmailWatchStore>()
+}
+
+fn credentials(app: &AppHandle) -> tauri::State<'_, Mutex<CredentialStore>> {
+    app.state::<Mutex<CredentialStore>>()
+}
+
+/// Run [`validate_connection`] on the blocking pool and flatten the
+/// `spawn_blocking` join outcome into the same `AppResult` the caller already
+/// works with.
+async fn validate_connection_blocking(
+    host: String,
+    port: u16,
+    address: String,
+    app_password: String,
+) -> AppResult<()> {
+    match tokio::task::spawn_blocking(move || {
+        validate_connection(&host, port, &address, &app_password)
+    })
+    .await
+    {
+        Ok(result) => result,
+        Err(e) => Err(AppError::Message(format!(
+            "connection check task panicked: {e}"
+        ))),
+    }
+}
+
+#[tauri::command]
+pub async fn email_watch_status(app: AppHandle) -> EmailWatchStatus {
+    match app.try_state::<EmailWatchStore>() {
+        Some(store) => store.status(),
+        None => EmailWatchStatus::default(),
+    }
+}
+
+/// Validate `address`/`app_password` against the stored (or default Gmail)
+/// host, then persist the account row + the app password in the OS keychain.
+/// Nothing is persisted when validation fails.
+#[tauri::command]
+pub async fn email_watch_connect(
+    app: AppHandle,
+    address: String,
+    app_password: String,
+) -> AppResult<EmailWatchStatus> {
+    let address = address.trim().to_string();
+    if address.is_empty() || app_password.is_empty() {
+        return Err(AppError::Validation(
+            "email address and app password are required".to_string(),
+        ));
+    }
+
+    let existing = store(&app).account();
+    let host = existing
+        .host
+        .unwrap_or_else(|| DEFAULT_IMAP_HOST.to_string());
+    let port = existing.port.unwrap_or(DEFAULT_IMAP_PORT);
+
+    validate_connection_blocking(host.clone(), port, address.clone(), app_password.clone()).await?;
+
+    credentials(&app)
+        .lock()
+        .set(CREDENTIAL_SLOT, &address, &app_password)?;
+    let store = store(&app);
+    store.connect(&address, &host, port)?;
+    store.record_check(now_ms())?;
+
+    Ok(store.status())
+}
+
+/// Remove the stored app password and clear the account row (does NOT touch
+/// `seen` dedupe rows semantically differently than a factory reset — both go
+/// through the same [`crate::email_watch::EmailWatchStore::clear`]).
+#[tauri::command]
+pub async fn email_watch_disconnect(app: AppHandle) -> AppResult<EmailWatchStatus> {
+    credentials(&app).lock().remove(CREDENTIAL_SLOT)?;
+    let store = store(&app);
+    store.clear()?;
+    Ok(store.status())
+}
+
+#[tauri::command]
+pub async fn email_watch_set_enabled(app: AppHandle, enabled: bool) -> AppResult<EmailWatchStatus> {
+    let store = store(&app);
+    store.set_enabled(enabled)?;
+    Ok(store.status())
+}
+
+/// Re-validate the existing connection (`LOGIN` + `SELECT INBOX`) using the
+/// stored host/address and the keychain-stored app password. Fetches or
+/// parses no mail — see the module doc. Errors if no account/credential is
+/// configured yet.
+#[tauri::command]
+pub async fn email_watch_check_now(app: AppHandle) -> AppResult<EmailWatchStatus> {
+    let store = store(&app);
+    let account = store.account();
+    let address = account
+        .address
+        .ok_or_else(|| AppError::Config("no email account is connected".to_string()))?;
+    let host = account
+        .host
+        .unwrap_or_else(|| DEFAULT_IMAP_HOST.to_string());
+    let port = account.port.unwrap_or(DEFAULT_IMAP_PORT);
+    let app_password = credentials(&app)
+        .lock()
+        .get_decrypted(CREDENTIAL_SLOT)
+        .map(|(_, password)| password)
+        .ok_or_else(|| {
+            AppError::Config("no app password is stored for this account".to_string())
+        })?;
+
+    validate_connection_blocking(host, port, address, app_password).await?;
+
+    store.record_check(now_ms())?;
+    Ok(store.status())
+}

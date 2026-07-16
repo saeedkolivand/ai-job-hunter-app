@@ -13,6 +13,7 @@ use crate::contact_profile::ContactProfileStore;
 use crate::credentials::CredentialStore;
 use crate::data_store::Resettable;
 use crate::documents::DocumentStore;
+use crate::email_watch::EmailWatchStore;
 use crate::job_preferences::JobPreferencesStore;
 use crate::jobs::JobTracker;
 use crate::notifications::NotificationStore;
@@ -106,6 +107,15 @@ impl Resettable for SpendStore {
         self.clear_all();
     }
 }
+impl Resettable for EmailWatchStore {
+    fn reset(&self) {
+        // Account row back to defaults + every `seen` row gone. The keychain
+        // app password is cleared separately by `Mutex<CredentialStore>`'s own
+        // `reset` (registered under the "credentials" label), which wipes
+        // every stored secret including this store's `email-imap` slot.
+        let _ = self.clear();
+    }
+}
 
 /// A type-erased factory-reset action: resolve a store from app state and wipe it.
 type ResetAction = Box<dyn Fn(&AppHandle) + Send + Sync>;
@@ -129,6 +139,7 @@ pub const MANAGE_RESETTABLE_LABELS: &[&str] = &[
     "postings",
     "interactions",
     "spend",
+    "email_watch",
     "cache",
 ];
 
@@ -499,6 +510,7 @@ mod tests {
         reg.register::<Mutex<PostingsCache>>("postings");
         reg.register::<Mutex<InteractionStore>>("interactions");
         reg.register::<SpendStore>("spend");
+        reg.register::<EmailWatchStore>("email_watch");
         reg.register::<KvCache>("cache");
 
         let labels = reg.labels();

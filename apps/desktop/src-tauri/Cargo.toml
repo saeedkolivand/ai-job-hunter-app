@@ -184,6 +184,21 @@ sha2 = "0.11"
 hmac = "0.13"
 htmd = "0.5.4"
 
+# IMAP client for email-confirmation watching (task #23, opt-in, default OFF —
+# `email_watch`). `native-tls` (the crate's default), NOT `rustls-tls`: the
+# `rustls-tls` feature bridges through `rustls-connector`, which is pinned to
+# `rustls 0.22`/`rustls-webpki 0.102` (imap's own Cargo.toml caps
+# rustls-connector at `^0.19`, so `cargo update` cannot bump past it) — that
+# resolves 4 live RUSTSEC advisories (2026-0049/0098/0099/0104, all fixed only
+# in rustls-webpki >=0.103.10) that `cargo deny check` fails on and no
+# semver-compatible update path clears. `native-tls` instead reuses the SAME
+# per-OS TLS stack `reqwest` already depends on (SChannel/SecureTransport/
+# OpenSSL — see net/http.rs), so this is not a second TLS stack, just a second
+# consumer of the one already in the tree. Sync API used only via
+# `spawn_blocking` (see `email_watch::imap_client`); this is deliberately NOT
+# `net::http` — IMAP is not HTTP and can't ride `reqwest` (see R5 note there).
+imap = { version = "3.0.0-alpha.15", default-features = false, features = ["native-tls"] }
+
 [target.'cfg(windows)'.dependencies]
 wmi = "0.18"
 windows-native-keyring-store = "1"
