@@ -1,5 +1,4 @@
 import { Bell, ScanSearch, Wand2 } from 'lucide-react';
-import { useEffect } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 
 import { useTranslation } from '@ajh/translations';
@@ -12,43 +11,20 @@ export function StepAction() {
   const { t } = useTranslation();
   const { control, setValue } = useFormContext<WizardState>();
   const assistant = useWatch({ control, name: 'assistant' });
-  const assistantProvider = useWatch({ control, name: 'assistantProvider' });
-  const assistantModel = useWatch({ control, name: 'assistantModel' });
-  const assistantBaseUrl = useWatch({ control, name: 'assistantBaseUrl' });
-  const { provider, model, baseUrl } = useGenerateConfig();
-
-  // The scheduled run is headless (no renderer), so it can't resolve "the
-  // active provider" itself — it replays whatever was snapshotted here. Keep
-  // the snapshot in sync with the live provider whenever notes are on: this
-  // covers both "just enabled" (snapshot starts empty) and re-opening an edit
-  // whose snapshot has since gone stale (the user switched provider in
-  // Settings after this autopilot was last saved). The equality guard makes
-  // this a no-op once in sync, so it never loops or dirties the form for no
-  // reason.
-  useEffect(() => {
-    // No usable model (no AI provider configured) — never snapshot an empty
-    // model, or the scheduled run silently produces zero notes forever.
-    if (!assistant || !model) return;
-    if (
-      provider === assistantProvider &&
-      model === assistantModel &&
-      baseUrl === assistantBaseUrl
-    ) {
-      return;
-    }
-    setValue('assistantProvider', provider, { shouldDirty: true });
-    setValue('assistantModel', model, { shouldDirty: true });
-    setValue('assistantBaseUrl', baseUrl, { shouldDirty: true });
-  }, [
-    assistant,
-    provider,
-    model,
-    baseUrl,
-    assistantProvider,
-    assistantModel,
-    assistantBaseUrl,
-    setValue,
-  ]);
+  // The provider/model snapshot is GONE (task #16): a scheduled headless run now
+  // resolves the CURRENTLY-active provider from the backend store at run time, so
+  // there is nothing to capture here. `provider`/`model` are still read to gate
+  // the toggle (no provider configured → disabled) and label the hint.
+  const { provider, model, isPending } = useGenerateConfig();
+  // Cold boot: while the backend config is first loading, `model` defaults to
+  // '' — indistinguishable from a real "no provider configured" state. Show
+  // nothing rather than falsely flashing the no-provider caption (mirrors
+  // `useCanUseAI`'s isPending guard in ModelSelector).
+  const caption = isPending
+    ? null
+    : model
+      ? t('autopilot.wizard.action.assistantCaption')
+      : t('autopilot.wizard.action.assistantNoProvider');
 
   // Autopilot is a discovery assistant: it finds & ranks matching jobs and
   // notifies you, then you apply with the tailoring assistant on the dedicated
@@ -94,11 +70,7 @@ export function StepAction() {
             feature's disclosure copy is its own properly-contrasted element
             instead of passing it through `description`, so the honesty copy
             this feature depends on stays legible. */}
-        <p className="text-caption text-foreground/70">
-          {model
-            ? t('autopilot.wizard.action.assistantCaption')
-            : t('autopilot.wizard.action.assistantNoProvider')}
-        </p>
+        {caption && <p className="text-caption text-foreground/70">{caption}</p>}
         {assistant && provider && model && (
           <p className="text-caption text-foreground/70">
             {t('autopilot.wizard.action.assistantProviderHint', { provider, model })}

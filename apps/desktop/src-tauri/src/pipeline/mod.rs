@@ -16,7 +16,7 @@ pub mod cache;
 pub mod enrichment;
 
 use async_trait::async_trait;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::commands::ai_provider::{
     record_usage, resolve, AgentTurn, AiGenerateRequest, AiGenerateRequestMessage, AiProvider,
@@ -51,6 +51,25 @@ impl Completer {
         model: Option<&str>,
         base_url: Option<String>,
     ) -> AppResult<Self> {
+        let (provider, model, base_url) = Self::resolve_parts(provider, model, base_url)?;
+        Ok(Self {
+            app: app.clone(),
+            provider,
+            model,
+            base_url,
+        })
+    }
+
+    /// The `AppHandle`-free core of [`resolve`](Self::resolve): provider present →
+    /// parse → model rule → `validate_model` → construct the boxed provider client
+    /// (`base_url` only honored for `OpenAiCompatible`). Extracted so both `resolve`
+    /// and the store-driven [`from_config`](Self::from_config) share one
+    /// implementation and so it's directly unit-testable without an `AppHandle`.
+    fn resolve_parts(
+        provider: Option<&str>,
+        model: Option<&str>,
+        base_url: Option<String>,
+    ) -> AppResult<(Box<dyn AiProvider>, String, Option<String>)> {
         let provider_str = provider
             .map(str::trim)
             .filter(|s| !s.is_empty())
@@ -70,12 +89,63 @@ impl Completer {
             }
         };
         provider_id.validate_model(&model)?;
+        Ok((resolve(provider_id, base_url.clone()), model, base_url))
+    }
+
+    /// Resolve a `Completer` from the **backend-owned** active provider store
+    /// ([`crate::ai_config::AiConfigStore`]) — the trust-boundary replacement for
+    /// [`resolve`](Self::resolve)'s request-supplied provider/model/base_url. The
+    /// renderer can no longer point generation at an attacker endpoint: routing
+    /// comes entirely from the persisted store, which validated every value at
+    /// write time. Reproduces `resolve`'s steps 1–5 verbatim (provider present →
+    /// parse → model rule → `validate_model` → OpenAiCompatible-only base_url),
+    /// differing ONLY in the source of the three values.
+    ///
+    /// The store's config is snapshotted (owned) before this returns, so no DB lock
+    /// is held across any later `.await`.
+    pub fn from_active(app: &AppHandle) -> AppResult<Self> {
+        let cfg = app
+            .state::<crate::ai_config::AiConfigStore>()
+            .active_config();
+        let (provider, model, base_url) = Self::from_config(cfg)?;
         Ok(Self {
             app: app.clone(),
-            provider: resolve(provider_id, base_url.clone()),
+            provider,
             model,
             base_url,
         })
+    }
+
+    /// The `AppHandle`-free validated-resolve seam behind
+    /// [`from_active`](Self::from_active): the defensive re-validate of the
+    /// stored `base_url` on the egress path (the writer/seed/import all validate
+    /// it, so this only ever fires on a tampered store — fail closed, never
+    /// silently fall back to the default endpoint), then the same
+    /// [`resolve_parts`](Self::resolve_parts) steps 1-5 `resolve` uses. Takes an
+    /// already-read owned [`ActiveAiConfig`](crate::ai_config::ActiveAiConfig) —
+    /// no store lock, no `AppHandle` — so it's directly unit-testable.
+    fn from_config(
+        cfg: crate::ai_config::ActiveAiConfig,
+    ) -> AppResult<(Box<dyn AiProvider>, String, Option<String>)> {
+        if let Some(url) = cfg.base_url.as_deref() {
+            crate::net::ssrf::validate_provider_base_url(url)?;
+        }
+        Self::resolve_parts(
+            cfg.active_provider.as_deref(),
+            cfg.model.as_deref(),
+            cfg.base_url,
+        )
+    }
+
+    /// Stream a full [`AiGenerateRequest`] through this resolved provider. Routing
+    /// (provider + base_url) is fixed by how the `Completer` was resolved — the
+    /// request no longer carries either. `model` is overwritten with the resolved
+    /// active model so an empty/stale renderer value can never ship (every
+    /// `chat_stream` impl reads `req.model`); every other field (messages, sampling
+    /// knobs, effort) is preserved.
+    pub async fn stream(&self, job_id: &str, mut req: AiGenerateRequest) -> AppResult<()> {
+        req.model = self.model.clone();
+        self.provider.chat_stream(&self.app, job_id, &req).await
     }
 
     /// Company-research brief through the active provider's **own** web search.
@@ -233,8 +303,6 @@ impl Completer {
             repeat_penalty: None,
             max_tokens,
             context_window: None,
-            provider: Some(self.provider.id().as_str().to_string()),
-            base_url: self.base_url.clone(),
             effort: None,
         };
         self.provider.chat_stream(&self.app, job_id, &req).await

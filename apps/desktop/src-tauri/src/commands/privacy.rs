@@ -5,6 +5,7 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 use tauri::{App, AppHandle, Manager};
 
+use crate::ai_config::AiConfigStore;
 use crate::ai_generations::AiGenerationStore;
 use crate::applications::ApplicationStore;
 use crate::autopilot::AutopilotStore;
@@ -80,6 +81,11 @@ impl Resettable for ContactProfileStore {
         let _ = self.clear();
     }
 }
+impl Resettable for AiConfigStore {
+    fn reset(&self) {
+        self.clear();
+    }
+}
 impl Resettable for ReferralStore {
     fn reset(&self) {
         self.clear_all();
@@ -117,6 +123,7 @@ pub const MANAGE_RESETTABLE_LABELS: &[&str] = &[
     "applications",
     "job_preferences",
     "contact_profile",
+    "ai_provider_config",
     "referrals",
     "job_tracker",
     "postings",
@@ -486,6 +493,7 @@ mod tests {
         reg.register::<ApplicationStore>("applications");
         reg.register::<JobPreferencesStore>("job_preferences");
         reg.register::<ContactProfileStore>("contact_profile");
+        reg.register::<AiConfigStore>("ai_provider_config");
         reg.register::<ReferralStore>("referrals");
         reg.register::<Mutex<JobTracker>>("job_tracker");
         reg.register::<Mutex<PostingsCache>>("postings");

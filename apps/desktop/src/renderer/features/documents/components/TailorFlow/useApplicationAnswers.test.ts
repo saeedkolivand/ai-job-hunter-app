@@ -294,15 +294,9 @@ describe('useApplicationAnswers', () => {
       });
 
       // No jobCountry in the base mock → country/currency both undefined (today's
-      // unconstrained behavior — the unknown-country fallback).
-      expect(lookupSalaryRange).toHaveBeenCalledWith(
-        'Engineer',
-        'Acme',
-        '',
-        'llama3',
-        undefined,
-        undefined
-      );
+      // unconstrained behavior — the unknown-country fallback). `model` is no
+      // longer threaded (routing is backend-owned, task #16).
+      expect(lookupSalaryRange).toHaveBeenCalledWith('Engineer', 'Acme', '', undefined, undefined);
       expect(generateApplicationAnswer).toHaveBeenCalledWith(
         expect.objectContaining({
           question: 'What are your salary expectations?',
@@ -336,7 +330,6 @@ describe('useApplicationAnswers', () => {
         'Engineer',
         'Acme',
         'Berlin, Germany',
-        'llama3',
         'DE',
         'EUR'
       );
@@ -494,8 +487,7 @@ describe('useApplicationAnswers', () => {
       expect(researchAnswer).toHaveBeenCalledWith(
         'Why do you want to work at this company?',
         'Engineer',
-        'Acme',
-        'llama3'
+        'Acme'
       );
       expect(generateApplicationAnswer).toHaveBeenCalledWith(
         expect.objectContaining({ webSearchNotes: 'Acme raised a Series B in 2026.' })

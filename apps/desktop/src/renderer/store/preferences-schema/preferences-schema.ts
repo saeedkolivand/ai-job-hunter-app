@@ -48,13 +48,6 @@ export const PromptQualitySchema = z.enum(['auto', 'full', 'compact']);
 // Output tone options
 export const OutputToneSchema = z.enum(['professional', 'casual', 'formal', 'creative']);
 
-// AI model preference
-export const AIModelPreferenceSchema = z.object({
-  defaultModel: z.string().optional(),
-  temperature: z.number().min(0).max(2).default(0.7),
-  maxTokens: z.number().min(1).max(8192).default(2048),
-});
-
 // AI provider selection (API key stored in OS keychain, not here)
 const AiProviderSchema = z.enum([
   'ollama',
@@ -150,7 +143,10 @@ export const PreferencesSchema = z.object({
 
   // AI Preferences
   language: z.string().default('en'),
-  aiModel: AIModelPreferenceSchema.optional(),
+  // NOTE: the legacy `aiModel` mirror ({defaultModel,temperature,maxTokens}) was
+  // removed (task #16) — it was never read by any generation call. `aiProviderConfig`
+  // is now the SEED SOURCE for the backend-owned store (read once on first run) +
+  // the home of the renderer-side tuning knobs (effort, modelLimits).
   aiProviderConfig: AiProviderConfigSchema.optional(),
   outputTone: OutputToneSchema.default('professional'),
 
@@ -313,6 +309,5 @@ export function resolveBackendConfig(
 }
 export type PromptQuality = z.infer<typeof PromptQualitySchema>;
 export type OutputTone = z.infer<typeof OutputToneSchema>;
-export type AIModelPreference = z.infer<typeof AIModelPreferenceSchema>;
 export type ResumePreference = z.infer<typeof ResumePreferenceSchema>;
 export type ApplicantPreferences = z.infer<typeof ApplicantPreferencesSchema>;

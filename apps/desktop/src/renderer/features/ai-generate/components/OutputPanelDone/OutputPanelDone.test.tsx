@@ -24,6 +24,12 @@ vi.mock('@/services/use-contact-profile', () => ({
   useContactProfile: () => ({ data: undefined }),
 }));
 
+// EditableOutput also reads useSelectedModel, now backed by the `useActiveConfig`
+// query (task #16) which reaches for AppClientProvider — stub it to a plain model.
+vi.mock('@/components/ui/ModelSelector', () => ({
+  useSelectedModel: () => 'llama3',
+}));
+
 // Stub useDebouncedCommit so tests don't depend on fake timers.
 // scheduleCommit immediately calls onCommit with the (out, value) pair —
 // simulates instant commit in tests. flush() with no argument is also a no-op

@@ -73,18 +73,17 @@ vi.mock('@/services', async (importOriginal) => {
       running: [],
       queuedJobs: [],
     }),
+    // Active provider/model is backend-owned (task #16), read via useActiveConfig.
+    useActiveConfig: () => ({
+      data: {
+        activeProvider: 'ollama',
+        model: 'llama3.2',
+        providers: { ollama: { model: 'llama3.2' } },
+      },
+      isPending: false,
+    }),
   };
 });
-
-// ── Preferences store ─────────────────────────────────────────────────────────
-
-vi.mock('@/store/preferences-store', () => ({
-  useAIModel: () => ({ defaultModel: 'llama3.2' }),
-  useAiProviderConfig: () => ({
-    activeProvider: 'ollama',
-    providers: { ollama: { model: '' } },
-  }),
-}));
 
 // ── Kind label map ────────────────────────────────────────────────────────────
 

@@ -6,13 +6,13 @@ import { useTranslation } from '@ajh/translations';
 import { Alert, Button, Input, transition, useNotification } from '@ajh/ui';
 
 import {
+  useConfigureActiveProvider,
   useHasProviderKey,
   useOpenExternal,
   useSetProviderKey,
   useTestProviderKey,
 } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
-import { usePreferencesStore } from '@/store/preferences-store';
 
 interface CloudProvider {
   id: AiProvider;
@@ -82,7 +82,7 @@ export function CloudProviderPanel({
   const openExternal = useOpenExternal();
   const setProviderKey = useSetProviderKey();
   const testProviderKey = useTestProviderKey();
-  const setAiProviderConfig = usePreferencesStore((s) => s.setAiProviderConfig);
+  const configureProvider = useConfigureActiveProvider();
 
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -99,9 +99,9 @@ export function CloudProviderPanel({
     try {
       await setProviderKey.mutateAsync({ provider: selectedProvider, apiKey: apiKey.trim() });
       setApiKey('');
-      setAiProviderConfig({
-        activeProvider: selectedProvider,
-        providers: { [selectedProvider]: { model: CLOUD_DEFAULT_MODELS[selectedProvider] ?? '' } },
+      await configureProvider.mutateAsync({
+        provider: selectedProvider,
+        model: CLOUD_DEFAULT_MODELS[selectedProvider] ?? '',
       });
       notify.success({ message: `${cloudMeta?.label ?? selectedProvider} API key saved.` });
     } catch (err) {

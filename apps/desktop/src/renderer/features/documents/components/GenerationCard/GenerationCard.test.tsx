@@ -17,6 +17,12 @@ const mockUpdateMutate = vi.fn();
 
 vi.mock('@/services', () => ({
   useOpenExternal: () => ({ mutate: vi.fn() }),
+  // EditableOutput → useSelectedModel now reads the backend active-config query
+  // (task #16); stub it so the card mounts without a provider tree.
+  useActiveConfig: () => ({
+    data: { activeProvider: 'ollama', model: 'llama3', providers: { ollama: { model: 'llama3' } } },
+    isPending: false,
+  }),
 }));
 
 vi.mock('@/services/use-ai-generations', () => ({

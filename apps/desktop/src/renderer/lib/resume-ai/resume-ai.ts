@@ -73,23 +73,20 @@ export async function runAnalysis({
     profile
   );
 
-  // Enqueue the generation job
+  // Enqueue the generation job. Routing (active provider + base_url) is now
+  // backend-owned (task #16) — the backend resolves it from its own store and
+  // overwrites `model` before streaming, so nothing is threaded here. `effort` (a
+  // CLI reasoning knob, not routing) stays renderer-side per RESOLVED-Q1.
   const api = getClient();
-  // Route to the active provider's endpoint — without this the backend defaults
-  // to Ollama, so cloud analysis would wrongly hit the local Ollama host.
-  const { activeProvider, providerSettings } = resolveActiveProvider(model);
+  const { providerSettings, activeModel } = resolveActiveProvider(model);
   const res = await api.ai.generate({
-    model: providerSettings?.model || model,
+    model: activeModel || model,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ],
     locale: safeLocale(locale),
     temperature: 0.1,
-    // Always route through the active provider (no silent Ollama fallback).
-    provider: activeProvider,
-    baseUrl: providerSettings?.baseUrl,
-    // Reasoning effort for CLI agents that support it (e.g. Codex).
     effort: providerSettings?.effort,
   });
 

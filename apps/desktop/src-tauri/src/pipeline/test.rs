@@ -2,7 +2,8 @@ use async_trait::async_trait;
 use tempfile::TempDir;
 
 use super::cache::KvCache;
-use super::{Pipeline, Stage};
+use super::{Completer, Pipeline, Stage};
+use crate::ai_config::ActiveAiConfig;
 use crate::error::{AppError, AppResult};
 
 // ── Pipeline ordering / abort ───────────────────────────────────────────────────
@@ -88,4 +89,99 @@ fn kv_cache_roundtrip_ttl_and_namespace_isolation() {
 
     // Key match is case-insensitive (COLLATE NOCASE).
     assert_eq!(cache.get("ns1", "ACME", 3600), Some("brief-v2".to_string()));
+}
+
+// ── Completer::from_config ────────────────────────────────────────────────────
+//
+// `from_config` is the `AppHandle`-free seam behind `Completer::from_active`'s
+// store-driven resolve (see its doc comment) — no `tauri::test` mock app needed.
+// These build an owned `ActiveAiConfig` directly, the same shape
+// `AiConfigStore::active_config()` returns.
+
+fn active_cfg(
+    provider: Option<&str>,
+    model: Option<&str>,
+    base_url: Option<&str>,
+) -> ActiveAiConfig {
+    ActiveAiConfig {
+        active_provider: provider.map(str::to_string),
+        model: model.map(str::to_string),
+        base_url: base_url.map(str::to_string),
+        providers: Default::default(),
+    }
+}
+
+#[test]
+fn rejects_tampered_cloud_metadata_base_url() {
+    // A metadata-endpoint base_url could only land here via a store row written
+    // directly to SQLite (the writer/seed/import all reject it) — the defensive
+    // re-validate must fail closed, never fall back to a default endpoint.
+    let cfg = active_cfg(
+        Some("openai-compatible"),
+        Some("local-model"),
+        Some("http://169.254.169.254/latest/meta-data/"),
+    );
+    let err = Completer::from_config(cfg).map(|_| ()).unwrap_err();
+    assert!(
+        format!("{err}").to_lowercase().contains("metadata"),
+        "got {err}"
+    );
+}
+
+#[test]
+fn rejects_tampered_non_http_base_url_scheme() {
+    let cfg = active_cfg(
+        Some("openai-compatible"),
+        Some("local-model"),
+        Some("ftp://evil.test/v1"),
+    );
+    let err = Completer::from_config(cfg).map(|_| ()).unwrap_err();
+    assert!(
+        format!("{err}").to_lowercase().contains("scheme"),
+        "got {err}"
+    );
+}
+
+#[test]
+fn resolves_openai_compatible_with_a_localhost_base_url() {
+    let cfg = active_cfg(
+        Some("openai-compatible"),
+        Some("local-model"),
+        Some("http://127.0.0.1:1234/v1"),
+    );
+    let (_provider, model, base_url) = Completer::from_config(cfg).expect("should resolve");
+    assert_eq!(model, "local-model");
+    assert_eq!(base_url.as_deref(), Some("http://127.0.0.1:1234/v1"));
+}
+
+#[test]
+fn unseeded_provider_is_the_no_provider_error() {
+    let cfg = active_cfg(None, None, None);
+    let err = Completer::from_config(cfg).map(|_| ()).unwrap_err();
+    assert!(
+        format!("{err}").contains("No AI provider selected"),
+        "got {err}"
+    );
+}
+
+#[test]
+fn empty_model_on_a_non_cli_provider_is_the_no_model_error() {
+    let cfg = active_cfg(Some("anthropic"), None, None);
+    let err = Completer::from_config(cfg).map(|_| ()).unwrap_err();
+    assert!(format!("{err}").contains("No model selected"), "got {err}");
+}
+
+#[test]
+fn a_good_native_provider_resolves_and_ignores_base_url() {
+    // `base_url` is only ever wired into the boxed client for `OpenAiCompatible`
+    // (see `commands::ai_provider::resolve`) — a native provider config still
+    // passes the re-validate (it applies regardless of provider) but the value
+    // plays no further part in what gets constructed.
+    let cfg = active_cfg(
+        Some("anthropic"),
+        Some("claude-3-5-sonnet"),
+        Some("https://example.com"),
+    );
+    let (_provider, model, _base_url) = Completer::from_config(cfg).expect("should resolve");
+    assert_eq!(model, "claude-3-5-sonnet");
 }

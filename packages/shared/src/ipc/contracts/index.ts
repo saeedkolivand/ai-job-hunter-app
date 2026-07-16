@@ -132,8 +132,11 @@ export {
   type AgentStepKind,
 } from './agent.js';
 export {
+  type ActiveAiConfig,
   AI_CHANNELS,
+  type AiConfigSnapshot,
   type AiContract,
+  type AiProviderRouting,
   type AiSpendProviderTotals,
   type AiSpendSummary,
   type EmbeddingConfig,

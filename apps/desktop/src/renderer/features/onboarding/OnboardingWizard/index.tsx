@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { transition } from '@ajh/ui';
 
+import { useActiveConfig } from '@/services';
 import { useOnboardingCompleted, usePreferencesStore } from '@/store/preferences-store';
 
 import { SpotlightTour } from '../SpotlightTour';
@@ -12,7 +13,8 @@ export function OnboardingWizard() {
   const onboardingCompleted = useOnboardingCompleted();
   const setOnboardingComplete = usePreferencesStore((s) => s.setOnboardingComplete);
   const setSidebarCollapsed = usePreferencesStore((s) => s.setSidebarCollapsed);
-  const activeProvider = usePreferencesStore((s) => s.aiProviderConfig?.activeProvider);
+  // Active provider is backend-owned (task #16); the research step is Ollama-only.
+  const activeProvider = useActiveConfig().data?.activeProvider;
   const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState(1);
   const [showTour, setShowTour] = useState(false);

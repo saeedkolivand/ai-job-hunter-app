@@ -10,15 +10,16 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tauri::AppHandle;
 
-use crate::commands::ai_provider::{emit_stream_error, resolve, AiGenerateRequest, ProviderId};
+use crate::commands::ai_provider::{emit_stream_error, AiGenerateRequest};
 use crate::db::new_job_id;
 use crate::error::AppResult;
-use crate::pipeline::{Pipeline, Stage};
+use crate::pipeline::{Completer, Pipeline, Stage};
 
 struct GenerationContext {
-    app: AppHandle,
     job_id: String,
-    provider_id: ProviderId,
+    /// Provider/model/base_url resolved from the backend store — the request no
+    /// longer carries any of them (task #16).
+    completer: Completer,
     req: AiGenerateRequest,
 }
 
@@ -31,8 +32,9 @@ impl Stage<GenerationContext> for StreamGenerateStage {
         "generate"
     }
     async fn run(&self, ctx: &mut GenerationContext) -> AppResult<()> {
-        let provider = resolve(ctx.provider_id, ctx.req.base_url.clone());
-        provider.chat_stream(&ctx.app, &ctx.job_id, &ctx.req).await
+        // Routing is fixed by the resolved `Completer`; `stream` also overwrites
+        // `req.model` with the resolved active model so nothing routes off the wire.
+        ctx.completer.stream(&ctx.job_id, ctx.req.clone()).await
     }
 }
 
@@ -50,31 +52,20 @@ pub async fn generate_pipeline(app: AppHandle, req: AiGenerateRequest) -> Value 
         json!({ "jobId": job_id })
     };
 
-    let provider_str = match req.provider.as_deref() {
-        Some(p) if !p.trim().is_empty() => p.to_string(),
-        _ => {
-            return fail(
-                &app,
-                &job_id,
-                "No AI provider selected. Choose a provider in Settings → AI.".to_string(),
-            )
-        }
-    };
-    let provider_id = match ProviderId::parse(&provider_str) {
-        Ok(id) => id,
+    // Resolve the active provider from the BACKEND store (not the request):
+    // provider present → known → model belongs to it, all validated inside
+    // `from_active`. Fail fast before spawning.
+    let completer = match Completer::from_active(&app) {
+        Ok(c) => c,
         Err(e) => return fail(&app, &job_id, e.to_string()),
     };
-    if let Err(e) = provider_id.validate_model(&req.model) {
-        return fail(&app, &job_id, e.to_string());
-    }
 
     let job_id_clone = job_id.clone();
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {
         let mut ctx = GenerationContext {
-            app: app_clone.clone(),
             job_id: job_id_clone.clone(),
-            provider_id,
+            completer,
             req,
         };
         let pipeline = Pipeline::new("generate").add(StreamGenerateStage);

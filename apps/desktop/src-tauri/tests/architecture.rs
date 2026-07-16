@@ -55,6 +55,9 @@ const L1: &[&str] = &[
     // AI-spend visibility store (real per-call token usage + estimated cost).
     // Same layer as ai_generations: a per-domain SQLite store, Tauri-free.
     "spend",
+    // Backend-owned active AI provider store (task #16): the single source of
+    // truth for generation routing. A per-domain SQLite store, Tauri-free.
+    "ai_config",
 ];
 const L2: &[&str] = &[
     "pipeline",
@@ -326,6 +329,7 @@ const R3_ALLOW: &[&str] = &[
     "documents/mod.rs",
     "job_preferences/mod.rs",
     "contact_profile/mod.rs",
+    "ai_config/mod.rs",
     "referrals/mod.rs",
     "jobs/mod.rs",
     "pipeline/cache/mod.rs",
@@ -430,6 +434,10 @@ const R7_ALLOW: &[(&str, &str)] = &[
     // relocated to a top-level module. autopilot_scheduler invokes the autopilot command.
     ("pipeline", "commands"),
     ("documents", "commands"),
+    // ai_config (L1) reads ProviderId/validate_model from commands::ai_provider,
+    // exactly like documents::embed — same W-1 exception until ai_provider is
+    // relocated out of commands/.
+    ("ai_config", "commands"),
     ("postings", "commands"),
     ("autopilot_scheduler", "commands"),
     // Centralized event emit: autopilot_helpers (L2) streams scrape progress via
