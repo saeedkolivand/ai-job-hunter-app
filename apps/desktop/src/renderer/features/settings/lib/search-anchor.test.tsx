@@ -12,7 +12,7 @@
  *
  * Coverage:
  *  - All 11 SectionIds have ≥1 SEARCH_INDEX entry.
- *  - All 29 anchors are reachable in the rendered DOM.
+ *  - All 30 anchors are reachable in the rendered DOM.
  *  - Multi-component sections are fully covered:
  *      general   → GeneralSection (6 anchors inside the component)
  *      appearance → AppearanceCard (5 anchors inside the component)
@@ -20,7 +20,7 @@
  *      ai        → SettingsContent wrapper (2) + AISettingsTab interior (3)
  *      job       → SettingsContent wrappers (3)
  *      resume    → SettingsContent wrapper (1)
- *      accounts  → AccountsSettingsTab (2 anchors inside)
+ *      accounts  → AccountsSettingsTab (3 anchors inside)
  *      privacy   → PrivacySettingsTab (2 anchors inside)
  *      performance → SettingsContent wrapper (1)
  *      developer → SettingsContent wrapper (1)
@@ -250,6 +250,9 @@ vi.mock('@/features/settings/components/accounts/BoardSessionRow', () => ({
 vi.mock('@/features/settings/components/accounts/ExtensionBridgeSection', () => ({
   ExtensionBridgeSection: () => <div data-settings-anchor="accounts-extension" />,
 }));
+vi.mock('@/features/settings/components/accounts/EmailWatchSection', () => ({
+  EmailWatchSection: () => <div data-settings-anchor="accounts-email-watch" />,
+}));
 
 // PerformancePreferences — calls t(`${base}.details`, { returnObjects: true }) which the
 // stub returns as a string (not array), causing details.map to throw.
@@ -331,8 +334,8 @@ function assertAnchor(container: HTMLElement, anchor: string) {
 // ── manifest integrity ────────────────────────────────────────────────────────
 
 describe('SEARCH_INDEX — manifest integrity', () => {
-  it('has exactly 29 entries', () => {
-    expect(SEARCH_INDEX).toHaveLength(29);
+  it('has exactly 30 entries', () => {
+    expect(SEARCH_INDEX).toHaveLength(30);
   });
 
   it('every SectionId has at least one entry', () => {

@@ -795,6 +795,32 @@
           "toggleFailed": "Could not update the auto-track setting."
         }
       },
+      "emailWatch": {
+        "title": "Email tracking",
+        "statusLabel": "Connection",
+        "connected": "Connected",
+        "disconnected": "Not connected",
+        "addressLabel": "Email address",
+        "addressPlaceholder": "you@gmail.com",
+        "appPasswordLabel": "App password",
+        "appPasswordPlaceholder": "16-character app password",
+        "appPasswordHelp": "Requires 2-step verification. Create one at",
+        "connect": "Connect",
+        "connecting": "Connecting…",
+        "connectFailed": "Could not connect. Check the address and app password and try again.",
+        "disconnect": "Disconnect",
+        "disconnectFailed": "Could not disconnect.",
+        "watch": {
+          "label": "Watch for confirmation emails",
+          "description": "Saves your preference for the automatic inbox check arriving in a future update. Until then, use Check now to test the connection."
+        },
+        "toggleFailed": "Could not update the email-tracking setting.",
+        "lastCheck": "Last checked {{value}}",
+        "neverChecked": "Not checked yet",
+        "checkNow": "Check now",
+        "checkNowFailed": "Could not reach the mailbox. Check your app password and try again.",
+        "disclosure": "An app password grants full access to your Gmail account — not just read-only — so it's stored only in your OS keychain, never in this app's database. Any mailbox check happens locally: email content never leaves this device and is never sent to any AI provider. Nothing is ever written to your applications automatically — a match always shows up as a notification for you to confirm. Automatic inbox checks are coming in a future update; until then, Check now only re-tests this connection."
+      },
       "connectedViaBrowser": "{{board}} connected via browser extension",
       "boards": {
         "connected": "Connected",
