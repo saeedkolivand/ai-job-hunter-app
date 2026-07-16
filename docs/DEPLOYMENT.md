@@ -319,16 +319,16 @@ This identifier is used for:
 
 The app stores all user data in the OS app data directory:
 
-| Platform | Path                                           |
-| -------- | ---------------------------------------------- |
-| Windows  | `%APPDATA%\ai-job-hunter\`                     |
-| macOS    | `~/Library/Application Support/ai-job-hunter/` |
-| Linux    | `~/.local/share/ai-job-hunter/`                |
+| Platform | Path                                             |
+| -------- | ------------------------------------------------ |
+| Windows  | `%APPDATA%\com.ajh.desktop\`                     |
+| macOS    | `~/Library/Application Support/com.ajh.desktop/` |
+| Linux    | `~/.local/share/com.ajh.desktop/`                |
 
 Contents:
 
 ```
-ai-job-hunter/
+com.ajh.desktop/
 ├── documents.db    ← imported docs + embedding vectors (vectors/posting_vectors/match_scores tables)
 ├── jobs.db         ← scraped/tracked jobs  (+ applications.db, ai_generations.db, job_preferences.db,
 │                     contact_profile.db, referrals.db, pipeline_cache.db — one SQLite file per domain)
