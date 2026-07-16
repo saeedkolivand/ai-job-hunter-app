@@ -25,7 +25,7 @@
 <p align="center">
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><img alt="Release" src="https://img.shields.io/github/v/release/saeedkolivand/ai-job-hunter-app?color=e24b4a&label=release"></a>
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><img alt="Downloads" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/saeedkolivand/ai-job-hunter-app/badges/downloads.json"></a>
-  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/saeedkolivand/ai-job-hunter-app/ci-pipeline.yml?branch=main&label=CI"></a>
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/saeedkolivand/ai-job-hunter-app/ci-pipeline.yml?label=CI"></a>
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/saeedkolivand/ai-job-hunter-app"></a>
   <a href="LICENSE"><img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-orange.svg"></a>
 </p>
