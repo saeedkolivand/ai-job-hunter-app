@@ -6,6 +6,7 @@ import { createMockClient, makeQueryClient, renderHookWithClient } from '@/test-
 import { keys } from '../query-client';
 import {
   useExtensionAiAssistSetting,
+  useExtensionBridgeEvents,
   useExtensionBridgeStatus,
   useRegenerateExtensionToken,
   useSetExtensionAiAssistSetting,
@@ -35,6 +36,75 @@ describe('useExtensionBridgeStatus', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(result.current.data).toEqual(offline);
+  });
+});
+
+describe('useExtensionBridgeEvents', () => {
+  it('invalidates extensionBridge.status when the onChanged listener fires', async () => {
+    // Capture the listener registered via api.extensionBridge.onChanged so we
+    // can fire it manually — simulates the bridge's `extensionBridge:changed`
+    // push arriving on a pair/unpair transition.
+    let capturedListener: ((event: unknown) => void) | null = null;
+    const onChanged = vi.fn((cb: (event: unknown) => void) => {
+      capturedListener = cb;
+      return () => {};
+    });
+
+    const client = createMockClient({
+      'extensionBridge.onChanged': onChanged,
+    });
+    const queryClient = makeQueryClient();
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+
+    renderHookWithClient(() => useExtensionBridgeEvents(), { client, queryClient });
+
+    expect(onChanged).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      capturedListener?.({ connected: true });
+      await Promise.resolve();
+    });
+
+    expect(invalidate).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: keys.extensionBridge.status })
+    );
+  });
+
+  it('forwards the event to the optional onChanged callback', async () => {
+    let capturedListener: ((event: unknown) => void) | null = null;
+    const onChanged = vi.fn((cb: (event: unknown) => void) => {
+      capturedListener = cb;
+      return () => {};
+    });
+
+    const client = createMockClient({
+      'extensionBridge.onChanged': onChanged,
+    });
+    const externalHandler = vi.fn();
+
+    renderHookWithClient(() => useExtensionBridgeEvents(externalHandler), { client });
+
+    const event = { connected: false };
+    await act(async () => {
+      capturedListener?.(event);
+      await Promise.resolve();
+    });
+
+    expect(externalHandler).toHaveBeenCalledWith(event);
+  });
+
+  it('unsubscribes on unmount so no stale listener leaks', () => {
+    const off = vi.fn();
+    const onChanged = vi.fn(() => off);
+
+    const client = createMockClient({
+      'extensionBridge.onChanged': onChanged,
+    });
+    const { unmount } = renderHookWithClient(() => useExtensionBridgeEvents(), { client });
+
+    unmount();
+
+    expect(off).toHaveBeenCalledTimes(1);
   });
 });
 

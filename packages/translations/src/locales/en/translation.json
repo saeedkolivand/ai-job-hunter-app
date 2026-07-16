@@ -768,6 +768,8 @@
         "portUnavailable": "Unavailable",
         "help": "Pair the AI Job Hunter browser extension to send jobs straight from any job board into your tracker.",
         "availability": "Available for Chrome and Firefox.",
+        "multiDevice": "You can pair more than one browser with this same token. Regenerate token disconnects all of them, not just the one you're using now.",
+        "refresh": "Refresh",
         "regenerate": "Regenerate token",
         "regenerated": "Pairing token regenerated. Re-pair your browser to reconnect.",
         "regenerateFailed": "Could not regenerate the token.",

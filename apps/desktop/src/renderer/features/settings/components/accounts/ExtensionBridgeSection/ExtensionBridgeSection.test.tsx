@@ -160,6 +160,54 @@ describe('ExtensionBridgeSection', () => {
     expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
   });
 
+  it('clicking the refresh button re-fetches the status query and keeps its label visible while pending', async () => {
+    // The second call (the manual refetch triggered by the click) stays
+    // pending until the test resolves it, so we can assert the label + spin
+    // state mid-flight.
+    let resolvePending: (v: ExtensionBridgeStatus) => void = () => {};
+    const statusFn = vi
+      .fn()
+      .mockResolvedValueOnce({ port: 9712, connected: true, token: 'tok-abc123' })
+      .mockImplementationOnce(
+        () =>
+          new Promise<ExtensionBridgeStatus>((resolve) => {
+            resolvePending = resolve;
+          })
+      );
+    const client = createMockClient({ 'extensionBridge.status': statusFn });
+    const queryClient = makeQueryClient();
+
+    function Wrapper({ children }: { children: ReactNode }) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          <AppClientProvider client={client}>
+            <NotificationProvider>{children}</NotificationProvider>
+          </AppClientProvider>
+        </QueryClientProvider>
+      );
+    }
+
+    render(<ExtensionBridgeSection />, { wrapper: Wrapper });
+
+    const refreshBtn = await screen.findByRole('button', { name: /refresh/i });
+    await waitFor(() => expect(statusFn).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(refreshBtn);
+
+    // The button's accessible label must never vanish while pending — only
+    // its icon animates.
+    expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument();
+    expect(statusFn).toHaveBeenCalledTimes(2);
+    expect(refreshBtn.querySelector('svg')).toHaveClass('animate-spin');
+
+    resolvePending({ port: 9712, connected: true, token: 'tok-abc123' });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument();
+      expect(refreshBtn.querySelector('svg')).not.toHaveClass('animate-spin');
+    });
+  });
+
   it('opens the ConfirmModal when Regenerate is clicked (modal gates mutation)', async () => {
     renderSection();
 
