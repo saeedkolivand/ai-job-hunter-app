@@ -53,10 +53,14 @@ function getTodayDate() {
  */
 function getGitChangeDate(filePath) {
   try {
-    const output = execFileSync('git', ['log', '-1', '--format=%as', '--', filePath], {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'ignore'], // suppress stderr
-    }).trim();
+    const output = execFileSync(
+      'git',
+      ['log', '-1', '--date=short', '--format=%ad', '--', filePath],
+      {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'], // suppress stderr
+      }
+    ).trim();
     return output || undefined;
   } catch {
     return undefined;
@@ -66,49 +70,51 @@ function getGitChangeDate(filePath) {
 /**
  * Bump the "Last updated: YYYY-MM-DD" header in a markdown file.
  * Only touches the date; preserves trailing text like "(v1.0)" or "(task #16: ...)".
+ * Preserves exact line endings in the file (doesn't normalize).
  * Returns true if the file was modified, false otherwise.
  */
 function bumpLastUpdated(filePath, newDate) {
-  let content = readFileSync(filePath, 'utf-8');
+  const content = readFileSync(filePath, 'utf-8');
 
-  // Normalize line endings to \n for processing
-  const normalized = content.replace(/\r\n/g, '\n');
-  const lines = normalized.split('\n');
+  // Split by any line ending (LF or CRLF), keeping track of original line ending style.
+  // Use a regex that captures the line ending so we can restore it exactly.
+  const lineEndingMatch = content.match(/\r\n|\n/);
+  const lineEnding = lineEndingMatch ? lineEndingMatch[0] : '\n';
+  const lines = content.split(lineEndingMatch ? lineEndingMatch[0] : /\r\n|\n/);
 
   // Look for the "Last updated:" line in the first ~10 lines
-  let found = false;
-  for (let i = 0; i < Math.min(10, lines.length); i++) {
-    const line = lines[i];
-    const match = line.match(/^(Last updated:) \d{4}-\d{2}-\d{2}(.*)$/);
+  let headerIndex = -1;
+  let oldDate = null;
 
+  for (let i = 0; i < Math.min(10, lines.length); i++) {
+    const match = lines[i].match(/^Last updated: (\d{4}-\d{2}-\d{2})(.*)$/);
     if (match) {
-      const oldDate = line.match(/\d{4}-\d{2}-\d{2}/)[0];
-      if (oldDate !== newDate) {
-        // Replace the date, keep everything else (prefix + suffix)
-        lines[i] = `${match[1]} ${newDate}${match[2]}`;
-        found = true;
-      } else {
-        // Date is already current, no change needed
-        return false;
-      }
+      headerIndex = i;
+      oldDate = match[1];
       break;
     }
   }
 
-  if (!found) {
+  if (headerIndex === -1) {
     // No "Last updated:" header found, skip this file
     return false;
   }
 
-  const modified = lines.join('\n');
+  if (oldDate === newDate) {
+    // Date is already current, no change needed
+    return false;
+  }
 
-  // Restore original line endings (if the file had CRLF, use CRLF; else \n)
-  const hasOriginalCRLF = content.includes('\r\n');
-  const final = hasOriginalCRLF ? modified.replace(/\n/g, '\r\n') : modified;
+  // Replace only the header line, keeping the date that was captured
+  lines[headerIndex] = `Last updated: ${newDate}${lines[headerIndex].substring(
+    `Last updated: ${oldDate}`.length
+  )}`;
+
+  const modified = lines.join(lineEnding);
 
   // Only write if content actually changed
-  if (final !== content) {
-    writeFileSync(filePath, final, 'utf-8');
+  if (modified !== content) {
+    writeFileSync(filePath, modified, 'utf-8');
     return true;
   }
 
@@ -118,7 +124,7 @@ function bumpLastUpdated(filePath, newDate) {
 /**
  * Main: process argv as file paths.
  */
-async function main() {
+function main() {
   const argv = process.argv.slice(2);
   const backfillFromGit = argv.includes('--backfill-from-git');
 
@@ -160,7 +166,9 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+try {
+  main();
+} catch (err) {
   process.stderr.write(`Error: ${err.message}\n`);
   process.exit(1);
-});
+}
