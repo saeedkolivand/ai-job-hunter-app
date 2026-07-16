@@ -172,8 +172,8 @@ Five-step IPC agentic loop: `agent_run` command → validated request → spawne
 | Cancellation-token registry      | ✅     | Jobs spawned via `agent_run` register CancellationToken in `ScraperEngine`; `jobs_cancel` reaches them                                                                                                                                                                                                                                                           |
 | Streaming `agent:step` events    | ✅     | Per-turn narration (plan + tool calls) and terminal proposal, streamed to the Job Detail pane (`PrepApplicationPanel`)                                                                                                                                                                                                                                           |
 | Prompt normalization (Rust)      | ✅     | System + user prompts in Rust; per-flow in `flows.rs`. See `draft_cover_letter` / `suggest_interview_questions` compact Rust implementations vs TS `@ajh/prompts` builders (drift risk)                                                                                                                                                                          |
+| Interview practice mode          | ✅     | Mock questions + star answer feedback via `suggest_interview_questions` tool; interactive drill UI for candidate preparation (PR #623, v0.126.0)                                                                                                                                                                                                                 |
 
-| Interview practice mode | ✅ | Mock questions + star answer feedback via `suggest_interview_questions` tool; interactive drill UI for candidate preparation (PR #623, v0.126.0) |
 ---
 
 ## UI / UX
@@ -227,8 +227,8 @@ Auto-detect applications via email confirmation watches (IMAP polling foundation
 
 | Feature                    | Status | Notes                                                                                                                |
 | -------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
-| Email provider connection  | ✅     | Gmail via OAuth app-password flow; integrated into Settings (PR #689, foundational, v0.126.0)                        |
-| IMAP store + polling       | 🚧     | EmailWatchStore with poller/parser/matcher; watcher spawned at startup; ADR-0013                                     |
+| Email provider connection  | ✅     | Gmail via IMAP app password (OS keychain, no OAuth — ADR-0013 records why); integrated into Settings (PR #689)       |
+| IMAP store + polling       | 🚧     | EmailWatchStore shipped (#689); poller/parser/matcher + startup watcher built, in review (Layer C PR B); ADR-0013    |
 | Confirmation email parsing | 🚧     | Template-driven regex matchers for job board confirmation emails (in-progress, deferred: multi-board matcher tuning) |
 
 ---
