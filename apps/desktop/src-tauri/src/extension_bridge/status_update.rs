@@ -97,8 +97,11 @@ pub(super) fn status_result_reply(req_id: &str, outcome: AppResult<StatusUpdateO
 /// presentation only (it distinguishes "no match" from "not saved" for the
 /// user-facing message), so a status change racing between that read and the
 /// write can never be silently overwritten. The CAS appends the status event
-/// with a short fixed note ("via extension" — no page-derived text, per the
-/// untrusted-text discipline) and sets `applied_at` in the SAME transaction.
+/// with a short fixed note — "via extension" for a deliberate popup click, or
+/// "auto-tracked via extension" for an automated Task-#22 write (mirrors the
+/// notification-body discrimination in `handle_status_update`) — never
+/// page-derived text, per the untrusted-text discipline — and sets
+/// `applied_at` in the SAME transaction.
 pub(super) fn resolve_status_update(
     store: &ApplicationStore,
     payload: &Value,
@@ -142,12 +145,17 @@ pub(super) fn resolve_status_update(
     // stale by the time we write. `Ok(false)` means the guard lost the race
     // (status moved on between the read and here) — refuse with the same
     // user-facing sentinel as the pre-check above, never a partial write.
+    let note = if is_auto_status_update(payload) {
+        "auto-tracked via extension"
+    } else {
+        "via extension"
+    };
     let transitioned = store
         .transition_status_if(
             &app.id,
             ApplicationStatus::Saved,
             ApplicationStatus::Applied,
-            Some("via extension"),
+            Some(note),
         )
         .map_err(|e| {
             // Wire-error discipline: never let a raw store error (path/SQL

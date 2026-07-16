@@ -8,7 +8,7 @@
  * whenever the popup sends its first message.
  */
 
-import { browser } from '@wxt-dev/browser';
+import { type Browser, browser } from '@wxt-dev/browser';
 
 import type {
   ExtensionAnswerAssistRequest,
@@ -67,8 +67,10 @@ const ANSWER_REPLACE_GLOBAL = '__ajhRunAnswerReplace';
  *  form submit (Task #22). Duplicated as a local literal — MUST match
  *  `SUBMIT_DETECTED_MSG` in `lib/submit-watch.ts` — so that pure DOM module
  *  (and its `field-signal` dependency) never bundles into the background's
- *  runtime graph (same discipline as `AUTOFILL_GLOBAL` above). */
-const SUBMIT_DETECTED_MSG = 'submitDetected';
+ *  runtime graph (same discipline as `AUTOFILL_GLOBAL` above). Exported ONLY
+ *  so `background.test.ts` can pin this literal against the imported const —
+ *  a future edit to one side can't silently break routing. */
+export const SUBMIT_DETECTED_MSG = 'submitDetected';
 
 /** Popup requests whose handling injects a script into the active page — after
  *  a SUCCESSFUL one we arm the auto-track submit watcher (opt-in gated,
@@ -942,15 +944,23 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
 
 // ── wiring ────────────────────────────────────────────────────────────────────
 
-browser.runtime.onMessage.addListener((message: unknown): Promise<PopupResponse> | undefined => {
-  // The injected submit-watcher posts a fire-and-forget `submitDetected` — it
-  // is NOT a popup request and expects no response, so handle it out-of-band.
-  if (isSubmitDetected(message)) {
-    void handleSubmitDetected(message.url, submitFlowDeps());
-    return undefined;
+browser.runtime.onMessage.addListener(
+  (message: unknown, sender: Browser.runtime.MessageSender): Promise<PopupResponse> | undefined => {
+    // The injected submit-watcher posts a fire-and-forget `submitDetected` — it
+    // is NOT a popup request and expects no response, so handle it out-of-band.
+    if (isSubmitDetected(message)) {
+      // Belt-and-braces MV3 hygiene: this extension declares no
+      // `externally_connectable`, so no other extension/page can ever reach
+      // this listener — but require the sender to be THIS extension anyway
+      // before acting on it (defense-in-depth, costs nothing).
+      if (sender.id === browser.runtime.id) {
+        void handleSubmitDetected(message.url, submitFlowDeps());
+      }
+      return undefined;
+    }
+    return handleRequest(message as PopupRequest);
   }
-  return handleRequest(message as PopupRequest);
-});
+);
 
 // Re-probe on the lifecycle wake points so a freshly-started worker reconnects.
 browser.runtime.onStartup.addListener(() => {
