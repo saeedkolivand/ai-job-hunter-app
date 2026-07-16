@@ -97,3 +97,30 @@ pub async fn extension_bridge_set_ai_assist_enabled(app: AppHandle, enabled: boo
         None => json!({ "enabled": false }),
     }
 }
+
+/// Current auto-track opt-in: `{ enabled }` (Task #22) — default OFF. Gates the
+/// extension's gesture submit-watcher (the extension reads it via
+/// `autotrack.check`) AND the desktop honoring an AUTO `status.update`. Default
+/// OFF when the bridge state isn't managed (start-up failure) — the safe state.
+#[tauri::command]
+pub async fn extension_bridge_auto_track_enabled(app: AppHandle) -> Value {
+    let enabled = app
+        .try_state::<BridgeState>()
+        .map(|s| s.autotrack_enabled())
+        .unwrap_or(false);
+    json!({ "enabled": enabled })
+}
+
+/// Set (and persist) the auto-track opt-in; echoes the stored value:
+/// `{ enabled }`. A bare boolean — the auto-mark-applied consent gate. A no-op
+/// returning `false` when the bridge state is unavailable.
+#[tauri::command]
+pub async fn extension_bridge_set_auto_track_enabled(app: AppHandle, enabled: bool) -> Value {
+    match app.try_state::<BridgeState>() {
+        Some(state) => {
+            state.set_autotrack_enabled(enabled);
+            json!({ "enabled": state.autotrack_enabled() })
+        }
+        None => json!({ "enabled": false }),
+    }
+}

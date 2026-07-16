@@ -84,6 +84,7 @@ function injectedEntries(): Plugin {
         'capture-questions',
         'answer-fill',
         'answer-replace',
+        'submit-watch',
       ]) {
         await build({
           configFile: false,

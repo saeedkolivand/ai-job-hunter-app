@@ -175,6 +175,8 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       setAutofillEnabled: async (enabled: boolean) => ({ enabled }),
       aiAssistEnabled: async () => ({ enabled: false }),
       setAiAssistEnabled: async (enabled: boolean) => ({ enabled }),
+      autoTrackEnabled: async () => ({ enabled: false }),
+      setAutoTrackEnabled: async (enabled: boolean) => ({ enabled }),
     },
 
     scrape: {

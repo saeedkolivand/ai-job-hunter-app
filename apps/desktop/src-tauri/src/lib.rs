@@ -919,6 +919,8 @@ pub fn run() {
             commands::extension_bridge::extension_bridge_set_autofill_enabled,
             commands::extension_bridge::extension_bridge_ai_assist_enabled,
             commands::extension_bridge::extension_bridge_set_ai_assist_enabled,
+            commands::extension_bridge::extension_bridge_auto_track_enabled,
+            commands::extension_bridge::extension_bridge_set_auto_track_enabled,
             // export
             export::commands::documents_export_document,
             export::commands::documents_export_and_save,

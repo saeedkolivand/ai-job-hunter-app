@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   ExtensionAiAssistSetting,
   ExtensionAutofillSetting,
+  ExtensionAutoTrackSetting,
   ExtensionBridgeStatus,
   ExtensionBridgeTokenResult,
 } from '@ajh/shared';
@@ -99,6 +100,32 @@ export const useSetExtensionAiAssistSetting = () => {
     mutationFn: ({ enabled }) => api.extensionBridge.setAiAssistEnabled(enabled),
     onSuccess: (data) => {
       qc.setQueryData(keys.extensionBridge.aiAssist, data);
+    },
+  });
+};
+
+/**
+ * Auto-track opt-in (default OFF) — a SEPARATE gate from autofill/ai-assist
+ * (Task #22). When on, the extension arms a gesture submit-watcher that
+ * auto-marks a matched `saved` application `applied` on a detected form submit.
+ * Desktop-enforced: the desktop also re-checks it before honoring the write.
+ */
+export const useExtensionAutoTrackSetting = () => {
+  const api = useAppClient();
+  return useQuery<ExtensionAutoTrackSetting>({
+    queryKey: keys.extensionBridge.autoTrack,
+    queryFn: () => api.extensionBridge.autoTrackEnabled(),
+  });
+};
+
+/** Toggle + persist the auto-track opt-in; refreshes the cached setting. */
+export const useSetExtensionAutoTrackSetting = () => {
+  const api = useAppClient();
+  const qc = useQueryClient();
+  return useMutation<ExtensionAutoTrackSetting, Error, boolean>({
+    mutationFn: (enabled: boolean) => api.extensionBridge.setAutoTrackEnabled(enabled),
+    onSuccess: (data) => {
+      qc.setQueryData(keys.extensionBridge.autoTrack, data);
     },
   });
 };

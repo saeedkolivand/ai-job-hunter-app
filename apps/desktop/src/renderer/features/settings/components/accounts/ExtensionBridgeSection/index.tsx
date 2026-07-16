@@ -9,11 +9,13 @@ import {
   useActiveConfig,
   useExtensionAiAssistSetting,
   useExtensionAutofillSetting,
+  useExtensionAutoTrackSetting,
   useExtensionBridgeStatus,
   useGenerateConfig,
   useRegenerateExtensionToken,
   useSetExtensionAiAssistSetting,
   useSetExtensionAutofillSetting,
+  useSetExtensionAutoTrackSetting,
 } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
 import { useUiStore } from '@/store/ui-store';
@@ -75,6 +77,22 @@ export function ExtensionBridgeSection() {
       await setAiAssist.mutateAsync({ enabled: next });
     } catch {
       notify.error({ message: t('settings.accounts.extension.aiAssist.toggleFailed') });
+    }
+  };
+
+  // Auto-track: a SEPARATE opt-in (default OFF). When on, the extension arms a
+  // gesture submit-watcher that auto-marks a matched `saved` job `applied` on a
+  // detected form submit — desktop-enforced (the desktop re-checks the opt-in
+  // before honoring the automated write).
+  const { data: autoTrack } = useExtensionAutoTrackSetting();
+  const setAutoTrack = useSetExtensionAutoTrackSetting();
+  const autoTrackEnabled = autoTrack?.enabled ?? false;
+
+  const handleToggleAutoTrack = async (next: boolean) => {
+    try {
+      await setAutoTrack.mutateAsync(next);
+    } catch {
+      notify.error({ message: t('settings.accounts.extension.autoTrack.toggleFailed') });
     }
   };
 
@@ -222,6 +240,21 @@ export function ExtensionBridgeSection() {
             />
             <p className="text-[11px] leading-snug text-foreground/40">
               {t('settings.accounts.extension.aiAssist.disclosure')}
+            </p>
+          </div>
+
+          {/* Auto-track opt-in (default OFF) — a SEPARATE gate: auto-marks a
+              matched saved job applied on a detected form submit. */}
+          <div className="space-y-2 border-t border-foreground/10 pt-3">
+            <Switch
+              checked={autoTrackEnabled}
+              onCheckedChange={(next) => void handleToggleAutoTrack(next)}
+              disabled={setAutoTrack.isPending}
+              label={t('settings.accounts.extension.autoTrack.label')}
+              description={t('settings.accounts.extension.autoTrack.description')}
+            />
+            <p className="text-[11px] leading-snug text-foreground/40">
+              {t('settings.accounts.extension.autoTrack.disclosure')}
             </p>
           </div>
 

@@ -10,10 +10,37 @@
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-use super::msg;
+use super::{msg, BridgeState};
 use crate::applications::{normalize_job_url, ApplicationStatus, ApplicationStore};
 use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, APPLICATIONS_CHANGED};
+
+/// Refusal text when an AUTOMATED (`auto: true`) `status.update` arrives while
+/// the auto-track opt-in is off — an actionable, fixed sentinel (no dynamic /
+/// path / PII content on the wire). The extension folds this into a silent
+/// no-op (an auto write is a passive background action, not a user click), but
+/// the desktop still returns a clear reason for its own log.
+const AUTOTRACK_OFF_MESSAGE: &str =
+    "Auto-track is off. Turn it on in AI Job Hunter → Settings → Accounts → Browser extension.";
+
+/// The `auto` flag on a `status.update` payload (default false when absent) —
+/// true marks the AUTOMATED Task-#22 write from the gesture submit-watcher, as
+/// opposed to a deliberate popup "Mark as applied" click.
+pub(super) fn is_auto_status_update(payload: &Value) -> bool {
+    payload
+        .get("auto")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+/// Whether an AUTO `status.update` must be REFUSED: an auto-flagged write is
+/// honored only while the auto-track opt-in is on. A non-auto (deliberate popup
+/// click) write is never refused here — it keeps its existing ungated behavior.
+/// Defense-in-depth: the extension also gates ARMING client-side, but a
+/// compromised extension must not auto-write `applied` without the user's opt-in.
+pub(super) fn auto_write_refused(payload: &Value, autotrack_enabled: bool) -> bool {
+    is_auto_status_update(payload) && !autotrack_enabled
+}
 
 /// The `status.update` outcome: the transitioned Application's id + new status
 /// (always `"applied"`), plus a title/company snapshot used ONLY to name the
@@ -70,8 +97,11 @@ pub(super) fn status_result_reply(req_id: &str, outcome: AppResult<StatusUpdateO
 /// presentation only (it distinguishes "no match" from "not saved" for the
 /// user-facing message), so a status change racing between that read and the
 /// write can never be silently overwritten. The CAS appends the status event
-/// with a short fixed note ("via extension" — no page-derived text, per the
-/// untrusted-text discipline) and sets `applied_at` in the SAME transaction.
+/// with a short fixed note — "via extension" for a deliberate popup click, or
+/// "auto-tracked via extension" for an automated Task-#22 write (mirrors the
+/// notification-body discrimination in `handle_status_update`) — never
+/// page-derived text, per the untrusted-text discipline — and sets
+/// `applied_at` in the SAME transaction.
 pub(super) fn resolve_status_update(
     store: &ApplicationStore,
     payload: &Value,
@@ -115,12 +145,17 @@ pub(super) fn resolve_status_update(
     // stale by the time we write. `Ok(false)` means the guard lost the race
     // (status moved on between the read and here) — refuse with the same
     // user-facing sentinel as the pre-check above, never a partial write.
+    let note = if is_auto_status_update(payload) {
+        "auto-tracked via extension"
+    } else {
+        "via extension"
+    };
     let transitioned = store
         .transition_status_if(
             &app.id,
             ApplicationStatus::Saved,
             ApplicationStatus::Applied,
-            Some("via extension"),
+            Some(note),
         )
         .map_err(|e| {
             // Wire-error discipline: never let a raw store error (path/SQL
@@ -151,6 +186,21 @@ pub(super) fn resolve_status_update(
 /// local store on an exact match, strictly narrower than the already-ungated
 /// `import.request{applied:true}` (see the doc note on [`msg::STATUS_UPDATE`]).
 pub(super) fn handle_status_update(app: &AppHandle, req_id: &str, payload: &Value) -> String {
+    // Defense-in-depth (Task #22): an AUTOMATED write (`auto: true`) is honored
+    // ONLY when the auto-track opt-in is on. A deliberate popup click (no `auto`
+    // flag) stays ungated exactly as before — this refuses nothing for it.
+    let autotrack_enabled = app
+        .try_state::<BridgeState>()
+        .map(|s| s.autotrack_enabled())
+        .unwrap_or(false);
+    if auto_write_refused(payload, autotrack_enabled) {
+        return status_result_reply(
+            req_id,
+            Err(AppError::Validation(AUTOTRACK_OFF_MESSAGE.to_string())),
+        );
+    }
+    let auto = is_auto_status_update(payload);
+
     let outcome = app
         .try_state::<ApplicationStore>()
         .ok_or_else(|| AppError::Config("applications store unavailable".to_string()))
@@ -180,7 +230,11 @@ pub(super) fn handle_status_update(app: &AppHandle, req_id: &str, payload: &Valu
             crate::notifications::NewNotification {
                 kind: "status.update".to_string(),
                 title: format!("Marked \"{display_name}\" as applied"),
-                body: "via the browser extension".to_string(),
+                body: if auto {
+                    "auto-tracked on a detected form submit".to_string()
+                } else {
+                    "via the browser extension".to_string()
+                },
                 route: Some(crate::notifications::NotificationRoute {
                     to: "/applications".to_string(),
                     search: Some(search),
