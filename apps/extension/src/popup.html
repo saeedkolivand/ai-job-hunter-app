@@ -58,13 +58,18 @@
 
       <!-- Help popover: explains the local-only connection and what to do when the
            app isn't running — the guidance the offline view used to spell out inline.
-           Toggled by #btn-help; hidden by default. -->
-      <p id="help-popover" class="help-popover" role="region" aria-label="How this works" hidden>
-        The extension talks to the desktop app only on your own computer (loopback). If the status
-        shows “App not running”, open AI Job Hunter and reopen this popup.
-      </p>
+           Toggled by #btn-help; hidden by default. Also hosts "Unpair this device" —
+           moved off the import view's standing row (see #view-import's Job group). -->
+      <div id="help-popover" class="help-popover" role="region" aria-label="How this works" hidden>
+        <p>
+          The extension talks to the desktop app only on your own computer (loopback). If the status
+          shows “App not running”, open AI Job Hunter and reopen this popup.
+        </p>
+        <button id="btn-unpair" class="link" type="button">Unpair this device</button>
+      </div>
 
-      <!-- Import view: shown when paired + connected. -->
+      <!-- Import view: shown when paired + connected. Grouped by job-to-be-done
+           (Job / Form / Answer tools) instead of one flat stack. -->
       <section id="view-import" class="view" hidden>
         <!-- Persistent "authorized" cue: this section only renders when phase ===
              'connected', which requires a stored pairing token — so the button is
@@ -81,145 +86,172 @@
           ✓ Authorized
         </button>
         <p class="hint">Import the job on this page into your desktop app.</p>
-        <!-- Fire-and-forget "have I already applied?" line, populated after the
-             popup opens (background auto-check). Empty/hidden until (and unless)
-             an existing Application is found — never shown on a failure/timeout. -->
-        <p id="applied-status" class="msg msg--ok" role="status" aria-live="polite" hidden></p>
-        <!-- Shown only for a found+saved applied.check result; hides itself once
-             the job is marked applied (re-fires the same auto-check). -->
-        <button id="btn-mark-applied" class="btn" type="button" hidden>Mark as applied</button>
-        <div class="actions">
+
+        <!-- Job group: always shown — import, fit-check, applied state. -->
+        <section class="group" aria-label="Job">
+          <!-- Fire-and-forget "have I already applied?" line, populated after the
+               popup opens (background auto-check). Empty/hidden until (and unless)
+               an existing Application is found — never shown on a failure/timeout. -->
+          <p id="applied-status" class="msg msg--ok" role="status" aria-live="polite" hidden></p>
+          <!-- Shown only for a found+saved applied.check result; hides itself once
+               the job is marked applied (re-fires the same auto-check). -->
+          <button id="btn-mark-applied" class="btn btn--quiet" type="button" hidden>
+            Mark as applied
+          </button>
           <button id="btn-import" class="btn btn--primary" type="button">Import this job</button>
+          <!-- Explicit, never automatic: scores the default/most-recent resume against
+               this page's posting (keyword coverage only — a local computation; only
+               the score + a few missing keywords ever leave the device). -->
+          <button
+            id="btn-check-fit"
+            class="btn btn--quiet"
+            type="button"
+            title="Score your resume against this page's job posting"
+          >
+            Check fit
+          </button>
+          <div id="match-result" class="match-result" hidden></div>
+          <label class="check">
+            <input id="chk-applied" type="checkbox" />
+            <span>I already applied to this job</span>
+          </label>
+        </section>
+
+        <!-- Form group: assisted autofill + answer capture — hidden (together with
+             the Answer-tools disclosure below) when this page has no fillable
+             fields (see popup.ts's fields probe, run once on connect). -->
+        <section id="group-form" class="group group--divided" aria-label="Form">
           <button
             id="btn-fill"
-            class="btn"
+            class="btn btn--primary"
             type="button"
             title="Fill this page's form with your saved contact details (opt-in, review before submitting)"
           >
             Fill this form
           </button>
-        </div>
-        <label class="check">
-          <input id="chk-applied" type="checkbox" />
-          <span>I already applied to this job</span>
-        </label>
-        <!-- Always offered alongside the mark-as-applied flow — the post-submit
-             one-stop gesture. No match for this page → the desktop refuses with
-             a message to import the job first (never auto-creates). -->
-        <button
-          id="btn-save-answers"
-          class="btn"
-          type="button"
-          title="Save the answers you typed on this page's application form"
-        >
-          Save my answers from this page
-        </button>
-        <!-- Fuzzy-matches this page's EMPTY questions against every past answer.
-             Populated on click; rows carry per-suggestion Copy + (when a live
-             field target exists and it isn't salary-like) Fill actions. -->
-        <button
-          id="btn-suggest-answers"
-          class="btn"
-          type="button"
-          title="Suggest answers from your past applications for this page's empty questions"
-        >
-          Suggest answers for this form
-        </button>
-        <div id="suggestions-list" class="suggestions" hidden></div>
-        <!-- AI answer drafting ("Help me answer…") — billable, gated on a
-             SEPARATE desktop opt-in from autofill/suggestions above. The
-             picker is fed by the SAME questions-mode scan "Suggest answers
-             for this form" already ran (no separate scan injection); a
-             pasted/typed question always works too. -->
-        <div class="assist">
-          <label class="assist__label" for="assist-picker">Or pick a scanned question</label>
-          <select id="assist-picker" class="assist__picker">
-            <option value="">— Paste or type a question below —</option>
-          </select>
-          <textarea
-            id="assist-question"
-            class="assist__question"
-            placeholder="Paste or type an application question…"
-            aria-label="Application question"
-            rows="2"
-          ></textarea>
-          <label class="check">
-            <input id="chk-search-web" type="checkbox" />
-            <span>Search the web for this answer</span>
-          </label>
+          <!-- Always offered alongside the mark-as-applied flow — the post-submit
+               one-stop gesture. No match for this page → the desktop refuses with
+               a message to import the job first (never auto-creates). -->
           <button
-            id="btn-assist"
-            class="btn"
+            id="btn-save-answers"
+            class="btn btn--quiet"
             type="button"
-            title="Draft a paste-ready answer using your resume and this page's context"
+            title="Save the answers you typed on this page's application form"
           >
-            Help me answer…
+            Save my answers from this page
           </button>
-          <div id="assist-result" class="assist-result" hidden>
-            <p id="assist-draft" class="assist-result__draft"></p>
-            <button id="btn-copy-assist" class="btn btn--small" type="button">Copy</button>
-          </div>
-        </div>
-        <!-- AI answer REWRITE ("Rewrite an answer", extension PR 11) — the SAME
-             billable opt-in as drafting above (never the autofill one). The
-             picker is fed by the SAME filled-fields scan "Save my answers from
-             this page" already ran (no separate scan injection). Pure text
-             transform: never pulls résumé/job grounding, only transforms the
-             picked field's existing text per a preset or free-text instruction. -->
-        <div class="assist">
-          <label class="assist__label" for="rewrite-picker">Pick a filled answer to rewrite</label>
-          <select id="rewrite-picker" class="assist__picker">
-            <option value="">— Save my answers first to scan this page —</option>
-          </select>
-          <div class="rewrite-presets" role="group" aria-label="Quick rewrite presets">
-            <button type="button" class="btn btn--small" data-preset="shorten">Shorten</button>
-            <button type="button" class="btn btn--small" data-preset="expand">Expand</button>
-            <button type="button" class="btn btn--small" data-preset="rephrase">Rephrase</button>
-            <button type="button" class="btn btn--small" data-preset="impact">More impact</button>
-            <button type="button" class="btn btn--small" data-preset="grammar">Fix grammar</button>
-          </div>
-          <input
-            id="rewrite-instruction"
-            class="assist__question"
-            type="text"
-            placeholder="Or type your own instruction…"
-            aria-label="Rewrite instruction"
-          />
+        </section>
+
+        <!-- Answer tools: collapsed by default (persisted expand/collapse
+             preference — see popup.ts's initAnswerToolsPreference); auto-expands
+             if a streamed AI answer is buffered/still running on reopen. Hidden
+             (together with the Form group above) when this page has no fillable
+             fields. -->
+        <details id="answer-tools" class="group group--divided">
+          <summary>Answer tools</summary>
+          <!-- Fuzzy-matches this page's EMPTY questions against every past answer.
+               Populated on click; rows carry per-suggestion Copy + (when a live
+               field target exists and it isn't salary-like) Fill actions. -->
           <button
-            id="btn-rewrite"
-            class="btn"
+            id="btn-suggest-answers"
+            class="btn btn--quiet"
             type="button"
-            title="Rewrite the picked answer using your typed instruction"
+            title="Suggest answers from your past applications for this page's empty questions"
           >
-            Rewrite this answer
+            Suggest answers for this form
           </button>
-          <div id="rewrite-result" class="assist-result" hidden>
-            <p id="rewrite-draft" class="assist-result__draft"></p>
-            <div class="rewrite-result__actions">
-              <button id="btn-copy-rewrite" class="btn btn--small" type="button">Copy</button>
-              <button id="btn-accept-rewrite" class="btn btn--small btn--primary" type="button">
-                Accept
-              </button>
-              <button id="btn-restore-rewrite" class="btn btn--small" type="button">
-                Restore original
+          <div id="suggestions-list" class="suggestions" hidden></div>
+          <!-- AI answer drafting ("Help me answer…") — billable, gated on a
+               SEPARATE desktop opt-in from autofill/suggestions above. The
+               picker is fed by the SAME questions-mode scan "Suggest answers
+               for this form" already ran (no separate scan injection); a
+               pasted/typed question always works too. -->
+          <div class="assist">
+            <label class="assist__label" for="assist-picker">Or pick a scanned question</label>
+            <select id="assist-picker" class="assist__picker">
+              <option value="">— Paste or type a question below —</option>
+            </select>
+            <textarea
+              id="assist-question"
+              class="assist__question"
+              placeholder="Paste or type an application question…"
+              aria-label="Application question"
+              rows="2"
+            ></textarea>
+            <label class="check">
+              <input id="chk-search-web" type="checkbox" />
+              <span>Search the web for this answer</span>
+            </label>
+            <button
+              id="btn-assist"
+              class="btn btn--quiet"
+              type="button"
+              title="Draft a paste-ready answer using your resume and this page's context"
+            >
+              Help me answer…
+            </button>
+            <div id="assist-result" class="assist-result" hidden>
+              <p id="assist-draft" class="assist-result__draft"></p>
+              <button id="btn-copy-assist" class="btn btn--small btn--quiet" type="button">
+                Copy
               </button>
             </div>
           </div>
-        </div>
-        <!-- Explicit, never automatic: scores the default/most-recent resume against
-             this page's posting (keyword coverage only — a local computation; only
-             the score + a few missing keywords ever leave the device). -->
-        <button
-          id="btn-check-fit"
-          class="btn"
-          type="button"
-          title="Score your resume against this page's job posting"
-        >
-          Check fit
-        </button>
-        <div id="match-result" class="match-result" hidden></div>
+          <!-- AI answer REWRITE ("Rewrite an answer", extension PR 11) — the SAME
+               billable opt-in as drafting above (never the autofill one). The
+               picker is fed by the SAME filled-fields scan "Save my answers from
+               this page" already ran (no separate scan injection). Pure text
+               transform: never pulls résumé/job grounding, only transforms the
+               picked field's existing text per a preset or free-text instruction. -->
+          <div class="assist">
+            <label class="assist__label" for="rewrite-picker"
+              >Pick a filled answer to rewrite</label
+            >
+            <select id="rewrite-picker" class="assist__picker">
+              <option value="">— Save my answers first to scan this page —</option>
+            </select>
+            <label class="assist__label" for="rewrite-preset">Quick preset</label>
+            <select id="rewrite-preset" class="assist__picker" aria-label="Quick rewrite preset">
+              <option value="">— Pick a preset —</option>
+              <option value="shorten">Shorten</option>
+              <option value="expand">Expand</option>
+              <option value="rephrase">Rephrase</option>
+              <option value="impact">More impact</option>
+              <option value="grammar">Fix grammar</option>
+            </select>
+            <input
+              id="rewrite-instruction"
+              class="assist__question"
+              type="text"
+              placeholder="Or type your own instruction…"
+              aria-label="Rewrite instruction"
+            />
+            <button
+              id="btn-rewrite"
+              class="btn btn--quiet"
+              type="button"
+              title="Rewrite the picked answer using your typed instruction"
+            >
+              Rewrite this answer
+            </button>
+            <div id="rewrite-result" class="assist-result" hidden>
+              <p id="rewrite-draft" class="assist-result__draft"></p>
+              <div class="rewrite-result__actions">
+                <button id="btn-copy-rewrite" class="btn btn--small btn--quiet" type="button">
+                  Copy
+                </button>
+                <button id="btn-accept-rewrite" class="btn btn--small btn--quiet" type="button">
+                  Accept
+                </button>
+                <button id="btn-restore-rewrite" class="btn btn--small btn--quiet" type="button">
+                  Restore original
+                </button>
+              </div>
+            </div>
+          </div>
+        </details>
+
         <p id="import-msg" class="msg" role="status" aria-live="polite"></p>
-        <button id="btn-unpair" class="link" type="button">Unpair this device</button>
       </section>
 
       <!-- Pairing view: shown when the app is reachable but no token is stored. -->
