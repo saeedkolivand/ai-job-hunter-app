@@ -3,8 +3,9 @@
  *
  * Covers:
  *  - Start is disabled (with a needsResume hint) when no résumé is saved.
- *  - Starting a run calls agent.run with the exact {resumeId, jobId, provider,
- *    model, baseUrl} payload sourced from useDefaultResumeId/useGenerateConfig.
+ *  - Starting a run calls agent.run with the exact {resumeId, jobId} payload
+ *    (provider/model/baseUrl are backend-resolved, task #25 — never sent);
+ *    useGenerateConfig's provider/model still gate the Start entry point.
  *  - A streamed `agent:step` turn (matching the run's own jobId) renders in
  *    the live checklist with its text; a step for a DIFFERENT jobId is ignored
  *    (cross-run contamination guard).
@@ -172,16 +173,13 @@ describe('PrepApplicationPanel — start gating', () => {
 });
 
 describe('PrepApplicationPanel — starting a run', () => {
-  it('calls agent.run with resumeId/jobId/provider/model/baseUrl and shows the starting indicator', async () => {
+  it('calls agent.run with only resumeId/jobId (routing is backend-resolved) and shows the starting indicator', async () => {
     openModal();
     await clickStart();
 
     expect(mockRunMutateAsync).toHaveBeenCalledWith({
       resumeId: 'resume-1',
       jobId: 'posting-1',
-      provider: 'ollama',
-      model: 'llama3',
-      baseUrl: undefined,
     });
     expect(screen.getByText('jobs.prep.starting')).toBeInTheDocument();
   });

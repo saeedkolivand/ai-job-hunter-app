@@ -85,8 +85,10 @@ function findLastMatch(steps: AgentStepEvent[], item: ChecklistItem): AgentStepE
  * "Prep this application" trigger + modal for a single job {@link Posting}.
  * Runs the agentic `agent.run` flow (Phase 2 — display-only, no write executes)
  * and streams its steps as a live checklist: research → match → draft cover
- * letter → draft résumé → questions → propose. Provider/model/résumé mirror the
- * same selection `ai_generate`/company-research already use.
+ * letter → draft résumé → questions → propose. `agent.run` only ever sends
+ * `{ resumeId, jobId }` — routing (provider/model/baseUrl) is backend-owned,
+ * resolved server-side from the active-provider store (task #25); `provider`/
+ * `model` below are read only to gate the entry point.
  *
  * Capability gate: today there's no renderer-visible "does this provider
  * support tool calls" signal, so a non-tool-capable provider/model is only
@@ -100,7 +102,7 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
   const [open, setOpen] = useState(false);
 
   const resumeId = useDefaultResumeId();
-  const { provider, model, baseUrl } = useGenerateConfig();
+  const { provider, model } = useGenerateConfig();
   const canRun = !!resumeId && !!provider && !!model;
 
   const [machineState, send] = useMachine(agentRunMachine, 'idle');
@@ -265,12 +267,12 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
     reconciledRef.current = false;
     send('START');
     try {
+      // Routing (provider/model/baseUrl) is backend-owned — resolved server-side
+      // from the active-provider store via `Completer::from_active` (task #25).
+      // `provider`/`model` above are read only to gate `canRun`/the entry point.
       const { jobId } = await runAgent.mutateAsync({
         resumeId,
         jobId: posting.id,
-        provider,
-        model,
-        baseUrl,
       });
       setRunJobId(jobId);
     } catch (err) {
@@ -278,7 +280,7 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
       setError(err instanceof Error ? err.message : t('jobs.prep.runFailed'));
       send('ERROR');
     }
-  }, [canRun, resumeId, isBusy, runAgent, posting.id, provider, model, baseUrl, send, t]);
+  }, [canRun, resumeId, isBusy, runAgent, posting.id, send, t]);
 
   const stop = () => {
     if (!runJobId) return;
