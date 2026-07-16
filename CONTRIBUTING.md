@@ -4,153 +4,15 @@ Thank you for contributing. This document covers everything you need to ship a c
 
 ---
 
-## Workflow
-
-### 1. Never push to `main`
-
-All work goes through pull requests. `main` is protected.
-
-```bash
-# Always branch from an up-to-date main
-git fetch origin
-git checkout main && git pull origin main
-git checkout -b feat/your-feature-name
-```
-
-### 2. Branch naming
-
-| Type     | Format                  | Example                    |
-| -------- | ----------------------- | -------------------------- |
-| Feature  | `feat/<short-name>`     | `feat/autopilot-scheduler` |
-| Bug fix  | `fix/<short-name>`      | `fix/pdf-export-crash`     |
-| Chore    | `chore/<short-name>`    | `chore/update-tauri`       |
-| Docs     | `docs/<short-name>`     | `docs/api-reference`       |
-| Refactor | `refactor/<short-name>` | `refactor/search-service`  |
-
-### 3. Commit messages (Conventional Commits)
-
-Format: `<type>(<scope>): <subject>`
-
-```
-feat(ai): add extended thinking support for Anthropic provider
-fix(scrape): handle captcha timeout on LinkedIn board
-chore(deps): update Tauri to 2.12
-docs(api): document search namespace
-refactor(jobs): extract job-tracker state machine
-```
-
-**Types and their version impact:**
-
-| Type                                           | Triggers release |
-| ---------------------------------------------- | ---------------- |
-| `feat:`                                        | minor bump       |
-| `fix:`, `perf:`                                | patch bump       |
-| `BREAKING CHANGE` footer                       | minor bump (0.x) |
-| `refactor:`, `docs:`, `chore:`, `ci:`, `test:` | no release       |
-
-Commits must pass `commitlint` (enforced by Husky). Invalid messages are rejected at commit time.
-
-### 4. Before pushing
-
-```bash
-pnpm lint:fix     # auto-fix lint issues
-pnpm typecheck    # verify no TypeScript errors
-pnpm test         # run the test suite
-```
-
-### 5. Open a PR
-
-```bash
-git push -u origin feat/your-feature-name
-gh pr create --title "feat(ai): add extended thinking support" --body "..."
-```
-
-PR checklist:
-
-- [ ] `pnpm typecheck` passes
-- [ ] `pnpm lint:strict` passes (no warnings)
-- [ ] Tests added or updated
-- [ ] Docs updated if adding/changing an IPC contract
-
----
-
-## Code Style
-
-### TypeScript
-
-- `strict: true` — no implicit `any`, no `@ts-ignore`
-- `import type` for all pure type imports (auto-fixed by `lint:fix`)
-- Import groups (blank line between each): `node:*` → external → `@ajh/*` → `@/*` → relative
-- No `// eslint-disable` — fix the issue or add a scoped override to `eslint.config.mjs` with a reason comment
-
-### React
-
-- Feature components live in `features/<name>/components/`
-- Shared components go in `packages/ui`
-- Chrome components go in `components/layout/`
-- No cross-feature imports
-- No `window.api.*` in feature or route files — use service hooks
-- No raw `<button>`, `<select>`, `<textarea>` — use `@ajh/ui` primitives
-
-### Styling
-
-- `text-brand`, `bg-brand`, `border-brand` — never hardcoded hex colors
-- No inline `{ duration, ease }` animation objects — use `transition.*` from `@ajh/ui`
-
-### i18n
-
-- `import { useTranslation } from "@ajh/translations"` — never from `react-i18next` directly
-
----
-
-## Adding a New IPC Capability
-
-Follow the 5-step checklist in [docs/PATTERNS.md](docs/PATTERNS.md#1-ipc-pattern-renderer--rust):
-
-1. Contract in `packages/shared/src/ipc/contracts/`
-2. Rust command in `apps/desktop/src-tauri/src/commands/`
-3. Tauri client wiring in `apps/desktop/src/tauri-client/index.ts`
-4. Service hook in `apps/desktop/src/renderer/services/`
-5. Query keys in `services/query-client.ts`
-
-Then document the new namespace in [docs/API.md](docs/API.md).
-
----
-
-## Testing
-
-```bash
-pnpm test           # run all tests
-pnpm test:watch     # watch mode
-```
-
-Use `createMockClient()` from `@/lib/mock-client` for React component tests. Never mock the database — use real in-memory SQLite for data layer tests.
-
----
-
-## Release Process
-
-Releases are fully automated. **Do not manually bump versions or tag.**
-
-1. Merge PR to `main`
-2. semantic-release analyzes commits
-3. If release-worthy (`feat:`, `fix:`, `perf:`), it bumps versions, writes changelog, creates GitHub Release, and CI builds platform installers
-
----
-
-## Original contributing notes below
-
----
-
 ## Table of Contents
 
 - [Development Setup](#development-setup)
 - [Monorepo Structure](#monorepo-structure)
+- [Workflow](#workflow)
 - [Commit Conventions](#commit-conventions)
-- [Branching Strategy](#branching-strategy)
-- [Pull Request Process](#pull-request-process)
-- [Testing](#testing)
 - [Code Style](#code-style)
+- [Adding a New IPC Capability](#adding-a-new-ipc-capability)
+- [Testing](#testing)
 - [Release Process](#release-process)
 
 ---
@@ -230,7 +92,7 @@ ai-job-hunter-app/
 ├── .prettierrc.json             # Prettier
 ├── commitlint.config.mjs        # Commit linting
 ├── vitest.config.ts             # Unit tests
-└── .releaserc.json              # semantic-release config
+└── .releaserc.json               # semantic-release config
 ```
 
 ### Package dependency graph
@@ -250,9 +112,57 @@ Build order: `shared → ui / prompts / translations / test-ids → desktop`
 
 ---
 
+## Workflow
+
+### 1. Never push to `main`
+
+All work goes through pull requests. `main` is protected and always releasable — every release ships from it.
+
+```bash
+# Always branch from an up-to-date main
+git fetch origin
+git checkout main && git pull origin main
+git checkout -b feat/your-feature-name
+```
+
+### 2. Branch naming
+
+| Type     | Format                  | Example                    |
+| -------- | ----------------------- | -------------------------- |
+| Feature  | `feat/<short-name>`     | `feat/autopilot-scheduler` |
+| Bug fix  | `fix/<short-name>`      | `fix/pdf-export-crash`     |
+| Chore    | `chore/<short-name>`    | `chore/update-tauri`       |
+| Docs     | `docs/<short-name>`     | `docs/api-reference`       |
+| Refactor | `refactor/<short-name>` | `refactor/search-service`  |
+
+### 3. Before pushing
+
+```bash
+pnpm lint:fix     # auto-fix lint issues
+pnpm typecheck    # verify no TypeScript errors
+pnpm test         # run the test suite
+```
+
+### 4. Open a PR
+
+```bash
+git push -u origin feat/your-feature-name
+gh pr create --title "feat(ai): add extended thinking support" --body "..."
+```
+
+PR checklist:
+
+- [ ] `pnpm typecheck` passes
+- [ ] `pnpm lint:strict` passes (no warnings)
+- [ ] Tests added or updated
+- [ ] Docs updated if adding/changing an IPC contract
+- [ ] CI is green and at least one review approval is granted before merge
+
+---
+
 ## Commit Conventions
 
-This project uses [Conventional Commits](https://www.conventionalcommits.org). Commit messages are enforced by commitlint (runs on every commit via husky).
+This project uses [Conventional Commits](https://www.conventionalcommits.org). Commit messages are enforced by commitlint (runs on every commit via Husky) — invalid messages are rejected at commit time.
 
 ### Format
 
@@ -266,19 +176,20 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org). C
 
 ### Types
 
-| Type       | When to use                    | Triggers release |
-| ---------- | ------------------------------ | ---------------- |
-| `feat`     | New feature                    | Minor            |
-| `fix`      | Bug fix                        | Patch            |
-| `perf`     | Performance improvement        | Patch            |
-| `ui`       | UI/UX change                   | Patch            |
-| `refactor` | Code refactor (no feature/fix) | No               |
-| `docs`     | Documentation only             | No               |
-| `test`     | Tests only                     | No               |
-| `build`    | Build system                   | No               |
-| `ci`       | CI/CD                          | No               |
-| `chore`    | Maintenance                    | No               |
-| `revert`   | Revert a commit                | Patch            |
+| Type       | When to use                     | Triggers release |
+| ---------- | ------------------------------- | ---------------- |
+| `feat`     | New feature                     | Minor            |
+| `fix`      | Bug fix                         | Patch            |
+| `perf`     | Performance improvement         | Patch            |
+| `ui`       | UI/UX change                    | Patch            |
+| `refactor` | Code refactor (no feature/fix)  | No               |
+| `docs`     | Documentation only              | No               |
+| `style`    | Formatting only, no code change | No               |
+| `test`     | Tests only                      | No               |
+| `build`    | Build system                    | No               |
+| `ci`       | CI/CD                           | No               |
+| `chore`    | Maintenance                     | No               |
+| `revert`   | Revert a commit                 | Patch            |
 
 Breaking changes: add `!` after the type or `BREAKING CHANGE:` in the footer → triggers a **minor** release while the project is on `0.x` (the `.releaserc.json` pre-1.0 guard; it becomes a major bump only after `1.0`).
 
@@ -294,25 +205,54 @@ feat!: redesign IPC contract for campaign → autopilot rename
 
 ---
 
-## Branching Strategy
+## Code Style
 
-- `main` — always releasable. All releases come from here.
-- Feature branches: `feat/my-feature`
-- Bug fixes: `fix/issue-description`
-- Documentation: `docs/topic`
+ESLint and Prettier are enforced on every commit via lint-staged; CI also checks formatting (`pnpm lint:strict --max-warnings 0`, `pnpm format:check`).
 
-Merge via Pull Request only. Direct pushes to `main` are restricted.
+### TypeScript
+
+- `strict: true` — no implicit `any`, no `@ts-ignore`
+- `import type` for all pure type imports (auto-fixed by `lint:fix`)
+- Import groups (blank line between each): `node:*` → external → `@ajh/*` → `@/*` → relative
+- No `// eslint-disable` — fix the issue or add a scoped override to `eslint.config.mjs` with a reason comment
+- Prefer `const` over `let`
+
+### React
+
+- Feature components live in `features/<name>/components/`
+- Shared components go in `packages/ui`
+- Chrome components go in `components/layout/`
+- No cross-feature imports
+- No `window.api.*` in feature or route files — use service hooks
+- No raw `<button>`, `<select>`, `<textarea>` — use `@ajh/ui` primitives
+
+### Styling
+
+- `text-brand`, `bg-brand`, `border-brand` — never hardcoded hex colors
+- No inline `{ duration, ease }` animation objects — use `transition.*` from `@ajh/ui`
+
+### i18n
+
+- `import { useTranslation } from "@ajh/translations"` — never from `react-i18next` directly
+
+### Other conventions
+
+- No stray `console.log` in source (lint allows only `console.warn` / `console.error`)
+- Named exports preferred over default exports (except React components and route files)
 
 ---
 
-## Pull Request Process
+## Adding a New IPC Capability
 
-1. Fork or branch from `main`
-2. Make your changes
-3. Run `pnpm typecheck && pnpm lint && pnpm test` locally
-4. Open a PR using the template
-5. CI must pass before merge
-6. At least one review approval required
+Follow the 5-step checklist in [docs/PATTERNS.md](docs/PATTERNS.md#1-ipc-pattern-renderer--rust):
+
+1. Contract in `packages/shared/src/ipc/contracts/`
+2. Rust command in `apps/desktop/src-tauri/src/commands/`
+3. Tauri client wiring in `apps/desktop/src/tauri-client/index.ts`
+4. Service hook in `apps/desktop/src/renderer/services/`
+5. Query keys in `services/query-client.ts`
+
+Then document the new namespace in [docs/API.md](docs/API.md).
 
 ---
 
@@ -326,6 +266,8 @@ pnpm test:watch        # Watch mode
 pnpm test:coverage     # With HTML coverage report → ./coverage/
 ```
 
+Use `createMockClient()` from `@/lib/mock-client` for React component tests. Never mock the database — use real in-memory SQLite for data layer tests.
+
 ### What to test
 
 - **Always**: pure utility functions, Zod schema validation, matching logic
@@ -334,34 +276,13 @@ pnpm test:coverage     # With HTML coverage report → ./coverage/
 
 ---
 
-## Code Style
-
-ESLint and Prettier are enforced on every commit (lint-staged). CI also checks formatting.
-
-Key rules:
-
-- Use `type` imports: `import type { Foo } from './foo'`
-- No stray `console.log` in source (lint allows only `console.warn` / `console.error`)
-- Prefer `const` over `let`
-- No implicit `any`
-- Named exports preferred over default exports (except React components and route files)
-
----
-
 ## Release Process
 
-Releases are **fully automated** via [semantic-release](https://semantic-release.gitbook.io).
+Releases are **manually triggered** — nothing runs automatically on push or merge to `main`. `ci-pipeline.yml` deliberately excludes push-to-`main`, and `release.yml` only runs on `workflow_dispatch`. **Never manually tag or bump versions** — semantic-release owns the version; you only trigger it.
 
-1. Merge a PR to `main`
-2. semantic-release analyses commit messages since the last release
-3. If a releasable commit is detected, it:
-   - Bumps version in `package.json`
-   - Generates/updates `CHANGELOG.md`
-   - Creates a GitHub Release with release notes
-   - Triggers the build workflow
-4. The build workflow produces:
-   - Windows: NSIS installer (`.exe`)
-   - Linux: AppImage + `.deb`
-5. Artifacts are attached to the GitHub Release automatically
+Actions → "🚀 Release" has two independent manual steps:
 
-No manual tagging or version bumping needed.
+1. **`action: release`** — semantic-release derives the version bump from the conventional-commit types merged since the last release (`feat` → minor, `fix`/`perf` → patch, `BREAKING CHANGE` → minor while pre-1.0), syncs the version files + `CHANGELOG.md`, creates the GitHub Release + tag, and commits the bump back to `main`. Does **not** build installers.
+2. **`action: build-installers`** — a _separate_ manual dispatch that builds the Tauri installers (Windows NSIS/MSI, Linux AppImage/.deb/.rpm, macOS dmg for Intel + Apple Silicon) and the browser-extension zips, then attaches them to the release.
+
+See `CLAUDE.md` § Release & commits and the header comment in `.github/workflows/release.yml` for the authoritative reference.
