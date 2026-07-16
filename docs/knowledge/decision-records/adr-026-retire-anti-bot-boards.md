@@ -20,7 +20,7 @@ Meanwhile, the Adzuna/JSearch aggregator (introduced in PR #465) already covers 
 
 ## Decision
 
-Remove the five boards from the `SCRAPERS` registry and delete their Rust scraper modules. The registry goes from 21 → 16 boards. Coverage for these boards is provided by the existing Aggregator board (Adzuna primary / JSearch paid fallback).
+Remove the five boards from the `SCRAPERS` registry and delete their Rust scraper modules. Coverage for these boards is provided by the existing Aggregator board (Adzuna primary / JSearch paid fallback). The registry now contains 23 active scrapers.
 
 ### What is deliberately KEPT (dormant or active)
 
@@ -61,9 +61,9 @@ These items were considered for removal but kept for good reasons:
 
 ## Consequences
 
-- **Registry shrinks to 16 boards.** All active scrapers are either public APIs (LinkedIn, YCombinator, Remotive, RemoteOK, WWR, Arbeitnow, BerlinStartupJobs, GermanTechJobs), company-scoped ATS APIs (Greenhouse, Lever, Ashby, Personio, Recruitee, SmartRecruiters), or the Aggregator.
+- **Registry now contains 23 boards.** All active scrapers are either public APIs (LinkedIn, YCombinator, Remotive, RemoteOK, WWR, Arbeitnow, BerlinStartupJobs, GermanTechJobs, Arbeitsagentur, TheMuse, Workable, Comeet), company-scoped ATS APIs (Greenhouse, Lever, Ashby, Pinpoint, Rippling, Breezy, BambooHR, Personio, Recruitee, SmartRecruiters), or the Aggregator.
 - **Aggregator coverage depends on Adzuna/JSearch keys.** Users without keys see empty results for these boards, same as before (the scrapers were also returning empty). Users with keys get better coverage than the scraper ever provided.
-- **German-market follow-up.** Adzuna.de depth for German-language roles should be validated. If thin, a dedicated German-market source (e.g. a StepStone aggregator API if one becomes available, or a supplementary board) may be warranted. This is NOT done in this change.
+- **German-market coverage (shipped).** Adzuna.de is available, and Jooble + Arbeitsagentur board (PR #618) provide dedicated German-language fallback depth. German roles are now covered via aggregator + Arbeitsagentur public API.
 - **Extension import unaffected.** The single-job import flow (browser extension → URL resolver → scrape_url) keeps working for Indeed and Workday URLs because the URL resolvers are pure transforms, not authenticated scrape loops.
 - **No schema migration.** `z.array(z.enum(BOARD_IDS))` collapses to `Vec<String>` in the IPC-generated Rust, so removing enum members produces a byte-identical `ipc_contracts/scrape.rs` after `pnpm gen:ipc`.
 
