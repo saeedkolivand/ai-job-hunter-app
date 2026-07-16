@@ -53,6 +53,13 @@
   /* Low-opacity group divider — derived from --card-border so it adapts to
    * the dark-mode override below without a second definition. */
   --divider: color-mix(in srgb, var(--card-border) 22%, transparent);
+  /* Border for the quiet/flat button tier + the assist/rewrite inputs.
+   * Light mode: --card-border is already opaque ink against a near-white
+   * card (>>3:1) — safe to reuse directly. Dark mode overrides this to its
+   * own higher-alpha value below (see that block's comment) since
+   * --card-border there is a low-alpha wash tuned for thin 1.5px card
+   * outlines, not a load-bearing 1px interactive-control border. */
+  --quiet-border: var(--card-border);
 }
 
 * {
@@ -248,6 +255,22 @@ body {
   margin: 0 0 8px;
 }
 
+/* Wraps the "Unpair this device" link — hidden together as a unit when no
+ * token is stored (see popup.ts's render(), toggled from hasToken). */
+.help-popover__unpair {
+  padding-top: 8px;
+  border-top: 1px solid var(--divider);
+}
+
+/* Small sub-label distinguishing "Unpair this device" as a "Reset pairing"
+ * action from the explanatory paragraph above it. */
+.help-popover__hint {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
 .view {
   display: flex;
   flex-direction: column;
@@ -361,6 +384,7 @@ details.group[open] > summary::before {
  * that visually "pops". */
 .btn--quiet {
   border-width: 1px;
+  border-color: var(--quiet-border);
   box-shadow: none;
 }
 
@@ -602,7 +626,7 @@ details.group[open] > summary::before {
   font-size: 12px;
   padding: 8px 10px;
   border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
-  border: 1px solid var(--card-border);
+  border: 1px solid var(--quiet-border);
   background: var(--token-bg);
   color: var(--ink);
 }
@@ -667,6 +691,10 @@ details.group[open] > summary::before {
   .btn {
     transition: none;
   }
+
+  details.group > summary::before {
+    transition: none;
+  }
 }
 
 /* Warm-dark variant — mirrors the light paper-blend identity on a dark
@@ -685,8 +713,19 @@ details.group[open] > summary::before {
     --warn: #e0b35a;
     --shadow: rgba(0, 0, 0, 0.45);
 
-    /* Warm light border replaces the ink border on dark surfaces. */
+    /* Warm light border replaces the ink border on dark surfaces. Kept
+     * low-alpha for the thin 1.5px card outlines (.suggestion/.match-result/
+     * .assist-result/.help-popover) it was tuned for. */
     --card-border: rgba(240, 231, 214, 0.16);
+    /* --quiet-border and --divider get their OWN higher alpha here — deriving
+     * either from --card-border above would compound its already-low alpha
+     * into an effectively invisible ~1.05:1 wash (verified: WCAG contrast
+     * against --card #241f19). 0.4 clears the ≥3:1 non-text-contrast target
+     * for the quiet button tier + assist/rewrite inputs; 0.28 is a
+     * deliberately lighter touch for the group dividers, which are
+     * decorative section separators, not interactive-control borders. */
+    --quiet-border: rgba(240, 231, 214, 0.4);
+    --divider: rgba(240, 231, 214, 0.28);
 
     --token-bg: #1f1a15;
     --placeholder: #8c826e;

@@ -60,12 +60,25 @@
            app isn't running — the guidance the offline view used to spell out inline.
            Toggled by #btn-help; hidden by default. Also hosts "Unpair this device" —
            moved off the import view's standing row (see #view-import's Job group). -->
-      <div id="help-popover" class="help-popover" role="region" aria-label="How this works" hidden>
+      <div
+        id="help-popover"
+        class="help-popover"
+        role="region"
+        aria-label="How this works, and pairing options"
+        hidden
+      >
         <p>
           The extension talks to the desktop app only on your own computer (loopback). If the status
           shows “App not running”, open AI Job Hunter and reopen this popup.
         </p>
-        <button id="btn-unpair" class="link" type="button">Unpair this device</button>
+        <!-- Only shown while a pairing token is actually stored (toggled in
+             render() from ConnectionStatus.hasToken) — nothing to unpair
+             otherwise. Hidden by default here too, matching that no-token
+             starting assumption before the first status arrives. -->
+        <div id="unpair-group" class="help-popover__unpair" hidden>
+          <p class="help-popover__hint">Reset pairing</p>
+          <button id="btn-unpair" class="link" type="button">Unpair this device</button>
+        </div>
       </div>
 
       <!-- Import view: shown when paired + connected. Grouped by job-to-be-done
@@ -119,7 +132,12 @@
 
         <!-- Form group: assisted autofill + answer capture — hidden (together with
              the Answer-tools disclosure below) when this page has no fillable
-             fields (see popup.ts's fields probe, run once on connect). -->
+             fields (see popup.ts's fields probe, run once on connect). NOT
+             hidden by default here: the probe fails OPEN, so this group (and
+             Answer tools) render visible until/unless a CONFIRMED empty scan
+             says otherwise — a deliberate brief flash-then-hide on a
+             fields:false page, never the reverse (a probe bug hiding a
+             feature that's actually there). -->
         <section id="group-form" class="group group--divided" aria-label="Form">
           <button
             id="btn-fill"
@@ -143,7 +161,7 @@
         </section>
 
         <!-- Answer tools: collapsed by default (persisted expand/collapse
-             preference — see popup.ts's initAnswerToolsPreference); auto-expands
+             preference — see popup.ts's bootstrapAnswerTools); auto-expands
              if a streamed AI answer is buffered/still running on reopen. Hidden
              (together with the Form group above) when this page has no fillable
              fields. -->
@@ -211,7 +229,7 @@
               <option value="">— Save my answers first to scan this page —</option>
             </select>
             <label class="assist__label" for="rewrite-preset">Quick preset</label>
-            <select id="rewrite-preset" class="assist__picker" aria-label="Quick rewrite preset">
+            <select id="rewrite-preset" class="assist__picker">
               <option value="">— Pick a preset —</option>
               <option value="shorten">Shorten</option>
               <option value="expand">Expand</option>
@@ -240,7 +258,7 @@
                 <button id="btn-copy-rewrite" class="btn btn--small btn--quiet" type="button">
                   Copy
                 </button>
-                <button id="btn-accept-rewrite" class="btn btn--small btn--quiet" type="button">
+                <button id="btn-accept-rewrite" class="btn btn--small btn--primary" type="button">
                   Accept
                 </button>
                 <button id="btn-restore-rewrite" class="btn btn--small btn--quiet" type="button">

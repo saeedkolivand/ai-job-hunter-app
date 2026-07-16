@@ -536,6 +536,7 @@ const els = {
   appliedStatus: byId<HTMLParagraphElement>('applied-status'),
   chkApplied: byId<HTMLInputElement>('chk-applied'),
   importMsg: byId<HTMLParagraphElement>('import-msg'),
+  unpairGroup: byId<HTMLElement>('unpair-group'),
   btnUnpair: byId<HTMLButtonElement>('btn-unpair'),
   tokenInput: byId<HTMLInputElement>('token-input'),
   pairMsg: byId<HTMLParagraphElement>('pair-msg'),
@@ -692,6 +693,9 @@ function showView(phase: ConnectionStatus['phase']): void {
 
 function render(status: ConnectionStatus): void {
   lastKnownHasToken = status.hasToken;
+  // The help popover is global (not scoped to any one view/phase) — only show
+  // "Unpair this device" while there is actually something to unpair.
+  els.unpairGroup.hidden = !status.hasToken;
 
   if (status.phase === 'connected') {
     // Fire-and-forget, on each transition INTO connected (never on a repeated

@@ -88,7 +88,9 @@ function buildPopupDom(): void {
     <p id="applied-status" hidden></p>
     <input id="chk-applied" type="checkbox" />
     <p id="import-msg"></p>
-    <button id="btn-unpair"></button>
+    <div id="unpair-group" hidden>
+      <button id="btn-unpair"></button>
+    </div>
     <input id="token-input" type="text" />
     <p id="pair-msg"></p>
     <button id="btn-save-token"></button>
@@ -2912,8 +2914,13 @@ describe('bootstrapAnswerTools (applies the persisted preference, reattach can o
 // Moved off the import view's standing row in popup.html — the click handler
 // itself is unchanged/unaffected by that relocation.
 
-describe('unpair (#btn-unpair)', () => {
+describe('unpair (#btn-unpair, #unpair-group hasToken-gated)', () => {
   const flush = () => new Promise((r) => setTimeout(r, 0));
+  const statusListener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
+    ((message: unknown) => void) | undefined;
+  if (!statusListener) throw new Error('onMessage status listener not registered');
+  const push = (hasToken: boolean, phase: ConnectionStatus['phase'] = 'not_paired') =>
+    statusListener({ ok: true, kind: 'status', status: { phase, port: null, hasToken } });
 
   it('clears the token and returns to the pairing view', async () => {
     sendMessageMock.mockReset();
@@ -2931,5 +2938,16 @@ describe('unpair (#btn-unpair)', () => {
 
     expect(sendMessageMock).toHaveBeenCalledWith({ kind: 'clearToken' });
     expect(byId<HTMLElement>('view-pair').hidden).toBe(false);
+  });
+
+  it('shows the "Unpair this device" group only while a pairing token is stored', () => {
+    push(false);
+    expect(byId<HTMLElement>('unpair-group').hidden).toBe(true);
+
+    push(true, 'connected');
+    expect(byId<HTMLElement>('unpair-group').hidden).toBe(false);
+
+    push(false, 'app_not_running');
+    expect(byId<HTMLElement>('unpair-group').hidden).toBe(true);
   });
 });
