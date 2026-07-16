@@ -77,5 +77,4 @@ Any future paid or metered external provider must:
 4. Require explicit double opt-in (credential present AND user toggle on), never run on
    credential presence alone.
 
-Owning symbols: `ApifyLinkedInProvider`, `search_with_providers` in
-`scraping/boards/aggregator/mod.rs`.
+Owning symbols: `ApifyLinkedInProvider` (in `scraping/boards/aggregator/providers.rs`), `search_with_providers` (in `scraping/boards/aggregator/mod.rs`).

@@ -17,7 +17,7 @@ Resolve all performance modes to a single unified `PerformanceProfile` (the trut
 **Frontend (resolver):**
 
 - `PerformanceProfile` (TypeScript interface) models a user's selection: display tier + backend tier + custom overrides.
-- `resolveBackendConfig(mode, profile)` pure function maps the profile to a concrete `PerformanceBackendConfig` struct with numeric knobs. See `apps/desktop/src/renderer/store/preferences-schema/preferences-schema.ts` lines 274–285.
+- `resolveBackendConfig(mode, profile)` pure function maps the profile to a concrete `PerformanceBackendConfig` struct with numeric knobs. See `apps/desktop/src/renderer/store/preferences-schema/preferences-schema.ts` lines 283+.
 - The function consults tier-mapping tables (`CONCURRENCY_BY_TIER`, `KEEP_ALIVE_SECS_BY_TIER`, `CACHE_TTL_SECS_BY_TIER`, `CACHE_MAX_ROWS_BY_TIER`) defined in the same file.
 
 **IPC contract:**
@@ -49,11 +49,11 @@ Tiers are defined by their numeric targets (concurrency, keep-alive, cache TTL, 
 
 | Tier        | Concurrency | Keep-alive (s) | Cache TTL (d) | Cache rows |
 | ----------- | ----------- | -------------- | ------------- | ---------- |
-| low-memory  | 2           | 30             | 1             | 250        |
-| balanced    | 4           | 300            | 7             | 2000       |
-| high (perf) | 8           | 1800           | ∞ (unbounded) | ∞          |
+| low-memory  | 1           | 0              | 1             | 250        |
+| balanced    | 2           | 300            | 7             | 2000       |
+| high (perf) | 4           | 1800           | ∞ (unbounded) | ∞          |
 
-To find the exact numbers and update them, see the tier-mapping tables in `apps/desktop/src/renderer/store/preferences-schema/preferences-schema.ts` (lines 257–268).
+To find the exact numbers and update them, see the tier-mapping tables in `apps/desktop/src/renderer/store/preferences-schema/preferences-schema.ts` (lines 266–267 for concurrency; resolveBackendConfig at lines 283+).
 
 ## Consequences
 

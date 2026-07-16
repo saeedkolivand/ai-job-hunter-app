@@ -1,6 +1,6 @@
 # ADR-015: Browser extension imports via local WebSocket bridge
 
-Last updated: 2026-06-12
+Last updated: 2026-07-16
 
 **Status:** Accepted
 
@@ -17,7 +17,7 @@ The app treats the browser as a **Save** Application origin (`ApplicationOrigin:
 ### Security model (five layers)
 
 1. **Loopback bind only** — listener binds `127.0.0.1`; no LAN or remote access.
-2. **Origin allowlist (defense-in-depth, not the primary boundary)** — the WS handshake's `Origin` header is validated in-callback (before socket upgrade) against `chrome-extension://<id>` and `moz-extension://<uuid>` patterns. **Chrome**: pinned to the stable Chrome Web Store id in `auth::ALLOWED_EXTENSION_IDS` (placeholder until store submission). **Firefox**: accepts any well-formed UUID shape (8-4-4-4-12 lowercase hex) via `auth::is_extension_uuid`, because Firefox assigns every install a random per-install internal UUID (anti-fingerprinting), never the AMO gecko id. A `platform::config::extension_dev_origins` env override admits local extensions during development. **Note:** the origin allowlist is defense-in-depth; the per-frame token (layer 3) is the authoritative auth boundary.
+2. **Origin allowlist (defense-in-depth, not the primary boundary)** — the WS handshake's `Origin` header is validated in-callback (before socket upgrade) against `chrome-extension://<id>` and `moz-extension://<uuid>` patterns. **Chrome**: pinned to the stable Chrome Web Store id in `auth::ALLOWED_EXTENSION_IDS` (PR #379). **Firefox**: accepts any well-formed UUID shape (8-4-4-4-12 lowercase hex) via `auth::is_extension_uuid`, because Firefox assigns every install a random per-install internal UUID (anti-fingerprinting), never the AMO gecko id. A `platform::config::extension_dev_origins` env override admits local extensions during development. **Note:** the origin allowlist is defense-in-depth; the per-frame token (layer 3) is the authoritative auth boundary.
 3. **Per-frame token** — every message envelope carries the paired secret; a mismatch closes the socket. The token is generated on first run, persisted to the app data dir, and rotatable via `extension_bridge_regenerate_token` command. This is the real auth boundary, even over loopback.
 4. **Frame size cap** — messages over `MAX_FRAME_BYTES` (2 MB) are rejected at the protocol layer; the oversized frame closes the socket.
 5. **URL/SSRF guard** — the imported `url` field is normalized (http/https only via `normalize_job_url`), then validated by `auth::is_safe_import_url` against loopback/private/link-local/`*.local` hosts. The actual fetch is additionally guarded by `net::http::get_guarded`, which resolves the hostname, validates the IP via `net::ssrf::is_safe_ip` (rejects RFC-1918, loopback, link-local, CGNAT, ULA, unspecified, broadcast, multicast), and pins the connection to that IP — closing the DNS-rebinding TOCTOU window.
@@ -41,9 +41,9 @@ The bridge is an **L3 shell module** (like `commands`, `tray`, `updater`): it ho
 
 ## Consequences
 
-- **v1 publication blockers:** placeholder extension IDs in `ALLOWED_EXTENSION_IDS` must be replaced with the real Chrome Web Store id (marked `TODO(bridge)` in `auth.rs`). Firefox does not require an entry because it validates by UUID shape. The Chrome Web Store id is assigned at publish and cannot be forced from the manifest — it must be set in `auth.rs` once published. Hosted privacy policy required; store reviewer test notes + graceful "app not running" empty state required.
+- **Publication:** Chrome Web Store id pinned in `auth::ALLOWED_EXTENSION_IDS` (PR #379). Firefox validates by UUID shape (no separate entry required). Hosted privacy policy required; graceful "app not running" empty state handles connection failures.
 - **Token management:** the pairing token is copied by the user from app Settings and entered/saved by the extension (the extension stores it, not the user). Rotation via `extension_bridge_regenerate_token` command; factory reset clears the token (Resettable trait).
-- **Accepted v1 risk:** a same-account local process squatting `127.0.0.1:<port>` before the app binds could harvest the pairing token on first import. Bounded: local-only, SSRF-guarded, rotatable, and the real auth is the per-frame token. Closed in v2 via server-initiated challenge (send random nonce, extension signs it) or fallback to native messaging.
+- **v2 auth upgrade (shipped):** the pairing token is now authenticated via mutual HMAC-SHA256 challenge-response handshake (ADR-0010, PR #627), closing the v1 risk of early token harvest. The handshake is server-initiated (send random nonce, extension signs it); post-auth, frames carry no token.
 - **Renderer integration:** `useMenuIntents` hook in renderer services subscribes to `applications:changed` event; the jobs/applications view live-updates on successful import.
 
 ## Related ADRs
