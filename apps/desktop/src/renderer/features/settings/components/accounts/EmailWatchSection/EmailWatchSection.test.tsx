@@ -83,6 +83,12 @@ describe('EmailWatchSection — disconnected → connect', () => {
     });
     // Never the raw rejection text.
     expect(screen.queryByText('IMAP LOGIN failed')).not.toBeInTheDocument();
+
+    // The app password must not linger in state/the DOM after a FAILED
+    // connect either — only a fresh paste should ever populate it again.
+    await waitFor(() => {
+      expect(screen.getByLabelText<HTMLInputElement>('App password').value).toBe('');
+    });
   });
 
   it('disables Connect until both fields are non-empty', async () => {

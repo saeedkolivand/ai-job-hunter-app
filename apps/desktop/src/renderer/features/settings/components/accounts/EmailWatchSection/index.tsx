@@ -48,10 +48,13 @@ export function EmailWatchSection() {
   const handleConnect = async () => {
     try {
       await connect.mutateAsync({ address: address.trim(), appPassword });
-      // Never keep the app password around once the mutation has fired.
-      setAppPassword('');
     } catch {
       // Surfaced inline below via connect.isError — no raw error text.
+    } finally {
+      // Never keep the app password around once the mutation has fired —
+      // success or failure. A failed login means a typo'd/expired password;
+      // the user re-pastes a fresh one rather than editing the rejected one.
+      setAppPassword('');
     }
   };
 

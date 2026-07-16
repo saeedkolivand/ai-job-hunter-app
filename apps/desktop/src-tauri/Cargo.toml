@@ -201,6 +201,14 @@ htmd = "0.5.4"
 # path (the app password crosses this crate's LOGIN call) — an unreviewed
 # float to alpha.16+ must not happen silently; bump it deliberately.
 imap = { version = "=3.0.0-alpha.15", default-features = false, features = ["native-tls"] }
+# Direct dep (not just via imap's `native-tls` feature above): `email_watch::
+# imap_client` builds the TLS connection manually (TcpStream::connect_timeout
+# + read/write timeouts, then wraps in TLS) because `imap::ClientBuilder::
+# connect()` has no timeout at all and its timeout-capable `connect_with` is
+# private. Pinned to the SAME 0.2.x line already resolved transitively via
+# `imap`/`reqwest`'s own `native-tls` features — `cargo tree -p native-tls`
+# confirms a single 0.2.18, no new duplicate version.
+native-tls = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 wmi = "0.18"

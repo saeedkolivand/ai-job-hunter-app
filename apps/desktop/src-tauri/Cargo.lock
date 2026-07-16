@@ -113,6 +113,7 @@ dependencies = [
  "log",
  "lopdf 0.44.0",
  "mockall",
+ "native-tls",
  "parking_lot",
  "pbkdf2",
  "pdf-extract",

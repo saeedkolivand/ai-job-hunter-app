@@ -26,9 +26,9 @@ The critical decision is how to access Gmail: OAuth or an app password. This ADR
 
 **Honest disclosure — the trade-off:** An app password grants **full mail access** (read AND write), not just readonly. We mitigate this with:
 
-- **OS keychain-only storage** — the credential never reaches disk, never crosses the network unencrypted, and is deleted instantly on user revocation (via the Google account page).
-- **IMAP read-only use** — the app only issues IMAP SELECT and UID SEARCH commands; it never issues APPEND, COPY, or any write. The backend code is auditable; the API enforces read-only behavior.
-- **Instant revocability** — the user can revoke the password at myaccount.google.com/apppasswords with one click, immediately invalidating the app's access, with no further action needed in the app.
+- **OS keychain-only storage** — the credential never reaches disk, never crosses the network unencrypted, and is removed on Disconnect or factory reset.
+- **IMAP read-only use** — the app only issues IMAP SELECT and UID SEARCH commands; it never issues APPEND, COPY, or any write. Read-only is an application-behavior guarantee (enforced by code review and auditable), not an API-enforced restriction — the password itself grants full mailbox access, as disclosed above.
+- **Instant revocability** — the user can revoke the password at myaccount.google.com/apppasswords with one click, immediately invalidating the app's future IMAP logins; the now-inert keychain entry remains local until Disconnect or factory reset removes it.
 
 **Version 1 = notify + confirm, no auto-write.** Matching company and title from email subjects/bodies is inherently fuzzy (no URL exists in an email) and cannot meet Layer A's exact-URL deduplication bar. The only new power Layer C grants is local mailbox reading. Auto-writing matched applications is deferred behind a separate opt-in under ADR-0009's "observe X, auto-act Y" consequence.
 

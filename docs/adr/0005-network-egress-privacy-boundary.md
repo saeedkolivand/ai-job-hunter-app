@@ -39,7 +39,7 @@ No runtime behavior changes: every current call already complies. The fix is to 
 
 ## Consequences
 
-- **README.md and SECURITY.md must be rewritten** to state the personal-data guarantee and enumerate the six egress classes. (Tracked as a develop/modify item, not yet applied.)
+- **README.md and SECURITY.md must be rewritten** to state the personal-data guarantee and enumerate the seven egress classes. (Tracked as a develop/modify item, not yet applied.)
 - **A new egress endpoint now has a written test to pass:** does it send personal data (prohibited) or a public identifier/typed query (opt-in, default OFF, CSP-scoped)? This is the reference for future review.
 - **The opt-in enrichment pattern (Clearbit) is now the sanctioned template** for feature-driven egress: default OFF, minimal CSP, public identifier only.
 - **No behavior changes ship from this ADR.** If a future decision adds a hard offline mode, it supersedes option 2 here.

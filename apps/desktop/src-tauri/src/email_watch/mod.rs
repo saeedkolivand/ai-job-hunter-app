@@ -170,24 +170,34 @@ impl EmailWatchStore {
     /// from a different account could collide with the new mailbox's own
     /// numbering and silently suppress a real future match.
     pub fn connect(&self, address: &str, host: &str, port: u16) -> AppResult<()> {
-        let conn = self.conn.lock();
+        let mut conn = self.conn.lock();
         let previous_address: Option<String> =
             conn.query_row("SELECT address FROM account WHERE id = 1", [], |row| {
                 row.get(0)
             })?;
         let address_changed = previous_address.as_deref() != Some(address);
 
-        conn.execute(
+        // The address/host/port UPDATE and the (conditional) watermark-reset +
+        // seen-wipe must land together or not at all — a crash/failure between
+        // them would otherwise leave `previous_address == address` on retry (so
+        // the cleanup branch never re-fires) while stale `seen` rows from the
+        // OLD mailbox persist, exactly the per-mailbox UID-collision hazard this
+        // method's own doc warns about. One transaction; `.transaction()` needs
+        // `&mut Connection`, so call on the locked guard directly (it derefs
+        // mutably).
+        let tx = conn.transaction()?;
+        tx.execute(
             "UPDATE account SET address = ?1, host = ?2, port = ?3 WHERE id = 1",
             params![address, host, i64::from(port)],
         )?;
         if address_changed {
-            conn.execute(
+            tx.execute(
                 "UPDATE account SET last_uid = NULL, uidvalidity = NULL WHERE id = 1",
                 [],
             )?;
-            conn.execute("DELETE FROM seen", [])?;
+            tx.execute("DELETE FROM seen", [])?;
         }
+        tx.commit()?;
         Ok(())
     }
 
@@ -281,13 +291,19 @@ impl EmailWatchStore {
     /// via `CredentialStore`) and the factory reset (`Resettable::reset` in
     /// `commands/privacy.rs`).
     pub fn clear(&self) -> AppResult<()> {
-        let conn = self.conn.lock();
-        conn.execute(
+        let mut conn = self.conn.lock();
+        // Same atomicity requirement as `connect`'s address-changed branch —
+        // the account wipe and the `seen` wipe must land together, or a
+        // failure between them could leave stale `seen` rows attributed to an
+        // address that no longer exists.
+        let tx = conn.transaction()?;
+        tx.execute(
             "UPDATE account SET address = NULL, host = NULL, port = NULL, enabled = 0,
              last_uid = NULL, uidvalidity = NULL, last_check_ms = NULL WHERE id = 1",
             [],
         )?;
-        conn.execute("DELETE FROM seen", [])?;
+        tx.execute("DELETE FROM seen", [])?;
+        tx.commit()?;
         Ok(())
     }
 
