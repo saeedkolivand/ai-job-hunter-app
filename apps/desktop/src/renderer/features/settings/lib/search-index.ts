@@ -303,6 +303,22 @@ export const SEARCH_INDEX: SearchEntry[] = [
     ],
     anchor: 'accounts-extension',
   },
+  {
+    id: 'accounts-email-watch',
+    section: 'accounts',
+    titleKey: 'settings.accounts.emailWatch.title',
+    keywords: [
+      'email',
+      'gmail',
+      'imap',
+      'app password',
+      'confirmation',
+      'auto-track',
+      'watch',
+      'inbox',
+    ],
+    anchor: 'accounts-email-watch',
+  },
 
   // ── privacy ──────────────────────────────────────────────────────────────────
   {

@@ -184,6 +184,32 @@ sha2 = "0.11"
 hmac = "0.13"
 htmd = "0.5.4"
 
+# IMAP client for email-confirmation watching (task #23, opt-in, default OFF —
+# `email_watch`). `native-tls` (the crate's default), NOT `rustls-tls`: the
+# `rustls-tls` feature bridges through `rustls-connector`, which is pinned to
+# `rustls 0.22`/`rustls-webpki 0.102` (imap's own Cargo.toml caps
+# rustls-connector at `^0.19`, so `cargo update` cannot bump past it) — that
+# resolves 4 live RUSTSEC advisories (2026-0049/0098/0099/0104, all fixed only
+# in rustls-webpki >=0.103.10) that `cargo deny check` fails on and no
+# semver-compatible update path clears. `native-tls` instead reuses the SAME
+# per-OS TLS stack `reqwest` already depends on (SChannel/SecureTransport/
+# OpenSSL — see net/http.rs), so this is not a second TLS stack, just a second
+# consumer of the one already in the tree. Sync API used only via
+# `spawn_blocking` (see `email_watch::imap_client`); this is deliberately NOT
+# `net::http` — IMAP is not HTTP and can't ride `reqwest` (see R5 note there).
+# Exact-pinned (`=`), not caret: it's a pre-1.0 alpha on a credential-bearing
+# path (the app password crosses this crate's LOGIN call) — an unreviewed
+# float to alpha.16+ must not happen silently; bump it deliberately.
+imap = { version = "=3.0.0-alpha.15", default-features = false, features = ["native-tls"] }
+# Direct dep (not just via imap's `native-tls` feature above): `email_watch::
+# imap_client` builds the TLS connection manually (TcpStream::connect_timeout
+# + read/write timeouts, then wraps in TLS) because `imap::ClientBuilder::
+# connect()` has no timeout at all and its timeout-capable `connect_with` is
+# private. Pinned to the SAME 0.2.x line already resolved transitively via
+# `imap`/`reqwest`'s own `native-tls` features — `cargo tree -p native-tls`
+# confirms a single 0.2.18, no new duplicate version.
+native-tls = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 wmi = "0.18"
 windows-native-keyring-store = "1"
