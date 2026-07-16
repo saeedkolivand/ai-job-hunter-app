@@ -400,6 +400,59 @@ async function runAppliedCheck(): Promise<PopupResponse> {
   }
 }
 
+/** The `probe-fields.js` completion value — see that file's doc for why two
+ *  independent booleans, not one. */
+interface FieldsProbeResult {
+  hasFormFields: boolean;
+  hasAnswerFields: boolean;
+}
+
+/** Minimal guard for the `{hasFormFields, hasAnswerFields}` object that
+ *  crossed the `executeScript` boundary (probe-fields.js's completion value). */
+function isFieldsProbeResult(v: unknown): v is FieldsProbeResult {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return typeof o.hasFormFields === 'boolean' && typeof o.hasAnswerFields === 'boolean';
+}
+
+/**
+ * Inject the fillable-fields probe into the active tab and return its
+ * `{hasFormFields, hasAnswerFields}` completion value. Single-step injection
+ * — same pattern as `captureActiveTabQuestions`. UNLIKE the other capture
+ * injections, this never needs a token check first: it never touches the
+ * bridge/desktop at all, only the active tab's DOM.
+ */
+async function captureActiveTabFieldsProbe(): Promise<FieldsProbeResult> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tabId = tab?.id;
+  if (typeof tabId !== 'number') throw new Error('No active tab to scan.');
+
+  const results = await browser.scripting.executeScript({
+    target: { tabId },
+    files: ['probe-fields.js'],
+  });
+  const probe = results[0]?.result;
+  if (!isFieldsProbeResult(probe)) throw new Error('Could not scan this page.');
+  return probe;
+}
+
+/**
+ * Passive "does this page have fillable form fields?" probe, run once when
+ * the popup shows the connected view — gates the Form group / Answer-tools
+ * disclosure. Mirrors `runAppliedCheck`'s never-surfaces-`ok:false` fold, but
+ * FAILS OPEN instead of closed: any failure (no active tab, restricted page,
+ * scripting permission denied) resolves BOTH signals `true` so a probe bug
+ * can never hide either feature — only a CONFIRMED empty scan hides them.
+ */
+async function runFieldsProbe(): Promise<PopupResponse> {
+  try {
+    const { hasFormFields, hasAnswerFields } = await captureActiveTabFieldsProbe();
+    return { ok: true, kind: 'fieldsProbe', hasFormFields, hasAnswerFields };
+  } catch {
+    return { ok: true, kind: 'fieldsProbe', hasFormFields: true, hasAnswerFields: true };
+  }
+}
+
 /**
  * User-clicked "Mark as applied" for the active tab's URL. UNLIKE
  * `runAppliedCheck`, failures are NOT folded away here: a transport-level
@@ -884,6 +937,8 @@ async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
         return await runFill();
       case 'appliedCheck':
         return await runAppliedCheck();
+      case 'fieldsProbe':
+        return await runFieldsProbe();
       case 'statusUpdate':
         return await runStatusUpdate();
       case 'answersSave':
