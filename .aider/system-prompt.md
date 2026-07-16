@@ -9,15 +9,16 @@ The Rust core lives in `apps/desktop/src-tauri/`; the React renderer in `apps/de
 ## Architecture summary
 
 - The renderer never calls `window.api.*` directly — use service hooks in `apps/desktop/src/renderer/services/`.
-- IPC contract is the single source of truth: `packages/shared/src/ipc/contracts.ts`.
-- The four workspace packages are exactly `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`.
+- IPC contract is the single source of truth: `packages/shared/src/ipc/contracts/`.
+- The five workspace packages are exactly `@ajh/shared`, `@ajh/ui`, `@ajh/prompts`, `@ajh/translations`, `@ajh/test-ids`.
   Backend business logic lives in the Rust core (`apps/desktop/src-tauri/`), not in a TS package.
+- There are two apps: `apps/desktop` (the Tauri shell above) and `apps/extension` (MV3 browser extension — Chrome + Firefox — job import + opt-in autofill over the loopback bridge).
 
 ## Before editing any file, check:
 
 1. Does a service hook already exist in `apps/desktop/src/renderer/services/`?
 2. Is there a shared UI primitive in `@ajh/ui`?
-3. Does the IPC contract need updating in `packages/shared/src/ipc/contracts.ts`?
+3. Does the IPC contract need updating in `packages/shared/src/ipc/contracts/`?
 
 ## Mandatory patterns
 
@@ -56,8 +57,8 @@ import { useMachine } from '@/hooks/use-machine';
 
 **New IPC capability (5 steps):**
 
-1. `packages/shared/src/ipc/contracts.ts` → 2. `apps/desktop/src-tauri/src/commands.rs`
-   → 3. `apps/desktop/src/tauri-client.ts` → 4. `apps/desktop/src/renderer/services/` hook
+1. `packages/shared/src/ipc/contracts/` → 2. `apps/desktop/src-tauri/src/commands/`
+   → 3. `apps/desktop/src/tauri-client/index.ts` → 4. `apps/desktop/src/renderer/services/` hook
    → 5. `services/query-client.ts` query key
 
 ## Reference documentation

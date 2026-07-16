@@ -15,7 +15,7 @@ Re-injected every session by the `SessionStart` hook (`.claude/hooks/style-polic
 
 ## Path privacy
 
-Never output absolute paths, usernames, home dirs, drive letters, or temp/IDE paths — anywhere (logs, stack traces, PRs, commits, markdown). Always repo-relative (`apps/desktop/src/main.rs`, not `C:\Users\…`). Git Bash form: `/c/Users/…`.
+Never output absolute paths, usernames, home dirs, drive letters, or temp/IDE paths — anywhere (logs, stack traces, PRs, commits, markdown). Always repo-relative (`apps/desktop/src-tauri/src/main.rs`, not `C:\Users\…`). Git Bash form: `/c/Users/…`.
 
 ## Shell & tooling
 
@@ -34,10 +34,11 @@ packages/ui           ← React component library + design system → @ajh/ui (n
 packages/prompts      ← AI prompt templates, provider-aware + locale-driven (pure TS, zero deps)
 packages/translations ← i18next + en/de resources → @ajh/translations (no app/IPC deps)
 packages/test-ids     ← central TEST_IDS map → @ajh/test-ids
-apps/desktop            ← Tauri app: Rust core (scraping, login, documents, AI) + React renderer
+apps/desktop           ← Tauri app: Rust core (scraping, login, documents, AI) + React renderer
+apps/extension         ← MV3 browser extension (Chrome + Firefox): job import + opt-in autofill over the loopback bridge
 ```
 
-Renderer → shell only via `AppClient` (`createTauriInvokeClient()` in `apps/desktop/src/tauri-client.ts`). IPC contract: `packages/shared/src/ipc/contracts.ts`. **Dev:** `pnpm dev`.
+Renderer → shell only via `AppClient` (`createTauriInvokeClient()` in `apps/desktop/src/tauri-client/index.ts`). IPC contract: `packages/shared/src/ipc/contracts/`. **Dev:** `pnpm dev`.
 
 ---
 
@@ -64,16 +65,16 @@ Renderer → shell only via `AppClient` (`createTauriInvokeClient()` in `apps/de
 
 ## Quick reference
 
-| What                                       | Where                                                                                                     |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| IPC contract / Tauri commands / TS client  | `packages/shared/src/ipc/contracts.ts` · `src-tauri/src/commands.rs` · `apps/desktop/src/tauri-client.ts` |
-| Service hooks                              | `apps/desktop/src/renderer/services/`                                                                     |
-| UI package / design tokens / motion tokens | `packages/ui/src/index.ts` · `packages/ui/src/css/tokens.css` · `packages/ui/src/lib/motion.ts`           |
-| State machines                             | `apps/desktop/src/renderer/lib/machines/`                                                                 |
-| i18n                                       | `@ajh/translations`; init shim `apps/desktop/src/renderer/i18n/index.ts`                                  |
-| Rust: config/paths · HTTP · errors · spans | `platform/config.rs` · `net/http.rs` · `error.rs` · `observability.rs`                                    |
-| Board registry                             | `scraping/boards/mod.rs` (`SCRAPERS`) — no applier registry (apply engine removed)                        |
-| Docs                                       | `docs/PATTERNS.md` · `docs/DESIGN_SYSTEM.md` · `docs/DEVELOPMENT.md` · `docs/EXPORT_TEMPLATES.md`         |
+| What                                       | Where                                                                                                                    |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| IPC contract / Tauri commands / TS client  | `packages/shared/src/ipc/contracts/` · `apps/desktop/src-tauri/src/commands/` · `apps/desktop/src/tauri-client/index.ts` |
+| Service hooks                              | `apps/desktop/src/renderer/services/`                                                                                    |
+| UI package / design tokens / motion tokens | `packages/ui/src/index.ts` · `packages/ui/src/css/tokens.css` · `packages/ui/src/lib/motion.ts`                          |
+| State machines                             | `apps/desktop/src/renderer/lib/machines/`                                                                                |
+| i18n                                       | `@ajh/translations`; init shim `apps/desktop/src/renderer/i18n/index.ts`                                                 |
+| Rust: config/paths · HTTP · errors · spans | `platform/config.rs` · `net/http.rs` · `error.rs` · `observability.rs`                                                   |
+| Board registry                             | `scraping/boards/mod.rs` (`SCRAPERS`) — no applier registry (apply engine removed)                                       |
+| Docs                                       | `docs/PATTERNS.md` · `docs/DESIGN_SYSTEM.md` · `docs/DEVELOPMENT.md` · `docs/EXPORT_TEMPLATES.md`                        |
 
 ---
 

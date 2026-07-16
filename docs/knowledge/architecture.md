@@ -12,11 +12,13 @@ Local-first desktop app, [pnpm][pnpm] monorepo. **[Tauri][tauri] is the shell.**
 - `packages/ui` — [React][react] component library + design system (no app logic, no IPC).
 - `packages/prompts` — AI prompt templates, provider-aware + locale-driven (pure [TypeScript][typescript], zero deps).
 - `packages/translations` — i18next singleton + adapters (`useTranslation`, `TFunction`, `i18n` re-export), language detection, resource bundles (en/de). Zero app/IPC deps; renderer couples via thin shim `@/i18n` (`languageChanged` listener).
+- `packages/test-ids` — central `TEST_IDS` map → `@ajh/test-ids`, feature-namespaced to mirror translation keys.
 - `apps/desktop` — [Rust][rust] core (`src-tauri/src/`) + [React][react] renderer (`src/renderer/`).
+- `apps/extension` — MV3 browser extension (Chrome + Firefox): job import + opt-in autofill over the loopback bridge (`apps/desktop/src-tauri/src/extension_bridge/`).
 
 ## Rust/TS boundary (Rust-first)
 
-Business logic, processing pipelines, ATS analysis, and document generation live in **Rust** (`apps/desktop/src-tauri/src/`). The renderer is presentation-only and reaches the shell **only** via the `AppClient` context (`apps/desktop/src/tauri-client.ts` → `createTauriInvokeClient()`). IPC contract source of truth: `packages/shared/src/ipc/` (+ `apps/desktop/src-tauri/src/ipc_contracts/`).
+Business logic, processing pipelines, ATS analysis, and document generation live in **Rust** (`apps/desktop/src-tauri/src/`). The renderer is presentation-only and reaches the shell **only** via the `AppClient` context (`apps/desktop/src/tauri-client/index.ts` → `createTauriInvokeClient()`). IPC contract source of truth: `packages/shared/src/ipc/` (+ `apps/desktop/src-tauri/src/ipc_contracts/`).
 
 **Window/app shell actions** (focus, minimize, maximize, taskbar progress, attention flash, position reset, app hide/show) are exposed via the `useWindowControls` service hook (`apps/desktop/src/renderer/services/use-window-controls/`), which is the single home for `@tauri-apps/api/window`, `@tauri-apps/api/app`, `@tauri-apps/plugin-positioner`, and `@tauri-apps/plugin-os` imports in the renderer. (This is distinct from the `AppClient` / service-hook boundary used for data-bearing IPC via React Query.) **Plugin-store disk writes** are limited to module-level allowlisted keys (example: `apps/desktop/src/renderer/lib/onboarding-mirror.ts`) to prevent arbitrary key writes under the `store:default` grant. See lessons for ports-and-adapters boundary enforcement and security design.
 
@@ -34,7 +36,7 @@ L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints.
 
 ## Shared renderer generation components
 
-`apps/desktop/src/renderer/components/generation/EditableOutput/` — app-level (not `@ajh/ui`) shared component used by AI Generate, saved `GenerationCard`, and the autopilot apply modal. Renders a Preview/Edit toggle for `resumeText` / `coverLetterText`; inline AI rewrite via `RewritePopover` calls `rewriteSelection` (in `renderer/lib/generate/generation/generation.ts`) which reuses `streamGenerate` with `buildRewritePrompt` (`packages/prompts/src/generate/rewrite.ts`) — no new IPC command. Edits persist through `useUpdateAiGeneration` (`services/use-ai-generations/`) → `aiGenerations.update` IPC → `update_texts` in `ai_generations/mod.rs`. See ADR-007 addendum for the optimistic-cache contract.
+`apps/desktop/src/renderer/components/generation/EditableOutput/` — app-level (not `@ajh/ui`) shared component used by AI Generate, saved `GenerationCard`, and the autopilot apply modal. Renders a Preview/Edit toggle for `resumeText` / `coverLetterText`; inline AI rewrite via `RewritePopover` calls `rewriteSelection` (in `renderer/lib/generate/generation/generation.ts`) which reuses `streamGenerate` with `buildRewritePrompt` (`packages/prompts/src/generate/rewrite/rewrite.ts`) — no new IPC command. Edits persist through `useUpdateAiGeneration` (`services/use-ai-generations/`) → `aiGenerations.update` IPC → `update_texts` in `ai_generations/mod.rs`. See ADR-007 addendum for the optimistic-cache contract.
 
 ## Feature ownership (frontend ↔ domain ↔ agent)
 
