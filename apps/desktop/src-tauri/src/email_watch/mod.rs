@@ -246,13 +246,15 @@ impl EmailWatchStore {
     /// Advance the persisted UID watermark after processing messages up
     /// through `uid` (the poller always calls this with the highest UID it
     /// just handled — monotonic, never rewound except by
-    /// [`Self::reset_on_uidvalidity_change`]). Unused by any command in PR A;
-    /// exercised directly by tests so the watermark contract is locked before
-    /// PR B's poller depends on it.
+    /// [`Self::reset_on_uidvalidity_change`]). The `MAX` in the `SET` clause
+    /// enforces that monotonic invariant AT THE DATABASE, not just by
+    /// caller convention — a caller that (mistakenly, or via a reordered
+    /// concurrent write) passes a lower uid than what's already stored can
+    /// never rewind the watermark.
     pub fn advance_last_uid(&self, uid: u32) -> AppResult<()> {
         let conn = self.conn.lock();
         conn.execute(
-            "UPDATE account SET last_uid = ?1 WHERE id = 1",
+            "UPDATE account SET last_uid = MAX(COALESCE(last_uid, 0), ?1) WHERE id = 1",
             params![i64::from(uid)],
         )?;
         Ok(())

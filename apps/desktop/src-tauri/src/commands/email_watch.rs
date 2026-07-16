@@ -174,8 +174,10 @@ fn is_check_now_rate_limited(last_check_ms: Option<u64>, now_ms: u64) -> bool {
 pub async fn email_watch_check_now(app: AppHandle) -> AppResult<EmailWatchStatus> {
     let store = store_or_err(&app)?;
     if is_check_now_rate_limited(store.account().last_check_ms, now_ms()) {
+        // Same literal `run_check`'s own concurrent-run guard rejects with —
+        // single source of truth, see `email_watch_scheduler::RATE_LIMITED_MESSAGE`.
         return Err(AppError::RateLimited(
-            "a check already ran recently — try again in a moment".to_string(),
+            crate::email_watch_scheduler::RATE_LIMITED_MESSAGE.to_string(),
         ));
     }
     crate::email_watch_scheduler::run_check(&app).await

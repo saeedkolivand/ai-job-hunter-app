@@ -265,6 +265,31 @@ fn uidvalidity_change_resets_last_uid_only_when_it_actually_changes() {
     assert_eq!(store.account().uidvalidity, Some(43));
 }
 
+#[test]
+fn advance_last_uid_never_rewinds_the_watermark() {
+    // The `MAX` in the UPDATE enforces this at the database, not just by
+    // caller convention (rust-backend-architect advisory #2) — a lower uid
+    // than what's already stored (a stale caller, or a reordered concurrent
+    // write) must be a no-op, never a rewind.
+    let (_dir, store) = new_store();
+    store.advance_last_uid(100).unwrap();
+    assert_eq!(store.account().last_uid, Some(100));
+
+    store.advance_last_uid(50).unwrap();
+    assert_eq!(
+        store.account().last_uid,
+        Some(100),
+        "a lower uid must not rewind it"
+    );
+
+    store.advance_last_uid(150).unwrap();
+    assert_eq!(
+        store.account().last_uid,
+        Some(150),
+        "a higher uid still advances it"
+    );
+}
+
 // ── Factory reset (Resettable calls `clear()`; see commands/privacy.rs) ──────
 
 #[test]

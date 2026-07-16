@@ -20,8 +20,13 @@
 //! own due-gated tick calls it, and so does the manual
 //! `email_watch_check_now` command (after its own separate 60 s
 //! min-interval guard — see `commands::email_watch`), so "real" behavior is
-//! defined exactly once.
+//! defined exactly once. [`run_check`] ALSO carries its own concurrent-run
+//! guard ([`RunGuard`]) — the 60 s min-gap check alone is TOCTOU (it reads
+//! `last_check_ms` before the multi-second IMAP pass runs, so N concurrent
+//! callers can all pass the same stale read); the guard makes "only one
+//! `run_check` body executes at a time" true regardless of caller.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use chrono::Local;
@@ -122,17 +127,61 @@ async fn tick(app: &AppHandle, consecutive_failures: &mut u32) {
     }
 }
 
+/// Process-global in-flight flag backing [`RunGuard`] — mirrors
+/// `commands::autopilot::RUNS_IN_FLIGHT`, simplified to a single flag (not a
+/// per-id `HashSet`) since there is only ever ONE configured mailbox. Process-
+/// local/transient (holds no user data), so a module static rather than
+/// managed Tauri state.
+static RUN_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+/// The exact rejection text surfaced to the renderer whenever a check
+/// (scheduled or manual) is refused — either because one is already in
+/// flight ([`RunGuard`]) or because one ran too recently
+/// (`commands::email_watch::email_watch_check_now`'s own 60 s min-gap
+/// guard). Both return this SAME string over IPC — `AppError` serializes as
+/// plain text, so the renderer discriminates by an exact string match (see
+/// `EmailWatchSection`'s `CHECK_NOW_RATE_LIMIT_MESSAGE`); do not change this
+/// text without updating that renderer constant too.
+pub const RATE_LIMITED_MESSAGE: &str = "a check already ran recently — try again in a moment";
+
+/// RAII claim on [`RUN_IN_FLIGHT`], mirroring `commands::autopilot::
+/// RunGuard`. [`RunGuard::try_acquire`] returns `None` when a check is
+/// already in flight (the caller must refuse, never queue/wait); dropping
+/// the returned guard clears the flag, so the claim is released on EVERY
+/// exit path — a normal return, an early `?`, or a panic unwind.
+struct RunGuard;
+
+impl RunGuard {
+    fn try_acquire() -> Option<RunGuard> {
+        RUN_IN_FLIGHT
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| RunGuard)
+    }
+}
+
+impl Drop for RunGuard {
+    fn drop(&mut self) {
+        RUN_IN_FLIGHT.store(false, Ordering::Release);
+    }
+}
+
 /// Run one full fetch+parse+match+notify pass against the currently
 /// configured mailbox, and stamp `last_check_ms` regardless of outcome (so
 /// [`is_due`]'s elapsed-time gate is measured from the last ATTEMPT, not the
 /// last success — otherwise a failing mail host would make every internal
 /// [`TICK_INTERVAL`] wake-up re-attempt immediately instead of respecting the
 /// backoff). Shared by the scheduler's own tick and the manual
-/// `email_watch_check_now` command.
+/// `email_watch_check_now` command. Refuses immediately (never queues) when
+/// a check is already in flight — see [`RunGuard`].
 pub async fn run_check(app: &AppHandle) -> AppResult<EmailWatchStatus> {
     let store = app
         .try_state::<EmailWatchStore>()
         .ok_or_else(|| AppError::Storage("email watch is unavailable".to_string()))?;
+
+    let Some(_guard) = RunGuard::try_acquire() else {
+        return Err(AppError::RateLimited(RATE_LIMITED_MESSAGE.to_string()));
+    };
 
     let outcome = run_check_inner(app, &store).await;
     if let Err(e) = store.record_check(now_ms()) {
@@ -152,7 +201,8 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
         .unwrap_or_else(|| DEFAULT_IMAP_HOST.to_string());
     let port = account.port.unwrap_or(DEFAULT_IMAP_PORT);
     let app_password = app
-        .state::<Mutex<CredentialStore>>()
+        .try_state::<Mutex<CredentialStore>>()
+        .ok_or_else(|| AppError::Storage("credential store is unavailable".to_string()))?
         .lock()
         .get_decrypted(CREDENTIAL_SLOT)
         .map(|(_, password)| password)
@@ -188,8 +238,11 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
     .await
     {
         Ok(result) => result?,
-        Err(e) => {
-            log::warn!("[email_watch] tick task panicked: {e}");
+        Err(_) => {
+            // Fixed-string log — a `JoinError`'s `Display` can echo the panic
+            // payload, which (unlike `imap`'s own errors) has no guarantee of
+            // being content-free.
+            log::warn!("[email_watch] tick task panicked");
             return Err(AppError::Message(
                 "email check failed unexpectedly".to_string(),
             ));
@@ -200,16 +253,14 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
         store.reset_on_uidvalidity_change(tick.uidvalidity)?;
     }
 
-    // Seed from the STORE's own (just-reset, if applicable) watermark rather
-    // than the pre-tick `stored_last_uid` snapshot: after a UIDVALIDITY
-    // change, the old value is meaningless against the new numbering — using
-    // it here would risk `advance_last_uid` writing a stale/too-high bound
-    // that silently suppresses every real message under the new numbering.
-    let mut max_uid = if tick.uidvalidity_changed {
-        None
-    } else {
-        stored_last_uid
-    };
+    // Seed from the SAME effective-watermark decision `poller::run_tick`
+    // itself used (not the raw pre-tick `stored_last_uid` snapshot): after a
+    // UIDVALIDITY change, the old value is meaningless against the new
+    // numbering — using it here would risk `advance_last_uid` writing a
+    // stale/too-high bound that silently suppresses every real message under
+    // the new numbering. Reuses `poller::effective_last_uid` rather than a
+    // second copy of the same if/else, so there is exactly one decision.
+    let mut max_uid = poller::effective_last_uid(tick.uidvalidity_changed, stored_last_uid);
     for outcome in &tick.outcomes {
         max_uid = Some(max_uid.map_or(outcome.uid, |m| m.max(outcome.uid)));
         let uid_key = outcome.uid.to_string();
@@ -312,5 +363,38 @@ mod tests {
             !is_due(Some(last), 1, now),
             "one failure — 30 min backoff not yet elapsed"
         );
+    }
+
+    // ── concurrent-run guard (rust-backend-architect HIGH) ─────────────────
+    // `RUN_IN_FLIGHT` is a single process-global flag (not per-id, unlike
+    // autopilot's), so these two tests share state and MUST run serially
+    // relative to each other or they'd flake against the parallel test runner.
+
+    #[test]
+    #[serial_test::serial]
+    fn run_guard_blocks_a_second_concurrent_acquire() {
+        let first = RunGuard::try_acquire().expect("first acquire succeeds");
+        assert!(
+            RunGuard::try_acquire().is_none(),
+            "a second acquire while one is in flight is blocked (no concurrent runs)"
+        );
+        drop(first);
+        assert!(
+            RunGuard::try_acquire().is_some(),
+            "after the first guard drops, a new acquire succeeds"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn run_guard_releases_on_drop_even_after_repeated_acquire_attempts() {
+        let guard = RunGuard::try_acquire().expect("acquire succeeds");
+        // Several refused attempts while held must not corrupt the flag —
+        // each is a no-op read, not a competing claim.
+        for _ in 0..3 {
+            assert!(RunGuard::try_acquire().is_none());
+        }
+        drop(guard);
+        assert!(RunGuard::try_acquire().is_some());
     }
 }

@@ -44,7 +44,7 @@ pub struct TickResult {
     pub outcomes: Vec<MessageOutcome>,
 }
 
-/// Whether the LIVE `UIDVALIDITY` (just read via `SELECT`) differs from the
+/// Whether the LIVE `UIDVALIDITY` (just read via `EXAMINE`) differs from the
 /// previously stored one — a mailbox renumbering, meaning the old watermark
 /// may refer to entirely different messages now. Pure so it is directly
 /// unit-testable without a network round trip.
@@ -52,15 +52,53 @@ fn has_uidvalidity_changed(stored_uidvalidity: Option<u32>, live_uidvalidity: u3
     stored_uidvalidity != Some(live_uidvalidity)
 }
 
-/// The `last_uid` bound [`run_tick`] filters fetched headers against —
-/// `None` (every header counts as new) after a UIDVALIDITY change, otherwise
-/// the caller's stored watermark unchanged.
-fn effective_last_uid(uidvalidity_changed: bool, stored_last_uid: Option<u32>) -> Option<u32> {
+/// The `last_uid` bound to filter fetched headers (or, equally, to seed a
+/// post-tick watermark advance) against — `None` (everything counts as new)
+/// after a UIDVALIDITY change, otherwise the caller's stored watermark
+/// unchanged. `pub(crate)`: [`run_tick`] uses it internally, and
+/// `email_watch_scheduler` reuses the SAME fn (rather than reimplementing the
+/// identical if/else) to seed its post-tick `advance_last_uid` call — one
+/// decision, one place, inheriting these tests.
+pub(crate) fn effective_last_uid(
+    uidvalidity_changed: bool,
+    stored_last_uid: Option<u32>,
+) -> Option<u32> {
     if uidvalidity_changed {
         None
     } else {
         stored_last_uid
     }
+}
+
+/// Hard cap on how many above-the-watermark headers a single tick processes
+/// (fingerprint + candidate-body-fetch + match). A burst of new mail since
+/// the last check (a long-disconnected mailbox, a mass-application day) is
+/// bounded rather than processed unboundedly in one blocking pass; the
+/// watermark only advances to the highest uid actually processed, so any
+/// remainder is picked up on the NEXT tick — nothing is permanently skipped,
+/// just spread across ticks. Lowest-uid-first (oldest unprocessed mail),
+/// never highest-first, so the remainder is always the newer half.
+const MAX_HEADERS_PER_TICK: usize = 200;
+
+/// Hard cap on raw message bytes handed to [`parser::parse_body_text`] — a
+/// message with large attachments could otherwise cost real CPU decoding
+/// (base64, MIME structure) content this feature never needs (only the
+/// text/plain body). Attachments/trailing MIME parts are typically AFTER the
+/// text body in a confirmation email, so a byte cut here only risks losing
+/// content this feature doesn't read anyway.
+const MAX_BODY_BYTES: usize = 200_000;
+
+/// Sort `headers` ascending by uid and cap to at most `cap` entries —
+/// oldest-first, so any never-reached remainder this tick is picked up on
+/// the next one. Pure/network-free, factored out of [`run_tick`] so the
+/// ordering+cap behavior itself is directly unit-testable.
+fn cap_oldest_first(
+    mut headers: Vec<&imap_client::HeaderCandidate>,
+    cap: usize,
+) -> Vec<&imap_client::HeaderCandidate> {
+    headers.sort_unstable_by_key(|h| h.uid);
+    headers.truncate(cap);
+    headers
 }
 
 /// Run one IMAP tick: fetch headers since `since`, drop anything at or below
@@ -89,6 +127,7 @@ pub fn run_tick(
         .iter()
         .filter(|h| effective_last_uid.is_none_or(|lu| h.uid > lu))
         .collect();
+    let relevant = cap_oldest_first(relevant, MAX_HEADERS_PER_TICK);
 
     // Parse + fingerprint every relevant header up front (cheap, in-process,
     // no network) so we know exactly which uids need a body fetch.
@@ -120,9 +159,10 @@ pub fn run_tick(
         .into_iter()
         .map(|(uid, header, is_candidate, domain_hint)| {
             let matched_application_id = header.filter(|_| is_candidate).and_then(|header| {
-                let body_text = bodies
-                    .get(&uid)
-                    .and_then(|raw| parser::parse_body_text(raw));
+                let body_text = bodies.get(&uid).and_then(|raw| {
+                    let capped = &raw[..raw.len().min(MAX_BODY_BYTES)];
+                    parser::parse_body_text(capped)
+                });
                 let candidates = parser::extract_candidates(
                     &header.subject,
                     body_text.as_deref(),
@@ -200,6 +240,31 @@ mod tests {
         // First-ever connect: nothing stored yet, so `Some(_)` never matches
         // and every fetched header is treated as new.
         assert!(has_uidvalidity_changed(None, 7));
+    }
+
+    // ── cap_oldest_first (rust-backend-architect advisory #4) ───────────────
+
+    fn header_with_uid(uid: u32) -> imap_client::HeaderCandidate {
+        imap_client::HeaderCandidate {
+            uid,
+            raw_header: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn cap_oldest_first_sorts_ascending_and_caps_the_count() {
+        let (h5, h1, h3) = (header_with_uid(5), header_with_uid(1), header_with_uid(3));
+        let capped = cap_oldest_first(vec![&h5, &h1, &h3], 2);
+        let uids: Vec<u32> = capped.iter().map(|h| h.uid).collect();
+        assert_eq!(uids, vec![1, 3], "keeps the lowest (oldest) uids first");
+    }
+
+    #[test]
+    fn cap_oldest_first_is_a_no_op_under_the_cap() {
+        let (h2, h1) = (header_with_uid(2), header_with_uid(1));
+        let capped = cap_oldest_first(vec![&h2, &h1], 200);
+        let uids: Vec<u32> = capped.iter().map(|h| h.uid).collect();
+        assert_eq!(uids, vec![1, 2]);
     }
 
     #[test]

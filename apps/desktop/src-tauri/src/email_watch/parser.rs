@@ -26,13 +26,20 @@ pub struct EmailHeader {
     pub message_id: Option<String>,
 }
 
+/// Cap on how many bytes of a decoded subject are kept before fingerprinting
+/// or extraction ever sees it. The `regex` crate is itself immune to ReDoS
+/// (no backtracking), so this isn't a catastrophic-backtracking concern —
+/// it's the same "bound unbounded input" discipline as [`BODY_SNIPPET_BYTES`]
+/// below, applied to a pathological/hostile subject header.
+const SUBJECT_MAX_BYTES: usize = 500;
+
 /// Parse a raw header-only byte block (as returned by
 /// `imap_client::fetch_headers_since`) into [`EmailHeader`]. `None` only if
 /// mail-parser can't construct even an empty message from the bytes (should
 /// not happen for real server responses, but never trusted blindly).
 pub fn parse_header(raw: &[u8]) -> Option<EmailHeader> {
     let message = MessageParser::default().parse(raw)?;
-    let subject = message.subject().unwrap_or_default().to_string();
+    let subject = safe_prefix(message.subject().unwrap_or_default(), SUBJECT_MAX_BYTES).to_string();
     let from = message.from().and_then(|addr| addr.first());
     let from_name = from
         .and_then(|a| a.name())
@@ -67,14 +74,29 @@ pub fn parse_body_text(raw: &[u8]) -> Option<String> {
 /// application-confirmation email. Case-insensitive, Unicode-aware (so
 /// `(?i)für` matches `FÜR`/`Für`). This is the ONLY gate — a hit here is
 /// required before any body is fetched or any matching is attempted.
+///
+/// Recall was broadened per `job-match-expert` review (item 8/9): the
+/// informal "thanks for applying"/"thank you for your application"
+/// contraction, "we('ve| have) received your application", bare "application
+/// confirmation"/"received", reverse-order "received your application", the
+/// DE dative "Ihrer Bewerbung", "Eingangsbestätigung", and informal "deine
+/// Bewerbung". This intentionally trades some precision for recall — see the
+/// `known_false_positive_*` tests below for the accepted risk under a
+/// notify-only (never auto-write) model.
 static SUBJECT_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     [
         r"(?i)thank you for applying",
+        r"(?i)thank(?:s| you)(?: you)? for (?:applying|your application)",
         r"(?i)application (?:was |has been )?(?:received|submitted)",
+        r"(?i)application (?:confirmation|received)",
+        r"(?i)we(?:'ve| have)? received your application",
+        r"(?i)received your application",
         r"(?i)your application to",
-        r"(?i)ihre bewerbung",
+        r"(?i)ihr(?:e|er) bewerbung",
         r"(?i)bewerbung (?:ist )?(?:eingegangen|erhalten)",
         r"(?i)danke für ihre bewerbung",
+        r"(?i)eingangsbestätigung",
+        r"(?i)deine bewerbung",
     ]
     .iter()
     .map(|p| Regex::new(p).expect("static subject pattern is valid"))
@@ -154,8 +176,15 @@ pub struct Candidates {
 /// itself sits OUTSIDE the named group, so it never pollutes the captured
 /// text.
 static TITLE_COMPANY_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
-    const EN_BOUNDARY: &str = r"(?:$|[.,!?;:]|\s+(?:was|is|has|will|being|which|and)\b)";
-    const DE_BOUNDARY: &str = r"(?:$|[.,!?;:]|\s+(?:ist|war|wurde|wird|und)\b)";
+    // NOTE: `and`/`und` deliberately excluded from these boundaries (unlike
+    // the other continuation words) — a company name legitimately containing
+    // "and"/"und" (e.g. "Johnson and Johnson", "Miller und Frost") would
+    // otherwise be truncated at the first one. Both words are already in
+    // `matcher::STOPWORDS`, so leaving them IN the captured span (when the
+    // capture does run past them) is harmless — the matcher strips them
+    // before scoring either way.
+    const EN_BOUNDARY: &str = r"(?:$|[.,!?;:]|\s+(?:was|is|has|will|being|which)\b)";
+    const DE_BOUNDARY: &str = r"(?:$|[.,!?;:]|\s+(?:ist|war|wurde|wird)\b)";
     [
         // EN, title+company: "applying for/to (the) Software Engineer position at Acme Corp"
         format!(
@@ -330,6 +359,39 @@ mod tests {
         assert!(fingerprint(&header("DANKE FÜR IHRE BEWERBUNG", None)).is_candidate());
     }
 
+    // ── fingerprint: broadened recall (job-match-expert items 8/9) ──────────
+
+    #[test]
+    fn fingerprint_matches_the_broadened_en_recall_phrases() {
+        for subject in [
+            "Thanks for applying to Acme!",   // informal contraction
+            "Thank you for your application", // "application" not "applying"
+            "We've received your application",
+            "We have received your application",
+            "Application confirmation",
+            "Confirmation: received your application", // reverse order, no "we"
+        ] {
+            assert!(
+                fingerprint(&header(subject, None)).is_candidate(),
+                "expected a match for {subject:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn fingerprint_matches_the_broadened_de_recall_phrases() {
+        for subject in [
+            "Ihrer Bewerbung liegt uns vor", // dative "Ihrer Bewerbung"
+            "Eingangsbestätigung Ihrer Bewerbung",
+            "Deine Bewerbung ist eingegangen", // informal "du" form
+        ] {
+            assert!(
+                fingerprint(&header(subject, None)).is_candidate(),
+                "expected a match for {subject:?}"
+            );
+        }
+    }
+
     // ── fingerprint: negative / near-miss ───────────────────────────────────
 
     #[test]
@@ -350,6 +412,59 @@ mod tests {
     fn fingerprint_rejects_a_near_miss_that_only_mentions_applying_in_passing() {
         // Contains "applying" but not the gated phrase "thank you for applying".
         assert!(!fingerprint(&header("Tips for applying to jobs this year", None)).is_candidate());
+    }
+
+    // ── known accepted false-positive shapes (job-match-expert item 11) ─────
+    //
+    // The fingerprint gate is a SUBJECT phrase match — it has no way to tell
+    // a genuine confirmation from a rejection, an interview invite, or a
+    // draft-completion nudge that happens to reuse the same wording. This is
+    // an ACCEPTED risk under v1's notify+confirm model (never auto-write): a
+    // false-positive match still only produces a Notification Center card
+    // pointing at the RIGHT saved application (the company/title still has to
+    // clear the matcher's threshold) — the user reads the actual email and
+    // decides. A body negative-signal check ("unfortunately", "not moving
+    // forward", "other candidates", "regret to inform", …) MUST be added
+    // before any future ratchet toward an automatic write, to avoid
+    // auto-marking a REJECTED application as if it were merely confirmed.
+
+    #[test]
+    fn known_false_positive_a_rejection_email_still_fingerprints() {
+        // A real ATS rejection often reuses the exact confirmation subject
+        // line from earlier in the thread.
+        assert!(fingerprint(&header("Your application to Acme Corp", None)).is_candidate());
+    }
+
+    #[test]
+    fn known_false_positive_b_an_interview_invite_still_fingerprints() {
+        assert!(fingerprint(&header("Your application to Acme — Next Steps", None)).is_candidate());
+    }
+
+    #[test]
+    fn known_false_positive_d_a_draft_completion_nudge_still_fingerprints() {
+        assert!(fingerprint(&header("Complete your application to Acme", None)).is_candidate());
+    }
+
+    // ── and/und no longer truncates a company name (item 10 regression) ─────
+
+    #[test]
+    fn extraction_no_longer_truncates_a_company_name_containing_and() {
+        let c = extract_candidates(
+            "Your application to Johnson and Johnson was received",
+            None,
+            None,
+        );
+        assert_eq!(c.company.as_deref(), Some("Johnson and Johnson"));
+    }
+
+    #[test]
+    fn extraction_no_longer_truncates_a_company_name_containing_und() {
+        let c = extract_candidates(
+            "Ihre Bewerbung bei Miller und Frost ist eingegangen",
+            None,
+            None,
+        );
+        assert_eq!(c.company.as_deref(), Some("Miller und Frost"));
     }
 
     #[test]

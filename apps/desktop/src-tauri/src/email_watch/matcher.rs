@@ -310,6 +310,66 @@ mod tests {
         assert_eq!(result.map(|s| s.application_id), Some("a1".to_string()));
     }
 
+    // ── known precision limits (job-match-expert item 11 e/f, documented not fixed) ──
+
+    #[test]
+    fn known_precision_limit_ambiguous_title_extraction_can_favor_the_wrong_role() {
+        // Documents a real precision limit, not a bug: when a company has TWO
+        // saved roles and the email's extracted title only generically
+        // overlaps both, the matcher picks whichever token overlap is
+        // HIGHER — it has no way to know which role the email is actually
+        // about beyond that overlap. Here "Engineer" shares a token with
+        // a1's "Software Engineer" but none with a2's "Backend Developer",
+        // even though the real confirmation could equally plausibly be
+        // about either role.
+        let apps = vec![
+            app(
+                "a1",
+                "Acme Corp",
+                "Software Engineer",
+                ApplicationStatus::Saved,
+            ),
+            app(
+                "a2",
+                "Acme Corp",
+                "Backend Developer",
+                ApplicationStatus::Saved,
+            ),
+        ];
+        let result = best_match(
+            &candidates(Some("Acme Corp"), Some("Engineer")),
+            &apps,
+            false,
+        );
+        assert_eq!(
+            result.map(|s| s.application_id),
+            Some("a1".to_string()),
+            "picks a1 purely because 'Engineer' shares a token with its title — not because \
+             the email is provably about that role; a known precision limit, not a correctness bug"
+        );
+    }
+
+    #[test]
+    fn known_precision_limit_two_different_companies_sharing_one_token_both_stay_below_threshold() {
+        let apps = vec![
+            app("a1", "Acme Ventures Group", "", ApplicationStatus::Saved),
+            app("a2", "Acme Capital Partners", "", ApplicationStatus::Saved),
+        ];
+        // "Acme" alone shares only the generic "acme" token with EACH
+        // company — neither clears the threshold on its own, so this is
+        // correctly a non-match rather than a coin-flip between two
+        // unrelated companies that happen to share one word.
+        assert_eq!(
+            best_match(&candidates(Some("Acme"), None), &apps, false),
+            None
+        );
+    }
+
+    #[test]
+    fn umlaut_and_legal_suffix_normalize_to_the_same_tokens() {
+        assert_eq!(normalize_tokens("Müller GmbH"), normalize_tokens("Müller"));
+    }
+
     #[test]
     fn normalize_tokens_strips_legal_suffixes_so_they_compare_equal() {
         assert_eq!(normalize_tokens("Acme Corp"), normalize_tokens("Acme Inc."));

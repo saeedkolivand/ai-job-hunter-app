@@ -19,9 +19,10 @@
 //! TLS stack `net/http.rs` already depends on for `reqwest` — not a second TLS
 //! stack, just a second consumer of the one already in the tree.
 //!
-//! [`validate_connection`] — TLS connect, `LOGIN`, `SELECT INBOX`, then log
-//! out — proves a host/address/app-password combination actually works before
-//! anything is persisted (`email_watch_connect`).
+//! [`validate_connection`] — TLS connect, `LOGIN`, `EXAMINE INBOX` (read-only
+//! — see [`login_and_select`]), then log out — proves a host/address/
+//! app-password combination actually works before anything is persisted
+//! (`email_watch_connect`).
 //!
 //! **PR B** adds the read path the poller needs, sharing the same
 //! connect/login/select prefix ([`login_and_select`]): [`fetch_headers_since`]
@@ -54,22 +55,29 @@ pub const DEFAULT_IMAP_PORT: u16 = 993;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Read/write timeout applied to the socket AFTER it connects (covers TLS
-/// handshake, greeting, `LOGIN`, `SELECT`) — bounds a server that ACCEPTS the
+/// handshake, greeting, `LOGIN`, `EXAMINE`) — bounds a server that ACCEPTS the
 /// connection but then never answers (a slow-loris-style stall), which
 /// `CONNECT_TIMEOUT` alone does not cover.
 const IO_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// A logged-in, `INBOX`-selected session over the timeout-bounded TLS socket.
+/// A logged-in, `INBOX`-opened session over the timeout-bounded TLS socket.
 type ImapSession = imap::Session<native_tls::TlsStream<TcpStream>>;
 
-/// TLS-connect (with [`CONNECT_TIMEOUT`]/[`IO_TIMEOUT`]), `LOGIN`, and
-/// `SELECT INBOX` — the shared prefix every connector entry point in this
-/// file needs (connect-time validation, and PR B's header/body fetches).
+/// TLS-connect (with [`CONNECT_TIMEOUT`]/[`IO_TIMEOUT`]), `LOGIN`, and open
+/// `INBOX` via `EXAMINE` (NOT `SELECT`) — the shared prefix every connector
+/// entry point in this file needs (connect-time validation, and PR B's
+/// header/body fetches).
 ///
-/// On a SELECT failure the session is best-effort logged out before
-/// returning `Err` (a logout failure must never mask the real SELECT error);
-/// on a LOGIN failure there is no session to log out. Callers own logging out
-/// the returned session on their own success/further-error paths.
+/// `EXAMINE` is `SELECT`'s read-only twin (same `Mailbox` response, including
+/// `uid_validity`) — every fetch in this module already uses `BODY.PEEK[...]`
+/// (never sets `\Seen`), so this is belt-and-suspenders: the SERVER itself
+/// now refuses any write (`STORE`/`EXPUNGE`/...) on this session, not just
+/// this crate's own discipline never issuing one.
+///
+/// On an EXAMINE failure the session is best-effort logged out before
+/// returning `Err` (a logout failure must never mask the real error); on a
+/// LOGIN failure there is no session to log out. Callers own logging out the
+/// returned session on their own success/further-error paths.
 ///
 /// Blocking (the `imap` crate has no async API) — call only from
 /// `spawn_blocking`.
@@ -99,9 +107,9 @@ fn login_and_select(
             )
         })?;
 
-    match session.select("INBOX").map_err(|e| {
+    match session.examine("INBOX").map_err(|e| {
         log::warn!(
-            "[email_watch] IMAP SELECT INBOX against {host}:{port} failed: {}",
+            "[email_watch] IMAP EXAMINE INBOX against {host}:{port} failed: {}",
             error_kind(&e)
         );
         AppError::Provider("could not open the mailbox inbox".to_string())
@@ -114,10 +122,10 @@ fn login_and_select(
     }
 }
 
-/// `LOGIN` + `SELECT INBOX`, then best-effort log out. Returns `Ok(())` only
-/// if every step succeeds; the caller must not persist the account/
-/// credential on `Err`. See [`login_and_select`] for the blocking/privacy
-/// contract.
+/// `LOGIN` + `EXAMINE INBOX` (read-only), then best-effort log out. Returns
+/// `Ok(())` only if every step succeeds; the caller must not persist the
+/// account/credential on `Err`. See [`login_and_select`] for the
+/// blocking/privacy contract.
 pub fn validate_connection(
     host: &str,
     port: u16,
@@ -143,7 +151,7 @@ pub struct HeaderCandidate {
 
 #[derive(Debug)]
 pub struct HeaderFetchResult {
-    /// The mailbox's current `UIDVALIDITY` (from `SELECT`). The caller
+    /// The mailbox's current `UIDVALIDITY` (from `EXAMINE`). The caller
     /// compares this against the previously stored value — see
     /// [`crate::email_watch::poller`] — since this connector has no
     /// visibility into the store's prior watermark.
@@ -186,7 +194,7 @@ fn fetch_headers_inner(
     since: chrono::NaiveDate,
 ) -> AppResult<HeaderFetchResult> {
     let uidvalidity = mailbox.uid_validity.ok_or_else(|| {
-        log::warn!("[email_watch] SELECT INBOX on {host}:{port} returned no UIDVALIDITY");
+        log::warn!("[email_watch] EXAMINE INBOX on {host}:{port} returned no UIDVALIDITY");
         AppError::Provider("mailbox does not report a UID validity value".to_string())
     })?;
 
@@ -244,6 +252,13 @@ fn fetch_headers_inner(
 /// "minimize reads" design: never fetched for every candidate, only ones
 /// [`crate::email_watch::parser::fingerprint`] already flagged). An empty
 /// `uids` short-circuits without a network round trip.
+///
+/// This opens a SECOND connection (a fresh `EXAMINE`) rather than reusing
+/// [`fetch_headers_since`]'s session, so it does NOT re-check `UIDVALIDITY`
+/// against the value that fetch already saw — a rename/renumbering landing
+/// in the few-hundred-ms gap between the two calls is vanishingly rare, and
+/// self-corrects on the very next tick (a mismatched watermark is caught
+/// there, not silently trusted forever).
 pub fn fetch_bodies(
     host: &str,
     port: u16,
@@ -410,7 +425,7 @@ fn error_kind(e: &imap::Error) -> &'static str {
 
 // No automated test for the network-round-trip functions above (connect,
 // login_and_select, fetch_headers_since, fetch_bodies): every branch is a
-// real TLS/LOGIN/SELECT/FETCH exchange against an IMAP server, and there is
+// real TLS/LOGIN/EXAMINE/FETCH exchange against an IMAP server, and there is
 // no fake IMAP harness in this crate — documented gap, mirrors the project's
 // own "IMAP integration is manual smoke" note. The pure, network-free helper
 // below (and EmailWatchStore's store-level logic in `tests.rs`) IS covered.
