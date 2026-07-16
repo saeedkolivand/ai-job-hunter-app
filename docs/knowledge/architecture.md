@@ -1,6 +1,6 @@
 # Architecture (map + boundaries + feature ownership)
 
-Last updated: 2026-06-13
+Last updated: 2026-07-16
 
 Canonical: [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md), [`docs/architecture-rules.md`](../architecture-rules.md) (the L0–L3 rules, tested by `cargo test --test architecture`), [`docs/PATTERNS.md`](../PATTERNS.md). Query graphify (MCP `query_graph`, else `graphify explain "<module>"`) for a scoped view.
 
@@ -29,10 +29,11 @@ L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints.
 ## Backend modules (`apps/desktop/src-tauri/src/`)
 
 - **Resume/export** — `export/` (pdf/, docx/, typst_engine/, model_docx/, templates/, parser/, links/, types.rs), `model/`, `theme/`, `locale/`, `contact_profile/`, `validate/`.
-- **Job match / ATS** — `commands/match_resume.rs`, `commands/cover_letter.rs` + `cover_letter/`, `recommend/`, `validate/`.
-- **Automation** — `scraping/` (boards/, engine/, http/, linkedin/, board*login/), `browser/`, `autopilot/` + `autopilot_scheduler`. *(No auto-apply engine: the app is an apply **assistant** — autopilot finds → ranks → notifies; the user tailors & submits.)\_
-- **AI** — `commands/ai_provider/` (ollama/openai/anthropic/gemini + cli_agent), `commands/ai.rs`, `documents/` (embeddings), `ai_generations/`, `extraction/`, `recommend/`.
-- **Platform/data** — `platform/` (`config.rs` `data_dir()`), `net/` (`http.rs` `shared()`), `error.rs`, `observability.rs` (`Span`), `db.rs`, `data_store.rs`, `credentials/`, `updater/`, `pipeline/`, `jobs/`, `postings/`, `job_preferences/`, `profile_import/`.
+- **Job match / ATS** — `commands/match_resume.rs`, `cover_letter/`, `commands/ai.rs` (cover-letter generation), `recommend/`, `validate/`.
+- **Automation** — `scraping/` (boards/, engine/, http/, linkedin/, board_login/, trust/, rate_limiter/, scrape_url/, types/), `autopilot/` + `autopilot_scheduler`, `email_watch/` + `email_watch_scheduler.rs`, `agent/`, `commands/agent.rs`. _(No auto-apply engine: the app is an apply **assistant** — autopilot finds → ranks → notifies; the user tailors & submits.)_ See ADR-0013 for email-confirmation watching.
+- **AI** — `commands/ai_provider/` (ollama, openai, anthropic, gemini, ollama_cloud, cli_agent), `commands/ai.rs`, `documents/` (embeddings), `ai_generations/`, `ai_config/`, `extraction/`, `recommend/`. See ADR-0012 for backend-owned provider/model/base_url resolution.
+- **Notifications** — `notifications/` (persistent store + action registry), `tray/` (system tray + menu). See `notification-center.md`.
+- **Platform/data** — `platform/` (`config.rs` `data_dir()`), `net/` (`http.rs` `shared()`), `error.rs`, `observability.rs` (`Span`), `db.rs`, `data_store.rs`, `credentials/`, `updater/`, `pipeline/`, `jobs/`, `postings/`, `job_preferences/`, `profile_import/`, `applications/`, `salary_research/`, `referrals/`, `spend/`, `limits/`, `deeplink/`, `events/`, `extension_bridge/`.
 
 ## Shared renderer generation components
 
@@ -40,18 +41,18 @@ L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints.
 
 ## Feature ownership (frontend ↔ domain ↔ agent)
 
-Renderer (`apps/desktop/src/renderer/`): ~14 features each owning a route + service hooks (`renderer/services/`, [TanStack Query][tanstack-query]), [Zustand][zustand] stores, state machines (`lib/machines/`). Map: jobs/search/monitoring → backend jobs/scraping; ai-generate/ai-workspace → AI + resume/export; resumes/resume → resume-export domain; autopilot/onboarding → automation; settings/privacy → platform/security.
+Renderer (`apps/desktop/src/renderer/features/`): 12 features each owning a route + service hooks (`renderer/services/`, [TanStack Query][tanstack-query]), [Zustand][zustand] stores, state machines (`lib/machines/`). Directories: ai-generate, analyze (job match UI), applications, autopilot, dashboard, documents (export + tailoring), jobs (search/monitoring), monitoring, onboarding, resume-builder, settings, support.
 
-| Area                                 | Owner agent                                        | Key paths                                                                      |
-| ------------------------------------ | -------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Resume / export / templates          | `resume-export-expert` (impl `pdf-docx-generator`) | `export/` (incl. `typst_engine/`), `model/`, `theme/`, `locale/`, `templates/` |
-| ATS scoring / job match              | `job-match-expert`                                 | `commands/match_resume.rs`, `cover_letter`, `recommend/`, `validate/`          |
-| Scraping / apply assistant           | `scraping-applier-expert`                          | `scraping/`, `browser/`, `autopilot/`                                          |
-| AI providers / embeddings / prompts  | `ai-provider-expert`                               | `commands/ai_provider/`, `commands/ai.rs`, `documents/`, `packages/prompts`    |
-| Rust backend / data / migrations     | `rust-backend-architect`                           | rest of `src-tauri/src/**`, `db.rs`, `*Store`                                  |
-| Security (cross-cutting)             | `tauri-security-reviewer`                          | `capabilities/`, `net/`, `credentials/`, deps, `updater/`                      |
-| Frontend / UI / a11y / i18n          | `frontend-reviewer`                                | `apps/desktop/src/renderer/**`, `packages/ui`                                  |
-| Docs / knowledge / lessons / release | `project-steward`                                  | `docs/`, `docs/knowledge/`, release config                                     |
+| Area                                 | Owner agent                                        | Key paths                                                                                 |
+| ------------------------------------ | -------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Resume / export / templates          | `resume-export-expert` (impl `pdf-docx-generator`) | `export/` (incl. `typst_engine/`, `templates/`), `model/`, `theme/`, `locale/`            |
+| ATS scoring / job match              | `job-match-expert`                                 | `commands/match_resume.rs`, `cover_letter/`, `recommend/`, `validate/`                    |
+| Scraping / apply assistant           | `scraping-applier-expert`                          | `scraping/`, `autopilot/`, `agent/`, `email_watch/`                                       |
+| AI providers / embeddings / prompts  | `ai-provider-expert`                               | `commands/ai_provider/`, `commands/ai.rs`, `ai_config/`, `documents/`, `packages/prompts` |
+| Rust backend / data / migrations     | `rust-backend-architect`                           | rest of `src-tauri/src/**`, `db.rs`, `*Store`                                             |
+| Security (cross-cutting)             | `tauri-security-reviewer`                          | `capabilities/`, `net/`, `credentials/`, deps, `updater/`, `extension_bridge/`            |
+| Frontend / UI / a11y / i18n          | `frontend-reviewer`                                | `apps/desktop/src/renderer/**`, `packages/ui`                                             |
+| Docs / knowledge / lessons / release | `project-steward`                                  | `docs/`, `docs/knowledge/`, release config                                                |
 
 [tauri]: https://tauri.app
 [pnpm]: https://pnpm.io
