@@ -47,7 +47,7 @@
 
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use futures::StreamExt;
 use parking_lot::Mutex;
@@ -59,6 +59,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::applications::{normalize_job_url, ApplicationStore};
 use crate::error::{AppError, AppResult};
+use crate::events::{emit_event, EXTENSION_BRIDGE_CHANGED};
 
 mod answer_assist;
 mod answer_rewrite;
@@ -252,23 +253,25 @@ const AUTOFILL_OPTIN_FILE: &str = "extension_autofill_optin";
 const AI_ASSIST_OPTIN_FILE: &str = "extension_ai_assist_optin";
 
 /// Managed Tauri state for the bridge. Commands read the bound port + token off
-/// this; the server flips `connected` while a socket is paired.
+/// this; the server counts `connected` up/down as sockets pair/close.
 pub struct BridgeState {
     /// `Some` once a port in [`PORT_RANGE`] bound; `None` if the bridge is
     /// disabled (no free port / startup failure).
     port: Mutex<Option<u16>>,
     /// The pairing secret. Persisted to disk; rotated by `regenerate`.
     token: Mutex<String>,
-    /// Last-writer-wins status hint: set `true` once the extension's client
-    /// proof verifies (the v2 mutual handshake completes — never on the bare WS
+    /// Live-connection refcount: incremented once a socket's client proof
+    /// verifies (the v2 mutual handshake completes — never on the bare WS
     /// handshake nor the `hello`/`challenge` exchange, so an unauthenticated
-    /// client is never reported as connected) and `false` when a socket loop
-    /// exits. It is **not** a refcount — this single bool assumes the de-facto
-    /// single extension socket (loopback, one extension), so with concurrent
-    /// sockets the second to close clears the flag while the first is still
-    /// open. If concurrent sockets ever become real, promote to an
-    /// `AtomicUsize` refcount.
-    connected: AtomicBool,
+    /// client is never counted) and decremented when that same socket's loop
+    /// exits. Multiple browsers may legitimately share one pairing token
+    /// (each gets its own per-socket HMAC handshake), so this is a COUNT, not
+    /// a last-writer-wins flag — otherwise whichever socket closed last would
+    /// decide `is_connected()` for every other still-open one (e.g. Chrome's
+    /// MV3 service worker idling its socket closed would falsely report
+    /// "disconnected" while Firefox is still paired). [`Self::is_connected`]
+    /// is `count > 0`.
+    connected: AtomicUsize,
     /// Assisted-autofill opt-in (default OFF, persisted to [`AUTOFILL_OPTIN_FILE`]).
     /// A `profile.get` returns the contact profile only while this is on; off ⇒
     /// the desktop replies with a clear refusal (never silently). This is the
@@ -310,7 +313,7 @@ impl BridgeState {
         Self {
             port: Mutex::new(None),
             token: Mutex::new(token),
-            connected: AtomicBool::new(false),
+            connected: AtomicUsize::new(0),
             autofill_enabled: AtomicBool::new(load_autofill_optin(data_dir)),
             ai_assist_enabled: AtomicBool::new(load_ai_assist_optin(data_dir)),
             autotrack_enabled: AtomicBool::new(autotrack::load_autotrack_optin(data_dir)),
@@ -324,9 +327,10 @@ impl BridgeState {
         *self.port.lock()
     }
 
-    /// Whether an authenticated extension socket is currently paired.
+    /// Whether at least one authenticated extension socket is currently
+    /// paired (the live-connection count is non-zero — see `connected`'s doc).
     pub fn is_connected(&self) -> bool {
-        self.connected.load(Ordering::Relaxed)
+        self.connected.load(Ordering::Relaxed) > 0
     }
 
     /// The current pairing token.
@@ -395,8 +399,29 @@ impl BridgeState {
         *self.port.lock() = port;
     }
 
-    fn set_connected(&self, connected: bool) {
-        self.connected.store(connected, Ordering::Relaxed);
+    /// Record a socket reaching `Authenticated`. Returns `true` iff this was
+    /// the 0→1 transition (the first paired browser) — the caller uses this to
+    /// emit [`crate::events::EXTENSION_BRIDGE_CHANGED`] only on a real
+    /// transition, not on every additional pairing.
+    fn inc_connected(&self) -> bool {
+        self.connected.fetch_add(1, Ordering::Relaxed) == 0
+    }
+
+    /// Record one authenticated socket's teardown. Saturating: a decrement
+    /// past zero (should never happen — callers only decrement a connection
+    /// that itself incremented, see `handle_connection`'s `authenticated`
+    /// flag) stays at zero rather than wrapping `AtomicUsize` to `usize::MAX`,
+    /// which `is_connected` (`count > 0`) would otherwise misreport as
+    /// connected. Returns `true` iff this was the 1→0 transition (the last
+    /// paired browser disconnected).
+    fn dec_connected(&self) -> bool {
+        let prev = self
+            .connected
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |c| {
+                Some(c.saturating_sub(1))
+            })
+            .unwrap_or(0);
+        prev == 1
     }
 }
 
@@ -604,7 +629,7 @@ async fn probe_ports(range: std::ops::RangeInclusive<u16>) -> Option<(TcpListene
 /// spawned DETACHED, so if nothing else raced it, this loop would never learn
 /// it ended (a `WRITE_STALL` timeout, or a genuine send error) until its OWN
 /// next inbound frame — which, for a stalled-but-open peer or a quiet/idle
-/// connection, may never arrive, leaving `cancel_all`/`set_connected(false)`
+/// connection, may never arrive, leaving `cancel_all`/`dec_connected`
 /// below delayed indefinitely while the app still believes the extension is
 /// connected. Racing the writer handle alongside `reader.next()` means a
 /// writer-task end tears the connection down immediately instead.
@@ -660,10 +685,13 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
         Some(s) => s,
         None => return,
     };
-    // NOT marked connected yet: the bare WS handshake (loopback + origin) is not
-    // authentication. The socket walks the v2 mutual handshake below; `connected`
-    // flips true only once the extension's client proof verifies (an `AuthOk`
-    // decision), so an unauthenticated socket is never reported as connected.
+    // NOT counted connected yet: the bare WS handshake (loopback + origin) is
+    // not authentication. The socket walks the v2 mutual handshake below; the
+    // live-connection count only increments once the extension's client proof
+    // verifies (an `AuthOk` decision), so an unauthenticated socket is never
+    // counted. Tracked per-connection so teardown below only decrements a
+    // socket that actually incremented (never on an unauthenticated close).
+    let mut authenticated = false;
 
     let (writer, mut reader) = ws.split();
     // The ONE task that ever writes to the live WS sink — see `stream`'s
@@ -695,7 +723,7 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                 // must tear this connection down immediately, not wait for
                 // this loop's own next inbound frame — which, for a
                 // stalled-but-open or quiet/idle connection, may never come.
-                // Falls through to the SAME cancel_all + set_connected(false)
+                // Falls through to the SAME cancel_all + dec_connected
                 // cleanup below as every other exit path.
                 log::warn!(
                     "[extension_bridge] writer task ended (write-stall timeout or a \
@@ -760,9 +788,15 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
             }
             FrameDecision::AuthOk(reply) => {
                 // Client proof verified — the mutual handshake completes. Only now
-                // is the socket authorized; mark it connected and reply auth.ok.
+                // is the socket authorized; count it connected and reply auth.ok.
                 conn = ConnState::Authenticated;
-                state.set_connected(true);
+                authenticated = true;
+                if state.inc_connected() {
+                    // 0→1: the first paired browser — notify the renderer so the
+                    // Settings pill flips immediately instead of waiting on its
+                    // 30s poll.
+                    emit_event(&app, EXTENSION_BRIDGE_CHANGED, json!({ "connected": true }));
+                }
                 Some(reply)
             }
             FrameDecision::Reply(text) => Some(text),
@@ -832,7 +866,20 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     // socket's own registry — see `stream`'s module doc for why that's
     // never a global `BridgeState` field).
     assist_streams.cancel_all(&app);
-    state.set_connected(false);
+    // Only a socket that actually reached `Authenticated` (and so incremented
+    // the count above) decrements it here — an unauthenticated socket's
+    // teardown (a rejected origin, a failed proof, an over-cap/outdated first
+    // frame) must never touch the count.
+    if authenticated && state.dec_connected() {
+        // 1→0: the last paired browser disconnected — with two browsers
+        // sharing one token, this now only fires once the SECOND socket also
+        // closes, not on whichever one happens to close first.
+        emit_event(
+            &app,
+            EXTENSION_BRIDGE_CHANGED,
+            json!({ "connected": false }),
+        );
+    }
 }
 
 /// Per-connection handshake state. A socket starts `AwaitingHello`; a valid
