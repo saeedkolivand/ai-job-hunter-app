@@ -474,8 +474,8 @@ async fn run_notes_loop(
 /// `prior_urls`) are annotated: a re-surfaced job keeps its earlier note for free
 /// via the store merge, so re-generating would just burn a call whose result the
 /// merge discards — in steady state (nothing new) this makes ZERO provider calls.
-/// `completer` is `None` when the caller's [`Completer::resolve`] found no usable
-/// provider — swallowed here: the discovery run always succeeds; notes are
+/// `completer` is `None` when the caller's [`Completer::from_active`] found no
+/// usable provider — swallowed here: the discovery run always succeeds; notes are
 /// best-effort enrichment. Provider/limiter resolution (and the "no usable
 /// provider (reason)" log, so a user can debug why notes never run) lives in the
 /// L3 caller (`commands::autopilot::autopilot_run`, which already holds the

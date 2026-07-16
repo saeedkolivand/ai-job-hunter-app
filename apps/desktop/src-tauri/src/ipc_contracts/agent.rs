@@ -9,10 +9,6 @@ use serde::{Deserialize, Serialize};
 pub struct AgentRunRequest {
     pub resume_id: String,
     pub job_id: String,
-    pub provider: String,
-    pub model: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub base_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

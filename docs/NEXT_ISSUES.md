@@ -38,16 +38,16 @@ detection, invocation, arg/format differences per CLI, and error surfacing. Dete
 what fails (not found? wrong invocation? unsupported output mode?) and either fix the adapters
 or clearly report which are supported.
 
-## 5. Flip `agent_run` off a request-supplied `base_url`
+## 5. [CLOSED] Flip `agent_run` off a request-supplied `base_url`
 
-Task #16 moved the active AI provider config to a backend-owned store (`ai_config::AiConfigStore`)
-so the generation commands resolve routing from _there_ instead of trusting the renderer: `ai_generate`,
-`generate_pipeline`, research/salary, the extension bridge's `resolve_answer_assist`, and autopilot are
-all flipped. The `agent_run` ("prep this application") agent-loop path (`commands/agent.rs` →
-`run_agent_live`) is **not** flipped yet — it still resolves via `Completer::resolve(..., req.base_url)`
-and threads the same renderer-supplied `req.base_url` into `agent::tools::ToolContext` for tool calls
-(e.g. `research_company`). Flip this path onto `Completer::from_active` + a store-resolved
-`ToolContext` so no generation command anywhere still accepts a request base_url.
+**Resolution (`fix/agent-run-backend-provider`):** `agent_run` (`commands/agent.rs` →
+`run_agent_live`) now resolves via `Completer::from_active`, same as every other generation
+command. `ToolContext` (`agent/tools.rs`) carries only `job_id`; `provider`/`model`/`base_url`
+were dropped from `AgentRunRequest` in both the Rust struct and the Zod schema. The
+request-driven `Completer::resolve` constructor was deleted (`pipeline/mod.rs`), leaving
+`from_active` as the only egress-binding path. tauri-security-reviewer + rust-backend-architect
+approved with no HIGH/CRITICAL. See [ADR-0012](adr/0012-ai-provider-base-url-provenance.md)
+— its closure claim now covers all generation paths.
 
 ## 6. [LOW] Drop the dead autopilot `assistant_provider/model/base_url` fields
 

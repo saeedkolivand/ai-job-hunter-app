@@ -220,19 +220,16 @@ export const MatchResumeRequestSchema = z.object({
 });
 
 /**
- * Request for the "prep this application" agentic flow (`agent.run`). Mirrors the
- * inputs `match_resume` / `ai_research_company` already take: the résumé + job
- * identity plus the validated provider/model routing. `provider`/`model` are the
- * TRUSTED routing context threaded into the agent's tools — never taken from
- * model-supplied tool args. `baseUrl` matches `AiGenerateRequestSchema` (an
- * openai-compatible override, not strictly a URL).
+ * Request for the "prep this application" agentic flow (`agent.run`). Carries ONLY
+ * the résumé + job identity: routing (provider/model/baseUrl) is BACKEND-OWNED —
+ * the agent loop and every tool provider call resolve the active provider from the
+ * persisted store (`Completer::from_active`), never from the renderer, so a
+ * compromised renderer can no longer point a credentialed request at an attacker
+ * endpoint (task #25 — closes the last base_url-exfil path task #16 sealed).
  */
 export const AgentRunRequestSchema = z.object({
   resumeId: z.string().min(1),
   jobId: z.string().min(1),
-  provider: z.string().min(1),
-  model: z.string().min(1),
-  baseUrl: z.string().optional(),
 });
 
 /**

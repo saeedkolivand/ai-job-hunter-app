@@ -7,13 +7,15 @@
 //! existing Tauri commands / prompt-driven generators; no business logic is
 //! duplicated here.
 //!
-//! SECURITY (lethal-trifecta exfil leg): a handler's ROUTING/EGRESS parameters
-//! (provider / model / base_url) AND the run's job identity (`job_id`) come from
-//! the trusted [`ToolContext`] threaded in by `agent_run`, NEVER from the
-//! model-supplied `args`. A prompt-injected job posting can steer the CONTENT the
-//! model asks about, but can never redirect a credentialed provider request to an
-//! attacker host (SSRF / API-key exfil), nor substitute an arbitrary
-//! company/job-ad blob for the run's own posting.
+//! SECURITY (lethal-trifecta exfil leg): a handler's ROUTING/EGRESS is
+//! BACKEND-OWNED — a tool that makes its own provider call resolves the active
+//! provider/model/base_url from the persisted store via [`Completer::from_active`]
+//! (task #25), never from the renderer nor the model-supplied `args`. The run's job
+//! identity (`job_id`) comes from the trusted [`ToolContext`] threaded in by
+//! `agent_run`. A prompt-injected job posting can steer the CONTENT the model asks
+//! about, but can never redirect a credentialed provider request to an attacker
+//! host (SSRF / API-key exfil), nor substitute an arbitrary company/job-ad blob for
+//! the run's own posting.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -37,18 +39,16 @@ pub enum ToolKind {
     Write,
 }
 
-/// Trusted routing/egress context, threaded from `agent_run` into every tool
-/// handler. The provider/model/base_url here are the VALIDATED request values —
-/// tools that make their own provider call resolve a [`Completer`] from these,
-/// never from the untrusted `args` (see the module-level SECURITY note). `job_id`
-/// is the run's OWN job (also validated request input) — a tool that only ever
-/// concerns itself with this run's single posting (e.g. `research_company`) loads
-/// it by this id instead of trusting a model-supplied job/company blob.
+/// Trusted run-identity context, threaded from `agent_run` into every tool
+/// handler. Routing/egress is backend-owned (task #25): a tool that makes its own
+/// provider call resolves a [`Completer`] via [`Completer::from_active`] (the
+/// active provider/model/base_url from the persisted store), never from the
+/// renderer nor the untrusted `args` (see the module-level SECURITY note). `job_id`
+/// is the run's OWN job (validated request input) — a tool that only ever concerns
+/// itself with this run's single posting (e.g. `research_company`) loads it by this
+/// id instead of trusting a model-supplied job/company blob.
 #[derive(Debug, Clone)]
 pub struct ToolContext {
-    pub provider: String,
-    pub model: String,
-    pub base_url: Option<String>,
     pub job_id: String,
 }
 
@@ -246,22 +246,15 @@ fn grounded_user_msg(resume: &str, job: &str, company_brief: &str) -> String {
     msg
 }
 
-/// Resolve a [`Completer`] from the TRUSTED context and run one non-streaming
-/// completion, charging the per-provider daily ceiling first (the coarse
-/// runaway-cost backstop the rest of the AI commands share — a tool-side provider
-/// call spends money too).
-async fn complete_trusted(
-    app: &AppHandle,
-    ctx: &ToolContext,
-    system: &str,
-    user: &str,
-) -> AppResult<String> {
-    let completer = Completer::resolve(
-        app,
-        Some(&ctx.provider),
-        Some(&ctx.model),
-        ctx.base_url.clone(),
-    )?;
+/// Resolve a [`Completer`] from the BACKEND-OWNED active provider store and run one
+/// non-streaming completion, charging the per-provider daily ceiling first (the
+/// coarse runaway-cost backstop the rest of the AI commands share — a tool-side
+/// provider call spends money too). Resolving via [`Completer::from_active`] (task
+/// #25) unifies the agent's own turns and every tool provider call onto the ONE
+/// store-configured endpoint (fixes the split-brain where a run could otherwise hit
+/// two endpoints), and keeps a compromised renderer from redirecting egress.
+async fn complete_trusted(app: &AppHandle, system: &str, user: &str) -> AppResult<String> {
+    let completer = Completer::from_active(app)?;
     app.state::<Arc<Limiter>>()
         .inner()
         .charge_provider_daily(completer.provider_id().as_str(), PROVIDER_DAILY_MAX)?;
@@ -337,11 +330,10 @@ letter — no preamble or commentary.";
 
 fn draft_cover_letter_handler(
     app: &AppHandle,
-    ctx: &ToolContext,
+    _ctx: &ToolContext,
     args: Value,
 ) -> Pin<Box<dyn Future<Output = AppResult<Value>> + Send>> {
     let app = app.clone();
-    let ctx = ctx.clone();
     Box::pin(async move {
         let (resume, job) = load_resume_and_job(&app, &args)?;
         let brief = args
@@ -349,7 +341,7 @@ fn draft_cover_letter_handler(
             .and_then(|v| v.as_str())
             .unwrap_or_default();
         let user = grounded_user_msg(&resume, &job, brief);
-        let text = complete_trusted(&app, &ctx, COVER_LETTER_SYSTEM, &user).await?;
+        let text = complete_trusted(&app, COVER_LETTER_SYSTEM, &user).await?;
         Ok(json!({ "coverLetter": text }))
     })
 }
@@ -379,11 +371,10 @@ headers.";
 
 fn draft_resume_handler(
     app: &AppHandle,
-    ctx: &ToolContext,
+    _ctx: &ToolContext,
     args: Value,
 ) -> Pin<Box<dyn Future<Output = AppResult<Value>> + Send>> {
     let app = app.clone();
-    let ctx = ctx.clone();
     Box::pin(async move {
         let (resume, job) = load_resume_and_job(&app, &args)?;
         let brief = args
@@ -391,7 +382,7 @@ fn draft_resume_handler(
             .and_then(|v| v.as_str())
             .unwrap_or_default();
         let user = grounded_user_msg(&resume, &job, brief);
-        let text = complete_trusted(&app, &ctx, RESUME_SYSTEM, &user).await?;
+        let text = complete_trusted(&app, RESUME_SYSTEM, &user).await?;
         Ok(json!({ "resume": text }))
     })
 }
@@ -410,11 +401,10 @@ self-serving questions about salary, PTO, or perks. Calibrate to the candidate's
 
 fn suggest_interview_questions_handler(
     app: &AppHandle,
-    ctx: &ToolContext,
+    _ctx: &ToolContext,
     args: Value,
 ) -> Pin<Box<dyn Future<Output = AppResult<Value>> + Send>> {
     let app = app.clone();
-    let ctx = ctx.clone();
     Box::pin(async move {
         let (resume, job) = load_resume_and_job(&app, &args)?;
         let brief = args
@@ -422,7 +412,7 @@ fn suggest_interview_questions_handler(
             .and_then(|v| v.as_str())
             .unwrap_or_default();
         let user = grounded_user_msg(&resume, &job, brief);
-        let text = complete_trusted(&app, &ctx, INTERVIEW_QUESTIONS_SYSTEM, &user).await?;
+        let text = complete_trusted(&app, INTERVIEW_QUESTIONS_SYSTEM, &user).await?;
         Ok(json!({ "questions": text }))
     })
 }
