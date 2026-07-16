@@ -1,6 +1,6 @@
 # ADR-003: Centralized platform / net / error layers (L0)
 
-Last updated: 2026-06-01
+Last updated: 2026-07-16
 
 **Status:** Accepted · Enforced by `cargo test --test architecture` · See [`docs/architecture-rules.md`](../../architecture-rules.md)
 
