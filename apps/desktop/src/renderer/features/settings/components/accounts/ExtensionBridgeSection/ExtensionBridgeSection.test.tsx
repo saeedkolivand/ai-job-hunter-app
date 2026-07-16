@@ -4,7 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import type { ExtensionAiAssistSetting, ExtensionBridgeStatus } from '@ajh/shared';
+import type { ActiveAiConfig, ExtensionAiAssistSetting, ExtensionBridgeStatus } from '@ajh/shared';
 import { NotificationProvider } from '@ajh/ui';
 
 import { AppClientProvider } from '@/providers/AppClientProvider';
@@ -15,15 +15,15 @@ import { ExtensionBridgeSection } from './index';
 
 // The live active provider the renderer would use for `ai_generate` today —
 // controlled per-test (mirrors StepAction.test.tsx's pattern) so the ai-assist
-// toggle's "snapshot the current provider on enable" behavior is testable
-// without a real Zustand `preferences-store`. Partial mock — every OTHER
-// `@/services` hook stays real (backed by `createMockClient`). Reset to this
-// default in `beforeEach` below — never a trailing manual-restore line, which
-// leaks into later tests the moment an assertion throws before reaching it.
-let stubbedGenerateConfig: { provider: string; model: string; baseUrl: string | undefined } = {
+// toggle's provider-configured gate is testable without a real Zustand
+// `preferences-store`. Partial mock — every OTHER `@/services` hook stays real
+// (backed by `createMockClient`; `useActiveConfig` reads `ai.activeConfig` off
+// the mock client, driven per-test via `renderSection`'s `activeConfig` arg).
+// Reset to this default in `beforeEach` below — never a trailing manual-restore
+// line, which leaks into later tests the moment an assertion throws first.
+let stubbedGenerateConfig: { provider: string; model: string } = {
   provider: 'openai',
   model: 'gpt-4o',
-  baseUrl: undefined,
 };
 
 vi.mock('@/services', async (importOriginal) => {
@@ -43,7 +43,11 @@ function renderSection(
   aiAssist: ExtensionAiAssistSetting = { enabled: false },
   setAiAssistEnabled = vi
     .fn()
-    .mockImplementation((enabled: boolean) => Promise.resolve({ enabled }))
+    .mockImplementation((enabled: boolean) => Promise.resolve({ enabled })),
+  // The backend active generation config the "Using: X · Y" label reads
+  // (task #16) — `providers` is always present, `activeProvider`/`model`
+  // absent until a provider is selected. Default: no active provider.
+  activeConfig: ActiveAiConfig = { providers: {} }
 ) {
   const client = createMockClient({
     'extensionBridge.status': vi.fn().mockResolvedValue(statusPayload),
@@ -52,6 +56,7 @@ function renderSection(
     'extensionBridge.setAutofillEnabled': setAutofill,
     'extensionBridge.aiAssistEnabled': vi.fn().mockResolvedValue(aiAssist),
     'extensionBridge.setAiAssistEnabled': setAiAssistEnabled,
+    'ai.activeConfig': vi.fn().mockResolvedValue(activeConfig),
   });
   const queryClient = makeQueryClient();
 
@@ -74,7 +79,7 @@ function renderSection(
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
-  stubbedGenerateConfig = { provider: 'openai', model: 'gpt-4o', baseUrl: undefined };
+  stubbedGenerateConfig = { provider: 'openai', model: 'gpt-4o' };
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
     value: { writeText: vi.fn().mockResolvedValue(undefined) },
@@ -315,19 +320,21 @@ describe('ExtensionBridgeSection', () => {
     });
   });
 
-  it('snapshots the current active provider/model when the ai-assist switch is turned on', async () => {
+  it('sends just the enabled flag when the ai-assist switch is turned on (no provider snapshot)', async () => {
     const setAiAssist = vi.fn().mockResolvedValue({ enabled: true });
     renderSection(undefined, undefined, undefined, undefined, { enabled: false }, setAiAssist);
 
     const sw = await screen.findByRole('switch', { name: /ai answer drafting/i });
     await userEvent.click(sw);
 
+    // A draft resolves the active provider from the backend store at
+    // answer-time (task #16), so the toggle threads nothing but the flag.
     await waitFor(() => {
-      expect(setAiAssist).toHaveBeenCalledWith(true, 'openai', 'gpt-4o', undefined);
+      expect(setAiAssist).toHaveBeenCalledWith(true);
     });
   });
 
-  it('sends no provider fields when the ai-assist switch is turned off', async () => {
+  it('sends just the enabled flag when the ai-assist switch is turned off', async () => {
     const setAiAssist = vi.fn().mockResolvedValue({ enabled: false });
     renderSection(undefined, undefined, undefined, undefined, { enabled: true }, setAiAssist);
 
@@ -335,12 +342,12 @@ describe('ExtensionBridgeSection', () => {
     await userEvent.click(sw);
 
     await waitFor(() => {
-      expect(setAiAssist).toHaveBeenCalledWith(false, undefined, undefined, undefined);
+      expect(setAiAssist).toHaveBeenCalledWith(false);
     });
   });
 
   it('disables the ai-assist switch when no AI provider/model is configured', async () => {
-    stubbedGenerateConfig = { provider: 'ollama', model: '', baseUrl: undefined };
+    stubbedGenerateConfig = { provider: 'ollama', model: '' };
     renderSection(undefined, undefined, undefined, undefined, { enabled: false });
 
     await waitFor(() => {
@@ -355,7 +362,7 @@ describe('ExtensionBridgeSection', () => {
   });
 
   it('keeps the ai-assist switch enabled for a CLI-agent provider with no model selected (Completer::resolve allows it)', async () => {
-    stubbedGenerateConfig = { provider: 'claude-code', model: '', baseUrl: undefined };
+    stubbedGenerateConfig = { provider: 'claude-code', model: '' };
     renderSection(undefined, undefined, undefined, undefined, { enabled: false });
 
     await waitFor(() => {
@@ -369,12 +376,8 @@ describe('ExtensionBridgeSection', () => {
   // off — even if the live provider config becomes unconfigured afterward
   // (e.g. the active provider/model was cleared elsewhere in Settings).
   it('lets an already-enabled ai-assist switch be turned off even if the provider becomes unconfigured', async () => {
-    stubbedGenerateConfig = { provider: 'ollama', model: '', baseUrl: undefined };
-    renderSection(undefined, undefined, undefined, undefined, {
-      enabled: true,
-      provider: 'openai',
-      model: 'gpt-4o',
-    });
+    stubbedGenerateConfig = { provider: 'ollama', model: '' };
+    renderSection(undefined, undefined, undefined, undefined, { enabled: true });
 
     await waitFor(() => {
       const sw = screen.getByRole('switch', { name: /ai answer drafting/i });
@@ -384,11 +387,7 @@ describe('ExtensionBridgeSection', () => {
   });
 
   it('does not disable the ai-assist switch when it is enabled and the provider is configured', async () => {
-    renderSection(undefined, undefined, undefined, undefined, {
-      enabled: true,
-      provider: 'openai',
-      model: 'gpt-4o',
-    });
+    renderSection(undefined, undefined, undefined, undefined, { enabled: true });
 
     await waitFor(() => {
       const sw = screen.getByRole('switch', { name: /ai answer drafting/i });
@@ -396,11 +395,11 @@ describe('ExtensionBridgeSection', () => {
     });
   });
 
-  it('shows the pinned provider/model snapshot in the description while the opt-in is on', async () => {
-    renderSection(undefined, undefined, undefined, undefined, {
-      enabled: true,
-      provider: 'openai',
+  it('shows the active provider/model (from the backend store) in the description while the opt-in is on', async () => {
+    renderSection(undefined, undefined, undefined, undefined, { enabled: true }, undefined, {
+      activeProvider: 'openai',
       model: 'gpt-4o',
+      providers: {},
     });
 
     await waitFor(() => {
@@ -408,8 +407,12 @@ describe('ExtensionBridgeSection', () => {
     });
   });
 
-  it('omits the pinned-snapshot line while the opt-in is off', async () => {
-    renderSection(undefined, undefined, undefined, undefined, { enabled: false });
+  it('omits the "Using:" line while the opt-in is off, even with an active provider', async () => {
+    renderSection(undefined, undefined, undefined, undefined, { enabled: false }, undefined, {
+      activeProvider: 'openai',
+      model: 'gpt-4o',
+      providers: {},
+    });
 
     await waitFor(() => screen.getByRole('switch', { name: /ai answer drafting/i }));
     expect(screen.queryByText(/Using:/)).not.toBeInTheDocument();

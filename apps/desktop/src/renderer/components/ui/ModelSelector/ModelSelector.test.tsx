@@ -41,13 +41,11 @@ vi.mock('@/providers/AppClientProvider', () => ({
   }),
 }));
 
-// ── Preferences store stub — control selectedValue via aiModel / providerConfig
+// ── Active-config stub — control selectedValue via the backend routing query ───
 
-// useAIModel / useAiProviderConfig / usePreferencesStore are pulled individually.
-// We vi.mock the whole module and expose controllable refs so each test can set
-// them before rendering.
-
-let stubbedDefaultModel: string | undefined = undefined;
+// Routing (activeProvider + per-provider model) is backend-owned (task #16), read
+// via `useActiveConfig`; the model now lives in `providers[activeProvider].model`
+// for EVERY provider kind (the old `aiModel` Ollama mirror is gone).
 let stubbedActiveProvider = 'ollama';
 let stubbedActiveProviderModel = '';
 // Installed Ollama model names — drives `options` via buildModelOptions, so a test
@@ -63,26 +61,18 @@ let stubbedHealth: {
   isLoading: boolean;
 } = { data: undefined, isLoading: false };
 
-vi.mock('@/store/preferences-store', () => ({
-  useAIModel: () =>
-    stubbedDefaultModel !== undefined ? { defaultModel: stubbedDefaultModel } : undefined,
-  useAiProviderConfig: () => ({
-    activeProvider: stubbedActiveProvider,
-    providers: {
-      [stubbedActiveProvider]: { model: stubbedActiveProviderModel },
-    },
-  }),
-  usePreferencesStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({
-      setAIModel: vi.fn(),
-      setProviderSettings: vi.fn(),
-      setActiveProvider: vi.fn(),
-    }),
-}));
-
 // ── Service stubs — prevent QueryClient dependency ────────────────────────────
 
 vi.mock('@/services', () => ({
+  useActiveConfig: () => ({
+    data: {
+      activeProvider: stubbedActiveProvider,
+      model: stubbedActiveProviderModel,
+      providers: { [stubbedActiveProvider]: { model: stubbedActiveProviderModel } },
+    },
+    isPending: false,
+  }),
+  useConfigureActiveProvider: () => ({ mutate: vi.fn() }),
   useAIModels: () => ({ data: stubbedOllamaModels, isLoading: false }),
   useHasProviderKey: () => ({ data: { has: false } }),
   useSystemHealth: () => stubbedHealth,
@@ -125,15 +115,14 @@ function renderSelector() {
 // tests would otherwise flip the warning condition.
 beforeEach(() => {
   stubbedActiveProvider = 'ollama';
-  stubbedDefaultModel = undefined;
   stubbedActiveProviderModel = '';
   stubbedOllamaModels = [];
   stubbedHealth = { data: undefined, isLoading: false };
 });
 
-describe('ModelSelector — no model selected (Ollama, defaultModel absent)', () => {
+describe('ModelSelector — no model selected (Ollama, model absent)', () => {
   it('renders the amber warning text when no model is selected', () => {
-    stubbedDefaultModel = undefined;
+    stubbedActiveProviderModel = '';
 
     renderSelector();
 
@@ -141,7 +130,7 @@ describe('ModelSelector — no model selected (Ollama, defaultModel absent)', ()
   });
 
   it('renders a status element for a11y when no model is selected', () => {
-    stubbedDefaultModel = undefined;
+    stubbedActiveProviderModel = '';
 
     renderSelector();
 
@@ -149,7 +138,7 @@ describe('ModelSelector — no model selected (Ollama, defaultModel absent)', ()
   });
 
   it('renders an amber wrapper (border-amber-400/30 class) when no model is selected', () => {
-    stubbedDefaultModel = undefined;
+    stubbedActiveProviderModel = '';
 
     const { container } = renderSelector();
 
@@ -158,9 +147,9 @@ describe('ModelSelector — no model selected (Ollama, defaultModel absent)', ()
   });
 });
 
-describe('ModelSelector — model selected and visible (Ollama, defaultModel in available models)', () => {
+describe('ModelSelector — model selected and visible (Ollama, model in available models)', () => {
   it('does NOT render the amber warning when the selected model is a visible option', () => {
-    stubbedDefaultModel = 'llama3.2';
+    stubbedActiveProviderModel = 'llama3.2';
     stubbedOllamaModels = [{ name: 'llama3.2' }];
 
     renderSelector();
@@ -170,7 +159,7 @@ describe('ModelSelector — model selected and visible (Ollama, defaultModel in 
   });
 
   it('does NOT render the status role element when the selected model is a visible option', () => {
-    stubbedDefaultModel = 'llama3.2';
+    stubbedActiveProviderModel = 'llama3.2';
     stubbedOllamaModels = [{ name: 'llama3.2' }];
 
     renderSelector();
@@ -179,7 +168,7 @@ describe('ModelSelector — model selected and visible (Ollama, defaultModel in 
   });
 
   it('does NOT render the amber wrapper class when the selected model is a visible option', () => {
-    stubbedDefaultModel = 'llama3.2';
+    stubbedActiveProviderModel = 'llama3.2';
     stubbedOllamaModels = [{ name: 'llama3.2' }];
 
     const { container } = renderSelector();
@@ -188,9 +177,9 @@ describe('ModelSelector — model selected and visible (Ollama, defaultModel in 
   });
 });
 
-describe('ModelSelector — model selected but unavailable (Ollama, defaultModel not in available models)', () => {
+describe('ModelSelector — model selected but unavailable (Ollama, model not in available models)', () => {
   it('renders the modelUnavailable warning (not noModelSelected) when the list is empty', () => {
-    stubbedDefaultModel = 'llama3.2';
+    stubbedActiveProviderModel = 'llama3.2';
     stubbedOllamaModels = [];
 
     renderSelector();
@@ -201,7 +190,7 @@ describe('ModelSelector — model selected but unavailable (Ollama, defaultModel
   });
 
   it('renders the modelUnavailable warning when the list contains only other models', () => {
-    stubbedDefaultModel = 'llama3.2';
+    stubbedActiveProviderModel = 'llama3.2';
     stubbedOllamaModels = [{ name: 'qwen2.5' }];
 
     renderSelector();
@@ -210,7 +199,7 @@ describe('ModelSelector — model selected but unavailable (Ollama, defaultModel
   });
 
   it('renders the amber wrapper for an unavailable selected model', () => {
-    stubbedDefaultModel = 'llama3.2';
+    stubbedActiveProviderModel = 'llama3.2';
     stubbedOllamaModels = [];
 
     const { container } = renderSelector();

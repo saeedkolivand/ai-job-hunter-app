@@ -11,6 +11,7 @@
 #![deny(clippy::await_holding_lock)]
 
 pub mod agent;
+pub mod ai_config;
 pub mod ai_generations;
 pub mod applications;
 pub mod autopilot;
@@ -614,6 +615,17 @@ pub fn run() {
                     log::warn!("[setup] contact profile store failed to open (non-fatal): {e}")
                 }
             }
+            // Backend-owned active AI provider store (task #16): the single source of
+            // truth for generation routing (provider/model/base_url). Holds no
+            // secrets; wiped on factory reset, included in backups.
+            match ai_config::AiConfigStore::open(&data_dir) {
+                Ok(store) => {
+                    manage_resettable(app, &mut reset_registry, "ai_provider_config", store)
+                }
+                Err(e) => {
+                    log::warn!("[setup] ai provider config store failed to open (non-fatal): {e}")
+                }
+            }
             match referrals::ReferralStore::open(&data_dir) {
                 Ok(store) => manage_resettable(app, &mut reset_registry, "referrals", store),
                 Err(e) => {
@@ -802,6 +814,10 @@ pub fn run() {
             commands::ai::ai_set_embedding_config,
             commands::ai::ai_reembed_all,
             commands::ai::ai_spend_summary,
+            commands::ai::ai_active_config,
+            commands::ai::ai_set_active_provider,
+            commands::ai::ai_set_provider_settings,
+            commands::ai::ai_seed_active_config,
             commands::pipeline::generate_pipeline,
             // agent ("prep this application" flow + human-in-the-loop confirm gate)
             commands::agent::agent_run,

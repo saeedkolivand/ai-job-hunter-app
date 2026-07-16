@@ -12,20 +12,18 @@
 //! rest of the request, before resolving a provider, before spending
 //! anything. See [`check_ai_assist_gate`].
 //!
-//! ## Provider resolution — a persisted snapshot, mirroring `Autopilot`
+//! ## Provider resolution — the backend-owned active-provider store
 //! The bridge is a headless background context with no renderer to read the
-//! active AI provider from at answer-time (the renderer's "active provider"
-//! lives ONLY in the webview's `preferences-store`/`localStorage` — there is
-//! NO backend-owned active-provider store yet; see
-//! `commands::autopilot::run_autopilot`'s own MEDIUM-4 note on exactly this
-//! gap). So, mirroring `Autopilot::assistant_provider`/`assistant_model`/
-//! `assistant_base_url` (the ONE existing precedent for "a headless run
-//! resolves a provider with no renderer in scope"), the Settings toggle that
-//! turns this opt-in ON snapshots the renderer's CURRENT active provider into
-//! `BridgeState::ai_assist_snapshot` — see `commands::extension_bridge::
-//! extension_bridge_set_ai_assist_enabled`. A missing/never-snapshotted
-//! config resolves to the fixed [`NO_PROVIDER_MESSAGE`] sentinel, never a
-//! silent no-op.
+//! active AI provider from at answer-time. It resolves the provider/model/
+//! base_url from the backend-owned [`crate::ai_config::AiConfigStore`] via
+//! [`crate::pipeline::Completer::from_active`] — the SAME single source of
+//! truth `ai_generate` and Autopilot now use (task #16). A bridge draft
+//! therefore follows the CURRENTLY-active provider, with NO renderer-supplied
+//! provider/model/base_url to trust (closing the persisted-base_url SSRF the
+//! old `ai_assist` snapshot carried: a one-time XSS could pin an attacker
+//! endpoint that every future bridge draft then replayed). An unset store
+//! resolves to the fixed [`NO_PROVIDER_MESSAGE`] sentinel, never a silent
+//! no-op.
 //!
 //! ## Context-aware drafting (plan decision 7)
 //! A salary-shaped question (shared [`super::answers_suggest::is_salary_question`]
@@ -556,7 +554,6 @@ pub(super) async fn resolve_answer_assist(
     app: &AppHandle,
     req_id: &str,
     ai_assist_enabled: bool,
-    ai_assist_cfg: &super::AiAssistConfig,
     app_store: &ApplicationStore,
     doc_store: &DocumentStore,
     payload: &Value,
@@ -573,13 +570,11 @@ pub(super) async fn resolve_answer_assist(
     let url = parse_url(payload);
     let search_web = parse_search_web(payload);
 
-    let completer = Completer::resolve(
-        app,
-        ai_assist_cfg.provider.as_deref(),
-        ai_assist_cfg.model.as_deref(),
-        ai_assist_cfg.base_url.clone(),
-    )
-    .map_err(|e| {
+    // Routing is backend-owned (task #16): resolve the active provider/model/
+    // base_url from the `AiConfigStore` — the SAME source `ai_generate` uses —
+    // never a renderer-supplied snapshot. This closes the persisted-base_url
+    // SSRF the old `ai_assist` snapshot carried.
+    let completer = Completer::from_active(app).map_err(|e| {
         tracing::debug!("answer_assist: provider resolution failed: {e}");
         AppError::Config(NO_PROVIDER_MESSAGE.to_string())
     })?;
@@ -834,14 +829,14 @@ pub(super) async fn handle_answer_assist(
     registry: &super::stream::AssistStreamRegistry,
     sink: &mut dyn super::FrameSink,
 ) -> String {
-    // ONE lock acquisition for both the gate and the snapshot — see
-    // `BridgeState::ai_assist_snapshot`'s doc for why two separate reads
-    // (`ai_assist_enabled()` + a second lock for the config) would be a
-    // benign TOCTOU here.
-    let cfg = app
+    // The billable-AI consent gate (ADR-0011). The provider/model/base_url a
+    // draft uses are no longer read here — `resolve_answer_assist` resolves
+    // them from the backend `AiConfigStore` via `Completer::from_active`
+    // (task #16), so only the opt-in flag is needed at this point.
+    let ai_assist_enabled = app
         .try_state::<super::BridgeState>()
-        .map(|state| state.ai_assist_snapshot())
-        .unwrap_or_default();
+        .map(|state| state.ai_assist_enabled())
+        .unwrap_or(false);
 
     let outcome = match (
         app.try_state::<ApplicationStore>(),
@@ -851,8 +846,7 @@ pub(super) async fn handle_answer_assist(
             resolve_answer_assist(
                 app,
                 req_id,
-                cfg.enabled,
-                &cfg,
+                ai_assist_enabled,
                 app_store.inner(),
                 doc_store.inner(),
                 payload,

@@ -77,12 +77,13 @@ type TemperatureStep = 'analysis' | 'resume' | 'cover' | 'answers' | 'referral';
  *  unset step falls back to its default. Override is Ollama-only — cloud/CLI
  *  providers always use the per-step default. */
 function resolveTemperature(step: TemperatureStep, stepDefault: number): number {
-  const cfg = usePreferencesStore.getState().aiProviderConfig;
-  const provider = cfg?.activeProvider ?? 'ollama';
-  if (provider !== 'ollama') return stepDefault;
-  const model = cfg?.providers?.ollama?.model;
-  const override = model
-    ? cfg?.providers?.ollama?.modelLimits?.[model]?.temperature?.[step]
+  // The active provider/model come from the backend store (task #16); the per-model
+  // temperature override is a renderer-side tuning knob (Ollama-only) read from the
+  // resolver's Zustand-sourced `providerSettings`.
+  const { activeProvider, providerSettings, activeModel } = resolveActiveProvider();
+  if (activeProvider !== 'ollama') return stepDefault;
+  const override = activeModel
+    ? providerSettings?.modelLimits?.[activeModel]?.temperature?.[step]
     : undefined;
   return override ?? stepDefault;
 }
@@ -163,11 +164,10 @@ async function streamGenerate(
     frequencyPenalty: sampling?.frequencyPenalty,
     presencePenalty: sampling?.presencePenalty,
     repeatPenalty: sampling?.repeatPenalty,
-    // Always send the active provider — the backend routes strictly and will
-    // not fall back to Ollama. baseUrl only applies to OpenAI-compatible servers.
-    provider: activeProvider,
-    baseUrl: providerSettings?.baseUrl,
-    // Reasoning effort for CLI agents that support it (e.g. Codex).
+    // provider + baseUrl are NO LONGER sent (task #16): the backend resolves the
+    // active provider/base_url from its own store and overwrites `model` before
+    // streaming, so an XSS'd renderer can no longer point generation at an
+    // arbitrary endpoint. `effort` (a CLI reasoning knob, not routing) stays.
     effort: providerSettings?.effort,
     // Per-model local limits (Ollama) — context window (num_ctx) + max output
     // (num_predict). Omitted (undefined) for cloud/CLI or when unset.
@@ -308,21 +308,15 @@ export async function synthesizeResume(
  * the cover letter still generates. The returned brief is untrusted reference
  * text — the prompt fences it.
  */
-export async function researchCompany(
-  jobAd: string,
-  model: string,
-  company?: string
-): Promise<string> {
+export async function researchCompany(jobAd: string, company?: string): Promise<string> {
   try {
-    const { activeProvider, providerSettings } = resolveActiveProvider(model);
+    // Routing (provider/model/base_url) is backend-owned (task #16) — the enricher
+    // reads the active provider from the store, so nothing is threaded here.
     const res = await getClient().ai.researchCompany({
       jobAd,
       // The AI-extracted company name is far more reliable than the backend's
       // heuristic job-ad scan (which can grab a tagline), so send it when known.
       company: company?.trim() || undefined,
-      provider: activeProvider,
-      model: providerSettings?.model || model,
-      baseUrl: providerSettings?.baseUrl,
     });
     return res?.brief ?? '';
   } catch {
@@ -341,18 +335,15 @@ export async function researchCompany(
 export async function researchAnswer(
   question: string,
   role: string,
-  company: string,
-  model: string
+  company: string
 ): Promise<string> {
   try {
-    const { activeProvider, providerSettings } = resolveActiveProvider(model);
+    // Routing is backend-owned (task #16) — the enricher reads the active provider
+    // from the store, so nothing is threaded here.
     const res = await getClient().ai.researchAnswer({
       question,
       role: role.trim() || undefined,
       company: company.trim() || undefined,
-      provider: activeProvider,
-      model: providerSettings?.model || model,
-      baseUrl: providerSettings?.baseUrl,
     });
     return res ?? '';
   } catch {
@@ -372,7 +363,6 @@ export async function lookupSalaryRange(
   role: string,
   company: string,
   location: string,
-  model: string,
   /** ISO-3166 alpha-2 job country, when known — grounds the researched currency. */
   country?: string,
   /** Authoritative ISO-4217 currency for `country` (resolve via `countryToCurrency`
@@ -381,16 +371,14 @@ export async function lookupSalaryRange(
   currency?: string
 ): Promise<SalaryRange | undefined> {
   try {
-    const { activeProvider, providerSettings } = resolveActiveProvider(model);
+    // Routing is backend-owned (task #16) — the enricher reads the active provider
+    // from the store, so nothing is threaded here.
     const res = await getClient().ai.lookupSalary({
       role,
       company: company.trim() || undefined,
       location: location.trim() || undefined,
       country: country?.trim() || undefined,
       currency: currency?.trim() || undefined,
-      provider: activeProvider,
-      model: providerSettings?.model || model,
-      baseUrl: providerSettings?.baseUrl,
     });
     return res ?? undefined;
   } catch {
@@ -423,9 +411,7 @@ export async function generateCoverLetter(
   const profile = buildProviderProfile(model);
 
   // Opt-in: fetch a company brief and fold it into the prompt's fit paragraph.
-  const companyBrief = opts?.researchCompany
-    ? await researchCompany(jobAd, model, meta.companyName)
-    : '';
+  const companyBrief = opts?.researchCompany ? await researchCompany(jobAd, meta.companyName) : '';
 
   // Resolve the cover-letter market from the job's country (decision: job
   // location, not ad language) with an optional manual override; the letter is

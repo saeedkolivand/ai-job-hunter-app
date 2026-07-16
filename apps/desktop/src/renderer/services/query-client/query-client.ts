@@ -73,6 +73,8 @@ export const keys = {
     capabilities: ['ai', 'capabilities'] as const,
     embeddingStatus: ['ai', 'embeddingStatus'] as const,
     spend: ['ai', 'spend'] as const,
+    // Backend-owned active generation provider config (task #16).
+    activeConfig: ['ai', 'activeConfig'] as const,
   },
   documents: {
     all: ['documents'] as const,

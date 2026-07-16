@@ -8,13 +8,19 @@
  *  - in change-mode: the eye-toggle button has an accessible name
  *    (`settings.aiProvider.showKey`) via its aria-label — guards against
  *    accidental removal of the label in future refactors.
+ *  - base URL save: a rejected `setProviderSettings` write (the `{error}`-union
+ *    narrowing added for review #16) surfaces an error notification instead of
+ *    silently swallowing the failure.
  *
  * No QueryClient / AppClientProvider needed — the component's only hooks are
- * useTranslation (stubbed) and usePreferencesStore (stubbed).
+ * useTranslation (stubbed), useNotification (stubbed), and useSetProviderSettings
+ * (stubbed).
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+
+import type * as AjhUi from '@ajh/ui';
 
 // ── i18n stub ──────────────────────────────────────────────────────────────
 
@@ -22,12 +28,38 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 
-// ── Preferences store stub ─────────────────────────────────────────────────
+// ── @ajh/ui — use the real library, override only useNotification (no
+// NotificationProvider mounted in these focused tests) ─────────────────────
 
-vi.mock('@/store/preferences-store', () => ({
-  usePreferencesStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ setProviderSettings: vi.fn() }),
+const mockNotify = {
+  open: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+  warning: vi.fn(),
+  destroy: vi.fn(),
+};
+
+vi.mock('@ajh/ui', async (importOriginal) => {
+  const actual = await importOriginal<typeof AjhUi>();
+  return { ...actual, useNotification: () => mockNotify };
+});
+
+// ── Service stub — the base_url save now writes via the backend setter (task #16).
+// `mutate` invokes the caller's `onError` synchronously so tests can simulate a
+// rejected `{error}`-union write without a real QueryClient/mutation lifecycle.
+
+const mockSetProviderSettingsMutate = vi.fn((_req: unknown, opts?: { onError?: () => void }) =>
+  opts?.onError?.()
+);
+
+vi.mock('@/services', () => ({
+  useSetProviderSettings: () => ({ mutate: mockSetProviderSettingsMutate }),
 }));
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
 
 // ── component under test ───────────────────────────────────────────────────
 
@@ -122,5 +154,21 @@ describe('CloudProviderConfig — eye-toggle a11y in change-mode', () => {
     // The button carries aria-label={t('settings.aiProvider.showKey')}
     // (line 85 of index.tsx). Guards against accidental removal.
     expect(screen.getByRole('button', { name: 'settings.aiProvider.showKey' })).toBeInTheDocument();
+  });
+});
+
+describe('CloudProviderConfig — base URL save surfaces a rejected write', () => {
+  it('shows an error notification (i18n key, not raw error) when the save rejects', async () => {
+    const user = userEvent.setup();
+    render(
+      <CloudProviderConfig {...baseProps} provider="openai-compatible" baseUrlInput="https://x" />
+    );
+
+    await user.click(screen.getByText('settings.aiProvider.saveUrl'));
+
+    expect(mockSetProviderSettingsMutate).toHaveBeenCalledOnce();
+    expect(mockNotify.error).toHaveBeenCalledWith({
+      message: 'settings.aiProvider.saveUrlFailed',
+    });
   });
 });

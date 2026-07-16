@@ -5,6 +5,34 @@ export interface AiContract {
   generate(req: AiGenerateRequest): Promise<{ jobId: string }>;
 
   /**
+   * The backend-owned active AI *generation* provider config — the single source
+   * of truth for which provider/model/baseUrl generation routes to (task #16).
+   * The renderer reads this (never the request) so it can no longer point
+   * generation at an arbitrary endpoint. `providers` is always present (maybe
+   * empty); `activeProvider`/`model`/`baseUrl` are absent when unseeded.
+   */
+  activeConfig(): Promise<ActiveAiConfig>;
+
+  /** Switch the active provider (the "switch" half of the switch-vs-edit split).
+   *  Returns the fresh active config, or `{ error }` on an invalid id. */
+  setActiveProvider(req: { provider: string }): Promise<ActiveAiConfig | { error: string }>;
+
+  /** Edit a (possibly non-active) provider's model/base_url without flipping the
+   *  active provider (the "edit" half). Returns the fresh active config, or
+   *  `{ error }` when server-side validation rejects the model/base_url. */
+  setProviderSettings(req: {
+    provider: string;
+    model?: string;
+    baseUrl?: string;
+  }): Promise<ActiveAiConfig | { error: string }>;
+
+  /** One-time first-run seed from the renderer's migrated Zustand config.
+   *  Row-presence gated server-side, so re-calls are safe no-ops. */
+  seedActiveConfig(req: {
+    config: AiConfigSnapshot;
+  }): Promise<{ seeded: boolean } | { error: string }>;
+
+  /**
    * Stream a generation through the backend orchestration pipeline. Same wire
    * shape as `generate`, but the work runs as a composable `Pipeline` (so feature
    * generators share one lifecycle). Used by resume/cover-letter generation.
@@ -35,9 +63,6 @@ export interface AiContract {
     jobAd: string;
     /** Accurate AI-extracted company name; preferred over heuristic job-ad extraction. */
     company?: string;
-    provider?: string;
-    model?: string;
-    baseUrl?: string;
   }): Promise<{ company: string; brief: string }>;
 
   /**
@@ -61,9 +86,6 @@ export interface AiContract {
      *  hallucinate one; omitted when the country is unknown, which preserves
      *  today's unconstrained "local currency for that location" behavior. */
     currency?: string;
-    provider?: string;
-    model?: string;
-    baseUrl?: string;
   }): Promise<SalaryRange | null>;
 
   /**
@@ -78,14 +100,7 @@ export interface AiContract {
    * as without web search. The notes are reference context only; the prompt
    * layer fences them as untrusted and never lets them write the answer.
    */
-  researchAnswer(req: {
-    question: string;
-    role?: string;
-    company?: string;
-    provider?: string;
-    model?: string;
-    baseUrl?: string;
-  }): Promise<string>;
+  researchAnswer(req: { question: string; role?: string; company?: string }): Promise<string>;
 
   pullModel(model: string): Promise<{ jobId: string }>;
 
@@ -166,6 +181,31 @@ export interface EmbeddingConfig {
   provider: string;
   model: string;
   baseUrl?: string | null;
+}
+
+/** One provider's backend-persisted generation routing (`base_url` is only
+ *  meaningful for `openai-compatible`). Mirrors the Rust `ProviderConfig`. */
+export interface AiProviderRouting {
+  model?: string;
+  baseUrl?: string;
+}
+
+/** The persisted snapshot the renderer seeds the backend store from — 1:1 with
+ *  the old Zustand `aiProviderConfig` (`{ activeProvider, providers }`). */
+export interface AiConfigSnapshot {
+  activeProvider?: string;
+  providers: Record<string, AiProviderRouting>;
+}
+
+/** Backend-owned active generation config (task #16). The active provider's own
+ *  resolved `model`/`baseUrl` plus the full `providers` map (for the Settings AI
+ *  tab). `activeProvider`/`model`/`baseUrl` are absent when the store is unseeded;
+ *  `providers` is always present (maybe empty). Mirrors the Rust `ActiveAiConfig`. */
+export interface ActiveAiConfig {
+  activeProvider?: string;
+  model?: string;
+  baseUrl?: string;
+  providers: Record<string, AiProviderRouting>;
 }
 
 /** A validated web-researched market salary range (mirrors the Rust

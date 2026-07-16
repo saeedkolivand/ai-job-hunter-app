@@ -1,8 +1,8 @@
 import { Radio } from 'lucide-react';
 
 import { PROVIDERS } from '@/lib/ai-providers/provider-meta';
+import { useActiveConfig } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
-import { useAiProviderConfig } from '@/store/preferences-store';
 
 /**
  * Surfaces the *actual* routing the backend will use — active provider, model,
@@ -29,11 +29,12 @@ function chatEndpoint(provider: string, model: string, baseUrl?: string): string
 }
 
 export function ProviderDebugBadge() {
-  const config = useAiProviderConfig();
+  // Reads the ACTUAL backend routing (task #16) so the badge shows exactly where
+  // generation will go.
+  const { data: config } = useActiveConfig();
   const provider = config?.activeProvider ?? 'ollama';
-  const settings = config?.providers?.[provider];
-  const model = settings?.model ?? '';
-  const baseUrl = settings?.baseUrl;
+  const model = config?.model ?? '';
+  const baseUrl = config?.baseUrl;
   const endpoint = chatEndpoint(provider, model, baseUrl);
 
   return (
