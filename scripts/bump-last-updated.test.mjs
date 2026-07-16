@@ -8,8 +8,20 @@ import { fileURLToPath } from 'node:url';
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const scriptPath = join(__dirname, 'bump-last-updated.mjs');
 
+// Fixed test date (independent of real clock) — tests set BUMP_DATE env var to this
+// so assertions never break from calendar rolls. Chosen arbitrarily in the future.
+const TEST_DATE = '2031-01-05';
+
 // Create a unique temp dir for this test run
 const testTmpDir = join(tmpdir(), `bump-last-updated-test-${Date.now()}`);
+
+// Helper: run script with BUMP_DATE env var set to TEST_DATE
+function runScript(files, options = {}) {
+  return execFileSync('node', [scriptPath, ...files], {
+    env: { ...process.env, BUMP_DATE: TEST_DATE },
+    ...options,
+  });
+}
 
 describe('bump-last-updated script', () => {
   beforeEach(() => {
@@ -22,7 +34,7 @@ describe('bump-last-updated script', () => {
   });
 
   describe('(1) date-changed: stale date → today, annotation preserved', () => {
-    it('bumps stale date to today preserving annotation', () => {
+    it('bumps stale date to TEST_DATE preserving annotation', () => {
       const testFile = join(testTmpDir, 'doc-with-annotation.md');
       writeFileSync(
         testFile,
@@ -34,10 +46,10 @@ Some content.
 `
       );
 
-      execFileSync('node', [scriptPath, testFile], { stdio: 'inherit' });
+      runScript([testFile], { stdio: 'inherit' });
 
       const content = readFileSync(testFile, 'utf-8');
-      expect(content).toContain('Last updated: 2026-07-16 (v0.116.0)');
+      expect(content).toContain(`Last updated: ${TEST_DATE} (v0.116.0)`);
       // Verify the annotation is preserved byte-for-byte
       expect(content).toMatch(/Last updated: \d{4}-\d{2}-\d{2} \(v0\.116\.0\)/);
     });
@@ -54,10 +66,10 @@ Some content.
 `
       );
 
-      execFileSync('node', [scriptPath, testFile]);
+      runScript([testFile]);
 
       const content = readFileSync(testFile, 'utf-8');
-      expect(content).toContain('Last updated: 2026-07-16');
+      expect(content).toContain(`Last updated: ${TEST_DATE}`);
       expect(content).not.toContain('2026-05-15');
     });
 
@@ -73,10 +85,10 @@ Content here.
 `
       );
 
-      execFileSync('node', [scriptPath, testFile]);
+      runScript([testFile]);
 
       const content = readFileSync(testFile, 'utf-8');
-      expect(content).toContain('Last updated: 2026-07-16 (task #16: architecture review)');
+      expect(content).toContain(`Last updated: ${TEST_DATE} (task #16: architecture review)`);
     });
   });
 
@@ -85,7 +97,7 @@ Content here.
       const testFile = join(testTmpDir, 'already-current.md');
       const originalContent = `# Test Doc
 
-Last updated: 2026-07-16
+Last updated: ${TEST_DATE}
 
 Content.
 `;
@@ -95,7 +107,7 @@ Content.
       const mtimeBefore = statSync(testFile).mtimeMs;
 
       // Wait a tiny bit to ensure mtime would differ if file was written
-      execFileSync('node', [scriptPath, testFile]);
+      runScript([testFile]);
 
       // Verify content is unchanged
       expect(readFileSync(testFile, 'utf-8')).toBe(originalContent);
@@ -111,14 +123,14 @@ Content.
         testFile,
         `# Test
 
-Last updated: 2026-07-16
+Last updated: ${TEST_DATE}
 
 Content.
 `
       );
 
       try {
-        execFileSync('node', [scriptPath, testFile], {
+        runScript([testFile], {
           encoding: 'utf-8',
           stdio: ['pipe', 'pipe', 'pipe'],
         });
@@ -145,7 +157,7 @@ More content.
 `;
       writeFileSync(testFile, originalContent);
 
-      execFileSync('node', [scriptPath, testFile]);
+      runScript([testFile]);
 
       expect(readFileSync(testFile, 'utf-8')).toBe(originalContent);
     });
@@ -160,7 +172,7 @@ Some text mentioning that I wrote this on Last updated: 2026-06-01 but that's in
 `;
       writeFileSync(testFile, originalContent);
 
-      execFileSync('node', [scriptPath, testFile]);
+      runScript([testFile]);
 
       expect(readFileSync(testFile, 'utf-8')).toBe(originalContent);
     });
@@ -173,12 +185,12 @@ Some text mentioning that I wrote this on Last updated: 2026-06-01 but that's in
       const contentCRLF = contentLF.replace(/\n/g, '\r\n');
       writeFileSync(testFile, contentCRLF);
 
-      execFileSync('node', [scriptPath, testFile]);
+      runScript([testFile]);
 
       const result = readFileSync(testFile, 'utf-8');
       // Verify CRLF is preserved (file should have \r\n, not just \n)
       expect(result).toContain('\r\n');
-      expect(result).toContain('Last updated: 2026-07-16');
+      expect(result).toContain(`Last updated: ${TEST_DATE}`);
       // Verify the structure (should have CRLF throughout)
       const lines = result.split('\r\n');
       expect(lines.length).toBeGreaterThan(1);
@@ -189,12 +201,12 @@ Some text mentioning that I wrote this on Last updated: 2026-06-01 but that's in
       const contentLF = `# Test Doc\n\nLast updated: 2026-06-01\n\nContent.\n`;
       writeFileSync(testFile, contentLF);
 
-      execFileSync('node', [scriptPath, testFile]);
+      runScript([testFile]);
 
       const result = readFileSync(testFile, 'utf-8');
       // Should not have CRLF (only LF)
       expect(result).not.toContain('\r\n');
-      expect(result).toContain('Last updated: 2026-07-16');
+      expect(result).toContain(`Last updated: ${TEST_DATE}`);
     });
   });
 
@@ -204,7 +216,7 @@ Some text mentioning that I wrote this on Last updated: 2026-06-01 but that's in
       const originalContent = `Last updated: 2026-06-01`;
       writeFileSync(testFile, originalContent);
 
-      execFileSync('node', [scriptPath, testFile]);
+      runScript([testFile]);
 
       expect(readFileSync(testFile, 'utf-8')).toBe(originalContent);
     });
@@ -216,16 +228,16 @@ Some text mentioning that I wrote this on Last updated: 2026-06-01 but that's in
       writeFileSync(mdFile, `# Markdown\n\nLast updated: 2026-06-01\n`);
       writeFileSync(txtFile, `Last updated: 2026-06-01`);
 
-      execFileSync('node', [scriptPath, mdFile, txtFile]);
+      runScript([mdFile, txtFile]);
 
       // MD file should be bumped
-      expect(readFileSync(mdFile, 'utf-8')).toContain('Last updated: 2026-07-16');
+      expect(readFileSync(mdFile, 'utf-8')).toContain(`Last updated: ${TEST_DATE}`);
       // TXT file should be untouched
       expect(readFileSync(txtFile, 'utf-8')).toBe(`Last updated: 2026-06-01`);
     });
 
     it('exits silently when given no files', () => {
-      const result = execFileSync('node', [scriptPath], {
+      const result = runScript([], {
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
       });
@@ -248,10 +260,10 @@ Content.
 `
       );
 
-      execFileSync('node', [scriptPath, testFile]);
+      runScript([testFile]);
 
       const content = readFileSync(testFile, 'utf-8');
-      expect(content).toContain('Last updated: 2026-07-16 (PR #625: bridge HMAC handshake)');
+      expect(content).toContain(`Last updated: ${TEST_DATE} (PR #625: bridge HMAC handshake)`);
     });
 
     it('handles header on line 1 (unusual but valid)', () => {
@@ -266,10 +278,10 @@ Content.
 `
       );
 
-      execFileSync('node', [scriptPath, testFile]);
+      runScript([testFile]);
 
       const content = readFileSync(testFile, 'utf-8');
-      expect(content).toContain('Last updated: 2026-07-16');
+      expect(content).toContain(`Last updated: ${TEST_DATE}`);
     });
 
     it('handles date within first 10 lines (max search depth)', () => {
@@ -299,10 +311,10 @@ Content.
 `
       );
 
-      execFileSync('node', [scriptPath, testFile]);
+      runScript([testFile]);
 
       const content = readFileSync(testFile, 'utf-8');
-      expect(content).toContain('Last updated: 2026-07-16');
+      expect(content).toContain(`Last updated: ${TEST_DATE}`);
     });
 
     it('ignores date beyond line 10 (outside search depth)', () => {
@@ -327,9 +339,32 @@ Content.
 `;
       writeFileSync(testFile, originalContent);
 
-      execFileSync('node', [scriptPath, testFile]);
+      runScript([testFile]);
 
       expect(readFileSync(testFile, 'utf-8')).toBe(originalContent);
+    });
+
+    it('respects BUMP_DATE env var (not today)', () => {
+      const testFile = join(testTmpDir, 'env-var-test.md');
+      writeFileSync(
+        testFile,
+        `# Test
+
+Last updated: 2026-06-01
+
+Content.
+`
+      );
+
+      // Run with BUMP_DATE set to TEST_DATE
+      execFileSync('node', [scriptPath, testFile], {
+        env: { ...process.env, BUMP_DATE: TEST_DATE },
+      });
+
+      const content = readFileSync(testFile, 'utf-8');
+      expect(content).toContain(`Last updated: ${TEST_DATE}`);
+      // Verify it's NOT today (even though script defaults to today)
+      expect(content).not.toMatch(/Last updated: 2026-07-1[6-9]/);
     });
   });
 });

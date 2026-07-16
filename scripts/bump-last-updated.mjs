@@ -20,6 +20,23 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
 /**
+ * Get the bump date from environment or fall back to today.
+ * Validates BUMP_DATE env var matches YYYY-MM-DD; ignores invalid values with warning.
+ */
+function getBumpDate() {
+  const envDate = process.env.BUMP_DATE;
+  if (envDate) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(envDate)) {
+      return envDate;
+    }
+    process.stderr.write(
+      `Warning: BUMP_DATE="${envDate}" does not match YYYY-MM-DD format; using today's date.\n`
+    );
+  }
+  return getTodayDate();
+}
+
+/**
  * Get today's date in YYYY-MM-DD format.
  */
 function getTodayDate() {
@@ -125,11 +142,11 @@ async function main() {
     if (backfillFromGit) {
       newDate = getGitChangeDate(filePath);
       if (!newDate) {
-        // Git date unavailable (untracked file, etc.); use today
-        newDate = getTodayDate();
+        // Git date unavailable (untracked file, etc.); use bump date (env or today)
+        newDate = getBumpDate();
       }
     } else {
-      newDate = getTodayDate();
+      newDate = getBumpDate();
     }
 
     if (bumpLastUpdated(filePath, newDate)) {
