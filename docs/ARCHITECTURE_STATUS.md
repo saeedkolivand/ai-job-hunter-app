@@ -258,6 +258,15 @@ MV3 extension (`apps/extension`) published on Chrome Web Store + Firefox AMO; br
 | URL-to-job-ad extraction in AI Generate | Medium   | `scrape.url` IPC contract exists; UI input not yet wired                                                                                                          |
 | LinkedIn official API integration       | Medium   | Currently Playwright-only                                                                                                                                         |
 | Advanced skill taxonomy                 | Medium   | Structured ontology for matching                                                                                                                                  |
+| Derive AUTH_BOARDS from catalog         | Low      | AUTH_BOARDS (renderer constants/auth/auth.ts) is hardcoded LinkedIn-only; derive from SCRAPERS board catalog (REQ-16630)                                          |
+| Wire `scrape:item` listener             | Low      | `scrape:item` emitted from autopilot_helpers but no renderer subscriber exists; `scrape:progress` wired in #564, complete the pair                                |
+| Persist Jobs ScrapeForm state           | Low      | ScrapeForm state (JobsPage-local useState) resets on navigation; unlike filter/sort persist, should survive route changes                                         |
+| Drop dead `totalApplied` counter        | Low      | Legacy persisted counter in packages/shared/src/types and Rust Autopilot struct (serde ignores it; remove both)                                                   |
+| Autopilot battery-awareness             | Low      | Pause heavy scraping on battery power; add battery/AC check + allow-on-battery preference (default: pause)                                                        |
+| i18n OllamaResourcesPanel               | Low      | RAM/VRAM labels and lag warnings hardcoded English in ai-settings/AISettingsTab/OllamaResourcesPanel.tsx                                                          |
+| Ai_provider module relocation           | Low      | Relocate ai_provider (~1,450 LOC) from commands/ai_provider/ to top-level src/ai_provider/ L1 module with thin wrappers in commands/ai.rs (architecture)          |
+| Burn down Tauri-coupling allowlist      | Low      | 8-entry R2 allowlist in tests/architecture.rs (tauri emit/Manager in non-shell modules); inject emitter/resource port per ADR-0025                                |
+| E2E data backup round-trip test         | Low      | REQ-13006: add verify/E2E test for export→re-import full bundle round-trip (only per-store unit tests exist; needs versioned bundle test)                         |
 | Cloud sync                              | Low      | Deferred — needs a remote backend; the backup bundle + `DataStore` trait are the substrate                                                                        |
 | Team/shared job tracking                | Low      | Would require cloud sync                                                                                                                                          |
 
