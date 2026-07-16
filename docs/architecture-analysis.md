@@ -1,6 +1,6 @@
 # Architecture Analysis — Rust/Tauri Core
 
-Last updated: 2026-06-03
+Last updated: 2026-07-16
 
 > **⚠️ Point-in-time snapshot (June 2026).** This is a discovery report (Phase 1) captured on
 > `feat/rust-arch-enforcement` branch; it is read-only and describes the architecture

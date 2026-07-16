@@ -1,6 +1,6 @@
 # Design System — AI Job Hunter
 
-Last updated: 2026-06-24 (v0.116.0)
+Last updated: 2026-07-16 (v0.116.0)
 
 The design system lives in `packages/ui` and is published as the `@ajh/ui` internal package. It provides design tokens, a component library, motion primitives, and theming infrastructure.
 

@@ -1,6 +1,6 @@
 # Domain model (core types, traits, registries)
 
-Last updated: 2026-06-22
+Last updated: 2026-07-16
 
 Describes the **shape**; the source is authoritative for field-level detail. Query graphify (MCP `query_graph` / `get_node`, else `graphify explain "<type>"`) then read the owning file.
 

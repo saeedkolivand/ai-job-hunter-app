@@ -1,6 +1,6 @@
 # ADR-015: Browser extension imports via local WebSocket bridge
 
-Last updated: 2026-06-12
+Last updated: 2026-07-16
 
 **Status:** Accepted
 

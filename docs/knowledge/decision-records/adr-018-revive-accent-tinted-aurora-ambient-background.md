@@ -1,6 +1,6 @@
 # ADR-018: Revive accent-tinted aurora ambient background
 
-Last updated: 2026-06-14
+Last updated: 2026-07-16
 
 **Status:** Accepted
 
