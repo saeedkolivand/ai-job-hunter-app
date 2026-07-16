@@ -62,7 +62,7 @@ function buildPopupDom(): void {
       <button id="btn-save-answers"></button>
     </section>
     <details id="answer-tools">
-      <summary id="answer-tools-summary">Answer tools</summary>
+      <summary id="answer-tools-summary">Answer tools<span id="answer-tools-count" aria-live="polite"></span></summary>
       <button id="btn-suggest-answers"></button>
       <div id="suggestions-list" hidden></div>
       <select id="assist-picker"><option value=""></option></select>
@@ -1463,7 +1463,7 @@ describe('auto-suggest on popup open (Task #30)', () => {
     await flush();
 
     expect(byId<HTMLDivElement>('suggestions-list').hidden).toBe(false);
-    expect(byId<HTMLElement>('answer-tools-summary').textContent).toBe('Answer tools (1)');
+    expect(byId<HTMLElement>('answer-tools-count').textContent).toBe(' (1)');
     // Silent auto-run: the shared status line is never touched by this path
     // (compared to its own pre-test value — this file shares one DOM across
     // describe blocks, so asserting a literal '' would be order-dependent).
@@ -1508,7 +1508,7 @@ describe('auto-suggest on popup open (Task #30)', () => {
     await flush();
 
     expect(byId<HTMLDivElement>('suggestions-list').hidden).toBe(true);
-    expect(byId<HTMLElement>('answer-tools-summary').textContent).toBe('Answer tools');
+    expect(byId<HTMLElement>('answer-tools-count').textContent).toBe('');
     expect(byId<HTMLParagraphElement>('import-msg').textContent).toBe(msgBefore);
   });
 
@@ -1565,6 +1565,61 @@ describe('auto-suggest on popup open (Task #30)', () => {
       byId<HTMLDivElement>('suggestions-list').hidden,
       'a stale auto-suggest result must never render onto a page the popup already left'
     ).toBe(true);
+  });
+
+  it('a manual click while the auto chain is mid-flight always wins — the auto render is discarded', async () => {
+    let resolveAutoAnswers: ((res: unknown) => void) | undefined;
+    const pendingAutoAnswers = new Promise((resolve) => {
+      resolveAutoAnswers = resolve;
+    });
+    sendMessageMock
+      .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
+      .mockResolvedValueOnce(HAS_ANSWER_FIELDS)
+      .mockResolvedValueOnce(AUTOFILL_ON)
+      .mockReturnValueOnce(pendingAutoAnswers); // the auto chain's own answers.suggest — stuck in flight
+
+    push('connected');
+    await flush();
+    expect(byId<HTMLDivElement>('suggestions-list').hidden).toBe(true); // auto still awaiting
+
+    // The user clicks "Suggest answers for this form" (manual) WHILE the auto
+    // chain above is still mid-flight — its own answers.suggest resolves first.
+    const MANUAL_RESULT = {
+      ok: true as const,
+      kind: 'answersSuggest' as const,
+      result: {
+        ok: true as const,
+        suggestions: [
+          {
+            question: 'Manual question?',
+            answer: 'Manual answer.',
+            sourceQuestion: 'Manual question?',
+            score: 0.9,
+            salary: false,
+          },
+        ],
+      },
+      scanned: [{ question: 'Manual question?', index: 0 }],
+    };
+    sendMessageMock.mockResolvedValueOnce(MANUAL_RESULT);
+    byId<HTMLButtonElement>('btn-suggest-answers').click();
+    await flush();
+
+    expect(byId<HTMLDivElement>('suggestions-list').textContent).toContain('Manual answer.');
+    expect(byId<HTMLButtonElement>('btn-suggest-answers').disabled).toBe(false);
+
+    // The auto chain's own (now-stale) answers.suggest finally resolves with a
+    // DIFFERENT result — it must be discarded, never overwriting the manual render.
+    resolveAutoAnswers?.(ONE_SUGGESTION);
+    await flush();
+
+    expect(
+      byId<HTMLDivElement>('suggestions-list').textContent,
+      'the stale auto render must never overwrite a deliberate manual click'
+    ).toContain('Manual answer.');
+    expect(byId<HTMLDivElement>('suggestions-list').textContent).not.toContain(
+      'Because I love it.'
+    );
   });
 });
 

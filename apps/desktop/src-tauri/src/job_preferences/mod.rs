@@ -1,6 +1,10 @@
 use parking_lot::Mutex;
-/// Job preferences store (SQLite-backed).
-/// Stores user's job search preferences: location and tech stack.
+/// Job preferences store (SQLite-backed): the user's job-search location +
+/// country code, tech stack, and salary expectation — a personal salary
+/// figure, free text, byte-capped server-side (see `JobPreferencesStore::set`).
+/// Backed up/restored via `DataStore` and wiped on factory reset via
+/// `Resettable` (see `commands::privacy`), same posture as every other field
+/// this store holds.
 use std::path::PathBuf;
 
 use rusqlite::{params, Connection};
