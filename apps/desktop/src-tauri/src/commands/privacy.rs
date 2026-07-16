@@ -428,6 +428,7 @@ mod tests {
                     name: "Rust".into(),
                     category: "backend".into(),
                 }]),
+                salary_expectation: Some("€75,000".into()),
             })
             .unwrap();
         let before = store.get();
@@ -449,6 +450,10 @@ mod tests {
         assert!(
             after.country_code.is_none(),
             "country_code must also be None after reset"
+        );
+        assert!(
+            after.salary_expectation.is_none(),
+            "salary_expectation must also be None after reset"
         );
     }
 

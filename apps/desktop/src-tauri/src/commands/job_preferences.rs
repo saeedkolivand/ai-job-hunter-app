@@ -18,6 +18,7 @@ pub async fn job_preferences_set(app: AppHandle, prefs: Value) -> Value {
             location: None,
             country_code: None,
             tech_stack: None,
+            salary_expectation: None,
         });
     match store.set(&job_prefs) {
         Ok(()) => json!({ "success": true }),

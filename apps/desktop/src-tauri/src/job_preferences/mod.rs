@@ -26,6 +26,37 @@ pub struct JobPreferences {
     pub country_code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tech_stack: Option<Vec<TechStackItem>>,
+    /// User-supplied salary expectation (free text, e.g. "€75,000" or "80k
+    /// DOE") — the backend-readable copy of the renderer's
+    /// `usePreferencesStore.applicant.salaryExpectation` (Task #30). The
+    /// renderer stays the source of truth (edited in Settings → Applicant
+    /// details) and pushes it here on change + once on boot; the bridge's
+    /// `answers.suggest` reads it to fill a synthetic salary-question row
+    /// (`extension_bridge::answers_suggest`) that a renderer-only value could
+    /// never satisfy. Clamped to [`MAX_SALARY_EXPECTATION_BYTES`] in [`set`](Self::set).
+    #[serde(skip_serializing_if = "Option::is_none", rename = "salaryExpectation")]
+    pub salary_expectation: Option<String>,
+}
+
+/// Byte cap on `salary_expectation` — this is free text, not a bounded enum,
+/// so the store clamps it the same way `extension_bridge`'s own verb caps
+/// clamp untrusted/renderer-supplied strings (`answers_suggest::clamp_bytes`
+/// et al.), rather than trusting the renderer's own zod `.optional()` (no
+/// length cap there) to always be the one write path.
+const MAX_SALARY_EXPECTATION_BYTES: usize = 200;
+
+/// Clamp `s` to at most `max` bytes, cutting on a UTF-8 char boundary — same
+/// discipline as `extension_bridge::answers_suggest::clamp_bytes`.
+fn clamp_bytes(mut s: String, max: usize) -> String {
+    if s.len() <= max {
+        return s;
+    }
+    let mut end = max;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s.truncate(end);
+    s
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -94,6 +125,17 @@ impl JobPreferencesStore {
                 Ok(())
             },
         },
+        // Backend-readable salary expectation (Task #30) — a plain `ADD COLUMN`,
+        // same safe shape as the country-code migration above.
+        Migration {
+            name: "add_job_preferences_salary_expectation",
+            up: |conn| {
+                conn.execute_batch(
+                    "ALTER TABLE job_preferences ADD COLUMN salary_expectation TEXT;",
+                )?;
+                Ok(())
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -109,7 +151,7 @@ impl JobPreferencesStore {
     pub fn get(&self) -> JobPreferences {
         let conn = self.conn.lock();
         conn.query_row(
-            "SELECT location, tech_stack, country_code
+            "SELECT location, tech_stack, country_code, salary_expectation
              FROM job_preferences WHERE id = 1",
             [],
             |row| {
@@ -119,6 +161,7 @@ impl JobPreferencesStore {
                     location: row.get(0)?,
                     country_code: row.get(2)?,
                     tech_stack,
+                    salary_expectation: row.get(3)?,
                 })
             },
         )
@@ -126,6 +169,7 @@ impl JobPreferencesStore {
             location: None,
             country_code: None,
             tech_stack: None,
+            salary_expectation: None,
         })
     }
 
@@ -133,7 +177,7 @@ impl JobPreferencesStore {
     pub fn clear(&self) -> AppResult<()> {
         let conn = self.conn.lock();
         conn.execute(
-            "UPDATE job_preferences SET location = NULL, tech_stack = NULL, country_code = NULL WHERE id = 1",
+            "UPDATE job_preferences SET location = NULL, tech_stack = NULL, country_code = NULL, salary_expectation = NULL WHERE id = 1",
             [],
         )
         .map_err(|e| e.to_string())?;
@@ -146,12 +190,23 @@ impl JobPreferencesStore {
             .tech_stack
             .as_ref()
             .and_then(|ts| serde_json::to_string(ts).ok());
+        // Untrusted free text (not a bounded enum) — clamp server-side rather
+        // than trusting the renderer's own validation to be the only write path.
+        let salary_expectation = prefs
+            .salary_expectation
+            .clone()
+            .map(|s| clamp_bytes(s, MAX_SALARY_EXPECTATION_BYTES));
 
         conn.execute(
             "UPDATE job_preferences
-             SET location = ?1, tech_stack = ?2, country_code = ?3
+             SET location = ?1, tech_stack = ?2, country_code = ?3, salary_expectation = ?4
              WHERE id = 1",
-            params![prefs.location, tech_stack_json, prefs.country_code],
+            params![
+                prefs.location,
+                tech_stack_json,
+                prefs.country_code,
+                salary_expectation
+            ],
         )
         .map_err(|e| e.to_string())?;
         Ok(())

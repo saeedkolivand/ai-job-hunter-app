@@ -3,6 +3,7 @@ import { Briefcase } from 'lucide-react';
 import { useTranslation } from '@ajh/translations';
 import { Input, SettingsSection } from '@ajh/ui';
 
+import { useJobPreferences, useSetJobPreferences } from '@/services';
 import type { ApplicantPreferences } from '@/store/preferences-schema';
 import { useApplicant, usePreferencesStore } from '@/store/preferences-store';
 
@@ -44,10 +45,18 @@ export function ApplicantDetailsSection() {
   const { t } = useTranslation();
   const applicant = useApplicant();
   const setApplicant = usePreferencesStore((s) => s.setApplicant);
+  // Backend-readable mirror of `salaryExpectation` only (Task #30) — the
+  // bridge's `answers.suggest` reads it from `job_preferences`, which has no
+  // access to this renderer-only store otherwise.
+  const { data: jobPrefs } = useJobPreferences();
+  const setJobPreferences = useSetJobPreferences();
 
   const update = (key: keyof ApplicantPreferences, value: string) => {
     const next: ApplicantPreferences = { ...applicant, [key]: value };
     setApplicant(next);
+    if (key === 'salaryExpectation') {
+      setJobPreferences.mutate({ ...jobPrefs, salaryExpectation: value.trim() || undefined });
+    }
   };
 
   return (
