@@ -13,6 +13,7 @@ pub mod credentials;
 pub mod data;
 pub mod dialog;
 pub mod documents;
+pub mod email_watch;
 pub mod extension_bridge;
 pub mod geocoding;
 pub mod github;

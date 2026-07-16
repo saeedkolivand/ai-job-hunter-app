@@ -28,6 +28,7 @@ import { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js
 import { DATA_CHANNELS, type DataContract } from './data.js';
 import { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
 import { DOCUMENTS_CHANNELS, type DocumentsContract } from './documents.js';
+import { EMAIL_WATCH_CHANNELS, type EmailWatchContract } from './emailWatch.js';
 import { EXTENSION_BRIDGE_CHANNELS, type ExtensionBridgeContract } from './extensionBridge.js';
 import { GEOCODE_CHANNELS, type GeocodeContract } from './geocode.js';
 import { GITHUB_CHANNELS, type GitHubContract } from './github.js';
@@ -59,6 +60,7 @@ export interface IpcContract {
   contactProfile: ContactProfileContract;
   github: GitHubContract;
   extensionBridge: ExtensionBridgeContract;
+  emailWatch: EmailWatchContract;
   scrape: ScrapeContract;
   match: MatchContract;
   geocode: GeocodeContract;
@@ -92,6 +94,7 @@ export const IPC_CHANNELS = {
   contactProfile: CONTACT_PROFILE_CHANNELS,
   github: GITHUB_CHANNELS,
   extensionBridge: EXTENSION_BRIDGE_CHANNELS,
+  emailWatch: EMAIL_WATCH_CHANNELS,
   scrape: SCRAPE_CHANNELS,
   match: MATCH_CHANNELS,
   geocode: GEOCODE_CHANNELS,
@@ -209,6 +212,12 @@ export {
   type TemplateRecommendation,
   type TemplateRecommendSignals,
 } from './documents.js';
+export {
+  EMAIL_WATCH_CHANNELS,
+  type EmailWatchConnectRequest,
+  type EmailWatchContract,
+  type EmailWatchStatus,
+} from './emailWatch.js';
 export {
   EXTENSION_BRIDGE_CHANNELS,
   type ExtensionAiAssistSetting,

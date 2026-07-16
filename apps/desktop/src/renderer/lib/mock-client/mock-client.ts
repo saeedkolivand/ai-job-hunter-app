@@ -17,7 +17,12 @@
  * Every method is a jest/vitest spy-friendly async stub. Provide overrides as a
  * deep-partial — only the methods you care about need to be specified.
  */
-import type { ReferralContact, ReferralUpsertRequest, ScrapeProgressEvent } from '@ajh/shared';
+import type {
+  EmailWatchConnectRequest,
+  ReferralContact,
+  ReferralUpsertRequest,
+  ScrapeProgressEvent,
+} from '@ajh/shared';
 
 import type { AppClient } from '../app-client';
 
@@ -177,6 +182,18 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       setAiAssistEnabled: async (enabled: boolean) => ({ enabled }),
       autoTrackEnabled: async () => ({ enabled: false }),
       setAutoTrackEnabled: async (enabled: boolean) => ({ enabled }),
+    },
+
+    emailWatch: {
+      status: async () => ({ connected: false, enabled: false }),
+      connect: async ({ address }: EmailWatchConnectRequest) => ({
+        connected: true,
+        address,
+        enabled: false,
+      }),
+      disconnect: async () => ({ connected: false, enabled: false }),
+      setEnabled: async (enabled: boolean) => ({ connected: false, enabled }),
+      checkNow: async () => ({ connected: false, enabled: false }),
     },
 
     scrape: {
