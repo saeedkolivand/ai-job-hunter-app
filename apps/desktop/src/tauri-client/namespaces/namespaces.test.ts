@@ -112,6 +112,19 @@ describe('tauri-client namespaces', () => {
     expect(typeof unsub).toBe('function');
   });
 
+  it('wires extensionBridge:changed through listen and forwards the payload', () => {
+    const handler = vi.fn();
+    const unsub = extensionBridge.onChanged(handler);
+    expect(listen).toHaveBeenCalledWith(
+      EVENT_CHANNELS.extensionBridge.changed,
+      expect.any(Function)
+    );
+
+    lastListenHandler?.({ payload: { connected: true } });
+    expect(handler).toHaveBeenCalledWith({ connected: true });
+    expect(typeof unsub).toBe('function');
+  });
+
   it('exercises every method across every namespace', () => {
     const client = createTauriInvokeClient() as unknown as Record<string, Record<string, unknown>>;
     let invokeMethods = 0;

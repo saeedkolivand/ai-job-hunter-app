@@ -15,6 +15,7 @@
 import type { AgentStepEvent } from '../ipc/contracts/agent.js';
 import type { ApplicationChangedEvent } from '../ipc/contracts/applications.js';
 import type { AutopilotFocusEvent, AutopilotStepEvent } from '../ipc/contracts/autopilot.js';
+import type { ExtensionBridgeChangedEvent } from '../ipc/contracts/extensionBridge.js';
 import type { MenuActionEvent, MenuNavigateEvent } from '../ipc/contracts/menu.js';
 import type { AiStreamChunk, JobEvent, NotificationToast } from '../types/index.js';
 import { AGENT_EVENTS } from './agent.js';
@@ -22,6 +23,7 @@ import { AI_EVENTS } from './ai.js';
 import { APPLICATIONS_EVENTS } from './applications.js';
 import { AUTOPILOT_EVENTS } from './autopilot.js';
 import { BOARDS_EVENTS, type BoardsLoginStatusEvent } from './boards.js';
+import { EXTENSION_BRIDGE_EVENTS } from './extensionBridge.js';
 import { JOBS_EVENTS } from './jobs.js';
 import { MENU_EVENTS } from './menu.js';
 import { NOTIFICATIONS_EVENTS } from './notifications.js';
@@ -42,6 +44,7 @@ export const EVENT_CHANNELS = {
   scrape: SCRAPE_EVENTS,
   boards: BOARDS_EVENTS,
   system: SYSTEM_EVENTS,
+  extensionBridge: EXTENSION_BRIDGE_EVENTS,
 } as const;
 
 // Union type of all event-channel wire strings.
@@ -69,6 +72,7 @@ export interface AppEvents {
   'scrape:item': ScrapeItemEvent;
   'boards:login-status': BoardsLoginStatusEvent;
   'system:accentChanged': void;
+  'extensionBridge:changed': ExtensionBridgeChangedEvent;
 }
 
 export {
@@ -78,6 +82,7 @@ export {
   AUTOPILOT_EVENTS,
   BOARDS_EVENTS,
   type BoardsLoginStatusEvent,
+  EXTENSION_BRIDGE_EVENTS,
   JOBS_EVENTS,
   MENU_EVENTS,
   NOTIFICATIONS_EVENTS,

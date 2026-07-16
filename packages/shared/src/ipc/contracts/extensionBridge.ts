@@ -57,6 +57,17 @@ export interface ExtensionAutoTrackSetting {
   enabled: boolean;
 }
 
+/**
+ * Pushed on a 0→1 or →0 transition in the live paired-connection COUNT (not a
+ * per-socket event) — the desktop supports multiple browsers sharing one
+ * pairing token, each with its own socket, so this only fires when the last
+ * one disconnects or the first one (re)connects, never on an intermediate
+ * pairing/close while at least one other socket stays open.
+ */
+export interface ExtensionBridgeChangedEvent {
+  connected: boolean;
+}
+
 export interface ExtensionBridgeContract {
   status(): Promise<ExtensionBridgeStatus>;
   regenerateToken(): Promise<ExtensionBridgeTokenResult>;
@@ -77,6 +88,9 @@ export interface ExtensionBridgeContract {
   autoTrackEnabled(): Promise<ExtensionAutoTrackSetting>;
   /** Set + persist the auto-track opt-in; echoes the stored value. */
   setAutoTrackEnabled(enabled: boolean): Promise<ExtensionAutoTrackSetting>;
+  /** Subscribe to a live connection-count transition (0→1 / →0). Returns a
+   *  sync unsubscribe handle — mirrors `ApplicationsContract.onChanged`. */
+  onChanged(handler: (event: ExtensionBridgeChangedEvent) => void): () => void;
 }
 
 export const EXTENSION_BRIDGE_CHANNELS = {

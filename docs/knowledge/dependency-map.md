@@ -14,17 +14,17 @@ For the live graph use **graphify** — MCP `query_graph "what depends on <X>"` 
 
 ## Layer boundaries (Rust, CI-enforced)
 
-`std::env::var` only in `platform/`; `reqwest::Client` only in `net/`; untyped `Result<_,String>` only in `error/`. Cross-layer coupling beyond L0→L1→L2→L3 is a HIGH finding. Source: `docs/architecture-rules.md` + the `cargo test --test architecture` guard.
+`std::env::var` only in `platform/`; `reqwest::Client` only in `net/http.rs`; untyped `Result<_,String>` only in `error.rs`. Cross-layer coupling beyond L0→L1→L2→L3 is a HIGH finding. Source: `docs/architecture-rules.md` + the `cargo test --test architecture` guard.
 
 ## Manifests (where to look)
 
-- Rust: `apps/desktop/src-tauri/Cargo.toml` / `Cargo.lock`; workspace `Cargo.toml`. Supply-chain policy: `deny.toml` (`cargo deny check`, `cargo audit`).
+- Rust: `apps/desktop/src-tauri/Cargo.toml` / `Cargo.lock`. Supply-chain policy: `apps/desktop/src-tauri/deny.toml` (`cargo deny check`, `cargo audit`).
 - JS: root `package.json` + `pnpm-lock.yaml`; per-package `package.json` (`packages/*`, `apps/desktop`). Audit: `pnpm audit` + dependency-review (CI).
 - Tauri: `apps/desktop/src-tauri/tauri.conf.json`, `apps/desktop/src-tauri/capabilities/default.json`.
 
 ## Registries (the extension points)
 
-- Scrapers — `scraping/boards/mod.rs` (`SCRAPERS`, `Scraper` trait).
+- Scrapers — `scraping/boards/mod.rs` (`SCRAPERS` registry; `Scraper` trait in `scraping/types/mod.rs`).
 - AI providers — `commands/ai_provider/` (one file per provider behind a shared interface; adding a provider = new adapter only).
 
 > No applier registry: the auto-apply engine was removed (the app is an apply **assistant**).
