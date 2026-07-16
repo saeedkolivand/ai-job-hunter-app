@@ -207,29 +207,30 @@ The Tauri app opens automatically. Hot-reload is enabled for the renderer.
 ## Monorepo Structure
 
 ```
-ai-job-hunter/
+ai-job-hunter-app/
 ├── apps/
-│   └── tauri/                  # Tauri app (Rust core + React renderer)
-│       ├── src-tauri/          # Rust core (commands, menu, tray, updater)
-│       └── src/                # React UI + tauri-client.ts
+│   ├── desktop/                 # Tauri app: Rust core + React renderer
+│   │   ├── src-tauri/           # Rust core (commands, scraping, AI, export, DB, extension bridge)
+│   │   └── src/                 # React UI + tauri-client
+│   └── extension/               # Browser extension (MV3, Chrome + Firefox)
 │
 ├── packages/
-│   ├── shared/                 # Types, Zod schemas, IPC contracts
-│   ├── core/                   # EventBus, JobQueue, TaskScheduler, logger
-│   ├── ai/                     # Ollama client, inference wrappers
-│   ├── data/                   # Scrapers, appliers, DB, vector store
-│   └── workers/                # Background workers
+│   ├── shared/                  # Types, Zod schemas, IPC contracts
+│   ├── ui/                      # @ajh/ui — React component library
+│   ├── prompts/                 # AI prompt templates
+│   ├── translations/            # i18n config + locale strings
+│   └── test-ids/                # @ajh/test-ids — central TEST_IDS map
 │
 ├── .github/
-│   ├── workflows/              # CI/CD pipelines
+│   ├── workflows/               # CI/CD pipelines
 │   └── ISSUE_TEMPLATE/
 │
-├── docs/                       # Architecture and design documentation
-├── eslint.config.mjs           # ESLint (flat config)
-├── .prettierrc.json            # Prettier
-├── commitlint.config.mjs       # Commit linting
-├── vitest.config.ts            # Unit tests
-└── .releaserc.json             # semantic-release config
+├── docs/                        # Architecture and design documentation
+├── eslint.config.mjs            # ESLint (flat config)
+├── .prettierrc.json             # Prettier
+├── commitlint.config.mjs        # Commit linting
+├── vitest.config.ts             # Unit tests
+└── .releaserc.json              # semantic-release config
 ```
 
 ### Package dependency graph
@@ -239,11 +240,13 @@ ai-job-hunter/
   └── @ajh/shared
   └── @ajh/ui
   └── @ajh/prompts
+  └── @ajh/translations
+  └── @ajh/test-ids
 @ajh/ui
   └── @ajh/shared
 ```
 
-Build order: `shared → ui / prompts → tauri`
+Build order: `shared → ui / prompts / translations / test-ids → desktop`
 
 ---
 
