@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784142300053,
+  "lastUpdate": 1784161657638,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4781,6 +4781,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 292767,
             "range": "± 15215",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b9230da4ca21f546926c14c4e06b01f549cbd35c",
+          "message": "fix: own the active ai provider config in the backend so the renderer can't set base_url (#682)\n\n* fix: own the active ai provider config in the backend so the renderer can't set base_url\n\nThe renderer's Zustand preferences were the source of truth for the active AI\nprovider/model/base_url and injected them into every generation call, which the\nbackend trusted. An XSS'd renderer could set provider=openai + base_url=attacker\nand exfiltrate the stored key + full prompt on every call (unguarded egress\npath); the extension bridge was worse, persisting the attacker base_url to disk.\n\nIntroduce a backend-owned AiConfigStore (SQLite, mirrors EmbeddingConfig) as the\nsingle source of truth for { activeProvider, providers:{model,baseUrl} }, wired\ninto the GDPR reset registry + backup bundle. Generation, research, the extension\nbridge, and autopilot now resolve provider/model/base_url server-side via\nCompleter::from_active; provider + baseUrl are removed from AiGenerateRequest\n(compile-time lock). base_url is validated on write (http(s) only, cloud-metadata\naddress blocked) — provenance, not IP-filtering, so localhost/LAN gateways still\nwork. The renderer flips to a backend-backed useActiveConfig query with a boot\nprefetch and a one-time post-hydration seed from existing prefs; effort and\nmodelLimits stay renderer-side. The three settings-time inspection commands keep\nbase_url (not the generation surface).\n\nBehavior change: a scheduled autopilot run now follows the currently-active\nprovider instead of the one pinned when the schedule was created.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: scope base_url ownership docs, drop inert native base_url, guard cold-boot caption\n\nAddress the #16 review findings (all advisory, none blocking):\n\n- Scope the AiConfigStore module doc + net/ssrf doc: base_url ownership is closed\n  for the flipped generation commands (ai_generate, pipeline, research/salary,\n  bridge, autopilot); the agent_run path is a tracked follow-up (NEXT_ISSUES #5).\n  Correct the metadata-block claim to \"any IPv4 notation\" (IPv6 forms are not\n  covered; the block is defense-in-depth, not the boundary).\n- Persist base_url only for openai-compatible in both validate_settings and the\n  seed/import scrub path; native providers store NULL so an inert base_url can't\n  reach record_usage's cost gate (+ tests).\n- Guard the autopilot StepAction and StepFineTune captions on the useActiveConfig\n  isPending window so an already-configured user never sees a \"no provider\" flash\n  on cold boot (+ test).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: close out task #16 with the base_url provenance adr\n\nAdd ADR-0012 (backend-owned AiConfigStore, provenance not IP-filtering,\nscoped to the flipped commands with agent_run tracked as open). Sync the\nAI-provider and autopilot behavior-change notes into automation-domain.md,\nretire the answer-assist provider-snapshot description in extension-domain.md\nand ADR-0011, and add two LOW follow-ups to NEXT_ISSUES.\n\n* fix: handle the error-union in provider-config mutations and cover from_active + boot\n\nAddress the #682 claude review:\n\n- HIGH: useSetActiveProvider/useSetProviderSettings/useConfigureActiveProvider\n  now narrow the { error } union and throw so a rejected write surfaces via\n  onError instead of a false success; useConfigureActiveProvider stops before\n  setActiveProvider when setProviderSettings errors. CloudProviderConfig's\n  base_url save gains error feedback (+ i18n key). So a base_url rejected by the\n  new SSRF/provenance guard is now shown, not swallowed.\n- Extract an AppHandle-free from_config/resolve_parts seam from Completer so the\n  fail-closed base_url re-validate is unit-tested (tampered metadata/scheme ->\n  reject, never fall back to the default endpoint).\n- Add the missing AiConfigBoot seed-logic test (once-only guard, pre-hydration\n  skip, fresh-install skip, invalidation).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
+          "timestamp": "2026-07-16T02:07:40+02:00",
+          "tree_id": "87e90b76ab8b1e5158cfb3997eff38f2e3d66d82",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/b9230da4ca21f546926c14c4e06b01f549cbd35c"
+        },
+        "date": 1784161656938,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2143453,
+            "range": "± 66839",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2538073,
+            "range": "± 25107",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 287417,
+            "range": "± 3930",
             "unit": "ns/iter"
           }
         ]
