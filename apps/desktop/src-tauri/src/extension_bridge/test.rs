@@ -41,6 +41,8 @@ fn message_type_constants_match_ts() {
         msg::APPLIED_RESULT,
         msg::STATUS_UPDATE,
         msg::STATUS_RESULT,
+        msg::AUTOTRACK_CHECK,
+        msg::AUTOTRACK_RESULT,
         msg::ANSWERS_SAVE,
         msg::ANSWERS_RESULT,
         msg::ANSWERS_SUGGEST,
@@ -98,6 +100,8 @@ fn reserved_types_are_distinct() {
         msg::APPLIED_RESULT,
         msg::STATUS_UPDATE,
         msg::STATUS_RESULT,
+        msg::AUTOTRACK_CHECK,
+        msg::AUTOTRACK_RESULT,
         msg::ANSWERS_SAVE,
         msg::ANSWERS_RESULT,
         msg::ANSWERS_SUGGEST,
@@ -322,6 +326,118 @@ fn reset_disables_ai_assist_optin() {
     assert!(
         !s.ai_assist_enabled(),
         "factory reset returns the ai-assist opt-in to its default OFF"
+    );
+}
+
+// ── Auto-track opt-in (Task #22, SEPARATE gate, default OFF, persisted) ───────
+
+#[test]
+fn autotrack_optin_defaults_off_and_persists() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+    assert!(!s.autotrack_enabled(), "auto-track opt-in defaults OFF");
+
+    s.set_autotrack_enabled(true);
+    assert!(s.autotrack_enabled());
+
+    // A fresh load from the same dir reads back the persisted opt-in.
+    let reloaded = BridgeState::load(dir.path());
+    assert!(reloaded.autotrack_enabled(), "opt-in persists across loads");
+
+    // Turning it back off persists too.
+    reloaded.set_autotrack_enabled(false);
+    assert!(!BridgeState::load(dir.path()).autotrack_enabled());
+}
+
+#[test]
+fn autotrack_optin_is_independent_of_the_other_optins() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+    s.set_autofill_enabled(true);
+    s.set_ai_assist(true);
+    assert!(
+        !s.autotrack_enabled(),
+        "turning autofill/ai-assist on must never turn auto-track on too — separate gates"
+    );
+}
+
+#[test]
+fn reset_disables_autotrack_optin() {
+    use crate::data_store::Resettable;
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+    s.set_autotrack_enabled(true);
+    s.reset();
+    assert!(
+        !s.autotrack_enabled(),
+        "factory reset returns the auto-track opt-in to its default OFF"
+    );
+}
+
+#[test]
+fn autotrack_result_reply_carries_the_flag() {
+    use super::autotrack::autotrack_result_reply;
+    let on: serde_json::Value =
+        serde_json::from_str(&autotrack_result_reply("req-1", true)).unwrap();
+    assert_eq!(on["type"], msg::AUTOTRACK_RESULT);
+    assert_eq!(on["reqId"], "req-1");
+    assert_eq!(on["payload"]["enabled"], true);
+
+    let off: serde_json::Value =
+        serde_json::from_str(&autotrack_result_reply("req-2", false)).unwrap();
+    assert_eq!(off["payload"]["enabled"], false);
+}
+
+#[test]
+fn advance_authenticated_routes_autotrack_check() {
+    let envelope = serde_json::json!({
+        "type": msg::AUTOTRACK_CHECK,
+        "reqId": "req-9",
+        "payload": Value::Null,
+    });
+    let decision = advance_authenticated(msg::AUTOTRACK_CHECK, "req-9".to_string(), &envelope);
+    match decision {
+        FrameDecision::AutotrackCheck { req_id } => assert_eq!(req_id, "req-9"),
+        other => panic!("expected FrameDecision::AutotrackCheck, got {other:?}"),
+    }
+}
+
+// ── AUTO status.update gate (defense-in-depth, Task #22) ──────────────────────
+
+#[test]
+fn auto_write_is_refused_only_when_flagged_auto_and_optin_off() {
+    use super::status_update::auto_write_refused;
+    let auto = serde_json::json!({ "url": "https://x.co/j", "to": "applied", "auto": true });
+    let manual = serde_json::json!({ "url": "https://x.co/j", "to": "applied" });
+
+    // An AUTO write is refused ONLY while the opt-in is off.
+    assert!(
+        auto_write_refused(&auto, false),
+        "auto + opt-in OFF → refuse"
+    );
+    assert!(
+        !auto_write_refused(&auto, true),
+        "auto + opt-in ON → allowed"
+    );
+
+    // A deliberate popup click (no `auto` flag) is NEVER refused here, opt-in or not.
+    assert!(
+        !auto_write_refused(&manual, false),
+        "manual click stays ungated even with the opt-in OFF"
+    );
+    assert!(!auto_write_refused(&manual, true));
+}
+
+#[test]
+fn is_auto_status_update_defaults_false_when_absent() {
+    use super::status_update::is_auto_status_update;
+    assert!(is_auto_status_update(&serde_json::json!({ "auto": true })));
+    assert!(!is_auto_status_update(
+        &serde_json::json!({ "auto": false })
+    ));
+    assert!(
+        !is_auto_status_update(&serde_json::json!({ "url": "x" })),
+        "absent `auto` → treated as a manual click"
     );
 }
 

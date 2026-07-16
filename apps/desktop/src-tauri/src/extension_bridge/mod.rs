@@ -66,6 +66,7 @@ mod answers_save;
 mod answers_suggest;
 mod assist_registry;
 pub mod auth;
+mod autotrack;
 pub mod handshake;
 mod import_flow;
 #[cfg(test)]
@@ -157,6 +158,14 @@ pub mod msg {
     /// a malformed request. UNLIKE `applied.result`, this verb's errors ARE
     /// user-facing (it answers a deliberate click, not a passive check).
     pub const STATUS_RESULT: &str = "status.result";
+    /// Extension → desktop: read the auto-track opt-in (Task #22, auto-track
+    /// Layer A) — no payload. The extension consults this before ARMING its
+    /// gesture submit-watcher (client-side gate). Reading the flag needs no
+    /// consent (it is the user's own device-local setting); the WRITE it gates
+    /// (`status.update { auto: true }`) is the enforced boundary.
+    pub const AUTOTRACK_CHECK: &str = "autotrack.check";
+    /// Desktop → extension: the `autotrack.check` outcome — `{ enabled }`.
+    pub const AUTOTRACK_RESULT: &str = "autotrack.result";
     /// Extension → desktop: "save my answers from this page" — append the
     /// captured `{question, answer}` pairs onto the Application matched by
     /// (canonicalized + normalized) `url`. No match → a refusal telling the
@@ -274,6 +283,15 @@ pub struct BridgeState {
     /// [`crate::ai_config::AiConfigStore`] at answer-time (task #16) via
     /// [`crate::pipeline::Completer::from_active`], never a renderer snapshot.
     ai_assist_enabled: AtomicBool,
+    /// Auto-track opt-in (default OFF, persisted to
+    /// `autotrack::AUTOTRACK_OPTIN_FILE`).
+    /// Task #22: the extension reads it (via `autotrack.check`) to decide
+    /// whether to arm its gesture submit-watcher, and the desktop re-checks it
+    /// before honoring an AUTO `status.update` (a write flagged `auto: true`) —
+    /// defense-in-depth so a compromised extension can't auto-mark `applied`
+    /// without the user's opt-in. A bare `AtomicBool`, same shape as
+    /// `autofill_enabled` / `ai_assist_enabled`.
+    autotrack_enabled: AtomicBool,
     /// `match.live` token-bucket throttle — shared across EVERY connection for
     /// this pairing, not per-connection, so a loopback reconnect (a cheap,
     /// near-instant handshake) can never reset the burst allowance. See
@@ -295,6 +313,7 @@ impl BridgeState {
             connected: AtomicBool::new(false),
             autofill_enabled: AtomicBool::new(load_autofill_optin(data_dir)),
             ai_assist_enabled: AtomicBool::new(load_ai_assist_optin(data_dir)),
+            autotrack_enabled: AtomicBool::new(autotrack::load_autotrack_optin(data_dir)),
             match_live_limiter: Mutex::new(match_live::MatchLiveThrottle::new()),
             data_dir: data_dir.to_path_buf(),
         }
@@ -388,6 +407,7 @@ impl crate::data_store::Resettable for BridgeState {
         self.regenerate_token();
         self.set_autofill_enabled(false);
         self.set_ai_assist(false);
+        self.set_autotrack_enabled(false);
     }
 }
 
@@ -757,6 +777,10 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
             FrameDecision::StatusUpdate { req_id, payload } => {
                 Some(status_update::handle_status_update(&app, &req_id, &payload))
             }
+            FrameDecision::AutotrackCheck { req_id } => Some(autotrack::autotrack_result_reply(
+                &req_id,
+                state.autotrack_enabled(),
+            )),
             FrameDecision::AnswersSave { req_id, payload } => {
                 Some(answers_save::handle_answers_save(&app, &req_id, &payload))
             }
@@ -877,6 +901,10 @@ enum FrameDecision {
     /// [`status_update::resolve_status_update`] is what actually restricts it
     /// to `saved → applied` on an exact match.
     StatusUpdate { req_id: String, payload: Value },
+    /// An authenticated `autotrack.check` (Task #22) — a pure read of the
+    /// auto-track opt-in off [`BridgeState`]. No payload; the loop answers it
+    /// with `autotrack::autotrack_result_reply`.
+    AutotrackCheck { req_id: String },
     /// An authenticated `answers.save` to answer through
     /// [`answers_save::handle_answers_save`]. Carries the payload verbatim so
     /// the handler can read `url` + `answers`.
@@ -1015,6 +1043,8 @@ fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameD
             let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
             FrameDecision::StatusUpdate { req_id, payload }
         }
+        // "Is auto-track on?" — a pure read of the opt-in (no payload). Task #22.
+        msg::AUTOTRACK_CHECK => FrameDecision::AutotrackCheck { req_id },
         // "Save my answers from this page" — a consent-gated append-only write.
         msg::ANSWERS_SAVE => {
             let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);

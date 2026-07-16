@@ -18,11 +18,17 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { browser } from '@wxt-dev/browser';
+import { type Browser, browser } from '@wxt-dev/browser';
 
 import type { AutofillSummary } from './lib/autofill';
 import type { PopupRequest, PopupResponse } from './lib/messages';
 import { getToken } from './lib/storage';
+import { SUBMIT_DETECTED_MSG } from './lib/submit-watch';
+
+/** The extension's own id (mocked) — used to build a trusted `sender` for the
+ *  submit-watcher's fire-and-forget message (see `background.ts`'s
+ *  belt-and-braces `sender.id === browser.runtime.id` check). */
+const EXTENSION_ID = 'test-extension-id';
 
 // ── hoisted mock BridgeClient (background.ts's getClient() lazily constructs
 // ONE client and caches it for the worker's lifetime — every test drives this
@@ -39,11 +45,13 @@ const mockClient = vi.hoisted(() => ({
   suggestAnswers: vi.fn(),
   matchLive: vi.fn(),
   answerAssist: vi.fn(),
+  autotrackEnabled: vi.fn(),
 }));
 
 vi.mock('@wxt-dev/browser', () => ({
   browser: {
     runtime: {
+      id: 'test-extension-id',
       onMessage: { addListener: vi.fn() },
       onStartup: { addListener: vi.fn() },
       onInstalled: { addListener: vi.fn() },
@@ -53,6 +61,10 @@ vi.mock('@wxt-dev/browser', () => ({
     },
     tabs: { query: vi.fn() },
     scripting: { executeScript: vi.fn() },
+    action: {
+      setBadgeText: vi.fn().mockResolvedValue(undefined),
+      setBadgeBackgroundColor: vi.fn().mockResolvedValue(undefined),
+    },
   },
 }));
 
@@ -74,19 +86,34 @@ vi.mock('./lib/bridge', () => ({
 
 // Dynamic import AFTER the mocks are in place — background.ts registers its
 // onMessage listener + kicks an initial ensureConnected() probe at module load.
-await import('./background');
+const backgroundModule = await import('./background');
 
 const tabsQueryMock = vi.mocked(browser.tabs.query);
 const executeScriptMock = vi.mocked(browser.scripting.executeScript);
 const getTokenMock = vi.mocked(getToken);
+const setBadgeTextMock = vi.mocked(browser.action.setBadgeText);
 
 /** The `handleRequest`-wrapping callback background.ts registered at module load. */
 const listener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
-  ((message: unknown) => Promise<PopupResponse>) | undefined;
+  | ((
+      message: unknown,
+      sender: Browser.runtime.MessageSender
+    ) => Promise<PopupResponse> | undefined)
+  | undefined;
 
 function send(req: PopupRequest): Promise<PopupResponse> {
   if (!listener) throw new Error('onMessage listener not registered');
-  return listener(req);
+  return listener(req, {
+    id: EXTENSION_ID,
+  } as Browser.runtime.MessageSender) as Promise<PopupResponse>;
+}
+
+/** Flush the fire-and-forget async work `handleRequest`/the raw listener kick
+ *  off without awaiting (`void handleSubmitDetected(...)`, `void
+ *  maybeArmSubmitWatch(...)`) — both settle within a couple of microtask/timer
+ *  turns, mirrored from the existing streaming-race tests further down. */
+function flush(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 const FAKE_TOKEN = 'a'.repeat(64);
@@ -103,6 +130,8 @@ beforeEach(() => {
   mockClient.suggestAnswers.mockReset();
   mockClient.matchLive.mockReset();
   mockClient.answerAssist.mockReset();
+  mockClient.autotrackEnabled.mockReset();
+  setBadgeTextMock.mockClear();
 });
 
 // ── not-paired short-circuit ────────────────────────────────────────────────
@@ -1350,5 +1379,102 @@ describe('answerReplace request', () => {
     });
 
     expect(res).toEqual({ ok: false, error: 'Could not replace this field.' });
+  });
+});
+
+// ── Task #22 review closures: SUBMIT_DETECTED_MSG parity, submitDetected
+// routing, submit-watch arming on a gesture, and the getStatus badge clear ──
+
+describe('SUBMIT_DETECTED_MSG parity (Task #22 review closure)', () => {
+  it('the background.ts local literal matches the imported lib/submit-watch.ts const — a future edit to one side cannot silently break routing', () => {
+    expect(backgroundModule.SUBMIT_DETECTED_MSG).toBe(SUBMIT_DETECTED_MSG);
+  });
+});
+
+describe('submitDetected message — not a popup request (Task #22 review closure)', () => {
+  it('returns undefined (no popup response channel) and routes to handleSubmitDetected, which auto-marks a tracked saved job applied when the opt-in is ON', async () => {
+    mockClient.autotrackEnabled.mockResolvedValue(true);
+    mockClient.checkApplied.mockResolvedValue({ found: true, status: 'saved' });
+    mockClient.updateStatus.mockResolvedValue({
+      ok: true,
+      applicationId: 'app-1',
+      status: 'applied',
+    });
+
+    const result = listener?.(
+      { kind: SUBMIT_DETECTED_MSG, url: 'https://jobs.example.com/posting/9' },
+      { id: EXTENSION_ID } as Browser.runtime.MessageSender
+    );
+    expect(result).toBeUndefined();
+
+    await flush();
+
+    expect(mockClient.checkApplied).toHaveBeenCalledWith('https://jobs.example.com/posting/9');
+    expect(mockClient.updateStatus).toHaveBeenCalledWith(
+      'https://jobs.example.com/posting/9',
+      true
+    );
+  });
+
+  it('is ignored when the sender is not this extension (belt-and-braces MV3 hygiene)', async () => {
+    mockClient.autotrackEnabled.mockResolvedValue(true);
+    mockClient.checkApplied.mockResolvedValue({ found: true, status: 'saved' });
+
+    const result = listener?.(
+      { kind: SUBMIT_DETECTED_MSG, url: 'https://jobs.example.com/posting/9' },
+      { id: 'some-other-extension-id' } as Browser.runtime.MessageSender
+    );
+    expect(result).toBeUndefined();
+
+    await flush();
+
+    expect(mockClient.checkApplied).not.toHaveBeenCalled();
+    expect(mockClient.updateStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe('arming the submit watcher after a gesture request (Task #22 review closure)', () => {
+  it('a successful GESTURE_KINDS request (e.g. fill) injects submit-watch.js when the opt-in is ON', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    mockClient.getProfile.mockResolvedValue({ email: 'saeed@example.com' });
+    mockClient.autotrackEnabled.mockResolvedValue(true);
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://example.com/apply' } as never]);
+    const summary: AutofillSummary = {
+      filled: [{ key: 'email', label: 'Email', count: 1 }],
+      nameSplit: null,
+      filledNothing: false,
+    };
+    executeScriptMock
+      .mockResolvedValueOnce([] as never) // fill.js registration
+      .mockResolvedValueOnce([{ result: summary }] as never); // fill.js call
+
+    await send({ kind: 'fill' });
+    await flush(); // the arm is fire-and-forget — flush it before asserting
+
+    expect(mockClient.autotrackEnabled).toHaveBeenCalled();
+    expect(executeScriptMock).toHaveBeenCalledWith({
+      target: { tabId: 7 },
+      files: ['submit-watch.js'],
+    });
+  });
+
+  it('a non-gesture request (getStatus) never arms the watcher', async () => {
+    mockClient.autotrackEnabled.mockResolvedValue(true);
+
+    await send({ kind: 'getStatus' });
+    await flush();
+
+    expect(mockClient.autotrackEnabled).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ files: ['submit-watch.js'] })
+    );
+  });
+});
+
+describe('getStatus clears the import/badge prompt (Task #22 review closure)', () => {
+  it('clears the action badge set by a prior untracked-submit nudge', async () => {
+    await send({ kind: 'getStatus' });
+
+    expect(setBadgeTextMock).toHaveBeenCalledWith({ text: '' });
   });
 });

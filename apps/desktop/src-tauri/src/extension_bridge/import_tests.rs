@@ -1393,6 +1393,39 @@ fn resolve_status_update_transitions_saved_to_applied_and_appends_event() {
     );
 }
 
+/// An AUTOMATED write (`auto: true`, Task #22's gesture submit-watcher)
+/// appends a DISTINCT history note from a deliberate popup click — mirrors
+/// `handle_status_update`'s notification-body discrimination — so the
+/// Application's own status-event history records HOW it was applied.
+#[test]
+fn resolve_status_update_auto_write_appends_distinct_history_note() {
+    let (_dir, store) = open_store();
+    let url = "https://jobs.example.com/posting/status-auto-1";
+    let id = store
+        .upsert_for_origin(
+            url,
+            "linkedin",
+            &app_meta("Acme", "Auto-tracked Engineer"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    super::status_update::resolve_status_update(
+        &store,
+        &json!({ "url": url, "to": "applied", "auto": true }),
+    )
+    .expect("saved -> applied must succeed for an auto write");
+
+    let events = store.events(&id);
+    let last = events.last().expect("set_status must append an event");
+    assert_eq!(last.to_status, "applied");
+    assert_eq!(
+        last.note, "auto-tracked via extension",
+        "an auto write must record a distinct history note from a manual click"
+    );
+}
+
 /// Regression guard for the non-atomic-guard review finding (HIGH): the
 /// desktop-side guard is `ApplicationStore::transition_status_if`, a single
 /// atomic compare-and-set. Simulate two callers racing the exact same

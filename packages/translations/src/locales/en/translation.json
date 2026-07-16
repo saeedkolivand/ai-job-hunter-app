@@ -787,6 +787,12 @@
           "noProvider": "Choose an AI provider in Settings → AI first, then turn this on.",
           "disclosure": "When on, the extension's \"Help me answer…\" sends the question you paste or pick, your resume, the matched job's description, any cached company research brief, and a salary reference range (when relevant), to your configured AI provider to draft a paste-ready answer — this is billable AI usage, unlike the free autofill above. Turning \"Search the web\" on in the extension also sends the question to your provider's web search. Drafts are copy-only; nothing is ever filled into a page automatically.",
           "toggleFailed": "Could not update the AI answer-drafting setting."
+        },
+        "autoTrack": {
+          "label": "Auto-track sent applications",
+          "description": "After you use the extension on an application page, mark the matched saved job as applied when you submit the form.",
+          "disclosure": "When on, after you have used the extension on an application page, it watches for you submitting the form (locally, on that page only) and — over the loopback connection — marks the matching saved job as applied. If the job isn't tracked yet, it just nudges you to import it; it never creates a job on its own, never submits or blocks a form, and nothing leaves your computer.",
+          "toggleFailed": "Could not update the auto-track setting."
         }
       },
       "connectedViaBrowser": "{{board}} connected via browser extension",
