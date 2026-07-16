@@ -809,6 +809,7 @@
         "connecting": "Wird verbunden…",
         "connectFailed": "Verbindung fehlgeschlagen. Prüfen Sie Adresse und App-Passwort und versuchen Sie es erneut.",
         "disconnect": "Trennen",
+        "disconnecting": "Wird getrennt…",
         "disconnectFailed": "Verbindung konnte nicht getrennt werden.",
         "watch": {
           "label": "Auf Bestätigungs-E-Mails achten",
@@ -818,6 +819,7 @@
         "lastCheck": "Zuletzt geprüft: {{value}}",
         "neverChecked": "Noch nicht geprüft",
         "checkNow": "Jetzt prüfen",
+        "checking": "Wird geprüft…",
         "checkNowFailed": "Postfach nicht erreichbar. Prüfen Sie Ihr App-Passwort und versuchen Sie es erneut.",
         "disclosure": "Ein App-Passwort gewährt vollen Zugriff auf Ihr Gmail-Konto – nicht nur Lesezugriff – und wird deshalb nur in Ihrem Betriebssystem-Schlüsselbund gespeichert, niemals in der Datenbank dieser App. Jede Postfachprüfung erfolgt lokal: E-Mail-Inhalte verlassen dieses Gerät nie und werden nie an einen KI-Anbieter gesendet. Es wird nie automatisch etwas in Ihre Bewerbungen geschrieben – ein Treffer erscheint immer als Benachrichtigung, die Sie selbst bestätigen. Die automatische Posteingangsprüfung kommt in einem zukünftigen Update; bis dahin testet „Jetzt prüfen“ nur diese Verbindung erneut."
       },

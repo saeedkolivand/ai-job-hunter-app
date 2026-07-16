@@ -26,8 +26,17 @@ use crate::email_watch::imap_client::{validate_connection, DEFAULT_IMAP_HOST, DE
 use crate::email_watch::{EmailWatchStatus, EmailWatchStore, CREDENTIAL_SLOT};
 use crate::error::{AppError, AppResult};
 
-fn store(app: &AppHandle) -> tauri::State<'_, EmailWatchStore> {
-    app.state::<EmailWatchStore>()
+/// Resolve the managed `EmailWatchStore`, or a typed error when it isn't
+/// managed (the boot-time `EmailWatchStore::open` failed — a non-fatal,
+/// logged-and-continue startup path, see `lib.rs::setup`). Using `try_state`
+/// (never the panicking `state()`) is load-bearing here: unlike
+/// `email_watch_status` (which degrades to a default status), the four
+/// mutating commands below must reject with an `AppError` instead of
+/// panicking the whole `invoke` call — a panic never resolves/rejects the
+/// renderer's promise, leaving the UI stuck.
+fn store_or_err(app: &AppHandle) -> AppResult<tauri::State<'_, EmailWatchStore>> {
+    app.try_state::<EmailWatchStore>()
+        .ok_or_else(|| AppError::Storage("email watch is unavailable".to_string()))
 }
 
 fn credentials(app: &AppHandle) -> tauri::State<'_, Mutex<CredentialStore>> {
@@ -36,22 +45,27 @@ fn credentials(app: &AppHandle) -> tauri::State<'_, Mutex<CredentialStore>> {
 
 /// Run [`validate_connection`] on the blocking pool and flatten the
 /// `spawn_blocking` join outcome into the same `AppResult` the caller already
-/// works with.
+/// works with. A join failure (task panic) is logged with the host only —
+/// the renderer gets a fixed sentinel, never the panic payload.
 async fn validate_connection_blocking(
     host: String,
     port: u16,
     address: String,
     app_password: String,
 ) -> AppResult<()> {
+    let host_for_log = host.clone();
     match tokio::task::spawn_blocking(move || {
         validate_connection(&host, port, &address, &app_password)
     })
     .await
     {
         Ok(result) => result,
-        Err(e) => Err(AppError::Message(format!(
-            "connection check task panicked: {e}"
-        ))),
+        Err(e) => {
+            log::warn!("[email_watch] connection check task against {host_for_log} panicked: {e}");
+            Err(AppError::Message(
+                "connection check failed unexpectedly".to_string(),
+            ))
+        }
     }
 }
 
@@ -79,7 +93,7 @@ pub async fn email_watch_connect(
         ));
     }
 
-    let existing = store(&app).account();
+    let existing = store_or_err(&app)?.account();
     let host = existing
         .host
         .unwrap_or_else(|| DEFAULT_IMAP_HOST.to_string());
@@ -90,7 +104,7 @@ pub async fn email_watch_connect(
     credentials(&app)
         .lock()
         .set(CREDENTIAL_SLOT, &address, &app_password)?;
-    let store = store(&app);
+    let store = store_or_err(&app)?;
     store.connect(&address, &host, port)?;
     store.record_check(now_ms())?;
 
@@ -103,14 +117,14 @@ pub async fn email_watch_connect(
 #[tauri::command]
 pub async fn email_watch_disconnect(app: AppHandle) -> AppResult<EmailWatchStatus> {
     credentials(&app).lock().remove(CREDENTIAL_SLOT)?;
-    let store = store(&app);
+    let store = store_or_err(&app)?;
     store.clear()?;
     Ok(store.status())
 }
 
 #[tauri::command]
 pub async fn email_watch_set_enabled(app: AppHandle, enabled: bool) -> AppResult<EmailWatchStatus> {
-    let store = store(&app);
+    let store = store_or_err(&app)?;
     store.set_enabled(enabled)?;
     Ok(store.status())
 }
@@ -121,7 +135,7 @@ pub async fn email_watch_set_enabled(app: AppHandle, enabled: bool) -> AppResult
 /// configured yet.
 #[tauri::command]
 pub async fn email_watch_check_now(app: AppHandle) -> AppResult<EmailWatchStatus> {
-    let store = store(&app);
+    let store = store_or_err(&app)?;
     let account = store.account();
     let address = account
         .address

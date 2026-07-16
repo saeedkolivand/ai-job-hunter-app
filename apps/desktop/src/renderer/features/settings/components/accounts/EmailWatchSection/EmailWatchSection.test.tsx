@@ -131,6 +131,53 @@ describe('EmailWatchSection — connected', () => {
     });
   });
 
+  it('keeps an accessible text label on "Check now" for the whole pending IMAP round trip', async () => {
+    let resolveCheck!: (value: EmailWatchStatus) => void;
+    const checkNow = vi.fn(
+      () => new Promise<EmailWatchStatus>((resolve) => (resolveCheck = resolve))
+    );
+    renderSection({
+      'emailWatch.status': vi.fn().mockResolvedValue(CONNECTED),
+      'emailWatch.checkNow': checkNow,
+    });
+
+    const btn = await screen.findByRole('button', { name: 'Check now' });
+    await userEvent.click(btn);
+
+    // Never a bare icon-only button — the pending label stays a real text name.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Checking…' })).toBeInTheDocument();
+    });
+
+    resolveCheck(CONNECTED);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Check now' })).toBeInTheDocument();
+    });
+  });
+
+  it('keeps an accessible text label on "Disconnect" for the whole pending round trip', async () => {
+    let resolveDisconnect!: (value: EmailWatchStatus) => void;
+    const disconnect = vi.fn(
+      () => new Promise<EmailWatchStatus>((resolve) => (resolveDisconnect = resolve))
+    );
+    renderSection({
+      'emailWatch.status': vi.fn().mockResolvedValue(CONNECTED),
+      'emailWatch.disconnect': disconnect,
+    });
+
+    const btn = await screen.findByRole('button', { name: 'Disconnect' });
+    await userEvent.click(btn);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Disconnecting…' })).toBeInTheDocument();
+    });
+
+    resolveDisconnect(DISCONNECTED);
+    await waitFor(() => {
+      expect(screen.getByLabelText('Email address')).toBeInTheDocument();
+    });
+  });
+
   it('returns to the connect form after disconnecting', async () => {
     const disconnect = vi.fn().mockResolvedValue(DISCONNECTED);
     renderSection({

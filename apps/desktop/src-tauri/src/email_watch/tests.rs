@@ -83,6 +83,63 @@ fn reconnect_preserves_enabled_and_watermark() {
     assert_eq!(status.last_check_at, Some(1_000));
 }
 
+#[test]
+fn connect_to_a_different_address_clears_uid_watermark_and_seen_but_not_enabled() {
+    let (_dir, store) = new_store();
+    store.connect("a@gmail.com", "imap.gmail.com", 993).unwrap();
+    store.set_enabled(true).unwrap();
+    // reset_on_uidvalidity_change(7) itself nulls last_uid as a side effect of
+    // the "changed" branch (nothing was stored yet) — advance it afterward so
+    // there is a real non-null watermark + seen row to prove gets cleared.
+    store.reset_on_uidvalidity_change(7).unwrap();
+    store.advance_last_uid(100).unwrap();
+    store.mark_seen("uid-100", Some("app-1"), 1_000).unwrap();
+    assert_eq!(store.account().last_uid, Some(100));
+    assert_eq!(store.account().uidvalidity, Some(7));
+    assert!(store.has_seen("uid-100"));
+
+    // Reconnecting to the SAME address must preserve the watermark + seen row
+    // (mirrors `reconnect_preserves_enabled_and_watermark` for these fields).
+    store.connect("a@gmail.com", "imap.gmail.com", 993).unwrap();
+    assert_eq!(
+        store.account().last_uid,
+        Some(100),
+        "same-address reconnect must preserve last_uid"
+    );
+    assert_eq!(
+        store.account().uidvalidity,
+        Some(7),
+        "same-address reconnect must preserve uidvalidity"
+    );
+    assert!(
+        store.has_seen("uid-100"),
+        "same-address reconnect must preserve seen rows"
+    );
+
+    // Connecting to a DIFFERENT address must clear the UID watermark and the
+    // seen table (numeric UIDs are per-mailbox — carrying one over could
+    // collide with the new mailbox's own numbering and silently suppress a
+    // real future match), but must NOT touch the enabled opt-in.
+    store.connect("b@gmail.com", "imap.gmail.com", 993).unwrap();
+    let account = store.account();
+    assert_eq!(
+        account.last_uid, None,
+        "a different address must clear last_uid"
+    );
+    assert_eq!(
+        account.uidvalidity, None,
+        "a different address must clear uidvalidity"
+    );
+    assert!(
+        !store.has_seen("uid-100"),
+        "a different address must clear seen rows"
+    );
+    assert!(
+        store.status().enabled,
+        "enabled is independent of the address and must survive"
+    );
+}
+
 // ── Enabled toggle ────────────────────────────────────────────────────────────
 
 #[test]

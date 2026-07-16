@@ -197,7 +197,10 @@ htmd = "0.5.4"
 # consumer of the one already in the tree. Sync API used only via
 # `spawn_blocking` (see `email_watch::imap_client`); this is deliberately NOT
 # `net::http` — IMAP is not HTTP and can't ride `reqwest` (see R5 note there).
-imap = { version = "3.0.0-alpha.15", default-features = false, features = ["native-tls"] }
+# Exact-pinned (`=`), not caret: it's a pre-1.0 alpha on a credential-bearing
+# path (the app password crosses this crate's LOGIN call) — an unreviewed
+# float to alpha.16+ must not happen silently; bump it deliberately.
+imap = { version = "=3.0.0-alpha.15", default-features = false, features = ["native-tls"] }
 
 [target.'cfg(windows)'.dependencies]
 wmi = "0.18"

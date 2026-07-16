@@ -49,8 +49,10 @@ pub const DEFAULT_IMAP_PORT: u16 = 993;
 /// `spawn_blocking`.
 ///
 /// Privacy: never logs `address`/`app_password`. A failure logs the host/port
-/// plus the IMAP-library error text (protocol-level detail only — this call
-/// never fetches or reads a message, so there is no mail content to leak).
+/// plus a content-free error-KIND label only (see [`error_kind`]) — never the
+/// library error's `Display`/`Debug` text, which can echo server-controlled
+/// content (some IMAP servers echo the attempted username/address back into a
+/// `NO`/`BAD` response's message).
 pub fn validate_connection(
     host: &str,
     port: u16,
@@ -60,21 +62,30 @@ pub fn validate_connection(
     let client = imap::ClientBuilder::new(host, port)
         .connect()
         .map_err(|e| {
-            log::warn!("[email_watch] IMAP connect to {host}:{port} failed: {e}");
+            log::warn!(
+                "[email_watch] IMAP connect to {host}:{port} failed: {}",
+                error_kind(&e)
+            );
             AppError::Network("could not connect to the mail server".to_string())
         })?;
 
     let mut session = client
         .login(address, app_password)
         .map_err(|(e, _client)| {
-            log::warn!("[email_watch] IMAP login against {host}:{port} failed: {e}");
+            log::warn!(
+                "[email_watch] IMAP login against {host}:{port} failed: {}",
+                error_kind(&e)
+            );
             AppError::Config(
                 "sign-in failed — check the email address and app password".to_string(),
             )
         })?;
 
     let select_result = session.select("INBOX").map(|_| ()).map_err(|e| {
-        log::warn!("[email_watch] IMAP SELECT INBOX against {host}:{port} failed: {e}");
+        log::warn!(
+            "[email_watch] IMAP SELECT INBOX against {host}:{port} failed: {}",
+            error_kind(&e)
+        );
         AppError::Provider("could not open the mailbox inbox".to_string())
     });
 
@@ -83,6 +94,32 @@ pub fn validate_connection(
     let _ = session.logout();
 
     select_result
+}
+
+/// A short, content-free classification of an `imap::Error` for logging.
+/// Deliberately NOT the error's `Display`/`Debug` — see [`validate_connection`]
+/// for why. `imap::Error` is `#[non_exhaustive]` (and some variants are
+/// feature-gated, e.g. `RustlsHandshake` doesn't exist under this crate's
+/// `native-tls`-only build), so this always ends in a wildcard arm.
+fn error_kind(e: &imap::Error) -> &'static str {
+    match e {
+        imap::Error::Io(_) => "io",
+        imap::Error::Tls(_) => "tls",
+        imap::Error::TlsHandshake(_) => "tls-handshake",
+        imap::Error::Bad(_) => "bad-response",
+        imap::Error::No(_) => "no-response",
+        imap::Error::Bye(_) => "bye-response",
+        imap::Error::ConnectionLost => "connection-lost",
+        imap::Error::Parse(_) => "parse",
+        imap::Error::Validate(_) => "validate",
+        imap::Error::Append => "append",
+        imap::Error::Unexpected(_) => "unexpected-response",
+        imap::Error::MissingStatusResponse => "missing-status-response",
+        imap::Error::TagMismatch(_) => "tag-mismatch",
+        imap::Error::StartTlsNotAvailable => "starttls-not-available",
+        imap::Error::TlsNotConfigured => "tls-not-configured",
+        _ => "other",
+    }
 }
 
 // No automated test here: this function's every branch is a real network

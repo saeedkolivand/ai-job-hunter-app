@@ -158,16 +158,36 @@ impl EmailWatchStore {
 
     // ── Writes ─────────────────────────────────────────────────────────────────
 
-    /// Upsert the configured mailbox. Deliberately never touches `enabled` /
-    /// `last_uid` / `uidvalidity` / `last_check_ms` — a reconnect (even to a
-    /// different address/host) preserves the current opt-in and watermark;
-    /// only [`Self::clear`] resets those.
+    /// Upsert the configured mailbox. Never touches `enabled`/`last_check_ms`
+    /// — a reconnect (even to a different address/host) always preserves the
+    /// current opt-in; only [`Self::clear`] resets that.
+    ///
+    /// The UID watermark (`last_uid`/`uidvalidity`) and the `seen` dedupe
+    /// table are preserved ONLY when `address` is unchanged from what's
+    /// already stored (a same-mailbox reconnect, e.g. re-entering a rotated
+    /// app password). Connecting to a genuinely DIFFERENT address clears both
+    /// — numeric IMAP UIDs are per-mailbox, so carrying a UID/seen row over
+    /// from a different account could collide with the new mailbox's own
+    /// numbering and silently suppress a real future match.
     pub fn connect(&self, address: &str, host: &str, port: u16) -> AppResult<()> {
         let conn = self.conn.lock();
+        let previous_address: Option<String> =
+            conn.query_row("SELECT address FROM account WHERE id = 1", [], |row| {
+                row.get(0)
+            })?;
+        let address_changed = previous_address.as_deref() != Some(address);
+
         conn.execute(
             "UPDATE account SET address = ?1, host = ?2, port = ?3 WHERE id = 1",
             params![address, host, i64::from(port)],
         )?;
+        if address_changed {
+            conn.execute(
+                "UPDATE account SET last_uid = NULL, uidvalidity = NULL WHERE id = 1",
+                [],
+            )?;
+            conn.execute("DELETE FROM seen", [])?;
+        }
         Ok(())
     }
 

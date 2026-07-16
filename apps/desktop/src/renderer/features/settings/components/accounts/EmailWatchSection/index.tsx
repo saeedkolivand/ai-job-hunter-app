@@ -128,7 +128,10 @@ export function EmailWatchSection() {
                 disabled={checkNow.isPending}
                 onClick={() => void handleCheckNow()}
               >
-                {checkNow.isPending ? <Spinner /> : t('settings.accounts.emailWatch.checkNow')}
+                {checkNow.isPending && <Spinner />}
+                {checkNow.isPending
+                  ? t('settings.accounts.emailWatch.checking')
+                  : t('settings.accounts.emailWatch.checkNow')}
               </Button>
             </div>
 
@@ -140,7 +143,10 @@ export function EmailWatchSection() {
                 disabled={disconnect.isPending}
                 onClick={() => void handleDisconnect()}
               >
-                {disconnect.isPending ? <Spinner /> : t('settings.accounts.emailWatch.disconnect')}
+                {disconnect.isPending && <Spinner />}
+                {disconnect.isPending
+                  ? t('settings.accounts.emailWatch.disconnecting')
+                  : t('settings.accounts.emailWatch.disconnect')}
               </Button>
             </div>
           </>
