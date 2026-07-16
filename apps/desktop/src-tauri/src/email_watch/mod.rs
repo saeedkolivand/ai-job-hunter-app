@@ -194,23 +194,36 @@ impl EmailWatchStore {
     /// The poller opt-in (default OFF; independent of whether an account is
     /// configured — connecting does NOT auto-enable, per ADR-0005's
     /// default-OFF posture).
-    pub fn set_enabled(&self, enabled: bool) -> AppResult<()> {
+    ///
+    /// Guarded by `address IS NOT NULL`: a concurrent `disconnect`/factory
+    /// reset (`clear`) can land between a caller's read and this write (e.g.
+    /// while a command is mid-`spawn_blocking` IMAP validation) — without the
+    /// guard this write would resurrect `enabled` on an already-wiped
+    /// account (worst case: `enabled=1` with `address=NULL`, which a LATER
+    /// `connect` would silently inherit, since `connect` deliberately never
+    /// touches `enabled`). Returns whether the row was actually updated
+    /// (`false` = lost the race to a clear — a no-op, not an error).
+    pub fn set_enabled(&self, enabled: bool) -> AppResult<bool> {
         let conn = self.conn.lock();
-        conn.execute(
-            "UPDATE account SET enabled = ?1 WHERE id = 1",
+        let affected = conn.execute(
+            "UPDATE account SET enabled = ?1 WHERE id = 1 AND address IS NOT NULL",
             params![i64::from(enabled)],
         )?;
-        Ok(())
+        Ok(affected > 0)
     }
 
-    /// Record a successful connectivity check (`connect`/`check_now`).
-    pub fn record_check(&self, ts_ms: u64) -> AppResult<()> {
+    /// Record a successful connectivity check (`connect`/`check_now`). Same
+    /// concurrent-clear guard and no-op-reporting contract as
+    /// [`Self::set_enabled`] — a `disconnect` racing a multi-second
+    /// `spawn_blocking` IMAP validation must not resurrect `last_check_ms` on
+    /// an already-wiped account.
+    pub fn record_check(&self, ts_ms: u64) -> AppResult<bool> {
         let conn = self.conn.lock();
-        conn.execute(
-            "UPDATE account SET last_check_ms = ?1 WHERE id = 1",
+        let affected = conn.execute(
+            "UPDATE account SET last_check_ms = ?1 WHERE id = 1 AND address IS NOT NULL",
             params![ts_to_db(ts_ms)],
         )?;
-        Ok(())
+        Ok(affected > 0)
     }
 
     /// Advance the persisted UID watermark after processing messages up

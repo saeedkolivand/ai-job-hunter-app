@@ -143,13 +143,76 @@ fn connect_to_a_different_address_clears_uid_watermark_and_seen_but_not_enabled(
 // ── Enabled toggle ────────────────────────────────────────────────────────────
 
 #[test]
-fn set_enabled_toggles_independent_of_the_account() {
+fn set_enabled_toggles_once_an_account_is_connected() {
     let (_dir, store) = new_store();
+    store.connect("a@gmail.com", "imap.gmail.com", 993).unwrap();
     assert!(!store.status().enabled, "default is OFF");
-    store.set_enabled(true).unwrap();
+    assert!(
+        store.set_enabled(true).unwrap(),
+        "must report the row updated"
+    );
     assert!(store.status().enabled);
-    store.set_enabled(false).unwrap();
+    assert!(store.set_enabled(false).unwrap());
     assert!(!store.status().enabled);
+}
+
+#[test]
+fn set_enabled_is_a_no_op_without_a_connected_account() {
+    // No `connect()` — address is NULL, same shape as a just-cleared account.
+    let (_dir, store) = new_store();
+    assert!(
+        !store.set_enabled(true).unwrap(),
+        "set_enabled must report a no-op with no account configured"
+    );
+    assert!(!store.status().enabled, "enabled must stay OFF");
+}
+
+// ── Concurrent-clear guard on the trailing writes ─────────────────────────────
+//
+// `set_enabled`/`record_check` can be called by a command mid-`spawn_blocking`
+// IMAP validation (`connect`/`check_now`); a `disconnect` (`clear()`) racing
+// in first must make the trailing write a no-op instead of resurrecting a
+// field on the wiped row (worst case: `enabled=1` with `address=NULL`, which
+// a LATER `connect` would silently inherit since `connect` never touches
+// `enabled`). These tests interleave `clear()` between a "read" (the account
+// was connected) and each trailing write to pin the guard.
+
+#[test]
+fn set_enabled_after_a_concurrent_clear_stays_disabled_and_address_stays_null() {
+    let (_dir, store) = new_store();
+    store.connect("a@gmail.com", "imap.gmail.com", 993).unwrap();
+
+    // Simulate a `disconnect` landing between the caller's read and this
+    // write (e.g. while a sibling command was awaiting `spawn_blocking`).
+    store.clear().unwrap();
+
+    assert!(
+        !store.set_enabled(true).unwrap(),
+        "set_enabled must report a no-op after a concurrent clear"
+    );
+    let status = store.status();
+    assert!(
+        !status.enabled,
+        "enabled must NOT be resurrected on the wiped row"
+    );
+    assert!(status.address.is_none(), "address must stay cleared");
+}
+
+#[test]
+fn record_check_after_a_concurrent_clear_leaves_last_check_ms_null() {
+    let (_dir, store) = new_store();
+    store.connect("a@gmail.com", "imap.gmail.com", 993).unwrap();
+
+    store.clear().unwrap();
+
+    assert!(
+        !store.record_check(5_000).unwrap(),
+        "record_check must report a no-op after a concurrent clear"
+    );
+    assert!(
+        store.status().last_check_at.is_none(),
+        "last_check_ms must NOT be resurrected on the wiped row"
+    );
 }
 
 // ── Seen dedupe ───────────────────────────────────────────────────────────────

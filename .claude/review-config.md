@@ -27,6 +27,7 @@ verify before raising), **Precedents** (severity/design calls already made).
 - **Dotted-key mock overrides are valid** in renderer tests. `createMockClient` in `apps/desktop/src/renderer/test-support.tsx` is a `Proxy` whose `get` trap resolves dotted paths, so `createMockClient({ 'autopilot.takePendingFocus': fn })` correctly overrides `client.autopilot.takePendingFocus`. Do NOT flag this as a "wrong override shape / shallow-merge miss" (CodeRabbit raised this on #477; it was a false positive). The concrete-object variant at `renderer/lib/mock-client/mock-client.ts` is different — it takes nested objects — so match the override shape to whichever factory the test imports.
 - **`unwrap()`/`expect()` on a KNOWN-GOOD LITERAL inside a `LazyLock`/`OnceLock` static initializer** (e.g. `Regex::new(r"…").unwrap()` with a hardcoded pattern) is accepted house style (~70 instances) — flag static-init unwraps only when the input is fallible/externally influenced.
 - **`json!(local)` over a contract-shaped local in `commands/**`** is pervasive house style — flag `json!` only when it wholesale-serializes a domain/storage STRUCT across the IPC boundary.
+- **`void openExternal.mutateAsync(url)` with no catch** is established house style (10+ identical call sites: AggregatorKeysSettings, ResearchStep, OllamaNotInstalled, ExtensionStep, …) — do not flag unhandled-rejection on it. (False positive by a /review opus pass on PR A of task #23; verifier scored 20.)
 
 ## Signal-quality criteria (what makes a finding real here)
 
@@ -39,3 +40,4 @@ verify before raising), **Precedents** (severity/design calls already made).
 ## Precedents (severity + design calls already made)
 
 - **Cold-start intent buffers** (`PendingMenu`, `PendingFocus`) are `app.manage`d **early** in setup (before the deep-link handler), deliberately NOT in `tray::build` — that ordering is the fix, not a bug.
+- **ADRs may restate code-owned literals** (slot names, IPs, ports) alongside a pointer to the owning symbol — the "thin pointers, no copied literals" rule governs `docs/knowledge/` only, and ADR-0012 set the restate-with-pointer style. Do not flag literal restatement in `docs/adr/`. (False positive by a /review sonnet pass on PR A of task #23; verifier scored 0.)

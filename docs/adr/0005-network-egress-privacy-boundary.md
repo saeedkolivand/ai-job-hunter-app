@@ -24,6 +24,7 @@ Network egress is **permitted** and enumerated by class, each with a gating rule
 4. **Updater** (GitHub releases) — an on-launch version check; sends no user data.
 5. **Location autocomplete** (OpenStreetMap/Nominatim) — user-initiated typeahead; sends only the location text the user types, returns city/country only.
 6. **Optional enrichment** (e.g. Clearbit logos) — must be **opt-in and default OFF**, CSP-scoped to the minimum hosts, and send no more than a public identifier (a company name). With the setting off, nothing leaves the device.
+7. **Email-confirmation watching** (IMAP to user's own mail host) — opt-in, default OFF; credential user-supplied and OS-keychain-backed; email content never leaves the device. See [ADR 0013](0013-email-confirmation-watching.md).
 
 **Rule for new egress:** any new outbound call that would send data derived from the user's documents, credentials, or tracked applications is prohibited by default; anything sending a public identifier or user-typed query for enrichment must follow rule 6 (opt-in, default OFF, CSP-scoped). The README/SECURITY wording must keep the personal-data guarantee and accurately enumerate the endpoint classes rather than claim a call count.
 

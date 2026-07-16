@@ -43,6 +43,14 @@ fn credentials(app: &AppHandle) -> tauri::State<'_, Mutex<CredentialStore>> {
     app.state::<Mutex<CredentialStore>>()
 }
 
+/// Remove ASCII whitespace from `s` (Google's copy/paste app-password format
+/// is 4 space-separated groups, e.g. `"abcd efgh ijkl mnop"`). Pure so it's
+/// cheaply unit-testable without a Tauri harness; see [`email_watch_connect`]
+/// for why this is scoped to the default Gmail host only.
+fn strip_ascii_whitespace(s: &str) -> String {
+    s.chars().filter(|c| !c.is_ascii_whitespace()).collect()
+}
+
 /// Run [`validate_connection`] on the blocking pool and flatten the
 /// `spawn_blocking` join outcome into the same `AppResult` the caller already
 /// works with. A join failure (task panic) is logged with the host only —
@@ -98,6 +106,18 @@ pub async fn email_watch_connect(
         .host
         .unwrap_or_else(|| DEFAULT_IMAP_HOST.to_string());
     let port = existing.port.unwrap_or(DEFAULT_IMAP_PORT);
+
+    // Google displays an app password as 4 space-separated groups ("abcd efgh
+    // ijkl mnop") and users commonly paste it with the spaces intact; strip
+    // them before validating/storing. Scoped to the default Gmail host only
+    // — a future custom IMAP host's password could legitimately contain
+    // meaningful whitespace, and stripping it there would corrupt a valid
+    // credential.
+    let app_password = if host == DEFAULT_IMAP_HOST {
+        strip_ascii_whitespace(&app_password)
+    } else {
+        app_password
+    };
 
     validate_connection_blocking(host.clone(), port, address.clone(), app_password.clone()).await?;
 
@@ -156,4 +176,30 @@ pub async fn email_watch_check_now(app: AppHandle) -> AppResult<EmailWatchStatus
 
     store.record_check(now_ms())?;
     Ok(store.status())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_ascii_whitespace;
+
+    #[test]
+    fn strip_ascii_whitespace_removes_googles_4_group_spacing() {
+        assert_eq!(
+            strip_ascii_whitespace("abcd efgh ijkl mnop"),
+            "abcdefghijklmnop"
+        );
+    }
+
+    #[test]
+    fn strip_ascii_whitespace_is_a_no_op_without_whitespace() {
+        assert_eq!(
+            strip_ascii_whitespace("abcdefghijklmnop"),
+            "abcdefghijklmnop"
+        );
+    }
+
+    #[test]
+    fn strip_ascii_whitespace_also_removes_leading_trailing_and_tabs() {
+        assert_eq!(strip_ascii_whitespace("  ab\tcd\n"), "abcd");
+    }
 }
