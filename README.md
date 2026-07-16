@@ -403,7 +403,7 @@ A <a href="https://pypi.org/project/graphifyy/" target="_blank" rel="noopener no
 ```
 ai-job-hunter-app/
 ├── apps/
-│   ├── tauri/                    # Main desktop app (Tauri shell: Rust core + React renderer)
+│   ├── desktop/                  # Main desktop app (Tauri shell: Rust core + React renderer)
 │   │   ├── src-tauri/            # Rust core (commands, scraping, AI, export, DB, extension bridge)
 │   │   └── src/renderer/         # React frontend
 │   │       ├── features/         # Feature-scoped components
@@ -417,7 +417,8 @@ ai-job-hunter-app/
 │   ├── shared/                   # IPC contracts, Zod schemas, shared types, extension protocol
 │   ├── ui/                       # @ajh/ui — React component library
 │   ├── prompts/                  # Provider-aware, locale-driven AI prompt templates
-│   └── translations/             # i18n config + locale strings (en, de, …)
+│   ├── translations/             # i18n config + locale strings (en, de, …)
+│   └── test-ids/                 # @ajh/test-ids — central TEST_IDS map
 ├── docs/                         # Documentation + knowledge base (ADRs)
 ├── turbo.json                    # Turbo build configuration
 ├── pnpm-workspace.yaml           # pnpm workspaces

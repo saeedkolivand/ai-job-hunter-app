@@ -85,7 +85,7 @@ These five boards were retired as direct scrapers (ADR-026, 2026-06-21). Their R
 
 **Purpose:** Cover anti-bot sites (Indeed, Glassdoor, Xing, Workday, StepStone) that return empty results or errors when self-scraped. Uses a provider registry pattern: Adzuna (primary, free), JSearch (paid fallback, invoked only on Adzuna errors), Jooble (third-tier BYO-key fallback, ~67-country coverage).
 
-**Full-description resolution:** Aggregator sources return short snippets; the detail pane auto-fetches full descriptions on open by following redirect chains and re-dispatching to named-board handlers. See `apps/desktop/src-tauri/src/scraping/http/html_to_markdown.rs` and `scraping/boards/aggregator/mod.rs` for fetch logic, IP-guarding, and snippet-vs-resolved floor semantics.
+**Full-description resolution:** Aggregator sources return short snippets; the detail pane auto-fetches full descriptions on open by following redirect chains and re-dispatching to named-board handlers. See `html_to_markdown()` in `apps/desktop/src-tauri/src/scraping/http/mod.rs` and `scraping/boards/aggregator/mod.rs` for fetch logic, IP-guarding, and snippet-vs-resolved floor semantics.
 
 **Keys and configuration:**
 
@@ -334,11 +334,11 @@ Board fetch errors are now representable end-to-end, distinguishing between "boa
 - **`fetch_text` boards** — germantechjobs, wwr, berlinstartupjobs now propagate non-200 as errors instead of silent-empty.
 - **Board error outcome** — All boards propagate fetch errors via `search()` → `Err`, which surfaces in `BoardScrapeSummary.error: Option<String>` (engine records it). Boards with multi-company fanout (lever, recruitee, smartrecruiters, etc.) track `successful_fetches` and `first_fetch_error`; when `successful_fetches == 0`, the error propagates (all-fail → board error, not `Ok(empty)`). Pagination boards (themuse, arbeitnow, arbeitsagentur) distinguish page-0 failure (error) from later-page failure (keep partial harvest).
 - **Shared decision functions** — `apps/desktop/src-tauri/src/scraping/boards/common.rs` exports two pure fns: `ats_all_fetches_failed(board_id, successful_fetches, first_fetch_error) -> Option<String>` (returns error message only when all companies failed) and `should_propagate_page_error(collected_so_far: usize) -> bool` (propagate if nothing collected yet, else keep partial harvest). Wired into 10 ATS boards + 3 paginated boards; no production URL embedded (testable without wiremock).
-- **Frontend:** Service hook `apps/desktop/src/renderer/services/boards.ts` (scrape mutations)
-- **Settings UI:** `apps/desktop/src/renderer/features/settings/routes/JobsSettings.tsx`
+- **Frontend:** Service hook `apps/desktop/src/renderer/services/use-boards/use-boards.ts` (scrape mutations)
+- **Settings UI:** `apps/desktop/src/renderer/features/settings/components/preferences/AggregatorKeysSettings/index.tsx`
 - **Detail pane:**
   - Resolve + merge gate: `apps/desktop/src/renderer/features/jobs/components/JobDetailPane/index.tsx` (on-open resolve if short snippet; keep-longer merge logic; calls `scrape_resolve_url` + `scrape_update_description` IPC)
-  - Description formatting: `apps/desktop/src-tauri/src/scraping/http/html_to_markdown` — Rust module converting HTML job descriptions to Markdown
+  - Description formatting: `html_to_markdown()` in `apps/desktop/src-tauri/src/scraping/http/mod.rs` — converts HTML job descriptions to Markdown
   - Rendering: `JobDescription` component (`packages/ui/src/components/JobDescription/index.tsx`) renders Markdown via react-markdown with design-token-only styling
 - **Rust commands:** `apps/desktop/src-tauri/src/commands/scrape.rs` (`scrape_resolve_url`, `scrape_update_description`)
 - **PostingsCache mutation:** `apps/desktop/src-tauri/src/postings/mod.rs: update_description(job_id, text)` — in-place cache mutation; text-hash-keyed result/embedding caches auto-invalidate on changed job text

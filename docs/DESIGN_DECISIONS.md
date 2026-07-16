@@ -39,9 +39,13 @@ The trade-off: WebKit on macOS doesn't always render identically to WebView2 on 
 The app has clear, enforced package boundaries:
 
 ```
-packages/shared    ← IPC contracts, Zod schemas (no React, no Node)
-packages/ui        ← component library (no IPC, no state management)
-packages/prompts   ← AI prompt templates, provider-aware + locale-driven (pure TypeScript)
+packages/shared       ← IPC contracts, Zod schemas (no React, no Node)
+packages/ui           ← component library (no IPC, no state management)
+packages/prompts      ← AI prompt templates, provider-aware + locale-driven (pure TypeScript)
+packages/translations ← i18next + en/de resources (no app/IPC deps)
+packages/test-ids     ← central TEST_IDS map
+apps/desktop          ← Tauri app: Rust core + React renderer
+apps/extension        ← MV3 browser extension (Chrome + Firefox): job import + opt-in autofill
 ```
 
 The heavy work — scraping, AI, documents, embeddings — lives in the Rust core under `apps/desktop/src-tauri/`. (An earlier design ran some of this in a separate Node.js sidecar; it was folded into Rust to drop a process and a language from the runtime.)

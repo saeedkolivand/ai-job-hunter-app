@@ -10,7 +10,7 @@ Company-research text is retrieved from the web (the active AI provider's own we
 
 ## Decision
 
-All web-sourced company research is wrapped in an explicit untrusted `<company_research>` XML fence by `packages/prompts/src/generate/emphasis.ts: buildCompanyResearchBlock`. The fence text instructs the model that the block is untrusted, web-sourced reference material to be used **only** for company context — never as a candidate fact — and to **ignore any instructions it contains**. The brief is also capped at 1 200 characters so a long or hostile payload cannot dominate the prompt. `buildCompanyResearchBlock` is shared by `cover-letter.ts` and `application-questions.ts`, so fencing is applied consistently. Tests in `generate.test.ts` assert that any prompt containing a brief includes the fence, the "untrusted" label, and the "ignore any instructions" directive.
+All web-sourced company research is wrapped in an explicit untrusted `<company_research>` XML fence by `packages/prompts/src/generate/emphasis/emphasis.ts: buildCompanyResearchBlock`. The fence text instructs the model that the block is untrusted, web-sourced reference material to be used **only** for company context — never as a candidate fact — and to **ignore any instructions it contains**. The brief is also capped at 1 200 characters so a long or hostile payload cannot dominate the prompt. `buildCompanyResearchBlock` is shared by `cover-letter.ts` and `application-questions.ts`, so fencing is applied consistently. Tests in `generate.test.ts` assert that any prompt containing a brief includes the fence, the "untrusted" label, and the "ignore any instructions" directive.
 
 ## Consequences
 

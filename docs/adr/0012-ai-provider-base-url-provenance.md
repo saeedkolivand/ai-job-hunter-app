@@ -63,7 +63,7 @@ Loopback and LAN addresses are deliberately **not** rejected — `validate_provi
 - Commands: `apps/desktop/src-tauri/src/commands/ai.rs` (`ai_active_config`, `ai_set_active_provider`, `ai_set_provider_settings`, `ai_research_company`), `apps/desktop/src-tauri/src/commands/autopilot.rs` (assistant-notes resolution).
 - Extension bridge: `apps/desktop/src-tauri/src/extension_bridge/answer_assist.rs` (`resolve_answer_assist`), `apps/desktop/src-tauri/src/extension_bridge/mod.rs` (`ai_assist_enabled: AtomicBool`).
 - Shared contracts: `packages/shared/src/schemas/index.ts` (`AiGenerateRequestSchema`, `AgentRunRequestSchema`), `packages/shared/src/ipc/contracts/ai.ts` (`ActiveAiConfig`, `AiConfigSnapshot`, `AiProviderRouting`).
-- Renderer: `apps/desktop/src/renderer/services/use-ai-provider.ts` (`useActiveConfig`, `useSetActiveProvider`, `useSetProviderSettings`), `apps/desktop/src/renderer/providers/AiConfigBoot` (boot prefetch + one-time seed).
+- Renderer: `apps/desktop/src/renderer/services/use-ai-provider/use-ai-provider.ts` (`useActiveConfig`, `useSetActiveProvider`, `useSetProviderSettings`), `apps/desktop/src/renderer/providers/AiConfigBoot` (boot prefetch + one-time seed).
 - CSP local-AI exception: `docs/knowledge/security-rules.md` ("local AI egress is limited to Ollama (`127.0.0.1:11434`)").
 - Follow-up: [`docs/NEXT_ISSUES.md` #5](../NEXT_ISSUES.md) (flip `agent_run` off a request-supplied `base_url`).
 - Related: [ADR 0011](0011-extension-ai-assist-optin.md) (the AI-assist opt-in gate this retires the provider snapshot from), [ADR 0005](0005-network-egress-privacy-boundary.md) (egress classes).

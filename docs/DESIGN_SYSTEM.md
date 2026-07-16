@@ -379,7 +379,7 @@ Labeled settings group with optional description:
 Wraps every route page. Provides consistent padding, max-width, and scroll container:
 
 ```typescript
-// apps/desktop/src/renderer/components/layout/PageShell.tsx
+// apps/desktop/src/renderer/components/layout/PageShell/index.tsx
 <PageShell title="Dashboard">
   {/* page content */}
 </PageShell>
