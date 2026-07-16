@@ -137,6 +137,60 @@ describe('EmailWatchSection — connected', () => {
     });
   });
 
+  it('shows generic checkNowFailed copy for an ordinary checkNow failure', async () => {
+    const checkNow = vi.fn().mockRejectedValue(new Error('IMAP fetch failed'));
+    renderSection({
+      'emailWatch.status': vi.fn().mockResolvedValue(CONNECTED),
+      'emailWatch.checkNow': checkNow,
+    });
+
+    const btn = await screen.findByRole('button', { name: 'Check now' });
+    await userEvent.click(btn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Could not reach the mailbox. Check your app password and try again.')
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('shows friendly rate-limit copy (not the raw backend sentinel) when checkNow is rate-limited', async () => {
+    const checkNow = vi
+      .fn()
+      .mockRejectedValue(new Error('a check already ran recently — try again in a moment'));
+    renderSection({
+      'emailWatch.status': vi.fn().mockResolvedValue(CONNECTED),
+      'emailWatch.checkNow': checkNow,
+    });
+
+    const btn = await screen.findByRole('button', { name: 'Check now' });
+    await userEvent.click(btn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Checked moments ago — try again in a minute.')).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText('a check already ran recently — try again in a moment')
+    ).not.toBeInTheDocument();
+  });
+
+  it('also recognizes the rate-limit sentinel when Tauri rejects with a bare string (not an Error)', async () => {
+    const checkNow = vi
+      .fn()
+      .mockRejectedValue('a check already ran recently — try again in a moment');
+    renderSection({
+      'emailWatch.status': vi.fn().mockResolvedValue(CONNECTED),
+      'emailWatch.checkNow': checkNow,
+    });
+
+    const btn = await screen.findByRole('button', { name: 'Check now' });
+    await userEvent.click(btn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Checked moments ago — try again in a minute.')).toBeInTheDocument();
+    });
+  });
+
   it('keeps an accessible text label on "Check now" for the whole pending IMAP round trip', async () => {
     let resolveCheck!: (value: EmailWatchStatus) => void;
     const checkNow = vi.fn(

@@ -813,7 +813,7 @@
         "disconnectFailed": "Verbindung konnte nicht getrennt werden.",
         "watch": {
           "label": "Auf Bestätigungs-E-Mails achten",
-          "description": "Speichert Ihre Einstellung für die automatische Posteingangsprüfung, die in einem zukünftigen Update kommt. Bis dahin testet „Jetzt prüfen“ nur die Verbindung."
+          "description": "Führt etwa alle 15 Minuten eine automatische Posteingangsprüfung durch. Ein Treffer erzeugt eine Benachrichtigung, die Sie bestätigen — es wird nie von selbst etwas als beworben markiert."
         },
         "toggleFailed": "Die Einstellung für die E-Mail-Verfolgung konnte nicht aktualisiert werden.",
         "lastCheck": "Zuletzt geprüft: {{value}}",
@@ -821,7 +821,8 @@
         "checkNow": "Jetzt prüfen",
         "checking": "Wird geprüft…",
         "checkNowFailed": "Postfach nicht erreichbar. Prüfen Sie Ihr App-Passwort und versuchen Sie es erneut.",
-        "disclosure": "Ein App-Passwort gewährt vollen Zugriff auf Ihr Gmail-Konto – nicht nur Lesezugriff – und wird deshalb nur in Ihrem Betriebssystem-Schlüsselbund gespeichert, niemals in der Datenbank dieser App. Jede Postfachprüfung erfolgt lokal: E-Mail-Inhalte verlassen dieses Gerät nie und werden nie an einen KI-Anbieter gesendet. Es wird nie automatisch etwas in Ihre Bewerbungen geschrieben – ein Treffer erscheint immer als Benachrichtigung, die Sie selbst bestätigen. Die automatische Posteingangsprüfung kommt in einem zukünftigen Update; bis dahin testet „Jetzt prüfen“ nur diese Verbindung erneut."
+        "checkNowRateLimited": "Gerade erst geprüft — versuchen Sie es in einer Minute erneut.",
+        "disclosure": "Ein App-Passwort gewährt vollen Zugriff auf Ihr Gmail-Konto – nicht nur Lesezugriff – und wird deshalb nur in Ihrem Betriebssystem-Schlüsselbund gespeichert, niemals in der Datenbank dieser App. Jede Prüfung, automatisch oder über „Jetzt prüfen“, erfolgt lokal: Sie durchsucht Ihren Posteingang nach wahrscheinlichen Bewerbungsbestätigungs-E-Mails, und der E-Mail-Inhalt verlässt dieses Gerät nie und erreicht keinen KI-Anbieter. Ein Treffer erzeugt ausschließlich eine Benachrichtigung, die Sie bestätigen – es wird nie automatisch etwas als beworben markiert."
       },
       "connectedViaBrowser": "{{board}} über Browser-Erweiterung verbunden",
       "boards": {
