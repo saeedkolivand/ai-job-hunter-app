@@ -139,7 +139,9 @@ describe('useSetExtensionAiAssistSetting', () => {
       await setResult.current.mutateAsync({ enabled: true });
     });
 
-    expect(queryClient.getQueryData(keys.extensionBridge.aiAssist)).toEqual({ enabled: true });
+    await waitFor(() =>
+      expect(queryClient.getQueryData(keys.extensionBridge.aiAssist)).toEqual({ enabled: true })
+    );
   });
 
   it('forwards just the enabled flag when turning the opt-in OFF', async () => {
