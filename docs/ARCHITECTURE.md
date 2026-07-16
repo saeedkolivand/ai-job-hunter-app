@@ -22,7 +22,7 @@ graph TB
     end
 
     subgraph Tauri["Tauri Core (Rust)"]
-        Commands["IPC Commands\n(23 namespaces)"]
+        Commands["IPC Commands\n(one namespace per domain)"]
         Keychain["OS Keychain\n(credentials)"]
         Updater["Auto-Updater"]
         Window["Window / Tray / Menu"]
@@ -128,33 +128,12 @@ The single source of truth for renderer ↔ Rust communication:
 ```
 packages/shared/src/
 ├── ipc/
-│   ├── contracts/          # 23 typed namespace definitions
-│   │   ├── ai.ts
-│   │   ├── aiGenerations.ts
-│   │   ├── autopilot.ts
-│   │   ├── boards.ts
-│   │   ├── cliAgents.ts
-│   │   ├── contactProfile.ts
-│   │   ├── credentials.ts
-│   │   ├── data.ts
-│   │   ├── dialog.ts
-│   │   ├── documents.ts
-│   │   ├── geocode.ts
-│   │   ├── jobPreferences.ts
-│   │   ├── jobs.ts
-│   │   ├── linkedin.ts
-│   │   ├── match.ts
-│   │   ├── privacy.ts
-│   │   ├── resume.ts
-│   │   ├── scrape.ts
-│   │   ├── search.ts
-│   │   ├── shortcuts.ts
-│   │   ├── support.ts
-│   │   ├── system.ts
-│   │   └── updater.ts
-│   └── contracts.ts        # Re-exports all namespaces
+│   ├── contracts/               # one typed namespace module per IPC domain, re-exported via index.ts
+│   ├── extension-protocol.ts    # browser-extension wire protocol
+│   └── extension-protocol-constants.ts
 ├── schemas/                # Zod validation schemas
 ├── types/                  # JobRecord, DocumentRecord, MatchScore, etc.
+├── events/                 # shared event-bus types
 ├── language-detection.ts   # franc.js language detection
 ├── ai-models.ts            # Model registry per provider
 └── utils.ts
