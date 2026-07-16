@@ -28,6 +28,7 @@ import type { FillAnswerResult } from './lib/answer-fill';
 // (erased at build) to keep answers-capture.ts's runtime code out of the
 // background's bundle.
 import type { CapturedAnswer, FilledField, ScannedQuestion } from './lib/answers-capture';
+import { handleSubmitDetected, maybeArmSubmitWatch } from './lib/auto-track';
 // TYPE-ONLY import from the autofill module. This is deliberate: `fill.js` is
 // injected via `executeScript({ files })`, which runs as a CLASSIC script (no ES
 // modules) — so `fill.js` must bundle with ZERO `import` statements. If the
@@ -61,6 +62,26 @@ const ANSWER_FILL_GLOBAL = '__ajhRunAnswerFill';
  *  Duplicated as a local literal for the same reason as `AUTOFILL_GLOBAL`
  *  above. */
 const ANSWER_REPLACE_GLOBAL = '__ajhRunAnswerReplace';
+
+/** Internal message kind the injected `submit-watch.js` posts on a detected
+ *  form submit (Task #22). Duplicated as a local literal — MUST match
+ *  `SUBMIT_DETECTED_MSG` in `lib/submit-watch.ts` — so that pure DOM module
+ *  (and its `field-signal` dependency) never bundles into the background's
+ *  runtime graph (same discipline as `AUTOFILL_GLOBAL` above). */
+const SUBMIT_DETECTED_MSG = 'submitDetected';
+
+/** Popup requests whose handling injects a script into the active page — after
+ *  a SUCCESSFUL one we arm the auto-track submit watcher (opt-in gated,
+ *  idempotent per page). */
+const GESTURE_KINDS: ReadonlySet<PopupRequest['kind']> = new Set([
+  'import',
+  'fill',
+  'answersSave',
+  'answersSuggest',
+  'answerFill',
+  'answerReplace',
+  'matchLive',
+]);
 
 /** Client-side cap on the number of scanned question labels sent in one
  *  `answers.suggest` call — the desktop re-clamps independently (untrusted
@@ -390,6 +411,63 @@ async function runStatusUpdate(): Promise<PopupResponse> {
   const url = await activeTabUrl();
   const result = await getClient().updateStatus(url);
   return { ok: true, kind: 'statusUpdate', result };
+}
+
+// ── Auto-track (Task #22, Layer A) ──────────────────────────────────────────────
+
+/** Guard for the injected submit-watcher's fire-and-forget message. */
+function isSubmitDetected(v: unknown): v is { kind: 'submitDetected'; url: string } {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return o.kind === SUBMIT_DETECTED_MSG && typeof o.url === 'string';
+}
+
+/**
+ * Inject the auto-track submit watcher into the active tab (single-step, like
+ * `captureActiveTabHtml`: the watcher self-arms on load and needs no argument).
+ * Called only after a successful gesture + only when the opt-in is on (see
+ * {@link maybeArmSubmitWatch}); the watcher's own isolated-world flag makes a
+ * repeat injection on the same page a no-op.
+ */
+async function injectSubmitWatch(): Promise<void> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tabId = tab?.id;
+  if (typeof tabId !== 'number') return;
+  await browser.scripting.executeScript({ target: { tabId }, files: ['submit-watch.js'] });
+}
+
+/**
+ * Nudge the user (action badge) that they submitted an application for a job the
+ * app isn't tracking — clicking the extension action opens the popup, whose
+ * existing Import button captures the page. Uses only the always-available
+ * `action` API — NO `notifications` permission (Task #22 adds none).
+ */
+function promptImport(): void {
+  try {
+    browser.action.setBadgeText({ text: '!' }).catch(() => {});
+    browser.action.setBadgeBackgroundColor({ color: '#2563eb' }).catch(() => {});
+  } catch {
+    // action API unavailable — skip the nudge.
+  }
+}
+
+/** Clear the untracked-submit nudge (called when the popup opens). */
+function clearImportPrompt(): void {
+  try {
+    browser.action.setBadgeText({ text: '' }).catch(() => {});
+  } catch {
+    // ignore — nothing to clear.
+  }
+}
+
+/** Auto-track dependencies wired to the live bridge client. */
+function submitFlowDeps() {
+  return {
+    autotrackEnabled: () => getClient().autotrackEnabled(),
+    checkApplied: (url: string) => getClient().checkApplied(url),
+    updateStatusAuto: (url: string) => getClient().updateStatus(url, true),
+    promptImport,
+  };
 }
 
 /**
@@ -762,12 +840,15 @@ async function runAnswerReplace(
 }
 
 /** Central popup-request dispatcher. Never throws — maps errors to `ok:false`. */
-async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
+async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
   try {
     switch (req.kind) {
       case 'getStatus': {
-        // Opening the popup is a good moment to (re)probe the bridge.
+        // Opening the popup is a good moment to (re)probe the bridge, and to
+        // clear any pending auto-track "import this untracked job?" nudge (the
+        // user is now here and can act on it via the Import button).
         void getClient().ensureConnected();
+        clearImportPrompt();
         const status = await computeStatus();
         return { ok: true, kind: 'status', status };
       }
@@ -841,11 +922,35 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
   }
 }
 
+/**
+ * Popup-request entry: dispatch, then — after a SUCCESSFUL page-touching
+ * gesture — arm the auto-track submit watcher on that page (opt-in gated +
+ * idempotent per page), so a subsequent form submit can auto-mark the matched
+ * application applied. Arming is fire-and-forget: it never affects the popup's
+ * own response.
+ */
+async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
+  const response = await dispatchRequest(req);
+  if (response.ok && GESTURE_KINDS.has(req.kind)) {
+    void maybeArmSubmitWatch({
+      autotrackEnabled: () => getClient().autotrackEnabled(),
+      injectSubmitWatch,
+    });
+  }
+  return response;
+}
+
 // ── wiring ────────────────────────────────────────────────────────────────────
 
-browser.runtime.onMessage.addListener((message: unknown): Promise<PopupResponse> =>
-  handleRequest(message as PopupRequest)
-);
+browser.runtime.onMessage.addListener((message: unknown): Promise<PopupResponse> | undefined => {
+  // The injected submit-watcher posts a fire-and-forget `submitDetected` — it
+  // is NOT a popup request and expects no response, so handle it out-of-band.
+  if (isSubmitDetected(message)) {
+    void handleSubmitDetected(message.url, submitFlowDeps());
+    return undefined;
+  }
+  return handleRequest(message as PopupRequest);
+});
 
 // Re-probe on the lifecycle wake points so a freshly-started worker reconnects.
 browser.runtime.onStartup.addListener(() => {

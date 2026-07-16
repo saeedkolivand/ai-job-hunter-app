@@ -107,6 +107,7 @@ export const keys = {
     status: ['extensionBridge', 'status'] as const,
     autofill: ['extensionBridge', 'autofill'] as const,
     aiAssist: ['extensionBridge', 'aiAssist'] as const,
+    autoTrack: ['extensionBridge', 'autoTrack'] as const,
   },
   notifications: { all: ['notifications'] as const },
   boards: { catalog: ['boards', 'catalog'] as const },

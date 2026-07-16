@@ -213,6 +213,7 @@ export {
   EXTENSION_BRIDGE_CHANNELS,
   type ExtensionAiAssistSetting,
   type ExtensionAutofillSetting,
+  type ExtensionAutoTrackSetting,
   type ExtensionBridgeContract,
   type ExtensionBridgeStatus,
   type ExtensionBridgeTokenResult,

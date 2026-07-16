@@ -102,6 +102,7 @@ type AnswersResolver = (result: ExtensionAnswersSaveResult) => void;
 type SuggestResolver = (result: ExtensionAnswersSuggestResult) => void;
 type MatchResolver = (result: ExtensionMatchLiveResult) => void;
 type AssistResolver = (result: ExtensionAnswerAssistResult) => void;
+type AutotrackResolver = (enabled: boolean) => void;
 
 export type BridgePhase = 'searching' | 'connected' | 'app_not_running' | 'outdated' | 'bad_token';
 
@@ -269,6 +270,17 @@ function normalizeStatusUpdateResult(payload: unknown): ExtensionStatusUpdateRes
   return payload.ok
     ? { ok: true, applicationId: payload.applicationId, status: payload.status }
     : { ok: false, error: payload.error };
+}
+
+/** Read the boolean `enabled` flag from an `autotrack.result` payload — any
+ *  malformed/absent shape degrades to `false` (OFF, the safe default), so a
+ *  bad reply can never make the extension believe auto-track is on. */
+function readAutotrackEnabled(payload: unknown): boolean {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    (payload as Record<string, unknown>).enabled === true
+  );
 }
 
 /**
@@ -631,6 +643,10 @@ export class BridgeClient {
    *  separate from {@link pending} for the same reason as
    *  {@link pendingProfile}. */
   private readonly pendingAssist = new Map<string, AssistResolver>();
+  /** In-flight `autotrack.check` resolvers, correlated by `reqId`. Kept
+   *  separate from {@link pending} for the same reason as {@link pendingProfile};
+   *  resolves a plain boolean (never rejects — a failure degrades to OFF). */
+  private readonly pendingAutotrack = new Map<string, AutotrackResolver>();
   /** In-flight `answer.assist` streaming-preview callbacks, correlated by
    *  `reqId` — registered by {@link answerAssist} for EVERY call (even with
    *  no caller-supplied `onChunk`), because a chunk's arrival also resets the
@@ -785,6 +801,7 @@ export class BridgeClient {
     this.pendingSuggest.clear();
     this.pendingMatch.clear();
     this.pendingAssist.clear();
+    this.pendingAutotrack.clear();
     this.assistChunkListeners.clear();
     this.transport?.close();
     this.transport = null;
@@ -930,7 +947,7 @@ export class BridgeClient {
    * caller (background.ts) must pass the `error` straight through to the
    * popup instead of swallowing it.
    */
-  async updateStatus(url: string): Promise<ExtensionStatusUpdateResult> {
+  async updateStatus(url: string, auto = false): Promise<ExtensionStatusUpdateResult> {
     await this.ensureConnected();
     if (this.phase !== 'connected' || !this.transport) {
       throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
@@ -941,7 +958,9 @@ export class BridgeClient {
     const envelope: ExtensionEnvelope = {
       type: EXTENSION_MESSAGE_TYPES.statusUpdate,
       reqId,
-      payload: { url, to: 'applied' },
+      // `auto: true` marks the automated Task-#22 write; the desktop re-gates it
+      // on the auto-track opt-in. Omitted for the ordinary popup click (ungated).
+      payload: auto ? { url, to: 'applied', auto: true } : { url, to: 'applied' },
     };
 
     return new Promise<ExtensionStatusUpdateResult>((resolve, reject) => {
@@ -962,6 +981,51 @@ export class BridgeClient {
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     });
+  }
+
+  /**
+   * Read the desktop-enforced auto-track opt-in (Task #22) — resolves `true`
+   * only when the desktop replies `{ enabled: true }`. UNLIKE the other verbs
+   * this NEVER rejects: any failure (not connected, timeout, send error, a
+   * malformed reply) degrades to `false` (OFF, the safe default), because the
+   * two callers (`maybeArmSubmitWatch` / `handleSubmitDetected`) treat "unknown"
+   * exactly as "off" — never arm, never auto-write, when we can't confirm the
+   * opt-in is on.
+   */
+  async autotrackEnabled(): Promise<boolean> {
+    try {
+      await this.ensureConnected();
+      if (this.phase !== 'connected' || !this.transport) return false;
+      const transport = this.transport;
+
+      const reqId = newReqId();
+      const envelope: ExtensionEnvelope = {
+        type: EXTENSION_MESSAGE_TYPES.autotrackCheck,
+        reqId,
+        payload: null,
+      };
+
+      return await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => {
+          this.pendingAutotrack.delete(reqId);
+          this.timers.delete(reqId);
+          resolve(false); // no reply in time → degrade to OFF
+        }, REQUEST_TIMEOUT_MS);
+        this.timers.set(reqId, timer);
+        this.pendingAutotrack.set(reqId, resolve);
+
+        try {
+          transport.send(envelope);
+        } catch {
+          clearTimeout(timer);
+          this.timers.delete(reqId);
+          this.pendingAutotrack.delete(reqId);
+          resolve(false); // send failure → OFF
+        }
+      });
+    } catch {
+      return false; // connect failure → OFF
+    }
   }
 
   /**
@@ -1538,6 +1602,16 @@ export class BridgeClient {
       return;
     }
 
+    // autotrack.result → the auto-track opt-in flag (separate map, Task #22).
+    if (env.type === EXTENSION_MESSAGE_TYPES.autotrackResult) {
+      const resolveAutotrack = this.pendingAutotrack.get(reqId);
+      if (typeof resolveAutotrack !== 'function') return;
+      this.pendingAutotrack.delete(reqId);
+      this.clearTimer(reqId);
+      resolveAutotrack(readAutotrackEnabled(env.payload));
+      return;
+    }
+
     // answers.result → the "save my answers" outcome (separate map).
     if (env.type === EXTENSION_MESSAGE_TYPES.answersResult) {
       const resolveAnswers = this.pendingAnswers.get(reqId);
@@ -1667,6 +1741,11 @@ export class BridgeClient {
       if (timer) clearTimeout(timer);
       resolve({ ok: false, error: reason });
     }
+    for (const [reqId, resolve] of this.pendingAutotrack.entries()) {
+      const timer = this.timers.get(reqId);
+      if (timer) clearTimeout(timer);
+      resolve(false); // a dropped connection → treat the opt-in as OFF (safe).
+    }
     this.pending.clear();
     this.pendingProfile.clear();
     this.pendingApplied.clear();
@@ -1675,6 +1754,7 @@ export class BridgeClient {
     this.pendingSuggest.clear();
     this.pendingMatch.clear();
     this.pendingAssist.clear();
+    this.pendingAutotrack.clear();
     // A dropped connection mid-stream never sends `assist.done` — this is
     // the "interrupted" case: no more chunks are coming, so retire every
     // listener now rather than leaving it to fire on a transport that no

@@ -147,6 +147,18 @@ export const EXTENSION_MESSAGE_TYPES = {
    */
   statusResult: 'status.result',
   /**
+   * Extension → desktop: read the auto-track opt-in (Task #22, auto-track
+   * Layer A) — no payload. The extension consults this before ARMING the
+   * gesture submit-watcher (client-side gate); the desktop is the
+   * authoritative gate (it ALSO re-checks the opt-in before honoring an AUTO
+   * `status.update` — see {@link ExtensionStatusUpdateRequest}'s `auto`). No
+   * consent needed to READ the flag: it is the user's own device-local
+   * setting, loopback only.
+   */
+  autotrackCheck: 'autotrack.check',
+  /** Desktop → extension: the `autotrack.check` outcome — `{ enabled }`. */
+  autotrackResult: 'autotrack.result',
+  /**
    * Extension → desktop: "save my answers from this page" — append the
    * captured `{question, answer}` pairs from the active tab's filled form
    * fields onto the Application matched by (canonicalized + normalized)
@@ -417,6 +429,25 @@ export interface ExtensionAppliedCheckResult {
 export interface ExtensionStatusUpdateRequest {
   url: string;
   to: 'applied';
+  /**
+   * True marks this an AUTOMATED write from the gesture submit-watcher (Task
+   * #22, auto-track Layer A), not a deliberate popup click. The desktop honors
+   * an `auto` write ONLY when the auto-track opt-in is on — defense-in-depth:
+   * the extension also gates arming client-side, but a compromised extension
+   * must not auto-write `applied` without the user's opt-in. Absent/false is
+   * the ordinary user-clicked "Mark as applied", ungated exactly as before.
+   */
+  auto?: boolean;
+}
+
+/**
+ * `autotrack.result` payload — whether the desktop-enforced auto-track opt-in
+ * (Task #22) is currently on. The extension reads it before arming the gesture
+ * submit-watcher; a malformed/absent reply is treated as `false` (OFF, the safe
+ * default) client-side.
+ */
+export interface ExtensionAutotrackResult {
+  enabled: boolean;
 }
 
 /**

@@ -44,6 +44,19 @@ export interface ExtensionAiAssistSetting {
   enabled: boolean;
 }
 
+/**
+ * Auto-track opt-in state (Task #22, auto-track Layer A) — a SEPARATE opt-in
+ * from {@link ExtensionAutofillSetting}/{@link ExtensionAiAssistSetting}. When
+ * on, the extension arms a gesture submit-watcher that, on a detected form
+ * submit, auto-marks the matched `saved` application `applied` (or nudges you
+ * to import an untracked one). Default OFF, desktop-enforced: the desktop also
+ * re-checks it before honoring an automated write, so a compromised extension
+ * can't auto-mark applied without this consent.
+ */
+export interface ExtensionAutoTrackSetting {
+  enabled: boolean;
+}
+
 export interface ExtensionBridgeContract {
   status(): Promise<ExtensionBridgeStatus>;
   regenerateToken(): Promise<ExtensionBridgeTokenResult>;
@@ -60,6 +73,10 @@ export interface ExtensionBridgeContract {
    * at answer-time (task #16), so nothing more needs capturing here.
    */
   setAiAssistEnabled(enabled: boolean): Promise<ExtensionAiAssistSetting>;
+  /** Read the auto-track opt-in (default OFF). */
+  autoTrackEnabled(): Promise<ExtensionAutoTrackSetting>;
+  /** Set + persist the auto-track opt-in; echoes the stored value. */
+  setAutoTrackEnabled(enabled: boolean): Promise<ExtensionAutoTrackSetting>;
 }
 
 export const EXTENSION_BRIDGE_CHANNELS = {
@@ -69,4 +86,6 @@ export const EXTENSION_BRIDGE_CHANNELS = {
   setAutofillEnabled: 'extensionBridge:setAutofillEnabled',
   aiAssistEnabled: 'extensionBridge:aiAssistEnabled',
   setAiAssistEnabled: 'extensionBridge:setAiAssistEnabled',
+  autoTrackEnabled: 'extensionBridge:autoTrackEnabled',
+  setAutoTrackEnabled: 'extensionBridge:setAutoTrackEnabled',
 } as const;
