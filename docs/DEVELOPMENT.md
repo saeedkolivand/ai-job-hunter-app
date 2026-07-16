@@ -159,7 +159,7 @@ The renderer imports `@ajh/ui` via the workspace symlink. After rebuilding, Vite
 2. Run `pnpm --filter @ajh/shared gen:ipc` to regenerate `ipc_contracts/*.rs` (CI runs `gen:ipc:check` to enforce this)
 3. Run `pnpm typecheck` to verify no breakage
 4. Update the Rust command handler in `apps/desktop/src-tauri/src/commands/`
-5. Update `apps/desktop/src/tauri-client.ts`
+5. Update `apps/desktop/src/tauri-client/index.ts`
 6. Update the service hook in `apps/desktop/src/renderer/services/`
 
 ### Modifying Rust code (`apps/desktop/src-tauri`)

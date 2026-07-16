@@ -49,7 +49,7 @@ Implement one-click CLI agent install via:
 - **IPC contract**: `packages/shared/src/ipc/contracts/cliAgents.ts` — `status()`, `redetect()`, `install()`
 - **Rust commands**: `apps/desktop/src-tauri/src/commands/cli_agents.rs` — read-only status/redetect
 - **Shell spawn**: Rust `CliAgentBackend::install_package()` + `docs_url()` → plugin-shell execute
-- **Service hooks**: `apps/desktop/src/renderer/services/use-cli-agents.ts` — `useCliAgents()`, `useInstallCliAgent()`
+- **Service hooks**: `apps/desktop/src/renderer/services/use-cli-agents/use-cli-agents.ts` — `useCliAgents()`, `useInstallCliAgent()`
 - **UI**: `features/settings/components/ai-settings/CliAgentInstall` (consent modal, streamed console, guide)
 - **Session slice**: Integrated into Settings; agent status cached + re-probed after install
 - **Capability allowlist**: `apps/desktop/src-tauri/capabilities/default.json` — 3 shell:allow-execute entries

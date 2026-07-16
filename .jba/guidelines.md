@@ -72,9 +72,9 @@ renderer only via IPC service hooks, never imported directly.
 - `docs/PATTERNS.md` — all enforced coding patterns with examples
 - `docs/DESIGN_SYSTEM.md` — UI tokens, glass surfaces, motion
 - `docs/DEVELOPMENT.md` — setup, commands, debugging
-- `docs/RELEASE.md` — release pipeline and commit conventions
+- `CLAUDE.md` § Release & commits — release pipeline and commit conventions
 
 ### Release
 
-Automated via semantic-release on push to `main`.
+Manual only — Actions → "🚀 Release" → `action: release`; nothing auto-runs on push to `main`. semantic-release derives the version bump from commit types.
 Never manually tag or edit CHANGELOG.md/package.json versions.

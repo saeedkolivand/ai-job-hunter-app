@@ -322,7 +322,7 @@ calls the backend, XML-escapes stray `&` characters in SVG link hrefs (Typst lea
 performance; invalid XML unless escaped), wraps each SVG string in a `Blob` with type
 `image/svg+xml`, and returns per-page `blob:` URLs.
 
-**UI:** `PdfPreview` in `apps/desktop/src/renderer/features/ai-generate/components/PdfPreview/`
+**UI:** `PdfPreview` in `apps/desktop/src/renderer/components/generation/PdfPreview/`
 renders a scrollable container of `<img src=blob:>` elements, one per page, with Blob URL
 lifecycle management (revoke on each render batch and on unmount). The preview debounces
 ~500 ms after same-document edits and re-renders immediately on document switches (résumé ↔

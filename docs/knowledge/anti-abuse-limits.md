@@ -100,6 +100,6 @@ All are **runtime-configurable** via `system_set_performance_mode` (the Performa
 
 ## Related
 
-- **Performance mode** (`docs/performance-mode.md`): how to adjust limits at runtime.
+- **Performance mode** ([`PATTERNS.md` § 11](../PATTERNS.md#11-performance-mode-pattern)): how to adjust limits at runtime.
 - **ARCHITECTURE_STATUS.md**: Anti-abuse limits status.
 - **PATTERNS.md § 13**: `limits` as a module owner (anti-abuse rate + concurrency).
