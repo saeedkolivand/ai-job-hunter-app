@@ -66,6 +66,7 @@ mod answers_save;
 mod answers_suggest;
 mod assist_registry;
 pub mod auth;
+mod autotrack;
 pub mod handshake;
 mod import_flow;
 #[cfg(test)]
@@ -250,15 +251,6 @@ const AUTOFILL_OPTIN_FILE: &str = "extension_autofill_optin";
 /// safe state).
 const AI_ASSIST_OPTIN_FILE: &str = "extension_ai_assist_optin";
 
-/// File under the app data dir holding the auto-track opt-in flag (`"1"` = on,
-/// anything else / absent = off), persisted beside [`AUTOFILL_OPTIN_FILE`].
-/// Default OFF: the desktop arms nothing on its own — the extension only reads
-/// this (via `autotrack.check`) to decide whether to arm its gesture
-/// submit-watcher, and the desktop re-checks it before honoring an AUTO
-/// `status.update` (Task #22). This is the consent gate for auto-marking a job
-/// `applied` from a detected form submit.
-const AUTOTRACK_OPTIN_FILE: &str = "extension_autotrack_optin";
-
 /// Managed Tauri state for the bridge. Commands read the bound port + token off
 /// this; the server flips `connected` while a socket is paired.
 pub struct BridgeState {
@@ -291,7 +283,8 @@ pub struct BridgeState {
     /// [`crate::ai_config::AiConfigStore`] at answer-time (task #16) via
     /// [`crate::pipeline::Completer::from_active`], never a renderer snapshot.
     ai_assist_enabled: AtomicBool,
-    /// Auto-track opt-in (default OFF, persisted to [`AUTOTRACK_OPTIN_FILE`]).
+    /// Auto-track opt-in (default OFF, persisted to
+    /// `autotrack::AUTOTRACK_OPTIN_FILE`).
     /// Task #22: the extension reads it (via `autotrack.check`) to decide
     /// whether to arm its gesture submit-watcher, and the desktop re-checks it
     /// before honoring an AUTO `status.update` (a write flagged `auto: true`) —
@@ -320,7 +313,7 @@ impl BridgeState {
             connected: AtomicBool::new(false),
             autofill_enabled: AtomicBool::new(load_autofill_optin(data_dir)),
             ai_assist_enabled: AtomicBool::new(load_ai_assist_optin(data_dir)),
-            autotrack_enabled: AtomicBool::new(load_autotrack_optin(data_dir)),
+            autotrack_enabled: AtomicBool::new(autotrack::load_autotrack_optin(data_dir)),
             match_live_limiter: Mutex::new(match_live::MatchLiveThrottle::new()),
             data_dir: data_dir.to_path_buf(),
         }
@@ -386,24 +379,6 @@ impl BridgeState {
         self.ai_assist_enabled.store(enabled, Ordering::Relaxed);
         if let Err(e) = persist_ai_assist_optin(&self.data_dir, enabled) {
             log::warn!("[extension_bridge] failed to persist ai-assist opt-in (non-fatal): {e}");
-        }
-    }
-
-    /// Whether auto-track is opted in (Task #22). Read by the `autotrack.check`
-    /// verb (so the extension can gate ARMING its submit-watcher) AND re-checked
-    /// before honoring an AUTO `status.update` — see
-    /// [`status_update::auto_write_refused`].
-    pub fn autotrack_enabled(&self) -> bool {
-        self.autotrack_enabled.load(Ordering::Relaxed)
-    }
-
-    /// Set (and persist) the auto-track opt-in. A persist failure is non-fatal
-    /// but leaves the in-memory value authoritative for this run — same
-    /// discipline as [`set_autofill_enabled`](Self::set_autofill_enabled).
-    pub fn set_autotrack_enabled(&self, enabled: bool) {
-        self.autotrack_enabled.store(enabled, Ordering::Relaxed);
-        if let Err(e) = persist_autotrack_optin(&self.data_dir, enabled) {
-            log::warn!("[extension_bridge] failed to persist auto-track opt-in (non-fatal): {e}");
         }
     }
 
@@ -498,23 +473,6 @@ fn persist_ai_assist_optin(data_dir: &Path, enabled: bool) -> std::io::Result<()
     std::fs::write(
         data_dir.join(AI_ASSIST_OPTIN_FILE),
         json!({ "enabled": enabled }).to_string(),
-    )
-}
-
-/// Read the persisted auto-track opt-in (`"1"` ⇒ on). Absent / any other value
-/// ⇒ OFF, so a first run and a corrupt flag both default to the safe (off)
-/// state — mirrors [`load_autofill_optin`]'s degrade-to-off discipline.
-fn load_autotrack_optin(data_dir: &Path) -> bool {
-    std::fs::read_to_string(data_dir.join(AUTOTRACK_OPTIN_FILE))
-        .map(|s| s.trim() == "1")
-        .unwrap_or(false)
-}
-
-fn persist_autotrack_optin(data_dir: &Path, enabled: bool) -> std::io::Result<()> {
-    std::fs::create_dir_all(data_dir)?;
-    std::fs::write(
-        data_dir.join(AUTOTRACK_OPTIN_FILE),
-        if enabled { "1" } else { "0" },
     )
 }
 
@@ -819,9 +777,10 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
             FrameDecision::StatusUpdate { req_id, payload } => {
                 Some(status_update::handle_status_update(&app, &req_id, &payload))
             }
-            FrameDecision::AutotrackCheck { req_id } => {
-                Some(autotrack_result_reply(&req_id, state.autotrack_enabled()))
-            }
+            FrameDecision::AutotrackCheck { req_id } => Some(autotrack::autotrack_result_reply(
+                &req_id,
+                state.autotrack_enabled(),
+            )),
             FrameDecision::AnswersSave { req_id, payload } => {
                 Some(answers_save::handle_answers_save(&app, &req_id, &payload))
             }
@@ -944,7 +903,7 @@ enum FrameDecision {
     StatusUpdate { req_id: String, payload: Value },
     /// An authenticated `autotrack.check` (Task #22) — a pure read of the
     /// auto-track opt-in off [`BridgeState`]. No payload; the loop answers it
-    /// with [`autotrack_result_reply`].
+    /// with `autotrack::autotrack_result_reply`.
     AutotrackCheck { req_id: String },
     /// An authenticated `answers.save` to answer through
     /// [`answers_save::handle_answers_save`]. Carries the payload verbatim so
@@ -1117,18 +1076,6 @@ fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameD
             ))),
         )),
     }
-}
-
-/// Build the `autotrack.result` reply (Task #22): the current auto-track opt-in
-/// as `{ enabled }`. A pure read — no consent gate on READING the user's own
-/// device-local setting (the enforced boundary is the AUTO `status.update` write).
-fn autotrack_result_reply(req_id: &str, enabled: bool) -> String {
-    json!({
-        "type": msg::AUTOTRACK_RESULT,
-        "reqId": req_id,
-        "payload": { "enabled": enabled },
-    })
-    .to_string()
 }
 
 /// Build the `challenge` reply (handshake step 2) carrying the fresh server nonce.

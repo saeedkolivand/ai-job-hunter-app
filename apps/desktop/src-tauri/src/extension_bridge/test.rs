@@ -376,6 +376,7 @@ fn reset_disables_autotrack_optin() {
 
 #[test]
 fn autotrack_result_reply_carries_the_flag() {
+    use super::autotrack::autotrack_result_reply;
     let on: serde_json::Value =
         serde_json::from_str(&autotrack_result_reply("req-1", true)).unwrap();
     assert_eq!(on["type"], msg::AUTOTRACK_RESULT);
