@@ -222,6 +222,14 @@ impl Completer {
         self.provider.capabilities(&self.model)
     }
 
+    /// The resolved active model — so a caller can name it in a capability-gate
+    /// error message after resolving, without re-deriving it from the (no longer
+    /// trusted) request. See [`crate::commands::agent::agent_run`]'s
+    /// tool-capability guard.
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
     /// Non-streaming completion through the active provider — the single-shot text
     /// analogue used by agentic text-generating tools (cover letter, interview
     /// questions) that need the whole response before returning. Reuses the same

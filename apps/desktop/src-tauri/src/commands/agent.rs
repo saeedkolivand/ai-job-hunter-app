@@ -22,7 +22,7 @@ use crate::agent::controller::{run_agent_live, AgentStep, AgentStepKind, Stopped
 use crate::agent::flows::PREP_APPLICATION_SYSTEM;
 use crate::agent::gate::{AgentGate, Decision};
 use crate::agent::tools::{fenced, prep_application_tools, ToolContext, JOB_CAP, RESUME_CAP};
-use crate::commands::ai_provider::{ModelCapabilities, ProviderId};
+use crate::commands::ai_provider::ModelCapabilities;
 use crate::db::new_job_id;
 use crate::documents::DocumentStore;
 use crate::error::{AppError, AppResult};
@@ -43,11 +43,11 @@ async fn fail_run(app: &AppHandle, engine: &ScraperEngine, job_id: &str, msg: St
 /// immediately; the run streams `agent:step` events and finishes the job async.
 ///
 /// Modeled on [`crate::commands::ai::ai_generate`]: acquire the anti-abuse limiter,
-/// register the cancel token, then spawn the loop. EVERY fail-able step — provider/
-/// model validation, `Completer::resolve`, the tool-capability check, and loading
-/// the résumé + cached job posting — now runs INSIDE the spawned task, alongside
-/// the loop itself, so no terminal `jobs:event` can ever fire before this function
-/// returns `{ jobId }`. That return is the renderer's ONLY source of the job id; it
+/// register the cancel token, then spawn the loop. EVERY fail-able step —
+/// `Completer::from_active` (backend-owned provider resolution + validation), the
+/// tool-capability check, and loading the résumé + cached job posting — now runs
+/// INSIDE the spawned task, alongside the loop itself, so no terminal `jobs:event`
+/// can ever fire before this function returns `{ jobId }`. That return is the renderer's ONLY source of the job id; it
 /// starts filtering `jobs:event`/`agent:step` by that id only afterwards, so a
 /// terminal event emitted synchronously (as validation failures used to, via a
 /// `fail` closure called before the `json!` return) was silently dropped and the
@@ -95,27 +95,15 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
     tauri::async_runtime::spawn(async move {
         let _guard = guard; // release the concurrency slot when the run ends
 
-        // 1-2. Provider must be present, known, and own the model — the same
-        // required-and-validated rule as `ai_generate` (no silent fallback).
-        let provider_id = match ProviderId::parse(req.provider.trim()) {
-            Ok(id) => id,
-            Err(e) => {
-                fail_run(&app_task, &engine_task, &job_id_task, e.to_string()).await;
-                return;
-            }
-        };
-        if let Err(e) = provider_id.validate_model(&req.model) {
-            fail_run(&app_task, &engine_task, &job_id_task, e.to_string()).await;
-            return;
-        }
-
-        // Resolve the active provider into a Completer for the agent's own turns.
-        let completer = match Completer::resolve(
-            &app_task,
-            Some(&req.provider),
-            Some(&req.model),
-            req.base_url.clone(),
-        ) {
+        // 1-2. Resolve the active provider into a Completer for the agent's own
+        // turns from the BACKEND-OWNED store (task #25) — never renderer-supplied
+        // provider/model/base_url. `from_active` runs provider-present → parse →
+        // model-rule → `validate_model` plus the defensive base_url re-validate
+        // internally (no silent fallback), so it subsumes the old request-driven
+        // pre-checks. This closes the last base_url-exfil path task #16 sealed: an
+        // XSS'd renderer can no longer point a credentialed agent turn at an
+        // attacker endpoint.
+        let completer = match Completer::from_active(&app_task) {
             Ok(c) => c,
             Err(e) => {
                 fail_run(&app_task, &engine_task, &job_id_task, e.to_string()).await;
@@ -128,8 +116,9 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
         // fabricated match score or invented company research as if the tools
         // actually ran. Reject early with a clear message — the renderer separately
         // disables the entry point for non-tool models; this is the server-side
-        // guard.
-        if let Err(e) = require_tool_capable(completer.capabilities(), &req.model) {
+        // guard. The model comes from the RESOLVED completer (the store), never the
+        // request.
+        if let Err(e) = require_tool_capable(completer.capabilities(), completer.model()) {
             fail_run(&app_task, &engine_task, &job_id_task, e.to_string()).await;
             return;
         }
@@ -158,14 +147,13 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
             return;
         };
 
-        // Trusted routing context threaded into the tools — provider/model/base_url/
-        // job_id all come from the VALIDATED request, NEVER from model-supplied
-        // tool args (job_id lets `research_company` load THIS run's own posting
-        // server-side — see the LOW-1 fix in `agent::tools`).
+        // Trusted run-identity context threaded into the tools. Routing is now
+        // backend-owned (task #25): tools that make their own provider call resolve
+        // via `Completer::from_active`, so `ToolContext` carries only `job_id` — the
+        // run's OWN validated job (lets `research_company` load THIS run's own
+        // posting server-side, never a model-supplied job/company blob; see the
+        // LOW-1 fix in `agent::tools`).
         let ctx = ToolContext {
-            provider: req.provider.clone(),
-            model: req.model.clone(),
-            base_url: req.base_url.clone(),
             job_id: req.job_id.clone(),
         };
         let user = build_user_message(&req.resume_id, &req.job_id, &resume.text, &job_text);
@@ -389,5 +377,28 @@ mod tests {
         assert!(matches!(err, AppError::Validation(_)));
         assert!(err.to_string().contains("llama3"));
         assert!(err.to_string().contains("tool-capable model"));
+    }
+
+    /// Wire-contract security lock (task #25): `AgentRunRequest` carries ONLY the
+    /// résumé + job identity. Routing is backend-owned — `agent_run` resolves the
+    /// provider/model/base_url via [`Completer::from_active`] (the store), so the
+    /// request struct has NO routing field. A compromised renderer that appends
+    /// `provider`/`model`/`baseUrl` can't redirect a credentialed agent turn: serde
+    /// silently drops the unknown keys because there is nowhere to bind them. This
+    /// is the same compile-time-removal lock #16 used to seal the base_url-exfil
+    /// class; the gate is `gen:ipc:check` (Rust↔TS parity) + this shape assertion.
+    #[test]
+    fn agent_run_request_carries_only_identity_no_routing() {
+        let req: AgentRunRequest = serde_json::from_value(json!({
+            "resumeId": "res-1",
+            "jobId": "job-9",
+            // A compromised renderer's attempted egress redirect — ignored.
+            "provider": "openai-compatible",
+            "model": "evil",
+            "baseUrl": "http://attacker.example",
+        }))
+        .expect("deserializes from the identity-only wire shape, ignoring routing keys");
+        assert_eq!(req.resume_id, "res-1");
+        assert_eq!(req.job_id, "job-9");
     }
 }

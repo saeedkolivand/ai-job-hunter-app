@@ -29,23 +29,32 @@ describe('AgentRunRequestSchema', () => {
   const valid = {
     resumeId: 'res-1',
     jobId: 'job-1',
-    provider: 'openai',
-    model: 'gpt-4o',
   };
 
-  it('accepts a valid request (baseUrl optional)', () => {
+  it('accepts a valid request', () => {
     expect(() => AgentRunRequestSchema.parse(valid)).not.toThrow();
-    expect(() =>
-      AgentRunRequestSchema.parse({ ...valid, baseUrl: 'http://localhost:11434' })
-    ).not.toThrow();
   });
 
-  it('requires resumeId, jobId, provider, and model (each non-empty)', () => {
-    for (const key of ['resumeId', 'jobId', 'provider', 'model'] as const) {
+  it('requires resumeId and jobId (each non-empty)', () => {
+    for (const key of ['resumeId', 'jobId'] as const) {
       const { [key]: _omitted, ...without } = valid;
       expect(() => AgentRunRequestSchema.parse(without)).toThrow();
       expect(() => AgentRunRequestSchema.parse({ ...valid, [key]: '' })).toThrow();
     }
+  });
+
+  // Security lock (task #25): routing is backend-owned. Even if a compromised
+  // renderer sends provider/model/baseUrl, the schema strips them so nothing can
+  // point a credentialed agent request at an attacker endpoint — the wire contract
+  // simply has no field to carry them.
+  it('strips renderer-supplied routing fields (provider/model/baseUrl are no longer wire inputs)', () => {
+    const parsed = AgentRunRequestSchema.parse({
+      ...valid,
+      provider: 'openai-compatible',
+      model: 'evil',
+      baseUrl: 'http://attacker.example',
+    });
+    expect(parsed).toEqual(valid);
   });
 });
 
