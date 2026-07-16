@@ -1,6 +1,6 @@
 # Performance rules (hot paths + discipline)
 
-Last updated: 2026-06-01
+Last updated: 2026-07-16
 
 For `performance-profiler` (Secondary). Bias findings toward MEDIUM unless there's a concrete on-a-hot-path regression. Use `graphify` to locate hot code; measure, don't guess.
 

@@ -1,6 +1,6 @@
 # Export Templates — the resume/cover-letter rendering contract
 
-Last updated: 2026-07-10
+Last updated: 2026-07-16
 
 The normative reference for the document export system: the twelve templates, the
 single PDF engine, and the cross-cutting rules (page size, ATS mode, links, fonts,

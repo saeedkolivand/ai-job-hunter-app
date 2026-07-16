@@ -1,6 +1,6 @@
 # Security rules (the security authority's knowledge)
 
-Last updated: 2026-06-01
+Last updated: 2026-07-16
 
 For `tauri-security-reviewer` (cross-cutting authority). Security/data findings round **UP**. Anchors below are real repo locations.
 

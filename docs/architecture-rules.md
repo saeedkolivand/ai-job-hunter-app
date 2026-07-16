@@ -1,6 +1,6 @@
 # Architecture Rules — Rust/Tauri Core
 
-Last updated: 2026-06-01
+Last updated: 2026-07-16
 
 > **Status:** enforceable rules (Phase 2), derived from
 > [`architecture-analysis.md`](architecture-analysis.md) — the **actual** structure of

@@ -1,6 +1,6 @@
 # ADR-012: Live preview renders the real exported document via SVG; templates stay single-source
 
-Last updated: 2026-06-22
+Last updated: 2026-07-16
 
 **Status:** Accepted (revised during implementation)
 

@@ -1,6 +1,6 @@
 # ADR-008: PDF glyph subsetting at export time via `parse_font`
 
-Last updated: 2026-06-02
+Last updated: 2026-07-16
 
 **Status:** Superseded by the Typst migration (`feat/typst-premium-resume-templates`).
 Typst handles font subsetting internally when producing PDF bytes; the explicit

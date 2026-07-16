@@ -1,6 +1,6 @@
 # Patterns — AI Job Hunter
 
-Last updated: 2026-06-22
+Last updated: 2026-07-16
 
 This document describes the recurring architectural and implementation patterns used throughout the codebase. Understanding these patterns is essential for contributing consistently.
 

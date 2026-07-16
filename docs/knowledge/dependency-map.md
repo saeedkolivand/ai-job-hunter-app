@@ -1,6 +1,6 @@
 # Dependency map (pointer)
 
-Last updated: 2026-06-01
+Last updated: 2026-07-16
 
 For the live graph use **graphify** — MCP `query_graph "what depends on <X>"` / `shortest_path "<A>" "<B>"` when connected, else the `graphify query` / `graphify path` CLI, or `graphify-out/GRAPH_REPORT.md` for hubs/communities. This file only fixes the **boundary rules** and where manifests live.
 
