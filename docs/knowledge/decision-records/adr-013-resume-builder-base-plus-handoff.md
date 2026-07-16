@@ -42,7 +42,7 @@ Build a **dedicated résumé-builder UI** that:
 
 - **New prompts module**: `packages/prompts/src/builder/` exports `buildBuilderSystemPrompt`, `buildInterviewResumePrompt`, `renderInterviewAnswers`, `InterviewAnswers` type
 - **New renderer flow**: `features/resume-builder/**` (wizard, RepeatableList, useResumeBuilder hook)
-- **New generation method**: `lib/generate/generation.ts::synthesizeResume()` — mirrors `generateResume()` with a single streamed pass
+- **New generation method**: `lib/generate/generation/generation.ts::synthesizeResume()` — mirrors `generateResume()` with a single streamed pass
 - **Session store slice**: `store/session-store::resumeBuilder` holds interview state
 - **Route**: `routes/build.tsx` → `ROUTES.BUILD` with Sidebar "Resume Builder" nav entry
 - **Output panel**: Reuses existing `OutputPanelDone` + `saveAiGeneration` for persistence
@@ -51,4 +51,4 @@ See:
 
 - `@ajh/prompts/builder` — prompt templates
 - `features/resume-builder` — UI wizard
-- `apps/desktop/src/renderer/lib/generate/generation.ts::synthesizeResume()` — generation orchestration
+- `apps/desktop/src/renderer/lib/generate/generation/generation.ts::synthesizeResume()` — generation orchestration

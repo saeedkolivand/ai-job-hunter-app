@@ -50,5 +50,4 @@ Document in `DEPLOYMENT.md` that per-machine (MSI) users must **perform a clean 
 
 ## Related
 
-- `docs/DEPLOYMENT.md` § "Windows Installer Scope & Migration" — detailed user-facing migration docs.
-- `docs/ARCHITECTURE_STATUS.md` — auto-updater status marked as `currentUser`-only.
+- `docs/DEPLOYMENT.md` § "Windows Installer Configuration" — user-facing migration guidance.

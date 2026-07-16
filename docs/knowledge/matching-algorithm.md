@@ -13,7 +13,7 @@ The AI Job Hunter uses **two complementary scoring strategies**:
 
 The `coverage_score()` function (in `documents::keywords`) is the **single source of truth** for embedding-free scoring. It powers:
 
-- **Autopilot ranking** (`autopilot::ranking` → `coverage_score()`): filters + sorts candidates by keyword match %.
+- **Autopilot ranking** (`commands::autopilot::build_found_job` → `coverage_score()`): filters + sorts candidates by keyword match %.
 - **ATS component** of the Jobs page combined score.
 - **Gap analysis** in resume feedback (which skills are missing).
 
@@ -29,7 +29,7 @@ For the exact algorithm steps, parameters, and implementation, see `apps/desktop
 
 ## Autopilot Ranking
 
-Autopilot's ranking pipeline (in `autopilot::ranking` + `recommend::batch_match`):
+Autopilot's ranking pipeline (in `commands/autopilot.rs` → `build_found_job()`):
 
 1. Fetch job postings.
 2. For each job, call `coverage_score()` (cached result if in `match_scores` table).
@@ -37,7 +37,7 @@ Autopilot's ranking pipeline (in `autopilot::ranking` + `recommend::batch_match`
 4. Sort by coverage % descending.
 5. Return top results for the user to approve/apply.
 
-**Autopilot's displayed "% match" = keyword-coverage %, clearly labeled "Keyword Coverage %" in UI** (distinct from the Jobs page "Match %" combined score).
+**Autopilot's displayed score** is keyword-coverage, rendered as a Low/Medium/High MatchBand (variant='coverage', relaxed thresholds; '~'-prefixed muted when provisional from aggregator snippet) — distinct from the Jobs page combined-score band.
 
 ## Jobs Page Combined Score
 
@@ -49,12 +49,12 @@ This hybrid approach is slower (requires embedding lookup) but more semantically
 
 Both scores are cached in SQLite:
 
-- `posting_vectors` table: stores embeddings (keyed by job_id + text_hash + embedding_space).
+- `posting_vectors` table: stores embeddings (keyed by job_id, one row per posting); text_hash + provider/model columns pin the embedded text and embedding space so mismatches are cache misses.
 - `match_scores` table: composite PK encodes formula version, so changes to the keyword algorithm automatically invalidate old cached results.
 
 ## Testing
 
-Keyword-coverage tests live in `documents/keywords.rs::tests` (unit tests for stemming, matching, language detection) and `recommend/tests.rs` (batch matching + ranking). See ARCHITECTURE_STATUS.md for the full coverage.
+Keyword-coverage tests live in `documents/keywords.rs::tests` (unit tests for stemming, matching, language detection), `commands/autopilot.rs` (ranking uses the shared kernel), and `commands/match_resume.rs::tests` (combined formula). See ARCHITECTURE_STATUS.md for the full coverage.
 
 ## Intentional simplification: flat keyword coverage
 

@@ -920,7 +920,7 @@ jobs:
           echo "| Supply chain | \`cargo deny check\` (advisories/licenses/bans/sources) |" >> $GITHUB_STEP_SUMMARY
           echo "| Unused deps | \`cargo machete\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "_Architecture rules: docs/architecture-rules.md • analysis: docs/architecture-analysis.md_" >> $GITHUB_STEP_SUMMARY
+          echo "_Architecture rules: docs/architecture-rules.md_" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🔧 Environment" >> $GITHUB_STEP_SUMMARY
           echo "- **Rust**: $(rustc --version)" >> $GITHUB_STEP_SUMMARY
