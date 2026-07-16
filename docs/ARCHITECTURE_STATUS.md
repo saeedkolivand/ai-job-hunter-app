@@ -2,7 +2,7 @@
 
 Implementation status tracker. Updated as features ship.
 
-Last updated: 2026-07-05
+Last updated: 2026-07-16 (audit refresh: shipped features moved, missing sections added, TypeScript version corrected)
 
 ---
 
@@ -22,7 +22,7 @@ Last updated: 2026-07-05
 | ------------------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [Tauri][tauri] 2.x shell                         | ✅     | Window, tray, menus, IPC                                                                                                                                                                          |
 | [pnpm][pnpm] monorepo + [Turborepo][turborepo]   | ✅     | All packages wired                                                                                                                                                                                |
-| [TypeScript][typescript] 6 across all packages   | ✅     | Strict mode enabled                                                                                                                                                                               |
+| [TypeScript][typescript] 7 (per-importer split)  | ✅     | Apps/desktop/extension use ^7.0.2 (build), root at ^6.0.3 (eslint only). pnpm per-importer resolution lets builds use TS7 while lint stack (typescript-eslint 8.x, capped at <6.1 peer) uses TS6  |
 | [Vite][vite] + HMR for renderer                  | ✅     |                                                                                                                                                                                                   |
 | [TanStack Router][tanstack-router] (file-based)  | ✅     | All 9 routes                                                                                                                                                                                      |
 | [TanStack Query][tanstack-query] + service hooks | ✅     | All 23 namespaces                                                                                                                                                                                 |
@@ -57,11 +57,6 @@ former `packages/ai` and `packages/data` Node packages were removed.
 | Match-score result cache    | ✅     | `match_scores` table (Phase 1); composite PK encodes formula version, space, semantic flag, text hash |
 | ATS keyword matching        | ✅     | Stemmed matching with language detection from job ad                                                  |
 | Semantic similarity scoring | ✅     | Embedding-based cosine similarity; local Ollama or cloud providers (OpenAI, Anthropic, Gemini)        |
-
-> ⚠️ This feature matrix previously tracked the deleted Node packages and has
-> not been re-audited against the Rust implementation. Some features that were
-> ✅ in TypeScript (notably hybrid search) are currently stubs in Rust — verify
-> against the code before relying on this.
 
 ---
 
@@ -116,8 +111,11 @@ Active scrapers: 21 boards. Five boards (Indeed, StepStone, Xing, Workday, Glass
 | Local model limits         | ✅     | `ai_inspect_model` IPC; `modelLimits` in preferences-store; `num_ctx`/`num_predict` on [Ollama][ollama] path only                                                                     |
 | Company research           | ✅     | `ai_research_company` IPC; opt-in; active provider's own web search (native tool / Ollama Web Search); untrusted-fenced                                                               |
 | Application questions      | ✅     | `APPLICATION_QUESTIONS` registry + grounded answer prompt; answers persist on per-job record                                                                                          |
+| Salary expectation helper  | ✅     | Paste-ready number from user expectation + market research (PRs #548, #549); grounds currency in job's country (ADR-0015)                                                             |
 | Locale-aware prompts       | ✅     | 11 languages                                                                                                                                                                          |
+| Humanized generation tone  | ✅     | Natural-voice LEXICAL/PROSE tiers + Output Tone wiring to escape adversarial AI-detection (PR #563)                                                                                   |
 | Template preview           | ✅     | OptionTile with live preview                                                                                                                                                          |
+| 12-template gallery        | ✅     | Multi-tier resume templates with Document accent + 3 letter layouts (PRs #590-#594)                                                                                                   |
 
 ---
 
@@ -164,17 +162,18 @@ Active scrapers: 21 boards. Five boards (Indeed, StepStone, Xing, Workday, Glass
 
 Five-step IPC agentic loop: `agent_run` command → validated request → spawned task → `agent:step` event stream → job lifecycle event.
 
-| Feature                          | Status | Notes                                                                                                                                                                                                                                                                                                                                |
-| -------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Phase 1: Agent loop controller   | ✅     | Core loop, turn-by-turn control flow, streaming, tool routing. `run_agent_live`, `AgentStepKind`, `StoppedReason` (PR #552)                                                                                                                                                                                                          |
-| Phase 2: "Prep application" flow | ✅     | 4 read-only tools (research_company, match_resume, draft_cover_letter, suggest_interview_questions); fixed system prompt; trusted ToolContext; no Write tools; display-only proposal (PR #555)                                                                                                                                       |
-| Phase 3: Proposal confirm gate   | ✅     | Write actions suspend for explicit user approval (approve/edit/deny); `agent_confirm` IPC; 300s timeout; fail-closed (edit+deny default to no-action); validate once on route, once on approval                                                                                                                                      |
-| Phase 4: Autopilot AI notes      | ✅     | Opt-in `assistant` flag on Autopilot record; generates short LLM notes (why a top match fits, tailoring tip) for top ~3 NEW matches per run; HEADLESS read-only; notify-only; 45s step timeout, daily-ceiling short-circuit, ≤3 calls/run bounded; persists provider snapshot; notes surface on found-job rows + notification suffix |
-| Tool-calling model requirement   | ✅     | Validated server-side; non-tool models rejected with clear message (HIGH-2 defense-in-depth)                                                                                                                                                                                                                                         |
-| Cancellation-token registry      | ✅     | Jobs spawned via `agent_run` register CancellationToken in `ScraperEngine`; `jobs_cancel` reaches them                                                                                                                                                                                                                               |
-| Streaming `agent:step` events    | ✅     | Per-turn narration (plan + tool calls) and terminal proposal, streamed to the Job Detail pane (`PrepApplicationPanel`)                                                                                                                                                                                                               |
-| Prompt normalization (Rust)      | ✅     | System + user prompts in Rust; per-flow in `flows.rs`. See `draft_cover_letter` / `suggest_interview_questions` compact Rust implementations vs TS `@ajh/prompts` builders (drift risk)                                                                                                                                              |
+| Feature                          | Status | Notes                                                                                                                                                                                                                                                                                                                                                            |
+| -------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 1: Agent loop controller   | ✅     | Core loop, turn-by-turn control flow, streaming, tool routing. `run_agent_live`, `AgentStepKind`, `StoppedReason` (PR #552)                                                                                                                                                                                                                                      |
+| Phase 2: "Prep application" flow | ✅     | 4 read-only tools (research_company, match_resume, draft_cover_letter, suggest_interview_questions); fixed system prompt; trusted ToolContext; no Write tools; display-only proposal (PR #555)                                                                                                                                                                   |
+| Phase 3: Proposal confirm gate   | ✅     | Write actions suspend for explicit user approval (approve/edit/deny); `agent_confirm` IPC; 300s timeout; fail-closed (edit+deny default to no-action); validate once on route, once on approval                                                                                                                                                                  |
+| Phase 4: Autopilot AI notes      | ✅     | Opt-in `assistant` flag on Autopilot record; generates short LLM notes (why a top match fits, tailoring tip) for top ~3 NEW matches per run; HEADLESS read-only; notify-only; 45s step timeout, daily-ceiling short-circuit, ≤3 calls/run bounded; resolves active provider from backend store (ADR-0012); notes surface on found-job rows + notification suffix |
+| Tool-calling model requirement   | ✅     | Validated server-side; non-tool models rejected with clear message (HIGH-2 defense-in-depth)                                                                                                                                                                                                                                                                     |
+| Cancellation-token registry      | ✅     | Jobs spawned via `agent_run` register CancellationToken in `ScraperEngine`; `jobs_cancel` reaches them                                                                                                                                                                                                                                                           |
+| Streaming `agent:step` events    | ✅     | Per-turn narration (plan + tool calls) and terminal proposal, streamed to the Job Detail pane (`PrepApplicationPanel`)                                                                                                                                                                                                                                           |
+| Prompt normalization (Rust)      | ✅     | System + user prompts in Rust; per-flow in `flows.rs`. See `draft_cover_letter` / `suggest_interview_questions` compact Rust implementations vs TS `@ajh/prompts` builders (drift risk)                                                                                                                                                                          |
 
+| Interview practice mode | ✅ | Mock questions + star answer feedback via `suggest_interview_questions` tool; interactive drill UI for candidate preparation (PR #623, v0.126.0) |
 ---
 
 ## UI / UX
@@ -208,6 +207,49 @@ Five-step IPC agentic loop: `agent_run` command → validated request → spawne
 
 ---
 
+## Applications & Tracker
+
+Persistent job-application records with rich metadata and automation.
+
+| Feature                             | Status | Notes                                                                                                                                     |
+| ----------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Application record model            | ✅     | Per-job Application aggregate; linked to ai_generations, interaction_history, interview_questions, answers                                |
+| Status pipeline                     | ✅     | saved → applied → (interviewing/rejected/offer/accepted); auto-derived `applied` from `ai_generations.job_url`                            |
+| Saved answers per job               | ✅     | ApplicationAnswer array persisted; extension suggests matches for new applications (extension_bridge answers_suggest)                     |
+| Interview Q&A storage               | ✅     | InterviewQuestion array on Application aggregate; suggested via `suggest_interview_questions` agent tool                                  |
+| Candidate questions for interviewer | ✅     | Suggest interview questions to ask the interviewer; stored on Application for reuse (PR #383, v0.104.0 + practice mode PR #623, v0.126.0) |
+
+---
+
+## Email-Confirmation Watching (Auto-Track Layer C)
+
+Auto-detect applications via email confirmation watches (IMAP polling foundation).
+
+| Feature                    | Status | Notes                                                                                                                |
+| -------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
+| Email provider connection  | ✅     | Gmail via OAuth app-password flow; integrated into Settings (PR #689, foundational, v0.126.0)                        |
+| IMAP store + polling       | 🚧     | EmailWatchStore with poller/parser/matcher; watcher spawned at startup; ADR-0013                                     |
+| Confirmation email parsing | 🚧     | Template-driven regex matchers for job board confirmation emails (in-progress, deferred: multi-board matcher tuning) |
+
+---
+
+## Browser Extension (Chrome + Firefox)
+
+MV3 extension (`apps/extension`) published on Chrome Web Store + Firefox AMO; bridges desktop via loopback native messaging with HMAC authentication (ADR-0010, PR #627).
+
+| Feature                   | Status | Notes                                                                                                                                   |
+| ------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Job import from boards    | ✅     | Canonical URL resolution for LinkedIn/Indeed (PR #390); deferred: Glassdoor/Xing/StepStone                                              |
+| Opt-in contact autofill   | ✅     | Click-to-fill contact profile on any form; two-gate consent, fetch-fresh no-persist, never-submit; generic matcher (PR #625, ADR-0009)  |
+| Answers capture + replay  | ✅     | Save application-form question/answer pairs; suggest matched answers from prior applications (PR #637, deferred: HMAC bridge signature) |
+| AI answer draft + rewrite | ✅     | Generate or rewrite application answers from the extension with streaming; opt-in gates per question (PR #649, #675)                    |
+| Check-fit scoring         | ✅     | Resume matching against job ad; displayed inline on job posting                                                                         |
+| Mark as applied           | ✅     | Record application from the job board                                                                                                   |
+| Auto-track on form submit | ✅     | Opt-in listener detects form submissions, auto-records application (Layer A, PR #687, v0.126.0)                                         |
+| HMAC bridge protocol v2   | ✅     | Mutual HMAC-SHA256 challenge-response; token never on wire; closes port-squat deferral (ADR-0010, PR #627)                              |
+
+---
+
 ## Planned / Backlog
 
 | Feature                                 | Priority | Notes                                                                                                                                                             |
@@ -216,10 +258,8 @@ Five-step IPC agentic loop: `agent_run` command → validated request → spawne
 | URL-to-job-ad extraction in AI Generate | Medium   | `scrape.url` IPC contract exists; UI input not yet wired                                                                                                          |
 | LinkedIn official API integration       | Medium   | Currently Playwright-only                                                                                                                                         |
 | Advanced skill taxonomy                 | Medium   | Structured ontology for matching                                                                                                                                  |
-| Salary negotiation assistant            | Low      |                                                                                                                                                                   |
 | Cloud sync                              | Low      | Deferred — needs a remote backend; the backup bundle + `DataStore` trait are the substrate                                                                        |
 | Team/shared job tracking                | Low      | Would require cloud sync                                                                                                                                          |
-| Interview preparation AI                | Medium   | Mock interview Q&A                                                                                                                                                |
 
 [tauri]: https://tauri.app
 [pnpm]: https://pnpm.io
