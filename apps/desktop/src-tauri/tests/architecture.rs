@@ -58,6 +58,15 @@ const L1: &[&str] = &[
     // Backend-owned active AI provider store (task #16): the single source of
     // truth for generation routing. A per-domain SQLite store, Tauri-free.
     "ai_config",
+    // Email-confirmation watching (task #23, PR A): the account/dedupe SQLite
+    // store + the IMAP connector. Tauri-free — non-test store code imports
+    // only db/error (L0) in PR A (the command layer, L3, is the one that
+    // reaches credentials). PR B's poller will need
+    // `commands::notifications::push_and_notify` (L3), the same upward
+    // shell-reach `autopilot_scheduler` (L2) already has for
+    // `commands::autopilot::autopilot_run` — that R7 exception (or an L2
+    // relocation) is a PR B decision, not pre-solved here.
+    "email_watch",
 ];
 const L2: &[&str] = &[
     "pipeline",
@@ -331,6 +340,7 @@ const R3_ALLOW: &[&str] = &[
     "contact_profile/mod.rs",
     "ai_config/mod.rs",
     "referrals/mod.rs",
+    "email_watch/mod.rs",
     "jobs/mod.rs",
     "pipeline/cache/mod.rs",
     // Reads the installed browser's EXTERNAL Cookies SQLite (read-only, copied to

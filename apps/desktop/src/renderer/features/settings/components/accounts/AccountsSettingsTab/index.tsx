@@ -7,6 +7,7 @@ import { AUTH_BOARDS } from '@/constants/auth';
 import { useCredentialsAvailable } from '@/services';
 
 import { BoardSessionRow } from '../BoardSessionRow';
+import { EmailWatchSection } from '../EmailWatchSection';
 import { ExtensionBridgeSection } from '../ExtensionBridgeSection';
 
 export function AccountsSettingsTab() {
@@ -33,6 +34,10 @@ export function AccountsSettingsTab() {
 
       <div data-settings-anchor="accounts-extension">
         <ExtensionBridgeSection />
+      </div>
+
+      <div data-settings-anchor="accounts-email-watch">
+        <EmailWatchSection />
       </div>
     </div>
   );

@@ -25,6 +25,7 @@ pub mod data_store;
 pub mod db;
 pub mod deeplink;
 pub mod documents;
+pub mod email_watch;
 pub mod error;
 pub mod events;
 pub mod export;
@@ -657,6 +658,15 @@ pub fn run() {
                 Ok(store) => manage_resettable(app, &mut reset_registry, "spend", store),
                 Err(e) => log::warn!("[setup] spend store failed to open (non-fatal): {e}"),
             }
+            // Email-confirmation watching (task #23, PR A — connect/status only,
+            // no poller yet). Holds no secrets (the app password lives in the OS
+            // keychain via CredentialStore); wiped on factory reset, NOT included
+            // in backups (machine-local mailbox bookkeeping — see
+            // `email_watch::mod` doc).
+            match email_watch::EmailWatchStore::open(&data_dir) {
+                Ok(store) => manage_resettable(app, &mut reset_registry, "email_watch", store),
+                Err(e) => log::warn!("[setup] email watch store failed to open (non-fatal): {e}"),
+            }
             app.manage(Mutex::new(UpdaterState::default()));
             app.manage(std::sync::Arc::new(ScraperEngine::new()));
             // In-memory anti-abuse limiter (rate + concurrency + per-provider daily
@@ -921,6 +931,12 @@ pub fn run() {
             commands::extension_bridge::extension_bridge_set_ai_assist_enabled,
             commands::extension_bridge::extension_bridge_auto_track_enabled,
             commands::extension_bridge::extension_bridge_set_auto_track_enabled,
+            // email-confirmation watching (Task #23, PR A — connect/status only)
+            commands::email_watch::email_watch_status,
+            commands::email_watch::email_watch_connect,
+            commands::email_watch::email_watch_disconnect,
+            commands::email_watch::email_watch_set_enabled,
+            commands::email_watch::email_watch_check_now,
             // export
             export::commands::documents_export_document,
             export::commands::documents_export_and_save,
