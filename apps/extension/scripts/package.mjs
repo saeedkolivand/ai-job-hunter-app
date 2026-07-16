@@ -36,6 +36,7 @@ const INJECTED_CLASSIC_SCRIPTS = [
   'capture.js',
   'capture-questions.js',
   'answer-fill.js',
+  'submit-watch.js',
 ];
 const IMPORT_EXPORT_TOKEN_RE = /\b(?:import|export)\b/;
 // A minifier can emit `import`/`export` mid-line (e.g. `...;import{x}from"y";...`),

@@ -33,6 +33,7 @@ import {
   type ExtensionAssistChunkPayload,
   type ExtensionAuthOkPayload,
   type ExtensionAuthPayload,
+  type ExtensionAutotrackResult,
   type ExtensionChallengePayload,
   type ExtensionEnvelope,
   type ExtensionHelloPayload,
@@ -67,6 +68,7 @@ export {
   type ExtensionAssistChunkPayload,
   type ExtensionAuthOkPayload,
   type ExtensionAuthPayload,
+  type ExtensionAutotrackResult,
   type ExtensionChallengePayload,
   type ExtensionEnvelope,
   type ExtensionHelloPayload,
@@ -101,6 +103,8 @@ export const ExtensionMessageTypeSchema = z.enum([
   EXTENSION_MESSAGE_TYPES.appliedResult,
   EXTENSION_MESSAGE_TYPES.statusUpdate,
   EXTENSION_MESSAGE_TYPES.statusResult,
+  EXTENSION_MESSAGE_TYPES.autotrackCheck,
+  EXTENSION_MESSAGE_TYPES.autotrackResult,
   EXTENSION_MESSAGE_TYPES.answersSave,
   EXTENSION_MESSAGE_TYPES.answersResult,
   EXTENSION_MESSAGE_TYPES.answersSuggest,
@@ -216,7 +220,21 @@ export const ExtensionAppliedCheckResultSchema = z.object({
 export const ExtensionStatusUpdateRequestSchema = z.object({
   url: z.string().min(1),
   to: z.literal('applied'),
+  // Additive/optional: marks an AUTOMATED write from the gesture submit-watcher
+  // (Task #22). The desktop honors it only when the auto-track opt-in is on;
+  // absent/false is the ordinary user-clicked "Mark as applied".
+  auto: z.boolean().optional(),
 }) satisfies z.ZodType<ExtensionStatusUpdateRequest>;
+
+/**
+ * `autotrack.result` payload — the desktop-enforced auto-track opt-in state
+ * (Task #22). Mirrors {@link ExtensionAutotrackResult}. Read by the extension
+ * before arming the gesture submit-watcher; a malformed reply is treated as
+ * `false` (OFF) client-side.
+ */
+export const ExtensionAutotrackResultSchema = z.object({
+  enabled: z.boolean(),
+}) satisfies z.ZodType<ExtensionAutotrackResult>;
 
 /**
  * `status.update` payload. Mirrors {@link ExtensionStatusUpdateResult} — a

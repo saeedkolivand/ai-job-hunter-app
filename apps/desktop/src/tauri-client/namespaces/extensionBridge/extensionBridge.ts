@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   ExtensionAiAssistSetting,
   ExtensionAutofillSetting,
+  ExtensionAutoTrackSetting,
   ExtensionBridgeStatus,
   ExtensionBridgeTokenResult,
 } from '@ajh/shared';
@@ -16,4 +17,7 @@ export const extensionBridge = {
   aiAssistEnabled: () => invoke<ExtensionAiAssistSetting>('extension_bridge_ai_assist_enabled'),
   setAiAssistEnabled: (enabled: boolean) =>
     invoke<ExtensionAiAssistSetting>('extension_bridge_set_ai_assist_enabled', { enabled }),
+  autoTrackEnabled: () => invoke<ExtensionAutoTrackSetting>('extension_bridge_auto_track_enabled'),
+  setAutoTrackEnabled: (enabled: boolean) =>
+    invoke<ExtensionAutoTrackSetting>('extension_bridge_set_auto_track_enabled', { enabled }),
 };
