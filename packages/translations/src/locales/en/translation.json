@@ -815,7 +815,7 @@
         "disconnectFailed": "Could not disconnect.",
         "watch": {
           "label": "Watch for confirmation emails",
-          "description": "Saves your preference for the automatic inbox check arriving in a future update. Until then, use Check now to test the connection."
+          "description": "Runs an automatic inbox check about every 15 minutes. A match creates a notification for you to confirm — nothing is ever marked applied on its own."
         },
         "toggleFailed": "Could not update the email-tracking setting.",
         "lastCheck": "Last checked {{value}}",
@@ -823,7 +823,8 @@
         "checkNow": "Check now",
         "checking": "Checking…",
         "checkNowFailed": "Could not reach the mailbox. Check your app password and try again.",
-        "disclosure": "An app password grants full access to your Gmail account — not just read-only — so it's stored only in your OS keychain, never in this app's database. Any mailbox check happens locally: email content never leaves this device and is never sent to any AI provider. Nothing is ever written to your applications automatically — a match always shows up as a notification for you to confirm. Automatic inbox checks are coming in a future update; until then, Check now only re-tests this connection."
+        "checkNowRateLimited": "Checked moments ago — try again in a minute.",
+        "disclosure": "An app password grants full access to your Gmail account — not just read-only — so it's stored only in your OS keychain, never in this app's database. Every check, automatic or via Check now, happens locally: it scans your inbox for likely application-confirmation emails, and the email content never leaves this device or reaches any AI provider. A match only ever creates a notification for you to confirm — nothing is ever marked applied automatically."
       },
       "connectedViaBrowser": "{{board}} connected via browser extension",
       "boards": {

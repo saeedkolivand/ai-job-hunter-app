@@ -15,6 +15,19 @@ import {
 
 const GOOGLE_APP_PASSWORD_URL = 'https://myaccount.google.com/apppasswords';
 
+// `checkNow` rejects with this EXACT string when the backend's own
+// `MIN_CHECK_NOW_GAP_MS` guard refuses a too-recent re-check
+// (`AppError::RateLimited` in `commands/email_watch.rs::email_watch_check_now`
+// — `AppError` serializes as a plain string over IPC, so string-matching is
+// the only discriminator available; a rename there must be mirrored here).
+const CHECK_NOW_RATE_LIMIT_MESSAGE = 'a check already ran recently — try again in a moment';
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  return '';
+}
+
 function Spinner() {
   return (
     <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
@@ -22,11 +35,13 @@ function Spinner() {
 }
 
 /**
- * Email-confirmation watching (Task #23, auto-track Layer C) — PR A: connect
- * a Gmail app password, toggle the standing "watch" opt-in, and re-check the
- * connection on demand. No poller yet (PR B) — the enabled switch only saves
- * the preference the future automatic inbox check will read; "Check now" is
- * honest today (it re-validates the IMAP login, nothing more).
+ * Email-confirmation watching (Task #23, auto-track Layer C) — connect a
+ * Gmail app password, toggle the standing "watch" opt-in, and re-check the
+ * connection on demand. Once connected, `enabled` governs a backend-owned
+ * ~15-minute background poller (PR B); "Check now" runs that SAME
+ * fetch+parse+match+notify pass immediately, rate-limited server-side to one
+ * per 60s. A match never auto-writes — it only produces a Notification
+ * Center card the user confirms themselves.
  */
 export function EmailWatchSection() {
   const { t } = useTranslation();
@@ -77,8 +92,17 @@ export function EmailWatchSection() {
   const handleCheckNow = async () => {
     try {
       await checkNow.mutateAsync();
-    } catch {
-      notify.error({ message: t('settings.accounts.emailWatch.checkNowFailed') });
+    } catch (err) {
+      // The 60s server-side rate-limit guard gets its own friendly copy,
+      // never the raw error, for either shape here.
+      const isRateLimited = errorMessage(err) === CHECK_NOW_RATE_LIMIT_MESSAGE;
+      notify.error({
+        message: t(
+          isRateLimited
+            ? 'settings.accounts.emailWatch.checkNowRateLimited'
+            : 'settings.accounts.emailWatch.checkNowFailed'
+        ),
+      });
     }
   };
 
