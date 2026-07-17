@@ -19,15 +19,19 @@
 //! TLS stack `net/http.rs` already depends on for `reqwest` — not a second TLS
 //! stack, just a second consumer of the one already in the tree.
 //!
-//! **PR A** exposes exactly the seam the connect/check-now commands need:
-//! [`validate_connection`] — TLS connect, `LOGIN`, `SELECT INBOX`, then log
-//! out. It proves a host/address/app-password combination actually works
-//! before anything is persisted, and is called again (unchanged) by
-//! `email_watch_check_now` to re-validate an existing connection. PR B extends
-//! this file with `UID SEARCH SINCE` + header/body fetch for the poller — the
-//! connect/select step here stays as-is; the sync `imap` crate has no async
-//! API, so a persistent session can't be held across ticks anyway (PR B opens
-//! a fresh connection per tick, same as this function does).
+//! [`validate_connection`] — TLS connect, `LOGIN`, `EXAMINE INBOX` (read-only
+//! — see [`login_and_select`]), then log out — proves a host/address/
+//! app-password combination actually works before anything is persisted
+//! (`email_watch_connect`).
+//!
+//! **PR B** adds the read path the poller needs, sharing the same
+//! connect/login/select prefix ([`login_and_select`]): [`fetch_headers_since`]
+//! (`UID SEARCH SINCE <date>` + a header-only `UID FETCH`, every candidate
+//! above the watermark) and [`fetch_bodies`] (a second, header+body `UID
+//! FETCH`, called ONLY for fingerprint-matched uids — see
+//! [`crate::email_watch::poller`]). The sync `imap` crate has no async API,
+//! so a persistent session can't be held across ticks anyway — every function
+//! here opens a fresh connection and logs out before returning.
 //!
 //! **Blocking**: every call here is synchronous — callers MUST run it inside
 //! `tokio::task::spawn_blocking`, never directly on an async worker.
@@ -51,16 +55,29 @@ pub const DEFAULT_IMAP_PORT: u16 = 993;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Read/write timeout applied to the socket AFTER it connects (covers TLS
-/// handshake, greeting, `LOGIN`, `SELECT`) — bounds a server that ACCEPTS the
+/// handshake, greeting, `LOGIN`, `EXAMINE`) — bounds a server that ACCEPTS the
 /// connection but then never answers (a slow-loris-style stall), which
 /// `CONNECT_TIMEOUT` alone does not cover.
 const IO_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// TLS-connect to `host:port` (with [`CONNECT_TIMEOUT`]/[`IO_TIMEOUT`]),
-/// `LOGIN` with `address`/`app_password`, and `SELECT INBOX` to prove the
-/// mailbox is reachable — then best-effort log out. Returns `Ok(())` only if
-/// every step succeeds; the caller must not persist the account/credential on
-/// `Err`.
+/// A logged-in, `INBOX`-opened session over the timeout-bounded TLS socket.
+type ImapSession = imap::Session<native_tls::TlsStream<TcpStream>>;
+
+/// TLS-connect (with [`CONNECT_TIMEOUT`]/[`IO_TIMEOUT`]), `LOGIN`, and open
+/// `INBOX` via `EXAMINE` (NOT `SELECT`) — the shared prefix every connector
+/// entry point in this file needs (connect-time validation, and PR B's
+/// header/body fetches).
+///
+/// `EXAMINE` is `SELECT`'s read-only twin (same `Mailbox` response, including
+/// `uid_validity`) — every fetch in this module already uses `BODY.PEEK[...]`
+/// (never sets `\Seen`), so this is belt-and-suspenders: the SERVER itself
+/// now refuses any write (`STORE`/`EXPUNGE`/...) on this session, not just
+/// this crate's own discipline never issuing one.
+///
+/// On an EXAMINE failure the session is best-effort logged out before
+/// returning `Err` (a logout failure must never mask the real error); on a
+/// LOGIN failure there is no session to log out. Callers own logging out the
+/// returned session on their own success/further-error paths.
 ///
 /// Blocking (the `imap` crate has no async API) — call only from
 /// `spawn_blocking`.
@@ -70,12 +87,12 @@ const IO_TIMEOUT: Duration = Duration::from_secs(30);
 /// library error's `Display`/`Debug` text, which can echo server-controlled
 /// content (some IMAP servers echo the attempted username/address back into a
 /// `NO`/`BAD` response's message).
-pub fn validate_connection(
+fn login_and_select(
     host: &str,
     port: u16,
     address: &str,
     app_password: &str,
-) -> AppResult<()> {
+) -> AppResult<(ImapSession, imap::types::Mailbox)> {
     let client = connect_with_timeout(host, port)?;
 
     let mut session = client
@@ -90,19 +107,283 @@ pub fn validate_connection(
             )
         })?;
 
-    let select_result = session.select("INBOX").map(|_| ()).map_err(|e| {
+    match session.examine("INBOX").map_err(|e| {
         log::warn!(
-            "[email_watch] IMAP SELECT INBOX against {host}:{port} failed: {}",
+            "[email_watch] IMAP EXAMINE INBOX against {host}:{port} failed: {}",
             error_kind(&e)
         );
         AppError::Provider("could not open the mailbox inbox".to_string())
-    });
+    }) {
+        Ok(mailbox) => Ok((session, mailbox)),
+        Err(e) => {
+            let _ = session.logout();
+            Err(e)
+        }
+    }
+}
 
-    // Best-effort logout regardless of the SELECT outcome — a logout failure
-    // must never mask (or be conflated with) the real result above.
+/// `LOGIN` + `EXAMINE INBOX` (read-only), then best-effort log out. Returns
+/// `Ok(())` only if every step succeeds; the caller must not persist the
+/// account/credential on `Err`. See [`login_and_select`] for the
+/// blocking/privacy contract.
+pub fn validate_connection(
+    host: &str,
+    port: u16,
+    address: &str,
+    app_password: &str,
+) -> AppResult<()> {
+    let (mut session, _mailbox) = login_and_select(host, port, address, app_password)?;
     let _ = session.logout();
+    Ok(())
+}
 
-    select_result
+/// One candidate message's raw header bytes, as returned by
+/// [`fetch_headers_since`]. RFC2047 decoding + field extraction happens in
+/// [`crate::email_watch::parser`], never here — this module stays a thin
+/// transport.
+#[derive(Debug)]
+pub struct HeaderCandidate {
+    pub uid: u32,
+    /// Raw `HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)` bytes for this
+    /// message (still RFC2047-encoded where applicable).
+    pub raw_header: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub struct HeaderFetchResult {
+    /// The mailbox's current `UIDVALIDITY` (from `EXAMINE`). The caller
+    /// compares this against the previously stored value — see
+    /// [`crate::email_watch::poller`] — since this connector has no
+    /// visibility into the store's prior watermark.
+    pub uidvalidity: u32,
+    pub headers: Vec<HeaderCandidate>,
+}
+
+/// How many days back `SINCE` looks, on every tick (not just the first) —
+/// always applied, even on a watermark-bounded search, as a defense-in-depth
+/// bound (and the only bound at all when there's no trustworthy watermark
+/// yet).
+pub const LOOKBACK_DAYS: i64 = 30;
+
+/// Build the `UID SEARCH` query string. When the LIVE `uidvalidity` (just
+/// read via this tick's own `EXAMINE`) matches `stored_uidvalidity` AND a
+/// `stored_last_uid` watermark exists, the search is ALSO bounded
+/// server-side to `UID <last_uid+1>:*` (RFC 3501 §6.4.4 — search keys are
+/// implicitly ANDed) — this is the common case and the whole point: without
+/// it, every tick re-fetches headers for the entire [`LOOKBACK_DAYS`]
+/// window, not just what's new since the watermark. Falls back to the
+/// unbounded `SINCE`-only form when there's no watermark yet, OR when the
+/// live/stored `uidvalidity` disagree — a UID bound built from a STALE
+/// watermark would be meaningless (or actively wrong) against a renumbered
+/// mailbox, so this only ever bounds using a watermark just confirmed fresh
+/// against THIS tick's own live read (never a cached/older comparison).
+///
+/// Pure/network-free so the query-construction decision itself is directly
+/// unit-testable.
+fn build_search_query(
+    since: chrono::NaiveDate,
+    uidvalidity_matches_stored: bool,
+    stored_last_uid: Option<u32>,
+) -> String {
+    let since_str = since.format("%d-%b-%Y");
+    match (uidvalidity_matches_stored, stored_last_uid) {
+        (true, Some(last_uid)) => format!("UID {}:* SINCE {since_str}", last_uid.saturating_add(1)),
+        _ => format!("SINCE {since_str}"),
+    }
+}
+
+/// `UID SEARCH` (watermark-bounded when trustworthy — see
+/// [`build_search_query`]) on `INBOX`, then `UID FETCH` ONLY the header
+/// fields the parser/matcher need (From/Subject/Date/Message-ID) — never the
+/// body (see [`fetch_bodies`], called only for fingerprint-matched
+/// candidates). Every fetch uses `BODY.PEEK[...]`, which never sets `\Seen`
+/// (ADR-0013's read-only guarantee — no `APPEND`/`COPY`/`STORE` anywhere in
+/// this module).
+///
+/// `stored_uidvalidity`/`stored_last_uid` are the caller's persisted values —
+/// passed through so the bound can be built from a comparison against THIS
+/// call's own live `EXAMINE`, never a value the caller compared earlier
+/// (which could be stale by the time this call actually runs). The caller
+/// (`crate::email_watch::poller`) still independently re-filters the
+/// returned headers against its own effective watermark as a defense-in-depth
+/// safety net — this function narrowing the SERVER-side fetch is an
+/// optimization, not the only correctness gate.
+pub fn fetch_headers_since(
+    host: &str,
+    port: u16,
+    address: &str,
+    app_password: &str,
+    since: chrono::NaiveDate,
+    stored_uidvalidity: Option<u32>,
+    stored_last_uid: Option<u32>,
+) -> AppResult<HeaderFetchResult> {
+    let (mut session, mailbox) = login_and_select(host, port, address, app_password)?;
+    let result = fetch_headers_inner(
+        &mut session,
+        host,
+        port,
+        &mailbox,
+        since,
+        stored_uidvalidity,
+        stored_last_uid,
+    );
+    let _ = session.logout();
+    result
+}
+
+fn fetch_headers_inner(
+    session: &mut ImapSession,
+    host: &str,
+    port: u16,
+    mailbox: &imap::types::Mailbox,
+    since: chrono::NaiveDate,
+    stored_uidvalidity: Option<u32>,
+    stored_last_uid: Option<u32>,
+) -> AppResult<HeaderFetchResult> {
+    let uidvalidity = mailbox.uid_validity.ok_or_else(|| {
+        log::warn!("[email_watch] EXAMINE INBOX on {host}:{port} returned no UIDVALIDITY");
+        AppError::Provider("mailbox does not report a UID validity value".to_string())
+    })?;
+
+    let uidvalidity_matches_stored = stored_uidvalidity == Some(uidvalidity);
+    let query = build_search_query(since, uidvalidity_matches_stored, stored_last_uid);
+    let uids = session.uid_search(&query).map_err(|e| {
+        log::warn!(
+            "[email_watch] UID SEARCH against {host}:{port} failed: {}",
+            error_kind(&e)
+        );
+        AppError::Provider("could not search the mailbox".to_string())
+    })?;
+    if uids.is_empty() {
+        return Ok(HeaderFetchResult {
+            uidvalidity,
+            headers: Vec::new(),
+        });
+    }
+
+    let mut sorted: Vec<u32> = uids.into_iter().collect();
+    sorted.sort_unstable();
+    let seq = uid_sequence_set(&sorted);
+    let fetches = session
+        .uid_fetch(
+            &seq,
+            "(UID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])",
+        )
+        .map_err(|e| {
+            log::warn!(
+                "[email_watch] UID FETCH (headers) against {host}:{port} failed: {}",
+                error_kind(&e)
+            );
+            AppError::Provider("could not read mailbox messages".to_string())
+        })?;
+
+    let headers = fetches
+        .iter()
+        .filter_map(|f| {
+            let uid = f.uid?;
+            let raw = f.header()?;
+            Some(HeaderCandidate {
+                uid,
+                raw_header: raw.to_vec(),
+            })
+        })
+        .collect();
+
+    Ok(HeaderFetchResult {
+        uidvalidity,
+        headers,
+    })
+}
+
+/// Hard cap on raw message bytes fetched per candidate body — bounded at the
+/// PROTOCOL level via a partial-fetch octet range (`<0.N>`), not merely
+/// truncated in-process after the whole message is already resident in
+/// memory. RFC 3501 §6.4.5 (and this crate's own `validate_str_noquote` doc
+/// comment, which quotes the grammar verbatim) both confirm `"BODY.PEEK"
+/// section ["<" number "." nz-number ">"]` is valid FETCH syntax — so a
+/// message with large attachments never has more than this many bytes
+/// actually transferred or held in memory in the first place, for up to
+/// `MAX_HEADERS_PER_TICK` candidates per tick. `email_watch::poller` keeps
+/// its OWN post-fetch cap too (defense-in-depth against a non-compliant
+/// server that ignores the partial-fetch hint and returns the whole message
+/// anyway) — this constant is the single source of truth both layers use.
+pub const MAX_BODY_BYTES: usize = 200_000;
+
+/// The `UID FETCH` item spec for a body fetch — ALWAYS the partial-octet
+/// form (`BODY.PEEK[]<0.MAX_BODY_BYTES>`), never a bare `BODY.PEEK[]`.
+/// Pure/network-free, factored out so the exact wire spec — the thing that
+/// actually bounds memory, not just the post-fetch truncation — is directly
+/// unit-testable.
+fn body_fetch_item_spec() -> String {
+    format!("(UID BODY.PEEK[]<0.{MAX_BODY_BYTES}>)")
+}
+
+/// Fetch the raw message (header + body, read-only, capped to
+/// [`MAX_BODY_BYTES`] — see [`body_fetch_item_spec`]) for exactly `uids` —
+/// called ONLY for fingerprint-matched candidates (the "minimize reads"
+/// design: never fetched for every candidate, only ones
+/// [`crate::email_watch::parser::fingerprint`] already flagged). An empty
+/// `uids` short-circuits without a network round trip.
+///
+/// This opens a SECOND connection (a fresh `EXAMINE`) rather than reusing
+/// [`fetch_headers_since`]'s session, so it does NOT re-check `UIDVALIDITY`
+/// against the value that fetch already saw — a rename/renumbering landing
+/// in the few-hundred-ms gap between the two calls is vanishingly rare, and
+/// self-corrects on the very next tick (a mismatched watermark is caught
+/// there, not silently trusted forever).
+pub fn fetch_bodies(
+    host: &str,
+    port: u16,
+    address: &str,
+    app_password: &str,
+    uids: &[u32],
+) -> AppResult<Vec<(u32, Vec<u8>)>> {
+    if uids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (mut session, _mailbox) = login_and_select(host, port, address, app_password)?;
+    let result = fetch_bodies_inner(&mut session, host, port, uids);
+    let _ = session.logout();
+    result
+}
+
+fn fetch_bodies_inner(
+    session: &mut ImapSession,
+    host: &str,
+    port: u16,
+    uids: &[u32],
+) -> AppResult<Vec<(u32, Vec<u8>)>> {
+    let mut sorted = uids.to_vec();
+    sorted.sort_unstable();
+    let seq = uid_sequence_set(&sorted);
+    let fetches = session
+        .uid_fetch(&seq, body_fetch_item_spec())
+        .map_err(|e| {
+            log::warn!(
+                "[email_watch] UID FETCH (body) against {host}:{port} failed: {}",
+                error_kind(&e)
+            );
+            AppError::Provider("could not read mailbox messages".to_string())
+        })?;
+
+    Ok(fetches
+        .iter()
+        .filter_map(|f| {
+            let uid = f.uid?;
+            let raw = f.body()?;
+            Some((uid, raw.to_vec()))
+        })
+        .collect())
+}
+
+/// Build an IMAP sequence-set string from already-sorted uids (e.g.
+/// `"101,102,105"`). Pure + unit-testable without a network round trip.
+fn uid_sequence_set(sorted_uids: &[u32]) -> String {
+    sorted_uids
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// Manual TLS-connect with both a connect timeout and a read/write timeout on
@@ -142,17 +423,27 @@ fn connect_with_timeout(
                 continue;
             }
         };
+        // A failed `set_*_timeout` must drop this socket and move on to the
+        // next resolved address — NOT log-and-proceed — so no socket ever
+        // enters TLS/LOGIN without an I/O deadline (deferred LOW from the
+        // PR A review; the pre-fix behavior let a `set_read_timeout`/
+        // `set_write_timeout` failure fall through to `connector.connect`
+        // below with no read/write timeout applied at all).
         if let Err(e) = tcp.set_read_timeout(Some(IO_TIMEOUT)) {
             log::warn!(
                 "[email_watch] set_read_timeout for {host}:{port} failed: {}",
                 e.kind()
             );
+            last_err = AppError::Network("could not connect to the mail server".to_string());
+            continue;
         }
         if let Err(e) = tcp.set_write_timeout(Some(IO_TIMEOUT)) {
             log::warn!(
                 "[email_watch] set_write_timeout for {host}:{port} failed: {}",
                 e.kind()
             );
+            last_err = AppError::Network("could not connect to the mail server".to_string());
+            continue;
         }
 
         let tls = match connector.connect(host, tcp) {
@@ -206,9 +497,87 @@ fn error_kind(e: &imap::Error) -> &'static str {
     }
 }
 
-// No automated test here: this function's every branch is a real network
-// round-trip against an IMAP server (TLS handshake, LOGIN, SELECT) — there is
-// no fake IMAP server in this crate's test harness, and standing one up is
-// out of scope for PR A (mirrors the project's own documented gap: IMAP
-// integration is manual smoke, tracked for PR B alongside the poller/parser).
-// The store-level logic this wraps (EmailWatchStore) is covered in `tests.rs`.
+// No automated test for the network-round-trip functions above (connect,
+// login_and_select, fetch_headers_since, fetch_bodies): every branch is a
+// real TLS/LOGIN/EXAMINE/FETCH exchange against an IMAP server, and there is
+// no fake IMAP harness in this crate — documented gap, mirrors the project's
+// own "IMAP integration is manual smoke" note. The pure, network-free helper
+// below (and EmailWatchStore's store-level logic in `tests.rs`) IS covered.
+#[cfg(test)]
+mod tests {
+    use super::{body_fetch_item_spec, build_search_query, uid_sequence_set, MAX_BODY_BYTES};
+    use chrono::NaiveDate;
+
+    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    // ── body_fetch_item_spec (/review MEDIUM: protocol-level body bound) ────
+
+    #[test]
+    fn body_fetch_item_spec_is_bounded_by_a_partial_octet_range() {
+        // Pins the EXACT wire spec — a bare `BODY.PEEK[]` regression (fetching
+        // an unbounded whole message again) would fail this, not just a
+        // "contains a number somewhere" check.
+        assert_eq!(
+            body_fetch_item_spec(),
+            format!("(UID BODY.PEEK[]<0.{MAX_BODY_BYTES}>)")
+        );
+        assert_eq!(body_fetch_item_spec(), "(UID BODY.PEEK[]<0.200000>)");
+    }
+
+    // ── build_search_query (/review MEDIUM: watermark-scoped SEARCH) ────────
+
+    #[test]
+    fn build_search_query_bounds_by_uid_when_uidvalidity_matches_and_a_watermark_exists() {
+        assert_eq!(
+            build_search_query(date(2026, 7, 16), true, Some(100)),
+            "UID 101:* SINCE 16-Jul-2026"
+        );
+    }
+
+    #[test]
+    fn build_search_query_is_unbounded_without_a_stored_watermark() {
+        // No watermark yet (first-ever connect) — nothing to bound by, even
+        // though uidvalidity trivially "matches" (both `None`/absent).
+        assert_eq!(
+            build_search_query(date(2026, 7, 16), true, None),
+            "SINCE 16-Jul-2026"
+        );
+    }
+
+    #[test]
+    fn build_search_query_is_unbounded_when_uidvalidity_does_not_match_stored() {
+        // A stale watermark from a DIFFERENT uidvalidity generation must
+        // never be used to bound the search, even if one is stored.
+        assert_eq!(
+            build_search_query(date(2026, 7, 16), false, Some(100)),
+            "SINCE 16-Jul-2026"
+        );
+    }
+
+    #[test]
+    fn build_search_query_never_overflows_at_the_uid_ceiling() {
+        assert_eq!(
+            build_search_query(date(2026, 7, 16), true, Some(u32::MAX)),
+            format!("UID {}:* SINCE 16-Jul-2026", u32::MAX)
+        );
+    }
+
+    #[test]
+    fn uid_sequence_set_joins_sorted_uids_with_commas() {
+        assert_eq!(uid_sequence_set(&[101, 102, 105]), "101,102,105");
+    }
+
+    #[test]
+    fn uid_sequence_set_of_a_single_uid_has_no_comma() {
+        assert_eq!(uid_sequence_set(&[42]), "42");
+    }
+
+    #[test]
+    fn uid_sequence_set_of_empty_is_empty_string() {
+        // Callers (`fetch_bodies`) short-circuit before this is ever built
+        // with an empty slice, but the pure fn itself stays total.
+        assert_eq!(uid_sequence_set(&[]), "");
+    }
+}

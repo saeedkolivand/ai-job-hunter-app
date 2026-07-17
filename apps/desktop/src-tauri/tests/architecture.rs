@@ -58,14 +58,15 @@ const L1: &[&str] = &[
     // Backend-owned active AI provider store (task #16): the single source of
     // truth for generation routing. A per-domain SQLite store, Tauri-free.
     "ai_config",
-    // Email-confirmation watching (task #23, PR A): the account/dedupe SQLite
-    // store + the IMAP connector. Tauri-free — non-test store code imports
-    // only db/error (L0) in PR A (the command layer, L3, is the one that
-    // reaches credentials). PR B's poller will need
-    // `commands::notifications::push_and_notify` (L3), the same upward
-    // shell-reach `autopilot_scheduler` (L2) already has for
-    // `commands::autopilot::autopilot_run` — that R7 exception (or an L2
-    // relocation) is a PR B decision, not pre-solved here.
+    // Email-confirmation watching (task #23): the account/dedupe SQLite store
+    // + the IMAP connector + the pure parser/matcher/poller (PR B). Stays
+    // Tauri-free — non-test code here imports only db/error (L0) + itself
+    // (the command layer, L3, is the one that reaches credentials). PR B's
+    // decision on the poller's own upward reach into
+    // `commands::notifications::push_and_notify`: a SEPARATE L2 module
+    // (`email_watch_scheduler`, mirroring the `autopilot`/`autopilot_scheduler`
+    // split) owns that exception — see its R7_ALLOW entry below — rather than
+    // growing an R7_ALLOW on this L1 store.
     "email_watch",
 ];
 const L2: &[&str] = &[
@@ -76,6 +77,12 @@ const L2: &[&str] = &[
     "autopilot_scheduler",
     "autopilot_helpers",
     "recommend",
+    // Email-watch background poller (task #23, PR B) — mirrors the
+    // `autopilot`/`autopilot_scheduler` split: the L1 `email_watch` store/
+    // connector/parser/matcher/poller stay Tauri-free, and this is the one
+    // module in the family that spawns from setup and reaches up into
+    // `commands::notifications::push_and_notify`.
+    "email_watch_scheduler",
 ];
 const L3: &[&str] = &[
     "commands",
@@ -279,6 +286,10 @@ fn r1_tauri_command_only_in_command_surfaces() {
 const R2_ALLOW: &[&str] = &[
     "autopilot_helpers/mod.rs",
     "autopilot_scheduler.rs",
+    // Email-watch scheduler (L2, task #23 PR B) — needs `tauri::AppHandle`/
+    // `async_runtime::spawn` to run its own background loop, exactly like
+    // `autopilot_scheduler.rs` above.
+    "email_watch_scheduler.rs",
     "cover_letter/research/mod.rs",
     "documents/mod.rs",
     "pipeline/mod.rs",
@@ -468,6 +479,16 @@ const R7_ALLOW: &[(&str, &str)] = &[
     // already reach up for). No runtime/layer coupling. TODO(arch): host the
     // cross-language consts in an L0 module so this exception clears.
     ("scraping", "ipc_contracts"),
+    // Email-watch scheduler (L2, task #23 PR B) invokes
+    // `commands::notifications::push_and_notify` to deliver a match — the
+    // same upward shell-reach `autopilot_scheduler` has for
+    // `commands::autopilot::autopilot_run`, deliberately kept OFF the L1
+    // `email_watch` store (see that module's L1 comment above).
+    ("email_watch_scheduler", "commands"),
+    // Same call site also builds the `NewNotification`/`NotificationRoute`
+    // payload types `push_and_notify` takes — both live in the L3
+    // `notifications` module (the persisted Notification Center store).
+    ("email_watch_scheduler", "notifications"),
 ];
 
 #[test]
