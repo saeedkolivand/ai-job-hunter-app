@@ -2311,6 +2311,7 @@ fn resolve_answers_suggest_refuses_when_opt_in_off() {
     let err = super::answers_suggest::resolve_answers_suggest(
         &store,
         false,
+        None,
         &json!({ "questions": ["Why this role?"] }),
     )
     .unwrap_err();
@@ -2321,9 +2322,13 @@ fn resolve_answers_suggest_refuses_when_opt_in_off() {
 #[test]
 fn resolve_answers_suggest_returns_empty_list_for_no_questions() {
     let (_dir, store) = open_store();
-    let out =
-        super::answers_suggest::resolve_answers_suggest(&store, true, &json!({ "questions": [] }))
-            .unwrap();
+    let out = super::answers_suggest::resolve_answers_suggest(
+        &store,
+        true,
+        None,
+        &json!({ "questions": [] }),
+    )
+    .unwrap();
     assert!(out.is_empty());
 }
 
@@ -2368,6 +2373,7 @@ fn resolve_answers_suggest_matches_across_multiple_applications() {
     let out = super::answers_suggest::resolve_answers_suggest(
         &store,
         true,
+        None,
         &json!({ "questions": ["What is your notice period?"] }),
     )
     .unwrap();
@@ -2402,12 +2408,157 @@ fn resolve_answers_suggest_never_mutates_the_store() {
     let _ = super::answers_suggest::resolve_answers_suggest(
         &store,
         true,
+        None,
         &json!({ "questions": ["Why do you want to work here?"] }),
     )
     .unwrap();
     let after = serde_json::to_value(store.list()).unwrap();
 
     assert_eq!(before, after, "answers.suggest must never mutate the store");
+}
+
+// ── Synthetic salary-expectation suggestion row (Task #30) ───────────────────
+
+/// A salary-shaped question with NO stored answer still gets a suggestion
+/// when a backend salary expectation is available — the synthetic row.
+#[test]
+fn resolve_answers_suggest_synthesizes_salary_row_when_no_stored_match() {
+    let (_dir, store) = open_store();
+    let out = super::answers_suggest::resolve_answers_suggest(
+        &store,
+        true,
+        Some("€75,000"),
+        &json!({ "questions": ["What are your salary expectations?"] }),
+    )
+    .unwrap();
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].answer, "€75,000");
+    assert_eq!(out[0].source_company.as_deref(), Some("Saved expectation"));
+    assert_eq!(out[0].score, 1.0);
+    assert!(out[0].salary);
+}
+
+/// Same synthetic fill for a German salary-shaped question — proves the
+/// synthetic path shares the same (now DACH-aware) `is_salary_question`.
+#[test]
+fn resolve_answers_suggest_synthesizes_salary_row_for_german_question() {
+    let (_dir, store) = open_store();
+    let out = super::answers_suggest::resolve_answers_suggest(
+        &store,
+        true,
+        Some("80.000 EUR"),
+        &json!({ "questions": ["Was ist Ihre Gehaltsvorstellung?"] }),
+    )
+    .unwrap();
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].answer, "80.000 EUR");
+    assert!(out[0].salary);
+}
+
+/// No backend salary expectation (renderer-only value not yet synced, or
+/// blank) → no synthetic row, and the salary question is simply absent from
+/// the reply (never an error).
+#[test]
+fn resolve_answers_suggest_no_synthetic_row_without_expectation() {
+    let (_dir, store) = open_store();
+    let out = super::answers_suggest::resolve_answers_suggest(
+        &store,
+        true,
+        None,
+        &json!({ "questions": ["What are your salary expectations?"] }),
+    )
+    .unwrap();
+    assert!(out.is_empty());
+
+    // A blank/whitespace-only expectation is treated the same as absent.
+    let out_blank = super::answers_suggest::resolve_answers_suggest(
+        &store,
+        true,
+        Some("   "),
+        &json!({ "questions": ["What are your salary expectations?"] }),
+    )
+    .unwrap();
+    assert!(out_blank.is_empty());
+}
+
+/// A REAL stored salary answer wins over the synthetic fill — the synthetic
+/// row only fills a gap `match_questions` left unanswered, it never competes
+/// with (or duplicates alongside) a genuine stored match for the SAME
+/// question.
+#[test]
+fn resolve_answers_suggest_stored_answer_wins_over_synthetic() {
+    let (_dir, store) = open_store();
+    let mut meta = app_meta("Acme", "Backend Engineer");
+    meta.answers = vec![ApplicationAnswer {
+        id: "a1".to_string(),
+        question: "What is your expected salary?".to_string(),
+        answer: "$120,000, negotiable.".to_string(),
+    }];
+    store
+        .upsert_for_origin(
+            "https://jobs.example.com/posting/salary-wins",
+            "linkedin",
+            &meta,
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    let out = super::answers_suggest::resolve_answers_suggest(
+        &store,
+        true,
+        Some("€75,000"),
+        &json!({ "questions": ["What is your expected salary?"] }),
+    )
+    .unwrap();
+    assert_eq!(
+        out.len(),
+        1,
+        "the stored answer must win — never a second, competing synthetic row"
+    );
+    assert_eq!(out[0].answer, "$120,000, negotiable.");
+    assert_eq!(out[0].source_company.as_deref(), Some("Acme"));
+}
+
+/// The synthetic row only fills questions the stored match left UNANSWERED —
+/// a non-salary question with its own stored match, plus a salary question
+/// with none, both come back (one real, one synthetic).
+#[test]
+fn resolve_answers_suggest_synthetic_only_fills_the_gap_alongside_a_real_match() {
+    let (_dir, store) = open_store();
+    let mut meta = app_meta("Acme", "Backend Engineer");
+    meta.answers = vec![ApplicationAnswer {
+        id: "a1".to_string(),
+        question: "Why do you want to work here?".to_string(),
+        answer: "Because I love building things.".to_string(),
+    }];
+    store
+        .upsert_for_origin(
+            "https://jobs.example.com/posting/salary-gap",
+            "linkedin",
+            &meta,
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    let out = super::answers_suggest::resolve_answers_suggest(
+        &store,
+        true,
+        Some("€75,000"),
+        &json!({
+            "questions": [
+                "Why do you want to work here?",
+                "What are your salary expectations?"
+            ]
+        }),
+    )
+    .unwrap();
+    assert_eq!(out.len(), 2);
+    assert!(out
+        .iter()
+        .any(|s| s.answer == "Because I love building things." && !s.salary));
+    assert!(out.iter().any(|s| s.answer == "€75,000" && s.salary));
 }
 
 /// `answers_suggest_reply` carries `ok:true` + the suggestions array.
@@ -2905,6 +3056,51 @@ fn match_questions_still_flags_how_much_will_i_be_paid_as_salary() {
     let out = match_questions(&["How much will I be paid?".to_string()], &candidates);
     assert_eq!(out.len(), 1);
     assert!(out[0].salary);
+}
+
+// ── German (DACH) salary keywords (Task #30) ──────────────────────────────────
+
+/// Each DACH salary-question shape is individually flagged Copy-only — one
+/// assertion per compound noun, mirroring the English keyword coverage above.
+#[test]
+fn match_questions_flags_german_salary_shapes() {
+    for question in [
+        "Wie hoch ist Ihr Gehalt?",
+        "Bitte geben Sie Ihre Gehaltsvorstellung an",
+        "Nennen Sie uns Ihre Gehaltsvorstellungen",
+        "Was ist Ihr Gehaltswunsch?",
+        "Ihr Bruttojahresgehalt?",
+        "Erwartetes Jahresgehalt",
+        "Gewünschte Vergütung",
+        "Ihre Salärvorstellung",
+    ] {
+        let candidates = vec![candidate(question, "80.000 EUR", "Acme", "Backend", 1_000)];
+        let out = match_questions(&[question.to_string()], &candidates);
+        assert_eq!(out.len(), 1, "expected a match for {question:?}");
+        assert!(out[0].salary, "{question:?} must be flagged salary");
+    }
+}
+
+/// Near-miss (decided + pinned, Task #30): "Gehaltsabrechnung hochladen"
+/// ("upload payslip") is a DIFFERENT compound word from every listed salary
+/// keyword — it must NEVER be flagged. Correct behavior: this question wants
+/// a file upload, not a stated expectation, so the synthetic salary-
+/// expectation fill (`resolve_answers_suggest`) must never target it either.
+#[test]
+fn match_questions_does_not_flag_gehaltsabrechnung_hochladen_as_salary() {
+    let candidates = vec![candidate(
+        "Gehaltsabrechnung hochladen",
+        "Erledigt.",
+        "Acme",
+        "Backend",
+        1_000,
+    )];
+    let out = match_questions(&["Gehaltsabrechnung hochladen".to_string()], &candidates);
+    assert_eq!(out.len(), 1);
+    assert!(
+        !out[0].salary,
+        "\"Gehaltsabrechnung\" (payslip) must not match \"gehalt\"-family keywords"
+    );
 }
 
 /// Pure property: the SAME inputs always produce the SAME output — no AI, no

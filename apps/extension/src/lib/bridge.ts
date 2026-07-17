@@ -103,6 +103,7 @@ type SuggestResolver = (result: ExtensionAnswersSuggestResult) => void;
 type MatchResolver = (result: ExtensionMatchLiveResult) => void;
 type AssistResolver = (result: ExtensionAnswerAssistResult) => void;
 type AutotrackResolver = (enabled: boolean) => void;
+type AutofillResolver = (enabled: boolean) => void;
 
 export type BridgePhase = 'searching' | 'connected' | 'app_not_running' | 'outdated' | 'bad_token';
 
@@ -276,6 +277,17 @@ function normalizeStatusUpdateResult(payload: unknown): ExtensionStatusUpdateRes
  *  malformed/absent shape degrades to `false` (OFF, the safe default), so a
  *  bad reply can never make the extension believe auto-track is on. */
 function readAutotrackEnabled(payload: unknown): boolean {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    (payload as Record<string, unknown>).enabled === true
+  );
+}
+
+/** Read the boolean `enabled` flag from an `autofill.result` payload (Task
+ *  #30) — mirrors `readAutotrackEnabled` exactly: any malformed/absent shape
+ *  degrades to `false` (OFF, the safe default). */
+function readAutofillEnabled(payload: unknown): boolean {
   return (
     typeof payload === 'object' &&
     payload !== null &&
@@ -647,6 +659,10 @@ export class BridgeClient {
    *  separate from {@link pending} for the same reason as {@link pendingProfile};
    *  resolves a plain boolean (never rejects — a failure degrades to OFF). */
   private readonly pendingAutotrack = new Map<string, AutotrackResolver>();
+  /** In-flight `autofill.check` resolvers, correlated by `reqId` (Task #30) —
+   *  mirrors {@link pendingAutotrack} exactly (never rejects — a failure
+   *  degrades to OFF). */
+  private readonly pendingAutofill = new Map<string, AutofillResolver>();
   /** In-flight `answer.assist` streaming-preview callbacks, correlated by
    *  `reqId` — registered by {@link answerAssist} for EVERY call (even with
    *  no caller-supplied `onChunk`), because a chunk's arrival also resets the
@@ -802,6 +818,7 @@ export class BridgeClient {
     this.pendingMatch.clear();
     this.pendingAssist.clear();
     this.pendingAutotrack.clear();
+    this.pendingAutofill.clear();
     this.assistChunkListeners.clear();
     this.transport?.close();
     this.transport = null;
@@ -1020,6 +1037,52 @@ export class BridgeClient {
           clearTimeout(timer);
           this.timers.delete(reqId);
           this.pendingAutotrack.delete(reqId);
+          resolve(false); // send failure → OFF
+        }
+      });
+    } catch {
+      return false; // connect failure → OFF
+    }
+  }
+
+  /**
+   * Read the desktop-enforced assisted-autofill opt-in (Task #30) — resolves
+   * `true` only when the desktop replies `{ enabled: true }`. Mirrors
+   * {@link autotrackEnabled} exactly: NEVER rejects — any failure (not
+   * connected, timeout, send error, a malformed reply) degrades to `false`
+   * (OFF, the safe default), because the caller (the popup's auto-suggest
+   * check) treats "unknown" exactly as "off" — never auto-run when we can't
+   * confirm the opt-in is on. The desktop still enforces the real gate on
+   * `answers.suggest` itself regardless of what this read returns.
+   */
+  async autofillEnabled(): Promise<boolean> {
+    try {
+      await this.ensureConnected();
+      if (this.phase !== 'connected' || !this.transport) return false;
+      const transport = this.transport;
+
+      const reqId = newReqId();
+      const envelope: ExtensionEnvelope = {
+        type: EXTENSION_MESSAGE_TYPES.autofillCheck,
+        reqId,
+        payload: null,
+      };
+
+      return await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => {
+          this.pendingAutofill.delete(reqId);
+          this.timers.delete(reqId);
+          resolve(false); // no reply in time → degrade to OFF
+        }, REQUEST_TIMEOUT_MS);
+        this.timers.set(reqId, timer);
+        this.pendingAutofill.set(reqId, resolve);
+
+        try {
+          transport.send(envelope);
+        } catch {
+          clearTimeout(timer);
+          this.timers.delete(reqId);
+          this.pendingAutofill.delete(reqId);
           resolve(false); // send failure → OFF
         }
       });
@@ -1612,6 +1675,16 @@ export class BridgeClient {
       return;
     }
 
+    // autofill.result → the assisted-autofill opt-in flag (separate map, Task #30).
+    if (env.type === EXTENSION_MESSAGE_TYPES.autofillResult) {
+      const resolveAutofill = this.pendingAutofill.get(reqId);
+      if (typeof resolveAutofill !== 'function') return;
+      this.pendingAutofill.delete(reqId);
+      this.clearTimer(reqId);
+      resolveAutofill(readAutofillEnabled(env.payload));
+      return;
+    }
+
     // answers.result → the "save my answers" outcome (separate map).
     if (env.type === EXTENSION_MESSAGE_TYPES.answersResult) {
       const resolveAnswers = this.pendingAnswers.get(reqId);
@@ -1746,6 +1819,11 @@ export class BridgeClient {
       if (timer) clearTimeout(timer);
       resolve(false); // a dropped connection → treat the opt-in as OFF (safe).
     }
+    for (const [reqId, resolve] of this.pendingAutofill.entries()) {
+      const timer = this.timers.get(reqId);
+      if (timer) clearTimeout(timer);
+      resolve(false); // a dropped connection → treat the opt-in as OFF (safe).
+    }
     this.pending.clear();
     this.pendingProfile.clear();
     this.pendingApplied.clear();
@@ -1755,6 +1833,7 @@ export class BridgeClient {
     this.pendingMatch.clear();
     this.pendingAssist.clear();
     this.pendingAutotrack.clear();
+    this.pendingAutofill.clear();
     // A dropped connection mid-stream never sends `assist.done` — this is
     // the "interrupted" case: no more chunks are coming, so retire every
     // listener now rather than leaving it to fire on a transport that no

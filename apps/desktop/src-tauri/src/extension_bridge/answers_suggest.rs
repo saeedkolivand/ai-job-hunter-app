@@ -79,6 +79,24 @@ const MIN_SCORE: f64 = 0.4;
 /// multi-token phrase ("day rate"/"hourly rate"/"pay rate") — because a bare
 /// "rate" would false-positive an unrelated "Rate your TypeScript skills"
 /// question.
+///
+/// **DACH (German) shapes** (Task #30) — the desktop's largest non-English
+/// user base. Each is its own token (German compounds nouns rather than
+/// phrases), so a bare `"gehalt"` does NOT catch `"gehaltsvorstellung"` etc. —
+/// every compound actually seen on DACH application forms is listed
+/// explicitly, same discipline as the English list not listing bare "rate".
+/// Umlauts need no ASCII-folded variant: `normalize_question` lowercases with
+/// `str::to_lowercase` (Unicode-aware — "Ü" → "ü") and the matcher-local
+/// [`tokenize_ordered`]/[`tokenize`] split on `!char::is_alphanumeric`, which
+/// (per Rust's Unicode-aware `char` methods) keeps "ü" IN the token rather
+/// than splitting on it — "vergütung" tokenizes to one token, matching this
+/// list's entry byte-for-byte. Not adding a "verguetung" ASCII-folded variant
+/// (YAGNI): no real DACH form has been seen spelling it that way, and Rust
+/// never needs it to match the umlaut form. A near-miss is deliberately left
+/// UNFLAGGED: "Gehaltsabrechnung hochladen" ("upload payslip") tokenizes to
+/// `{gehaltsabrechnung, hochladen}` — neither an exact-token match for any
+/// entry below — which is correct: it asks for a file upload, not a stated
+/// figure, so it must never receive the synthetic salary-expectation fill.
 const SALARY_KEYWORDS: &[&str] = &[
     "salary",
     "compensation",
@@ -95,6 +113,14 @@ const SALARY_KEYWORDS: &[&str] = &[
     "pay rate",
     "how much",
     "paid",
+    "gehalt",
+    "gehaltsvorstellung",
+    "gehaltsvorstellungen",
+    "gehaltswunsch",
+    "bruttojahresgehalt",
+    "jahresgehalt",
+    "vergütung",
+    "salärvorstellung",
 ];
 
 /// Clamp `s` to at most `max` bytes, cutting on a UTF-8 char boundary — same
@@ -325,14 +351,74 @@ fn parse_questions(payload: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Fixed source label for a synthetic salary suggestion — see
+/// [`append_salary_expectation_suggestions`]'s doc for why `sourceCompany`
+/// (not a new field) carries it.
+const SAVED_EXPECTATION_SOURCE: &str = "Saved expectation";
+
+/// After the real (stored-answer) matches, append one synthetic suggestion
+/// per remaining salary-shaped question — the backend-readable
+/// `job_preferences.salary_expectation` (Task #30) filling a gap NO stored
+/// `ApplicationAnswer` covers. **Stored answer wins**: a question already
+/// present in `existing` (by normalized text) is skipped here entirely —
+/// this only fills questions `match_questions` left unanswered, never a
+/// second, competing suggestion for the same question. Mutates `existing` in
+/// place and respects [`MAX_SUGGESTIONS`] jointly with what's already there.
+///
+/// Fields: `answer` is the saved expectation string VERBATIM (never
+/// reformatted); `source_company` carries the fixed
+/// [`SAVED_EXPECTATION_SOURCE`] label (reusing the existing "from your X
+/// application" wire field rather than adding a new one — see
+/// `buildSuggestionRow` on the popup side); `source_question` echoes the
+/// scanned question itself (there is no distinct stored question to name);
+/// `score: 1.0` (not matcher-derived — a direct, deliberate fill); `salary:
+/// true` always — copy-only forever, the same flag every stored salary match
+/// already forces.
+fn append_salary_expectation_suggestions(
+    existing: &mut Vec<Suggestion>,
+    questions: &[String],
+    expectation: &str,
+) {
+    let mut covered: HashSet<String> = existing
+        .iter()
+        .map(|s| normalize_question(&s.question))
+        .collect();
+    for q in questions {
+        if existing.len() >= MAX_SUGGESTIONS {
+            break;
+        }
+        let norm_q = normalize_question(q);
+        if norm_q.is_empty() || !covered.insert(norm_q.clone()) || !is_salary_question(&norm_q) {
+            continue;
+        }
+        existing.push(Suggestion {
+            question: q.clone(),
+            answer: expectation.to_string(),
+            source_company: Some(SAVED_EXPECTATION_SOURCE.to_string()),
+            source_title: None,
+            source_question: q.clone(),
+            score: 1.0,
+            salary: true,
+        });
+    }
+}
+
 /// Core `answers.suggest`: gate on the autofill opt-in (same fixed sentinel as
 /// `profile.get`/`answers.save` — see [`super::AUTOFILL_OFF_MESSAGE`]), then
 /// fuzzy-match the (clamped, capped) incoming `questions` against EVERY
 /// answer on EVERY stored Application via [`ApplicationStore::list`] — pure
 /// local Rust, no AI, no egress. Read-only: never writes.
+///
+/// `salary_expectation` is the backend-readable
+/// `job_preferences.salary_expectation` (Task #30, may be absent/blank — the
+/// renderer-only value most users have not synced yet). When present it
+/// appends a synthetic suggestion for each remaining salary-shaped question
+/// no stored answer already covers — see
+/// [`append_salary_expectation_suggestions`].
 pub(super) fn resolve_answers_suggest(
     store: &ApplicationStore,
     autofill_enabled: bool,
+    salary_expectation: Option<&str>,
     payload: &Value,
 ) -> AppResult<Vec<Suggestion>> {
     if !autofill_enabled {
@@ -362,7 +448,11 @@ pub(super) fn resolve_answers_suggest(
         })
         .collect();
 
-    Ok(match_questions(&questions, &candidates))
+    let mut suggestions = match_questions(&questions, &candidates);
+    if let Some(expectation) = salary_expectation.map(str::trim).filter(|s| !s.is_empty()) {
+        append_salary_expectation_suggestions(&mut suggestions, &questions, expectation);
+    }
+    Ok(suggestions)
 }
 
 /// Build the `answers.suggest` reply. Mirrors `answers_result_reply` — a
@@ -404,15 +494,28 @@ pub(super) fn answers_suggest_reply(req_id: &str, outcome: AppResult<Vec<Suggest
 
 /// Answer an authenticated `answers.suggest`: resolve against the local
 /// `ApplicationStore` (gated on the autofill opt-in) and return a
-/// ready-to-send `answers.suggest.result` reply.
+/// ready-to-send `answers.suggest.result` reply. The backend-readable salary
+/// expectation (Task #30) rides the SAME managed state fetch pattern as the
+/// opt-in — an absent `JobPreferencesStore` (start-up failure) just means no
+/// synthetic row, never an error.
 pub(super) fn handle_answers_suggest(app: &AppHandle, req_id: &str, payload: &Value) -> String {
     let enabled = app
         .try_state::<super::BridgeState>()
         .map(|s| s.autofill_enabled())
         .unwrap_or(false);
+    let salary_expectation = app
+        .try_state::<crate::job_preferences::JobPreferencesStore>()
+        .and_then(|s| s.get().salary_expectation);
     let outcome = app
         .try_state::<ApplicationStore>()
         .ok_or_else(|| AppError::Config("applications store unavailable".to_string()))
-        .and_then(|store| resolve_answers_suggest(store.inner(), enabled, payload));
+        .and_then(|store| {
+            resolve_answers_suggest(
+                store.inner(),
+                enabled,
+                salary_expectation.as_deref(),
+                payload,
+            )
+        });
     answers_suggest_reply(req_id, outcome)
 }

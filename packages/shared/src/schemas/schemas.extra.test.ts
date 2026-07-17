@@ -179,6 +179,15 @@ describe('JobPreferencesSchema', () => {
     expect(() => JobPreferencesSchema.parse({ countryCode: 'deu' })).toThrow();
     expect(() => JobPreferencesSchema.parse({ countryCode: '1a' })).toThrow();
   });
+
+  it('accepts a salaryExpectation string', () => {
+    expect(() => JobPreferencesSchema.parse({ salaryExpectation: '€75,000' })).not.toThrow();
+  });
+
+  it('accepts an object with no salaryExpectation (optional, additive)', () => {
+    const parsed = JobPreferencesSchema.parse({ location: 'Berlin' });
+    expect(parsed.salaryExpectation).toBeUndefined();
+  });
 });
 
 describe('ApplicationUpdateSchema — jobDescription byte-level refine', () => {

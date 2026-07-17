@@ -73,6 +73,14 @@ export type PopupRequest =
    */
   | { kind: 'fieldsProbe' }
   /**
+   * Fire-and-forget "is assisted autofill on?" read (Task #30), run
+   * alongside `fieldsProbe` on entering the connected view — gates whether
+   * the popup auto-runs "Suggest answers for this form" without a click.
+   * Read-only, mirrors `fieldsProbe`'s never-blocks-the-import-controls
+   * discipline exactly.
+   */
+  | { kind: 'autofillCheck' }
+  /**
    * User-clicked "Mark as applied" for the active tab's URL. Unlike
    * `appliedCheck`, this is a deliberate WRITE action — its failures are
    * surfaced to the user, never folded away.
@@ -199,6 +207,13 @@ export type PopupResponse =
    * alone. See `probe-fields.ts` for where both are computed.
    */
   | { ok: true; kind: 'fieldsProbe'; hasFormFields: boolean; hasAnswerFields: boolean }
+  /**
+   * Always `ok:true` — mirrors `fieldsProbe`/`appliedCheck`'s never-a-
+   * transport-error fold: `autofillEnabled()` itself never rejects (any
+   * failure degrades to `false`, the safe default — see its doc on
+   * `BridgeClient`).
+   */
+  | { ok: true; kind: 'autofillCheck'; enabled: boolean }
   /**
    * `ok:true` at the transport level; the desktop's own `ok`/`error` on
    * `result` is what the popup renders — this verb's failures are NOT

@@ -67,6 +67,7 @@ mod answers_suggest;
 mod applied_check;
 mod assist_registry;
 pub mod auth;
+mod autofill_check;
 mod autotrack;
 pub mod handshake;
 mod import_flow;
@@ -167,6 +168,13 @@ pub mod msg {
     pub const AUTOTRACK_CHECK: &str = "autotrack.check";
     /// Desktop → extension: the `autotrack.check` outcome — `{ enabled }`.
     pub const AUTOTRACK_RESULT: &str = "autotrack.result";
+    /// Extension → desktop: read the assisted-autofill opt-in (Task #30) — no
+    /// payload. Mirrors `AUTOTRACK_CHECK` exactly (see [`autofill_check`]):
+    /// the popup auto-runs "Suggest answers" only when this reads `true`, but
+    /// the real gate stays enforced on `answers.suggest` itself.
+    pub const AUTOFILL_CHECK: &str = "autofill.check";
+    /// Desktop → extension: the `autofill.check` outcome — `{ enabled }`.
+    pub const AUTOFILL_RESULT: &str = "autofill.result";
     /// Extension → desktop: "save my answers from this page" — append the
     /// captured `{question, answer}` pairs onto the Application matched by
     /// (canonicalized + normalized) `url`. No match → a refusal telling the
@@ -815,6 +823,9 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                 &req_id,
                 state.autotrack_enabled(),
             )),
+            FrameDecision::AutofillCheck { req_id } => Some(
+                autofill_check::autofill_check_result_reply(&req_id, state.autofill_enabled()),
+            ),
             FrameDecision::AnswersSave { req_id, payload } => {
                 Some(answers_save::handle_answers_save(&app, &req_id, &payload))
             }
@@ -952,6 +963,11 @@ enum FrameDecision {
     /// auto-track opt-in off [`BridgeState`]. No payload; the loop answers it
     /// with `autotrack::autotrack_result_reply`.
     AutotrackCheck { req_id: String },
+    /// An authenticated `autofill.check` (Task #30) — a pure read of the
+    /// assisted-autofill opt-in off [`BridgeState`]. Mirrors
+    /// [`FrameDecision::AutotrackCheck`] exactly. No payload; the loop
+    /// answers it with `autofill_check::autofill_check_result_reply`.
+    AutofillCheck { req_id: String },
     /// An authenticated `answers.save` to answer through
     /// [`answers_save::handle_answers_save`]. Carries the payload verbatim so
     /// the handler can read `url` + `answers`.
@@ -1092,6 +1108,9 @@ fn advance_authenticated(kind: &str, req_id: String, envelope: &Value) -> FrameD
         }
         // "Is auto-track on?" — a pure read of the opt-in (no payload). Task #22.
         msg::AUTOTRACK_CHECK => FrameDecision::AutotrackCheck { req_id },
+        // "Is assisted autofill on?" — a pure read of the opt-in (no payload).
+        // Task #30, mirrors AUTOTRACK_CHECK exactly.
+        msg::AUTOFILL_CHECK => FrameDecision::AutofillCheck { req_id },
         // "Save my answers from this page" — a consent-gated append-only write.
         msg::ANSWERS_SAVE => {
             let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
