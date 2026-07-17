@@ -1030,6 +1030,68 @@ fn parse_from_html_main_content_description_fallback() {
 }
 
 #[test]
+fn parse_from_html_readability_skips_in_article_decoy_block() {
+    // No JSON-LD, no __NEXT_DATA__, no meta description, no extension hint —
+    // the whole-document last-resort chain runs. The decoy block below is
+    // nested INSIDE the <article> alongside the real job paragraphs — NOT a
+    // <nav>/<footer> sibling — so only Readability's own per-node scoring
+    // (its `UNLIKELY_CANDIDATES` class-pattern strip, matched here by
+    // `class="related sponsor"`) can drop it. `main_content_text`'s selector
+    // (`main, [role="main"], article`) would keep the WHOLE <article>
+    // innerHTML verbatim, decoy included — so this is the case that actually
+    // fails if `readability_content_text` were never wired in.
+    let html = r#"<html><head>
+        <title>Senior Backend Engineer at Acme</title>
+    </head><body>
+        <article>
+            <h1>Senior Backend Engineer</h1>
+            <p>We are looking for a Senior Backend Engineer to join our platform
+            team and help us scale the systems that power millions of requests
+            every day across our global user base. You will design and build
+            resilient distributed systems, own the API platform end to end, and
+            mentor junior engineers on best practices for scalable, reliable
+            architecture and long-term maintainability.</p>
+            <div class="related sponsor">
+                <p>Related Jobs: DevOps Engineer, Site Reliability Engineer,
+                Platform Engineer. Sponsored listings from our partner network.</p>
+            </div>
+            <p>Responsibilities include architecting microservices,
+            collaborating closely with product and design teams on new
+            features, and maintaining our CI/CD pipeline for rapid, safe
+            deployments across every environment we run in production today,
+            including our growing multi-region rollout.</p>
+        </article>
+    </body></html>"#;
+    let posting = parse_from_html("https://acme.example/j/readability-1", html)
+        .expect("a page with a real article body must produce a posting");
+    let desc = posting.description.as_deref().unwrap_or_default();
+    assert!(
+        desc.contains("resilient distributed systems")
+            && desc.contains("architecting microservices"),
+        "description must contain the real job body on both sides of the decoy, got: {desc}"
+    );
+    assert!(
+        !desc.contains("Related Jobs") && !desc.contains("Sponsored listings"),
+        "description must NOT contain the in-article decoy block, got: {desc}"
+    );
+}
+
+#[test]
+fn readability_content_text_returns_none_for_sparse_page() {
+    // A page with too little real content to trust: `is_probably_readable()`
+    // (dom_smoothie's own pre-check, default `min_content_length` 140 chars)
+    // must gate it out BEFORE `parse()` ever runs, so `readability_content_text`
+    // returns `None` — letting `parse_from_html`'s `.or_else(|| main_content_text(html))`
+    // fall through cleanly instead of readability guessing at a too-thin document.
+    let html = r#"<html><body><main><p>Short posting.</p></main></body></html>"#;
+    let result = readability_content_text("https://acme.example/j/sparse", html);
+    assert_eq!(
+        result, None,
+        "a too-thin document must fail the is_probably_readable() gate and yield None, got: {result:?}"
+    );
+}
+
+#[test]
 fn parse_from_html_unparseable_page_has_empty_title() {
     // A page with no title/h1/JSON-LD/__NEXT_DATA__/main yields a posting whose
     // title is empty — so `extension_bridge::usable` would be false and
