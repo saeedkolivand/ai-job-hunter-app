@@ -1,14 +1,14 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-07-16
+Last updated: 2026-07-17
 
-Describes the job-scraping subsystem: board registry (23 active scrapers), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
+Describes the job-scraping subsystem: board registry (24 active scrapers), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
 ## Board registry & catalog
 
 - **`Scraper` trait** — `apps/desktop/src-tauri/src/scraping/types/mod.rs` (bounds: `Send + Sync`). Every board implements it.
 - **`SCRAPERS`** — registry in `scraping/boards/mod.rs` of all enabled scrapers (built at compile time, no runtime plugin system).
-- **`BOARD_IDS`** — const array in `packages/shared/src/schemas/index.ts`; lists all scrapeable boards (23 total, `aggregator` counted once among them). `AGGREGATOR_BOARD_ID = 'aggregator'` is the stable catalog id for the Adzuna/JSearch provider.
+- **`BOARD_IDS`** — const array in `packages/shared/src/schemas/index.ts`; lists all scrapeable boards (24 total, `aggregator` counted once among them). `AGGREGATOR_BOARD_ID = 'aggregator'` is the stable catalog id for the Adzuna/JSearch provider.
 - **Catalog** — `ScraperEngine::catalog()` (Rust) → `boards.catalog()` IPC → `useBoardsCatalog()` hook. Exposes per-board metadata:
   - `id` (slug)
   - `name`, `icon` (UI)
@@ -57,7 +57,7 @@ Four more company-scoped boards, endpoint-reconnaissance-ported from `santifer/c
 
 ### PR 3 (2026-07-02): Workable (company-scoped, live-verified) + Comeet (credentialed)
 
-Two more boards, bringing the registry to 23. Neither is career-ops-ported — see `docs/SCRAPING_ENDPOINTS.md` for full endpoint detail.
+Two more boards, bringing the registry to 23 (Jobicy later added in #700, bringing it to 24). Neither is career-ops-ported — see `docs/SCRAPING_ENDPOINTS.md` for full endpoint detail.
 
 - **Workable** (`workable`, `apps/desktop/src-tauri/src/scraping/boards/workable/mod.rs` — company-scoped, `requires_company()=true`). Endpoint `apply.workable.com/api/v1/widget/accounts/{slug}?details=true` is **live-verified** (real request against slug `careers-at-sleek`, 55 jobs), not reconnaissance-ported. Company display name comes from the response's top-level `name` (falls back to the slug); job URL is host-locked to `apply.workable.com`; job id is namespaced `workable:{slug}:{shortcode}` since a bare shortcode is only unique within one tenant. Each job row is deserialized independently (`rows_to_jobs`), mirroring Rippling's per-row resilience idiom, so one malformed row can't zero out a whole company's results.
 - **Comeet** (`comeet`, `apps/desktop/src-tauri/src/scraping/boards/comeet/mod.rs` — credentialed, single-company, `requires_company()` stays `false` since the "company" is a fixed per-user credential rather than a per-search input). Endpoint `www.comeet.co/careers-api/2.0/company/{uid}/positions?token={token}` is confirmed live (400 without real credentials) but its **response shape is unconfirmed** — built from the career-ops (MIT) field spec, needs live-verification with a real company UID + token via the Settings UI. Clones the Apify LinkedIn provider's credential pattern: company UID + API token read via `credentials::read_credential("ai:comeet-company-uid" / "ai:comeet-api-token")` at scrape time (slots in `packages/shared/src/provider-slots.ts`); absent credentials → keyless-empty (`Ok(vec![])`), never an error; job URL is host-locked to `comeet.co`; client-side query/location filtering reuses the shared `boards::common::matches_filters` helper (originally The Muse-local, extracted to `common.rs` once Comeet needed the identical filter). `auth()` is explicitly `Guest` (credentials aren't surfaced through the board-login connect flow) — same explicit-override precedent as the Aggregator board.
@@ -192,7 +192,7 @@ computed.
     slug or a ≥3-char word match).
 - **ATS allowlist** — never raises `CompanyDomainMismatch`. See `ATS_ALLOWLIST`
   constant in `apps/desktop/src-tauri/src/scraping/trust/mod.rs`; includes the
-  standard ATS platforms (Greenhouse, Lever, etc.) plus our 23 `SCRAPERS` boards
+  standard ATS platforms (Greenhouse, Lever, etc.) plus our 24 `SCRAPERS` boards
   where `JobPosting.url` is systematically the BOARD's own domain rather than the
   employer's, plus the Adzuna aggregator (whose redirect host is a constant
   `api.adzuna.com` — country code is a path segment, not a subdomain).
@@ -322,6 +322,8 @@ Per-board scrape outcomes are now visible via a shared `BoardSummaryChips` compo
   - Comeet: `apps/desktop/src-tauri/src/scraping/boards/comeet/mod.rs`
 - **Keyword aggregators (client-side filter, no server-side search):**
   - The Muse: `apps/desktop/src-tauri/src/scraping/boards/themuse/mod.rs`
+- **Simple HTTP remote-jobs boards (keyless, full descriptions, tag-based keyword search):**
+  - Jobicy: `apps/desktop/src-tauri/src/scraping/boards/jobicy/mod.rs` — HTTP GET request to Jobicy's free API with `count`/`tag` query params; returns full inline job descriptions (no truncation, no detail-fetch wall); free-text `tag` parameter for keyword search; part of the SCRAPERS registry.
 - **Aggregator:**
   - Registry: `apps/desktop/src-tauri/src/scraping/boards/aggregator/mod.rs`
   - Providers (Adzuna, JSearch, Jooble, Apify LinkedIn): `apps/desktop/src-tauri/src/scraping/boards/aggregator/providers.rs` (JobProvider trait + implementations)
@@ -407,6 +409,6 @@ When a board achieves partial success (some companies reached, some invalid slug
 
 ## See also
 
-- `docs/SCRAPING_ENDPOINTS.md` — verified external endpoint reconnaissance (23 active boards, `aggregator` counted once among them; retired boards noted)
+- `docs/SCRAPING_ENDPOINTS.md` — verified external endpoint reconnaissance (24 active boards, `aggregator` counted once among them; retired boards noted)
 - `docs/knowledge/domain-model.md` — brief mention of `Scraper` trait + catalog
 - `docs/ARCHITECTURE.md` — high-level diagram of scraping + IPC boundary
