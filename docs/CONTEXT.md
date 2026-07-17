@@ -186,3 +186,43 @@ the gallery and picks which templates surface the ATS-mode toggle. A design-tier
 collapses to a linear single column (and drops its photo) when ATS mode is on. See
 [ADR 0007](adr/0007-document-color-is-a-knob-not-a-template.md).
 _Avoid_: premium tier, template category
+
+## Domain - Landing experience
+
+**Semantic layer**:
+The prerendered content HTML that is **always in the DOM** - the authority for SEO,
+accessibility, and scroll height. The WebGL experience layers on top of it; when the
+experience does not mount, this is what the visitor reads and scrolls. It is a layer of
+the one landing document, not a second destination.
+_Avoid_: "fallback page" as a separate URL (there is no separate URL - it is the same page)
+
+**Experience gate**:
+The single capability gate that decides whether the GL experience mounts: WebGL2 support
+**and** a fine pointer **and** a minimum viewport width **and** no reduced-motion
+preference. One gate, evaluated once - if any condition fails the visitor stays on the
+Semantic layer.
+_Avoid_: scattered feature detection (the decision lives in one gate, not ad-hoc checks
+sprinkled across the code)
+
+**Journey**:
+The scroll-scrubbed camera ride through the landing story - scroll position drives camera
+position, so the visitor scrubs the ride rather than watching it play.
+_Avoid_: overloading Autopilot (that is the app's job-application run - a different concept)
+
+**Beat**:
+One of the 8 places on the Journey: hero, slump, descent, deep-fried, godmode, features,
+testimonials, finale. A Beat is a location the camera visits on the ride.
+_Avoid_: section / panel for the 3D places (those name the DOM content; a Beat is a place
+in 3D space)
+
+**Passthrough files**:
+The `landing/` files copied verbatim into the exported site by the postbuild
+merge-passthrough script - source that ships unchanged, not produced by the build.
+_Avoid_: "static assets" (too generic - these are specifically the verbatim-copied
+`landing/` inputs, distinct from build output under `apps/landing/out`)
+
+**Line boil**:
+The stepped-clock wobble of the ink strokes - the stroke geometry is re-jittered on a
+~10fps stepped clock, giving the hand-drawn sketchbook look its core motion.
+_Avoid_: jitter / noise generically (Line boil is the specific stepped-clock stroke wobble,
+not any random perturbation)
