@@ -13,7 +13,7 @@
 // boilFps), then (4) renders the composer.
 
 import { EffectComposer, EffectPass, RenderPass } from "postprocessing";
-import { useEffect,useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { HalfFloatType, type Uniform } from "three";
 import { useFrame, useThree } from "@react-three/fiber";
 

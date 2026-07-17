@@ -8,13 +8,14 @@
 // journeyStore, and LoaderLift clears the boot overlay on the first painted GL
 // frame.
 //
-// GLLoader only mounts this after the capability gate passes and after hiding
-// (visibility:hidden + inert, never display:none) the semantic layer, which
-// remains the scroll-height / SEO / a11y authority. The canvas wrapper is
-// pointer-events:none for this phase -- there are no GL-side hit targets yet and
-// the semantic layer is inert, so nothing should intercept pointer input.
+// GLLoader mounts this after the capability gate passes, but only hides
+// (visibility:hidden + inert, never display:none) the semantic layer once
+// this component reports onReady on its first painted frame -- see GLLoader
+// for the full choreography (error boundary + skip-link fall back to legacy).
+// The canvas wrapper is pointer-events:none for this phase -- there are no
+// GL-side hit targets yet, so nothing should intercept pointer input.
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 
 import { resolveTier } from "@/engine/quality";
@@ -23,23 +24,27 @@ import { Composer } from "@/post/composer";
 
 import SceneManager from "./SceneManager";
 
-// One-shot boot-overlay lift. Runs at priority 2 -- after Composer's priority-1
-// composer.render() -- so #loader only starts fading once GL has actually
-// painted its first frame (no flash of empty canvas). In GL mode the legacy
-// engine, which normally clears the loader, stood down at the gate, so this is
-// the only thing that lifts it. Idempotent via the module-guard-free ref-less
-// early return once the class is applied.
-function LoaderLift() {
+// One-shot boot-overlay lift + ready signal. Runs at priority 2 -- after
+// Composer's priority-1 composer.render() -- so #loader only starts fading,
+// and onReady only fires, once GL has actually painted its first frame (no
+// flash of empty canvas). In GL mode the legacy engine, which normally clears
+// the loader, stood down at the gate, so this is the only thing that lifts
+// it. Guarded by a `done` ref, checked first, so the per-frame DOM lookup
+// only ever runs once per mount instead of every frame for the whole
+// session. If #loader is missing entirely, still mark done and fire onReady
+// -- otherwise the semantic root would never hide.
+function LoaderLift({ onReady }: { onReady: () => void }) {
+  const done = useRef(false);
   useFrame(() => {
-    const loader = document.getElementById("loader");
-    if (loader && !loader.classList.contains("gone")) {
-      loader.classList.add("gone");
-    }
+    if (done.current) return;
+    document.getElementById("loader")?.classList.add("gone");
+    done.current = true;
+    onReady();
   }, 2);
   return null;
 }
 
-export default function Experience() {
+export default function Experience({ onReady }: { onReady: () => void }) {
   const tier = resolveTier();
 
   // Scroll spine: mounted once, client-only. initScroll returns its own cleanup
@@ -64,7 +69,7 @@ export default function Experience() {
     >
       <SceneManager />
       <Composer />
-      <LoaderLift />
+      <LoaderLift onReady={onReady} />
     </Canvas>
   );
 }

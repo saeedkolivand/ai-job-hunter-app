@@ -73,7 +73,7 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   color *= vec3(1.03, 1.0, 0.94);
 
   // Warm vignette: fade to a warm brown toward the edges, scaled by uVignette.
-  float vig = smoothstep(0.8, 0.4, length(uv - 0.5));
+  float vig = 1.0 - smoothstep(0.4, 0.8, length(uv - 0.5));
   float vigAmt = mix(1.0, vig, uVignette);
   color *= mix(vec3(1.0), vec3(0.82, 0.76, 0.68), 1.0 - vigAmt);
 
