@@ -15,9 +15,9 @@
 #     sha256 digests from `gh release view v<version> --json assets`.
 
 cask "ai-job-hunter" do
-  version "0.126.0"
-  sha256 arm:   "bb5409a70fceb1a92d689bbfe05a89c5eb075ed4b3fc5fa4c2b8cc1b0ba8fb93",
-         intel: "7ee4594c97383f97f8d34cbfe4fedc16a8b8c44ded4f4827fa50fa4f5aec97f0"
+  version "0.127.0"
+  sha256 arm:   "02f5db6e4d0b6f2befa60e1dd066a5fde7f8bdd9f381cc34d38ccb206aecef8e",
+         intel: "2299a1f0d069fe610409dbb7a4824b18f31716d57ae094ba86b5379de51e89bd"
 
   arch arm: "aarch64-apple-silicon", intel: "x64-intel"
 
