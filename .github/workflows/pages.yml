@@ -3,13 +3,15 @@ name: 🌐 Deploy Landing Page
 # ──────────────────────────────────────────────────────────────────────
 # GitHub Pages Deploy
 # ──────────────────────────────────────────────────────────────────────
-# Purpose: Build and publish the landing experience to GitHub Pages
-# Triggers: push to main touching the app, passthrough source, the lockfile,
-#           or this workflow, plus manual dispatch
+# Purpose: Build and publish the landing experience (plus the @ajh/ui
+#          Storybook at /storybook/) to GitHub Pages
+# Triggers: push to main touching the app, passthrough source, the UI
+#           package, the lockfile, or this workflow, plus manual dispatch
 # Source:   apps/landing = the Next 16 static-export app (@ajh/landing);
 #           landing/ = passthrough source copied verbatim into the export by
 #           the postbuild merge-passthrough script. Build output lands in
-#           apps/landing/out.
+#           apps/landing/out. packages/ui = the @ajh/ui design system; its
+#           Storybook build is copied into out/storybook/.
 # Note:     Runs independently of release.yml (also push-to-main) — separate jobs.
 # ──────────────────────────────────────────────────────────────────────
 
@@ -20,6 +22,7 @@ on:
     paths:
       - 'apps/landing/**'
       - 'landing/**'
+      - 'packages/ui/**'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - '.github/workflows/pages.yml'
@@ -56,6 +59,18 @@ jobs:
           # 6 GiB clears the CI runner headroom without a swap.
           NODE_OPTIONS: --max-old-space-size=6144
         run: pnpm --filter @ajh/landing build
+
+      - name: 📚 Build Storybook (@ajh/ui)
+        env:
+          # Storybook's Vite bundle peaks near the landing build's ceiling;
+          # reuse the same heap headroom so CI never OOMs.
+          NODE_OPTIONS: --max-old-space-size=6144
+        # Runs AFTER Build Landing so apps/landing/out already exists (the
+        # landing postbuild merged the passthrough pages in). Copy the static
+        # Storybook into out/storybook/ so it ships inside the Pages artifact.
+        run: |
+          pnpm --filter @ajh/ui build-storybook
+          cp -r packages/ui/storybook-static apps/landing/out/storybook
 
       - name: 📤 Upload artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
