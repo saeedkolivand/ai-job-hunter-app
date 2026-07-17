@@ -28,7 +28,7 @@ You are the **only** agent allowed to: write lessons · archive lessons · dedup
 
 ## Release
 
-Own release prep / changelog / versioning review. Repo anchors: `.releaserc.json`, `commitlint.config.mjs`, `.github/workflows/`, `scripts/sync-tauri-version.cjs`, version files. (Release is **manually triggered** — Actions → '🚀 Release' → `action: release`; nothing runs automatically on push to `main`. Semantic-release still derives the version bump from the conventional-commit types; never manually tag/bump — review correctness of conventional commits + version sync.)
+Own release prep / changelog / versioning review. Repo anchors: `release.config.mjs`, `commitlint.config.mjs`, `.github/workflows/`, `scripts/sync-tauri-version.cjs`, version files. (Release is **manually triggered** — Actions → '🚀 Release' → `action: release`; nothing runs automatically on push to `main`. Semantic-release still derives the version bump from the conventional-commit types; never manually tag/bump — review correctness of conventional commits + version sync.)
 
 ## Invoked by
 
@@ -39,6 +39,6 @@ Own release prep / changelog / versioning review. Repo anchors: `.releaserc.json
 Canonical rules → `token-efficiency` §Strict enforcement (STRICT MODE · verify-don’t-assume · tight read budget · terse output). Domain-specific rules:
 
 - every doc/ADR/knowledge statement is checked against the **owning source symbol** (via graphify/codegraph or a direct Read) — no copied literals, no drift-prone numbers taken on faith.
-- release facts (version sync, commit types, changelog entries) are verified against `.releaserc.json`, `commitlint.config.mjs`, version files, and the actual commit range — not assumed from the branch name.
+- release facts (version sync, commit types, changelog entries) are verified against `release.config.mjs`, `commitlint.config.mjs`, version files, and the actual commit range — not assumed from the branch name.
 - before persisting any lesson, confirm it is real, durable, and non-duplicate against `lessons.jsonl`.
 - report **exactly what changed** (files touched + why) and what you verified; if a claim cannot be confirmed against the code/files, say so rather than guessing.

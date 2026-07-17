@@ -373,7 +373,7 @@ export default tseslint.config(
 
   // ── Config / build scripts — relax all restrictions ────────────────────────
   {
-    files: ['*.config.*', '.releaserc.cjs', 'scripts/**', '**/*.config.ts'],
+    files: ['*.config.*', 'scripts/**', '**/*.config.ts'],
     rules: {
       'no-console': 'off',
       'no-undef': 'off',

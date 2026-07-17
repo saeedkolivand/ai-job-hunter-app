@@ -9,6 +9,10 @@
 
 import presetFactory from 'conventional-changelog-conventionalcommits';
 
+import releaseNotesTransform from './scripts/release-notes-transform.cjs';
+
+const { extractGitHubLogin } = releaseNotesTransform;
+
 // Preset config — passed to both the plugin and the factory for consistency
 const PRESET_CONFIG = {
   types: [
@@ -25,19 +29,6 @@ const PRESET_CONFIG = {
     { type: 'revert', section: '⏪ Reverts', hidden: false },
   ],
 };
-
-/**
- * Extract GitHub login from noreply email.
- * Pattern: <id>+<login>@users.noreply.github.com
- *
- * @param {string} email
- * @returns {string|null}
- */
-function extractGitHubLogin(email) {
-  if (!email) return null;
-  const match = email.match(/^\d+\+([^@]+)@users\.noreply\.github\.com$/);
-  return match ? match[1] : null;
-}
 
 /**
  * Resolve the preset and extract its transform function.

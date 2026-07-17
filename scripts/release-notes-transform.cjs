@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
- * release-notes-transform.cjs — utility module for contributor credit extraction.
+ * release-notes-transform.cjs — single source of truth for GitHub login extraction.
  *
- * Exports extractGitHubLogin for unit testing and reuse.
- * The actual transform wrapping logic is in release.config.mjs.
+ * Exports extractGitHubLogin, imported by release.config.mjs (the wrapped
+ * writerOpts.transform) and by release-notes-transform.test.mjs (unit tests),
+ * so both stay in sync — no duplicated regex to drift.
  */
 
 'use strict';
