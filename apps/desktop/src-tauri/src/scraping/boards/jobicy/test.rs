@@ -108,8 +108,7 @@ fn test_parse_fixture_job1_full_html_description_becomes_markdown() {
     assert_eq!(j.company, "TechMagic");
     assert_eq!(j.location.as_deref(), Some("Ukraine"));
     assert_eq!(
-        j.url,
-        "https://jobicy.com/jobs/146131-customer-experience-analyst",
+        j.url, "https://jobicy.com/jobs/146131-customer-experience-analyst",
         "url must be the unmodified jobicy.com link (ToS attribution requirement)"
     );
     assert_eq!(j.source, "jobicy");
@@ -133,10 +132,7 @@ fn test_parse_fixture_job1_full_html_description_becomes_markdown() {
         .unwrap()
         .timestamp_millis();
     assert_eq!(j.posted_at, Some(expected_ms));
-    assert_eq!(
-        j.extra.get("remote").and_then(|v| v.as_bool()),
-        Some(true)
-    );
+    assert_eq!(j.extra.get("remote").and_then(|v| v.as_bool()), Some(true));
 }
 
 #[test]
@@ -154,6 +150,45 @@ fn test_parse_fixture_job2_falls_back_to_excerpt_when_description_missing() {
         !desc.contains("<p>"),
         "excerpt fallback must still be HTML-converted, got: {desc:?}"
     );
+}
+
+#[test]
+fn test_map_job_empty_description_falls_back_to_excerpt() {
+    // `jobDescription: ""` (present but blank) must NOT short-circuit `.or` —
+    // it must fall back to `jobExcerpt` just like a missing/`None` field.
+    let j: Job = serde_json::from_str(
+        r#"{
+            "id": 1,
+            "url": "https://jobicy.com/jobs/1-x",
+            "jobTitle": "Some Job",
+            "jobDescription": "",
+            "jobExcerpt": "<p>Fallback excerpt text</p>"
+        }"#,
+    )
+    .unwrap();
+    let posting = map_job(j, "jobicy", 0).expect("id/title/url all present");
+    let desc = posting.description.as_deref().unwrap_or("");
+    assert!(
+        desc.contains("Fallback excerpt text"),
+        "blank jobDescription must fall back to jobExcerpt, got: {desc:?}"
+    );
+}
+
+#[test]
+fn test_map_job_blank_description_and_excerpt_yields_none() {
+    // Both fields present but blank — no fabricated description.
+    let j: Job = serde_json::from_str(
+        r#"{
+            "id": 1,
+            "url": "https://jobicy.com/jobs/1-x",
+            "jobTitle": "Some Job",
+            "jobDescription": "   ",
+            "jobExcerpt": ""
+        }"#,
+    )
+    .unwrap();
+    let posting = map_job(j, "jobicy", 0).expect("id/title/url all present");
+    assert_eq!(posting.description, None);
 }
 
 // ── map_job edge cases ───────────────────────────────────────────────────────
@@ -282,6 +317,57 @@ fn test_missing_jobs_field_defaults_to_empty_vec() {
     // parse error or a fabricated result.
     let resp: Resp = serde_json::from_str(r#"{"jobCount": 0}"#).unwrap();
     assert!(resp.jobs.is_empty());
+}
+
+// ── parse_response (hermetic — the 404-vs-other-status contract) ────────────
+//
+// `search()` delegates its "is this a real failure or a 404-but-valid-empty-
+// result" decision to `parse_response`, a pure function with no network call,
+// so this load-bearing contract no longer relies solely on the `#[ignore]`d
+// live-network tests below.
+
+#[test]
+fn test_parse_response_500_is_err() {
+    let result = parse_response(500, "Internal Server Error", "jobicy", 0);
+    assert!(result.is_err(), "a real 5xx outage must never be Ok");
+}
+
+#[test]
+fn test_parse_response_403_is_err() {
+    let result = parse_response(403, "Forbidden", "jobicy", 0);
+    assert!(result.is_err(), "a 403 must never be misread as empty");
+}
+
+#[test]
+fn test_parse_response_404_with_empty_jobs_json_is_ok_empty() {
+    let body = r#"{"jobs":[],"success":false,"message":"Nothing found..."}"#;
+    let result = parse_response(404, body, "jobicy", 0);
+    assert!(
+        result.is_ok(),
+        "a 404 with a valid empty-jobs JSON body is a genuine zero-match search"
+    );
+    assert!(result.unwrap().is_empty());
+}
+
+#[test]
+fn test_parse_response_200_with_jobs_is_ok_with_postings() {
+    let result = parse_response(200, FIXTURE_JSON, "jobicy", 0);
+    assert!(result.is_ok(), "a 200 with a well-formed body must parse");
+    // job3 has no id and is dropped; job1+job2 survive (see FIXTURE_JSON doc).
+    assert_eq!(result.unwrap().len(), 2);
+}
+
+#[test]
+fn test_parse_response_404_with_html_body_is_err() {
+    // A real routing 404 (e.g. a CDN/edge error page) returns HTML, not the
+    // `{"jobs":[...]}` shape — JSON parsing must fail and propagate as `Err`,
+    // never a silently-empty `Ok`.
+    let body = "<html><body>404 Not Found</body></html>";
+    let result = parse_response(404, body, "jobicy", 0);
+    assert!(
+        result.is_err(),
+        "a 404 with an HTML (non-JSON) body is a real outage, not an empty result"
+    );
 }
 
 // ── live network (ignored in CI) ─────────────────────────────────────────────

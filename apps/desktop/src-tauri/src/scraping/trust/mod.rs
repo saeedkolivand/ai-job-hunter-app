@@ -54,7 +54,7 @@ const SUSPICIOUS_DOMAINS: &[&str] = &[
 ];
 
 /// Hosts a `CompanyDomainMismatch` is never raised against: real ATS
-/// platforms (career-ops's original list) plus the hosts our own 23
+/// platforms (career-ops's original list) plus the hosts our
 /// `SCRAPERS` boards legitimately return as `JobPosting.url` where that host
 /// is the BOARD's own domain rather than the employer's — LinkedIn
 /// (`linkedin.com`, always `/jobs/view/<id>`), Berlin Startup Jobs

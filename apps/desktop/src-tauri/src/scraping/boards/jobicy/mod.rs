@@ -23,7 +23,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-struct Job {
+pub(crate) struct Job {
     id: Option<i64>,
     url: Option<String>,
     #[serde(rename = "jobTitle")]
@@ -83,8 +83,9 @@ fn is_valid_jobicy_url(url: &str) -> bool {
     reqwest::Url::parse(url)
         .map(|u| {
             (u.scheme() == "http" || u.scheme() == "https")
-                && u.host_str()
-                    .is_some_and(|h| crate::scraping::trust::matches_domain_list(h, &["jobicy.com"]))
+                && u.host_str().is_some_and(|h| {
+                    crate::scraping::trust::matches_domain_list(h, &["jobicy.com"])
+                })
         })
         .unwrap_or(false)
 }
@@ -113,11 +114,14 @@ pub(crate) fn map_job(j: Job, scraper_id: &str, now: i64) -> Option<JobPosting> 
         location: j.job_geo.filter(|s| !s.trim().is_empty()),
         url,
         source: scraper_id.to_string(),
-        // Full HTML → Markdown. Falls back to the (also HTML) excerpt on the
-        // rare response missing `jobDescription`.
+        // Full HTML → Markdown. Falls back to the (also HTML) excerpt when
+        // `jobDescription` is absent OR a blank string (some rows send `""`
+        // rather than omitting the key) — mirrors how title/url/company
+        // already treat blank strings as missing.
         description: j
             .job_description
-            .or(j.job_excerpt)
+            .filter(|s| !s.trim().is_empty())
+            .or(j.job_excerpt.filter(|s| !s.trim().is_empty()))
             .map(|html| html_to_markdown(&html)),
         requirements: None,
         posted_at: j
@@ -131,6 +135,41 @@ pub(crate) fn map_job(j: Job, scraper_id: &str, now: i64) -> Option<JobPosting> 
             map
         },
     })
+}
+
+/// Decide whether a raw HTTP response is a genuine failure or a
+/// (possibly-404-but-JSON) empty/successful result, then parse it into
+/// postings. Pure — no network, no `ScrapeContext` — so the load-bearing
+/// "a real outage is never misread as empty" contract is hermetically unit
+/// testable; previously it was only exercised by an `#[ignore]`d live-network
+/// test.
+///
+/// Jobicy returns HTTP 404 with a valid JSON body
+/// (`{"jobs":[],"success":false,"message":"Nothing found..."}`) for a genuine
+/// zero-match `tag` search (live-verified) — a normal empty result, not a
+/// fetch failure. Every OTHER non-2xx status (a real routing/server error
+/// returns an HTML body, not this JSON shape) still propagates as an `Err`,
+/// surfaced in `BoardScrapeSummary.error`, per this codebase's "never a
+/// silent empty result on failure" rule.
+pub(crate) fn parse_response(
+    status_code: u16,
+    body: &str,
+    scraper_id: &str,
+    now: i64,
+) -> anyhow::Result<Vec<JobPosting>> {
+    if status_code != 200 && status_code != 404 {
+        return Err(anyhow::anyhow!("HTTP {status_code}"));
+    }
+
+    let resp: Resp = serde_json::from_str(body).map_err(|e| {
+        log::warn!("[jobicy] response parse failure (HTTP {status_code}): {e}");
+        anyhow::anyhow!("response body did not match the expected schema")
+    })?;
+
+    Ok(rows_to_jobs(resp.jobs)
+        .into_iter()
+        .filter_map(|j| map_job(j, scraper_id, now))
+        .collect())
 }
 
 pub struct JobicyScraper;
@@ -178,46 +217,23 @@ impl Scraper for JobicyScraper {
             // 400s ("Invalid 'geo' value" — enum validation), while an
             // unmatched `tag` 404s with `{"success":false,"message":"Nothing
             // found..."}` — a legitimate zero-result search, not a rejected
-            // value. That 404-for-zero-matches case is handled below (treated
-            // as an authoritative empty result, never a fetch failure).
+            // value. That 404-for-zero-matches case is handled in
+            // `parse_response` below (treated as an authoritative empty
+            // result, never a fetch failure).
             url.push_str(&format!("&tag={}", urlencoding::encode(q)));
         }
 
         let res = fetch_text(&url, Default::default(), ctx.signal).await?;
 
-        // Jobicy returns HTTP 404 with a valid JSON body
-        // (`{"jobs":[],"success":false,"message":"Nothing found..."}`) for a
-        // genuine zero-match `tag` search (live-verified) — a normal empty
-        // result, not a fetch failure. Every OTHER non-2xx status (a real
-        // routing/server error returns an HTML body, not this JSON shape)
-        // still propagates as an `Err`, surfaced in `BoardScrapeSummary.error`,
-        // per this codebase's "never a silent empty result on failure" rule.
-        if res.status_code != 200 && res.status_code != 404 {
-            return Err(anyhow::anyhow!("HTTP {}", res.status_code));
-        }
-
-        let resp: Resp = serde_json::from_str(&res.text).map_err(|e| {
-            log::warn!(
-                "[jobicy] response parse failure (HTTP {}): {e}",
-                res.status_code
-            );
-            anyhow::anyhow!("response body did not match the expected schema")
-        })?;
-
-        let jobs = rows_to_jobs(resp.jobs);
         let now = chrono::Utc::now().timestamp_millis();
-        let mut out = vec![];
+        // 404-vs-other-status decision + parse lives in `parse_response` (pure,
+        // hermetically unit tested) — see its doc comment for the contract.
+        let out = parse_response(res.status_code, &res.text, self.id(), now)?;
 
-        for j in jobs {
-            let Some(posting) = map_job(j, self.id(), now) else {
-                continue;
-            };
-
-            if let Some(ref on_item) = ctx.on_item {
+        if let Some(ref on_item) = ctx.on_item {
+            for posting in &out {
                 on_item(posting.clone());
             }
-
-            out.push(posting);
         }
 
         if let Some(ref on_progress) = ctx.on_progress {
