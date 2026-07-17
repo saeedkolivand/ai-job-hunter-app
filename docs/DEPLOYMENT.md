@@ -1,6 +1,6 @@
 # Deployment — AI Job Hunter
 
-Last updated: 2026-07-16
+Last updated: 2026-07-17
 
 AI Job Hunter is distributed as a native desktop installer built by [Tauri][tauri]. There is no server to deploy — the entire app runs on the end user's machine.
 
@@ -122,11 +122,11 @@ Releases are **manually triggered** via [semantic-release][semantic-release]: go
 | `BREAKING CHANGE` footer                       | minor (`0.x.0`) | Yes           |
 | `refactor:`, `docs:`, `chore:`, `ci:`, `test:` | none            | No            |
 
-While the project stays on `0.x`, a `BREAKING CHANGE` bumps the **minor** (not major) — `.releaserc.json` maps `{ "breaking": true, "release": "minor" }` to keep the pre-1.0 line. Revisit when declaring a stable `1.0` API.
+While the project stays on `0.x`, a `BREAKING CHANGE` bumps the **minor** (not major) — `release.config.mjs` maps `{ "breaking": true, "release": "minor" }` to keep the pre-1.0 line. Revisit when declaring a stable `1.0` API.
 
 ### Release configuration
 
-`.releaserc.json` controls semantic-release behavior. Releases execute these plugins in order:
+`release.config.mjs` controls semantic-release behavior (ESM, so the release-notes `writerOpts.transform` can wrap the preset's transform with top-level `await` — used to append `(@login)` contributor credit for non-owner, non-bot commits). Releases execute these plugins in order:
 
 1. `@semantic-release/commit-analyzer` — analyzes commits to determine version bump
 2. `@semantic-release/release-notes-generator` — drafts release notes
@@ -135,7 +135,7 @@ While the project stays on `0.x`, a `BREAKING CHANGE` bumps the **minor** (not m
 5. `@semantic-release/github` — creates GitHub Release with notes and assets
 6. `@semantic-release/git` — commits the synced version files + `CHANGELOG.md` to `main` with message `chore(release): <version> [skip ci]`
 
-See `.releaserc.json` for full plugin options.
+See `release.config.mjs` for full plugin options.
 
 ### Version sync
 

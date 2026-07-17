@@ -97,7 +97,7 @@
       "apps/desktop/src-tauri/src/autopilot/**",
       "apps/desktop/src-tauri/src/scraping/boards/**"
     ],
-    "release": [".releaserc.json", "commitlint.config.mjs", ".github/workflows/**"]
+    "release": ["release.config.mjs", "commitlint.config.mjs", ".github/workflows/**"]
   },
   "lessons_domains": {
     "export": [

@@ -199,7 +199,7 @@ const CHANGELOG_LIMIT: usize = 15;
 /// changelog now works fully offline and makes no GitHub request (removes an
 /// egress path the old per-release API fetch had). `include_str!` makes rustc
 /// track the file for rebuilds like any other source dependency, no `build.rs`
-/// needed. `@semantic-release/changelog` (`.releaserc.json`) regenerates this
+/// needed. `@semantic-release/changelog` (`release.config.mjs`) regenerates this
 /// file as part of the release commit, before the Tauri build step packages this
 /// binary — see the release workflow for the ordering.
 const CHANGELOG_MD: &str = include_str!("../../../../../CHANGELOG.md");
