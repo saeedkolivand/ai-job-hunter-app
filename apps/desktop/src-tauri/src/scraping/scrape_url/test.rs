@@ -1066,7 +1066,8 @@ fn parse_from_html_readability_skips_in_article_decoy_block() {
         .expect("a page with a real article body must produce a posting");
     let desc = posting.description.as_deref().unwrap_or_default();
     assert!(
-        desc.contains("resilient distributed systems") && desc.contains("architecting microservices"),
+        desc.contains("resilient distributed systems")
+            && desc.contains("architecting microservices"),
         "description must contain the real job body on both sides of the decoy, got: {desc}"
     );
     assert!(
