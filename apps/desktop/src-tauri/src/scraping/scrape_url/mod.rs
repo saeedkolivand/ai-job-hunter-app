@@ -514,19 +514,25 @@ pub fn parse_from_html(url: &str, html: &str) -> Option<JobPosting> {
         }
     }
 
-    // Main-content text as a last-resort description — SKIPPED when the hint
-    // already supplied a real title. `job_root_generic_html` scopes its own
+    // Whole-document last-resort description — SKIPPED when the hint already
+    // supplied a real title. `job_root_generic_html` scopes its own
     // description search to that same hinted subtree, so if it honestly found
     // no body text there (a title-only hint — e.g. the real description
     // renders client-side in an ATS iframe the outerHTML capture can't see),
-    // escalating to a whole-DOCUMENT largest-block guess risks landing on an
-    // unrelated block (e.g. a bigger related-jobs sidebar) instead of just
-    // admitting there's no description to show. A hint that yielded NOTHING
-    // (no title either — hostile/mis-marked) carries no signal, so the
-    // whole-document heuristic chain still runs exactly as if there were no
-    // hint at all.
+    // escalating to a whole-DOCUMENT guess risks landing on an unrelated block
+    // (e.g. a bigger related-jobs sidebar) instead of just admitting there's
+    // no description to show. A hint that yielded NOTHING (no title either —
+    // hostile/mis-marked) carries no signal, so the whole-document heuristic
+    // chain still runs exactly as if there were no hint at all.
+    //
+    // Within that chain, `readability_content_text` (a real Mozilla-Readability
+    // port) runs FIRST — it scores/prunes nav, footer, and boilerplate rather
+    // than just picking the largest `main`/`article` block, so it's the
+    // higher-precision guess on a page with no JSON-LD. `main_content_text`'s
+    // largest-block guess stays as the final fallback for when readability's
+    // own pre-check (`is_probably_readable`) or `parse()` comes back empty.
     if description.is_none() && !hint_title_used {
-        description = main_content_text(html);
+        description = readability_content_text(url, html).or_else(|| main_content_text(html));
     }
 
     let host = reqwest::Url::parse(url)
@@ -812,10 +818,60 @@ fn next_data_job(html: &str) -> Option<JsonLdJob> {
     find(&json, 0)
 }
 
-/// Largest main-content text block as a last-resort description: pick the longest
-/// rendered text among `main` / `[role="main"]` / `article`.
-// ponytail: largest-block heuristic, not a Readability port; good enough for ATS
-// detail pages. Upgrade path = a real content-extraction crate if it falls short.
+/// Real-readability last-resort description: run `dom_smoothie` (a faithful
+/// Rust port of Mozilla's Readability.js) over the whole document, so nav/
+/// footer/boilerplate get scored out instead of surviving a naive
+/// largest-block guess. `is_probably_readable()` must run before `parse()`
+/// (it inspects the un-mutated document; `parse()` mutates it) and gates
+/// documents too thin to trust — e.g. a nav-only shell with no real article.
+/// Both the pre-check and `parse()` are best-effort: any `Err` (bad URL,
+/// `max_elements_to_parse` exceeded, no candidate found) falls through to
+/// `None` — the caller then tries `main_content_text` — rather than
+/// propagating, since this is an enrichment, not a hard requirement.
+fn readability_content_text(url: &str, html: &str) -> Option<String> {
+    let cfg = dom_smoothie::Config {
+        // `text_content` becomes ready-to-use markdown straight off the
+        // cleaned readability DOM — skips a second html_to_markdown pass over
+        // `article.content` (which would re-parse already-cleaned HTML).
+        text_mode: dom_smoothie::TextMode::Markdown,
+        // Defense-in-depth against a hostile/huge page: default `0` means
+        // UNLIMITED, letting an attacker-sized document drive an unbounded
+        // multi-pass scoring parse (CPU/peak-memory amplification). 4000 is
+        // comfortably above any real job posting page (dom_smoothie's own
+        // test suite parses a full Wikipedia article — far denser than a job
+        // page — under 10,000 with no false-positive `TooManyElements`)
+        // while still bounding abuse. Tripping the cap returns
+        // `Err(TooManyElements)`, handled by the `Err ⇒ None` arm below —
+        // clean fall-through to `main_content_text`.
+        max_elements_to_parse: 4000,
+        ..Default::default()
+    };
+    let mut readability = match dom_smoothie::Readability::new(html, Some(url), Some(cfg)) {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!("[scraping::scrape_url] dom_smoothie::Readability::new failed: {e}");
+            return None;
+        }
+    };
+    if !readability.is_probably_readable() {
+        return None;
+    }
+    match readability.parse() {
+        Ok(article) => {
+            let text = article.text_content.trim().to_string();
+            (!text.is_empty()).then_some(text)
+        }
+        Err(e) => {
+            log::warn!("[scraping::scrape_url] dom_smoothie parse failed: {e}");
+            None
+        }
+    }
+}
+
+/// Largest main-content text block as a FINAL last-resort description (below
+/// `readability_content_text`): pick the longest rendered text among `main` /
+/// `[role="main"]` / `article`. Kept as the floor for when readability's own
+/// pre-check or `parse()` comes back empty — a naive guess beats nothing.
 fn main_content_text(html: &str) -> Option<String> {
     let doc = Html::parse_document(html);
     let sel = Selector::parse(r#"main, [role="main"], article"#).ok()?;
