@@ -36,6 +36,7 @@ export const WAYPOINTS: Waypoint[] = [
 ];
 
 const N = WAYPOINTS.length;
+if (N < 2) throw new Error("journey: WAYPOINTS needs at least 2 entries");
 
 // Curves built once. centripetal parametrization avoids the cusps/overshoot a
 // uniform Catmull-Rom throws on the sharp fried->godmode reversal.
@@ -65,7 +66,8 @@ function segmentIndex(t: number): number {
   let hi = N - 1;
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1;
-    if (WAYPOINTS[mid]!.t <= t) lo = mid;
+    const wp = WAYPOINTS[mid];
+    if (wp && wp.t <= t) lo = mid;
     else hi = mid - 1;
   }
   return Math.min(lo, N - 2);
@@ -74,8 +76,9 @@ function segmentIndex(t: number): number {
 export function evalPose(t: number): { position: THREE.Vector3; quaternion: THREE.Quaternion } {
   const tc = t < 0 ? 0 : t > 1 ? 1 : t;
   const i = segmentIndex(tc);
-  const a = WAYPOINTS[i]!;
-  const b = WAYPOINTS[i + 1]!;
+  const a = WAYPOINTS[i];
+  const b = WAYPOINTS[i + 1];
+  if (!a || !b) return _pose; // segmentIndex clamps i to [0, N-2], so both are always defined
 
   // Local fraction inside the segment; snap to the segment start across a hard
   // cut so the pose holds then jumps at the boundary instead of gliding.

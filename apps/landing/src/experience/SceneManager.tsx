@@ -14,7 +14,9 @@ import { journeyStore } from "@/engine/store";
 
 function activeIndex(t: number): number {
   for (let i = 0; i < BEATS.length; i++) {
-    const [lo, hi] = BEATS[i]!.range;
+    const beat = BEATS[i];
+    if (!beat) continue; // loop bound guarantees this index is always defined
+    const [lo, hi] = beat.range;
     if (t < hi) return t < lo ? 0 : i;
   }
   return BEATS.length - 1;
