@@ -3,9 +3,13 @@ name: 🌐 Deploy Landing Page
 # ──────────────────────────────────────────────────────────────────────
 # GitHub Pages Deploy
 # ──────────────────────────────────────────────────────────────────────
-# Purpose: Publish the static marketing landing page (landing/) to GitHub Pages
-# Triggers: push to main touching landing/ or this workflow, plus manual dispatch
-# Source:   landing/ is a self-contained single-page site (no build step)
+# Purpose: Build and publish the landing experience to GitHub Pages
+# Triggers: push to main touching the app, passthrough source, the lockfile,
+#           or this workflow, plus manual dispatch
+# Source:   apps/landing = the Next 16 static-export app (@ajh/landing);
+#           landing/ = passthrough source copied verbatim into the export by
+#           the postbuild merge-passthrough script. Build output lands in
+#           apps/landing/out.
 # Note:     Runs independently of release.yml (also push-to-main) — separate jobs.
 # ──────────────────────────────────────────────────────────────────────
 
@@ -14,7 +18,10 @@ on:
     branches:
       - main
     paths:
+      - 'apps/landing/**'
       - 'landing/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -35,17 +42,26 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Checkout
+      - name: 📥 Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
 
-      - name: Configure Pages
-        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
 
-      - name: Upload artifact
+      - name: 🏗️ Build Landing
+        env:
+          # Next 16 static export peaks above the default heap on this app;
+          # 6 GiB clears the CI runner headroom without a swap.
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: pnpm --filter @ajh/landing build
+
+      - name: 📤 Upload artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
-          path: landing
+          path: apps/landing/out
 
-      - name: Deploy to GitHub Pages
+      - name: 🚀 Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
