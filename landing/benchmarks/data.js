@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784239053820,
+  "lastUpdate": 1784252351776,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -4991,6 +4991,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 287334,
             "range": "± 13954",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d2f6fb2040202e1e3598c559540e6bf03c5398de",
+          "message": "feat: watch the inbox for application confirmations and notify to confirm (auto-track layer c) (#696)\n\n* feat: add the email-watch poller, parser, matcher, and scheduler\n\nThe watcher half of auto-track layer c (task #23 pr b): a separate l2\nscheduler mirroring the autopilot one (15-min ticks, failure backoff, 60s\ncheck-now rate limit), the imap read path (uid search above the watermark,\nheaders first, bodies only for fingerprint hits, all read-only), an en+de\nconfirmation-email parser (mail-parser, rfc2047/mime decode, sender-domain\nhints boost but never gate), and a token-jaccard company/title matcher\nagainst saved applications. New matches stamp the seen table first, then\npush a notification card routing to the matched application - never an\nautomatic write. Also treats a failed socket-timeout set as a connect error\n(the deferred pr-a review advisory).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* ui: update the email-watch settings copy for the live watcher\n\nCheck now runs the real fetch-parse-match-notify pass and the watch switch\ngoverns the 15-minute automatic check, so the placeholder copy is rewritten\nto the true semantics (en+de); the 60s check-now rate limit surfaces as\nfriendly fixed copy instead of a raw error, with tests for both rejection\nshapes.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: guard concurrent email checks and broaden confirmation recall\n\nCritic round two (security PASS, match-quality PASS, rust-arch 1 HIGH): an\nin-flight RunGuard on the shared run_check seam closes both the check-now\nTOCTOU (gmail login bursts) and the stamp-before-notify concurrency gap;\neffective_last_uid is reused not duplicated; advance_last_uid enforces its\nmonotonic invariant in SQL; per-tick header/body/subject byte bounds; EXAMINE\nover SELECT for a read-only session; try_state for the credential store in the\nscheduler. Parser recall broadened per job-match review (thanks-for-your-\napplication and received-your-application EN shapes, dative ihrer bewerbung,\neingangsbestätigung, informal deine bewerbung), and/und boundary truncation\nfixed, plus 8 adversarial fixtures documenting the rejection-email and\nwrong-role precision limits that must gate any future auto-write.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: add the email-watch domain doc and close out the layer c pointers\n\nNew knowledge doc for the watcher domain (read-only imap posture, watermark\nand dedupe contracts, en+de fingerprint philosophy, honest limits incl. the\nrejection-parity constraint that gates any future auto-write), the\nextension-domain layer c pointer updated, and four lessons persisted from\nthis build's review rounds.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: clear seen on mailbox renumber and guard tick writes against disconnect\n\nReview-ensemble round (two verified HIGHs plus advisories): a uidvalidity\nchange now wipes the seen table in the same transaction as the watermark\nreset, so reused uids from a renumbered mailbox can never silently swallow a\nreal confirmation; the three post-tick writes and the notify path re-check\nthe account still exists, closing the disconnect-mid-tick resurrection race\npr a solved for its own writes; the uid search is watermark-scoped when the\ngeneration is confirmed unchanged; a concurrent-run refusal no longer\ninflates the backoff counter; and the renderer rate-limit sentinel is pinned\nby a cross-language parity test. The email-watch domain doc is corrected to\nthe shipped behavior (native-tls, credential persistence, real seen schema,\nnotify-only wording).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: pin the disconnect-mid-tick guard with a test and cap body fetches at the protocol level\n\nExtracts the account-still-connected check run_check_inner branches on into\na pure should_commit_outcomes fn (mirroring is_due/backoff_interval/\neffective_last_uid/classify_tick_outcome's own pattern) so the guard that\nsuppresses both post-tick writes and notify_match after a disconnect\nactually has a test pinning it, not just inline logic.\n\nAlso bounds fetch_bodies at the protocol level via a partial-octet\nBODY.PEEK[]<0.N> fetch item (confirmed supported by the imap crate's own\ndocumented grammar) instead of only truncating in-process after the whole\nmessage is already resident - a large/hostile mailbox no longer costs a\nmemory spike per candidate. The post-fetch cap in poller.rs stays as\ndefense-in-depth for a non-compliant server.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
+          "timestamp": "2026-07-17T03:21:09+02:00",
+          "tree_id": "e6334d5373faccc2fabf2c5bbf61ce6ce02667f3",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/d2f6fb2040202e1e3598c559540e6bf03c5398de"
+        },
+        "date": 1784252350789,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1721403,
+            "range": "± 13413",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2109663,
+            "range": "± 34437",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 238407,
+            "range": "± 7130",
             "unit": "ns/iter"
           }
         ]
