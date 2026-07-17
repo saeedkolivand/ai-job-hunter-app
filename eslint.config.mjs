@@ -118,6 +118,7 @@ export default tseslint.config(
       '**/dist/**',
       '**/out/**',
       '**/.next/**',
+      '**/storybook-static/**',
       // Generated browser-store packaging output (unpacked dirs + zips) — minified
       // bundles, never source; like dist/, must not be linted.
       'apps/extension/store-packages/**',
