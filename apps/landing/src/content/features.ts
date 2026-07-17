@@ -2,8 +2,8 @@
 export const features = {
   h2: "what it actually does",
   lede: "(in between the breakdowns, real software happened)",
-  c1t: "23 boards, one search",
-  c1p: "LinkedIn direct; the walled boards (Indeed, Glassdoor, StepStone, Xing, Workday) via aggregator API \u2014 no new Workday account. Then Greenhouse, Lever, Ashby, and the whole DACH lineup \u2014 14 more places to be rejected, but faster.",
+  c1t: "24 boards, one search",
+  c1p: "LinkedIn direct; the walled boards (Indeed, Glassdoor, StepStone, Xing, Workday) via aggregator API \u2014 no new Workday account. Then Greenhouse, Lever, Ashby, and the whole DACH lineup \u2014 15 more places to be rejected, but faster.",
   c2t: "AI cover letters & r\u00e9sum\u00e9s",
   c2p: "Writes it for you. 12 templates \u2014 7 ATS-Safe tier (Classic, Swiss Minimal, Academic, Meridian, Throughline, Cadence, Regent) and 5 Design tier (Atelier, Portrait, Lebenslauf, Aria, Saffron), four with a headshot \u2014 rendered by a pure-Rust Typst engine to DOCX, PDF & TXT. The AI is more passionate about this role than you could ever convincingly fake.",
   c3t: "ATS scoring",

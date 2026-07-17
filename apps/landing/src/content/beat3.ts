@@ -8,7 +8,7 @@ export const beat3 = {
   mid: "it finds them. it writes them. you press send.",
   line: {
     p1: "it ",
-    b1: "HITS 23 boards",
+    b1: "HITS 24 boards",
     p2: " while you do NOTHING. it ",
     b2: "writes the cover letter",
     p3: " \u2014 the one you CRIED over. GONE. it ",

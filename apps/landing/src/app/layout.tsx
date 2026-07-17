@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://aijobhunter.app"),
   title: "AI Job Hunter \u2014 please hire him",
   description:
-    "Covers 23 job boards (direct scrapers + Adzuna/JSearch aggregator), writes your cover letters, does everything but hit submit. A real desktop app. Also a cry for help.",
+    "Covers 24 job boards (direct scrapers + Adzuna/JSearch aggregator), writes your cover letters, does everything but hit submit. A real desktop app. Also a cry for help.",
   alternates: {
     canonical: "https://aijobhunter.app/",
   },
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
         url: OG_IMAGE,
         width: 1200,
         height: 630,
-        alt: "AI Job Hunter \u2014 IT DOES EVERYTHING ELSE. Covers 23 job boards, writes your cover letters, does everything but hit submit.",
+        alt: "AI Job Hunter \u2014 IT DOES EVERYTHING ELSE. Covers 24 job boards, writes your cover letters, does everything but hit submit.",
       },
     ],
   },

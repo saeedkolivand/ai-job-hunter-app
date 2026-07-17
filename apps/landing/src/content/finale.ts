@@ -7,7 +7,7 @@ export const finale = {
   screamVoice: "smug",
   doodleAria: "poke the finale guy",
   honest:
-    "yes, this app is real. yes, it actually pulls from 23 boards \u2014 LinkedIn over HTTP, the walled ones (Indeed, Glassdoor, StepStone, Xing, Workday) via the Adzuna/JSearch aggregator API so no one has to make a 9th Workday account, and a bunch of ATS and DACH boards on top. yes, it's built with Tauri + Rust + React 19 + a vector database + a pure-Rust Typst engine that renders every PDF \u2014 because I had a lot of free time, on account of the unemployment. no, it does not auto-apply \u2014 it finds the jobs and writes the whole application; hitting submit is the one job left to you. no, I still don't have a job. the autopilot is doing its best.",
+    "yes, this app is real. yes, it actually pulls from 24 boards \u2014 LinkedIn over HTTP, the walled ones (Indeed, Glassdoor, StepStone, Xing, Workday) via the Adzuna/JSearch aggregator API so no one has to make a 9th Workday account, and a bunch of ATS and DACH boards on top. yes, it's built with Tauri + Rust + React 19 + a vector database + a pure-Rust Typst engine that renders every PDF \u2014 because I had a lot of free time, on account of the unemployment. no, it does not auto-apply \u2014 it finds the jobs and writes the whole application; hitting submit is the one job left to you. no, I still don't have a job. the autopilot is doing its best.",
   cta: "ok fine, take the app \u2192",
   srcGithub:
     "view the source \u2014 it's PolyForm Noncommercial: read it, fork it, learn from it. just don't sell my misery back to me.",

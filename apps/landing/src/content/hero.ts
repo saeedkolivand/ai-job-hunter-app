@@ -7,7 +7,7 @@ export const hero = {
   h1b: "So I built a ",
   h1ul: "robot",
   h1c: " to do it.",
-  sub: "AI Job Hunter covers 23 job boards, writes your cover letters, and drafts your applications while you dissociate \u2014 you just press send. Runs fully offline. ",
+  sub: "AI Job Hunter covers 24 job boards, writes your cover letters, and drafts your applications while you dissociate \u2014 you just press send. Runs fully offline. ",
   subBold: "Built by a guy who is, himself, still unemployed.",
   scrollhint: "scroll to watch a man fall apart",
   scrollArrow: "\u2193",

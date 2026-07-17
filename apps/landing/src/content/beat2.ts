@@ -5,7 +5,7 @@ export const beat2 = {
   doodleVoice: "frazzled",
   doodleLines: "WHY won't they reply|i can't keep up|so many tabs|make it STOP|aaaaaa",
   chips: ["LinkedIn", "Indeed", "Glassdoor", "StepStone", "Xing", "Greenhouse", "Lever", "Workday"],
-  chipsMore: "+15 more",
+  chipsMore: "+16 more",
   tagA: "entry level: 5 yrs experience required \u00B7 easy apply (47 fields) \u00B7 create a Workday account ",
   tagItalic: "(for the 9th time)",
   blackholeYell: "HELLO??",
