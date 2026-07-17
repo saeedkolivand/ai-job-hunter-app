@@ -38,14 +38,16 @@ const PRESET_CONFIG = {
  */
 async function resolvePresetTransform() {
   const preset = await presetFactory(PRESET_CONFIG);
-  // The preset returns { commits, parser, writer, whatBump }
-  // writer contains the writerOpts properties including transform
-  if (!preset?.writer?.transform) {
+  // The preset returns { parser, writer, whatBump } (and historical/version-specific
+  // layouts). The writer object (or writerOpts in some preset versions) contains the
+  // transform function. Handle both shapes for version robustness.
+  const transform = preset?.writer?.transform ?? preset?.writerOpts?.transform;
+  if (typeof transform !== 'function') {
     throw new Error(
       'Failed to resolve preset transform from conventional-changelog-conventionalcommits'
     );
   }
-  return preset.writer.transform;
+  return transform;
 }
 
 // Resolve the preset transform at module init time (top-level await)

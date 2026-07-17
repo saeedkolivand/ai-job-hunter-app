@@ -1,5 +1,8 @@
+import { createRequire } from 'node:module';
 import { describe, it, expect } from 'vitest';
 import releaseNotesTransform from './release-notes-transform.cjs';
+
+const require = createRequire(import.meta.url);
 
 describe('release-notes-transform', () => {
   describe('extractGitHubLogin (unit)', () => {
