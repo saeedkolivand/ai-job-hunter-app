@@ -54,6 +54,14 @@ Emulate `prefers-reduced-motion: reduce` (DevTools emulation): the page MUST ren
 semantic HTML and GL must NOT mount -- no canvas, no fried effects. Likewise verify a sub-threshold
 viewport (width <= 900) or coarse pointer falls back to the DOM page.
 
+## WebGL2 unavailable
+
+Force context creation to fail with Chrome DevTools MCP: `mcp__chrome-devtools__navigate_page`'s
+`initScript` param, stubbing `HTMLCanvasElement.prototype.getContext` to return null for `webgl2`,
+then navigate/reload. Fallback (no DevTools MCP): a browser launch flag or equivalent CDP
+`Page.addScriptToEvaluateOnNewDocument` call. The semantic page MUST still render and no canvas
+may mount, same bar as the reduced-motion/narrow/coarse fallbacks above.
+
 ## Report
 
 One pass/fail table row per gate check with a one-line evidence note. Numbers, not adjectives

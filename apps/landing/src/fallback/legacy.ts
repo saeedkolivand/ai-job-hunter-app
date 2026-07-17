@@ -345,7 +345,7 @@ export function initLegacy(): void {
 
       var jt = false;
       addEventListener("scroll", function () { if (!jt) { jt = true; requestAnimationFrame(function () { jt = false; paintJourney(); }); } }, { passive: true });
-      var rt: any; addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(build, 180); });
+      var rt: any; addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { build(); measureDoc(); }, 180); });
       addEventListener("load", function () { build(); measureDoc(); });
       if (document.fonts && document.fonts.ready) { /* re-measure after webfonts settle layout */
         document.fonts.ready.then(function () { build(); measureDoc(); });

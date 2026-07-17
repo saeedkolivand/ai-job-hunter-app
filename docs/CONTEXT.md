@@ -189,40 +189,37 @@ _Avoid_: premium tier, template category
 
 ## Domain - Landing experience
 
+See docs/adr/0014-landing-gl-takeover.md for the full contract and the webgl-standards skill
+for implementation rules; entries below are definitions only.
+
 **Semantic layer**:
-The prerendered content HTML that is **always in the DOM** - the authority for SEO,
-accessibility, and scroll height. The WebGL experience layers on top of it; when the
-experience does not mount, this is what the visitor reads and scrolls. It is a layer of
-the one landing document, not a second destination.
-_Avoid_: "fallback page" as a separate URL (there is no separate URL - it is the same page)
+The prerendered content HTML that is always in the DOM - what the visitor reads when the GL
+experience does not mount. Same page, not a second destination.
+_Avoid_: "fallback page" as a separate URL
 
 **Experience gate**:
-The single capability gate that decides whether the GL experience mounts: WebGL2 support
-**and** a fine pointer **and** a minimum viewport width **and** no reduced-motion
-preference. One gate, evaluated once - if any condition fails the visitor stays on the
-Semantic layer.
-_Avoid_: scattered feature detection (the decision lives in one gate, not ad-hoc checks
-sprinkled across the code)
+The single capability check that decides whether the GL experience mounts over the Semantic
+layer. See the ADR for the exact conditions.
+_Avoid_: scattered feature detection (the decision lives in one gate)
 
 **Journey**:
 The scroll-scrubbed camera ride through the landing story - scroll position drives camera
-position, so the visitor scrubs the ride rather than watching it play.
-_Avoid_: overloading Autopilot (that is the app's job-application run - a different concept)
+position.
+_Avoid_: overloading Autopilot (the app's job-application run - a different concept)
 
 **Beat**:
-One of the 8 places on the Journey: hero, slump, descent, deep-fried, godmode, features,
-testimonials, finale. A Beat is a location the camera visits on the ride.
-_Avoid_: section / panel for the 3D places (those name the DOM content; a Beat is a place
-in 3D space)
+One of the 8 places the Journey's camera visits (hero through finale - see the ADR for the
+list).
+_Avoid_: section / panel (those name DOM content; a Beat is a place in 3D space)
 
 **Passthrough files**:
 The `landing/` files copied verbatim into the exported site by the postbuild
-merge-passthrough script - source that ships unchanged, not produced by the build.
-_Avoid_: "static assets" (too generic - these are specifically the verbatim-copied
-`landing/` inputs, distinct from build output under `apps/landing/out`)
+merge-passthrough script - source that ships unchanged.
+_Avoid_: "static assets" (too generic; see the ADR for the merge mechanics)
 
 **Line boil**:
-The stepped-clock wobble of the ink strokes - the stroke geometry is re-jittered on a
-~10fps stepped clock, giving the hand-drawn sketchbook look its core motion.
-_Avoid_: jitter / noise generically (Line boil is the specific stepped-clock stroke wobble,
-not any random perturbation)
+The shader-driven wobble of the ink strokes on a stepped clock, giving the hand-drawn
+sketchbook look its core motion. See the webgl-standards skill for the implementation
+contract.
+_Avoid_: CPU geometry jitter (Line boil is a vertex-shader effect, not per-frame geometry
+re-jitter); jitter / noise generically

@@ -30,6 +30,10 @@ rAF-counter FPS sampling; mark those checks self-reported.
 - **Console cleanliness** -- zero THREE/WebGL errors at any audited t.
 - **Reduced-motion + gate fallback** -- emulate `prefers-reduced-motion: reduce` (and a
   <=900px / coarse-pointer client): the prerendered semantic HTML must render and GL must NOT mount.
+- **WebGL2-unavailable fallback** -- force context creation to fail via
+  `mcp__chrome-devtools__navigate_page`'s `initScript` (stub `HTMLCanvasElement.prototype.getContext`
+  to return null for `webgl2`) and reload: the semantic page must still render and no canvas may
+  mount.
 
 ## Report
 

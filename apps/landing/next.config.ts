@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   images: { unoptimized: true },
   // This app lives in a pnpm workspace; point file tracing at the repo root so
   // Next resolves hoisted deps instead of walking out of the monorepo.
-  outputFileTracingRoot: path.join(__dirname, "../../"),
+  outputFileTracingRoot: path.join(import.meta.dirname, "../../"),
 };
 
 export default nextConfig;
