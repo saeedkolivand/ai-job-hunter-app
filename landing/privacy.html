@@ -78,10 +78,11 @@ hr.scrawl{border:none; height:14px; margin:48px auto; width:160px;
   background:no-repeat center/contain url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 14'><path d='M4 8 q12 -8 24 0 t24 0 t24 0 t24 0 t24 0 t24 0' fill='none' stroke='%231c1812' stroke-width='2.6' stroke-linecap='round'/></svg>")}
 
 footer{margin-top:60px; text-align:center}
-.byline{font-family:var(--scrawl); font-size:14px; color:var(--muted)}
+.byline{font-family:var(--scrawl); font-size:15px; color:var(--muted)}
 .foot-links{font-family:var(--mono); font-size:13px; color:var(--muted); margin-top:10px}
 .foot-links a{color:var(--muted); border:none}
 .foot-links a:hover{color:var(--ink)}
+.foot-links a:focus-visible{outline:2px solid var(--ink); outline-offset:2px; border-radius:2px}
 
 /* ── focus-visible ring for all interactive elements ──
    Using --ink (#1c1812) gives ~12.6:1 contrast on --paper, well above the
@@ -230,9 +231,7 @@ h2 .anchor:focus-visible{border-radius:2px}
     <span class="label">Job scraping — fetching job-board pages</span>
     <p style="margin-top:0">
       To find and import jobs, the app makes <b>outbound requests to the job boards you search</b>.
-      Most boards (e.g. Greenhouse, Lever, Ashby, Personio) are fetched over plain HTTP. LinkedIn is
-      the only board driven through a local Chromium instance using a per-board profile so your login
-      persists on your machine. The walled aggregator boards (Indeed, Glassdoor, StepStone, Xing, Workday)
+      Most boards (e.g. Greenhouse, Lever, Ashby, Personio) are fetched over plain HTTP. LinkedIn job listings are also fetched over HTTP like the other boards; the only local-Chromium use is an optional login window that saves your LinkedIn session cookie to a per-board profile on your machine (to enrich authenticated searches) — not the scrape transport. The walled aggregator boards (Indeed, Glassdoor, StepStone, Xing, Workday)
       are reached via the Adzuna/JSearch aggregator API using your own API key — no browser required.
       <b>Adzuna</b> requests go directly to Adzuna's API. <b>JSearch</b> requests go through
       <b>RapidAPI</b> (the API gateway for JSearch) using your RapidAPI key. We run no proxy or
@@ -301,7 +300,7 @@ h2 .anchor:focus-visible{border-radius:2px}
   <footer>
     <p class="byline">made by Saeed, between rejections.</p>
     <p class="foot-links">
-      <a href="/">home</a> · <a href="/creature">▶ the short film</a> · privacy · <a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener noreferrer">♥ sponsor</a>
+      <a href="/">home</a> · <a href="/download">download</a> · privacy · <a href="/creature">▶ the short film</a> · <a href="https://github.com/saeedkolivand/ai-job-hunter-app" target="_blank" rel="noopener noreferrer">GitHub</a> · <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll" target="_blank" rel="noopener noreferrer">Chrome extension</a> · <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/" target="_blank" rel="noopener noreferrer">Firefox extension</a> · <a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener noreferrer">♥ sponsor</a>
     </p>
   </footer>
 
