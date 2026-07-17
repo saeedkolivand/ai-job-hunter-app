@@ -186,3 +186,40 @@ the gallery and picks which templates surface the ATS-mode toggle. A design-tier
 collapses to a linear single column (and drops its photo) when ATS mode is on. See
 [ADR 0007](adr/0007-document-color-is-a-knob-not-a-template.md).
 _Avoid_: premium tier, template category
+
+## Domain - Landing experience
+
+See docs/adr/0014-landing-gl-takeover.md for the full contract and the webgl-standards skill
+for implementation rules; entries below are definitions only.
+
+**Semantic layer**:
+The prerendered content HTML that is always in the DOM - what the visitor reads when the GL
+experience does not mount. Same page, not a second destination.
+_Avoid_: "fallback page" as a separate URL
+
+**Experience gate**:
+The single capability check that decides whether the GL experience mounts over the Semantic
+layer. See the ADR for the exact conditions.
+_Avoid_: scattered feature detection (the decision lives in one gate)
+
+**Journey**:
+The scroll-scrubbed camera ride through the landing story - scroll position drives camera
+position.
+_Avoid_: overloading Autopilot (the app's job-application run - a different concept)
+
+**Beat**:
+One of the 8 places the Journey's camera visits (hero through finale - see the ADR for the
+list).
+_Avoid_: section / panel (those name DOM content; a Beat is a place in 3D space)
+
+**Passthrough files**:
+The `landing/` files copied verbatim into the exported site by the postbuild
+merge-passthrough script - source that ships unchanged.
+_Avoid_: "static assets" (too generic; see the ADR for the merge mechanics)
+
+**Line boil**:
+The shader-driven wobble of the ink strokes on a stepped clock, giving the hand-drawn
+sketchbook look its core motion. See the webgl-standards skill for the implementation
+contract.
+_Avoid_: CPU geometry jitter (Line boil is a vertex-shader effect, not per-frame geometry
+re-jitter); jitter / noise generically

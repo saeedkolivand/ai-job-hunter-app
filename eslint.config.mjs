@@ -117,6 +117,7 @@ export default tseslint.config(
     ignores: [
       '**/dist/**',
       '**/out/**',
+      '**/.next/**',
       // Generated browser-store packaging output (unpacked dirs + zips) — minified
       // bundles, never source; like dist/, must not be linted.
       'apps/extension/store-packages/**',
@@ -501,13 +502,42 @@ export default tseslint.config(
       },
     },
   },
-  // Branding/marketing asset generators run under Node (console / process / fs).
+  // Branding/marketing asset generators + landing's postbuild script all run
+  // under plain Node (console / process / fs).
   {
-    files: ['branding/**/*.mjs'],
+    files: ['branding/**/*.mjs', 'apps/landing/scripts/**/*.mjs'],
     languageOptions: {
       globals: {
         ...globals.node,
       },
+    },
+  },
+
+  // apps/landing (@ajh/landing) - static marketing site, no @ajh/ui dependency.
+  // It ships hand-authored CSS + inline hex/styles (not Tailwind design tokens),
+  // so the base design-system selector rule (hardcoded-hex-in-className/style,
+  // invalid-opacity) does not apply. The raw-<button>/@ajh/ui import bans are
+  // already scoped to apps/desktop/src/renderer, so they never match here.
+  // Placed last so it wins for these files. Only the design-system rule is
+  // relaxed; all general quality rules (no-explicit-any, import sort, etc.) stay.
+  {
+    files: ['apps/landing/**/*.ts', 'apps/landing/**/*.tsx'],
+    rules: {
+      'no-restricted-syntax': 'off',
+    },
+  },
+
+  // apps/landing/src/fallback - verbatim transcription of the legacy landing
+  // inline script (parity with landing/index.html); rewriting would defeat
+  // the port, so the rules that would force it to diverge are off here.
+  {
+    files: ['apps/landing/src/fallback/**'],
+    rules: {
+      'no-var': 'off',
+      '@typescript-eslint/no-non-null-assertion': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
+      'no-console': 'off',
+      'no-empty': 'off',
     },
   }
 );

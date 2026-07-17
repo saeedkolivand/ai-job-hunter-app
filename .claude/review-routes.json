@@ -36,6 +36,7 @@
     { "glob": "packages/translations/**", "owner": "frontend-reviewer" },
     { "glob": "packages/test-ids/**", "owner": "frontend-reviewer" },
     { "glob": "apps/desktop/src/**", "owner": "frontend-reviewer" },
+    { "glob": "apps/landing/**", "owner": "webgl-reviewer" },
     { "glob": "apps/desktop/src-tauri/src/**", "owner": "rust-backend-architect" },
     { "glob": "packages/shared/**", "owner": "rust-backend-architect" },
     { "glob": ".claude/hooks/**", "owner": "code-quality-reviewer" },
@@ -87,6 +88,14 @@
     {
       "owner": "ui-ux-expert",
       "globs": ["apps/desktop/src/renderer/**", "packages/ui/**", "landing/**"]
+    },
+    {
+      "owner": "gate-auditor",
+      "globs": ["apps/landing/**"]
+    },
+    {
+      "owner": "webgl-perf-profiler",
+      "globs": ["apps/landing/**"]
     }
   ],
   "advisory": {

@@ -107,20 +107,22 @@ Full pipeline, model tiering, and rationale → **`.claude/`** (agents/skills/co
 
 **Default: every change auto-routes through the agent fleet** — no slash command needed. Each domain is a **pair**: a write-capable **author** implements, an independent **critic** audits (authors never approve their own work). Pick by touched area:
 
-| Touched area                                                | Author                          | Critic(s)                                        |
-| ----------------------------------------------------------- | ------------------------------- | ------------------------------------------------ |
-| React renderer                                              | `frontend-author`               | `frontend-reviewer` · `ui-ux-expert` (visual/UX) |
-| Rust/Tauri backend                                          | `rust-backend-author`           | `rust-backend-architect`                         |
-| Resume/export, DocumentModel, templates, theme, locale      | `pdf-docx-generator`            | `resume-export-expert`                           |
-| ATS scoring, job analysis, matching, cover-letter relevance | `job-match-author`              | `job-match-expert`                               |
-| AI providers, routing, embeddings, prompts, streaming       | `ai-provider-author`            | `ai-provider-expert`                             |
-| Scraping, browser automation, registries                    | `scraping-applier-author`       | `scraping-applier-expert`                        |
-| Browser extension + bridge + protocol                       | `extension-author`              | `extension-reviewer`                             |
-| Tests                                                       | `test-author`                   | `testing-reviewer`                               |
-| Code quality (on-demand)                                    | `code-quality-author`           | `code-quality-reviewer`                          |
-| Docs / knowledge / ADRs / lessons / release                 | `project-steward` (sole writer) | `project-steward`                                |
+| Touched area                                                | Author                          | Critic(s)                                          |
+| ----------------------------------------------------------- | ------------------------------- | -------------------------------------------------- |
+| React renderer                                              | `frontend-author`               | `frontend-reviewer` · `ui-ux-expert` (visual/UX)   |
+| WebGL landing scenes/engine (apps/landing)                  | `webgl-author`                  | `webgl-reviewer` and `gate-auditor` (visual gates) |
+| GLSL, post pipeline (apps/landing shaders/post)             | `shader-engineer`               | `webgl-reviewer`                                   |
+| Rust/Tauri backend                                          | `rust-backend-author`           | `rust-backend-architect`                           |
+| Resume/export, DocumentModel, templates, theme, locale      | `pdf-docx-generator`            | `resume-export-expert`                             |
+| ATS scoring, job analysis, matching, cover-letter relevance | `job-match-author`              | `job-match-expert`                                 |
+| AI providers, routing, embeddings, prompts, streaming       | `ai-provider-author`            | `ai-provider-expert`                               |
+| Scraping, browser automation, registries                    | `scraping-applier-author`       | `scraping-applier-expert`                          |
+| Browser extension + bridge + protocol                       | `extension-author`              | `extension-reviewer`                               |
+| Tests                                                       | `test-author`                   | `testing-reviewer`                                 |
+| Code quality (on-demand)                                    | `code-quality-author`           | `code-quality-reviewer`                            |
+| Docs / knowledge / ADRs / lessons / release                 | `project-steward` (sole writer) | `project-steward`                                  |
 
-Cross-cutting critics (no author — fixes route to the owning domain author): `tauri-security-reviewer` (default Secondary on any risk-bearing change), `performance-profiler` (perf-sensitive only), `cleanup` (dead-code, always just before steward), `pr-reviewer` (strict pre-PR gate), `finding-verifier` (utility judge — one fresh haiku context per single-source /review finding, drops anything scoring <80).
+Cross-cutting critics (no author — fixes route to the owning domain author): `tauri-security-reviewer` (default Secondary on any risk-bearing change), `performance-profiler` (perf-sensitive only), `webgl-perf-profiler` (apps/landing GL frame rate only, distinct from `performance-profiler`), `cleanup` (dead-code, always just before steward), `pr-reviewer` (strict pre-PR gate), `finding-verifier` (utility judge — one fresh haiku context per single-source /review finding, drops anything scoring <80).
 
 **Per-change sequence** (skip what doesn't apply): author implements → sibling critic audits (resolve HIGH/CRITICAL; LOW/MEDIUM advisory) → if testable logic, `test-author` → `testing-reviewer` → `cleanup` → `project-steward` closes (docs/lessons sync + `graphify update .` + `codegraph sync`). Context flows via the per-task handoff file `.claude/scratch/<task>.md`. **≤3 critics/task.** Critic count scales with risk: trivial diffs rely on the Stop review-gate alone; small single-domain diffs get ONE sibling critic; the full trio (incl. security) only for risk-bearing/multi-domain changes. Orchestrate all sub-agents from the main session (agents can't call agents). **Before a PR:** `/review-security` (`tauri-security-reviewer`) — HIGH/CRITICAL block — then `/review` (`pr-reviewer`) as the final gate (🔴+🟠 block); both complement CodeRabbit.
 
@@ -131,6 +133,6 @@ Cross-cutting critics (no author — fixes route to the owning domain author): `
 - **Lessons** (`.claude/memory/lessons.jsonl`) — only `project-steward` writes; others propose via `LESSON · category · Context/Decision/Outcome`.
 - **Cross-session recall** — all agents may call `mcp__mcp-search` (claude-mem: `search`/`timeline`/`get_observations`/`memory_search`/`memory_context`) for prior-session context. Provided by the user-installed `thedotmack/claude-mem` plugin, not the repo — absent if the plugin isn't installed (the allowlist entry then just no-ops). Honor `docs/` path-privacy + `<private>` for PII.
 
-**Model tiering** (per agent `model:` frontmatter): Opus for last-line critics (`rust-backend-architect`, `tauri-security-reviewer`, `ai-provider-expert`, `job-match-expert`, `pr-reviewer`); Sonnet for authors + balanced critics; Haiku for `project-steward`. Authors escalate to Opus per spawn for genuinely hard work (Rust concurrency/`unsafe`, new provider streaming, schema migration). Use extended thinking for architecture/security/concurrency/data-loss; normal effort for routine UI/docs/renames.
+**Model tiering** (per agent `model:` frontmatter): Opus for last-line critics (`rust-backend-architect`, `tauri-security-reviewer`, `ai-provider-expert`, `job-match-expert`, `pr-reviewer`, `webgl-reviewer`); Sonnet for authors + balanced critics; Haiku for `project-steward`. Authors escalate to Opus per spawn for genuinely hard work (Rust concurrency/`unsafe`, new provider streaming, schema migration). Use extended thinking for architecture/security/concurrency/data-loss; normal effort for routine UI/docs/renames.
 
 **Context priority:** codegraph/graphify → source → `docs/knowledge/` → lessons. Read the minimum; stop at ~90% confidence.
