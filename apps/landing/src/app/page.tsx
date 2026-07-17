@@ -13,7 +13,7 @@ export default function Page() {
   return (
     <>
       <Chrome />
-      <main>
+      <main id="semantic-root">
         <Hero />
         <Beat1 />
         <Beat2 />
