@@ -1172,7 +1172,7 @@
         scraper: {
           t: 'Scraper engine + board registry',
           layer: 'rust',
-          d: '<code>ScraperEngine</code> bounds concurrency with a resizable semaphore and tracks cancellation tokens per job. A static <code>SCRAPERS</code> registry (23 boards) maps an id to a <code>&dyn Scraper</code>. Each scraper is HTTP‑mode or Browser‑mode and emits items through an <code>on_item</code> callback.',
+          d: '<code>ScraperEngine</code> bounds concurrency with a resizable semaphore and tracks cancellation tokens per job. A static <code>SCRAPERS</code> registry (24 boards) maps an id to a <code>&dyn Scraper</code>. Each scraper is HTTP‑mode or Browser‑mode and emits items through an <code>on_item</code> callback.',
           f: [
             'apps/desktop/src-tauri/src/scraping/engine/mod.rs',
             'apps/desktop/src-tauri/src/scraping/boards/mod.rs',
@@ -1550,7 +1550,7 @@
               layer: 'rust',
               title: 'Engine: throttle + look up the board',
               body: '<code>ScraperEngine</code> acquires a semaphore permit (default <b>2</b> concurrent scrapes, tunable by performance mode), registers a <code>CancellationToken</code> under the jobId, and resolves the scraper from the registry: <code>boards::get(id)</code>.',
-              code: '<span class="k">static</span> SCRAPERS: &[&<span class="k">dyn</span> Scraper] = &[ <span class="c">/* ~23 boards */</span> ];\\nboards::get(board)? <span class="c">// &dyn Scraper</span>',
+              code: '<span class="k">static</span> SCRAPERS: &[&<span class="k">dyn</span> Scraper] = &[ <span class="c">/* ~24 boards */</span> ];\\nboards::get(board)? <span class="c">// &dyn Scraper</span>',
               files: [
                 'apps/desktop/src-tauri/src/scraping/engine/mod.rs',
                 'apps/desktop/src-tauri/src/scraping/boards/mod.rs',
@@ -1839,7 +1839,7 @@
           ],
         },
         {
-          h: 'Scraping — engine + board registry (23 boards)',
+          h: 'Scraping — engine + board registry (24 boards)',
           b: `
     <p>The <code>ScraperEngine</code> bounds concurrency with a resizable semaphore (default 2) and keeps a
     cancellation token per running job. Boards live in a static <code>SCRAPERS</code> registry.</p>
