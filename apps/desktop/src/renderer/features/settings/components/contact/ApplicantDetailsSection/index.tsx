@@ -3,7 +3,7 @@ import { Briefcase } from 'lucide-react';
 import { useTranslation } from '@ajh/translations';
 import { Input, SettingsSection } from '@ajh/ui';
 
-import { useJobPreferences, useSetJobPreferences } from '@/services';
+import { useSetSalaryExpectation } from '@/services';
 import type { ApplicantPreferences } from '@/store/preferences-schema';
 import { useApplicant, usePreferencesStore } from '@/store/preferences-store';
 
@@ -47,15 +47,18 @@ export function ApplicantDetailsSection() {
   const setApplicant = usePreferencesStore((s) => s.setApplicant);
   // Backend-readable mirror of `salaryExpectation` only (Task #30) — the
   // bridge's `answers.suggest` reads it from `job_preferences`, which has no
-  // access to this renderer-only store otherwise.
-  const { data: jobPrefs } = useJobPreferences();
-  const setJobPreferences = useSetJobPreferences();
+  // access to this renderer-only store otherwise. A single-column write
+  // (review fix, PR #695): NEVER merge this onto a `useJobPreferences` read —
+  // that query may not have loaded yet, and spreading its stale/undefined
+  // `data` onto a full-row `set()` would silently NULL the user's saved
+  // location/tech stack/country code.
+  const setSalaryExpectation = useSetSalaryExpectation();
 
   const update = (key: keyof ApplicantPreferences, value: string) => {
     const next: ApplicantPreferences = { ...applicant, [key]: value };
     setApplicant(next);
     if (key === 'salaryExpectation') {
-      setJobPreferences.mutate({ ...jobPrefs, salaryExpectation: value.trim() || undefined });
+      setSalaryExpectation.mutate(value.trim() || undefined);
     }
   };
 

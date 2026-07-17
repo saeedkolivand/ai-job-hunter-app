@@ -26,6 +26,26 @@ export const useSetJobPreferences = () => {
 };
 
 /**
+ * Write-through for `applicant.salaryExpectation` only (review fix, PR #695)
+ * — a single-column backend write via `setSalaryExpectation`, NEVER the
+ * full-row `set()` merged with a possibly-stale/not-yet-loaded
+ * `useJobPreferences` cache (that full-row write would silently NULL
+ * `location`/`techStack`/`countryCode` whenever this fired before the query
+ * had loaded). Used by `ApplicantDetailsSection`'s onChange; invalidates the
+ * shared `jobPreferences` query on success so a concurrently-mounted
+ * `useJobPreferences` never serves the pre-write value.
+ */
+export const useSetSalaryExpectation = () => {
+  const api = useAppClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (salaryExpectation: string | undefined) =>
+      api.jobPreferences.setSalaryExpectation(salaryExpectation),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.jobPreferences.all }),
+  });
+};
+
+/**
  * Boot-time push of the renderer-only `applicant.salaryExpectation` onto the
  * backend-owned `job_preferences` store (Task #30) — the bridge's
  * `answers.suggest` reads it from there for the synthetic salary-question row
@@ -37,17 +57,23 @@ export const useSetJobPreferences = () => {
  * is saved. The settings field's own `onChange` (see `ApplicantDetailsSection`)
  * is what keeps it in sync on every SUBSEQUENT edit; this hook only covers the
  * gap for whatever was already saved. Mount once in an app-global root/provider.
+ *
+ * Uses the SAME single-column `setSalaryExpectation` write as the onChange
+ * path (review fix, PR #695) — never the full-row `set()`, and invalidates
+ * the query cache on success so a concurrently-mounting `useJobPreferences`
+ * can't cache the pre-sync value.
  */
 export const useSyncSalaryExpectation = () => {
   const api = useAppClient();
+  const qc = useQueryClient();
   const pushed = useRef(false);
   useEffect(() => {
     if (pushed.current) return;
     pushed.current = true;
     const salaryExpectation = usePreferencesStore.getState().applicant?.salaryExpectation?.trim();
     if (!salaryExpectation) return; // nothing saved yet — nothing to sync
-    void api.jobPreferences.get().then((current) => {
-      void api.jobPreferences.set({ ...current, salaryExpectation });
+    void api.jobPreferences.setSalaryExpectation(salaryExpectation).then(() => {
+      void qc.invalidateQueries({ queryKey: keys.jobPreferences.all });
     });
-  }, [api]);
+  }, [api, qc]);
 };

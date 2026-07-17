@@ -191,6 +191,87 @@ fn test_salary_expectation_is_byte_clamped() {
     assert!(stored.is_char_boundary(stored.len()));
 }
 
+// ── set_salary_expectation (review fix, PR #695 — single-column write) ───────
+
+/// The whole point of `set_salary_expectation`: unlike `set()`'s full-row
+/// write, it must NEVER touch location/tech_stack/country_code — proven here
+/// by seeding all three, then calling ONLY `set_salary_expectation` (as if a
+/// caller's `useJobPreferences` query hadn't loaded yet, so it has no fresh
+/// copy of those fields to spread) and asserting they all survive untouched.
+#[test]
+fn test_set_salary_expectation_never_clears_other_fields() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    store
+        .set(&JobPreferences {
+            location: Some("Berlin".to_string()),
+            country_code: Some("de".to_string()),
+            tech_stack: Some(vec![TechStackItem {
+                name: "Rust".to_string(),
+                category: "language".to_string(),
+            }]),
+            salary_expectation: None,
+        })
+        .unwrap();
+
+    store
+        .set_salary_expectation(Some("€75,000".to_string()))
+        .unwrap();
+
+    let retrieved = store.get();
+    assert_eq!(
+        retrieved.location,
+        Some("Berlin".to_string()),
+        "location must survive a salary-only set"
+    );
+    assert_eq!(
+        retrieved.country_code,
+        Some("de".to_string()),
+        "country_code must survive a salary-only set"
+    );
+    assert_eq!(
+        retrieved.tech_stack.as_ref().map(Vec::len),
+        Some(1),
+        "tech_stack must survive a salary-only set"
+    );
+    assert_eq!(retrieved.salary_expectation, Some("€75,000".to_string()));
+}
+
+#[test]
+fn test_set_salary_expectation_can_clear_to_none_without_touching_other_fields() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    store
+        .set(&JobPreferences {
+            location: Some("Munich".to_string()),
+            country_code: None,
+            tech_stack: None,
+            salary_expectation: Some("€75,000".to_string()),
+        })
+        .unwrap();
+
+    store.set_salary_expectation(None).unwrap();
+
+    let retrieved = store.get();
+    assert_eq!(retrieved.location, Some("Munich".to_string()));
+    assert_eq!(retrieved.salary_expectation, None);
+}
+
+#[test]
+fn test_set_salary_expectation_is_byte_clamped() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    let oversized: String = "€".repeat(150); // 300 bytes
+    store.set_salary_expectation(Some(oversized)).unwrap();
+
+    let stored = store.get().salary_expectation.unwrap();
+    assert!(stored.len() <= MAX_SALARY_EXPECTATION_BYTES);
+    assert!(stored.is_char_boundary(stored.len()));
+}
+
 // ── Migration: drop_unused_job_preferences_columns ────────────────────────────
 //
 // The v2 migration recreates `job_preferences` with only `id`, `location`, and

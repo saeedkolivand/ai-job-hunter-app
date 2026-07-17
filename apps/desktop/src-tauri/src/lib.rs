@@ -844,6 +844,7 @@ pub fn run() {
             // job preferences
             commands::job_preferences::job_preferences_get,
             commands::job_preferences::job_preferences_set,
+            commands::job_preferences::job_preferences_set_salary_expectation,
             // contact profile (header source of truth)
             commands::contact_profile::contact_profile_get,
             commands::contact_profile::contact_profile_set,

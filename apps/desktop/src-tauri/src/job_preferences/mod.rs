@@ -215,6 +215,27 @@ impl JobPreferencesStore {
         .map_err(|e| e.to_string())?;
         Ok(())
     }
+
+    /// Update ONLY `salary_expectation` — a single-column `UPDATE`, unlike
+    /// [`set`](Self::set)'s full-row write. Review fix (PR #695): a caller that
+    /// only has the salary value on hand (not a freshly-read `location`/
+    /// `tech_stack`/`country_code`) must never be forced to guess those other
+    /// columns — `set()`'s full-row semantics silently NULL any field absent
+    /// from its payload, which nulled out the user's saved location/tech stack
+    /// whenever `ApplicantDetailsSection` fired before its `useJobPreferences`
+    /// query had loaded. This method structurally cannot touch the other three
+    /// columns, so that class of bug can never recur here regardless of any
+    /// caller's cache/query state.
+    pub fn set_salary_expectation(&self, salary_expectation: Option<String>) -> AppResult<()> {
+        let conn = self.conn.lock();
+        let clamped = salary_expectation.map(|s| clamp_bytes(s, MAX_SALARY_EXPECTATION_BYTES));
+        conn.execute(
+            "UPDATE job_preferences SET salary_expectation = ?1 WHERE id = 1",
+            params![clamped],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
 }
 
 impl DataStore for JobPreferencesStore {
