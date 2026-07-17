@@ -62,6 +62,14 @@ export const useSetSalaryExpectation = () => {
  * path (review fix, PR #695) — never the full-row `set()`, and invalidates
  * the query cache on success so a concurrently-mounting `useJobPreferences`
  * can't cache the pre-sync value.
+ *
+ * Best-effort: `.catch` swallows a rejected `setSalaryExpectation` (or the
+ * invalidate, though that itself can't reject) — `pushed` is already set by
+ * the time either runs, so a failure here is never retried; the impact is
+ * only "not synced this launch" (the value stays in the renderer store and
+ * the ordinary onChange path still fires normally on the next edit), never
+ * data loss. Without this, a rejection would surface as an unhandled promise
+ * rejection (review fix, PR #695).
  */
 export const useSyncSalaryExpectation = () => {
   const api = useAppClient();
@@ -72,8 +80,12 @@ export const useSyncSalaryExpectation = () => {
     pushed.current = true;
     const salaryExpectation = usePreferencesStore.getState().applicant?.salaryExpectation?.trim();
     if (!salaryExpectation) return; // nothing saved yet — nothing to sync
-    void api.jobPreferences.setSalaryExpectation(salaryExpectation).then(() => {
-      void qc.invalidateQueries({ queryKey: keys.jobPreferences.all });
-    });
+    void api.jobPreferences
+      .setSalaryExpectation(salaryExpectation)
+      .then(() => qc.invalidateQueries({ queryKey: keys.jobPreferences.all }))
+      .catch(() => {
+        // Best-effort boot sync — see the doc above. Never surfaced to the
+        // user, never retried this session.
+      });
   }, [api, qc]);
 };
