@@ -159,6 +159,19 @@ export const EXTENSION_MESSAGE_TYPES = {
   /** Desktop → extension: the `autotrack.check` outcome — `{ enabled }`. */
   autotrackResult: 'autotrack.result',
   /**
+   * Extension → desktop: read the assisted-autofill opt-in (Task #30) — no
+   * payload. Mirrors `autotrack.check` EXACTLY: a pure read of the user's own
+   * device-local setting, no consent gate on the READ itself (the enforced
+   * boundary is what the opt-in gates — `profile.get`/`answers.save`/
+   * `answers.suggest` — never this read). The popup consults it once per
+   * connected transition to decide whether to auto-run "Suggest answers for
+   * this form" without a click; the desktop still re-enforces the real gate
+   * on `answers.suggest` itself regardless of what this read returns.
+   */
+  autofillCheck: 'autofill.check',
+  /** Desktop → extension: the `autofill.check` outcome — `{ enabled }`. */
+  autofillResult: 'autofill.result',
+  /**
    * Extension → desktop: "save my answers from this page" — append the
    * captured `{question, answer}` pairs from the active tab's filled form
    * fields onto the Application matched by (canonicalized + normalized)
@@ -447,6 +460,16 @@ export interface ExtensionStatusUpdateRequest {
  * default) client-side.
  */
 export interface ExtensionAutotrackResult {
+  enabled: boolean;
+}
+
+/**
+ * `autofill.result` payload (Task #30) — whether the desktop-enforced
+ * assisted-autofill opt-in is currently on. Mirrors
+ * {@link ExtensionAutotrackResult} exactly; a malformed/absent reply is
+ * treated as `false` (OFF, the safe default) client-side.
+ */
+export interface ExtensionAutofillResult {
   enabled: boolean;
 }
 

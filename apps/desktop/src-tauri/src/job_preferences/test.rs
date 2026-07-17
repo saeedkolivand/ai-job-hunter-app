@@ -32,6 +32,7 @@ fn test_clear_resets_to_empty() {
                 name: "Rust".to_string(),
                 category: "language".to_string(),
             }]),
+            salary_expectation: Some("€75,000".to_string()),
         })
         .unwrap();
     assert!(store.get().location.is_some());
@@ -40,6 +41,7 @@ fn test_clear_resets_to_empty() {
     let prefs = store.get();
     assert_eq!(prefs.location, None);
     assert_eq!(prefs.tech_stack, None);
+    assert_eq!(prefs.salary_expectation, None);
 }
 
 #[test]
@@ -60,6 +62,7 @@ fn test_set_and_get() {
                 category: "frontend".to_string(),
             },
         ]),
+        salary_expectation: Some("€75,000".to_string()),
     };
 
     store.set(&prefs).unwrap();
@@ -68,6 +71,7 @@ fn test_set_and_get() {
     assert_eq!(retrieved.location, Some("Berlin".to_string()));
     assert_eq!(retrieved.country_code, Some("de".to_string()));
     assert_eq!(retrieved.tech_stack.as_ref().unwrap().len(), 2);
+    assert_eq!(retrieved.salary_expectation, Some("€75,000".to_string()));
 }
 
 #[test]
@@ -82,6 +86,7 @@ fn test_tech_stack_serialization() {
             name: "TypeScript".to_string(),
             category: "language".to_string(),
         }]),
+        salary_expectation: None,
     };
 
     store.set(&prefs).unwrap();
@@ -103,6 +108,7 @@ fn test_partial_update() {
             name: "Rust".to_string(),
             category: "language".to_string(),
         }]),
+        salary_expectation: Some("€75,000".to_string()),
     };
     store.set(&prefs1).unwrap();
 
@@ -111,6 +117,7 @@ fn test_partial_update() {
         location: Some("Munich".to_string()),
         country_code: None,
         tech_stack: None,
+        salary_expectation: None,
     };
     store.set(&prefs2).unwrap();
 
@@ -122,6 +129,147 @@ fn test_partial_update() {
         retrieved.country_code, None,
         "country_code must also be overwritten to None (full-row UPDATE semantics)"
     );
+    assert_eq!(
+        retrieved.salary_expectation, None,
+        "salary_expectation must also be overwritten to None (full-row UPDATE semantics)"
+    );
+}
+
+// ── salary_expectation (Task #30) ─────────────────────────────────────────────
+
+#[test]
+fn test_salary_expectation_round_trips() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    store
+        .set(&JobPreferences {
+            location: None,
+            country_code: None,
+            tech_stack: None,
+            salary_expectation: Some("80k DOE".to_string()),
+        })
+        .unwrap();
+
+    assert_eq!(store.get().salary_expectation, Some("80k DOE".to_string()));
+}
+
+#[test]
+fn test_salary_expectation_defaults_to_none() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+    assert_eq!(store.get().salary_expectation, None);
+}
+
+/// A pathological/oversized value is clamped server-side, never trusted as
+/// the only write path (mirrors the byte caps `extension_bridge`'s own verbs
+/// enforce on untrusted strings).
+#[test]
+fn test_salary_expectation_is_byte_clamped() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    // A multi-byte (UTF-8) string well over the 200-byte cap.
+    let oversized: String = "€".repeat(150); // 150 * 2 bytes = 300 bytes
+    store
+        .set(&JobPreferences {
+            location: None,
+            country_code: None,
+            tech_stack: None,
+            salary_expectation: Some(oversized),
+        })
+        .unwrap();
+
+    let stored = store.get().salary_expectation.unwrap();
+    assert!(
+        stored.len() <= MAX_SALARY_EXPECTATION_BYTES,
+        "stored value must be clamped to the byte cap, got {} bytes",
+        stored.len()
+    );
+    // Never split a multi-byte char — the clamped string must stay valid UTF-8
+    // (guaranteed by `String`'s invariant; this call would panic otherwise).
+    assert!(stored.is_char_boundary(stored.len()));
+}
+
+// ── set_salary_expectation (review fix, PR #695 — single-column write) ───────
+
+/// The whole point of `set_salary_expectation`: unlike `set()`'s full-row
+/// write, it must NEVER touch location/tech_stack/country_code — proven here
+/// by seeding all three, then calling ONLY `set_salary_expectation` (as if a
+/// caller's `useJobPreferences` query hadn't loaded yet, so it has no fresh
+/// copy of those fields to spread) and asserting they all survive untouched.
+#[test]
+fn test_set_salary_expectation_never_clears_other_fields() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    store
+        .set(&JobPreferences {
+            location: Some("Berlin".to_string()),
+            country_code: Some("de".to_string()),
+            tech_stack: Some(vec![TechStackItem {
+                name: "Rust".to_string(),
+                category: "language".to_string(),
+            }]),
+            salary_expectation: None,
+        })
+        .unwrap();
+
+    store
+        .set_salary_expectation(Some("€75,000".to_string()))
+        .unwrap();
+
+    let retrieved = store.get();
+    assert_eq!(
+        retrieved.location,
+        Some("Berlin".to_string()),
+        "location must survive a salary-only set"
+    );
+    assert_eq!(
+        retrieved.country_code,
+        Some("de".to_string()),
+        "country_code must survive a salary-only set"
+    );
+    assert_eq!(
+        retrieved.tech_stack.as_ref().map(Vec::len),
+        Some(1),
+        "tech_stack must survive a salary-only set"
+    );
+    assert_eq!(retrieved.salary_expectation, Some("€75,000".to_string()));
+}
+
+#[test]
+fn test_set_salary_expectation_can_clear_to_none_without_touching_other_fields() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    store
+        .set(&JobPreferences {
+            location: Some("Munich".to_string()),
+            country_code: None,
+            tech_stack: None,
+            salary_expectation: Some("€75,000".to_string()),
+        })
+        .unwrap();
+
+    store.set_salary_expectation(None).unwrap();
+
+    let retrieved = store.get();
+    assert_eq!(retrieved.location, Some("Munich".to_string()));
+    assert_eq!(retrieved.salary_expectation, None);
+}
+
+#[test]
+fn test_set_salary_expectation_is_byte_clamped() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    let oversized: String = "€".repeat(150); // 300 bytes
+    store.set_salary_expectation(Some(oversized)).unwrap();
+
+    let stored = store.get().salary_expectation.unwrap();
+    assert!(stored.len() <= MAX_SALARY_EXPECTATION_BYTES);
+    assert!(stored.is_char_boundary(stored.len()));
 }
 
 // ── Migration: drop_unused_job_preferences_columns ────────────────────────────
@@ -159,7 +307,7 @@ fn test_migration_drops_unused_columns_and_preserves_kept_fields() {
         .unwrap();
     }
 
-    // Re-open through the store, which runs the pending v2 + v3 migrations.
+    // Re-open through the store, which runs the pending v2 + v3 + v4 migrations.
     let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
 
     // Kept fields round-trip.
@@ -175,6 +323,12 @@ fn test_migration_drops_unused_columns_and_preserves_kept_fields() {
     assert_eq!(
         prefs.country_code, None,
         "country_code must default to None on a legacy DB with no such column"
+    );
+    // v4 (`add_job_preferences_salary_expectation`) — same defaults-to-None
+    // discipline for a second brand-new column on the same legacy v1 DB.
+    assert_eq!(
+        prefs.salary_expectation, None,
+        "salary_expectation must default to None on a legacy DB with no such column"
     );
 
     // Dropped columns are gone from the schema.
@@ -211,5 +365,11 @@ fn test_migration_drops_unused_columns_and_preserves_kept_fields() {
         &conn,
         "job_preferences",
         "country_code"
+    ));
+    // v4 column added on top of the same chain.
+    assert!(crate::db::column_exists(
+        &conn,
+        "job_preferences",
+        "salary_expectation"
     ));
 }

@@ -162,6 +162,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     jobPreferences: {
       get: async () => ({}),
       set: noop,
+      setSalaryExpectation: noop,
     },
 
     contactProfile: {

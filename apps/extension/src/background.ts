@@ -454,6 +454,19 @@ async function runFieldsProbe(): Promise<PopupResponse> {
 }
 
 /**
+ * Passive "is assisted autofill on?" read (Task #30), run once when the
+ * popup shows the connected view — the popup uses it to decide whether to
+ * auto-run "Suggest answers for this form" without a click. Mirrors
+ * `runFieldsProbe`'s always-`ok:true` fold: `autofillEnabled()` itself never
+ * rejects (any failure degrades to `false`, the safe default — see its
+ * doc), so this never needs its own catch.
+ */
+async function runAutofillCheck(): Promise<PopupResponse> {
+  const enabled = await getClient().autofillEnabled();
+  return { ok: true, kind: 'autofillCheck', enabled };
+}
+
+/**
  * User-clicked "Mark as applied" for the active tab's URL. UNLIKE
  * `runAppliedCheck`, failures are NOT folded away here: a transport-level
  * rejection (not paired, bridge unreachable, timeout) propagates up to
@@ -939,6 +952,8 @@ async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
         return await runAppliedCheck();
       case 'fieldsProbe':
         return await runFieldsProbe();
+      case 'autofillCheck':
+        return await runAutofillCheck();
       case 'statusUpdate':
         return await runStatusUpdate();
       case 'answersSave':
