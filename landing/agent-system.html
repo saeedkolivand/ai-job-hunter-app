@@ -335,7 +335,7 @@ footer{margin-top:60px; text-align:center}
   <p class="scrawl reveal">the .claude/ agent system</p>
   <h1 class="reveal">The Agent Fleet</h1>
   <p class="tag reveal">a swarm of tiny specialists builds this repo, and a second swarm <em>tears their work apart.</em></p>
-  <p class="count reveal"><span class="num" id="agent-count" data-to="25">25</span> <b>agents</b> · paired author + critic per domain · nobody approves their own work.</p>
+  <p class="count reveal"><span class="num" id="agent-count" data-to="30">30</span> <b>agents</b> · paired author + critic per domain · nobody approves their own work.</p>
 
   <div class="hero-scene reveal draw" aria-hidden="true">
     <svg viewBox="0 0 560 220">
@@ -524,7 +524,7 @@ footer{margin-top:60px; text-align:center}
   <hr class="div draw" aria-hidden="true"><svg viewBox="0 0 620 16" preserveAspectRatio="none"><path class="ink" d="M2 8 Q160 13 320 7 T618 9"/></svg></hr>
 
   <footer>
-    <p class="byline">25 specialists, zero of them with a real job either.</p>
+    <p class="byline">30 specialists, zero of them with a real job either.</p>
     <p class="foot-links">
       <a href="/">home</a> · <a href="/download">download</a> · <a href="/privacy">privacy</a> · <a href="/creature">▶ the short film</a> · <a href="https://github.com/saeedkolivand/ai-job-hunter-app" target="_blank" rel="noopener noreferrer">GitHub</a> · <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll" target="_blank" rel="noopener noreferrer">Chrome extension</a> · <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/" target="_blank" rel="noopener noreferrer">Firefox extension</a> · <a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener noreferrer">♥ sponsor</a>
     </p>
@@ -545,6 +545,8 @@ footer{margin-top:60px; text-align:center}
       ['test-author','author','Writes automated tests — unit / integration / e2e / golden — across every domain.','↔ critic <b>testing-reviewer</b>','**/*.test.* · **/*.spec.* · src-tauri/tests/**','Use test-author to add golden tests for the new export path.'],
       ['code-quality-author','author','Refactors to meet clean-code / DRY / KISS — smallest behavior-preserving diff.','↔ critic <b>code-quality-reviewer</b>','any package/path on request','Use code-quality-author to deduplicate the repeated scoring helpers.'],
       ['extension-author','author','Implements the browser extension (MV3, Chrome + Firefox) and the desktop↔extension bridge (native-host + loopback WS, per-frame token auth) plus the shared wire protocol.','↔ critic <b>extension-reviewer</b> (+ tauri-security-reviewer on auth/permission/data risk)','apps/extension/** · apps/desktop/src-tauri/src/extension_bridge/** · packages/shared/src/ipc/extension-protocol*','Use extension-author to add a new extension message type.'],
+      ['webgl-author','author','Implements the apps/landing WebGL journey - scenes, engine, ink strokes, gags, app shell, and the semantic layer; everything scroll-driven as a pure function of t.','reviewed by <b>webgl-reviewer</b> (+ gate-auditor on rendered output)','apps/landing/src/{scenes,engine,ink,gags,app,semantic}/**','Use webgl-author to add a new beat to the camera journey.'],
+      ['shader-engineer','author','Owns all GLSL for apps/landing - custom postprocessing Effects (SketchbookEffect, FriedEffect), onBeforeCompile patches, and the line-boil vertex shader.','reviewed by <b>webgl-reviewer</b>','apps/landing/src/{engine,scenes,ink}/** (shaders + post)','Use shader-engineer to write the deep-fried posterize + dither effect.'],
     ],
     critics: [
       ['rust-backend-architect','critic','Reviews the Rust/Tauri backend — domain modeling, error handling, L0–L3 boundaries, data/SQLite/GDPR.','audits <b>rust-backend-author</b>','apps/desktop/src-tauri/src/** (unowned) · packages/shared/**','/review-rust on the new store command.'],
@@ -559,12 +561,15 @@ footer{margin-top:60px; text-align:center}
       ['tauri-security-reviewer','critic','The cross-cutting SECURITY AUTHORITY — IPC surface, capabilities, updater, net, credentials, supply-chain, AI injection.','default <b>Secondary</b> on any risk-bearing change','capabilities/ · net/ · credentials/ · commands/** · Cargo.* · package.json','/review-security on the new IPC command.'],
       ['performance-profiler','critic','The performance lens — startup, memory, hot paths, rendering, AI token efficiency. Secondary on perf-sensitive paths.','<b>Secondary</b> alongside the domain Primary','export/** · scraping/** · ai_provider/** · layout/** · measure/**','/review-performance on the export hot path.'],
       ['extension-reviewer','critic','Reviews the browser extension + bridge — MV3 compliance, permission minimization, per-frame token auth correctness, protocol lockstep (TS ↔ Rust), and Chrome Web Store + Firefox AMO store-policy compliance.','audits <b>extension-author</b> (+ tauri-security-reviewer on auth/permission/data risk)','apps/extension/** · extension_bridge/** · extension-protocol*','/review-extension on the new message type.'],
+      ['webgl-reviewer','critic','Independent last-line critic over apps/landing GL - scrub-safety, resource disposal, per-frame allocation, uniform-vs-recompile correctness, stroke/draw-call budget, semantic-layer parity, and gate integrity. Read-only.','audits <b>webgl-author</b> + <b>shader-engineer</b>','apps/landing/src/**','/review-webgl on the new beat.'],
     ],
     cross: [
       ['finding-verifier','cross','Per-finding verification judge in the /review pipeline — reads code at file:line, refutes-by-default, requires rule-based claims to quote the exact rule or score 0. Never edits, only scores 0–100.','runs per single-source candidate finding in /review synthesis','review-config.md · .claude/agents/** · target file:line (read-only)','/review to score findings <80 confidence.'],
       ['cleanup','cross','Dead-code audit across the TS/React + Rust monorepo — unused files, exports, deps. Report-first; safe-tier deletes only after confirmation.','runs immediately before <b>project-steward</b>','whole monorepo','/cleanup after the feature lands.'],
       ['project-steward','cross','Sole owner of docs, the knowledge base, ADRs, the lessons log, and release — the only agent that persists lessons.','closes every task','docs/** · docs/knowledge/** · landing/** · release config','/update-docs to sync docs + graphify after the change.'],
       ['pr-reviewer','cross','Strict generalist PRE-PR reviewer — runs the real repo tools (typecheck, lint, clippy, tests) + cross-file blast-radius + a verification gate before a PR opens, so CodeRabbit finds fewer issues.','final internal gate before push — 🔴+🟠 block','any changed files (diff-scoped)','/review before opening a PR.'],
+      ['gate-auditor','cross','Rendered-output auditor - drives the dev server via Chrome DevTools MCP to exact t positions, screenshots, traces, and console; runs the per-phase gates, scrub determinism, and the fried-ramp flash budget. Never edits code.','runs the visual gate on apps/landing rendered-output changes','apps/landing (dev server on :3000)','/gate on the current landing phase.'],
+      ['webgl-perf-profiler','cross','GL frame-rate lens for apps/landing - traces the worst t-segment, then applies the degradation ladder in order (stroke budget, boil fps, dpr, Pass B extras, grain), stopping at the first pass. Distinct from performance-profiler.','Secondary on apps/landing GL frame rate','apps/landing/src/** (GL frame loop)','Use webgl-perf-profiler when the fried beat drops below target FPS.'],
     ],
   };
   var BY_NAME = {};
@@ -580,8 +585,10 @@ footer{margin-top:60px; text-align:center}
     ['test-author',         ['testing-reviewer']],
     ['code-quality-author', ['code-quality-reviewer']],
     ['extension-author',    ['extension-reviewer']],
+    ['webgl-author',        ['webgl-reviewer']],
+    ['shader-engineer',     ['webgl-reviewer']],
   ];
-  var CROSS_NODES = ['finding-verifier','tauri-security-reviewer','performance-profiler','cleanup','project-steward','pr-reviewer'];
+  var CROSS_NODES = ['finding-verifier','tauri-security-reviewer','performance-profiler','webgl-perf-profiler','gate-auditor','cleanup','project-steward','pr-reviewer'];
 
   function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function escAttr(s){ return esc(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
