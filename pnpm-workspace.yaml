@@ -22,6 +22,7 @@ allowBuilds:
   core-js: false
   esbuild: true
   lzma-native: true
+  sharp: false
   tesseract.js: true
 
 # Dependency hoisting settings

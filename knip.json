@@ -21,6 +21,9 @@
     "apps/desktop": {
       "entry": ["src/renderer/main.tsx", "src/e2e-main.tsx"]
     },
+    "apps/landing": {
+      "entry": ["src/app/**/{page,layout}.tsx", "next.config.ts", "scripts/merge-passthrough.mjs"]
+    },
     "apps/extension": {
       "entry": ["src/background.ts"]
     },

@@ -1,0 +1,27 @@
+// BEAT 3 - DEEP FRIED copy. ASCII source only (non-ASCII as unicode escapes).
+export const beat3 = {
+  doodleLines: "IT WRITES IT FOR ME|I HAVE THE POWER|NO MORE COVER LETTERS|unlimited POWER|YESSS",
+  doodleAria: "poke the fried guy",
+  huge1: "WAIT.",
+  huge2: "IT DOES",
+  huge3: "EVERYTHING ELSE.",
+  mid: "it finds them. it writes them. you press send.",
+  line: {
+    p1: "it ",
+    b1: "HITS 23 boards",
+    p2: " while you do NOTHING. it ",
+    b2: "writes the cover letter",
+    p3: " \u2014 the one you CRIED over. GONE. it ",
+    b3: "scores your r\u00e9sum\u00e9",
+    p4: " so the regex blob can't hurt you anymore. ",
+    b4: "semantic matching????",
+    p5: " it KNOWS which jobs want you. it knows things you don't. the one thing it ",
+    b5: "won't",
+    p6: " do? press submit. that terror stays yours.",
+  },
+  dialogAria: "secret confirmation",
+  dq: "Are you sure?",
+  dialogHint: "(you were not supposed to find this)",
+  yes: "yes",
+  yes2: "YES",
+} as const;
