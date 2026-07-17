@@ -2,13 +2,12 @@
 //! over [`crate::email_watch::EmailWatchStore`] + the connect-time IMAP
 //! validation ([`crate::email_watch::imap_client`]).
 //!
-//! **PR A scope only**: connect/status/enable/disconnect, plus a manual
-//! connectivity re-check. `email_watch_check_now` re-validates the stored
-//! connection (`LOGIN` + `SELECT INBOX`) — it does NOT fetch or parse any
-//! mail. That is a deliberate choice over a stub: it is honest (it does
-//! exactly what its name says) and useful for debugging a broken app
-//! password/host before the poller exists. The poller/parser/matcher land in
-//! PR B.
+//! `email_watch_check_now` runs the SAME fetch+parse+match+notify pass the
+//! background scheduler runs (`crate::email_watch_scheduler::run_check`),
+//! gated by its own [`MIN_CHECK_NOW_GAP_MS`] guard — a typed
+//! [`AppError::RateLimited`] refusal, never a silent no-op, so a renderer bug
+//! or a determined caller can't spam Gmail logins (a `tauri-security-reviewer`
+//! requirement carried into PR B).
 //!
 //! Every IMAP call runs inside `spawn_blocking` — never directly on the async
 //! runtime (the `imap` crate is fully synchronous). Wire-error discipline
@@ -149,38 +148,44 @@ pub async fn email_watch_set_enabled(app: AppHandle, enabled: bool) -> AppResult
     Ok(store.status())
 }
 
-/// Re-validate the existing connection (`LOGIN` + `SELECT INBOX`) using the
-/// stored host/address and the keychain-stored app password. Fetches or
-/// parses no mail — see the module doc. Errors if no account/credential is
-/// configured yet.
+/// Minimum gap between two `email_watch_check_now` invocations — measured
+/// against `last_check_ms` (stamped by ANY check, manual or scheduled), so a
+/// renderer bug/loop can't spam Gmail logins. Refuses with
+/// [`AppError::RateLimited`] rather than silently no-oping, so the renderer
+/// can surface (and retry) the refusal.
+const MIN_CHECK_NOW_GAP_MS: u64 = 60_000;
+
+/// Whether a fresh `email_watch_check_now` call must be refused because the
+/// last recorded check (manual or scheduled) is under [`MIN_CHECK_NOW_GAP_MS`]
+/// old. Pure so it's cheaply unit-testable without a Tauri harness.
+fn is_check_now_rate_limited(last_check_ms: Option<u64>, now_ms: u64) -> bool {
+    match last_check_ms {
+        None => false,
+        Some(last) => now_ms.saturating_sub(last) < MIN_CHECK_NOW_GAP_MS,
+    }
+}
+
+/// Run a real fetch+parse+match+notify pass (`crate::email_watch_scheduler::
+/// run_check` — the SAME pass the background scheduler runs) against the
+/// stored connection, gated by [`MIN_CHECK_NOW_GAP_MS`]. Errors if no
+/// account/credential is configured yet, or if a check already ran too
+/// recently.
 #[tauri::command]
 pub async fn email_watch_check_now(app: AppHandle) -> AppResult<EmailWatchStatus> {
     let store = store_or_err(&app)?;
-    let account = store.account();
-    let address = account
-        .address
-        .ok_or_else(|| AppError::Config("no email account is connected".to_string()))?;
-    let host = account
-        .host
-        .unwrap_or_else(|| DEFAULT_IMAP_HOST.to_string());
-    let port = account.port.unwrap_or(DEFAULT_IMAP_PORT);
-    let app_password = credentials(&app)
-        .lock()
-        .get_decrypted(CREDENTIAL_SLOT)
-        .map(|(_, password)| password)
-        .ok_or_else(|| {
-            AppError::Config("no app password is stored for this account".to_string())
-        })?;
-
-    validate_connection_blocking(host, port, address, app_password).await?;
-
-    store.record_check(now_ms())?;
-    Ok(store.status())
+    if is_check_now_rate_limited(store.account().last_check_ms, now_ms()) {
+        // Same literal `run_check`'s own concurrent-run guard rejects with —
+        // single source of truth, see `email_watch_scheduler::RATE_LIMITED_MESSAGE`.
+        return Err(AppError::RateLimited(
+            crate::email_watch_scheduler::RATE_LIMITED_MESSAGE.to_string(),
+        ));
+    }
+    crate::email_watch_scheduler::run_check(&app).await
 }
 
 #[cfg(test)]
 mod tests {
-    use super::strip_ascii_whitespace;
+    use super::{is_check_now_rate_limited, strip_ascii_whitespace, MIN_CHECK_NOW_GAP_MS};
 
     #[test]
     fn strip_ascii_whitespace_removes_googles_4_group_spacing() {
@@ -201,5 +206,24 @@ mod tests {
     #[test]
     fn strip_ascii_whitespace_also_removes_leading_trailing_and_tabs() {
         assert_eq!(strip_ascii_whitespace("  ab\tcd\n"), "abcd");
+    }
+
+    #[test]
+    fn check_now_is_never_rate_limited_when_nothing_has_run_yet() {
+        assert!(!is_check_now_rate_limited(None, 1_000_000));
+    }
+
+    #[test]
+    fn check_now_is_rate_limited_within_the_min_gap() {
+        let now = 1_000_000_000u64;
+        let last = now - (MIN_CHECK_NOW_GAP_MS / 2);
+        assert!(is_check_now_rate_limited(Some(last), now));
+    }
+
+    #[test]
+    fn check_now_is_allowed_once_the_min_gap_has_elapsed() {
+        let now = 1_000_000_000u64;
+        let last = now - MIN_CHECK_NOW_GAP_MS;
+        assert!(!is_check_now_rate_limited(Some(last), now));
     }
 }

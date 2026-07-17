@@ -1,6 +1,6 @@
 # Extension domain (browser extension + desktop bridge)
 
-Last updated: 2026-07-16 (task #22: auto-track Layer A — gesture-armed `submit-watch` + `autotrack.check`/`autotrack.result` + `status.update`'s `auto` flag)
+Last updated: 2026-07-17 (task #22: auto-track Layer A — gesture-armed `submit-watch` + `autotrack.check`/`autotrack.result` + `status.update`'s `auto` flag; task #23 PR B: Layer C pointer now points to email-watch-domain.md)
 
 Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tauri-security-reviewer`.
 
@@ -97,7 +97,7 @@ After the user has invoked the extension on an application page (any existing ge
   - Entirely best-effort: every failure (bridge unreachable, malformed reply) is swallowed so a page submit never surfaces an error to the user.
 - **Opt-in** (`extension_bridge_auto_track_enabled` / `extension_bridge_set_auto_track_enabled` IPC commands, `apps/desktop/src-tauri/src/commands/extension_bridge.rs`; `BridgeState::autotrack_enabled`/`set_autotrack_enabled`, persisted flag in `extension_bridge/mod.rs`; toggle in `ExtensionBridgeSection`) gates BOTH sides: the extension's own arming check (client-side, best-effort) AND — the actual enforcement — `handle_status_update` refusing any `auto: true` write when the desktop's own opt-in is off (`auto_write_refused`/`is_auto_status_update`, `extension_bridge/status_update.rs`). See [ADR 0009's amendment](../adr/0009-assisted-autofill.md) for the consent-class rationale and the security reviewer's server-side-enforcement conclusion.
 
-**Honest limits** (documented, not papered over): auto-track only catches a submit **after** the user has already used the extension on that page (gesture-armed — there is no passive background watching). A full-page-navigation submit is best-effort — the injected script can be torn down by the navigation before its message is delivered; SPA/Easy-Apply flows (which submit via JS without unloading the page) are reliably caught. Layer C (#23, local email-confirmation parsing, not yet built) is the planned complement that corroborates from a second, independent signal.
+**Honest limits** (documented, not papered over): auto-track only catches a submit **after** the user has already used the extension on that page (gesture-armed — there is no passive background watching). A full-page-navigation submit is best-effort — the injected script can be torn down by the navigation before its message is delivered; SPA/Easy-Apply flows (which submit via JS without unloading the page) are reliably caught. Layer C (local email-confirmation IMAP polling, PR #23) corroborates from a second, independent signal — see [email-watch-domain.md](./email-watch-domain.md).
 
 ## Import flow
 

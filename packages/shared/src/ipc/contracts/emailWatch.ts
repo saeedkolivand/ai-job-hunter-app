@@ -1,12 +1,17 @@
 /**
  * Email-confirmation watching (Task #23, auto-track Layer C) — IMAP
- * connect/status/enable control surface.
+ * connect/status/enable control surface, plus the poller it gates.
  *
- * **PR A scope only**: connect/status/enable/disconnect + a manual
- * connectivity re-check. The backend validates the address/app-password by a
- * real IMAP `LOGIN` + `SELECT INBOX` before persisting anything; nothing is
- * fetched or parsed from the mailbox yet — the poller/parser/matcher land in
- * PR B. `appPassword` is write-only: sent once to `connect`, stored in the OS
+ * The backend validates the address/app-password by a real IMAP `LOGIN` +
+ * `SELECT INBOX` before persisting anything (`connect`). Once `enabled`, a
+ * backend-owned background poller periodically fetches new INBOX headers,
+ * fingerprints them as plausible application-confirmation emails, and
+ * fuzzy-matches company/title against the user's saved applications — a
+ * match surfaces as a Notification Center card (never an auto-write; the
+ * user still marks applied themselves). `checkNow` runs that SAME pass
+ * on-demand, gated by a short server-side min-interval guard (rejects if a
+ * check ran too recently) so it can't be used to spam Gmail logins.
+ * `appPassword` is write-only: sent once to `connect`, stored in the OS
  * keychain, and never returned or logged.
  */
 
@@ -16,9 +21,10 @@
 export interface EmailWatchStatus {
   connected: boolean;
   address?: string;
-  /** The (future) poller opt-in — default OFF, independent of `connected`. */
+  /** The poller opt-in — default OFF, independent of `connected`. */
   enabled: boolean;
   lastCheckAt?: number;
+  /** Timestamp of the most recent email→application match, if any. */
   lastMatchAt?: number;
 }
 
@@ -34,8 +40,8 @@ export interface EmailWatchContract {
   /** Removes the keychain app password and clears the account row. */
   disconnect(): Promise<EmailWatchStatus>;
   setEnabled(enabled: boolean): Promise<EmailWatchStatus>;
-  /** Re-validates the existing connection (LOGIN + SELECT INBOX). Fetches no
-   *  mail — see the module doc. */
+  /** Runs a real fetch+parse+match+notify pass now (the same pass the
+   *  background poller runs). Rejects if a check already ran too recently. */
   checkNow(): Promise<EmailWatchStatus>;
 }
 

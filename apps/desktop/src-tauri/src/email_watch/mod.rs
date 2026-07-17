@@ -1,11 +1,15 @@
 //! Email-confirmation watching (Task #23, auto-track Layer C) — the persisted
 //! account/dedupe store behind IMAP-based application-confirmation matching.
 //!
-//! **PR A scope**: this store + the connect-time IMAP validation
-//! ([`imap_client`]) only. No poller, no parser, no matcher yet — those land in
-//! PR B, which will read/write this same schema (the `seen` dedupe table and
-//! `reset_on_uidvalidity_change` exist now, unused by any command, so PR B
-//! extends this file instead of reshaping it).
+//! **PR A** shipped this store + the connect-time IMAP validation
+//! ([`imap_client`]). **PR B** adds the read path: [`imap_client`]'s header/
+//! body fetch, [`parser`] (pure RFC2047/MIME decode + fingerprint + candidate
+//! extraction), [`matcher`] (pure token-Jaccard company/title scoring), and
+//! [`poller`] (the Tauri-free tick orchestration tying the three together).
+//! The actual background schedule lives ABOVE this module family, in the
+//! top-level `email_watch_scheduler` (L2) — mirroring the `autopilot`/
+//! `autopilot_scheduler` split, so this store never needs an upward reach
+//! into `commands::notifications` itself.
 //!
 //! **Backup/reset posture**: unlike most per-domain SQLite stores in this
 //! crate, `EmailWatchStore` is **NOT** a [`crate::data_store::DataStore`] (not
@@ -38,6 +42,9 @@ use crate::db::{open, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::AppResult;
 
 pub mod imap_client;
+pub mod matcher;
+pub mod parser;
+pub mod poller;
 
 /// OS-keychain slot for the IMAP app password (never persisted in SQLite,
 /// never logged, never returned over IPC). Read/written via
@@ -239,50 +246,99 @@ impl EmailWatchStore {
     /// Advance the persisted UID watermark after processing messages up
     /// through `uid` (the poller always calls this with the highest UID it
     /// just handled — monotonic, never rewound except by
-    /// [`Self::reset_on_uidvalidity_change`]). Unused by any command in PR A;
-    /// exercised directly by tests so the watermark contract is locked before
-    /// PR B's poller depends on it.
-    pub fn advance_last_uid(&self, uid: u32) -> AppResult<()> {
+    /// [`Self::reset_on_uidvalidity_change`]). The `MAX` in the `SET` clause
+    /// enforces that monotonic invariant AT THE DATABASE, not just by
+    /// caller convention — a caller that (mistakenly, or via a reordered
+    /// concurrent write) passes a lower uid than what's already stored can
+    /// never rewind the watermark.
+    ///
+    /// Same concurrent-clear guard as [`Self::set_enabled`]/[`Self::
+    /// record_check`] (`AND address IS NOT NULL`): the poller's tick awaits a
+    /// multi-second `spawn_blocking` IMAP round trip before calling this — a
+    /// `disconnect`/factory reset landing during that window must not
+    /// resurrect a watermark on the just-wiped account. Returns whether the
+    /// row was actually updated (`false` = lost the race to a clear, or a
+    /// value equal to what's already stored — a no-op, not an error).
+    pub fn advance_last_uid(&self, uid: u32) -> AppResult<bool> {
         let conn = self.conn.lock();
-        conn.execute(
-            "UPDATE account SET last_uid = ?1 WHERE id = 1",
+        let affected = conn.execute(
+            "UPDATE account SET last_uid = MAX(COALESCE(last_uid, 0), ?1) WHERE id = 1 AND address IS NOT NULL",
             params![i64::from(uid)],
         )?;
-        Ok(())
+        Ok(affected > 0)
     }
 
     /// Mark `uid` as considered, optionally recording the application it
     /// matched. `INSERT OR IGNORE`: re-marking an already-seen uid is a no-op
     /// (the first stamp wins) — the poller's dedupe gate, not a poller-owned
     /// idempotency retry.
-    pub fn mark_seen(&self, uid: &str, matched_app_id: Option<&str>, ts_ms: u64) -> AppResult<()> {
+    ///
+    /// Same concurrent-clear guard as [`Self::advance_last_uid`] — this is an
+    /// `INSERT`, not an `UPDATE`, so the guard is expressed as a `SELECT …
+    /// WHERE EXISTS` row source instead of a trailing `WHERE`: the literal
+    /// values are only actually inserted when a connected account row still
+    /// exists at the moment this runs. Returns whether a row was inserted
+    /// (`false` = lost the race to a clear, or the uid was already seen).
+    pub fn mark_seen(
+        &self,
+        uid: &str,
+        matched_app_id: Option<&str>,
+        ts_ms: u64,
+    ) -> AppResult<bool> {
         let conn = self.conn.lock();
-        conn.execute(
-            "INSERT OR IGNORE INTO seen (uid, matched_app_id, ts) VALUES (?1, ?2, ?3)",
+        let affected = conn.execute(
+            "INSERT OR IGNORE INTO seen (uid, matched_app_id, ts)
+             SELECT ?1, ?2, ?3
+             WHERE EXISTS (SELECT 1 FROM account WHERE id = 1 AND address IS NOT NULL)",
             params![uid, matched_app_id, ts_to_db(ts_ms)],
         )?;
-        Ok(())
+        Ok(affected > 0)
     }
 
     /// `UIDVALIDITY` changed (the mailbox was recreated/renumbered by the
     /// server) — the stored `last_uid` watermark is meaningless against the
-    /// new numbering and must be dropped. Returns whether a reset happened
-    /// (`false` when `new_uidvalidity` already matches the stored value, in
-    /// which case `last_uid` is left untouched).
+    /// new numbering and must be dropped, AND every `seen` row must go with
+    /// it: numeric UIDs are unique only per (mailbox, UIDVALIDITY)
+    /// generation, so a stale `seen` row from the OLD generation would make
+    /// `has_seen` hit a false positive against a REUSED low uid in the
+    /// re-scan window, silently swallowing a real confirmation forever
+    /// (`seen` was otherwise only ever pruned on clear/disconnect/address-
+    /// switch — the exact same per-generation hazard `connect`'s own
+    /// address-changed branch already guards).
+    ///
+    /// Same concurrent-clear guard as [`Self::advance_last_uid`]: the
+    /// `UPDATE` only touches a row with a connected account, and the `seen`
+    /// wipe only runs when that `UPDATE` actually affected a row — a
+    /// `disconnect`/factory reset landing mid-tick must not resurrect
+    /// `uidvalidity`/`last_uid` on the just-wiped account (`clear()` already
+    /// wiped `seen` itself in that case; wiping it again here would be a
+    /// harmless no-op, but skipping it is more honest about what changed).
+    /// Returns whether a reset actually happened (`false` when
+    /// `new_uidvalidity` already matches the stored value, OR when the
+    /// account vanished before this write landed).
     pub fn reset_on_uidvalidity_change(&self, new_uidvalidity: u32) -> AppResult<bool> {
-        let conn = self.conn.lock();
+        let mut conn = self.conn.lock();
         let current: Option<i64> =
             conn.query_row("SELECT uidvalidity FROM account WHERE id = 1", [], |row| {
                 row.get(0)
             })?;
-        let changed = current != Some(i64::from(new_uidvalidity));
-        if changed {
-            conn.execute(
-                "UPDATE account SET uidvalidity = ?1, last_uid = NULL WHERE id = 1",
-                params![i64::from(new_uidvalidity)],
-            )?;
+        if current == Some(i64::from(new_uidvalidity)) {
+            return Ok(false);
         }
-        Ok(changed)
+        // Same atomicity requirement as `connect`'s address-changed branch:
+        // the watermark reset and the `seen` wipe must land together, or a
+        // crash between them could leave stale `seen` rows attributed to a
+        // UIDVALIDITY generation that no longer exists.
+        let tx = conn.transaction()?;
+        let affected = tx.execute(
+            "UPDATE account SET uidvalidity = ?1, last_uid = NULL WHERE id = 1 AND address IS NOT NULL",
+            params![i64::from(new_uidvalidity)],
+        )?;
+        if affected > 0 {
+            tx.execute("DELETE FROM seen", [])?;
+        }
+        tx.commit()?;
+        Ok(affected > 0)
     }
 
     /// Full wipe: the account row back to its just-migrated defaults, and
