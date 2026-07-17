@@ -43,6 +43,8 @@ fn message_type_constants_match_ts() {
         msg::STATUS_RESULT,
         msg::AUTOTRACK_CHECK,
         msg::AUTOTRACK_RESULT,
+        msg::AUTOFILL_CHECK,
+        msg::AUTOFILL_RESULT,
         msg::ANSWERS_SAVE,
         msg::ANSWERS_RESULT,
         msg::ANSWERS_SUGGEST,
@@ -102,6 +104,8 @@ fn reserved_types_are_distinct() {
         msg::STATUS_RESULT,
         msg::AUTOTRACK_CHECK,
         msg::AUTOTRACK_RESULT,
+        msg::AUTOFILL_CHECK,
+        msg::AUTOFILL_RESULT,
         msg::ANSWERS_SAVE,
         msg::ANSWERS_RESULT,
         msg::ANSWERS_SUGGEST,
@@ -464,6 +468,36 @@ fn advance_authenticated_routes_autotrack_check() {
     match decision {
         FrameDecision::AutotrackCheck { req_id } => assert_eq!(req_id, "req-9"),
         other => panic!("expected FrameDecision::AutotrackCheck, got {other:?}"),
+    }
+}
+
+// ── autofill.check (Task #30) — mirrors autotrack.check exactly ──────────────
+
+#[test]
+fn autofill_check_result_reply_carries_the_flag() {
+    use super::autofill_check::autofill_check_result_reply;
+    let on: serde_json::Value =
+        serde_json::from_str(&autofill_check_result_reply("req-1", true)).unwrap();
+    assert_eq!(on["type"], msg::AUTOFILL_RESULT);
+    assert_eq!(on["reqId"], "req-1");
+    assert_eq!(on["payload"]["enabled"], true);
+
+    let off: serde_json::Value =
+        serde_json::from_str(&autofill_check_result_reply("req-2", false)).unwrap();
+    assert_eq!(off["payload"]["enabled"], false);
+}
+
+#[test]
+fn advance_authenticated_routes_autofill_check() {
+    let envelope = serde_json::json!({
+        "type": msg::AUTOFILL_CHECK,
+        "reqId": "req-10",
+        "payload": Value::Null,
+    });
+    let decision = advance_authenticated(msg::AUTOFILL_CHECK, "req-10".to_string(), &envelope);
+    match decision {
+        FrameDecision::AutofillCheck { req_id } => assert_eq!(req_id, "req-10"),
+        other => panic!("expected FrameDecision::AutofillCheck, got {other:?}"),
     }
 }
 

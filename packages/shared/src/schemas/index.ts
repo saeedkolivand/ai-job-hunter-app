@@ -506,6 +506,11 @@ export const JobPreferencesSchema = z.object({
     .regex(/^[A-Za-z]{2}$/)
     .optional(),
   techStack: z.array(TechStackItemSchema).optional(),
+  // Backend-readable copy of the renderer's own `applicant.salaryExpectation`
+  // (Task #30) — free text, no client-side length cap; the Rust store clamps
+  // it (~200 bytes) at the write boundary, matching every other
+  // renderer-supplied string in this contract.
+  salaryExpectation: z.string().optional(),
 });
 
 export type AutopilotCreate = z.infer<typeof AutopilotCreateSchema>;

@@ -14,7 +14,12 @@ import type { ExtensionAnswerSuggestion, ExtensionRewritePreset } from '@ajh/sha
 
 import type { FilledField, ScannedQuestion } from '../lib/answers-capture';
 import type { ConnectionStatus, PopupRequest, PopupResponse } from '../lib/messages';
-import { getAnswerToolsExpanded, looksLikeToken, setAnswerToolsExpanded } from '../lib/storage';
+import {
+  getAnswerToolsExpanded,
+  hasAnswerToolsPreference,
+  looksLikeToken,
+  setAnswerToolsExpanded,
+} from '../lib/storage';
 
 import './popup.css';
 
@@ -529,6 +534,11 @@ const els = {
   btnMarkApplied: byId<HTMLButtonElement>('btn-mark-applied'),
   groupForm: byId<HTMLElement>('group-form'),
   answerTools: byId<HTMLDetailsElement>('answer-tools'),
+  // The base "Answer tools" label is static HTML text; this is the dedicated
+  // `aria-live="polite"` count span appended after it (Task #30 review fix —
+  // a screen reader must hear the count even while the disclosure is closed,
+  // and rewriting the WHOLE summary's textContent would wipe this child span).
+  answerToolsCount: byId<HTMLElement>('answer-tools-count'),
   btnSaveAnswers: byId<HTMLButtonElement>('btn-save-answers'),
   btnSuggestAnswers: byId<HTMLButtonElement>('btn-suggest-answers'),
   suggestionsList: byId<HTMLDivElement>('suggestions-list'),
@@ -735,7 +745,13 @@ function render(status: ConnectionStatus): void {
     // into a different page's connected view.
     els.suggestionsList.hidden = true;
     els.suggestionsList.textContent = '';
+    els.answerToolsCount.textContent = '';
     lastScannedQuestions = [];
+    // Invalidate any in-flight auto-suggest chain (Task #30) — same discipline
+    // as `fieldsProbeGeneration` below, own counter since the auto-suggest
+    // chain (autofill.check → scan → answers.suggest) outlives one fieldsProbe
+    // round trip.
+    autoSuggestGeneration += 1;
     // A stale "Check fit" score from a previous page must never linger either.
     els.matchResult.hidden = true;
     els.matchResult.textContent = '';
@@ -952,9 +968,74 @@ async function runFieldsProbeCheck(): Promise<void> {
     const res = await send({ kind: 'fieldsProbe' });
     if (myGeneration !== fieldsProbeGeneration) return;
     setToolGroupsVisible(resolveFieldsProbeResponse(res));
+    // Auto-suggest (Task #30): only on a GENUINELY resolved `hasAnswerFields:
+    // true` — never on the catch's fail-open default below, which doesn't
+    // actually confirm there's anything to suggest for.
+    if (res.ok && res.kind === 'fieldsProbe' && res.hasAnswerFields) {
+      void runAutoSuggest();
+    }
   } catch {
     if (myGeneration !== fieldsProbeGeneration) return;
     setToolGroupsVisible({ showFormGroup: true, showAnswerTools: true });
+  }
+}
+
+/**
+ * Generation guard for {@link runAutoSuggest} — separate from
+ * `fieldsProbeGeneration` since the auto-suggest chain (`autofill.check` →
+ * scan → `answers.suggest`) outlives one fieldsProbe round trip; bumped
+ * alongside it on leaving `connected` (see `render`).
+ */
+let autoSuggestGeneration = 0;
+
+/**
+ * Auto-run "Suggest answers for this form" (Task #30), fired by
+ * {@link runFieldsProbeCheck} once per connected transition when the
+ * just-resolved probe found answer-capturable fields AND the desktop's
+ * assisted-autofill opt-in reads on (`autofill.check` — a pure client-side
+ * shortcut; the desktop still enforces the REAL gate on `answers.suggest`
+ * itself). UNLIKE `doSuggestAnswers`, this is SILENT: it never writes the
+ * "Looking for matching answers…" line to the shared `#import-msg`, and zero
+ * results stay silent too (no "No matching past answers" message) — an
+ * auto-run must never talk over whatever the user is doing. Only a
+ * non-empty result renders anything: the suggestion rows, the Answer-tools
+ * `<summary>` count (via `renderSuggestions`), and — only when the user has
+ * never expressed a collapse/expand preference — auto-expands the
+ * disclosure. Errors are swallowed the same way (silent, never shown).
+ *
+ * Shares its DOM with `doSuggestAnswers` (the manual click) — a deliberate
+ * click always wins (review fix): `doSuggestAnswers` bumps
+ * `autoSuggestGeneration` at entry, so a chain already in flight fails its
+ * own next generation check below and bails before rendering; the
+ * `els.btnSuggestAnswers.disabled` check right before rendering is this
+ * path's complementary guard for a FRESH chain (a reconnect firing this
+ * function anew) that starts while a manual click is still mid-flight.
+ */
+async function runAutoSuggest(): Promise<void> {
+  autoSuggestGeneration += 1;
+  const myGeneration = autoSuggestGeneration;
+  try {
+    const check = await send({ kind: 'autofillCheck' });
+    if (myGeneration !== autoSuggestGeneration) return;
+    if (!check.ok || check.kind !== 'autofillCheck' || !check.enabled) return;
+
+    const res = await send({ kind: 'answersSuggest' });
+    if (myGeneration !== autoSuggestGeneration) return;
+    const { suggestions, scanned } = resolveAnswersSuggestResponse(res);
+    lastScannedQuestions = scanned;
+    if (suggestions.length === 0) return; // silent — nothing found
+    // A manual click is mid-flight (or one just started) — never render over
+    // it; the deliberate click always wins.
+    if (els.btnSuggestAnswers.disabled) return;
+
+    renderSuggestions(suggestions);
+    renderAssistPicker(scanned);
+    if (!(await hasAnswerToolsPreference())) {
+      if (myGeneration !== autoSuggestGeneration || els.btnSuggestAnswers.disabled) return;
+      els.answerTools.open = true;
+    }
+  } catch {
+    // Silent — an auto-run must never surface a transport error to the user.
   }
 }
 
@@ -1170,8 +1251,15 @@ function buildSuggestionRow(item: RenderedSuggestion): HTMLElement {
   return row;
 }
 
-/** Render the suggestion list — clears any prior rows first (no stale DOM
- *  from a previous scan). */
+/**
+ * Render the suggestion list — clears any prior rows first (no stale DOM from
+ * a previous scan) — and updates the Answer-tools `<summary>`'s `aria-live`
+ * count span (Task #30, whenever suggestions are showing — manual click OR
+ * auto-found; cleared back to empty once the list is empty again). The base
+ * "Answer tools" label is static HTML text, untouched here — only the
+ * dedicated count span is written, so a screen reader announces just the
+ * count delta instead of re-reading the whole label on every scan.
+ */
 function renderSuggestions(suggestions: ExtensionAnswerSuggestion[]): void {
   els.suggestionsList.textContent = '';
   const rows = correlateSuggestions(suggestions, lastScannedQuestions);
@@ -1179,14 +1267,26 @@ function renderSuggestions(suggestions: ExtensionAnswerSuggestion[]): void {
     els.suggestionsList.append(buildSuggestionRow(item));
   }
   els.suggestionsList.hidden = rows.length === 0;
+  els.answerToolsCount.textContent = rows.length > 0 ? ` (${rows.length})` : '';
 }
 
 /**
  * Click handler for "Suggest answers for this form". Scans the active tab's
  * empty candidate fields, sends their labels as `answers.suggest`, and
  * renders the returned suggestions. Errors ARE shown (a deliberate click).
+ *
+ * Shares its DOM (suggestionsList, `lastScannedQuestions`, the Answer-tools
+ * summary count) with {@link runAutoSuggest} — a deliberate click must always
+ * win over the passive auto-run. Bumping `autoSuggestGeneration` here
+ * invalidates any auto chain already in flight (its own post-await checks
+ * will now see a stale generation and bail before rendering); disabling
+ * {@link els.btnSuggestAnswers} for the duration is the auto path's
+ * complementary guard for a FRESH auto chain that starts while this click is
+ * still mid-flight (a reconnect on a different page) — see
+ * `runAutoSuggest`'s doc.
  */
 async function doSuggestAnswers(): Promise<void> {
+  autoSuggestGeneration += 1;
   els.btnSuggestAnswers.disabled = true;
   els.suggestionsList.hidden = true;
   els.suggestionsList.textContent = '';

@@ -60,3 +60,17 @@ export async function getAnswerToolsExpanded(): Promise<boolean> {
 export async function setAnswerToolsExpanded(expanded: boolean): Promise<void> {
   await browser.storage.local.set({ [ANSWER_TOOLS_EXPANDED_KEY]: expanded });
 }
+
+/**
+ * Whether the user has EVER explicitly toggled the Answer-tools disclosure
+ * (i.e. a preference is stored at all) — distinct from
+ * {@link getAnswerToolsExpanded}'s collapsed-default fold, which can't tell
+ * "never set" apart from "explicitly collapsed". Used to decide whether an
+ * auto-found suggestion (Task #30) may auto-expand the disclosure: only when
+ * the user has never expressed an opinion, so an explicit prior collapse is
+ * always respected.
+ */
+export async function hasAnswerToolsPreference(): Promise<boolean> {
+  const stored = await browser.storage.local.get(ANSWER_TOOLS_EXPANDED_KEY);
+  return stored[ANSWER_TOOLS_EXPANDED_KEY] !== undefined;
+}

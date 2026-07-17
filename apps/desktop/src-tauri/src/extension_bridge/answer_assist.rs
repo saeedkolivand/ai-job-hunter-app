@@ -32,13 +32,16 @@
 //! `salary_currency` — the employer's own stated figure, never a market
 //! estimate); (2) failing that, a web-researched market range via the shared
 //! [`crate::salary_research::SalaryResearch`] enricher (the SAME machinery
-//! `ai_lookup_salary` uses). **Honest parity gap**: the in-app answer flow
-//! ALSO weighs the candidate's own SAVED salary expectation
-//! (`usePreferencesStore.getState().applicant.expectedSalary`) against the
-//! reference range (don't-undersell precedence) — that preference is
-//! renderer-only state (the same `preferences-store`/`localStorage` gap noted
-//! above), so the bridge cannot read it and this draft never states a
-//! candidate-asserted number. It still produces a grounded, honest answer:
+//! `ai_lookup_salary` uses). **Honest parity gap (still open here)**: the
+//! in-app answer flow ALSO weighs the candidate's own SAVED salary
+//! expectation (`usePreferencesStore.getState().applicant.expectedSalary`)
+//! against the reference range (don't-undersell precedence). A
+//! backend-readable copy now exists (`job_preferences.salary_expectation`,
+//! Task #30) and IS consumed by `answers.suggest`'s synthetic salary row
+//! ([`super::answers_suggest::resolve_answers_suggest`]) — but this draft
+//! path does not read it (deliberately out of scope for #30: porting the
+//! don't-undersell precedence logic is a separate change), so it still never
+//! states a candidate-asserted number. It still produces a grounded, honest answer:
 //! when a reference range resolves, the prompt states its midpoint (or the
 //! range itself) rather than fabricating "my expectation is X" — the same
 //! "no numeric expectation stated" branch the in-app prompt's own precedence

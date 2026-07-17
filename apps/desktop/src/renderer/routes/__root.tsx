@@ -33,6 +33,7 @@ import {
   useExtensionBridgeEvents,
   useNotificationEvents,
   useSyncCloseToTray,
+  useSyncSalaryExpectation,
 } from '@/services';
 import {
   useOnboardingCompleted,
@@ -134,6 +135,9 @@ function RootLayout() {
   useAutopilotFocusNavigation();
   // Push the persisted close-to-tray preference to the shell once on boot.
   useSyncCloseToTray();
+  // Push the persisted salary expectation onto the backend job_preferences
+  // store once on boot (Task #30) — existing users' saved value lands there.
+  useSyncSalaryExpectation();
   // Sync taskbar progress + flash attention on job completion/failure.
   useWindowTaskbarSync();
   // One-shot: if Zustand says not completed, check the disk mirror (survives
