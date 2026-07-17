@@ -580,7 +580,7 @@ Found a vulnerability? Please report it privately — see **<a href="SECURITY.md
 
 <p align="center">
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/graphs/contributors">
-    <img alt="Contributors" src="https://contrib.rocks/image?repo=saeedkolivand/ai-job-hunter-app">
+    <img alt="Contributors" src="https://contrib.rocks/image?repo=saeedkolivand/ai-job-hunter-app&max=100">
   </a>
 </p>
 
