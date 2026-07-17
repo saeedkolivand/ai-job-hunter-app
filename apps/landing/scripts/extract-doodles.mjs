@@ -48,7 +48,7 @@ function shapeToD(name, a) {
     case 'line': return `M${+a.x1},${+a.y1} L${+a.x2},${+a.y2}`;
     case 'polyline':
     case 'polygon': {
-      const pts = (a.points || '').trim().split(/\s+/).map((p) => p.split(',').join(','));
+      const pts = (a.points || '').trim().split(/\s+/);
       if (!pts[0]) return '';
       return `M${pts.join(' L')}` + (name === 'polygon' ? ' Z' : '');
     }

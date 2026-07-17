@@ -289,6 +289,9 @@ importers:
       three:
         specifier: 0.185.1
         version: 0.185.1
+      troika-three-text:
+        specifier: 0.52.4
+        version: 0.52.4(three@0.185.1)
       zustand:
         specifier: 5.0.14
         version: 5.0.14(@types/react@19.2.17)(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7))

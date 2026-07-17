@@ -61,12 +61,26 @@ export default function GLLoader() {
     // mounted yet), so scene text is ready on the first painted frame instead
     // of popping in. Not a crash fix -- the context-loss fix is the Suspense
     // boundary inside Experience's Canvas; see the comment there.
+    // Because it is boot QUALITY, not correctness, it must never strand the
+    // visitor: LegacyBoot already stood down on the GL verdict, so if this
+    // stalled (dead fetch, 404 font) nothing else would ever boot the page.
+    // Race it against a 4s timer and mount the Experience on timeout or
+    // rejection anyway -- worst case the atlases warm in-canvas and glyphs
+    // pop in a beat late.
     let cancelled = false;
-    preloadAllFonts().then(() => {
+    const done = () => {
       if (!cancelled) setPreloaded(true);
-    });
+    };
+    const timer = window.setTimeout(done, 4000);
+    preloadAllFonts()
+      .catch(() => undefined)
+      .then(() => {
+        window.clearTimeout(timer);
+        done();
+      });
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, []);
 

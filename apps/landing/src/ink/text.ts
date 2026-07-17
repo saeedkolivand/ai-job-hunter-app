@@ -91,6 +91,10 @@ export const FONT_TEXTS: Record<FontKey, string[]> = {
 // dispatch a second round of preloadFont requests -- otherwise Experience can
 // mount (on the second call's early resolve) while the first call's glyphs
 // are still draining through troika's shared macrotask queue.
+// Each font resolves independently, and a preloadFont call that throws
+// resolves its own slot instead of poisoning the batch; a font whose network
+// fetch stalls still leaves its promise pending -- GLLoader races the whole
+// batch against a timeout for that case.
 let preloadPromise: Promise<void> | null = null;
 export function preloadAllFonts(): Promise<void> {
   if (preloadPromise) return preloadPromise;
@@ -99,10 +103,14 @@ export function preloadAllFonts(): Promise<void> {
     keys.map(
       (key) =>
         new Promise<void>((resolve) => {
-          preloadFont(
-            { font: FONT[key], characters: charactersFor(...FONT_TEXTS[key]), sdfGlyphSize: 64 },
-            () => resolve(),
-          );
+          try {
+            preloadFont(
+              { font: FONT[key], characters: charactersFor(...FONT_TEXTS[key]), sdfGlyphSize: 64 },
+              () => resolve(),
+            );
+          } catch {
+            resolve();
+          }
         }),
     ),
   ).then(() => undefined);

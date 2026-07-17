@@ -27,16 +27,11 @@
 
 import type { LineMaterial } from "three/addons/lines/LineMaterial.js";
 
-import { boilTime } from "@/engine/clocks";
-
 // Shared stepped-time uniform: ONE object referenced by every boiled material,
-// so a single write per frame advances the boil for the whole page. Updated by
-// InkStrokes' priority-0 useFrame through advanceBoil().
+// so a single write per frame advances the boil for the whole page. Its single
+// writer is the composer's priority-1 useFrame (post/composer.tsx), which sets
+// it just before composer.render() -- the only consumer of the uniform.
 export const boilClock: { value: number } = { value: 0 };
-
-export function advanceBoil(elapsed: number, fps: number): void {
-  boilClock.value = boilTime(elapsed, fps);
-}
 
 // Default displacement amplitude in WORLD units (a subtle paper tremor). Callers
 // pass ampLocal = BOIL_AMP / scale so the world-space jitter is scale-invariant:

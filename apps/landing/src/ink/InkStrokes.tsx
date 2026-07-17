@@ -18,13 +18,14 @@
 //                      inside one batch, so the batch uses the doodle's average
 //                      stroke width -- the documented trade for one draw call.
 //
-// Both modes boil (ink/boil.ts): the material is boil-patched and the shared
-// boil clock is advanced here each frame. fill:true shapes render in either mode
-// as a triangulated Mesh (THREE.ShapeGeometry earcut) in the fill colour, seated
-// a hair behind the strokes so the outline draws on top.
+// Both modes boil (ink/boil.ts): the material is boil-patched; the shared boil
+// clock it reads is advanced once per frame by the composer (its single
+// writer). fill:true shapes render in either mode as a triangulated Mesh
+// (THREE.ShapeGeometry earcut) in the fill colour, seated a hair behind the
+// strokes so the outline draws on top.
 //
-// Per-frame cost: uniform-value writes only (the shared boil clock + each hero
-// stroke's dashOffset). No setPositions, no geometry rebuild, no allocation.
+// Per-frame cost: uniform-value writes only (each hero stroke's dashOffset).
+// No setPositions, no geometry rebuild, no allocation.
 
 import { useEffect, useMemo, useRef } from "react";
 import {
@@ -44,9 +45,8 @@ import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js
 import { useFrame } from "@react-three/fiber";
 
 import doodlesData from "@/data/doodles.json";
-import { resolveTier } from "@/engine/quality";
 import { journeyStore } from "@/engine/store";
-import { advanceBoil, BOIL_AMP, patchBoil } from "@/ink/boil";
+import { BOIL_AMP, patchBoil } from "@/ink/boil";
 import { PALETTE } from "@/ink/palette";
 
 interface DoodleStroke {
@@ -97,7 +97,6 @@ export default function InkStrokes({
   scale = 1,
   drawOn,
 }: InkStrokesProps) {
-  const tier = useMemo(() => resolveTier(), []);
   // Geometry depends only on the doodle, its scale, and the mode (draw vs
   // decor) -- NOT on t0/t1, which only steer the per-frame dash mapping. Reading
   // them through a ref keeps an inline `drawOn={{...}}` prop from rebuilding the
@@ -242,11 +241,12 @@ export default function InkStrokes({
     };
   }, [built]);
 
-  // Priority 0: advance the shared boil clock, then (draw-on only) map t -> dash
-  // progress. Runs before the composer's priority-1 render, so the frame draws
-  // with fresh uniforms. Pure f(t): scrubbing backwards un-draws the strokes.
-  useFrame((state) => {
-    advanceBoil(state.clock.elapsedTime, tier.boilFps);
+  // Priority 0 (draw-on only): map t -> dash progress. Runs before the
+  // composer's priority-1 render, so the frame draws with fresh uniforms. The
+  // shared boil clock is NOT advanced here -- the composer is its single
+  // writer (see post/composer.tsx). Pure f(t): scrubbing backwards un-draws
+  // the strokes.
+  useFrame(() => {
     const d = drawRef.current;
     if (!d || built.dashItems.length === 0) return;
     const t = journeyStore.getState().t;
