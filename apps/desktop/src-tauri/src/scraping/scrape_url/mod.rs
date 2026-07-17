@@ -828,7 +828,19 @@ fn next_data_job(html: &str) -> Option<JsonLdJob> {
 /// `max_elements_to_parse` exceeded, no candidate found) falls through to
 /// `None` — the caller then tries `main_content_text` — rather than
 /// propagating, since this is an enrichment, not a hard requirement.
+// TODO(perf): this runs synchronous CPU parsing on the async executor with no
+// `spawn_blocking` (same as every other rung of `parse_from_html`'s generic-HTML
+// fallback — all use `Html::parse_document`). Deferred: wrap the whole generic
+// fallback in `spawn_blocking` at its async call sites (including the
+// extension-bridge Scan path) — a broader refactor, out of scope here.
 fn readability_content_text(url: &str, html: &str) -> Option<String> {
+    // Host only — never log the raw dom_smoothie error, which can embed the
+    // scraped `url` (see the `host`-only convention at parse_from_html's own
+    // `reqwest::Url::parse` call and the `linkedin` job-id log above).
+    let host = reqwest::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .unwrap_or_default();
     let cfg = dom_smoothie::Config {
         // `text_content` becomes ready-to-use markdown straight off the
         // cleaned readability DOM — skips a second html_to_markdown pass over
@@ -848,8 +860,10 @@ fn readability_content_text(url: &str, html: &str) -> Option<String> {
     };
     let mut readability = match dom_smoothie::Readability::new(html, Some(url), Some(cfg)) {
         Ok(r) => r,
-        Err(e) => {
-            log::warn!("[scraping::scrape_url] dom_smoothie::Readability::new failed: {e}");
+        Err(_) => {
+            log::debug!(
+                "[scraping::scrape_url] dom_smoothie::Readability::new failed for host {host}"
+            );
             return None;
         }
     };
@@ -861,8 +875,8 @@ fn readability_content_text(url: &str, html: &str) -> Option<String> {
             let text = article.text_content.trim().to_string();
             (!text.is_empty()).then_some(text)
         }
-        Err(e) => {
-            log::warn!("[scraping::scrape_url] dom_smoothie parse failed: {e}");
+        Err(_) => {
+            log::debug!("[scraping::scrape_url] dom_smoothie parse failed for host {host}");
             None
         }
     }

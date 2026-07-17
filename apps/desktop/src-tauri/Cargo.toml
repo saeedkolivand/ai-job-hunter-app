@@ -185,10 +185,11 @@ hmac = "0.13"
 htmd = "0.5.4"
 # Real readability pass for `scraping::scrape_url`'s generic-HTML last resort:
 # a faithful Rust port of Mozilla's Readability.js (used by Firefox Reader
-# View). MIT-licensed. Replaces the old whole-document largest-`main`/
-# `article`-block guess as the higher-precision fallback when neither the
-# extension hint nor JSON-LD `JobPosting` matched — the guess itself stays as
-# the final fallback below it.
+# View). Replaces the old whole-document largest-`main`/`article`-block guess
+# as the higher-precision fallback when neither the extension hint nor
+# JSON-LD `JobPosting` matched — the guess itself stays as the final fallback
+# below it. MIT-licensed — permitted under deny.toml's `[licenses] allow`
+# list, enforced by CI's `cargo deny check`.
 dom_smoothie = "0.18"
 
 # IMAP client for email-confirmation watching (task #23, opt-in, default OFF —
