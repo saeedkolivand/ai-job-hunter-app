@@ -479,6 +479,11 @@ a.cta:focus-visible     { border-radius:12px 9px 13px 8px }
   .dialog .btns>*{margin:0 5px}
   .dc-inner>*{margin:0 1px}
 }
+
+/* footer navigation — distinct from caveat styling */
+.foot-nav{font-family:var(--mono); font-size:12px; color:#7a7269; margin-top:10px}
+.foot-nav a{color:#7a7269; text-decoration:none; border:none}
+.foot-nav a:hover{color:var(--ink)}
 </style>
 </head>
 <body>
@@ -634,7 +639,7 @@ a.cta:focus-visible     { border-radius:12px 9px 13px 8px }
       </svg>
     </div>
     <div class="swarm reveal" id="swarm">
-      <span class="chip x">LinkedIn</span><span class="chip x">Indeed</span><span class="chip x">Glassdoor</span><span class="chip x">StepStone</span><span class="chip x">Xing</span><span class="chip x">Greenhouse</span><span class="chip x">Lever</span><span class="chip x">Workday</span><span class="chip">+8 more</span>
+      <span class="chip x">LinkedIn</span><span class="chip x">Indeed</span><span class="chip x">Glassdoor</span><span class="chip x">StepStone</span><span class="chip x">Xing</span><span class="chip x">Greenhouse</span><span class="chip x">Lever</span><span class="chip x">Workday</span><span class="chip">+15 more</span>
     </div>
     <p class="tag reveal" style="margin:6px auto 26px; max-width:42ch; color:#d1c6e6">entry level: 5 yrs experience required · easy apply (47 fields) · create a Workday account <i>(for the 9th time)</i></p>
 
@@ -711,7 +716,7 @@ a.cta:focus-visible     { border-radius:12px 9px 13px 8px }
     <svg class="deco draw" style="right:16%; top:8%; width:20px" viewBox="0 0 22 22" aria-hidden="true"><path pathLength="1" d="M11 2 v7 M11 13 v7 M2 11 h7 M13 11 h7" style="stroke-width:2.4"/></svg>
     <h2 class="fried huge reveal">WAIT.<br>IT DOES<br>EVERYTHING ELSE.</h2>
     <div class="fried mid reveal">it finds them. it writes them. you press send.</div>
-    <p class="fried-line reveal">it <b>HITS 16 boards</b> while you do NOTHING. it <b>writes the cover letter</b> — the one you CRIED over. GONE. it <b>scores your résumé</b> so the regex blob can't hurt you anymore. <b>semantic matching????</b> it KNOWS which jobs want you. it knows things you don't. the one thing it <b>won't</b> do? press submit. that terror stays yours.</p>
+    <p class="fried-line reveal">it <b>HITS 23 boards</b> while you do NOTHING. it <b>writes the cover letter</b> — the one you CRIED over. GONE. it <b>scores your résumé</b> so the regex blob can't hurt you anymore. <b>semantic matching????</b> it KNOWS which jobs want you. it knows things you don't. the one thing it <b>won't</b> do? press submit. that terror stays yours.</p>
     <div class="dialog reveal" role="region" aria-label="secret confirmation">
       <span class="dq" aria-live="polite" aria-atomic="true">Are you sure?</span><br><span style="font-size:12px; color:#444">(you were not supposed to find this)</span>
       <div class="btns"><button>yes</button><button class="y2">YES</button></div>
@@ -772,8 +777,8 @@ a.cta:focus-visible     { border-radius:12px 9px 13px 8px }
     <p class="lede reveal">(in between the breakdowns, real software happened)</p>
     <svg class="crayon-arrow" viewBox="0 0 120 60"><path d="M8 12 q40 36 90 30" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/><path d="M84 48 l14 -6 m-14 6 l8 -13" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/></svg>
     <div class="feat-grid">
-      <div class="feat reveal"><h3>16 boards, one search</h3><p>LinkedIn direct; the walled boards (Indeed, Glassdoor, StepStone, Xing, Workday) via aggregator API — no new Workday account. Then Greenhouse, Lever, Ashby, and the whole DACH lineup — 7 more places to be rejected, but faster.</p></div>
-      <div class="feat reveal"><h3>AI cover letters &amp; résumés</h3><p>Writes it for you. 9 templates — 5 premium ones (Meridian, Atelier, Throughline, Portrait, Lebenslauf), two with a headshot — rendered by a pure-Rust Typst engine to DOCX, PDF &amp; TXT. The AI is more passionate about this role than you could ever convincingly fake.</p></div>
+      <div class="feat reveal"><h3>23 boards, one search</h3><p>LinkedIn direct; the walled boards (Indeed, Glassdoor, StepStone, Xing, Workday) via aggregator API — no new Workday account. Then Greenhouse, Lever, Ashby, and the whole DACH lineup — 14 more places to be rejected, but faster.</p></div>
+      <div class="feat reveal"><h3>AI cover letters &amp; résumés</h3><p>Writes it for you. 12 templates — 7 ATS-Safe tier (Classic, Swiss Minimal, Academic, Meridian, Throughline, Cadence, Regent) and 5 Design tier (Atelier, Portrait, Lebenslauf, Aria, Saffron), four with a headshot — rendered by a pure-Rust Typst engine to DOCX, PDF &amp; TXT. The AI is more passionate about this role than you could ever convincingly fake.</p></div>
       <div class="feat reveal"><h3>ATS scoring</h3><p>Your résumé was reviewed by a piece of regex that has never felt joy. Now you score back.</p></div>
       <div class="feat reveal"><h3>Semantic matching</h3><p>Hybrid vector search. Understands your résumé better than your mother, who still thinks you "do computers."</p></div>
       <div class="feat reveal"><h3>Autopilot</h3><p>Pick a board and a schedule, walk away. At 9am it scrapes, ranks the matches, pings you, and pre-writes each tailored application. The submit button it leaves to you — some dignity must remain.</p></div>
@@ -782,6 +787,7 @@ a.cta:focus-visible     { border-radius:12px 9px 13px 8px }
       <div class="feat reveal"><h3>Import anything (even a photo)</h3><p>Feed it your old résumé as a PDF, DOCX, or a cursed phone photo — Tesseract OCRs it, the app re-parses it, and politely says nothing about the typos.</p></div>
       <div class="feat reveal"><h3>11 languages (well, almost)</h3><p>It <i>writes</i> your résumé in 11 — en, de, fr, es, it, tr, pt, ru, zh, ja, ko. The app's own interface speaks two for now, English and German; the other nine are "coming soon," same as my big break. Cosmopolitan failure, localized.</p></div>
       <div class="feat reveal"><h3>Privacy-first</h3><p>OS keychain, local SQLite, zero telemetry. No one is watching you spiral. For once.</p></div>
+      <div class="feat reveal"><h3>Browser extension (save jobs one-click)</h3><p>While browsing any job board, one click imports that posting straight into your desktop app — no parsing, no copy-paste. The extension does the grabbing so your dignity doesn't have to. <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll" target="_blank" rel="noopener noreferrer" style="color:var(--red)">Chrome</a> · <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/" target="_blank" rel="noopener noreferrer" style="color:var(--red)">Firefox</a>.</p></div>
     </div>
   </div>
 </section>
@@ -826,7 +832,7 @@ a.cta:focus-visible     { border-radius:12px 9px 13px 8px }
       <path class="dood" d="M100 138 L82 172"/><path class="dood" d="M100 138 L118 172"/>
     </svg>
   </div>
-  <p class="honest">yes, this app is real. yes, it actually pulls from 16 sources — LinkedIn via direct browser scraping, the walled ones (Indeed, Glassdoor, StepStone, Xing, Workday) via the Adzuna/JSearch aggregator API so no one has to make a 9th Workday account, and a bunch of ATS and DACH boards on top. yes, it's built with Tauri + Rust + React 19 + a vector database + a pure-Rust Typst engine that renders every PDF — because I had a lot of free time, on account of the unemployment. no, it does not auto-apply — it finds the jobs and writes the whole application; hitting submit is the one job left to you. no, I still don't have a job. the autopilot is doing its best.</p>
+  <p class="honest">yes, this app is real. yes, it actually pulls from 23 boards — LinkedIn over HTTP, the walled ones (Indeed, Glassdoor, StepStone, Xing, Workday) via the Adzuna/JSearch aggregator API so no one has to make a 9th Workday account, and a bunch of ATS and DACH boards on top. yes, it's built with Tauri + Rust + React 19 + a vector database + a pure-Rust Typst engine that renders every PDF — because I had a lot of free time, on account of the unemployment. no, it does not auto-apply — it finds the jobs and writes the whole application; hitting submit is the one job left to you. no, I still don't have a job. the autopilot is doing its best.</p>
   <a class="cta" id="cta" href="/download">ok fine, take the app →</a>
   <a class="src-link" href="https://github.com/saeedkolivand/ai-job-hunter-app">view the source — it's PolyForm Noncommercial: read it, fork it, learn from it. just don't sell my misery back to me.</a>
   <a class="src-link" href="/creature">▶ THE CREATURE — a hand-drawn doodle about the tiny recruiter you accidentally summon. it grows. (2:40)</a>
@@ -835,7 +841,7 @@ a.cta:focus-visible     { border-radius:12px 9px 13px 8px }
   <p class="builtwith">Tauri · Rust · React 19 · TanStack · SQLite · Typst · Ollama · pure spite</p>
   <p class="byline">made by Saeed, between rejections.</p>
   <svg class="inkline draw" style="width:24px; margin-top:10px" viewBox="0 0 30 28" aria-hidden="true"><path pathLength="1" d="M15 24 C5 16 2 9 8 5 q5 -3 7 4 q2 -7 7 -4 c6 4 3 11 -7 19 Z" style="stroke-width:2.4"/></svg>
-  <p class="footnote"><a href="/privacy" style="color:#5a4f3b">Privacy</a> · <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll" target="_blank" rel="noopener" style="color:#5a4f3b">Chrome extension</a> · <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/" target="_blank" rel="noopener" style="color:#5a4f3b">Firefox extension</a> · <a href="https://github.com/saeedkolivand/ai-job-hunter-app" target="_blank" rel="noopener" style="color:#5a4f3b">GitHub</a> · <a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener" style="color:#5a4f3b">♥ sponsor</a></p>
+  <p class="foot-nav">home · <a href="/download">download</a> · <a href="/privacy">privacy</a> · <a href="/creature">▶ the short film</a> · <a href="https://github.com/saeedkolivand/ai-job-hunter-app" target="_blank" rel="noopener noreferrer">GitHub</a> · <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll" target="_blank" rel="noopener noreferrer">Chrome extension</a> · <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/" target="_blank" rel="noopener noreferrer">Firefox extension</a> · <a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener noreferrer">♥ sponsor</a></p>
 </section>
 
 </main>
