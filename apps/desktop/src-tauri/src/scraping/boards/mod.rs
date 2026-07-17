@@ -14,6 +14,7 @@ pub mod comeet;
 pub(crate) mod common;
 pub mod germantechjobs;
 pub mod greenhouse;
+pub mod jobicy;
 pub mod lever;
 pub mod linkedin;
 pub mod personio;
@@ -38,6 +39,7 @@ pub use breezy::BreezyScraper;
 pub use comeet::ComeetScraper;
 pub use germantechjobs::GermanTechJobsScraper;
 pub use greenhouse::GreenhouseScraper;
+pub use jobicy::JobicyScraper;
 pub use lever::LeverScraper;
 pub use linkedin::LinkedInScraper;
 pub use personio::PersonioScraper;
@@ -66,6 +68,7 @@ static SCRAPERS: &[&dyn Scraper] = &[
     &RemoteOkScraper,
     &WeWorkRemotelyScraper,
     &ArbeitnowScraper,
+    &JobicyScraper,
     &BerlinStartupJobsScraper,
     &GermanTechJobsScraper,
     &GreenhouseScraper,
