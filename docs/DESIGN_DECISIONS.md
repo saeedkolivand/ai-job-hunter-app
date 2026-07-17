@@ -1,6 +1,6 @@
 # AI Job Hunter — Design Decisions
 
-Last updated: 2026-07-16
+Last updated: 2026-07-17
 
 This document records the major architectural decisions in the project — the reasoning behind the technology choices, the patterns used, and the trade-offs considered. It is a reference for contributors and reviewers who want to understand the _why_ behind the codebase.
 
@@ -379,7 +379,7 @@ The repo uses [semantic-release][semantic-release] driven by [Conventional Commi
 | `BREAKING CHANGE` footer       | minor (0.x)  |
 | `chore:`, `docs:`, `refactor:` | no release   |
 
-Releases are **manually triggered** (Actions → "🚀 Release" → `action: release`); semantic-release then bumps the version, publishes release notes to the GitHub release, and (via a separate dispatch) triggers the Tauri build pipeline. Nothing auto-runs on push/merge to `main`. While the project is on `0.x`, a `BREAKING CHANGE` bumps the minor, not the major (`.releaserc.json` pre-1.0 guard).
+Releases are **manually triggered** (Actions → "🚀 Release" → `action: release`); semantic-release then bumps the version, publishes release notes to the GitHub release, and (via a separate dispatch) triggers the Tauri build pipeline. Nothing auto-runs on push/merge to `main`. While the project is on `0.x`, a `BREAKING CHANGE` bumps the minor, not the major (`release.config.mjs` pre-1.0 guard).
 
 ### Pre-commit hooks ([Husky][husky] + [lint-staged][lint-staged])
 

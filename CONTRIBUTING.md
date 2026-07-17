@@ -92,7 +92,7 @@ ai-job-hunter-app/
 ├── .prettierrc.json             # Prettier
 ├── commitlint.config.mjs        # Commit linting
 ├── vitest.config.ts             # Unit tests
-└── .releaserc.json               # semantic-release config
+└── release.config.mjs           # semantic-release config
 ```
 
 ### Package dependency graph
@@ -191,7 +191,7 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org). C
 | `chore`    | Maintenance                     | No               |
 | `revert`   | Revert a commit                 | Patch            |
 
-Breaking changes: add `!` after the type or `BREAKING CHANGE:` in the footer → triggers a **minor** release while the project is on `0.x` (the `.releaserc.json` pre-1.0 guard; it becomes a major bump only after `1.0`).
+Breaking changes: add `!` after the type or `BREAKING CHANGE:` in the footer → triggers a **minor** release while the project is on `0.x` (the `release.config.mjs` pre-1.0 guard; it becomes a major bump only after `1.0`).
 
 ### Examples
 
