@@ -4,7 +4,7 @@
  *
  * Lifecycle: semantic-release calls `prepare` AFTER
  * `@semantic-release/release-notes-generator` has populated
- * `context.nextRelease.notes`, and BEFORE any `publish` step. In `.releaserc.json`
+ * `context.nextRelease.notes`, and BEFORE any `publish` step. In `release.config.mjs`
  * this plugin is ordered first among the `prepare` hooks (immediately after
  * release-notes-generator, before @semantic-release/exec / changelog / git /
  * github), so it runs only when a real release is actually proceeding and — by

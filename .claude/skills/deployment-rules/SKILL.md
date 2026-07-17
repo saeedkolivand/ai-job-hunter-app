@@ -1,6 +1,6 @@
 ---
 name: deployment-rules
-description: Release/deployment standards — semantic-release, commitlint, version sync, the updater. Load for /prepare-release and changes to .releaserc / commitlint / workflows / version files. Owned by project-steward.
+description: Release/deployment standards — semantic-release, commitlint, version sync, the updater. Load for /prepare-release and changes to release.config.mjs / commitlint / workflows / version files. Owned by project-steward.
 ---
 
 # Deployment / release rules
@@ -9,7 +9,7 @@ Releases run **only on manual dispatch** (Actions → "🚀 Release" → `action
 
 ## Release triggers (commit type → bump)
 
-- `feat:` → minor · `fix:` / `perf:` → patch · `BREAKING CHANGE` footer → **minor** (0.x guard — `.releaserc.json` maps breaking→minor while pre-1.0).
+- `feat:` → minor · `fix:` / `perf:` → patch · `BREAKING CHANGE` footer → **minor** (0.x guard — `release.config.mjs` maps breaking→minor while pre-1.0).
 - `refactor:` / `docs:` / `chore:` / `ci:` / `test:` → no release.
 
 ## Commit messages (commitlint, blocks the commit)

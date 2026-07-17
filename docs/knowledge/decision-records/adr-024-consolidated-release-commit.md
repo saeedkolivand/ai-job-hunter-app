@@ -1,6 +1,6 @@
 # ADR-024: Consolidated atomic release commit
 
-Last updated: 2026-06-14
+Last updated: 2026-07-17
 
 **Status:** Accepted
 
@@ -50,7 +50,7 @@ The separate `sync-version-files` GitHub Actions job is **removed**; the `releas
 
 ## Related
 
-- `.releaserc.json` — plugin configuration (commit-analyzer → release-notes-generator → exec → changelog → github → git)
+- `release.config.mjs` — plugin configuration (commit-analyzer → release-notes-generator → exec → changelog → github → git)
 - `.github/workflows/release.yml` — `release` job updated; `sync-version-files` job removed
 - `scripts/sync-tauri-version.cjs` — invoked by semantic-release's exec plugin in `prepare` phase
 - `docs/DEPLOYMENT.md` § "Release configuration" and "CI/CD Pipeline" — updated to reflect consolidated flow
