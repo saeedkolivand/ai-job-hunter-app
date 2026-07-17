@@ -9,7 +9,8 @@
 // Per frame it: (1) reads the scroll-driven global t from journeyStore, (2)
 // evaluates the camera pose for that t and copies it onto the default camera
 // (evalPose writes into reusable objects -> zero per-frame allocation), (3)
-// advances the sketchbook boil clock via clocks.boilTime (stepped to the tier's
+// advances both boil clocks -- the sketchbook effect uniform and ink/boil's
+// shared line-boil clock -- via clocks.boilTime (stepped to the tier's
 // boilFps), then (4) renders the composer.
 
 import { EffectComposer, EffectPass, RenderPass } from "postprocessing";
@@ -21,6 +22,7 @@ import { boilTime } from "@/engine/clocks";
 import { evalPose } from "@/engine/journey";
 import { resolveTier } from "@/engine/quality";
 import { journeyStore } from "@/engine/store";
+import { boilClock } from "@/ink/boil";
 import { SketchbookEffect } from "@/post/sketchbook-effect";
 
 export function Composer() {
@@ -61,7 +63,14 @@ export function Composer() {
     const pose = evalPose(t);
     state.camera.position.copy(pose.position);
     state.camera.quaternion.copy(pose.quaternion);
-    boilUniform.value = boilTime(state.clock.elapsedTime, tier.boilFps);
+    // Single writer for BOTH boil clocks: the sketchbook effect's uniform and
+    // the shared line-boil clock every InkStrokes material references
+    // (ink/boil.ts). Priority 1 runs after all priority-0 subscribers and
+    // immediately before composer.render() -- the only consumer -- so ordering
+    // holds and the whole page steps on one value per frame.
+    const bt = boilTime(state.clock.elapsedTime, tier.boilFps);
+    boilUniform.value = bt;
+    boilClock.value = bt;
     composer.render(delta);
   }, 1);
 
