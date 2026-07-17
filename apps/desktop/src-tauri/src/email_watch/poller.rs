@@ -80,14 +80,6 @@ pub(crate) fn effective_last_uid(
 /// never highest-first, so the remainder is always the newer half.
 const MAX_HEADERS_PER_TICK: usize = 200;
 
-/// Hard cap on raw message bytes handed to [`parser::parse_body_text`] — a
-/// message with large attachments could otherwise cost real CPU decoding
-/// (base64, MIME structure) content this feature never needs (only the
-/// text/plain body). Attachments/trailing MIME parts are typically AFTER the
-/// text body in a confirmation email, so a byte cut here only risks losing
-/// content this feature doesn't read anyway.
-const MAX_BODY_BYTES: usize = 200_000;
-
 /// Sort `headers` ascending by uid and cap to at most `cap` entries —
 /// oldest-first, so any never-reached remainder this tick is picked up on
 /// the next one. Pure/network-free, factored out of [`run_tick`] so the
@@ -167,8 +159,14 @@ pub fn run_tick(
         .into_iter()
         .map(|(uid, header, is_candidate, domain_hint)| {
             let matched_application_id = header.filter(|_| is_candidate).and_then(|header| {
+                // The fetch itself is already bounded at the protocol level
+                // to `imap_client::MAX_BODY_BYTES` (a partial-octet FETCH,
+                // see `imap_client::body_fetch_item_spec`) — this second cap
+                // is defense-in-depth only, for a non-compliant server that
+                // ignores the partial-fetch hint and returns the whole
+                // message anyway.
                 let body_text = bodies.get(&uid).and_then(|raw| {
-                    let capped = &raw[..raw.len().min(MAX_BODY_BYTES)];
+                    let capped = &raw[..raw.len().min(imap_client::MAX_BODY_BYTES)];
                     parser::parse_body_text(capped)
                 });
                 let candidates = parser::extract_candidates(

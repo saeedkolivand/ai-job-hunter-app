@@ -295,9 +295,33 @@ fn fetch_headers_inner(
     })
 }
 
-/// Fetch the full raw message (`BODY.PEEK[]` — header + body, read-only) for
-/// exactly `uids` — called ONLY for fingerprint-matched candidates (the
-/// "minimize reads" design: never fetched for every candidate, only ones
+/// Hard cap on raw message bytes fetched per candidate body — bounded at the
+/// PROTOCOL level via a partial-fetch octet range (`<0.N>`), not merely
+/// truncated in-process after the whole message is already resident in
+/// memory. RFC 3501 §6.4.5 (and this crate's own `validate_str_noquote` doc
+/// comment, which quotes the grammar verbatim) both confirm `"BODY.PEEK"
+/// section ["<" number "." nz-number ">"]` is valid FETCH syntax — so a
+/// message with large attachments never has more than this many bytes
+/// actually transferred or held in memory in the first place, for up to
+/// `MAX_HEADERS_PER_TICK` candidates per tick. `email_watch::poller` keeps
+/// its OWN post-fetch cap too (defense-in-depth against a non-compliant
+/// server that ignores the partial-fetch hint and returns the whole message
+/// anyway) — this constant is the single source of truth both layers use.
+pub const MAX_BODY_BYTES: usize = 200_000;
+
+/// The `UID FETCH` item spec for a body fetch — ALWAYS the partial-octet
+/// form (`BODY.PEEK[]<0.MAX_BODY_BYTES>`), never a bare `BODY.PEEK[]`.
+/// Pure/network-free, factored out so the exact wire spec — the thing that
+/// actually bounds memory, not just the post-fetch truncation — is directly
+/// unit-testable.
+fn body_fetch_item_spec() -> String {
+    format!("(UID BODY.PEEK[]<0.{MAX_BODY_BYTES}>)")
+}
+
+/// Fetch the raw message (header + body, read-only, capped to
+/// [`MAX_BODY_BYTES`] — see [`body_fetch_item_spec`]) for exactly `uids` —
+/// called ONLY for fingerprint-matched candidates (the "minimize reads"
+/// design: never fetched for every candidate, only ones
 /// [`crate::email_watch::parser::fingerprint`] already flagged). An empty
 /// `uids` short-circuits without a network round trip.
 ///
@@ -332,13 +356,15 @@ fn fetch_bodies_inner(
     let mut sorted = uids.to_vec();
     sorted.sort_unstable();
     let seq = uid_sequence_set(&sorted);
-    let fetches = session.uid_fetch(&seq, "(UID BODY.PEEK[])").map_err(|e| {
-        log::warn!(
-            "[email_watch] UID FETCH (body) against {host}:{port} failed: {}",
-            error_kind(&e)
-        );
-        AppError::Provider("could not read mailbox messages".to_string())
-    })?;
+    let fetches = session
+        .uid_fetch(&seq, body_fetch_item_spec())
+        .map_err(|e| {
+            log::warn!(
+                "[email_watch] UID FETCH (body) against {host}:{port} failed: {}",
+                error_kind(&e)
+            );
+            AppError::Provider("could not read mailbox messages".to_string())
+        })?;
 
     Ok(fetches
         .iter()
@@ -479,11 +505,25 @@ fn error_kind(e: &imap::Error) -> &'static str {
 // below (and EmailWatchStore's store-level logic in `tests.rs`) IS covered.
 #[cfg(test)]
 mod tests {
-    use super::{build_search_query, uid_sequence_set};
+    use super::{body_fetch_item_spec, build_search_query, uid_sequence_set, MAX_BODY_BYTES};
     use chrono::NaiveDate;
 
     fn date(y: i32, m: u32, d: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    // ── body_fetch_item_spec (/review MEDIUM: protocol-level body bound) ────
+
+    #[test]
+    fn body_fetch_item_spec_is_bounded_by_a_partial_octet_range() {
+        // Pins the EXACT wire spec — a bare `BODY.PEEK[]` regression (fetching
+        // an unbounded whole message again) would fail this, not just a
+        // "contains a number somewhere" check.
+        assert_eq!(
+            body_fetch_item_spec(),
+            format!("(UID BODY.PEEK[]<0.{MAX_BODY_BYTES}>)")
+        );
+        assert_eq!(body_fetch_item_spec(), "(UID BODY.PEEK[]<0.200000>)");
     }
 
     // ── build_search_query (/review MEDIUM: watermark-scoped SEARCH) ────────

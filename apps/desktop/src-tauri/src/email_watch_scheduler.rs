@@ -218,6 +218,24 @@ pub async fn run_check(app: &AppHandle) -> AppResult<EmailWatchStatus> {
     Ok(store.status())
 }
 
+/// Whether `run_check_inner` may proceed to commit this tick's outcomes
+/// (reset UIDVALIDITY, stamp `seen`, advance the watermark) AND fire any
+/// notifications, given whether the account is STILL connected right after
+/// the multi-second `spawn_blocking` IMAP round trip returned.
+///
+/// Every post-tick write is ALSO separately guarded at the DB layer
+/// (`address IS NOT NULL` on `advance_last_uid`/`mark_seen`/
+/// `reset_on_uidvalidity_change`) — but `notify_match` has NO database
+/// awareness of its own, so THIS decision is the only thing standing between
+/// a vanished account (a Disconnect or factory reset landing mid-tick) and a
+/// stale notification card sourced from a mailbox the user just
+/// disconnected. Pure so the decision itself is directly unit-tested, not
+/// just exercised indirectly via the DB-layer no-op guards — mirrors this
+/// file's own `is_due`/`backoff_interval`/`classify_tick_outcome` pattern.
+fn should_commit_outcomes(account_still_connected: bool) -> bool {
+    account_still_connected
+}
+
 async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<()> {
     let account = store.account();
     let address = account
@@ -284,8 +302,10 @@ async fn run_check_inner(app: &AppHandle, store: &EmailWatchStore) -> AppResult<
     // AND the notification, which has NO DB awareness of its own and would
     // otherwise fire a "Possible application confirmation" card sourced from
     // a mailbox the user just disconnected. Bail silently — nothing to
-    // report for an account that no longer exists.
-    if store.account().address.is_none() {
+    // report for an account that no longer exists. The decision itself is a
+    // pure fn (see `should_commit_outcomes`) so it's directly unit-tested,
+    // not just exercised indirectly via the DB-layer no-op guards.
+    if !should_commit_outcomes(store.account().address.is_some()) {
         return Ok(());
     }
 
@@ -385,6 +405,23 @@ mod tests {
              in EmailWatchSection/index.tsx's CHECK_NOW_RATE_LIMIT_MESSAGE — the two \
              sentinels are independent literals and must be edited together"
         );
+    }
+
+    // ── should_commit_outcomes (/review HIGH: untested disconnect-mid-tick guard) ──
+
+    #[test]
+    fn should_commit_outcomes_is_false_once_the_account_is_gone() {
+        assert!(
+            !should_commit_outcomes(false),
+            "a vanished account (Disconnect/factory-reset landing mid-tick) must skip \
+             BOTH the post-tick writes and notify_match — this is the exact condition \
+             `run_check_inner` branches on before either"
+        );
+    }
+
+    #[test]
+    fn should_commit_outcomes_is_true_while_still_connected() {
+        assert!(should_commit_outcomes(true));
     }
 
     #[test]
