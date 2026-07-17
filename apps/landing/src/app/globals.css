@@ -411,6 +411,20 @@ a.cta:focus-visible     { border-radius:12px 9px 13px 8px }
 #cookie button:focus-visible{ border-radius:10px }
 .dialog button:focus-visible{ border-radius:4px }
 
+/* ---------- GL skip-link ----------
+   Only rendered while the GL Experience is mounted (P1 a11y strategy): off-screen
+   until :focus, then a real, visible, keyboard-reachable link back to the fully
+   accessible semantic page. Rendered first in the body so it is the first
+   focusable element / first Tab stop whenever GL is mounted. */
+.skip-gl{
+  position:absolute; top:-40px; left:8px; z-index:1000;
+  background:var(--paper); color:var(--ink);
+  font-family:var(--mono); font-size:13px;
+  padding:8px 14px; border-radius:8px;
+  text-decoration:none;
+}
+.skip-gl:focus{ top:8px }
+
 /* reduced motion */
 @media (prefers-reduced-motion: reduce){
   /* Kill decorative animations and transitions. The focus-visible outline is a
