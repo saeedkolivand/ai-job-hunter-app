@@ -9,17 +9,18 @@ fn test_browser_sem() -> Arc<TokioSemaphore> {
 fn test_catalog() {
     let engine = ScraperEngine::new();
     let catalog = engine.catalog();
-    assert_eq!(catalog.len(), 23);
+    assert_eq!(catalog.len(), 24);
 
     // Check specific scrapers
     assert!(catalog.iter().any(|s| s.id == "linkedin"));
     assert!(catalog.iter().any(|s| s.id == "ycombinator"));
     assert!(catalog.iter().any(|s| s.id == "aggregator"));
     assert!(catalog.iter().any(|s| s.id == "greenhouse"));
-    // The 23-count alone doesn't prove which ids make it up — assert the two
-    // newest boards are actually present, not just that *some* 23 ids are.
+    // The 24-count alone doesn't prove which ids make it up — assert the
+    // newest boards are actually present, not just that *some* 24 ids are.
     assert!(catalog.iter().any(|s| s.id == "workable"));
     assert!(catalog.iter().any(|s| s.id == "comeet"));
+    assert!(catalog.iter().any(|s| s.id == "jobicy"));
 
     // Retired anti-bot boards must not appear in the catalog.
     assert!(!catalog.iter().any(|s| s.id == "indeed"));
@@ -230,7 +231,7 @@ fn test_catalog_listed_flags() {
         "comeet must be hidden from the picker until live-verified"
     );
 
-    // Every board except the hidden Comeet is listed (23 registered, 1 hidden).
+    // Every board except the hidden Comeet is listed (24 registered, 1 hidden).
     let listed_count = catalog.iter().filter(|e| e.listed).count();
     assert_eq!(
         listed_count,
@@ -238,8 +239,8 @@ fn test_catalog_listed_flags() {
         "all boards except the hidden Comeet should be listed"
     );
     assert_eq!(
-        listed_count, 22,
-        "22 of the 23 registered boards are listed"
+        listed_count, 23,
+        "23 of the 24 registered boards are listed"
     );
 }
 
@@ -249,7 +250,7 @@ fn test_health() {
     let health = engine.health();
     assert_eq!(health.mode, "in-process");
     assert!(health.ready);
-    assert_eq!(health.scrapers.len(), 23);
+    assert_eq!(health.scrapers.len(), 24);
 }
 
 #[test]

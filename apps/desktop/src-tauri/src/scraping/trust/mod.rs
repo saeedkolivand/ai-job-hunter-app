@@ -61,7 +61,9 @@ const SUSPICIOUS_DOMAINS: &[&str] = &[
 /// (`berlinstartupjobs.com`, its own WordPress RSS permalink), and the Adzuna
 /// aggregator (`api.adzuna.com` — the country code is a *path* segment, e.g.
 /// `/v1/api/jobs/de/redirects/…`, not a subdomain, so this one host covers
-/// every market's `redirect_url`) — so those boards' results aren't
+/// every market's `redirect_url`), and Jobicy (`jobicy.com` — its own posting
+/// page URL is REQUIRED by Jobicy's ToS attribution, see
+/// `scraping/boards/jobicy/mod.rs`) — so those boards' results aren't
 /// systematically flagged. JSearch's `job_apply_link` is the real employer
 /// URL, so it's intentionally left off this list.
 const ATS_ALLOWLIST: &[&str] = &[
@@ -95,6 +97,7 @@ const ATS_ALLOWLIST: &[&str] = &[
     "berlinstartupjobs.com",
     "api.adzuna.com",
     "comeet.co",
+    "jobicy.com",
 ];
 
 /// Score/flag a posting from its apply `url` and `company` name. Pure, no I/O;
