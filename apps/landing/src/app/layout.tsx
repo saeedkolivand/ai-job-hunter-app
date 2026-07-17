@@ -55,15 +55,6 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <head>
-        {/* React 19 hoists these font links into <head>; kept verbatim from landing/index.html. */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Anton&family=Caveat:wght@600;700&family=Gloria+Hallelujah&family=Patrick+Hand&family=Space+Mono:wght@400;700&display=swap"
-          rel="stylesheet"
-        />
-      </head>
       <body>
         {/* Capability-gated GL takeover. Mounts the WebGL Experience only when
             the gate passes; otherwise renders nothing and legacy boots. Placed

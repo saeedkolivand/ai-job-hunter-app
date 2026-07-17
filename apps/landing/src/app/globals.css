@@ -1,3 +1,36 @@
+/* Self-hosted fonts (was the Google Fonts CDN link in layout <head>). Local
+   TTFs under /public/fonts keep the exported page from touching any Google font
+   host -- closes the CodeRabbit privacy finding. Family names are unchanged so
+   the --scrawl/--hand/--impact/--mono vars below keep working, and
+   the same TTFs feed the GL text builder (src/ink/text.ts). Licenses ship
+   alongside as /fonts/OFL-*.txt. */
+@font-face{
+  font-family:'Gloria Hallelujah'; font-style:normal; font-weight:400;
+  font-display:swap; src:url('/fonts/GloriaHallelujah.ttf') format('truetype');
+}
+@font-face{
+  font-family:'Patrick Hand'; font-style:normal; font-weight:400;
+  font-display:swap; src:url('/fonts/PatrickHand-Regular.ttf') format('truetype');
+}
+@font-face{
+  font-family:'Anton'; font-style:normal; font-weight:400;
+  font-display:swap; src:url('/fonts/Anton-Regular.ttf') format('truetype');
+}
+/* Caveat is a variable font (wght axis); one file covers the 600 + 700 the copy
+   uses, exposed as a weight range. */
+@font-face{
+  font-family:'Caveat'; font-style:normal; font-weight:400 700;
+  font-display:swap; src:url('/fonts/Caveat-VariableWght.ttf') format('truetype');
+}
+@font-face{
+  font-family:'Space Mono'; font-style:normal; font-weight:400;
+  font-display:swap; src:url('/fonts/SpaceMono-Regular.ttf') format('truetype');
+}
+@font-face{
+  font-family:'Space Mono'; font-style:normal; font-weight:700;
+  font-display:swap; src:url('/fonts/SpaceMono-Bold.ttf') format('truetype');
+}
+
 :root{
   --scrawl:'Gloria Hallelujah', cursive;
   --hand:'Patrick Hand', cursive;
