@@ -89,17 +89,19 @@ function redArrow({ rotate = 0, flip = false, width = 150 } = {}) {
 //   tip   — a small standoff (TIP_GAP) outside the card's LEFT edge, level
 //           with the measured target button's centre (capture-time fy/fh
 //           fractions, rotated with the card). It never crosses the card face.
-//   curve — one quadratic whose control point derives from the tail→tip
-//           vector: it bows AWAY from the caption side, curvature scales with
+//   curve — one cubic whose departure control derives from the tail→tip
+//           vector (it bows AWAY from the caption side, curvature scales with
 //           distance, and it flips naturally when the target sits above vs
-//           below the caption. A deterministic solver grows the bow until the
-//           whole stroke clears the caption bbox by ARROW.captionPad (asserted
-//           — the stroke must never overlap caption glyphs).
+//           below the caption) and whose ARRIVAL control is constrained so the
+//           path arrives pointing at the target button's measured centre. A
+//           deterministic solver grows the bow until the whole stroke clears
+//           the caption bbox by ARROW.captionPad (asserted — the stroke must
+//           never overlap caption glyphs).
 //   look  — seeded per-shot jitter (tail spot, bow, wobble, stroke width,
 //           barb length/spread) so each arrow reads hand-drawn and no two are
 //           identical. Brand look preserved: single red stroke, round caps,
-//           two-barb arrowhead rotated to the quadratic's ANALYTIC tangent at
-//           the tip (tip − control) — never a hardcoded head angle.
+//           two-barb arrowhead rotated to the cubic's ANALYTIC tangent at the
+//           tip (tip − arrival control) — never a hardcoded head angle.
 //
 // Rendered as the LAST element in the stage with the highest z-index, so the
 // head is never occluded by the popup image.
@@ -143,11 +145,12 @@ function arrowCrowdsCaption(points, inflate, cap) {
   );
 }
 
-// Build the full-frame arrow SVG for one shot from measured geometry: `tip`
-// (frame px, from shotCardGeometry) and `cap` (the caption bbox in frame px,
+// Build the full-frame arrow SVG for one shot from measured geometry: `tip` +
+// `aim` (frame px, from shotCardGeometry — the standoff point and the button
+// centre the head must point at) and `cap` (the caption bbox in frame px,
 // measured in the live composite page). Returns the SVG string plus the
 // resolved geometry for logging. Throws if no curve can clear the caption.
-function buildShotArrow(shot, tip, cap) {
+function buildShotArrow(shot, tip, aim, cap) {
   const rng = seededRng(shot.file);
   const stroke = ARROW.strokeBase + rng() * 1.4;
   const inflate = stroke / 2 + ARROW.shadowPad;
@@ -171,11 +174,11 @@ function buildShotArrow(shot, tip, cap) {
   const pool = usable.length > 0 ? usable : [below];
   const tail = pool.reduce((a, b) => (dist(a) <= dist(b) ? a : b));
 
-  // Quadratic control point from the tail→tip vector: a perpendicular offset
-  // at the midpoint, bowed AWAY from the caption (the normal side pointing
-  // away from the caption centre), curvature scaled by shaft length. The flip
-  // when the target sits above vs below the caption falls out of the
-  // away-side selection.
+  // Departure control from the tail→tip vector: a perpendicular offset at the
+  // midpoint, bowed AWAY from the caption (the normal side pointing away from
+  // the caption centre), curvature scaled by shaft length. The flip when the
+  // target sits above vs below the caption falls out of the away-side
+  // selection.
   const dx = tip.x - tail.x;
   const dy = tip.y - tail.y;
   const len = Math.hypot(dx, dy) || 1;
@@ -191,6 +194,15 @@ function buildShotArrow(shot, tip, cap) {
       : -1;
   let bow = len * (0.12 + rng() * 0.08);
 
+  // Arrival constraint: the cubic's tangent at t=1 is tip − c2, so placing c2
+  // on the ray from the tip AWAY from the aim point makes the head arrive
+  // pointing straight at the target button's centre.
+  const aimLen = Math.hypot(aim.x - tip.x, aim.y - tip.y) || 1;
+  const ax = (aim.x - tip.x) / aimLen;
+  const ay = (aim.y - tip.y) / aimLen;
+  const arriveLen = len * (0.3 + rng() * 0.1);
+  const c2 = { x: tip.x - ax * arriveLen, y: tip.y - ay * arriveLen };
+
   // Hand wobble: a smooth seeded waver along the chord normal, zero at both
   // endpoints so the tail anchor and the tip stay exact.
   const wobbleAmp = 1.4 + rng() * 1.2;
@@ -199,15 +211,30 @@ function buildShotArrow(shot, tip, cap) {
   const spread = ((26 + rng() * 6) * Math.PI) / 180;
   const barb = ARROW.barbBase - 3 + rng() * 6;
 
+  // Arrowhead: two barbs swept back from the tip along the cubic's analytic
+  // tangent at t=1 (∝ tip − c2 = the aim direction) — never hardcoded.
+  const ang = Math.atan2(ay, ax);
+  const b1 = {
+    x: tip.x - barb * Math.cos(ang - spread),
+    y: tip.y - barb * Math.sin(ang - spread),
+  };
+  const b2 = {
+    x: tip.x - barb * Math.cos(ang + spread),
+    y: tip.y - barb * Math.sin(ang + spread),
+  };
+
   // Deterministic clearance solver: grow the bow away from the caption until
   // every sampled stroke point — shaft AND arrowhead barbs — clears the
-  // caption bbox by ARROW.captionPad. The control point is clamped left of the
-  // card edge so the shaft never bulges over the card face.
+  // caption bbox by ARROW.captionPad. The departure control (c1, derived from
+  // the quadratic-equivalent bow point) is clamped left of the card edge so
+  // the shaft never bulges over the card face; c2 is fixed by the arrival
+  // constraint and does not move.
   const N = 32;
   let geom = null;
   for (let iter = 0; iter < 12 && !geom; iter++) {
-    const cx = Math.min(mx + away * nx * bow, CARD_LEFT_EDGE - 24);
-    const cy = my + away * ny * bow;
+    const qx = Math.min(mx + away * nx * bow, CARD_LEFT_EDGE - 24);
+    const qy = my + away * ny * bow;
+    const c1 = { x: tail.x + (2 / 3) * (qx - tail.x), y: tail.y + (2 / 3) * (qy - tail.y) };
     const shaft = [];
     for (let i = 0; i <= N; i++) {
       const t = i / N;
@@ -215,25 +242,24 @@ function buildShotArrow(shot, tip, cap) {
       const w =
         Math.sin(Math.PI * t) * wobbleAmp * Math.sin(wobbleFreq * 2 * Math.PI * t + wobblePhase);
       shaft.push({
-        x: u * u * tail.x + 2 * u * t * cx + t * t * tip.x + nx * w,
-        y: u * u * tail.y + 2 * u * t * cy + t * t * tip.y + ny * w,
+        x:
+          u * u * u * tail.x +
+          3 * u * u * t * c1.x +
+          3 * u * t * t * c2.x +
+          t * t * t * tip.x +
+          nx * w,
+        y:
+          u * u * u * tail.y +
+          3 * u * u * t * c1.y +
+          3 * u * t * t * c2.y +
+          t * t * t * tip.y +
+          ny * w,
       });
     }
-    // Arrowhead: two barbs swept back from the tip along the quadratic's
-    // analytic tangent at t=1 (tip − control).
-    const ang = Math.atan2(tip.y - cy, tip.x - cx);
-    const b1 = {
-      x: tip.x - barb * Math.cos(ang - spread),
-      y: tip.y - barb * Math.sin(ang - spread),
-    };
-    const b2 = {
-      x: tip.x - barb * Math.cos(ang + spread),
-      y: tip.y - barb * Math.sin(ang + spread),
-    };
     if (arrowCrowdsCaption([...shaft, b1, b2], inflate, cap)) {
       bow *= 1.35;
     } else {
-      geom = { shaft, b1, b2, cx, cy };
+      geom = { shaft, c1 };
     }
   }
   if (!geom) {
@@ -248,10 +274,10 @@ function buildShotArrow(shot, tip, cap) {
   const svg = `<svg class="arrow-overlay" viewBox="0 0 ${FRAME_W} ${FRAME_H}" width="${FRAME_W}" height="${FRAME_H}">
       <path d="${d}"
         fill="none" stroke="${RED}" stroke-width="${f(stroke)}" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M${f(geom.b1.x)} ${f(geom.b1.y)} L${f(tip.x)} ${f(tip.y)} L${f(geom.b2.x)} ${f(geom.b2.y)}"
+      <path d="M${f(b1.x)} ${f(b1.y)} L${f(tip.x)} ${f(tip.y)} L${f(b2.x)} ${f(b2.y)}"
         fill="none" stroke="${RED}" stroke-width="${f(stroke)}" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>`;
-  return { svg, tail, bow, control: { x: geom.cx, y: geom.cy }, stroke };
+  return { svg, tail, bow, c1: geom.c1, c2, stroke };
 }
 
 // Scrawled red underline — the landing's hero .ul draw path.
@@ -288,8 +314,10 @@ const STATES = [
     pillText: '✕ App not running',
     pillClass: 'pill pill--app_not_running',
     show: 'view-offline',
-    // Arrow target: the "Retry" button in the offline card.
-    target: '#btn-retry',
+    // Arrow target: the "Get the app" button — the only VISIBLE control in the
+    // forced offline view (#btn-retry lives in a hidden sibling and measures
+    // 0x0, which the capture guard below rejects).
+    target: '#btn-get-app',
   },
   {
     name: 'pairing',
@@ -454,9 +482,11 @@ async function capturePopups(browser) {
         fh: btnRect.height / appRect.height,
       };
     }, state.target);
-    if (!frac) {
+    if (!frac || frac.fw <= 0 || frac.fh <= 0) {
       throw new Error(
-        `Could not measure target "${state.target}" for state "${state.name}": element or main.app missing.`
+        `Could not measure target "${state.target}" for state "${state.name}": ` +
+          `element or main.app missing, or the element is hidden (zero size) — ` +
+          `the arrow would aim at garbage coordinates.`
       );
     }
     console.log(
@@ -571,32 +601,32 @@ function shotCardGeometry(shot, raw) {
   const anchor = shot.cardAnchorY ?? 0.5;
   const imgH = (CARD_W * raw.dim.height) / raw.dim.width;
   const imgTop = FRAME_H / 2 - anchor * imgH;
-  // Target the CARD's LEFT EDGE (constant across shots), level with the button's
-  // vertical centre — NOT the button's left edge (fx), which is interior for the
-  // centred Retry and full-width Save & pair buttons. Only fy/fh drive the tip
-  // (its vertical position); fx/fw are ignored so the tip never lands inside the
-  // card face.
+  const imgLeft = CARD_LEFT_EDGE + CARD_BORDER;
+  // The TIP targets the CARD's LEFT EDGE, level with the button's vertical
+  // centre — never the card face. The AIM point is the button's actual centre
+  // (fx/fw too): the arrow ARRIVES pointing at it, so the head reads as
+  // pointing AT the button, not merely at the card edge.
   const btnCenterY = imgTop + (raw.frac.fy + raw.frac.fh / 2) * imgH;
-  // Edge point in the UNROTATED frame: card left edge, at the button centre Y.
-  let ex = CARD_LEFT_EDGE;
-  let ey = btnCenterY;
+  const btnCenterX = imgLeft + (raw.frac.fx + raw.frac.fw / 2) * CARD_W;
   // The card is rendered with a small `rotate(cardRotate)` about its CENTRE, so
-  // rotate the edge point by the same angle about that centre to track the
-  // actually-rendered card edge.
+  // rotate both points by the same angle about that centre to track the
+  // actually-rendered card.
   const cxc = CARD_LEFT_EDGE + CARD_OUTER_W / 2;
   const cyc = FRAME_H / 2;
   const theta = (shot.cardRotate * Math.PI) / 180;
   const cos = Math.cos(theta);
   const sin = Math.sin(theta);
-  const rx = ex - cxc;
-  const ry = ey - cyc;
-  const rotatedEx = cxc + rx * cos - ry * sin;
-  const rotatedEy = cyc + rx * sin + ry * cos;
+  const rot = (px, py) => ({
+    x: cxc + (px - cxc) * cos - (py - cyc) * sin,
+    y: cyc + (px - cxc) * sin + (py - cyc) * cos,
+  });
+  const edge = rot(CARD_LEFT_EDGE, btnCenterY);
+  const aim = rot(btnCenterX, btnCenterY);
   // Tip sits TIP_GAP px left of the (rotated) card edge — just outside the card
   // face, level with the target button. The tail is resolved later against the
   // live-measured caption bbox (buildShotArrow).
-  const tip = { x: rotatedEx - TIP_GAP, y: rotatedEy };
-  return { tip, imgTop };
+  const tip = { x: edge.x - TIP_GAP, y: edge.y };
+  return { tip, aim, imgTop };
 }
 
 function shotFragment(shot, raw) {
@@ -684,7 +714,7 @@ async function compositeShots(browser, raw) {
     const captured = raw[shot.state];
     const { body, css, geometry } = shotFragment(shot, captured);
     const { fx, fy, fw, fh } = captured.frac;
-    const { tip } = geometry;
+    const { tip, aim } = geometry;
     const targetSel = STATES.find((s) => s.name === shot.state).target;
     // Two-phase composite in ONE rendered page: everything except the arrow is
     // laid out, the caption's live bbox is measured, then the per-shot arrow
@@ -697,7 +727,7 @@ async function compositeShots(browser, raw) {
         return { x: box.x, y: box.y, w: box.width, h: box.height };
       });
       const cap = { x: r.x * DSF, y: r.y * DSF, w: r.w * DSF, h: r.h * DSF };
-      const arrow = buildShotArrow(shot, tip, cap);
+      const arrow = buildShotArrow(shot, tip, aim, cap);
       await page.evaluate((svg) => {
         document.getElementById('stage').insertAdjacentHTML('beforeend', svg);
       }, arrow.svg);
@@ -706,8 +736,9 @@ async function compositeShots(browser, raw) {
           `        fractions  fx=${fx.toFixed(4)} fy=${fy.toFixed(4)} fw=${fw.toFixed(4)} fh=${fh.toFixed(4)}\n` +
           `        caption bbox (${cap.x.toFixed(0)},${cap.y.toFixed(0)}) ${cap.w.toFixed(0)}x${cap.h.toFixed(0)}\n` +
           `        tail[${arrow.tail.mode}] (${arrow.tail.x.toFixed(1)}, ${arrow.tail.y.toFixed(1)})  ` +
-          `ctrl (${arrow.control.x.toFixed(1)}, ${arrow.control.y.toFixed(1)})  ` +
-          `tip (${tip.x.toFixed(1)}, ${tip.y.toFixed(1)})  ` +
+          `c1 (${arrow.c1.x.toFixed(1)}, ${arrow.c1.y.toFixed(1)})  ` +
+          `c2 (${arrow.c2.x.toFixed(1)}, ${arrow.c2.y.toFixed(1)})\n` +
+          `        tip (${tip.x.toFixed(1)}, ${tip.y.toFixed(1)})  aim (${aim.x.toFixed(1)}, ${aim.y.toFixed(1)})  ` +
           `bow ${arrow.bow.toFixed(1)}  stroke ${arrow.stroke.toFixed(1)}`
       );
     };

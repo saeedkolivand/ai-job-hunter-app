@@ -40,7 +40,7 @@ to give the store a clean narrative:
 ### Screenshot captions
 
 - `01-private.png` — "private by default — it only talks to the app on your own
-  computer" (offline popup state; red arrow → **Retry**).
+  computer" (offline popup state; red arrow → **Get the app**).
 - `02-pair-once.png` — "pair once — paste the token from the desktop app"
   (pairing popup state; red arrow → **Save & pair**).
 - `03-one-click.png` — "one click → the job's saved in your app, tagged New"
