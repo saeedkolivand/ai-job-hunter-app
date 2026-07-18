@@ -31,6 +31,11 @@ t from below/above matches; a scrubbed exit fully reassembles; page 0/8 exits ar
 fallback** (reduced-motion / <=900px / coarse-pointer / WebGL2-unavailable each render the semantic
 page with NO canvas).
 
+**Check discipline:** any 3D rotation/translation/hinge/throw behavior must be verified from at
+least one NON-default camera angle or via a geometric assertion -- a single default-view screenshot
+is not evidence (a top-down shot approved a cover-hinge sign that drove the board through the page
+stack; see the miss ledger in `.claude/skills/critic-contract/SKILL.md`).
+
 ## Report
 
 Return a **pass/fail table only** -- one row per check, one-line evidence note each (measured FPS,

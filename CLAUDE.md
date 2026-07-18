@@ -124,6 +124,8 @@ Full pipeline, model tiering, and rationale → **`.claude/`** (agents/skills/co
 
 Cross-cutting critics (no author — fixes route to the owning domain author): `tauri-security-reviewer` (default Secondary on any risk-bearing change), `performance-profiler` (perf-sensitive only), `webgl-perf-profiler` (apps/landing GL frame rate only, distinct from `performance-profiler`), `cleanup` (dead-code, always just before steward), `pr-reviewer` (strict pre-PR gate), `finding-verifier` (utility judge — one fresh haiku context per single-source /review finding, drops anything scoring <80).
 
+Every critic loads `.claude/skills/critic-contract/SKILL.md` before reviewing — adversarial stance (the handoff is context, never evidence), empirical verification of runtime-behavior claims, and a mandatory self-red-team section before any APPROVE.
+
 **Per-change sequence** (skip what doesn't apply): author implements → sibling critic audits (resolve HIGH/CRITICAL; LOW/MEDIUM advisory) → if testable logic, `test-author` → `testing-reviewer` → `cleanup` → `project-steward` closes (docs/lessons sync + `graphify update .` + `codegraph sync`). Context flows via the per-task handoff file `.claude/scratch/<task>.md`. **≤3 critics/task.** Critic count scales with risk: trivial diffs rely on the Stop review-gate alone; small single-domain diffs get ONE sibling critic; the full trio (incl. security) only for risk-bearing/multi-domain changes. Orchestrate all sub-agents from the main session (agents can't call agents). **Before a PR:** `/review-security` (`tauri-security-reviewer`) — HIGH/CRITICAL block — then `/review` (`pr-reviewer`) as the final gate (🔴+🟠 block); both complement CodeRabbit.
 
 **Hard rules:**
