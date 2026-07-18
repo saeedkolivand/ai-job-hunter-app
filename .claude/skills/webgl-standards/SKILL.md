@@ -71,3 +71,13 @@ rungs are not enough.
 Source files under `apps/landing/src/**` must be pure ASCII. Turbopack's merged source maps crash
 on multi-byte characters (the rope bug). Any user-facing copy with non-ASCII glyphs lives
 `\uXXXX`-escaped in `src/content/`, never inline in a component.
+
+## Composer pass-toggling gotcha (learned P4, 2026-07-18)
+
+postprocessing's autoRenderToScreen statically pins renderToScreen=true on the ARRAY-LAST pass
+at construction. If that pass is ever disabled (recipe windows), the last ENABLED pass renders
+offscreen and the canvas goes black outside the window. When any pass toggles enabled: set
+autoRenderToScreen=false on the composer and drive renderToScreen per frame in the recipe
+(flip only at shoulders where the ramp is zero - no pop). Also verified in 6.39.2 source:
+ChromaticAberrationEffect is the CONVOLUTION-class effect (not Bloom - its glow is precomputed
+into its own map); mainUv effects (e.g. FriedEffect barrel) cannot share a pass with CA.

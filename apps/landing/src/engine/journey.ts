@@ -22,7 +22,8 @@ export interface Waypoint {
 }
 
 // Authored in t-space (ascending, spanning 0..1). One waypoint per beat
-// boundary so the curve threads every beat's vantage point.
+// boundary threads every beat's vantage point; the godmode beat also carries an
+// extra mid-beat vantage (see below) so its fast rise settles before the plateau.
 export const WAYPOINTS: Waypoint[] = [
   { t: 0 / 8, position: new THREE.Vector3(0, 0, 12), look: new THREE.Vector3(0, 0, 0) },
   { t: 1 / 8, position: new THREE.Vector3(0, -3, 10), look: new THREE.Vector3(1, -4, 0) },
@@ -34,6 +35,15 @@ export const WAYPOINTS: Waypoint[] = [
   { t: 2 / 8, position: new THREE.Vector3(1.6, -14, 8.8), look: new THREE.Vector3(1, -23, 0) },
   { t: 3 / 8, position: new THREE.Vector3(0, -36, 5), look: new THREE.Vector3(0, -42.5, 0) },
   { t: 4 / 8, position: new THREE.Vector3(0, -40, 6), look: new THREE.Vector3(0, -44, 0) },
+  // godmode crash-through vantage: the fried->godmode reversal is a fast rise,
+  // not a glide. Without this the single 4/8->5/8 segment sweeps the look-target
+  // from y=-44 to +22 across the WHOLE beat, so the scene (parked at world y=22)
+  // only enters frame in the beat's last ~2% (gate: beat 5 rendered empty at
+  // t~0.60). This front-loads the rise (pit -> near-plateau by t~0.544); the
+  // 4.35/8->5/8 leg then holds on the payoff, framing sky/sun/guy/quote/stonks
+  // across t~0.55..0.625. Safe to add: getPoint keys off (index+f)/(N-1), so
+  // every other beat still samples exactly its own segment.
+  { t: 4.35 / 8, position: new THREE.Vector3(0, 17, 14.3), look: new THREE.Vector3(0, 20.5, 0) },
   { t: 5 / 8, position: new THREE.Vector3(0, 20, 14), look: new THREE.Vector3(0, 22, 0) },
   { t: 6 / 8, position: new THREE.Vector3(10, 19, 10), look: new THREE.Vector3(22, 19, 0) },
   { t: 7 / 8, position: new THREE.Vector3(26, 17, 12), look: new THREE.Vector3(26, 17, 0) },
