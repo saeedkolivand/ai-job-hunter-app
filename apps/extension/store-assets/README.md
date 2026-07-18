@@ -60,9 +60,10 @@ from your own résumé and page context and is copy-only (nothing auto-typed).
 
 `screenshots/raw/` contains five element screenshots of the real popup card, one
 per forced UI state: `popup-{offline,pairing,connected,fill,answers}.png`. Each
-is a light-mode capture at a 360px CSS viewport × 2 device scale (720px output
-width). They are inputs to the composited screenshots above; not uploaded to the
-store.
+is a light-mode element screenshot of `main.app` at 2× device scale, so the PNG
+width tracks the card's rendered CSS width (currently 340px → 680px output) and
+the height varies with each state's content. They are inputs to the composited
+screenshots above; not uploaded to the store.
 
 ## Brand tokens (from `landing/index.html`)
 

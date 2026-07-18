@@ -482,11 +482,18 @@ async function capturePopups(browser) {
         fh: btnRect.height / appRect.height,
       };
     }, state.target);
-    if (!frac || frac.fw <= 0 || frac.fh <= 0) {
+    // Reject non-finite fractions explicitly: `NaN <= 0` is false, so a 0-width
+    // main.app (division by zero → NaN/Infinity) would slip past the size check.
+    if (
+      !frac ||
+      ![frac.fx, frac.fy, frac.fw, frac.fh].every(Number.isFinite) ||
+      frac.fw <= 0 ||
+      frac.fh <= 0
+    ) {
       throw new Error(
         `Could not measure target "${state.target}" for state "${state.name}": ` +
-          `element or main.app missing, or the element is hidden (zero size) — ` +
-          `the arrow would aim at garbage coordinates.`
+          `element or main.app missing, hidden (zero size), or a non-finite ` +
+          `measurement — the arrow would aim at garbage coordinates.`
       );
     }
     console.log(
@@ -608,11 +615,14 @@ function shotCardGeometry(shot, raw) {
   // pointing AT the button, not merely at the card edge.
   const btnCenterY = imgTop + (raw.frac.fy + raw.frac.fh / 2) * imgH;
   const btnCenterX = imgLeft + (raw.frac.fx + raw.frac.fw / 2) * CARD_W;
-  // The card is rendered with a small `rotate(cardRotate)` about its CENTRE, so
-  // rotate both points by the same angle about that centre to track the
-  // actually-rendered card.
+  // The card is rendered with a small `rotate(cardRotate)` whose CSS
+  // transform-origin is the default 50% 50% of the CARD ELEMENT's border box —
+  // i.e. the card's OWN centre, `imgTop + imgH / 2`. For centred shots that
+  // coincides with FRAME_H / 2; for anchored shots (cardAnchorY) the card is
+  // shifted, so its centre — and the rotation pivot — moves with it. Rotate
+  // both points about that pivot to track the actually-rendered card.
   const cxc = CARD_LEFT_EDGE + CARD_OUTER_W / 2;
-  const cyc = FRAME_H / 2;
+  const cyc = imgTop + imgH / 2;
   const theta = (shot.cardRotate * Math.PI) / 180;
   const cos = Math.cos(theta);
   const sin = Math.sin(theta);
