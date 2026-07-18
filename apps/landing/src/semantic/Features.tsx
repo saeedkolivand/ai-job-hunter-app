@@ -24,7 +24,7 @@ export default function Features() {
         </svg>
         <h2 className="reveal">{features.h2}</h2>
         <p className="lede reveal">{features.lede}</p>
-        <svg className="crayon-arrow" viewBox="0 0 120 60">
+        <svg className="crayon-arrow" viewBox="0 0 120 60" aria-hidden="true">
           <path d="M8 12 q40 36 90 30" fill="none" stroke="var(--ink)" strokeWidth="3" strokeLinecap="round" />
           <path d="M84 48 l14 -6 m-14 6 l8 -13" fill="none" stroke="var(--ink)" strokeWidth="3" strokeLinecap="round" />
         </svg>

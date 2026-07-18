@@ -67,7 +67,7 @@ export default function Beat2() {
                 <p key={`a${i}`}>{p}</p>
               ))}
               {beat2.feed.map((p, i) => (
-                <p key={`b${i}`}>{p}</p>
+                <p key={`b${i}`} aria-hidden="true">{p}</p>
               ))}
             </div></div>
             <span className="ct" style={{ marginTop: "8px" }}>{beat2.linkedinGhost}</span>

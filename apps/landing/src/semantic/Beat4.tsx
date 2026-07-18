@@ -28,7 +28,7 @@ export default function Beat4() {
         <path pathLength="1" d="M4 16 q5 -7 10 0 q5 -7 10 0" style={{ stroke: "#5a3610", strokeWidth: 2 }} />
         <path pathLength="1" d="M36 8 q4 -6 8 0 q4 -6 8 0" style={{ stroke: "#5a3610", strokeWidth: 1.8 }} />
       </svg>
-      <svg className="stonks" viewBox="0 0 100 70">
+      <svg className="stonks" viewBox="0 0 100 70" aria-hidden="true">
         <path d="M6 64 L34 40 L52 50 L92 8" fill="none" stroke="#2a7d2a" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M74 8 L92 8 L92 26" fill="none" stroke="#2a7d2a" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
