@@ -109,7 +109,10 @@ export default function GLLoader() {
         view accessible version
       </a>
       <ExperienceBoundary onError={fallBackToLegacy}>
-        <RipbookExperience onReady={() => setReady(true)} />
+        <RipbookExperience
+          onReady={() => setReady(true)}
+          onError={fallBackToLegacy}
+        />
       </ExperienceBoundary>
     </>
   );

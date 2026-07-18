@@ -25,7 +25,7 @@ import {
   PlaneGeometry,
   RingGeometry,
 } from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 import { createDeskMaterial } from "@/desk/deskMaterial";
 

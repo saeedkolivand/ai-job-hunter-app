@@ -186,8 +186,12 @@ const FRAGMENT = /* glsl */ `
     vec4 stB = texture2D(uStain, (cellB + lpB) / 4.0);
     albedo = mix(albedo, stB.rgb, stB.a * 0.06);
 
-    // Graphite smudge: seed-offset density, darkens the paper slightly.
-    float sm = texture2D(uSmudge, rs * vUv * 1.3 + vec2(ajh_hash11(uPageSeed + 2.0), ajh_hash11(uPageSeed + 8.0))).r;
+    // Graphite smudge: seed-offset density, darkens the paper slightly. Wrap the
+    // rotated/offset lookup with fract() (the smear field tiles) so it never
+    // leaves [0,1] into the clamp-to-edge border texels -- which would smear one
+    // edge row across the page. Intensity unchanged; mirrors the hatch path.
+    vec2 smUv = fract(rs * vUv * 1.3 + vec2(ajh_hash11(uPageSeed + 2.0), ajh_hash11(uPageSeed + 8.0)));
+    float sm = texture2D(uSmudge, smUv).r;
     albedo *= 1.0 - sm * 0.10;
 
     // Normal-mapped light catch. Flat page tangent frame: T=+x, B=+y, N=vWorldN

@@ -114,12 +114,14 @@ function bakeAlbedoRough(): ShaderMaterial {
         col = mix(col, ink, fleck * 0.5);
 
         // Faint ruled lines (printed flat ink), ~26 across the page height.
+        // Ascending-edge smoothstep + invert (GLSL smoothstep is UNDEFINED when
+        // edge0 >= edge1); 1 - smoothstep(lo,hi) is the descending ramp we want.
         float ly = abs(fract(uv.y * 26.0) - 0.5);
-        float ruled = smoothstep(0.045, 0.010, ly) * 0.06;
+        float ruled = (1.0 - smoothstep(0.010, 0.045, ly)) * 0.06;
         col = mix(col, ink, ruled);
 
         // Editor-red margin line near the left edge.
-        float margin = smoothstep(0.007, 0.0025, abs(uv.x - 0.12)) * 0.55;
+        float margin = (1.0 - smoothstep(0.0025, 0.007, abs(uv.x - 0.12))) * 0.55;
         col = mix(col, red, margin);
 
         // Edge darkening toward the borders.
@@ -191,12 +193,14 @@ function bakeStain(): ShaderMaterial {
         float wob = (ajh_vnoise(vec2(ang * 2.0 + seed * 20.0, seed * 7.0)) - 0.5) * 0.22;
         float r = length(c) * (1.0 + wob);
 
-        float ring = smoothstep(0.020, 0.0, abs(r - 0.72));
-        float fillC = smoothstep(0.8, 0.0, r) * 0.28;
-        float blot = smoothstep(0.75, 0.35, r);
+        // Ascending-edge smoothstep + invert (edge0 < edge1 always; GLSL
+        // smoothstep is undefined otherwise) -- same descending falloffs.
+        float ring = 1.0 - smoothstep(0.0, 0.020, abs(r - 0.72));
+        float fillC = (1.0 - smoothstep(0.0, 0.8, r)) * 0.28;
+        float blot = 1.0 - smoothstep(0.35, 0.75, r);
         float isRing = step(0.5, seed);
         float cov = mix(blot, max(ring, fillC), isRing);
-        cov *= smoothstep(1.0, 0.9, r);
+        cov *= 1.0 - smoothstep(0.9, 1.0, r);
         cov = clamp(cov, 0.0, 1.0);
 
         vec3 brown = ajh_srgb2lin(vec3(0.42, 0.28, 0.16));
@@ -252,7 +256,8 @@ function bakeHatch(): ShaderMaterial {
         float dj = 0.6 + 0.4 * ajh_hash11(line * 4.3 + seed + 9.0);
         float halfw = mix(0.12, 0.34, wj);
         float present = step(1.0 - dens, ajh_hash11(line * 2.9 + seed + 3.0));
-        float cov = smoothstep(halfw, halfw * 0.4, abs(fx - 0.5)) * dj * present;
+        // Ascending-edge smoothstep + invert (halfw > halfw*0.4): stroke core.
+        float cov = (1.0 - smoothstep(halfw * 0.4, halfw, abs(fx - 0.5))) * dj * present;
         float gap = smoothstep(0.25, 0.5, ajh_vnoise(vec2(r.y * 9.0 + line, seed)));
         return clamp(cov * gap, 0.0, 1.0);
       }
@@ -342,13 +347,19 @@ export function bakeAll(renderer: WebGLRenderer): void {
   const cam = new Camera(); // ignored by the vertex shader; render() needs one
 
   const mats: ShaderMaterial[] = [];
+  // Provisional: render every target into local RTs first and publish the holder
+  // .value assignments ONLY after all succeed -> the bake is transactional. The
+  // idempotence/retry guard reads paperAlbedoRough.value, so a partial success
+  // must never assign it; otherwise a retry would skip the missing targets.
+  const provisional: { name: BakeName; rt: WebGLRenderTarget }[] = [];
   const timings: string[] = [];
   const t0 = performance.now();
 
-  // try/finally so a bake shader that throws mid-loop still restores the render
-  // target and disposes the shared quad geometry + created materials (the RTs
-  // stay -- session lifetime). The error is NOT swallowed: it propagates out so
-  // the boot sequence can fall back to legacy instead of the loader hanging.
+  // try/catch/finally: a bake shader that throws mid-loop disposes every
+  // provisional RT (catch) and leaves the holders null so a retry re-bakes
+  // cleanly, always restores the render target + tears down the shared quad
+  // geometry/materials (finally), and re-throws so the boot sequence can fall
+  // back to legacy instead of the loader hanging.
   try {
     for (const { name, size } of targets) {
       const s0 = performance.now();
@@ -366,10 +377,17 @@ export function bakeAll(renderer: WebGLRenderer): void {
       quad.material = mat;
       renderer.setRenderTarget(rt);
       renderer.render(scene, cam);
-      bakes[name].value = rt.texture;
-      rendered.push(rt);
+      provisional.push({ name, rt });
       timings.push(`${name} ${size} ${(performance.now() - s0).toFixed(1)}ms`);
     }
+    // All targets rendered -> publish atomically.
+    for (const { name, rt } of provisional) {
+      bakes[name].value = rt.texture;
+      rendered.push(rt);
+    }
+  } catch (err) {
+    for (const { rt } of provisional) rt.dispose();
+    throw err;
   } finally {
     renderer.setRenderTarget(prevTarget);
     for (const m of mats) m.dispose();

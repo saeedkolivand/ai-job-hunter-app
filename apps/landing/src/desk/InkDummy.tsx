@@ -15,7 +15,7 @@
 
 import { useEffect, useMemo } from "react";
 import { CapsuleGeometry, SphereGeometry } from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 import { createInkMaterial, createInkOutlineMaterial } from "@/ink/InkMaterial";
 

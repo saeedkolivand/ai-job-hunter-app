@@ -33,7 +33,13 @@ import { CAMERA, Composer } from "./Composer";
 // lift. The composer stays mounted throughout (it owns the render loop); the rest
 // of the scene mounts only once the bakes are in, so no material ever samples a
 // null bake texture.
-function Stage({ onReady }: { onReady: () => void }) {
+function Stage({
+  onReady,
+  onError,
+}: {
+  onReady: () => void;
+  onError: () => void;
+}) {
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
   const camera = useThree((s) => s.camera);
@@ -42,42 +48,46 @@ function Stage({ onReady }: { onReady: () => void }) {
   const coverRef = useRef<Group>(null);
 
   const [baked, setBaked] = useState(false);
-  const [, forwardBakeError] = useState<Error>();
   const ready = useRef(false);
   const lifted = useRef(false);
 
   // (1) Bakes first, behind the loader. bakeAll is synchronous (RT renders) and
   // idempotent, so a StrictMode double-mount never re-bakes. On success unlock the
-  // scene mount; on failure re-raise DURING RENDER (setState updater that throws)
-  // so GLLoader's ExperienceBoundary catches it -> fallBackToLegacy. An error
-  // thrown in an effect would otherwise escape the boundary and hang the loader.
+  // scene mount; on failure call onError (a PLAIN function -> GLLoader's
+  // fallBackToLegacy). We deliberately do NOT re-throw to a React boundary: the
+  // bake runs inside the R3F reconciler root, whose errors never cross into the
+  // DOM tree where GLLoader's ExperienceBoundary lives -- a throw here would just
+  // hang the loader. A direct callback is boundary-independent.
   useEffect(() => {
     try {
       bakeAll(gl);
       setBaked(true);
     } catch (err) {
-      forwardBakeError(() => {
-        throw err instanceof Error ? err : new Error(String(err));
-      });
+      console.error("[ripbook] bake failed; falling back to legacy", err);
+      onError();
     }
-  }, [gl]);
+  }, [gl, onError]);
 
   // (2) Once the scene has mounted with its baked textures, warm the shader
-  // programs so the first scrub has no compile hitch; only then flag ready.
-  // Fire-and-forget with rejection swallowed (a lost context must not surface as
-  // a console error); finally() still flags ready so the loader can never stick.
+  // programs so the first scrub has no compile hitch, then flag ready. A failed
+  // warmup means the GL path is broken -> fall back to legacy (via onError)
+  // rather than lifting the loader onto a possibly-black canvas.
   useEffect(() => {
     if (!baked) return;
     let cancelled = false;
     gl.compileAsync(scene, camera)
-      .catch(() => {})
-      .finally(() => {
+      .then(() => {
         if (!cancelled) ready.current = true;
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("[ripbook] shader warmup failed; falling back", err);
+        onError();
       });
     return () => {
       cancelled = true;
     };
-  }, [baked, gl, scene, camera]);
+  }, [baked, gl, scene, camera, onError]);
 
   // (3) Lift the boot overlay + report ready on the first painted frame after
   // warmup. Priority 2 runs after the composer's priority-1 render, so onReady
@@ -111,7 +121,13 @@ function Stage({ onReady }: { onReady: () => void }) {
   );
 }
 
-export default function RipbookExperience({ onReady }: { onReady: () => void }) {
+export default function RipbookExperience({
+  onReady,
+  onError,
+}: {
+  onReady: () => void;
+  onError: () => void;
+}) {
   // Scroll spine: mounted once, client-only. initScroll returns its own cleanup
   // (kills the ScrollTrigger + master timeline, destroys Lenis, detaches the
   // ticker/listeners), so a StrictMode double-mount tears the first graph down
@@ -142,7 +158,7 @@ export default function RipbookExperience({ onReady }: { onReady: () => void }) 
       >
         {/* Dark kraft desk. */}
         <color attach="background" args={["#141013"]} />
-        <Stage onReady={onReady} />
+        <Stage onReady={onReady} onError={onError} />
       </Canvas>
       <Hud />
     </>

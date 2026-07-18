@@ -48,10 +48,13 @@ const THROW = {
 } as const;
 
 // Cover hinge-open (page 0's exit). The front cover pivots about the top binding
-// edge; a positive x-rotation swings it up and back, clearing the page. Driven by
-// channels[0].exitP (pure f(t)) so scrubbing back re-closes it. ~150 deg fully
-// open.
-const HINGE_MAX = 2.6;
+// edge and its board extends toward -y. The board sits just in FRONT of the page
+// (pivot z = +0.06); a NEGATIVE x-rotation lifts the board up and toward the
+// camera (+z), staying clear of the page (z=0) and the stack/back-cover (z<0). A
+// positive rotation would sweep the board backward THROUGH the page + stack.
+// Driven by channels[0].exitP (pure f(t)) so scrubbing back re-closes it. ~150
+// deg fully open.
+const HINGE_MAX = -2.6;
 
 // Tear/throw phasing (both pure f(exitP), so scrubbing back is exact): the
 // shader tear-front (uRipP -> tearP) fully separates the seam by exitP 0.62
