@@ -1,9 +1,21 @@
 ---
-status: accepted
+status: superseded
+superseded-by: 0016
 supersedes-parts-of: 0014
 ---
 
 # Landing rebuilds as RIPBOOK - a full-WebGL kraft notebook that rips out pages
+
+> # ⚠ SUPERSEDED - read [ADR 0016](0016-terminal-velocity-scroll-film-landing.md) for the active landing contract
+>
+> **Superseded by ADR 0016 (2026-07-18).** RIPBOOK was **abandoned mid-M3** the same day it
+> was recorded; the owner replaced it with **TERMINAL VELOCITY**, a realistic CG scroll-film,
+> and `apps/landing` was stripped to a bare Next skeleton (#717). **Nothing in this ADR is the
+> contract anymore** - the 9-page notebook, the Rip/Exit system, the Desk pile, in-canvas
+> troika SDF text, the `p`-space model, and the hand-drawn ink/boil look are all retired. The
+> still-binding machinery this ADR inherited from [ADR 0014](0014-landing-gl-takeover.md) (Next
+> 16 static export, Semantic layer, Experience gate, Passthrough merge, held flip) carries
+> forward under ADR 0016, not here. Kept for history only.
 
 ## Context
 

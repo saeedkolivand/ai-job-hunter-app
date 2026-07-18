@@ -189,9 +189,10 @@ _Avoid_: premium tier, template category
 
 ## Domain - Landing experience
 
-See docs/adr/0014-landing-gl-takeover.md (amended by docs/adr/0015-ripbook-notebook-landing.md,
-the RIPBOOK notebook rebuild) for the full contract and the webgl-standards skill for
-implementation rules; entries below are definitions only.
+See docs/adr/0016-terminal-velocity-scroll-film-landing.md (the active TERMINAL VELOCITY
+scroll-film; supersedes the RIPBOOK rebuild 0015, which superseded parts of the original GL
+takeover 0014) for the full contract and the webgl-standards skill for implementation rules;
+entries below are definitions only. RIPBOOK-era terms are kept below marked _superseded_.
 
 **Semantic layer**:
 The prerendered content HTML that is always in the DOM - what the visitor reads when the GL
@@ -203,54 +204,113 @@ The single capability check that decides whether the GL experience mounts over t
 layer. See the ADR for the exact conditions.
 _Avoid_: scattered feature detection (the decision lives in one gate)
 
-**Journey** (superseded by [ADR 0015](adr/0015-ripbook-notebook-landing.md)):
-Was the 8-Beat scroll-scrubbed camera ride. Retired in the RIPBOOK rebuild - the landing is now
-a 9-**Page** notebook you scroll through and **Rip**. Use Page / Rip / p-space instead.
+**TERMINAL VELOCITY**:
+The active landing concept ([ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)): a
+realistic CG **scroll-film** (~2:40) retelling `landing/index.html`'s story as one continuous
+vertical fall-then-rise, scrolled to watch. Replaces RIPBOOK. The name plays on two meanings:
+the screen (terminal) and the physics of the fall (terminal velocity).
+_Avoid_: RIPBOOK / notebook (retired), "the landing animation" (it is a directed film, one shot)
+
+**Scroll-film**:
+The form TERMINAL VELOCITY takes: a single continuous camera shot where **scroll is the
+playhead**, fully reversible, with no page/section cuts. Distinct from the retired RIPBOOK
+per-Page notebook model.
+_Avoid_: slideshow, scrollytelling sections (there are no discrete DOM sections driving it - one
+timeline); "video" (it is real-time GL, not a media file)
+
+**Playhead**:
+The film's 0->100% timeline position, mapped 1:1 from native scroll (~2:40 of runtime).
+Reversible - scrolling up rewinds. Interactions never move it (determinism is load-bearing).
+_Avoid_: "scroll progress" used loosely (the playhead is a time axis the whole render is a pure
+function of); global `t` (that was the RIPBOOK scroll variable)
+
+**Scroll map** (the 9 scenes):
+The ordered set of nine scenes the playhead runs through: Cold open, The canyon, The surface
+(splash), The deep, Blackout, The catch, The ascent, Dawn, Finale/credits. See the ADR for
+each scene's range and beat. The TERMINAL VELOCITY analogue of RIPBOOK's 9 Pages, but scenes
+are camera moments in one shot, not discrete rippable pages.
+_Avoid_: Pages (retired), Beats (the older 0014 term), "chapters" when the scene ranges are meant
+
+**Depth gauge**:
+The film's diegetic progress indicator - meters below sea level shown in the chrome. Because the
+whole film is one vertical axis, depth IS progress; paired with the timecode (00:00 -> 02:40).
+Replaces RIPBOOK's Desk-pile odometer.
+_Avoid_: progress bar (there is none - depth + timecode are the only progress UI), Desk pile (retired)
+
+**Letterbox chrome**:
+The cinematic frame drawn over the film: top/bottom bars carrying hand-lettered act titles and
+captions, plus the always-available projector-slate menu chip (download, GitHub, privacy, the
+creature, skip-to-end). The only web chrome besides the timecode + depth gauge.
+_Avoid_: "the nav bar" / "the header" (it is diegetic film framing, not web UI); HUD (that names
+the robot-lens in-world overlay, a different thing)
+
+**Style frames**:
+The nine approved FLUX.2 color-script frames rendered 2026-07-18 - the look-dev ground truth for
+grade, lighting arc, and mood per scene. Stored outside the repo; referenced, never checked in.
+_Avoid_: concept art (broader), storyboard (that is shot blocking, not the color script);
+treating them as shippable assets (they are reference only)
+
+**VAT** (Vertex Animation Texture):
+A baked simulation stored as a texture and played back by sampling at time t (via `three-vat`) -
+used for the splash crown (a Houdini FLIP bake). Scrubbing a VAT is deterministic and reversible
+for free, which is why heavy sims are baked, not run real-time.
+_Avoid_: "the water sim" (the bounded Gerstner water patch is separate and real-time); running
+FLIP live (the crown is pre-baked)
+
+**Quality governor**:
+The runtime tiering system (TERMINAL VELOCITY): detect a startup tier at load, then dynamically
+adjust at runtime via a frame-time loop with **hysteresis** - downgrade when performance drops
+below a threshold, upgrade when it recovers above a higher threshold, with a cooldown between
+changes. Turns knobs in a fixed priority order: pixel ratio, post samples, geometry density,
+effect toggles. Thresholds and per-tier ladders are locked in [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md).
+_Avoid_: "auto quality" (the order and hysteresis are deliberate, not a bare fps flip-flop);
+the RIPBOOK boil-tier scheme (retired)
+
+**Journey** (superseded - [ADR 0015](adr/0015-ripbook-notebook-landing.md), then [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)):
+Was the 8-Beat scroll-scrubbed camera ride (0014). Retired. The active landing is the TERMINAL
+VELOCITY **scroll-film** - one continuous shot scrolled as a playhead through 9 **scenes**. Use
+scroll-film / playhead / scene, not Journey (and not the RIPBOOK Page/Rip either).
 _Avoid_: reusing "Journey" for the new model; overloading Autopilot (the app's job-application run)
 
-**Beat** (superseded by [ADR 0015](adr/0015-ripbook-notebook-landing.md)):
-Was one of the 8 places the Journey's camera visited. Replaced by **Page**.
-_Avoid_: reusing "Beat" for a notebook page
+**Beat** (superseded - [ADR 0015](adr/0015-ripbook-notebook-landing.md), then [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)):
+Was one of the 8 places the Journey's camera visited (0014). Retired. The TERMINAL VELOCITY unit
+is a **scene** (one of 9); the intervening RIPBOOK **Page** is also retired.
+_Avoid_: reusing "Beat" for a scene or a page
 
-**Page**:
-One of the 9 notebook pages of the RIPBOOK landing (Cover, Slump, DescentA, DescentB, Fried,
-AreYouSure, Features, Testimonials, Godmode/back cover - see [ADR 0015](adr/0015-ripbook-notebook-landing.md)).
-The unit that replaces a Beat; scrolling plays a Page then runs its **Exit**.
-_Avoid_: Beat (retired), section / panel (those name the semantic-layer DOM, not the 3D page);
-"rippable page" as a synonym for Page (pages 0 and 8 don't rip)
+**Page** (superseded by [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)):
+Was one of the 9 RIPBOOK notebook pages. Retired with the notebook. The TERMINAL VELOCITY unit
+is a **scene** in one continuous shot - see Scroll map. No pages, no per-page Exit.
+_Avoid_: reusing Page for a TERMINAL VELOCITY scene; section / panel (those name the semantic-layer DOM)
 
-**Exit**:
-The animation that plays a Page out as you scroll past it (the trailing slice of the Page's
-scroll). A **Rip** is the usual Exit; page 0's Exit is the cover hinge-open and page 8's Exit is
-the pencil signature + stamp + back-cover close. Pure function of scroll, fully reversible.
-_Avoid_: assuming every Exit is a Rip (two pages exit without a rip)
+**Exit** (superseded by [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)):
+Was the trailing animation that played a RIPBOOK Page out (a Rip, hinge-open, or sign/stamp).
+Retired - the scroll-film has no per-page exits, only continuous camera motion.
+_Avoid_: reusing Exit for TERMINAL VELOCITY scene transitions (there are no cuts)
 
-**Rip**:
-The usual kind of **Exit** - the scrubbed animation that tears / crumples / folds a Page out of
-the notebook (pages 1-7, each with its own style: corner tear, crumple, paper-plane fold, ...).
-Reversible; scroll back and the Page reassembles. The split point lives in webgl-standards.
-_Avoid_: treating Rip as every page's Exit (pages 0/8 hinge-open and sign/stamp instead);
-transition / animation generically
+**Rip** (superseded by [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)):
+Was the usual RIPBOOK Exit - a scrubbed tear/crumple/fold of a Page. Retired with the notebook;
+TERMINAL VELOCITY has no rips.
+_Avoid_: reusing Rip for any TERMINAL VELOCITY motion
 
-**p-space**:
-Page-local progress `p` in `[0,1]` - the active Page's slice of the global scroll `t`, remapped so
-an early range **plays** the Page and the trailing range scrubs its **Exit**. The exact split is a
-webgl-standards constant. Distinct from the global `t`.
-_Avoid_: conflating p-space with global scroll t (t spans all 9 pages; p is within one)
+**p-space** (superseded by [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)):
+Was RIPBOOK's page-local progress `p` (a Page's slice of the global scroll `t`). Retired.
+TERMINAL VELOCITY drives everything off one **playhead** (0->100%), not a per-page remap.
+_Avoid_: reusing `p`/`t` for the playhead; per-scene progress remaps (the film is one timeline)
 
-**Desk pile**:
-The persistent stack of already-exited Pages on the desk - the landing's progress indicator (with
-the odometer). Rendered as one instanced draw revealed by its `.count`.
-_Avoid_: "progress bar" (there is no bar; the pile of pages IS the indicator)
+**Desk pile** (superseded by [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)):
+Was RIPBOOK's stack of exited Pages serving as the progress odometer. Retired. TERMINAL VELOCITY
+shows progress via the **depth gauge + timecode**.
+_Avoid_: reusing Desk pile for any TERMINAL VELOCITY indicator
 
 **Foley**:
-The procedural paper sound effects synthesized in-app - rip, crumple, whoosh, scribble, stamp.
-Distinct from the Gibberish voice.
+The procedural sound effects synthesized in-app, spatialized to the cursor. Under TERMINAL
+VELOCITY these are film-world sounds (paper snap, ripple, servo beep); the RIPBOOK set (rip,
+crumple, scribble, stamp) is retired. Distinct from the Gibberish voice.
 _Avoid_: sound assets / audio files (Foley is synthesized, not sampled)
 
 **Gibberish voice**:
-The ported voice synth that mutters as the protagonist "speaks" - non-lexical, silenced by the
-"mute the guy" toggle.
+The voice synth that mutters as the protagonist "speaks" - non-lexical, silenced by the "mute the
+guy" toggle. Carries over to TERMINAL VELOCITY (e.g. the poke-to-flail yelp with doppler).
 _Avoid_: narration / TTS (it renders no real words)
 
 **Passthrough files**:
@@ -258,9 +318,8 @@ The `landing/` files copied verbatim into the exported site by the postbuild
 merge-passthrough script - source that ships unchanged.
 _Avoid_: "static assets" (too generic; see the ADR for the merge mechanics)
 
-**Line boil**:
-The shader-driven wobble of the ink strokes on a stepped clock (the shared `uBoil` uniform),
-giving the hand-drawn notebook look its core motion while camera/physics stay smooth. See the
-webgl-standards skill for the implementation contract.
-_Avoid_: CPU geometry jitter (Line boil is a vertex-shader effect, not per-frame geometry
-re-jitter); jitter / noise generically
+**Line boil** (superseded by [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)):
+Was the shader-driven wobble of ink strokes (`uBoil`) that gave RIPBOOK its hand-drawn look.
+Retired - TERMINAL VELOCITY is a PBR realistic film, no ink boil. The only "on twos" that
+carries over is character animation stepped at ~12 fps against a smooth 60 fps camera.
+_Avoid_: reusing Line boil / `uBoil` for any TERMINAL VELOCITY effect

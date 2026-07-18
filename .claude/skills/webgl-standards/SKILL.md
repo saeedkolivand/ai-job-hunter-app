@@ -5,6 +5,16 @@ description: apps/landing WebGL landing conventions + verified version pins the 
 
 # apps/landing WebGL standards (RIPBOOK)
 
+> **⚠ SUPERSEDED CONCEPT - awaits its TERMINAL VELOCITY revision.** RIPBOOK was abandoned
+> mid-M3 (2026-07-18); the landing is now **TERMINAL VELOCITY**, a realistic CG scroll-film
+> (`docs/adr/0016-terminal-velocity-scroll-film-landing.md`). Every RIPBOOK-specific rule below
+> (the 9-page p-space model, the Rip system, `uBoil`/line-boil, in-canvas troika SDF text, the
+> single ink post chain, and the RIPBOOK budgets) is **superseded by ADR 0016** and no longer
+> the contract. What still holds: the Next 16 static-export stack, the capability gate + semantic
+> layer, and the ASCII-only source rule. This skill will be rewritten for TERMINAL VELOCITY
+> (WebGL2 lane, VAT playback, Gerstner water, godrays, glTF-clip scrub, quality governor) by the
+> GL authors in a later task; until then treat the numbers here as historical.
+
 The single source both GL authors (`webgl-author`, `shader-engineer`) and their critics
 (`webgl-reviewer`, `gate-auditor`, `webgl-perf-profiler`) read before touching `apps/landing`.
 Architecture rationale: `docs/adr/0014-landing-gl-takeover.md` as amended by
