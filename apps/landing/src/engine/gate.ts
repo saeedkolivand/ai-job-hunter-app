@@ -16,8 +16,18 @@ export interface GateVerdict {
 
 let cached: GateVerdict | null = null;
 
+// Pre-launch guard: the GL experience is still being built (phases P4-P7,
+// docs/adr/0014). Until the production flip, GL mounts only in dev or with an
+// explicit ?gl=1 opt-in; every other visitor gets the legacy page exactly as
+// shipped today. Remove this guard at the P7 flip.
+function flipped(): boolean {
+  if (process.env.NODE_ENV === "development") return true;
+  return new URLSearchParams(window.location.search).has("gl");
+}
+
 function probe(): GateVerdict {
   if (typeof window === "undefined") return { gl: false, reason: "ssr" };
+  if (!flipped()) return { gl: false, reason: "pre-launch" };
 
   let webgl2 = false;
   try {
