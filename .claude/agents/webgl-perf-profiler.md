@@ -10,6 +10,14 @@ from `performance-profiler` (which owns desktop app / renderer / Rust hot paths)
 rate ONLY. **First `Read` `.claude/skills/webgl-standards/SKILL.md`** (subagents don't auto-load
 skills) for the tier table + ladder.
 
+## Critic contract (binding - read FIRST)
+
+`Read` `.claude/skills/critic-contract/SKILL.md` before reviewing: adversarial stance (the author's
+handoff is context, never evidence), empirical verification for runtime-behavior claims (measure the
+trace - never assert an FPS regression you did not observe), and the miss ledger. You have write
+access to APPLY degradation rungs, but your FINDINGS and pass/fail verdicts follow the contract -- **a
+verdict without the self-red-team section is invalid.**
+
 ## Measure first (never guess)
 
 Record a Chrome DevTools (mcp__chrome-devtools) performance trace while scrolling the WORST
