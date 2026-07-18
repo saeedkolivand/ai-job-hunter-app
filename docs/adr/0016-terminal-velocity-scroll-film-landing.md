@@ -87,10 +87,11 @@ synth at the light -> strings building on the ascent -> morning birds at dawn. S
 (paper snap, ripple, servo beep) spatialized to the cursor. Audio is a first-class deliverable.
 
 **Renderer: WebGL2 lane for v1.** R3F + three + the pmndrs `postprocessing` composer already
-pinned in this repo, plus `three-good-godrays` (shadow-map raymarched shafts), `three-vat`
-(baked sims), a bounded **Gerstner** water patch, and DataTexture GPGPU - all WebGL2-only and
-all proven. **TSL/WebGPU is a deliberate tier-up experiment, not the base** (it would force
-rebuilding the whole post chain).
+pinned in this repo, plus `three-good-godrays` (shadow-map raymarched shafts), an in-house VAT
+decode shader for baked sims (errata, verified 2026-07-18: `three-vat` does not exist on npm;
+VAT playback is in-house per `.claude/skills/webgl-standards/SKILL.md`), a bounded **Gerstner**
+water patch, and DataTexture GPGPU - all WebGL2-only and all proven. **TSL/WebGPU is a deliberate
+tier-up experiment, not the base** (it would force rebuilding the whole post chain).
 
 **Character + camera = ONE clip.** The protagonist, the robot, and the camera spline are one
 long **Blender glTF** clip driven by `mixer.setTime(duration * progress)` - one source of
@@ -100,7 +101,8 @@ fast flicks do not pop poses. One master timeline binds camera, baked light stat
 uniforms together so grade and blocking move as one.
 
 **Baked heavy sims, instanced paper.** The **splash crown** is a **Houdini FLIP** sim baked to
-**VAT** (Vertex Animation Texture) and played back via `three-vat` - scrubbing a VAT is just
+**VAT** (Vertex Animation Texture) and played back via an in-house VAT decode shader (no
+`three-vat` package - see errata above) - scrubbing a VAT is just
 sampling a texture at time t: deterministic, reversible, cheap. The **paper storm** is ONE
 `InstancedMesh` (thousands of sheets, one draw call): per-instance phase in a DataTexture,
 bending analytic in the vertex shader, letter text from one atlas; true cloth only for the few

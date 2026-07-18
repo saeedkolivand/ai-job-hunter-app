@@ -1,97 +1,152 @@
 ---
 name: webgl-gate-audit
-description: Procedures for auditing apps/landing RIPBOOK WebGL phase gates - driving the browser to exact t positions across the 9 pages, screenshot discipline, FPS sampling, scrub + rip-reversal determinism, draw-call probing, strobe budget, copy-parity, and reduced-motion verification. Load when running /gate or reviewing rendered GL output.
+description: Procedures for auditing apps/landing TERMINAL VELOCITY WebGL phase gates - driving the browser to exact playhead positions across the 9 scenes, screenshot discipline, scrub + VAT determinism (scrub down THEN rewind to the same playhead -> identical frame), FPS sampling at the risk scenes, draw-call + bundle-size probes vs budget, the blackout->dawn luminance-delta/strobe check at max scrub velocity, copy-parity vs landing/index.html, and reduced-motion + no-GL fallback verification. Load when running /gate or reviewing rendered GL output.
 ---
 
-# apps/landing WebGL gate-audit procedures
+# apps/landing WebGL gate-audit procedures (TERMINAL VELOCITY)
 
-The accessibility tree is blind to a canvas: screenshots, console, and performance traces are the
-ONLY evidence. Never edit code from this skill -- it audits rendered output only.
+The accessibility tree is blind to a canvas, so **GL/canvas output** is judged only via
+screenshots, console, and performance traces - never edit code from this skill, it audits rendered
+output only. **Semantic-layer gates are the exception**: copy parity, real crawlable anchors,
+no-GL fallback rendering, and canvas absence are DOM facts, not pixels, and REQUIRE DOM inspection
+(accessibility snapshot / `eval` querying the DOM / DevTools Elements panel), not screenshots -
+see Copy parity and Reduced-motion + no-GL fallback render below. Contract + numbers live in
+`.claude/skills/webgl-standards/SKILL.md`; experience decisions in
+`docs/adr/0016-terminal-velocity-scroll-film-landing.md`.
 
 ## Driving the page
 
-Dev server: `pnpm --filter @ajh/landing dev` (http://localhost:3000). The experience is
-canvas-only once GL mounts; DOM/accessibility snapshots see nothing.
+Dev server: `pnpm --filter @ajh/landing dev` (http://localhost:3000). The film is canvas-only once
+GL mounts; DOM/accessibility snapshots see nothing but the hidden Semantic layer + a11y overlay.
 
-Scroll to a global t in [0,1]:
+Scroll = the **playhead** `t` in `[0,1]` over ~3,000 svh (a frozen pixel scroll-track computed once
+at mount, never a live `vh` unit - see `webgl-standards`). Drive it to a target `T`:
 `window.scrollTo(0, (document.documentElement.scrollHeight - innerHeight) * T)`
-then wait ~2s for Lenis to settle before screenshotting. There are **9 pages**; page `i` is
-active for `t` in `[i/9, (i+1)/9]`, in order: 0 Cover (hinge-open), 1 Slump (corner tear),
-2 DescentA (horizontal mid-rip), 3 DescentB (vertical tear), 4 Fried (crumple + toss),
-5 AreYouSure (folds to a paper plane), 6 Features (diagonal tear), 7 Testimonials (perforation
-zip), 8 Godmode -> back cover (signature + stamp, no rip). Within a page, `p` in `[0,0.72]`
-**plays** and `p` in `[0.72,1]` **scrubs the rip**. To sample a page mid-play use
-`t = i/9 + 0.4/9`; to sample its rip use `t = i/9 + 0.85/9`. Avoid exact `i/9` boundaries
-(transition gutters).
+then wait ~2 s for Lenis + scrub damping to settle before screenshotting. The **9 scenes** use
+**half-open playhead ranges** `[lo, hi)` so adjacent scenes never overlap at a shared boundary
+(scene 8 alone is closed at both ends, `[0.95, 1.00]`) - matching `webgl-standards`' scroll map:
+
+| #   | Scene          | `t` range    | sample mid-scene `T` |
+| --- | -------------- | ------------ | -------------------- |
+| 0   | Cold open      | [0.00, 0.05) | 0.025                |
+| 1   | The canyon     | [0.05, 0.30) | 0.175                |
+| 2   | The surface    | [0.30, 0.38) | 0.340 (splash/VAT)   |
+| 3   | The deep       | [0.38, 0.52) | 0.450                |
+| 4   | Blackout       | [0.52, 0.58) | 0.550                |
+| 5   | The catch      | [0.58, 0.64) | 0.610                |
+| 6   | The ascent     | [0.64, 0.85) | 0.745 (ascent fold)  |
+| 7   | Dawn           | [0.85, 0.95) | 0.900                |
+| 8   | Finale/credits | [0.95, 1.00] | 0.975                |
+
+Sample mid-scene, not on a range boundary (transition gutters). Confirm the playhead never
+hijacks: no wheel `preventDefault`, no snap, native scroll maps 1:1.
 
 ## Tools
 
-Preferred: Chrome DevTools MCP (mcp__chrome-devtools) -- performance traces, CPU/network
+Preferred: Chrome DevTools MCP (`mcp__chrome-devtools`) - performance traces, CPU/network
 throttling, console with stack traces, screenshots. Fallback if the DevTools MCP is unavailable:
-the `agent-browser` CLI (`agent-browser open <url>`, `eval "<js>"`, `screenshot <path>`,
-`console`) plus rAF-counter FPS sampling; mark those checks self-reported. Screenshots stay in the
-audit context -- report only pass/fail + evidence lines, never raw images.
+the `agent-browser` CLI (`agent-browser open <url>`, `eval "<js>"`, `screenshot <path>`, `console`)
+plus rAF-counter FPS sampling; mark those checks self-reported. Screenshots stay in the audit
+context - report only pass/fail + evidence lines, never raw images.
 
-## FPS
+## Scrub determinism (the core gate)
 
-DevTools MCP: record a trace while scrolling a segment; read the FPS track. Fallback rAF sampler
-(~2s, scroll during it):
+Everything is a pure `f(t)`, so a given playhead must produce ONE frame regardless of direction.
+Pick a `T` inside a scene (not a boundary). Approach it **from below** (scroll to `T-0.02`, settle,
+then `T`) and **from above** (scroll to `T+0.02`, settle, then `T`); screenshot both. The frames
+MUST match - identical camera pose, character pose, light/grade state, post state. Run it on a
+motion-heavy scene (the canyon fall) AND a light-transition scene (the deep). Any drift = a
+time-accumulated state or a `crossFadeTo` leaked in = HIGH failure.
+
+## Down-AND-rewind determinism
+
+Scroll **forward through** a scene into the next, then **back** to the earlier `T`; after settle the
+frame must match the first pass exactly - no leftover pose, no half-played VAT, no stuck light
+state, no doubled particles. The film is reversible end to end; a scene that stays "played" on
+scroll-back is a HIGH failure. Exercise it across scene 2->3 (surface into deep) and scene 6->7
+(ascent into dawn - the axis inverts here, highest risk).
+
+## VAT scrub determinism (scene 2 splash)
+
+At the splash (`T ~= 0.34`), the crown is a VAT played by sampling at time t. Approach `T` from
+below and from above (as in scrub determinism) AND forward-then-rewind: the crown geometry MUST be
+frame-identical each time (VAT sampling is deterministic; inter-frame interpolation must be
+symmetric). A crown that differs by approach direction, or that "sticks" at its peak on rewind,
+means the VAT time is not pure `f(t)` = HIGH failure.
+
+## FPS sampling (risk scenes first)
+
+Sample the two heaviest scenes explicitly: the **splash/VAT** (scene 2, `T~=0.34`) and the **ascent
+fold** (scene 6, `T~=0.745`, paper-planes-in-formation); then spot-check the canyon storm (scene 1).
+DevTools MCP: record a trace while scrubbing the segment, read the FPS track. Fallback rAF sampler
+(~2 s, scrub during it):
 `new Promise(res => { let f=0; const t0=performance.now(); const loop=()=>{f++; performance.now()-t0<2000 ? requestAnimationFrame(loop) : res(Math.round(f/2));}; requestAnimationFrame(loop); })`
-LOW tier: CPU-throttle 4x (DevTools) and re-measure.
+The governor should hold the tier steady above 45 fps (its downgrade floor); a scene that sits below
+45 fps without the governor stepping down a rung is a failure. LOW tier: CPU-throttle 4x (DevTools)
+and re-measure; also verify on real budget-Android where possible (fp16 banding / PBR cost).
 
-## Scrub determinism
+## Draw-call probe vs budget
 
-Pick a t inside a page (not a boundary). Approach it from below (scroll to t-0.03, then t) and from
-above (t+0.03, then t); screenshot both after settle. The frames MUST match -- same camera pose,
-same stroke draw-on state, same post state. Test one **play** region (a normal page, `p<0.72`) and
-one **exit** region (`p>0.72`) -- a rip page (e.g. Fried crumple) AND a non-rip exit (page 0 cover
-hinge-open, page 8 signature + stamp + back-cover close), since those exits are not rips.
+At each sampled scene read `renderer.info.render.calls` (expose it, or read via the R3F store in an
+`eval`): **< 100 on desktop, < 50 on mobile** at every `t`. Confirm the paper storm stays ONE draw
+call (a call count that scales with sheet count means the InstancedMesh path regressed). A
+monotonically climbing count as you scroll means a scene's assets are never disposed.
 
-## Exit-reversal determinism
+## Bundle-size probe vs 10 MB
 
-Scroll **into** a page's exit (`t = i/9 + 0.85/9`, so `p>0.72`) then back **below** 0.72
-(`t = i/9 + 0.4/9`); after settle the page must **fully reassemble** -- no torn/missing geometry,
-no leftover crumple/fold, and the Desk pile `.count` must not double-count the page. Run it on a
-rip page AND on page 0 (hinge must re-close) and page 8 (signature/stamp must clear). Reversibility
-is the core contract (the rig is pure `f(t)`); a page that stays exited on scroll-back is a HIGH
-failure.
+**Accounting (deterministic, reproducible):** the 10 MB budget measures **content-encoded (gzip)
+transfer** - GitHub Pages serves gzip only, no brotli - of the **initial route plus every
+story-streamed asset**, summed from the DevTools **Network log of one full playthrough** (scroll
+the film start to finish once, network throttling off, cache disabled, so every story-position
+asset actually loads). Build first (`pnpm --filter @ajh/landing build`), serve the exported
+`apps/landing/out` directory with a gzip-enabled static file server (measuring against `next dev`
+undercounts - no production minify/compress), then record the trace against that build. Sum the
+transferred-size column (reflects gzip encoding, not the uncompressed `Content-Length`) across
+every request: JS/CSS chunks, KTX2 textures, DRACO/meshopt geometry, VAT textures, audio, and the
+self-hosted DRACO/KTX2 decoder WASM/JS. **Exclude `.map` source-map requests** (dev-only, never
+fetched by real users at this cost); **include** the self-hosted decoders (a CDN-hosted decoder is
+a separate blocker, see below, but if self-hosted it still counts against the budget). Total must
+be **<= 10 MB**. Confirm textures are KTX2/ETC1S, geometry is DRACO or meshopt, and the DRACO/KTX2
+**decoders are self-hosted** (a CDN-hosted decoder is a blocker). Report the byte total and the
+largest three assets.
 
-## Draw-call probe
+## Luminance-delta / strobe check (blackout -> dawn at max scrub velocity)
 
-At each sampled page read `renderer.info.render.calls` (expose it, or read via the R3F store in an
-`eval`): it must stay **< 120** at every t. Also confirm **visibility scoping** -- only the active
-page +/-1 is mounted; distant pages are disposed (a monotonically climbing call count as you scroll
-means a page is never disposed).
+The photosensitivity risk is fast scrubbing compressing a slow fade into flashing. Scrub the
+blackout -> catch -> ascent -> dawn span (scenes 4-7) as FAST as the input allows and confirm the
+luminance-delta clamp holds: **no more than 3 full-frame luminance flashes in any rolling second**
+(frame-by-frame trace screenshots, or a flash-budget console counter if exposed). Also confirm zero
+THREE/WebGL console errors at any `t`. A fade that strobes only under fast scrub = HIGH failure
+(the velocity clamp is missing).
 
-## Strobe budget
+## Copy parity
 
-Zero THREE/WebGL console errors are allowed at any t. Generic strobe guard (the post chain never
-toggles now, so this is content-agnostic): across **any** page -- including the Fried crumple and
-the AreYouSure paper-plane fold -- confirm no more than 3 full-frame flashes in any rolling second
-(frame-by-frame trace screenshots, or a flash-budget console counter if exposed).
+Run the bidirectional copy-diff against `landing/index.html`. Every joke and link must keep a home:
+the diegetic in-world copy (monitor gags, tower signage, HUD, end-credits footer) AND a real
+crawlable anchor in the Semantic layer. Any missing, extra, or reworded line fails the gate.
 
-## Copy parity (gate step from M3)
+## Reduced-motion + no-GL fallback render
 
-Run the bidirectional copy-diff script against `landing/index.html`. Every visible line of GL SDF
-copy must match the semantic source 1:1; any diff (missing, extra, or reworded line) fails the gate.
+- Emulate `prefers-reduced-motion: reduce` (DevTools): the page MUST render the chapter-stepped
+  slideshow / prerendered Semantic HTML with identical copy and GL must NOT mount (no canvas). Also
+  verify the **in-page motion toggle** produces the same stepped-slideshow fallback.
+- Verify each Experience-gate condition independently falls back to the Semantic page with NO
+  canvas, via DOM inspection (accessibility snapshot / `eval` querying `document.querySelector`
+  for a `<canvas>`), not a screenshot:
+  - **Narrow viewport**: resize/emulate to CSS width **<= 900px** - the gate's authoritative
+    breakpoint (`webgl-standards`' Experience gate: width > 900px required to mount GL).
+  - **Coarse pointer**: DevTools device-toolbar touch-device emulation, or the CDP call
+    `Emulation.setEmulatedMedia({ features: [{ name: 'pointer', value: 'coarse' }] })`.
+  - **WebGL2 unavailable**: force context creation to fail via
+    `mcp__chrome-devtools__navigate_page`'s `initScript` param, stubbing
+    `HTMLCanvasElement.prototype.getContext` to return null for `webgl2`, then reload (fallback: a
+    CDP `Page.addScriptToEvaluateOnNewDocument` call).
 
-## Reduced-motion + gate
-
-Emulate `prefers-reduced-motion: reduce` (DevTools emulation): the page MUST render the prerendered
-semantic HTML and GL must NOT mount -- no canvas at all. Likewise verify a sub-threshold viewport
-(width <= 900), a coarse pointer, and a WebGL2-unavailable context each fall back to the legacy
-semantic page with no canvas (same bar for every gate condition).
-
-## WebGL2 unavailable
-
-Force context creation to fail with Chrome DevTools MCP: `mcp__chrome-devtools__navigate_page`'s
-`initScript` param, stubbing `HTMLCanvasElement.prototype.getContext` to return null for `webgl2`,
-then navigate/reload. Fallback (no DevTools MCP): a browser launch flag or equivalent CDP
-`Page.addScriptToEvaluateOnNewDocument` call. The semantic page MUST still render and no canvas
-may mount, same bar as the reduced-motion/narrow/coarse fallbacks above.
+  Same bar for every condition above: Semantic page renders, no `<canvas>` element exists in the
+  DOM, all links + the CTA remain real anchors, scroll height intact.
 
 ## Report
 
 One pass/fail table row per gate check with a one-line evidence note. Numbers, not adjectives
-(measured FPS, t positions compared, console error count). Screenshots never leave the audit
-context.
+(measured FPS, `t` positions compared, draw-call count, byte total, console error count).
+Screenshots never leave the audit context.
