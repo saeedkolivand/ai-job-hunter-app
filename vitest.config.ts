@@ -14,10 +14,6 @@ export default defineConfig({
       // every story as a test; selectable on its own with `--project storybook`.
       'packages/ui/vitest.storybook.config.ts',
       'apps/desktop',
-      // Node-env project for the landing app's pure logic (scroll p-space math
-      // + pre-split geometry). Config: apps/landing/vitest.config.ts. Not in the
-      // coverage include/thresholds below, so it adds tests without gating.
-      'apps/landing',
       // Node-env project for build/release scripts (e.g. the empty-release-notes
       // guard plugin). Config: scripts/vitest.config.ts.
       'scripts',
