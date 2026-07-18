@@ -19,6 +19,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 
 import { channels } from "@/engine/channels";
 import { CORNER_TEAR_PAGE } from "@/engine/pages";
+import { pointer, trackPointer } from "@/engine/pointer";
 import { resolveTier } from "@/engine/quality";
 import { hudStats } from "@/engine/stats";
 import { uBoil, uResolution, uRipP } from "@/engine/uniforms";
@@ -46,6 +47,12 @@ const THROW = {
   rz: 1.8,
 } as const;
 
+// Cover hinge-open (page 0's exit). The front cover pivots about the top binding
+// edge; a positive x-rotation swings it up and back, clearing the page. Driven by
+// channels[0].exitP (pure f(t)) so scrubbing back re-closes it. ~150 deg fully
+// open.
+const HINGE_MAX = 2.6;
+
 // Tear/throw phasing (both pure f(exitP), so scrubbing back is exact): the
 // shader tear-front (uRipP -> tearP) fully separates the seam by exitP 0.62
 // BEFORE the piece is meaningfully thrown (throwP starts at 0.5), so the free
@@ -56,7 +63,13 @@ function smoothstep(e0: number, e1: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
-export function Composer({ freeRef }: { freeRef: RefObject<Group | null> }) {
+export function Composer({
+  freeRef,
+  coverRef,
+}: {
+  freeRef: RefObject<Group | null>;
+  coverRef: RefObject<Group | null>;
+}) {
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
   const camera = useThree((s) => s.camera);
@@ -89,19 +102,22 @@ export function Composer({ freeRef }: { freeRef: RefObject<Group | null> }) {
   // Release GPU resources when the Canvas unmounts.
   useEffect(() => () => composer.dispose(), [composer]);
 
-  // Warm the page shader programs once, behind the loader, so the first scrub
-  // into the tear has no compile hitch. Fire-and-forget (the material would
-  // compile lazily on first render anyway); swallow rejection so a lost context
-  // never surfaces as a console error.
-  useEffect(() => {
-    void gl.compileAsync(scene, camera).catch(() => {});
-  }, [gl, scene, camera]);
+  // Feed the camera parallax from a window pointermove listener. The Canvas is
+  // pointer-events:none (Lenis keeps document scroll; the a11y overlay will sit
+  // above the canvas), so R3F's state.pointer never updates -- we read the
+  // window-level `pointer` singleton instead.
+  useEffect(() => trackPointer(), []);
+
+  // (Shader warmup moved to the boot sequence in RipbookExperience so it runs
+  // AFTER the bakes and once the full scene has mounted: bakes -> compileAsync ->
+  // onReady.)
 
   useFrame((state, delta) => {
     // (1) Camera micro-parallax around the fixed down-look pose. Time-damped
-    // toward a pointer-driven target; never reads scroll state.
-    const targetX = CAMERA.x + state.pointer.x * PARALLAX;
-    const targetY = CAMERA.y + state.pointer.y * PARALLAX;
+    // toward the window-pointer target (see engine/pointer); never reads scroll
+    // state.
+    const targetX = CAMERA.x + pointer.x * PARALLAX;
+    const targetY = CAMERA.y + pointer.y * PARALLAX;
     camera.position.x = MathUtils.damp(camera.position.x, targetX, CAM_DAMP, delta);
     camera.position.y = MathUtils.damp(camera.position.y, targetY, CAM_DAMP, delta);
     camera.position.z = CAMERA.z;
@@ -121,6 +137,13 @@ export function Composer({ freeRef }: { freeRef: RefObject<Group | null> }) {
       );
       g.rotation.set(THROW.rx * throwP, THROW.ry * throwP, THROW.rz * throwP);
     }
+
+    // (2b) Cover hinge-open, page 0's exit. Pure f(channels[0].exitP) so it
+    // scrubs closed again; eased for a heavier board swing.
+    const coverCh = channels[0];
+    const openP = coverCh ? smoothstep(0, 1, coverCh.exitP) : 0;
+    const cover = coverRef.current;
+    if (cover) cover.rotation.x = HINGE_MAX * openP;
 
     // (3) Stepped boil clock -- single writer.
     uBoil.value = Math.floor(state.clock.elapsedTime * tier.boilHz) / tier.boilHz;
