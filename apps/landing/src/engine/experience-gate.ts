@@ -9,6 +9,14 @@ import { getGPUTier } from "detect-gpu";
 import { NARROW_BREAKPOINT_PX } from "./constants";
 import type { QualityTier } from "./store";
 
+// Self-hosted benchmark data (vendored from the detect-gpu npm package's own
+// dist/benchmarks/*.json into public/detect-gpu/ -- see
+// apps/landing/public/detect-gpu/README.md) instead of detect-gpu's default
+// unpkg.com CDN. getGPUTier joins this as `${DETECT_GPU_BENCHMARKS_URL}/<file>.json`
+// (no trailing slash), and Next serves public/ at the site root, so
+// public/detect-gpu/d-nvidia.json resolves at /detect-gpu/d-nvidia.json.
+const DETECT_GPU_BENCHMARKS_URL = "/detect-gpu";
+
 export interface Capabilities {
   webgl2: boolean;
   finePointer: boolean;
@@ -38,7 +46,7 @@ export async function probeCapabilities(): Promise<Capabilities> {
 
   let gpuTier: number;
   try {
-    const result = await getGPUTier();
+    const result = await getGPUTier({ benchmarksURL: DETECT_GPU_BENCHMARKS_URL });
     gpuTier = result.tier ?? 0;
   } catch {
     gpuTier = 0;

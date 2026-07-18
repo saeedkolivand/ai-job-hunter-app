@@ -15,12 +15,15 @@ const SCHEMA = {
   offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
 };
 
+// Escape "<" so a "</script>" inside any serialized field (e.g. SITE.description)
+// can't close the element early -- the standard JSON-LD injection guard.
+const serialized = JSON.stringify(SCHEMA).replace(/</g, "\\u003c");
+
 export function JsonLd() {
   return (
     <script
       type="application/ld+json"
-      // JSON.stringify output is inert; this is the standard way to embed JSON-LD.
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(SCHEMA) }}
+      dangerouslySetInnerHTML={{ __html: serialized }}
     />
   );
 }

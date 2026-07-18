@@ -122,7 +122,12 @@ export function Experience({ semantic }: { semantic: ReactNode }) {
           users a duplicate menu and an aria-live region for a film that isn't
           playing. The skip-link target follows suit. */}
       <SkipLink href={glLive ? "#tv-content" : "#story-content"} />
-      <MotionToggle reduced={motionReduced} onToggle={handleMotionToggle} />
+      {/* No-WebGL2/coarse-pointer/narrow "fallback" never had motion running,
+          so toggling it there is a no-op control -- only render it once the
+          rig actually exists (gl-live) or could be resumed (slideshow). */}
+      {(glLive || mode === "slideshow") && (
+        <MotionToggle reduced={motionReduced} onToggle={handleMotionToggle} />
+      )}
       {glLive && <A11yOverlay />}
       {glLive && <GlCanvas tier={tier} />}
       {glLive && <Chrome />}
