@@ -3,15 +3,15 @@ name: 🌐 Deploy Landing Page
 # ──────────────────────────────────────────────────────────────────────
 # GitHub Pages Deploy
 # ──────────────────────────────────────────────────────────────────────
-# Purpose: Build and publish the landing experience (plus the @ajh/ui
-#          Storybook at /storybook/) to GitHub Pages
-# Triggers: push to main touching the app, passthrough source, the UI
-#           package, the lockfile, or this workflow, plus manual dispatch
-# Source:   apps/landing = the Next 16 static-export app (@ajh/landing);
-#           landing/ = passthrough source copied verbatim into the export by
-#           the postbuild merge-passthrough script. Build output lands in
-#           apps/landing/out. packages/ui = the @ajh/ui design system; its
-#           Storybook build is copied into out/storybook/.
+# Purpose: Publish the static marketing landing page (landing/) plus the
+#          @ajh/ui Storybook (at /storybook/) to GitHub Pages
+# Triggers: push to main touching landing/, packages/ui/, or this workflow,
+#           plus manual dispatch
+# Source:   landing/ is a self-contained static site (no build step); the
+#           Storybook build output is copied in at deploy time only (never
+#           committed). The apps/landing GL experience was reset for a
+#           restart (docs/adr/0014) -- this workflow returns to the static
+#           upload until the new app exists.
 # Note:     Runs independently of release.yml (also push-to-main) — separate jobs.
 # ──────────────────────────────────────────────────────────────────────
 
@@ -20,11 +20,8 @@ on:
     branches:
       - main
     paths:
-      - 'apps/landing/**'
       - 'landing/**'
       - 'packages/ui/**'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -53,29 +50,20 @@ jobs:
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
 
-      - name: 🏗️ Build Landing
-        env:
-          # Next 16 static export peaks above the default heap on this app;
-          # 6 GiB clears the CI runner headroom without a swap.
-          NODE_OPTIONS: --max-old-space-size=6144
-        run: pnpm --filter @ajh/landing build
-
       - name: 📚 Build Storybook (@ajh/ui)
         env:
-          # Storybook's Vite bundle peaks near the landing build's ceiling;
-          # reuse the same heap headroom so CI never OOMs.
+          # Storybook's Vite bundle needs heap headroom on the CI runner.
           NODE_OPTIONS: --max-old-space-size=6144
-        # Runs AFTER Build Landing so apps/landing/out already exists (the
-        # landing postbuild merged the passthrough pages in). Copy the static
-        # Storybook into out/storybook/ so it ships inside the Pages artifact.
+        # Copy the static Storybook alongside the landing pages (runner-only;
+        # landing/storybook is never committed) so it ships in the artifact.
         run: |
           pnpm --filter @ajh/ui build-storybook
-          cp -r packages/ui/storybook-static apps/landing/out/storybook
+          cp -r packages/ui/storybook-static landing/storybook
 
       - name: 📤 Upload artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
-          path: apps/landing/out
+          path: landing
 
       - name: 🚀 Deploy to GitHub Pages
         id: deployment
