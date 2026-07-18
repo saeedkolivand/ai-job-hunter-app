@@ -1,17 +1,19 @@
 ---
 status: accepted
-amended-by: 0015
+amended-by: 0016
 ---
 
 # Landing becomes a built GL experience with a semantic fallback
 
-> # ⚠ PARTIALLY HISTORICAL - read [ADR 0015](0015-ripbook-notebook-landing.md) for the active experience contract
+> # ⚠ PARTIALLY HISTORICAL - read [ADR 0016](0016-terminal-velocity-scroll-film-landing.md) for the active experience contract
 >
-> **Amended by ADR 0015 (2026-07-18).** 0015 **supersedes** this ADR's landing _experience_ - the
-> 8-beat scroll-scrubbed camera Journey, the "beat copy in a screen-space DOM overlay" ruling, and
-> the deep-fried Pass B glitch set-piece - with the RIPBOOK notebook (9 rippable pages, all copy as
-> in-canvas SDF text, one always-on post chain). Sections describing those are marked _Historical_
-> below and are NO LONGER the contract.
+> **Amended by ADR 0016 (2026-07-18).** This ADR's landing _experience_ - the 8-beat
+> scroll-scrubbed camera Journey, the "beat copy in a screen-space DOM overlay" ruling, and the
+> deep-fried Pass B glitch set-piece - was first replaced by RIPBOOK
+> ([ADR 0015](0015-ripbook-notebook-landing.md)) and, when RIPBOOK was abandoned mid-M3 the same
+> day, by **TERMINAL VELOCITY** (ADR 0016, a realistic CG scroll-film). ADR 0015 is now itself
+> **superseded**; read 0016 for the live experience contract. Sections describing the original
+> Journey are marked _Historical_ below and are NO LONGER the contract.
 >
 > Everything _structural_ here **still binds (active):** the Next 16 static export, the Semantic
 > layer as the SEO/a11y/scroll-height authority, the single Experience gate, the `landing/`
@@ -71,7 +73,8 @@ still hold._
 
 ## References
 
-- Active experience contract: `docs/adr/0015-ripbook-notebook-landing.md`.
-- Glossary: `docs/CONTEXT.md` (Semantic layer, Experience gate, Passthrough files,
-  Line boil are active; Journey and Beat are superseded by 0015).
+- Active experience contract: `docs/adr/0016-terminal-velocity-scroll-film-landing.md`
+  (RIPBOOK, `docs/adr/0015-ripbook-notebook-landing.md`, is the superseded intermediate).
+- Glossary: `docs/CONTEXT.md` (Semantic layer, Experience gate, Passthrough files are active;
+  Journey, Beat, and the RIPBOOK terms are superseded).
 - App: `apps/landing`; passthrough source: `landing/`; deploy: `.github/workflows/pages.yml`.
