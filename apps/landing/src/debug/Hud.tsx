@@ -20,7 +20,7 @@ export default function Hud() {
   useEffect(() => {
     const enabled =
       process.env.NODE_ENV === "development" ||
-      new URLSearchParams(window.location.search).has("hud");
+      new URLSearchParams(window.location.search).get("hud") === "1";
     if (enabled) setOn(true);
   }, []);
 
