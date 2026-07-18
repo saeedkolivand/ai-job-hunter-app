@@ -76,10 +76,19 @@ function GraphPaper() {
 }
 
 // --- headline pieces (line 2 lays out around a centred "robot") -------------
+// The red "robot" is its own centred Text; "So I built a" (right-anchored) and
+// "to do it." (left-anchored) sit on either side. The gap on each side is an
+// explicit x-offset -- half of robot's rendered width (~0.98 world at fontSize
+// H) plus one space (~0.25) -- so the words land a clean space-gap off the
+// punchline. The old 0.95 offset was NARROWER than robot's half-width, so the
+// neighbours collided with it and the line read "arobotto"; authoring the gap
+// as geometry (rather than trusting a trailing/leading space glyph to survive
+// troika's per-segment layout) makes the spacing deterministic.
 const L1 = hero.h1a; // "Job hunting broke me."
 const P1 = hero.h1b.trim(); // "So I built a"
 const ROBOT = hero.h1ul; // "robot"
 const P3 = hero.h1c.trim(); // "to do it."
+const ROBOT_GAP = 1.23; // robot half-width (~0.98) + one space (~0.25) at H
 const KICKER = hero.kicker.toUpperCase();
 const SUB = hero.sub + hero.subBold;
 const H = 1.05; // headline fontSize (world units)
@@ -148,7 +157,7 @@ export default function Hero() {
       <Text
         font={FONT.caveat}
         characters={charactersFor(...FONT_TEXTS.caveat)}
-        position={[-0.95, 2.15, 0.1]}
+        position={[-ROBOT_GAP, 2.15, 0.1]}
         fontSize={H}
         anchorX="right"
         anchorY="middle"
@@ -174,7 +183,7 @@ export default function Hero() {
       <Text
         font={FONT.caveat}
         characters={charactersFor(...FONT_TEXTS.caveat)}
-        position={[0.95, 2.15, 0.1]}
+        position={[ROBOT_GAP, 2.15, 0.1]}
         fontSize={H}
         anchorX="left"
         anchorY="middle"

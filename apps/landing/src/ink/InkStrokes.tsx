@@ -31,6 +31,7 @@ import { useEffect, useMemo, useRef } from "react";
 import {
   Color,
   DoubleSide,
+  type Group,
   Mesh,
   MeshBasicMaterial,
   type Object3D,
@@ -104,6 +105,7 @@ export default function InkStrokes({
   const mode = drawOn ? "draw" : "decor";
   const drawRef = useRef(drawOn);
   drawRef.current = drawOn;
+  const groupRef = useRef<Group | null>(null);
 
   const built = useMemo<Built>(() => {
     const objects: Object3D[] = [];
@@ -254,10 +256,19 @@ export default function InkStrokes({
     const raw = span > 1e-6 ? (t - d.t0) / span : t >= d.t1 ? 1 : 0;
     const prog = raw < 0 ? 0 : raw > 1 ? 1 : raw;
     for (const it of built.dashItems) it.mat.dashOffset = it.len * (1 - prog);
+    // Draw-call cull: at prog 0 every stroke's dash gap already covers its whole
+    // line, so the doodle is 100% invisible yet each stroke still costs a draw
+    // call. Hiding the group there submits zero draws for a not-yet-drawn (or
+    // scrubbed-back-before-window) doodle -- the win in the co-mounted beat
+    // overlap, where a neighbour beat's doodles sit pre-window. Pure f(t) and
+    // scrub-safe: visibility is a function of t only, and it flips exactly at t0
+    // where the strokes (and fills) are already invisible, so nothing on screen
+    // changes -- only off-screen/hidden geometry stops being drawn.
+    if (groupRef.current) groupRef.current.visible = prog > 0;
   });
 
   return (
-    <group position={position} rotation={rotation} scale={scale}>
+    <group ref={groupRef} position={position} rotation={rotation} scale={scale}>
       {built.objects.map((o, i) => (
         <primitive key={i} object={o} dispose={null} />
       ))}
