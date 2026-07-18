@@ -12,20 +12,34 @@
 // few-mm lift on the held lip). Both key off the same driver: uRipP[uPageIndex]
 // mirrors channels[i].exitP, so gate + throw stay in lockstep.
 //
-// The fragment is a PLACEHOLDER for M2 (the real kraft bake): flat kraft +
-// cheap 3-octave value-noise fiber tint (screen-stable, no external textures),
-// a brighter raw-pulp lightening within the torn-edge band, and a one-light
-// lambert so the peel curl reads in 3D. Helper functions are ajh_-prefixed to
-// avoid colliding with three's injected symbols.
+// The fragment is the M2 page v2: it samples the shared kraft bake
+// (bakes.paperAlbedoRough rgb=linear albedo / a=roughness, bakes.paperNormalHeight
+// rg=tangent normal / b=height), perturbs the geometry normal by the fiber map,
+// lights it with the scene's single directional (the hardcoded AJH_LIGHT, matching
+// RipbookExperience's directionalLight) plus an ambient wrap, adds a roughness-
+// modulated soft sheen, and overlays per-page seeded stains + a graphite smudge
+// (bakes.stain / bakes.smudge) via uPageSeed-driven transforms. The M1 torn-edge
+// raw-pulp band is kept. The bake textures are DATA (NoColorSpace) authored linear,
+// so there is NO sRGB decode on sample. Helpers are ajh_-prefixed.
+//
+// Per-page variation follows the ONE-shared-bake rule: never a per-page bake --
+// the single stain/smudge atlas is transformed per page by uPageSeed here.
 //
 // Uniforms (see also engine/uniforms.ts for the shared singletons):
 //   uBoil       float          -- stepped boil clock; seeds the torn-edge jitter.
 //   uRipP       float[9]       -- per-page rip/exit progress (shared singleton).
 //   uPageIndex  int  [0..8]    -- which page this material renders (const per mat).
 //   uSide       float 0|1      -- 0 = held page, 1 = free corner flap.
+//   uPaper      sampler2D      -- kraft albedo (rgb linear) + roughness (a).
+//   uPaperN     sampler2D      -- tangent normal (rg) + height (b) map.
+//   uStain      sampler2D      -- seeded coffee/ink stain atlas (rgb tint, a cov).
+//   uSmudge     sampler2D      -- seeded graphite smudge (r density).
+//   uPageSeed   float [0,1)    -- per-page seed for the stain/smudge transforms.
 
 import { DoubleSide, ShaderMaterial } from "three";
 
+import { bakes } from "@/bake/bakes";
+import { NOISE } from "@/bake/chunks";
 import { CORNER_TEAR_PAGE } from "@/engine/pages";
 import { uBoil, uRipP } from "@/engine/uniforms";
 
@@ -126,75 +140,95 @@ const VERTEX = /* glsl */ `
 `;
 
 const FRAGMENT = /* glsl */ `
+  uniform sampler2D uPaper;
+  uniform sampler2D uPaperN;
+  uniform sampler2D uStain;
+  uniform sampler2D uSmudge;
+  uniform float uPageSeed;
+
   varying vec2 vUv;
   varying float vSeamDist;
   varying float vEdge;
   varying vec3 vWorldN;
 
-  // Authored in LINEAR space -- there is no texture sample to sRGB-decode here,
-  // and the composer encodes the final output to sRGB, so these are the linear
-  // conversions of the placeholder kraft / raw-pulp tones.
-  const vec3  AJH_KRAFT = vec3(0.565, 0.413, 0.220);  // ~#c6ac81
-  const vec3  AJH_RAW   = vec3(0.720, 0.550, 0.320);  // brighter torn-edge pulp
+  ${NOISE}
+
   const vec3  AJH_LIGHT = vec3(-0.333, 0.667, 0.667); // world light dir (upper-front)
-  const float AJH_AMBIENT = 0.55;
-  const float AJH_FIBER = 0.13;   // fine-fiber tint depth
-  const float AJH_BLOTCH = 0.10;  // coarse tone variation depth
-
-  float ajh_hash21(vec2 p) {
-    p = fract(p * vec2(123.34, 456.21));
-    p += dot(p, p + 45.32);
-    return fract(p.x * p.y);
-  }
-
-  float ajh_vnoise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    float a = ajh_hash21(i);
-    float b = ajh_hash21(i + vec2(1.0, 0.0));
-    float c = ajh_hash21(i + vec2(0.0, 1.0));
-    float d = ajh_hash21(i + vec2(1.0, 1.0));
-    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-  }
-
-  float ajh_fbm(vec2 p) {
-    float sum = 0.0;
-    float amp = 0.5;
-    for (int o = 0; o < 3; o++) {
-      sum += amp * ajh_vnoise(p);
-      p *= 2.0;
-      amp *= 0.5;
-    }
-    return sum;
-  }
+  const float AJH_AMBIENT = 0.5;
 
   void main() {
-    // Screen-stable fiber tint from object UVs (fixed per surface point, so it
-    // does not swim as the camera or the flap moves).
-    float fiber = ajh_fbm(vUv * 80.0) - 0.5;
-    float blotch = ajh_fbm(vUv * 4.0) - 0.5;
-    vec3 col = AJH_KRAFT * (1.0 + fiber * AJH_FIBER + blotch * AJH_BLOTCH);
+    // Bake samples are DATA (NoColorSpace) authored LINEAR -> NO sRGB decode.
+    vec4 ar = texture2D(uPaper, vUv);
+    vec3 albedo = ar.rgb;
+    float rough = ar.a;
+    vec2 nxy = texture2D(uPaperN, vUv).rg * 2.0 - 1.0;
+    float nz = sqrt(max(0.0, 1.0 - dot(nxy, nxy)));
 
-    // Brighter raw pulp within the torn-edge band (seam-distance falloff, pinned
-    // bright on the actual snapped edge verts via vEdge).
+    // Torn-edge raw-pulp band (kept from M1): brighter exposed fibers, pinned on
+    // the actual snapped edge verts via vEdge.
     float edge = 1.0 - smoothstep(0.0, 0.04, abs(vSeamDist));
     edge = max(edge, vEdge);
-    col = mix(col, AJH_RAW, edge * 0.6);
+    vec3 raw = ajh_srgb2lin(vec3(0.80, 0.66, 0.44));
+    albedo = mix(albedo, raw, edge * 0.6);
 
-    // One-light lambert so the peel curl reads; double-sided, so flip on back.
-    vec3 nrm = normalize(vWorldN);
-    if (!gl_FrontFacing) nrm = -nrm;
-    float lam = clamp(dot(nrm, normalize(AJH_LIGHT)), 0.0, 1.0);
-    col *= AJH_AMBIENT + (1.0 - AJH_AMBIENT) * lam;
+    // Per-page stains: two taps into the shared stain atlas, each a hashed cell
+    // placed + rotated by uPageSeed (never a per-page bake). Coverage stays low.
+    mat2 rs = ajh_rot(uPageSeed * 6.2831);
+    float idA = floor(ajh_hash11(uPageSeed * 3.1 + 1.0) * 16.0);
+    vec2 cellA = vec2(mod(idA, 4.0), floor(idA / 4.0));
+    vec2 lpA = clamp(rs * (vUv - vec2(0.62, 0.55)) * 1.6 + 0.5, 0.03, 0.97);
+    vec4 stA = texture2D(uStain, (cellA + lpA) / 4.0);
+    albedo = mix(albedo, stA.rgb, stA.a * 0.09);
+
+    float idB = floor(ajh_hash11(uPageSeed * 5.7 + 4.0) * 16.0);
+    vec2 cellB = vec2(mod(idB, 4.0), floor(idB / 4.0));
+    vec2 lpB = clamp(ajh_rot(uPageSeed * 4.0 + 1.0) * (vUv - vec2(0.30, 0.28)) * 1.9 + 0.5, 0.03, 0.97);
+    vec4 stB = texture2D(uStain, (cellB + lpB) / 4.0);
+    albedo = mix(albedo, stB.rgb, stB.a * 0.06);
+
+    // Graphite smudge: seed-offset density, darkens the paper slightly. Wrap the
+    // rotated/offset lookup with fract() (the smear field tiles) so it never
+    // leaves [0,1] into the clamp-to-edge border texels -- which would smear one
+    // edge row across the page. Intensity unchanged; mirrors the hatch path.
+    vec2 smUv = fract(rs * vUv * 1.3 + vec2(ajh_hash11(uPageSeed + 2.0), ajh_hash11(uPageSeed + 8.0)));
+    float sm = texture2D(uSmudge, smUv).r;
+    albedo *= 1.0 - sm * 0.10;
+
+    // Normal-mapped light catch. Flat page tangent frame: T=+x, B=+y, N=vWorldN
+    // (the peel curl already tilts vWorldN); flip on back faces (double-sided).
+    vec3 N = normalize(vWorldN);
+    if (!gl_FrontFacing) N = -N;
+    vec3 T = normalize(vec3(1.0, 0.0, 0.0) - N * N.x);
+    vec3 B = cross(N, T);
+    vec3 Nw = normalize(T * nxy.x + B * nxy.y + N * nz);
+
+    vec3 L = normalize(AJH_LIGHT);
+    float lam = clamp(dot(Nw, L), 0.0, 1.0);
+    float wrap = clamp(dot(Nw, L) * 0.5 + 0.5, 0.0, 1.0); // ambient wrap
+    float diff = mix(wrap, lam, 0.5);
+    vec3 col = albedo * (AJH_AMBIENT + (1.0 - AJH_AMBIENT) * diff);
+
+    // Soft sheen: rougher paper -> softer, weaker highlight. View ~ +z for the
+    // near-flat page (cheap, no camera vector needed).
+    vec3 V = vec3(0.0, 0.0, 1.0);
+    vec3 H = normalize(L + V);
+    float sh = pow(clamp(dot(Nw, H), 0.0, 1.0), mix(40.0, 8.0, rough)) * (1.0 - rough) * 0.18;
+    col += sh;
 
     gl_FragColor = vec4(col, 1.0);
   }
 `;
 
+// Per-page seed for the stain/smudge transforms. A stable golden-ratio hash of
+// the page index so held + free pieces share the same stains and each page reads
+// differently once more pages come online.
+const PAGE_SEED = (CORNER_TEAR_PAGE * 0.61803398875) % 1;
+
 // One program, two instances (held + free) sharing the singleton uniform objects
-// BY REFERENCE -- the composer's single writer updates both for free. uPageIndex
-// and uSide are per-material constants set at creation.
+// BY REFERENCE -- the composer's single writer updates both for free. The bake
+// holders (bakes.*) are likewise shared by reference: they are filled before the
+// scene (hence this material) mounts, so the sampler is never null. uPageIndex,
+// uSide, and uPageSeed are per-material constants set at creation.
 export function createRipPaperMaterial(side: number): ShaderMaterial {
   return new ShaderMaterial({
     name: "RipPaperMaterial",
@@ -204,6 +238,11 @@ export function createRipPaperMaterial(side: number): ShaderMaterial {
       uRipP,
       uPageIndex: { value: CORNER_TEAR_PAGE },
       uSide: { value: side },
+      uPaper: bakes.paperAlbedoRough,
+      uPaperN: bakes.paperNormalHeight,
+      uStain: bakes.stain,
+      uSmudge: bakes.smudge,
+      uPageSeed: { value: PAGE_SEED },
     },
     vertexShader: VERTEX,
     fragmentShader: FRAGMENT,
