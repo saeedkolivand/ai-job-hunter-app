@@ -22,6 +22,7 @@ import { resolveTier } from "@/engine/quality";
 import { initScroll } from "@/engine/scroll";
 import FontsDebug from "@/ink/FontsDebug";
 import { Composer } from "@/post/composer";
+import JourneyLine from "@/scenes/JourneyLine";
 
 import SceneManager from "./SceneManager";
 
@@ -144,6 +145,13 @@ export default function Experience({ onReady }: { onReady: () => void }) {
           ContextWatchdog also stays outside so it keeps watching while
           content suspends. */}
       {!fontsMode && <Composer />}
+      {/* The journey line spans the whole ride, so it is mounted here (not by
+          SceneManager, which only keeps near-camera beats). It sits OUTSIDE the
+          Suspense boundary for the same reason Composer does: it memoizes GPU
+          resources with a disposing cleanup, and re-suspension would run that
+          cleanup while the useMemo survives -- leaving disposed rails. It never
+          suspends (no drei <Text>), so this is safe. */}
+      {!fontsMode && <JourneyLine />}
       <Suspense fallback={null}>
         {fontsMode ? (
           <FontsDebug onReady={onReady} />

@@ -14,6 +14,7 @@ import { beat2 } from "@/content/beat2";
 import { beat3 } from "@/content/beat3";
 import { beat4 } from "@/content/beat4";
 import { features } from "@/content/features";
+import { finale } from "@/content/finale";
 import { hero } from "@/content/hero";
 import { testimonials } from "@/content/testimonials";
 
@@ -74,9 +75,18 @@ export function charactersFor(...strings: string[]): string {
 // `characters` prop from this, not from ad hoc strings.
 export const FONT_TEXTS: Record<FontKey, string[]> = {
   impact: [hero.h1a, beat2.blackholeYell, beat3.huge1, beat3.huge2, beat3.huge3],
-  scrawl: [hero.scrollhint, beat1.sectionLabel, beat2.h2],
+  scrawl: [
+    hero.scrollhint,
+    beat1.sectionLabel,
+    beat2.h2,
+    features.h2,
+    testimonials.heading,
+    testimonials.headingSmall,
+    testimonials.starsWho,
+    ...testimonials.quotes.map((q) => q.who),
+  ],
   hand: [
-    features.c2t,
+    ...Object.values(features),
     beat2.feed[0],
     hero.sub,
     hero.subBold,
@@ -94,13 +104,20 @@ export const FONT_TEXTS: Record<FontKey, string[]> = {
     beat4.line2b,
     beat3.mid,
     ...Object.values(beat3.line),
+    "*****", // testimonials star rating -- ASCII asterisks stand in for the star
+    ...testimonials.quotes.map((q) => q.quote),
     "0123456789",
+    finale.cta, // CTA label chars (its U+2192 has no Patrick Hand glyph -- dropped)
+    "->", // the ASCII arrow the button actually renders
   ],
   caveat: [hero.dontClick, hero.h1a, hero.h1b, hero.h1ul, hero.h1c],
   mono: [
     hero.kicker.toUpperCase(),
     features.c1t,
     testimonials.stars,
+    testimonials.featuredPrefix,
+    ...testimonials.featured,
+    testimonials.sep,
     ...beat1.screencaps,
     beat2.atsBold,
     beat2.recruitersTitle,
@@ -109,6 +126,10 @@ export const FONT_TEXTS: Record<FontKey, string[]> = {
     beat3.dq,
     beat3.yes,
     beat3.yes2,
+    finale.honest,
+    finale.srcGithub,
+    finale.builtwith,
+    finale.byline,
   ],
   monoBold: [beat2.blackholeMain],
 };
