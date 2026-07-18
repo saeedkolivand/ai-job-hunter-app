@@ -30,7 +30,12 @@ stay with `shader-engineer`.
 - **Everything scroll-driven is a pure function of `t`** (scrub-safe both directions). No
   time-accumulated state driving scroll visuals.
 - **Semantic layer is the scroll-height authority** -- when GL mounts it gets `visibility:hidden`
-  - `inert`, NEVER `display:none` (that collapses scroll height and breaks the journey).
+  - `inert`, NEVER `display:none` (that collapses scroll height and breaks the scroll rig).
+- **Accessibility while GL runs = the a11y overlay, not the canvas.** Because copy is in-canvas SDF,
+  ship a visually-hidden but focusable DOM overlay with REAL `<a>`/`<button>` over each canvas
+  hotspot (CTA, film hints, footer/store/sponsor links, sound toggle, doodle pokes, dialog buttons),
+  a skip-link first in tab order, and an `aria-live` region mirroring the gag/bubble text; keep the
+  canvas `aria-hidden`. See webgl-standards. Never leave interactive controls canvas-only.
 - **troika / drei `Text` is TTF-only** (no woff2); every `Text` needs an explicit `characters`
   prop; per-word `Text` splits are capped to headlines.
 - **ASCII-only source** (Turbopack multi-byte sourcemap crash) -- non-ASCII copy lives
@@ -48,4 +53,5 @@ Domain-specific HIGH examples:
 
 - `window`/`document` at render scope; a numeric priority on an animation `useFrame`; a per-frame
   hook selector for scroll state; an unset InstancedMesh instance; `display:none` on the semantic
-  layer; scroll visuals driven by accumulated time instead of `t`; non-ASCII in a source file.
+  layer; canvas-only interactive controls with no accessible a11y overlay; scroll visuals driven by
+  accumulated time instead of `t`; non-ASCII in a source file.

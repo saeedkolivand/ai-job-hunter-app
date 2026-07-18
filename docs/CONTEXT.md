@@ -213,26 +213,35 @@ Was one of the 8 places the Journey's camera visited. Replaced by **Page**.
 _Avoid_: reusing "Beat" for a notebook page
 
 **Page**:
-One of the 9 rippable notebook pages of the RIPBOOK landing (Cover, Slump, DescentA, DescentB,
-Fried, AreYouSure, Features, Testimonials, Godmode/back cover - see [ADR 0015](adr/0015-ripbook-notebook-landing.md)).
-The unit that replaces a Beat; scrolling plays a Page then Rips it out.
-_Avoid_: Beat (retired), section / panel (those name the semantic-layer DOM, not the 3D page)
+One of the 9 notebook pages of the RIPBOOK landing (Cover, Slump, DescentA, DescentB, Fried,
+AreYouSure, Features, Testimonials, Godmode/back cover - see [ADR 0015](adr/0015-ripbook-notebook-landing.md)).
+The unit that replaces a Beat; scrolling plays a Page then runs its **Exit**.
+_Avoid_: Beat (retired), section / panel (those name the semantic-layer DOM, not the 3D page);
+"rippable page" as a synonym for Page (pages 0 and 8 don't rip)
+
+**Exit**:
+The animation that plays a Page out as you scroll past it (the trailing slice of the Page's
+scroll). A **Rip** is the usual Exit; page 0's Exit is the cover hinge-open and page 8's Exit is
+the pencil signature + stamp + back-cover close. Pure function of scroll, fully reversible.
+_Avoid_: assuming every Exit is a Rip (two pages exit without a rip)
 
 **Rip**:
-The `p` in `[0.72,1]` scrubbed exit that tears / crumples / folds a Page out of the notebook.
-Each Page has its own exit style (corner tear, crumple, paper-plane fold, ...); it is a pure
-function of scroll and fully **reversible** (scroll back and the Page reassembles).
-_Avoid_: transition / animation (a Rip is the specific scrubbed page-exit, not any tween)
+The usual kind of **Exit** - the scrubbed animation that tears / crumples / folds a Page out of
+the notebook (pages 1-7, each with its own style: corner tear, crumple, paper-plane fold, ...).
+Reversible; scroll back and the Page reassembles. The split point lives in webgl-standards.
+_Avoid_: treating Rip as every page's Exit (pages 0/8 hinge-open and sign/stamp instead);
+transition / animation generically
 
 **p-space**:
-Page-local progress `p` in `[0,1]` - the active Page's slice of the global scroll `t` remapped so
-`[0,0.72]` **plays** the Page and `[0.72,1]` scrubs its **Rip**. Distinct from the global `t`.
+Page-local progress `p` in `[0,1]` - the active Page's slice of the global scroll `t`, remapped so
+an early range **plays** the Page and the trailing range scrubs its **Exit**. The exact split is a
+webgl-standards constant. Distinct from the global `t`.
 _Avoid_: conflating p-space with global scroll t (t spans all 9 pages; p is within one)
 
 **Desk pile**:
-The persistent stack of already-ripped Pages on the desk - the landing's progress indicator (with
+The persistent stack of already-exited Pages on the desk - the landing's progress indicator (with
 the odometer). Rendered as one instanced draw revealed by its `.count`.
-_Avoid_: "progress bar" (there is no bar; the pile of torn pages IS the indicator)
+_Avoid_: "progress bar" (there is no bar; the pile of pages IS the indicator)
 
 **Foley**:
 The procedural paper sound effects synthesized in-app - rip, crumple, whoosh, scribble, stamp.

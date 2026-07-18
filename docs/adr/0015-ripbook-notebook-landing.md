@@ -22,10 +22,11 @@ when WebGL does not run. RIPBOOK changes the _experience_, not that machinery.
 
 ## Decision
 
-The landing becomes **RIPBOOK**: a full-WebGL kraft-paper **notebook** on a dark desk,
-camera looking down ~25 degrees. Every story beat is a notebook **Page**; scrolling plays
-the Page then **Rips** it out; ripped pages persist as a **Desk pile** that is the progress
-indicator (with an odometer).
+The landing becomes **RIPBOOK**: a full-WebGL kraft-paper **notebook** on a dark desk, camera
+looking down at it. Every story beat is a notebook **Page**; scrolling plays the Page then runs
+its **exit** (usually a **Rip**); exited pages persist as a **Desk pile** that is the progress
+indicator (with an odometer). Operational constants (angles, splits, sizes, pins, budgets) live in
+`.claude/skills/webgl-standards/SKILL.md`; this ADR records the decision, not the numbers.
 
 **The 9 pages (index - name - exit):**
 
@@ -41,26 +42,31 @@ indicator (with an odometer).
 | 7   | Testimonials | perforation zip                                                       |
 | 8   | Godmode      | -> back cover (pencil signature + stamp, NO rip; two-moment timeline) |
 
+Each page has a **play** phase then an **exit** phase (the trailing slice of its scroll). A
+**Rip** is the usual exit (pages 1-7); page 0 exits by hinge-opening the cover and page 8 by the
+pencil signature + stamp + back-cover close - not every page rips.
+
 **Scroll rig.** Lenis owns document scroll; the prerendered semantic layer stays the
-scroll-height authority (9 x 140vh sections). Lenis is synced to **one** GSAP ScrollTrigger
-`scrub:true` master timeline (absolute tweens only) writing into preallocated channels + a
-zustand store; GL reads `store.getState()` per frame. Page-local progress `p` in `[0,0.72]`
-plays the Page, `[0.72,1]` scrubs the Rip; the whole thing is a pure function of scroll and
-**fully reversible**. Contract in `.claude/skills/webgl-standards/SKILL.md`.
+scroll-height authority. Lenis is synced to **one** GSAP ScrollTrigger `scrub:true` master
+timeline (absolute tweens only) writing into preallocated channels + a zustand store; GL reads
+`store.getState()` per frame. The whole thing is a pure function of scroll and **fully
+reversible** (scrolling back reassembles an exited page). The `p`-space split, section heights,
+and sync pattern live in `.claude/skills/webgl-standards/SKILL.md`.
 
 **Full-GL text.** All copy renders as SDF text **in-canvas** via troika (TTF-only, explicit
 `characters`). There is no DOM text over the canvas. (Supersession below.)
 
 **Post chain (strict, always-on, nothing toggles).** RenderPass -> tilt-shift DOF (focus
-band on the active page) -> paper/grain composite (grain <= 0.035, stepped at boil fps) ->
-vignette, with MSAA 4x (SMAA fallback). **No bloom, no chromatic aberration, no halftone.**
-Built on the **raw** postprocessing composer (6.39.2 pin unchanged).
+band on the active page) -> paper/grain composite -> vignette, with MSAA (SMAA fallback).
+**No bloom, no chromatic aberration, no halftone.** Built on the **raw** postprocessing composer.
+Pass order, MSAA sample count, and grain cap live in the skill.
 
-**Hand-drawn look.** A global stepped **boil** uniform (`uBoil = floor(time*10)/10`)
-re-seeds all ink jitter while camera/physics stay smooth 60fps; 3-band toon + procedural
-cross-hatch atlas; inverted-hull screen-constant outlines; Sobel crease lines; pencil grain;
-seeded smudge / eraser-ghost decals; procedural kraft paper **baked once at load** (no
-downloaded textures).
+**Hand-drawn look.** A global stepped **boil** uniform re-seeds all ink jitter (stepped at the
+active quality tier's boil rate, not a fixed clock) while camera/physics stay smooth; 3-band toon
+
+- procedural cross-hatch atlas; inverted-hull screen-constant outlines; Sobel crease lines; pencil
+  grain; seeded smudge / eraser-ghost decals; procedural kraft paper **baked once at load** (no
+  downloaded textures). The `uBoil` formula, tier rates, and bake sizes live in the skill.
 
 **Audio.** The legacy gibberish-voice synth is ported verbatim to TS, plus new procedural
 paper **Foley** (rip / crumple / whoosh / scribble / stamp). A mute toggle ("mute the guy").
@@ -76,12 +82,11 @@ gate step from M3).
 (extracted legacy SVG stroke art) is salvaged for page-surface 2D ink, lazily loaded; the
 cast is rebuilt as procedural 3D (no salvaged meshes).
 
-**New dependencies.** `gsap 3.15.0` + `lenis 1.3.25` (scroll rig); `framer-motion` **DOM-only**
-(loader, mute toggle, a11y overlay - never over the canvas). Version pins live in
-`.claude/skills/webgl-standards/SKILL.md`.
+**New dependencies.** `gsap` + `lenis` (the scroll rig); `framer-motion` **DOM-only** (loader,
+mute toggle, a11y overlay - never over the canvas). Exact version pins live in the skill.
 
-**Budgets.** 60fps @ 1440p on M1 / GTX 1660 through every rip; JS <= 1.3 MB gz; draw calls
-< 120.
+**Budgets.** Hard, gate-enforced budgets on frame rate (through every exit), JS bundle size, and
+draw calls; the numbers live in the skill's Budgets section.
 
 **Delivery.** PRs land docs -> scaffold -> M1..M6 and merge autonomously. The **production
 flip** PR (pages.yml builds `apps/landing/out` and deletes only `landing/index.html`) is
@@ -93,9 +98,9 @@ This ADR supersedes three previously locked rulings; each is named so the reader
 what changed:
 
 1. **The 8-beat t-space camera Journey** (0014 Context; the "8-beat t-space journey" section
-   of `webgl-standards`). Replaced by the **9-Page notebook + Rip** model - global `t` still
-   drives everything, but page `i` owns `t` in `[i/9,(i+1)/9]` with the play/rip `p`-space
-   split at 0.72.
+   of `webgl-standards`). Replaced by the **9-Page notebook** model - global `t` still drives
+   everything, but each page owns its slice of `t`, split into a play phase then an exit phase
+   (see the skill's p-space section for the exact split).
 2. **The art-brief ruling "beat copy in a screen-space DOM overlay."** Replaced by **all copy
    as in-canvas SDF text** (troika). The semantic layer keeps the _machine-readable_ copy;
    the _visible_ copy is GL.
@@ -116,8 +121,9 @@ what changed:
 - **troika per-glyph boil risk.** Stepping every glyph's jitter at boil fps can spike draw
   calls / re-layout; the fallback is per-word (not per-glyph) boil on headlines only, with body
   copy static under boil.
-- **Budget enforcement.** Draw calls < 120 and JS <= 1.3 MB gz are gate-enforced (`renderer.info`
-  probe + bundle check); the procedural bakes and rip pre-splits must fit inside them.
+- **Budget enforcement.** The frame-rate, JS-size, and draw-call budgets (numbers in the skill)
+  are gate-enforced (`renderer.info` probe + bundle check); the procedural bakes and rip pre-splits
+  must fit inside them.
 - **Rip lifecycle risk.** Pages dispose at page-distance > 2 and rebuild on approach; a disposal
   or prefetch bug reads as a black/blank page - covered by the gate's disposal + reversal checks.
 - Reduced-motion / no-WebGL2 / coarse-pointer / narrow visitors never reach any of this: the

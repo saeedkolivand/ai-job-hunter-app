@@ -62,7 +62,10 @@ directions -- no time-accumulated state driving scroll visuals). Page `i` is **a
 | 8   | Godmode      | -> back cover; pencil signature + stamp, **no rip**, two-moment timeline |
 
 **Page-local `p`.** Map `t` within the active page to `p` in `[0,1]`: `p` in `[0,0.72]` **plays**
-the page, `p` in `[0.72,1]` **scrubs the Rip**. Both regions are pure `f(t)` and fully reversible.
+the page, `p` in `[0.72,1]` scrubs the page's **exit**. A **Rip** is the usual exit (pages 1-7);
+page 0's exit is the cover **hinge-open** and page 8's exit is the **pencil signature + stamp +
+back-cover close** (no rip) -- same `[0.72,1]` window, different exit. Both regions are pure `f(t)`
+and fully reversible.
 
 **One timeline, channels bridge.** Lenis owns document scroll; a **single** GSAP ScrollTrigger
 `scrub:true` master timeline (absolute tweens ONLY -- no `+=`) writes into **preallocated
@@ -87,9 +90,11 @@ heavy boil amplitude, dense cross-hatch), not effect passes.
 ## uBoil singleton-uniform contract
 
 `uBoil` is **one uniform object shared by reference** across every ink/hatch/crease material. The
-**single writer** is the composer's `priority 1` `useFrame`; it sets `uBoil = floor(time*10)/10`
-(HIGH 10 fps, LOW 8 fps) once per frame. No material owns its own boil clock, and nothing else
-writes it. Re-seed all ink jitter from `uBoil` so the whole page boils on the same step.
+**single writer** is the composer's `priority 1` `useFrame`; it sets
+`uBoil = floor(time * boilHz) / boilHz` once per frame, where `boilHz` is the **active quality
+tier's** boil rate (HIGH 10, LOW 8 -- see Quality tiers). It is **not** a fixed 10 Hz. No material
+owns its own boil clock, and nothing else writes it. Re-seed all ink jitter from `uBoil` so the
+whole page boils on the same step.
 
 ## Boil-vs-smooth split
 
@@ -100,8 +105,9 @@ broken.
 
 ## Rip system invariants
 
-- **Pre-split at load.** Each page is authored as a tear mesh at load time (never re-triangulated
-  per frame).
+- **Pre-split at load.** Each **rippable** page (1-7) is authored as a tear mesh at load time
+  (never re-triangulated per frame). Page 0 (cover hinge) and page 8 (signature + stamp + back-cover
+  close) use their own exit meshes, not the tear/morph rig.
 - **Vertex-shader bend + morph targets.** The Rip is a vertex-shader bend plus morph-target
   crumple/fold driven by `p` in `[0.72,1]` -- pure `f(t)`, so scrubbing back below 0.72 fully
   reassembles the page.
@@ -116,19 +122,34 @@ broken.
 stain/smudge atlas** -- reused across all pages. **Never per-page 4096^2 bakes.** HIGH bakes at
 4096^2, LOW at 2048^2. No downloaded textures.
 
-## Draw-call budget (< 120) + visibility scoping
+## Budgets (the numbers other docs point at) + visibility scoping
 
-Keep total draw calls under 120. Only the **active page +/-1** is mounted; distant pages are
-disposed (see Rip system). Probe with `renderer.info.render.calls`. The pile is one instanced draw;
-per-word troika splits are headlines-only precisely because each is its own draw call.
+This skill owns the RIPBOOK performance budgets; ADR 0015 and CONTEXT.md point here instead of
+copying them:
 
-## Capability gate + the semantic layer
+- **Frame rate:** 60fps @ 1440p on M1 / GTX 1660 through every page and exit (incl. the crumple rip).
+- **JS bundle:** <= 1.3 MB gzipped.
+- **Draw calls:** < 120 -- probe with `renderer.info.render.calls`.
+
+Visibility scoping keeps the draw-call budget: only the **active page +/-1** is mounted; distant
+pages are disposed (see Rip system). The pile is one instanced draw; per-word troika splits are
+headlines-only precisely because each is its own draw call.
+
+## Capability gate + the semantic layer + the a11y overlay
 
 - **Gate to GL:** WebGL2 AND fine pointer AND width > 900 AND NOT reduced-motion, **and** a
   `flipped()` pre-launch guard until the production flip. Fail any -> the legacy prerendered DOM
-  page runs and GL never mounts. Reduced-motion users therefore never reach the boil/rip motion.
+  page runs and GL never mounts. Reduced-motion users therefore never reach the boil/exit motion.
 - **Semantic layer is the scroll-height authority.** When GL mounts it gets `visibility:hidden` +
-  `inert` -- NEVER `display:none` (that collapses scroll height and breaks the scroll rig).
+  `inert` -- NEVER `display:none` (that collapses scroll height and breaks the scroll rig). It keeps
+  owning SEO + machine-readable copy while hidden; it is NOT the interactive surface once GL runs.
+- **a11y overlay is the accessible interface while GL runs.** Because copy is in-canvas SDF (opaque
+  to the a11y tree), a **visually-hidden but focusable** DOM overlay carries the accessibility: REAL
+  `<a>`/`<button>` elements positioned over the canvas hotspots (CTA, film hints, footer / store /
+  sponsor links, the sound / "mute the guy" toggle, doodle pokes, dialog buttons), a **skip-link
+  first in tab order**, and an `aria-live` region that mirrors the gag/speech-bubble text as it
+  changes. The overlay is keyboard + screen-reader operable even though it is visually hidden; the
+  canvas itself stays `aria-hidden`. Do not put the interactive controls only on the canvas.
 
 ## Quality tiers
 

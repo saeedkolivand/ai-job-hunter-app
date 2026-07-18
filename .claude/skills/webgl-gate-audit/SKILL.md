@@ -44,14 +44,17 @@ LOW tier: CPU-throttle 4x (DevTools) and re-measure.
 Pick a t inside a page (not a boundary). Approach it from below (scroll to t-0.03, then t) and from
 above (t+0.03, then t); screenshot both after settle. The frames MUST match -- same camera pose,
 same stroke draw-on state, same post state. Test one **play** region (a normal page, `p<0.72`) and
-one **rip** region (the Fried crumple page, `p>0.72`).
+one **exit** region (`p>0.72`) -- a rip page (e.g. Fried crumple) AND a non-rip exit (page 0 cover
+hinge-open, page 8 signature + stamp + back-cover close), since those exits are not rips.
 
-## Rip-reversal determinism
+## Exit-reversal determinism
 
-Scroll **into** a page's rip (`t = i/9 + 0.85/9`, so `p>0.72`) then back **below** 0.72
+Scroll **into** a page's exit (`t = i/9 + 0.85/9`, so `p>0.72`) then back **below** 0.72
 (`t = i/9 + 0.4/9`); after settle the page must **fully reassemble** -- no torn/missing geometry,
-no leftover crumple, and the Desk pile `.count` must not double-count the page. Reversibility is the
-core contract (the rig is pure `f(t)`); a page that stays torn on scroll-back is a HIGH failure.
+no leftover crumple/fold, and the Desk pile `.count` must not double-count the page. Run it on a
+rip page AND on page 0 (hinge must re-close) and page 8 (signature/stamp must clear). Reversibility
+is the core contract (the rig is pure `f(t)`); a page that stays exited on scroll-back is a HIGH
+failure.
 
 ## Draw-call probe
 
