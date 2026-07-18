@@ -207,10 +207,9 @@ _Avoid_: scattered feature detection (the decision lives in one gate)
 **TERMINAL VELOCITY**:
 The active landing concept ([ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)): a
 realistic CG **scroll-film** (~2:40) retelling `landing/index.html`'s story as one continuous
-vertical fall-then-rise, scrolled to watch. Replaces RIPBOOK. The name = the screen (terminal)
-
-- the fall (terminal velocity).
-  _Avoid_: RIPBOOK / notebook (retired), "the landing animation" (it is a directed film, one shot)
+vertical fall-then-rise, scrolled to watch. Replaces RIPBOOK. The name plays on two meanings:
+the screen (terminal) and the physics of the fall (terminal velocity).
+_Avoid_: RIPBOOK / notebook (retired), "the landing animation" (it is a directed film, one shot)
 
 **Scroll-film**:
 The form TERMINAL VELOCITY takes: a single continuous camera shot where **scroll is the
@@ -259,11 +258,12 @@ _Avoid_: "the water sim" (the bounded Gerstner water patch is separate and real-
 FLIP live (the crown is pre-baked)
 
 **Quality governor**:
-The runtime tiering system: pick a startup tier (detect-gpu), then a frame-time loop with
-**hysteresis** (downgrade under 45 fps, upgrade over 83 fps, cooldown between) turns knobs in a
-fixed order - pixel ratio, post samples, geometry density, effect toggles. Per-tier ladders live
-in the webgl-standards skill.
-_Avoid_: "auto quality" (the order and hysteresis are deliberate - a bare fps check flip-flops);
+The runtime tiering system (TERMINAL VELOCITY): detect a startup tier at load, then dynamically
+adjust at runtime via a frame-time loop with **hysteresis** - downgrade when performance drops
+below a threshold, upgrade when it recovers above a higher threshold, with a cooldown between
+changes. Turns knobs in a fixed priority order: pixel ratio, post samples, geometry density,
+effect toggles. Thresholds and per-tier ladders are locked in [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md).
+_Avoid_: "auto quality" (the order and hysteresis are deliberate, not a bare fps flip-flop);
 the RIPBOOK boil-tier scheme (retired)
 
 **Journey** (superseded - [ADR 0015](adr/0015-ripbook-notebook-landing.md), then [ADR 0016](adr/0016-terminal-velocity-scroll-film-landing.md)):

@@ -64,24 +64,22 @@ position; the cold-open letterbox carries the two legacy early-exit captions.
 **Diegetic copy parity.** Every joke and link from `landing/index.html` keeps a home, told
 diegetically (no UI copy): screencap gags -> the cold-open monitor + falling objects; the
 24-board swarm -> tower signage; the ATS robot -> the server floor behind tower glass; the
-LinkedIn feed -> an animated billboard facade; counters -> the elevator indicator (descent)
-
-- robot HUD (ascent); the "Are you sure?" dialog -> the robot lens HUD; testimonials /
-  features / the honest paragraph -> the **end-credits roll as the full footer** (all legacy
-  links, license line, store links, sponsor links, byline, foot-nav). Parity stays enforced
-  by a bidirectional diff against `landing/index.html`, and every one of those links also
-  exists as a real crawlable anchor in the Semantic layer.
+LinkedIn feed -> an animated billboard facade; counters -> the elevator indicator (descent) +
+robot HUD (ascent); the "Are you sure?" dialog -> the robot lens HUD; testimonials /
+features / the honest paragraph -> the **end-credits roll as the full footer** (all legacy
+links, license line, store links, sponsor links, byline, foot-nav). Parity stays enforced
+by a bidirectional diff against `landing/index.html`, and every one of those links also
+exists as a real crawlable anchor in the Semantic layer.
 
 **Interactive layer.** A film you can touch, never scrub-hijacking. The cursor is a physical
-**presence** (camera parallax, papers flutter from it, an underwater ripple wake; device tilt
-
-- touch on mobile). Every scene has at least one touchable system plus one hidden discovery
-  (live monitor, poke-to-flail, pluck-and-read a rejection sheet, tower-window vignettes,
-  splash droplet nudge, bioluminescent cursor in the deep, the fake-button HUD, plane
-  barrel-rolls, drag-ripples at dawn, the robot-nods SEND hover). The **SEND button at the
-  finale is the one real action** in the whole film - the product's thesis. Easter eggs are
-  preserved verbatim (konami "OFFER" flip, scroll-too-fast wind roar + protest, mute-the-guy,
-  console greeting).
+**presence** (camera parallax, papers flutter from it, an underwater ripple wake; device tilt +
+touch on mobile). Every scene has at least one touchable system plus one hidden discovery
+(live monitor, poke-to-flail, pluck-and-read a rejection sheet, tower-window vignettes,
+splash droplet nudge, bioluminescent cursor in the deep, the fake-button HUD, plane
+barrel-rolls, drag-ripples at dawn, the robot-nods SEND hover). The **SEND button at the
+finale is the one real action** in the whole film - the product's thesis. Easter eggs are
+preserved verbatim (konami "OFFER" flip, scroll-too-fast wind roar + protest, mute-the-guy,
+console greeting).
 
 **Sound arc.** Wind + city hum -> hard silence + sub bass at the splash/deep -> a single warm
 synth at the light -> strings building on the ascent -> morning birds at dawn. Scrubbing fast
@@ -138,9 +136,8 @@ agent fleet; the main session orchestrates only. The **production flip** PR (pag
 ## Milestones
 
 RIPBOOK kept its milestone map inline in the ADR; TERMINAL VELOCITY does the same. Six
-milestone PR chains, each closed by `project-steward` (docs/lessons sync + `graphify update .`
-
-- `codegraph sync`). Gate = one line of what must pass before the next milestone opens.
+milestone PR chains, each closed by `project-steward` (docs/lessons sync + `graphify update .` +
+`codegraph sync`). Gate = one line of what must pass before the next milestone opens.
 
 | M   | Scope                                                               | Gate                                                                                     |
 | --- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
