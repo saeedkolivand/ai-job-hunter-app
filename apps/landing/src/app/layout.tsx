@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
 
-import GLLoader from "./GLLoader";
-
 import "./globals.css";
 
 // Inline SVG data-URI favicon, transcribed verbatim from landing/index.html.
@@ -55,14 +53,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
-        {/* Capability-gated GL takeover. Mounts the WebGL Experience only when
-            the gate passes; otherwise renders nothing and legacy boots. Placed
-            first so its skip-link (when GL is mounted) is the first body
-            element and first Tab stop. */}
-        <GLLoader />
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
