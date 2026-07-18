@@ -26,8 +26,13 @@ export interface Waypoint {
 export const WAYPOINTS: Waypoint[] = [
   { t: 0 / 8, position: new THREE.Vector3(0, 0, 12), look: new THREE.Vector3(0, 0, 0) },
   { t: 1 / 8, position: new THREE.Vector3(0, -3, 10), look: new THREE.Vector3(1, -4, 0) },
-  { t: 2 / 8, position: new THREE.Vector3(2, -18, 9), look: new THREE.Vector3(2, -24, 0) },
-  { t: 3 / 8, position: new THREE.Vector3(1, -36, 7), look: new THREE.Vector3(0, -42, 0) },
+  // descent: tip forward off the slump lip and plunge the shaft. Steep pitch
+  // (~46deg entry -> ~55deg mid) + a 22-unit vertical drop reads as a fall; the
+  // look-target leads down the shaft toward the disc. Exit lands just above the
+  // black hole (P4's fried beat owns the crash-through). Both neighbours still
+  // frame: slump-mid look ~y=-13, fried-mid look ~y=-43.5.
+  { t: 2 / 8, position: new THREE.Vector3(1.6, -14, 8.8), look: new THREE.Vector3(1, -23, 0) },
+  { t: 3 / 8, position: new THREE.Vector3(0, -36, 5), look: new THREE.Vector3(0, -42.5, 0) },
   { t: 4 / 8, position: new THREE.Vector3(0, -40, 6), look: new THREE.Vector3(0, -44, 0) },
   { t: 5 / 8, position: new THREE.Vector3(0, 20, 14), look: new THREE.Vector3(0, 22, 0) },
   { t: 6 / 8, position: new THREE.Vector3(10, 19, 10), look: new THREE.Vector3(22, 19, 0) },
