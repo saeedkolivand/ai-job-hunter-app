@@ -31,6 +31,7 @@ import { useEffect, useMemo, useRef } from "react";
 import {
   Color,
   DoubleSide,
+  type Group,
   Mesh,
   MeshBasicMaterial,
   type Object3D,
@@ -87,6 +88,7 @@ function strokeColor(raw?: string): Color {
 interface Built {
   objects: Object3D[];
   dashItems: { mat: LineMaterial; len: number }[];
+  fillItems: { mat: MeshBasicMaterial }[];
   disposables: { dispose(): void }[];
 }
 
@@ -104,16 +106,18 @@ export default function InkStrokes({
   const mode = drawOn ? "draw" : "decor";
   const drawRef = useRef(drawOn);
   drawRef.current = drawOn;
+  const groupRef = useRef<Group | null>(null);
 
   const built = useMemo<Built>(() => {
     const objects: Object3D[] = [];
     const dashItems: { mat: LineMaterial; len: number }[] = [];
+    const fillItems: { mat: MeshBasicMaterial }[] = [];
     const disposables: { dispose(): void }[] = [];
 
     const doodle = DOODLES.find((d) => d.name === name);
     if (!doodle) {
       if (typeof console !== "undefined") console.warn("InkStrokes: unknown doodle " + name);
-      return { objects, dashItems, disposables };
+      return { objects, dashItems, fillItems, disposables };
     }
 
     const [vw, vh] = doodle.viewBox;
@@ -224,14 +228,23 @@ export default function InkStrokes({
         shp.lineTo(lx(xi), ly(yi));
       }
       const geo = new ShapeGeometry(shp);
-      const mat = new MeshBasicMaterial({ color: strokeColor(s.color), side: DoubleSide });
+      // Draw mode: fill chases the linework, so it starts transparent and the
+      // useFrame below ramps opacity with prog. Decor mode has no reveal
+      // window -- stays opaque, no per-frame cost.
+      const mat = new MeshBasicMaterial({
+        color: strokeColor(s.color),
+        side: DoubleSide,
+        transparent: mode === "draw",
+        opacity: mode === "draw" ? 0 : 1,
+      });
       const mesh = new Mesh(geo, mat);
       mesh.position.z = -0.01;
       objects.push(mesh);
       disposables.push(geo, mat);
+      if (mode === "draw") fillItems.push({ mat });
     }
 
-    return { objects, dashItems, disposables };
+    return { objects, dashItems, fillItems, disposables };
   }, [name, scale, mode]);
 
   useEffect(() => {
@@ -248,16 +261,30 @@ export default function InkStrokes({
   // the strokes.
   useFrame(() => {
     const d = drawRef.current;
-    if (!d || built.dashItems.length === 0) return;
+    if (!d || (built.dashItems.length === 0 && built.fillItems.length === 0)) return;
     const t = journeyStore.getState().t;
     const span = d.t1 - d.t0;
     const raw = span > 1e-6 ? (t - d.t0) / span : t >= d.t1 ? 1 : 0;
     const prog = raw < 0 ? 0 : raw > 1 ? 1 : raw;
     for (const it of built.dashItems) it.mat.dashOffset = it.len * (1 - prog);
+    // Fill chases the linework: opacity ramps over a lagged window so fills
+    // arrive after outlines are largely drawn (art brief section 2). Pure
+    // f(prog) -- scrub-safe both directions, zero allocation.
+    const fillOpacity = Math.min(1, Math.max(0, (prog - 0.35) / 0.3));
+    for (const it of built.fillItems) it.mat.opacity = fillOpacity;
+    // Draw-call cull: at prog 0 every stroke's dash gap already covers its whole
+    // line, so the doodle is 100% invisible yet each stroke still costs a draw
+    // call. Hiding the group there submits zero draws for a not-yet-drawn (or
+    // scrubbed-back-before-window) doodle -- the win in the co-mounted beat
+    // overlap, where a neighbour beat's doodles sit pre-window. Pure f(t) and
+    // scrub-safe: visibility is a function of t only, and it flips exactly at t0
+    // where the strokes (and fills) are already invisible, so nothing on screen
+    // changes -- only off-screen/hidden geometry stops being drawn.
+    if (groupRef.current) groupRef.current.visible = prog > 0;
   });
 
   return (
-    <group position={position} rotation={rotation} scale={scale}>
+    <group ref={groupRef} position={position} rotation={rotation} scale={scale}>
       {built.objects.map((o, i) => (
         <primitive key={i} object={o} dispose={null} />
       ))}

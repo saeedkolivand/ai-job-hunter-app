@@ -9,6 +9,7 @@
 
 import { preloadFont } from "troika-three-text";
 
+import { beat1 } from "@/content/beat1";
 import { beat2 } from "@/content/beat2";
 import { features } from "@/content/features";
 import { hero } from "@/content/hero";
@@ -70,11 +71,31 @@ export function charactersFor(...strings: string[]): string {
 // that render <Text> never drift apart -- scenes should build their
 // `characters` prop from this, not from ad hoc strings.
 export const FONT_TEXTS: Record<FontKey, string[]> = {
-  impact: [hero.h1a],
-  scrawl: [hero.scrollhint],
-  hand: [features.c2t, beat2.feed[0], hero.sub, hero.subBold],
+  impact: [hero.h1a, beat2.blackholeYell],
+  scrawl: [hero.scrollhint, beat1.sectionLabel, beat2.h2],
+  hand: [
+    features.c2t,
+    beat2.feed[0],
+    hero.sub,
+    hero.subBold,
+    beat1.thought,
+    beat1.counterA,
+    beat1.counterB,
+    beat1.counterC,
+    beat2.linkedinTitle,
+    "0123456789",
+  ],
   caveat: [hero.dontClick, hero.h1a, hero.h1b, hero.h1ul, hero.h1c],
-  mono: [hero.kicker.toUpperCase(), features.c1t, testimonials.stars],
+  mono: [
+    hero.kicker.toUpperCase(),
+    features.c1t,
+    testimonials.stars,
+    ...beat1.screencaps,
+    beat2.atsBold,
+    beat2.recruitersTitle,
+    beat2.chipsMore,
+    ...beat2.chips,
+  ],
   monoBold: [beat2.blackholeMain],
 };
 
