@@ -458,6 +458,29 @@ a.cta:focus-visible     { border-radius:12px 9px 13px 8px }
 }
 .skip-gl:focus{ top:8px }
 
+/* ---------- GL scroll pacing ----------
+   When the RIPBOOK scroll rig mounts, scroll.ts adds .gl-paced to #semantic-root
+   so the (now visibility:hidden, still layout-measured) semantic sections supply
+   generous, evenly paced scroll height for the 9-page t-space. Content is
+   untouched -- only each direct section's min-height grows. Removed on rig
+   teardown. */
+#semantic-root.gl-paced > *{min-height:140vh}
+
+/* When the GL experience has painted, the prerendered legacy fixed chrome
+   (progress bar, odometer, sound toggle, cookie, journey ink, toasts) must
+   yield: it lives OUTSIDE #semantic-root so visibility:hidden on that root does
+   not cover it, and its behaviour (LegacyBoot) stood down at the gate, so these
+   are dead controls over the canvas. GLLoader adds .gl-active on <html> when
+   ready and removes it on teardown/fallback. #loader is intentionally excluded
+   -- the GL first-frame lift owns it. */
+html.gl-active #progress-wrap,
+html.gl-active #odometer,
+html.gl-active #sound-toggle,
+html.gl-active #cookie,
+html.gl-active #journey,
+html.gl-active #slowdown,
+html.gl-active #jk{display:none}
+
 /* reduced motion */
 @media (prefers-reduced-motion: reduce){
   /* Kill decorative animations and transitions. The focus-visible outline is a
