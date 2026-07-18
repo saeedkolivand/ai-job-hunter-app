@@ -1,6 +1,13 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
+import {
+  Component,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 
 import { gateVerdict } from "@/engine/gate";
 import { initLegacy } from "@/fallback/legacy";
@@ -10,19 +17,37 @@ import { initLegacy } from "@/fallback/legacy";
 // layer stays visible and interactive until Experience reports onReady on its
 // first painted frame -- only then is it hidden + made inert (never display:none,
 // that would collapse scroll height). If the visitor activates the skip-link
-// below, GLLoader unmounts GL, reverts the semantic layer, and boots the legacy
-// engine itself -- LegacyBoot already stood down because the initial gate verdict
-// was GL, so this is the only place left that can still start it.
+// below, or the Experience throws during render, GLLoader unmounts GL, reverts
+// the semantic layer, and boots the legacy engine itself -- LegacyBoot already
+// stood down because the initial gate verdict was GL, so this is the only place
+// left that can still start it.
 //
-// RIPBOOK scaffold (PR0): the WebGL Experience is not built yet -- it arrives in
-// M1. RipbookExperience is a placeholder that renders nothing and never reports
-// ready, so on the GL-pass path the semantic layer simply stays visible. When the
-// real Experience lands (M1) it replaces this stub with a dynamic ssr:false import
-// that calls onReady on its first painted frame, and the boot restores the
-// font-preload warm-up + a render-error boundary around it.
-// TODO(ripbook M1): dynamic-import the real GL Experience here.
-function RipbookExperience(_props: { onReady: () => void }): ReactNode {
-  return null;
+// The real RIPBOOK Experience (M1) is dynamically imported with ssr:false: it
+// touches window/WebGL, so it must never run during the static prerender. It
+// calls onReady on its first painted frame.
+const RipbookExperience = dynamic(
+  () => import("@/experience/RipbookExperience"),
+  { ssr: false },
+);
+
+// Render-phase error boundary around the Experience. A WebGL/init throw here is
+// caught and turned into a legacy fallback instead of a blank page. (Event-time
+// failures like context loss are a later hardening pass; M1 covers the render
+// path.)
+class ExperienceBoundary extends Component<
+  { onError: () => void; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch() {
+    this.props.onError();
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
 }
 
 export default function GLLoader() {
@@ -42,13 +67,20 @@ export default function GLLoader() {
   // semantic layer never gets stuck hidden.
   useEffect(() => {
     if (!ready) return;
+    // .gl-active hides the legacy fixed chrome (see globals.css) that lives
+    // outside #semantic-root; the root itself is hidden + inert.
+    document.documentElement.classList.add("gl-active");
     const root = document.getElementById("semantic-root");
-    if (!root) return;
-    root.style.visibility = "hidden";
-    root.setAttribute("inert", "");
+    if (root) {
+      root.style.visibility = "hidden";
+      root.setAttribute("inert", "");
+    }
     return () => {
-      root.style.visibility = "";
-      root.removeAttribute("inert");
+      document.documentElement.classList.remove("gl-active");
+      if (root) {
+        root.style.visibility = "";
+        root.removeAttribute("inert");
+      }
     };
   }, [ready]);
 
@@ -76,7 +108,9 @@ export default function GLLoader() {
       >
         view accessible version
       </a>
-      <RipbookExperience onReady={() => setReady(true)} />
+      <ExperienceBoundary onError={fallBackToLegacy}>
+        <RipbookExperience onReady={() => setReady(true)} />
+      </ExperienceBoundary>
     </>
   );
 }
