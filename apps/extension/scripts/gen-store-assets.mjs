@@ -67,7 +67,8 @@ const GRAIN_CSS = `
 // viewBox 0 0 50 44: shaft curves from upper-right (46,10) down to the tip
 // (8,32); two short strokes form the arrowhead at the tip.
 // Used ONLY by the marquee accent (a decorative flourish, not part of the
-// 5-screenshot set — those use frameArrowSvg(), anchored to measured buttons).
+// 5-screenshot set — those use buildShotArrow(), computed per shot from the
+// measured caption bbox and target button).
 function redArrow({ rotate = 0, flip = false, width = 150 } = {}) {
   const sx = flip ? -1 : 1;
   return `<svg class="arrow" viewBox="0 0 50 44" style="width:${width}px;transform:rotate(${rotate}deg) scaleX(${sx});">
@@ -76,61 +77,181 @@ function redArrow({ rotate = 0, flip = false, width = 150 } = {}) {
   </svg>`;
 }
 
-// Hand-drawn red pointer arrow for the 5 store screenshots, built directly in
-// FRAME coordinates as a full-frame SVG overlay. Tail and tip are absolute
-// (x,y) points in the 1280x800 stage; the path is a single quadratic curve
-// from tail→tip with a clear two-barb arrowhead at the tip.
+// Hand-drawn red pointer arrow for the 5 store screenshots — computed PER SHOT
+// from the actually-rendered geometry, as a full-frame SVG overlay in 1280x800
+// frame coordinates. Nothing about the arrow is shared between shots:
 //
-// Same chunky stroke / curve STYLE in all shots — in fact the SAME shape,
-// translated vertically only. The tip always lands just OUTSIDE the card's LEFT
-// edge (constant x across shots), level with the target button's vertical centre
-// (mapped from the capture-time fy/fh fractions). It never crosses the card
-// face — the head points AT the card from outside, regardless of which button
-// (Retry / Save & pair / Import this job / Fill this form / Help me answer…)
-// each shot highlights.
+//   tail  — anchored to the caption: the composite page is rendered first
+//           WITHOUT the arrow, the caption element's bbox is measured live,
+//           and the tail starts just off its nearest edge (below the last
+//           line, or trailing the right edge — whichever is closer to the
+//           target without degenerating into a stub or a near-vertical drop).
+//   tip   — a small standoff (TIP_GAP) outside the card's LEFT edge, level
+//           with the measured target button's centre (capture-time fy/fh
+//           fractions, rotated with the card). It never crosses the card face.
+//   curve — one quadratic whose control point derives from the tail→tip
+//           vector: it bows AWAY from the caption side, curvature scales with
+//           distance, and it flips naturally when the target sits above vs
+//           below the caption. A deterministic solver grows the bow until the
+//           whole stroke clears the caption bbox by ARROW.captionPad (asserted
+//           — the stroke must never overlap caption glyphs).
+//   look  — seeded per-shot jitter (tail spot, bow, wobble, stroke width,
+//           barb length/spread) so each arrow reads hand-drawn and no two are
+//           identical. Brand look preserved: single red stroke, round caps,
+//           two-barb arrowhead rotated to the quadratic's ANALYTIC tangent at
+//           the tip (tip − control) — never a hardcoded head angle.
 //
-// Rendered as the LAST element in the body (after the card) with the highest
-// z-index, so the head is never occluded by the popup image.
+// Rendered as the LAST element in the stage with the highest z-index, so the
+// head is never occluded by the popup image.
 const ARROW = {
-  stroke: 5.5, // chunky hand-drawn weight
-  barb: 26, // arrowhead barb length in frame px
+  strokeBase: 5, // hand-drawn weight in frame px (+ seeded jitter)
+  barbBase: 26, // arrowhead barb length in frame px (± seeded jitter)
+  tailMargin: 30, // gap between the caption bbox edge and the tail start
+  captionPad: 12, // asserted stroke clearance around the caption bbox
+  shadowPad: 4, // drop-shadow spill included in the clearance check
 };
 
-// Build a full-frame SVG overlay with a curved arrow from `tail` to `tip`.
-// The control point bows the shaft so it reads as a relaxed hand-drawn sweep
-// (perpendicular offset from the tail→tip midpoint). The arrowhead is two
-// barbs rotated to the incoming direction at the tip.
-function frameArrowSvg(tail, tip, frame) {
+// Deterministic per-shot PRNG (FNV-1a seed + mulberry32): same file name in,
+// same arrow out — the pipeline stays reproducible, but every shot gets its
+// own hand-drawn character.
+function seededRng(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  let s = h >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// True if any sampled stroke point, inflated by `inflate` (half stroke width +
+// shadow spill), lands inside the caption bbox padded by ARROW.captionPad —
+// i.e. the arrow would crowd the caption glyphs.
+function arrowCrowdsCaption(points, inflate, cap) {
+  const pad = ARROW.captionPad;
+  const x0 = cap.x - pad;
+  const y0 = cap.y - pad;
+  const x1 = cap.x + cap.w + pad;
+  const y1 = cap.y + cap.h + pad;
+  return points.some(
+    (p) => p.x + inflate > x0 && p.x - inflate < x1 && p.y + inflate > y0 && p.y - inflate < y1
+  );
+}
+
+// Build the full-frame arrow SVG for one shot from measured geometry: `tip`
+// (frame px, from shotCardGeometry) and `cap` (the caption bbox in frame px,
+// measured in the live composite page). Returns the SVG string plus the
+// resolved geometry for logging. Throws if no curve can clear the caption.
+function buildShotArrow(shot, tip, cap) {
+  const rng = seededRng(shot.file);
+  const stroke = ARROW.strokeBase + rng() * 1.4;
+  const inflate = stroke / 2 + ARROW.shadowPad;
+
+  // Tail candidates hang just off the caption bbox: below its last line, or
+  // trailing its right edge. Pick whichever is closer to the tip, skipping
+  // candidates that would degenerate (a stub-length shaft, or a near-vertical
+  // drop whose head could not read as pointing AT the card).
+  const below = {
+    mode: 'below',
+    x: cap.x + cap.w * (0.5 + rng() * 0.2),
+    y: cap.y + cap.h + ARROW.tailMargin,
+  };
+  const trailing = {
+    mode: 'right',
+    x: cap.x + cap.w + ARROW.tailMargin,
+    y: cap.y + cap.h * (0.4 + rng() * 0.25),
+  };
+  const dist = (p) => Math.hypot(tip.x - p.x, tip.y - p.y);
+  const usable = [below, trailing].filter((p) => dist(p) >= 140 && Math.abs(tip.x - p.x) >= 120);
+  const pool = usable.length > 0 ? usable : [below];
+  const tail = pool.reduce((a, b) => (dist(a) <= dist(b) ? a : b));
+
+  // Quadratic control point from the tail→tip vector: a perpendicular offset
+  // at the midpoint, bowed AWAY from the caption (the normal side pointing
+  // away from the caption centre), curvature scaled by shaft length. The flip
+  // when the target sits above vs below the caption falls out of the
+  // away-side selection.
   const dx = tip.x - tail.x;
   const dy = tip.y - tail.y;
   const len = Math.hypot(dx, dy) || 1;
-  // Unit direction tail→tip and its left-hand normal.
-  const ux = dx / len;
-  const uy = dy / len;
-  const nx = -uy;
-  const ny = ux;
-  // Bow the curve "upward" (toward the caption) by ~14% of its length.
+  const nx = -dy / len;
+  const ny = dx / len;
   const mx = (tail.x + tip.x) / 2;
   const my = (tail.y + tip.y) / 2;
-  const bow = -0.14 * len;
-  const cx = mx + nx * bow;
-  const cy = my + ny * bow;
-  // Arrowhead: two barbs swept back from the tip along the incoming direction,
-  // splayed ±28° so the head reads clearly.
-  const ang = Math.atan2(tip.y - cy, tip.x - cx); // incoming direction at tip
-  const spread = (28 * Math.PI) / 180;
-  const b = ARROW.barb;
-  const b1x = tip.x - b * Math.cos(ang - spread);
-  const b1y = tip.y - b * Math.sin(ang - spread);
-  const b2x = tip.x - b * Math.cos(ang + spread);
-  const b2y = tip.y - b * Math.sin(ang + spread);
+  const capCx = cap.x + cap.w / 2;
+  const capCy = cap.y + cap.h / 2;
+  const away =
+    Math.hypot(mx + nx - capCx, my + ny - capCy) >= Math.hypot(mx - nx - capCx, my - ny - capCy)
+      ? 1
+      : -1;
+  let bow = len * (0.12 + rng() * 0.08);
+
+  // Hand wobble: a smooth seeded waver along the chord normal, zero at both
+  // endpoints so the tail anchor and the tip stay exact.
+  const wobbleAmp = 1.4 + rng() * 1.2;
+  const wobbleFreq = 1.5 + rng() * 1.5;
+  const wobblePhase = rng() * Math.PI * 2;
+  const spread = ((26 + rng() * 6) * Math.PI) / 180;
+  const barb = ARROW.barbBase - 3 + rng() * 6;
+
+  // Deterministic clearance solver: grow the bow away from the caption until
+  // every sampled stroke point — shaft AND arrowhead barbs — clears the
+  // caption bbox by ARROW.captionPad. The control point is clamped left of the
+  // card edge so the shaft never bulges over the card face.
+  const N = 32;
+  let geom = null;
+  for (let iter = 0; iter < 12 && !geom; iter++) {
+    const cx = Math.min(mx + away * nx * bow, CARD_LEFT_EDGE - 24);
+    const cy = my + away * ny * bow;
+    const shaft = [];
+    for (let i = 0; i <= N; i++) {
+      const t = i / N;
+      const u = 1 - t;
+      const w =
+        Math.sin(Math.PI * t) * wobbleAmp * Math.sin(wobbleFreq * 2 * Math.PI * t + wobblePhase);
+      shaft.push({
+        x: u * u * tail.x + 2 * u * t * cx + t * t * tip.x + nx * w,
+        y: u * u * tail.y + 2 * u * t * cy + t * t * tip.y + ny * w,
+      });
+    }
+    // Arrowhead: two barbs swept back from the tip along the quadratic's
+    // analytic tangent at t=1 (tip − control).
+    const ang = Math.atan2(tip.y - cy, tip.x - cx);
+    const b1 = {
+      x: tip.x - barb * Math.cos(ang - spread),
+      y: tip.y - barb * Math.sin(ang - spread),
+    };
+    const b2 = {
+      x: tip.x - barb * Math.cos(ang + spread),
+      y: tip.y - barb * Math.sin(ang + spread),
+    };
+    if (arrowCrowdsCaption([...shaft, b1, b2], inflate, cap)) {
+      bow *= 1.35;
+    } else {
+      geom = { shaft, b1, b2, cx, cy };
+    }
+  }
+  if (!geom) {
+    throw new Error(
+      `${shot.file}: could not route the arrow clear of the caption ` +
+        `(tip ${tip.x.toFixed(0)},${tip.y.toFixed(0)} — caption bbox too close to the target)`
+    );
+  }
+
   const f = (n) => n.toFixed(1);
-  return `<svg class="arrow-overlay" viewBox="0 0 ${frame.w} ${frame.h}" width="${frame.w}" height="${frame.h}">
-      <path d="M${f(tail.x)} ${f(tail.y)} Q${f(cx)} ${f(cy)} ${f(tip.x)} ${f(tip.y)}"
-        fill="none" stroke="${RED}" stroke-width="${ARROW.stroke}" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M${f(b1x)} ${f(b1y)} L${f(tip.x)} ${f(tip.y)} L${f(b2x)} ${f(b2y)}"
-        fill="none" stroke="${RED}" stroke-width="${ARROW.stroke}" stroke-linecap="round" stroke-linejoin="round"/>
+  const d = geom.shaft.map((p, i) => `${i === 0 ? 'M' : 'L'}${f(p.x)} ${f(p.y)}`).join(' ');
+  const svg = `<svg class="arrow-overlay" viewBox="0 0 ${FRAME_W} ${FRAME_H}" width="${FRAME_W}" height="${FRAME_H}">
+      <path d="${d}"
+        fill="none" stroke="${RED}" stroke-width="${f(stroke)}" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M${f(geom.b1.x)} ${f(geom.b1.y)} L${f(tip.x)} ${f(tip.y)} L${f(geom.b2.x)} ${f(geom.b2.y)}"
+        fill="none" stroke="${RED}" stroke-width="${f(stroke)}" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>`;
+  return { svg, tail, bow, control: { x: geom.cx, y: geom.cy }, stroke };
 }
 
 // Scrawled red underline — the landing's hero .ul draw path.
@@ -360,18 +481,18 @@ async function capturePopups(browser) {
 // and a chunky hand-drawn arrow whose tip lands just OUTSIDE the card's LEFT
 // edge, level with that state's primary control (Retry / Save & pair / Import
 // this job / Fill this form / Help me answer…). The tip never crosses the card
-// face: it targets the constant card LEFT EDGE x, and only the button's
-// vertical centre (capture-time fy/fh) moves it up/down — so the arrow is one
-// identical shape translated vertically.
+// face: it targets the card LEFT EDGE x, at the button's vertical centre
+// (capture-time fy/fh fractions).
 //
 // The card is `right:120px` × 560px wide (2px border) on a 1280px stage, so its
 // rendered OUTER width is 564 and its visible LEFT edge sits at x = 596
 // (FRAME_W − 120 − 564); it is vertically centred (or scrolled via cardAnchorY
-// for the tall answers shot). The arrow is a full-frame SVG drawn LAST (highest
-// z-index) so the tip is never occluded by the popup image.
+// for the tall answers shot). The arrow is a full-frame SVG injected LAST
+// (highest z-index) so the tip is never occluded by the popup image.
 //
-// The tail is a fixed up-left offset from the tip (TAIL_DX/TAIL_DY), so it too
-// translates vertically with the tip and the whole arrow keeps one shape.
+// Compositing is two-phase within one rendered page: render everything except
+// the arrow, measure the caption's live bbox, then buildShotArrow() computes a
+// per-shot curve from that bbox + the tip and injects it before the screenshot.
 const FRAME_W = 1280;
 const FRAME_H = 800;
 const CARD_W = 560; // card image render width in frame px (matches .card img)
@@ -381,14 +502,10 @@ const CARD_RIGHT = 120; // .card right offset
 const CARD_BORDER = 2;
 const CARD_OUTER_W = CARD_W + 2 * CARD_BORDER; // 564
 const CARD_LEFT_EDGE = FRAME_W - CARD_RIGHT - CARD_OUTER_W; // 596, card's visible left edge
-const IMG_LEFT = CARD_LEFT_EDGE + CARD_BORDER; // 598, where the popup PNG actually sits
 // Arrow tip sits just OUTSIDE the card's left edge (never crosses the card
-// face); the tail is a fixed up-left offset from the tip. Because CARD_LEFT_EDGE
-// is constant across all shots (card width is fixed), the arrow is one identical
-// shape translated vertically only — y tracks each target button's centre.
+// face). The tail is NOT fixed: it anchors per shot to the measured caption
+// bbox at composite time — see buildShotArrow().
 const TIP_GAP = 12; // tip sits this many px left of the card edge
-const TAIL_DX = -210; // fixed up-left offset from tip (tunable)
-const TAIL_DY = -118;
 const SHOTS = [
   {
     file: '01-private.png',
@@ -396,8 +513,6 @@ const SHOTS = [
     state: 'offline', // → measured fractions for #btn-retry
     caption: 'private by default — it only talks to the app on your own computer',
     captionPos: 'left:90px; top:150px; width:430px; text-align:left;',
-    // Caption top (px) — drives the tail's vertical anchor near the copy.
-    captionTop: 150,
     cardRotate: -1.4,
   },
   {
@@ -406,7 +521,6 @@ const SHOTS = [
     state: 'pairing', // → measured fractions for #btn-save-token
     caption: 'pair once — paste the token from the desktop app',
     captionPos: 'left:90px; top:150px; width:430px; text-align:left;',
-    captionTop: 150,
     cardRotate: 1.2,
   },
   {
@@ -415,7 +529,6 @@ const SHOTS = [
     state: 'connected', // → measured fractions for #btn-import
     caption: "one click → the job's saved in your app, tagged New",
     captionPos: 'left:90px; top:150px; width:430px; text-align:left;',
-    captionTop: 150,
     cardRotate: -1.0,
   },
   {
@@ -425,7 +538,6 @@ const SHOTS = [
     caption:
       'opt-in autofill — your saved details, filled on your command. you review every field; it never submits.',
     captionPos: 'left:90px; top:140px; width:440px; text-align:left;',
-    captionTop: 140,
     cardRotate: 1.0,
   },
   {
@@ -435,7 +547,6 @@ const SHOTS = [
     caption:
       "stuck on 'why do you want to work here?' — it drafts an answer from your resume. copy it when you're happy.",
     captionPos: 'left:90px; top:140px; width:440px; text-align:left;',
-    captionTop: 140,
     cardRotate: -1.2,
     // The answers card is ~2x the 800px frame (open answer tools + draft), so
     // scroll it up to keep the question box, "Help me answer…" button and the
@@ -445,12 +556,11 @@ const SHOTS = [
   },
 ];
 
-// Compute the placed card rect in frame px and the arrow tip/tail for a shot.
+// Compute the placed card rect in frame px and the ARROW TIP for a shot.
 // `raw` is the capture result for this state: { dim:{width,height}, frac }.
-function shotArrowGeometry(shot, raw) {
+function shotCardGeometry(shot, raw) {
   // Card image rect in frame px. Width is fixed; height preserves the raw
-  // popup PNG aspect ratio (height:auto). The PNG sits at IMG_LEFT (inside the
-  // 2px card border).
+  // popup PNG aspect ratio (height:auto).
   //
   // Vertical placement: `cardAnchorY` is the fraction of the card height that
   // aligns to the frame's vertical centre. Default 0.5 centres the card (the
@@ -459,10 +569,8 @@ function shotArrowGeometry(shot, raw) {
   // letting the frame's overflow:hidden crop the top — the same crop-to-fit the
   // centred shots already rely on, just anchored on a chosen region.
   const anchor = shot.cardAnchorY ?? 0.5;
-  const imgW = CARD_W;
   const imgH = (CARD_W * raw.dim.height) / raw.dim.width;
   const imgTop = FRAME_H / 2 - anchor * imgH;
-  const imgLeft = IMG_LEFT;
   // Target the CARD's LEFT EDGE (constant across shots), level with the button's
   // vertical centre — NOT the button's left edge (fx), which is interior for the
   // centred Retry and full-width Save & pair buttons. Only fy/fh drive the tip
@@ -485,24 +593,22 @@ function shotArrowGeometry(shot, raw) {
   const rotatedEx = cxc + rx * cos - ry * sin;
   const rotatedEy = cyc + rx * sin + ry * cos;
   // Tip sits TIP_GAP px left of the (rotated) card edge — just outside the card
-  // face. tip.x is ~constant across shots (rotation jitter only); tip.y tracks
-  // each button → one identical arrow translated vertically.
+  // face, level with the target button. The tail is resolved later against the
+  // live-measured caption bbox (buildShotArrow).
   const tip = { x: rotatedEx - TIP_GAP, y: rotatedEy };
-  // Tail is a fixed up-left offset from the tip.
-  const tail = { x: tip.x + TAIL_DX, y: tip.y + TAIL_DY };
-  return { tip, tail, imgLeft, imgTop, imgW, imgH };
+  return { tip, imgTop };
 }
 
 function shotFragment(shot, raw) {
   const rawBuf = readFileSync(path.join(OUT_RAW, shot.raw));
   const popupUri = `data:image/png;base64,${rawBuf.toString('base64')}`;
-  const geometry = shotArrowGeometry(shot, raw);
-  const { tip, tail, imgTop } = geometry;
-  const arrowSvg = frameArrowSvg(tail, tip, { w: FRAME_W, h: FRAME_H });
-  // Default (no cardAnchorY): centre the card — shots 01–03 stay byte-identical.
-  // An explicit anchor pins the card's OUTER top to the computed imgTop (minus
-  // the 2px border), matching shotArrowGeometry's imgTop so the arrow still
-  // lands on the target button.
+  const geometry = shotCardGeometry(shot, raw);
+  const { imgTop } = geometry;
+  // NOTE: the body has NO arrow yet — it is measured, computed, and injected
+  // into the live page just before the screenshot (see compositeShots).
+  // Default (no cardAnchorY): centre the card. An explicit anchor pins the
+  // card's OUTER top to the computed imgTop (minus the 2px border), matching
+  // shotCardGeometry's imgTop so the arrow still lands on the target button.
   const cardTop = shot.cardAnchorY == null ? '50%' : `${(imgTop - CARD_BORDER).toFixed(2)}px`;
   const cardTransform =
     shot.cardAnchorY == null
@@ -519,19 +625,21 @@ function shotFragment(shot, raw) {
       font-family:var(--scrawl); font-size:30px; line-height:1.42; color:var(--ink);
       transform:rotate(-2deg);}
     .caption .hl{color:var(--red);}
-    /* Full-frame overlay drawn LAST with the highest z-index, so the chunky
+    /* Full-frame overlay injected LAST with the highest z-index, so the chunky
        arrow head sits ON TOP of the card edge and is never occluded. */
     .arrow-overlay{position:absolute; left:0; top:0; z-index:40; overflow:visible;
       pointer-events:none; filter:drop-shadow(2px 3px 0 rgba(28,24,18,.18));}`;
   const body = `
     <div class="grain"></div>
     <div class="caption">${shot.caption}</div>
-    <div class="card"><img src="${popupUri}" alt=""></div>
-    ${arrowSvg}`;
+    <div class="card"><img src="${popupUri}" alt=""></div>`;
   return { body, css, geometry };
 }
 
-async function renderSized(browser, bodyHtml, headExtra, css, target, outPath) {
+// `postSetup(page)` (optional) runs after fonts settle and before the
+// screenshot — the seam the shot compositor uses to measure the live page and
+// inject the per-shot arrow.
+async function renderSized(browser, bodyHtml, headExtra, css, target, outPath, postSetup) {
   // The layout is authored at FULL target dims (1280x800 etc.) for readability.
   // To get an EXACT target-pixel PNG at 2x crispness we render into a viewport
   // of HALF the target size with deviceScaleFactor:2, and scale the full-size
@@ -558,6 +666,7 @@ async function renderSized(browser, bodyHtml, headExtra, css, target, outPath) {
   await page.setViewportSize({ width: vw, height: vh });
   await page.setContent(html, { waitUntil: 'networkidle' });
   await page.evaluate(() => document.fonts.ready);
+  if (postSetup) await postSetup(page);
   const buf = await page.screenshot({
     path: outPath,
     clip: { x: 0, y: 0, width: vw, height: vh },
@@ -569,20 +678,48 @@ async function renderSized(browser, bodyHtml, headExtra, css, target, outPath) {
 
 async function compositeShots(browser, raw) {
   const dims = {};
-  console.log('\n=== ARROW ANCHORING (measured button fractions → frame tip) ===');
+  console.log('\n=== ARROW ANCHORING (per-shot dynamic geometry) ===');
   for (const shot of SHOTS) {
     const out = path.join(OUT_SHOTS, shot.file);
     const captured = raw[shot.state];
     const { body, css, geometry } = shotFragment(shot, captured);
     const { fx, fy, fw, fh } = captured.frac;
-    const { tip, tail } = geometry;
+    const { tip } = geometry;
     const targetSel = STATES.find((s) => s.name === shot.state).target;
-    console.log(
-      `     ${shot.file}  ${shot.state} → ${targetSel}\n` +
-        `        fractions  fx=${fx.toFixed(4)} fy=${fy.toFixed(4)} fw=${fw.toFixed(4)} fh=${fh.toFixed(4)}\n` +
-        `        frame tip  (${tip.x.toFixed(1)}, ${tip.y.toFixed(1)})   tail (${tail.x.toFixed(1)}, ${tail.y.toFixed(1)})`
+    // Two-phase composite in ONE rendered page: everything except the arrow is
+    // laid out, the caption's live bbox is measured, then the per-shot arrow
+    // is computed + injected before the screenshot. getBoundingClientRect
+    // reports viewport CSS px (the stage is scaled by 1/DSF with a top-left
+    // origin), so multiply back up to frame px.
+    const drawArrow = async (page) => {
+      const r = await page.evaluate(() => {
+        const box = document.querySelector('.caption').getBoundingClientRect();
+        return { x: box.x, y: box.y, w: box.width, h: box.height };
+      });
+      const cap = { x: r.x * DSF, y: r.y * DSF, w: r.w * DSF, h: r.h * DSF };
+      const arrow = buildShotArrow(shot, tip, cap);
+      await page.evaluate((svg) => {
+        document.getElementById('stage').insertAdjacentHTML('beforeend', svg);
+      }, arrow.svg);
+      console.log(
+        `     ${shot.file}  ${shot.state} → ${targetSel}\n` +
+          `        fractions  fx=${fx.toFixed(4)} fy=${fy.toFixed(4)} fw=${fw.toFixed(4)} fh=${fh.toFixed(4)}\n` +
+          `        caption bbox (${cap.x.toFixed(0)},${cap.y.toFixed(0)}) ${cap.w.toFixed(0)}x${cap.h.toFixed(0)}\n` +
+          `        tail[${arrow.tail.mode}] (${arrow.tail.x.toFixed(1)}, ${arrow.tail.y.toFixed(1)})  ` +
+          `ctrl (${arrow.control.x.toFixed(1)}, ${arrow.control.y.toFixed(1)})  ` +
+          `tip (${tip.x.toFixed(1)}, ${tip.y.toFixed(1)})  ` +
+          `bow ${arrow.bow.toFixed(1)}  stroke ${arrow.stroke.toFixed(1)}`
+      );
+    };
+    dims[shot.file] = await renderSized(
+      browser,
+      body,
+      '',
+      css,
+      { w: 1280, h: 800 },
+      out,
+      drawArrow
     );
-    dims[shot.file] = await renderSized(browser, body, '', css, { w: 1280, h: 800 }, out);
   }
   return dims;
 }

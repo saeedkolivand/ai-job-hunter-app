@@ -70,9 +70,11 @@ store.
 - Fonts (Google Fonts): Patrick Hand, Gloria Hallelujah, Anton, Space Mono.
 - Film-grain overlay: the landing's `feTurbulence` SVG data-URI at ~6% opacity,
   `mix-blend-mode: overlay`.
-- Hand-drawn red arrow: the landing's `.dc-arrow` path, recoloured to the brand
-  red and re-oriented per shot.
+- Hand-drawn red arrow: computed per shot at composite time — the tail anchors
+  just off the measured caption bbox, the tip lands just outside the card edge
+  level with the measured target button, and the curve (bow, wobble, stroke
+  width, arrowhead) is derived from that geometry with seeded per-shot jitter,
+  so no two arrows are identical and the stroke never touches the caption
+  (asserted with 12px clearance). The marquee accent still uses the landing's
+  `.dc-arrow` path, recoloured to the brand red.
 - Brand mark (promo art): the extension's real icon, `src/icons/icon-128.png`.
-</content>
-
-</invoke>
