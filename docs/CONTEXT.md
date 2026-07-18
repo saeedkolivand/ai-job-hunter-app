@@ -189,8 +189,9 @@ _Avoid_: premium tier, template category
 
 ## Domain - Landing experience
 
-See docs/adr/0014-landing-gl-takeover.md for the full contract and the webgl-standards skill
-for implementation rules; entries below are definitions only.
+See docs/adr/0014-landing-gl-takeover.md (amended by docs/adr/0015-ripbook-notebook-landing.md,
+the RIPBOOK notebook rebuild) for the full contract and the webgl-standards skill for
+implementation rules; entries below are definitions only.
 
 **Semantic layer**:
 The prerendered content HTML that is always in the DOM - what the visitor reads when the GL
@@ -202,15 +203,55 @@ The single capability check that decides whether the GL experience mounts over t
 layer. See the ADR for the exact conditions.
 _Avoid_: scattered feature detection (the decision lives in one gate)
 
-**Journey**:
-The scroll-scrubbed camera ride through the landing story - scroll position drives camera
-position.
-_Avoid_: overloading Autopilot (the app's job-application run - a different concept)
+**Journey** (superseded by [ADR 0015](adr/0015-ripbook-notebook-landing.md)):
+Was the 8-Beat scroll-scrubbed camera ride. Retired in the RIPBOOK rebuild - the landing is now
+a 9-**Page** notebook you scroll through and **Rip**. Use Page / Rip / p-space instead.
+_Avoid_: reusing "Journey" for the new model; overloading Autopilot (the app's job-application run)
 
-**Beat**:
-One of the 8 places the Journey's camera visits (hero through finale - see the ADR for the
-list).
-_Avoid_: section / panel (those name DOM content; a Beat is a place in 3D space)
+**Beat** (superseded by [ADR 0015](adr/0015-ripbook-notebook-landing.md)):
+Was one of the 8 places the Journey's camera visited. Replaced by **Page**.
+_Avoid_: reusing "Beat" for a notebook page
+
+**Page**:
+One of the 9 notebook pages of the RIPBOOK landing (Cover, Slump, DescentA, DescentB, Fried,
+AreYouSure, Features, Testimonials, Godmode/back cover - see [ADR 0015](adr/0015-ripbook-notebook-landing.md)).
+The unit that replaces a Beat; scrolling plays a Page then runs its **Exit**.
+_Avoid_: Beat (retired), section / panel (those name the semantic-layer DOM, not the 3D page);
+"rippable page" as a synonym for Page (pages 0 and 8 don't rip)
+
+**Exit**:
+The animation that plays a Page out as you scroll past it (the trailing slice of the Page's
+scroll). A **Rip** is the usual Exit; page 0's Exit is the cover hinge-open and page 8's Exit is
+the pencil signature + stamp + back-cover close. Pure function of scroll, fully reversible.
+_Avoid_: assuming every Exit is a Rip (two pages exit without a rip)
+
+**Rip**:
+The usual kind of **Exit** - the scrubbed animation that tears / crumples / folds a Page out of
+the notebook (pages 1-7, each with its own style: corner tear, crumple, paper-plane fold, ...).
+Reversible; scroll back and the Page reassembles. The split point lives in webgl-standards.
+_Avoid_: treating Rip as every page's Exit (pages 0/8 hinge-open and sign/stamp instead);
+transition / animation generically
+
+**p-space**:
+Page-local progress `p` in `[0,1]` - the active Page's slice of the global scroll `t`, remapped so
+an early range **plays** the Page and the trailing range scrubs its **Exit**. The exact split is a
+webgl-standards constant. Distinct from the global `t`.
+_Avoid_: conflating p-space with global scroll t (t spans all 9 pages; p is within one)
+
+**Desk pile**:
+The persistent stack of already-exited Pages on the desk - the landing's progress indicator (with
+the odometer). Rendered as one instanced draw revealed by its `.count`.
+_Avoid_: "progress bar" (there is no bar; the pile of pages IS the indicator)
+
+**Foley**:
+The procedural paper sound effects synthesized in-app - rip, crumple, whoosh, scribble, stamp.
+Distinct from the Gibberish voice.
+_Avoid_: sound assets / audio files (Foley is synthesized, not sampled)
+
+**Gibberish voice**:
+The ported voice synth that mutters as the protagonist "speaks" - non-lexical, silenced by the
+"mute the guy" toggle.
+_Avoid_: narration / TTS (it renders no real words)
 
 **Passthrough files**:
 The `landing/` files copied verbatim into the exported site by the postbuild
@@ -218,8 +259,8 @@ merge-passthrough script - source that ships unchanged.
 _Avoid_: "static assets" (too generic; see the ADR for the merge mechanics)
 
 **Line boil**:
-The shader-driven wobble of the ink strokes on a stepped clock, giving the hand-drawn
-sketchbook look its core motion. See the webgl-standards skill for the implementation
-contract.
+The shader-driven wobble of the ink strokes on a stepped clock (the shared `uBoil` uniform),
+giving the hand-drawn notebook look its core motion while camera/physics stay smooth. See the
+webgl-standards skill for the implementation contract.
 _Avoid_: CPU geometry jitter (Line boil is a vertex-shader effect, not per-frame geometry
 re-jitter); jitter / noise generically
