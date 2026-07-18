@@ -1,5 +1,7 @@
-/* Minimal reset for the bare skeleton. The legacy landing port + self-hosted
-   font faces were removed with the abandoned RIPBOOK GL app. */
+/* TERMINAL VELOCITY M1 chrome + layer styling. No final art -- just the
+   scaffold: letterbox/timecode/depth chrome, the a11y overlay, the chapter
+   stepper, and readable fallback styling for the Semantic layer. */
+
 *,
 *::before,
 *::after {
@@ -14,12 +16,201 @@ body {
 
 body {
   min-height: 100vh;
+  background: #0a0c11;
+  color: #e7ecf3;
   font-family:
     system-ui,
     -apple-system,
     "Segoe UI",
     Roboto,
     sans-serif;
-  line-height: 1.5;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+a {
+  color: #6cc6ff;
+}
+
+/* ---- skip link: first in tab order, off-screen until focused ---- */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 10px 16px;
+  background: #0a0c11;
+  color: #e7ecf3;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+.skip-link:focus {
+  left: 8px;
+  top: 8px;
+}
+
+/* ---- motion toggle: visible in-page control ---- */
+.motion-toggle {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 55;
+  font: 12px/1.2 system-ui, sans-serif;
+  color: #cfd6e0;
+  background: rgba(8, 10, 16, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 9px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.motion-toggle:hover {
+  background: rgba(22, 26, 36, 0.82);
+}
+
+/* ---- a11y overlay: visually hidden but focusable + screen-reader operable.
+   Expands into view when any control inside it takes keyboard focus. ---- */
+.a11y-overlay {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.a11y-overlay:focus-within {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 12px 16px;
+  overflow: visible;
+  clip: auto;
+  clip-path: none;
+  white-space: normal;
+  background: #0a0c11;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  z-index: 90;
+}
+
+/* ---- chrome: letterbox + timecode + depth gauge (DOM overlay, not GL) ---- */
+.chrome {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+.letterbox {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: clamp(28px, 7vh, 64px);
+  background: #000;
+}
+.letterbox-top {
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.letterbox-bottom {
+  bottom: 0;
+}
+.act-title {
+  font: 12px/1 "Space Mono", ui-monospace, monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #cfd6e0;
+}
+.timecode {
+  position: fixed;
+  left: 12px;
+  bottom: calc(clamp(28px, 7vh, 64px) + 10px);
+  z-index: 11;
+  font: 12px/1.2 ui-monospace, monospace;
+  color: #cfd6e0;
+  background: rgba(8, 10, 16, 0.55);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.depth-gauge {
+  position: fixed;
+  right: 12px;
+  bottom: calc(clamp(28px, 7vh, 64px) + 10px);
+  z-index: 11;
+  font: 12px/1.2 ui-monospace, monospace;
+  color: #cfd6e0;
+  background: rgba(8, 10, 16, 0.55);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+/* ---- chapter stepper: fallback + slideshow navigation ---- */
+.chapter-stepper {
+  position: fixed;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: rgba(8, 10, 16, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  font: 13px/1.2 system-ui, sans-serif;
+  color: #cfd6e0;
+}
+.chapter-stepper button {
+  font: 13px/1.2 system-ui, sans-serif;
+  color: #e7ecf3;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 7px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.chapter-stepper button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---- Semantic layer: hidden when GL is live (visibility, never display) ---- */
+.semantic-wrapper.is-hidden {
+  visibility: hidden;
+}
+.semantic-layer {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 80px 22px 120px;
+}
+.semantic-layer h1 {
+  font-size: clamp(28px, 6vw, 48px);
+  line-height: 1.1;
+}
+.semantic-layer h2 {
+  font-size: clamp(20px, 4vw, 30px);
+  margin-top: 8px;
+}
+.semantic-layer section {
+  padding: 40px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.semantic-layer .act-label {
+  font: 12px/1.2 ui-monospace, monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8e9bad;
+}
+.semantic-layer ul {
+  padding-left: 18px;
+}
+.semantic-credits {
+  padding-top: 48px;
 }
