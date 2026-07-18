@@ -1,8 +1,17 @@
 ---
 status: accepted
+amended-by: 0015
 ---
 
 # Landing becomes a built GL experience with a semantic fallback
+
+> **Amended by [ADR 0015](0015-ripbook-notebook-landing.md) (2026-07-18).** 0015 replaces
+> this ADR's landing _experience_ - the 8-beat scroll-scrubbed camera Journey, the "beat copy
+> in a screen-space DOM overlay" ruling, and the deep-fried Pass B glitch set-piece - with the
+> RIPBOOK notebook (9 rippable pages, all copy as in-canvas SDF text, one always-on post chain).
+> Everything _structural_ here still binds: the Next 16 static export, the Semantic layer as the
+> SEO/a11y/scroll-height authority, the single Experience gate, the `landing/` passthrough merge,
+> and the staged flip procedure (delete `landing/index.html` only at the owner-approved flip).
 
 ## Context
 
