@@ -1,6 +1,6 @@
 ---
 name: gate-auditor
-description: Cross-cutting rendered-output auditor for the apps/landing WebGL phases - drives the dev server via Chrome DevTools MCP to exact t positions, screenshots, records performance traces, reads the console, and runs the per-phase gates, scrub-determinism, fried-ramp flash budget, and reduced-motion fallback checks. Never edits code. Returns a pass/fail table only; raw screenshots never leave its context.
+description: Cross-cutting rendered-output auditor for the apps/landing RIPBOOK WebGL milestones - drives the dev server via Chrome DevTools MCP to exact t positions across the 9 pages, screenshots, records performance traces, reads the console, and runs the page/rip scrub + rip-reversal determinism, draw-call, strobe-budget, copy-parity, and gate-fallback checks. Never edits code. Returns a pass/fail table only; raw screenshots never leave its context.
 tools: Read, Glob, Grep, Bash, mcp__chrome-devtools
 model: sonnet
 ---
@@ -21,19 +21,15 @@ rAF-counter FPS sampling; mark those checks self-reported.
 
 ## Checks
 
-- **Per-phase gates** -- the phase's acceptance criteria (P0 parity ... P7 flip). Read
-  `docs/adr/0014-landing-gl-takeover.md` for the phase the diff targets.
-- **Scrub determinism** -- the same t reached from below and from above renders the same frame
-  (camera pose, stroke draw-on, post state). Test one normal beat and the deep-fried beat.
-- **Fried-ramp flash budget** -- at most 3 full-frame flashes in any rolling second across the
-  deep-fried Pass B ramp (CA / dither / glitch inside the window is intentional; strobing is not).
-- **Console cleanliness** -- zero THREE/WebGL errors at any audited t.
-- **Reduced-motion + gate fallback** -- emulate `prefers-reduced-motion: reduce` (and a
-  <=900px / coarse-pointer client): the prerendered semantic HTML must render and GL must NOT mount.
-- **WebGL2-unavailable fallback** -- force context creation to fail via
-  `mcp__chrome-devtools__navigate_page`'s `initScript` (stub `HTMLCanvasElement.prototype.getContext`
-  to return null for `webgl2`) and reload: the semantic page must still render and no canvas may
-  mount.
+Run the checklist in `.claude/skills/webgl-gate-audit/SKILL.md` (do not duplicate it here). In one
+line: **milestone acceptance** for the M1..M6 milestone the diff targets (see
+`docs/adr/0015-ripbook-notebook-landing.md`); **play/exit scrub + exit-reversal determinism** (same
+t from below/above matches; a scrubbed exit fully reassembles; page 0/8 exits are non-rip);
+**draw-call probe** (`renderer.info.render.calls` under budget, distant pages disposed);
+**strobe budget** (<=3 full-frame flashes/rolling-second, content-agnostic); **copy parity** vs
+`landing/index.html` (from M3); **console cleanliness** (zero THREE/WebGL errors); and **gate
+fallback** (reduced-motion / <=900px / coarse-pointer / WebGL2-unavailable each render the semantic
+page with NO canvas).
 
 ## Report
 

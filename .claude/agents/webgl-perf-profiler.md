@@ -13,23 +13,18 @@ skills) for the tier table + ladder.
 ## Measure first (never guess)
 
 Record a Chrome DevTools (mcp__chrome-devtools) performance trace while scrolling the WORST
-t-segment (typically the deep-fried beat -- Pass B + bloom + full stroke load). Read the FPS track.
-For the LOW-tier check, CPU-throttle 4x and re-measure. Query `codegraph` before editing any module
-you profile. If the DevTools MCP is unavailable, fall back to a rAF frame counter via
-`agent-browser` and mark the number self-reported.
+t-segments: **the heaviest rip window** (the crumple-page rip + Desk pile + dust) and **the
+fullest-cast page**. Read the FPS track. For the LOW-tier check, CPU-throttle 4x and re-measure.
+Query `codegraph` before editing any module you profile. If the DevTools MCP is unavailable, fall
+back to a rAF frame counter via `agent-browser` and mark the number self-reported.
 
-## The degradation ladder (apply IN ORDER, stop at first pass)
+## The degradation ladder (pointer - do not duplicate)
 
-1. halve the stroke budget
-2. line-boil 10 -> 8 fps
-3. dpr 2 -> 1.25
-4. disable Pass B extras (scanline, then dither)
-5. grain off
-
-Re-measure after each rung; stop the moment target FPS is met -- do NOT apply lower rungs "for
+Apply the ladder defined in `.claude/skills/webgl-standards/SKILL.md` (Quality tiers) IN ORDER,
+re-measuring after each rung; stop the moment target FPS is met -- do NOT apply lower rungs "for
 safety". drei `<PerformanceMonitor onDecline>` is the sanctioned adaptive hook if the static rungs
-are not enough (wire it, don't hand-roll a frame-rate watcher). Uniform-driven toggles and
-`pass.enabled` are free; NEVER swap `blendFunction` at runtime (recompile).
+are not enough (wire it, don't hand-roll a frame-rate watcher). The post chain never toggles a pass
+(ADR 0015), so there is no "disable Pass B" rung; NEVER swap `blendFunction` at runtime (recompile).
 
 ## Report (bounded)
 
