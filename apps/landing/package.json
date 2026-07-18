@@ -7,7 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "postbuild": "node scripts/merge-passthrough.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@react-three/drei": "10.7.7",
@@ -29,6 +31,7 @@
     "@types/react-dom": "19.2.3",
     "@types/three": "0.185.1",
     "svg-path-properties": "2.0.1",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "vitest": "^4.1.10"
   }
 }
