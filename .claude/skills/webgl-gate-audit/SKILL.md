@@ -5,9 +5,13 @@ description: Procedures for auditing apps/landing TERMINAL VELOCITY WebGL phase 
 
 # apps/landing WebGL gate-audit procedures (TERMINAL VELOCITY)
 
-The accessibility tree is blind to a canvas: screenshots, console, and performance traces are the
-ONLY evidence. Never edit code from this skill - it audits rendered output only. Contract + numbers
-live in `.claude/skills/webgl-standards/SKILL.md`; experience decisions in
+The accessibility tree is blind to a canvas, so **GL/canvas output** is judged only via
+screenshots, console, and performance traces - never edit code from this skill, it audits rendered
+output only. **Semantic-layer gates are the exception**: copy parity, real crawlable anchors,
+no-GL fallback rendering, and canvas absence are DOM facts, not pixels, and REQUIRE DOM inspection
+(accessibility snapshot / `eval` querying the DOM / DevTools Elements panel), not screenshots -
+see Copy parity and Reduced-motion + no-GL fallback render below. Contract + numbers live in
+`.claude/skills/webgl-standards/SKILL.md`; experience decisions in
 `docs/adr/0016-terminal-velocity-scroll-film-landing.md`.
 
 ## Driving the page
@@ -15,22 +19,24 @@ live in `.claude/skills/webgl-standards/SKILL.md`; experience decisions in
 Dev server: `pnpm --filter @ajh/landing dev` (http://localhost:3000). The film is canvas-only once
 GL mounts; DOM/accessibility snapshots see nothing but the hidden Semantic layer + a11y overlay.
 
-Scroll = the **playhead** `t` in `[0,1]` over ~3,000 vh. Drive it to a target `T`:
+Scroll = the **playhead** `t` in `[0,1]` over ~3,000 svh (a frozen pixel scroll-track computed once
+at mount, never a live `vh` unit - see `webgl-standards`). Drive it to a target `T`:
 `window.scrollTo(0, (document.documentElement.scrollHeight - innerHeight) * T)`
-then wait ~2 s for Lenis + scrub damping to settle before screenshotting. The **9 scenes** and their
-playhead ranges (scene active when `t` is in range):
+then wait ~2 s for Lenis + scrub damping to settle before screenshotting. The **9 scenes** use
+**half-open playhead ranges** `[lo, hi)` so adjacent scenes never overlap at a shared boundary
+(scene 8 alone is closed at both ends, `[0.95, 1.00]`) - matching `webgl-standards`' scroll map:
 
-| #   | Scene          | `t` range   | sample mid-scene `T` |
-| --- | -------------- | ----------- | -------------------- |
-| 0   | Cold open      | 0.00 - 0.05 | 0.025                |
-| 1   | The canyon     | 0.05 - 0.30 | 0.175                |
-| 2   | The surface    | 0.30 - 0.38 | 0.340 (splash/VAT)   |
-| 3   | The deep       | 0.38 - 0.52 | 0.450                |
-| 4   | Blackout       | 0.52 - 0.58 | 0.550                |
-| 5   | The catch      | 0.58 - 0.64 | 0.610                |
-| 6   | The ascent     | 0.64 - 0.85 | 0.745 (ascent fold)  |
-| 7   | Dawn           | 0.85 - 0.95 | 0.900                |
-| 8   | Finale/credits | 0.95 - 1.00 | 0.975                |
+| #   | Scene          | `t` range    | sample mid-scene `T` |
+| --- | -------------- | ------------ | -------------------- |
+| 0   | Cold open      | [0.00, 0.05) | 0.025                |
+| 1   | The canyon     | [0.05, 0.30) | 0.175                |
+| 2   | The surface    | [0.30, 0.38) | 0.340 (splash/VAT)   |
+| 3   | The deep       | [0.38, 0.52) | 0.450                |
+| 4   | Blackout       | [0.52, 0.58) | 0.550                |
+| 5   | The catch      | [0.58, 0.64) | 0.610                |
+| 6   | The ascent     | [0.64, 0.85) | 0.745 (ascent fold)  |
+| 7   | Dawn           | [0.85, 0.95) | 0.900                |
+| 8   | Finale/credits | [0.95, 1.00] | 0.975                |
 
 Sample mid-scene, not on a range boundary (transition gutters). Confirm the playhead never
 hijacks: no wheel `preventDefault`, no snap, native scroll maps 1:1.
@@ -88,11 +94,21 @@ monotonically climbing count as you scroll means a scene's assets are never disp
 
 ## Bundle-size probe vs 10 MB
 
-Build (`pnpm --filter @ajh/landing build`) and measure the shipped `apps/landing/out` payload -
-total transferred (JS + KTX2 textures + DRACO/meshopt geometry + VAT textures + audio) must be
-**<= 10 MB**. Confirm textures are KTX2/ETC1S, geometry is DRACO or meshopt, and the DRACO/KTX2
-**decoders are self-hosted** (a CDN-hosted decoder or a single uncompressed hero/VAT texture is a
-blocker). Report the byte total and the largest three assets.
+**Accounting (deterministic, reproducible):** the 10 MB budget measures **content-encoded (gzip)
+transfer** - GitHub Pages serves gzip only, no brotli - of the **initial route plus every
+story-streamed asset**, summed from the DevTools **Network log of one full playthrough** (scroll
+the film start to finish once, network throttling off, cache disabled, so every story-position
+asset actually loads). Build first (`pnpm --filter @ajh/landing build`), serve the exported
+`apps/landing/out` directory with a gzip-enabled static file server (measuring against `next dev`
+undercounts - no production minify/compress), then record the trace against that build. Sum the
+transferred-size column (reflects gzip encoding, not the uncompressed `Content-Length`) across
+every request: JS/CSS chunks, KTX2 textures, DRACO/meshopt geometry, VAT textures, audio, and the
+self-hosted DRACO/KTX2 decoder WASM/JS. **Exclude `.map` source-map requests** (dev-only, never
+fetched by real users at this cost); **include** the self-hosted decoders (a CDN-hosted decoder is
+a separate blocker, see below, but if self-hosted it still counts against the budget). Total must
+be **<= 10 MB**. Confirm textures are KTX2/ETC1S, geometry is DRACO or meshopt, and the DRACO/KTX2
+**decoders are self-hosted** (a CDN-hosted decoder is a blocker). Report the byte total and the
+largest three assets.
 
 ## Luminance-delta / strobe check (blackout -> dawn at max scrub velocity)
 
@@ -115,11 +131,19 @@ crawlable anchor in the Semantic layer. Any missing, extra, or reworded line fai
   slideshow / prerendered Semantic HTML with identical copy and GL must NOT mount (no canvas). Also
   verify the **in-page motion toggle** produces the same stepped-slideshow fallback.
 - Verify each Experience-gate condition independently falls back to the Semantic page with NO
-  canvas: sub-threshold viewport (narrow), coarse pointer, and WebGL2 unavailable. Force WebGL2
-  failure via `mcp__chrome-devtools__navigate_page` `initScript` stubbing
-  `HTMLCanvasElement.prototype.getContext` to return null for `webgl2`, then reload (fallback: a CDP
-  `Page.addScriptToEvaluateOnNewDocument` call). Same bar for every condition: Semantic page
-  renders, no canvas mounts, all links + the CTA remain real anchors, scroll height intact.
+  canvas, via DOM inspection (accessibility snapshot / `eval` querying `document.querySelector`
+  for a `<canvas>`), not a screenshot:
+  - **Narrow viewport**: resize/emulate to CSS width **<= 900px** - the gate's authoritative
+    breakpoint (`webgl-standards`' Experience gate: width > 900px required to mount GL).
+  - **Coarse pointer**: DevTools device-toolbar touch-device emulation, or the CDP call
+    `Emulation.setEmulatedMedia({ features: [{ name: 'pointer', value: 'coarse' }] })`.
+  - **WebGL2 unavailable**: force context creation to fail via
+    `mcp__chrome-devtools__navigate_page`'s `initScript` param, stubbing
+    `HTMLCanvasElement.prototype.getContext` to return null for `webgl2`, then reload (fallback: a
+    CDP `Page.addScriptToEvaluateOnNewDocument` call).
+
+  Same bar for every condition above: Semantic page renders, no `<canvas>` element exists in the
+  DOM, all links + the CTA remain real anchors, scroll height intact.
 
 ## Report
 

@@ -83,36 +83,42 @@ with `npm view <pkg> version` / `... peerDependencies`; the lockfile must match 
 ## The playhead model
 
 Scroll = a single global **playhead** `t` in `[0,1]`, mapped 1:1 from native scroll over a total
-page length of **3,000 vh** (_tunable_, ADR envelope 2,000-4,000 vh; use `svh`/`dvh` or px
-triggers, never `vh`). One idea per scroll step. Everything scroll-driven is a **pure function of
-`t`**, scrub-safe both directions - no time-accumulated state driving scroll visuals.
+page length of **3,000 svh** (_tunable_, ADR envelope 2,000-4,000 svh) - a `100vh`-equivalent
+computed ONCE at mount from `window.visualViewport?.height ?? window.innerHeight` and **frozen**
+into a fixed pixel scroll-track height for the session (never a live `vh` unit, which reflows on
+mobile browser chrome show/hide and would move the playhead under the user's finger). One idea per
+scroll step. Everything scroll-driven is a **pure function of `t`**, scrub-safe both directions -
+no time-accumulated state driving scroll visuals.
 
-**Scrub smoothing:** damp the raw playhead with a scrub factor of **0.6** (_tunable_, ADR range
-0.5-1) plus Lenis lerp; **both smoothings are DISABLED under reduced motion / the in-page motion
-toggle** (the reduced-motion path is a chapter-stepped slideshow, not a damped scrub).
+**Scrub smoothing:** damp the raw playhead with a scrub factor of **0.6** (_skill-owned starting
+value, tunable in the 0.5-1 band - not an ADR figure) plus Lenis lerp; **both smoothings are
+DISABLED under reduced motion / the in-page motion toggle** (the reduced-motion path is a
+chapter-stepped slideshow, not a damped scrub).
 
 **Scrub-never-hijack:** no wheel `preventDefault`, no scroll snap, no scroll-ownership override.
 Native scroll maps straight to the playhead. Interactions perturb particles / play vignettes but
 **never move the playhead** (determinism is load-bearing).
 
-**The 9-scene scroll map** (playhead range copied from ADR 0016; scene `i` active when `t` is in
-its range):
+**The 9-scene scroll map** expands ADR 0016's approximate `%` ranges into **half-open intervals**
+`[lo, hi)` (skill-owned precision refinement) so adjacent scenes never overlap at a shared
+boundary; only the final scene is closed at both ends. Scene `i` is active when `t` is in
+`[lo_i, hi_i)` (`[0.95, 1.00]` for scene 8):
 
 | #   | Scene          | playhead `t` | Locked beat                                                                            |
 | --- | -------------- | ------------ | -------------------------------------------------------------------------------------- |
-| 0   | Cold open      | 0.00 - 0.05  | Live monitor (FINAL_v9, 2:47 AM), chair tips past balance, title card, floor dissolves |
-| 1   | The canyon     | 0.05 - 0.30  | Slow-mo backward fall down glowing rejection towers; paper storm thickens              |
-| 2   | The surface    | 0.30 - 0.38  | Hits the paper ocean; the one hard beat - letterbox flexes, sound cuts, splash crown   |
-| 3   | The deep       | 0.38 - 0.52  | Underwater, god-rays thin band by band; he goes limp - the saddest frame               |
-| 4   | Blackout       | 0.52 - 0.58  | Near-total dark, breathing only; a single amber point of light appears below           |
-| 5   | The catch      | 0.58 - 0.64  | A submersible drone catches him gently; the "Are you sure?" HUD gag                    |
-| 6   | The ascent     | 0.64 - 0.85  | Axis inverts; robot carries him up; paper folds into planes in formation; he sleeps    |
-| 7   | Dawn           | 0.85 - 0.95  | Surface break into flat calm at sunrise; first warm full-color frame                   |
-| 8   | Finale/credits | 0.95 - 1.00  | Robot surfaces holding one red SEND button (the CTA); credits roll; creature sting     |
+| 0   | Cold open      | [0.00, 0.05) | Live monitor (FINAL_v9, 2:47 AM), chair tips past balance, title card, floor dissolves |
+| 1   | The canyon     | [0.05, 0.30) | Slow-mo backward fall down glowing rejection towers; paper storm thickens              |
+| 2   | The surface    | [0.30, 0.38) | Hits the paper ocean; the one hard beat - letterbox flexes, sound cuts, splash crown   |
+| 3   | The deep       | [0.38, 0.52) | Underwater, god-rays thin band by band; he goes limp - the saddest frame               |
+| 4   | Blackout       | [0.52, 0.58) | Near-total dark, breathing only; a single amber point of light appears below           |
+| 5   | The catch      | [0.58, 0.64) | A submersible drone catches him gently; the "Are you sure?" HUD gag                    |
+| 6   | The ascent     | [0.64, 0.85) | Axis inverts; robot carries him up; paper folds into planes in formation; he sleeps    |
+| 7   | Dawn           | [0.85, 0.95) | Surface break into flat calm at sunrise; first warm full-color frame                   |
+| 8   | Finale/credits | [0.95, 1.00] | Robot surfaces holding one red SEND button (the CTA); credits roll; creature sting     |
 
-Per-scene local progress `sp` = `(t - lo) / (hi - lo)` clamped to `[0,1]`; scenes map their own
-sub-beats off `sp`, never off wall-clock. The axis bends back up at the ascent so the SAME water is
-descended (scene 3) then re-ascended (scene 6) - one world, reversible.
+Per-scene local progress `sp` = `(t - lo) / (hi - lo)` clamped to `[0,1)` (`[0,1]` for scene 8);
+scenes map their own sub-beats off `sp`, never off wall-clock. The axis bends back up at the ascent
+so the SAME water is descended (scene 3) then re-ascended (scene 6) - one world, reversible.
 
 ## Scroll rig contract
 
@@ -200,10 +206,18 @@ blocker); **draw calls < 100 desktop / < 50 mobile** (probe `renderer.info.rende
 **Startup tier:** `detect-gpu` picks the initial tier (tier 3 -> HIGH, 2 -> MID, 1 -> LOW; tier 0 /
 no WebGL2 -> Experience gate fails, semantic fallback, GL never mounts).
 
-**Runtime governor:** a frame-time loop with **hysteresis** - **downgrade below 45 fps**, **upgrade
-above 83 fps**, with a **cooldown (~3 s, _tunable_)** between switches so it never oscillates. Turn
-knobs **in this order** (ADR-locked): **pixel ratio -> post samples -> geometry density -> effect
-toggles.**
+**Runtime governor:** ADR 0016 records the envelope as its 120 Hz-class illustration (downgrade
+below 45 fps, upgrade above 83 fps); **this skill owns the mechanism**, and 83 fps is unreachable
+on a 60 Hz display - a session downgraded once could never recover under a literal fps trigger. The
+real trigger is **sustained frame time relative to the display's own refresh budget**
+(`1000 / screen.refreshRate` if available, else assume 60 Hz -> ~16.7 ms budget): **downgrade**
+when the rolling frame-time average exceeds **1.35x** the refresh budget (~22.5 ms on 60 Hz -
+matches the ADR's ~45 fps figure at 60 Hz), **upgrade** when it stays sustained below **0.8x** the
+budget (~13.4 ms on 60 Hz) for the sustain window, with a **cooldown (~3 s, _tunable_)** between
+switches so it never oscillates. On a 120 Hz display the same 1.35x/0.8x ratios land near the
+ADR's literal 45/83 fps figures - the ratio IS the mechanism, the fps numbers are one worked
+example, not the trigger itself. Turn knobs **in this order** (ADR-locked): **pixel ratio -> post
+samples -> geometry density -> effect toggles.**
 
 Per-tier ladder (starting values, all _tunable_; the governor moves BETWEEN rungs, it does not
 invent new ones):
@@ -215,7 +229,8 @@ invent new ones):
 | LOW          | 1.0     | SMAA | 900               | 16            | off | on    |
 | MOBILE floor | 1.0     | SMAA | 600               | 12            | off | light |
 
-Mobile below the narrow breakpoint may use the **fixed-camera variant** (ADR-allowed). drei
+Mobile below the narrow breakpoint (CSS width <= 900px) may use the **fixed-camera variant**
+(ADR-allowed). drei
 `PerformanceMonitor` `onDecline` is the sanctioned adaptive hook if the static rungs are not enough.
 Budget-Android testing from day one (fp16 banding + dynamic-PBR cost on Adreno/Mali is where
 realistic real-time dies) - verify on real low-end hardware, not just a desktop throttle.
@@ -225,6 +240,21 @@ realistic real-time dies) - verify on real low-end hardware, not just a desktop 
 - **Reduced motion / in-page motion toggle = a chapter-stepped slideshow** of stills with identical
   copy and a frozen camera. Ship the toggle IN-PAGE (OS `prefers-reduced-motion` misses many
   vestibular users); both scrub smoothings off in this mode.
+- **Runtime toggle transition (GL already mounted).** The Experience gate only blocks GL at
+  _mount_; the in-page motion toggle can flip while GL is live, so the transition is explicit and
+  reversible, implemented as one state machine (`gl-live` <-> `slideshow`) driven by the toggle -
+  never two independent gate evaluations that can race:
+  - **Toggling ON** (motion reduced) while GL is mounted: stop the rAF loop and Lenis so no further
+    frames render, **freeze the playhead** at its current `t`, remove the Lenis scroll intercept so
+    scroll returns to native, hide the canvas the same way as the Semantic layer
+    (`visibility:hidden` + `inert` - never `display:none`), and reveal the chapter-stepped
+    slideshow **at the chapter containing the frozen `t`** (map `t` to its scene via the scroll map
+    above, jump the slideshow to that chapter).
+  - **Toggling OFF** (motion restored): re-run the full Experience gate (WebGL2 + fine pointer +
+    width + NOT reduced-motion must all still pass); on pass, remount GL, resume the rAF loop +
+    Lenis, and seed the playhead at the **same chapter's** range-start `t` (the slideshow has no
+    sub-chapter position, so exact `t` is not preserved - only the chapter); on fail (e.g. the OS
+    preference re-asserts), stay on the slideshow.
 - **Photosensitivity (WCAG 2.3.1):** cap luminance delta **per unit of REAL time, not scroll
   distance** - fast scrubbing can compress a slow fade into >3 Hz flashing. Clamp playhead velocity
   through the blackout -> dawn transition (scenes 4-7) so the fade can never strobe.
@@ -244,10 +274,12 @@ realistic real-time dies) - verify on real low-end hardware, not just a desktop 
 
 ## Capability gate + Semantic layer + a11y overlay (structural, from ADR 0014 - still binds)
 
-- **Experience gate to GL:** WebGL2 AND fine pointer AND width above the narrow breakpoint AND NOT
-  reduced-motion (plus any pre-launch `flipped()` guard until the owner flip). Fail any -> the
-  prerendered Semantic HTML runs and GL never mounts. Reduced-motion / no-WebGL2 / coarse-pointer /
-  narrow visitors therefore never reach the film - the fallback holds them whole.
+- **Experience gate to GL:** WebGL2 AND fine pointer (`matchMedia('(pointer: fine)')`) AND CSS
+  width **> 900px** (the narrow breakpoint - width <= 900px fails the gate; this is the
+  authoritative figure `webgl-gate-audit`'s fallback procedure drives to) AND NOT reduced-motion
+  (plus any pre-launch `flipped()` guard until the owner flip). Fail any -> the prerendered
+  Semantic HTML runs and GL never mounts. Reduced-motion / no-WebGL2 / coarse-pointer / narrow
+  visitors therefore never reach the film - the fallback holds them whole.
 - **Semantic layer is the scroll-height authority.** When GL mounts it gets `visibility:hidden` +
   `inert` - **NEVER `display:none`** (that collapses scroll height and breaks the scroll rig). It
   keeps owning SEO + machine-readable copy + scroll height while hidden; it is NOT the interactive
