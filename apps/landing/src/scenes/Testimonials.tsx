@@ -26,6 +26,11 @@
 //                Space Mono line last and smallest at the axis bottom (crown
 //                rule: heading top, wall below, featured last/smallest).
 //
+// The whole scene culls (root visible=false) outside a tight t-window so it
+// submits ZERO draws while it is only a co-mounted neighbour of features /
+// finale (the backdrop plane + merged border batch have no per-element gate
+// of their own, unlike the individually-windowed cards/deco/text below).
+//
 // ponytail: staging is lean -- borders are a static merged batch (no per-stroke
 // draw-on) and card text is world-space GL, always drawn while mounted; the
 // stagger is carried by paper+text opacity, not a dashed stroke reveal. Ceiling:
@@ -252,9 +257,22 @@ function useCardBorders(): [number, number, number][] {
 }
 
 export default function Testimonials() {
+  const rootRef = useRef<Group | null>(null);
   const borders = useCardBorders();
+
+  // Cull the whole beat outside a tight t-window: it is a co-mounted neighbour
+  // of features (active 0.625-0.75) and finale (active 0.875-1.0), and must
+  // submit no draws there. Widened past the wall's own [0.75, 0.875] active
+  // range so the backdrop/borders are already up before the earliest card
+  // reveal (0.79) and linger past the last (featured line ends 0.875) --
+  // pure f(t), the flip is deterministic and scrub-safe.
+  useFrame(() => {
+    const t = journeyStore.getState().t;
+    if (rootRef.current) rootRef.current.visible = t >= 0.73 && t <= 0.895;
+  });
+
   return (
-    <group position={[26, 17, 0]}>
+    <group ref={rootRef} position={[26, 17, 0]} visible={false}>
       {/* the pinboard page the notes sit on */}
       <mesh position={[0, 0, -0.5]}>
         <planeGeometry args={[26, 15]} />
