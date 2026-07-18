@@ -11,7 +11,7 @@ import { useEffect, useRef } from "react";
 
 import { SCENES } from "@/engine/scene-resolver";
 import { playhead, useRig } from "@/engine/store";
-import { formatDepth, formatTimecode } from "@/engine/timecode";
+import { depthMeters, formatDepth, formatTimecode, timecodeSeconds } from "@/engine/timecode";
 
 export function Chrome() {
   const timecodeRef = useRef<HTMLSpanElement>(null);
@@ -21,19 +21,22 @@ export function Chrome() {
 
   useEffect(() => {
     let raf = 0;
-    let lastTimecode = "";
-    let lastDepth = "";
+    // Cache the last NUMBER, not the last formatted string: compare on the
+    // cheap arithmetic value every rAF, and only allocate + write the
+    // formatted string on the (much rarer) frame where it actually changed.
+    let lastSeconds = -1;
+    let lastDepthM = -1;
     const tick = (): void => {
       const t = playhead.t;
-      const tc = formatTimecode(t);
-      if (tc !== lastTimecode && timecodeRef.current) {
-        timecodeRef.current.textContent = tc;
-        lastTimecode = tc;
+      const seconds = timecodeSeconds(t);
+      if (seconds !== lastSeconds) {
+        lastSeconds = seconds;
+        if (timecodeRef.current) timecodeRef.current.textContent = formatTimecode(t);
       }
-      const depth = formatDepth(t);
-      if (depth !== lastDepth && depthRef.current) {
-        depthRef.current.textContent = depth;
-        lastDepth = depth;
+      const depthM = Math.round(depthMeters(t));
+      if (depthM !== lastDepthM) {
+        lastDepthM = depthM;
+        if (depthRef.current) depthRef.current.textContent = formatDepth(t);
       }
       raf = requestAnimationFrame(tick);
     };

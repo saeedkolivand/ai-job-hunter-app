@@ -97,6 +97,18 @@ a {
   border: 1px solid rgba(255, 255, 255, 0.25);
   z-index: 90;
 }
+/* "skip to end" is a <button> (it drives the playhead, not an anchor jump --
+   see A11yOverlay) sitting in a list of <a> links; strip the native button
+   chrome so it reads the same as its siblings once focus reveals the overlay. */
+.a11y-overlay button {
+  font: inherit;
+  color: #6cc6ff;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
 
 /* ---- chrome: letterbox + timecode + depth gauge (DOM overlay, not GL) ---- */
 .chrome {

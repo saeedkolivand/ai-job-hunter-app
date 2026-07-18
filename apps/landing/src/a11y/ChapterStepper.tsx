@@ -21,7 +21,10 @@ export function ChapterStepper({ initialScene = 0 }: { initialScene?: number }) 
     setI(clamped);
     const target = SCENES[clamped];
     if (target && typeof document !== "undefined") {
-      document.getElementById(target.id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      // "auto" (instant), not "smooth" -- this stepper IS the fallback +
+      // reduced-motion/slideshow path, so the users who reach it are often
+      // here specifically BECAUSE they asked for less motion.
+      document.getElementById(target.id)?.scrollIntoView({ behavior: "auto", block: "start" });
     }
   }
 

@@ -29,6 +29,11 @@ function hasWebGL2(): boolean {
   try {
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("webgl2");
+    // Release this temporary probe context immediately -- browsers cap
+    // concurrent WebGL contexts (commonly ~8-16), and leaving this one alive
+    // until GC would eat into that budget right before the real Canvas the
+    // gl-live rig creates a moment later.
+    ctx?.getExtension("WEBGL_lose_context")?.loseContext();
     return ctx != null;
   } catch {
     return false;

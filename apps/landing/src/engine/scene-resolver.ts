@@ -3,6 +3,8 @@
 // skill's half-open intervals [lo, hi) so adjacent scenes never overlap at a
 // shared boundary; only the final scene is closed at both ends.
 
+import { clamp01 } from "./clamp";
+
 export interface Scene {
   readonly index: number;
   readonly id: string; // hash anchor / deep-link target
@@ -22,10 +24,6 @@ export const SCENES: readonly Scene[] = [
   { index: 7, id: "dawn", act: "Dawn", lo: 0.85, hi: 0.95 },
   { index: 8, id: "finale", act: "Finale/credits", lo: 0.95, hi: 1.0 },
 ];
-
-function clamp01(t: number): number {
-  return t < 0 ? 0 : t > 1 ? 1 : t;
-}
 
 // Active scene index for a playhead value. Boundaries resolve to the higher
 // scene (half-open [lo, hi)); t === 1 lands in the closed final scene.

@@ -37,6 +37,10 @@ describe("resolveScene", () => {
     expect(resolveScene(2)).toBe(8);
   });
 
+  it("resolves a NaN playhead to scene 0 instead of matching nothing", () => {
+    expect(resolveScene(NaN)).toBe(0);
+  });
+
   it("resolves representative interior values", () => {
     expect(resolveScene(0.049)).toBe(0);
     expect(resolveScene(0.2)).toBe(1);
@@ -64,6 +68,11 @@ describe("sceneProgress", () => {
 
   it("returns 0 for an out-of-range scene index", () => {
     expect(sceneProgress(0.5, 99)).toBe(0);
+  });
+
+  it("resolves a NaN playhead to 0 instead of NaN", () => {
+    expect(sceneProgress(NaN, 1)).toBe(0);
+    expect(Number.isNaN(sceneProgress(NaN, 1))).toBe(false);
   });
 });
 

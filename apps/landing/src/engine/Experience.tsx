@@ -111,6 +111,15 @@ export function Experience({ semantic }: { semantic: ReactNode }) {
     });
   }, []);
 
+  // Drive the playhead to the credits scene rather than anchor-jumping to
+  // #credits -- that element lives inside the Semantic layer, which is
+  // inert while gl-live, so a hash jump would strand focus on an
+  // unfocusable node.
+  const handleSkipToEnd = useCallback(() => {
+    const finale = sceneById("finale");
+    if (finale) rigRef.current?.seek(finale.lo);
+  }, []);
+
   const stepped = mode === "fallback" || mode === "slideshow";
   const glLive = mode === "gl-live";
 
@@ -128,7 +137,7 @@ export function Experience({ semantic }: { semantic: ReactNode }) {
       {(glLive || mode === "slideshow") && (
         <MotionToggle reduced={motionReduced} onToggle={handleMotionToggle} />
       )}
-      {glLive && <A11yOverlay />}
+      {glLive && <A11yOverlay onSkipToEnd={handleSkipToEnd} />}
       {glLive && <GlCanvas tier={tier} />}
       {glLive && <Chrome />}
       {stepped && <ChapterStepper initialScene={chapterRef.current} />}

@@ -2,11 +2,8 @@
 // (meters below sea level). Both are pure functions of the playhead t so they
 // scrub deterministically both directions. NO DOM imports.
 
+import { clamp01 } from "./clamp";
 import { DURATION_SECONDS } from "./constants";
-
-function clamp01(t: number): number {
-  return t < 0 ? 0 : t > 1 ? 1 : t;
-}
 
 function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
@@ -18,9 +15,17 @@ function smoothstep(x: number): number {
   return c * c * (3 - 2 * c);
 }
 
+// The rounded integer second count formatTimecode formats, exposed
+// separately so a per-frame caller (Chrome's rAF loop) can cheaply compare
+// the NUMBER before allocating the formatted string, instead of
+// restringifying every frame just to throw most of the results away.
+export function timecodeSeconds(t: number): number {
+  return Math.round(clamp01(t) * DURATION_SECONDS);
+}
+
 // mm:ss elapsed, counting up to DURATION_SECONDS across the whole film.
 export function formatTimecode(t: number): string {
-  const total = Math.round(clamp01(t) * DURATION_SECONDS);
+  const total = timecodeSeconds(t);
   const mm = Math.floor(total / 60);
   const ss = total % 60;
   return `${pad2(mm)}:${pad2(ss)}`;

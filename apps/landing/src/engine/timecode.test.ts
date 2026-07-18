@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { depthMeters, formatDepth, formatTimecode } from "./timecode";
+import { depthMeters, formatDepth, formatTimecode, timecodeSeconds } from "./timecode";
 
 describe("formatTimecode", () => {
   it("counts 00:00 -> 02:40 across the playhead", () => {
@@ -15,6 +15,12 @@ describe("formatTimecode", () => {
     expect(formatTimecode(2)).toBe("02:40");
     // 6 seconds in -> 00:06 (single-digit seconds padded)
     expect(formatTimecode(6 / 160)).toBe("00:06");
+  });
+
+  it("never renders NaN for a non-finite playhead", () => {
+    expect(formatTimecode(NaN)).toBe("00:00");
+    expect(formatTimecode(NaN)).not.toContain("NaN");
+    expect(timecodeSeconds(NaN)).toBe(0);
   });
 });
 
@@ -48,5 +54,11 @@ describe("formatDepth", () => {
   it("renders whole meters with an m suffix", () => {
     expect(formatDepth(0)).toBe("0 m");
     expect(formatDepth(0.61)).toBe("1120 m");
+  });
+
+  it("never renders NaN for a non-finite playhead", () => {
+    expect(depthMeters(NaN)).toBe(0);
+    expect(formatDepth(NaN)).toBe("0 m");
+    expect(formatDepth(NaN)).not.toContain("NaN");
   });
 });

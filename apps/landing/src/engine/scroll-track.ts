@@ -14,6 +14,7 @@
 // them in when a caller needs a raw scrollY (e.g. a non-ScrollTrigger consumer)
 // rather than duplicating this math inline.
 
+import { clamp01 } from "./clamp";
 import { SCROLL_TRACK_SVH } from "./constants";
 
 // Frozen scroll-track height in px. 1 svh == 1% of the small-viewport height, so
@@ -30,17 +31,18 @@ export function scrollableRangePx(viewportHeightPx: number): number {
 }
 
 // Map an absolute scrollY to playhead t in [0, 1] against the frozen viewport.
+// Routed through the shared clamp01 -- a NaN scrollY (range > 0 but a bad DOM
+// read) would otherwise pass every ternary comparison as false and fall
+// through as NaN instead of clamping.
 export function scrollYToPlayhead(scrollY: number, viewportHeightPx: number): number {
   const range = scrollableRangePx(viewportHeightPx);
   if (range <= 0) return 0;
-  const t = scrollY / range;
-  return t < 0 ? 0 : t > 1 ? 1 : t;
+  return clamp01(scrollY / range);
 }
 
 // Inverse: the scrollY that lands the playhead exactly on t (used to reseed the
 // scroll position at a chapter start after a mode transition or a hash link).
 export function playheadToScrollY(t: number, viewportHeightPx: number): number {
   const range = scrollableRangePx(viewportHeightPx);
-  const c = t < 0 ? 0 : t > 1 ? 1 : t;
-  return c * range;
+  return clamp01(t) * range;
 }

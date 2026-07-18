@@ -18,6 +18,10 @@ describe("frozenTrackHeightPx", () => {
   it("rounds to an integer px", () => {
     expect(Number.isInteger(frozenTrackHeightPx(811))).toBe(true);
   });
+
+  it("is 0 for a zero viewport height", () => {
+    expect(frozenTrackHeightPx(0)).toBe(0);
+  });
 });
 
 describe("scrollableRangePx", () => {
@@ -45,6 +49,10 @@ describe("scrollYToPlayhead", () => {
   it("degenerates safely at a zero viewport", () => {
     expect(scrollYToPlayhead(500, 0)).toBe(0);
   });
+
+  it("resolves a NaN scrollY to 0 instead of NaN", () => {
+    expect(scrollYToPlayhead(NaN, 800)).toBe(0);
+  });
 });
 
 describe("playheadToScrollY <-> scrollYToPlayhead", () => {
@@ -58,5 +66,17 @@ describe("playheadToScrollY <-> scrollYToPlayhead", () => {
     const t = 0.4237;
     const y = playheadToScrollY(t, 800);
     expect(scrollYToPlayhead(y, 800)).toBeCloseTo(t, 6);
+  });
+
+  it("clamps a below-range playhead to scrollY 0", () => {
+    expect(playheadToScrollY(-5, 800)).toBe(0);
+  });
+
+  it("clamps an above-range playhead to the full scrollable range", () => {
+    expect(playheadToScrollY(5, 800)).toBe(scrollableRangePx(800));
+  });
+
+  it("resolves a NaN playhead to scrollY 0 instead of NaN", () => {
+    expect(playheadToScrollY(NaN, 800)).toBe(0);
   });
 });

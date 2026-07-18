@@ -9,7 +9,7 @@ import { MENU_LINKS } from "@/content/story";
 import { SCENES } from "@/engine/scene-resolver";
 import { useRig } from "@/engine/store";
 
-export function A11yOverlay() {
+export function A11yOverlay({ onSkipToEnd }: { onSkipToEnd: () => void }) {
   // scene is a discrete store field (updated only on scene change), so this
   // re-renders a handful of times per session -- never per frame.
   const scene = useRig((s) => s.scene);
@@ -37,7 +37,13 @@ export function A11yOverlay() {
             ),
           )}
           <li>
-            <a href="#credits">skip to end (credits)</a>
+            {/* #credits lives inside the Semantic layer, which stays
+                visibility:hidden + inert while gl-live -- an anchor jump
+                would land keyboard/SR focus on an invisible, unfocusable
+                node. Drive the playhead to the credits scene instead. */}
+            <button type="button" onClick={onSkipToEnd}>
+              skip to end (credits)
+            </button>
           </li>
         </ul>
       </nav>
