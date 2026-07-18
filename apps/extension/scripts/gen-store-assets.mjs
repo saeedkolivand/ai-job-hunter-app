@@ -6,11 +6,12 @@
 // crisp and the final PNG dimensions are exact.
 //
 // Pipeline:
-//   1. Capture the REAL built popup (dist/chrome/popup.html) in 3 states
-//      (offline / pairing / connected). popup.js is BLOCKED so it can't force
-//      the offline view after its 3s timeout; popup.css loads normally; each
-//      state is forced by direct DOM manipulation.
-//   2. Composite 3 doodle-annotated 1280x800 store screenshots.
+//   1. Capture the REAL built popup (dist/chrome/popup.html) in 5 states
+//      (offline / pairing / connected / fill / answers). popup.js is BLOCKED so
+//      it can't force the offline view after its 3s timeout; popup.css loads
+//      normally; each state is forced by direct DOM manipulation.
+//   2. Composite 5 doodle-annotated 1280x800 store screenshots (Chrome caps the
+//      listing at 5): private → pair → import → autofill → answer tools.
 //   3. Render a 440x280 promo tile + a 1400x560 marquee.
 //
 // Run: node apps/extension/scripts/gen-store-assets.mjs
@@ -66,7 +67,7 @@ const GRAIN_CSS = `
 // viewBox 0 0 50 44: shaft curves from upper-right (46,10) down to the tip
 // (8,32); two short strokes form the arrowhead at the tip.
 // Used ONLY by the marquee accent (a decorative flourish, not part of the
-// 3-screenshot set — those use frameArrowSvg(), anchored to measured buttons).
+// 5-screenshot set — those use frameArrowSvg(), anchored to measured buttons).
 function redArrow({ rotate = 0, flip = false, width = 150 } = {}) {
   const sx = flip ? -1 : 1;
   return `<svg class="arrow" viewBox="0 0 50 44" style="width:${width}px;transform:rotate(${rotate}deg) scaleX(${sx});">
@@ -75,17 +76,18 @@ function redArrow({ rotate = 0, flip = false, width = 150 } = {}) {
   </svg>`;
 }
 
-// Hand-drawn red pointer arrow for the 3 store screenshots, built directly in
+// Hand-drawn red pointer arrow for the 5 store screenshots, built directly in
 // FRAME coordinates as a full-frame SVG overlay. Tail and tip are absolute
 // (x,y) points in the 1280x800 stage; the path is a single quadratic curve
 // from tail→tip with a clear two-barb arrowhead at the tip.
 //
-// Same chunky stroke / curve STYLE in all three shots — in fact the SAME shape,
+// Same chunky stroke / curve STYLE in all shots — in fact the SAME shape,
 // translated vertically only. The tip always lands just OUTSIDE the card's LEFT
 // edge (constant x across shots), level with the target button's vertical centre
 // (mapped from the capture-time fy/fh fractions). It never crosses the card
 // face — the head points AT the card from outside, regardless of which button
-// (Retry / Save & pair / Import this job) each shot highlights.
+// (Retry / Save & pair / Import this job / Fill this form / Help me answer…)
+// each shot highlights.
 //
 // Rendered as the LAST element in the body (after the card) with the highest
 // z-index, so the head is never occluded by the popup image.
@@ -153,7 +155,12 @@ function pngSize(buf) {
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
 }
 
-// ---- STEP 1: capture the real popup in 3 states -----------------------------
+// ---- STEP 1: capture the real popup in 5 states -----------------------------
+// The last two (`fill`, `answers`) are the SAME connected #view-import as
+// `connected`, forced into a deeper sub-state (autofill feedback / open answer
+// tools with a drafted answer) via extra DOM manipulation — see the `sub`
+// discriminator handled in the capture evaluate below. Only plain, serialisable
+// data crosses into page.evaluate (functions don't serialise).
 const STATES = [
   {
     name: 'offline',
@@ -180,6 +187,43 @@ const STATES = [
     target: '#btn-import',
     importMsg: 'Imported "Senior Frontend Engineer". Open AI Job Hunter → Applications to view it.',
   },
+  {
+    name: 'fill',
+    pillText: '● Connected',
+    pillClass: 'pill pill--connected',
+    show: 'view-import',
+    // Arrow target: the "Fill this form" primary button in the Form group.
+    target: '#btn-fill',
+    // The REAL post-fill message string (popup.ts resolveFillResponse, the
+    // non-name-split branch): `Filled N fields — review them on the page.`
+    importMsg: 'Filled 4 fields — review them on the page.',
+  },
+  {
+    name: 'answers',
+    pillText: '● Connected',
+    pillClass: 'pill pill--connected',
+    show: 'view-import',
+    // Arrow target: the AI-draft "Help me answer…" button inside answer tools.
+    target: '#btn-assist',
+    // The REAL streamed-draft-complete message (popup.ts: 'Draft ready — …').
+    importMsg: 'Draft ready — review before using it.',
+    // Deeper connected sub-state, forced in the capture evaluate below:
+    //  - open the <details id="answer-tools"> disclosure,
+    //  - hide the separate PR-11 "rewrite" sub-panel to keep the shot focused
+    //    on drafting (both live in the same disclosure; not misrepresentation —
+    //    a curated feature shot, not a claim the rewrite panel is absent),
+    //  - fill the question box + reveal the drafted #assist-result.
+    // The past-answer "Suggest answers" list is left in its default (unclicked)
+    // empty state: the open card is already >2x the 800px frame, and the
+    // drafted answer — which this shot's caption is about — is the hero. The
+    // suggest feature still ships; it just isn't the subject of THIS shot.
+    sub: 'answers',
+    assistQuestion: 'Why do you want to work at Acme?',
+    // Short, generic-professional draft (2 sentences) — plausible, not a real
+    // user's data; drafted from the user's OWN résumé + page context, copy-only.
+    assistDraft:
+      "Acme's focus on shipping reliable tools that people depend on every day lines up with how I like to work. In my last role I owned the front-end of a similar product end to end, and I'd bring that same care for detail and users here.",
+  },
 ];
 
 async function capturePopups(browser) {
@@ -205,11 +249,12 @@ async function capturePopups(browser) {
         pill.textContent = ` ${s.pillText} `;
         pill.className = s.pillClass;
       }
-      // Hide every view, then reveal only the target one. NOTE: the popup CSS
-      // rule `.view{display:flex}` overrides the UA `[hidden]{display:none}`
-      // (author > UA), so toggling the hidden attribute alone won't hide a
-      // view here. Force it with an inline display style, which wins over the
-      // class rule.
+      // Hide every view, then reveal only the target one. The popup CSS has
+      // `[hidden]{display:none !important}` (popup.css), and `!important` beats
+      // the `.view{display:flex}` rule, so `setAttribute('hidden')` DOES hide a
+      // view and `removeAttribute('hidden')` restores the flex layout. The
+      // explicit inline `display` writes below are belt-and-suspenders (they
+      // keep the forced state robust even if that CSS rule is ever retuned).
       for (const sec of document.querySelectorAll('section.view')) {
         sec.setAttribute('hidden', '');
         sec.style.display = 'none';
@@ -225,6 +270,31 @@ async function capturePopups(browser) {
         if (msg) {
           msg.textContent = s.importMsg;
           msg.className = 'msg msg--ok';
+        }
+      }
+
+      // Answer-tools sub-state (state `answers`): open the disclosure, hide the
+      // separate PR-11 rewrite sub-panel, fill the question box, and reveal the
+      // drafted answer. All source strings are plain serialisable data carried
+      // on the state object.
+      if (s.sub === 'answers') {
+        const details = document.getElementById('answer-tools');
+        if (details) details.open = true;
+
+        // Hide the rewrite <div class="assist"> (owner of #rewrite-picker) so
+        // the shot focuses on drafting, not the deferred rewrite feature.
+        const rewritePicker = document.getElementById('rewrite-picker');
+        const rewriteBlock = rewritePicker && rewritePicker.closest('.assist');
+        if (rewriteBlock) rewriteBlock.setAttribute('hidden', '');
+
+        const question = document.getElementById('assist-question');
+        if (question && s.assistQuestion) question.value = s.assistQuestion;
+
+        if (s.assistDraft) {
+          const draft = document.getElementById('assist-draft');
+          if (draft) draft.textContent = s.assistDraft;
+          const result = document.getElementById('assist-result');
+          if (result) result.removeAttribute('hidden');
         }
       }
     }, state);
@@ -289,14 +359,16 @@ async function capturePopups(browser) {
 // Each shot: paper bg + grain, popup PNG as a tilted card, scrawled caption,
 // and a chunky hand-drawn arrow whose tip lands just OUTSIDE the card's LEFT
 // edge, level with that state's primary control (Retry / Save & pair / Import
-// this job). The tip never crosses the card face: it targets the constant card
-// LEFT EDGE x, and only the button's vertical centre (capture-time fy/fh) moves
-// it up/down — so the arrow is one identical shape translated vertically.
+// this job / Fill this form / Help me answer…). The tip never crosses the card
+// face: it targets the constant card LEFT EDGE x, and only the button's
+// vertical centre (capture-time fy/fh) moves it up/down — so the arrow is one
+// identical shape translated vertically.
 //
 // The card is `right:120px` × 560px wide (2px border) on a 1280px stage, so its
 // rendered OUTER width is 564 and its visible LEFT edge sits at x = 596
-// (FRAME_W − 120 − 564); it is vertically centred. The arrow is a full-frame SVG
-// drawn LAST (highest z-index) so the tip is never occluded by the popup image.
+// (FRAME_W − 120 − 564); it is vertically centred (or scrolled via cardAnchorY
+// for the tall answers shot). The arrow is a full-frame SVG drawn LAST (highest
+// z-index) so the tip is never occluded by the popup image.
 //
 // The tail is a fixed up-left offset from the tip (TAIL_DX/TAIL_DY), so it too
 // translates vertically with the tip and the whole arrow keeps one shape.
@@ -312,8 +384,8 @@ const CARD_LEFT_EDGE = FRAME_W - CARD_RIGHT - CARD_OUTER_W; // 596, card's visib
 const IMG_LEFT = CARD_LEFT_EDGE + CARD_BORDER; // 598, where the popup PNG actually sits
 // Arrow tip sits just OUTSIDE the card's left edge (never crosses the card
 // face); the tail is a fixed up-left offset from the tip. Because CARD_LEFT_EDGE
-// is constant across all 3 shots, the arrow is one identical shape translated
-// vertically only — y tracks each target button's centre.
+// is constant across all shots (card width is fixed), the arrow is one identical
+// shape translated vertically only — y tracks each target button's centre.
 const TIP_GAP = 12; // tip sits this many px left of the card edge
 const TAIL_DX = -210; // fixed up-left offset from tip (tunable)
 const TAIL_DY = -118;
@@ -346,17 +418,50 @@ const SHOTS = [
     captionTop: 150,
     cardRotate: -1.0,
   },
+  {
+    file: '04-fill-forms.png',
+    raw: 'popup-fill.png',
+    state: 'fill', // → measured fractions for #btn-fill
+    caption:
+      'opt-in autofill — your saved details, filled on your command. you review every field; it never submits.',
+    captionPos: 'left:90px; top:140px; width:440px; text-align:left;',
+    captionTop: 140,
+    cardRotate: 1.0,
+  },
+  {
+    file: '05-answers.png',
+    raw: 'popup-answers.png',
+    state: 'answers', // → measured fractions for #btn-assist
+    caption:
+      "stuck on 'why do you want to work here?' — it drafts an answer from your resume. copy it when you're happy.",
+    captionPos: 'left:90px; top:140px; width:440px; text-align:left;',
+    captionTop: 140,
+    cardRotate: -1.2,
+    // The answers card is ~2x the 800px frame (open answer tools + draft), so
+    // scroll it up to keep the question box, "Help me answer…" button and the
+    // full drafted answer + its Copy button in frame — tuned against the
+    // measured #btn-assist fraction and the draft-card height.
+    cardAnchorY: 0.66,
+  },
 ];
 
 // Compute the placed card rect in frame px and the arrow tip/tail for a shot.
 // `raw` is the capture result for this state: { dim:{width,height}, frac }.
 function shotArrowGeometry(shot, raw) {
   // Card image rect in frame px. Width is fixed; height preserves the raw
-  // popup PNG aspect ratio (height:auto). Vertically centred (top:50%). The PNG
-  // sits at IMG_LEFT (inside the 2px card border).
+  // popup PNG aspect ratio (height:auto). The PNG sits at IMG_LEFT (inside the
+  // 2px card border).
+  //
+  // Vertical placement: `cardAnchorY` is the fraction of the card height that
+  // aligns to the frame's vertical centre. Default 0.5 centres the card (the
+  // original behaviour — shots 01–03 stay byte-identical). A larger fraction
+  // scrolls a TALL card up so a lower region (e.g. the answer-draft) shows,
+  // letting the frame's overflow:hidden crop the top — the same crop-to-fit the
+  // centred shots already rely on, just anchored on a chosen region.
+  const anchor = shot.cardAnchorY ?? 0.5;
   const imgW = CARD_W;
   const imgH = (CARD_W * raw.dim.height) / raw.dim.width;
-  const imgTop = FRAME_H / 2 - imgH / 2;
+  const imgTop = FRAME_H / 2 - anchor * imgH;
   const imgLeft = IMG_LEFT;
   // Target the CARD's LEFT EDGE (constant across shots), level with the button's
   // vertical centre — NOT the button's left edge (fx), which is interior for the
@@ -391,11 +496,21 @@ function shotArrowGeometry(shot, raw) {
 function shotFragment(shot, raw) {
   const rawBuf = readFileSync(path.join(OUT_RAW, shot.raw));
   const popupUri = `data:image/png;base64,${rawBuf.toString('base64')}`;
-  const { tip, tail } = shotArrowGeometry(shot, raw);
+  const geometry = shotArrowGeometry(shot, raw);
+  const { tip, tail, imgTop } = geometry;
   const arrowSvg = frameArrowSvg(tail, tip, { w: FRAME_W, h: FRAME_H });
+  // Default (no cardAnchorY): centre the card — shots 01–03 stay byte-identical.
+  // An explicit anchor pins the card's OUTER top to the computed imgTop (minus
+  // the 2px border), matching shotArrowGeometry's imgTop so the arrow still
+  // lands on the target button.
+  const cardTop = shot.cardAnchorY == null ? '50%' : `${(imgTop - CARD_BORDER).toFixed(2)}px`;
+  const cardTransform =
+    shot.cardAnchorY == null
+      ? `translateY(-50%) rotate(${shot.cardRotate}deg)`
+      : `rotate(${shot.cardRotate}deg)`;
   const css = `
-    .card{position:absolute; right:${CARD_RIGHT}px; top:50%; z-index:10;
-      transform:translateY(-50%) rotate(${shot.cardRotate}deg);
+    .card{position:absolute; right:${CARD_RIGHT}px; top:${cardTop}; z-index:10;
+      transform:${cardTransform};
       border:2px solid var(--ink); border-radius:14px;
       box-shadow:6px 10px 0 rgba(28,24,18,.14), 0 18px 40px rgba(28,24,18,.20);
       overflow:hidden; background:#0f1117;}
@@ -413,7 +528,7 @@ function shotFragment(shot, raw) {
     <div class="caption">${shot.caption}</div>
     <div class="card"><img src="${popupUri}" alt=""></div>
     ${arrowSvg}`;
-  return { body, css, geometry: shotArrowGeometry(shot, raw) };
+  return { body, css, geometry };
 }
 
 async function renderSized(browser, bodyHtml, headExtra, css, target, outPath) {
