@@ -92,6 +92,51 @@ $files"
   HAVE_RANGE=1
 done
 
+# ── Docs / meta fast path ──────────────────────────────────────────────────────
+# When the branch's OWN contribution (merge-base(origin/main)..HEAD — what this PR
+# actually adds, NOT the raw push range) is entirely docs/meta content, the heavy
+# build/typecheck/test/rust gates add nothing: markdown, docs/**, the .claude
+# agent/skill/command fleet, CLAUDE.md and landing/*.html are never built or run.
+# Using the branch's own diff (not remote_sha..local_sha) means a re-push that only
+# folds a fresh origin/main in — exactly what the sync step above forces on a stale
+# PR — still fast-paths a docs-only PR instead of re-gating main's already-merged,
+# already-tested code. Run ONLY the cheap guards those paths need, then exit.
+#
+# Safety: ANY executable/config/build input (.husky/**, .claude/hooks/**,
+# .claude/settings*, scripts/**, package.json, lockfiles, tsconfig, *.config.*,
+# Cargo.*, .github/**, or any *.rs/*.mjs/*.ts/*.sh/…) drops straight to the full
+# gate below — as does PREPUSH_FULL=1, an undetermined push range (HAVE_RANGE=0),
+# or an unresolvable merge-base. Uncertainty always takes the full gate.
+if [ -z "${PREPUSH_FULL:-}" ] && [ "$HAVE_RANGE" -eq 1 ]; then
+  own_base=$(git merge-base origin/main HEAD 2>/dev/null || true)
+  own_files=""
+  if [ -n "$own_base" ]; then
+    own_files=$(git diff --name-only "$own_base..HEAD" 2>/dev/null | grep -E '.' || true)
+  fi
+  # ALLOW: every changed file is plainly non-executable docs/meta content.
+  DOCS_ALLOW='\.(md|mdx|txt)$|^docs/|^\.claude/(agents|skills|commands)/|^landing/.*\.html$'
+  # DENY: executable/config/build inputs — even when they sit under an allowed dir.
+  DOCS_DENY='\.(mjs|cjs|jsx?|tsx?|mts|cts|rs|sh|bash|zsh|ps1|bat|cmd|py|rb)$|^\.husky/|^\.claude/hooks/|^\.claude/settings|^scripts/|(^|/)package(-lock)?\.json$|pnpm-lock\.yaml$|(^|/)tsconfig[^/]*\.json$|(^|/)Cargo\.(toml|lock)$|\.config\.(js|mjs|cjs|ts)$|^\.github/'
+  if [ -n "$own_files" ] \
+    && ! printf '%s\n' "$own_files" | grep -qvE "$DOCS_ALLOW" \
+    && ! printf '%s\n' "$own_files" | grep -qE "$DOCS_DENY"; then
+    n=$(printf '%s\n' "$own_files" | grep -c .)
+    echo "▶ Path filter: DOCS/META fast path (${n} files — branch is docs/meta only; skipping build/typecheck/test + rust + AI review). PREPUSH_FULL=1 forces the full gate."
+    if printf '%s\n' "$own_files" | grep -qE '^\.claude/|^CLAUDE\.md$'; then
+      echo "▶ Checking agent-system drift..."
+      node scripts/check-agent-system.mjs
+    fi
+    if printf '%s\n' "$own_files" | grep -qE '^landing/'; then
+      echo "▶ Checking landing-diagram drift..."
+      pnpm check:landing-drift
+    fi
+    echo "▶ Prettier-checking changed docs..."
+    printf '%s\n' "$own_files" | xargs pnpm exec prettier --check --ignore-unknown
+    echo "✓ Docs/meta fast path complete"
+    exit 0
+  fi
+fi
+
 RUST=""
 NODE=""
 LANDING=""
