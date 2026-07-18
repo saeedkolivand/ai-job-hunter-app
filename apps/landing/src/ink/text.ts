@@ -11,6 +11,8 @@ import { preloadFont } from "troika-three-text";
 
 import { beat1 } from "@/content/beat1";
 import { beat2 } from "@/content/beat2";
+import { beat3 } from "@/content/beat3";
+import { beat4 } from "@/content/beat4";
 import { features } from "@/content/features";
 import { hero } from "@/content/hero";
 import { testimonials } from "@/content/testimonials";
@@ -71,7 +73,7 @@ export function charactersFor(...strings: string[]): string {
 // that render <Text> never drift apart -- scenes should build their
 // `characters` prop from this, not from ad hoc strings.
 export const FONT_TEXTS: Record<FontKey, string[]> = {
-  impact: [hero.h1a, beat2.blackholeYell],
+  impact: [hero.h1a, beat2.blackholeYell, beat3.huge1, beat3.huge2, beat3.huge3],
   scrawl: [hero.scrollhint, beat1.sectionLabel, beat2.h2],
   hand: [
     features.c2t,
@@ -83,6 +85,15 @@ export const FONT_TEXTS: Record<FontKey, string[]> = {
     beat1.counterB,
     beat1.counterC,
     beat2.linkedinTitle,
+    beat4.big,
+    beat4.counter.p1,
+    beat4.counter.p2,
+    beat4.counter.p3,
+    beat4.line1,
+    beat4.line2a,
+    beat4.line2b,
+    beat3.mid,
+    ...Object.values(beat3.line),
     "0123456789",
   ],
   caveat: [hero.dontClick, hero.h1a, hero.h1b, hero.h1ul, hero.h1c],
@@ -95,6 +106,9 @@ export const FONT_TEXTS: Record<FontKey, string[]> = {
     beat2.recruitersTitle,
     beat2.chipsMore,
     ...beat2.chips,
+    beat3.dq,
+    beat3.yes,
+    beat3.yes2,
   ],
   monoBold: [beat2.blackholeMain],
 };
