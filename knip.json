@@ -22,7 +22,22 @@
       "entry": ["src/renderer/main.tsx", "src/e2e-main.tsx"]
     },
     "apps/landing": {
-      "entry": ["src/app/**/{page,layout}.tsx", "next.config.ts", "scripts/merge-passthrough.mjs"]
+      "entry": ["src/app/**/{page,layout}.tsx", "scripts/*.mjs"],
+      // GL stack installed at PR0 scaffold but consumed milestone by milestone;
+      // remove each as it is first imported (ripbook M1-M6).
+      "ignoreDependencies": [
+        "three",
+        "@react-three/fiber",
+        "@react-three/drei",
+        "postprocessing",
+        "troika-three-text",
+        "gsap",
+        "lenis",
+        "zustand",
+        "framer-motion",
+        "@types/three",
+        "svg-path-properties"
+      ]
     },
     "apps/extension": {
       "entry": ["src/background.ts"]
