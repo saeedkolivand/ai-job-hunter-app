@@ -13,7 +13,7 @@ import { useFrame } from "@react-three/fiber";
 
 import { playhead } from "@/engine/store";
 
-import { DESK_PROPS, type DeskPropState,writeDeskProp } from "./canyon-layout";
+import { DESK_PROPS, type DeskPropState, writeDeskProp } from "./canyon-layout";
 
 function Mug() {
   return (
