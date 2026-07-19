@@ -11,21 +11,34 @@ import { useEffect, useRef } from "react";
 
 import { SCENES } from "@/engine/scene-resolver";
 import { playhead, useRig } from "@/engine/store";
-import { depthMeters, formatDepth, formatTimecode, timecodeSeconds } from "@/engine/timecode";
+import {
+  formatGauge,
+  formatTimecode,
+  gaugeMeters,
+  isAltitudePhase,
+  timecodeSeconds,
+} from "@/engine/timecode";
+
+// SSR-rendered initial text: computed from t=0 (never hand-duplicated) so the
+// server-rendered markup always matches what the first client tick would write,
+// and hydration never has to reconcile a stale hardcoded string here.
+const INITIAL_TIMECODE = formatTimecode(0);
+const INITIAL_GAUGE = formatGauge(0);
 
 export function Chrome() {
   const timecodeRef = useRef<HTMLSpanElement>(null);
-  const depthRef = useRef<HTMLSpanElement>(null);
+  const gaugeRef = useRef<HTMLSpanElement>(null);
   const scene = useRig((s) => s.scene);
   const act = SCENES[scene]?.act ?? "";
 
   useEffect(() => {
     let raf = 0;
-    // Cache the last NUMBER, not the last formatted string: compare on the
-    // cheap arithmetic value every rAF, and only allocate + write the
+    // Cache the last NUMBER (+ phase), not the last formatted string: compare
+    // on the cheap arithmetic value every rAF, and only allocate + write the
     // formatted string on the (much rarer) frame where it actually changed.
     let lastSeconds = -1;
-    let lastDepthM = -1;
+    let lastGaugeM = Number.NaN;
+    let lastPhase: boolean | null = null;
     const tick = (): void => {
       const t = playhead.t;
       const seconds = timecodeSeconds(t);
@@ -33,10 +46,12 @@ export function Chrome() {
         lastSeconds = seconds;
         if (timecodeRef.current) timecodeRef.current.textContent = formatTimecode(t);
       }
-      const depthM = Math.round(depthMeters(t));
-      if (depthM !== lastDepthM) {
-        lastDepthM = depthM;
-        if (depthRef.current) depthRef.current.textContent = formatDepth(t);
+      const gaugeM = Math.round(gaugeMeters(t));
+      const phase = isAltitudePhase(t);
+      if (gaugeM !== lastGaugeM || phase !== lastPhase) {
+        lastGaugeM = gaugeM;
+        lastPhase = phase;
+        if (gaugeRef.current) gaugeRef.current.textContent = formatGauge(t);
       }
       raf = requestAnimationFrame(tick);
     };
@@ -51,10 +66,10 @@ export function Chrome() {
       </div>
       <div className="letterbox letterbox-bottom" />
       <div className="timecode">
-        <span ref={timecodeRef}>00:00</span>
+        <span ref={timecodeRef}>{INITIAL_TIMECODE}</span>
       </div>
       <div className="depth-gauge">
-        DEPTH <span ref={depthRef}>0 m</span>
+        <span ref={gaugeRef}>{INITIAL_GAUGE}</span>
       </div>
     </div>
   );

@@ -38,6 +38,7 @@ const SURFACE_T = 0.3; // scene 2 -- hits the paper ocean
 const BOTTOM_T = 0.61; // scene 5 -- the catch, deepest point
 const RESURFACE_T = 0.88; // scene 7 -- dawn surface break
 const MAX_DEPTH_M = 1120; // meters at the bottom
+const START_ALT_M = 520; // meters above the paper ocean at t=0 (tunable)
 
 // Meters below sea level for a playhead value. 0 above the surface and after
 // the resurface; rises to MAX_DEPTH_M at the bottom. Monotonic on each leg.
@@ -53,4 +54,38 @@ export function depthMeters(t: number): number {
 // Display string for the depth gauge, e.g. "842 m".
 export function formatDepth(t: number): string {
   return `${Math.round(depthMeters(t))} m`;
+}
+
+// Meters ABOVE the paper ocean surface while still falling. 0 at and after
+// SURFACE_T; monotonically decreasing from START_ALT_M down to 0 across the
+// fall so the gauge visibly moves from the very first frame instead of reading
+// 0 through the entire cold-open + canyon (a gauge frozen at 0 for 30% of the
+// film fails ADR-0016's "depth IS progress" contract).
+export function altitudeMeters(t: number): number {
+  const c = clamp01(t);
+  if (c >= SURFACE_T) return 0;
+  return START_ALT_M * (1 - smoothstep(c / SURFACE_T));
+}
+
+// True while the gauge should read altitude above the surface (falling);
+// false once at or below the surface, where it switches to depth-below.
+export function isAltitudePhase(t: number): boolean {
+  return clamp01(t) < SURFACE_T;
+}
+
+// The one continuous gauge magnitude across the whole film: altitude above the
+// surface before SURFACE_T, depth below it after -- "the whole film is one
+// axis, so depth IS progress" (ADR-0016), never frozen through the fall.
+export function gaugeMeters(t: number): number {
+  return isAltitudePhase(t) ? altitudeMeters(t) : depthMeters(t);
+}
+
+// "ALT" while falling above the surface, "DEPTH" once at/below it.
+export function gaugeLabel(t: number): "ALT" | "DEPTH" {
+  return isAltitudePhase(t) ? "ALT" : "DEPTH";
+}
+
+// Display string for the gauge, e.g. "ALT 412 m" / "DEPTH 842 m".
+export function formatGauge(t: number): string {
+  return `${gaugeLabel(t)} ${Math.round(gaugeMeters(t))} m`;
 }
