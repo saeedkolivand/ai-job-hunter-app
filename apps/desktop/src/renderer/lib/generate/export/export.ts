@@ -12,7 +12,9 @@ function sanitize(str: string): string {
   return str
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-zA-Z0-9\s-]/g, '')
+    // Keep any Unicode letter/number so non-Latin names (Cyrillic, CJK, Arabic,
+    // Greek, Hebrew, Thai, ...) survive instead of collapsing to the placeholder.
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
     .trim()
     .replace(/\s+/g, '-')
     .replace(/-{2,}/g, '-')
