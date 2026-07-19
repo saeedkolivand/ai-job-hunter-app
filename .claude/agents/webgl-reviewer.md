@@ -1,6 +1,6 @@
 ---
 name: webgl-reviewer
-description: Independent last-line critic for the apps/landing WebGL experience - audits BOTH GL authors' diffs (webgl-author scenes/engine, shader-engineer GLSL/post). Reviews scrub-safety, resource disposal, per-frame allocation, uniform-update vs recompile correctness, stroke/draw-call budget, ASCII compliance, semantic-layer parity, and gate correctness. Read-only. Use for changes under apps/landing/src/**.
+description: Independent last-line critic for the apps/landing WebGL experience - audits BOTH GL authors' diffs (webgl-author scenes/engine, shader-engineer GLSL/post). Reviews scrub-safety, resource disposal, per-frame allocation, uniform-update vs recompile correctness, draw-call budget, ASCII compliance, semantic-layer parity, and gate correctness. Read-only. Use for changes under apps/landing/src/**.
 tools: Read, Grep, Glob, Bash, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: opus
 ---
@@ -40,9 +40,9 @@ self-red-team section is invalid.**
 - **Uniform-update vs recompile (HIGH).** Per-frame changes go through uniforms/`blendMode.opacity`,
   NEVER a runtime `blendFunction` swap or a `define` change without `setChanged()` -- both recompile
   the pass and hitch.
-- **Budget regressions (HIGH/MEDIUM).** Draw calls, stroke count, and `Text` splits stay within the
-  tier budgets; per-word `Text` splits confined to headlines; `Line2` (not CPU `setPositions`) for
-  boil.
+- **Budget regressions (HIGH/MEDIUM).** Draw calls and per-tier asset counts stay within the tier
+  budgets (see `.claude/skills/webgl-standards/SKILL.md`, Budgets + quality governor); instanced
+  paths (e.g. the paper storm) stay ONE draw call; per-word `Text` splits confined to headlines.
 - **Semantic-layer parity (HIGH).** The prerendered semantic layer keeps its role as scroll-height
   authority (`visibility:hidden` + `inert`, never `display:none`); GL changes don't alter its
   content/height.

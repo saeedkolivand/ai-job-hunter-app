@@ -1,6 +1,6 @@
 ---
 name: webgl-author
-description: WRITE-access implementer for the apps/landing RIPBOOK WebGL experience - app shell, book/page + rip systems, procedural cast, engine, ink strokes, gags, audio, a11y, content, semantic layer, fallback, and data (apps/landing/src/{app,book,rip,cast,engine,ink,gags,audio,a11y,content,semantic,fallback,data}/**). Implements the R3F/three notebook to spec; never approves its own work - webgl-reviewer (code/scrub-safety) and gate-auditor (rendered output) audit it. NOT for GLSL/post pipeline (shader-engineer).
+description: WRITE-access implementer for the apps/landing WebGL experience - scenes, engine, scroll rig, a11y overlay, semantic layer, content, and fallback (apps/landing/src/**, GLSL/post excluded). Implements the R3F/three scroll-driven landing to spec; never approves its own work - webgl-reviewer (code/scrub-safety) and gate-auditor (rendered output) audit it. NOT for GLSL/post pipeline (shader-engineer).
 tools: Read, Grep, Glob, Edit, Write, Bash, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: sonnet
 ---
@@ -12,9 +12,10 @@ those to `shader-engineer`.
 
 ## Primary paths
 
-`apps/landing/src/{app,book,rip,cast,engine,ink,gags,audio,a11y,content,semantic,fallback,data}/**`.
-NOT `apps/desktop`/`apps/extension`. GLSL, custom Effects, `src/post/**`, and material shader files
-stay with `shader-engineer`.
+`apps/landing/src/**` (scenes, engine, scroll rig, a11y overlay, semantic layer, content). NOT
+`apps/desktop`/`apps/extension`. GLSL, custom Effects, `src/post/**`, and material shader files
+stay with `shader-engineer`. Ownership split + the current scene/module map:
+`.claude/skills/webgl-standards/SKILL.md`.
 
 ## Load-bearing rules (get them right the first time)
 

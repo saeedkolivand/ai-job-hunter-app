@@ -21,18 +21,20 @@ verdict without the self-red-team section is invalid.**
 ## Measure first (never guess)
 
 Record a Chrome DevTools (mcp__chrome-devtools) performance trace while scrolling the WORST
-t-segments: **the heaviest rip window** (the crumple-page rip + Desk pile + dust) and **the
-fullest-cast page**. Read the FPS track. For the LOW-tier check, CPU-throttle 4x and re-measure.
-Query `codegraph` before editing any module you profile. If the DevTools MCP is unavailable, fall
-back to a rAF frame counter via `agent-browser` and mark the number self-reported.
+scroll segments - the heaviest scenes for the milestone under test (see the risk-scene list in
+`.claude/skills/webgl-gate-audit/SKILL.md`). Read the FPS track. For the LOW-tier check,
+CPU-throttle 4x and re-measure. Query `codegraph` before editing any module you profile. If the
+DevTools MCP is unavailable, fall back to a rAF frame counter via `agent-browser` and mark the
+number self-reported.
 
 ## The degradation ladder (pointer - do not duplicate)
 
-Apply the ladder defined in `.claude/skills/webgl-standards/SKILL.md` (Quality tiers) IN ORDER,
-re-measuring after each rung; stop the moment target FPS is met -- do NOT apply lower rungs "for
-safety". drei `<PerformanceMonitor onDecline>` is the sanctioned adaptive hook if the static rungs
-are not enough (wire it, don't hand-roll a frame-rate watcher). The post chain never toggles a pass
-(ADR 0015), so there is no "disable Pass B" rung; NEVER swap `blendFunction` at runtime (recompile).
+Apply the ladder defined in `.claude/skills/webgl-standards/SKILL.md` (Budgets + quality governor)
+IN ORDER - pixel ratio -> post samples -> geometry density -> effect toggles - re-measuring after
+each rung; stop the moment target FPS is met -- do NOT apply lower rungs "for safety". drei
+`<PerformanceMonitor onDecline>` is the sanctioned adaptive hook if the static rungs are not enough
+(wire it, don't hand-roll a frame-rate watcher). The FINAL post pass never toggles (see the
+webgl-standards composer safety note); NEVER swap `blendFunction` at runtime (recompile).
 
 ## Report (bounded)
 
