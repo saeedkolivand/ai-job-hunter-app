@@ -9,6 +9,7 @@
 
 import { useEffect, useRef } from "react";
 
+import { letterboxFlex } from "@/engine/letterbox";
 import { SCENES } from "@/engine/scene-resolver";
 import { playhead, useRig } from "@/engine/store";
 import {
@@ -19,6 +20,11 @@ import {
   timecodeSeconds,
 } from "@/engine/timecode";
 
+// Peak extra letterbox bar height (px) at the splash impact. The flex is pure
+// f(t) so it scrubs both directions with the playhead; the accompanying silence
+// beat is an audio hook deferred to M5.
+const LETTERBOX_FLEX_PX = 42;
+
 // SSR-rendered initial text: computed from t=0 (never hand-duplicated) so the
 // server-rendered markup always matches what the first client tick would write,
 // and hydration never has to reconcile a stale hardcoded string here.
@@ -26,6 +32,7 @@ const INITIAL_TIMECODE = formatTimecode(0);
 const INITIAL_GAUGE = formatGauge(0);
 
 export function Chrome() {
+  const chromeRef = useRef<HTMLDivElement>(null);
   const timecodeRef = useRef<HTMLSpanElement>(null);
   const gaugeRef = useRef<HTMLSpanElement>(null);
   const scene = useRig((s) => s.scene);
@@ -39,6 +46,7 @@ export function Chrome() {
     let lastSeconds = -1;
     let lastGaugeM = Number.NaN;
     let lastPhase: boolean | null = null;
+    let lastFlexPx = -1;
     const tick = (): void => {
       const t = playhead.t;
       const seconds = timecodeSeconds(t);
@@ -53,6 +61,14 @@ export function Chrome() {
         lastPhase = phase;
         if (gaugeRef.current) gaugeRef.current.textContent = formatGauge(t);
       }
+      // Letterbox flex at the splash impact -- pushed to a CSS var (only on real
+      // change) so the bars widen briefly then relax; the CSS composes it onto the
+      // responsive base height, so the clamp() sizing is preserved.
+      const flexPx = Math.round(letterboxFlex(t) * LETTERBOX_FLEX_PX);
+      if (flexPx !== lastFlexPx) {
+        lastFlexPx = flexPx;
+        chromeRef.current?.style.setProperty("--lb-extra", `${flexPx}px`);
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -60,7 +76,7 @@ export function Chrome() {
   }, []);
 
   return (
-    <div className="chrome" aria-hidden>
+    <div className="chrome" aria-hidden ref={chromeRef}>
       <div className="letterbox letterbox-top">
         <span className="act-title">{act}</span>
       </div>

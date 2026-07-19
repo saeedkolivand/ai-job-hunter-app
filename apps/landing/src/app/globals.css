@@ -121,7 +121,10 @@ a {
   position: fixed;
   left: 0;
   right: 0;
-  height: clamp(28px, 7vh, 64px);
+  /* Responsive base height + the splash-beat flex (Chrome sets --lb-extra from
+     letterboxFlex(t), a pure f(t) so it scrubs both ways). No CSS transition:
+     the value is already frame-smooth and a transition would fight determinism. */
+  height: calc(clamp(28px, 7vh, 64px) + var(--lb-extra, 0px));
   background: #000;
 }
 .letterbox-top {
