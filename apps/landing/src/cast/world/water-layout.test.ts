@@ -7,6 +7,7 @@ import {
   gerstnerSurface,
   godrayStrength,
   sceneLuminance,
+  SURFACE_T,
   SURFACE_WORLD_Y,
   type SurfacePoint,
   worldFog,
@@ -222,6 +223,20 @@ describe("worldFog (cold-open density pullback + the whole-descent grade)", () =
       expect(d).toBeGreaterThan(0);
       expect(Number.isFinite(rgb[0] + rgb[1] + rgb[2])).toBe(true);
     }
+  });
+
+  it("is continuous across the SURFACE_T waterline crossing (PR #722 fix -- no visible pop)", () => {
+    // The canyon branch is used for c < SURFACE_T and the deep branch for
+    // c >= SURFACE_T (worldFog's own `c < SURFACE_T` split), so sampling just
+    // below and exactly at SURFACE_T exercises both branches right at the seam.
+    const below: [number, number, number] = [0, 0, 0];
+    const above: [number, number, number] = [0, 0, 0];
+    const densityBelow = worldFog(SURFACE_T - 1e-6, below);
+    const densityAbove = worldFog(SURFACE_T, above);
+    expect(densityAbove).toBeCloseTo(densityBelow, 4);
+    expect(above[0]).toBeCloseTo(below[0], 4);
+    expect(above[1]).toBeCloseTo(below[1], 4);
+    expect(above[2]).toBeCloseTo(below[2], 4);
   });
 });
 

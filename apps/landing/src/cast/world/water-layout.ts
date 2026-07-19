@@ -9,7 +9,7 @@
 // three objects + per-frame plumbing; this file owns only the deterministic
 // numbers.
 
-import { cameraY, canyonFogRGB, hash01 } from "./canyon-layout";
+import { cameraY, canyonFogRGB, FOG_COLD, hash01 } from "./canyon-layout";
 
 const TWO_PI = Math.PI * 2;
 
@@ -331,6 +331,16 @@ export function cameraLookDownOffset(t: number): number {
 // fall reads continuous. NOTE: the cold-open's camera/framing is placeholder
 // until the home-office scene exists (a later milestone) -- this only fixes the
 // fog from reading as a flat wall in the meantime, not the scene's content.
+//
+// SURFACE_T boundary aligned exactly (PR #722 CodeRabbit fix): the deep branch's
+// pDeep=0 anchor used to be a separately-tuned [0.01,0.022,0.048]@0.02 that did
+// NOT match the canyon side's value at t->SURFACE_T (FOG_COLD @ the established
+// 0.012 canyon density) -- a real, visible pop in both density and hue right at
+// the waterline crossing. The deep branch's pDeep=0 anchor now IS FOG_COLD / the
+// canyon density (not a re-typed copy -- imported from canyon-layout.ts, so the
+// two sides cannot drift out of sync again), making worldFog exactly continuous
+// (C0) across SURFACE_T: mix(x, ..., 0) === x at t=SURFACE_T on the deep side,
+// which equals the canyon side's value in the limit t->SURFACE_T from below.
 export function worldFog(t: number, out: [number, number, number]): number {
   const c = clamp01(t);
   if (c < SURFACE_T) {
@@ -339,10 +349,10 @@ export function worldFog(t: number, out: [number, number, number]): number {
   }
   const pDeep = smoothstep(SURFACE_T, 0.52, c);
   const pBlk = smoothstep(0.52, 0.58, c);
-  out[0] = mix(0.01, 0.001, pDeep) * (1 - pBlk);
-  out[1] = mix(0.022, 0.004, pDeep) * (1 - pBlk);
-  out[2] = mix(0.048, 0.01, pDeep) * (1 - 0.7 * pBlk);
-  return mix(0.02, 0.075, pDeep) + pBlk * 0.03;
+  out[0] = mix(FOG_COLD[0], 0.001, pDeep) * (1 - pBlk);
+  out[1] = mix(FOG_COLD[1], 0.004, pDeep) * (1 - pBlk);
+  out[2] = mix(FOG_COLD[2], 0.01, pDeep) * (1 - 0.7 * pBlk);
+  return mix(0.012, 0.075, pDeep) + pBlk * 0.03;
 }
 
 // ---- luminance target + slew cap (the WCAG 2.3.1 clamp lives in engine/) ----

@@ -111,7 +111,10 @@ export function cameraLookUpY(t: number): number {
 // read as a saturated glow rather than a dim muddy tone. B kept low but
 // nonzero (a touch of warmth, not pure red-only).
 const FOG_WARM: readonly [number, number, number] = [0.24, 0.08, 0.015];
-const FOG_COLD: readonly [number, number, number] = [0.006, 0.014, 0.032];
+// Exported (PR #722 CodeRabbit fix): water-layout.ts's worldFog anchors its deep
+// branch's SURFACE_T boundary to this SAME constant (not a re-typed copy) so the
+// waterline crossing can never drift out of sync if this value is retuned again.
+export const FOG_COLD: readonly [number, number, number] = [0.006, 0.014, 0.032];
 
 // Writes the fog rgb for this t into `out` (caller-owned, so the per-frame path
 // never allocates). Sodium-orange city glow up top graded to cold blue in the
