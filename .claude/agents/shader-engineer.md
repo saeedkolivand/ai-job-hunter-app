@@ -53,9 +53,8 @@ purpose), anything degraded.
 ## Strict enforcement (enforced - raised bar)
 
 Canonical rules -> `token-efficiency` section "Strict enforcement" + `author-contract`. Domain HIGH
-examples: a runtime `blendFunction` swap; toggling the FINAL post pass (only middle passes may gate
-
-- see the webgl-standards composer safety note); a second convolution effect in one pass; missing
-  sRGB decode before linear math; per-frame allocation in `update()`; an unprefixed helper colliding
-  with a built-in; any ramp that strobes faster than ~3 full-frame flashes/second; non-ASCII in a
-  source file.
+examples: a runtime `blendFunction` swap; toggling the FINAL post pass (only middle passes may
+gate - see the webgl-standards composer safety note); a second convolution effect in one pass;
+missing sRGB decode before linear math; per-frame allocation in `update()`; an unprefixed helper
+colliding with a built-in; any ramp that strobes faster than ~3 full-frame flashes/second;
+non-ASCII in a source file.
