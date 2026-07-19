@@ -43,10 +43,16 @@ export function hash01(n: number): number {
 // ---- paper-storm density (thickens through the canyon per the ADR) --------
 
 // Storm thickness as a pure function of t: thin at the canyon mouth, thickening
-// to full by the canyon floor, then fading out past the surface (M2 renders the
-// storm only around the canyon band).
+// to full by the canyon floor, then fading out approaching the surface.
+//
+// Fade-out window tightened (M3 review round 2 fix): the old [0.31, 0.4] window
+// kept the storm at ~74% density through the MIDDLE of scene 2 (t=0.34) --
+// still a dense paper tumble hiding the water plane + splash crown behind it.
+// The storm's job is done by the splash; the ADR beat there is the CROWN, not
+// more paper. Fade-out now completes by t=0.32 (just past the surface
+// crossing), so the storm has fully cleared for the rest of scene 2.
 export function stormDensity(t: number): number {
-  return smoothstep(0.05, 0.26, t) * (1 - smoothstep(0.31, 0.4, t));
+  return smoothstep(0.05, 0.26, t) * (1 - smoothstep(0.27, 0.32, t));
 }
 
 // Active instances to reveal via InstancedMesh.count for this t. Every slot is
@@ -94,7 +100,17 @@ export function cameraLookUpY(t: number): number {
 // washed daylight grey-brown mid-blend. Warm end skews hard red/orange (barely
 // any blue -- a sodium-vapor ember, not a tan); cold end is a saturated deep
 // navy (barely any red).
-const FOG_WARM: readonly [number, number, number] = [0.06, 0.024, 0.008];
+//
+// FOG_WARM retuned twice (M3 review): round 1 ([0.06,0.024,0.008] ->
+// [0.11,0.028,0.002]) still read chocolate live -- round 1 pushed the RATIO
+// further red-dominant but did not raise the overall magnitude enough, and
+// R:G had drifted to ~3.9:1 (too close to pure red, not enough orange/amber
+// presence to read as "ember" once gamma-corrected). Round 2: R:G brought back
+// to ~3:1 (a known-good ember ratio, e.g. #FF5500) and overall magnitude more
+// than doubled again so the gamma-boosted screen output lands bright enough to
+// read as a saturated glow rather than a dim muddy tone. B kept low but
+// nonzero (a touch of warmth, not pure red-only).
+const FOG_WARM: readonly [number, number, number] = [0.24, 0.08, 0.015];
 const FOG_COLD: readonly [number, number, number] = [0.006, 0.014, 0.032];
 
 // Writes the fog rgb for this t into `out` (caller-owned, so the per-frame path
