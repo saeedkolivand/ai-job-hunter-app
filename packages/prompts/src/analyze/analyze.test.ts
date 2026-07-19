@@ -232,6 +232,18 @@ describe('validateAndRepair', () => {
     expect(validateAndRepair('totally not json')).toBeNull();
   });
 
+  it('does not flag mismatch when a language field is an empty string', () => {
+    // The empty-string resume must coerce to 'unknown', and the mismatch check
+    // must run on the coerced value — otherwise the badge lights up alongside a
+    // resume language displayed as "unknown", which is self-contradictory.
+    const result = validateAndRepair(
+      JSON.stringify({ detectedLanguages: { resume: '', jobAd: 'fr' } })
+    ) as AnalysisResult;
+    expect(result.detectedLanguages.resume).toBe('unknown');
+    expect(result.detectedLanguages.jobAd).toBe('fr');
+    expect(result.detectedLanguages.mismatch).toBe(false);
+  });
+
   it('defaults missing sub-objects gracefully', () => {
     const result = validateAndRepair('{}') as AnalysisResult;
     expect(result.detectedLanguages.resume).toBe('unknown');
