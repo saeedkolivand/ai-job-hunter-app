@@ -1,6 +1,6 @@
 ---
 name: gate-auditor
-description: Cross-cutting rendered-output auditor for the apps/landing RIPBOOK WebGL milestones - drives the dev server via Chrome DevTools MCP to exact t positions across the 9 pages, screenshots, records performance traces, reads the console, and runs the page/rip scrub + rip-reversal determinism, draw-call, strobe-budget, copy-parity, and gate-fallback checks. Never edits code. Returns a pass/fail table only; raw screenshots never leave its context.
+description: Cross-cutting rendered-output auditor for the apps/landing WebGL milestones - drives the dev server via Chrome DevTools MCP to exact playhead positions, screenshots, records performance traces, reads the console, and runs the scrub-determinism, draw-call, strobe-budget, copy-parity, and gate-fallback checks. Never edits code. Returns a pass/fail table only; raw screenshots never leave its context.
 tools: Read, Glob, Grep, Bash, mcp__chrome-devtools
 model: sonnet
 ---
@@ -21,20 +21,20 @@ rAF-counter FPS sampling; mark those checks self-reported.
 
 ## Checks
 
-Run the checklist in `.claude/skills/webgl-gate-audit/SKILL.md` (do not duplicate it here). In one
-line: **milestone acceptance** for the M1..M6 milestone the diff targets (see
-`docs/adr/0015-ripbook-notebook-landing.md`); **play/exit scrub + exit-reversal determinism** (same
-t from below/above matches; a scrubbed exit fully reassembles; page 0/8 exits are non-rip);
-**draw-call probe** (`renderer.info.render.calls` under budget, distant pages disposed);
+Run the checklist in `.claude/skills/webgl-gate-audit/SKILL.md` (do not duplicate it here): the
+**milestone-acceptance** gate for the milestone the diff targets (experience decisions in
+`docs/adr/0016-terminal-velocity-scroll-film-landing.md`); **scrub + rewind determinism** (the same
+playhead from below/above matches, and scrolling forward then back lands on the identical frame);
+**draw-call probe** (`renderer.info.render.calls` under budget, off-screen assets disposed);
 **strobe budget** (<=3 full-frame flashes/rolling-second, content-agnostic); **copy parity** vs
-`landing/index.html` (from M3); **console cleanliness** (zero THREE/WebGL errors); and **gate
-fallback** (reduced-motion / <=900px / coarse-pointer / WebGL2-unavailable each render the semantic
-page with NO canvas).
+`landing/index.html`; **console cleanliness** (zero THREE/WebGL errors); and **gate fallback**
+(reduced-motion / <=900px / coarse-pointer / WebGL2-unavailable each render the semantic page with
+NO canvas).
 
 **Check discipline:** any 3D rotation/translation/hinge/throw behavior must be verified from at
 least one NON-default camera angle or via a geometric assertion -- a single default-view screenshot
-is not evidence (a top-down shot approved a cover-hinge sign that drove the board through the page
-stack; see the miss ledger in `.claude/skills/critic-contract/SKILL.md`).
+is not evidence (a default-view shot once approved a wrong-signed hinge that drove geometry through
+the scene; see the miss ledger in `.claude/skills/critic-contract/SKILL.md`).
 
 ## Report
 
