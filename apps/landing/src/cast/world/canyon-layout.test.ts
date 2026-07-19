@@ -50,7 +50,21 @@ describe("stormDensity", () => {
   it("thickens (rises) across the canyon to full near the floor", () => {
     expect(stormDensity(0.1)).toBeLessThan(stormDensity(0.2));
     expect(stormDensity(0.2)).toBeLessThan(stormDensity(0.26));
-    expect(stormDensity(0.28)).toBeCloseTo(1, 5);
+    // Full right at the rise's own upper edge (0.26), BEFORE the fade-out
+    // window starts (0.27) -- the fade-out was tightened to [0.27, 0.32] (M3
+    // review round 2: the storm must clear well before the middle of scene 2
+    // so the water plane + splash crown read, not a dense paper tumble), so
+    // 0.28 (used pre-fix) is no longer "still full" -- it is already fading.
+    expect(stormDensity(0.26)).toBeCloseTo(1, 5);
+  });
+
+  it("clears out approaching the surface crossing so scene 2 reads clean", () => {
+    // M3 review round 2: tightened from the old [0.31, 0.4] fade-out so the
+    // storm is fully gone by the surface crossing (0.32), not still ~74% dense
+    // mid scene-2 (0.34) hiding the water plane + splash crown behind it.
+    expect(stormDensity(0.32)).toBeCloseTo(0, 5);
+    expect(stormDensity(0.34)).toBe(0);
+    expect(stormDensity(0.38)).toBe(0);
   });
 });
 
