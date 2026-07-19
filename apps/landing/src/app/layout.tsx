@@ -52,7 +52,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    // suppressHydrationWarning: NOT Lenis/the rig -- proven by source read, our
+    // `new Lenis(...)` never sets autoToggle/autoRaf, so Lenis's only <html>-style
+    // path (an `overflow` toggle under autoToggle) never runs, and GSAP/
+    // ScrollTrigger write no transition-property/margin-right anywhere either.
+    // createScrollRig() (the sole Lenis owner) only constructs inside
+    // Experience's gl-live effect, itself gated behind an ASYNC
+    // probeCapabilities() resolution -- structurally impossible before
+    // hydration. The mismatch is a third-party browser extension injecting
+    // attributes into <html> pre-hydration (the standard Next.js-documented
+    // false positive for this exact element).
+    <html lang="en" suppressHydrationWarning>
       <body>{children}</body>
     </html>
   );

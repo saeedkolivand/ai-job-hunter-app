@@ -10,7 +10,7 @@ import { Canvas } from "@react-three/fiber";
 import { dprCap } from "@/engine/experience-gate";
 import type { QualityTier } from "@/engine/store";
 
-import { PlaceholderWorld } from "./PlaceholderWorld";
+import { CanyonWorld } from "./world/CanyonWorld";
 
 export function GlCanvas({ tier }: { tier: QualityTier }) {
   return (
@@ -23,7 +23,7 @@ export function GlCanvas({ tier }: { tier: QualityTier }) {
         gl={{ antialias: true, powerPreference: "high-performance" }}
         camera={{ position: [0, 0, 6], fov: 55 }}
       >
-        <PlaceholderWorld />
+        <CanyonWorld tier={tier} />
       </Canvas>
     </div>
   );
