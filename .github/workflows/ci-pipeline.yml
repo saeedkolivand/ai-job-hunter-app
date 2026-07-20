@@ -246,7 +246,7 @@ jobs:
           echo "::endgroup::"
 
       # Not path-filtered: drift is triggered by SOURCE moving (e.g. a removed
-      # module), not by edits to landing/, so this must run on every code PR.
+      # module), not by edits to apps/landing/, so this must run on every code PR.
       - name: 🗺️ Check Landing Diagram Drift
         id: landing_drift
         continue-on-error: true

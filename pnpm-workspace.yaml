@@ -10,8 +10,6 @@ packages:
 # Remove when typescript-eslint supports TS 7: bump root to ^7 and unify all manifests.
 # (Peer pinning via overrides/packageExtensions cannot do this: an ancestor-provided
 # peer always wins resolution, verified on pnpm 11.10.0.)
-# Exception: apps/landing pins typescript 6.0.3, not ^7.0.2 -- Next 16's build-time TS
-# integration crashes under native TS 7 (tested 2026-07-17; retest when Next supports TS 7).
 
 # Security overrides — pin transitive deps to patched ranges.
 # esbuild <0.28.1: GHSA-gv7w-rqvm-qjhr (RCE via NPM_CONFIG_REGISTRY); transitive dev-only (vitest/vite/storybook chains).

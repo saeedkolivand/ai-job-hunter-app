@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
-const cardPath = join(root, 'landing', 'social-card.html');
+const cardPath = join(root, 'apps', 'landing', 'social-card.html');
 if (!existsSync(cardPath)) {
   console.error('missing', cardPath);
   process.exit(1);
@@ -13,7 +13,7 @@ if (!existsSync(cardPath)) {
 const card = pathToFileURL(cardPath).href;
 
 const targets = [
-  { out: 'landing/og-card.jpg', w: 1200, h: 630 },
+  { out: 'apps/landing/og-card.jpg', w: 1200, h: 630 },
   { out: 'branding/github-social-preview.png', w: 1280, h: 640 },
 ];
 

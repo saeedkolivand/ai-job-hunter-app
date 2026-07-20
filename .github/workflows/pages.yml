@@ -3,15 +3,14 @@ name: 🌐 Deploy Landing Page
 # ──────────────────────────────────────────────────────────────────────
 # GitHub Pages Deploy
 # ──────────────────────────────────────────────────────────────────────
-# Purpose: Publish the static marketing landing page (landing/) plus the
+# Purpose: Publish the static marketing landing page (apps/landing/) plus the
 #          @ajh/ui Storybook (at /storybook/) to GitHub Pages
-# Triggers: push to main touching landing/, packages/ui/, or this workflow,
+# Triggers: push to main touching apps/landing/, packages/ui/, or this workflow,
 #           plus manual dispatch
-# Source:   landing/ is a self-contained static site (no build step); the
-#           Storybook build output is copied in at deploy time only (never
-#           committed). The apps/landing GL experience was reset for a
-#           restart (docs/adr/0014) -- this workflow returns to the static
-#           upload until the new app exists.
+# Source:   apps/landing/ is a self-contained static site (no build step, no
+#           workspace package) -- index.html plus its sibling pages and assets
+#           are served as-is; the Storybook build output is copied in at deploy
+#           time only (never committed).
 # Note:     Runs independently of release.yml (also push-to-main) — separate jobs.
 # ──────────────────────────────────────────────────────────────────────
 
@@ -20,7 +19,7 @@ on:
     branches:
       - main
     paths:
-      - 'landing/**'
+      - 'apps/landing/**'
       - 'packages/ui/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
@@ -55,15 +54,15 @@ jobs:
           # Storybook's Vite bundle needs heap headroom on the CI runner.
           NODE_OPTIONS: --max-old-space-size=6144
         # Copy the static Storybook alongside the landing pages (runner-only;
-        # landing/storybook is never committed) so it ships in the artifact.
+        # apps/landing/storybook is never committed) so it ships in the artifact.
         run: |
           pnpm --filter @ajh/ui build-storybook
-          cp -r packages/ui/storybook-static landing/storybook
+          cp -r packages/ui/storybook-static apps/landing/storybook
 
       - name: 📤 Upload artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
-          path: landing
+          path: apps/landing
 
       - name: 🚀 Deploy to GitHub Pages
         id: deployment
