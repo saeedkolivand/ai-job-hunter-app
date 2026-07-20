@@ -342,7 +342,13 @@ const NAMED_KEY_PATTERNS: readonly { key: string; pattern: RegExp }[] = [
   { key: 'email', pattern: /email|e-mail|\bcorreo\b|\bcourriel\b|sahkoposti/ },
   // `telefon` (substring) covers telefon(nummer)/telefono/telefone across
   // DE/ES/IT/PT/SV/DA/NO/PL; `telefoon` (NL) and `telephone` (FR/EN) differ.
-  { key: 'phone', pattern: /phone|mobile|telephone|telefon|telefoon|\bhandy\b|\bmobil\b|puhelin/ },
+  // `handy`/`mobil` stay `\b`-anchored (bare `handy` ⊂ "handyman", bare `mobil`
+  // ⊂ "automobil…"), so the concatenated DE compounds are listed explicitly.
+  {
+    key: 'phone',
+    pattern:
+      /phone|mobile|telephone|telefon|telefoon|handynummer|handytelefon|mobilnummer|mobiltelefon|\bhandy\b|\bmobil\b|puhelin/,
+  },
   // Combined full-name phrases — MUST precede first/last (see table doc).
   {
     key: 'fullName',

@@ -343,6 +343,32 @@ describe('planAndFill – EU-language field labels (Tier-2 free-text matcher)', 
     expect(val('c2')).toBe('');
   });
 
+  it('German: concatenated mobile labels "Handynummer" / "Mobilnummer" / "Mobiltelefon" fill from the phone value', () => {
+    // The \b-anchored handy/mobil keywords miss these standard DE compounds, so
+    // they are listed explicitly in the phone pattern.
+    setForm(`
+      <label for="h">Handynummer</label><input id="h" type="tel" />
+      <label for="m">Mobilnummer</label><input id="m" type="tel" />
+      <label for="mt">Mobiltelefon</label><input id="mt" type="tel" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('h')).toBe('+31612345678');
+    expect(val('m')).toBe('+31612345678');
+    expect(val('mt')).toBe('+31612345678');
+  });
+
+  it('German phone stays anchored: "Automobilhersteller" / "Handyman" do NOT match the phone key', () => {
+    // Why the compounds are explicit rather than unanchored `handy`/`mobil`:
+    // bare substrings would wrongly fill these real, unrelated labels.
+    setForm(`
+      <label for="a">Automobilhersteller</label><input id="a" type="text" />
+      <label for="hm">Handyman services</label><input id="hm" type="text" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('a')).toBe('');
+    expect(val('hm')).toBe('');
+  });
+
   it('French: Prénom/Nom de famille/Adresse e-mail/Numéro de téléphone/Ville fill', () => {
     setForm(`
       <label for="pr">Prénom</label><input id="pr" type="text" />
