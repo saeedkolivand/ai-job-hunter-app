@@ -96,9 +96,9 @@ export function useReferralDraft({
         format: channel,
         charLimit: channel === 'connection_note' ? CONNECTION_NOTE_LIMIT : undefined,
         model,
-        // Write the message in the résumé's language — same client-side detection
-        // the cover-letter/metadata path uses; `safeLocale` clamps it downstream.
-        locale: detectLanguages(resume, '').resumeName,
+        // Write the message in the résumé's language — pass the ISO 639-1 code
+        // (not the display name) so `safeLocale` downstream doesn't collapse it to 'en'.
+        locale: detectLanguages(resume, '').resume,
         onToken: (tok) => setDraft((prev) => prev + tok),
         signal: controller.signal,
       });
@@ -147,7 +147,7 @@ export function useReferralDraft({
         format: channel,
         charLimit: channel === 'connection_note' ? CONNECTION_NOTE_LIMIT : undefined,
         model,
-        locale: detectLanguages(resume, '').resumeName,
+        locale: detectLanguages(resume, '').resume,
         onToken: (tok) => {
           if (firstToken) {
             // Replace the snapshot with the first streaming token.
