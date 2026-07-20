@@ -104,6 +104,16 @@ describe('buildLinkSuggestions — in-doc harvest from docValue', () => {
     const result = buildLinkSuggestions({ contactProfile: null, docValue: '' });
     expect(result).toEqual([]);
   });
+
+  it('captures a URL that itself contains a balanced paren pair (e.g. wikipedia disambiguation)', () => {
+    const docValue =
+      'See [Python](https://en.wikipedia.org/wiki/Python_(programming_language)) for context.';
+    const result = buildLinkSuggestions({ contactProfile: null, docValue });
+    expect(result).toContainEqual({
+      label: 'Python',
+      url: 'https://en.wikipedia.org/wiki/Python_(programming_language)',
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

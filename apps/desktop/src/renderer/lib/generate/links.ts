@@ -15,9 +15,12 @@ import type { LinkSuggestion } from '@ajh/ui';
 /**
  * An inline markdown link span `[label](url)` in the live document. Mirrors the
  * `MD_LINK_SPAN_RE` shape in packages/prompts/src/generate/links.ts; the two
- * capture groups are the label and the raw URL.
+ * capture groups are the label and the raw URL. The URL group allows one level
+ * of balanced parens so Wikipedia-style URLs (e.g. `Python_(programming_language)`)
+ * are captured whole instead of being truncated at the first `)`. Bounded
+ * quantifiers (200/2000) cap adversarial input to keep the regex linear.
  */
-const MD_LINK_SPAN_RE = /\[([^\]]+)\]\(([^)]+)\)/g;
+const MD_LINK_SPAN_RE = /\[([^\]]{1,200})\]\(((?:[^()]|\([^()]{0,200}\)){1,2000})\)/g;
 
 /** URL schemes we surface — matches the dialog's `isAllowedLinkUrl` gate. */
 const ALLOWED_SCHEMES = new Set(['http:', 'https:', 'mailto:']);
