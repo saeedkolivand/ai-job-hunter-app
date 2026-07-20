@@ -72,7 +72,77 @@ export const AMBIGUOUS = [
   'visa status',
   'green card',
   'immigration status',
+  // ── Localized third-party / reference / emergency-contact fields ──────────
+  // The EU-language equivalents of the referrer/reference/emergency/supervisor/
+  // contact-person categories already protected in English above. Without
+  // these, a "Name des Ansprechpartners" / "Name der Referenzperson" field
+  // matches the generic `\bname\b` catch-all in `matchNamedKey` and mis-fills
+  // with the applicant's OWN name. All are long, distinctive substrings with no
+  // English-word collision (the short/collision-prone ones live in
+  // {@link AMBIGUOUS_WORDS} below).
+  'ansprechpartner', // DE contact person
+  'notfall', // DE emergency (covers notfallkontakt/notfallnummer)
+  'referenz', // DE reference (covers referenzperson/referenznummer)
+  'vorgesetzt', // DE supervisor (vorgesetzte/vorgesetzter)
+  'personne a contacter', // FR person to contact
+  'recruteur', // FR recruiter
+  'contacto de emergencia', // ES emergency contact
+  'persona de contacto', // ES contact person
+  'referencia', // ES reference
+  'emergencia', // ES emergency
+  'reclutador', // ES recruiter
+  'contatto di emergenza', // IT emergency contact
+  'referente', // IT reference/contact person
+  'emergenza', // IT emergency
+  'contactpersoon', // NL contact person
+  'noodcontact', // NL emergency contact
+  'osoba kontaktowa', // PL contact person
+  'kontakt alarmowy', // PL emergency contact
+  'referencje', // PL references
+  // ── Localized sensitive PII (date of birth / national-id / tax / social) ──
+  // Long, distinctive substrings (accent-free — the signal is diacritic-folded
+  // by `textSignal`). A false match here only ever SKIPS a field (never
+  // mis-fills / mis-captures), so this is the safe direction.
+  'geburtsdatum', // DE date of birth
+  'geburtstag', // DE birthday
+  'steuernummer', // DE tax number
+  'sozialversicherung', // DE social security
+  'ausweis', // DE id card
+  'date de naissance', // FR date of birth
+  'numero de securite sociale', // FR social-security number
+  'fecha de nacimiento', // ES date of birth
+  'codice fiscale', // IT tax code
+  'data di nascita', // IT date of birth
+  'geboortedatum', // NL date of birth
+  'data urodzenia', // PL date of birth
+  'pesel', // PL national id
+  'data de nascimento', // PT date of birth
+  'personnummer', // SV/NO national id
+  'cpr-nummer', // DA national id
+  'fodselsnummer', // NO national id (ø folded to o by `stripDiacritics`)
+  'henkilotunnus', // FI national id
 ];
+
+/**
+ * Ambiguous/sensitive terms that are too SHORT or too English-collision-prone
+ * to match as plain substrings — matched on `\b` WORD boundaries instead (the
+ * signal is accent-free and lowercased, so keywords are too). A bare substring
+ * would wrongly SKIP a legitimate field: `dni` ⊂ Polish "poprzedni", `bsn` is a
+ * 3-letter fragment, `urgence` ⊂ "insurgence". `\burgence\b` still catches the
+ * FR "contact d'urgence" form (the apostrophe is a word boundary).
+ */
+const AMBIGUOUS_WORDS = /\b(?:dni|bsn|urgence)\b/;
+
+/**
+ * True when a field's {@link textSignal} is ambiguous or sensitive and must be
+ * SKIPPED by both autofill ({@link textSignal} → `isCandidateField`) and
+ * answers-capture (`isCapturable`). Combines the plain-substring {@link AMBIGUOUS}
+ * denylist with the word-anchored {@link AMBIGUOUS_WORDS} one, so the two
+ * consumers can never disagree on what counts as ambiguous.
+ */
+export function isAmbiguousSignal(signal: string): boolean {
+  return AMBIGUOUS.some((w) => signal.includes(w)) || AMBIGUOUS_WORDS.test(signal);
+}
 
 /**
  * True when `el` or ANY ancestor is hidden — via the `hidden` attribute or
@@ -145,19 +215,42 @@ export function labelText(el: HTMLElement): string {
   return text;
 }
 
-/** The lowercased free-text signal (name/id/placeholder/aria-label/label) used
- *  both for autofill's Tier-2 field matching and the answers-capture
- *  denylist check. Takes `HTMLElement` for the same reason as `labelText`. */
+/** Fold an accented EU label to ASCII so it matches the accent-free keyword
+ *  table in {@link matchNamedKey} and the {@link AMBIGUOUS} denylist. Two steps,
+ *  because NFD alone is not enough: (1) NFD-decompose then strip combining marks
+ *  (é → e, ä → a, ż → z, å → a); (2) an explicit fold for the atomic letters
+ *  that have NO NFD decomposition (ø, æ, ł, đ, ß) — without step 2, "Fødselsnummer"
+ *  or "Szkoła" would keep their ø/ł and never match "fodselsnummer"/"szkola".
+ *  Kept LOCAL to this file (no import — this module is inlined verbatim into the
+ *  classic-injected `fill.js`/`capture.js` bundles, which forbid `import`);
+ *  `autofill.ts` keeps its own `normalizeLabel` for the extra-link matcher. */
+function stripDiacritics(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[øØ]/g, 'o')
+    .replace(/[æÆ]/g, 'ae')
+    .replace(/[łŁ]/g, 'l')
+    .replace(/[đĐ]/g, 'd')
+    .replace(/[ßẞ]/g, 'ss');
+}
+
+/** The accent-free, lowercased free-text signal (name/id/placeholder/aria-label/
+ *  label) used both for autofill's Tier-2 field matching and the answers-capture
+ *  denylist check. Diacritics are stripped here (not per keyword) so BOTH the
+ *  named-key table and the AMBIGUOUS denylist can be written accent-free and a
+ *  German/French/Polish/… label still matches. Takes `HTMLElement` for the same
+ *  reason as `labelText`. */
 export function textSignal(el: HTMLElement): string {
-  return [
-    el.getAttribute('name') ?? '',
-    el.id,
-    el.getAttribute('placeholder') ?? '',
-    el.getAttribute('aria-label') ?? '',
-    labelText(el),
-  ]
-    .join(' ')
-    .toLowerCase();
+  return stripDiacritics(
+    [
+      el.getAttribute('name') ?? '',
+      el.id,
+      el.getAttribute('placeholder') ?? '',
+      el.getAttribute('aria-label') ?? '',
+      labelText(el),
+    ].join(' ')
+  ).toLowerCase();
 }
 
 /** The last (field) token of an `autocomplete` attribute value, e.g.
@@ -218,24 +311,90 @@ export function matchAutocompleteKey(token: string): string | null {
  * `autofill.ts`-only "Tier 1", since capture also runs against `<select>`/
  * `<textarea>` which don't carry the same autocomplete semantics).
  */
+/**
+ * Ordered, first-match-wins keyword table for {@link matchNamedKey}. Each
+ * `pattern` runs against the accent-free, lowercased {@link textSignal}, so
+ * every keyword is written WITHOUT diacritics (universite, not université) and
+ * a `\b` anchor is used for short / collision-prone terms.
+ *
+ * Widened beyond English to the major EU languages
+ * (DE/FR/ES/IT/NL/PL/PT/SV/DA, plus NO/FI where the words coincide). Two
+ * ordering choices matter:
+ *  - the COMBINED full-name phrases ("nombre completo", "imie i nazwisko", …)
+ *    run BEFORE first/last, so such a field resolves to `fullName` rather than
+ *    grabbing just its first (or last) token — those single tokens are
+ *    substrings of the combined phrase;
+ *  - a name term that is also a substring of a "username"/"company"/full-name
+ *    phrase carries a negative lookahead (e.g. `nombre(?!… de …)`) so a
+ *    "Nombre de usuario" / "Nombre de la empresa" field never mis-fills as a
+ *    first name.
+ *
+ * The generic bare-"Name" catch-all (with its education/company/user denylist)
+ * is NOT in this table — it runs last, in {@link matchNamedKey}, only after
+ * every specific pattern misses.
+ */
+const NAMED_KEY_PATTERNS: readonly { key: string; pattern: RegExp }[] = [
+  { key: 'linkedin', pattern: /linkedin/ },
+  { key: 'github', pattern: /github/ },
+  { key: 'website', pattern: /portfolio|personal (web ?site|site)/ },
+  // `email`/`e-mail` already cover most EU forms (e-mail-adresse, adresse
+  // e-mail, indirizzo e-mail, …); only the non-"mail" spellings are added.
+  { key: 'email', pattern: /email|e-mail|\bcorreo\b|\bcourriel\b|sahkoposti/ },
+  // `telefon` (substring) covers telefon(nummer)/telefono/telefone across
+  // DE/ES/IT/PT/SV/DA/NO/PL; `telefoon` (NL) and `telephone` (FR/EN) differ.
+  // `handy`/`mobil` stay `\b`-anchored (bare `handy` ⊂ "handyman", bare `mobil`
+  // ⊂ "automobil…"), so the concatenated DE compounds are listed explicitly.
+  {
+    key: 'phone',
+    pattern:
+      /phone|mobile|telephone|telefon|telefoon|handynummer|handytelefon|mobilnummer|mobiltelefon|\bhandy\b|\bmobil\b|puhelin/,
+  },
+  // Combined full-name phrases — MUST precede first/last (see table doc): both
+  // the "completo"-style forms AND the "first AND last" conjunction forms
+  // ("Vor- und Nachname", "Nombre y apellidos", "Nome e cognome"), which would
+  // otherwise PARTIALLY fill via the first/last patterns below (nachname →
+  // lastName, nombre → firstName). `-?` tolerates the elided-hyphen DE/NL forms.
+  {
+    key: 'fullName',
+    pattern:
+      /\bfull name\b|vollstandiger name|vor-? und nachname|nom complet|prenom et nom|nombre completo|nombre y apellidos?|nome completo|nome e cognome|imie i nazwisko|volledige naam|voor-? en achternaam|fullstandigt namn/,
+  },
+  // `nombre` (ES) and `nome` (IT/PT) mean "name" — excluded when they head a
+  // username/company/full-name phrase so they only fire for a real first name.
+  {
+    key: 'firstName',
+    pattern:
+      /first name|given name|forename|vorname|prenom|voornaam|fornamn|fornavn|etunimi|\bimie\b|\bnombre\b(?!\s*(?:de\b|completo))|\bnome\b(?!\s*(?:completo|utente|de\b|da\b|del))/,
+  },
+  {
+    key: 'lastName',
+    pattern:
+      /last name|surname|family name|nachname|familienname|nom de famille|\bapellidos?\b|cognome|achternaam|nazwisko|apelido|sobrenome|efternamn|efternavn|etternavn|sukunimi/,
+  },
+  // `city`/`town` stay plain substrings (unchanged English behavior); the added
+  // EU city/place terms use `\b` where they are short/collision-prone.
+  {
+    key: 'location',
+    pattern:
+      /city|town|\blocation\b|\bort\b|stadt|wohnort|\bville\b|ciudad|citta|plaats|miasto|cidade|localidad/,
+  },
+];
+
 export function matchNamedKey(signal: string): string | null {
-  if (signal.includes('linkedin')) return 'linkedin';
-  if (signal.includes('github')) return 'github';
-  if (signal.includes('portfolio') || /personal (web ?site|site)/.test(signal)) return 'website';
-  if (signal.includes('email') || signal.includes('e-mail')) return 'email';
-  if (signal.includes('phone') || signal.includes('mobile') || signal.includes('telephone'))
-    return 'phone';
-  if (/first name|given name|forename/.test(signal)) return 'firstName';
-  if (/last name|surname|family name/.test(signal)) return 'lastName';
-  if (signal.includes('city') || signal.includes('town') || /\blocation\b/.test(signal))
-    return 'location';
-  if (/\bfull name\b/.test(signal)) return 'fullName';
-  // A bare "Name" field (not user/file/nick/display/business/org and not an
-  // education field — "School Name"/"University Name"/"Degree Name"/… — and not
-  // a first/last variant already handled) → full name.
+  for (const { key, pattern } of NAMED_KEY_PATTERNS) {
+    if (pattern.test(signal)) return key;
+  }
+  // Generic catch-all: a bare "Name" field → full name, UNLESS it's a
+  // user/file/nick/display/business/org field OR a school/company/user-account
+  // "name" field. The denylist is localized (accent-free — the signal is
+  // diacritic-stripped) so "Name der Schule" / "Name des Unternehmens" /
+  // "Nom de l'entreprise"-style fields never receive the person's name.
   if (
     /\bname\b/.test(signal) &&
-    !/user|file|nick|screen|display|business|org|school|institution|university|college|degree|course|program|certificat/.test(
+    // `\bfirma\b` is anchored — a bare `firma` substring wrongly matches the
+    // English words "affirmative"/"confirmation", which would stop a legitimate
+    // "Name (Affirmative Action)" EEO field from filling.
+    !/user|file|nick|screen|display|business|org|school|institution|university|college|degree|course|program|certificat|schule|hochschule|universitat|benutzer|\bfirma\b|unternehmen|ecole|universite|entreprise|societe|utilisateur|escuela|universidad|empresa|usuario|scuola|universita|azienda|utente|szkola|uczelnia|uzytkownik|gebruiker|bedrijf|foretag|anvandare|virksomhed|bruger|yritys|kayttaja/.test(
       signal
     )
   )

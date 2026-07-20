@@ -16,14 +16,14 @@
  *    remainder) for separate first/last fields and FLAGGED as a guess.
  *
  * The label/visibility/denylist primitives (`labelText`/`textSignal`/
- * `isHidden`/`escapeId`/`AMBIGUOUS`) live in `./field-signal` — shared with
- * `answers-capture.ts` (PR 5 of the extension roadmap) so fill and capture
+ * `isHidden`/`escapeId`/`isAmbiguousSignal`) live in `./field-signal` — shared
+ * with `answers-capture.ts` (PR 5 of the extension roadmap) so fill and capture
  * never disagree on what counts as labelled/visible/ambiguous.
  */
 
 import {
-  AMBIGUOUS,
   autocompleteToken,
+  isAmbiguousSignal,
   isHidden,
   matchAutocompleteKey,
   matchNamedKey,
@@ -123,9 +123,9 @@ export function splitName(fullName: string): { first: string; last: string } {
 
 /**
  * The baseline gate shared by every fill tier: a fillable input TYPE, visible,
- * empty, not a card/password autocomplete token, and not matching the
- * {@link AMBIGUOUS} denylist. Extracted so the extra-link matcher (Tier 2)
- * applies the exact same discipline as the named-key matcher below.
+ * empty, not a card/password autocomplete token, and not matching the ambiguous/
+ * sensitive denylist ({@link isAmbiguousSignal}). Extracted so the extra-link
+ * matcher (Tier 2) applies the exact same discipline as the named-key matcher below.
  */
 function isCandidateField(el: HTMLInputElement): boolean {
   if (!FILLABLE_TYPES.has(el.type)) return false;
@@ -135,8 +135,7 @@ function isCandidateField(el: HTMLInputElement): boolean {
   const ac = autocompleteToken(el);
   if (ac.startsWith('cc-') || ac === 'current-password' || ac === 'new-password') return false;
 
-  const signal = textSignal(el);
-  if (AMBIGUOUS.some((w) => signal.includes(w))) return false;
+  if (isAmbiguousSignal(textSignal(el))) return false;
 
   return true;
 }

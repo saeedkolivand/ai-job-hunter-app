@@ -18,6 +18,7 @@ import {
   runAutofill,
   splitName,
 } from './autofill';
+import { textSignal } from './field-signal';
 
 const PROFILE: AutofillProfile = {
   fullName: 'Saeed Kolivand',
@@ -301,6 +302,289 @@ describe('planAndFill – filled-nothing', () => {
     const summary = planAndFill(document, PROFILE);
     expect(summary.filledNothing).toBe(true);
     expect(summary.filled).toHaveLength(0);
+  });
+});
+
+describe('planAndFill – EU-language field labels (Tier-2 free-text matcher)', () => {
+  // Each language: native-labelled first/last/email/phone/location fields fill
+  // from the profile (proving the widened keyword table AND the accent-free
+  // signal normalization — every label below carries real diacritics), while
+  // its school / company / username "name" fields do NOT fill (proving the
+  // localized generic-name denylist + the first-name negative lookaheads).
+
+  it('German: Vorname/Nachname/E-Mail-Adresse/Telefonnummer/Wohnort fill', () => {
+    setForm(`
+      <label for="vn">Vorname</label><input id="vn" type="text" />
+      <label for="nn">Nachname</label><input id="nn" type="text" />
+      <label for="em">E-Mail-Adresse</label><input id="em" type="email" />
+      <label for="tp">Telefonnummer</label><input id="tp" type="tel" />
+      <label for="wo">Wohnort</label><input id="wo" type="text" />
+    `);
+    const summary = planAndFill(document, PROFILE);
+    expect(val('vn')).toBe('Saeed');
+    expect(val('nn')).toBe('Kolivand');
+    expect(val('em')).toBe('saeed@example.com');
+    expect(val('tp')).toBe('+31612345678');
+    expect(val('wo')).toBe('Amsterdam, Netherlands');
+    expect(summary.nameSplit).toEqual({ first: 'Saeed', last: 'Kolivand' });
+  });
+
+  it('German: Schulname / "Name der Schule" / "Name des Unternehmens" are NOT filled', () => {
+    setForm(`
+      <label for="s1">Schulname</label><input id="s1" type="text" />
+      <label for="s2">Name der Schule</label><input id="s2" type="text" />
+      <label for="c1">Firmenname</label><input id="c1" type="text" />
+      <label for="c2">Name des Unternehmens</label><input id="c2" type="text" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('s1')).toBe('');
+    expect(val('s2')).toBe('');
+    expect(val('c1')).toBe('');
+    expect(val('c2')).toBe('');
+  });
+
+  it('German: concatenated mobile labels "Handynummer" / "Mobilnummer" / "Mobiltelefon" fill from the phone value', () => {
+    // The \b-anchored handy/mobil keywords miss these standard DE compounds, so
+    // they are listed explicitly in the phone pattern.
+    setForm(`
+      <label for="h">Handynummer</label><input id="h" type="tel" />
+      <label for="m">Mobilnummer</label><input id="m" type="tel" />
+      <label for="mt">Mobiltelefon</label><input id="mt" type="tel" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('h')).toBe('+31612345678');
+    expect(val('m')).toBe('+31612345678');
+    expect(val('mt')).toBe('+31612345678');
+  });
+
+  it('German phone stays anchored: "Automobilhersteller" / "Handyman" do NOT match the phone key', () => {
+    // Why the compounds are explicit rather than unanchored `handy`/`mobil`:
+    // bare substrings would wrongly fill these real, unrelated labels.
+    setForm(`
+      <label for="a">Automobilhersteller</label><input id="a" type="text" />
+      <label for="hm">Handyman services</label><input id="hm" type="text" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('a')).toBe('');
+    expect(val('hm')).toBe('');
+  });
+
+  it('French: Prénom/Nom de famille/Adresse e-mail/Numéro de téléphone/Ville fill', () => {
+    setForm(`
+      <label for="pr">Prénom</label><input id="pr" type="text" />
+      <label for="nf">Nom de famille</label><input id="nf" type="text" />
+      <label for="em">Adresse e-mail</label><input id="em" type="email" />
+      <label for="tp">Numéro de téléphone</label><input id="tp" type="tel" />
+      <label for="vi">Ville</label><input id="vi" type="text" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('pr')).toBe('Saeed');
+    expect(val('nf')).toBe('Kolivand');
+    expect(val('em')).toBe('saeed@example.com');
+    expect(val('tp')).toBe('+31612345678');
+    expect(val('vi')).toBe('Amsterdam, Netherlands');
+  });
+
+  it("French: nom de l'école / nom de l'entreprise are NOT filled", () => {
+    setForm(`
+      <label for="e1">Nom de l'école</label><input id="e1" type="text" />
+      <label for="e2">Nom de l'entreprise</label><input id="e2" type="text" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('e1')).toBe('');
+    expect(val('e2')).toBe('');
+  });
+
+  it('Spanish: Nombre/Apellidos/Correo electrónico/Teléfono/Ciudad fill', () => {
+    setForm(`
+      <label for="nb">Nombre</label><input id="nb" type="text" />
+      <label for="ap">Apellidos</label><input id="ap" type="text" />
+      <label for="em">Correo electrónico</label><input id="em" type="email" />
+      <label for="tp">Teléfono</label><input id="tp" type="tel" />
+      <label for="ci">Ciudad</label><input id="ci" type="text" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('nb')).toBe('Saeed');
+    expect(val('ap')).toBe('Kolivand');
+    expect(val('em')).toBe('saeed@example.com');
+    expect(val('tp')).toBe('+31612345678');
+    expect(val('ci')).toBe('Amsterdam, Netherlands');
+  });
+
+  it('Spanish: "Nombre de usuario" (username) and "Nombre de la empresa" (company) are NOT filled', () => {
+    // The load-bearing case: `nombre` means "name" so a bare `nombre` pattern
+    // would mis-fill both of these; the negative lookahead is what stops it.
+    setForm(`
+      <label for="u">Nombre de usuario</label><input id="u" type="text" />
+      <label for="c">Nombre de la empresa</label><input id="c" type="text" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('u')).toBe('');
+    expect(val('c')).toBe('');
+  });
+
+  it('Polish: Imię/Nazwisko/E-mail/Telefon/Miasto fill', () => {
+    setForm(`
+      <label for="im">Imię</label><input id="im" type="text" />
+      <label for="nz">Nazwisko</label><input id="nz" type="text" />
+      <label for="em">E-mail</label><input id="em" type="email" />
+      <label for="tp">Telefon</label><input id="tp" type="tel" />
+      <label for="mi">Miasto</label><input id="mi" type="text" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('im')).toBe('Saeed');
+    expect(val('nz')).toBe('Kolivand');
+    expect(val('em')).toBe('saeed@example.com');
+    expect(val('tp')).toBe('+31612345678');
+    expect(val('mi')).toBe('Amsterdam, Netherlands');
+  });
+
+  it('Polish: "Nazwa firmy" (company) and "Nazwa użytkownika" (username) are NOT filled', () => {
+    setForm(`
+      <label for="c">Nazwa firmy</label><input id="c" type="text" />
+      <label for="u">Nazwa użytkownika</label><input id="u" type="text" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('c')).toBe('');
+    expect(val('u')).toBe('');
+  });
+
+  it('Italian: Nome/Cognome/Indirizzo email/Telefono/Città fill (Cognome is NOT read as a first name)', () => {
+    setForm(`
+      <label for="no">Nome</label><input id="no" type="text" />
+      <label for="co">Cognome</label><input id="co" type="text" />
+      <label for="em">Indirizzo email</label><input id="em" type="email" />
+      <label for="tp">Telefono</label><input id="tp" type="tel" />
+      <label for="ci">Città</label><input id="ci" type="text" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('no')).toBe('Saeed');
+    expect(val('co')).toBe('Kolivand');
+    expect(val('em')).toBe('saeed@example.com');
+    expect(val('tp')).toBe('+31612345678');
+    expect(val('ci')).toBe('Amsterdam, Netherlands');
+  });
+
+  it('Italian: "Nome utente" (username) is NOT filled as a first name', () => {
+    setForm(`<label for="u">Nome utente</label><input id="u" type="text" />`);
+    planAndFill(document, PROFILE);
+    expect(val('u')).toBe('');
+  });
+
+  it('resolves a COMBINED full-name field to fullName, not just its first/last token', () => {
+    // Combined phrases contain the first/last keywords as substrings, so they
+    // must be matched BEFORE first/last (else "Nombre completo" would fill with
+    // just "Saeed"). Filled as one fullName value — no first/last split.
+    setForm(`
+      <label for="es">Nombre completo</label><input id="es" type="text" />
+      <label for="pl">Imię i nazwisko</label><input id="pl" type="text" />
+      <label for="de">Vollständiger Name</label><input id="de" type="text" />
+    `);
+    const summary = planAndFill(document, PROFILE);
+    expect(val('es')).toBe('Saeed Kolivand');
+    expect(val('pl')).toBe('Saeed Kolivand');
+    expect(val('de')).toBe('Saeed Kolivand');
+    expect(summary.nameSplit).toBeNull();
+    expect(summary.filled.every((f) => f.key === 'fullName')).toBe(true);
+  });
+
+  it('fills a combined "first AND last" label as the WHOLE name, not a partial first/last', () => {
+    // "Vor- und Nachname" contains "nachname" (→ lastName) and "Nombre y
+    // apellidos" contains "nombre" (→ firstName); without the conjunction forms
+    // in the fullName pattern each would fill only half the name.
+    setForm(`
+      <label for="de">Vor- und Nachname</label><input id="de" type="text" />
+      <label for="es">Nombre y apellidos</label><input id="es" type="text" />
+      <label for="it">Nome e cognome</label><input id="it" type="text" />
+      <label for="fr">Prénom et nom</label><input id="fr" type="text" />
+      <label for="nl">Voor- en achternaam</label><input id="nl" type="text" />
+    `);
+    const summary = planAndFill(document, PROFILE);
+    expect(val('de')).toBe('Saeed Kolivand');
+    expect(val('es')).toBe('Saeed Kolivand');
+    expect(val('it')).toBe('Saeed Kolivand');
+    expect(val('fr')).toBe('Saeed Kolivand');
+    expect(val('nl')).toBe('Saeed Kolivand');
+    expect(summary.nameSplit).toBeNull();
+    expect(summary.filled.every((f) => f.key === 'fullName')).toBe(true);
+  });
+
+  it('still skips a localized sensitive-PII field (DE Geburtsdatum, PL PESEL)', () => {
+    setForm(`
+      <label for="g">Geburtsdatum</label><input id="g" type="text" autocomplete="email" />
+      <label for="p">Numer PESEL</label><input id="p" type="text" autocomplete="email" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('g')).toBe('');
+    expect(val('p')).toBe('');
+  });
+});
+
+describe('planAndFill – third-party / localized denylist hardening', () => {
+  it('German: "Name des Ansprechpartners / Notfallkontakts / Referenzperson" third-party fields are NOT filled', () => {
+    // \bname\b fires on all three, so without the localized ansprechpartner /
+    // notfall / referenz denylist they would mis-fill with the applicant's name.
+    setForm(`
+      <label for="a">Name des Ansprechpartners</label><input id="a" type="text" />
+      <label for="n">Name des Notfallkontakts</label><input id="n" type="text" />
+      <label for="r">Name der Referenzperson</label><input id="r" type="text" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('a')).toBe('');
+    expect(val('n')).toBe('');
+    expect(val('r')).toBe('');
+  });
+
+  it('French: "Nom du contact d\'urgence" / "Numéro d\'urgence" are NOT filled (urgence is word-anchored)', () => {
+    setForm(`
+      <label for="cu">Nom du contact d'urgence</label><input id="cu" type="text" />
+      <label for="nu">Numéro d'urgence</label><input id="nu" type="tel" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('cu')).toBe('');
+    expect(val('nu')).toBe('');
+  });
+
+  it('English: a "Name (Affirmative Action)" EEO field STILL fills — `firma` is word-anchored, not a bare substring', () => {
+    // "affirmative" contains the substring "firma"; a bare `firma` denylist term
+    // would have wrongly blocked this real US EEO self-identification field.
+    setForm(
+      `<label for="aa">Name (Voluntary Self-Identification — Affirmative Action)</label><input id="aa" type="text" />`
+    );
+    planAndFill(document, PROFILE);
+    expect(val('aa')).toBe('Saeed Kolivand');
+  });
+
+  it('Norwegian: a "Fødselsnummer" field is skipped (ø is folded to o so the denylist matches)', () => {
+    // NFD does NOT decompose ø, so without the explicit fold "fodselsnummer"
+    // never matches "Fødselsnummer" and this national-id field would fill.
+    setForm(
+      `<label for="f">Fødselsnummer</label><input id="f" type="text" autocomplete="email" />`
+    );
+    planAndFill(document, PROFILE);
+    expect(val('f')).toBe('');
+  });
+
+  it('word-anchors "dni": a standalone "DNI" field is skipped, but Polish "poprzedni" (previous) does not over-skip a first-name field', () => {
+    setForm(`
+      <label for="d1">Número de DNI</label><input id="d1" type="text" autocomplete="email" />
+      <label for="im2">Imię</label><input id="im2" name="poprzedni_krok" type="text" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('d1')).toBe(''); // "DNI" whole word → ambiguous, skipped
+    expect(val('im2')).toBe('Saeed'); // "poprzedni" substring must NOT trigger the dni rule
+  });
+
+  it('folds atomic non-decomposable letters (ø/æ/ł/đ/ß) that NFD leaves intact', () => {
+    setForm(
+      `<label for="x">Fødselsnummer Szkoła Æther Đ Straße</label><input id="x" type="text" />`
+    );
+    const signal = textSignal(document.getElementById('x') as HTMLElement);
+    expect(signal).toContain('fodselsnummer');
+    expect(signal).toContain('szkola');
+    expect(signal).toContain('aether');
+    expect(signal).toContain('strasse');
+    expect(signal).toContain(' d '); // Đ → d
   });
 });
 
