@@ -13,7 +13,7 @@ if (!existsSync(cardPath)) {
 const card = pathToFileURL(cardPath).href;
 
 const targets = [
-  { out: 'apps/landing/og-card.jpg', w: 1200, h: 630 },
+  { out: 'apps/landing/public/og-card.jpg', w: 1200, h: 630 },
   { out: 'branding/github-social-preview.png', w: 1280, h: 640 },
 ];
 

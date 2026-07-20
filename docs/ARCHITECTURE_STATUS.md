@@ -252,18 +252,22 @@ MV3 extension (`apps/extension`) published on Chrome Web Store + Firefox AMO; br
 
 ## Landing & Public Site
 
-Static site serving brand, download links, and documentation.
+Next.js 15 static-export workspace package serving brand, download links, and documentation.
 
-| Feature                 | Status | Notes                                                                                               |
-| ----------------------- | ------ | --------------------------------------------------------------------------------------------------- |
-| Static consolidation    | ✅     | Root `landing/` moved to `apps/landing/` (index.html + 8 sibling pages, no build step; ADR-0017)    |
-| GitHub Pages deployment | ✅     | `pages.yml` publishes `apps/landing/` directly; no Next.js export or Vite build                     |
-| Original landing copy   | ✅     | `index.html` + footer links, brand doodles (SVG), CSS, foley JS; no WebGL infrastructure            |
-| Brand tokens            | ✅     | Paper/ink/red palette, fonts (Google Fonts), film-grain overlay; shared with extension store assets |
+| Feature                  | Status | Notes                                                                                                               |
+| ------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------- |
+| Next.js static export    | ✅     | `apps/landing/` is a Next.js 15 package (`output: 'export'`); flat files (no server runtime); PR1 delivered         |
+| Authored pages as routes | ✅     | 5 pages: home, creature, how-it-works, privacy, download (all `src/app/`); faithful port of legacy static site      |
+| Passthrough artifacts    | ✅     | Benchmarks, dashboards, storybook copied verbatim from `public/` (CI-owned, not built by Next)                      |
+| Parity gate              | ✅     | `pnpm check:parity` ensures byte-shape parity with legacy static layout (permanent, non-optional pre-push/CI gate)  |
+| GitHub Pages deployment  | ✅     | `pages.yml` publishes Next.js export output (`out/`) directly to Pages                                              |
+| Release seam             | ✅     | `src/data/version.json` baked at build time; `/download` and homepage read for client-side freshness checks         |
+| Brand tokens             | ✅     | Paper/ink/red palette, fonts (Google Fonts), film-grain overlay; shared with extension store assets; marketing tier |
+| Docs tier (PR2–PR4)      | 🚧     | `/mission-control` full-repo dashboard + unified docs pages (separate visual skin; PAT auth; safe-tier writes)      |
 
 **Note:** TERMINAL VELOCITY scroll-film (ADR 0016, merged M1–M3) abandoned 2026-07-20 mid-M4.
 All film concepts (playhead, scroll-film, scenes, quality governor, VAT shaders) and
-Experience-gate machinery (ADR 0014) retired. Static site remains the sole public landing.
+Experience-gate machinery (ADR 0014) retired. Static site (now Next.js) remains the sole public landing (ADR-0018).
 
 ---
 

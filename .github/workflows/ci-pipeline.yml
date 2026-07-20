@@ -100,6 +100,7 @@ jobs:
           filters: |
             frontend:
               - 'apps/desktop/src/**'
+              - 'apps/landing/**'
               - 'packages/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
