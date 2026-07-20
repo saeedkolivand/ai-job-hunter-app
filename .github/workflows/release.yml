@@ -19,7 +19,7 @@ name: 🚀 Release
 #   - package-extension: Build + attach browser extension zips (action: build-installers only)
 #   - generate-update-manifest: Publish latest.json for the auto-updater
 #   - update-cask: Pin the Homebrew cask to the built dmgs (version + per-arch sha256)
-#   - update-download-page: Sync landing/download.html to the built installer URLs
+#   - update-download-page: Sync apps/landing/download.html to the built installer URLs
 #
 # How to release:
 #   1. Actions → "🚀 Release" → Run workflow → action: release
@@ -825,9 +825,9 @@ jobs:
 
   update-download-page:
     name: 🌐 Update Landing Download Page
-    # Pins the landing download page (landing/download.html) to the just-built
+    # Pins the landing download page (apps/landing/download.html) to the just-built
     # installer assets — the versioned .dmg/.exe/.AppImage URLs only resolve once
-    # the build has uploaded them. It also commits landing/download.html back to
+    # the build has uploaded them. It also commits apps/landing/download.html back to
     # main, so it must run AFTER update-cask (the other main-pushing job) — both
     # did a bare `git push HEAD:main` in parallel and raced ("fetch first" reject).
     # Serializing via needs makes cask push first, then this job checks out the
@@ -836,7 +836,7 @@ jobs:
     # marked block via scripts/sync-download-page.cjs and commits it back to main.
     #
     # NOTE: unlike the cask commit, this one deliberately omits `[skip ci]` — we
-    # WANT the push to re-trigger pages.yml (it watches landing/**) so the live
+    # WANT the push to re-trigger pages.yml (it watches apps/landing/**) so the live
     # site redeploys with the fresh links. The push-only `release` job also fires
     # but no-ops (a lone chore commit yields no semantic-release version bump).
     needs: [build, update-cask, generate-update-manifest]
@@ -877,7 +877,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          echo "::group::Pinning landing/download.html to $VERSION"
+          echo "::group::Pinning apps/landing/download.html to $VERSION"
           node scripts/sync-download-page.cjs "${VERSION#v}"
           echo "::endgroup::"
 
@@ -887,10 +887,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- landing/download.html; then
+          if git diff --quiet -- apps/landing/download.html; then
             echo "Download page already up to date."
             exit 0
           fi
-          git add landing/download.html
+          git add apps/landing/download.html
           git commit -m "chore: sync landing download page to ${VERSION}"
           git push git@github.com:saeedkolivand/ai-job-hunter-app.git HEAD:main

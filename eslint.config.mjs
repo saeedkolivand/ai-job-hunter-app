@@ -129,7 +129,9 @@ export default tseslint.config(
       '**/src-tauri/target/**',
       // Local, untracked agent/editor tooling — not part of the codebase.
       '.claude/**',
-      'landing/**',
+      // apps/landing is a self-contained static marketing site (HTML + assets +
+      // the generated benchmarks/data.js), not a linted TS/JS package.
+      'apps/landing/**',
     ],
   },
 
@@ -503,42 +505,13 @@ export default tseslint.config(
       },
     },
   },
-  // Branding/marketing asset generators + landing's postbuild script all run
-  // under plain Node (console / process / fs).
+  // Branding/marketing asset generators run under plain Node (console / process / fs).
   {
-    files: ['branding/**/*.mjs', 'apps/landing/scripts/**/*.mjs'],
+    files: ['branding/**/*.mjs'],
     languageOptions: {
       globals: {
         ...globals.node,
       },
-    },
-  },
-
-  // apps/landing (@ajh/landing) - static marketing site, no @ajh/ui dependency.
-  // It ships hand-authored CSS + inline hex/styles (not Tailwind design tokens),
-  // so the base design-system selector rule (hardcoded-hex-in-className/style,
-  // invalid-opacity) does not apply. The raw-<button>/@ajh/ui import bans are
-  // already scoped to apps/desktop/src/renderer, so they never match here.
-  // Placed last so it wins for these files. Only the design-system rule is
-  // relaxed; all general quality rules (no-explicit-any, import sort, etc.) stay.
-  {
-    files: ['apps/landing/**/*.ts', 'apps/landing/**/*.tsx'],
-    rules: {
-      'no-restricted-syntax': 'off',
-    },
-  },
-
-  // apps/landing/src/fallback - verbatim transcription of the legacy landing
-  // inline script (parity with landing/index.html); rewriting would defeat
-  // the port, so the rules that would force it to diverge are off here.
-  {
-    files: ['apps/landing/src/fallback/**'],
-    rules: {
-      'no-var': 'off',
-      '@typescript-eslint/no-non-null-assertion': 'off',
-      '@typescript-eslint/no-explicit-any': 'off',
-      'no-console': 'off',
-      'no-empty': 'off',
     },
   }
 );

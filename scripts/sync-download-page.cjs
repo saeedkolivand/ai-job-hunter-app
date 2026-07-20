@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * Sync the landing download page (landing/download.html) to a published
+ * Sync the landing download page (apps/landing/download.html) to a published
  * release's installer assets: regenerates the per-platform download buttons
  * (macOS / Windows / Linux) between the <!-- downloads:start --> /
  * <!-- downloads:end --> markers, pinned to the given version.
@@ -11,7 +11,7 @@
  * build (mirrors `sync-cask.cjs`) — that's the only point where the versioned
  * assets the buttons link to actually exist on the GitHub Release. The push of
  * the rewritten page to main re-triggers the Pages deploy (pages.yml watches
- * landing/**), so the live site updates without `[skip ci]`.
+ * apps/landing/**), so the live site updates without `[skip ci]`.
  *
  * The asset filenames mirror the release notes Downloads table in
  * .github/workflows/release.yml — keep the two in sync if either changes.
@@ -72,7 +72,7 @@ function buildBlock(v) {
   ].join('\n');
 }
 
-const pagePath = path.join(__dirname, '..', 'landing', 'download.html');
+const pagePath = path.join(__dirname, '..', 'apps', 'landing', 'download.html');
 const before = fs.readFileSync(pagePath, 'utf8');
 
 const BLOCK_RE = /<!-- downloads:start[\s\S]*?downloads:end -->/;

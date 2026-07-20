@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded-by-0017
 supersedes: 0015
 supersedes-parts-of: 0014
 ---

@@ -1,9 +1,15 @@
 ---
 name: webgl-standards
-description: apps/landing WebGL conventions + verified version pins the GL authors and critics load first for TERMINAL VELOCITY - the realistic CG scroll-film. Owns the tunable constants ADR 0016 defers here - R3F v9 / three 0.185 / postprocessing 6.39.2 / three-good-godrays / gsap+lenis / detect-gpu / zustand, the one-shot playhead + 9-scene scroll map, the WebGL2 lane, the scroll rig, glTF-clip camera/character scrub, VAT splash playback, Gerstner water + godrays, the instanced paper storm, the filmic post chain, per-tier budgets + quality governor, the capability gate + semantic layer + a11y overlay, and the ASCII-only source rule. Load for any change under apps/landing/src/**.
+description: DORMANT (ADR-0017, 2026-07-20) - the TERMINAL VELOCITY scroll-film was retired and apps/landing is a static site with no GL surface; this skill is preserved for any future WebGL rebuild (conventions, verified version pins, playhead/scroll-rig/VAT/Gerstner/post-chain patterns, budgets, gate + semantic-layer machinery). Do not load for current apps/landing work - the static site routes to project-steward.
 ---
 
 # apps/landing WebGL standards (TERMINAL VELOCITY)
+
+> **DORMANT — ADR-0017 (2026-07-20).** The scroll-film was retired mid-M4; `apps/landing`
+> is now the self-contained static site with no `src/` and no GL surface, owned by
+> `project-steward`. Everything below is preserved verbatim as the starting point for a
+> future WebGL rebuild (M1-M3 remain in git history at #720-#722; the M4 tree is stashed
+> on `feat/tv-m4-robot`). Do not apply it to the static site.
 
 The single source both GL authors (`webgl-author`, `shader-engineer`) and their critics
 (`webgl-reviewer`, `gate-auditor`, `webgl-perf-profiler`) read before touching `apps/landing`.
