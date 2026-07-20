@@ -111,7 +111,7 @@ export function buildApplicationEmailPrompt(
     params.recipientName != null ? sanitizeRecipientName(params.recipientName) : undefined;
   const candidateName = meta.candidateName?.trim() || 'Unknown';
   const jobTitle = meta.jobTitle?.trim() || 'this role';
-  const companyName = meta.companyName?.trim() || 'the company';
+  const companyName = meta.companyName?.trim();
   const hasCompany = !!meta.companyName?.trim();
   const lang = meta.targetLanguage || 'en';
 
