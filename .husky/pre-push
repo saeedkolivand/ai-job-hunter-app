@@ -96,7 +96,7 @@ done
 # When the branch's OWN contribution (merge-base(origin/main)..HEAD — what this PR
 # actually adds, NOT the raw push range) is entirely docs/meta content, the heavy
 # build/typecheck/test/rust gates add nothing: markdown, docs/**, the .claude
-# agent/skill/command fleet, CLAUDE.md and landing/*.html are never built or run.
+# agent/skill/command fleet, CLAUDE.md and apps/landing/*.html are never built or run.
 # Using the branch's own diff (not remote_sha..local_sha) means a re-push that only
 # folds a fresh origin/main in — exactly what the sync step above forces on a stale
 # PR — still fast-paths a docs-only PR instead of re-gating main's already-merged,
@@ -114,7 +114,7 @@ if [ -z "${PREPUSH_FULL:-}" ] && [ "$HAVE_RANGE" -eq 1 ]; then
     own_files=$(git diff --name-only "$own_base..HEAD" 2>/dev/null | grep -E '.' || true)
   fi
   # ALLOW: every changed file is plainly non-executable docs/meta content.
-  DOCS_ALLOW='\.(md|mdx|txt)$|^docs/|^\.claude/(agents|skills|commands)/|^landing/.*\.html$'
+  DOCS_ALLOW='\.(md|mdx|txt)$|^docs/|^\.claude/(agents|skills|commands)/|^apps/landing/.*\.html$'
   # DENY: executable/config/build inputs — even when they sit under an allowed dir.
   DOCS_DENY='\.(mjs|cjs|jsx?|tsx?|mts|cts|rs|sh|bash|zsh|ps1|bat|cmd|py|rb)$|^\.husky/|^\.claude/hooks/|^\.claude/settings|^scripts/|(^|/)package(-lock)?\.json$|pnpm-lock\.yaml$|(^|/)tsconfig[^/]*\.json$|(^|/)Cargo\.(toml|lock)$|\.config\.(js|mjs|cjs|ts)$|^\.github/'
   if [ -n "$own_files" ] \
@@ -126,7 +126,7 @@ if [ -z "${PREPUSH_FULL:-}" ] && [ "$HAVE_RANGE" -eq 1 ]; then
       echo "▶ Checking agent-system drift..."
       node scripts/check-agent-system.mjs
     fi
-    if printf '%s\n' "$own_files" | grep -qE '^landing/'; then
+    if printf '%s\n' "$own_files" | grep -qE '^apps/landing/'; then
       echo "▶ Checking landing-diagram drift..."
       pnpm check:landing-drift
     fi
@@ -158,7 +158,7 @@ else
   if printf '%s\n' "$CHANGED" | grep -qE '^apps/desktop/src/|^packages/|^package\.json$|^pnpm-lock\.yaml$|^tsconfig.*\.json$|^eslint\.config\.mjs$|^vitest\.config\.ts$|^turbo\.json$|^\.github/'; then
     NODE=1
   fi
-  if printf '%s\n' "$CHANGED" | grep -qE '^landing/'; then
+  if printf '%s\n' "$CHANGED" | grep -qE '^apps/landing/'; then
     LANDING=1
   fi
   if printf '%s\n' "$CHANGED" | grep -qE '^\.github/workflows/'; then
@@ -198,7 +198,7 @@ if [ -n "$NODE" ] || [ -n "$RUST" ]; then
 fi
 
 # ── Landing-diagram drift ──────────────────────────────────────────────────────
-# The landing architecture/how-it-works diagrams are derived from the code, so a
+# The apps/landing architecture/how-it-works diagrams are derived from the code, so a
 # change to the diagrammed source (node/rust) OR to the landing pages can drift.
 if [ -n "$NODE" ] || [ -n "$RUST" ] || [ -n "$LANDING" ]; then
   echo "▶ Checking landing-diagram drift..."

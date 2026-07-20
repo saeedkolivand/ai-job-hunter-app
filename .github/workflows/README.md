@@ -60,7 +60,7 @@
 
 ### 🚀 Deploy — publishes on push to main
 
-| Workflow                            | Triggers     | What it does                                                                                                     |
-| ----------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------- |
-| [🌐 Deploy Landing Page](pages.yml) | push, manual | Publish the static marketing landing page (landing/) plus the @ajh/ui Storybook (at /storybook/) to GitHub Pages |
-| [🚀 Release](release.yml)           | manual       | Manual semantic release + on-demand Tauri installer builds                                                       |
+| Workflow                            | Triggers     | What it does                                                                                                          |
+| ----------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------- |
+| [🌐 Deploy Landing Page](pages.yml) | push, manual | Publish the static marketing landing page (apps/landing/) plus the @ajh/ui Storybook (at /storybook/) to GitHub Pages |
+| [🚀 Release](release.yml)           | manual       | Manual semantic release + on-demand Tauri installer builds                                                            |

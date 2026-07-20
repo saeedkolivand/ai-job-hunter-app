@@ -391,7 +391,7 @@ IPC request shapes have a single source of truth: **[Zod][zod] schemas in `packa
 
 This repo ships a knowledge base under <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a> — domain notes plus **architecture decision records** (<a href="docs/knowledge/decision-records/" target="_blank" rel="noopener noreferrer">ADRs</a>) — and a Claude Code agent system under `.claude/` (23 agents, a write-capable **author** + an independent **critic** per domain, plus commands). When in doubt about _why_ something is built a certain way, the ADRs are the fastest answer.
 
-For a **visual walkthrough** of the agent system — the fleet map, how a prompt is routed to an agent, the author→critic pipeline, and a with/without-agents comparison — open the interactive <a href="landing/agent-system.html" target="_blank" rel="noopener noreferrer">landing/agent-system.html</a>.
+For a **visual walkthrough** of the agent system — the fleet map, how a prompt is routed to an agent, the author→critic pipeline, and a with/without-agents comparison — open the interactive <a href="apps/landing/agent-system.html" target="_blank" rel="noopener noreferrer">apps/landing/agent-system.html</a>.
 
 A <a href="https://pypi.org/project/graphifyy/" target="_blank" rel="noopener noreferrer">graphify</a> knowledge graph (`graphify-out/`) can also be queried directly or wired as an **optional, opt-in** local MCP server — see <a href="docs/DEVELOPMENT.md#optional-knowledge-graph-mcp-graphify" target="_blank" rel="noopener noreferrer">docs/DEVELOPMENT.md</a>.
 

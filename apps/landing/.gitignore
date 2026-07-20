@@ -1,4 +1,3 @@
-.next/
-out/
-node_modules/
-next-env.d.ts
+# @ajh/ui Storybook static build is copied in only at Pages-deploy time
+# (.github/workflows/pages.yml) so it ships in the artifact; never committed.
+storybook/
