@@ -659,6 +659,14 @@ describe('buildCoverLetterSystemPrompt', () => {
     // Default (no tone passed) falls back to the professional directive.
     expect(buildCoverLetterSystemPrompt('recruiter', 'large')).toMatch(/TONE: polished, warm/);
   });
+
+  it('carries the placeholder-ban line in the FORMAT skeleton at full depth', () => {
+    // When the company is unknown the model must omit the addressee lines rather
+    // than print a literal "[Company Name]" / "Unternehmen" placeholder.
+    const prompt = buildCoverLetterSystemPrompt('recruiter', 'large');
+    expect(prompt).toContain('omit the company/addressee lines entirely');
+    expect(prompt).toContain('NEVER output a placeholder');
+  });
 });
 
 describe('buildCoverLetterPrompt', () => {
@@ -744,6 +752,26 @@ describe('buildCoverLetterPrompt', () => {
     const jobAd = 'Acme is hiring a recruiter-facing account executive in Berlin.';
     const prompt = buildCoverLetterPrompt(RESUME_WITH_LINKS, jobAd, META, 'recruiter');
     expect(prompt).toContain(jobAd);
+  });
+
+  it('names the company in the Role context line unchanged when it is known', () => {
+    // Byte-identical to the pre-fix Role line so the known-company path is untouched.
+    const prompt = buildCoverLetterPrompt(RESUME_WITH_LINKS, 'Job ad', META, 'recruiter');
+    expect(prompt).toContain('Role: Senior Engineer at Acme');
+  });
+
+  it('drops the company from the Role line and forbids a placeholder when the company is unknown', () => {
+    const prompt = buildCoverLetterPrompt(
+      RESUME_WITH_LINKS,
+      'Job ad',
+      { ...META, companyName: '' },
+      'recruiter'
+    );
+    expect(prompt).toContain('company name unknown');
+    expect(prompt).not.toContain(' at this company');
+    // The Role context line must not name the company; only the static
+    // EXAMPLE block ("...role at Acme:") legitimately mentions the fixture name.
+    expect(prompt).not.toContain('Role: Senior Engineer at Acme');
   });
 });
 

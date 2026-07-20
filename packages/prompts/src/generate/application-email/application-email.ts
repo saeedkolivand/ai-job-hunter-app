@@ -112,6 +112,7 @@ export function buildApplicationEmailPrompt(
   const candidateName = meta.candidateName?.trim() || 'Unknown';
   const jobTitle = meta.jobTitle?.trim() || 'this role';
   const companyName = meta.companyName?.trim() || 'the company';
+  const hasCompany = !!meta.companyName?.trim();
   const lang = meta.targetLanguage || 'en';
 
   const { depth, truncation, jobAdChars } = resolveProfile(target);
@@ -136,7 +137,7 @@ Subject: [concise, specific subject — role name + "Application" or similar; no
 ${greeting}
 
 [Body: 2 to 3 short paragraphs, ~120 to 200 words total. NOT a cover letter — email-length only.]
-- Opening paragraph: one specific, résumé-backed reason the candidate fits this role. Do not start with "I am excited to apply" or "I am writing to express my interest". Name the role and company naturally.
+- Opening paragraph: one specific, résumé-backed reason the candidate fits this role. Do not start with "I am excited to apply" or "I am writing to express my interest". Name the role and company naturally.${hasCompany ? '' : ' (company name unknown: name only the role, never invent, name, or write a company placeholder such as "Company" or "Unternehmen")'}
 - Middle: one or two concrete achievements from the résumé that prove the fit — shown as sentences, not bullets.
 - Closing: a brief, confident invitation to discuss further and a natural reference to the attached résumé/CV.
 
@@ -212,7 +213,7 @@ Every factual claim about the candidate MUST be traceable to a line in <candidat
 
 ### CONTEXT ###
 Candidate: ${candidateName}
-Role: ${jobTitle} at ${companyName}
+Role: ${hasCompany ? `${jobTitle} at ${companyName}` : jobTitle}
 Greeting: ${greeting}
 ${langNote}
 ${groundingBlock ? `\n${groundingBlock}\n` : ''}

@@ -141,6 +141,7 @@ const COVER_LETTER_FORMAT = `FORMAT (layout only; the body itself must read as o
 
 [Company Name]
 [Hiring Team / Manager name if named in the job ad]
+(If the company name is not known, omit the company/addressee lines entirely. NEVER output a placeholder such as "[Company Name]", "Company", or "Unternehmen".)
 
 Dear [Hiring Team / specific name],
 
@@ -325,6 +326,15 @@ export function buildCoverLetterPrompt(
   const directivesBlock = buildEmphasisDirectivesBlock(meta.emphasis);
   const groundingBlock = buildGroundingBlock(resumeBody, meta.topRequirements ?? []);
 
+  // Role context line: name the company only when it is actually known. When it
+  // is unknown, instruct the model to name the role alone rather than fall back
+  // to a placeholder like "this company" (which surfaces as literal placeholder
+  // text such as "[Company Name]" / "Unternehmen" in the generated letter).
+  const companyName = meta.companyName?.trim();
+  const roleLine = companyName
+    ? `Role: ${meta.jobTitle?.trim() || 'this role'} at ${companyName}`
+    : `Role: ${meta.jobTitle?.trim() || 'this role'} (company name unknown - never name, invent, or write a placeholder for a company)`;
+
   return `${linksBlock ? `${linksBlock}\n\n` : ''}<candidate_resume>
 ${resumeBody}
 </candidate_resume>
@@ -347,7 +357,7 @@ Resume: "Led migration of order service from monolith to microservices at FoodCo
 
 ### CONTEXT ###
 Candidate: ${meta.candidateName || 'Unknown'}
-Role: ${meta.jobTitle || 'this role'} at ${meta.companyName || 'this company'}
+${roleLine}
 Today: ${today}
 ${langNote}
 ${directivesBlock ? `${directivesBlock}\n` : ''}${emphasisBlock}

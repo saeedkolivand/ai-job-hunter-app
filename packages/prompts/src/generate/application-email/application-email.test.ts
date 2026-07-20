@@ -356,3 +356,40 @@ describe('buildApplicationEmailPrompt — styleReference', () => {
     expect(user.split(BASE.resume.trim()).length - 1).toBe(1);
   });
 });
+
+// ─── Unknown company — never emit a placeholder ───────────────────────────────
+// When meta.companyName is empty, the prompt must not seed a "the company"
+// stand-in the model then renders as a literal "[Company]" / "Unternehmen"
+// placeholder — it names the role alone and instructs never to invent one.
+
+describe('buildApplicationEmailPrompt — unknown company', () => {
+  const NO_COMPANY: ApplicationEmailParams = {
+    ...BASE,
+    meta: { ...META, companyName: '' },
+  };
+
+  it('drops the " at <company>" clause from the CONTEXT Role line when the company is unknown', () => {
+    const { user } = buildApplicationEmailPrompt(NO_COMPANY);
+    expect(user).not.toContain(' at the company');
+    expect(user).not.toContain(' at Globex');
+    expect(user).toContain('Role: Senior Backend Engineer');
+  });
+
+  it('never renders a bracketed company placeholder anywhere in the prompt', () => {
+    const { system, user } = buildApplicationEmailPrompt(NO_COMPANY);
+    expect(system).not.toContain('[Company');
+    expect(user).not.toContain('[Company');
+  });
+
+  it('adds a never-invent-a-company instruction to the opening-paragraph bullet', () => {
+    const { system } = buildApplicationEmailPrompt(NO_COMPANY);
+    expect(system).toMatch(/company name unknown/i);
+    expect(system).toMatch(/never invent, name, or write a company placeholder/i);
+  });
+
+  it('leaves the known-company Role line unchanged and adds no unknown-company instruction', () => {
+    const { system, user } = buildApplicationEmailPrompt(BASE);
+    expect(user).toContain('Role: Senior Backend Engineer at Globex');
+    expect(system).not.toMatch(/company name unknown/i);
+  });
+});
