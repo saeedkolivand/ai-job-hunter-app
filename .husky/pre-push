@@ -114,7 +114,9 @@ if [ -z "${PREPUSH_FULL:-}" ] && [ "$HAVE_RANGE" -eq 1 ]; then
     own_files=$(git diff --name-only "$own_base..HEAD" 2>/dev/null | grep -E '.' || true)
   fi
   # ALLOW: every changed file is plainly non-executable docs/meta content.
-  DOCS_ALLOW='\.(md|mdx|txt)$|^docs/|^\.claude/(agents|skills|commands)/|^apps/landing/.*\.html$'
+  # apps/landing/public/*.html = passthrough dashboards (never built); the routes'
+  # authored bodies live under src/content and are NOT docs (they affect the build).
+  DOCS_ALLOW='\.(md|mdx|txt)$|^docs/|^\.claude/(agents|skills|commands)/|^apps/landing/public/.*\.html$'
   # DENY: executable/config/build inputs — even when they sit under an allowed dir.
   DOCS_DENY='\.(mjs|cjs|jsx?|tsx?|mts|cts|rs|sh|bash|zsh|ps1|bat|cmd|py|rb)$|^\.husky/|^\.claude/hooks/|^\.claude/settings|^scripts/|(^|/)package(-lock)?\.json$|pnpm-lock\.yaml$|(^|/)tsconfig[^/]*\.json$|(^|/)Cargo\.(toml|lock)$|\.config\.(js|mjs|cjs|ts)$|^\.github/'
   if [ -n "$own_files" ] \
@@ -203,6 +205,16 @@ fi
 if [ -n "$NODE" ] || [ -n "$RUST" ] || [ -n "$LANDING" ]; then
   echo "▶ Checking landing-diagram drift..."
   pnpm check:landing-drift
+fi
+
+# ── Landing copy/link parity ────────────────────────────────────────────────────
+# The Next landing port must not silently drop a legacy link or signature joke.
+# Build the static export and assert parity against out/. Only when the landing
+# source actually changed (LANDING) — the build is landing-scoped.
+if [ -n "$LANDING" ]; then
+  echo "▶ Building landing + checking copy/link parity..."
+  pnpm --filter @ajh/landing build
+  pnpm --filter @ajh/landing check:parity
 fi
 
 # ── Workflow-catalog drift ─────────────────────────────────────────────────────

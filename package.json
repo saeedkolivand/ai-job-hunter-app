@@ -12,6 +12,7 @@
   },
   "scripts": {
     "dev": "pnpm build:packages && cargo fetch --manifest-path apps/desktop/src-tauri/Cargo.toml && pnpm --filter @ajh/desktop dev",
+    "dev:landing": "pnpm --filter @ajh/landing dev",
     "build": "turbo build",
     "build:packages": "turbo build --filter=!@ajh/desktop",
     "build:chrome": "pnpm --filter @ajh/extension build:chrome",
