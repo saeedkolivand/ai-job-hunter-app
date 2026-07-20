@@ -404,6 +404,24 @@ describe('ApplyByEmailTab — standalone generation', () => {
     expect(generateEmailMock).toHaveBeenCalledWith(expect.objectContaining({ jobAd: RESOLVED }));
   });
 
+  it('shows the loading skeleton while the job URL is still resolving', () => {
+    // Empty JD + no saved generation → the URL resolver is enabled and in-flight.
+    resolveJobUrlMock.mockReturnValue({ data: undefined, isFetching: true });
+
+    const { container } = render(
+      <ApplyByEmailTab
+        application={makeApp({ jobDescription: '' })}
+        matchingGenerations={NO_GENERATIONS}
+      />
+    );
+
+    // The loading gate short-circuits to the skeleton only...
+    expect(container.querySelector('.animate-skeleton')).not.toBeNull();
+    // ...so neither the Generate button nor the needsJob empty state has rendered.
+    expect(screen.queryByRole('button', { name: 'applications.detail.email.generate' })).toBeNull();
+    expect(screen.queryByText('applications.detail.email.needsJob')).toBeNull();
+  });
+
   it('detects the target language from a German job description (real detectLanguage)', async () => {
     const germanJd =
       'Wir suchen einen erfahrenen Softwareentwickler für unser Team in München. ' +

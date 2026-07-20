@@ -303,7 +303,7 @@ export function JobsPage() {
               owner below. Short content is unaffected (no scrollbar shown). */}
           <div
             data-testid={TEST_IDS.jobs.scrapeFormScroll}
-            className="min-h-0 max-h-[55vh] shrink-0 overflow-y-auto px-10 pt-10"
+            className="max-h-[55vh] shrink-0 overflow-y-auto px-10 pt-10"
           >
             <PageHeader
               title={t('jobs.title')}

@@ -784,6 +784,5 @@ describe('JobsPage — scrape form scroll container', () => {
     const wrapper = screen.getByTestId(TEST_IDS.jobs.scrapeFormScroll);
     expect(wrapper.className).toContain('overflow-y-auto');
     expect(wrapper.className).toContain('max-h-[55vh]');
-    expect(wrapper.className).toContain('min-h-0');
   });
 });
