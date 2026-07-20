@@ -30,6 +30,17 @@ describe('buildFilename', () => {
       'Candidate-Role-Company-cover-letter.docx'
     );
   });
+
+  it('preserves Cyrillic and CJK characters instead of collapsing to the placeholder', () => {
+    const cyrillic = { ...meta, candidateName: 'Иван Петров' };
+    expect(buildFilename(cyrillic, 'resume', 'pdf')).toBe(
+      'Иван-Петров-Senior-Engineer-Acme-Co-resume.pdf'
+    );
+    const cjk = { ...meta, candidateName: '田中 太郎' };
+    expect(buildFilename(cjk, 'resume', 'pdf')).toBe(
+      '田中-太郎-Senior-Engineer-Acme-Co-resume.pdf'
+    );
+  });
 });
 
 describe('exportTXT', () => {
