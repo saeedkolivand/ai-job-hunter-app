@@ -107,22 +107,21 @@ Full pipeline, model tiering, and rationale → **`.claude/`** (agents/skills/co
 
 **Default: every change auto-routes through the agent fleet** — no slash command needed. Each domain is a **pair**: a write-capable **author** implements, an independent **critic** audits (authors never approve their own work). Pick by touched area:
 
-| Touched area                                                | Author                          | Critic(s)                                          |
-| ----------------------------------------------------------- | ------------------------------- | -------------------------------------------------- |
-| React renderer                                              | `frontend-author`               | `frontend-reviewer` · `ui-ux-expert` (visual/UX)   |
-| WebGL landing scenes/engine (apps/landing)                  | `webgl-author`                  | `webgl-reviewer` and `gate-auditor` (visual gates) |
-| GLSL, post pipeline (apps/landing shaders/post)             | `shader-engineer`               | `webgl-reviewer`                                   |
-| Rust/Tauri backend                                          | `rust-backend-author`           | `rust-backend-architect`                           |
-| Resume/export, DocumentModel, templates, theme, locale      | `pdf-docx-generator`            | `resume-export-expert`                             |
-| ATS scoring, job analysis, matching, cover-letter relevance | `job-match-author`              | `job-match-expert`                                 |
-| AI providers, routing, embeddings, prompts, streaming       | `ai-provider-author`            | `ai-provider-expert`                               |
-| Scraping, browser automation, registries                    | `scraping-applier-author`       | `scraping-applier-expert`                          |
-| Browser extension + bridge + protocol                       | `extension-author`              | `extension-reviewer`                               |
-| Tests                                                       | `test-author`                   | `testing-reviewer`                                 |
-| Code quality (on-demand)                                    | `code-quality-author`           | `code-quality-reviewer`                            |
-| Docs / knowledge / ADRs / lessons / release                 | `project-steward` (sole writer) | `project-steward`                                  |
+| Touched area                                                                                                                                                         | Author                          | Critic(s)                                        |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------ |
+| React renderer                                                                                                                                                       | `frontend-author`               | `frontend-reviewer` · `ui-ux-expert` (visual/UX) |
+| Landing static site (apps/landing — DORMANT GL fleet: `webgl-author`, `shader-engineer`, `webgl-reviewer`, `gate-auditor` idle until a GL surface returns, ADR-0017) | `project-steward`               | `project-steward` · `ui-ux-expert` (visual)      |
+| Rust/Tauri backend                                                                                                                                                   | `rust-backend-author`           | `rust-backend-architect`                         |
+| Resume/export, DocumentModel, templates, theme, locale                                                                                                               | `pdf-docx-generator`            | `resume-export-expert`                           |
+| ATS scoring, job analysis, matching, cover-letter relevance                                                                                                          | `job-match-author`              | `job-match-expert`                               |
+| AI providers, routing, embeddings, prompts, streaming                                                                                                                | `ai-provider-author`            | `ai-provider-expert`                             |
+| Scraping, browser automation, registries                                                                                                                             | `scraping-applier-author`       | `scraping-applier-expert`                        |
+| Browser extension + bridge + protocol                                                                                                                                | `extension-author`              | `extension-reviewer`                             |
+| Tests                                                                                                                                                                | `test-author`                   | `testing-reviewer`                               |
+| Code quality (on-demand)                                                                                                                                             | `code-quality-author`           | `code-quality-reviewer`                          |
+| Docs / knowledge / ADRs / lessons / release                                                                                                                          | `project-steward` (sole writer) | `project-steward`                                |
 
-Cross-cutting critics (no author — fixes route to the owning domain author): `tauri-security-reviewer` (default Secondary on any risk-bearing change), `performance-profiler` (perf-sensitive only), `webgl-perf-profiler` (apps/landing GL frame rate only, distinct from `performance-profiler`), `cleanup` (dead-code, always just before steward), `pr-reviewer` (strict pre-PR gate), `finding-verifier` (utility judge — one fresh haiku context per single-source /review finding, drops anything scoring <80).
+Cross-cutting critics (no author — fixes route to the owning domain author): `tauri-security-reviewer` (default Secondary on any risk-bearing change), `performance-profiler` (perf-sensitive only), `webgl-perf-profiler` (GL frame rate only — dormant, no GL surface since ADR-0017), `cleanup` (dead-code, always just before steward), `pr-reviewer` (strict pre-PR gate), `finding-verifier` (utility judge — one fresh haiku context per single-source /review finding, drops anything scoring <80).
 
 Every critic loads `.claude/skills/critic-contract/SKILL.md` before reviewing — adversarial stance (the handoff is context, never evidence), empirical verification of runtime-behavior claims, and a mandatory self-red-team section before any APPROVE.
 
