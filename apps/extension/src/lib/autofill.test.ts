@@ -488,6 +488,27 @@ describe('planAndFill – EU-language field labels (Tier-2 free-text matcher)', 
     expect(summary.filled.every((f) => f.key === 'fullName')).toBe(true);
   });
 
+  it('fills a combined "first AND last" label as the WHOLE name, not a partial first/last', () => {
+    // "Vor- und Nachname" contains "nachname" (→ lastName) and "Nombre y
+    // apellidos" contains "nombre" (→ firstName); without the conjunction forms
+    // in the fullName pattern each would fill only half the name.
+    setForm(`
+      <label for="de">Vor- und Nachname</label><input id="de" type="text" />
+      <label for="es">Nombre y apellidos</label><input id="es" type="text" />
+      <label for="it">Nome e cognome</label><input id="it" type="text" />
+      <label for="fr">Prénom et nom</label><input id="fr" type="text" />
+      <label for="nl">Voor- en achternaam</label><input id="nl" type="text" />
+    `);
+    const summary = planAndFill(document, PROFILE);
+    expect(val('de')).toBe('Saeed Kolivand');
+    expect(val('es')).toBe('Saeed Kolivand');
+    expect(val('it')).toBe('Saeed Kolivand');
+    expect(val('fr')).toBe('Saeed Kolivand');
+    expect(val('nl')).toBe('Saeed Kolivand');
+    expect(summary.nameSplit).toBeNull();
+    expect(summary.filled.every((f) => f.key === 'fullName')).toBe(true);
+  });
+
   it('still skips a localized sensitive-PII field (DE Geburtsdatum, PL PESEL)', () => {
     setForm(`
       <label for="g">Geburtsdatum</label><input id="g" type="text" autocomplete="email" />

@@ -349,11 +349,15 @@ const NAMED_KEY_PATTERNS: readonly { key: string; pattern: RegExp }[] = [
     pattern:
       /phone|mobile|telephone|telefon|telefoon|handynummer|handytelefon|mobilnummer|mobiltelefon|\bhandy\b|\bmobil\b|puhelin/,
   },
-  // Combined full-name phrases — MUST precede first/last (see table doc).
+  // Combined full-name phrases — MUST precede first/last (see table doc): both
+  // the "completo"-style forms AND the "first AND last" conjunction forms
+  // ("Vor- und Nachname", "Nombre y apellidos", "Nome e cognome"), which would
+  // otherwise PARTIALLY fill via the first/last patterns below (nachname →
+  // lastName, nombre → firstName). `-?` tolerates the elided-hyphen DE/NL forms.
   {
     key: 'fullName',
     pattern:
-      /\bfull name\b|vollstandiger name|nom complet|nombre completo|nome completo|imie i nazwisko|volledige naam|fullstandigt namn/,
+      /\bfull name\b|vollstandiger name|vor-? und nachname|nom complet|prenom et nom|nombre completo|nombre y apellidos?|nome completo|nome e cognome|imie i nazwisko|volledige naam|voor-? en achternaam|fullstandigt namn/,
   },
   // `nombre` (ES) and `nome` (IT/PT) mean "name" — excluded when they head a
   // username/company/full-name phrase so they only fire for a real first name.
