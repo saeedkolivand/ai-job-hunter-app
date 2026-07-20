@@ -2548,7 +2548,8 @@
         "rewriteSubjectAriaLabel": "Rewrite the subject with AI",
         "rewriteBodyAriaLabel": "Rewrite the email body with AI",
         "openMailto": "Send via mail client",
-        "needsResume": "Add your résumé to generate an application email."
+        "needsResume": "Add your résumé to generate an application email.",
+        "addResume": "Add a résumé"
       },
       "tabsLabel": "Application detail tabs",
       "timelineTitle": "Timeline",
