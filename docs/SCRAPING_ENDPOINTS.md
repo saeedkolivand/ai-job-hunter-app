@@ -130,7 +130,7 @@ These five boards were retired as direct scrapers in 2026-06-21 (ADR-026). Their
 
 **What is deliberately KEPT (dormant):**
 
-- `scraping/scrape_url/mod.rs` — `resolve()`, `try_workday()`, `canonical_job_url()` (Indeed URL resolver): used by the browser extension single-job import flow; kept because the import resolvers are pure URL transforms, not authenticated scrape loops.
+- `scraping/scrape_url/mod.rs` — `resolve()`, `try_workday()`, `canonical_job_url()` (Indeed URL resolver): used by the browser extension single-job import flow; kept because the import resolvers are pure URL transforms, not authenticated scrape loops. SPA/list-view (canonical) imports resolve the canonical URL first; when resolution yields no description (LinkedIn's anonymous-fetch authwall is the trigger), the bridge gap-fills from the extension's captured `[data-ajh-job-root]` hint subtree only (never whole-document JSON-LD, which would import the wrong job from list-shell markup).
 - `scraping/board_login/` and `credentials/` machinery: dormant (no active scrapers need them for these boards, but the infrastructure supports future use).
 - `commands/boards.rs` `boards_list()`: trimmed to `["linkedin"]` — indeed/xing/glassdoor were removed because their in-app login fed nothing after scraping removal.
 - `CredentialSetSchema` / `CredentialBoardSchema` in shared schemas: untouched (dormant).

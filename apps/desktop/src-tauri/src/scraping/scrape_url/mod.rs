@@ -574,10 +574,18 @@ pub fn parse_from_html(url: &str, html: &str) -> Option<JobPosting> {
 /// every server-fetch resolve where the hint can never be present) is
 /// untouched. The caller (`parse_from_html`) applies title and description
 /// independently, so either field alone may come back empty/`None`.
+///
+/// `pub(crate)` so `extension_bridge::import_flow`'s canonical (SPA/list-view)
+/// branch can call this HINT-SCOPED extraction directly on the extension's
+/// captured HTML, instead of the whole-document `parse_from_html` — a list
+/// shell (e.g. LinkedIn search results) commonly carries its own SEO
+/// `JobPosting` JSON-LD for an UNRELATED job, and `parse_from_html`'s
+/// precedence lets JSON-LD override the hint, which would silently import the
+/// wrong job. Scoping to just this extraction sidesteps that entirely.
 // ponytail: single-node lookup + a couple of child selectors, no depth cap
 // needed (unlike the JSON-LD/NEXT_DATA walks) — scoped to whatever the
 // extension already marked.
-fn job_root_generic_html(html: &str) -> Option<(String, Option<String>)> {
+pub(crate) fn job_root_generic_html(html: &str) -> Option<(String, Option<String>)> {
     // Cheap substring check before the full-document reparse below: every
     // server-fetch resolve call hits this with no hint attribute present at
     // all, so skip `Html::parse_document` entirely on that (overwhelmingly
