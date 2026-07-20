@@ -125,4 +125,27 @@ describe('content script – markLikelyJobNode', () => {
     expect(hidden.hasAttribute('data-ajh-job-root')).toBe(false);
     expect(main.getAttribute('data-ajh-job-root')).toBe('true');
   });
+
+  it('does NOT let a [class*="job-details"] node hidden by an ANCESTOR\'s display:none steal the hint from a visible <main>', () => {
+    // display:none does NOT inherit — the decoy's OWN computed display can be
+    // "block" even while an ancestor is display:none. Only an ancestor-chain
+    // walk (not an own-style-only check) catches this.
+    const hiddenAncestor = document.createElement('div');
+    hiddenAncestor.style.display = 'none';
+    document.body.appendChild(hiddenAncestor);
+
+    const decoy = document.createElement('div');
+    decoy.className = 'job-details-nested-decoy';
+    decoy.textContent = 'x'.repeat(201);
+    hiddenAncestor.appendChild(decoy);
+
+    const main = document.createElement('main');
+    main.textContent = 'y'.repeat(201);
+    document.body.appendChild(main);
+
+    markLikelyJobNode();
+
+    expect(decoy.hasAttribute('data-ajh-job-root')).toBe(false);
+    expect(main.getAttribute('data-ajh-job-root')).toBe('true');
+  });
 });

@@ -15,7 +15,15 @@
  * automatically when the script is injected by executeScript (the injected-
  * execution contract is preserved — the IIFE's completion value is still the
  * outerHTML string that executeScript returns to the background).
+ *
+ * Bundled with an `import` from `./lib/field-signal` (unlike most injected
+ * classic-script entries, this is SAFE for a `chrome.scripting.executeScript`
+ * target): built by its OWN isolated Rollup pass — see the `injectedEntries`
+ * plugin in `vite.config.ts` — mirroring `capture.ts`'s convention, so the
+ * import is inlined and never shares a chunk with another entry.
  */
+
+import { isHidden } from './lib/field-signal';
 
 /**
  * CSS selector priority list for best-effort job-container detection. The
@@ -37,31 +45,24 @@ const JOB_NODE_CANDIDATES = [
 ] as const;
 
 /**
- * Whether an element is hidden via `display: none` or `visibility: hidden`.
- * Deliberately `getComputedStyle`-ONLY — never `getBoundingClientRect`/
- * `offsetWidth`/layout reads, which jsdom always zeroes regardless of real
- * visibility (see `apps/extension/src/lib/field-signal.ts`'s `isHidden` for
- * the same convention).
- */
-function isHiddenByStyle(el: Element): boolean {
-  const style = window.getComputedStyle(el);
-  return style.display === 'none' || style.visibility === 'hidden';
-}
-
-/**
  * Best-effort: find the most likely main job container so a future desktop
  * parser could prefer it. We do not trim to it (full outerHTML is the v1
  * contract); we only mark it so the markup is preserved verbatim. This
  * capture can run on ANY active tab (not just known job boards), so a hidden
- * decoy container (`display:none`/`visibility:hidden`) is skipped rather than
- * allowed to steal the hint from a real, visible container.
+ * decoy container is skipped rather than allowed to steal the hint from a
+ * real, visible container — `display:none` does NOT inherit, so a candidate
+ * can compute its OWN `display` as visible while sitting under a hidden
+ * ancestor; `field-signal.ts`'s `isHidden` walks the ancestor chain (and is
+ * `getComputedStyle`-only — never `getBoundingClientRect`/`offsetWidth`,
+ * which jsdom always zeroes regardless of real visibility), so reusing it
+ * here catches that case too.
  *
  * Exported so tests can call the real implementation directly.
  */
 export function markLikelyJobNode(): void {
   for (const selector of JOB_NODE_CANDIDATES) {
-    for (const el of Array.from(document.querySelectorAll(selector))) {
-      if (isHiddenByStyle(el)) continue;
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
+      if (isHidden(el)) continue;
       if (el.textContent && el.textContent.trim().length > 200) {
         el.setAttribute('data-ajh-job-root', 'true');
         return;
