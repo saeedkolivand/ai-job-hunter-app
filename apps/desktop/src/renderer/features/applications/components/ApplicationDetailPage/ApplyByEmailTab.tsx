@@ -1,8 +1,9 @@
 import { Briefcase, Check, ClipboardCopy, FileText, Mail, Sparkles } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 
-import type { AiGenerationRecord, Application } from '@ajh/shared';
+import { type AiGenerationRecord, type Application, detectLanguage } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, CardSkeleton, EmptyState, Input, RowSkeleton, StreamingText } from '@ajh/ui';
 
@@ -11,11 +12,18 @@ import {
   type RewriteTarget,
 } from '@/components/generation/EditableOutput/RewritePopover';
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
+import { ROUTES } from '@/constants/routes';
 import { useDefaultResumeId } from '@/hooks/useDefaultResumeId';
 import { generateApplicationEmail, type GenerationMeta } from '@/lib/generate';
 import { getSelectionOffsets } from '@/lib/selection-offsets';
 import { COPY_FEEDBACK_MS } from '@/lib/timings';
-import { useDocuments, useDocumentText, useUpdateApplication } from '@/services';
+import {
+  useContactProfile,
+  useDocuments,
+  useDocumentText,
+  useResolveJobUrl,
+  useUpdateApplication,
+} from '@/services';
 
 import { extractRecipient } from '../../lib/extract-recipient';
 
@@ -61,14 +69,26 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
   const model = useSelectedModel();
   const { canUse } = useCanUseAI();
 
+  const navigate = useNavigate();
   const { isLoading: docsLoading } = useDocuments();
   const defaultResumeId = useDefaultResumeId();
   const resumeQuery = useDocumentText(defaultResumeId);
   const updateApplication = useUpdateApplication();
+  const profile = useContactProfile();
 
   const saved = matchingGenerations[0];
-  const jobDesc = (application.jobDescription ?? '').trim() || (saved?.jobAd ?? '').trim();
+  // application.jobDescription is the primary source; the saved generation's jobAd
+  // is a fallback for older records; URL resolution only fires when neither has
+  // content yet (mirrors InterviewPrepTab so email generation is self-sourcing).
+  const initialDesc = (application.jobDescription ?? '').trim() || (saved?.jobAd ?? '').trim();
+  const resolved = useResolveJobUrl(application.jobUrl, !initialDesc);
+  const jobDesc = initialDesc || (resolved.data?.description ?? '').trim();
   const resume = (resumeQuery.data ?? '').trim() || (saved?.resumeText ?? '').trim();
+
+  // Fallback target language when there is no saved generation to copy it from:
+  // detect from the job description, defaulting unknown/too-short text to English.
+  const detectedLanguage = detectLanguage(jobDesc);
+  const fallbackLanguage = detectedLanguage === 'unknown' ? 'en' : detectedLanguage;
 
   const meta: GenerationMeta = saved
     ? {
@@ -82,10 +102,10 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
         topRequirements: saved.topRequirements,
       }
     : {
-        candidateName: '',
+        candidateName: profile.data?.fullName?.trim() ?? '',
         jobTitle: application.title,
         companyName: application.company,
-        targetLanguage: 'en',
+        targetLanguage: fallbackLanguage,
         resumeLanguage: 'en',
         jobAdLanguage: 'en',
         mismatch: false,
@@ -272,7 +292,11 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
     );
   };
 
-  if (docsLoading || (!!defaultResumeId && resumeQuery.isLoading)) {
+  if (
+    docsLoading ||
+    (!!defaultResumeId && resumeQuery.isLoading) ||
+    (!initialDesc && resolved.isFetching)
+  ) {
     return (
       <div className="h-full overflow-y-auto px-6 py-5">
         <CardSkeleton />
@@ -362,6 +386,17 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
             icon={FileText}
             title={t('applications.detail.email.needsResume')}
             className="py-12"
+            action={
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => void navigate({ to: ROUTES.RESUMES })}
+                className="gap-1.5"
+              >
+                <FileText size={13} />
+                {t('applications.detail.email.addResume')}
+              </Button>
+            }
           />
         )}
         {canUse && !!resume && !jobDesc && !hasDraft && (
