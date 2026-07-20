@@ -189,12 +189,49 @@ _Avoid_: premium tier, template category
 
 ## Domain - Landing experience
 
-**SUPERSEDED** — Landing is now a static site (see [ADR 0017](adr/0017-landing-consolidation-static-site.md)).
-The TERMINAL VELOCITY scroll-film (ADR 0016, 0015, parts of 0014) was abandoned mid-M4 on
-2026-07-20 after three merged milestones; all WebGL infrastructure, film concepts (playhead,
-scroll-film, scenes, quality governor, VAT, shader standards), and Experience-gate machinery
-are **retired**. The static site (index.html + 8 sibling pages, no build step) remains deployed.
-Entries below are definitions for reading the retired ADRs only; they are not in active use.
+**CURRENT ARCHITECTURE** — Landing is a **Next.js 15 static-export workspace package** at
+`apps/landing/`, deployed as flat files to GitHub Pages via `pages.yml`. All authored pages
+are routes (`home`, `creature`, `how-it-works`, `privacy`, `download`); third-party artifacts
+(dashboards, benchmarks, storybook) stay in `public/` as passthrough. Parity gate (`check:parity`)
+ensures byte-shape matching with the legacy static layout. See [ADR 0018](adr/0018-landing-nextjs-static-export.md)
+for full decision record.
+
+**SUPERSEDED** — The TERMINAL VELOCITY scroll-film (ADR 0016, 0015, parts of 0014) was
+abandoned mid-M4 on 2026-07-20 after three merged milestones; all WebGL infrastructure, film
+concepts (playhead, scroll-film, scenes, quality governor, VAT, shader standards), and
+Experience-gate machinery are **retired**. Entries below are definitions for reading the retired
+ADRs only; they are not in active use.
+
+**Authored page**:
+A hand-written, user-facing page in the landing site, ported as a Next.js route under
+`src/app/`. Examples: home (root), creature, how-it-works, privacy, download. Distinct from
+**Passthrough artifacts** (CI-owned, served verbatim from `public/`).
+_Avoid_: "component" (pages are full routes), "generated page" (they are hand-authored)
+
+**Passthrough artifact**:
+Third-party or CI-owned files served verbatim from `public/` at build time (copied unchanged
+by Next.js static export). Examples: benchmarks (index.html + data.js), ci-dashboard.html,
+agent-system.html, storybook (when present). Never built or transformed by Next, only deployed
+as-is. Distinct from **Authored pages** (hand-written routes).
+_Avoid_: "static assets" (too generic), "public files" (ambiguous — could mean any `public/`
+content)
+
+**Marketing tier** vs **Docs tier**:
+Two visual skins on the landing site. Marketing tier (pages 1–4: home, creature, how-it-works,
+privacy) preserves the original hand-authored design and brand tone. Docs tier (planned future,
+PR2–PR4: `/mission-control` + `docs/` pages) uses a unified, separate visual language. They
+share no design language; marketing skin is protected from future refactoring. See
+[ADR 0018](adr/0018-landing-nextjs-static-export.md).
+_Avoid_: "landing pages" / "public pages" / "web pages" (imprecise); using one tier's design
+for the other
+
+**Mission control**:
+The planned `/mission-control` full-repo dashboard (PR2, ADR-0018): a single-page app that
+surfaces repo-wide metrics (releases, recent changes, health), accessible to signed-in users
+(PAT auth). Replaces the scattered `ci-dashboard.html` and `agent-system.html` with a unified
+docs-tier interface. Supports safe-tier write actions (e.g. manual workflow dispatch).
+_Avoid_: "admin panel" (it is a dashboard, not an admin control), "metrics page" (it does more
+than metrics)
 
 **Semantic layer**:
 The prerendered content HTML that is always in the DOM - what the visitor reads when the GL
