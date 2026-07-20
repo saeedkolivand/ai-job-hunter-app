@@ -40,7 +40,7 @@ export const AUTOFILL_GLOBAL = '__ajhRunAutofill';
 /** One additional labelled link beyond the named platform fields (e.g.
  *  Portfolio, Dribbble, Behance, Stack Overflow). Matched by Tier 2 only —
  *  see {@link matchExtraLink}. */
-export interface AutofillLink {
+interface AutofillLink {
   label: string;
   url: string;
 }
@@ -61,7 +61,7 @@ export interface AutofillProfile {
  *  An extra-link fill uses the synthetic key `extraLink:<label>` (its `label`
  *  is the link's own label, e.g. "Portfolio") so it never collides with a
  *  named key. */
-export interface AutofillFilledField {
+interface AutofillFilledField {
   /** Logical key: email | phone | fullName | firstName | lastName | location | linkedin | github | website | extraLink:<label>. */
   key: string;
   /** Human label shown in the summary (e.g. "Email", or the extra link's own label). */
@@ -147,7 +147,7 @@ function isCandidateField(el: HTMLInputElement): boolean {
  * require a SPECIFIC signal (linkedin/github/portfolio/personal site); a bare
  * "Website"/"URL" is ambiguous and skipped.
  */
-export function matchFieldKey(el: HTMLInputElement): string | null {
+function matchFieldKey(el: HTMLInputElement): string | null {
   if (!isCandidateField(el)) return null;
 
   const signal = textSignal(el);

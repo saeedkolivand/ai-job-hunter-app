@@ -35,12 +35,6 @@ vi.mock('@/components/ui/ModelSelector', () => ({
   useCanUseAI: () => ({ canUse: true }),
 }));
 
-// ── Document hooks — no real IPC needed ──────────────────────────────────────
-
-vi.mock('@/features/jobs/hooks/useDefaultResumeId', () => ({
-  useDefaultResumeId: () => null,
-}));
-
 // ── Service hooks ─────────────────────────────────────────────────────────────
 
 // Mutable so tests can control what the resolver returns and whether it is called.

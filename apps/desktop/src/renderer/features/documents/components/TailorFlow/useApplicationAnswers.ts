@@ -79,7 +79,7 @@ const CURRENCY_SHAPE_RE = /^[A-Za-z]{3,4}$/;
  * Currency is upper-cased to match the prompt block's rendered case even
  * when a source ever supplies lowercase.
  */
-export function buildScrapedSalaryRange(
+function buildScrapedSalaryRange(
   min?: number,
   max?: number,
   currency?: string

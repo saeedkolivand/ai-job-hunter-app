@@ -10,7 +10,7 @@
  *   const [state, send] = useMachine(machine, 'idle');
  */
 
-export type Transition<TState extends string, TEvent extends string> = Partial<
+type Transition<TState extends string, TEvent extends string> = Partial<
   Record<TState, Partial<Record<TEvent, TState>>>
 >;
 

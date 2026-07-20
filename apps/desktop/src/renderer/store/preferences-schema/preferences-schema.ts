@@ -117,7 +117,7 @@ export type PerProviderSettings = z.infer<typeof PerProviderSettingsSchema>;
 export type LocalModelLimits = z.infer<typeof LocalModelLimitsSchema>;
 
 // Resume preference
-export const ResumePreferenceSchema = z.object({
+const ResumePreferenceSchema = z.object({
   defaultId: z.string().optional(),
   autoIndex: z.boolean().default(true),
   autoParse: z.boolean().default(true),
@@ -127,7 +127,7 @@ export const ResumePreferenceSchema = z.object({
 // availability, notice, remote). Fed to the cover letter (market inclusions such
 // as the DACH salary expectation + earliest start date) and to autopilot
 // application answers. User-supplied ONLY; never inferred or auto-filled.
-export const ApplicantPreferencesSchema = z.object({
+const ApplicantPreferencesSchema = z.object({
   salaryExpectation: z.string().optional(),
   earliestStartDate: z.string().optional(),
   noticePeriod: z.string().optional(),
