@@ -181,6 +181,23 @@ describe('collectAnswers — excludes identity fields (contact-profile data, not
   });
 });
 
+describe('collectAnswers — localized exclusion, in lockstep with autofill', () => {
+  // Capture and autofill share isAmbiguousSignal + matchNamedKey, so the new
+  // localized denylist/identity terms must behave identically on this side too.
+  it('does not capture a filled German "Vorname" field (matchNamedKey → firstName identity)', () => {
+    setForm(`<label for="vn">Vorname</label><input id="vn" type="text" value="Saeed" />`);
+    expect(collectAnswers(document)).toEqual([]);
+  });
+
+  it('does not capture a filled "Name des Ansprechpartners" / "Notfallkontakt" third-party field', () => {
+    setForm(`
+      <label for="ap">Name des Ansprechpartners</label><input id="ap" type="text" value="Jane Doe" />
+      <label for="nk">Notfallkontakt</label><input id="nk" type="text" value="+49 111 222" />
+    `);
+    expect(collectAnswers(document)).toEqual([]);
+  });
+});
+
 describe('collectAnswers — autocomplete-aware identity exclusion (shared with autofill.ts Tier 1)', () => {
   it('does not capture an autocomplete="name" field even under a quirky, non-identity-looking label', () => {
     setForm(
