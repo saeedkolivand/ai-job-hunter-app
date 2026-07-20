@@ -2,7 +2,7 @@
 
 Implementation status tracker. Updated as features ship.
 
-Last updated: 2026-07-16 (audit refresh: shipped features moved, missing sections added, TypeScript version corrected)
+Last updated: 2026-07-20 (audit refresh: shipped features moved, missing sections added, TypeScript version corrected)
 
 ---
 
@@ -247,6 +247,23 @@ MV3 extension (`apps/extension`) published on Chrome Web Store + Firefox AMO; br
 | Mark as applied           | ✅     | Record application from the job board                                                                                                   |
 | Auto-track on form submit | ✅     | Opt-in listener detects form submissions, auto-records application (Layer A, PR #687, v0.126.0)                                         |
 | HMAC bridge protocol v2   | ✅     | Mutual HMAC-SHA256 challenge-response; token never on wire; closes port-squat deferral (ADR-0010, PR #627)                              |
+
+---
+
+## Landing & Public Site
+
+Static site serving brand, download links, and documentation.
+
+| Feature                 | Status | Notes                                                                                               |
+| ----------------------- | ------ | --------------------------------------------------------------------------------------------------- |
+| Static consolidation    | ✅     | Root `landing/` moved to `apps/landing/` (index.html + 8 sibling pages, no build step; ADR-0017)    |
+| GitHub Pages deployment | ✅     | `pages.yml` publishes `apps/landing/` directly; no Next.js export or Vite build                     |
+| Original landing copy   | ✅     | `index.html` + footer links, brand doodles (SVG), CSS, foley JS; no WebGL infrastructure            |
+| Brand tokens            | ✅     | Paper/ink/red palette, fonts (Google Fonts), film-grain overlay; shared with extension store assets |
+
+**Note:** TERMINAL VELOCITY scroll-film (ADR 0016, merged M1–M3) abandoned 2026-07-20 mid-M4.
+All film concepts (playhead, scroll-film, scenes, quality governor, VAT shaders) and
+Experience-gate machinery (ADR 0014) retired. Static site remains the sole public landing.
 
 ---
 

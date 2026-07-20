@@ -103,7 +103,7 @@ Two graphs back codebase questions — **prefer them over raw `rg`/`fd`/file-bro
 
 ## Knowledge base & agent system
 
-Full pipeline, model tiering, and rationale → **`.claude/`** (agents/skills/commands), routing → **`.claude/review-routes.json`**, visual map → **`landing/agent-system.html`**, knowledge base → **`docs/knowledge/`** (thin pointers into source — no copied literals). The drift guard `pnpm check:agent-system` (pre-push + CI) keeps agents ⇄ routes ⇄ this file ⇄ explainer ⇄ docs in sync.
+Full pipeline, model tiering, and rationale → **`.claude/`** (agents/skills/commands), routing → **`.claude/review-routes.json`**, visual map → **`apps/landing/agent-system.html`**, knowledge base → **`docs/knowledge/`** (thin pointers into source — no copied literals). The drift guard `pnpm check:agent-system` (pre-push + CI) keeps agents ⇄ routes ⇄ this file ⇄ explainer ⇄ docs in sync.
 
 **Default: every change auto-routes through the agent fleet** — no slash command needed. Each domain is a **pair**: a write-capable **author** implements, an independent **critic** audits (authors never approve their own work). Pick by touched area:
 
