@@ -18,6 +18,7 @@ import {
   runAutofill,
   splitName,
 } from './autofill';
+import { textSignal } from './field-signal';
 
 const PROFILE: AutofillProfile = {
   fullName: 'Saeed Kolivand',
@@ -469,6 +470,74 @@ describe('planAndFill – EU-language field labels (Tier-2 free-text matcher)', 
     planAndFill(document, PROFILE);
     expect(val('g')).toBe('');
     expect(val('p')).toBe('');
+  });
+});
+
+describe('planAndFill – third-party / localized denylist hardening', () => {
+  it('German: "Name des Ansprechpartners / Notfallkontakts / Referenzperson" third-party fields are NOT filled', () => {
+    // \bname\b fires on all three, so without the localized ansprechpartner /
+    // notfall / referenz denylist they would mis-fill with the applicant's name.
+    setForm(`
+      <label for="a">Name des Ansprechpartners</label><input id="a" type="text" />
+      <label for="n">Name des Notfallkontakts</label><input id="n" type="text" />
+      <label for="r">Name der Referenzperson</label><input id="r" type="text" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('a')).toBe('');
+    expect(val('n')).toBe('');
+    expect(val('r')).toBe('');
+  });
+
+  it('French: "Nom du contact d\'urgence" / "Numéro d\'urgence" are NOT filled (urgence is word-anchored)', () => {
+    setForm(`
+      <label for="cu">Nom du contact d'urgence</label><input id="cu" type="text" />
+      <label for="nu">Numéro d'urgence</label><input id="nu" type="tel" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('cu')).toBe('');
+    expect(val('nu')).toBe('');
+  });
+
+  it('English: a "Name (Affirmative Action)" EEO field STILL fills — `firma` is word-anchored, not a bare substring', () => {
+    // "affirmative" contains the substring "firma"; a bare `firma` denylist term
+    // would have wrongly blocked this real US EEO self-identification field.
+    setForm(
+      `<label for="aa">Name (Voluntary Self-Identification — Affirmative Action)</label><input id="aa" type="text" />`
+    );
+    planAndFill(document, PROFILE);
+    expect(val('aa')).toBe('Saeed Kolivand');
+  });
+
+  it('Norwegian: a "Fødselsnummer" field is skipped (ø is folded to o so the denylist matches)', () => {
+    // NFD does NOT decompose ø, so without the explicit fold "fodselsnummer"
+    // never matches "Fødselsnummer" and this national-id field would fill.
+    setForm(
+      `<label for="f">Fødselsnummer</label><input id="f" type="text" autocomplete="email" />`
+    );
+    planAndFill(document, PROFILE);
+    expect(val('f')).toBe('');
+  });
+
+  it('word-anchors "dni": a standalone "DNI" field is skipped, but Polish "poprzedni" (previous) does not over-skip a first-name field', () => {
+    setForm(`
+      <label for="d1">Número de DNI</label><input id="d1" type="text" autocomplete="email" />
+      <label for="im2">Imię</label><input id="im2" name="poprzedni_krok" type="text" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('d1')).toBe(''); // "DNI" whole word → ambiguous, skipped
+    expect(val('im2')).toBe('Saeed'); // "poprzedni" substring must NOT trigger the dni rule
+  });
+
+  it('folds atomic non-decomposable letters (ø/æ/ł/đ/ß) that NFD leaves intact', () => {
+    setForm(
+      `<label for="x">Fødselsnummer Szkoła Æther Đ Straße</label><input id="x" type="text" />`
+    );
+    const signal = textSignal(document.getElementById('x') as HTMLElement);
+    expect(signal).toContain('fodselsnummer');
+    expect(signal).toContain('szkola');
+    expect(signal).toContain('aether');
+    expect(signal).toContain('strasse');
+    expect(signal).toContain(' d '); // Đ → d
   });
 });
 

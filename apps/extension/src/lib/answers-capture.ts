@@ -22,8 +22,8 @@
  */
 
 import {
-  AMBIGUOUS,
   autocompleteToken,
+  isAmbiguousSignal,
   isHidden,
   labelText,
   matchAutocompleteKey,
@@ -75,7 +75,7 @@ function isCapturable(el: HTMLElement): boolean {
   if (isHidden(el)) return false;
   if (matchAutocompleteKey(autocompleteToken(el)) !== null) return false;
   const signal = textSignal(el);
-  if (AMBIGUOUS.some((w) => signal.includes(w))) return false;
+  if (isAmbiguousSignal(signal)) return false;
   return matchNamedKey(signal) === null;
 }
 

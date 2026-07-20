@@ -72,13 +72,37 @@ export const AMBIGUOUS = [
   'visa status',
   'green card',
   'immigration status',
-  // Localized sensitive PII (date of birth / national-id / tax / social-security
-  // numbers) across the major EU languages. Matched as plain substrings via
-  // `.includes` (same as every entry above), so they are written accent-free —
-  // the signal is diacritic-stripped by `textSignal` — and WITHOUT `\b` anchors
-  // (those are regex-only). The short ids (`dni`/`bsn`/`pesel`) never collide
-  // with a fillable identity label, and a false match here only ever SKIPS a
-  // field (never mis-fills / mis-captures), so this stays the safe direction.
+  // ── Localized third-party / reference / emergency-contact fields ──────────
+  // The EU-language equivalents of the referrer/reference/emergency/supervisor/
+  // contact-person categories already protected in English above. Without
+  // these, a "Name des Ansprechpartners" / "Name der Referenzperson" field
+  // matches the generic `\bname\b` catch-all in `matchNamedKey` and mis-fills
+  // with the applicant's OWN name. All are long, distinctive substrings with no
+  // English-word collision (the short/collision-prone ones live in
+  // {@link AMBIGUOUS_WORDS} below).
+  'ansprechpartner', // DE contact person
+  'notfall', // DE emergency (covers notfallkontakt/notfallnummer)
+  'referenz', // DE reference (covers referenzperson/referenznummer)
+  'vorgesetzt', // DE supervisor (vorgesetzte/vorgesetzter)
+  'personne a contacter', // FR person to contact
+  'recruteur', // FR recruiter
+  'contacto de emergencia', // ES emergency contact
+  'persona de contacto', // ES contact person
+  'referencia', // ES reference
+  'emergencia', // ES emergency
+  'reclutador', // ES recruiter
+  'contatto di emergenza', // IT emergency contact
+  'referente', // IT reference/contact person
+  'emergenza', // IT emergency
+  'contactpersoon', // NL contact person
+  'noodcontact', // NL emergency contact
+  'osoba kontaktowa', // PL contact person
+  'kontakt alarmowy', // PL emergency contact
+  'referencje', // PL references
+  // ── Localized sensitive PII (date of birth / national-id / tax / social) ──
+  // Long, distinctive substrings (accent-free — the signal is diacritic-folded
+  // by `textSignal`). A false match here only ever SKIPS a field (never
+  // mis-fills / mis-captures), so this is the safe direction.
   'geburtsdatum', // DE date of birth
   'geburtstag', // DE birthday
   'steuernummer', // DE tax number
@@ -87,19 +111,38 @@ export const AMBIGUOUS = [
   'date de naissance', // FR date of birth
   'numero de securite sociale', // FR social-security number
   'fecha de nacimiento', // ES date of birth
-  'dni', // ES national id
   'codice fiscale', // IT tax code
   'data di nascita', // IT date of birth
   'geboortedatum', // NL date of birth
-  'bsn', // NL national id
   'data urodzenia', // PL date of birth
   'pesel', // PL national id
   'data de nascimento', // PT date of birth
   'personnummer', // SV/NO national id
   'cpr-nummer', // DA national id
-  'fodselsnummer', // NO national id
+  'fodselsnummer', // NO national id (ø folded to o by `stripDiacritics`)
   'henkilotunnus', // FI national id
 ];
+
+/**
+ * Ambiguous/sensitive terms that are too SHORT or too English-collision-prone
+ * to match as plain substrings — matched on `\b` WORD boundaries instead (the
+ * signal is accent-free and lowercased, so keywords are too). A bare substring
+ * would wrongly SKIP a legitimate field: `dni` ⊂ Polish "poprzedni", `bsn` is a
+ * 3-letter fragment, `urgence` ⊂ "insurgence". `\burgence\b` still catches the
+ * FR "contact d'urgence" form (the apostrophe is a word boundary).
+ */
+const AMBIGUOUS_WORDS = /\b(?:dni|bsn|urgence)\b/;
+
+/**
+ * True when a field's {@link textSignal} is ambiguous or sensitive and must be
+ * SKIPPED by both autofill ({@link textSignal} → `isCandidateField`) and
+ * answers-capture (`isCapturable`). Combines the plain-substring {@link AMBIGUOUS}
+ * denylist with the word-anchored {@link AMBIGUOUS_WORDS} one, so the two
+ * consumers can never disagree on what counts as ambiguous.
+ */
+export function isAmbiguousSignal(signal: string): boolean {
+  return AMBIGUOUS.some((w) => signal.includes(w)) || AMBIGUOUS_WORDS.test(signal);
+}
 
 /**
  * True when `el` or ANY ancestor is hidden — via the `hidden` attribute or
@@ -172,14 +215,24 @@ export function labelText(el: HTMLElement): string {
   return text;
 }
 
-/** NFD-decompose then strip every combining mark (é → e, ä → a) so an accented
- *  EU label ("Prénom", "Wohnort", "Nazwisko") matches the accent-free keyword
- *  table in {@link matchNamedKey}. Kept LOCAL to this file (no import — this
- *  module is inlined verbatim into the classic-injected `fill.js`/`capture.js`
- *  bundles, which forbid `import`); `autofill.ts` keeps its own equivalent
- *  `normalizeLabel` for the extra-link matcher. */
+/** Fold an accented EU label to ASCII so it matches the accent-free keyword
+ *  table in {@link matchNamedKey} and the {@link AMBIGUOUS} denylist. Two steps,
+ *  because NFD alone is not enough: (1) NFD-decompose then strip combining marks
+ *  (é → e, ä → a, ż → z, å → a); (2) an explicit fold for the atomic letters
+ *  that have NO NFD decomposition (ø, æ, ł, đ, ß) — without step 2, "Fødselsnummer"
+ *  or "Szkoła" would keep their ø/ł and never match "fodselsnummer"/"szkola".
+ *  Kept LOCAL to this file (no import — this module is inlined verbatim into the
+ *  classic-injected `fill.js`/`capture.js` bundles, which forbid `import`);
+ *  `autofill.ts` keeps its own `normalizeLabel` for the extra-link matcher. */
 function stripDiacritics(s: string): string {
-  return s.normalize('NFD').replace(/\p{Diacritic}/gu, '');
+  return s
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[øØ]/g, 'o')
+    .replace(/[æÆ]/g, 'ae')
+    .replace(/[łŁ]/g, 'l')
+    .replace(/[đĐ]/g, 'd')
+    .replace(/[ßẞ]/g, 'ss');
 }
 
 /** The accent-free, lowercased free-text signal (name/id/placeholder/aria-label/
@@ -328,7 +381,10 @@ export function matchNamedKey(signal: string): string | null {
   // "Nom de l'entreprise"-style fields never receive the person's name.
   if (
     /\bname\b/.test(signal) &&
-    !/user|file|nick|screen|display|business|org|school|institution|university|college|degree|course|program|certificat|schule|hochschule|universitat|benutzer|firma|unternehmen|ecole|universite|entreprise|societe|utilisateur|escuela|universidad|empresa|usuario|scuola|universita|azienda|utente|szkola|uczelnia|uzytkownik|gebruiker|bedrijf|foretag|anvandare|virksomhed|bruger|yritys|kayttaja/.test(
+    // `\bfirma\b` is anchored — a bare `firma` substring wrongly matches the
+    // English words "affirmative"/"confirmation", which would stop a legitimate
+    // "Name (Affirmative Action)" EEO field from filling.
+    !/user|file|nick|screen|display|business|org|school|institution|university|college|degree|course|program|certificat|schule|hochschule|universitat|benutzer|\bfirma\b|unternehmen|ecole|universite|entreprise|societe|utilisateur|escuela|universidad|empresa|usuario|scuola|universita|azienda|utente|szkola|uczelnia|uzytkownik|gebruiker|bedrijf|foretag|anvandare|virksomhed|bruger|yritys|kayttaja/.test(
       signal
     )
   )
