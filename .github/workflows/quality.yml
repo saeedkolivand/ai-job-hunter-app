@@ -318,7 +318,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: write # commit benchmark history to apps/landing/benchmarks on main (push runs)
+      contents: write # commit benchmark history to apps/landing/public/benchmarks on main (push runs)
       pull-requests: write # comment on a PR when a result regresses
     steps:
       - name: 🛡️ Harden Runner
@@ -360,7 +360,7 @@ jobs:
           output-file-path: apps/desktop/src-tauri/output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-pages-branch: main
-          benchmark-data-dir-path: apps/landing/benchmarks
+          benchmark-data-dir-path: apps/landing/public/benchmarks
           skip-fetch-gh-pages: true
           auto-push: false
           comment-on-alert: true

@@ -81,6 +81,6 @@ Every ADR carries a `Status` field documenting its lifecycle: `Accepted | Supers
 
 `docs/ARCHITECTURE.md`, `docs/architecture-rules.md`, `docs/PATTERNS.md`, `docs/DESIGN_SYSTEM.md`, `docs/EXPORT_TEMPLATES.md`, `docs/API.md`, `docs/DESIGN_DECISIONS.md`, and the graphify graph (`graphify-out/`).
 
-**Agent system:** interactive explainer at `apps/landing/agent-system.html` documents the agent fleet, pairing structure, and command routing.
+**Agent system:** interactive explainer at `apps/landing/public/agent-system.html` documents the agent fleet, pairing structure, and command routing.
 
 > Maintained **only** by `project-steward`. Per-domain knowledge docs may exceed ~150 lines (e.g., scraping-domain.md, extension-domain.md). After code/doc changes: `graphify update .`.

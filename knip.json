@@ -1,6 +1,12 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignore": ["graphify-out/**", "apps/landing/**"],
+  "ignore": [
+    "graphify-out/**",
+    "apps/landing/out/**",
+    "apps/landing/.next/**",
+    "apps/landing/public/**",
+    "apps/landing/src/content/**"
+  ],
   "ignoreBinaries": ["rtk", "claude"],
   "ignoreDependencies": [
     "semantic-release",
@@ -23,6 +29,13 @@
     },
     "apps/extension": {
       "entry": ["src/background.ts"]
+    },
+    "apps/landing": {
+      "entry": [
+        "next.config.ts",
+        "vitest.config.ts",
+        "src/app/**/{page,layout,not-found,error,route}.{ts,tsx}"
+      ]
     },
     "packages/translations": {
       "entry": ["i18next.config.ts"]

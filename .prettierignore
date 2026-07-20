@@ -6,5 +6,12 @@ node_modules/
 pnpm-lock.yaml
 CHANGELOG.md
 **/tauri.conf.json
-apps/landing/
+# @ajh/landing: format the app's TS/TSX (src/app, src/components, src/lib) but
+# never the verbatim ports — the passthrough dashboards/scripts in public/ and the
+# extracted HTML/CSS page fragments in src/content/ must stay byte-identical.
+apps/landing/.next/
+apps/landing/next-env.d.ts
+apps/landing/public/
+apps/landing/src/content/
+apps/landing/social-card.html
 .impeccable/

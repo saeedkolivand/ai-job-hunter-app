@@ -1,0 +1,88 @@
+<main class="wrap">
+
+  <a class="top-back" href="/">← back to the chaos</a>
+
+  <h1>Take the app</h1>
+
+  <p class="lede">
+    A <b>local-first desktop app</b> — it scrapes the job boards, ranks the matches, and writes the whole
+    application on your own machine. <b>Free for personal use. Source-available.</b> No accounts, no telemetry, no upsell.
+    It is also <b>unsigned</b>, because code-signing certificates cost money and I, famously, do not have a job.
+    Your operating system will fret. The notes under each button tell you how to reassure it.
+  </p>
+
+  <div class="platforms">
+<!-- downloads:start (auto-synced on release build by scripts/sync-download-page.cjs — do not edit by hand) -->
+    <p class="dl-version">latest installer build: <b>v0.127.0</b></p>
+
+    <div class="pcard">
+      <div class="pc-head"><div class="pc-ico">🍎</div><h2>macOS</h2></div>
+      <div class="pc-actions">
+        <a class="dl-btn" href="https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.127.0/macos-AI-Job-Hunter_0.127.0_aarch64-apple-silicon.dmg">Apple Silicon · .dmg</a>
+        <a class="dl-btn alt" href="https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.127.0/macos-AI-Job-Hunter_0.127.0_x64-intel.dmg">Intel · .dmg</a>
+      </div>
+      <p class="dl-note">macOS says it's "damaged"? It isn't — just unsigned. Clear the quarantine flag once:<br><code class="copy-cmd" role="button" tabindex="0" title="click to copy" data-copy='xattr -cr "/Applications/AI Job Hunter.app"'>xattr -cr "/Applications/AI Job Hunter.app"</code><br>Or install it with Homebrew — tap the repo once, then install:<br><code class="copy-cmd" role="button" tabindex="0" title="click to copy" data-copy="brew tap saeedkolivand/ai-job-hunter-app https://github.com/saeedkolivand/ai-job-hunter-app">brew tap saeedkolivand/ai-job-hunter-app https://github.com/saeedkolivand/ai-job-hunter-app</code><br><code class="copy-cmd" role="button" tabindex="0" title="click to copy" data-copy="brew install --cask ai-job-hunter">brew install --cask ai-job-hunter</code>.</p>
+    </div>
+
+    <div class="pcard">
+      <div class="pc-head"><div class="pc-ico">🪟</div><h2>Windows</h2></div>
+      <div class="pc-actions">
+        <a class="dl-btn" href="https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.127.0/windows-AI-Job-Hunter_0.127.0_x64-setup.exe">Installer · .exe</a>
+        <a class="dl-btn alt" href="https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.127.0/windows-AI-Job-Hunter_0.127.0_x64_en-US.msi">.msi</a>
+      </div>
+      <p class="dl-note">SmartScreen may warn (unsigned). Click "More info" → "Run anyway".</p>
+    </div>
+
+    <div class="pcard">
+      <div class="pc-head"><div class="pc-ico">🐧</div><h2>Linux</h2></div>
+      <div class="pc-actions">
+        <a class="dl-btn" href="https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.127.0/linux-AI-Job-Hunter_0.127.0_amd64.AppImage">.AppImage</a>
+        <a class="dl-btn alt" href="https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.127.0/linux-AI-Job-Hunter_0.127.0_amd64.deb">.deb</a>
+        <a class="dl-btn alt" href="https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v0.127.0/linux-AI-Job-Hunter-0.127.0-1.x86_64.rpm">.rpm</a>
+      </div>
+      <p class="dl-note"><code>chmod +x</code> the AppImage, then run it.</p>
+    </div>
+<!-- downloads:end -->
+  </div>
+
+  <p class="auto-note">
+    Installed apps <b>auto-update</b> — grab it once and you never need this page again. Builds are signed for
+    the updater, just not for Gatekeeper/SmartScreen. macOS users can also install with Homebrew —<br>
+    <code class="copy-cmd" role="button" tabindex="0" aria-label="Click to copy: brew tap saeedkolivand/ai-job-hunter-app https://github.com/saeedkolivand/ai-job-hunter-app" data-copy="brew tap saeedkolivand/ai-job-hunter-app https://github.com/saeedkolivand/ai-job-hunter-app">brew tap saeedkolivand/ai-job-hunter-app https://github.com/saeedkolivand/ai-job-hunter-app</code><br>
+    then <code class="copy-cmd" role="button" tabindex="0" aria-label="Click to copy: brew install --cask ai-job-hunter" data-copy="brew install --cask ai-job-hunter">brew install --cask ai-job-hunter</code>.
+  </p>
+
+  <hr class="scrawl">
+
+  <!-- ============ BROWSER EXTENSION ============ -->
+  <h2>The browser extension</h2>
+  <p class="ext-intro" style="margin-top:14px">
+    Optional companion. When you're staring at a job posting, it hands that page straight to the desktop app
+    running on the same machine — native messaging (or loopback) — nothing leaves your computer. Inert unless the app is running and paired.
+  </p>
+
+  <div class="ext-grid">
+    <div class="ext-card">
+      <div class="pc-ico" aria-hidden="true">🧩</div>
+      <h2>Chrome</h2>
+      <p class="sub">also Edge, Brave, and other Chromium browsers</p>
+      <a class="ext-btn" href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll" target="_blank" rel="noopener noreferrer">Chrome Web Store →</a>
+    </div>
+    <div class="ext-card">
+      <div class="pc-ico" aria-hidden="true">🦊</div>
+      <h2>Firefox</h2>
+      <p class="sub">on Mozilla Add-ons (AMO)</p>
+      <a class="ext-btn" href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/" target="_blank" rel="noopener noreferrer">Add to Firefox →</a>
+    </div>
+  </div>
+
+  <hr class="scrawl">
+
+  <footer>
+    <p class="byline">made by Saeed, between rejections.</p>
+    <p class="foot-links">
+      <a href="/">home</a> · download · <a href="/privacy">privacy</a> · <a href="/creature">▶ the short film</a> · <a href="/storybook/">design system</a> · <a href="https://github.com/saeedkolivand/ai-job-hunter-app" target="_blank" rel="noopener noreferrer">GitHub</a> · <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll" target="_blank" rel="noopener noreferrer">Chrome extension</a> · <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/" target="_blank" rel="noopener noreferrer">Firefox extension</a> · <a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener noreferrer">♥ sponsor</a>
+    </p>
+  </footer>
+
+</main>

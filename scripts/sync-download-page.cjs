@@ -1,20 +1,22 @@
 #!/usr/bin/env node
 /*
- * Sync the landing download page (apps/landing/download.html) to a published
- * release's installer assets: regenerates the per-platform download buttons
- * (macOS / Windows / Linux) between the <!-- downloads:start --> /
- * <!-- downloads:end --> markers, pinned to the given version.
+ * Sync the landing /download version seam to a published release. Writes the
+ * per-platform installer URLs + version into apps/landing/src/data/version.json;
+ * the Next /download route imports that JSON at build time (and swaps to a newer
+ * GitHub release at runtime via DownloadFreshness). No HTML surgery — the page
+ * markup is owned by the port (apps/landing/src/app/download).
  *
  *   node scripts/sync-download-page.cjs <version>     # e.g. 0.103.0
  *
- * Run by the release pipeline's `update-download-page` job AFTER the installer
- * build (mirrors `sync-cask.cjs`) — that's the only point where the versioned
- * assets the buttons link to actually exist on the GitHub Release. The push of
- * the rewritten page to main re-triggers the Pages deploy (pages.yml watches
- * apps/landing/**), so the live site updates without `[skip ci]`.
+ * CLI contract unchanged (single <version> arg) so release.yml's
+ * `update-download-page` job invokes it exactly as before. Run AFTER the
+ * installer build (the versioned assets the URLs point to must exist on the
+ * GitHub Release). The commit of version.json to main re-triggers the Pages
+ * deploy (pages.yml watches apps/landing/**), so the live site updates.
  *
  * The asset filenames mirror the release notes Downloads table in
  * .github/workflows/release.yml — keep the two in sync if either changes.
+ * KEEP `buildInstallers` IN SYNC with apps/landing/src/lib/version.ts.
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -34,59 +36,42 @@ if (!VERSION_RE.test(version)) {
   process.exit(1);
 }
 
-/** The auto-generated platform-cards block, pinned to `v`. */
-function buildBlock(v) {
+/** Per-OS GitHub Release asset URLs pinned to `v`. Mirrors version.ts. */
+function buildInstallers(v) {
   const base = `${REPO}/releases/download/v${v}`;
-  return [
-    '<!-- downloads:start (auto-synced on release build by scripts/sync-download-page.cjs — do not edit by hand) -->',
-    `    <p class="dl-version">latest installer build: <b>v${v}</b></p>`,
-    '',
-    '    <div class="pcard">',
-    '      <div class="pc-head"><div class="pc-ico">🍎</div><h2>macOS</h2></div>',
-    '      <div class="pc-actions">',
-    `        <a class="dl-btn" href="${base}/macos-AI-Job-Hunter_${v}_aarch64-apple-silicon.dmg">Apple Silicon · .dmg</a>`,
-    `        <a class="dl-btn alt" href="${base}/macos-AI-Job-Hunter_${v}_x64-intel.dmg">Intel · .dmg</a>`,
-    '      </div>',
-    '      <p class="dl-note">macOS says it\'s "damaged"? It isn\'t — just unsigned. Clear the quarantine flag once:<br><code class="copy-cmd" role="button" tabindex="0" title="click to copy" data-copy=\'xattr -cr "/Applications/AI Job Hunter.app"\'>xattr -cr "/Applications/AI Job Hunter.app"</code><br>Or install it with Homebrew — tap the repo once, then install:<br><code class="copy-cmd" role="button" tabindex="0" title="click to copy" data-copy="brew tap saeedkolivand/ai-job-hunter-app https://github.com/saeedkolivand/ai-job-hunter-app">brew tap saeedkolivand/ai-job-hunter-app https://github.com/saeedkolivand/ai-job-hunter-app</code><br><code class="copy-cmd" role="button" tabindex="0" title="click to copy" data-copy="brew install --cask ai-job-hunter">brew install --cask ai-job-hunter</code>.</p>',
-    '    </div>',
-    '',
-    '    <div class="pcard">',
-    '      <div class="pc-head"><div class="pc-ico">🪟</div><h2>Windows</h2></div>',
-    '      <div class="pc-actions">',
-    `        <a class="dl-btn" href="${base}/windows-AI-Job-Hunter_${v}_x64-setup.exe">Installer · .exe</a>`,
-    `        <a class="dl-btn alt" href="${base}/windows-AI-Job-Hunter_${v}_x64_en-US.msi">.msi</a>`,
-    '      </div>',
-    '      <p class="dl-note">SmartScreen may warn (unsigned). Click "More info" → "Run anyway".</p>',
-    '    </div>',
-    '',
-    '    <div class="pcard">',
-    '      <div class="pc-head"><div class="pc-ico">🐧</div><h2>Linux</h2></div>',
-    '      <div class="pc-actions">',
-    `        <a class="dl-btn" href="${base}/linux-AI-Job-Hunter_${v}_amd64.AppImage">.AppImage</a>`,
-    `        <a class="dl-btn alt" href="${base}/linux-AI-Job-Hunter_${v}_amd64.deb">.deb</a>`,
-    `        <a class="dl-btn alt" href="${base}/linux-AI-Job-Hunter-${v}-1.x86_64.rpm">.rpm</a>`,
-    '      </div>',
-    '      <p class="dl-note"><code>chmod +x</code> the AppImage, then run it.</p>',
-    '    </div>',
-    '<!-- downloads:end -->',
-  ].join('\n');
+  return {
+    macArm: `${base}/macos-AI-Job-Hunter_${v}_aarch64-apple-silicon.dmg`,
+    macIntel: `${base}/macos-AI-Job-Hunter_${v}_x64-intel.dmg`,
+    winExe: `${base}/windows-AI-Job-Hunter_${v}_x64-setup.exe`,
+    winMsi: `${base}/windows-AI-Job-Hunter_${v}_x64_en-US.msi`,
+    linuxAppImage: `${base}/linux-AI-Job-Hunter_${v}_amd64.AppImage`,
+    linuxDeb: `${base}/linux-AI-Job-Hunter_${v}_amd64.deb`,
+    linuxRpm: `${base}/linux-AI-Job-Hunter-${v}-1.x86_64.rpm`,
+  };
 }
 
-const pagePath = path.join(__dirname, '..', 'apps', 'landing', 'download.html');
-const before = fs.readFileSync(pagePath, 'utf8');
-
-const BLOCK_RE = /<!-- downloads:start[\s\S]*?downloads:end -->/;
-if (!BLOCK_RE.test(before)) {
-  console.error('download.html format unexpected — downloads:start/end markers not found');
-  process.exit(1);
+const jsonPath = path.join(__dirname, '..', 'apps', 'landing', 'src', 'data', 'version.json');
+const before = fs.existsSync(jsonPath) ? fs.readFileSync(jsonPath, 'utf8') : '';
+let prev;
+try {
+  prev = JSON.parse(before);
+} catch {
+  prev = {};
 }
 
-const after = before.replace(BLOCK_RE, buildBlock(version));
+const next = {
+  version,
+  // Preserve the timestamp when the version is unchanged (avoids a no-op diff);
+  // otherwise stamp now.
+  releasedAt: prev.version === version ? (prev.releasedAt ?? null) : new Date().toISOString(),
+  installers: buildInstallers(version),
+};
 
+const after = `${JSON.stringify(next, null, 2)}\n`;
 if (after === before) {
-  console.log(`Download page already pinned to v${version} — no change.`);
+  console.log(`version.json already pinned to v${version} — no change.`);
   process.exit(0);
 }
 
-fs.writeFileSync(pagePath, after);
-console.log(`Download page synced to v${version} (macOS / Windows / Linux buttons pinned).`);
+fs.writeFileSync(jsonPath, after);
+console.log(`version.json synced to v${version} (macOS / Windows / Linux installer URLs pinned).`);
