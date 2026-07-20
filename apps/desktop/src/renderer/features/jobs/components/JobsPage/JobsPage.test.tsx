@@ -765,3 +765,25 @@ describe('JobsPage — stable newest sort', () => {
     expect(filteredIds()).toEqual(['new', 'old', 'u1', 'u2']);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Header/scrape-form scroll container — jsdom can't measure layout, so assert
+// the bounding + scroll classes are present on the wrapper. Without them, a
+// full board selection + open advanced grid overflows the viewport and the
+// Start button becomes unreachable at the 900x600 window floor.
+// ---------------------------------------------------------------------------
+
+describe('JobsPage — scrape form scroll container', () => {
+  beforeEach(() => {
+    postingsContainer.data = [];
+  });
+
+  it('bounds and scrolls the header wrapper so tall form content cannot clip the Start button', () => {
+    renderJobsPage();
+
+    const wrapper = screen.getByTestId(TEST_IDS.jobs.scrapeFormScroll);
+    expect(wrapper.className).toContain('overflow-y-auto');
+    expect(wrapper.className).toContain('max-h-[55vh]');
+    expect(wrapper.className).toContain('min-h-0');
+  });
+});
