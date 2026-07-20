@@ -188,6 +188,27 @@ fn strip_leading_md_emphasis(s: &str) -> &str {
     s.strip_prefix('*').unwrap_or(s)
 }
 
+/// Prefer the contact profile's casing for an ALL-CAPS name.
+///
+/// When `name` is ALL-CAPS (has uppercase, no lowercase) and the profile's
+/// `full_name` matches it case-insensitively, adopt the profile's casing so the
+/// letterhead and signature don't render shouted (e.g. a stored "SAEED KOLIVAND"
+/// becomes the profile's "Saeed Kolivand"). Pure pass-through otherwise: no
+/// profile, a different-name profile, or an already mixed-case name are all
+/// returned unchanged — never title-cased (so "MCDONALD" / "O'BRIEN" are safe).
+fn prefer_profile_casing(name: String, contact: Option<&ContactProfile>) -> String {
+    let all_caps = name.chars().any(char::is_uppercase) && !name.chars().any(char::is_lowercase);
+    if !all_caps {
+        return name;
+    }
+    match contact.and_then(|p| p.full_name.as_deref()) {
+        Some(full) if full.trim().to_lowercase() == name.trim().to_lowercase() => {
+            full.trim().to_string()
+        }
+        _ => name,
+    }
+}
+
 /// Parse a finished cover-letter text into a structured [`LetterModel`].
 ///
 /// Parsing rules:
@@ -228,17 +249,23 @@ pub(super) fn parse_cover_letter(
     // Name: prefer generation metadata, then first non-blank text line.
     let raw_lines: Vec<&str> = text.lines().collect();
 
-    let name_text: String = meta_name
-        .filter(|s| !s.trim().is_empty())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| {
-            raw_lines
-                .iter()
-                .map(|l| l.trim())
-                .find(|l| !l.is_empty())
-                .unwrap_or("")
-                .to_string()
-        });
+    // B.2: an ALL-CAPS stored name adopts the contact profile's mixed-case
+    // casing (when it matches case-insensitively) so the letterhead + signature
+    // don't render shouted; no-op with no profile or a different-name profile.
+    let name_text: String = prefer_profile_casing(
+        meta_name
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|| {
+                raw_lines
+                    .iter()
+                    .map(|l| l.trim())
+                    .find(|l| !l.is_empty())
+                    .unwrap_or("")
+                    .to_string()
+            }),
+        contact,
+    );
 
     // Contact line: use named profile fields (shared with the resume header);
     // fall back to scraping the letter text only when no profile is supplied.
@@ -285,6 +312,11 @@ pub(super) fn parse_cover_letter(
     let mut after_closing = false;
     let mut signature_title: Option<String> = None;
 
+    // B.1: case-insensitive header-name compare, computed from the final
+    // (possibly re-cased) `name_text`, so the applicant's own name — however the
+    // model cased it — is skipped rather than landing in the recipient block.
+    let name_lower = name_text.trim().to_lowercase();
+
     for raw_line in &raw_lines {
         let trimmed = raw_line.trim();
         // Clean: strip markdown links to plain text for detection only.
@@ -294,7 +326,7 @@ pub(super) fn parse_cover_letter(
         // Skip lines that were part of the header (name + blank + contact echo).
         if skip_lines < 3
             && (clean.is_empty()
-                || trimmed == name_text.as_str()
+                || clean.trim().trim_end_matches([',', '.']).to_lowercase() == name_lower
                 || (!contact_md.is_empty() && contact_md.contains(clean.trim())))
         {
             skip_lines += 1;
@@ -403,11 +435,10 @@ pub(super) fn parse_cover_letter(
         );
     }
 
-    // Signature name: prefer generation metadata, then the stored name.
-    let signature_name = meta_name
-        .filter(|s| !s.trim().is_empty())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| name_text.clone());
+    // Signature name equals the letterhead name verbatim: both derive from
+    // `meta_name` (or the first text line) with profile casing preferred (B.2),
+    // so the signoff never renders a different casing than the letterhead.
+    let signature_name = name_text.clone();
 
     LetterModel {
         opts,
@@ -805,5 +836,120 @@ Saeed Kolivand
              got {:?}",
             model.signature_title
         );
+    }
+
+    /// B.1: the applicant's own name — however the model cased it, plain or
+    /// **bold** — must be skipped as a header line, never pushed into the
+    /// recipient block, even when `meta_name` is stored ALL-CAPS.
+    #[test]
+    fn applicant_name_not_leaked_into_recipient_block() {
+        for first_line in ["Saeed Kolivand", "**Saeed Kolivand**"] {
+            let letter = format!(
+                "\
+{first_line}
+saeed@example.com | https://linkedin.com/in/saeedkolivand
+
+June 10, 2025
+
+Hiring Manager
+Acme Corp
+
+Dear Hiring Manager,
+
+I am excited to apply for this role and believe my background is a strong match.
+
+Sincerely,
+
+Saeed Kolivand
+"
+            );
+            let model = parse_cover_letter(
+                &letter,
+                None,
+                Some("SAEED KOLIVAND"),
+                "us",
+                "en",
+                dummy_style(),
+            );
+
+            assert!(
+                model
+                    .recipient_lines
+                    .iter()
+                    .any(|l| l.contains("Acme") || l.contains("Hiring Manager")),
+                "recipient block should still capture the company/manager lines ({first_line:?}); \
+                 got {:?}",
+                model.recipient_lines
+            );
+            assert!(
+                !model.recipient_lines.iter().any(|l| l
+                    .trim()
+                    .trim_end_matches([',', '.'])
+                    .to_lowercase()
+                    == "saeed kolivand"),
+                "applicant name must not leak into the recipient block ({first_line:?}); got {:?}",
+                model.recipient_lines
+            );
+        }
+    }
+
+    /// B.2: an ALL-CAPS stored name adopts the contact profile's mixed-case
+    /// casing for BOTH letterhead and signature when the profile's `full_name`
+    /// matches case-insensitively.
+    #[test]
+    fn all_caps_name_adopts_profile_casing() {
+        let profile = ContactProfile {
+            full_name: Some("Saeed Kolivand".to_string()),
+            ..Default::default()
+        };
+        let model = parse_cover_letter(
+            "Dear Hiring Manager,\n\nHello there.\n\nSincerely,\n",
+            Some(&profile),
+            Some("SAEED KOLIVAND"),
+            "us",
+            "en",
+            dummy_style(),
+        );
+
+        assert_eq!(model.letterhead.name, "Saeed Kolivand");
+        assert_eq!(model.signature_name, "Saeed Kolivand");
+    }
+
+    /// B.2 no-op: with no profile, an ALL-CAPS name is left untouched (never
+    /// title-cased) — the stored casing is authoritative.
+    #[test]
+    fn all_caps_name_without_profile_stays_uppercase() {
+        let model = parse_cover_letter(
+            "Dear Hiring Manager,\n\nHello there.\n\nSincerely,\n",
+            None,
+            Some("SAEED KOLIVAND"),
+            "us",
+            "en",
+            dummy_style(),
+        );
+
+        assert_eq!(model.letterhead.name, "SAEED KOLIVAND");
+        assert_eq!(model.signature_name, "SAEED KOLIVAND");
+    }
+
+    /// B.2 no-op: a profile for a DIFFERENT person must not re-case the stored
+    /// name — the casing preference is scoped to the same name only.
+    #[test]
+    fn all_caps_name_with_different_profile_stays_uppercase() {
+        let profile = ContactProfile {
+            full_name: Some("Jane Smith".to_string()),
+            ..Default::default()
+        };
+        let model = parse_cover_letter(
+            "Dear Hiring Manager,\n\nHello there.\n\nSincerely,\n",
+            Some(&profile),
+            Some("SAEED KOLIVAND"),
+            "us",
+            "en",
+            dummy_style(),
+        );
+
+        assert_eq!(model.letterhead.name, "SAEED KOLIVAND");
+        assert_eq!(model.signature_name, "SAEED KOLIVAND");
     }
 }
