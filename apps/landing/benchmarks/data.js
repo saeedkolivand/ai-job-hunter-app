@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784257436044,
+  "lastUpdate": 1784573751905,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -5075,6 +5075,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 228067,
             "range": "± 3297",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4faf353f1725bc844293ec7e8b3148d418e2209f",
+          "message": "refactor: consolidate static landing into apps/landing and retire the scroll-film app (#737)\n\n* refactor: consolidate static landing into apps/landing and retire the scroll-film app\n\nThe TERMINAL VELOCITY scroll-film (ADR-0016) is abandoned by owner decision mid-M4.\napps/landing is now the self-contained static site formerly at landing/ (no build step,\nno workspace package); pages.yml publishes it directly. The film milestones M1-M3 remain\nin history; the uncommitted M4 tree is preserved in a stash on feat/tv-m4-robot.\nADR-0017 records the decision and supersedes ADR-0016.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: reroute landing review ownership to project-steward for the static site\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: mark gl fleet dormant in routing table and webgl-standards skill per adr-0017\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-20T20:46:05+02:00",
+          "tree_id": "b7eae4beb3eb9fb287d3a913d69628f86a0b6489",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/4faf353f1725bc844293ec7e8b3148d418e2209f"
+        },
+        "date": 1784573751756,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2229606,
+            "range": "± 58430",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2662471,
+            "range": "± 43590",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 291163,
+            "range": "± 3866",
             "unit": "ns/iter"
           }
         ]
