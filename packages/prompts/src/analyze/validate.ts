@@ -112,20 +112,20 @@ export function validateAndRepair(raw: string): AnalysisResult | null {
     })
     .filter((r) => r.issue.length > 0);
 
+  // Coerce first, then decide mismatch on the coerced values — an empty-string
+  // language from the model would otherwise slip past the 'unknown' guard below.
+  const resumeLang = ensureString(langs.resume, 'unknown');
+  const jobAdLang = ensureString(langs.jobAd, 'unknown');
   return {
     detectedLanguages: {
-      resume: ensureString(langs.resume, 'unknown'),
-      jobAd: ensureString(langs.jobAd, 'unknown'),
+      resume: resumeLang,
+      jobAd: jobAdLang,
       // Only flag mismatch when both languages are actually known — matches
       // detectLanguages() in @ajh/shared. Otherwise an 'unknown' or missing
       // side would falsely trip the mismatch warning.
       mismatch:
         langs.mismatch === true ||
-        (typeof langs.resume === 'string' &&
-          typeof langs.jobAd === 'string' &&
-          langs.resume !== 'unknown' &&
-          langs.jobAd !== 'unknown' &&
-          langs.resume !== langs.jobAd),
+        (resumeLang !== 'unknown' && jobAdLang !== 'unknown' && resumeLang !== jobAdLang),
     },
     scores: {
       ats: clampScore(scores.ats),
