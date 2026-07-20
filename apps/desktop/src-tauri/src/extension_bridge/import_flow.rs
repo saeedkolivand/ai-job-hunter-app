@@ -104,50 +104,6 @@ pub(super) fn usable(p: &crate::scraping::types::JobPosting) -> bool {
     !p.title.trim().is_empty()
 }
 
-/// Fill `resolve`'s title/description from the extension's `[data-ajh-job-root]`
-/// HINT ONLY — used by the SPA/list-view (canonical) import branch when the
-/// resolve came back unusable or description-less (LinkedIn's anonymous-fetch
-/// authwall is the common trigger).
-///
-/// Deliberately narrower than a full DOM/`parse_from_html` merge: a list-shell
-/// page (LinkedIn search/collections) commonly carries its OWN SEO
-/// `JobPosting` JSON-LD for an unrelated job (the first list result), and
-/// `parse_from_html`'s precedence lets JSON-LD override the hint — so calling
-/// it on the whole shell document risks silently importing the wrong job. The
-/// caller extracts via [`crate::scraping::scrape_url::job_root_generic_html`]
-/// instead, which reads ONLY the hinted subtree, never the document's JSON-LD
-/// /`__NEXT_DATA__`/whole-page heuristics.
-///
-/// `resolve`'s non-empty title/description win; a field it left empty is
-/// filled from the hint — never the other way around. `company`/`location`
-/// are untouched (the hint doesn't extract them — they stay whatever `resolve`
-/// produced, including its own host-based company fallback). Returns `None`
-/// when `resolve` is `None` — there is no base posting's identity
-/// (id/url/source/company) to attach the hint to, so the stub/partial path
-/// covers that case instead of synthesizing a whole posting from a
-/// list-shell's hint alone. Pure — no `AppHandle`/network — so it's directly
-/// unit-testable.
-pub(super) fn merge_resolve_with_hint(
-    resolve: Option<crate::scraping::types::JobPosting>,
-    hint_title: String,
-    hint_description: Option<String>,
-) -> Option<crate::scraping::types::JobPosting> {
-    let mut base = resolve?;
-    if base.title.trim().is_empty() && !hint_title.trim().is_empty() {
-        base.title = hint_title;
-    }
-    if base
-        .description
-        .as_deref()
-        .map(str::trim)
-        .unwrap_or("")
-        .is_empty()
-    {
-        base.description = hint_description;
-    }
-    Some(base)
-}
-
 /// Core import: parse the posting (Scan mode from provided HTML, else URL mode
 /// via the resolver), upsert the Applications aggregate from it (Application
 /// only — not the postings cache), emit the change event, and return the
@@ -212,42 +168,13 @@ pub(super) async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<
         }
     };
 
-    // At most one network fetch. For a SPA/list view (canonical rewrite), the
-    // captured DOM's `[data-ajh-job-root]` hint is the SAME selected job's
-    // detail pane — not the list shell (LinkedIn search/collections views
-    // render the full JD client-side into it; see content.ts's pane-first
-    // `JOB_NODE_CANDIDATES`) — so when the canonical resolve comes back
-    // unusable or missing a description (its anonymous fetch commonly hits an
-    // authwall), fill the gap from that hint. Deliberately scoped to the hint
-    // ONLY (`job_root_generic_html`, never the whole-document
-    // `parse_from_html`) — a list shell commonly carries its own SEO JSON-LD
-    // for an UNRELATED job, and `parse_from_html`'s precedence would let that
-    // JSON-LD override the hint (see `merge_resolve_with_hint`'s doc). No
-    // usable hint on the shell → the stub/partial path below covers it. For a
-    // direct page (no canonical rewrite) the DOM is parsed directly (its own
-    // JSON-LD, if any, describes THAT page); URL mode with no DOM falls back
-    // to a server fetch.
+    // At most one network fetch. The captured DOM is parsed ONLY for a direct page
+    // (no canonical rewrite) — for a SPA/list view the DOM is the list shell, not the
+    // selected job, so we resolve the canonical URL instead and never parse the shell.
     let mut posting: Option<crate::scraping::types::JobPosting> =
         if let Some(c) = canonical.as_deref() {
             let _guard = acquire_slot()?;
-            let resolved = crate::scraping::scrape_url::resolve(c).await?; // SPA/list view → selected job's canonical URL
-            let resolved_needs_hint_fallback = !resolved.as_ref().is_some_and(usable)
-                || resolved
-                    .as_ref()
-                    .and_then(|p| p.description.as_deref())
-                    .is_none_or(|d| d.trim().is_empty());
-            let hint = if resolved_needs_hint_fallback {
-                html.as_deref()
-                    .and_then(crate::scraping::scrape_url::job_root_generic_html)
-            } else {
-                None
-            };
-            match hint {
-                Some((hint_title, hint_description)) => {
-                    merge_resolve_with_hint(resolved, hint_title, hint_description)
-                }
-                None => resolved,
-            }
+            crate::scraping::scrape_url::resolve(c).await? // SPA/list view → selected job's canonical URL
         } else if let Some(h) = html.as_deref() {
             crate::scraping::scrape_url::parse_from_html(&url, h) // direct page → captured authenticated DOM
         } else {

@@ -2,14 +2,7 @@
   "extends": ["//"],
   "tasks": {
     "build": {
-      "inputs": [
-        "src/**",
-        "public/**",
-        "data/**",
-        "next.config.ts",
-        "tsconfig.json",
-        "package.json"
-      ],
+      "inputs": ["src/**", "public/**", "next.config.ts", "tsconfig.json", "package.json"],
       "outputs": ["out/**", ".next/**"]
     }
   }

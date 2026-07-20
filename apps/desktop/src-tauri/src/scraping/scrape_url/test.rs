@@ -1445,46 +1445,6 @@ fn test_parse_from_html_json_ld_beats_hint() {
     );
 }
 
-#[test]
-fn test_parse_from_html_linkedin_search_shell_pane_wins_over_list_shell() {
-    // Shaped like a LinkedIn search/collections view (`?currentJobId=…`): a
-    // list-shell pane with several unrelated job cards, and a detail pane for
-    // the SELECTED job carrying `data-ajh-job-root="true"` (per content.ts's
-    // pane-first `JOB_NODE_CANDIDATES` — see extension_bridge::import_flow's
-    // canonical-branch DOM fallback that consumes this same hint). The
-    // description must come from the hinted detail pane, not the list cards.
-    let html = r#"<html><head><title>LinkedIn Job Search | LinkedIn</title></head><body>
-        <main>
-            <ul class="jobs-search__results-list">
-                <li><a>Unrelated Job Card One</a><p>Some other company, some other role.</p></li>
-                <li><a>Unrelated Job Card Two</a><p>Another company, another role entirely.</p></li>
-            </ul>
-            <div class="jobs-details" data-ajh-job-root="true">
-                <h1>Staff Backend Engineer</h1>
-                <div class="jobs-description__content">
-                    <p>We are hiring a Staff Backend Engineer to own resilient
-                    distributed systems and the API platform end to end.</p>
-                </div>
-            </div>
-        </main>
-    </body></html>"#;
-    let posting = parse_from_html("https://www.linkedin.com/jobs/view/4185657072", html)
-        .expect("a hinted detail pane must yield a posting");
-    assert_eq!(
-        posting.title, "Staff Backend Engineer",
-        "title must come from the hinted detail pane, not an unrelated list card"
-    );
-    let desc = posting.description.as_deref().unwrap_or_default();
-    assert!(
-        desc.contains("resilient distributed systems"),
-        "description must come from the hinted detail pane, got: {desc}"
-    );
-    assert!(
-        !desc.contains("Unrelated Job Card"),
-        "description must NOT leak the list-shell's other job cards, got: {desc}"
-    );
-}
-
 // ── resolve Pass 3 — redirect→final-URL board re-dispatch ────────────────────
 //
 // Pass 3 of resolve(): after named boards miss on the ORIGINAL url, follow the
