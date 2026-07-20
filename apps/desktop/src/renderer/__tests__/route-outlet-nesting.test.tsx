@@ -196,11 +196,6 @@ vi.mock('@/services', async (importOriginal) => {
   };
 });
 
-// useDefaultResumeId reads useDocuments internally; stub it for the same reason.
-vi.mock('@/features/jobs/hooks/useDefaultResumeId', () => ({
-  useDefaultResumeId: () => null,
-}));
-
 vi.mock('@/services/use-ai-generations', () => ({
   useAiGenerations: () => ({ data: [] }),
 }));

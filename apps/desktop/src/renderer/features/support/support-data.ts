@@ -1,6 +1,6 @@
 import { Bot, Briefcase, Link as LinkIcon, Settings, Wifi } from 'lucide-react';
 
-export interface Problem {
+interface Problem {
   q: string;
   a: string;
 }

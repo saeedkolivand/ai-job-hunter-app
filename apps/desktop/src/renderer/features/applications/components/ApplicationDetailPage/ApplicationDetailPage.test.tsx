@@ -97,10 +97,6 @@ vi.mock('@/hooks/use-format-relative-time', () => ({
   useFormatRelativeTime: () => () => '',
 }));
 
-vi.mock('@/features/jobs/hooks/useDefaultResumeId', () => ({
-  useDefaultResumeId: () => null,
-}));
-
 // ── TailorFlow stub — keep the heavy generation tree out of the render ────────
 
 // Capture the onJobDescChange callback so DocumentsTab debounce tests can

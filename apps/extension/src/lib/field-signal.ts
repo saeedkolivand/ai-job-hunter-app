@@ -31,7 +31,7 @@
  * (SSN/tax id, passport, date of birth, national id, driver's license,
  * bank/IBAN, visa status).
  */
-export const AMBIGUOUS = [
+const AMBIGUOUS = [
   'referr',
   'referral',
   'reference',
@@ -194,7 +194,7 @@ export function isHidden(el: HTMLElement): boolean {
 }
 
 /** CSS.escape when available (jsdom + browsers), else a conservative fallback. */
-export function escapeId(id: string): string {
+function escapeId(id: string): string {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(id);
   return id.replace(/["\\]/g, '\\$&');
 }
