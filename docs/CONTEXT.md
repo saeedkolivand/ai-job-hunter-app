@@ -189,10 +189,12 @@ _Avoid_: premium tier, template category
 
 ## Domain - Landing experience
 
-See docs/adr/0016-terminal-velocity-scroll-film-landing.md (the active TERMINAL VELOCITY
-scroll-film; supersedes the RIPBOOK rebuild 0015, which superseded parts of the original GL
-takeover 0014) for the full contract and the webgl-standards skill for implementation rules;
-entries below are definitions only. RIPBOOK-era terms are kept below marked _superseded_.
+**SUPERSEDED** — Landing is now a static site (see [ADR 0017](adr/0017-landing-consolidation-static-site.md)).
+The TERMINAL VELOCITY scroll-film (ADR 0016, 0015, parts of 0014) was abandoned mid-M4 on
+2026-07-20 after three merged milestones; all WebGL infrastructure, film concepts (playhead,
+scroll-film, scenes, quality governor, VAT, shader standards), and Experience-gate machinery
+are **retired**. The static site (index.html + 8 sibling pages, no build step) remains deployed.
+Entries below are definitions for reading the retired ADRs only; they are not in active use.
 
 **Semantic layer**:
 The prerendered content HTML that is always in the DOM - what the visitor reads when the GL

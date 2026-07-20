@@ -36,12 +36,11 @@
     { "glob": "packages/translations/**", "owner": "frontend-reviewer" },
     { "glob": "packages/test-ids/**", "owner": "frontend-reviewer" },
     { "glob": "apps/desktop/src/**", "owner": "frontend-reviewer" },
-    { "glob": "apps/landing/**", "owner": "webgl-reviewer" },
+    { "glob": "apps/landing/**", "owner": "project-steward" },
     { "glob": "apps/desktop/src-tauri/src/**", "owner": "rust-backend-architect" },
     { "glob": "packages/shared/**", "owner": "rust-backend-architect" },
     { "glob": ".claude/hooks/**", "owner": "code-quality-reviewer" },
     { "glob": ".claude/**", "owner": "project-steward" },
-    { "glob": "landing/**", "owner": "project-steward" },
     { "glob": "docs/**", "owner": "project-steward" },
     { "glob": "scripts/**", "owner": "project-steward" },
     { "glob": ".github/**", "owner": "project-steward" }
@@ -87,15 +86,7 @@
     },
     {
       "owner": "ui-ux-expert",
-      "globs": ["apps/desktop/src/renderer/**", "packages/ui/**", "landing/**"]
-    },
-    {
-      "owner": "gate-auditor",
-      "globs": ["apps/landing/**"]
-    },
-    {
-      "owner": "webgl-perf-profiler",
-      "globs": ["apps/landing/**"]
+      "globs": ["apps/desktop/src/renderer/**", "packages/ui/**", "apps/landing/**"]
     }
   ],
   "advisory": {

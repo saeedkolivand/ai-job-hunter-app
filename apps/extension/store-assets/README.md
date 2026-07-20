@@ -4,7 +4,7 @@ Deterministic, regenerable Chrome Web Store assets. Every file is composited
 from HTML/CSS via headless Chromium (Playwright) — no AI image generation — so
 text is crisp and pixel dimensions are exact. The brand language (paper / ink /
 red, hand-drawn doodles, film grain, the same Google Fonts) is lifted from
-`landing/index.html`.
+`apps/landing/index.html`.
 
 Firefox AMO reuses the **same** 1280×800 screenshot set (AMO accepts the same
 dimensions); no separate render is needed.
@@ -65,7 +65,7 @@ width tracks the card's rendered CSS width (currently 340px → 680px output) an
 the height varies with each state's content. They are inputs to the composited
 screenshots above; not uploaded to the store.
 
-## Brand tokens (from `landing/index.html`)
+## Brand tokens (from `apps/landing/index.html`)
 
 - Paper `#f4ecdc`, ink `#1c1812`, red `#e24b4a`.
 - Fonts (Google Fonts): Patrick Hand, Gloria Hallelujah, Anton, Space Mono.

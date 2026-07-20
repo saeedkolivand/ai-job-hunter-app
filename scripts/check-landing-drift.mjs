@@ -21,17 +21,17 @@ import { join } from 'node:path';
 const ROOT = process.cwd();
 
 // Claim-bearing architecture diagrams (path/IPC/registry/denylist checks).
-const DIAGRAMS = ['landing/architecture-map.html', 'landing/how-it-works.html'];
+const DIAGRAMS = ['apps/landing/architecture-map.html', 'apps/landing/how-it-works.html'];
 
 // Every landing page + embedded script (secret-scan only).
 const SECRET_SCAN_FILES = [
-  'landing/architecture-map.html',
-  'landing/how-it-works.html',
-  'landing/ci-dashboard.html',
-  'landing/index.html',
-  'landing/download.html',
-  'landing/benchmarks/index.html',
-  'landing/benchmarks/data.js',
+  'apps/landing/architecture-map.html',
+  'apps/landing/how-it-works.html',
+  'apps/landing/ci-dashboard.html',
+  'apps/landing/index.html',
+  'apps/landing/download.html',
+  'apps/landing/benchmarks/index.html',
+  'apps/landing/benchmarks/data.js',
 ];
 
 const IPC_CONTRACTS_DIR = 'packages/shared/src/ipc/contracts';
@@ -167,13 +167,13 @@ for (const file of SECRET_SCAN_FILES) {
 
 if (failures.length === 0) {
   console.log(
-    '✓ landing/ diagrams in sync with source (paths, IPC contracts, registries, no secrets)'
+    '✓ apps/landing/ diagrams in sync with source (paths, IPC contracts, registries, no secrets)'
   );
   process.exit(0);
 }
 
 // Group the report by check, then file.
-console.error(`✗ landing/ drift detected — ${failures.length} issue(s):\n`);
+console.error(`✗ apps/landing/ drift detected — ${failures.length} issue(s):\n`);
 const byCheck = new Map();
 for (const f of failures) {
   if (!byCheck.has(f.check)) byCheck.set(f.check, []);
