@@ -1,6 +1,6 @@
 import type { AutopilotRunState } from '@/lib/machines/autopilot-run.machine';
 
-export interface StepLog {
+interface StepLog {
   step: string;
   detail: string;
   ts: number;

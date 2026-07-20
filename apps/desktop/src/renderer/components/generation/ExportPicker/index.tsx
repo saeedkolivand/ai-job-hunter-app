@@ -10,7 +10,7 @@ import type { TemplateId } from '@/lib/generate';
 const EXPORT_FORMATS = ['pdf', 'docx', 'txt'] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
-export interface ExportTemplateOption {
+interface ExportTemplateOption {
   id: TemplateId;
   label: string;
 }

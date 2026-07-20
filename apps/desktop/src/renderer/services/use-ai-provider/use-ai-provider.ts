@@ -240,7 +240,7 @@ export const useGenerateConfig = () => {
  * a new provider is picked up with zero renderer change. Cheap + rarely-changing,
  * so cached for a long while.
  */
-export const useModelCapabilities = (provider: string, model: string, baseUrl?: string) => {
+const useModelCapabilities = (provider: string, model: string, baseUrl?: string) => {
   const api = useAppClient();
   return useQuery({
     queryKey: [...keys.ai.capabilities, provider, model, baseUrl ?? ''],

@@ -55,10 +55,6 @@ vi.mock('@/hooks/use-format-relative-time', () => ({
   useFormatRelativeTime: () => () => '',
 }));
 
-vi.mock('@/features/jobs/hooks/useDefaultResumeId', () => ({
-  useDefaultResumeId: () => null,
-}));
-
 vi.mock('@/features/documents/components/TailorFlow', () => ({
   TailorFlow: () => <div data-testid={TEST_IDS.documents.tailorFlowStub} />,
 }));
