@@ -22,6 +22,8 @@ export const TEST_IDS = {
   /** Jobs feature — scraping, results, form */
   jobs: {
     scrapeForm: 'scrape-form',
+    /** Bounded, scrollable wrapper around the page header + scrape form. */
+    scrapeFormScroll: 'scrape-form-scroll',
     /** stub-only: no matching attribute on the real component */
     scrapeFilters: 'scrape-filters',
     aggregatorKeyHint: 'aggregator-key-hint',
