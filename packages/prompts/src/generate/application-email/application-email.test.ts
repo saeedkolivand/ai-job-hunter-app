@@ -392,4 +392,18 @@ describe('buildApplicationEmailPrompt — unknown company', () => {
     expect(user).toContain('Role: Senior Backend Engineer at Globex');
     expect(system).not.toMatch(/company name unknown/i);
   });
+
+  it('frames the full-depth email as "about THIS role at THIS company" only when the company is known', () => {
+    const { system } = buildApplicationEmailPrompt(BASE, 'large');
+    expect(system).toContain('about THIS role at THIS company');
+  });
+
+  it('drops the "at THIS company" opening framing at full depth when the company is unknown', () => {
+    // Only the opening framing is gated; the shared HUMANIZE voice block still
+    // references "THIS company" generically, so the assertion targets the
+    // specific opening phrase rather than the substring anywhere.
+    const { system } = buildApplicationEmailPrompt(NO_COMPANY, 'large');
+    expect(system).not.toContain('about THIS role at THIS company');
+    expect(system).toContain('clearly about THIS role');
+  });
 });

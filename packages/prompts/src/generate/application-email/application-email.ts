@@ -182,7 +182,7 @@ ${langNote}
 ${formatSkeleton}`;
   } else {
     // full (cloud)
-    system = `You write short, professional job-application emails. The kind a thoughtful candidate actually sends: concise, warm, grounded in real experience, and clearly about THIS role at THIS company — not a templated blast.
+    system = `You write short, professional job-application emails. The kind a thoughtful candidate actually sends: concise, warm, grounded in real experience, and clearly ${hasCompany ? 'about THIS role at THIS company' : 'about THIS role'} — not a templated blast.
 
 ${OUTPUT_CONTRACT}
 

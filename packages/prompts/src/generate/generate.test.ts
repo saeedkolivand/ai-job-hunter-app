@@ -667,6 +667,22 @@ describe('buildCoverLetterSystemPrompt', () => {
     expect(prompt).toContain('omit the company/addressee lines entirely');
     expect(prompt).toContain('NEVER output a placeholder');
   });
+
+  it('states the company-name rule conditionally at every depth (no unconditional "use the real company name")', () => {
+    // The system rule must not flatly command using the company name — that
+    // contradicts the omit-when-unknown instruction. Every depth carries the
+    // self-conditional form instead.
+    const large = buildCoverLetterSystemPrompt('recruiter', 'large');
+    const small = buildCoverLetterSystemPrompt('recruiter', 'small');
+    const cli = buildCoverLetterSystemPrompt('recruiter', { kind: 'cli' });
+    for (const prompt of [large, small, cli]) {
+      expect(prompt).toMatch(/if the company name is not provided/i);
+    }
+    // The old unconditional imperative ("...and job title." / ";") is gone.
+    expect(large).not.toContain('Use the real company name and job title.');
+    expect(small).not.toContain('Use the real company name and job title.');
+    expect(cli).not.toContain('the real company name and job title;');
+  });
 });
 
 describe('buildCoverLetterPrompt', () => {
