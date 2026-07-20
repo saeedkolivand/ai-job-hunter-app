@@ -88,8 +88,9 @@ export function detectLanguage(text: string): string {
     return 'unknown';
   }
 
-  // Map ISO 639-3 to ISO 639-1
-  return LANGUAGE_MAP[code] || code;
+  // Map ISO 639-3 to ISO 639-1. Fall back to 'unknown' (not the raw 3-letter
+  // code) so the return value always honours the ISO 639-1 contract above.
+  return LANGUAGE_MAP[code] ?? 'unknown';
 }
 
 /**
