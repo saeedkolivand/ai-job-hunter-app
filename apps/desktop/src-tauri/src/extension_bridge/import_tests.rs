@@ -312,6 +312,217 @@ fn usable_requires_a_non_blank_title() {
     );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// A0b. merge_resolve_with_hint — the canonical-branch (LinkedIn search/list-view)
+// hint-scoped fallback merge. `resolve()`'s non-empty title/description win; the
+// `[data-ajh-job-root]` hint only fills a gap `resolve` left empty — never
+// clobbers a value `resolve` already supplied. This is the fix for the LinkedIn
+// search/collections import losing the JD: the canonical `resolve()` fetch
+// commonly hits LinkedIn's authwall and comes back title-less or
+// description-less, while the extension's captured DOM's hinted detail pane
+// still has it. Deliberately scoped to the HINT only (never a whole-document
+// `parse_from_html` merge) — see the wrong-job regression test below.
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn posting_with(
+    title: &str,
+    company: &str,
+    description: Option<&str>,
+) -> crate::scraping::types::JobPosting {
+    crate::scraping::types::JobPosting {
+        description: description.map(String::from),
+        ..sample_posting("https://acme.example/jobs/1", company, title)
+    }
+}
+
+/// `resolve` is usable (a real title) but came back with no description
+/// (the authwall degrade); the hint has one → the merged posting keeps
+/// resolve's title/company but carries the hint's description. This is the
+/// exact bug this fix closes.
+#[test]
+fn merge_resolve_with_hint_fills_a_missing_description_from_the_hint() {
+    let resolved = posting_with("Staff Engineer", "Acme", None);
+
+    let merged = super::import_flow::merge_resolve_with_hint(
+        Some(resolved),
+        "Staff Engineer".to_string(),
+        Some("Full job description text.".to_string()),
+    )
+    .expect("resolve present must merge to Some");
+
+    assert_eq!(merged.title, "Staff Engineer", "resolve's title must win");
+    assert_eq!(merged.company, "Acme", "company is untouched by the hint");
+    assert_eq!(
+        merged.description.as_deref(),
+        Some("Full job description text."),
+        "resolve's empty description must be filled in from the hint"
+    );
+}
+
+/// `resolve` is unusable (blank title — the authwall degrade) but the hint
+/// carries both title and description → they fill the gaps and the merged
+/// posting clears `usable`; `company` stays whatever `resolve` produced (the
+/// hint never supplies it).
+#[test]
+fn merge_resolve_with_hint_fills_title_and_description_when_resolve_is_unusable() {
+    let resolved = posting_with("", "acme.example", None); // resolve's own host fallback company
+
+    let merged = super::import_flow::merge_resolve_with_hint(
+        Some(resolved),
+        "Senior Backend Engineer".to_string(),
+        Some("Own the API platform.".to_string()),
+    )
+    .expect("resolve present must merge to Some");
+
+    assert_eq!(merged.title, "Senior Backend Engineer");
+    assert_eq!(
+        merged.company, "acme.example",
+        "company stays resolve's own value — the hint never supplies it"
+    );
+    assert_eq!(merged.description.as_deref(), Some("Own the API platform."));
+    assert!(
+        super::import_flow::usable(&merged),
+        "the merged posting must now be usable"
+    );
+}
+
+/// Both sides empty (no title/description anywhere) → the merge stays empty,
+/// so `handle_import`'s stub-persist path still triggers exactly as before
+/// this fix — the merge can never manufacture usability out of nothing.
+#[test]
+fn merge_resolve_with_hint_both_empty_stays_unusable() {
+    let resolved = posting_with("", "", None);
+
+    let merged =
+        super::import_flow::merge_resolve_with_hint(Some(resolved), String::new(), None)
+            .expect("resolve present (even if unusable) still merges to Some");
+
+    assert!(!super::import_flow::usable(&merged));
+    assert!(merged.description.is_none());
+}
+
+/// `resolve` already has a real description → the hint's (possibly different)
+/// description must NOT clobber it — a fallback field can only fill a gap,
+/// never override a value the primary source already supplied.
+#[test]
+fn merge_resolve_with_hint_never_clobbers_a_resolve_description_that_is_already_present() {
+    let resolved = posting_with("Staff Engineer", "Acme", Some("Resolve's own description."));
+
+    let merged = super::import_flow::merge_resolve_with_hint(
+        Some(resolved),
+        "Staff Engineer".to_string(),
+        Some("A different hint description.".to_string()),
+    )
+    .unwrap();
+
+    assert_eq!(
+        merged.description.as_deref(),
+        Some("Resolve's own description."),
+        "resolve's non-empty description must win over the hint's"
+    );
+}
+
+/// No `resolve` posting at all → `None` — there is no base identity
+/// (id/url/source/company) to attach the hint to, so the stub/partial path
+/// covers this case instead of synthesizing a posting from the hint alone.
+#[test]
+fn merge_resolve_with_hint_none_resolve_is_none() {
+    assert!(super::import_flow::merge_resolve_with_hint(
+        None,
+        "Some Title".to_string(),
+        Some("Some description.".to_string())
+    )
+    .is_none());
+}
+
+/// HIGH regression (wrong-job import via whole-document JSON-LD on list
+/// shells): a list-shell fixture carries a `data-ajh-job-root` pane for the
+/// SELECTED job PLUS unrelated SEO `JobPosting` JSON-LD (LinkedIn search pages
+/// render this for the first result). `job_root_generic_html` — the extraction
+/// the canonical branch actually uses — must yield the pane's own
+/// title/description, not the JSON-LD's; merging that hint onto an unusable
+/// `resolve` posting must therefore import the pane's job, never the
+/// unrelated one. Contrast: the whole-document `parse_from_html` on this SAME
+/// html WOULD adopt the JSON-LD job — pinning exactly why the canonical
+/// branch must never call it on a list shell.
+#[test]
+fn canonical_branch_hint_scoped_fallback_ignores_unrelated_whole_document_json_ld() {
+    let html = r#"
+        <html>
+        <head>
+            <title>Jobs at LinkedIn</title>
+            <script type="application/ld+json">
+            {
+                "@context": "https://schema.org/",
+                "@type": "JobPosting",
+                "title": "WRONG: Marketing Intern (first list result)",
+                "description": "This is an UNRELATED job from the list shell's own SEO markup.",
+                "hiringOrganization": { "name": "Wrong Corp" }
+            }
+            </script>
+        </head>
+        <body>
+            <ul class="jobs-search__results-list">
+                <li><a>Marketing Intern</a></li>
+                <li><a>Staff Backend Engineer</a></li>
+            </ul>
+            <div class="jobs-details" data-ajh-job-root="true">
+                <h1>Staff Backend Engineer</h1>
+                <p>Own the API platform end to end at Acme, the SELECTED job.</p>
+            </div>
+        </body>
+        </html>
+    "#;
+
+    // The whole-document parse WOULD adopt the wrong (JSON-LD) job — this is
+    // exactly the risk the canonical branch's hint-scoping avoids.
+    let whole_doc = crate::scraping::scrape_url::parse_from_html(
+        "https://www.linkedin.com/jobs/view/1",
+        html,
+    )
+    .expect("a titled JSON-LD document always yields Some");
+    assert_eq!(
+        whole_doc.title, "WRONG: Marketing Intern (first list result)",
+        "sanity check: parse_from_html's own precedence lets JSON-LD beat the hint"
+    );
+
+    // The canonical branch's actual extraction: hint-scoped only.
+    let (hint_title, hint_description) =
+        crate::scraping::scrape_url::job_root_generic_html(html)
+            .expect("a well-formed data-ajh-job-root pane must yield a hint");
+    assert_eq!(
+        hint_title, "Staff Backend Engineer",
+        "the hint-scoped extraction must read the pane, not the JSON-LD"
+    );
+    assert!(
+        hint_description
+            .as_deref()
+            .unwrap_or_default()
+            .contains("SELECTED job"),
+        "hint description must come from the pane, not the JSON-LD"
+    );
+
+    // An unusable `resolve()` (authwalled) merged with that hint must import
+    // the pane's job — never the unrelated JSON-LD one.
+    let resolved = posting_with("", "linkedin.com", None);
+    let merged =
+        super::import_flow::merge_resolve_with_hint(Some(resolved), hint_title, hint_description)
+            .expect("resolve present must merge to Some");
+    assert_eq!(merged.title, "Staff Backend Engineer");
+    assert!(
+        merged
+            .description
+            .as_deref()
+            .unwrap_or_default()
+            .contains("SELECTED job"),
+        "merged description must be the pane's, not the unrelated JSON-LD's"
+    );
+    assert_ne!(
+        merged.title, "WRONG: Marketing Intern (first list result)",
+        "the merged posting must never be the unrelated list-shell job"
+    );
+}
+
 // ── import-isolation contract ──────────────────────────────────────────────────
 // `persist_import_application` is the WHOLE persistence side effect of an import.
 // It takes only the `ApplicationStore` (no `PostingsCache`), so an import can
@@ -2137,7 +2348,8 @@ async fn port_probe_returns_none_when_full_span_busy_graceful_disable() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// A5. Canonical-import precedence — the list-shell DOM is never adopted
+// A5. Canonical-import precedence — the list-shell's whole-document JSON-LD is
+// never adopted; only the extension's HINT-SCOPED subtree may fill a gap.
 //
 // `handle_import` is an async fn that takes `&AppHandle` and cannot be invoked
 // hermetically (no live Tauri runtime in unit tests — see the A3 note above).
@@ -2145,24 +2357,32 @@ async fn port_probe_returns_none_when_full_span_busy_graceful_disable() {
 //
 //   (a) A LinkedIn SPA/list URL DOES get rewritten by `canonical_job_url` →
 //       `canonical.is_some()`.
-//   (b) Parsing the list-shell HTML with `parse_from_html` WOULD have yielded a
-//       titled posting — proving the old Fallback-X code would have wrongly
-//       adopted list-shell content.
-//   (c) The new precedence NEVER calls `parse_from_html` when `canonical` is
-//       Some — the canonical branch calls `resolve(c)` only. When that returns
-//       None/Err the handler falls through to the stub, not to a list-shell parse.
+//   (b) Parsing the list-shell HTML with the whole-document `parse_from_html`
+//       WOULD have yielded a titled posting for the WRONG (unrelated) job —
+//       proving why the canonical branch must never call it on a list shell
+//       (see `canonical_branch_hint_scoped_fallback_ignores_unrelated_whole_document_json_ld`
+//       above for the full merge-level pin of this).
+//   (c) The canonical branch NEVER calls `parse_from_html` — only `resolve(c)`,
+//       and (when that comes back unusable/description-less) the HINT-SCOPED
+//       `job_root_generic_html`, which reads only the `[data-ajh-job-root]`
+//       subtree and never the document's JSON-LD/`__NEXT_DATA__`/whole-page
+//       heuristics. When `resolve` returns nothing usable AND there is no
+//       usable hint, the handler falls through to the stub — never to a
+//       list-shell parse.
 //
-// Together (a)+(b)+(c) pin the invariant: a SPA/list import whose server fetch
-// yields nothing will produce a partial stub, NOT a posting whose title/content
-// came from the list shell.
+// Together (a)+(b)+(c) pin the invariant: a SPA/list import can only ever
+// adopt title/content from `resolve`'s own fetch or the extension's explicitly
+// hinted pane — never from the list shell's whole-document markup.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// A LinkedIn jobs/search URL with a `currentJobId` is rewritten to a canonical
 /// view URL. The extension sends the list-shell DOM alongside it; the list-shell
-/// HTML WOULD have yielded a titled posting via `parse_from_html` — proving the
-/// old Fallback-X code would have adopted the wrong content. The new precedence
-/// skips `parse_from_html` entirely when `canonical` is `Some`, so the shell
-/// content can never leak into an imported application.
+/// HTML WOULD have yielded a titled (but WRONG) posting via the whole-document
+/// `parse_from_html` — proving why the canonical branch must never call it on
+/// a list shell. The canonical branch only ever calls `resolve(c)` plus, as a
+/// gap-filler, the HINT-SCOPED `job_root_generic_html` — never the
+/// whole-document parse — so the shell's own JSON-LD/heuristic content can
+/// never leak into an imported application.
 #[test]
 fn canonical_spa_url_rewrite_skips_list_shell_dom_parse() {
     use crate::scraping::scrape_url::{canonical_job_url, parse_from_html};
@@ -2181,9 +2401,10 @@ fn canonical_spa_url_rewrite_skips_list_shell_dom_parse() {
         "canonical must point to the /jobs/view/<id> form"
     );
 
-    // (b) The list-shell HTML WOULD have produced a titled posting via parse_from_html
-    // — proving the old Fallback-X code (parse_from_html(effective_url, html) when
-    // canonical was Some) would have adopted list-shell content as the import result.
+    // (b) The list-shell HTML WOULD have produced a titled posting via the
+    // whole-document parse_from_html — proving that calling it on the shell
+    // (instead of the hint-scoped job_root_generic_html) would adopt
+    // list-shell content as the import result.
     let list_shell_html = r#"
         <html>
         <head>
@@ -2203,17 +2424,22 @@ fn canonical_spa_url_rewrite_skips_list_shell_dom_parse() {
     let shell_parse = parse_from_html(list_url, list_shell_html);
     assert!(
         shell_parse.as_ref().is_some_and(|p| !p.title.is_empty()),
-        "parse_from_html on the list-shell HTML yields a titled posting —          confirming the old Fallback-X code would have wrongly adopted this content"
+        "parse_from_html on the list-shell HTML yields a titled posting —          confirming the whole-document parse would wrongly adopt this content"
     );
 
-    // (c) The new precedence: when canonical.is_some(), only resolve(canonical) is
-    // called — parse_from_html is never reached for the shell. We can't call
-    // handle_import hermetically, but the if-else structure in handle_import is:
+    // (c) The canonical branch never calls parse_from_html at all — only
+    // resolve(c) and, as a gap-filler, the hint-scoped job_root_generic_html.
+    // We can't call handle_import hermetically, but its canonical-branch
+    // structure is:
     //
     //   if let Some(c) = canonical.as_deref() {
-    //       resolve(c).await?    ← only this branch runs when canonical is Some
+    //       let resolved = resolve(c).await?;
+    //       if resolved is unusable/description-less {
+    //           job_root_generic_html(html)   ← HINT-SCOPED gap-filler only,
+    //                                            never parse_from_html
+    //       }
     //   } else if let Some(h) = html.as_deref() {
-    //       parse_from_html(...)  ← SKIPPED when canonical is Some
+    //       parse_from_html(...)  ← SKIPPED entirely when canonical is Some
     //   } ...
     //
     // And the single fallback guard:
@@ -2222,10 +2448,10 @@ fn canonical_spa_url_rewrite_skips_list_shell_dom_parse() {
     //   is also guarded — so resolve(effective_url) is also skipped for the canonical path.
     //
     // Asserting canonical.is_some() (done above) is the structural proof that
-    // parse_from_html is unreachable for this URL under the new precedence.
+    // the whole-document parse_from_html is unreachable for this URL.
     assert!(
         canonical.is_some(),
-        "structural proof: canonical.is_some() → parse_from_html branch is unreachable          for this URL under the new handle_import precedence"
+        "structural proof: canonical.is_some() → the whole-document parse_from_html branch is          unreachable for this URL under the hint-scoped canonical precedence"
     );
 }
 

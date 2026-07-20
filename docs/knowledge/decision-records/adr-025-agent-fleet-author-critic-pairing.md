@@ -1,6 +1,6 @@
 # ADR-025: Agent fleet — paired author/critic per domain
 
-Last updated: 2026-06-19
+Last updated: 2026-07-20
 
 **Status:** Accepted
 
@@ -17,7 +17,7 @@ Every domain is a **pair**: a write-capable **author** implements, an independen
 - **25 agents:** the routing table + explainer must list every one (the guard enforces it).
 - **Token premium of pairing/teams:** offset by the pre-harvest handoff (no cold re-exploration).
 - **Agent Teams experimental:** Windows/VS Code runs in-process only (no tmux split panes).
-- **Visual explainer:** `landing/agent-system.html` documents the system.
+- **Visual explainer:** `apps/landing/public/agent-system.html` documents the system.
 - **Guard enforcement:** `scripts/check-agent-system.mjs` runs in pre-push hook and CI to keep agent definitions, routes, and configs in sync.
 
 ## Related
@@ -27,4 +27,4 @@ Every domain is a **pair**: a write-capable **author** implements, an independen
 - `.claude/review-routes.json` — deterministic routing from touched files to primary + risk-justified secondary reviewers
 - `CLAUDE.md` — single source of truth for agent descriptions and routing
 - `scripts/check-agent-system.mjs` — deterministic guard (pre-push + CI) enforcing agents ⇄ routes ⇄ CLAUDE.md ⇄ AI-configs
-- `landing/agent-system.html` — interactive visual explainer of the 25-agent system
+- `apps/landing/public/agent-system.html` — interactive visual explainer of the 25-agent system

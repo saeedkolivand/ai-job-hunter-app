@@ -3,14 +3,15 @@ name: 🌐 Deploy Landing Page
 # ──────────────────────────────────────────────────────────────────────
 # GitHub Pages Deploy
 # ──────────────────────────────────────────────────────────────────────
-# Purpose: Publish the static marketing landing page (apps/landing/) plus the
-#          @ajh/ui Storybook (at /storybook/) to GitHub Pages
-# Triggers: push to main touching apps/landing/, packages/ui/, or this workflow,
-#           plus manual dispatch
-# Source:   apps/landing/ is a self-contained static site (no build step, no
-#           workspace package) -- index.html plus its sibling pages and assets
-#           are served as-is; the Storybook build output is copied in at deploy
-#           time only (never committed).
+# Purpose: Build the Next.js landing app (apps/landing, static export → out/)
+#          plus the @ajh/ui Storybook (at /storybook/) and publish to GitHub Pages
+# Triggers: push to main touching apps/landing/, packages/ui/, pnpm-lock.yaml, or
+#           this workflow, plus manual dispatch
+# Source:   apps/landing is a Next.js app with `output: 'export'` — `next build`
+#           emits apps/landing/out (flat HTML/CSS/JS + the /public passthrough:
+#           dashboards, benchmarks, CNAME, .nojekyll, og-card.jpg). The Storybook
+#           build output is copied into out/storybook at deploy time only (never
+#           committed).
 # Note:     Runs independently of release.yml (also push-to-main) — separate jobs.
 # ──────────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,7 @@ on:
     paths:
       - 'apps/landing/**'
       - 'packages/ui/**'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -49,20 +51,26 @@ jobs:
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
 
+      - name: 🏗️ Build landing (static export)
+        run: pnpm --filter @ajh/landing build
+
+      - name: 🔍 Check copy/link parity (no legacy content dropped)
+        run: pnpm --filter @ajh/landing check:parity
+
       - name: 📚 Build Storybook (@ajh/ui)
         env:
           # Storybook's Vite bundle needs heap headroom on the CI runner.
           NODE_OPTIONS: --max-old-space-size=6144
-        # Copy the static Storybook alongside the landing pages (runner-only;
-        # apps/landing/storybook is never committed) so it ships in the artifact.
+        # Copy the static Storybook into the export output (runner-only;
+        # apps/landing/out/storybook is never committed) so it ships in the artifact.
         run: |
           pnpm --filter @ajh/ui build-storybook
-          cp -r packages/ui/storybook-static apps/landing/storybook
+          cp -r packages/ui/storybook-static apps/landing/out/storybook
 
       - name: 📤 Upload artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
-          path: apps/landing
+          path: apps/landing/out
 
       - name: 🚀 Deploy to GitHub Pages
         id: deployment

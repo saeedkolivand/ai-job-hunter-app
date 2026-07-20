@@ -67,4 +67,24 @@ describe('content script – markLikelyJobNode', () => {
 
     expect(main.hasAttribute('data-ajh-job-root')).toBe(false);
   });
+
+  it('prefers a detail-pane container (e.g. "jobs-details") over <main> — a search/list-shell view has both', () => {
+    // Mirrors a LinkedIn search view: <main> wraps the whole list-shell (list
+    // + detail pane) and would qualify on its own text length, but the
+    // detail-pane container must win so the hint marks the SELECTED job's
+    // pane, not the whole shell.
+    const main = document.createElement('main');
+    main.textContent = 'y'.repeat(500);
+    document.body.appendChild(main);
+
+    const pane = document.createElement('div');
+    pane.className = 'jobs-details__container';
+    pane.textContent = 'x'.repeat(201);
+    main.appendChild(pane);
+
+    markLikelyJobNode();
+
+    expect(pane.getAttribute('data-ajh-job-root')).toBe('true');
+    expect(main.hasAttribute('data-ajh-job-root')).toBe(false);
+  });
 });

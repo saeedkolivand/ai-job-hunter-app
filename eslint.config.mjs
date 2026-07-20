@@ -129,9 +129,17 @@ export default tseslint.config(
       '**/src-tauri/target/**',
       // Local, untracked agent/editor tooling — not part of the codebase.
       '.claude/**',
-      // apps/landing is a self-contained static marketing site (HTML + assets +
-      // the generated benchmarks/data.js), not a linted TS/JS package.
-      'apps/landing/**',
+      // apps/landing build output + non-TS assets. The app's TS/TSX (src/app,
+      // src/components, src/lib) IS linted; but these are not source:
+      //   out/ + .next/         → Next build output
+      //   public/**             → passthrough dashboards + verbatim gag scripts
+      //   src/content/**        → verbatim HTML/CSS fragments of the ported pages
+      //   next-env.d.ts         → generated
+      'apps/landing/out/**',
+      'apps/landing/.next/**',
+      'apps/landing/public/**',
+      'apps/landing/src/content/**',
+      'apps/landing/next-env.d.ts',
     ],
   },
 
@@ -377,7 +385,7 @@ export default tseslint.config(
 
   // ── Config / build scripts — relax all restrictions ────────────────────────
   {
-    files: ['*.config.*', 'scripts/**', '**/*.config.ts'],
+    files: ['*.config.*', 'scripts/**', 'apps/landing/scripts/**', '**/*.config.ts'],
     rules: {
       'no-console': 'off',
       'no-undef': 'off',
@@ -512,6 +520,26 @@ export default tseslint.config(
       globals: {
         ...globals.node,
       },
+    },
+  },
+
+  // ── @ajh/landing (Next.js marketing site) ──────────────────────────────────
+  // A standalone Next static-export app, NOT the desktop renderer. It faithfully
+  // ports the hand-authored marketing pages, so it is deliberately EXEMPT from
+  // the renderer-scoped rules (which target apps/desktop/src/renderer/** only and
+  // therefore already don't apply here — this block documents the intent):
+  //   • @ajh/ui primitives (Button/Input/…): the site has its own bespoke visual
+  //     language and injects verbatim first-party HTML — no shared primitives.
+  //   • i18n adapter / ports-and-adapters service hooks: no app IPC surface.
+  // dangerouslySetInnerHTML is intentional and safe here: the injected content is
+  // build-time-inlined first-party static HTML (src/content/**), never user input.
+  // The exemption is scoped to the two wrapper components that implement the
+  // pattern — any OTHER landing file reaching for dangerouslySetInnerHTML must
+  // justify its own override.
+  {
+    files: ['apps/landing/src/components/RawHtml.tsx', 'apps/landing/src/components/PageStyle.tsx'],
+    rules: {
+      'react/no-danger': 'off',
     },
   }
 );
